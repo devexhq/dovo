@@ -650,6 +650,33 @@ class RunStepsFailurePromptTests:
         assert prompter.calls == 1
 
 
+class RunStepsAssertFailureEscalationTests:
+    """[tier-1/integration] run_steps/_execute_one_step: top-level assert_ failure escalation, mirrored against the loop sub-step contract."""
+
+    def test_run_steps_assert_failure_marks_failed_with_pinned_message_format(self, tmp_path: Path) -> None:
+        """[tier-1/integration] run_steps: a top-level step exiting 0 but failing assert_(output_contains='never-appears') yields RunOutcome(status=FAILED) with step_results[0]=(status='failed', exit_code=0, error_message="Step 'check' failed assertion checks:\n  [FAIL] output_contains: substring 'never-appears' not found in output"), identical to the loop sub-step contract."""
+        step = StepBuilder.command("echo ok").with_id("check").assert_output_contains("never-appears").build()
+        context = RunContext(steps=[step], cwd=tmp_path, use_sandbox=False)
+
+        outcome = run_steps(context)
+
+        assert outcome.status == RunStatus.FAILED
+        _assert_step_results(
+            outcome.step_results,
+            [
+                _step_result(
+                    "check",
+                    status="failed",
+                    exit_code=0,
+                    error_message=(
+                        "Step 'check' failed assertion checks:\n"
+                        "  [FAIL] output_contains: substring 'never-appears' not found in output"
+                    ),
+                ),
+            ],
+        )
+
+
 class RunStepsPauseAndResumeTests:
     """Contract tests for RunCheckpoint persistence and resume-from-checkpoint behavior."""
 

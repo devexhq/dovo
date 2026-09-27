@@ -1,9 +1,13 @@
 from __future__ import annotations
 
+from collections import Counter
 from pathlib import Path
 
-from worktree.common.models import FailurePolicy
+import pytest
+
+from worktree.common.models import FailurePolicy, OnFailureSpec
 from worktree.core.db.repositories.artifacts import ArtifactsRepository
+from worktree.core.runtime.failure import USER_CONTINUED_MARKER
 from worktree.core.runtime.loop_runner import LoopBlockRunner
 from worktree.core.runtime.models import (
     FailurePromptDecision,
@@ -18,6 +22,7 @@ from worktree.core.step.models import (
     ArtifactPublishSpec,
     ConditionEvaluationResult,
     LoopStepBlock,
+    StepAssert,
     StepDefinition,
     StepResult,
     StepType,
@@ -239,6 +244,35 @@ class LoopBlockRunnerRunLogTimelineTests:
             (RunLogEventType.LOOP_DONE, 2, None, "completed"),
         ]
 
+    def test_loop_two_sub_steps_two_turns_emits_only_loop_events_never_step_events(self, tmp_path: Path) -> None:
+        """[tier-1/integration] LoopBlockRunner: a 2-sub-step loop run for 2 turns writes exactly 1 LOOP_START, 2 LOOP_TURN_START, 2 LOOP_CONDITIONS_EVALUATED, 1 LOOP_DONE, and 0 STEP_START/STEP_DONE events, since sub-steps dispatch through StepExecution directly, never through engine.py's _execute_one_step."""
+        loop = LoopStepBlock(
+            id="test-loop",
+            type="loop",
+            max_iterations=2,
+            until=["iteration.index >= 2"],
+            do=[
+                StepDefinition(id="a", type=StepType.COMMAND, command="echo a"),
+                StepDefinition(id="b", type=StepType.COMMAND, command="echo b"),
+            ],
+        )
+        state = StepLoopState(target_dir=tmp_path, session=None)
+        runner = LoopBlockRunner(loop=loop, sandbox_path=tmp_path, session_log_dir=tmp_path)
+
+        runner.run(state)
+
+        events = [
+            RunLogEvent.model_validate_json(line)
+            for line in (tmp_path / "run.log").read_text(encoding="utf-8").splitlines()
+        ]
+        counts = Counter(e.event for e in events)
+        assert counts[RunLogEventType.LOOP_START] == 1
+        assert counts[RunLogEventType.LOOP_TURN_START] == 2
+        assert counts[RunLogEventType.LOOP_CONDITIONS_EVALUATED] == 2
+        assert counts[RunLogEventType.LOOP_DONE] == 1
+        assert counts[RunLogEventType.STEP_START] == 0
+        assert counts[RunLogEventType.STEP_DONE] == 0
+
 
 class LoopSubStepAutoPublishTests:
     """[tier-1/unit] LoopBlockRunner._execute_sub_step_attempt: declarative artifacts: block on a do: sub-step."""
@@ -277,3 +311,238 @@ class LoopSubStepAutoPublishTests:
         assert record is not None
         assert record.file_count == 1
         assert state.warnings == []
+
+
+class LoopSubStepRetryOverrideCharacterizationTests:
+    """[tier-1/integration] LoopBlockRunner._execute_sub_step_attempt: characterizes the pre-fix retry-override bug."""
+
+    def test_loop_substep_retry_is_currently_not_honored_pending_fix(self, tmp_path: Path) -> None:
+        """[tier-1/integration] KNOWN BUG, not correct behavior: a loop sub-step declaring on_failure retry/max_retries=3 against an always-failing primitive runs exactly once (attempts == 1) and the loop aborts, because _execute_sub_step_attempt isolates the sub-step to on_failure=ABORT before StepExecution ever sees the declared retry spec."""
+        loop = LoopStepBlock(
+            id="test-loop",
+            type="loop",
+            max_iterations=1,
+            until=["iteration.index >= 1"],
+            do=[
+                StepDefinition(
+                    id="flaky",
+                    type=StepType.COMMAND,
+                    command="exit 1",
+                    on_failure=OnFailureSpec(action=FailurePolicy.RETRY, max_retries=3, backoff_ms=0),
+                )
+            ],
+        )
+        state = StepLoopState(target_dir=tmp_path, session=None)
+        runner = LoopBlockRunner(loop=loop, sandbox_path=tmp_path)
+
+        action, _, _ = runner.run(state)
+
+        assert action == LoopPromptDecision.ABORT
+        assert state.step_results[-1].attempts == 1
+        assert state.step_results[-1].status == "failed"
+
+
+class LoopSubStepContinueMarkerCharacterizationTests:
+    """[tier-1/integration] LoopBlockRunner._handle_sub_step_result: characterizes the pre-fix continue-marker mislabeling."""
+
+    def test_loop_substep_continue_marks_ignored_with_prompt_marker_pending_fix(self, tmp_path: Path) -> None:
+        """[tier-1/integration] KNOWN BUG, not correct behavior: a loop sub-step declaring on_failure continue against a failing primitive is recorded with status 'ignored' and an error_message containing '(user continued after prompt_user)' even though no FailurePrompter was ever configured, because _handle_sub_step_result routes plain continue through mark_continued_after_prompt."""
+        loop = LoopStepBlock(
+            id="test-loop",
+            type="loop",
+            max_iterations=1,
+            until=["iteration.index >= 1"],
+            do=[
+                StepDefinition(
+                    id="flaky",
+                    type=StepType.COMMAND,
+                    command="exit 1",
+                    on_failure=OnFailureSpec(action=FailurePolicy.CONTINUE),
+                )
+            ],
+        )
+        state = StepLoopState(target_dir=tmp_path, session=None)
+        runner = LoopBlockRunner(loop=loop, sandbox_path=tmp_path)
+
+        runner.run(state)
+
+        assert state.step_results[-1].status == "ignored"
+        assert USER_CONTINUED_MARKER in (state.step_results[-1].error_message or "")
+
+
+class _ScriptedFailurePrompter(FailurePrompter):
+    """Test double returning a scripted queue of FailurePromptDecision values for loop sub-step failures."""
+
+    def __init__(self, decisions: list[FailurePromptDecision]) -> None:
+        self.decisions = list(decisions)
+
+    def prompt_step_failure(
+        self,
+        *,
+        step: StepDefinition,
+        result: StepResult,
+        diagnostic: str,
+    ) -> FailurePromptDecision:
+        return self.decisions.pop(0)
+
+    def prompt_loop_max_iterations(
+        self,
+        *,
+        loop: LoopStepBlock,
+        iteration: int,
+        diagnostic: str,
+        grant_count: int = 3,
+    ) -> LoopPromptDecision:
+        raise AssertionError("prompt_loop_max_iterations should not be called")
+
+
+class LoopSubStepPromptUserParityTests:
+    """[tier-1/integration] LoopBlockRunner._prompt_sub_step_failure: prompt_user decision parity with the equivalent top-level step outcome."""
+
+    @pytest.mark.parametrize(
+        ("command", "decisions", "expected_status", "expected_attempts", "expect_abort"),
+        [
+            pytest.param(
+                'if [ "$WT_STEP_ATTEMPT" -eq 1 ]; then exit 1; else exit 0; fi',
+                [FailurePromptDecision.RETRY],
+                "completed",
+                2,
+                False,
+                id="retry",
+            ),
+            pytest.param("exit 1", [FailurePromptDecision.CONTINUE], "ignored", 1, False, id="continue"),
+            pytest.param("exit 1", [FailurePromptDecision.ABORT], "failed", 1, True, id="abort"),
+        ],
+    )
+    def test_loop_substep_prompt_user_decision_matches_top_level_outcome_category(
+        self,
+        tmp_path: Path,
+        command: str,
+        decisions: list[FailurePromptDecision],
+        expected_status: str,
+        expected_attempts: int,
+        expect_abort: bool,
+    ) -> None:
+        """[tier-1/integration] LoopBlockRunner._prompt_sub_step_failure: for RETRY/CONTINUE/ABORT decisions, the sub-step's final status/attempts and the run's continue-vs-abort action match the equivalent top-level RunStepsFailurePromptTests contract for the same decision."""
+        loop = LoopStepBlock(
+            id="test-loop",
+            type="loop",
+            max_iterations=1,
+            until=["iteration.index >= 1"],
+            do=[
+                StepDefinition(
+                    id="check",
+                    type=StepType.COMMAND,
+                    command=command,
+                    on_failure=OnFailureSpec(action=FailurePolicy.PROMPT_USER),
+                )
+            ],
+        )
+        state = StepLoopState(target_dir=tmp_path, session=None)
+        runner = LoopBlockRunner(
+            loop=loop,
+            sandbox_path=tmp_path,
+            failure_prompter=_ScriptedFailurePrompter(decisions),
+        )
+
+        action, _, error = runner.run(state)
+
+        assert state.step_results[-1].status == expected_status
+        assert state.step_results[-1].attempts == expected_attempts
+        if expect_abort:
+            assert action == LoopPromptDecision.ABORT
+            assert error is not None
+            assert "check" in error
+        else:
+            assert action == LoopPromptDecision.CONTINUE
+
+
+class _RefusingFailurePrompter(FailurePrompter):
+    """Test double proving the no-tty short-circuit never consults the prompter."""
+
+    def prompt_step_failure(
+        self,
+        *,
+        step: StepDefinition,
+        result: StepResult,
+        diagnostic: str,
+    ) -> FailurePromptDecision:
+        raise AssertionError("prompt_step_failure should not be called")
+
+    def prompt_loop_max_iterations(
+        self,
+        *,
+        loop: LoopStepBlock,
+        iteration: int,
+        diagnostic: str,
+        grant_count: int = 3,
+    ) -> LoopPromptDecision:
+        raise AssertionError("prompt_loop_max_iterations should not be called")
+
+
+class LoopSubStepNoTtyAbortTests:
+    """[tier-1/integration] LoopBlockRunner._prompt_sub_step_failure: no-tty degrade-to-abort parity with the top-level no-tty warning shape."""
+
+    def test_loop_substep_prompt_user_no_tty_aborts_without_consulting_prompter(self, tmp_path: Path) -> None:
+        """[tier-1/integration] LoopBlockRunner._prompt_sub_step_failure: with no_tty=True, a prompt_user sub-step failure aborts without calling the configured FailurePrompter, and state.warnings gains one entry naming the sub-step id and 'non-interactive', matching the shape of RunStepsFailurePromptTests' no_tty case."""
+        loop = LoopStepBlock(
+            id="test-loop",
+            type="loop",
+            max_iterations=1,
+            until=["iteration.index >= 1"],
+            do=[
+                StepDefinition(
+                    id="check",
+                    type=StepType.COMMAND,
+                    command="exit 1",
+                    on_failure=OnFailureSpec(action=FailurePolicy.PROMPT_USER),
+                )
+            ],
+        )
+        state = StepLoopState(target_dir=tmp_path, session=None)
+        runner = LoopBlockRunner(
+            loop=loop,
+            sandbox_path=tmp_path,
+            no_tty=True,
+            failure_prompter=_RefusingFailurePrompter(),
+        )
+
+        action, _, _ = runner.run(state)
+
+        assert action == LoopPromptDecision.ABORT
+        assert state.step_results[-1].status == "failed"
+        assert len(state.warnings) == 1
+        assert "check" in state.warnings[0]
+        assert "non-interactive" in state.warnings[0]
+
+
+class LoopSubStepAssertFailureParityTests:
+    """[tier-1/integration] LoopBlockRunner._execute_sub_step_attempt: assert_ failure escalates identically to a process failure."""
+
+    def test_loop_substep_assert_failure_marks_failed_with_pinned_message_format(self, tmp_path: Path) -> None:
+        """[tier-1/integration] LoopBlockRunner._execute_sub_step_attempt: a sub-step exiting 0 but failing assert_(output_contains='never-appears') records StepResult(status='failed', exit_code=0, error_message="Step 'check' failed assertion checks:\n  [FAIL] output_contains: substring 'never-appears' not found in output")."""
+        loop = LoopStepBlock(
+            id="test-loop",
+            type="loop",
+            max_iterations=1,
+            until=["iteration.index >= 1"],
+            do=[
+                StepDefinition(
+                    id="check",
+                    type=StepType.COMMAND,
+                    command="echo ok",
+                    assert_=StepAssert(output_contains="never-appears"),
+                )
+            ],
+        )
+        state = StepLoopState(target_dir=tmp_path, session=None)
+        runner = LoopBlockRunner(loop=loop, sandbox_path=tmp_path)
+
+        runner.run(state)
+
+        result = state.step_results[-1]
+        assert result.status == "failed"
+        assert result.exit_code == 0
+        assert result.error_message == (
+            "Step 'check' failed assertion checks:\n  [FAIL] output_contains: substring 'never-appears' not found in output"
+        )
