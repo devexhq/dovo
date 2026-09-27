@@ -271,6 +271,9 @@ class StepExecutionContext(BaseModel):
     previous_step: PreviousStepMetadata | None = None
     steps: Sequence[PreviousStepMetadata] | None = None
     session_tmp_dir: Path | None = None
+    session_log_dir: Path | None = None
+    save_attempt_logs: bool = True
+    loop_iteration: int | None = None
 
 
 class StepDispatchOutcome(BaseModel):

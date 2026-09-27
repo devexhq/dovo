@@ -8,7 +8,7 @@
       "severity": "BLOCKER",
       "domain": "all",
       "scope": "src/worktree/",
-      "evaluation_criteria": "Scan imports. Verify common/ imports no core/ or cli/; core/ and common/ import no cli/ or rich; inputs/ and patch/ import no step, runtime, agents; agents/ imports no step or runtime; step/ imports no runtime; runtime/ imports no blueprint, engine, cli; blueprint/ imports no runtime, engine, cli; engine/ imports no cli.",
+      "evaluation_criteria": "Scan imports. Verify common/ imports no core/ or cli/; core/ and common/ import no cli/ or rich; inputs/ and patch/ import no step, runtime, agents; agents/ imports no step or runtime; step/ imports no runtime; runtime/ imports no blueprint, engine, history, logs, cli; blueprint/ imports no runtime, engine, cli; engine/ imports no history, logs, cli; history/ and logs/ import no cli.",
       "bad_pattern": "from worktree.core.engine.engine import Engine  # upward import in core/runtime/"
     },
     {

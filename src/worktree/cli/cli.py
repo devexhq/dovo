@@ -14,6 +14,7 @@ from worktree.cli.diff.app import register_diff_command
 from worktree.cli.doctor.app import doctor_app
 from worktree.cli.history.app import history_app
 from worktree.cli.init.app import init_app
+from worktree.cli.logs.app import logs_app
 from worktree.cli.resume.app import resume_app
 from worktree.cli.run.app import run_app
 from worktree.cli.sandbox.app import sandbox_app
@@ -57,6 +58,7 @@ register_diff_command(app)
 app.add_typer(doctor_app, name="doctor")
 app.add_typer(history_app, name="history")
 app.add_typer(init_app, name="init")
+app.add_typer(logs_app, name="logs")
 app.add_typer(resume_app, name="resume")
 app.add_typer(run_app, name="run")
 app.add_typer(sandbox_app, name="sandbox")

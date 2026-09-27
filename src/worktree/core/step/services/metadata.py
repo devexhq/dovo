@@ -24,6 +24,15 @@ def resolve_step_temp_paths(session_tmp_dir: Path, step_id: str) -> tuple[Path, 
     return session_tmp_dir / "steps" / step_id, session_tmp_dir / f"step_{step_id}.output"
 
 
+def resolve_step_log_paths(
+    session_log_dir: Path, *, step_index: int, step_id: str, attempt: int, iteration: int | None = None
+) -> tuple[Path, Path]:
+    """Compute the per-attempt stdout/stderr log file paths rooted at session_log_dir, disambiguated by loop iteration when set."""
+    iteration_segment = f"_iter_{iteration}" if iteration is not None else ""
+    stem = f"{step_index:02d}_{step_id}{iteration_segment}_attempt_{attempt}"
+    return session_log_dir / f"{stem}.stdout.log", session_log_dir / f"{stem}.stderr.log"
+
+
 def _build_tmp_metadata(session_tmp_dir: Path | None, step_id: str) -> TempMetadata:
     """Build TempMetadata paths rooted at session_tmp_dir, or empty when no scratch space exists."""
     if session_tmp_dir is None:

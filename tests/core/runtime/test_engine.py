@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -19,6 +20,8 @@ from worktree.core.runtime import (
     LoopPromptDecision,
     RunCheckpoint,
     RunContext,
+    RunLogEvent,
+    RunLogEventType,
     RunObserver,
     RunPauseStore,
     run_steps,
@@ -1142,3 +1145,153 @@ class RunStepsResumeSessionScratchDirectoryTests:
 
         assert resumed_outcome.status == RunStatus.COMPLETED
         assert resumed_outcome.step_results[-1].outputs == {"fresh": "yes"}
+
+
+class RunStepsSessionLogDirectoryTests:
+    """[tier-1/integration] run_steps: session-scoped log directory allocation under the global storage root."""
+
+    def test_run_steps_creates_session_log_directory_before_first_step_dispatches(self, tmp_path: Path) -> None:
+        """[tier-1/integration] run_steps: with session_id set, logs_dir/<session_id>/ exists after a single completed step."""
+        context = RunContext(
+            steps=[StepBuilder.command("exit 0").with_id("s1").build()],
+            cwd=tmp_path,
+            use_sandbox=False,
+            session_id="session-logs",
+        )
+
+        outcome = run_steps(context)
+
+        assert outcome.status == RunStatus.COMPLETED
+        assert (resolve_project_filesystem_paths(tmp_path).logs_dir / "session-logs").is_dir()
+
+    def test_run_steps_skips_session_log_directory_when_context_session_id_is_none(self, tmp_path: Path) -> None:
+        """[tier-1/integration] run_steps: with session_id None, logs_dir does not exist or is empty after a completed run."""
+        context = RunContext(
+            steps=[StepBuilder.command("exit 0").with_id("s1").build()],
+            cwd=tmp_path,
+            use_sandbox=False,
+        )
+
+        outcome = run_steps(context)
+
+        assert outcome.status == RunStatus.COMPLETED
+        logs_dir = resolve_project_filesystem_paths(tmp_path).logs_dir
+        assert not logs_dir.exists() or not any(logs_dir.iterdir())
+
+    def test_run_steps_session_log_directory_persists_after_completed_run(self, tmp_path: Path) -> None:
+        """[tier-1/integration] run_steps: unlike the scratch tmp directory, logs_dir/<session_id>/ survives a completed run with keep=False."""
+        context = RunContext(
+            steps=[StepBuilder.command("exit 0").with_id("s1").build()],
+            cwd=tmp_path,
+            use_sandbox=False,
+            keep=False,
+            session_id="session-persist",
+        )
+
+        outcome = run_steps(context)
+
+        paths = resolve_project_filesystem_paths(tmp_path)
+        assert outcome.status == RunStatus.COMPLETED
+        assert not (paths.tmp_dir / "session-persist").exists()
+        assert (paths.logs_dir / "session-persist").is_dir()
+
+
+def _read_run_log(tmp_path: Path, session_id: str) -> list[RunLogEvent]:
+    """Parse every line of a session's run.log into RunLogEvents."""
+    run_log = resolve_project_filesystem_paths(tmp_path).logs_dir / session_id / "run.log"
+    return [RunLogEvent.model_validate_json(line) for line in run_log.read_text(encoding="utf-8").splitlines()]
+
+
+class RunStepsRunLogTimelineTests:
+    """[tier-1/integration] run_steps: run.log lifecycle timeline."""
+
+    def test_run_steps_writes_run_started_and_run_completed_events_with_parseable_timestamps(
+        self, tmp_path: Path
+    ) -> None:
+        """[tier-1/integration] run_steps: run.log opens with RUN_STARTED(session_id) and closes with RUN_COMPLETED(status='completed')."""
+        context = RunContext(
+            steps=[
+                StepBuilder.command("exit 0").with_id("s1").build(),
+                StepBuilder.command("exit 0").with_id("s2").build(),
+            ],
+            cwd=tmp_path,
+            use_sandbox=False,
+            session_id="session-timeline",
+        )
+
+        run_steps(context)
+
+        events = _read_run_log(tmp_path, "session-timeline")
+        assert (events[0].event, events[0].session_id) == (RunLogEventType.RUN_STARTED, "session-timeline")
+        assert (events[-1].event, events[-1].status) == (RunLogEventType.RUN_COMPLETED, "completed")
+        assert all(datetime.fromisoformat(e.ts) for e in events)
+
+    def test_run_steps_writes_step_start_and_done_events_in_execution_order(self, tmp_path: Path) -> None:
+        """[tier-1/integration] run_steps: STEP_START/STEP_DONE pairs for s1 then s2, in execution order."""
+        context = RunContext(
+            steps=[
+                StepBuilder.command("exit 0").with_id("s1").build(),
+                StepBuilder.command("exit 0").with_id("s2").build(),
+            ],
+            cwd=tmp_path,
+            use_sandbox=False,
+            session_id="session-steps",
+        )
+
+        run_steps(context)
+
+        step_events = [
+            e.model_copy(update={"ts": ""})
+            for e in _read_run_log(tmp_path, "session-steps")
+            if e.event in (RunLogEventType.STEP_START, RunLogEventType.STEP_DONE)
+        ]
+        assert step_events == [
+            RunLogEvent(event=RunLogEventType.STEP_START, step_index=1, step_id="s1", attempt=1),
+            RunLogEvent(
+                event=RunLogEventType.STEP_DONE,
+                step_index=1,
+                step_id="s1",
+                attempt=1,
+                status="completed",
+                exit_code=0,
+            ),
+            RunLogEvent(event=RunLogEventType.STEP_START, step_index=2, step_id="s2", attempt=1),
+            RunLogEvent(
+                event=RunLogEventType.STEP_DONE,
+                step_index=2,
+                step_id="s2",
+                attempt=1,
+                status="completed",
+                exit_code=0,
+            ),
+        ]
+
+    def test_run_steps_step_done_records_final_attempt_of_retried_step(self, tmp_path: Path) -> None:
+        """[tier-1/integration] run_steps: a step passing on its in-execution retry logs STEP_START(attempt=1) then STEP_DONE(attempt=2)."""
+        marker = tmp_path / "marker"
+        command = f'if [ -f "{marker}" ]; then exit 0; else touch "{marker}"; exit 1; fi'
+        context = RunContext(
+            steps=[StepBuilder.command(command).with_id("flaky").with_retry(max_retries=2, backoff_ms=0).build()],
+            cwd=tmp_path,
+            use_sandbox=False,
+            session_id="session-retry",
+        )
+
+        run_steps(context)
+
+        step_events = [
+            e.model_copy(update={"ts": ""})
+            for e in _read_run_log(tmp_path, "session-retry")
+            if e.event in (RunLogEventType.STEP_START, RunLogEventType.STEP_DONE)
+        ]
+        assert step_events == [
+            RunLogEvent(event=RunLogEventType.STEP_START, step_index=1, step_id="flaky", attempt=1),
+            RunLogEvent(
+                event=RunLogEventType.STEP_DONE,
+                step_index=1,
+                step_id="flaky",
+                attempt=2,
+                status="completed",
+                exit_code=0,
+            ),
+        ]

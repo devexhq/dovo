@@ -12,11 +12,14 @@ from worktree.core.runtime.failure import (
     mark_continued_after_prompt,
     step_failure_diagnostic,
 )
+from worktree.core.runtime.log_writer import append_run_log_event
 from worktree.core.runtime.models import (
     FailurePromptDecision,
     FailurePrompter,
     LoopPromptDecision,
     RunCheckpoint,
+    RunLogEvent,
+    RunLogEventType,
     RunObserver,
     RunPauseStore,
     StepLoopState,
@@ -53,6 +56,8 @@ class LoopBlockRunner:
         identity: ExecutionIdentity | None = None,
         resume_from: RunCheckpoint | None = None,
         session_tmp_dir: Path | None = None,
+        session_log_dir: Path | None = None,
+        save_attempt_logs: bool = True,
     ) -> None:
         self.loop = loop
         self.sandbox_path = sandbox_path.resolve()
@@ -66,9 +71,15 @@ class LoopBlockRunner:
         self.identity = identity
         self.resume_from = resume_from
         self.session_tmp_dir = session_tmp_dir
+        self.session_log_dir = session_log_dir
+        self.save_attempt_logs = save_attempt_logs
 
     def _notify_start(self, max_iterations: int) -> None:
         """Notify observer that loop execution has started."""
+        append_run_log_event(
+            self.session_log_dir,
+            RunLogEvent(event=RunLogEventType.LOOP_START, loop_id=self.loop.id, max_iterations=max_iterations),
+        )
         if self.observer is not None and hasattr(self.observer, "on_loop_start"):
             try:
                 self.observer.on_loop_start(self.loop.id, max_iterations)
@@ -77,6 +88,12 @@ class LoopBlockRunner:
 
     def _notify_turn(self, turn: int, max_iterations: int) -> None:
         """Notify observer that a loop turn is beginning."""
+        append_run_log_event(
+            self.session_log_dir,
+            RunLogEvent(
+                event=RunLogEventType.LOOP_TURN_START, loop_id=self.loop.id, turn=turn, max_iterations=max_iterations
+            ),
+        )
         if self.observer is not None and hasattr(self.observer, "on_loop_turn_start"):
             try:
                 self.observer.on_loop_turn_start(self.loop.id, turn, max_iterations)
@@ -85,6 +102,10 @@ class LoopBlockRunner:
 
     def _notify_done(self, status: str, turns: int) -> None:
         """Notify observer that loop execution has finished."""
+        append_run_log_event(
+            self.session_log_dir,
+            RunLogEvent(event=RunLogEventType.LOOP_DONE, loop_id=self.loop.id, status=status, turn=turns),
+        )
         if self.observer is not None and hasattr(self.observer, "on_loop_done"):
             try:
                 self.observer.on_loop_done(self.loop.id, status, turns)
@@ -98,6 +119,16 @@ class LoopBlockRunner:
         next_turn: int | None,
     ) -> None:
         """Notify observer of evaluated loop until conditions."""
+        append_run_log_event(
+            self.session_log_dir,
+            RunLogEvent(
+                event=RunLogEventType.LOOP_CONDITIONS_EVALUATED,
+                loop_id=self.loop.id,
+                all_passed=all_passed,
+                next_turn=next_turn,
+                conditions=[r.model_dump() for r in results],
+            ),
+        )
         if self.observer is not None and hasattr(self.observer, "on_loop_conditions_evaluated"):
             try:
                 self.observer.on_loop_conditions_evaluated(
@@ -181,6 +212,9 @@ class LoopBlockRunner:
                 identity=self.identity,
                 steps=historical_steps,
                 session_tmp_dir=self.session_tmp_dir,
+                session_log_dir=self.session_log_dir,
+                save_attempt_logs=self.save_attempt_logs,
+                loop_iteration=turn,
             )
         )
         result = execution.run()

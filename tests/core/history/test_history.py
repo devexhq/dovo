@@ -15,6 +15,8 @@ from worktree.core.history.models import (
     HistoryListStatus,
     HistoryShowStatus,
 )
+from worktree.core.project.services.storage import resolve_project_filesystem_paths
+from worktree.core.runtime import RunLogEvent, RunLogEventType
 
 
 def _as_expected_record(record: RunRecord) -> RunRecord:
@@ -248,3 +250,56 @@ class HistoryShowTests:
         assert result.warnings == []
         assert result.fixes == []
         assert result.ok is True
+
+
+class HistoryShowIncludeLogsTests:
+    """[tier-1/integration] History.show(include_logs=...): log file listing and run.log snippet."""
+
+    def _seed_logged_session(self, history: History, workspace: Path) -> Path:
+        """Persist a run record and a log directory with twelve run.log events and one stdout capture."""
+        history.db.create(session_id="sess", blueprint_name="bp", blueprint_key="bp", status=RunStatus.COMPLETED)
+        session_log_dir = resolve_project_filesystem_paths(workspace).logs_dir / "sess"
+        session_log_dir.mkdir(parents=True)
+        events = [
+            RunLogEvent(ts=f"2026-09-26T10:00:{i:02d}+00:00", event=RunLogEventType.STEP_START, step_id=f"s{i}")
+            for i in range(1, 13)
+        ]
+        (session_log_dir / "run.log").write_text("".join(e.model_dump_json() + "\n" for e in events), encoding="utf-8")
+        (session_log_dir / "01_s1_attempt_1.stdout.log").write_text("out\n", encoding="utf-8")
+        return session_log_dir
+
+    def test_show_include_logs_true_populates_log_files_and_snippet(self, isolated_workspace: Path) -> None:
+        """[tier-1/integration] History.show: include_logs=True lists every file under logs_dir/<session_id>/ and renders the last 10 run.log events."""
+        history = History(isolated_workspace)
+        session_log_dir = self._seed_logged_session(history, isolated_workspace)
+
+        result = history.show("sess", include_logs=True)
+
+        assert result.log_files == [
+            str(session_log_dir / "01_s1_attempt_1.stdout.log"),
+            str(session_log_dir / "run.log"),
+        ]
+        assert result.log_snippet == [f"[2026-09-26T10:00:{i:02d}+00:00] step_start step_id=s{i}" for i in range(3, 13)]
+
+    def test_show_include_logs_false_default_leaves_log_fields_empty(self, isolated_workspace: Path) -> None:
+        """[tier-1/integration] History.show: the default call leaves log_files and log_snippet empty even when logs exist."""
+        history = History(isolated_workspace)
+        self._seed_logged_session(history, isolated_workspace)
+
+        result = history.show("sess")
+
+        assert (result.log_files, result.log_snippet) == ([], [])
+
+    @pytest.mark.skipif(os.geteuid() == 0, reason="root bypasses file permissions")
+    def test_show_include_logs_unreadable_run_log_returns_error_result(self, isolated_workspace: Path) -> None:
+        """[tier-1/integration] History.show: an OSError reading run.log is returned in errors with empty log fields."""
+        history = History(isolated_workspace)
+        session_log_dir = self._seed_logged_session(history, isolated_workspace)
+        (session_log_dir / "run.log").chmod(0)
+
+        result = history.show("sess", include_logs=True)
+
+        assert result.ok is False
+        assert (result.log_files, result.log_snippet) == ([], [])
+        assert len(result.errors) == 1
+        assert "Permission denied" in result.errors[0]

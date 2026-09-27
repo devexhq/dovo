@@ -8,6 +8,8 @@ from worktree.core.runtime.models import (
     FailurePromptDecision,
     FailurePrompter,
     LoopPromptDecision,
+    RunLogEvent,
+    RunLogEventType,
     RunObserver,
     StepLoopState,
 )
@@ -179,4 +181,58 @@ class LoopObserverEventTests:
             ("on_loop_turn_start", "test-loop", 1, 3),
             ("on_loop_turn_start", "test-loop", 2, 3),
             ("on_loop_done", "test-loop", "completed", 2),
+        ]
+
+
+class LoopBlockRunnerAttemptLogFilenameTests:
+    """[tier-1/integration] LoopBlockRunner: loop sub-step attempt logs are disambiguated per turn."""
+
+    def test_loop_sub_step_writes_distinct_log_file_per_turn_not_overwritten(self, tmp_path: Path) -> None:
+        """[tier-1/integration] LoopBlockRunner: a two-turn loop's sub-step 'check' writes _iter_1 and _iter_2 log files, each holding only its own turn's output."""
+        log_dir = tmp_path / "logs"
+        log_dir.mkdir()
+        loop = LoopStepBlock(
+            id="test-loop",
+            type="loop",
+            max_iterations=3,
+            until=["iteration.index >= 2"],
+            do=[StepDefinition(id="check", type=StepType.COMMAND, command='echo "turn $WT_ITERATION_INDEX"')],
+        )
+        state = StepLoopState(target_dir=tmp_path, session=None)
+        runner = LoopBlockRunner(loop=loop, sandbox_path=tmp_path, session_log_dir=log_dir)
+
+        runner.run(state)
+
+        assert (log_dir / "01_check_iter_1_attempt_1.stdout.log").read_text(encoding="utf-8") == "turn 1\n"
+        assert (log_dir / "01_check_iter_2_attempt_1.stdout.log").read_text(encoding="utf-8") == "turn 2\n"
+
+
+class LoopBlockRunnerRunLogTimelineTests:
+    """[tier-1/integration] LoopBlockRunner: loop lifecycle records in run.log."""
+
+    def test_loop_block_runner_writes_turn_and_condition_events_to_run_log(self, tmp_path: Path) -> None:
+        """[tier-1/integration] LoopBlockRunner: a loop meeting its until condition on turn 2 writes LOOP_START, per-turn LOOP_TURN_START/LOOP_CONDITIONS_EVALUATED, and one LOOP_DONE."""
+        loop = LoopStepBlock(
+            id="test-loop",
+            type="loop",
+            max_iterations=3,
+            until=["iteration.index >= 2"],
+            do=[StepDefinition(id="tick", type=StepType.COMMAND, command="echo ok")],
+        )
+        state = StepLoopState(target_dir=tmp_path, session=None)
+        runner = LoopBlockRunner(loop=loop, sandbox_path=tmp_path, session_log_dir=tmp_path)
+
+        runner.run(state)
+
+        events = [
+            RunLogEvent.model_validate_json(line)
+            for line in (tmp_path / "run.log").read_text(encoding="utf-8").splitlines()
+        ]
+        assert [(e.event, e.turn, e.all_passed, e.status) for e in events] == [
+            (RunLogEventType.LOOP_START, None, None, None),
+            (RunLogEventType.LOOP_TURN_START, 1, None, None),
+            (RunLogEventType.LOOP_CONDITIONS_EVALUATED, None, False, None),
+            (RunLogEventType.LOOP_TURN_START, 2, None, None),
+            (RunLogEventType.LOOP_CONDITIONS_EVALUATED, None, True, None),
+            (RunLogEventType.LOOP_DONE, 2, None, "completed"),
         ]

@@ -99,6 +99,11 @@ def _render_show_run(view: HistoryShowView) -> Any:
     if view.checkpoint is not None or view.checkpoint_raw is not None:
         renderables.extend(build_checkpoint_view_renderables(view.checkpoint, view.checkpoint_raw))
 
+    if view.log_files:
+        renderables.append(
+            Panel(Text("\n".join([*view.log_files, "", *view.log_snippet])), title="Session Logs", border_style="cyan")
+        )
+
     return Group(*renderables) if len(renderables) > 1 else renderables[0]
 
 
@@ -124,6 +129,8 @@ class HistoryShowFormatter(ComponentFormatter[HistoryShowResult, HistoryShowView
             run=run_summary,
             checkpoint=checkpoint,
             checkpoint_raw=checkpoint_raw,
+            log_files=list(data.log_files),
+            log_snippet=list(data.log_snippet),
             errors=list(data.errors),
             warnings=list(data.warnings),
             fixes=list(data.fixes),

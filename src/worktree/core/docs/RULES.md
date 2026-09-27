@@ -4,7 +4,7 @@
 > **Notice for Agents:** Code violating `BLOCKER` rules will fail verification.
 
 - **[ARCH-001] Strict Layered Import Flow (BLOCKER):**
-  Dependencies flow strictly one way: common/ -> core/{db,git,sandbox,catalog,inputs,patch,history,diff,status}/ -> core/agents/ -> core/step/ -> {core/runtime/, core/blueprint/} -> core/engine/ -> cli/. Upward imports are strictly prohibited.
+  Dependencies flow strictly one way: common/ -> core/{db,git,sandbox,catalog,inputs,patch,diff,status}/ -> core/agents/ -> core/step/ -> {core/runtime/, core/blueprint/} -> core/engine/ -> {core/history/, core/logs/} -> cli/. Upward imports are strictly prohibited.
 
 ```python
 # ✅ DO: from worktree.core.runtime.engine import run_steps  # in core/engine/

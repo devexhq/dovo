@@ -127,6 +127,7 @@ All operations that can fail return a Pydantic result object subclassing `BaseRe
 - `SessionRunPayload`: Persisted `run.json` execution results and telemetry for a session (`version`, `session_id`, `name`, `status`, `started_at`, `completed_at`, `error_message`, `step_results`, `definitions`). Written via `write_session_run_json` / read via `load_session_run` (`core/engine/writer.py`).
 - `DefinitionRef`: One snapshotted catalog item's resolved reference, content SHA, and resolution timestamp (`ref`, `sha`, `resolved_at`); `ref` is `"<tier>:<item_type>:<key>"`.
 - `DefinitionsManifest`: The blueprint's `DefinitionRef` plus a `DefinitionRef` per transitively-resolved `uses:` step (`blueprint`, `steps`), snapshotted by `Engine.run` into `<session_dir>/definitions/` and consumed by `ResumableRun`/`load_blueprint_from_snapshot` to resume without a live catalog read.
+- [`RunLogEvent`](../../src/worktree/core/runtime/models.py) / `RunLogEventType`: One `run.log` timeline record. `run_steps` and `LoopBlockRunner` append one JSON line per lifecycle event to `logs_dir/<session_id>/run.log` via `append_run_log_event` (`core/runtime/log_writer.py`), which stamps `ts` at write time and drops write failures silently. `event` decides which optional fields are populated. `core/logs` only reads these events.
 
 ### Agent Provider Models
 **Relevant sources:** `src/worktree/core/agents/models.py`, `src/worktree/core/agents/cli_mutation.py`.
@@ -169,7 +170,8 @@ All three tables live in one centralized SQLite database shared across projects 
 
 ### History, Diff, and Status Models
 **Relevant sources:** `src/worktree/core/history/models.py`, `src/worktree/core/diff/models.py`, `src/worktree/core/status/models.py`.
-- `HistoryListResult`, `HistoryShowResult`: History query results.
+- `HistoryListResult`, `HistoryShowResult`: History query results. `HistoryShowResult.log_files`/`log_snippet` are populated only by `History.show(include_logs=True)`; the snippet holds the last 10 `run.log` events as plain text lines.
+- `LogsShowResult` / `LogsShowStatus` / `LogStreamFilter` ([`core/logs/models.py`](../../src/worktree/core/logs/models.py)): `wt logs` outcome. Only one of `events` (parsed `run.log`, no `step` filter) or `lines` (raw step capture, `step` filter) is populated per call. `available_steps`/`available_attempts` are filled on `STEP_NOT_FOUND`/`ATTEMPT_NOT_FOUND`. Step identity is parsed from the capture filename `<NN>_<step_id>[_iter_<n>]_attempt_<n>.<stream>.log`; there is no sidecar index.
 - `DiffResult`: Session unified-diff and artifact outcome (`status`, `diff_text`, `files_changed`, `errors`, `ok`).
 - `WorktreeStatusResult`: Workspace health, repository status, and collected developer warnings.
 
@@ -231,6 +233,7 @@ Each core domain exposes a cohesive facade class that encapsulates domain servic
 | `Diff` | `core/diff/facade.py` | Session diff calculation, artifact loading, and rendering (`get_diff`, `render`). |
 | `Status` | `core/status/facade.py` | Workspace health and telemetry aggregation (`collect`). |
 | `History` | `core/history/history.py` | Execution history query and display (`list`, `show`). |
+| `Logs` | `core/logs/logs.py` | Persisted session log inspection (`show`); session existence is checked against `RunsRepository`, then the global `logs_dir/<session_id>/`. |
 | `Step` | `core/step/facade.py` | Step blueprint load, resolution, and isolated execution (`load`, `resolve`, `execute`, `assert_step`). |
 | `Engine` | `core/engine/engine.py` | Process-level run persistence, session minting, execution, and resume (`run`, `resume`, `reconcile`). |
 | `Filesystem` | `common/filesystem/facade.py` | Atomic writes, safe path operations, and YAML parsing (`atomic_write_json`, `atomic_write_text`, `read_yaml`). |
@@ -266,7 +269,8 @@ Each CLI command package under `src/worktree/cli/<name>/` contains:
 - `wt run`: Execute a task or workflow blueprint.
 - `wt resume`: Resume a paused execution session.
 - `wt sandbox`: Manage git worktree sandboxes (`create`, `list`, `show`, `delete`, `prune`, `apply`).
-- `wt history`: Query past run records (`history`, `history show`).
+- `wt history`: Query past run records (`history`, `history show`, `history show --logs`).
+- `wt logs <session_id>`: Show a session's `run.log` timeline, or one step's raw capture (`--step`, `--attempt`, `--stream`, `--tail`, `--format`).
 - `wt diff`: Show uncommitted or session diffs.
 - `wt doctor`: Run registered diagnostic checks and print a scannable workspace health report (`--category`, `--format`).
 

@@ -55,6 +55,7 @@ nav:
       - Run (wt run): cli/run.md
       - Resume (wt resume): cli/resume.md
       - History (wt history): cli/history.md
+      - Logs (wt logs): cli/logs.md
       - Sandbox (wt sandbox): cli/sandbox.md
 exclude_docs: |
   agents/*

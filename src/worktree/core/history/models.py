@@ -41,6 +41,8 @@ class HistoryShowResult(BaseResult):
     status: HistoryShowStatus
     session_id: str | None = None
     run: RunRecord | None = None
+    log_files: list[str] = Field(default_factory=list)
+    log_snippet: list[str] = Field(default_factory=list)
 
     @property
     def ok(self) -> bool:

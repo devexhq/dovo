@@ -46,6 +46,7 @@ wt history show <session_id> [OPTIONS]
 
 | Flag | Description |
 | --- | --- |
+| `--logs` | Also list the session's log files and the last 10 `run.log` events. See [`wt logs`](logs.md) for full log output. The command exits `1` if the session's logs cannot be read. |
 | `--format [terminal\|json]` | Presentation format (`terminal` or `json`). |
 
 ## Examples

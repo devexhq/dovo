@@ -11,6 +11,7 @@ from worktree.core.step.models import PreviousStepMetadata, StepDefinition, Step
 from worktree.core.step.services.metadata import (
     build_execution_metadata,
     metadata_to_env,
+    resolve_step_log_paths,
     resolve_step_temp_paths,
 )
 
@@ -46,6 +47,27 @@ class MetadataBuilderTempPathsTests:
         assert bool(metadata.tmp.session_dir) is expect_populated
         assert bool(metadata.tmp.step_dir) is expect_populated
         assert bool(metadata.tmp.output_file) is expect_populated
+
+
+class ResolveStepLogPathsTests:
+    """[tier-1/domain] resolve_step_log_paths: per-attempt stdout/stderr log filename computation."""
+
+    def test_resolve_step_log_paths_returns_stdout_and_stderr_paths_with_zero_padded_index(
+        self, tmp_path: Path
+    ) -> None:
+        """[tier-1/domain] resolve_step_log_paths: without iteration, names are <NN>_<step_id>_attempt_<n>.{stdout,stderr}.log."""
+        paths = resolve_step_log_paths(tmp_path, step_index=1, step_id="setup", attempt=1)
+
+        assert paths == (tmp_path / "01_setup_attempt_1.stdout.log", tmp_path / "01_setup_attempt_1.stderr.log")
+
+    def test_resolve_step_log_paths_inserts_iter_segment_when_iteration_is_set(self, tmp_path: Path) -> None:
+        """[tier-1/domain] resolve_step_log_paths: iteration=2 inserts an _iter_2 segment before _attempt_."""
+        paths = resolve_step_log_paths(tmp_path, step_index=1, step_id="retry_check", attempt=1, iteration=2)
+
+        assert paths == (
+            tmp_path / "01_retry_check_iter_2_attempt_1.stdout.log",
+            tmp_path / "01_retry_check_iter_2_attempt_1.stderr.log",
+        )
 
 
 class MetadataToEnvExcludesOutputsFromStepsJsonTests:
