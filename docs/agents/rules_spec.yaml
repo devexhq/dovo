@@ -12,7 +12,7 @@ rules:
     and patch/ import no step, runtime, agents; agents/ imports no step or runtime; step/ imports no runtime; runtime/ imports
     no blueprint, engine, history, logs, cli; blueprint/ imports no runtime, engine, cli; engine/ imports no history, logs,
     cli; history/ and logs/ import no cli.
-  positive_example: 'from worktree.core.runtime.engine import run_steps  # in core/engine/'
+  positive_example: 'from worktree.core.runtime.run import run_steps  # in core/engine/'
   negative_example: 'from worktree.core.engine.engine import Engine  # upward import in core/runtime/'
   citation: docs/agents/architecture.md#package-boundaries-import-direction
 - id: ARCH-002
@@ -57,19 +57,6 @@ rules:
   positive_example: src/worktree/core/prune/ -> models.py, exceptions.py, prune.py, services/
   negative_example: 'src/worktree/core/prune/ -> facade.py  # or monolithic prune.py mixing models & logic'
   citation: docs/agents/architecture.md#adding-a-new-catalog-backed-domain
-- id: ARCH-005
-  title: Engine Module Naming Disambiguation
-  severity: BLOCKER
-  category: Architecture
-  domain: core
-  scope: src/worktree/
-  guideline: core/runtime/engine.py (run_steps) and core/engine/engine.py (Engine class) are two distinct modules sharing
-    the filename engine.py. Check import targets carefully.
-  evaluation_criteria: Verify that callers of run_steps import from worktree.core.runtime.engine and callers of Engine import
-    from worktree.core.engine.engine.
-  positive_example: from worktree.core.runtime.engine import run_steps; from worktree.core.engine.engine import Engine
-  negative_example: 'from worktree.core.engine.engine import run_steps  # aliasing confusion'
-  citation: docs/agents/architecture.md#layers
 - id: ARCH-006
   title: Secrets Environment Resolution
   severity: BLOCKER
@@ -1156,10 +1143,9 @@ planner_rules:
   requirement: 'Explicitly name every trap a lower-context implementer could fall into: dead code, similarly-named-but-unrelated
     symbols, duplicate implementations, or stale docs. Mark each explicitly out of scope.'
   deliverable_contract: Subsection '**Traps (explicitly not touched):**' naming specific symbols and paths.
-  validation_check: Verify known hazards (e.g. core/runtime/engine.py vs core/engine/engine.py) are trapped when touched.
+  validation_check: Verify known hazards (e.g. similarly-named-but-unrelated modules across sibling packages) are trapped
+    when touched.
   positive_example: '**Traps (explicitly not touched):**
-
-    - `core/runtime/engine.py`: Do not import Engine from here (that is `run_steps`). Engine lives in `core/engine/engine.py`.
 
     - Stale doc claim in `schemas.md` §4 mentioning `renderers.py`: Do not create `renderers.py`.
 

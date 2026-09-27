@@ -45,10 +45,8 @@ src/worktree/schemas/v1/             Packaged, versioned JSON Schemas (config.js
 
 - Default for **new** domain code: `models.py` + `services/<verb>.py`. Do not extend the flat `config/` / `db/` pattern to new domains.
 - Single-step execution: `core/step/` (`runner.py`).
-- Multi-step orchestration: `core/runtime/` (`engine.py` -> `run_steps`).
+- Multi-step orchestration: `core/runtime/` (`run.py` -> `run_steps`).
 - Process facade: `core/engine/` (`Engine.run` / `Engine.resume`, `BlueprintRunService` / `BlueprintResumeService`).
-
-> **Naming hazard:** `core/runtime/engine.py` (`run_steps`) and `core/engine/engine.py` (`Engine` class) are two distinct modules sharing the filename `engine.py`. When importing, double-check which package you intend.
 
 ### Domain ownership
 
@@ -110,7 +108,7 @@ common/  ->  core/project/  ->  core/{db,git,sandbox,catalog,inputs,patch,diff,s
 1. **Models**: `<X>Definition` in `core/<x>/models.py`.
 2. **Exceptions**: `<X>LoadError` / `<X>ValidationError` subclassing definition errors in `core/<x>/exceptions.py`.
 3. **Loader**: `core/<x>/services/loader.py` -> `Catalog.get(..., item_type=..., definition_cls=...)`.
-4. **Execution**: If executing steps, build `RunContext` and delegate to `run_steps` in `core.runtime.engine`.
+4. **Execution**: If executing steps, build `RunContext` and delegate to `run_steps` in `core.runtime.run`.
 5. **CLI**: Thin `commands/root.py`, UI formatters in `cli/ui/formatters/<x>/`, plain-text formatters in `core/<x>/services/renderer.py` if needed for non-interactive diagnostics.
 
 ## Adding a new agent provider

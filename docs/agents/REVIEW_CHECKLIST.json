@@ -39,15 +39,6 @@
       "bad_pattern": "src/worktree/core/prune/ -> facade.py  # or monolithic prune.py mixing models & logic"
     },
     {
-      "id": "ARCH-005",
-      "name": "Engine Module Naming Disambiguation",
-      "severity": "BLOCKER",
-      "domain": "core",
-      "scope": "src/worktree/",
-      "evaluation_criteria": "Verify that callers of run_steps import from worktree.core.runtime.engine and callers of Engine import from worktree.core.engine.engine.",
-      "bad_pattern": "from worktree.core.engine.engine import run_steps  # aliasing confusion"
-    },
-    {
       "id": "ARCH-006",
       "name": "Secrets Environment Resolution",
       "severity": "BLOCKER",

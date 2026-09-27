@@ -29,5 +29,5 @@ Precise definitions for core concepts and terms in the Worktree CLI codebase.
   - *Model:* `RunCheckpoint` in [`core/runtime/models.py`](../../src/worktree/core/runtime/models.py).
 - **Input (`ParameterInput`)**: A declared, typed parameter in a blueprint referenced via `${{ inputs.<name> }}` placeholders.
   - *Model:* `ParameterInput` in [`core/inputs/models.py`](../../src/worktree/core/inputs/models.py).
-- **Engine**: The process-level facade (`Engine` in [`core/engine/engine.py`](../../src/worktree/core/engine/engine.py)) managing run persistence and delegating to `run_steps` in [`core/runtime/engine.py`](../../src/worktree/core/runtime/engine.py).
+- **Engine**: The process-level facade (`Engine` in [`core/engine/engine.py`](../../src/worktree/core/engine/engine.py)) managing run persistence and delegating to `run_steps` in [`core/runtime/run.py`](../../src/worktree/core/runtime/run.py).
 - **Adapter**: Provider-specific implementation of `AgentAdapter` (`local`, `ollama`, `cursor`, `gemini`, `copilot`) in [`core/agents/`](../../src/worktree/core/agents/).
