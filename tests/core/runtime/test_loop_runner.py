@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from worktree.common.models import FailurePolicy
+from worktree.core.db.repositories.artifacts import ArtifactsRepository
 from worktree.core.runtime.loop_runner import LoopBlockRunner
 from worktree.core.runtime.models import (
     FailurePromptDecision,
@@ -14,6 +15,7 @@ from worktree.core.runtime.models import (
     StepLoopState,
 )
 from worktree.core.step.models import (
+    ArtifactPublishSpec,
     ConditionEvaluationResult,
     LoopStepBlock,
     StepDefinition,
@@ -236,3 +238,42 @@ class LoopBlockRunnerRunLogTimelineTests:
             (RunLogEventType.LOOP_CONDITIONS_EVALUATED, None, True, None),
             (RunLogEventType.LOOP_DONE, 2, None, "completed"),
         ]
+
+
+class LoopSubStepAutoPublishTests:
+    """[tier-1/unit] LoopBlockRunner._execute_sub_step_attempt: declarative artifacts: block on a do: sub-step."""
+
+    def test_loop_sub_step_artifacts_block_publishes_on_successful_turn(
+        self, tmp_path: Path, artifacts_repository: ArtifactsRepository
+    ) -> None:
+        """[tier-1/unit] LoopBlockRunner._execute_sub_step_attempt: a do: sub-step declaring artifacts: publishes via the same auto_publish_step_artifacts call a top-level step uses, once per successful turn."""
+        (tmp_path / "out.txt").write_text("hi", encoding="utf-8")
+        loop = LoopStepBlock(
+            id="publish-loop",
+            type="loop",
+            max_iterations=1,
+            until=["iteration.index >= 1"],
+            do=[
+                StepDefinition(
+                    id="tick",
+                    type=StepType.COMMAND,
+                    command="echo ok",
+                    artifacts=[ArtifactPublishSpec(name="out", path="out.txt")],
+                )
+            ],
+        )
+        state = StepLoopState(target_dir=tmp_path, session=None)
+        runner = LoopBlockRunner(
+            loop=loop,
+            sandbox_path=tmp_path,
+            session_id="wf_abc123",
+            artifacts_dir=tmp_path / "artifacts",
+            artifacts_db=artifacts_repository,
+        )
+
+        runner.run(state)
+
+        record = artifacts_repository.get("wf_abc123", "out")
+        assert record is not None
+        assert record.file_count == 1
+        assert state.warnings == []

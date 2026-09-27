@@ -7,6 +7,8 @@ from pathlib import Path
 from typing import Any
 
 from worktree.common.models import FailurePolicy, OnFailureSpec
+from worktree.core.db.repositories.artifacts import ArtifactsRepository
+from worktree.core.runtime.artifact_publish import auto_publish_step_artifacts
 from worktree.core.runtime.failure import (
     effective_terminal_policy,
     mark_continued_after_prompt,
@@ -58,6 +60,9 @@ class LoopBlockRunner:
         session_tmp_dir: Path | None = None,
         session_log_dir: Path | None = None,
         save_attempt_logs: bool = True,
+        session_id: str | None = None,
+        artifacts_dir: Path | None = None,
+        artifacts_db: ArtifactsRepository | None = None,
     ) -> None:
         self.loop = loop
         self.sandbox_path = sandbox_path.resolve()
@@ -73,6 +78,9 @@ class LoopBlockRunner:
         self.session_tmp_dir = session_tmp_dir
         self.session_log_dir = session_log_dir
         self.save_attempt_logs = save_attempt_logs
+        self.session_id = session_id
+        self.artifacts_dir = artifacts_dir
+        self.artifacts_db = artifacts_db
 
     def _notify_start(self, max_iterations: int) -> None:
         """Notify observer that loop execution has started."""
@@ -194,6 +202,7 @@ class LoopBlockRunner:
         turn: int,
         attempt: int,
         historical_steps: Sequence[PreviousStepMetadata],
+        state: StepLoopState,
     ) -> StepResult:
         """Execute a single attempt of a loop sub-step."""
         self._notify_sub_step_start(sub_idx, sub_step)
@@ -215,10 +224,23 @@ class LoopBlockRunner:
                 session_log_dir=self.session_log_dir,
                 save_attempt_logs=self.save_attempt_logs,
                 loop_iteration=turn,
+                session_id=self.session_id or "",
+                artifacts_dir=self.artifacts_dir,
+                artifacts_db=self.artifacts_db,
             )
         )
         result = execution.run()
         self._notify_sub_step_done(sub_idx, result)
+        if result.ok:
+            state.warnings.extend(
+                auto_publish_step_artifacts(
+                    sub_step,
+                    sandbox_path=self.sandbox_path,
+                    session_id=self.session_id or "",
+                    artifacts_dir=self.artifacts_dir,
+                    artifacts_db=self.artifacts_db,
+                )
+            )
         return result
 
     def _prompt_sub_step_failure(
@@ -280,6 +302,7 @@ class LoopBlockRunner:
                 turn=turn,
                 attempt=attempt,
                 historical_steps=historical_steps,
+                state=state,
             )
             action, recorded, error = self._handle_sub_step_result(sub_step, result, state)
             if action == FailurePromptDecision.RETRY:

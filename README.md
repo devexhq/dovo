@@ -90,6 +90,12 @@ wt history
 - `wt sandbox apply <sandbox-id>` — apply sandbox changes back to workspace
 - `wt sandbox diff <sandbox-id>` — inspect differences from base commit
 
+### Artifacts
+
+- `wt artifacts list [--session <session-id>]` — list published session artifacts
+- `wt artifacts download <session-id> <name> --dest <path>` — checksum-verify and extract a published artifact bundle
+- `wt artifacts prune [--dry-run] [--force]` — delete expired artifact bundles
+
 ## Agent providers for workflow runs
 
 Workflow definitions support these providers:

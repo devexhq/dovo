@@ -19,6 +19,7 @@ from worktree.core.db.migrations import (
     init_database,
 )
 from worktree.core.db.models import (
+    ArtifactRecord,
     CostRecord,
     RunRecord,
     RunStatus,
@@ -27,6 +28,7 @@ from worktree.core.db.models import (
     parse_timestamp,
 )
 from worktree.core.db.repositories import (
+    ArtifactsRepository,
     BaseRepository,
     CostsRepository,
     RunsRepository,
@@ -37,6 +39,8 @@ __all__ = [
     "DEFAULT_DB_FILENAME",
     "INITIAL_SCHEMA_REVISION",
     "LATEST_SCHEMA_REVISION",
+    "ArtifactRecord",
+    "ArtifactsRepository",
     "BaseRepository",
     "CostRecord",
     "CostsRepository",

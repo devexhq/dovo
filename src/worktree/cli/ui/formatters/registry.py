@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Any, Final
 from pydantic import BaseModel
 
 import worktree.cli.ui.events as event_models
+import worktree.cli.ui.formatters.artifacts as artifacts_formatters
 import worktree.cli.ui.formatters.catalog as catalog_formatters
 import worktree.cli.ui.formatters.config as config_formatters
 import worktree.cli.ui.formatters.diff as diff_formatters
@@ -18,6 +19,7 @@ import worktree.cli.ui.formatters.init as init_formatters
 import worktree.cli.ui.formatters.logs as logs_formatters
 import worktree.cli.ui.formatters.sandbox as sandbox_formatters
 import worktree.cli.ui.formatters.status as status_formatters
+import worktree.core.artifacts as artifacts_models
 import worktree.core.bootstrap as bootstrap_models
 import worktree.core.catalog as catalog_models
 import worktree.core.config as config_models
@@ -34,6 +36,10 @@ if TYPE_CHECKING:
     from rich.console import Console
 
 FORMATTER_REGISTRY: Final[dict[type[BaseModel], type[ComponentFormatter[Any, Any]]]] = {
+    # Artifacts
+    artifacts_models.ArtifactsListResult: artifacts_formatters.ArtifactsListFormatter,
+    artifacts_models.ArtifactDownloadResult: artifacts_formatters.ArtifactDownloadFormatter,
+    artifacts_models.ArtifactsPruneResult: artifacts_formatters.ArtifactsPruneFormatter,
     # Events
     event_models.ErrorPanelEvent: event_formatters.ErrorPanelFormatter,
     event_models.LockWaitEvent: event_formatters.LockWaitFormatter,

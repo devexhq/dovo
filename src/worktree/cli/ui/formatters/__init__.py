@@ -2,6 +2,11 @@
 
 from __future__ import annotations
 
+from worktree.cli.ui.formatters.artifacts import (
+    ArtifactDownloadFormatter,
+    ArtifactsListFormatter,
+    ArtifactsPruneFormatter,
+)
 from worktree.cli.ui.formatters.catalog import (
     CatalogCreateFormatter,
     CatalogDeleteFormatter,
@@ -69,6 +74,9 @@ from worktree.cli.ui.formatters.status import (
 
 __all__ = [
     "FORMATTER_REGISTRY",
+    "ArtifactDownloadFormatter",
+    "ArtifactsListFormatter",
+    "ArtifactsPruneFormatter",
     "CatalogCreateFormatter",
     "CatalogDeleteFormatter",
     "CatalogListFormatter",

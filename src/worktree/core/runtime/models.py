@@ -11,6 +11,7 @@ from pydantic import BaseModel, Field
 
 from worktree.core.config.models import WorktreeConfig
 from worktree.core.db import RunStatus
+from worktree.core.db.repositories.artifacts import ArtifactsRepository
 from worktree.core.sandbox import SandboxSession
 from worktree.core.step import (
     ConditionEvaluationResult,
@@ -119,6 +120,8 @@ class StepLoopState:
     session_log_dir: Path | None = None
     save_attempt_logs: bool = True
     warnings: list[str] = field(default_factory=list)
+    artifacts_dir: Path | None = None
+    artifacts_db: ArtifactsRepository | None = None
 
 
 @dataclass(frozen=True)

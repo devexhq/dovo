@@ -22,8 +22,10 @@ _SEEDED_TEMPLATE_RELATIVE_PATHS = [
     "catalog/steps/wt/ai-code-patcher.yml",
     "catalog/steps/wt/ai-planner.yml",
     "catalog/steps/wt/ai-reviewer.yml",
+    "catalog/steps/wt/download-artifact.yml",
     "catalog/steps/wt/git-sync-base.yml",
     "catalog/steps/wt/run-tests.yml",
+    "catalog/steps/wt/upload-artifact.yml",
 ]
 
 
@@ -179,8 +181,10 @@ class InitCliIntegrationTests:
                     ".worktree/catalog/steps/wt/ai-code-patcher.yml",
                     ".worktree/catalog/steps/wt/ai-planner.yml",
                     ".worktree/catalog/steps/wt/ai-reviewer.yml",
+                    ".worktree/catalog/steps/wt/download-artifact.yml",
                     ".worktree/catalog/steps/wt/git-sync-base.yml",
                     ".worktree/catalog/steps/wt/run-tests.yml",
+                    ".worktree/catalog/steps/wt/upload-artifact.yml",
                 ],
                 "skipped_seed_files": [],
                 "overwritten_seed_files": [],

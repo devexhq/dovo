@@ -90,3 +90,16 @@ class MetadataToEnvExcludesOutputsFromStepsJsonTests:
 
         parsed = json.loads(env["WT_STEPS_JSON"])
         assert "outputs" not in parsed[0]
+
+
+class MetadataSessionIdEnvTests:
+    """[tier-1/unit] metadata_to_env: WT_SESSION_ID reflects ExecutionMetadata.session_id."""
+
+    def test_metadata_to_env_includes_wt_session_id(self) -> None:
+        """[tier-1/unit] metadata_to_env: ExecutionMetadata(session_id='wf_abc123') maps to env['WT_SESSION_ID'] == 'wf_abc123'."""
+        step = StepDefinition(id="s1", type=StepType.COMMAND, command="echo hi")
+
+        metadata = build_execution_metadata(step, session_id="wf_abc123")
+        env = metadata_to_env(metadata)
+
+        assert env["WT_SESSION_ID"] == "wf_abc123"

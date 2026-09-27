@@ -14,7 +14,7 @@ from worktree.core.db.connection import (
 )
 
 INITIAL_SCHEMA_REVISION = "0001_initial_schema"
-LATEST_SCHEMA_REVISION = "0002_drop_catalog_table"
+LATEST_SCHEMA_REVISION = "0003_add_artifacts_table"
 
 
 def init_database(
