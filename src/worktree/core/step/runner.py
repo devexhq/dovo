@@ -33,6 +33,7 @@ from worktree.core.step.models import (
 from worktree.core.step.services.metadata import (
     build_execution_metadata,
     metadata_to_env,
+    resolve_step_log_paths,
     resolve_step_temp_paths,
 )
 
@@ -138,6 +139,10 @@ class StepExecution:
             metadata.previous_step or self.context.get("previous_step") or (self.steps[-1] if self.steps else None)
         )
         self.session_tmp_dir = metadata.session_tmp_dir
+        self.session_log_dir = metadata.session_log_dir
+        self.save_attempt_logs = metadata.save_attempt_logs
+        self.loop_iteration = metadata.loop_iteration
+        self.log_warnings: list[str] = []
         self.step_scratch_dir: Path | None = None
         self.output_file: Path | None = None
         self.max_attempts = 1
@@ -157,6 +162,7 @@ class StepExecution:
         outcome = self._run_attempts()
         duration = time.monotonic() - start_time
         outputs, output_warnings = self._collect_step_outputs()
+        output_warnings = [*self.log_warnings, *output_warnings]
 
         if outcome.status == "completed":
             return _step_result(
@@ -303,19 +309,42 @@ class StepExecution:
             except Exception as exc:
                 collected_errors.append(f"Output callback error on {stream_name}: {exc}")
 
+    def _append_log_line(self, log_file: IO[str] | None, line: str) -> IO[str] | None:
+        """Append and flush one line to the attempt log; on OSError warn and return None to stop logging."""
+        if log_file is None:
+            return None
+        try:
+            log_file.write(line)
+            log_file.flush()
+        except OSError as exc:
+            self.log_warnings.append(f"Failed writing attempt log '{log_file.name}': {exc}")
+            try:
+                log_file.close()
+            except OSError:
+                # Already warned above: closing re-flushes the same unwritable buffer.
+                pass
+            return None
+        return log_file
+
     def _stream_pipe(
         self,
         pipe: IO[str] | None,
         stream_name: str,
         collected_lines: list[str],
         collected_errors: list[str],
+        log_file: IO[str] | None,
     ) -> None:
-        """Read lines from pipe, accumulate them, and invoke on_output callback."""
+        """Read lines from pipe, accumulate them, invoke on_output callback, and append them to the attempt log.
+
+        The streaming thread owns log_file and closes it, so a thread outliving its join never writes to a closed handle.
+        """
         if pipe is None:
+            self._close_log_file(log_file)
             return
         try:
             for line in iter(pipe.readline, ""):
                 self._dispatch_pipe_line(line, stream_name, collected_lines, collected_errors)
+                log_file = self._append_log_line(log_file, line)
         except Exception as exc:
             collected_errors.append(f"Failed reading {stream_name} stream: {exc}")
         finally:
@@ -324,6 +353,7 @@ class StepExecution:
             except Exception:
                 # Best-effort cleanup: closing stream pipe during termination.
                 pass
+            self._close_log_file(log_file)
 
     def _terminate_process_tree(
         self,
@@ -334,6 +364,40 @@ class StepExecution:
     ) -> None:
         """Terminate or kill a subprocess and its child process tree."""
         terminate_process_tree(proc, grace_seconds=grace_seconds, pgid=pgid)
+
+    def _open_log_file(self, path: Path | None) -> IO[str] | None:
+        """Open an attempt log file for writing, or warn and return None when it cannot be opened."""
+        if path is None:
+            return None
+        try:
+            return open(path, "w", encoding="utf-8")
+        except OSError as exc:
+            self.log_warnings.append(f"Failed opening attempt log '{path}': {exc}")
+            return None
+
+    def _open_attempt_logs(self, metadata: ExecutionMetadata) -> tuple[IO[str] | None, IO[str] | None]:
+        """Open this attempt's stdout/stderr log files when attempt logging is enabled."""
+        stdout_log_path, stderr_log_path = (
+            resolve_step_log_paths(
+                self.session_log_dir,
+                step_index=metadata.step.index,
+                step_id=metadata.step.id,
+                attempt=metadata.step.attempt,
+                iteration=self.loop_iteration,
+            )
+            if self.session_log_dir is not None and self.save_attempt_logs
+            else (None, None)
+        )
+        return self._open_log_file(stdout_log_path), self._open_log_file(stderr_log_path)
+
+    def _close_log_file(self, log_file: IO[str] | None) -> None:
+        """Best-effort close of one attempt log file handle."""
+        if log_file is None:
+            return
+        try:
+            log_file.close()
+        except OSError as exc:
+            self.log_warnings.append(f"Failed closing attempt log '{log_file.name}': {exc}")
 
     def _run_process(
         self,
@@ -348,6 +412,7 @@ class StepExecution:
         """Spawn subprocess, stream standard output/error, and collect dispatch outcome."""
         env = self._build_process_env(metadata)
         isolation_kwargs = get_isolated_process_kwargs()
+        stdout_log, stderr_log = self._open_attempt_logs(metadata)
         try:
             proc = subprocess.Popen(
                 cmd,
@@ -362,6 +427,8 @@ class StepExecution:
                 **isolation_kwargs,
             )
         except Exception as exc:
+            self._close_log_file(stdout_log)
+            self._close_log_file(stderr_log)
             return _failed_dispatch(f"{failure_label} execution error: {exc}")
 
         pgid = proc.pid
@@ -373,12 +440,12 @@ class StepExecution:
 
         stdout_thread = threading.Thread(
             target=self._stream_pipe,
-            args=(proc.stdout, "stdout", stdout_lines, pipe_errors),
+            args=(proc.stdout, "stdout", stdout_lines, pipe_errors, stdout_log),
             daemon=True,
         )
         stderr_thread = threading.Thread(
             target=self._stream_pipe,
-            args=(proc.stderr, "stderr", stderr_lines, pipe_errors),
+            args=(proc.stderr, "stderr", stderr_lines, pipe_errors, stderr_log),
             daemon=True,
         )
         stdout_thread.start()

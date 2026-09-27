@@ -65,6 +65,8 @@ class HistoryShowView(BaseModel):
     run: RunSummaryView | None = None
     checkpoint: CheckpointDetailsView | None = None
     checkpoint_raw: str | None = None
+    log_files: list[str] = Field(default_factory=list)
+    log_snippet: list[str] = Field(default_factory=list)
     errors: list[str] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
     fixes: list[str] = Field(default_factory=list)

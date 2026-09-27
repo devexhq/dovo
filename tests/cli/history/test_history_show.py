@@ -9,6 +9,7 @@ from typer.testing import CliRunner
 
 from worktree.cli import app
 from worktree.core.db import RunStatus, WorktreeDb
+from worktree.core.project.services.storage import resolve_project_filesystem_paths
 
 
 class HistoryShowCliIntegrationTests:
@@ -69,7 +70,35 @@ class HistoryShowCliIntegrationTests:
             },
             "checkpoint": None,
             "checkpoint_raw": None,
+            "log_files": [],
+            "log_snippet": [],
             "errors": [],
             "warnings": [],
             "fixes": [],
         }
+
+
+class HistoryShowLogsCliIntegrationTests:
+    """Typer runner integration tests for wt history show --logs."""
+
+    def test_history_show_logs_flag_exit_0_lists_log_paths(
+        self, cli_runner: CliRunner, history_workspace: Path
+    ) -> None:
+        """wt history show <session_id> --logs: exit 0 and stdout contains every persisted log file name."""
+        WorktreeDb(path=history_workspace).runs.create(
+            session_id="session-logs", blueprint_name="task-a", blueprint_key="task-a", status=RunStatus.COMPLETED
+        )
+        session_log_dir = resolve_project_filesystem_paths(history_workspace).logs_dir / "session-logs"
+        session_log_dir.mkdir(parents=True)
+        (session_log_dir / "run.log").write_text("", encoding="utf-8")
+        (session_log_dir / "01_build_attempt_1.stdout.log").write_text("out\n", encoding="utf-8")
+
+        result = cli_runner.invoke(
+            app, ["-p", str(history_workspace), "history", "show", "session-logs", "--logs", "--format", "json"]
+        )
+
+        assert result.exit_code == 0
+        assert json.loads(result.stdout)["payload"]["log_files"] == [
+            str(session_log_dir / "01_build_attempt_1.stdout.log"),
+            str(session_log_dir / "run.log"),
+        ]

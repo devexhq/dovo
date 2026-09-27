@@ -19,11 +19,14 @@ from worktree.core.runtime.failure import (
     mark_continued_after_prompt,
     step_failure_diagnostic,
 )
+from worktree.core.runtime.log_writer import append_run_log_event
 from worktree.core.runtime.loop_runner import LoopBlockRunner
 from worktree.core.runtime.models import (
     FailurePromptDecision,
     RunCheckpoint,
     RunContext,
+    RunLogEvent,
+    RunLogEventType,
     RunOutcome,
     StepLoopState,
 )
@@ -351,6 +354,10 @@ def _execute_one_step(
     current_attempt = initial_attempt
     while True:
         _notify_step_start(context, idx, total, step)
+        append_run_log_event(
+            state.session_log_dir,
+            RunLogEvent(event=RunLogEventType.STEP_START, step_index=idx, step_id=step.id, attempt=current_attempt),
+        )
         on_output = (
             (lambda stream_name, line: _notify_step_output(context, idx, total, step, line, stream=stream_name))
             if context.observer is not None
@@ -368,9 +375,22 @@ def _execute_one_step(
                 previous_step=previous_step,
                 steps=steps,
                 session_tmp_dir=state.session_tmp_dir,
+                session_log_dir=state.session_log_dir,
+                save_attempt_logs=state.save_attempt_logs,
             )
         ).run()
         _notify_step_done(context, idx, total, result)
+        append_run_log_event(
+            state.session_log_dir,
+            RunLogEvent(
+                event=RunLogEventType.STEP_DONE,
+                step_index=idx,
+                step_id=step.id,
+                attempt=result.attempts,
+                status=result.status,
+                exit_code=result.exit_code,
+            ),
+        )
         if result.ok:
             return "continue", result, None
         action, recorded, error_message = _handle_failed_step(context, state, step, result, step_index)
@@ -501,6 +521,8 @@ def _dispatch_step(
             identity=context.identity,
             resume_from=context.resume_from,
             session_tmp_dir=state.session_tmp_dir,
+            session_log_dir=state.session_log_dir,
+            save_attempt_logs=state.save_attempt_logs,
         )
         return runner.run(state)
 
@@ -643,6 +665,20 @@ def _prepare_session_tmp_dir(context: RunContext, warnings: list[str]) -> Path |
     return session_tmp_dir
 
 
+def _prepare_session_log_dir(context: RunContext, warnings: list[str]) -> Path | None:
+    """Resolve and create the session log directory, or warn and return None."""
+    if context.session_id is None:
+        return None
+    logs_dir = resolve_project_filesystem_paths(context.cwd).logs_dir
+    session_log_dir = logs_dir / context.session_id
+    try:
+        session_log_dir.mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
+        warnings.append(f"Failed to create session log directory: {exc}")
+        return None
+    return session_log_dir
+
+
 def _cleanup_session_tmp_dir(session_tmp_dir: Path | None, *, keep: bool, status: RunStatus) -> None:
     """Best-effort delete of the session scratch directory on completed, unkept runs."""
     if session_tmp_dir is None or keep or status != RunStatus.COMPLETED:
@@ -677,7 +713,24 @@ def run_steps(context: RunContext) -> RunOutcome:
     prior = list(context.resume_from.step_results) if context.resume_from is not None else []
     setup_warnings: list[str] = []
     session_tmp_dir = _prepare_session_tmp_dir(context, setup_warnings)
-    state = StepLoopState(target_dir=target_dir, session=session, step_results=prior, session_tmp_dir=session_tmp_dir)
+    session_log_dir = _prepare_session_log_dir(context, setup_warnings)
+    save_attempt_logs = context.config.history.save_attempt_logs if context.config is not None else True
+    state = StepLoopState(
+        target_dir=target_dir,
+        session=session,
+        step_results=prior,
+        session_tmp_dir=session_tmp_dir,
+        session_log_dir=session_log_dir,
+        save_attempt_logs=save_attempt_logs,
+    )
+    append_run_log_event(
+        session_log_dir,
+        RunLogEvent(
+            event=RunLogEventType.RUN_STARTED,
+            session_id=context.session_id,
+            blueprint_key=context.identity.blueprint_key if context.identity else None,
+        ),
+    )
 
     status: RunStatus = RunStatus.FAILED
     step_results: list[StepResult] = []
@@ -696,6 +749,7 @@ def run_steps(context: RunContext) -> RunOutcome:
         _capture_and_persist_diff(context, session, warnings)
         sandbox_kept = _finalize_sandbox_cleanup(context, manager, session, target_dir, status, apply_failed)
         _cleanup_session_tmp_dir(session_tmp_dir, keep=context.keep, status=status)
+        append_run_log_event(session_log_dir, RunLogEvent(event=RunLogEventType.RUN_COMPLETED, status=status.value))
 
     return RunOutcome(
         status=status,

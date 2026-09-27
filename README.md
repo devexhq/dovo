@@ -54,7 +54,8 @@ wt history
 - `wt doctor` — run diagnostic checks and print a workspace health report
 - `wt run <blueprint>` — execute a task or workflow blueprint
 - `wt resume <session-id>` — resume a paused run
-- `wt history [show <session-id>]` — list or inspect past runs
+- `wt history [show <session-id> [--logs]]` — list or inspect past runs
+- `wt logs <session-id>` — show a session's run timeline or a step's captured output (`--step`, `--attempt`, `--stream`, `--tail`)
 
 ### Config
 

@@ -15,6 +15,7 @@ import worktree.cli.ui.formatters.events as event_formatters
 import worktree.cli.ui.formatters.global_cli as global_formatters
 import worktree.cli.ui.formatters.history as history_formatters
 import worktree.cli.ui.formatters.init as init_formatters
+import worktree.cli.ui.formatters.logs as logs_formatters
 import worktree.cli.ui.formatters.sandbox as sandbox_formatters
 import worktree.cli.ui.formatters.status as status_formatters
 import worktree.core.bootstrap as bootstrap_models
@@ -23,6 +24,7 @@ import worktree.core.config as config_models
 import worktree.core.diff as diff_models
 import worktree.core.doctor as doctor_models
 import worktree.core.history as history_models
+import worktree.core.logs as logs_models
 import worktree.core.sandbox as sandbox_models
 import worktree.core.status as status_models
 from worktree.cli.ui.formatters.common import DispatcherProtocol
@@ -63,6 +65,8 @@ FORMATTER_REGISTRY: Final[dict[type[BaseModel], type[ComponentFormatter[Any, Any
     # History
     history_models.HistoryListResult: history_formatters.HistoryListFormatter,
     history_models.HistoryShowResult: history_formatters.HistoryShowFormatter,
+    # Logs
+    logs_models.LogsShowResult: logs_formatters.LogsShowFormatter,
     # Init
     bootstrap_models.WorkspaceInitResult: init_formatters.WorkspaceInitFormatter,
     # Sandbox

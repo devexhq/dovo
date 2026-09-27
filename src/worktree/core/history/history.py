@@ -12,6 +12,15 @@ from worktree.core.history.models import (
     HistoryShowResult,
     HistoryShowStatus,
 )
+from worktree.core.logs.services.read import list_session_log_files, read_run_log_events
+from worktree.core.project.services.storage import resolve_project_filesystem_paths
+from worktree.core.runtime import RunLogEvent
+
+
+def _render_run_log_line(event: RunLogEvent) -> str:
+    """Render one run.log event as a short text line of its timestamp, kind, and populated scalar fields."""
+    suffix = "".join(f" {name}={value}" for name, value in event.details().items())
+    return f"[{event.ts}] {event.event.value}{suffix}"
 
 
 class History:
@@ -44,10 +53,27 @@ class History:
         runs = self.db.list(limit=limit, status=status_filter)
         return HistoryListResult(status=HistoryListStatus.OK, runs=runs, warnings=warnings)
 
-    def show(self, session_id: str) -> HistoryShowResult:
-        """Look up execution session metadata and run details."""
+    def show(self, session_id: str, *, include_logs: bool = False) -> HistoryShowResult:
+        """Look up execution session metadata and run details, plus log file paths and a run.log tail when requested."""
         row = self.db.get(session_id)
         if row is None:
             return HistoryShowResult(status=HistoryShowStatus.NOT_FOUND, session_id=session_id)
 
-        return HistoryShowResult(status=HistoryShowStatus.OK, session_id=session_id, run=row)
+        if not include_logs:
+            return HistoryShowResult(status=HistoryShowStatus.OK, session_id=session_id, run=row)
+
+        session_log_dir = resolve_project_filesystem_paths(self.path).logs_dir / session_id
+        try:
+            log_files = [str(p) for p in list_session_log_files(session_log_dir)]
+            log_snippet = [_render_run_log_line(e) for e in read_run_log_events(session_log_dir, tail=10)]
+        except OSError as exc:
+            return HistoryShowResult(
+                status=HistoryShowStatus.OK,
+                session_id=session_id,
+                run=row,
+                errors=[f"Failed reading session logs in '{session_log_dir}': {exc}"],
+            )
+
+        return HistoryShowResult(
+            status=HistoryShowStatus.OK, session_id=session_id, run=row, log_files=log_files, log_snippet=log_snippet
+        )

@@ -96,6 +96,9 @@ def history_list(
 def history_show(
     ctx: typer.Context,
     session_id: str = typer.Argument(..., help="Session ID to inspect."),
+    logs: bool = typer.Option(
+        False, "--logs", help="Display log file locations and recent log lines for this session."
+    ),
     format: str = typer.Option(
         "terminal",
         "--format",
@@ -107,6 +110,7 @@ def history_show(
     result = history_show_command(
         context,
         session_id,
+        logs=logs,
         output_format=format,
     )
     if not result.ok:

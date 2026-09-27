@@ -72,6 +72,7 @@ wt sandbox create my-feature
 - **[Run (`wt run`)](cli/run.md)**: Execute a blueprint by name.
 - **[Resume (`wt resume`)](cli/resume.md)**: Resume paused blueprint sessions from checkpoint.
 - **[History (`wt history`)](cli/history.md)**: List and inspect recorded blueprint runs.
+- **[Logs (`wt logs`)](cli/logs.md)**: Show a session's run timeline or a step's captured output.
 - **[Diff (`wt diff`)](cli/diff.md)**: View the diff captured for an execution session.
 - **[Doctor (`wt doctor`)](cli/doctor.md)**: Run registered workspace diagnostics.
 - **[Sandbox (`wt sandbox`)](cli/sandbox.md)**: Git worktree isolation.

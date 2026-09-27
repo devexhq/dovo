@@ -5,12 +5,13 @@ rules:
   category: Architecture
   domain: all
   scope: src/worktree/
-  guideline: 'Dependencies flow strictly one way: common/ -> core/{db,git,sandbox,catalog,inputs,patch,history,diff,status}/
-    -> core/agents/ -> core/step/ -> {core/runtime/, core/blueprint/} -> core/engine/ -> cli/. Upward imports are strictly
-    prohibited.'
+  guideline: 'Dependencies flow strictly one way: common/ -> core/{db,git,sandbox,catalog,inputs,patch,diff,status}/ ->
+    core/agents/ -> core/step/ -> {core/runtime/, core/blueprint/} -> core/engine/ -> {core/history/, core/logs/} -> cli/.
+    Upward imports are strictly prohibited.'
   evaluation_criteria: Scan imports. Verify common/ imports no core/ or cli/; core/ and common/ import no cli/ or rich; inputs/
     and patch/ import no step, runtime, agents; agents/ imports no step or runtime; step/ imports no runtime; runtime/ imports
-    no blueprint, engine, cli; blueprint/ imports no runtime, engine, cli; engine/ imports no cli.
+    no blueprint, engine, history, logs, cli; blueprint/ imports no runtime, engine, cli; engine/ imports no history, logs,
+    cli; history/ and logs/ import no cli.
   positive_example: 'from worktree.core.runtime.engine import run_steps  # in core/engine/'
   negative_example: 'from worktree.core.engine.engine import Engine  # upward import in core/runtime/'
   citation: docs/agents/architecture.md#package-boundaries-import-direction

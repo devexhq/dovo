@@ -11,7 +11,7 @@ User-facing command behavior lives under [docs/cli/](../cli/). Entity shapes and
 ```
 src/worktree/cli/                    Typer CLI entrypoint and subcommand wrappers (no domain logic)
   cli.py                             Application definition, global options, top-level exception handling
-  <name>/                            Subcommand packages (blueprint, config, diff, history, init, resume, run, sandbox, status, step)
+  <name>/                            Subcommand packages (blueprint, config, diff, history, init, logs, resume, run, sandbox, status, step)
 
 src/worktree/core/                   Domain business logic and orchestration (no Typer imports)
   bootstrap/                         Workspace directory structure initialization and repair
@@ -27,6 +27,7 @@ src/worktree/core/                   Domain business logic and orchestration (no
   status/                            Workspace health diagnostics and telemetry collection
   doctor/                            Diagnostic check registry, execution runner, and health validation engine
   history/                           Execution run queries and history presentation
+  logs/                              Persisted session log reading (run.log timeline, per-attempt step captures)
   step/                              Single-step execution, assertions evaluation, and step-local failure recovery
   runtime/                           In-process step-loop orchestration (run_steps), failure prompter, and pause checkpoints
   engine/                            Process facade (Engine), DB run persistence, session minting, and run/resume services
@@ -61,6 +62,7 @@ src/worktree/schemas/v1/             Packaged, versioned JSON Schemas (config.js
 - **Engine** (`core/engine/`): Process-level run persistence, session ID minting (`RunRequest`), DB run records, run/resume services (`BlueprintRunService`, `BlueprintResumeService`, `reconcile_stale_runs`). Must not import cli.
 - **Catalog** (`core/catalog/`): Disk-only, multi-tier (REPO/USER/GLOBAL/PACKAGED) template scanning and indexing via per-tier `index.json` caches, packaged seeds under `templates/`.
 - **History** (`core/history/`): `History` entrypoint (`history.py`), result models (`HistoryListResult`, `HistoryShowResult`). UI formatters reside in `cli/ui/formatters/history/`.
+- **Logs** (`core/logs/`): `Logs` entrypoint (`logs.py`), result models (`LogsShowResult`), `services/read.py` reading `run.log` and per-attempt step captures. `RunLogEvent` is produced by `core/runtime/`. UI formatters reside in `cli/ui/formatters/logs/`.
 - **Diff** (`core/diff/`): `DiffService`, session diff resolution, artifact loading, result models (`DiffResult`). UI formatters reside in `cli/ui/formatters/diff/`.
 - **Status** (`core/status/`): Workspace health and runtime telemetry collection (`collect_status`), result models (`WorktreeStatusResult`), warning aggregation.
 - **Doctor** (`core/doctor/`): Diagnostic check registry (`CheckRegistry`), execution runner (`DiagnosticRunner`), entrypoint coordinator (`Doctor`), check protocol (`DiagnosticCheck`), and result models (`DiagnosticCheckResult`, `DoctorReport`).
@@ -73,11 +75,11 @@ src/worktree/schemas/v1/             Packaged, versioned JSON Schemas (config.js
 Dependencies flow one way down the stack; do not import upward:
 
 ```
-common/  ->  core/project/  ->  core/{db,git,sandbox,catalog,inputs,patch,history,diff,status}/  ->  core/agents/  ->  core/doctor/  ->  core/step/  ->  {core/runtime/, core/blueprint/}  ->  core/engine/  ->  cli/
+common/  ->  core/project/  ->  core/{db,git,sandbox,catalog,inputs,patch,diff,status}/  ->  core/agents/  ->  core/doctor/  ->  core/step/  ->  {core/runtime/, core/blueprint/}  ->  core/engine/  ->  {core/history/, core/logs/}  ->  cli/
 ```
 
 - `common/` never depends on `core/` or `cli/`.
-- `core/project/` depends only on `common/`; `core/db/`, `core/diff/`, `core/engine/`, `core/sandbox/`, `core/doctor/`, and `core/runtime/` may resolve project identity via `core/project/services/storage`.
+- `core/project/` depends only on `common/`; `core/db/`, `core/diff/`, `core/engine/`, `core/sandbox/`, `core/doctor/`, `core/runtime/`, `core/history/`, and `core/logs/` may resolve project identity via `core/project/services/storage`.
 - `core/` and `common/` never import `cli/` or `rich`. All terminal rendering is driven through `ui_dispatcher.dispatch(result)`.
 - `core/inputs/` must not import `step`, `runtime`, `agents`, or `patch`.
 - `core/patch/` must not import `agents`, `step`, or `runtime`.
@@ -85,7 +87,8 @@ common/  ->  core/project/  ->  core/{db,git,sandbox,catalog,inputs,patch,histor
 - `core/step/` must not import `runtime`.
 - `core/runtime/` may use `step/`, `db/`, `sandbox/`, `project/`; must not import `blueprint/`, `engine/`, or `cli/`.
 - `core/blueprint/` may use `catalog/`, `inputs/`, `step/`; must not import `runtime/`, `engine/`, or `cli/`.
-- `core/engine/` may use `runtime/`, `blueprint/`, `db/`; must not import `cli/`.
+- `core/engine/` may use `runtime/`, `blueprint/`, `db/`; must not import `history/`, `logs/`, or `cli/`.
+- `core/history/` may use `engine/`, `logs/`, `runtime/`, `db/`; `core/logs/` may use `runtime/`, `db/`; neither imports `cli/`.
 - `cli/` may import `core/` and `common/`; lower layers never import `cli/`.
 - CLI commands never render directly or import formatters; they emit results through `ui_dispatcher.dispatch(result)`.
 - `cli/ui/` must not originate a domain fact. All domain facts, outcomes, warnings, and remediations originate in `core/` or `common/`; `cli/ui/` only derives presentation views.
