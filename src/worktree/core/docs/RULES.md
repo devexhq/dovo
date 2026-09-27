@@ -7,7 +7,7 @@
   Dependencies flow strictly one way: common/ -> core/{db,git,sandbox,catalog,inputs,patch,diff,status}/ -> core/agents/ -> core/step/ -> {core/runtime/, core/blueprint/} -> core/engine/ -> {core/history/, core/logs/} -> cli/. Upward imports are strictly prohibited.
 
 ```python
-# ✅ DO: from worktree.core.runtime.engine import run_steps  # in core/engine/
+# ✅ DO: from worktree.core.runtime.run import run_steps  # in core/engine/
 # ❌ DO NOT: from worktree.core.engine.engine import Engine  # upward import in core/runtime/
 ```
 
@@ -17,14 +17,6 @@
 ```python
 # ✅ DO: src/worktree/core/prune/ -> models.py, exceptions.py, prune.py, services/
 # ❌ DO NOT: src/worktree/core/prune/ -> facade.py  # or monolithic prune.py mixing models & logic
-```
-
-- **[ARCH-005] Engine Module Naming Disambiguation (BLOCKER):**
-  core/runtime/engine.py (run_steps) and core/engine/engine.py (Engine class) are two distinct modules sharing the filename engine.py. Check import targets carefully.
-
-```python
-# ✅ DO: from worktree.core.runtime.engine import run_steps; from worktree.core.engine.engine import Engine
-# ❌ DO NOT: from worktree.core.engine.engine import run_steps  # aliasing confusion
 ```
 
 - **[ARCH-006] Secrets Environment Resolution (BLOCKER):**

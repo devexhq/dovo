@@ -143,12 +143,11 @@ def config_set_command(context: CliContext, key: str, value: str) -> ConfigSetRe
 - **Scope:** `## Current state section in .agentic/plan.md`
 - **Requirement:** Explicitly name every trap a lower-context implementer could fall into: dead code, similarly-named-but-unrelated symbols, duplicate implementations, or stale docs. Mark each explicitly out of scope.
 - **Deliverable Contract:** Subsection '**Traps (explicitly not touched):**' naming specific symbols and paths.
-- **Validation Check:** Verify known hazards (e.g. core/runtime/engine.py vs core/engine/engine.py) are trapped when touched.
+- **Validation Check:** Verify known hazards (e.g. similarly-named-but-unrelated modules across sibling packages) are trapped when touched.
 
 <!-- ✅ POSITIVE EXAMPLE -->
 ```markdown
 **Traps (explicitly not touched):**
-- `core/runtime/engine.py`: Do not import Engine from here (that is `run_steps`). Engine lives in `core/engine/engine.py`.
 - Stale doc claim in `schemas.md` §4 mentioning `renderers.py`: Do not create `renderers.py`.
 ```
 
