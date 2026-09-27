@@ -51,6 +51,7 @@ def build_execution_metadata(
     previous_step: PreviousStepMetadata | None = None,
     steps: Sequence[PreviousStepMetadata] | None = None,
     session_tmp_dir: Path | None = None,
+    session_id: str = "",
 ) -> ExecutionMetadata:
     """Build structured execution metadata for a single step attempt."""
     step_metadata = StepMetadata(
@@ -79,6 +80,7 @@ def build_execution_metadata(
         steps=historical_steps,
         iteration=IterationMetadata(index=iteration_index),
         tmp=_build_tmp_metadata(session_tmp_dir, step.id),
+        session_id=session_id,
     )
 
 
@@ -98,6 +100,7 @@ def metadata_to_env(metadata: ExecutionMetadata) -> dict[str, str]:
         "WT_PREVIOUS_STEP_STATUS": metadata.previous_step.status,
         "WT_PREVIOUS_STEP_EXIT_CODE": metadata.previous_step.exit_code,
         "WT_STEPS_JSON": json.dumps([item.model_dump() for item in metadata.steps]),
+        "WT_SESSION_ID": metadata.session_id,
     }
     if metadata.tmp.session_dir:
         env["WT_TEMP"] = metadata.tmp.session_dir

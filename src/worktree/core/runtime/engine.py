@@ -10,9 +10,11 @@ from worktree.common.models import FailurePolicy
 from worktree.common.process import process_registry
 from worktree.core.config import ConfigLoadError
 from worktree.core.db import RunStatus, SandboxesRepository
+from worktree.core.db.repositories.artifacts import ArtifactsRepository
 from worktree.core.diff.writer import get_session_dir, write_session_diff
 from worktree.core.git.runner import GitRunner
 from worktree.core.project.services.storage import resolve_project_filesystem_paths
+from worktree.core.runtime.artifact_publish import auto_publish_step_artifacts
 from worktree.core.runtime.exceptions import PromptUserInterruptedError
 from worktree.core.runtime.failure import (
     effective_terminal_policy,
@@ -377,6 +379,9 @@ def _execute_one_step(
                 session_tmp_dir=state.session_tmp_dir,
                 session_log_dir=state.session_log_dir,
                 save_attempt_logs=state.save_attempt_logs,
+                session_id=context.session_id or "",
+                artifacts_dir=state.artifacts_dir,
+                artifacts_db=state.artifacts_db,
             )
         ).run()
         _notify_step_done(context, idx, total, result)
@@ -392,6 +397,14 @@ def _execute_one_step(
             ),
         )
         if result.ok:
+            publish_warnings = auto_publish_step_artifacts(
+                step,
+                sandbox_path=state.target_dir,
+                session_id=context.session_id or "",
+                artifacts_dir=state.artifacts_dir,
+                artifacts_db=state.artifacts_db,
+            )
+            state.warnings.extend(publish_warnings)
             return "continue", result, None
         action, recorded, error_message = _handle_failed_step(context, state, step, result, step_index)
         if action == "retry":
@@ -523,6 +536,9 @@ def _dispatch_step(
             session_tmp_dir=state.session_tmp_dir,
             session_log_dir=state.session_log_dir,
             save_attempt_logs=state.save_attempt_logs,
+            session_id=context.session_id,
+            artifacts_dir=state.artifacts_dir,
+            artifacts_db=state.artifacts_db,
         )
         return runner.run(state)
 
@@ -665,6 +681,14 @@ def _prepare_session_tmp_dir(context: RunContext, warnings: list[str]) -> Path |
     return session_tmp_dir
 
 
+def _prepare_session_artifacts(context: RunContext) -> tuple[Path | None, ArtifactsRepository | None]:
+    """Resolve the project artifacts_dir and construct a per-run ArtifactsRepository once, or (None, None) without a session."""
+    if context.session_id is None:
+        return None, None
+    artifacts_dir = resolve_project_filesystem_paths(context.cwd).artifacts_dir
+    return artifacts_dir, ArtifactsRepository(context.cwd.resolve())
+
+
 def _prepare_session_log_dir(context: RunContext, warnings: list[str]) -> Path | None:
     """Resolve and create the session log directory, or warn and return None."""
     if context.session_id is None:
@@ -714,6 +738,7 @@ def run_steps(context: RunContext) -> RunOutcome:
     setup_warnings: list[str] = []
     session_tmp_dir = _prepare_session_tmp_dir(context, setup_warnings)
     session_log_dir = _prepare_session_log_dir(context, setup_warnings)
+    artifacts_dir, artifacts_db = _prepare_session_artifacts(context)
     save_attempt_logs = context.config.history.save_attempt_logs if context.config is not None else True
     state = StepLoopState(
         target_dir=target_dir,
@@ -722,6 +747,8 @@ def run_steps(context: RunContext) -> RunOutcome:
         session_tmp_dir=session_tmp_dir,
         session_log_dir=session_log_dir,
         save_attempt_logs=save_attempt_logs,
+        artifacts_dir=artifacts_dir,
+        artifacts_db=artifacts_db,
     )
     append_run_log_event(
         session_log_dir,

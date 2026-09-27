@@ -7,6 +7,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 from worktree.common.models import BaseResult, FailurePolicy, OnFailureSpec
+from worktree.core.db.repositories.artifacts import ArtifactsRepository
 
 _DRIVE_PATH_RE = re.compile(r"^[A-Za-z]:/")
 DEFAULT_STEP_TIMEOUT_SECONDS = 120
@@ -18,6 +19,7 @@ class StepType(StrEnum):
     COMMAND = "command"
     AGENT = "agent"
     SCRIPT = "script"
+    INTERNAL = "internal"
 
 
 class StepAssert(BaseModel):
@@ -85,6 +87,18 @@ def _validate_inline_type_shape(step: "StepDefinition") -> None:
         raise ValueError("Agent steps must specify a non-empty 'prompt' string.")
     if step.type == StepType.SCRIPT and not step.script_path:
         raise ValueError("Script steps must specify a non-empty 'script_path' string.")
+    if step.type == StepType.INTERNAL and not step.command:
+        raise ValueError("Internal steps must specify a non-empty 'command' string naming the internal command to run.")
+
+
+class ArtifactPublishSpec(BaseModel):
+    """Declarative artifact publish spec attached to a step, applied on step success."""
+
+    model_config = {"extra": "forbid", "strict": True}
+
+    name: str = Field(min_length=1)
+    path: str = Field(min_length=1)
+    retention_days: int | None = Field(default=None, ge=0)
 
 
 class StepDefinition(BaseModel):
@@ -106,6 +120,7 @@ class StepDefinition(BaseModel):
     timeout_seconds: int = Field(default=DEFAULT_STEP_TIMEOUT_SECONDS, gt=0)
     assert_: StepAssert | None = Field(default=None, validation_alias="assert", serialization_alias="assert")
     on_failure: OnFailureSpec = Field(default_factory=lambda: OnFailureSpec(action=FailurePolicy.ABORT))
+    artifacts: list[ArtifactPublishSpec] = Field(default_factory=list)
 
     @field_validator("type", mode="before")
     @classmethod
@@ -253,12 +268,13 @@ class ExecutionMetadata(BaseModel):
     steps: list[PreviousStepMetadata] = Field(default_factory=list)
     iteration: IterationMetadata = Field(default_factory=IterationMetadata)
     tmp: TempMetadata = Field(default_factory=TempMetadata)
+    session_id: str = ""
 
 
 class StepExecutionContext(BaseModel):
     """Structured metadata for a step execution."""
 
-    model_config = {"extra": "forbid", "strict": True}
+    model_config = {"extra": "forbid", "strict": True, "arbitrary_types_allowed": True}
 
     step: StepDefinition
     sandbox_path: Path
@@ -274,6 +290,21 @@ class StepExecutionContext(BaseModel):
     session_log_dir: Path | None = None
     save_attempt_logs: bool = True
     loop_iteration: int | None = None
+    session_id: str | None = None
+    artifacts_dir: Path | None = None
+    artifacts_db: ArtifactsRepository | None = None
+
+
+class InternalCommandContext(BaseModel):
+    """Structured inputs available to an in-process internal step command handler."""
+
+    model_config = {"extra": "forbid", "strict": True, "arbitrary_types_allowed": True}
+
+    sandbox_path: Path
+    session_id: str
+    env: dict[str, str] = Field(default_factory=dict)
+    artifacts_dir: Path | None = None
+    artifacts_db: ArtifactsRepository | None = None
 
 
 class StepDispatchOutcome(BaseModel):

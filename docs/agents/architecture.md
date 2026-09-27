@@ -25,6 +25,7 @@ src/worktree/core/                   Domain business logic and orchestration (no
   blueprint/                         Unified task and workflow document loading and inspection
   diff/                              Session unified diff computation and artifact retrieval
   status/                            Workspace health diagnostics and telemetry collection
+  artifacts/                         Session artifact publishing, listing, downloading, and pruning
   doctor/                            Diagnostic check registry, execution runner, and health validation engine
   history/                           Execution run queries and history presentation
   logs/                              Persisted session log reading (run.log timeline, per-attempt step captures)
@@ -65,6 +66,7 @@ src/worktree/schemas/v1/             Packaged, versioned JSON Schemas (config.js
 - **Logs** (`core/logs/`): `Logs` entrypoint (`logs.py`), result models (`LogsShowResult`), `services/read.py` reading `run.log` and per-attempt step captures. `RunLogEvent` is produced by `core/runtime/`. UI formatters reside in `cli/ui/formatters/logs/`.
 - **Diff** (`core/diff/`): `DiffService`, session diff resolution, artifact loading, result models (`DiffResult`). UI formatters reside in `cli/ui/formatters/diff/`.
 - **Status** (`core/status/`): Workspace health and runtime telemetry collection (`collect_status`), result models (`WorktreeStatusResult`), warning aggregation.
+- **Artifacts** (`core/artifacts/`): Session artifact publishing (`publish_artifact`), listing, checksum-verified downloading, and expiry-based pruning (`Artifacts` entrypoint, `services/upload.py`, `services/download.py`, `services/prune.py`). Consumed by the `type: internal` `artifacts.upload`/`artifacts.download` step handlers and by `core/runtime/`'s declarative `artifacts:` block auto-publish.
 - **Doctor** (`core/doctor/`): Diagnostic check registry (`CheckRegistry`), execution runner (`DiagnosticRunner`), entrypoint coordinator (`Doctor`), check protocol (`DiagnosticCheck`), and result models (`DiagnosticCheckResult`, `DoctorReport`).
 - **Sandbox** (`core/sandbox/`): Isolated git worktree checkout creation, deletion, listing, show, prune, and patch application (`Sandbox` facade, `services/lifecycle.py`).
 - **Project** (`core/project/`): Stable project identity model (`ProjectIdentity`) with generation and persistence services.
@@ -75,7 +77,7 @@ src/worktree/schemas/v1/             Packaged, versioned JSON Schemas (config.js
 Dependencies flow one way down the stack; do not import upward:
 
 ```
-common/  ->  core/project/  ->  core/{db,git,sandbox,catalog,inputs,patch,diff,status}/  ->  core/agents/  ->  core/doctor/  ->  core/step/  ->  {core/runtime/, core/blueprint/}  ->  core/engine/  ->  {core/history/, core/logs/}  ->  cli/
+common/  ->  core/project/  ->  core/{db,git,sandbox,catalog,inputs,patch,diff,status,artifacts}/  ->  core/agents/  ->  core/doctor/  ->  core/step/  ->  {core/runtime/, core/blueprint/}  ->  core/engine/  ->  {core/history/, core/logs/}  ->  cli/
 ```
 
 - `common/` never depends on `core/` or `cli/`.
@@ -85,7 +87,7 @@ common/  ->  core/project/  ->  core/{db,git,sandbox,catalog,inputs,patch,diff,s
 - `core/patch/` must not import `agents`, `step`, or `runtime`.
 - `core/agents/` may use `patch/` and `config/`; must not import `step` or `runtime`.
 - `core/step/` must not import `runtime`.
-- `core/runtime/` may use `step/`, `db/`, `sandbox/`, `project/`; must not import `blueprint/`, `engine/`, or `cli/`.
+- `core/runtime/` may use `step/`, `db/`, `sandbox/`, `project/`, `artifacts/`; must not import `blueprint/`, `engine/`, or `cli/`.
 - `core/blueprint/` may use `catalog/`, `inputs/`, `step/`; must not import `runtime/`, `engine/`, or `cli/`.
 - `core/engine/` may use `runtime/`, `blueprint/`, `db/`; must not import `history/`, `logs/`, or `cli/`.
 - `core/history/` may use `engine/`, `logs/`, `runtime/`, `db/`; `core/logs/` may use `runtime/`, `db/`; neither imports `cli/`.

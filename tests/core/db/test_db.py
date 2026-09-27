@@ -9,6 +9,7 @@ import pytest
 from worktree.core.db.connection import DEFAULT_DB_FILENAME, resolve_db_path
 from worktree.core.db.db import WorktreeDb
 from worktree.core.db.migrations import init_database
+from worktree.core.db.repositories.artifacts import ArtifactsRepository
 from worktree.core.db.repositories.costs import CostsRepository
 from worktree.core.db.repositories.runs import RunsRepository
 from worktree.core.db.repositories.sandboxes import SandboxesRepository
@@ -54,6 +55,7 @@ class WorktreeDbTests:
             pytest.param("sandboxes", SandboxesRepository, id="sandboxes"),
             pytest.param("runs", RunsRepository, id="runs"),
             pytest.param("costs", CostsRepository, id="costs"),
+            pytest.param("artifacts", ArtifactsRepository, id="artifacts"),
         ],
     )
     def test_repository_properties_share_facade_state_and_cache(

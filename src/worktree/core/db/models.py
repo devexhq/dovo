@@ -5,7 +5,7 @@ from enum import StrEnum
 from pathlib import Path
 from typing import Any, ClassVar
 
-from sqlalchemy import String, TypeDecorator
+from sqlalchemy import String, TypeDecorator, UniqueConstraint
 from sqlmodel import Field, SQLModel
 
 
@@ -167,6 +167,30 @@ class RunRecord(SQLModel, table=True):
             return None
         elapsed = (end - start).total_seconds()
         return elapsed if elapsed >= 0 else None
+
+
+class ArtifactRecord(SQLModel, table=True):
+    """Row shape for the centralized `artifacts` table."""
+
+    __tablename__: ClassVar[str] = "artifacts"  # pyright: ignore[reportIncompatibleVariableOverride]
+    model_config = {"extra": "forbid"}
+    __table_args__ = (UniqueConstraint("project_id", "session_id", "name", name="uq_artifacts_project_session_name"),)
+
+    id: int | None = Field(default=None, primary_key=True)
+    project_id: str = Field(index=True, nullable=False)
+    session_id: str = Field(index=True, nullable=False)
+    name: str
+    path: Path = Field(sa_type=PathType)
+    size_bytes: int = Field(default=0)
+    file_count: int = Field(default=0)
+    created_at: str = Field(default_factory=_now_utc_str)
+    expires_at: str | None = Field(default=None, index=True)
+
+    def __init__(self, **data: Any) -> None:
+        """Initialize ArtifactRecord, coercing a string path to a Path instance."""
+        if "path" in data and isinstance(data["path"], str):
+            data["path"] = Path(data["path"])
+        super().__init__(**data)
 
 
 class CostRecord(SQLModel, table=True):

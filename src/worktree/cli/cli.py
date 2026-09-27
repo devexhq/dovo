@@ -7,6 +7,7 @@ from typing import Annotated, Any
 import typer
 from typer.core import TyperGroup
 
+from worktree.cli.artifacts.app import artifacts_app
 from worktree.cli.blueprint.app import blueprint_app
 from worktree.cli.config.app import config_app
 from worktree.cli.context import CliContext, default_lock_wait_notifier, ensure_lazy_project_init
@@ -52,6 +53,7 @@ app = typer.Typer(
     rich_markup_mode="rich",
 )
 
+app.add_typer(artifacts_app, name="artifacts")
 app.add_typer(blueprint_app, name="blueprint")
 app.add_typer(config_app, name="config")
 register_diff_command(app)

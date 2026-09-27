@@ -23,6 +23,7 @@ from worktree.core.inputs.services.interpolate import interpolate_step_fields
 from worktree.core.step.assertions import evaluate_assertions
 from worktree.core.step.models import (
     ExecutionMetadata,
+    InternalCommandContext,
     PreviousStepMetadata,
     StepDefinition,
     StepDispatchOutcome,
@@ -30,6 +31,7 @@ from worktree.core.step.models import (
     StepResult,
     StepType,
 )
+from worktree.core.step.services.internal_dispatch import INTERNAL_COMMAND_HANDLERS
 from worktree.core.step.services.metadata import (
     build_execution_metadata,
     metadata_to_env,
@@ -142,6 +144,9 @@ class StepExecution:
         self.session_log_dir = metadata.session_log_dir
         self.save_attempt_logs = metadata.save_attempt_logs
         self.loop_iteration = metadata.loop_iteration
+        self.session_id = metadata.session_id or ""
+        self.artifacts_dir = metadata.artifacts_dir
+        self.artifacts_db = metadata.artifacts_db
         self.log_warnings: list[str] = []
         self.step_scratch_dir: Path | None = None
         self.output_file: Path | None = None
@@ -210,6 +215,7 @@ class StepExecution:
                 previous_step=self.previous_step,
                 steps=self.steps,
                 session_tmp_dir=self.session_tmp_dir,
+                session_id=self.session_id,
             )
             inputs = self.context.get("inputs")
             inputs_dict = inputs if isinstance(inputs, dict) else None
@@ -238,7 +244,31 @@ class StepExecution:
             return self._execute_script(metadata)
         if self.step.instance.type == StepType.AGENT:
             return self._execute_agent()
+        if self.step.instance.type == StepType.INTERNAL:
+            return self._execute_internal()
         return _failed_dispatch(f"Unsupported step primitive type '{self.step.instance.type}'.")
+
+    def _execute_internal(self) -> StepDispatchOutcome:
+        """Look up self.step.instance.command in INTERNAL_COMMAND_HANDLERS and dispatch in-process, catching all exceptions into a failed outcome."""
+        command = self.step.instance.command
+        if not command:
+            return _failed_dispatch("Internal step has no command string defined.")
+
+        handler = INTERNAL_COMMAND_HANDLERS.get(command)
+        if handler is None:
+            return _failed_dispatch(f"Unknown internal command '{command}'.")
+
+        context = InternalCommandContext(
+            sandbox_path=self.sandbox_path,
+            session_id=self.session_id,
+            env=self.step.instance.env,
+            artifacts_dir=self.artifacts_dir,
+            artifacts_db=self.artifacts_db,
+        )
+        try:
+            return handler(context)
+        except Exception as exc:
+            return _failed_dispatch(f"Internal command '{command}' error: {exc}")
 
     def _execute_command(self, metadata: ExecutionMetadata) -> StepDispatchOutcome:
         """Execute a COMMAND step inside sandbox_path."""

@@ -13,12 +13,13 @@ from sqlmodel import Session, SQLModel
 from worktree.core.db.connection import get_engine
 from worktree.core.db.migrations import init_database
 from worktree.core.db.models import (
+    ArtifactRecord,
     CostRecord,
     RunRecord,
     SandboxRecord,
 )
 
-RecordClass = type[RunRecord] | type[SandboxRecord] | type[CostRecord]
+RecordClass = type[RunRecord] | type[SandboxRecord] | type[CostRecord] | type[ArtifactRecord]
 
 
 @pytest.fixture
@@ -38,6 +39,7 @@ class DbRecordModelTests:
             pytest.param(RunRecord, "runs", id="run_record"),
             pytest.param(SandboxRecord, "sandboxes", id="sandbox_record"),
             pytest.param(CostRecord, "costs", id="cost_record"),
+            pytest.param(ArtifactRecord, "artifacts", id="artifact_record"),
         ],
     )
     def test_record_declares_project_id_as_required_field(
@@ -69,6 +71,12 @@ class DbRecordModelTests:
                 ),
                 id="cost_record",
             ),
+            pytest.param(
+                lambda: ArtifactRecord(  # pyright: ignore[reportCallIssue] # intentional: omitted project_id is this test's subject
+                    session_id="wf_abc123", name="dist", path="/tmp/artifacts/wf_abc123/dist"
+                ),
+                id="artifact_record",
+            ),
         ],
     )
     def test_record_missing_project_id_violates_not_null_constraint(
@@ -76,7 +84,7 @@ class DbRecordModelTests:
         migrated_engine: Engine,
         record_factory: Callable[[], SQLModel],
     ) -> None:
-        """[tier-1/integration] RunRecord/SandboxRecord/CostRecord: omitting project_id raises IntegrityError on commit."""
+        """[tier-1/integration] RunRecord/SandboxRecord/CostRecord/ArtifactRecord: omitting project_id raises IntegrityError on commit."""
         record = record_factory()
         with Session(migrated_engine) as session:
             session.add(record)

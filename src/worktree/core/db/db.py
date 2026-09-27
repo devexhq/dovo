@@ -10,6 +10,7 @@ from worktree.core.db.connection import (
     resolve_db_path,
 )
 from worktree.core.db.migrations import init_database
+from worktree.core.db.repositories.artifacts import ArtifactsRepository
 from worktree.core.db.repositories.costs import CostsRepository
 from worktree.core.db.repositories.runs import RunsRepository
 from worktree.core.db.repositories.sandboxes import SandboxesRepository
@@ -31,6 +32,7 @@ class WorktreeDb:
         self._sandboxes: SandboxesRepository | None = None
         self._runs: RunsRepository | None = None
         self._costs: CostsRepository | None = None
+        self._artifacts: ArtifactsRepository | None = None
 
     @property
     def db_engine(self) -> Engine:
@@ -66,10 +68,20 @@ class WorktreeDb:
             )
         return self._costs
 
+    @property
+    def artifacts(self) -> ArtifactsRepository:
+        """Repository managing published session artifact metadata."""
+        if self._artifacts is None:
+            self._artifacts = ArtifactsRepository(
+                self.path, db_filename=self.db_filename, auto_init=True, db_engine=self.db_engine
+            )
+        return self._artifacts
+
     def init_db(self) -> Path:
         """Run migrations and mark all child repositories as initialized."""
         path = init_database(db_filename=self.db_filename)
         self.sandboxes._initialized = True
         self.runs._initialized = True
         self.costs._initialized = True
+        self.artifacts._initialized = True
         return path

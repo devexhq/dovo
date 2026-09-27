@@ -1,0 +1,1 @@
+"""Artifacts domain core tests."""

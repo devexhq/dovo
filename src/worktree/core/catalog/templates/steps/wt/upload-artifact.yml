@@ -1,0 +1,7 @@
+id: upload-artifact
+name: upload-artifact
+description: Publish a named artifact bundle from the sandbox to persistent storage
+type: internal
+command: artifacts.upload
+timeout_seconds: 120
+on_failure: abort

@@ -107,7 +107,10 @@ All operations that can fail return a Pydantic result object subclassing `BaseRe
 - `BlueprintDefaults`: Blueprint-level defaults (`on_failure`).
 - `ParameterInput`: Declared parameter input (`type`, `description`, `required`, `default`, `aliases`).
 - `InputResolveResult`: Result of resolving input values from CLI flags and defaults (`values`, `missing`, `errors`, `warnings`, `ok`).
-- `StepDefinition`: Executable step specification (`id`, `name`, `type`, `description`, `command`, `prompt`, `script_path`, `tools`, `env`, `timeout_seconds`, `assert_`, `on_failure`, `uses`, `run`).
+- `StepDefinition`: Executable step specification (`id`, `name`, `type`, `description`, `command`, `prompt`, `script_path`, `tools`, `env`, `timeout_seconds`, `assert_`, `on_failure`, `uses`, `run`, `artifacts`). `type` is a `StepType` (`command`, `agent`, `script`, `internal`); `internal` requires a non-empty `command` naming an `INTERNAL_COMMAND_HANDLERS` registry key (`core/step/services/internal_dispatch.py`). `artifacts: list[ArtifactPublishSpec]` declares bundles auto-published via `publish_artifact` after a successful step, on both top-level and loop `do:` sub-steps; see Artifacts Models below.
+- `ArtifactPublishSpec`: Declarative per-step artifact publish spec (`name`, `path`, `retention_days`).
+- `InternalCommandContext`: Structured inputs passed to an in-process `type: internal` handler (`sandbox_path`, `session_id`, `env`, `artifacts_dir`, `artifacts_db`); see [`src/worktree/core/step/models.py`](../../src/worktree/core/step/models.py).
+- `ExecutionMetadata.session_id`: The run's session ID, threaded from `RunContext.session_id` through `build_execution_metadata` and exposed to `type: command`/`script` steps as the `WT_SESSION_ID` environment variable (`core/step/services/metadata.py`).
 - `StepAssert`: Verification conditions (`exit_code`, `output_contains`, `output_not_contains`, `regex_match`, `json_match`, `file_exists`, `file_not_exists`, `file_not_empty`).
 - `FailurePolicy`: `StrEnum` (`abort`, `continue`, `prompt_user`, `retry`). Terminal policies exclude `retry`.
 - `FailureSpec`: Normalized failure policy (`action`, `max_retries`, `backoff_ms`, `on_max_retries`).
@@ -146,6 +149,14 @@ All operations that can fail return a Pydantic result object subclassing `BaseRe
 - `SandboxPruneResult`: Result of pruning stale/orphan sandboxes (`status`, `pruned_items`, `errors`, `warnings`, `ok`).
 - `SandboxListResult`, `SandboxShowResult`, `SandboxApplyResult`, `SandboxDiffResult`, `SandboxDetectionResult`.
 
+### Artifacts Models
+**Relevant sources:** `src/worktree/core/artifacts/models.py`.
+- `ArtifactManifest` / `ArtifactManifestFile`: `manifest.json` contents written alongside every published artifact bundle (`name`, `session_id`, `created_at`, `expires_at`, `size_bytes`, `file_count`, `files: list[ArtifactManifestFile]`; each file entry carries `path`, `sha256`, `size_bytes`).
+- `ArtifactUploadResult` / `ArtifactUploadStatus`: Result of `publish_artifact` (`ok`, `no_matching_files`, `error`); constructed only by `core/artifacts/services/upload.py` and the `type: internal` `artifacts.upload` handler — never dispatched through `ui_dispatcher`.
+- `ArtifactDownloadResult` / `ArtifactDownloadStatus`: Result of `download_artifact` (`ok`, `not_found`, `checksum_mismatch`, `error`); checksum verification runs to completion before any file is copied into `--dest`.
+- `ArtifactsListResult` / `ArtifactsListStatus`: Result of listing artifacts for the current project (`ok`).
+- `ArtifactsPruneResult` / `ArtifactsPruneStatus` / `PrunedArtifact`: Result of `wt artifacts prune` (`ok`, `disabled`, `locked`); `disabled` means `prune.remove_expired_artifacts` is `False` and `--force` was not passed.
+
 ### Catalog Models
 **Relevant sources:** `src/worktree/core/catalog/models.py`.
 
@@ -163,10 +174,11 @@ The catalog is disk-only: each of the REPO, USER, and GLOBAL tiers keeps its own
 ### Database SQLModel Records
 **Relevant sources:** `src/worktree/core/db/models.py`.
 
-All three tables live in one centralized SQLite database shared across projects (`resolve_db_path` in `core/db/connection.py`), and every record carries `project_id`; every `BaseRepository` query scopes on it (`core/db/repositories/base.py`). The catalog is no longer one of them — see Catalog Models above.
+All four tables live in one centralized SQLite database shared across projects (`resolve_db_path` in `core/db/connection.py`), and every record carries `project_id`; every `BaseRepository` query scopes on it (`core/db/repositories/base.py`). The catalog is no longer one of them — see Catalog Models above.
 - `SandboxRecord`: Persisted sandbox rows in `sandboxes` table.
 - `RunRecord`: Persisted blueprint run rows in `runs` table (including `checkpoint_json`).
 - `CostRecord`: Persisted token and execution cost tracking in `costs` table.
+- `ArtifactRecord`: Persisted artifact metadata rows in `artifacts` table (`id`, `project_id`, `session_id`, `name`, `path`, `size_bytes`, `file_count`, `created_at`, `expires_at`); unique on `(project_id, session_id, name)`, upserted by `ArtifactsRepository.create`.
 
 ### History, Diff, and Status Models
 **Relevant sources:** `src/worktree/core/history/models.py`, `src/worktree/core/diff/models.py`, `src/worktree/core/status/models.py`.
@@ -226,7 +238,8 @@ Each core domain exposes a cohesive facade class that encapsulates domain servic
 | `GitRunner` | `core/git/runner.py` | Low-level git CLI execution (`run`, `worktree_add`, `worktree_remove`, `worktree_list`, `diff`). |
 | `Sandbox` | `core/sandbox/facade.py` | Worktree sandbox lifecycle (`create`, `show`, `list`, `delete`, `prune`, `apply`, `diff`). |
 | `Config` | `core/config/facade.py` | Config loading, validation, generation, and mutation (`load`, `validate`, `set`, `unset`, `generate`, `show`). |
-| `WorktreeDb` | `core/db/db.py` | Central database access point (`sandboxes`, `runs`, `costs` repositories). |
+| `WorktreeDb` | `core/db/db.py` | Central database access point (`sandboxes`, `runs`, `costs`, `artifacts` repositories). |
+| `Artifacts` | `core/artifacts/artifacts.py` | Session artifact publishing, listing, downloading, and pruning (`upload`, `list`, `download`, `prune`). |
 | `Inputs` | `core/inputs/facade.py` | Input flag parsing, default resolution, and placeholder interpolation (`parse_args`, `resolve`, `interpolate`). |
 | `Catalog` | `core/catalog/catalog.py` | Disk-only, multi-tier template scanning, indexing, retrieval, and seeding (`list`, `show`, `get`, `create`, `delete`, `sync`, `validate`, `seed`). |
 | `Blueprint` | `core/blueprint/facade.py` | Loading and rendering unified blueprint documents (`load`, `from_path`, `from_document`, `render_show`). |
@@ -271,6 +284,7 @@ Each CLI command package under `src/worktree/cli/<name>/` contains:
 - `wt sandbox`: Manage git worktree sandboxes (`create`, `list`, `show`, `delete`, `prune`, `apply`).
 - `wt history`: Query past run records (`history`, `history show`, `history show --logs`).
 - `wt logs <session_id>`: Show a session's `run.log` timeline, or one step's raw capture (`--step`, `--attempt`, `--stream`, `--tail`, `--format`).
+- `wt artifacts`: Publish, list, download, and prune session artifacts (`list`, `download`, `prune`; publishing is reached only through the `type: internal` `wt/upload-artifact` catalog step or a step's declarative `artifacts:` block, not a CLI command).
 - `wt diff`: Show uncommitted or session diffs.
 - `wt doctor`: Run registered diagnostic checks and print a scannable workspace health report (`--category`, `--format`).
 
