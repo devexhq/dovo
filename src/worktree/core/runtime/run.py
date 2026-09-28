@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import dataclasses
 from collections.abc import Sequence
 
 from worktree.common.process import process_registry
@@ -76,15 +77,17 @@ def _dispatch_step(
     context: RunContext,
     state: StepLoopState,
     coordinator: StepCoordinator,
+    loop_coordinator: StepCoordinator,
     step: StepDefinition | LoopStepBlock,
     step_index: int,
     step_context: dict[str, object] | None,
-) -> tuple[str, StepResult | None, str | None]:
+) -> tuple[str, list[StepResult], str | None]:
     """Run or re-prompt a step or loop block depending on whether this is the resume gate."""
     if isinstance(step, LoopStepBlock):
         runner = LoopBlockRunner(
             loop=step,
             sandbox_path=state.target_dir,
+            coordinator=loop_coordinator,
             context=step_context,
             observer=context.observer,
             failure_prompter=context.failure_prompter,
@@ -106,7 +109,7 @@ def _dispatch_step(
     previous_step = historical_steps[-1] if historical_steps else PreviousStepMetadata()
     resume = context.resume_from
     if resume is not None and step_index == resume.next_step_index:
-        return coordinator.resume_pending_gate(
+        action, result, error_message = coordinator.resume_pending_gate(
             state,
             step,
             resume,
@@ -114,7 +117,8 @@ def _dispatch_step(
             previous_step=previous_step,
             steps=historical_steps,
         )
-    return coordinator.execute_one_step(
+        return action, [result] if result is not None else [], error_message
+    action, result, error_message = coordinator.execute_one_step(
         state,
         step,
         idx=step_index + 1,
@@ -124,12 +128,14 @@ def _dispatch_step(
         previous_step=previous_step,
         steps=historical_steps,
     )
+    return action, [result] if result is not None else [], error_message
 
 
 def _run_remaining_steps(
     context: RunContext,
     state: StepLoopState,
     coordinator: StepCoordinator,
+    loop_coordinator: StepCoordinator,
     start: int,
 ) -> tuple[RunStatus, list[str]]:
     """Execute remaining steps from ``start`` until completion or abort."""
@@ -137,9 +143,10 @@ def _run_remaining_steps(
     for step_index, step in enumerate(context.steps):
         if step_index < start:
             continue
-        action, result, error_message = _dispatch_step(context, state, coordinator, step, step_index, step_context)
-        if result is not None:
-            state.step_results.append(result)
+        action, results, error_message = _dispatch_step(
+            context, state, coordinator, loop_coordinator, step, step_index, step_context
+        )
+        state.step_results.extend(results)
         if action == "abort":
             errors = [error_message] if error_message else []
             return RunStatus.FAILED, errors
@@ -150,11 +157,12 @@ def _run_step_loop(
     context: RunContext,
     state: StepLoopState,
     coordinator: StepCoordinator,
+    loop_coordinator: StepCoordinator,
 ) -> tuple[RunStatus, list[StepResult], list[str], list[str]]:
     """Execute all steps, honoring failure policies and cancellation."""
     start = context.resume_from.next_step_index if context.resume_from is not None else 0
     try:
-        status, errors = _run_remaining_steps(context, state, coordinator, start)
+        status, errors = _run_remaining_steps(context, state, coordinator, loop_coordinator, start)
     except PromptUserInterruptedError as exc:
         errors = [str(exc)] if str(exc) else []
         return RunStatus.PAUSED, state.step_results, errors, state.warnings
@@ -176,6 +184,7 @@ def run_steps(context: RunContext) -> RunOutcome:
     """
     workspace = Workspace(context)
     coordinator = StepCoordinator(context)
+    loop_coordinator = StepCoordinator(dataclasses.replace(context, pause_store=None))
 
     target_dir, manager, session, setup_error = workspace.setup()
     if setup_error is not None:
@@ -218,7 +227,7 @@ def run_steps(context: RunContext) -> RunOutcome:
     warnings: list[str] = []
     apply_failed = False
     try:
-        status, step_results, errors, warnings = _run_step_loop(context, state, coordinator)
+        status, step_results, errors, warnings = _run_step_loop(context, state, coordinator, loop_coordinator)
         warnings = [*setup_warnings, *warnings]
         if status == RunStatus.COMPLETED:
             new_status, apply_failed = workspace.handle_auto_apply(manager, session, errors, warnings)

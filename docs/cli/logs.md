@@ -12,7 +12,7 @@ logs/<session_id>/
 └── 02_check_iter_1_attempt_1.stdout.log   # loop sub-steps carry an _iter_<n> segment
 ```
 
-Per-attempt stdout/stderr capture is controlled by `history.save_attempt_logs` in `.worktree/config.json` (default `true`). `run.log` is always written when the run has a session ID.
+Per-attempt stdout/stderr capture is controlled by `history.save_attempt_logs` in `.worktree/config.json` (default `true`). `run.log` is always written when the run has a session ID. Loop sub-steps appear in `run.log` as their own `STEP_START`/`STEP_DONE` events, interleaved with the loop's `LOOP_*` events, exactly like top-level steps.
 
 ## Usage
 

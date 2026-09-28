@@ -7,7 +7,7 @@ from pathlib import Path
 from worktree.common.models import FailurePolicy, OnFailureSpec
 from worktree.core.db import RunStatus
 from worktree.core.runtime import FailurePromptDecision, LoopPromptDecision, RunContext, run_steps
-from worktree.core.step.models import StepDefinition, StepResult, StepType
+from worktree.core.step.models import LoopStepBlock, StepDefinition, StepResult, StepType
 
 
 class _ScriptedFailurePrompter:
@@ -280,3 +280,35 @@ class RunStepsOutputsPropagationTests:
 
         assert outcome.status == RunStatus.COMPLETED
         assert outcome.step_results[1].stdout == "[]\n"
+
+
+class RunStepsHistoricalMetadataAcrossLoopBoundaryTests:
+    """[tier-1/integration] run_steps/_resolve_historical_steps_metadata: step name and status resolution survives a loop boundary."""
+
+    def test_final_step_sees_correctly_named_steps_for_prior_step_and_both_loop_turns(self, tmp_path: Path) -> None:
+        """[tier-1/integration] run_steps: a run of [top-level 'first' (name='First'), a 2-turn loop with one sub-step 'tick' (name='Tick'), top-level 'last'] gives 'last' a command '{{ steps[0].name }}|{{ steps[1].name }}|{{ steps[2].name }}' whose stdout is 'First|Tick|Tick\\n', proving _resolve_historical_steps_metadata names both loop-turn sub-step entries correctly alongside the top-level step."""
+        context = RunContext(
+            steps=[
+                StepDefinition(id="first", name="First", type=StepType.COMMAND, command="echo first"),
+                LoopStepBlock(
+                    id="test-loop",
+                    type="loop",
+                    max_iterations=2,
+                    until=["iteration.index >= 2"],
+                    do=[StepDefinition(id="tick", name="Tick", type=StepType.COMMAND, command="echo tick")],
+                ),
+                StepDefinition(
+                    id="last",
+                    type=StepType.COMMAND,
+                    command='echo "{{ steps[0].name }}|{{ steps[1].name }}|{{ steps[2].name }}"',
+                ),
+            ],
+            cwd=tmp_path,
+            use_sandbox=False,
+        )
+
+        outcome = run_steps(context)
+
+        assert outcome.status == RunStatus.COMPLETED
+        assert len(outcome.step_results) == 4
+        assert outcome.step_results[-1].stdout == "First|Tick|Tick\n"
