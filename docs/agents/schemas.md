@@ -177,7 +177,7 @@ The catalog is disk-only: each of the REPO, USER, and GLOBAL tiers keeps its own
 
 All four tables live in one centralized SQLite database shared across projects (`resolve_db_path` in `core/db/connection.py`), and every record carries `project_id`; every `BaseRepository` query scopes on it (`core/db/repositories/base.py`). The catalog is no longer one of them — see Catalog Models above.
 - `SandboxRecord`: Persisted sandbox rows in `sandboxes` table.
-- `RunRecord`: Persisted blueprint run rows in `runs` table (including `checkpoint_json`).
+- `RunRecord`: Persisted blueprint run rows in `runs` table (including `checkpoint_json` and the execution-state/config columns added by `0004_add_execution_state_columns` — see [`RunRecord`](../../src/worktree/core/db/models.py)).
 - `CostRecord`: Persisted token and execution cost tracking in `costs` table.
 - `ArtifactRecord`: Persisted artifact metadata rows in `artifacts` table (`id`, `project_id`, `session_id`, `name`, `path`, `size_bytes`, `file_count`, `created_at`, `expires_at`); unique on `(project_id, session_id, name)`, upserted by `ArtifactsRepository.create`.
 

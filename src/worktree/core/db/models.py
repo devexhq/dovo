@@ -150,6 +150,17 @@ class RunRecord(SQLModel, table=True):
     error_message: str | None = Field(default=None)
     checkpoint_json: str | None = Field(default=None)
 
+    execution_state_json: str | None = Field(default=None)
+    execution_state_revision: int | None = Field(default=0)
+    blueprint_tier: str | None = Field(default=None)
+    commit_sha: str | None = Field(default=None)
+    use_sandbox: bool = Field(default=True)
+    keep: bool = Field(default=False)
+    agent: str | None = Field(default=None)
+    inputs_json: str | None = Field(default=None)
+    auto_apply: bool = Field(default=True)
+    sandbox_id: str | None = Field(default=None)
+
     def __init__(self, **data: Any) -> None:
         """Initialize RunRecord, coercing string enums to Enum instances."""
         if "status" in data and isinstance(data["status"], str):

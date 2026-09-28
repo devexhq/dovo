@@ -9,7 +9,7 @@ from worktree.common.lock import WorkspaceLock, resolve_lock_file_path
 from worktree.core.db.connection import sqlite_url
 
 INITIAL_SCHEMA_REVISION = "0001_initial_schema"
-LATEST_SCHEMA_REVISION = "0003_add_artifacts_table"
+LATEST_SCHEMA_REVISION = "0004_add_execution_state_columns"
 
 
 def init_database(database_file: Path) -> Path:
