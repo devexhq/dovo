@@ -1,4 +1,4 @@
-"""Contract tests for BaseRepository's lazy project_id resolution."""
+"""Contract tests for BaseRepository's lazy project_id resolution and transaction handling."""
 
 from __future__ import annotations
 
@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 
 from worktree.core.db.repositories.runs import RunsRepository
+from worktree.core.db.repositories.sandboxes import SandboxesRepository
 from worktree.core.project.services.identity import generate_project_identity, save_project_identity
 
 
@@ -39,3 +40,32 @@ class BaseRepositoryTests:
         repo = RunsRepository(path=tmp_path, project_id="explicit")
 
         assert repo.project_id == "explicit"
+
+
+class BaseRepositoryCommitRollbackTests:
+    """[tier-1/integration] BaseRepository._commit: constraint-violation rollback, surfaced through SandboxesRepository.create."""
+
+    def test_duplicate_primary_key_rolls_back_and_raises_value_error_with_conflict_message(
+        self, tmp_path: Path
+    ) -> None:
+        """[tier-1/integration] SandboxesRepository.create: creating a second row with the same id raises ValueError with the repository's conflict_message, and the original row's data is unaffected (transaction rolled back, not partially applied)."""
+        repo = SandboxesRepository(path=tmp_path, project_id="proj-commit")
+        repo.create(
+            id="sbx_dup",
+            branch_name="worktree/sandbox-sbx_dup",
+            base_commit="abc123",
+            sandbox_path=tmp_path / "sbx_dup",
+        )
+
+        with pytest.raises(ValueError, match="Sandbox with id 'sbx_dup' already exists"):
+            repo.create(
+                id="sbx_dup",
+                branch_name="worktree/sandbox-other",
+                base_commit="def456",
+                sandbox_path=tmp_path / "other",
+            )
+
+        stored = repo.get("sbx_dup")
+        assert stored is not None
+        assert stored.branch_name == "worktree/sandbox-sbx_dup"
+        assert stored.base_commit == "abc123"
