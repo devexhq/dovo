@@ -245,7 +245,7 @@ class LoopBlockRunnerRunLogTimelineTests:
         ]
 
     def test_loop_two_sub_steps_two_turns_emits_only_loop_events_never_step_events(self, tmp_path: Path) -> None:
-        """[tier-1/integration] LoopBlockRunner: a 2-sub-step loop run for 2 turns writes exactly 1 LOOP_START, 2 LOOP_TURN_START, 2 LOOP_CONDITIONS_EVALUATED, 1 LOOP_DONE, and 0 STEP_START/STEP_DONE events, since sub-steps dispatch through StepExecution directly, never through engine.py's _execute_one_step."""
+        """[tier-1/integration] LoopBlockRunner: a 2-sub-step loop run for 2 turns writes exactly 1 LOOP_START, 2 LOOP_TURN_START, 2 LOOP_CONDITIONS_EVALUATED, 1 LOOP_DONE, and 0 STEP_START/STEP_DONE events, since sub-steps dispatch through StepExecution directly, never through step_coordinator.py's StepCoordinator.execute_one_step."""
         loop = LoopStepBlock(
             id="test-loop",
             type="loop",
