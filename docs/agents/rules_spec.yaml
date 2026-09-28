@@ -740,6 +740,47 @@ rules:
   positive_example: 'class ResumeCommandCliIntegrationTests: def test_resume_executes_remaining_steps(self): ...'
   negative_example: '# PR modifying Engine.resume() without integration tests for resumed step loop'
   citation: docs/agents/testing.md#pr-review-hygiene-and-testing-documentation-review-rule
+- id: TEST-016
+  title: Public Function Happy and Unhappy Path Coverage
+  severity: BLOCKER
+  category: Testing
+  domain: tests
+  scope: tests/
+  guideline: >-
+    Every public function and method (no leading underscore) in a production module
+    requires at least one happy-path test (valid inputs producing the expected
+    successful outcome) and at least one unhappy-path test (invalid input, missing
+    dependency, boundary condition, or failure state producing the expected error
+    result, exception, or classified non-ok outcome). Private functions and methods
+    (leading underscore) are covered exclusively as byproducts of their public
+    callers and never receive dedicated test methods. The coverage gate (CI-001)
+    validates that private paths are reached. Properties containing no branching
+    logic beyond a single field return are exempt from the unhappy-path requirement;
+    their happy path is satisfied by any test that reads them. Dunder methods are
+    exempt unless they contain domain validation (e.g. a __init__ that coerces or
+    rejects values). When a public method has multiple independent failure modes,
+    TEST-006 parameterization is the primary tool for covering them; a separate
+    test method per failure mode is reserved for cases with divergent fixture
+    requirements.
+  evaluation_criteria: >-
+    For each public function or method in a changed production module, verify its
+    corresponding test file (per TEST-002) contains at least one test exercising a
+    success path and at least one test exercising a failure or boundary path. Flag
+    any public function with only happy-path tests, any dedicated test method
+    targeting a private (underscore-prefixed) function, and any public function
+    with zero covering tests. Trivial properties (single field return, no branch)
+    require only a happy-path read.
+  positive_example: |-
+    class RunStateStoreTests:
+        def test_save_persists_state_and_increments_revision(self): ...
+        def test_save_with_stale_revision_returns_conflict_error(self): ...
+        def test_load_returns_persisted_state(self): ...
+        def test_load_with_corrupt_json_returns_classified_failure(self): ...
+  negative_example: |-
+    class RunStateStoreTests:
+        def test__validate_schema_version(self): ...  # dedicated test for private method
+        def test_save_persists_state(self): ...  # happy path only, no unhappy path for save()
+  citation: docs/agents/testing.md#core-testing-rules
 - id: TEST-017
   title: CLI Runner Assertion Boundary
   severity: BLOCKER

@@ -453,6 +453,15 @@
       "bad_pattern": "# PR modifying Engine.resume() without integration tests for resumed step loop"
     },
     {
+      "id": "TEST-016",
+      "name": "Public Function Happy and Unhappy Path Coverage",
+      "severity": "BLOCKER",
+      "domain": "tests",
+      "scope": "tests/",
+      "evaluation_criteria": "For each public function or method in a changed production module, verify its corresponding test file (per TEST-002) contains at least one test exercising a success path and at least one test exercising a failure or boundary path. Flag any public function with only happy-path tests, any dedicated test method targeting a private (underscore-prefixed) function, and any public function with zero covering tests. Trivial properties (single field return, no branch) require only a happy-path read.",
+      "bad_pattern": "class RunStateStoreTests:\n    def test__validate_schema_version(self): ...  # dedicated test for private method\n    def test_save_persists_state(self): ...  # happy path only, no unhappy path for save()"
+    },
+    {
       "id": "TEST-017",
       "name": "CLI Runner Assertion Boundary",
       "severity": "BLOCKER",
