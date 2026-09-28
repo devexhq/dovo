@@ -36,7 +36,13 @@ Branch names follow `<username>/<short-description>`. If the current branch does
 
 ## Step 2: Clear the agentic artifacts
 
-Delete the handoff files **before staging anything**, so no path under `.agentic/` can reach the index even if the ignore rule is missing or a stale copy was tracked:
+Before deleting anything, capture the issue number for later use in the PR description. `/wt-plan` writes `.agentic/plan.md` with a `# Issue #<n>: <title>` header (see `docs/agents/planning.md`); read that header now, since it's the only place the number lives once the file is gone:
+
+```bash
+head -1 .agentic/plan.md 2>/dev/null
+```
+
+Then delete the handoff files **before staging anything**, so no path under `.agentic/` can reach the index even if the ignore rule is missing or a stale copy was tracked:
 
 ```bash
 rm -f .agentic/plan.md .agentic/review.md .agentic/review.json
@@ -85,7 +91,7 @@ Three sections, intent-focused, per `docs/agents/git-and-pr-conventions.md`:
 Fixes #<n>
 ```
 
-Use `Fixes #N` (or `Closes #N`) when the work resolves an issue; omit the line entirely when there is none rather than inventing a reference. Keep the title in the same imperative, semantic style as the commit titles.
+Use `Fixes #N` (or `Closes #N`) when the work resolves an issue, with `N` from the header captured in Step 2; omit the line entirely when Step 2 found no issue number rather than inventing a reference. Keep the title in the same imperative, semantic style as the commit titles.
 
 Write the body to a temp file outside the repo (`mktemp`), never into `.agentic/` or the working tree, so nothing is left behind for the next `git status` to pick up.
 
