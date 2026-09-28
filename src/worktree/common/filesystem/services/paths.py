@@ -43,11 +43,6 @@ def get_gitignore_file(cwd: Path) -> Path:
     return cwd / ".gitignore"
 
 
-def get_session_dir(cwd: Path, session_id: str) -> Path:
-    """Return the session artifact directory path, relative to CWD."""
-    return get_worktree_dir(cwd) / "sessions" / session_id
-
-
 def get_catalog_templates_dir() -> Traversable:
     """Return the packaged catalog templates resource root."""
     return importlib.resources.files("worktree.core.catalog.templates")

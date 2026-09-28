@@ -7,13 +7,13 @@ from pathlib import Path
 
 from worktree.core.blueprint import BlueprintRunResult
 from worktree.core.catalog import Catalog
-from worktree.core.db import RunRecord, RunsRepository
+from worktree.core.db import RunsRepository
 from worktree.core.engine.engine import Engine
 from worktree.core.engine.exceptions import EngineResumeError, EngineRuntimeError
+from worktree.core.engine.services._shared import fail, finalize, load_record
 from worktree.core.runtime import (
     FailurePrompter,
     RunObserver,
-    RunOutcome,
 )
 
 
@@ -33,7 +33,7 @@ class BlueprintResumeService:
         """Find session if omitted, classify and resume via Engine."""
         target_session_id, resolve_error = self._resolve_target_session()
         if resolve_error is not None or not target_session_id:
-            return self._fail(resolve_error or "No paused session found to resume.")
+            return fail(self.warnings, resolve_error or "No paused session found to resume.")
 
         catalog = Catalog(path=self.path)
 
@@ -45,9 +45,9 @@ class BlueprintResumeService:
                 no_tty=self.no_tty,
             )
         except (EngineResumeError, EngineRuntimeError) as exc:
-            return self._fail(str(exc))
+            return fail(self.warnings, str(exc))
 
-        return self._finalize(target_session_id, run_outcome)
+        return finalize(self.db, self.warnings, run_outcome, target_session_id)
 
     def _resolve_target_session(self) -> tuple[str, str | None]:
         """Resolve session ID to resume, defaulting to latest paused session."""
@@ -57,31 +57,5 @@ class BlueprintResumeService:
                 return "", "No paused session found to resume."
             return record.session_id, None
 
-        record = self._load_record(self.session_id)
+        record = load_record(self.db, self.warnings, self.session_id)
         return self.session_id, None
-
-    def _fail(self, message: str) -> BlueprintRunResult:
-        """Construct a failed BlueprintRunResult with an error message."""
-        return BlueprintRunResult(
-            run_record=None,
-            errors=[message],
-            warnings=self.warnings,
-        )
-
-    def _load_record(self, session_id: str) -> RunRecord | None:
-        """Load RunRecord from database, recording warning on failure."""
-        try:
-            return self.db.get(session_id)
-        except Exception as exc:
-            self.warnings.append(f"Failed to load run record for '{session_id}': {exc}")
-            return None
-
-    def _finalize(self, session_id: str, run_outcome: RunOutcome) -> BlueprintRunResult:
-        """Combine run outcome warnings and errors into final BlueprintRunResult."""
-        self.warnings.extend(run_outcome.warnings)
-        record = self._load_record(session_id)
-        return BlueprintRunResult(
-            run_record=record,
-            errors=list(run_outcome.errors),
-            warnings=self.warnings,
-        )

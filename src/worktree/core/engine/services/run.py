@@ -13,16 +13,16 @@ from worktree.core.blueprint import (
     BlueprintValidationError,
 )
 from worktree.core.catalog import Catalog
-from worktree.core.db import RunRecord, RunsRepository, RunStatus
+from worktree.core.db import RunsRepository
 from worktree.core.engine.engine import Engine
 from worktree.core.engine.exceptions import EngineInputError, EngineRuntimeError
 from worktree.core.engine.models import RunRequest
+from worktree.core.engine.services._shared import fail, finalize
 from worktree.core.engine.services.reconcile import reconcile_stale_runs
 from worktree.core.inputs.services.resolve import format_input_error_message
 from worktree.core.runtime import (
     FailurePrompter,
     RunObserver,
-    RunOutcome,
 )
 
 
@@ -53,7 +53,7 @@ class BlueprintRunService:
         catalog = Catalog(path=self.path)
         blueprint, fail_outcome = self._load_blueprint(catalog)
         if fail_outcome is not None or blueprint is None:
-            return fail_outcome or self._fail(f"Failed to load Blueprint '{self.name}'.")
+            return fail_outcome or fail(self.warnings, f"Failed to load Blueprint '{self.name}'.")
 
         try:
             run_outcome = Engine(self.path, db=self.runs_db, catalog=catalog).run(
@@ -71,25 +71,18 @@ class BlueprintRunService:
                 ),
             )
         except EngineInputError as exc:
-            return self._fail(
+            return fail(
+                self.warnings,
                 format_input_error_message(
                     name=self.name,
                     result=exc.result,
                     declarations=blueprint.inputs,
-                )
+                ),
             )
         except EngineRuntimeError as exc:
-            return self._fail(str(exc))
+            return fail(self.warnings, str(exc))
 
-        return self._finalize(run_outcome)
-
-    def _fail(self, message: str) -> BlueprintRunResult:
-        """Construct a failed BlueprintRunResult with an error message."""
-        return BlueprintRunResult(
-            run_record=None,
-            errors=[message],
-            warnings=self.warnings,
-        )
+        return finalize(self.runs_db, self.warnings, run_outcome, run_outcome.session_id or "")
 
     def _load_blueprint(self, catalog: Catalog) -> tuple[Blueprint | None, BlueprintRunResult | None]:
         """Load and validate blueprint definition from catalog, returning error result on failure."""
@@ -97,56 +90,12 @@ class BlueprintRunService:
             blueprint = Blueprint.load(self.name, catalog=catalog)
         except BlueprintNotFoundError as exc:
             msg = str(exc) if str(exc) else f"Blueprint '{self.name}' not found in catalog."
-            return None, self._fail(msg)
+            return None, fail(self.warnings, msg)
         except BlueprintLoadError as exc:
             msg = str(exc) if str(exc) else "Failed to resolve blueprint."
-            return None, self._fail(msg)
+            return None, fail(self.warnings, msg)
         except BlueprintValidationError as exc:
             msg = str(exc) if str(exc) else "Blueprint definition is invalid."
-            return None, self._fail(msg)
+            return None, fail(self.warnings, msg)
 
         return blueprint, None
-
-    def _load_record(self, session_id: str) -> RunRecord | None:
-        """Load RunRecord from database, appending warning on failure."""
-        try:
-            return self.runs_db.get(session_id)
-        except Exception as exc:
-            self.warnings.append(f"Failed to load run record for '{session_id}': {exc}")
-            return None
-
-    def _fallback_record(
-        self,
-        session_id: str,
-        status: RunStatus,
-        error: str | None,
-    ) -> RunRecord:
-        """Construct a synthetic RunRecord when database record is unavailable."""
-        return RunRecord(
-            id=-1,
-            session_id=session_id,
-            blueprint_name=self.name,
-            branch_name="",
-            status=status,
-            started_at="",
-            completed_at=None,
-            error_message=error,
-        )
-
-    def _finalize(self, run_outcome: RunOutcome) -> BlueprintRunResult:
-        """Combine run outcome and database record into final BlueprintRunResult."""
-        sid = run_outcome.session_id or ""
-        self.warnings.extend(run_outcome.warnings)
-        record = self._load_record(sid) if sid else None
-        primary_error = run_outcome.errors[0] if run_outcome.errors else None
-        final_record = record or self._fallback_record(
-            sid,
-            run_outcome.status,
-            primary_error,
-        )
-
-        return BlueprintRunResult(
-            run_record=final_record,
-            errors=list(run_outcome.errors),
-            warnings=self.warnings,
-        )
