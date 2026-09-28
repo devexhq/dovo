@@ -294,6 +294,22 @@ assert 'wf_abcdef12' in rendered  # view value, not a caption
 # ❌ DO NOT: # PR modifying Engine.resume() without integration tests for resumed step loop
 ```
 
+- **[TEST-016] Public Function Happy and Unhappy Path Coverage (BLOCKER):**
+  Every public function and method (no leading underscore) in a production module requires at least one happy-path test (valid inputs producing the expected successful outcome) and at least one unhappy-path test (invalid input, missing dependency, boundary condition, or failure state producing the expected error result, exception, or classified non-ok outcome). Private functions and methods (leading underscore) are covered exclusively as byproducts of their public callers and never receive dedicated test methods. The coverage gate (CI-001) validates that private paths are reached. Properties containing no branching logic beyond a single field return are exempt from the unhappy-path requirement; their happy path is satisfied by any test that reads them. Dunder methods are exempt unless they contain domain validation (e.g. a __init__ that coerces or rejects values). When a public method has multiple independent failure modes, TEST-006 parameterization is the primary tool for covering them; a separate test method per failure mode is reserved for cases with divergent fixture requirements.
+
+```python
+# ✅ DO:
+class RunStateStoreTests:
+    def test_save_persists_state_and_increments_revision(self): ...
+    def test_save_with_stale_revision_returns_conflict_error(self): ...
+    def test_load_returns_persisted_state(self): ...
+    def test_load_with_corrupt_json_returns_classified_failure(self): ...
+# ❌ DO NOT:
+class RunStateStoreTests:
+    def test__validate_schema_version(self): ...  # dedicated test for private method
+    def test_save_persists_state(self): ...  # happy path only, no unhappy path for save()
+```
+
 - **[TEST-017] CLI Runner Assertion Boundary (BLOCKER):**
   CLI runner tests assert wiring and observable behavior: exit codes, --format json payloads as exact literal dicts, resulting disk or git state, and rendered CLI output. A rendered-output assertion is not restricted to a published error code token; asserting a literal status label, panel line, or full rendered string is permitted, ideally pinned via snapshot testing so the assertion cannot drift silently. Never assert help text wording; assert command registration and option names through Click metadata instead.
 
