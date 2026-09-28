@@ -135,6 +135,7 @@ class StepCoordinator:
         previous_step: PreviousStepMetadata | None = None,
         steps: Sequence[PreviousStepMetadata] | None = None,
         initial_attempt: int = 1,
+        loop_iteration: int | None = None,
     ) -> tuple[str, StepResult | None, str | None]:
         """Run a step until success, continue-after-failure, or abort.
 
@@ -170,6 +171,7 @@ class StepCoordinator:
                     session_tmp_dir=state.session_tmp_dir,
                     session_log_dir=state.session_log_dir,
                     save_attempt_logs=state.save_attempt_logs,
+                    loop_iteration=loop_iteration,
                     session_id=self.context.session_id or "",
                     artifacts_dir=state.artifacts_dir,
                     artifacts_db=state.artifacts_db,

@@ -279,3 +279,31 @@ class StepCoordinatorResumePendingGateTests:
         assert result is not None
         assert (result.status, result.exit_code, result.attempts) == ("completed", 0, 2)
         assert error_message is None
+
+
+class StepCoordinatorLoopIterationForwardingTests:
+    """[tier-1/unit] StepCoordinator.execute_one_step: the new loop_iteration parameter forwards to StepExecutionContext unchanged for top-level and loop callers."""
+
+    @pytest.mark.parametrize(
+        ("loop_iteration", "expected_filename"),
+        [
+            pytest.param(2, "01_check_iter_2_attempt_1.stdout.log", id="loop_iteration_set"),
+            pytest.param(None, "01_check_attempt_1.stdout.log", id="loop_iteration_none"),
+        ],
+    )
+    def test_loop_iteration_forwards_to_attempt_log_filename_iter_segment(
+        self,
+        tmp_path: Path,
+        loop_iteration: int | None,
+        expected_filename: str,
+    ) -> None:
+        """[tier-1/unit] execute_one_step: calling execute_one_step(..., loop_iteration=2) with session_log_dir set writes the attempt log as '01_check_iter_2_attempt_1.stdout.log', while the default loop_iteration=None (today's top-level call shape) keeps the '_iter_' segment absent from the filename."""
+        context = RunContext(steps=[], cwd=tmp_path, use_sandbox=False)
+        step = StepBuilder.command("echo ok").with_id("check").build()
+        state = StepLoopState(target_dir=tmp_path, session=None, session_log_dir=tmp_path)
+
+        StepCoordinator(context).execute_one_step(
+            state, step, idx=1, total=1, step_index=0, step_context=None, loop_iteration=loop_iteration
+        )
+
+        assert (tmp_path / expected_filename).exists()
