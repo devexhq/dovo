@@ -24,8 +24,10 @@ from worktree.core.runtime import (
     RunContext,
     RunObserver,
     RunOutcome,
+    RunPauseStore,
     run_steps,
 )
+from worktree.core.step import LoopStepBlock, StepDefinition
 
 
 class _DbPauseStore:
@@ -78,23 +80,19 @@ class Engine:
         identity = ExecutionIdentity(blueprint_name=blueprint.name, blueprint_key=blueprint.key)
 
         start_time = datetime.now(UTC).isoformat()
-        outcome = run_steps(
-            RunContext(
-                steps=steps,
-                cwd=self.path,
-                use_sandbox=caller_sandbox and blueprint.use_sandbox,
-                keep=req.keep,
-                agent=req.agent,
-                observer=req.observer,
-                inputs=resolved.values,
-                identity=identity,
-                session_id=sid,
-                no_tty=req.no_tty,
-                failure_prompter=req.failure_prompter,
-                pause_store=pause_store,
-                auto_apply=req.auto_apply,
-                config=Config(self.path)._loaded_config,
-            )
+        outcome = self._execute(
+            steps=steps,
+            use_sandbox=caller_sandbox and blueprint.use_sandbox,
+            keep=req.keep,
+            agent=req.agent,
+            observer=req.observer,
+            inputs=resolved.values,
+            identity=identity,
+            session_id=sid,
+            no_tty=req.no_tty,
+            failure_prompter=req.failure_prompter,
+            pause_store=pause_store,
+            auto_apply=req.auto_apply,
         )
 
         if pause_store is not None:
@@ -134,23 +132,19 @@ class Engine:
         identity = ExecutionIdentity(blueprint_name=loaded.name, blueprint_key=loaded.key)
 
         start_time = datetime.now(UTC).isoformat()
-        outcome = run_steps(
-            RunContext(
-                steps=steps,
-                cwd=self.path,
-                use_sandbox=checkpoint.use_sandbox,
-                keep=checkpoint.keep,
-                agent=checkpoint.agent,
-                observer=observer,
-                inputs=checkpoint.inputs or None,
-                identity=identity,
-                session_id=session_id,
-                no_tty=no_tty,
-                failure_prompter=failure_prompter,
-                pause_store=pause_store,
-                resume_from=checkpoint,
-                config=Config(self.path)._loaded_config,
-            )
+        outcome = self._execute(
+            steps=steps,
+            use_sandbox=checkpoint.use_sandbox,
+            keep=checkpoint.keep,
+            agent=checkpoint.agent,
+            observer=observer,
+            inputs=checkpoint.inputs or None,
+            identity=identity,
+            session_id=session_id,
+            no_tty=no_tty,
+            failure_prompter=failure_prompter,
+            pause_store=pause_store,
+            resume_from=checkpoint,
         )
 
         prior_run = load_session_run(self.path, session_id)
@@ -165,6 +159,44 @@ class Engine:
         )
 
         return self._finalize_outcome(outcome, session_id, engine_warnings)
+
+    def _execute(
+        self,
+        *,
+        steps: list[StepDefinition | LoopStepBlock],
+        use_sandbox: bool = True,
+        keep: bool = False,
+        agent: str | None = None,
+        observer: RunObserver | None = None,
+        inputs: dict[str, str | int | bool] | None = None,
+        identity: ExecutionIdentity | None = None,
+        session_id: str | None = None,
+        no_tty: bool = False,
+        failure_prompter: FailurePrompter | None = None,
+        pause_store: RunPauseStore | None = None,
+        resume_from: RunCheckpoint | None = None,
+        auto_apply: bool = False,
+    ) -> RunOutcome:
+        """Build the RunContext both run() and resume() share and drive it through run_steps."""
+        return run_steps(
+            RunContext(
+                steps=steps,
+                cwd=self.path,
+                use_sandbox=use_sandbox,
+                keep=keep,
+                agent=agent,
+                observer=observer,
+                inputs=inputs,
+                identity=identity,
+                session_id=session_id,
+                no_tty=no_tty,
+                failure_prompter=failure_prompter,
+                pause_store=pause_store,
+                resume_from=resume_from,
+                auto_apply=auto_apply,
+                config=Config(self.path)._loaded_config,
+            )
+        )
 
     def _start_run(
         self,

@@ -5,7 +5,6 @@ from .paths import (
     find_worktree_root,
     get_catalog_templates_dir,
     get_gitignore_file,
-    get_session_dir,
     get_worktree_config_file,
     get_worktree_dir,
 )
@@ -20,7 +19,6 @@ __all__ = [
     "find_worktree_root",
     "get_catalog_templates_dir",
     "get_gitignore_file",
-    "get_session_dir",
     "get_worktree_config_file",
     "get_worktree_dir",
     "is_git_repository",
