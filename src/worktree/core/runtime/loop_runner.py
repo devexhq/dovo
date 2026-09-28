@@ -26,6 +26,7 @@ from worktree.core.runtime.models import (
     RunPauseStore,
     StepLoopState,
 )
+from worktree.core.runtime.notify import safe_notify
 from worktree.core.step import StepExecution
 from worktree.core.step.models import (
     ConditionEvaluationResult,
@@ -88,11 +89,7 @@ class LoopBlockRunner:
             self.session_log_dir,
             RunLogEvent(event=RunLogEventType.LOOP_START, loop_id=self.loop.id, max_iterations=max_iterations),
         )
-        if self.observer is not None and hasattr(self.observer, "on_loop_start"):
-            try:
-                self.observer.on_loop_start(self.loop.id, max_iterations)
-            except Exception:
-                pass
+        safe_notify(self.observer, "on_loop_start", self.loop.id, max_iterations)
 
     def _notify_turn(self, turn: int, max_iterations: int) -> None:
         """Notify observer that a loop turn is beginning."""
@@ -102,11 +99,7 @@ class LoopBlockRunner:
                 event=RunLogEventType.LOOP_TURN_START, loop_id=self.loop.id, turn=turn, max_iterations=max_iterations
             ),
         )
-        if self.observer is not None and hasattr(self.observer, "on_loop_turn_start"):
-            try:
-                self.observer.on_loop_turn_start(self.loop.id, turn, max_iterations)
-            except Exception:
-                pass
+        safe_notify(self.observer, "on_loop_turn_start", self.loop.id, turn, max_iterations)
 
     def _notify_done(self, status: str, turns: int) -> None:
         """Notify observer that loop execution has finished."""
@@ -114,11 +107,7 @@ class LoopBlockRunner:
             self.session_log_dir,
             RunLogEvent(event=RunLogEventType.LOOP_DONE, loop_id=self.loop.id, status=status, turn=turns),
         )
-        if self.observer is not None and hasattr(self.observer, "on_loop_done"):
-            try:
-                self.observer.on_loop_done(self.loop.id, status, turns)
-            except Exception:
-                pass
+        safe_notify(self.observer, "on_loop_done", self.loop.id, status, turns)
 
     def _notify_conditions(
         self,
@@ -137,32 +126,17 @@ class LoopBlockRunner:
                 conditions=[r.model_dump() for r in results],
             ),
         )
-        if self.observer is not None and hasattr(self.observer, "on_loop_conditions_evaluated"):
-            try:
-                self.observer.on_loop_conditions_evaluated(
-                    self.loop.id,
-                    results,
-                    all_passed,
-                    next_turn=next_turn,
-                )
-            except Exception:
-                pass
+        safe_notify(
+            self.observer, "on_loop_conditions_evaluated", self.loop.id, results, all_passed, next_turn=next_turn
+        )
 
     def _notify_sub_step_start(self, sub_idx: int, sub_step: StepDefinition) -> None:
         """Notify observer that a loop sub-step is starting."""
-        if self.observer is not None:
-            try:
-                self.observer.on_step_start(sub_idx, len(self.loop.do), sub_step)
-            except Exception:
-                pass
+        safe_notify(self.observer, "on_step_start", sub_idx, len(self.loop.do), sub_step)
 
     def _notify_sub_step_done(self, sub_idx: int, result: StepResult) -> None:
         """Notify observer that a loop sub-step has finished."""
-        if self.observer is not None:
-            try:
-                self.observer.on_step_done(sub_idx, len(self.loop.do), result)
-            except Exception:
-                pass
+        safe_notify(self.observer, "on_step_done", sub_idx, len(self.loop.do), result)
 
     def _notify_sub_step_output(
         self,
@@ -172,11 +146,7 @@ class LoopBlockRunner:
         line: str,
     ) -> None:
         """Notify observer of output from a loop sub-step."""
-        if self.observer is not None:
-            try:
-                self.observer.on_step_output(sub_idx, len(self.loop.do), sub_step, line, stream=stream_name)
-            except Exception:
-                pass
+        safe_notify(self.observer, "on_step_output", sub_idx, len(self.loop.do), sub_step, line, stream=stream_name)
 
     def _resolve_sub_step_output_callback(
         self,
