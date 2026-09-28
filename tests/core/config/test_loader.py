@@ -9,6 +9,7 @@ from worktree.common.filesystem import Filesystem
 from worktree.core.config.generator import build_default_config
 from worktree.core.config.loader import (
     ConfigLoadStatus,
+    clear_config_cache,
     load_config,
 )
 from worktree.core.config.models import WorktreeConfig
@@ -128,3 +129,55 @@ class ConfigLoaderTests:
             "Run `wt config validate` for details",
             "Or `wt init --repair` to insert missing keys without overwriting values",
         ]
+
+    def test_load_malformed_json_returns_malformed_json_status_with_location_detail(
+        self, isolated_workspace: Path
+    ) -> None:
+        """[tier-1/unit] load_config: config.json containing invalid JSON syntax -> MALFORMED_JSON status, error names the file and a line/column location, config/raw are None."""
+        config_path = isolated_workspace / ".worktree" / "config.json"
+        config_path.parent.mkdir(parents=True, exist_ok=True)
+        config_path.write_text("{not valid json", encoding="utf-8")
+
+        result = load_config(isolated_workspace)
+
+        assert result.status == ConfigLoadStatus.MALFORMED_JSON
+        assert result.raw is None
+        assert result.config is None
+        assert f"Malformed config.json at '{config_path}'" in result.errors[0]
+        assert result.fixes == ["Repair JSON syntax, or restore from backup"]
+
+
+class ClearConfigCacheTests:
+    """[tier-1/unit] clear_config_cache: in-memory load_config cache invalidation."""
+
+    def test_clearing_specific_path_forces_a_disk_reread_reflecting_the_new_content(
+        self, isolated_workspace: Path
+    ) -> None:
+        """[tier-1/unit] clear_config_cache(path): a subsequent load_config call re-reads the file from disk instead of returning the stale cached result."""
+        config_path = isolated_workspace / ".worktree" / "config.json"
+        Filesystem.atomic_write_json(config_path, build_default_config("first-name"))
+        first = load_config(isolated_workspace)
+        assert first.config is not None
+        assert first.config.project.name == "first-name"
+
+        Filesystem.atomic_write_json(config_path, build_default_config("second-name"))
+        clear_config_cache(isolated_workspace)
+        second = load_config(isolated_workspace)
+
+        assert second.config is not None
+        assert second.config.project.name == "second-name"
+
+    def test_clearing_with_no_path_clears_every_cached_entry(self, tmp_path: Path) -> None:
+        """[tier-1/unit] clear_config_cache(None): clears the entire cache, so a subsequent load for any previously cached workspace re-reads from disk."""
+        workspace_a = tmp_path / "a"
+        workspace_b = tmp_path / "b"
+        for workspace, name in ((workspace_a, "workspace-a"), (workspace_b, "workspace-b")):
+            Filesystem.atomic_write_json(workspace / ".worktree" / "config.json", build_default_config(name))
+            load_config(workspace)
+
+        Filesystem.atomic_write_json(workspace_a / ".worktree" / "config.json", build_default_config("renamed-a"))
+        clear_config_cache()
+        reloaded = load_config(workspace_a)
+
+        assert reloaded.config is not None
+        assert reloaded.config.project.name == "renamed-a"

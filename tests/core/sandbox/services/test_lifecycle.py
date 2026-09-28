@@ -155,3 +155,78 @@ class SandboxLifecycleStorageBridgeTests:
         assert not sandbox_path.exists()
         assert "worktree/sandbox-sbx_bridge_626" not in GitRunner.list_branches(sandbox_workspace)
         assert SandboxesRepository(sandbox_workspace).get("sbx_bridge_626") is None
+
+
+class SandboxLifecycleCapacityTests:
+    """[tier-1/integration] SandboxLifecycle._check_capacity, exercised through create()."""
+
+    def test_create_at_capacity_returns_capacity_exceeded_without_creating_worktree(
+        self, sandbox_workspace: Path
+    ) -> None:
+        """[tier-1/integration] SandboxLifecycle.create: DEFAULT_MAXIMUM_SANDBOXES_ALLOWED (3) active sandbox directories already exist -> CAPACITY_EXCEEDED, no fourth worktree or branch is created."""
+        lifecycle = SandboxLifecycle(sandbox_workspace, SandboxesRepository(sandbox_workspace))
+        for i in range(3):
+            result = lifecycle.create(session_id=f"sbx_cap_{i}")
+            assert result.status == SandboxCreateStatus.OK
+
+        result = lifecycle.create(session_id="sbx_cap_overflow")
+
+        assert result.status == SandboxCreateStatus.CAPACITY_EXCEEDED
+        assert not (sandbox_workspace / ".worktree" / "sandboxes" / "sbx_cap_overflow").exists()
+        assert "worktree/sandbox-sbx_cap_overflow" not in GitRunner.list_branches(sandbox_workspace)
+
+
+class SandboxLifecycleCleanupTests:
+    """[tier-1/integration] SandboxLifecycle.cleanup: worktree removal and branch deletion."""
+
+    def test_cleanup_removes_worktree_directory_and_deletes_temporary_branch(self, sandbox_workspace: Path) -> None:
+        """[tier-1/integration] SandboxLifecycle.cleanup: removes the sandbox worktree directory from disk and deletes its temporary worktree/sandbox-<id> branch, with no warnings."""
+        lifecycle = SandboxLifecycle(sandbox_workspace, SandboxesRepository(sandbox_workspace))
+        create_result = lifecycle.create(session_id="sbx_cleanup_branch")
+        assert create_result.session is not None
+        session = create_result.session
+        assert "worktree/sandbox-sbx_cleanup_branch" in GitRunner.list_branches(sandbox_workspace)
+
+        warnings = lifecycle.cleanup(session)
+
+        assert warnings == []
+        assert not session.sandbox_path.exists()
+        assert "worktree/sandbox-sbx_cleanup_branch" not in GitRunner.list_branches(sandbox_workspace)
+
+    def test_cleanup_of_already_removed_worktree_is_idempotent_and_warning_free(self, sandbox_workspace: Path) -> None:
+        """[tier-1/integration] SandboxLifecycle.cleanup: calling cleanup a second time after the worktree directory is already gone still deletes the branch (idempotent) and produces no warnings."""
+        lifecycle = SandboxLifecycle(sandbox_workspace, SandboxesRepository(sandbox_workspace))
+        create_result = lifecycle.create(session_id="sbx_cleanup_twice")
+        assert create_result.session is not None
+        session = create_result.session
+
+        first_warnings = lifecycle.cleanup(session)
+        second_warnings = lifecycle.cleanup(session)
+
+        assert first_warnings == []
+        assert second_warnings == []
+
+
+class SandboxLifecycleDiscardPartialTests:
+    """[tier-1/integration] SandboxLifecycle.discard_partial: best-effort cleanup after a failed create."""
+
+    def test_discard_partial_removes_worktree_directory_and_branch(self, sandbox_workspace: Path) -> None:
+        """[tier-1/integration] SandboxLifecycle.discard_partial: removes the given worktree directory and deletes the given branch."""
+        lifecycle = SandboxLifecycle(sandbox_workspace, SandboxesRepository(sandbox_workspace))
+        sandbox_path = sandbox_workspace / ".worktree" / "sandboxes" / "sbx_discard"
+        temp_branch = "worktree/sandbox-sbx_discard"
+        GitRunner.worktree_add(sandbox_workspace, sandbox_path, temp_branch, "HEAD")
+        assert sandbox_path.is_dir()
+
+        lifecycle.discard_partial(sandbox_path, temp_branch)
+
+        assert not sandbox_path.exists()
+        assert temp_branch not in GitRunner.list_branches(sandbox_workspace)
+
+    def test_discard_partial_on_nonexistent_branch_does_not_raise(self, sandbox_workspace: Path) -> None:
+        """[tier-1/integration] SandboxLifecycle.discard_partial: a branch that was never created is a best-effort no-op, not an exception."""
+        lifecycle = SandboxLifecycle(sandbox_workspace, SandboxesRepository(sandbox_workspace))
+
+        lifecycle.discard_partial(
+            sandbox_workspace / ".worktree" / "sandboxes" / "never-existed", "worktree/sandbox-never-existed"
+        )

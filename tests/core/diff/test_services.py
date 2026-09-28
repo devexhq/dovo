@@ -51,3 +51,22 @@ class DiffServiceTests:
         session_dir = global_root / "storage" / "projects" / "project-626" / "sessions" / "session-626"
         assert result.status == DiffStatus.SESSION_NOT_FOUND
         assert not session_dir.exists()
+
+    def test_collect_without_session_id_discovers_most_recently_modified_session(self, tmp_path: Path) -> None:
+        """[tier-1/integration] DiffService.collect: session_id omitted -> resolves the most recently modified session directory under sessions_dir, not the first alphabetically."""
+        older = get_session_dir(tmp_path, "aaa-older")
+        newer = get_session_dir(tmp_path, "zzz-newer")
+        write_session_diff(older, "diff --git a/old.txt b/old.txt\n")
+        write_session_diff(newer, "diff --git a/new.txt b/new.txt\n")
+
+        result = DiffService(tmp_path).collect()
+
+        assert result.status == DiffStatus.OK
+        assert result.session_id == "zzz-newer"
+
+    def test_collect_without_session_id_and_no_sessions_returns_session_not_found(self, tmp_path: Path) -> None:
+        """[tier-1/integration] DiffService.collect: session_id omitted and no session directories exist -> SESSION_NOT_FOUND with no session_id set."""
+        result = DiffService(tmp_path).collect()
+
+        assert result.status == DiffStatus.SESSION_NOT_FOUND
+        assert result.session_id is None
