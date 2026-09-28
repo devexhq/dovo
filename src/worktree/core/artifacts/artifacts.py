@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from worktree.common.filesystem import WorkspacePaths
 from worktree.core.artifacts.models import (
     ArtifactDownloadResult,
     ArtifactsListResult,
@@ -16,15 +17,17 @@ from worktree.core.artifacts.services.prune import prune_artifacts
 from worktree.core.artifacts.services.upload import publish_artifact
 from worktree.core.config.models import WorktreeConfig
 from worktree.core.db.repositories.artifacts import ArtifactsRepository
-from worktree.core.project.services.storage import resolve_project_filesystem_paths
 
 
 class Artifacts:
     """Unified entrypoint for publishing, listing, downloading, and pruning session artifacts."""
 
-    def __init__(self, path: Path = Path("."), db: ArtifactsRepository | None = None) -> None:
-        self.path = path.resolve()
-        self.db = db if db is not None else ArtifactsRepository(self.path)
+    def __init__(self, paths: WorkspacePaths, db: ArtifactsRepository | None = None) -> None:
+        self.paths = paths
+        self.path = paths.root_dir
+        self.db = (
+            db if db is not None else ArtifactsRepository(db_path=paths.database_file, project_id=paths.project_id)
+        )
 
     def upload(
         self,
@@ -36,10 +39,9 @@ class Artifacts:
         retention_days: int | None = None,
     ) -> ArtifactUploadResult:
         """Publish a named artifact bundle matching path_glob from sandbox_path into persistent storage."""
-        artifacts_dir = resolve_project_filesystem_paths(self.path).artifacts_dir
         return publish_artifact(
             sandbox_path,
-            artifacts_dir,
+            self.paths.artifacts_dir,
             self.db,
             session_id=session_id,
             name=name,
@@ -59,8 +61,7 @@ class Artifacts:
         dest: Path,
     ) -> ArtifactDownloadResult:
         """Download and checksum-verify a named artifact bundle into dest."""
-        artifacts_dir = resolve_project_filesystem_paths(self.path).artifacts_dir
-        return download_artifact(artifacts_dir, self.db, session_id=session_id, name=name, dest=dest)
+        return download_artifact(self.paths.artifacts_dir, self.db, session_id=session_id, name=name, dest=dest)
 
     def prune(
         self,
@@ -73,8 +74,7 @@ class Artifacts:
 
         remove_expired resolves from config.prune.remove_expired_artifacts, defaulting to False when config is None.
         """
-        artifacts_dir = resolve_project_filesystem_paths(self.path).artifacts_dir
         remove_expired = config.prune.remove_expired_artifacts if config is not None else False
         return prune_artifacts(
-            self.path, artifacts_dir, self.db, dry_run=dry_run, force=force, remove_expired=remove_expired
+            self.path, self.paths.artifacts_dir, self.db, dry_run=dry_run, force=force, remove_expired=remove_expired
         )

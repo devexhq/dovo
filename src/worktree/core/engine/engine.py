@@ -5,8 +5,8 @@ from __future__ import annotations
 import os
 import uuid
 from datetime import UTC, datetime
-from pathlib import Path
 
+from worktree.common.filesystem import WorkspacePaths
 from worktree.common.lock import WorkspaceLock
 from worktree.core.blueprint import Blueprint
 from worktree.core.catalog import Catalog
@@ -59,11 +59,12 @@ class Engine:
 
     def __init__(
         self,
-        path: Path,
+        paths: WorkspacePaths,
         db: RunsRepository,
         catalog: Catalog,
     ) -> None:
-        self.path = path.resolve()
+        self.paths = paths
+        self.path = paths.root_dir
         self.db = db
         self.catalog = catalog
 
@@ -120,7 +121,7 @@ class Engine:
         loaded, db, checkpoint = ResumableRun.load(
             session_id,
             blueprint,
-            path=self.path,
+            paths=self.paths,
             db=self.db,
             catalog=self.catalog,
         ).ready()
@@ -147,7 +148,7 @@ class Engine:
             resume_from=checkpoint,
         )
 
-        prior_run = load_session_run(self.path, session_id)
+        prior_run = load_session_run(self.paths, session_id)
         definitions = prior_run.definitions if prior_run is not None else None
         self._finish_run(
             pause_store,
@@ -194,7 +195,8 @@ class Engine:
                 pause_store=pause_store,
                 resume_from=resume_from,
                 auto_apply=auto_apply,
-                config=Config(self.path)._loaded_config,
+                config=Config(self.paths)._loaded_config,
+                paths=self.paths,
             )
         )
 
@@ -205,7 +207,7 @@ class Engine:
         warnings: list[str],
     ) -> _DbPauseStore | None:
         """Insert a RUNNING row and return a pause store, or warn and skip persistence."""
-        with WorkspaceLock(self.path):
+        with WorkspaceLock(self.paths.lock_file):
             try:
                 self._insert_running(blueprint, session_id)
             except Exception as exc:
@@ -221,7 +223,7 @@ class Engine:
         warnings: list[str],
     ) -> DefinitionsManifest | None:
         """Snapshot the resolved blueprint and its uses: step references into the session directory."""
-        session_dir = get_session_dir(self.path, session_id)
+        session_dir = get_session_dir(self.paths, session_id)
         return snapshot_definitions(self.catalog, blueprint, session_dir, warnings)
 
     def _persist_session_run_json(
@@ -236,7 +238,7 @@ class Engine:
     ) -> None:
         """Persist structured run results and step telemetry to run.json."""
         try:
-            session_dir = get_session_dir(self.path, session_id)
+            session_dir = get_session_dir(self.paths, session_id)
             payload = SessionRunPayload(
                 version=1,
                 session_id=session_id,
@@ -263,7 +265,7 @@ class Engine:
         definitions: DefinitionsManifest | None = None,
     ) -> None:
         """Persist the outcome status when the start insert succeeded."""
-        with WorkspaceLock(self.path):
+        with WorkspaceLock(self.paths.lock_file):
             try:
                 error_message = outcome.errors[0] if outcome.errors else None
                 pause_store.finalize(outcome.status, error_message)
@@ -307,7 +309,7 @@ class Engine:
 
     def _mark_running(self, pause_store: _DbPauseStore, warnings: list[str]) -> None:
         """Set the paused row back to running, or record a persistence warning."""
-        with WorkspaceLock(self.path):
+        with WorkspaceLock(self.paths.lock_file):
             try:
                 pause_store.clear_pause()
             except Exception as exc:

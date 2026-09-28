@@ -8,8 +8,16 @@ from pathlib import Path
 from typer.testing import CliRunner
 
 from worktree.cli import app
+from worktree.common.filesystem.models import RepositoryPaths, WorkspacePaths
+from worktree.common.filesystem.services.global_root import resolve_global_paths
 from worktree.core.catalog import Catalog
 from worktree.core.catalog.models import CatalogItemType
+from worktree.core.project.services.storage import resolve_workspace_paths
+
+
+def _paths_for(root: Path) -> WorkspacePaths:
+    """Resolve the WorkspacePaths snapshot for root, reflecting its current project.json."""
+    return resolve_workspace_paths(RepositoryPaths.from_root(root), resolve_global_paths(None))
 
 
 class BlueprintDeleteCliIntegrationTests:
@@ -17,7 +25,7 @@ class BlueprintDeleteCliIntegrationTests:
 
     def test_blueprint_delete_cli_with_force_exits_zero(self, cli_runner: CliRunner, isolated_workspace: Path) -> None:
         """wt blueprint delete <name> --force: repo-tier file removed from disk; exit 0."""
-        Catalog(isolated_workspace).create(CatalogItemType.BLUEPRINT, "del-blueprint")
+        Catalog(_paths_for(isolated_workspace)).create(CatalogItemType.BLUEPRINT, "del-blueprint")
 
         result = cli_runner.invoke(
             app, ["-p", str(isolated_workspace), "blueprint", "delete", "del-blueprint", "--force"]
@@ -30,7 +38,7 @@ class BlueprintDeleteCliIntegrationTests:
         self, cli_runner: CliRunner, isolated_workspace: Path
     ) -> None:
         """wt blueprint delete <name>, answering 'n' at the prompt: cancels and exits 1."""
-        Catalog(isolated_workspace).create(CatalogItemType.BLUEPRINT, "declined-blueprint")
+        Catalog(_paths_for(isolated_workspace)).create(CatalogItemType.BLUEPRINT, "declined-blueprint")
 
         result = cli_runner.invoke(
             app, ["-p", str(isolated_workspace), "blueprint", "delete", "declined-blueprint"], input="n\n"
@@ -41,7 +49,7 @@ class BlueprintDeleteCliIntegrationTests:
 
     def test_blueprint_delete_cli_renders_json(self, cli_runner: CliRunner, isolated_workspace: Path) -> None:
         """wt blueprint delete <name> --force --format json: envelope reports deleted=true."""
-        Catalog(isolated_workspace).create(CatalogItemType.BLUEPRINT, "json-del-blueprint")
+        Catalog(_paths_for(isolated_workspace)).create(CatalogItemType.BLUEPRINT, "json-del-blueprint")
 
         result = cli_runner.invoke(
             app,

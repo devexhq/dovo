@@ -12,6 +12,7 @@ from typer.testing import CliRunner
 
 from worktree.cli import app
 from worktree.common.constants import WORKTREE_GITIGNORE_CONTENT, WORKTREE_GITIGNORE_TRACKED_ENTRIES
+from worktree.common.filesystem.services.global_root import resolve_global_paths
 from worktree.core.bootstrap.models import BootstrapOutcome
 from worktree.core.db.connection import resolve_db_path
 from worktree.core.project.models import PROJECT_ID_REGEX, ProjectIdentityProvisionStatus
@@ -60,7 +61,7 @@ class InitCliIntegrationTests:
         assert result.exit_code == 0
         worktree_dir = _worktree_dir(tmp_path)
         assert (worktree_dir / "config.json").exists()
-        assert resolve_db_path().is_file()
+        assert resolve_db_path(resolve_global_paths(None)).is_file()
         assert len(dispatch_spy) == 1
         res = dispatch_spy[0]
         assert res.bootstrap_result.root_path == worktree_dir

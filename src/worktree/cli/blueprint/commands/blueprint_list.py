@@ -18,6 +18,6 @@ def blueprint_list_command(context: CliContext, output_format: str = "terminal")
     Returns:
         CatalogListResult containing listed records and errors.
     """
-    result = Catalog(path=context.cwd).list(type_filter=CatalogItemType.BLUEPRINT)
+    result = Catalog(context.paths).list(type_filter=CatalogItemType.BLUEPRINT)
     ui_dispatcher.dispatch(result, output_format=output_format)
     return result

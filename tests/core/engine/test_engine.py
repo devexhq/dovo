@@ -11,6 +11,8 @@ import pytest
 
 from tests.harness.builders import BlueprintBuilder, StepBuilder, WorkspaceBuilder
 from tests.harness.catalog import write_runnable_blueprint, write_runnable_step
+from worktree.common.filesystem.models import RepositoryPaths, WorkspacePaths
+from worktree.common.filesystem.services.global_root import resolve_global_paths
 from worktree.common.models import FailurePolicy, OnFailureSpec
 from worktree.core.blueprint import Blueprint
 from worktree.core.catalog import Catalog
@@ -19,8 +21,14 @@ from worktree.core.db import RunsRepository, RunStatus
 from worktree.core.engine import Engine, EngineResumeError, EngineResumeStatus, RunRequest
 from worktree.core.engine.models import DefinitionRef, DefinitionsManifest, SessionRunPayload
 from worktree.core.engine.writer import get_session_dir, load_session_run, write_session_run_json
+from worktree.core.project.services.storage import resolve_workspace_paths
 from worktree.core.runtime import ExecutionIdentity, RunCheckpoint, RunContext, RunOutcome
 from worktree.core.step.models import LoopStepBlock, StepDefinition
+
+
+def _paths_for(root: Path) -> WorkspacePaths:
+    """Resolve the WorkspacePaths snapshot for root, reflecting its current project.json."""
+    return resolve_workspace_paths(RepositoryPaths.from_root(root), resolve_global_paths(None))
 
 
 def _checkpoint(
@@ -99,7 +107,8 @@ class EngineResumeOrchestrationTests:
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         workspace = WorkspaceBuilder(tmp_path / "workspace").with_database().build()
-        runs_repo = RunsRepository(workspace)
+        paths = _paths_for(workspace)
+        runs_repo = RunsRepository(db_path=paths.database_file, project_id=paths.project_id)
         blueprint, expected_steps = _task_blueprint()
         checkpoint = _checkpoint(keep=True, agent="copilot", inputs={"name": "demo"})
         _seed_paused_run(runs_repo, "task_resume", checkpoint)
@@ -113,7 +122,7 @@ class EngineResumeOrchestrationTests:
 
         monkeypatch.setattr("worktree.core.engine.engine.run_steps", fake_run_steps)
 
-        outcome = Engine(workspace, db=runs_repo, catalog=Catalog(workspace)).resume(
+        outcome = Engine(paths, db=runs_repo, catalog=Catalog(paths)).resume(
             "task_resume",
             blueprint=blueprint,
             observer=observer,
@@ -140,12 +149,14 @@ class EngineResumeOrchestrationTests:
             resume_from=checkpoint,
             auto_apply=False,
             config=context.config,
+            paths=paths,
         )
 
     def test_resume_omitted_blueprint_resolves_from_catalog_and_completes_run(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         workspace = WorkspaceBuilder(tmp_path / "workspace").with_database().build()
+        paths = _paths_for(workspace)
         blueprints_dir = workspace / ".worktree" / "catalog" / "blueprints"
         blueprints_dir.mkdir(parents=True, exist_ok=True)
         raw_yaml = (
@@ -155,7 +166,7 @@ class EngineResumeOrchestrationTests:
             "  - id: later\n    run: echo later\n"
         )
         (blueprints_dir / "lint.yml").write_text(raw_yaml, encoding="utf-8")
-        runs_repo = RunsRepository(workspace)
+        runs_repo = RunsRepository(db_path=paths.database_file, project_id=paths.project_id)
         checkpoint = _checkpoint()
         _seed_paused_run(runs_repo, "task_catalog", checkpoint)
         captured: dict[str, RunContext] = {}
@@ -166,7 +177,7 @@ class EngineResumeOrchestrationTests:
 
         monkeypatch.setattr("worktree.core.engine.engine.run_steps", fake_run_steps)
 
-        outcome = Engine(workspace, db=runs_repo, catalog=Catalog(workspace)).resume("task_catalog")
+        outcome = Engine(paths, db=runs_repo, catalog=Catalog(paths)).resume("task_catalog")
 
         assert outcome == RunOutcome(status=RunStatus.COMPLETED, sandbox_path=workspace).model_copy(
             update={"session_id": "task_catalog"}
@@ -193,6 +204,7 @@ class EngineResumeOrchestrationTests:
             resume_from=checkpoint,
             auto_apply=False,
             config=context.config,
+            paths=paths,
         )
 
     @pytest.mark.parametrize(
@@ -208,7 +220,8 @@ class EngineResumeOrchestrationTests:
     ) -> None:
         name = "lint" if blueprint_kind == "task" else "ship"
         workspace = WorkspaceBuilder(tmp_path / "workspace").with_database().build()
-        runs_repo = RunsRepository(workspace)
+        paths = _paths_for(workspace)
+        runs_repo = RunsRepository(db_path=paths.database_file, project_id=paths.project_id)
         blueprint, _ = _task_blueprint(name=name)
         checkpoint = _checkpoint()
         _seed_paused_run(runs_repo, session_id, checkpoint, name=name)
@@ -217,7 +230,7 @@ class EngineResumeOrchestrationTests:
             lambda _context: RunOutcome(status=RunStatus.COMPLETED, sandbox_path=workspace),
         )
 
-        outcome = Engine(workspace, db=runs_repo, catalog=Catalog(workspace)).resume(session_id, blueprint=blueprint)
+        outcome = Engine(paths, db=runs_repo, catalog=Catalog(paths)).resume(session_id, blueprint=blueprint)
 
         assert outcome == RunOutcome(status=RunStatus.COMPLETED, sandbox_path=workspace).model_copy(
             update={"session_id": session_id}
@@ -235,7 +248,8 @@ class EngineResumeOrchestrationTests:
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         workspace = WorkspaceBuilder(tmp_path / "workspace").with_database().build()
-        runs_repo = RunsRepository(workspace)
+        paths = _paths_for(workspace)
+        runs_repo = RunsRepository(db_path=paths.database_file, project_id=paths.project_id)
         blueprint, _ = _task_blueprint(name="ship", loop=True)
         checkpoint = _checkpoint()
         _seed_paused_run(runs_repo, "workflow_loop", checkpoint, name="ship")
@@ -244,9 +258,7 @@ class EngineResumeOrchestrationTests:
             lambda _context: RunOutcome(status=RunStatus.COMPLETED, sandbox_path=workspace),
         )
 
-        outcome = Engine(workspace, db=runs_repo, catalog=Catalog(workspace)).resume(
-            "workflow_loop", blueprint=blueprint
-        )
+        outcome = Engine(paths, db=runs_repo, catalog=Catalog(paths)).resume("workflow_loop", blueprint=blueprint)
 
         assert outcome == RunOutcome(status=RunStatus.COMPLETED, sandbox_path=workspace).model_copy(
             update={"session_id": "workflow_loop"}
@@ -264,7 +276,8 @@ class EngineResumeOrchestrationTests:
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         workspace = WorkspaceBuilder(tmp_path / "workspace").with_database().build()
-        runs_repo = RunsRepository(workspace)
+        paths = _paths_for(workspace)
+        runs_repo = RunsRepository(db_path=paths.database_file, project_id=paths.project_id)
         blueprint, _ = _task_blueprint()
         _seed_paused_run(runs_repo, "task_mark", _checkpoint())
         expected = RunOutcome(status=RunStatus.COMPLETED, sandbox_path=workspace, warnings=["step note"])
@@ -275,7 +288,7 @@ class EngineResumeOrchestrationTests:
 
         monkeypatch.setattr(RunsRepository, "update_status", _always_raise)
 
-        outcome = Engine(workspace, db=runs_repo, catalog=Catalog(workspace)).resume("task_mark", blueprint=blueprint)
+        outcome = Engine(paths, db=runs_repo, catalog=Catalog(paths)).resume("task_mark", blueprint=blueprint)
 
         assert outcome == expected.model_copy(
             update={
@@ -292,7 +305,8 @@ class EngineResumeOrchestrationTests:
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         workspace = WorkspaceBuilder(tmp_path / "workspace").with_database().build()
-        runs_repo = RunsRepository(workspace)
+        paths = _paths_for(workspace)
+        runs_repo = RunsRepository(db_path=paths.database_file, project_id=paths.project_id)
         blueprint, _ = _task_blueprint()
         checkpoint = _checkpoint()
         _seed_paused_run(runs_repo, "task_final", checkpoint)
@@ -310,7 +324,7 @@ class EngineResumeOrchestrationTests:
 
         monkeypatch.setattr(RunsRepository, "update_status", _fail_non_running_finalize)
 
-        outcome = Engine(workspace, db=runs_repo, catalog=Catalog(workspace)).resume("task_final", blueprint=blueprint)
+        outcome = Engine(paths, db=runs_repo, catalog=Catalog(paths)).resume("task_final", blueprint=blueprint)
 
         assert outcome == expected.model_copy(
             update={
@@ -332,9 +346,10 @@ class EngineResumeOrchestrationTests:
         self, tmp_path: Path, blueprint_given: bool
     ) -> None:
         workspace = WorkspaceBuilder(tmp_path / "workspace").with_database().build()
-        runs_repo = RunsRepository(workspace)
+        paths = _paths_for(workspace)
+        runs_repo = RunsRepository(db_path=paths.database_file, project_id=paths.project_id)
         blueprint, _ = _task_blueprint()
-        engine = Engine(workspace, db=runs_repo, catalog=Catalog(workspace))
+        engine = Engine(paths, db=runs_repo, catalog=Catalog(paths))
 
         with pytest.raises(EngineResumeError, match=r"Session 'missing' not found\.") as exc_info:
             if blueprint_given:
@@ -362,7 +377,8 @@ class EngineConfigResolutionTests:
             .with_config(data={"version": 1, "project": {"name": "engine-test"}, "sandbox": {"base_ref": "main"}})
             .build()
         )
-        runs_repo = RunsRepository(workspace)
+        paths = _paths_for(workspace)
+        runs_repo = RunsRepository(db_path=paths.database_file, project_id=paths.project_id)
         blueprint, _ = _task_blueprint()
         captured: dict[str, RunContext] = {}
 
@@ -372,7 +388,7 @@ class EngineConfigResolutionTests:
 
         monkeypatch.setattr("worktree.core.engine.engine.run_steps", fake_run_steps)
 
-        Engine(workspace, db=runs_repo, catalog=Catalog(workspace)).run(blueprint)
+        Engine(paths, db=runs_repo, catalog=Catalog(paths)).run(blueprint)
 
         context = captured["context"]
         assert context.config is not None
@@ -393,7 +409,8 @@ class EngineConfigResolutionTests:
             .with_config(data={"version": 1, "project": {"name": "engine-test"}, "sandbox": {"base_ref": "main"}})
             .build()
         )
-        runs_repo = RunsRepository(workspace)
+        paths = _paths_for(workspace)
+        runs_repo = RunsRepository(db_path=paths.database_file, project_id=paths.project_id)
         blueprint, _ = _task_blueprint()
         checkpoint = _checkpoint()
         _seed_paused_run(runs_repo, "task_config_merge", checkpoint)
@@ -405,7 +422,7 @@ class EngineConfigResolutionTests:
 
         monkeypatch.setattr("worktree.core.engine.engine.run_steps", fake_run_steps)
 
-        Engine(workspace, db=runs_repo, catalog=Catalog(workspace)).resume("task_config_merge", blueprint=blueprint)
+        Engine(paths, db=runs_repo, catalog=Catalog(paths)).resume("task_config_merge", blueprint=blueprint)
 
         context = captured["context"]
         assert context.config is not None
@@ -421,7 +438,8 @@ class EngineRunContextSessionIdTests:
     ) -> None:
         """[tier-1/unit] Engine.run: RunContext.session_id captured via monkeypatched run_steps equals the generated blueprint_<hex> sid also used for run.json."""
         workspace = WorkspaceBuilder(tmp_path / "workspace").with_database().build()
-        runs_repo = RunsRepository(workspace)
+        paths = _paths_for(workspace)
+        runs_repo = RunsRepository(db_path=paths.database_file, project_id=paths.project_id)
         blueprint, _ = _task_blueprint()
         captured: dict[str, RunContext] = {}
 
@@ -431,7 +449,7 @@ class EngineRunContextSessionIdTests:
 
         monkeypatch.setattr("worktree.core.engine.engine.run_steps", fake_run_steps)
 
-        outcome = Engine(workspace, db=runs_repo, catalog=Catalog(workspace)).run(blueprint)
+        outcome = Engine(paths, db=runs_repo, catalog=Catalog(paths)).run(blueprint)
 
         context = captured["context"]
         assert context.session_id is not None
@@ -443,7 +461,8 @@ class EngineRunContextSessionIdTests:
     ) -> None:
         """[tier-1/unit] Engine.run: RunContext.session_id captured via monkeypatched run_steps equals RunRequest.session_id when explicitly provided."""
         workspace = WorkspaceBuilder(tmp_path / "workspace").with_database().build()
-        runs_repo = RunsRepository(workspace)
+        paths = _paths_for(workspace)
+        runs_repo = RunsRepository(db_path=paths.database_file, project_id=paths.project_id)
         blueprint, _ = _task_blueprint()
         captured: dict[str, RunContext] = {}
 
@@ -453,9 +472,7 @@ class EngineRunContextSessionIdTests:
 
         monkeypatch.setattr("worktree.core.engine.engine.run_steps", fake_run_steps)
 
-        Engine(workspace, db=runs_repo, catalog=Catalog(workspace)).run(
-            blueprint, RunRequest(session_id="explicit-session")
-        )
+        Engine(paths, db=runs_repo, catalog=Catalog(paths)).run(blueprint, RunRequest(session_id="explicit-session"))
 
         assert captured["context"].session_id == "explicit-session"
 
@@ -464,7 +481,8 @@ class EngineRunContextSessionIdTests:
     ) -> None:
         """[tier-1/unit] Engine.resume: RunContext.session_id captured via monkeypatched run_steps equals the resumed session_id argument."""
         workspace = WorkspaceBuilder(tmp_path / "workspace").with_database().build()
-        runs_repo = RunsRepository(workspace)
+        paths = _paths_for(workspace)
+        runs_repo = RunsRepository(db_path=paths.database_file, project_id=paths.project_id)
         blueprint, _ = _task_blueprint()
         checkpoint = _checkpoint()
         _seed_paused_run(runs_repo, "task_resume_ctx", checkpoint)
@@ -476,9 +494,39 @@ class EngineRunContextSessionIdTests:
 
         monkeypatch.setattr("worktree.core.engine.engine.run_steps", fake_run_steps)
 
-        Engine(workspace, db=runs_repo, catalog=Catalog(workspace)).resume("task_resume_ctx", blueprint=blueprint)
+        Engine(paths, db=runs_repo, catalog=Catalog(paths)).resume("task_resume_ctx", blueprint=blueprint)
 
         assert captured["context"].session_id == "task_resume_ctx"
+
+
+class EngineSingleRunContextConstructionTests:
+    """[tier-2/unit] Run and resume preserve the Engine path snapshot in their contexts."""
+
+    def test_run_and_resume_both_populate_run_context_paths(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Both orchestration entry points pass the identical Engine WorkspacePaths object to run_steps."""
+        workspace = WorkspaceBuilder(tmp_path / "workspace").with_database().build()
+        paths = _paths_for(workspace)
+        runs_repo = RunsRepository(db_path=paths.database_file, project_id=paths.project_id)
+        blueprint, _ = _task_blueprint()
+        checkpoint = _checkpoint()
+        _seed_paused_run(runs_repo, "paths-resume", checkpoint)
+        captured: list[RunContext] = []
+
+        def fake_run_steps(context: RunContext) -> RunOutcome:
+            captured.append(context)
+            return RunOutcome(status=RunStatus.COMPLETED, sandbox_path=workspace)
+
+        monkeypatch.setattr("worktree.core.engine.engine.run_steps", fake_run_steps)
+        engine = Engine(paths, db=runs_repo, catalog=Catalog(paths))
+
+        engine.run(blueprint, RunRequest(session_id="paths-run", use_sandbox=False))
+        engine.resume("paths-resume", blueprint=blueprint)
+
+        assert len(captured) == 2
+        assert captured[0].paths is paths
+        assert captured[1].paths is paths
 
 
 class EngineRunSnapshotsDefinitionsTests:
@@ -489,25 +537,26 @@ class EngineRunSnapshotsDefinitionsTests:
     ) -> None:
         """[tier-1/unit] Engine.run: a catalog-backed blueprint with one uses: step produces session_dir/definitions/<key>.yml, session_dir/definitions/steps/<step_key>.yml, and run.json's definitions manifest referencing both."""
         workspace = WorkspaceBuilder(tmp_path / "workspace").with_database().build()
+        paths = _paths_for(workspace)
         write_runnable_step(workspace, key="lint-check", definition={"id": "lint-check", "run": "echo lint"})
         write_runnable_blueprint(workspace, key="snap-task", steps=[{"id": "s1", "uses": "lint-check"}])
-        catalog = Catalog(workspace)
+        catalog = Catalog(paths)
         blueprint = Blueprint.load("snap-task", catalog=catalog)
-        runs_repo = RunsRepository(workspace)
+        runs_repo = RunsRepository(db_path=paths.database_file, project_id=paths.project_id)
         monkeypatch.setattr(
             "worktree.core.engine.engine.run_steps",
             lambda _context: RunOutcome(status=RunStatus.COMPLETED, sandbox_path=workspace),
         )
 
-        outcome = Engine(workspace, db=runs_repo, catalog=catalog).run(
+        outcome = Engine(paths, db=runs_repo, catalog=catalog).run(
             blueprint, RunRequest(session_id="snap-1", use_sandbox=False)
         )
 
         assert outcome.status == RunStatus.COMPLETED
-        session_dir = get_session_dir(workspace, "snap-1")
+        session_dir = get_session_dir(paths, "snap-1")
         assert (session_dir / "definitions" / "snap-task.yml").is_file()
         assert (session_dir / "definitions" / "steps" / "lint-check.yml").is_file()
-        payload = load_session_run(workspace, "snap-1")
+        payload = load_session_run(paths, "snap-1")
         assert payload is not None
         assert payload.definitions is not None
         assert payload.definitions.blueprint.ref == "repo:blueprint:snap-task"
@@ -518,20 +567,21 @@ class EngineRunSnapshotsDefinitionsTests:
     ) -> None:
         """[tier-1/unit] Engine.run: an in-memory-only Blueprint (BlueprintBuilder, no catalog record) completes the run with RunOutcome.warnings naming the snapshot failure and run.json's definitions left None."""
         workspace = WorkspaceBuilder(tmp_path / "workspace").with_database().build()
-        runs_repo = RunsRepository(workspace)
+        paths = _paths_for(workspace)
+        runs_repo = RunsRepository(db_path=paths.database_file, project_id=paths.project_id)
         blueprint, _ = _task_blueprint()
         monkeypatch.setattr(
             "worktree.core.engine.engine.run_steps",
             lambda _context: RunOutcome(status=RunStatus.COMPLETED, sandbox_path=workspace),
         )
 
-        outcome = Engine(workspace, db=runs_repo, catalog=Catalog(workspace)).run(
+        outcome = Engine(paths, db=runs_repo, catalog=Catalog(paths)).run(
             blueprint, RunRequest(session_id="snap-2", use_sandbox=False)
         )
 
         assert outcome.status == RunStatus.COMPLETED
         assert outcome.warnings == ["Failed to snapshot run definitions: blueprint 'lint' not found in catalog."]
-        payload = load_session_run(workspace, "snap-2")
+        payload = load_session_run(paths, "snap-2")
         assert payload is not None
         assert payload.definitions is None
 
@@ -543,7 +593,8 @@ class EngineResumePreservesDefinitionsTests:
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         workspace = WorkspaceBuilder(tmp_path / "workspace").with_database().build()
-        runs_repo = RunsRepository(workspace)
+        paths = _paths_for(workspace)
+        runs_repo = RunsRepository(db_path=paths.database_file, project_id=paths.project_id)
         blueprint, _ = _task_blueprint()
         checkpoint = _checkpoint()
         _seed_paused_run(runs_repo, "task_defs", checkpoint)
@@ -552,7 +603,7 @@ class EngineResumePreservesDefinitionsTests:
             steps=[],
         )
         write_session_run_json(
-            get_session_dir(workspace, "task_defs"),
+            get_session_dir(paths, "task_defs"),
             SessionRunPayload(
                 session_id="task_defs",
                 name="lint",
@@ -566,8 +617,8 @@ class EngineResumePreservesDefinitionsTests:
             lambda _context: RunOutcome(status=RunStatus.COMPLETED, sandbox_path=workspace),
         )
 
-        Engine(workspace, db=runs_repo, catalog=Catalog(workspace)).resume("task_defs", blueprint=blueprint)
+        Engine(paths, db=runs_repo, catalog=Catalog(paths)).resume("task_defs", blueprint=blueprint)
 
-        payload = load_session_run(workspace, "task_defs")
+        payload = load_session_run(paths, "task_defs")
         assert payload is not None
         assert payload.definitions == manifest

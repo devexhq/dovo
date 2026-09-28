@@ -10,13 +10,21 @@ import pytest
 from typer.testing import CliRunner
 
 from worktree.cli import app
+from worktree.common.filesystem.models import RepositoryPaths, WorkspacePaths
+from worktree.common.filesystem.services.global_root import resolve_global_paths
+from worktree.core.project.services.storage import resolve_workspace_paths
 from worktree.core.sandbox.facade import Sandbox
 from worktree.core.sandbox.models import SandboxDeleteStatus, SandboxSession
 
 
+def _paths_for(root: Path) -> WorkspacePaths:
+    """Resolve the WorkspacePaths snapshot for root, reflecting its current project.json."""
+    return resolve_workspace_paths(RepositoryPaths.from_root(root), resolve_global_paths(None))
+
+
 def _create_sandbox(sandbox_workspace: Path) -> SandboxSession:
     """Create a fresh sandbox via the facade for one delete test."""
-    create_result = Sandbox(path=sandbox_workspace).create(name="delete-me")
+    create_result = Sandbox(paths=_paths_for(sandbox_workspace)).create(name="delete-me")
     assert create_result.session is not None
     return create_result.session
 

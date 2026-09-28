@@ -8,15 +8,16 @@ from pathlib import Path
 import pytest
 
 from tests.harness.builders import WorkspaceBuilder
+from worktree.common.filesystem.models import RepositoryPaths, WorkspacePaths
+from worktree.common.filesystem.services.global_root import resolve_global_paths
 from worktree.core.config import ConfigLoadError
 from worktree.core.config.loader import ConfigLoadResult, ConfigLoadStatus
 from worktree.core.db import RunStatus
-from worktree.core.db.repositories.artifacts import ArtifactsRepository
 from worktree.core.git.runner import GitRunner
-from worktree.core.project.services.storage import resolve_project_filesystem_paths
+from worktree.core.project.services.storage import resolve_workspace_paths
 from worktree.core.runtime.models import RunCheckpoint, RunContext, RunObserver
 from worktree.core.runtime.workspace import Workspace
-from worktree.core.sandbox import Sandbox, SandboxApplyResult, SandboxApplyStatus
+from worktree.core.sandbox import Sandbox, SandboxApplyResult, SandboxApplyStatus, SandboxSession
 from worktree.core.sandbox.models import SandboxCreateResult, SandboxCreateStatus
 
 
@@ -58,13 +59,18 @@ def _sandboxed_workspace(tmp_path: Path) -> Path:
     return WorkspaceBuilder(tmp_path / "workspace").with_git().with_database().build()
 
 
+def _paths_for(root: Path) -> WorkspacePaths:
+    """Resolve the WorkspacePaths snapshot for root, reflecting its current project.json."""
+    return resolve_workspace_paths(RepositoryPaths.from_root(root), resolve_global_paths(None))
+
+
 class WorkspaceSetupTests:
     """[tier-1/integration] Workspace.setup: sandbox creation, resume reconstruction, and no-sandbox passthrough."""
 
     def test_no_sandbox_returns_resolved_cwd_and_notifies_inactive(self, tmp_path: Path) -> None:
         """[tier-1/integration] setup: use_sandbox=False returns (cwd.resolve(), None, None, None) and notifies on_sandbox_ready(active=False)."""
         observer = _RecordingRunObserver()
-        context = RunContext(steps=[], cwd=tmp_path, use_sandbox=False, observer=observer)
+        context = RunContext(steps=[], cwd=tmp_path, use_sandbox=False, observer=observer, paths=_paths_for(tmp_path))
 
         target_dir, manager, session, error = Workspace(context).setup()
 
@@ -75,7 +81,9 @@ class WorkspaceSetupTests:
         """[tier-1/integration] setup: use_sandbox=True creates a real sandbox worktree and returns it as target_dir."""
         observer = _RecordingRunObserver()
         workspace_root = _sandboxed_workspace(tmp_path)
-        context = RunContext(steps=[], cwd=workspace_root, use_sandbox=True, observer=observer)
+        context = RunContext(
+            steps=[], cwd=workspace_root, use_sandbox=True, observer=observer, paths=_paths_for(workspace_root)
+        )
 
         target_dir, manager, session, error = Workspace(context).setup()
 
@@ -93,7 +101,7 @@ class WorkspaceSetupTests:
         workspace_root = _sandboxed_workspace(tmp_path)
         failed_result = SandboxCreateResult(status=SandboxCreateStatus.GIT_FAILED, errors=["git worktree add failed"])
         monkeypatch.setattr(Sandbox, "create", lambda self, *args, **kwargs: failed_result)
-        context = RunContext(steps=[], cwd=workspace_root, use_sandbox=True)
+        context = RunContext(steps=[], cwd=workspace_root, use_sandbox=True, paths=_paths_for(workspace_root))
 
         target_dir, manager, session, error = Workspace(context).setup()
 
@@ -116,7 +124,7 @@ class WorkspaceSetupTests:
             raise ConfigLoadError("malformed config.json", load_result)
 
         monkeypatch.setattr(Sandbox, "create", _raise)
-        context = RunContext(steps=[], cwd=workspace_root, use_sandbox=True)
+        context = RunContext(steps=[], cwd=workspace_root, use_sandbox=True, paths=_paths_for(workspace_root))
 
         _, manager, session, error = Workspace(context).setup()
 
@@ -127,7 +135,9 @@ class WorkspaceSetupTests:
     def test_resume_without_sandbox_returns_resolved_cwd(self, tmp_path: Path) -> None:
         """[tier-1/integration] setup: resume_from with use_sandbox=False returns cwd.resolve() without reconstructing a session."""
         checkpoint = RunCheckpoint(next_step_index=0, pending_step_id="s1", diagnostic="d", use_sandbox=False)
-        context = RunContext(steps=[], cwd=tmp_path, use_sandbox=True, resume_from=checkpoint)
+        context = RunContext(
+            steps=[], cwd=tmp_path, use_sandbox=True, resume_from=checkpoint, paths=_paths_for(tmp_path)
+        )
 
         target_dir, manager, session, error = Workspace(context).setup()
 
@@ -143,7 +153,9 @@ class WorkspaceSetupTests:
             use_sandbox=True,
             sandbox_path=str(missing_path),
         )
-        context = RunContext(steps=[], cwd=tmp_path, use_sandbox=True, resume_from=checkpoint)
+        context = RunContext(
+            steps=[], cwd=tmp_path, use_sandbox=True, resume_from=checkpoint, paths=_paths_for(tmp_path)
+        )
 
         target_dir, manager, session, error = Workspace(context).setup()
 
@@ -167,7 +179,9 @@ class WorkspaceSetupTests:
             sandbox_branch="worktree/sandbox-sess-1",
             sandbox_base_commit="abc123",
         )
-        context = RunContext(steps=[], cwd=tmp_path, use_sandbox=True, resume_from=checkpoint)
+        context = RunContext(
+            steps=[], cwd=tmp_path, use_sandbox=True, resume_from=checkpoint, paths=_paths_for(tmp_path)
+        )
 
         target_dir, manager, session, error = Workspace(context).setup()
 
@@ -187,7 +201,7 @@ class WorkspaceCleanupTests:
     def test_missing_manager_or_session_returns_false_and_notifies_not_kept(self, tmp_path: Path) -> None:
         """[tier-1/integration] cleanup: manager=None or session=None short-circuits, returns False, and notifies kept=False."""
         observer = _RecordingRunObserver()
-        context = RunContext(steps=[], cwd=tmp_path, use_sandbox=False, observer=observer)
+        context = RunContext(steps=[], cwd=tmp_path, use_sandbox=False, observer=observer, paths=_paths_for(tmp_path))
 
         kept = Workspace(context).cleanup(None, None, tmp_path)
 
@@ -198,7 +212,14 @@ class WorkspaceCleanupTests:
         """[tier-1/integration] cleanup: context.keep=True returns True and leaves the sandbox worktree on disk."""
         observer = _RecordingRunObserver()
         workspace_root = _sandboxed_workspace(tmp_path)
-        context = RunContext(steps=[], cwd=workspace_root, use_sandbox=True, keep=True, observer=observer)
+        context = RunContext(
+            steps=[],
+            cwd=workspace_root,
+            use_sandbox=True,
+            keep=True,
+            observer=observer,
+            paths=_paths_for(workspace_root),
+        )
         target_dir, manager, session, _ = Workspace(context).setup()
         assert session is not None
 
@@ -212,7 +233,14 @@ class WorkspaceCleanupTests:
         """[tier-1/integration] cleanup: context.keep=False removes the sandbox worktree and returns False."""
         observer = _RecordingRunObserver()
         workspace_root = _sandboxed_workspace(tmp_path)
-        context = RunContext(steps=[], cwd=workspace_root, use_sandbox=True, keep=False, observer=observer)
+        context = RunContext(
+            steps=[],
+            cwd=workspace_root,
+            use_sandbox=True,
+            keep=False,
+            observer=observer,
+            paths=_paths_for(workspace_root),
+        )
         target_dir, manager, session, _ = Workspace(context).setup()
         assert session is not None
 
@@ -227,7 +255,7 @@ class WorkspaceCleanupTests:
     ) -> None:
         """[tier-1/integration] cleanup: manager.cleanup raising is a best-effort no-op; cleanup still returns False."""
         workspace_root = _sandboxed_workspace(tmp_path)
-        context = RunContext(steps=[], cwd=workspace_root, use_sandbox=True)
+        context = RunContext(steps=[], cwd=workspace_root, use_sandbox=True, paths=_paths_for(workspace_root))
         target_dir, manager, session, _ = Workspace(context).setup()
         assert session is not None
 
@@ -246,7 +274,7 @@ class WorkspaceHandleAutoApplyTests:
 
     def test_auto_apply_disabled_returns_none_and_false(self, tmp_path: Path) -> None:
         """[tier-1/integration] handle_auto_apply: context.auto_apply=False returns (None, False) without calling manager.apply."""
-        context = RunContext(steps=[], cwd=tmp_path, use_sandbox=False, auto_apply=False)
+        context = RunContext(steps=[], cwd=tmp_path, use_sandbox=False, auto_apply=False, paths=_paths_for(tmp_path))
         errors: list[str] = []
         warnings: list[str] = []
 
@@ -258,7 +286,9 @@ class WorkspaceHandleAutoApplyTests:
     def test_auto_apply_success_returns_none_and_false(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """[tier-1/integration] handle_auto_apply: a successful apply returns (None, False) and appends no errors."""
         workspace_root = _sandboxed_workspace(tmp_path)
-        context = RunContext(steps=[], cwd=workspace_root, use_sandbox=True, auto_apply=True)
+        context = RunContext(
+            steps=[], cwd=workspace_root, use_sandbox=True, auto_apply=True, paths=_paths_for(workspace_root)
+        )
         _, manager, session, _ = Workspace(context).setup()
         assert session is not None
         ok_result = SandboxApplyResult(sandbox_id=session.session_id, status=SandboxApplyStatus.OK)
@@ -276,7 +306,9 @@ class WorkspaceHandleAutoApplyTests:
     ) -> None:
         """[tier-1/integration] handle_auto_apply: a conflicting apply returns (RunStatus.FAILED, True) and extends errors/warnings from the apply result."""
         workspace_root = _sandboxed_workspace(tmp_path)
-        context = RunContext(steps=[], cwd=workspace_root, use_sandbox=True, auto_apply=True)
+        context = RunContext(
+            steps=[], cwd=workspace_root, use_sandbox=True, auto_apply=True, paths=_paths_for(workspace_root)
+        )
         _, manager, session, _ = Workspace(context).setup()
         assert session is not None
         conflict_result = SandboxApplyResult(
@@ -311,7 +343,9 @@ class WorkspaceCaptureAndPersistDiffTests:
     ) -> None:
         """[tier-1/integration] capture_and_persist_diff: session=None or context.session_id=None writes nothing and appends no warnings."""
         workspace_root = _sandboxed_workspace(tmp_path)
-        context = RunContext(steps=[], cwd=workspace_root, use_sandbox=True, session_id=session_id)
+        context = RunContext(
+            steps=[], cwd=workspace_root, use_sandbox=True, session_id=session_id, paths=_paths_for(workspace_root)
+        )
         session = None
         if session_present:
             _, _, session, _ = Workspace(context).setup()
@@ -324,7 +358,9 @@ class WorkspaceCaptureAndPersistDiffTests:
     def test_writes_diff_patch_under_session_directory(self, tmp_path: Path) -> None:
         """[tier-1/integration] capture_and_persist_diff: with an active sandbox and session_id set, writes diff.patch under the resolved session directory."""
         workspace_root = _sandboxed_workspace(tmp_path)
-        context = RunContext(steps=[], cwd=workspace_root, use_sandbox=True, session_id="sess-1")
+        context = RunContext(
+            steps=[], cwd=workspace_root, use_sandbox=True, session_id="sess-1", paths=_paths_for(workspace_root)
+        )
         _, _, session, _ = Workspace(context).setup()
         assert session is not None
         (session.sandbox_path / "new_file.txt").write_text("hello\n", encoding="utf-8")
@@ -332,7 +368,7 @@ class WorkspaceCaptureAndPersistDiffTests:
 
         Workspace(context).capture_and_persist_diff(session, warnings)
 
-        session_dir = resolve_project_filesystem_paths(workspace_root).session_dir("sess-1")
+        session_dir = _paths_for(workspace_root).session_dir("sess-1")
         assert (session_dir / "diff.patch").exists()
         assert warnings == []
 
@@ -341,7 +377,9 @@ class WorkspaceCaptureAndPersistDiffTests:
     ) -> None:
         """[tier-1/integration] capture_and_persist_diff: a git failure while capturing the diff appends a warning naming the failure."""
         workspace_root = _sandboxed_workspace(tmp_path)
-        context = RunContext(steps=[], cwd=workspace_root, use_sandbox=True, session_id="sess-1")
+        context = RunContext(
+            steps=[], cwd=workspace_root, use_sandbox=True, session_id="sess-1", paths=_paths_for(workspace_root)
+        )
         _, _, session, _ = Workspace(context).setup()
         assert session is not None
 
@@ -364,7 +402,14 @@ class WorkspaceFinalizeCleanupTests:
         """[tier-1/integration] finalize_cleanup: RunStatus.PAUSED keeps the sandbox regardless of context.keep."""
         observer = _RecordingRunObserver()
         workspace_root = _sandboxed_workspace(tmp_path)
-        context = RunContext(steps=[], cwd=workspace_root, use_sandbox=True, keep=False, observer=observer)
+        context = RunContext(
+            steps=[],
+            cwd=workspace_root,
+            use_sandbox=True,
+            keep=False,
+            observer=observer,
+            paths=_paths_for(workspace_root),
+        )
         target_dir, manager, session, _ = Workspace(context).setup()
         assert session is not None
 
@@ -377,7 +422,9 @@ class WorkspaceFinalizeCleanupTests:
     def test_apply_failed_keeps_sandbox_even_when_completed(self, tmp_path: Path) -> None:
         """[tier-1/integration] finalize_cleanup: apply_failed=True keeps the sandbox even for RunStatus.COMPLETED."""
         workspace_root = _sandboxed_workspace(tmp_path)
-        context = RunContext(steps=[], cwd=workspace_root, use_sandbox=True, keep=False)
+        context = RunContext(
+            steps=[], cwd=workspace_root, use_sandbox=True, keep=False, paths=_paths_for(workspace_root)
+        )
         target_dir, manager, session, _ = Workspace(context).setup()
         assert session is not None
 
@@ -389,7 +436,9 @@ class WorkspaceFinalizeCleanupTests:
     def test_completed_status_without_apply_failure_delegates_to_cleanup(self, tmp_path: Path) -> None:
         """[tier-1/integration] finalize_cleanup: RunStatus.COMPLETED with apply_failed=False removes the sandbox per Workspace.cleanup."""
         workspace_root = _sandboxed_workspace(tmp_path)
-        context = RunContext(steps=[], cwd=workspace_root, use_sandbox=True, keep=False)
+        context = RunContext(
+            steps=[], cwd=workspace_root, use_sandbox=True, keep=False, paths=_paths_for(workspace_root)
+        )
         target_dir, manager, session, _ = Workspace(context).setup()
         assert session is not None
 
@@ -406,7 +455,7 @@ class WorkspacePrepareSessionTmpDirTests:
 
     def test_no_session_id_returns_none(self, tmp_path: Path) -> None:
         """[tier-1/unit] prepare_session_tmp_dir: context.session_id=None returns None without touching disk."""
-        context = RunContext(steps=[], cwd=tmp_path, use_sandbox=False, session_id=None)
+        context = RunContext(steps=[], cwd=tmp_path, use_sandbox=False, session_id=None, paths=_paths_for(tmp_path))
         warnings: list[str] = []
 
         result = Workspace(context).prepare_session_tmp_dir(warnings)
@@ -416,12 +465,14 @@ class WorkspacePrepareSessionTmpDirTests:
 
     def test_creates_steps_subdirectory_and_returns_session_tmp_dir(self, tmp_path: Path) -> None:
         """[tier-1/unit] prepare_session_tmp_dir: creates <tmp_dir>/<session_id>/steps and returns <tmp_dir>/<session_id>."""
-        context = RunContext(steps=[], cwd=tmp_path, use_sandbox=False, session_id="session-abc")
+        context = RunContext(
+            steps=[], cwd=tmp_path, use_sandbox=False, session_id="session-abc", paths=_paths_for(tmp_path)
+        )
         warnings: list[str] = []
 
         result = Workspace(context).prepare_session_tmp_dir(warnings)
 
-        assert result == resolve_project_filesystem_paths(tmp_path).tmp_dir / "session-abc"
+        assert result == _paths_for(tmp_path).tmp_dir / "session-abc"
         assert result is not None
         assert (result / "steps").is_dir()
         assert warnings == []
@@ -430,7 +481,9 @@ class WorkspacePrepareSessionTmpDirTests:
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """[tier-1/unit] prepare_session_tmp_dir: an OSError creating the scratch directory appends a warning and returns None."""
-        context = RunContext(steps=[], cwd=tmp_path, use_sandbox=False, session_id="session-abc")
+        context = RunContext(
+            steps=[], cwd=tmp_path, use_sandbox=False, session_id="session-abc", paths=_paths_for(tmp_path)
+        )
 
         def _raise(self: Path, *args: object, **kwargs: object) -> None:
             raise OSError("disk full")
@@ -450,7 +503,7 @@ class WorkspacePrepareSessionArtifactsTests:
 
     def test_no_session_id_returns_none_none(self, tmp_path: Path) -> None:
         """[tier-1/unit] prepare_session_artifacts: context.session_id=None returns (None, None)."""
-        context = RunContext(steps=[], cwd=tmp_path, use_sandbox=False, session_id=None)
+        context = RunContext(steps=[], cwd=tmp_path, use_sandbox=False, session_id=None, paths=_paths_for(tmp_path))
 
         artifacts_dir, artifacts_db = Workspace(context).prepare_session_artifacts()
 
@@ -458,12 +511,50 @@ class WorkspacePrepareSessionArtifactsTests:
 
     def test_session_id_set_returns_artifacts_dir_and_repository(self, tmp_path: Path) -> None:
         """[tier-1/unit] prepare_session_artifacts: context.session_id set returns the resolved artifacts_dir and a bound ArtifactsRepository."""
-        context = RunContext(steps=[], cwd=tmp_path, use_sandbox=False, session_id="session-abc")
+        workspace_root = WorkspaceBuilder(tmp_path / "artifacts_workspace").with_database().build()
+        paths = _paths_for(workspace_root)
+        context = RunContext(steps=[], cwd=workspace_root, use_sandbox=False, session_id="session-abc", paths=paths)
 
         artifacts_dir, artifacts_db = Workspace(context).prepare_session_artifacts()
 
-        assert artifacts_dir == resolve_project_filesystem_paths(tmp_path).artifacts_dir
-        assert isinstance(artifacts_db, ArtifactsRepository)
+        assert artifacts_dir == context.paths.artifacts_dir
+        assert artifacts_db is not None
+        assert artifacts_db.db_path == context.paths.database_file
+        assert artifacts_db.project_id == context.paths.project_id
+
+
+class WorkspaceSinglePathResolutionTests:
+    """[tier-2/unit] Session preparation uses the RunContext path snapshot exclusively."""
+
+    def test_prepare_session_methods_use_context_paths_without_reresolving(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """All four preparation methods run without invoking the workspace-path resolver."""
+        workspace_root = WorkspaceBuilder(tmp_path / "path_snapshot_workspace").with_git().with_database().build()
+        paths = _paths_for(workspace_root)
+        context = RunContext(steps=[], cwd=workspace_root, use_sandbox=False, session_id="path-snapshot", paths=paths)
+
+        def _unexpected_resolution(*args: object, **kwargs: object) -> WorkspacePaths:
+            raise AssertionError("workspace paths must be resolved once at the command boundary")
+
+        monkeypatch.setattr("worktree.core.project.services.storage.resolve_workspace_paths", _unexpected_resolution)
+        workspace = Workspace(context)
+        warnings: list[str] = []
+        session = SandboxSession(
+            session_id="path-snapshot",
+            target_branch="main",
+            sandbox_path=workspace_root,
+            base_commit="HEAD",
+            created_at="",
+        )
+
+        assert workspace.prepare_session_tmp_dir(warnings) == paths.tmp_dir / "path-snapshot"
+        artifacts_dir, artifacts_db = workspace.prepare_session_artifacts()
+        assert artifacts_dir == paths.artifacts_dir
+        assert artifacts_db is not None
+        assert workspace.prepare_session_log_dir(warnings) == paths.logs_dir / "path-snapshot"
+        workspace.capture_and_persist_diff(session, warnings)
+        assert warnings == []
 
 
 class WorkspacePrepareSessionLogDirTests:
@@ -471,7 +562,7 @@ class WorkspacePrepareSessionLogDirTests:
 
     def test_no_session_id_returns_none(self, tmp_path: Path) -> None:
         """[tier-1/unit] prepare_session_log_dir: context.session_id=None returns None without touching disk."""
-        context = RunContext(steps=[], cwd=tmp_path, use_sandbox=False, session_id=None)
+        context = RunContext(steps=[], cwd=tmp_path, use_sandbox=False, session_id=None, paths=_paths_for(tmp_path))
         warnings: list[str] = []
 
         result = Workspace(context).prepare_session_log_dir(warnings)
@@ -481,12 +572,14 @@ class WorkspacePrepareSessionLogDirTests:
 
     def test_creates_and_returns_session_log_dir(self, tmp_path: Path) -> None:
         """[tier-1/unit] prepare_session_log_dir: creates and returns <logs_dir>/<session_id>."""
-        context = RunContext(steps=[], cwd=tmp_path, use_sandbox=False, session_id="session-abc")
+        context = RunContext(
+            steps=[], cwd=tmp_path, use_sandbox=False, session_id="session-abc", paths=_paths_for(tmp_path)
+        )
         warnings: list[str] = []
 
         result = Workspace(context).prepare_session_log_dir(warnings)
 
-        assert result == resolve_project_filesystem_paths(tmp_path).logs_dir / "session-abc"
+        assert result == _paths_for(tmp_path).logs_dir / "session-abc"
         assert result is not None
         assert result.is_dir()
         assert warnings == []
@@ -495,7 +588,9 @@ class WorkspacePrepareSessionLogDirTests:
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """[tier-1/unit] prepare_session_log_dir: an OSError creating the log directory appends a warning and returns None."""
-        context = RunContext(steps=[], cwd=tmp_path, use_sandbox=False, session_id="session-abc")
+        context = RunContext(
+            steps=[], cwd=tmp_path, use_sandbox=False, session_id="session-abc", paths=_paths_for(tmp_path)
+        )
 
         def _raise(self: Path, *args: object, **kwargs: object) -> None:
             raise OSError("disk full")
@@ -525,7 +620,7 @@ class WorkspaceCleanupSessionTmpDirTests:
         self, tmp_path: Path, session_tmp_dir_present: bool, keep: bool, status: RunStatus
     ) -> None:
         """[tier-1/unit] cleanup_session_tmp_dir: session_tmp_dir=None, keep=True, or a non-COMPLETED status all skip removal."""
-        context = RunContext(steps=[], cwd=tmp_path, use_sandbox=False)
+        context = RunContext(steps=[], cwd=tmp_path, use_sandbox=False, paths=_paths_for(tmp_path))
         session_tmp_dir = None
         if session_tmp_dir_present:
             session_tmp_dir = tmp_path / "scratch"
@@ -538,7 +633,7 @@ class WorkspaceCleanupSessionTmpDirTests:
 
     def test_completed_and_not_kept_removes_directory(self, tmp_path: Path) -> None:
         """[tier-1/unit] cleanup_session_tmp_dir: RunStatus.COMPLETED with keep=False deletes the scratch directory tree."""
-        context = RunContext(steps=[], cwd=tmp_path, use_sandbox=False)
+        context = RunContext(steps=[], cwd=tmp_path, use_sandbox=False, paths=_paths_for(tmp_path))
         session_tmp_dir = tmp_path / "scratch"
         session_tmp_dir.mkdir()
 
@@ -548,7 +643,7 @@ class WorkspaceCleanupSessionTmpDirTests:
 
     def test_removal_failure_is_swallowed(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """[tier-1/unit] cleanup_session_tmp_dir: an OSError removing the directory is swallowed, never raised."""
-        context = RunContext(steps=[], cwd=tmp_path, use_sandbox=False)
+        context = RunContext(steps=[], cwd=tmp_path, use_sandbox=False, paths=_paths_for(tmp_path))
         session_tmp_dir = tmp_path / "scratch"
         session_tmp_dir.mkdir()
 

@@ -8,7 +8,7 @@ from enum import StrEnum
 from pathlib import Path
 from typing import Any
 
-from worktree.common.filesystem import Filesystem
+from worktree.common.filesystem import WorkspacePaths
 from worktree.common.models import BaseResult
 from worktree.common.schema_validation import CONFIG_VALIDATOR
 from worktree.core.config.models import WorktreeConfig
@@ -51,32 +51,25 @@ class _CachedConfig:
 _CONFIG_CACHE: dict[Path, _CachedConfig] = {}
 
 
-def clear_config_cache(path: Path | None = None) -> None:
+def clear_config_cache(config_path: Path | None = None) -> None:
     """Explicitly clear in-memory cached configuration."""
-    if path is not None:
-        target = resolve_config_path(path=path)
-        _CONFIG_CACHE.pop(target, None)
+    if config_path is not None:
+        _CONFIG_CACHE.pop(config_path, None)
     else:
         _CONFIG_CACHE.clear()
 
 
-def resolve_config_path(
-    path: Path | None = None,
-    *,
-    config_path: Path | None = None,
-) -> Path:
+def resolve_config_path(paths: WorkspacePaths, *, config_path: Path | None = None) -> Path:
     """Return absolute path to config.json.
 
     Args:
-        path: Repository root used when ``config_path`` is omitted.
+        paths: Resolved command-invocation workspace paths.
         config_path: Explicit config path; wins when provided.
 
     Returns:
         Absolute path to the config file.
     """
-    if config_path is not None:
-        return config_path.expanduser().resolve()
-    return Filesystem(path).config_file
+    return config_path.expanduser().resolve() if config_path is not None else paths.config_file
 
 
 def _read_and_validate_disk_config(target_path: Path) -> ConfigLoadResult:
@@ -199,7 +192,7 @@ def _get_cached_config(
 
 
 def load_config(
-    path: Path | None = None,
+    paths: WorkspacePaths,
     *,
     config_path: Path | None = None,
     bypass_cache: bool = False,
@@ -210,15 +203,30 @@ def load_config(
     config files. Uses an in-memory cache validated against file modification time.
 
     Args:
-        path: Repository root for default path resolution. Defaults to CWD worktree root.
+        paths: Resolved command-invocation workspace paths.
         config_path: Explicit path override.
         bypass_cache: When True, bypasses the in-memory cache and reads disk directly.
 
     Returns:
         Classified ``ConfigLoadResult`` with absolute ``config_path``.
     """
-    target_path = resolve_config_path(path=path, config_path=config_path)
+    target_path = resolve_config_path(paths, config_path=config_path)
+    return load_config_at(target_path, bypass_cache=bypass_cache)
 
+
+def load_config_at(target_path: Path, *, bypass_cache: bool = False) -> ConfigLoadResult:
+    """Load and validate config.json at an already-resolved path, without any ambient fallback.
+
+    Primary load surface for callers that hold a concrete config file path rather
+    than a full ``WorkspacePaths`` snapshot (e.g. standalone config validation).
+
+    Args:
+        target_path: Absolute path to the config.json file to load.
+        bypass_cache: When True, bypasses the in-memory cache and reads disk directly.
+
+    Returns:
+        Classified ``ConfigLoadResult`` with absolute ``config_path``.
+    """
     path_error = _check_path_existence(target_path)
     if path_error is not None:
         return path_error
@@ -244,8 +252,8 @@ def load_config(
 
 def _map_worktree_config(raw: dict[str, Any]) -> WorktreeConfig:
     """Map a schema-valid raw dict into ``WorktreeConfig``."""
-    project_raw = raw.get("project") or {}
-    project_name = project_raw.get("name") or "unnamed_project"
+    project_raw = raw.get("project", {})
+    project_name = project_raw.get("name", "unnamed_project")
     normalized = {
         **raw,
         "project": {

@@ -23,6 +23,6 @@ def blueprint_show_command(
     Returns:
         CatalogShowResult containing record and content or errors.
     """
-    result = Catalog(path=context.cwd).show(sha_or_name, item_type=CatalogItemType.BLUEPRINT)
+    result = Catalog(context.paths).show(sha_or_name, item_type=CatalogItemType.BLUEPRINT)
     ui_dispatcher.dispatch(result, output_format=output_format)
     return result

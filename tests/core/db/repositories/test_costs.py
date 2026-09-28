@@ -16,7 +16,7 @@ from worktree.core.db.repositories.costs import CostsRepository
 def db_path(tmp_path: Path) -> Path:
     """Path to a freshly migrated, isolated SQLite database file."""
     path = tmp_path / "worktree.db"
-    init_database(db_path=path)
+    init_database(path)
     return path
 
 

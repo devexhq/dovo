@@ -9,6 +9,7 @@ from typing import Protocol, runtime_checkable
 
 from pydantic import BaseModel, Field
 
+from worktree.common.filesystem import WorkspacePaths
 from worktree.core.config.models import WorktreeConfig
 from worktree.core.db import RunStatus
 from worktree.core.db.repositories.artifacts import ArtifactsRepository
@@ -143,6 +144,7 @@ class RunContext:
     resume_from: RunCheckpoint | None = None
     auto_apply: bool = False
     config: WorktreeConfig | None = None
+    paths: WorkspacePaths = field(kw_only=True)
 
 
 @runtime_checkable

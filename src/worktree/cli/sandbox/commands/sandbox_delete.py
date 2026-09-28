@@ -27,7 +27,7 @@ def collect_sandbox_delete(
     sandbox_id: str,
 ) -> SandboxDeleteResult:
     """Load config and look up one sandbox for delete (no mutation)."""
-    return Sandbox(path=context.cwd, db=context.db.sandboxes).delete(sandbox_id)
+    return Sandbox(context.paths, db=context.db.sandboxes).delete(sandbox_id)
 
 
 def _confirm_or_abort(row: object) -> bool:
@@ -59,7 +59,7 @@ def sandbox_delete_command(
         force: When True, skip the confirmation prompt.
         output_format: Presentation format ("terminal" or "json").
     """
-    sandbox = Sandbox(path=context.cwd, db=context.db.sandboxes)
+    sandbox = Sandbox(context.paths, db=context.db.sandboxes)
     result = sandbox.delete(sandbox_id)
 
     if result.status is SandboxDeleteStatus.NOT_INITIALIZED:

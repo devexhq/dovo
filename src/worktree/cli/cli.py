@@ -31,6 +31,9 @@ from worktree.core.config import ConfigLoadError
 # Package Metadata matching our PyPI footprint
 __version__ = get_version()
 
+# Commands that must operate without a valid config (see CliContext.build's load_config param)
+NON_STRICT_CONFIG_COMMANDS = {"config", "doctor", "init", "status"}
+
 
 class WorktreeTyperGroup(TyperGroup):
     """Custom TyperGroup capturing subcommand args for context initialization."""
@@ -128,13 +131,14 @@ def main(
             MessageEvent(message="[dim yellow][TELEMETRY] Global verbose tracking layer active.[/dim yellow]")
         )
 
-    # 2. Edge validation & exclusion list
-    excluded_commands = {"config", "doctor", "init", "install", "status"}
-    if ctx.invoked_subcommand not in excluded_commands and not ctx.obj.get("is_help", False):
+    # 2. Build the shared CLI context for every real subcommand invocation
+    if not ctx.obj.get("is_help", False):
         try:
             if ctx.invoked_subcommand == "run":
-                ensure_lazy_project_init(Filesystem.configure(path))
-            ctx.obj["context"] = CliContext.build(path=path)
+                ensure_lazy_project_init(Filesystem(path))
+            ctx.obj["context"] = CliContext.build(
+                path=path, load_config=ctx.invoked_subcommand not in NON_STRICT_CONFIG_COMMANDS
+            )
         except ConfigLoadError as exc:
             ui_dispatcher.dispatch(exc.result)
             raise typer.Exit(code=1) from exc

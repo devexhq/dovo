@@ -2,8 +2,7 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
+from worktree.common.filesystem import WorkspacePaths
 from worktree.core.db import (
     SandboxesRepository,
     SandboxStatus,
@@ -15,14 +14,14 @@ from worktree.core.sandbox.models import (
 
 
 def collect_sandbox_list(
-    path: Path,
+    paths: WorkspacePaths,
     db: SandboxesRepository,
     status: str | None = None,
 ) -> SandboxListResult:
     """Reconcile stale active rows and return list data.
 
     Args:
-        path: Repository root directory.
+        paths: Resolved command-invocation workspace paths.
         db: SandboxesRepository instance.
         status: Optional status filter (active, merged, cleaned,
             conflict). Reconciliation always runs on the full row set first.
@@ -30,6 +29,9 @@ def collect_sandbox_list(
     Returns:
         Structured list result. Does not print or exit.
     """
+    if paths.project_id is None:
+        return SandboxListResult(status=SandboxListStatus.NOT_INITIALIZED, sandboxes=[])
+
     db.reconcile_stale_active()
 
     status_filter: SandboxStatus | None = None

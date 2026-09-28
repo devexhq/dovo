@@ -25,6 +25,6 @@ def config_set_command(
         value: String value from CLI to parse and store at ``key``.
         output_format: Presentation format ("terminal" or "json").
     """
-    result = Config(path=context.cwd).set(key, value)
+    result = Config(context.paths).set(key, value)
     ui_dispatcher.dispatch(result, output_format=output_format)
     return result

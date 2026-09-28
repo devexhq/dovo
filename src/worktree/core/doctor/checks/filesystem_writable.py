@@ -5,8 +5,10 @@ from __future__ import annotations
 import uuid
 from pathlib import Path
 
+from worktree.common.filesystem import WorkspacePaths
 from worktree.core.doctor.models import CheckCategory, CheckStatus, DiagnosticCheckResult, DoctorContext
-from worktree.core.project.services.storage import resolve_project_filesystem_paths
+
+NOT_INITIALIZED_WARNING = "Skipped sessions_dir/artifacts_dir probes because the workspace is not initialized."
 
 
 class FilesystemWritableCheck:
@@ -17,8 +19,9 @@ class FilesystemWritableCheck:
     category: CheckCategory = CheckCategory.FILESYSTEM
 
     def execute(self, context: DoctorContext) -> DiagnosticCheckResult:
-        """Probe-write every resolved workspace directory (plus sandboxes) under context.cwd."""
-        targets = _target_paths(context.cwd)
+        """Probe-write every resolved workspace directory (plus sandboxes) under context.paths."""
+        targets = _target_paths(context.paths)
+        not_initialized_warnings = [NOT_INITIALIZED_WARNING] if context.paths.project_id is None else []
 
         verified_paths: list[str] = []
         unwritable_paths: list[str] = []
@@ -40,7 +43,7 @@ class FilesystemWritableCheck:
                 duration_ms=0.0,
                 error_code="DOCTOR_FS_UNWRITABLE",
                 errors=[message],
-                warnings=[],
+                warnings=not_initialized_warnings,
                 fixes=[],
             )
 
@@ -54,21 +57,24 @@ class FilesystemWritableCheck:
             duration_ms=0.0,
             error_code=None,
             errors=[],
-            warnings=[],
+            warnings=not_initialized_warnings,
             fixes=[],
         )
 
 
-def _target_paths(cwd: Path) -> dict[str, Path]:
-    """Return the ordered label-to-directory mapping of paths to probe for write access."""
-    filesystem_paths = resolve_project_filesystem_paths(cwd)
-    return {
-        "root_dir": filesystem_paths.worktree_dir,
-        "sessions_dir": filesystem_paths.sessions_dir,
-        "artifacts_dir": filesystem_paths.artifacts_dir,
-        "sandboxes_dir": filesystem_paths.sandboxes_dir,
-        "database": filesystem_paths.db_file.parent,
-    }
+def _target_paths(paths: WorkspacePaths) -> dict[str, Path]:
+    """Return the ordered label-to-directory mapping of paths to probe for write access.
+
+    sessions_dir/artifacts_dir are omitted when no project identity exists, so this check
+    never mkdirs a repo-local runtime-storage placeholder for an uninitialized workspace.
+    """
+    targets: dict[str, Path] = {"root_dir": paths.worktree_dir}
+    if paths.project_id is not None:
+        targets["sessions_dir"] = paths.sessions_dir
+        targets["artifacts_dir"] = paths.artifacts_dir
+    targets["sandboxes_dir"] = paths.sandboxes_dir
+    targets["database"] = paths.database_file.parent
+    return targets
 
 
 def _is_path_writable(path: Path) -> bool:

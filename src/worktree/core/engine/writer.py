@@ -9,7 +9,7 @@ from typing import Any
 import yaml
 from pydantic import ValidationError
 
-from worktree.common.filesystem import Filesystem
+from worktree.common.filesystem import Filesystem, WorkspacePaths
 from worktree.core.blueprint import Blueprint
 from worktree.core.blueprint.exceptions import BlueprintLoadError, BlueprintValidationError
 from worktree.core.blueprint.models import BlueprintDefinition
@@ -18,7 +18,6 @@ from worktree.core.catalog.models import CatalogItemType, CatalogRecord
 from worktree.core.diff.writer import get_session_dir, write_session_diff
 from worktree.core.engine.exceptions import EngineSnapshotMissingError
 from worktree.core.engine.models import DefinitionRef, DefinitionsManifest, SessionRunPayload
-from worktree.core.project.services.storage import resolve_project_filesystem_paths
 from worktree.core.step import LoopStepBlock, StepDefinition, merge_uses_step
 
 
@@ -29,9 +28,9 @@ def write_session_run_json(session_dir: Path, payload: SessionRunPayload) -> Pat
     return target_file
 
 
-def load_session_run(path: Path, session_id: str) -> SessionRunPayload | None:
+def load_session_run(paths: WorkspacePaths, session_id: str) -> SessionRunPayload | None:
     """Load and parse project-aware session run metadata when present and valid."""
-    target_file = resolve_project_filesystem_paths(path).session_dir(session_id) / "run.json"
+    target_file = paths.session_dir(session_id) / "run.json"
     if not target_file.is_file():
         return None
     try:

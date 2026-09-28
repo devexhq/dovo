@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from pathlib import Path
 
+from worktree.common.filesystem import WorkspacePaths
 from worktree.core.blueprint import BlueprintRunResult
 from worktree.core.catalog import Catalog
 from worktree.core.db import RunsRepository
@@ -21,7 +21,7 @@ from worktree.core.runtime import (
 class BlueprintResumeService:
     """Service encapsulating the paused session resume lifecycle."""
 
-    path: Path
+    paths: WorkspacePaths
     db: RunsRepository
     session_id: str | None = None
     no_tty: bool = False
@@ -35,10 +35,10 @@ class BlueprintResumeService:
         if resolve_error is not None or not target_session_id:
             return fail(self.warnings, resolve_error or "No paused session found to resume.")
 
-        catalog = Catalog(path=self.path)
+        catalog = Catalog(self.paths)
 
         try:
-            run_outcome = Engine(self.path, db=self.db, catalog=catalog).resume(
+            run_outcome = Engine(self.paths, db=self.db, catalog=catalog).resume(
                 target_session_id,
                 observer=self.observer,
                 failure_prompter=self.failure_prompter,

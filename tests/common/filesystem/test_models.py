@@ -2,11 +2,17 @@
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
 
-from worktree.common.filesystem.models import FilesystemPaths, GlobalPaths
+from worktree.common.filesystem.models import GlobalPaths, RepositoryPaths, WorkspacePaths
+from worktree.common.filesystem.services.paths import get_catalog_templates_dir
+from worktree.core.catalog.models import CatalogTier
+from worktree.core.project.models import ProjectIdentity
+from worktree.core.project.services.identity import save_project_identity
+from worktree.core.project.services.storage import resolve_workspace_paths
 
 
 class GlobalPathsTests:
@@ -27,34 +33,181 @@ class GlobalPathsTests:
         assert paths.storage_dir == expected_root / "storage"
 
 
-class FilesystemPathsTests:
-    """Contract tests for project-aware workspace runtime paths."""
+class RepositoryPathsTests:
+    """Contract tests for repository-local path discovery."""
 
-    def test_from_root_with_project_id_routes_runtime_paths_to_global_project_storage(
-        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-    ) -> None:
-        """A project ID routes runtime paths globally while keeping sandboxes local."""
-        global_root = tmp_path / "global"
-        monkeypatch.setenv("WORKTREE_HOME", str(global_root))
+    def test_from_root_derives_repository_local_paths(self, tmp_path: Path) -> None:
+        """[tier-1/unit] RepositoryPaths.from_root: derives every repo-local child path under .worktree/, and the real .lock filename."""
+        repo_root = tmp_path / "repository"
 
-        paths = FilesystemPaths.from_root(tmp_path / "repository", project_id="project-626")
+        paths = RepositoryPaths.from_root(repo_root)
 
-        project_storage = global_root / "storage" / "projects" / "project-626"
-        assert paths.sessions_dir == project_storage / "sessions"
-        assert paths.artifacts_dir == project_storage / "artifacts"
-        assert paths.logs_dir == project_storage / "logs"
-        assert paths.tmp_dir == project_storage / "tmp"
-        assert paths.sandboxes_dir == tmp_path / "repository" / ".worktree" / "sandboxes"
-        assert paths.project_storage_dir() == project_storage
-
-    def test_from_root_without_project_id_keeps_all_runtime_paths_repository_local(self, tmp_path: Path) -> None:
-        """No project ID keeps every runtime path under the repository workspace."""
-        paths = FilesystemPaths.from_root(tmp_path / "repository")
-
-        worktree_dir = tmp_path / "repository" / ".worktree"
-        assert paths.sessions_dir == worktree_dir / "sessions"
-        assert paths.artifacts_dir == worktree_dir / "artifacts"
-        assert paths.logs_dir == worktree_dir / "logs"
-        assert paths.tmp_dir == worktree_dir / "tmp"
+        worktree_dir = repo_root / ".worktree"
+        assert paths.root_dir == repo_root
+        assert paths.worktree_dir == worktree_dir
+        assert paths.config_file == worktree_dir / "config.json"
+        assert paths.catalog_dir == worktree_dir / "catalog"
+        assert paths.catalog_steps_dir == worktree_dir / "catalog" / "steps"
+        assert paths.catalog_blueprints_dir == worktree_dir / "catalog" / "blueprints"
         assert paths.sandboxes_dir == worktree_dir / "sandboxes"
-        assert paths.project_storage_dir() is None
+        assert paths.lock_file == worktree_dir / ".lock"
+        assert paths.gitignore_file == repo_root / ".gitignore"
+
+    def test_from_root_given_worktree_dir_resolves_parent_as_root(self, tmp_path: Path) -> None:
+        """[tier-1/unit] RepositoryPaths.from_root: passing the .worktree directory itself resolves root_dir to its parent."""
+        repo_root = tmp_path / "repository"
+        worktree_dir = repo_root / ".worktree"
+
+        paths = RepositoryPaths.from_root(worktree_dir)
+
+        assert paths.root_dir == repo_root
+        assert paths.worktree_dir == worktree_dir
+
+
+def _build_workspace_paths(root: Path, global_root: Path, *, project_id: str | None = None) -> WorkspacePaths:
+    repository_paths = RepositoryPaths.from_root(root)
+    global_paths = GlobalPaths.from_root(global_root)
+    runtime_root = global_paths.storage_dir / "projects" / project_id if project_id else repository_paths.worktree_dir
+    return WorkspacePaths(
+        root_dir=repository_paths.root_dir,
+        worktree_dir=repository_paths.worktree_dir,
+        config_file=repository_paths.config_file,
+        catalog_dir=repository_paths.catalog_dir,
+        catalog_steps_dir=repository_paths.catalog_steps_dir,
+        catalog_blueprints_dir=repository_paths.catalog_blueprints_dir,
+        sandboxes_dir=repository_paths.sandboxes_dir,
+        lock_file=repository_paths.lock_file,
+        gitignore_file=repository_paths.gitignore_file,
+        catalog_templates_dir=get_catalog_templates_dir(),
+        global_paths=global_paths,
+        database_file=global_paths.data_dir / "worktree.db",
+        project_id=project_id,
+        runtime_root=runtime_root,
+        logs_dir=runtime_root / "logs",
+        sessions_dir=runtime_root / "sessions",
+        artifacts_dir=runtime_root / "artifacts",
+        tmp_dir=runtime_root / "tmp",
+    )
+
+
+@pytest.fixture
+def sample_workspace_paths(tmp_path: Path) -> WorkspacePaths:
+    return _build_workspace_paths(tmp_path / "repository", tmp_path / "global")
+
+
+@pytest.fixture
+def fixture_repo_no_identity(tmp_path: Path) -> Path:
+    """Create a repository root representing the legacy local-runtime branch."""
+    repository = tmp_path / "fixture-repository-no-identity"
+    repository.mkdir()
+    return repository
+
+
+@pytest.fixture
+def fixture_repo_with_identity(tmp_path: Path) -> Path:
+    """Create a repository root with a persisted identity for global runtime storage."""
+    repository = tmp_path / "fixture-repository-with-identity"
+    worktree_dir = repository / ".worktree"
+    worktree_dir.mkdir(parents=True)
+    identity = ProjectIdentity(id="project-626", created_at=datetime(2026, 1, 1, tzinfo=UTC))
+    save_project_identity(worktree_dir / "project.json", identity)
+    return repository
+
+
+def _resolve_fixture_workspace_paths(repository: Path) -> WorkspacePaths:
+    global_paths = GlobalPaths.from_root(repository.parent / "legacy-global-root")
+    return resolve_workspace_paths(RepositoryPaths.from_root(repository), global_paths)
+
+
+class WorkspacePathsContractTests:
+    def test_catalog_dir_for_packaged_raises_value_error(self, sample_workspace_paths: WorkspacePaths) -> None:
+        """[tier-1/unit] WorkspacePaths.catalog_dir_for(CatalogTier.PACKAGED): raises ValueError with message "Tier 'packaged' is not disk-backed and has no tier root."."""
+        with pytest.raises(ValueError, match="not disk-backed"):
+            sample_workspace_paths.catalog_dir_for(CatalogTier.PACKAGED)
+
+    @pytest.mark.parametrize(
+        ("tier", "expected_attr"),
+        [
+            pytest.param(CatalogTier.REPO, "catalog_dir", id="repo"),
+            pytest.param(CatalogTier.USER, "user_catalog_dir", id="user"),
+            pytest.param(CatalogTier.GLOBAL, "global_catalog_dir", id="global"),
+        ],
+    )
+    def test_catalog_dir_for_disk_backed_tiers_resolves_expected_root(
+        self, sample_workspace_paths: WorkspacePaths, tier: CatalogTier, expected_attr: str
+    ) -> None:
+        """[tier-1/unit] WorkspacePaths.catalog_dir_for: REPO/USER/GLOBAL each resolve to their real disk-backed tier root."""
+        if tier is CatalogTier.REPO:
+            expected = sample_workspace_paths.catalog_dir
+        else:
+            expected = getattr(sample_workspace_paths.global_paths, expected_attr)
+
+        assert sample_workspace_paths.catalog_dir_for(tier) == expected
+
+    def test_session_dir_and_sandbox_dir_do_not_create_directories(
+        self, sample_workspace_paths: WorkspacePaths, tmp_path: Path
+    ) -> None:
+        """[tier-1/unit] WorkspacePaths.session_dir/sandbox_dir: returned paths do not exist on disk after the call (no mkdir side effect)."""
+        session_dir = sample_workspace_paths.session_dir("sess_1")
+        sandbox_dir = sample_workspace_paths.sandbox_dir("sbx_1")
+
+        assert session_dir == sample_workspace_paths.sessions_dir / "sess_1"
+        assert sandbox_dir == sample_workspace_paths.sandboxes_dir / "sbx_1"
+        assert not session_dir.exists()
+        assert not sandbox_dir.exists()
+
+
+class WorkspacePathsParityTests:
+    def test_workspace_paths_matches_legacy_resolution_without_project_identity(
+        self, fixture_repo_no_identity: Path
+    ) -> None:
+        """[tier-2/unit] WorkspacePaths keeps the legacy local-runtime layout except for the lock filename."""
+        paths = _resolve_fixture_workspace_paths(fixture_repo_no_identity)
+        legacy_worktree_dir = fixture_repo_no_identity / ".worktree"
+        legacy_layout = {
+            "root_dir": fixture_repo_no_identity,
+            "worktree_dir": legacy_worktree_dir,
+            "config_file": legacy_worktree_dir / "config.json",
+            "catalog_dir": legacy_worktree_dir / "catalog",
+            "catalog_steps_dir": legacy_worktree_dir / "catalog" / "steps",
+            "catalog_blueprints_dir": legacy_worktree_dir / "catalog" / "blueprints",
+            "sandboxes_dir": legacy_worktree_dir / "sandboxes",
+            "gitignore_file": fixture_repo_no_identity / ".gitignore",
+            "logs_dir": legacy_worktree_dir / "logs",
+            "sessions_dir": legacy_worktree_dir / "sessions",
+            "artifacts_dir": legacy_worktree_dir / "artifacts",
+            "tmp_dir": legacy_worktree_dir / "tmp",
+        }
+
+        for field, expected_path in legacy_layout.items():
+            assert getattr(paths, field) == expected_path
+        assert paths.lock_file == legacy_worktree_dir / ".lock"
+        assert paths.lock_file != legacy_worktree_dir / "worktree.lock"
+
+    def test_workspace_paths_matches_legacy_resolution_with_project_identity(
+        self, fixture_repo_with_identity: Path
+    ) -> None:
+        """[tier-2/unit] WorkspacePaths keeps the legacy project-aware runtime layout field-for-field."""
+        paths = _resolve_fixture_workspace_paths(fixture_repo_with_identity)
+        legacy_worktree_dir = fixture_repo_with_identity / ".worktree"
+        legacy_runtime_root = paths.global_paths.storage_dir / "projects" / "project-626"
+        legacy_layout = {
+            "root_dir": fixture_repo_with_identity,
+            "worktree_dir": legacy_worktree_dir,
+            "config_file": legacy_worktree_dir / "config.json",
+            "catalog_dir": legacy_worktree_dir / "catalog",
+            "catalog_steps_dir": legacy_worktree_dir / "catalog" / "steps",
+            "catalog_blueprints_dir": legacy_worktree_dir / "catalog" / "blueprints",
+            "sandboxes_dir": legacy_worktree_dir / "sandboxes",
+            "gitignore_file": fixture_repo_with_identity / ".gitignore",
+            "runtime_root": legacy_runtime_root,
+            "logs_dir": legacy_runtime_root / "logs",
+            "sessions_dir": legacy_runtime_root / "sessions",
+            "artifacts_dir": legacy_runtime_root / "artifacts",
+            "tmp_dir": legacy_runtime_root / "tmp",
+        }
+
+        for field, expected_path in legacy_layout.items():
+            assert getattr(paths, field) == expected_path
+        assert paths.lock_file == legacy_worktree_dir / ".lock"
+        assert paths.lock_file != legacy_worktree_dir / "worktree.lock"

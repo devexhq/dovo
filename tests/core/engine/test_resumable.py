@@ -9,14 +9,22 @@ import pytest
 
 from tests.harness.builders import BlueprintBuilder, StepBuilder, WorkspaceBuilder
 from tests.harness.catalog import write_runnable_blueprint, write_runnable_step
+from worktree.common.filesystem.models import RepositoryPaths, WorkspacePaths
+from worktree.common.filesystem.services.global_root import resolve_global_paths
 from worktree.core.blueprint import Blueprint
 from worktree.core.catalog import Catalog
 from worktree.core.db import RunsRepository, RunStatus
 from worktree.core.engine import EngineResumeError, EngineResumeStatus, ResumableRun
 from worktree.core.engine.models import DefinitionsManifest, SessionRunPayload
 from worktree.core.engine.writer import get_session_dir, snapshot_definitions, write_session_run_json
+from worktree.core.project.services.storage import resolve_workspace_paths
 from worktree.core.runtime import RunCheckpoint
 from worktree.core.step.models import LoopStepBlock, StepDefinition
+
+
+def _paths_for(root: Path) -> WorkspacePaths:
+    """Resolve the WorkspacePaths snapshot for root, reflecting its current project.json."""
+    return resolve_workspace_paths(RepositoryPaths.from_root(root), resolve_global_paths(None))
 
 
 def _checkpoint(
@@ -67,9 +75,10 @@ def _seed_snapshotted_paused_run(
     checkpoint: RunCheckpoint,
 ) -> DefinitionsManifest:
     """Snapshot blueprint_key's catalog blueprint into session_id's definitions/ dir and seed a matching paused row."""
-    catalog = Catalog(workspace)
+    paths = _paths_for(workspace)
+    catalog = Catalog(paths)
     blueprint = Blueprint.load(blueprint_key, catalog=catalog)
-    session_dir = get_session_dir(workspace, session_id)
+    session_dir = get_session_dir(paths, session_id)
     warnings: list[str] = []
     manifest = snapshot_definitions(catalog, blueprint, session_dir, warnings)
     assert manifest is not None
@@ -93,12 +102,13 @@ class ResumableRunHandleTests:
 
     def test_resumable_run_load_is_resumable_with_explicit_blueprint(self, tmp_path: Path) -> None:
         workspace = WorkspaceBuilder(tmp_path / "workspace").with_database().build()
-        runs_repo = RunsRepository(workspace)
+        paths = _paths_for(workspace)
+        runs_repo = RunsRepository(db_path=paths.database_file, project_id=paths.project_id)
         blueprint, expected_steps = _task_blueprint()
         checkpoint = _checkpoint()
         _seed_paused_run(runs_repo, "task-1", checkpoint)
 
-        handle = ResumableRun.load("task-1", blueprint, path=workspace, db=runs_repo, catalog=Catalog(workspace))
+        handle = ResumableRun.load("task-1", blueprint, paths=paths, db=runs_repo, catalog=Catalog(paths))
 
         assert handle.is_resumable is True
         assert handle.status == EngineResumeStatus.OK
@@ -107,9 +117,10 @@ class ResumableRunHandleTests:
 
     def test_resumable_run_load_not_found_when_session_missing(self, tmp_path: Path) -> None:
         workspace = WorkspaceBuilder(tmp_path / "workspace").with_database().build()
-        runs_repo = RunsRepository(workspace)
+        paths = _paths_for(workspace)
+        runs_repo = RunsRepository(db_path=paths.database_file, project_id=paths.project_id)
 
-        handle = ResumableRun.load("missing", path=workspace, db=runs_repo, catalog=Catalog(workspace))
+        handle = ResumableRun.load("missing", paths=paths, db=runs_repo, catalog=Catalog(paths))
 
         assert handle.is_resumable is False
         assert handle.status == EngineResumeStatus.NOT_FOUND
@@ -126,6 +137,7 @@ class ResumableRunBlueprintResolutionTests:
         self, tmp_path: Path
     ) -> None:
         workspace = WorkspaceBuilder(tmp_path / "workspace").with_database().build()
+        paths = _paths_for(workspace)
         blueprints_dir = workspace / ".worktree" / "catalog" / "blueprints"
         blueprints_dir.mkdir(parents=True, exist_ok=True)
         raw_yaml = (
@@ -135,10 +147,10 @@ class ResumableRunBlueprintResolutionTests:
             "  - id: later\n    run: echo later\n"
         )
         (blueprints_dir / "lint.yml").write_text(raw_yaml, encoding="utf-8")
-        runs_repo = RunsRepository(workspace)
+        runs_repo = RunsRepository(db_path=paths.database_file, project_id=paths.project_id)
         _seed_paused_run(runs_repo, "task-2", _checkpoint(), name="lint")
 
-        handle = ResumableRun.load("task-2", path=workspace, db=runs_repo, catalog=Catalog(workspace))
+        handle = ResumableRun.load("task-2", paths=paths, db=runs_repo, catalog=Catalog(paths))
 
         assert handle.is_resumable is True
         assert handle.blueprint is not None
@@ -149,10 +161,11 @@ class ResumableRunBlueprintResolutionTests:
         self, tmp_path: Path
     ) -> None:
         workspace = WorkspaceBuilder(tmp_path / "workspace").with_database().build()
-        runs_repo = RunsRepository(workspace)
+        paths = _paths_for(workspace)
+        runs_repo = RunsRepository(db_path=paths.database_file, project_id=paths.project_id)
         _seed_paused_run(runs_repo, "task-3", _checkpoint(), name="missing-task")
 
-        handle = ResumableRun.load("task-3", path=workspace, db=runs_repo, catalog=Catalog(workspace))
+        handle = ResumableRun.load("task-3", paths=paths, db=runs_repo, catalog=Catalog(paths))
 
         assert handle.is_resumable is False
         assert handle.status == EngineResumeStatus.FAILED
@@ -162,12 +175,13 @@ class ResumableRunBlueprintResolutionTests:
         self, tmp_path: Path
     ) -> None:
         workspace = WorkspaceBuilder(tmp_path / "workspace").with_database().build()
-        runs_repo = RunsRepository(workspace)
+        paths = _paths_for(workspace)
+        runs_repo = RunsRepository(db_path=paths.database_file, project_id=paths.project_id)
         blueprint, _ = _task_blueprint()
         checkpoint = _checkpoint(pending_step_id="removed-step")
         _seed_paused_run(runs_repo, "task-4", checkpoint)
 
-        handle = ResumableRun.load("task-4", blueprint, path=workspace, db=runs_repo, catalog=Catalog(workspace))
+        handle = ResumableRun.load("task-4", blueprint, paths=paths, db=runs_repo, catalog=Catalog(paths))
 
         assert handle.is_resumable is False
         assert handle.status == EngineResumeStatus.CORRUPT_CHECKPOINT
@@ -175,12 +189,13 @@ class ResumableRunBlueprintResolutionTests:
 
     def test_resumable_run_load_accepts_loop_steps_in_workflow_blueprint(self, tmp_path: Path) -> None:
         workspace = WorkspaceBuilder(tmp_path / "workspace").with_database().build()
-        runs_repo = RunsRepository(workspace)
+        paths = _paths_for(workspace)
+        runs_repo = RunsRepository(db_path=paths.database_file, project_id=paths.project_id)
         blueprint, expected_steps = _task_blueprint(loop=True)
         checkpoint = _checkpoint(pending_step_id="unit")
         _seed_paused_run(runs_repo, "task-5", checkpoint)
 
-        handle = ResumableRun.load("task-5", blueprint, path=workspace, db=runs_repo, catalog=Catalog(workspace))
+        handle = ResumableRun.load("task-5", blueprint, paths=paths, db=runs_repo, catalog=Catalog(paths))
 
         assert handle.is_resumable is True
         assert handle.steps == expected_steps
@@ -202,32 +217,35 @@ class ResumableRunClassificationTests:
         self, tmp_path: Path, status: RunStatus
     ) -> None:
         workspace = WorkspaceBuilder(tmp_path / "workspace").with_database().build()
-        runs_repo = RunsRepository(workspace)
+        paths = _paths_for(workspace)
+        runs_repo = RunsRepository(db_path=paths.database_file, project_id=paths.project_id)
         runs_repo.create("task_wrong", blueprint_name="lint", blueprint_key="lint", status=status)
 
-        handle = ResumableRun.load("task_wrong", path=workspace, db=runs_repo, catalog=Catalog(workspace))
+        handle = ResumableRun.load("task_wrong", paths=paths, db=runs_repo, catalog=Catalog(paths))
 
         assert handle.status == EngineResumeStatus.WRONG_STATUS
         assert str(handle) == f"Cannot resume session 'task_wrong': status is '{status.value}' (expected paused)."
 
     def test_resumable_run_load_corrupt_checkpoint_json_is_classified_corrupt_checkpoint(self, tmp_path: Path) -> None:
         workspace = WorkspaceBuilder(tmp_path / "workspace").with_database().build()
-        runs_repo = RunsRepository(workspace)
+        paths = _paths_for(workspace)
+        runs_repo = RunsRepository(db_path=paths.database_file, project_id=paths.project_id)
         runs_repo.create("task-6", blueprint_name="lint", blueprint_key="lint", status=RunStatus.RUNNING)
         runs_repo.save_pause("task-6", "not valid json", "boom")
 
-        handle = ResumableRun.load("task-6", path=workspace, db=runs_repo, catalog=Catalog(workspace))
+        handle = ResumableRun.load("task-6", paths=paths, db=runs_repo, catalog=Catalog(paths))
 
         assert handle.is_resumable is False
         assert handle.status == EngineResumeStatus.CORRUPT_CHECKPOINT
 
     def test_resumable_run_load_missing_sandbox_path_is_classified_missing_sandbox(self, tmp_path: Path) -> None:
         workspace = WorkspaceBuilder(tmp_path / "workspace").with_database().build()
-        runs_repo = RunsRepository(workspace)
+        paths = _paths_for(workspace)
+        runs_repo = RunsRepository(db_path=paths.database_file, project_id=paths.project_id)
         checkpoint = _checkpoint(use_sandbox=True, sandbox_path=str(tmp_path / "gone"))
         _seed_paused_run(runs_repo, "task-7", checkpoint)
 
-        handle = ResumableRun.load("task-7", path=workspace, db=runs_repo, catalog=Catalog(workspace))
+        handle = ResumableRun.load("task-7", paths=paths, db=runs_repo, catalog=Catalog(paths))
 
         assert handle.is_resumable is False
         assert handle.status == EngineResumeStatus.MISSING_SANDBOX
@@ -241,7 +259,8 @@ class ResumableRunSnapshotResolutionTests:
     ) -> None:
         """ResumableRun.load: a session with a definitions manifest and matching snapshot files resolves is_resumable True even after the catalog blueprint file is deleted."""
         workspace = WorkspaceBuilder(tmp_path / "workspace").with_database().build()
-        runs_repo = RunsRepository(workspace)
+        paths = _paths_for(workspace)
+        runs_repo = RunsRepository(db_path=paths.database_file, project_id=paths.project_id)
         write_runnable_blueprint(
             workspace,
             key="snap-resume-task",
@@ -253,7 +272,7 @@ class ResumableRunSnapshotResolutionTests:
         )
         (workspace / ".worktree" / "catalog" / "blueprints" / "snap-resume-task.yml").unlink()
 
-        handle = ResumableRun.load("snap-1", path=workspace, db=runs_repo, catalog=Catalog(workspace))
+        handle = ResumableRun.load("snap-1", paths=paths, db=runs_repo, catalog=Catalog(paths))
 
         assert handle.is_resumable is True
         assert handle.status == EngineResumeStatus.OK
@@ -262,7 +281,8 @@ class ResumableRunSnapshotResolutionTests:
     def test_resumable_run_load_recursive_uses_chain_resolves_fully_from_snapshot(self, tmp_path: Path) -> None:
         """ResumableRun.load: a leaf-uses-mid-uses-root snapshot resolves handle.blueprint's step to root's concrete command with no catalog present."""
         workspace = WorkspaceBuilder(tmp_path / "workspace").with_database().build()
-        runs_repo = RunsRepository(workspace)
+        paths = _paths_for(workspace)
+        runs_repo = RunsRepository(db_path=paths.database_file, project_id=paths.project_id)
         write_runnable_step(
             workspace, key="root", definition={"id": "root", "type": "command", "command": "echo root-command"}
         )
@@ -275,7 +295,7 @@ class ResumableRunSnapshotResolutionTests:
         )
         shutil.rmtree(workspace / ".worktree" / "catalog")
 
-        handle = ResumableRun.load("snap-2", path=workspace, db=runs_repo, catalog=Catalog(workspace))
+        handle = ResumableRun.load("snap-2", paths=paths, db=runs_repo, catalog=Catalog(paths))
 
         assert handle.is_resumable is True
         assert len(handle.steps) == 1
@@ -285,16 +305,17 @@ class ResumableRunSnapshotResolutionTests:
     def test_resumable_run_load_missing_snapshot_file_is_classified_missing_snapshot(self, tmp_path: Path) -> None:
         """ResumableRun.load: a definitions manifest referencing a deleted snapshot file classifies status MISSING_SNAPSHOT with the missing path in the message."""
         workspace = WorkspaceBuilder(tmp_path / "workspace").with_database().build()
-        runs_repo = RunsRepository(workspace)
+        paths = _paths_for(workspace)
+        runs_repo = RunsRepository(db_path=paths.database_file, project_id=paths.project_id)
         write_runnable_blueprint(workspace, key="missing-snap-task", steps=[{"id": "s1", "run": "echo one"}])
         checkpoint = _checkpoint(pending_step_id="s1")
         _seed_snapshotted_paused_run(
             workspace, runs_repo, "snap-3", blueprint_key="missing-snap-task", checkpoint=checkpoint
         )
-        blueprint_snapshot = get_session_dir(workspace, "snap-3") / "definitions" / "missing-snap-task.yml"
+        blueprint_snapshot = get_session_dir(paths, "snap-3") / "definitions" / "missing-snap-task.yml"
         blueprint_snapshot.unlink()
 
-        handle = ResumableRun.load("snap-3", path=workspace, db=runs_repo, catalog=Catalog(workspace))
+        handle = ResumableRun.load("snap-3", paths=paths, db=runs_repo, catalog=Catalog(paths))
 
         assert handle.is_resumable is False
         assert handle.status == EngineResumeStatus.MISSING_SNAPSHOT
@@ -303,16 +324,17 @@ class ResumableRunSnapshotResolutionTests:
     def test_resumable_run_load_corrupt_snapshot_blueprint_is_classified_failed(self, tmp_path: Path) -> None:
         """ResumableRun.load: a hand-corrupted snapshot blueprint YAML classifies status FAILED, matching today's catalog-load failure classification."""
         workspace = WorkspaceBuilder(tmp_path / "workspace").with_database().build()
-        runs_repo = RunsRepository(workspace)
+        paths = _paths_for(workspace)
+        runs_repo = RunsRepository(db_path=paths.database_file, project_id=paths.project_id)
         write_runnable_blueprint(workspace, key="corrupt-snap-task", steps=[{"id": "s1", "run": "echo one"}])
         checkpoint = _checkpoint(pending_step_id="s1")
         _seed_snapshotted_paused_run(
             workspace, runs_repo, "snap-4", blueprint_key="corrupt-snap-task", checkpoint=checkpoint
         )
-        blueprint_snapshot = get_session_dir(workspace, "snap-4") / "definitions" / "corrupt-snap-task.yml"
+        blueprint_snapshot = get_session_dir(paths, "snap-4") / "definitions" / "corrupt-snap-task.yml"
         blueprint_snapshot.write_text("just a plain string, not a mapping\n", encoding="utf-8")
 
-        handle = ResumableRun.load("snap-4", path=workspace, db=runs_repo, catalog=Catalog(workspace))
+        handle = ResumableRun.load("snap-4", paths=paths, db=runs_repo, catalog=Catalog(paths))
 
         assert handle.is_resumable is False
         assert handle.status == EngineResumeStatus.FAILED

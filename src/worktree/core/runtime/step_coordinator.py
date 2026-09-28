@@ -175,6 +175,7 @@ class StepCoordinator:
                     session_id=self.context.session_id or "",
                     artifacts_dir=state.artifacts_dir,
                     artifacts_db=state.artifacts_db,
+                    paths=self.context.paths,
                 )
             ).run()
             safe_notify(self.context.observer, "on_step_done", idx, total, result)

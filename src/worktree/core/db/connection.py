@@ -10,16 +10,14 @@ from sqlalchemy import Engine, event
 from sqlalchemy.pool import NullPool
 from sqlmodel import Session, create_engine
 
-from worktree.common.filesystem.services.global_root import resolve_global_paths
+from worktree.common.filesystem.models import GlobalPaths
 
 DEFAULT_DB_FILENAME = "worktree.db"
 
 
-def resolve_db_path(db_filename: str = DEFAULT_DB_FILENAME) -> Path:
+def resolve_db_path(global_paths: GlobalPaths, db_filename: str = DEFAULT_DB_FILENAME) -> Path:
     """Resolve the centralized database file path under the global Worktree data directory."""
-    db_path = resolve_global_paths().data_dir / db_filename
-    db_path.parent.mkdir(parents=True, exist_ok=True)
-    return db_path
+    return global_paths.data_dir / db_filename
 
 
 def _set_sqlite_pragmas(dbapi_connection: Any, connection_record: Any) -> None:
@@ -50,7 +48,6 @@ def sqlite_url(path: Path) -> str:
 
 def get_engine(db_path: Path) -> Engine:
     """Create a SQLModel/SQLAlchemy engine configured with SQLite WAL pragmas."""
-    db_path.parent.mkdir(parents=True, exist_ok=True)
     engine = create_engine(
         sqlite_url(db_path),
         connect_args={"check_same_thread": False},

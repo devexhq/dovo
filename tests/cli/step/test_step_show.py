@@ -8,8 +8,16 @@ from pathlib import Path
 from typer.testing import CliRunner
 
 from worktree.cli import app
+from worktree.common.filesystem.models import RepositoryPaths, WorkspacePaths
+from worktree.common.filesystem.services.global_root import resolve_global_paths
 from worktree.core.catalog import Catalog
 from worktree.core.catalog.models import CatalogItemType
+from worktree.core.project.services.storage import resolve_workspace_paths
+
+
+def _paths_for(root: Path) -> WorkspacePaths:
+    """Resolve the WorkspacePaths snapshot for root, reflecting its current project.json."""
+    return resolve_workspace_paths(RepositoryPaths.from_root(root), resolve_global_paths(None))
 
 
 class StepShowCliIntegrationTests:
@@ -17,7 +25,7 @@ class StepShowCliIntegrationTests:
 
     def test_step_show_cli_renders_terminal_metadata(self, cli_runner: CliRunner, isolated_workspace: Path) -> None:
         """wt step show <name>: renders step metadata and YAML definition; exit 0."""
-        Catalog(isolated_workspace).create(CatalogItemType.STEP, "show-step")
+        Catalog(_paths_for(isolated_workspace)).create(CatalogItemType.STEP, "show-step")
 
         result = cli_runner.invoke(app, ["-p", str(isolated_workspace), "step", "show", "show-step"])
 
@@ -28,7 +36,7 @@ class StepShowCliIntegrationTests:
 
     def test_step_show_cli_renders_json(self, cli_runner: CliRunner, isolated_workspace: Path) -> None:
         """wt step show <name> --format json: envelope's item is tagged tier='repo'."""
-        Catalog(isolated_workspace).create(CatalogItemType.STEP, "json-show-step")
+        Catalog(_paths_for(isolated_workspace)).create(CatalogItemType.STEP, "json-show-step")
 
         result = cli_runner.invoke(
             app, ["-p", str(isolated_workspace), "step", "show", "json-show-step", "--format", "json"]
@@ -41,7 +49,7 @@ class StepShowCliIntegrationTests:
 
     def test_step_show_cli_scopes_to_step_type(self, cli_runner: CliRunner, isolated_workspace: Path) -> None:
         """wt step show <name>: a same-named blueprint is not returned; exits 1 not found."""
-        Catalog(isolated_workspace).create(CatalogItemType.BLUEPRINT, "shared-name")
+        Catalog(_paths_for(isolated_workspace)).create(CatalogItemType.BLUEPRINT, "shared-name")
 
         result = cli_runner.invoke(app, ["-p", str(isolated_workspace), "step", "show", "shared-name"])
 

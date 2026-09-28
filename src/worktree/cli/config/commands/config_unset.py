@@ -21,6 +21,6 @@ def config_unset_command(
         key: Dot-path key (e.g. ``agent.model`` or ``version``).
         output_format: Presentation format ("terminal" or "json").
     """
-    result = Config(path=context.cwd).unset(key)
+    result = Config(context.paths).unset(key)
     ui_dispatcher.dispatch(result, output_format=output_format)
     return result

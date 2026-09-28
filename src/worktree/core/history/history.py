@@ -2,8 +2,7 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
+from worktree.common.filesystem import WorkspacePaths
 from worktree.core.db import RunsRepository, RunStatus
 from worktree.core.engine.services.reconcile import reconcile_stale_runs
 from worktree.core.history.models import (
@@ -13,7 +12,6 @@ from worktree.core.history.models import (
     HistoryShowStatus,
 )
 from worktree.core.logs.services.read import list_session_log_files, read_run_log_events
-from worktree.core.project.services.storage import resolve_project_filesystem_paths
 from worktree.core.runtime import RunLogEvent
 
 
@@ -26,10 +24,10 @@ def _render_run_log_line(event: RunLogEvent) -> str:
 class History:
     """Unified entrypoint for execution run history inspection and retrieval."""
 
-    def __init__(self, path: Path = Path("."), db: RunsRepository | None = None) -> None:
-        self.path = path.resolve()
-        self.cwd = self.path
-        self.db = db if db is not None else RunsRepository(self.path)
+    def __init__(self, paths: WorkspacePaths, db: RunsRepository | None = None) -> None:
+        self.paths = paths
+        self.path = paths.root_dir
+        self.db = db if db is not None else RunsRepository(db_path=paths.database_file, project_id=paths.project_id)
 
     def list(
         self,
@@ -62,7 +60,7 @@ class History:
         if not include_logs:
             return HistoryShowResult(status=HistoryShowStatus.OK, session_id=session_id, run=row)
 
-        session_log_dir = resolve_project_filesystem_paths(self.path).logs_dir / session_id
+        session_log_dir = self.paths.logs_dir / session_id
         try:
             log_files = [str(p) for p in list_session_log_files(session_log_dir)]
             log_snippet = [_render_run_log_line(e) for e in read_run_log_events(session_log_dir, tail=10)]

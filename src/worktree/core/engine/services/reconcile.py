@@ -6,6 +6,7 @@ import os
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
+from worktree.common.filesystem.models import RepositoryPaths
 from worktree.common.lock import WorkspaceLock
 from worktree.core.db import RunRecord, RunsRepository, RunStatus
 from worktree.core.engine.models import ReconciliationResult
@@ -123,7 +124,7 @@ def reconcile_stale_runs(db: RunsRepository, path: Path | None = None) -> Reconc
     """Inspect and reconcile stale RUNNING run records into FAILED status."""
     try:
         runs_repo, root_dir = _resolve_runs_repo_and_root(db, path)
-        with WorkspaceLock(root_dir):
+        with WorkspaceLock(RepositoryPaths.from_root(root_dir).lock_file):
             reconciled = _reconcile_stale_records(runs_repo)
 
         warning = format_reconciliation_warning(reconciled)

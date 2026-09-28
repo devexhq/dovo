@@ -663,7 +663,7 @@ def read_verdict() -> dict[str, object]:
     if verdict not in {VERDICT_APPROVE, VERDICT_CHANGES}:
         raise RuntimeError(f"unrecognized verdict {verdict!r} in {REVIEW_JSON}")
 
-    counts = payload.get("counts") or {}
+    counts = payload.get("counts", {})
     blocking = counts.get("blocking")
     if (verdict == VERDICT_APPROVE) != (blocking == 0):
         raise RuntimeError(f"verdict {verdict} disagrees with blocking count {blocking}")

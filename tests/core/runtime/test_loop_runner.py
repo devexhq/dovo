@@ -1,13 +1,17 @@
 from __future__ import annotations
 
+import dataclasses
 from collections import Counter
 from pathlib import Path
 
 import pytest
 
+from worktree.common.filesystem.models import RepositoryPaths, WorkspacePaths
+from worktree.common.filesystem.services.global_root import resolve_global_paths
 from worktree.common.models import FailurePolicy, OnFailureSpec
 from worktree.core.db import RunStatus
 from worktree.core.db.repositories.artifacts import ArtifactsRepository
+from worktree.core.project.services.storage import resolve_workspace_paths
 from worktree.core.runtime import run_steps
 from worktree.core.runtime.failure import USER_CONTINUED_MARKER
 from worktree.core.runtime.loop_runner import LoopBlockRunner
@@ -34,6 +38,12 @@ from worktree.core.step.models import (
     StepType,
 )
 
+
+def _paths_for(root: Path) -> WorkspacePaths:
+    """Resolve the WorkspacePaths snapshot for root, reflecting its current project.json."""
+    return resolve_workspace_paths(RepositoryPaths.from_root(root), resolve_global_paths(None))
+
+
 _LOOP_EVENT_TYPES = {
     RunLogEventType.LOOP_START,
     RunLogEventType.LOOP_TURN_START,
@@ -50,8 +60,27 @@ def _coordinator_for(
 ) -> StepCoordinator:
     """Build a StepCoordinator whose RunContext carries the sub-step failure-prompt wiring under test."""
     return StepCoordinator(
-        RunContext(steps=[], cwd=tmp_path, use_sandbox=False, failure_prompter=failure_prompter, no_tty=no_tty)
+        RunContext(
+            steps=[],
+            cwd=tmp_path,
+            use_sandbox=False,
+            failure_prompter=failure_prompter,
+            no_tty=no_tty,
+            paths=_paths_for(tmp_path),
+        )
     )
+
+
+class LoopSubStepPathsIdentityTests:
+    """[tier-2/unit] Loop context copies retain the original path snapshot."""
+
+    def test_loop_coordinator_replace_carries_paths_unchanged(self, tmp_path: Path) -> None:
+        """dataclasses.replace preserves paths object identity when removing the pause store."""
+        context = RunContext(steps=[], cwd=tmp_path, use_sandbox=False, paths=_paths_for(tmp_path))
+
+        loop_context = dataclasses.replace(context, pause_store=None)
+
+        assert loop_context.paths is context.paths
 
 
 class GrantingFailurePrompter(FailurePrompter):
@@ -394,7 +423,9 @@ class LoopSubStepAutoPublishTests:
             artifacts_dir=tmp_path / "artifacts",
             artifacts_db=artifacts_repository,
         )
-        coordinator = StepCoordinator(RunContext(steps=[], cwd=tmp_path, use_sandbox=False, session_id="wf_abc123"))
+        coordinator = StepCoordinator(
+            RunContext(steps=[], cwd=tmp_path, use_sandbox=False, session_id="wf_abc123", paths=_paths_for(tmp_path))
+        )
         runner = LoopBlockRunner(
             loop=loop,
             sandbox_path=tmp_path,
@@ -732,6 +763,7 @@ class LoopSubStepPromptUserInterruptNeverPersistsCheckpointTests:
             use_sandbox=False,
             failure_prompter=_InterruptingFailurePrompter(),
             pause_store=pause_store,
+            paths=_paths_for(tmp_path),
         )
 
         outcome = run_steps(context)

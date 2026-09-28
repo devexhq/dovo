@@ -9,9 +9,11 @@ from typing import Any
 import pytest
 
 from tests.harness.builders import StepBuilder, WorkspaceBuilder
+from worktree.common.filesystem.models import RepositoryPaths, WorkspacePaths
+from worktree.common.filesystem.services.global_root import resolve_global_paths
 from worktree.common.models import FailurePolicy, OnFailureSpec
 from worktree.core.db import RunStatus
-from worktree.core.project.services.storage import resolve_project_filesystem_paths
+from worktree.core.project.services.storage import resolve_workspace_paths
 from worktree.core.runtime import (
     USER_CONTINUED_MARKER,
     ExecutionIdentity,
@@ -28,6 +30,11 @@ from worktree.core.runtime import (
 )
 from worktree.core.sandbox import Sandbox, SandboxApplyResult, SandboxApplyStatus
 from worktree.core.step.models import ConditionEvaluationResult, LoopStepBlock, StepDefinition, StepResult
+
+
+def _paths_for(root: Path) -> WorkspacePaths:
+    """Resolve the WorkspacePaths snapshot for root, reflecting its current project.json."""
+    return resolve_workspace_paths(RepositoryPaths.from_root(root), resolve_global_paths(None))
 
 
 class _RefusingFailurePrompter(FailurePrompter):
@@ -255,6 +262,7 @@ class RunStepsExecutionTests:
             ],
             cwd=tmp_path,
             use_sandbox=False,
+            paths=_paths_for(tmp_path),
         )
 
         outcome = run_steps(context)
@@ -273,7 +281,9 @@ class RunStepsExecutionTests:
         observer = _RecordingRunObserver()
         step1 = StepBuilder.command("python3 -c \"print('line 1'); print('line 2')\"").with_id("s1").build()
         step2 = StepBuilder.command("python3 -c \"import sys; sys.stderr.write('err 1\\n')\"").with_id("s2").build()
-        context = RunContext(steps=[step1, step2], cwd=tmp_path, use_sandbox=False, observer=observer)
+        context = RunContext(
+            steps=[step1, step2], cwd=tmp_path, use_sandbox=False, observer=observer, paths=_paths_for(tmp_path)
+        )
 
         outcome = run_steps(context)
 
@@ -300,6 +310,7 @@ class RunStepsExecutionTests:
             cwd=workspace,
             use_sandbox=True,
             keep=False,
+            paths=_paths_for(workspace),
         )
 
         outcome = run_steps(context)
@@ -325,12 +336,13 @@ class RunStepsDiffSessionColocationTests:
             use_sandbox=True,
             identity=ExecutionIdentity(blueprint_name="fix-tests", blueprint_key="wt/fix-tests"),
             session_id="blueprint_abcd1234",
+            paths=_paths_for(workspace),
         )
 
         outcome = run_steps(context)
 
         assert outcome.status == RunStatus.COMPLETED
-        paths = resolve_project_filesystem_paths(workspace)
+        paths = _paths_for(workspace)
         assert (paths.session_dir("blueprint_abcd1234") / "diff.patch").is_file()
         assert not (paths.session_dir("wt/fix-tests") / "diff.patch").exists()
 
@@ -342,12 +354,13 @@ class RunStepsDiffSessionColocationTests:
             cwd=workspace,
             use_sandbox=True,
             identity=ExecutionIdentity(blueprint_name="fix-tests", blueprint_key="wt/fix-tests"),
+            paths=_paths_for(workspace),
         )
 
         outcome = run_steps(context)
 
         assert outcome.status == RunStatus.COMPLETED
-        paths = resolve_project_filesystem_paths(workspace)
+        paths = _paths_for(workspace)
         assert not (paths.session_dir("wt/fix-tests") / "diff.patch").exists()
 
     def test_run_steps_abort_on_failure_stops_before_later_steps(self, tmp_path: Path) -> None:
@@ -358,6 +371,7 @@ class RunStepsDiffSessionColocationTests:
             ],
             cwd=tmp_path,
             use_sandbox=False,
+            paths=_paths_for(tmp_path),
         )
 
         outcome = run_steps(context)
@@ -385,6 +399,7 @@ class RunStepsDiffSessionColocationTests:
             ],
             cwd=tmp_path,
             use_sandbox=False,
+            paths=_paths_for(tmp_path),
         )
 
         outcome = run_steps(context)
@@ -411,6 +426,7 @@ class RunStepsDiffSessionColocationTests:
             cwd=workspace,
             use_sandbox=True,
             keep=True,
+            paths=_paths_for(workspace),
         )
 
         outcome = run_steps(context)
@@ -430,6 +446,7 @@ class RunStepsDiffSessionColocationTests:
             cwd=tmp_path,
             use_sandbox=False,
             observer=observer,
+            paths=_paths_for(tmp_path),
         )
 
         outcome = run_steps(context)
@@ -455,6 +472,7 @@ class RunStepsDiffSessionColocationTests:
             cwd=tmp_path,
             use_sandbox=False,
             observer=_InterruptingStepStartObserver(),
+            paths=_paths_for(tmp_path),
         )
 
         outcome = run_steps(context)
@@ -464,7 +482,7 @@ class RunStepsDiffSessionColocationTests:
         assert outcome.errors == ["Execution cancelled by user."]
 
     def test_run_steps_empty_step_list_returns_completed_outcome_with_no_results(self, tmp_path: Path) -> None:
-        context = RunContext(steps=[], cwd=tmp_path, use_sandbox=False)
+        context = RunContext(steps=[], cwd=tmp_path, use_sandbox=False, paths=_paths_for(tmp_path))
 
         outcome = run_steps(context)
 
@@ -478,6 +496,7 @@ class RunStepsDiffSessionColocationTests:
             steps=[StepBuilder.command("echo x").with_id("s1").build()],
             cwd=workspace,
             use_sandbox=True,
+            paths=_paths_for(workspace),
         )
 
         outcome = run_steps(context)
@@ -501,6 +520,7 @@ class RunStepsFailurePromptTests:
             cwd=tmp_path,
             use_sandbox=False,
             failure_prompter=prompter,
+            paths=_paths_for(tmp_path),
         )
 
         outcome = run_steps(context)
@@ -531,6 +551,7 @@ class RunStepsFailurePromptTests:
             cwd=tmp_path,
             use_sandbox=False,
             failure_prompter=prompter,
+            paths=_paths_for(tmp_path),
         )
 
         outcome = run_steps(context)
@@ -559,6 +580,7 @@ class RunStepsFailurePromptTests:
             cwd=tmp_path,
             use_sandbox=False,
             failure_prompter=prompter,
+            paths=_paths_for(tmp_path),
         )
 
         outcome = run_steps(context)
@@ -591,6 +613,7 @@ class RunStepsFailurePromptTests:
             use_sandbox=False,
             failure_prompter=prompter,
             **ctx_kwargs,
+            paths=_paths_for(tmp_path),
         )
 
         outcome = run_steps(context)
@@ -628,6 +651,7 @@ class RunStepsFailurePromptTests:
             cwd=tmp_path,
             use_sandbox=False,
             failure_prompter=prompter,
+            paths=_paths_for(tmp_path),
         )
 
         outcome = run_steps(context)
@@ -656,7 +680,7 @@ class RunStepsAssertFailureEscalationTests:
     def test_run_steps_assert_failure_marks_failed_with_pinned_message_format(self, tmp_path: Path) -> None:
         """[tier-1/integration] run_steps: a top-level step exiting 0 but failing assert_(output_contains='never-appears') yields RunOutcome(status=FAILED) with step_results[0]=(status='failed', exit_code=0, error_message="Step 'check' failed assertion checks:\n  [FAIL] output_contains: substring 'never-appears' not found in output"), identical to the loop sub-step contract."""
         step = StepBuilder.command("echo ok").with_id("check").assert_output_contains("never-appears").build()
-        context = RunContext(steps=[step], cwd=tmp_path, use_sandbox=False)
+        context = RunContext(steps=[step], cwd=tmp_path, use_sandbox=False, paths=_paths_for(tmp_path))
 
         outcome = run_steps(context)
 
@@ -691,6 +715,7 @@ class RunStepsPauseAndResumeTests:
             use_sandbox=False,
             failure_prompter=prompter,
             pause_store=store,
+            paths=_paths_for(tmp_path),
         )
 
         outcome = run_steps(context)
@@ -722,6 +747,7 @@ class RunStepsPauseAndResumeTests:
             use_sandbox=False,
             no_tty=True,
             pause_store=store,
+            paths=_paths_for(tmp_path),
         )
 
         outcome = run_steps(context)
@@ -754,6 +780,7 @@ class RunStepsPauseAndResumeTests:
             use_sandbox=False,
             failure_prompter=_InterruptingFailurePrompter(),
             pause_store=store,
+            paths=_paths_for(tmp_path),
         )
 
         outcome = run_steps(context)
@@ -815,6 +842,7 @@ class RunStepsPauseAndResumeTests:
             use_sandbox=False,
             failure_prompter=prompter,
             resume_from=checkpoint,
+            paths=_paths_for(tmp_path),
         )
 
         outcome = run_steps(context)
@@ -849,6 +877,7 @@ class RunStepsRobustnessTests:
             cwd=tmp_path,
             use_sandbox=False,
             observer=_ExplodingRunObserver(),
+            paths=_paths_for(tmp_path),
         )
 
         outcome = run_steps(context)
@@ -876,6 +905,7 @@ class RunStepsRobustnessTests:
             steps=[StepBuilder.command("exit 1").with_id("fail").with_on_failure(FailurePolicy.ABORT).build()],
             cwd=workspace,
             use_sandbox=True,
+            paths=_paths_for(workspace),
         )
 
         outcome = run_steps(context)
@@ -909,6 +939,7 @@ class RunStepsRobustnessTests:
             ],
             cwd=tmp_path,
             use_sandbox=False,
+            paths=_paths_for(tmp_path),
         )
 
         outcome = run_steps(context)
@@ -945,6 +976,7 @@ class RunStepsRobustnessTests:
             cwd=tmp_path,
             use_sandbox=False,
             failure_prompter=_InterruptingFailurePrompter(),
+            paths=_paths_for(tmp_path),
         )
 
         outcome = run_steps(context)
@@ -971,7 +1003,13 @@ class RunStepsRobustnessTests:
             do=[StepBuilder.command("echo p2").with_id("poll2").with_name("Poll Two").build()],
         )
         step2 = StepBuilder.command("echo done").with_id("teardown").with_name("Teardown Step").build()
-        context = RunContext(steps=[step1, loop1, loop2, step2], cwd=tmp_path, use_sandbox=False, observer=observer)
+        context = RunContext(
+            steps=[step1, loop1, loop2, step2],
+            cwd=tmp_path,
+            use_sandbox=False,
+            observer=observer,
+            paths=_paths_for(tmp_path),
+        )
 
         outcome = run_steps(context)
 
@@ -1005,6 +1043,7 @@ class RunStepsRobustnessTests:
             cwd=workspace,
             use_sandbox=True,
             auto_apply=True,
+            paths=_paths_for(workspace),
         )
 
         outcome = run_steps(context)
@@ -1031,6 +1070,7 @@ class RunStepsSessionScratchDirectoryTests:
             cwd=tmp_path,
             use_sandbox=False,
             session_id="session-abc",
+            paths=_paths_for(tmp_path),
         )
 
         outcome = run_steps(context)
@@ -1056,26 +1096,28 @@ class RunStepsSessionScratchDirectoryTests:
             use_sandbox=False,
             keep=keep,
             session_id="session-keep",
+            paths=_paths_for(tmp_path),
         )
 
         run_steps(context)
 
-        session_tmp_dir = resolve_project_filesystem_paths(tmp_path).tmp_dir / "session-keep"
+        session_tmp_dir = _paths_for(tmp_path).tmp_dir / "session-keep"
         assert session_tmp_dir.exists() is expect_preserved
 
     def test_run_steps_skips_session_scratch_directory_when_context_session_id_is_none(self, tmp_path: Path) -> None:
-        """[tier-1/integration] run_steps: with RunContext.session_id left as the default None, no subdirectory is created anywhere under resolve_project_filesystem_paths(workspace).tmp_dir, and the step's command sees WT_TEMP as unset (empty string via `echo "[$WT_TEMP]"`)."""
+        """[tier-1/integration] run_steps: with RunContext.session_id left as the default None, no subdirectory is created anywhere under _paths_for(workspace).tmp_dir, and the step's command sees WT_TEMP as unset (empty string via `echo "[$WT_TEMP]"`)."""
         context = RunContext(
             steps=[StepBuilder.command('echo "[$WT_TEMP]"').with_id("s1").build()],
             cwd=tmp_path,
             use_sandbox=False,
+            paths=_paths_for(tmp_path),
         )
 
         outcome = run_steps(context)
 
         assert outcome.status == RunStatus.COMPLETED
         _assert_step_results(outcome.step_results, [_step_result("s1", status="completed", exit_code=0, stdout="[]\n")])
-        tmp_dir = resolve_project_filesystem_paths(tmp_path).tmp_dir
+        tmp_dir = _paths_for(tmp_path).tmp_dir
         assert not tmp_dir.exists() or not any(tmp_dir.iterdir())
 
 
@@ -1093,6 +1135,7 @@ class RunStepsResumeSessionScratchDirectoryTests:
             cwd=tmp_path,
             use_sandbox=False,
             session_id=session_id,
+            paths=_paths_for(tmp_path),
         )
         first_outcome = run_steps(first_context)
         assert first_outcome.status == RunStatus.FAILED
@@ -1120,6 +1163,7 @@ class RunStepsResumeSessionScratchDirectoryTests:
             session_id=session_id,
             failure_prompter=_ScriptedFailurePrompter([FailurePromptDecision.RETRY]),
             resume_from=checkpoint,
+            paths=_paths_for(tmp_path),
         )
 
         resumed_outcome = run_steps(resume_context)
@@ -1140,6 +1184,7 @@ class RunStepsResumeSessionScratchDirectoryTests:
             cwd=tmp_path,
             use_sandbox=False,
             session_id=session_id,
+            paths=_paths_for(tmp_path),
         )
         first_outcome = run_steps(first_context)
         assert first_outcome.status == RunStatus.FAILED
@@ -1166,6 +1211,7 @@ class RunStepsResumeSessionScratchDirectoryTests:
             session_id=session_id,
             failure_prompter=_ScriptedFailurePrompter([FailurePromptDecision.RETRY]),
             resume_from=checkpoint,
+            paths=_paths_for(tmp_path),
         )
 
         resumed_outcome = run_steps(resume_context)
@@ -1184,12 +1230,13 @@ class RunStepsSessionLogDirectoryTests:
             cwd=tmp_path,
             use_sandbox=False,
             session_id="session-logs",
+            paths=_paths_for(tmp_path),
         )
 
         outcome = run_steps(context)
 
         assert outcome.status == RunStatus.COMPLETED
-        assert (resolve_project_filesystem_paths(tmp_path).logs_dir / "session-logs").is_dir()
+        assert (_paths_for(tmp_path).logs_dir / "session-logs").is_dir()
 
     def test_run_steps_skips_session_log_directory_when_context_session_id_is_none(self, tmp_path: Path) -> None:
         """[tier-1/integration] run_steps: with session_id None, logs_dir does not exist or is empty after a completed run."""
@@ -1197,12 +1244,13 @@ class RunStepsSessionLogDirectoryTests:
             steps=[StepBuilder.command("exit 0").with_id("s1").build()],
             cwd=tmp_path,
             use_sandbox=False,
+            paths=_paths_for(tmp_path),
         )
 
         outcome = run_steps(context)
 
         assert outcome.status == RunStatus.COMPLETED
-        logs_dir = resolve_project_filesystem_paths(tmp_path).logs_dir
+        logs_dir = _paths_for(tmp_path).logs_dir
         assert not logs_dir.exists() or not any(logs_dir.iterdir())
 
     def test_run_steps_session_log_directory_persists_after_completed_run(self, tmp_path: Path) -> None:
@@ -1213,11 +1261,12 @@ class RunStepsSessionLogDirectoryTests:
             use_sandbox=False,
             keep=False,
             session_id="session-persist",
+            paths=_paths_for(tmp_path),
         )
 
         outcome = run_steps(context)
 
-        paths = resolve_project_filesystem_paths(tmp_path)
+        paths = _paths_for(tmp_path)
         assert outcome.status == RunStatus.COMPLETED
         assert not (paths.tmp_dir / "session-persist").exists()
         assert (paths.logs_dir / "session-persist").is_dir()
@@ -1225,7 +1274,7 @@ class RunStepsSessionLogDirectoryTests:
 
 def _read_run_log(tmp_path: Path, session_id: str) -> list[RunLogEvent]:
     """Parse every line of a session's run.log into RunLogEvents."""
-    run_log = resolve_project_filesystem_paths(tmp_path).logs_dir / session_id / "run.log"
+    run_log = _paths_for(tmp_path).logs_dir / session_id / "run.log"
     return [RunLogEvent.model_validate_json(line) for line in run_log.read_text(encoding="utf-8").splitlines()]
 
 
@@ -1244,6 +1293,7 @@ class RunStepsRunLogTimelineTests:
             cwd=tmp_path,
             use_sandbox=False,
             session_id="session-timeline",
+            paths=_paths_for(tmp_path),
         )
 
         run_steps(context)
@@ -1263,6 +1313,7 @@ class RunStepsRunLogTimelineTests:
             cwd=tmp_path,
             use_sandbox=False,
             session_id="session-steps",
+            paths=_paths_for(tmp_path),
         )
 
         run_steps(context)
@@ -1302,6 +1353,7 @@ class RunStepsRunLogTimelineTests:
             cwd=tmp_path,
             use_sandbox=False,
             session_id="session-retry",
+            paths=_paths_for(tmp_path),
         )
 
         run_steps(context)

@@ -5,6 +5,8 @@ from pathlib import Path
 from typing import Any
 
 from worktree.common.filesystem import Filesystem
+from worktree.common.filesystem.models import RepositoryPaths, WorkspacePaths
+from worktree.common.filesystem.services.global_root import resolve_global_paths
 from worktree.core.config.models import (
     ConfigTier,
     DoctorConfig,
@@ -26,6 +28,12 @@ from worktree.core.doctor.models import (
     DoctorContext,
 )
 from worktree.core.doctor.services.registry import CheckRegistry
+from worktree.core.project.services.storage import resolve_workspace_paths
+
+
+def _paths_for(root: Path) -> WorkspacePaths:
+    """Resolve the WorkspacePaths snapshot for root, reflecting its current project.json."""
+    return resolve_workspace_paths(RepositoryPaths.from_root(root), resolve_global_paths(None))
 
 
 class DummyDoctorCheck:
@@ -65,7 +73,7 @@ class DoctorCoordinatorTests:
 
     def test_run_diagnostics_delegates_to_runner_with_registered_checks(self, tmp_path: Path) -> None:
         """[tier-2/unit] Doctor.run_diagnostics: initializes context with self.path and executes checks registered in self.registry."""
-        doctor = Doctor(tmp_path, registry=CheckRegistry())
+        doctor = Doctor(_paths_for(tmp_path), registry=CheckRegistry())
         check = DummyDoctorCheck(check_id="test.delegation", category=CheckCategory.GIT)
         doctor.registry.register(check)
 
@@ -90,7 +98,7 @@ class DoctorCoordinatorTests:
         )
         Filesystem.atomic_write_json(config_dir / "config.json", serialize_config(config))
 
-        doctor = Doctor(tmp_path, registry=CheckRegistry())
+        doctor = Doctor(_paths_for(tmp_path), registry=CheckRegistry())
         git_check = DummyDoctorCheck(check_id="git.repo", category=CheckCategory.GIT)
         doctor.registry.register(git_check)
 
@@ -114,7 +122,7 @@ class DoctorCoordinatorTests:
             config_dir / "config.json", {"version": 1, "project": {"name": "resolved-project"}}
         )
 
-        doctor = Doctor(tmp_path, registry=CheckRegistry())
+        doctor = Doctor(_paths_for(tmp_path), registry=CheckRegistry())
         git_check = DummyDoctorCheck(check_id="git.repo", category=CheckCategory.GIT)
         doctor.registry.register(git_check)
 
@@ -132,7 +140,7 @@ class DoctorCoordinatorTests:
             doctor=DoctorConfig(check_git=False),
         )
 
-        doctor = Doctor(tmp_path, registry=CheckRegistry())
+        doctor = Doctor(_paths_for(tmp_path), registry=CheckRegistry())
         git_check = DummyDoctorCheck(check_id="git.repo", category=CheckCategory.GIT)
         doctor.registry.register(git_check)
 
@@ -145,7 +153,7 @@ class DoctorCoordinatorTests:
 
     def test_run_diagnostics_propagates_category_filter(self, tmp_path: Path) -> None:
         """[tier-2/unit] Doctor.run_diagnostics: category filter argument is passed to DiagnosticRunner and filters report checks."""
-        doctor = Doctor(tmp_path, registry=CheckRegistry())
+        doctor = Doctor(_paths_for(tmp_path), registry=CheckRegistry())
         git_check = DummyDoctorCheck(check_id="git.repo", category=CheckCategory.GIT)
         config_check = DummyDoctorCheck(check_id="config.schema", category=CheckCategory.CONFIG)
         doctor.registry.register(git_check)
@@ -164,7 +172,7 @@ class DoctorDefaultRegistryTests:
 
     def test_init_without_registry_uses_default_registry_with_all_builtin_checks(self, tmp_path: Path) -> None:
         """[tier-1/unit] Doctor.__init__: called with no registry argument -> self.registry has the 6 built-in checks."""
-        doctor = Doctor(tmp_path)
+        doctor = Doctor(_paths_for(tmp_path))
 
         checks = doctor.registry.all()
 
@@ -180,7 +188,7 @@ class DoctorDefaultRegistryTests:
         """[tier-1/unit] Doctor.__init__: called with registry=CheckRegistry() -> self.registry stays that empty instance."""
         explicit_registry = CheckRegistry()
 
-        doctor = Doctor(tmp_path, registry=explicit_registry)
+        doctor = Doctor(_paths_for(tmp_path), registry=explicit_registry)
 
         assert doctor.registry is explicit_registry
         assert doctor.registry.all() == []

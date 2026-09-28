@@ -6,6 +6,7 @@ import shutil
 from datetime import UTC, datetime
 from pathlib import Path
 
+from worktree.common.filesystem.models import RepositoryPaths
 from worktree.common.lock import LockTimeoutError, WorkspaceLock
 from worktree.core.artifacts.models import ArtifactsPruneResult, ArtifactsPruneStatus, PrunedArtifact
 from worktree.core.db.models import ArtifactRecord
@@ -49,7 +50,7 @@ def prune_artifacts(
         return ArtifactsPruneResult(status=ArtifactsPruneStatus.OK, dry_run=dry_run, force=force, items=items)
 
     try:
-        with WorkspaceLock(workspace_root):
+        with WorkspaceLock(RepositoryPaths.from_root(workspace_root).lock_file):
             items = [_prune_one_artifact(record, artifacts_dir, db, dry_run=False) for record in db.list_expired(now)]
             return ArtifactsPruneResult(status=ArtifactsPruneStatus.OK, dry_run=dry_run, force=force, items=items)
     except LockTimeoutError as exc:

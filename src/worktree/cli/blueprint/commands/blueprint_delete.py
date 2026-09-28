@@ -43,6 +43,6 @@ def blueprint_delete_command(
         ui_dispatcher.dispatch(result, output_format=output_format)
         return result
 
-    result = Catalog(path=context.cwd).delete(sha_or_name)
+    result = Catalog(context.paths).delete(sha_or_name)
     ui_dispatcher.dispatch(result, output_format=output_format)
     return result

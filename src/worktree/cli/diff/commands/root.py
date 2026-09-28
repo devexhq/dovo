@@ -29,7 +29,7 @@ def diff_command(
     Returns:
         Structured DiffResult with status, errors, and warnings.
     """
-    result = Diff(path=context.cwd, raw=raw, full=full, max_lines=max_lines).inspect(session_id=session_id)
+    result = Diff(context.paths, raw=raw, full=full, max_lines=max_lines).inspect(session_id=session_id)
     if output_format == "raw" or (raw and output_format == "terminal"):
         ui_dispatcher.dispatch(result, output_format="raw")
     else:

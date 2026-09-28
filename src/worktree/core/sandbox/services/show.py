@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from worktree.common.filesystem import WorkspacePaths
 from worktree.core.db import (
     SandboxesRepository,
     SandboxStatus,
@@ -15,20 +16,27 @@ from worktree.core.sandbox.models import (
 
 
 def collect_sandbox_show(
-    path: Path,
+    paths: WorkspacePaths,
     db: SandboxesRepository,
     sandbox_id: str,
 ) -> SandboxShowResult:
     """Look up one sandbox, and reconcile a stale active row.
 
     Args:
-        path: Repository root directory.
+        paths: Resolved command-invocation workspace paths.
         db: SandboxesRepository instance.
         sandbox_id: Sandbox primary key to show.
 
     Returns:
         Structured show result. Does not print or exit.
     """
+    if paths.project_id is None:
+        return SandboxShowResult(
+            status=SandboxShowStatus.NOT_INITIALIZED,
+            errors=["Workspace is not initialized."],
+            fixes=["Run `wt init` to initialize this workspace."],
+        )
+
     row = db.get(sandbox_id)
     if row is None:
         return SandboxShowResult(

@@ -1,10 +1,12 @@
 """Unit tests for worktree.core.doctor.models."""
 
+from collections.abc import Callable
 from pathlib import Path
 
 import pytest
 from pydantic import ValidationError
 
+from worktree.common.filesystem import WorkspacePaths
 from worktree.core.config.models import ProjectConfig, WorktreeConfig
 from worktree.core.doctor.models import (
     CheckCategory,
@@ -14,6 +16,8 @@ from worktree.core.doctor.models import (
     DoctorContext,
     DoctorReport,
 )
+
+WorkspacePathsFactory = Callable[[Path, Path | None], WorkspacePaths]
 
 
 class ConformingCheck:
@@ -82,20 +86,23 @@ class DoctorModelsTests:
 
         assert result.ok is expected_ok
 
-    def test_doctor_context_extra_fields_forbidden(self, tmp_path: Path) -> None:
+    def test_doctor_context_extra_fields_forbidden(
+        self, tmp_path: Path, workspace_paths_factory: WorkspacePathsFactory
+    ) -> None:
         """[tier-1/unit] DoctorContext: instantiating with unknown keyword argument raises ValidationError."""
-        context = DoctorContext(cwd=tmp_path, config=None)
+        paths = workspace_paths_factory(tmp_path, None)
+        context = DoctorContext(cwd=tmp_path, config=None, paths=paths)
         assert context.cwd == tmp_path
         assert context.config is None
 
         # Verify strict validation forbids unknown extra fields
         with pytest.raises(ValidationError):
-            DoctorContext.model_validate({"cwd": str(tmp_path), "unknown_field": "disallowed"})
+            DoctorContext.model_validate({"cwd": str(tmp_path), "paths": paths, "unknown_field": "disallowed"})
 
-    def test_doctor_context_with_config(self, tmp_path: Path) -> None:
+    def test_doctor_context_with_config(self, tmp_path: Path, workspace_paths_factory: WorkspacePathsFactory) -> None:
         """[tier-1/unit] DoctorContext: correctly holds WorktreeConfig when provided."""
         config = WorktreeConfig(version=1, project=ProjectConfig(name="test-project"))
-        context = DoctorContext(cwd=tmp_path, config=config)
+        context = DoctorContext(cwd=tmp_path, config=config, paths=workspace_paths_factory(tmp_path, None))
 
         assert context.cwd == tmp_path
         assert context.config == config

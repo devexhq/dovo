@@ -9,9 +9,13 @@ from unittest.mock import patch
 import pytest
 
 from tests.harness import WorkspaceBuilder
+from worktree.common.filesystem import WorkspacePaths
+from worktree.common.filesystem.models import RepositoryPaths
+from worktree.common.filesystem.services.global_root import resolve_global_paths
 from worktree.core.db import SandboxesRepository, SandboxStatus
 from worktree.core.git.exceptions import GitCommandError
 from worktree.core.git.runner import GitRunner
+from worktree.core.project.services.storage import resolve_workspace_paths
 from worktree.core.sandbox import Sandbox
 from worktree.core.sandbox.models import (
     SandboxDetectionStatus,
@@ -26,15 +30,27 @@ def detector_workspace(tmp_path: Path) -> Path:
     return WorkspaceBuilder(tmp_path / "detector_ws").with_git().with_database().build()
 
 
+@pytest.fixture
+def detector_workspace_paths(detector_workspace: Path) -> WorkspacePaths:
+    """Resolve the WorkspacePaths snapshot for detector_workspace."""
+    return resolve_workspace_paths(RepositoryPaths.from_root(detector_workspace), resolve_global_paths(None))
+
+
+def _repo(paths: WorkspacePaths) -> SandboxesRepository:
+    """Build a SandboxesRepository explicitly scoped to paths."""
+    return SandboxesRepository(db_path=paths.database_file, project_id=paths.project_id)
+
+
 class SandboxDetectorBaselineTests:
     """Baseline tests for SandboxDetector on clean workspaces and active sandboxes."""
 
     def test_detect_clean_workspace_reports_zero_stale(
         self,
         detector_workspace: Path,
+        detector_workspace_paths: WorkspacePaths,
     ) -> None:
         """Clean repository with no sandboxes should return OK with 0 stale items."""
-        db = SandboxesRepository(detector_workspace)
+        db = _repo(detector_workspace_paths)
         detector = SandboxDetector(detector_workspace, db)
 
         result = detector.detect()
@@ -47,10 +63,11 @@ class SandboxDetectorBaselineTests:
     def test_active_sandbox_is_excluded_from_all_categories(
         self,
         detector_workspace: Path,
+        detector_workspace_paths: WorkspacePaths,
     ) -> None:
         """Valid active sandboxes must be recorded in active count and excluded from stale items."""
-        db = SandboxesRepository(detector_workspace)
-        manager = Sandbox(detector_workspace, db)
+        db = _repo(detector_workspace_paths)
+        manager = Sandbox(detector_workspace_paths, db)
 
         create_result = manager.create(session_id="sbx_active_123")
         assert create_result.ok
@@ -71,9 +88,10 @@ class SandboxDetectorCategoryTests:
     def test_stale_worktree_ref_is_detected(
         self,
         detector_workspace: Path,
+        detector_workspace_paths: WorkspacePaths,
     ) -> None:
         """Stale worktree administrative entries and their unattached branches should be detected."""
-        db = SandboxesRepository(detector_workspace)
+        db = _repo(detector_workspace_paths)
         target = detector_workspace / ".worktree" / "sandboxes" / "sbx_wt1"
         GitRunner.worktree_add(
             detector_workspace,
@@ -108,9 +126,10 @@ class SandboxDetectorCategoryTests:
     def test_orphaned_directories_classified_by_dirty_state_and_db_status(
         self,
         detector_workspace: Path,
+        detector_workspace_paths: WorkspacePaths,
     ) -> None:
         """Orphaned directories should be classified with their dirty state and DB reconciliation reason."""
-        db = SandboxesRepository(detector_workspace)
+        db = _repo(detector_workspace_paths)
         sandboxes_dir = detector_workspace / ".worktree" / "sandboxes"
         sandboxes_dir.mkdir(parents=True, exist_ok=True)
 
@@ -165,9 +184,10 @@ class SandboxDetectorCategoryTests:
     def test_stale_db_record_is_detected(
         self,
         detector_workspace: Path,
+        detector_workspace_paths: WorkspacePaths,
     ) -> None:
         """Active database records with missing sandbox directories should be detected."""
-        db = SandboxesRepository(detector_workspace)
+        db = _repo(detector_workspace_paths)
         missing_path = detector_workspace / ".worktree" / "sandboxes" / "sbx_missing"
         db.create(
             id="sbx_missing",
@@ -194,9 +214,10 @@ class SandboxDetectorCategoryTests:
     def test_stale_branch_is_detected(
         self,
         detector_workspace: Path,
+        detector_workspace_paths: WorkspacePaths,
     ) -> None:
         """Unattached sandbox branches matching worktree/sandbox-* should be detected."""
-        db = SandboxesRepository(detector_workspace)
+        db = _repo(detector_workspace_paths)
         branch_name = "worktree/sandbox-sbx_abandoned"
         GitRunner.run(["branch", branch_name], detector_workspace)
 
@@ -220,10 +241,11 @@ class SandboxDetectorFacadeTests:
     def test_detect_stale_sandboxes_helper_and_sandbox_facade_agree(
         self,
         detector_workspace: Path,
+        detector_workspace_paths: WorkspacePaths,
     ) -> None:
         """Helper and facade methods return equivalent results on clean workspace."""
-        db = SandboxesRepository(detector_workspace)
-        manager = Sandbox(detector_workspace, db)
+        db = _repo(detector_workspace_paths)
+        manager = Sandbox(detector_workspace_paths, db)
 
         res_helper = detect_stale_sandboxes(detector_workspace, db)
         res_manager = manager.detect()
@@ -240,9 +262,10 @@ class SandboxDetectorFailureTests:
     def test_detect_returns_git_failed_on_worktree_list_error(
         self,
         detector_workspace: Path,
+        detector_workspace_paths: WorkspacePaths,
     ) -> None:
         """When GitRunner.worktree_list fails with GitCommandError, status should be GIT_FAILED."""
-        db = SandboxesRepository(detector_workspace)
+        db = _repo(detector_workspace_paths)
         detector = SandboxDetector(detector_workspace, db)
 
         with patch.object(
@@ -260,9 +283,10 @@ class SandboxDetectorFailureTests:
     def test_detect_returns_error_on_database_failure(
         self,
         detector_workspace: Path,
+        detector_workspace_paths: WorkspacePaths,
     ) -> None:
         """When database listing fails, status should be ERROR with description."""
-        db = SandboxesRepository(detector_workspace)
+        db = _repo(detector_workspace_paths)
         detector = SandboxDetector(detector_workspace, db)
 
         with patch.object(db, "list", side_effect=RuntimeError("database locked")):

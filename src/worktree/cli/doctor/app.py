@@ -7,9 +7,6 @@ from typing import Annotated
 import typer
 
 from worktree.cli.context import CliContext
-from worktree.common.filesystem import Filesystem
-from worktree.core.config import Config
-from worktree.core.db.db import WorktreeDb
 from worktree.core.doctor import CheckCategory
 
 from .commands.root import doctor_command
@@ -40,13 +37,7 @@ def doctor_callback(
     ),
 ) -> None:
     """Run registered diagnostic checks, dispatch the report, and exit 1 when any check failed."""
-    context: CliContext | None = ctx.obj.get("context") if ctx.obj else None
-    if context is None:
-        target_path = ctx.obj.get("path") if ctx.obj else None
-        fs = Filesystem.configure(target_path)
-        Config.configure(target_path)
-        cwd = fs.root_dir
-        context = CliContext(cwd=cwd, db=WorktreeDb(path=cwd), fs=fs)
+    context: CliContext = ctx.obj["context"]
 
     categories = [category] if category is not None else None
     result = doctor_command(context, categories=categories, output_format=format)

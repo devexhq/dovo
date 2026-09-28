@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from worktree.common.filesystem import Filesystem
+from worktree.common.filesystem import Filesystem, WorkspacePaths
 from worktree.common.lock import WorkspaceLock
 from worktree.common.utils import display_path
 from worktree.core.catalog.models import CatalogItemType, CatalogItemTypeDirectory, SeedResult
@@ -41,19 +41,19 @@ def _seed_one_file(source_file: Path, target_path: Path, *, force: bool, result:
 
 def seed_catalog_templates(
     item_type: CatalogItemType,
-    path: Path,
+    paths: WorkspacePaths,
     *,
     force: bool = False,
 ) -> SeedResult:
     """Copy curated `wt/` seed files for `item_type` into `.worktree/catalog/<type>/wt/`."""
-    with WorkspaceLock(path):
+    with WorkspaceLock(paths.lock_file):
         result = SeedResult()
 
-        source_dir = Filesystem().paths.catalog_templates_dir / CatalogItemTypeDirectory[item_type.name] / "wt"
+        source_dir = paths.catalog_templates_dir / CatalogItemTypeDirectory[item_type.name] / "wt"
         if not source_dir.is_dir():
             return result
 
-        target_dir = Filesystem(path).paths.catalog_dir / CatalogItemTypeDirectory[item_type.name] / "wt"
+        target_dir = paths.catalog_dir / CatalogItemTypeDirectory[item_type.name] / "wt"
 
         for source_file in _iter_source_files(Path(str(source_dir))):
             rel_name = source_file.relative_to(Path(str(source_dir)))
@@ -64,19 +64,19 @@ def seed_catalog_templates(
 
 
 def seed_all_catalog_templates(
-    path: Path,
+    paths: WorkspacePaths,
     *,
     force: bool = False,
 ) -> SeedResult:
     """Seed curated `wt/` templates for blueprints, and steps; aggregate the results."""
-    with WorkspaceLock(path):
+    with WorkspaceLock(paths.lock_file):
         aggregate = SeedResult()
 
         for item_type in (
             CatalogItemType.BLUEPRINT,
             CatalogItemType.STEP,
         ):
-            result = seed_catalog_templates(item_type, path=path, force=force)
+            result = seed_catalog_templates(item_type, paths, force=force)
             aggregate.created_files.extend(result.created_files)
             aggregate.skipped_existing_files.extend(result.skipped_existing_files)
             aggregate.overwritten_files.extend(result.overwritten_files)

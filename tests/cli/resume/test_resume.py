@@ -12,20 +12,29 @@ from typer.testing import CliRunner
 from tests.harness.catalog import write_runnable_blueprint, write_runnable_step
 from worktree.cli import app
 from worktree.cli.ui.dispatcher import ui_dispatcher
+from worktree.common.filesystem.models import RepositoryPaths, WorkspacePaths
+from worktree.common.filesystem.services.global_root import resolve_global_paths
 from worktree.core.blueprint import Blueprint
 from worktree.core.catalog import Catalog
 from worktree.core.config.models import ConfigTier
 from worktree.core.db import RunStatus, WorktreeDb
 from worktree.core.engine.models import SessionRunPayload
 from worktree.core.engine.writer import get_session_dir, snapshot_definitions, write_session_run_json
+from worktree.core.project.services.storage import resolve_workspace_paths
 from worktree.core.runtime.models import RunCheckpoint
+
+
+def _paths_for(root: Path) -> WorkspacePaths:
+    """Resolve the WorkspacePaths snapshot for root, reflecting its current project.json."""
+    return resolve_workspace_paths(RepositoryPaths.from_root(root), resolve_global_paths(None))
 
 
 def _seed_paused_session(
     resume_workspace: Path, *, session_id: str, blueprint_key: str, pending_step_id: str, next_step_index: int
 ) -> None:
     """Insert a RUNNING run row, then a saved checkpoint that pauses it."""
-    db = WorktreeDb(path=resume_workspace)
+    paths = _paths_for(resume_workspace)
+    db = WorktreeDb(database_file=paths.database_file, project_id=paths.project_id)
     db.runs.create(
         session_id=session_id, blueprint_name=blueprint_key, blueprint_key=blueprint_key, status=RunStatus.RUNNING
     )
@@ -42,14 +51,15 @@ def _seed_snapshotted_paused_session(
     resume_workspace: Path, *, session_id: str, blueprint_key: str, pending_step_id: str, next_step_index: int
 ) -> None:
     """Snapshot blueprint_key's catalog blueprint/steps into session_id's definitions/ dir, matching Engine.run's own persistence, then seed a matching paused row."""
-    catalog = Catalog(resume_workspace)
+    paths = _paths_for(resume_workspace)
+    catalog = Catalog(paths)
     blueprint = Blueprint.load(blueprint_key, catalog=catalog)
-    session_dir = get_session_dir(resume_workspace, session_id)
+    session_dir = get_session_dir(paths, session_id)
     warnings: list[str] = []
     manifest = snapshot_definitions(catalog, blueprint, session_dir, warnings)
     assert manifest is not None
 
-    db = WorktreeDb(path=resume_workspace)
+    db = WorktreeDb(database_file=paths.database_file, project_id=paths.project_id)
     db.runs.create(
         session_id=session_id, blueprint_name=blueprint_key, blueprint_key=blueprint_key, status=RunStatus.RUNNING
     )
@@ -99,7 +109,9 @@ class ResumeCliIntegrationTests:
         result = cli_runner.invoke(app, ["-p", str(resume_workspace), "resume", "paused-session-1"])
 
         assert result.exit_code == 0
-        record = WorktreeDb(path=resume_workspace).runs.get("paused-session-1")
+        record = WorktreeDb(
+            database_file=_paths_for(resume_workspace).database_file, project_id=_paths_for(resume_workspace).project_id
+        ).runs.get("paused-session-1")
         assert record is not None
         assert record.status == RunStatus.COMPLETED
         assert (resume_workspace / "resumed.marker").exists()
@@ -189,7 +201,9 @@ class ResumeCliIntegrationTests:
         result = cli_runner.invoke(app, ["-p", str(resume_workspace), "resume", "snap-resume-1"])
 
         assert result.exit_code == 0
-        record = WorktreeDb(path=resume_workspace).runs.get("snap-resume-1")
+        record = WorktreeDb(
+            database_file=_paths_for(resume_workspace).database_file, project_id=_paths_for(resume_workspace).project_id
+        ).runs.get("snap-resume-1")
         assert record is not None
         assert record.status == RunStatus.COMPLETED
         assert (resume_workspace / "resumed.marker").exists()

@@ -25,6 +25,6 @@ def sandbox_list_command(
         status: Optional status filter validated by Typer at the CLI layer.
         output_format: Presentation format ("terminal" or "json").
     """
-    result = Sandbox(path=context.cwd, db=context.db.sandboxes).list(status=status)
+    result = Sandbox(context.paths, db=context.db.sandboxes).list(status=status)
     ui_dispatcher.dispatch(result, output_format=output_format)
     return result

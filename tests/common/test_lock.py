@@ -13,6 +13,7 @@ import pytest
 from worktree.common.lock import (
     LockTimeoutError,
     WorkspaceLock,
+    resolve_lock_file_path,
     try_acquire_file_descriptor_lock,
     unlock_file_descriptor,
 )
@@ -53,13 +54,13 @@ class WorkspaceLockTests:
 
     def test_release_when_not_locked_leaves_state_unchanged(self, tmp_path: Path) -> None:
         """Verify calling release on an unacquired or already released lock does not corrupt registry state."""
-        lock_a = WorkspaceLock(tmp_path)
+        lock_a = WorkspaceLock(resolve_lock_file_path(tmp_path))
         lock_a.release()
         assert not lock_a.is_locked
 
         with lock_a:
             assert lock_a.is_locked
-            lock_b = WorkspaceLock(tmp_path)
+            lock_b = WorkspaceLock(resolve_lock_file_path(tmp_path))
             lock_b.release()
             assert not lock_b.is_locked
             assert lock_a.is_locked
@@ -86,7 +87,7 @@ class WorkspaceLockTests:
             def on_wait_callback(path: Path, pid: str | None, timeout: float) -> None:
                 dispatched.append((path, pid, timeout))
 
-            lock = WorkspaceLock(tmp_path, timeout_seconds=0.3, on_wait=on_wait_callback)
+            lock = WorkspaceLock(resolve_lock_file_path(tmp_path), timeout_seconds=0.3, on_wait=on_wait_callback)
             assert not lock.is_locked
 
             with pytest.raises(LockTimeoutError) as exc_info:
@@ -108,9 +109,9 @@ class WorkspaceLockTests:
         child_code = f"""
 import time
 from pathlib import Path
-from worktree.common.lock import WorkspaceLock
+from worktree.common.lock import WorkspaceLock, resolve_lock_file_path
 
-lock = WorkspaceLock(Path({str(tmp_path)!r}))
+lock = WorkspaceLock(resolve_lock_file_path(Path({str(tmp_path)!r})))
 with lock:
     print("LOCKED", flush=True)
     time.sleep(0.3)
@@ -129,7 +130,7 @@ with lock:
                 line = future.result(timeout=5.0)
             assert line.strip() == "LOCKED"
 
-            parent_lock = WorkspaceLock(tmp_path, timeout_seconds=3.0)
+            parent_lock = WorkspaceLock(resolve_lock_file_path(tmp_path), timeout_seconds=3.0)
             assert not parent_lock.is_locked
 
             with parent_lock:

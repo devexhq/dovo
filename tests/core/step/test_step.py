@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from pathlib import Path
 
 import pytest
 
+from worktree.common.filesystem import WorkspacePaths
 from worktree.core.project.services.identity import generate_project_identity, save_project_identity
 from worktree.core.step import (
     Step,
@@ -46,7 +48,9 @@ class StepShorthandExpansionTests:
 class StepResolutionTests:
     """Unit tests verifying step inheritance and field overlay behavior."""
 
-    def test_resolve_step_uses_inherits_and_overlays_explicit_fields_only(self, tmp_path: Path) -> None:
+    def test_resolve_step_uses_inherits_and_overlays_explicit_fields_only(
+        self, tmp_path: Path, workspace_paths_factory: Callable[[Path, Path | None], WorkspacePaths]
+    ) -> None:
         """Inherited step overlays explicitly set fields while preserving base definition defaults."""
         steps_dir = tmp_path / ".worktree" / "catalog" / "steps"
         steps_dir.mkdir(parents=True, exist_ok=True)
@@ -73,7 +77,7 @@ class StepResolutionTests:
             "timeout_seconds": 300,
         }
 
-        resolved = resolve_step_definition(overriding, path=tmp_path)
+        resolved = resolve_step_definition(overriding, paths=workspace_paths_factory(tmp_path, None))
 
         assert resolved.id == "derived-step"
         assert resolved.name == "Derived Step Name"
@@ -83,14 +87,16 @@ class StepResolutionTests:
         assert resolved.env == {"BASE_VAR": "base", "SHARED_VAR": "overridden", "OVERRIDE_VAR": "derived"}
         assert resolved.timeout_seconds == 300
 
-    def test_step_load_by_name_via_catalog(self, tmp_path: Path) -> None:
+    def test_step_load_by_name_via_catalog(
+        self, tmp_path: Path, workspace_paths_factory: Callable[[Path, Path | None], WorkspacePaths]
+    ) -> None:
         """Step.load_by_name resolves indexed step from workspace catalog."""
         steps_dir = tmp_path / ".worktree" / "catalog" / "steps"
         steps_dir.mkdir(parents=True, exist_ok=True)
         _persist_project_identity(tmp_path)
         (steps_dir / "catalog-step.yaml").write_text("id: catalog-step\nrun: echo hello\n", encoding="utf-8")
 
-        loaded = Step.load_by_name("catalog-step", path=tmp_path)
+        loaded = Step.load_by_name("catalog-step", paths=workspace_paths_factory(tmp_path, None))
         assert loaded is not None
         assert loaded.instance.id == "catalog-step"
         assert loaded.instance.run == "echo hello"
@@ -129,7 +135,9 @@ class StepResolutionTests:
         step_obj = Step(instance=inst)
         assert step_obj.resolve() == inst
 
-    def test_resolve_step_recursive_uses(self, tmp_path: Path) -> None:
+    def test_resolve_step_recursive_uses(
+        self, tmp_path: Path, workspace_paths_factory: Callable[[Path, Path | None], WorkspacePaths]
+    ) -> None:
         """Step inheriting from another shorthand step resolves recursively."""
         steps_dir = tmp_path / ".worktree" / "catalog" / "steps"
         steps_dir.mkdir(parents=True, exist_ok=True)
@@ -138,7 +146,7 @@ class StepResolutionTests:
         (steps_dir / "mid.yaml").write_text("id: mid\nuses: root\nname: Mid Name\n", encoding="utf-8")
 
         leaf = {"id": "leaf", "uses": "mid", "name": "Leaf Name"}
-        resolved = resolve_step_definition(leaf, path=tmp_path)
+        resolved = resolve_step_definition(leaf, paths=workspace_paths_factory(tmp_path, None))
         assert resolved.id == "leaf"
         assert resolved.name == "Leaf Name"
         assert resolved.type == StepType.COMMAND
@@ -146,7 +154,7 @@ class StepResolutionTests:
 
     def test_resolve_step_without_path_raises_validation_error(self) -> None:
         """Resolving a 'uses' step without path raises StepValidationError."""
-        with pytest.raises(StepValidationError, match="without workspace path"):
+        with pytest.raises(StepValidationError, match="without workspace paths"):
             resolve_step_definition({"id": "d", "uses": "base"})
 
     def test_resolve_step_missing_shorthand_or_type_raises_validation_error(self) -> None:

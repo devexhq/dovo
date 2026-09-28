@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from worktree.common.filesystem import WorkspacePaths
 from worktree.core.blueprint import Blueprint
 from worktree.core.blueprint.exceptions import (
     BlueprintLoadError,
@@ -41,7 +42,7 @@ class ResumableRun:
         self,
         session_id: str,
         *,
-        path: Path,
+        paths: WorkspacePaths,
         status: EngineResumeStatus,
         message: str = "",
         checkpoint: RunCheckpoint | None = None,
@@ -50,8 +51,9 @@ class ResumableRun:
         blueprint: Blueprint | None = None,
     ) -> None:
         self.session_id = session_id
-        self.path = path
-        self.cwd = path
+        self.paths = paths
+        self.path = paths.root_dir
+        self.cwd = self.path
         self.status = status
         self.message = message
         self.checkpoint = checkpoint
@@ -89,22 +91,21 @@ class ResumableRun:
         session_id: str,
         blueprint: Blueprint | None = None,
         *,
-        path: Path,
+        paths: WorkspacePaths,
         db: RunsRepository | None = None,
         catalog: Catalog | None = None,
     ) -> ResumableRun:
         """Classify a session without raising. Check ``is_resumable`` before resuming."""
-        root = path.resolve()
-        runs_db = db if db is not None else RunsRepository(root)
-        cat = catalog if catalog is not None else Catalog(root)
-        return cls._classify(session_id, blueprint, root, db=runs_db, catalog=cat)
+        runs_db = db if db is not None else RunsRepository(db_path=paths.database_file, project_id=paths.project_id)
+        cat = catalog if catalog is not None else Catalog(paths)
+        return cls._classify(session_id, blueprint, paths, db=runs_db, catalog=cat)
 
     @classmethod
     def _classify(
         cls,
         session_id: str,
         blueprint: Blueprint | None,
-        path: Path,
+        paths: WorkspacePaths,
         *,
         db: RunsRepository,
         catalog: Catalog,
@@ -112,21 +113,21 @@ class ResumableRun:
         """Walk row, status, checkpoint, and blueprint checks in order."""
         row = cls._lookup_row(session_id, blueprint, db)
         if row is None:
-            return cls._rejected(session_id, path, EngineResumeStatus.NOT_FOUND, f"Session '{session_id}' not found.")
+            return cls._rejected(session_id, paths, EngineResumeStatus.NOT_FOUND, f"Session '{session_id}' not found.")
 
         if row.status != RunStatus.PAUSED:
             return cls._rejected(
                 session_id,
-                path,
+                paths,
                 EngineResumeStatus.WRONG_STATUS,
                 f"Cannot resume session '{session_id}': status is '{row.status.value}' (expected paused).",
             )
 
-        checkpoint = cls._parse_checkpoint(session_id, row.checkpoint_json, path)
+        checkpoint = cls._parse_checkpoint(session_id, row.checkpoint_json, paths)
         if isinstance(checkpoint, ResumableRun):
             return checkpoint
 
-        loaded = blueprint if blueprint is not None else cls._load_blueprint(session_id, row, path, catalog=catalog)
+        loaded = blueprint if blueprint is not None else cls._load_blueprint(session_id, row, paths, catalog=catalog)
         if isinstance(loaded, ResumableRun):
             return loaded
 
@@ -134,14 +135,14 @@ class ResumableRun:
         if checkpoint.pending_step_id not in step_ids:
             return cls._rejected(
                 session_id,
-                path,
+                paths,
                 EngineResumeStatus.CORRUPT_CHECKPOINT,
                 f"Cannot resume session '{session_id}': checkpoint is missing or corrupt.",
             )
 
         return cls(
             session_id,
-            path=path,
+            paths=paths,
             status=EngineResumeStatus.OK,
             checkpoint=checkpoint,
             steps=steps,
@@ -153,12 +154,12 @@ class ResumableRun:
     def _rejected(
         cls,
         session_id: str,
-        path: Path,
+        paths: WorkspacePaths,
         status: EngineResumeStatus,
         message: str,
     ) -> ResumableRun:
         """Build a non-resumable handle for a classification failure."""
-        return cls(session_id, path=path, status=status, message=message)
+        return cls(session_id, paths=paths, status=status, message=message)
 
     @classmethod
     def _lookup_row(
@@ -176,13 +177,13 @@ class ResumableRun:
         return row
 
     @classmethod
-    def _parse_checkpoint(cls, session_id: str, raw: str | None, path: Path) -> RunCheckpoint | ResumableRun:
+    def _parse_checkpoint(cls, session_id: str, raw: str | None, paths: WorkspacePaths) -> RunCheckpoint | ResumableRun:
         """Return a parsed checkpoint, or a rejected handle when it cannot be used."""
         checkpoint = parse_checkpoint(raw)
         if checkpoint is None:
             return cls._rejected(
                 session_id,
-                path,
+                paths,
                 EngineResumeStatus.CORRUPT_CHECKPOINT,
                 f"Cannot resume session '{session_id}': checkpoint is missing or corrupt.",
             )
@@ -196,7 +197,7 @@ class ResumableRun:
 
         return cls._rejected(
             session_id,
-            path,
+            paths,
             EngineResumeStatus.MISSING_SANDBOX,
             f"Cannot resume session '{session_id}': sandbox path '{sandbox_path}' no longer exists.",
         )
@@ -206,22 +207,22 @@ class ResumableRun:
         cls,
         session_id: str,
         row: RunRecord,
-        path: Path,
+        paths: WorkspacePaths,
         *,
         catalog: Catalog,
     ) -> Blueprint | ResumableRun:
         """Load the session's snapshot blueprint when run.json carries a definitions manifest, else the catalog blueprint."""
-        payload = load_session_run(path, session_id)
+        payload = load_session_run(paths, session_id)
         if payload is not None and payload.definitions is not None:
-            return cls._load_blueprint_from_snapshot(session_id, path, payload.definitions)
-        return cls._load_blueprint_from_catalog(session_id, row, path, catalog=catalog)
+            return cls._load_blueprint_from_snapshot(session_id, paths, payload.definitions)
+        return cls._load_blueprint_from_catalog(session_id, row, paths, catalog=catalog)
 
     @classmethod
     def _load_blueprint_from_catalog(
         cls,
         session_id: str,
         row: RunRecord,
-        path: Path,
+        paths: WorkspacePaths,
         *,
         catalog: Catalog,
     ) -> Blueprint | ResumableRun:
@@ -233,7 +234,7 @@ class ResumableRun:
         except (BlueprintNotFoundError, BlueprintLoadError, BlueprintValidationError):
             return cls._rejected(
                 session_id,
-                path,
+                paths,
                 EngineResumeStatus.FAILED,
                 f"Cannot resume session '{session_id}': blueprint '{key}' not found.",
             )
@@ -242,24 +243,24 @@ class ResumableRun:
     def _load_blueprint_from_snapshot(
         cls,
         session_id: str,
-        path: Path,
+        paths: WorkspacePaths,
         manifest: DefinitionsManifest,
     ) -> Blueprint | ResumableRun:
         """Load and resolve the session's own snapshot files, classifying missing-file and validation failures."""
-        session_dir = get_session_dir(path, session_id)
+        session_dir = get_session_dir(paths, session_id)
         try:
             return load_blueprint_from_snapshot(session_dir, manifest)
         except EngineSnapshotMissingError as exc:
             return cls._rejected(
                 session_id,
-                path,
+                paths,
                 EngineResumeStatus.MISSING_SNAPSHOT,
                 f"Cannot resume session '{session_id}': {exc}",
             )
         except (BlueprintNotFoundError, BlueprintLoadError, BlueprintValidationError) as exc:
             return cls._rejected(
                 session_id,
-                path,
+                paths,
                 EngineResumeStatus.FAILED,
                 f"Cannot resume session '{session_id}': {exc}",
             )

@@ -2,26 +2,18 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
-from worktree.common.filesystem import Filesystem
+from worktree.common.filesystem import WorkspacePaths
 from worktree.core.config.loader import ConfigLoadResult, ConfigLoadStatus, load_config
 from worktree.core.config.services.hierarchical_loader import load_hierarchical_config
 
 
-def resolve_effective_config(
-    path: Path | None = None,
-    *,
-    config_path: Path | None = None,
-) -> ConfigLoadResult:
+def resolve_effective_config(paths: WorkspacePaths) -> ConfigLoadResult:
     """Load the repo tier, then merge Global and User tier overrides on top; never raises."""
-    repo_result = load_config(path=path, config_path=config_path)
+    repo_result = load_config(paths)
     if not repo_result.ok:
         return repo_result
 
-    # Mirrors load_config's own no-arg discovery; Config.load always passes a path today.
-    repo_root = path if path is not None else Filesystem().root_dir
-    hierarchical = load_hierarchical_config(repo_root, None)
+    hierarchical = load_hierarchical_config(paths)
 
     if not hierarchical.ok or hierarchical.config is None:
         return ConfigLoadResult(

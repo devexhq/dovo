@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+from worktree.common.filesystem import WorkspacePaths
 from worktree.core.db import SandboxesRepository, SandboxRecord, SandboxStatus
 from worktree.core.git.exceptions import (
     GitPlumbingTimeoutError,
@@ -60,7 +61,7 @@ class SandboxPatch:
 
     def __init__(
         self,
-        path: Path,
+        paths: WorkspacePaths,
         db: SandboxesRepository,
         *,
         lifecycle: SandboxLifecycle | None = None,
@@ -68,13 +69,14 @@ class SandboxPatch:
         """Initialize patch service bound to repository root.
 
         Args:
-            path: Repository root directory.
+            paths: Resolved command-invocation workspace paths.
             db: Explicit SandboxesRepository instance.
             lifecycle: Optional SandboxLifecycle instance (constructed if None).
         """
-        self.path = path.expanduser().resolve()
+        self.paths = paths
+        self.path = paths.root_dir
         self.db = db
-        self.lifecycle = lifecycle or SandboxLifecycle(self.path, self.db)
+        self.lifecycle = lifecycle or SandboxLifecycle(self.paths, self.db)
 
     def _validate_for_diff(
         self,

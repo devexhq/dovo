@@ -49,26 +49,21 @@ _LOAD_STATUS_TO_VALIDATION: dict[ConfigLoadStatus, ConfigValidationStatus] = {
 }
 
 
-def validate_config_result(
-    path: Path | None = None,
-    *,
-    config_path: Path | None = None,
-) -> ConfigValidationResult:
+def validate_config_result(config_path: Path) -> ConfigValidationResult:
     """Validate config without raising.
 
     Primary validation surface for ``wt config validate``. Does not print,
     exit, create, or mutate config files.
 
     Args:
-        path: Repository root for default path resolution.
-        config_path: Explicit path override.
+        config_path: Absolute path to the config.json file to validate.
 
     Returns:
         Classified ``ConfigValidationResult`` with absolute ``config_path``.
     """
-    from worktree.core.config.loader import load_config
+    from worktree.core.config.loader import load_config_at
 
-    loaded = load_config(path=path or Path("."), config_path=config_path)
+    loaded = load_config_at(config_path)
     status = _LOAD_STATUS_TO_VALIDATION[loaded.status]
 
     if loaded.status != ConfigLoadStatus.OK:

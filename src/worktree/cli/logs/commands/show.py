@@ -31,7 +31,7 @@ def logs_show_command(
     Returns:
         LogsShowResult containing run.log events or step log lines.
     """
-    result = Logs(path=context.cwd, db=context.db.runs).show(
+    result = Logs(context.paths, db=context.db.runs).show(
         session_id, step=step, attempt=attempt, stream=LogStreamFilter(stream), tail=tail
     )
     ui_dispatcher.dispatch(result, output_format=output_format)

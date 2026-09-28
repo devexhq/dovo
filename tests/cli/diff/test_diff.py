@@ -10,9 +10,18 @@ import pytest
 from typer.testing import CliRunner
 
 from worktree.cli import app
+from worktree.common.filesystem.models import RepositoryPaths, WorkspacePaths
+from worktree.common.filesystem.services.global_root import resolve_global_paths
 from worktree.core.diff.writer import get_session_dir, write_session_diff
 from worktree.core.project.models import ProjectIdentity
 from worktree.core.project.services.identity import save_project_identity
+from worktree.core.project.services.storage import resolve_workspace_paths
+
+
+def _paths_for(root: Path) -> WorkspacePaths:
+    """Resolve the WorkspacePaths snapshot for root, reflecting its current project.json."""
+    return resolve_workspace_paths(RepositoryPaths.from_root(root), resolve_global_paths(None))
+
 
 _PATCH_TEXT = (
     "diff --git a/file.txt b/file.txt\n"
@@ -30,7 +39,7 @@ def _write_session_diff(diff_workspace: Path, session_id: str) -> Path:
 
     diff_workspace is built via WorkspaceBuilder.with_database(), which now persists a project
     identity; remove it so session storage resolves to this local path rather than global
-    per-project storage (see resolve_project_filesystem_paths).
+    per-project storage (see resolve_workspace_paths).
     """
     (diff_workspace / ".worktree" / "project.json").unlink(missing_ok=True)
     session_dir = diff_workspace / ".worktree" / "sessions" / session_id
@@ -44,7 +53,7 @@ def _write_global_session_diff(diff_workspace: Path, session_id: str) -> Path:
     """Persist an identified project's patch in selected global session storage."""
     identity = ProjectIdentity(id="project-626", created_at=datetime(2026, 1, 1, tzinfo=UTC))
     save_project_identity(diff_workspace / ".worktree" / "project.json", identity)
-    session_dir = get_session_dir(diff_workspace, session_id)
+    session_dir = get_session_dir(_paths_for(diff_workspace), session_id)
     return write_session_diff(session_dir, _PATCH_TEXT)
 
 

@@ -10,6 +10,8 @@ import pytest
 from tests.harness.builders import BlueprintBuilder, StepBuilder
 from tests.harness.catalog import write_runnable_blueprint, write_runnable_step
 from worktree.common.filesystem import Filesystem
+from worktree.common.filesystem.models import RepositoryPaths, WorkspacePaths
+from worktree.common.filesystem.services.global_root import resolve_global_paths
 from worktree.core.blueprint import Blueprint
 from worktree.core.catalog import Catalog
 from worktree.core.diff.writer import get_session_dir
@@ -17,6 +19,12 @@ from worktree.core.engine.models import SessionRunPayload
 from worktree.core.engine.writer import load_session_run, snapshot_definitions, write_session_run_json
 from worktree.core.project.models import ProjectIdentity
 from worktree.core.project.services.identity import save_project_identity
+from worktree.core.project.services.storage import resolve_workspace_paths
+
+
+def _paths_for(root: Path) -> WorkspacePaths:
+    """Resolve the WorkspacePaths snapshot for root, reflecting its current project.json."""
+    return resolve_workspace_paths(RepositoryPaths.from_root(root), resolve_global_paths(None))
 
 
 class SessionRunWriterTests:
@@ -43,12 +51,13 @@ class SessionRunWriterTests:
         )
         monkeypatch.setenv("WORKTREE_HOME", str(global_root))
         save_project_identity(repository / ".worktree" / "project.json", identity)
-        write_session_run_json(get_session_dir(repository, "session-626"), global_payload)
+        repo_paths = _paths_for(repository)
+        write_session_run_json(get_session_dir(repo_paths, "session-626"), global_payload)
         local_session_dir = repository / ".worktree" / "sessions" / "session-626"
         local_session_dir.mkdir(parents=True)
         write_session_run_json(local_session_dir, local_payload)
 
-        payload = load_session_run(repository, "session-626")
+        payload = load_session_run(repo_paths, "session-626")
 
         assert payload == global_payload
 
@@ -61,7 +70,7 @@ class SnapshotDefinitionsTests:
         workspace = tmp_path / "workspace"
         write_runnable_step(workspace, key="lint-check", definition={"id": "lint-check", "run": "echo lint"})
         write_runnable_blueprint(workspace, key="run-def-task", steps=[{"id": "s1", "uses": "lint-check"}])
-        catalog = Catalog(workspace)
+        catalog = Catalog(_paths_for(workspace))
         blueprint = Blueprint.load("run-def-task", catalog=catalog)
         session_dir = tmp_path / "session"
         warnings: list[str] = []
@@ -84,7 +93,7 @@ class SnapshotDefinitionsTests:
         """snapshot_definitions: a blueprint with no uses: steps returns definitions.steps == [] and never creates session_dir/definitions/steps/."""
         workspace = tmp_path / "workspace"
         write_runnable_blueprint(workspace, key="no-uses-task", steps=[{"id": "s1", "run": "echo hi"}])
-        catalog = Catalog(workspace)
+        catalog = Catalog(_paths_for(workspace))
         blueprint = Blueprint.load("no-uses-task", catalog=catalog)
         session_dir = tmp_path / "session"
         warnings: list[str] = []
@@ -104,7 +113,7 @@ class SnapshotDefinitionsTests:
         write_runnable_step(workspace, key="mid", definition={"id": "mid", "uses": "root", "name": "Mid Name"})
         write_runnable_step(workspace, key="leaf", definition={"id": "leaf", "uses": "mid", "name": "Leaf Name"})
         write_runnable_blueprint(workspace, key="chain-task", steps=[{"id": "s1", "uses": "leaf"}])
-        catalog = Catalog(workspace)
+        catalog = Catalog(_paths_for(workspace))
         blueprint = Blueprint.load("chain-task", catalog=catalog)
         session_dir = tmp_path / "session"
         warnings: list[str] = []
@@ -120,7 +129,9 @@ class SnapshotDefinitionsTests:
 
     def test_snapshot_definitions_blueprint_not_catalog_backed_returns_none_with_warning(self, tmp_path: Path) -> None:
         """snapshot_definitions: a Blueprint whose key is not indexed in the catalog returns None and appends a 'not found in catalog' warning."""
-        catalog = Catalog(tmp_path / "workspace")
+        workspace = tmp_path / "workspace"
+        workspace.mkdir(parents=True, exist_ok=True)
+        catalog = Catalog(_paths_for(workspace))
         blueprint = Blueprint(
             BlueprintBuilder("no-catalog-task")
             .with_use_sandbox(False)
@@ -140,7 +151,7 @@ class SnapshotDefinitionsTests:
         """snapshot_definitions: a uses: reference with no matching catalog step returns None and appends a warning naming that step, writing no files."""
         workspace = tmp_path / "workspace"
         write_runnable_blueprint(workspace, key="missing-step-task", steps=[{"id": "s1", "uses": "ghost-step"}])
-        catalog = Catalog(workspace)
+        catalog = Catalog(_paths_for(workspace))
         blueprint = Blueprint.load("missing-step-task", catalog=catalog)
         session_dir = tmp_path / "session"
         warnings: list[str] = []

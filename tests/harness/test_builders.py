@@ -14,6 +14,7 @@ from tests.harness import (
     StepBuilder,
     WorkspaceBuilder,
 )
+from worktree.common.filesystem.services.global_root import resolve_global_paths
 from worktree.common.models import FailurePolicy, OnFailureSpec
 from worktree.core.blueprint.models import BlueprintDefaults, BlueprintDefinition
 from worktree.core.db.connection import resolve_db_path
@@ -454,7 +455,7 @@ class WorkspaceBuilderTests:
         try:
             assert workspace.is_dir()
             assert (workspace / ".worktree/config.json").is_file()
-            assert resolve_db_path().is_file()
+            assert resolve_db_path(resolve_global_paths(None)).is_file()
             assert (workspace / ".worktree/catalog").is_dir()
         finally:
             shutil.rmtree(workspace, ignore_errors=True)
@@ -462,7 +463,7 @@ class WorkspaceBuilderTests:
     def test_build_scaffolds_default_workspace_structure(self, tmp_path: Path) -> None:
         workspace = WorkspaceBuilder(tmp_path / "custom").build()
         assert (workspace / ".worktree/config.json").is_file()
-        assert resolve_db_path().is_file()
+        assert resolve_db_path(resolve_global_paths(None)).is_file()
         assert (workspace / ".worktree/catalog").is_dir()
 
     def test_with_project_name_sets_custom_name_in_config(self, tmp_path: Path) -> None:
@@ -473,7 +474,7 @@ class WorkspaceBuilderTests:
 
     def test_without_database_skips_sqlite_initialization(self, tmp_path: Path) -> None:
         WorkspaceBuilder(tmp_path / "no_db").without_database().build()
-        assert not resolve_db_path().is_file()
+        assert not resolve_db_path(resolve_global_paths(None)).is_file()
 
     def test_without_catalog_templates_skips_seeding(self, tmp_path: Path) -> None:
         workspace = WorkspaceBuilder(tmp_path / "no_catalog").without_catalog_templates().build()

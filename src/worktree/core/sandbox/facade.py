@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from worktree.common.filesystem import WorkspacePaths
 from worktree.common.lock import WorkspaceLock
 from worktree.core.config.models import WorktreeConfig
 from worktree.core.db import RunsRepository, SandboxesRepository, SandboxRecord, SandboxStatus
@@ -33,16 +34,19 @@ class Sandbox:
 
     def __init__(
         self,
-        path: Path = Path("."),
+        paths: WorkspacePaths,
         db: SandboxesRepository | None = None,
         runs_db: RunsRepository | None = None,
     ) -> None:
-        self.path = path.expanduser().resolve()
+        self.paths = paths
+        self.path = paths.root_dir
         self.cwd = self.path
-        self.db = db if db is not None else SandboxesRepository(self.path)
+        self.db = (
+            db if db is not None else SandboxesRepository(db_path=paths.database_file, project_id=paths.project_id)
+        )
         self.runs_db = runs_db
-        self.lifecycle = SandboxLifecycle(self.path, self.db)
-        self.patch = SandboxPatch(self.path, self.db, lifecycle=self.lifecycle)
+        self.lifecycle = SandboxLifecycle(self.paths, self.db)
+        self.patch = SandboxPatch(self.paths, self.db, lifecycle=self.lifecycle)
 
     @property
     def config(self) -> WorktreeConfig:
@@ -56,15 +60,15 @@ class Sandbox:
 
     def list(self, status: SandboxStatus | str | None = None) -> SandboxListResult:
         """List tracked sandboxes with lifecycle status, reconciling stale directories."""
-        return collect_sandbox_list(self.path, self.db, status)
+        return collect_sandbox_list(self.paths, self.db, status)
 
     def show(self, sandbox_id: str) -> SandboxShowResult:
         """Show details for one tracked sandbox, reconciling stale active rows."""
-        return collect_sandbox_show(self.path, self.db, sandbox_id)
+        return collect_sandbox_show(self.paths, self.db, sandbox_id)
 
     def delete(self, sandbox_id: str) -> SandboxDeleteResult:
         """Inspect sandbox row and disk state for deletion without mutating."""
-        return collect_sandbox_delete(self.path, self.db, sandbox_id=sandbox_id)
+        return collect_sandbox_delete(self.paths, self.db, sandbox_id=sandbox_id)
 
     def create(
         self,
@@ -75,7 +79,7 @@ class Sandbox:
         base_ref: str | None = None,
     ) -> SandboxCreateResult:
         """Create an isolated sandbox worktree and return structured result."""
-        with WorkspaceLock(self.path):
+        with WorkspaceLock(self.paths.lock_file):
             return self.lifecycle.create(
                 session_id=session_id,
                 include_wip=include_wip,
@@ -90,7 +94,7 @@ class Sandbox:
         force: bool = True,
     ) -> list[str]:
         """Remove worktree, delete throwaway branch, and prune."""
-        with WorkspaceLock(self.path):
+        with WorkspaceLock(self.paths.lock_file):
             return self.lifecycle.cleanup(session, force=force)
 
     def prune(
@@ -105,7 +109,7 @@ class Sandbox:
 
     def prune_git_worktrees(self) -> None:
         """Prune stale Git worktree registrations."""
-        with WorkspaceLock(self.path):
+        with WorkspaceLock(self.paths.lock_file):
             self.lifecycle.prune()
 
     def get_active(self) -> list[Path]:
@@ -123,7 +127,7 @@ class Sandbox:
         message: str | None = None,
     ) -> SandboxApplyResult:
         """Apply sandbox changes back to main workspace."""
-        with WorkspaceLock(self.path):
+        with WorkspaceLock(self.paths.lock_file):
             return self.patch.apply(
                 sandbox_id=sandbox_id,
                 strategy=strategy,

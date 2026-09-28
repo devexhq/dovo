@@ -1,9 +1,8 @@
 """Domain entrypoint coordinator for Worktree doctor diagnostics."""
 
-from pathlib import Path
-
-from worktree.core.config.facade import Config
+from worktree.common.filesystem import WorkspacePaths
 from worktree.core.config.models import WorktreeConfig
+from worktree.core.config.services.resolve import resolve_effective_config
 from worktree.core.doctor.models import (
     CheckCategory,
     DoctorContext,
@@ -16,9 +15,9 @@ from worktree.core.doctor.services.runner import DiagnosticRunner
 class Doctor:
     """Domain entrypoint coordinator for Worktree doctor diagnostics."""
 
-    def __init__(self, path: Path = Path("."), registry: CheckRegistry | None = None) -> None:
-        """Initialize the coordinator's workspace root, defaulting its check registry to the built-in check set."""
-        self.path = path.resolve()
+    def __init__(self, paths: WorkspacePaths, registry: CheckRegistry | None = None) -> None:
+        """Initialize the coordinator's workspace paths, defaulting its check registry to the built-in check set."""
+        self.paths = paths
         self.registry = registry if registry is not None else get_default_registry()
 
     def run_diagnostics(
@@ -30,13 +29,13 @@ class Doctor:
         active_config: WorktreeConfig | None = config
         if active_config is None:
             try:
-                load_result = Config(self.path).load()
+                load_result = resolve_effective_config(self.paths)
                 if load_result.ok:
                     active_config = load_result.config
             except Exception:
                 active_config = None
 
-        context = DoctorContext(cwd=self.path, config=active_config)
+        context = DoctorContext(cwd=self.paths.root_dir, config=active_config, paths=self.paths)
         runner = DiagnosticRunner(registry=self.registry)
 
         return runner.run_checks(context=context, categories=categories)

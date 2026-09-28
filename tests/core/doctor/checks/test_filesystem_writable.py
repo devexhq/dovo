@@ -1,25 +1,34 @@
 """Unit tests for worktree.core.doctor.checks.filesystem_writable."""
 
+from __future__ import annotations
+
+from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
 
+from worktree.common.filesystem import WorkspacePaths
 from worktree.core.config.models import ProjectConfig, WorktreeConfig
-from worktree.core.doctor.checks.filesystem_writable import FilesystemWritableCheck
+from worktree.core.doctor.checks.filesystem_writable import FilesystemWritableCheck, _target_paths
 from worktree.core.doctor.models import CheckCategory, CheckStatus, DoctorContext
 from worktree.core.project.models import ProjectIdentity
 from worktree.core.project.services.identity import save_project_identity
+
+WorkspacePathsFactory = Callable[[Path, Path | None], WorkspacePaths]
 
 
 class FilesystemWritableCheckTests:
     """Unit tests for FilesystemWritableCheck diagnostic outcomes."""
 
-    def test_execute_all_configured_paths_writable_returns_ok(self, tmp_path: Path) -> None:
+    def test_execute_all_configured_paths_writable_returns_ok(
+        self, tmp_path: Path, workspace_paths_factory: WorkspacePathsFactory
+    ) -> None:
         """[tier-1/unit] FilesystemWritableCheck.execute: default paths, all dirs creatable -> OK with verified_paths."""
         config = WorktreeConfig(version=1, project=ProjectConfig(name="demo"))
         check = FilesystemWritableCheck()
-        context = DoctorContext(cwd=tmp_path, config=config)
+        paths = workspace_paths_factory(tmp_path, None)
+        context = DoctorContext(cwd=tmp_path, config=config, paths=paths)
 
         result = check.execute(context)
 
@@ -30,41 +39,45 @@ class FilesystemWritableCheckTests:
         assert result.details == {
             "verified_paths": [
                 str(tmp_path / ".worktree"),
-                str(tmp_path / ".worktree/sessions"),
-                str(tmp_path / ".worktree/artifacts"),
                 str(tmp_path / ".worktree/sandboxes"),
-                str(tmp_path / ".worktree"),
+                str(paths.database_file.parent),
             ]
         }
 
-    def test_execute_readonly_directory_returns_unwritable_failure(self, tmp_path: Path) -> None:
-        """[tier-1/unit] FilesystemWritableCheck.execute: artifacts_dir pre-created read-only -> FAILED with DOCTOR_FS_UNWRITABLE."""
-        artifacts_dir = tmp_path / ".worktree" / "artifacts"
-        artifacts_dir.mkdir(parents=True, exist_ok=True)
-        artifacts_dir.chmod(0o500)
+    def test_execute_readonly_directory_returns_unwritable_failure(
+        self, tmp_path: Path, workspace_paths_factory: WorkspacePathsFactory
+    ) -> None:
+        """[tier-1/unit] FilesystemWritableCheck.execute: sandboxes_dir pre-created read-only -> FAILED with DOCTOR_FS_UNWRITABLE."""
+        sandboxes_dir = tmp_path / ".worktree" / "sandboxes"
+        sandboxes_dir.mkdir(parents=True, exist_ok=True)
+        sandboxes_dir.chmod(0o500)
         config = WorktreeConfig(version=1, project=ProjectConfig(name="demo"))
         check = FilesystemWritableCheck()
-        context = DoctorContext(cwd=tmp_path, config=config)
+        paths = workspace_paths_factory(tmp_path, None)
+        context = DoctorContext(cwd=tmp_path, config=config, paths=paths)
 
         try:
             result = check.execute(context)
         finally:
-            artifacts_dir.chmod(0o700)
+            sandboxes_dir.chmod(0o700)
 
         message = "1 configured path(s) are not writable."
         assert result.check_id == "filesystem.writable"
         assert result.category == CheckCategory.FILESYSTEM
         assert result.status == CheckStatus.FAILED
         assert result.error_code == "DOCTOR_FS_UNWRITABLE"
-        assert result.details == {"unwritable_paths": [str(artifacts_dir)]}
+        assert result.details == {"unwritable_paths": [str(sandboxes_dir)]}
         assert result.errors == [message]
 
-    def test_execute_readonly_parent_directory_returns_unwritable_failure(self, tmp_path: Path) -> None:
+    def test_execute_readonly_parent_directory_returns_unwritable_failure(
+        self, tmp_path: Path, workspace_paths_factory: WorkspacePathsFactory
+    ) -> None:
         """[tier-1/unit] FilesystemWritableCheck.execute: cwd read-only, target dirs not yet created -> mkdir raises OSError -> FAILED with DOCTOR_FS_UNWRITABLE."""
-        tmp_path.chmod(0o500)
         config = WorktreeConfig(version=1, project=ProjectConfig(name="demo"))
         check = FilesystemWritableCheck()
-        context = DoctorContext(cwd=tmp_path, config=config)
+        paths = workspace_paths_factory(tmp_path, None)
+        tmp_path.chmod(0o500)
+        context = DoctorContext(cwd=tmp_path, config=config, paths=paths)
 
         try:
             result = check.execute(context)
@@ -73,10 +86,7 @@ class FilesystemWritableCheckTests:
 
         unwritable_paths = [
             str(tmp_path / ".worktree"),
-            str(tmp_path / ".worktree/sessions"),
-            str(tmp_path / ".worktree/artifacts"),
             str(tmp_path / ".worktree/sandboxes"),
-            str(tmp_path / ".worktree"),
         ]
         message = f"{len(unwritable_paths)} configured path(s) are not writable."
         assert result.check_id == "filesystem.writable"
@@ -86,10 +96,13 @@ class FilesystemWritableCheckTests:
         assert result.details == {"unwritable_paths": unwritable_paths}
         assert result.errors == [message]
 
-    def test_execute_missing_config_falls_back_to_default_paths(self, tmp_path: Path) -> None:
+    def test_execute_missing_config_falls_back_to_default_paths(
+        self, tmp_path: Path, workspace_paths_factory: WorkspacePathsFactory
+    ) -> None:
         """[tier-1/unit] FilesystemWritableCheck.execute: context.config=None -> probes deterministic default paths."""
         check = FilesystemWritableCheck()
-        context = DoctorContext(cwd=tmp_path, config=None)
+        paths = workspace_paths_factory(tmp_path, None)
+        context = DoctorContext(cwd=tmp_path, config=None, paths=paths)
 
         result = check.execute(context)
 
@@ -100,15 +113,13 @@ class FilesystemWritableCheckTests:
         assert result.details == {
             "verified_paths": [
                 str(tmp_path / ".worktree"),
-                str(tmp_path / ".worktree/sessions"),
-                str(tmp_path / ".worktree/artifacts"),
                 str(tmp_path / ".worktree/sandboxes"),
-                str(tmp_path / ".worktree"),
+                str(paths.database_file.parent),
             ]
         }
 
     def test_execute_with_project_identity_probes_global_runtime_paths(
-        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path, workspace_paths_factory: WorkspacePathsFactory
     ) -> None:
         """An identified project probes global runtime paths and local workspace state."""
         global_root = tmp_path / "global"
@@ -116,8 +127,9 @@ class FilesystemWritableCheckTests:
         config = WorktreeConfig(version=1, project=ProjectConfig(name="demo"))
         monkeypatch.setenv("WORKTREE_HOME", str(global_root))
         save_project_identity(tmp_path / ".worktree" / "project.json", identity)
+        paths = workspace_paths_factory(tmp_path, None)
 
-        result = FilesystemWritableCheck().execute(DoctorContext(cwd=tmp_path, config=config))
+        result = FilesystemWritableCheck().execute(DoctorContext(cwd=tmp_path, config=config, paths=paths))
 
         project_storage = global_root / "storage" / "projects" / "project-626"
         assert result.status == CheckStatus.OK
@@ -127,8 +139,27 @@ class FilesystemWritableCheckTests:
                 str(project_storage / "sessions"),
                 str(project_storage / "artifacts"),
                 str(tmp_path / ".worktree" / "sandboxes"),
-                str(tmp_path / ".worktree"),
+                str(paths.database_file.parent),
             ]
         }
+        assert not (tmp_path / ".worktree" / "sessions").exists()
+        assert not (tmp_path / ".worktree" / "artifacts").exists()
+
+
+class DoctorFilesystemWritableNotInitializedTests:
+    """[tier-1/unit] FilesystemWritableCheck._target_paths: paths.project_id is None -> NFR-5 write-side gate."""
+
+    def test_sessions_and_artifacts_probes_skipped_when_no_project_identity(
+        self, tmp_path: Path, workspace_paths_factory: WorkspacePathsFactory
+    ) -> None:
+        """[tier-1/unit] FilesystemWritableCheck._target_paths: paths.project_id is None -> "sessions_dir" and "artifacts_dir" are absent from the returned dict; no directory is created under .worktree/sessions or .worktree/artifacts by execute()."""
+        paths = workspace_paths_factory(tmp_path, None)
+        assert paths.project_id is None
+        context = DoctorContext(cwd=tmp_path, config=None, paths=paths)
+
+        result = FilesystemWritableCheck().execute(context)
+
+        assert result.status == CheckStatus.OK
+        assert set(_target_paths(paths)) == {"root_dir", "sandboxes_dir", "database"}
         assert not (tmp_path / ".worktree" / "sessions").exists()
         assert not (tmp_path / ".worktree" / "artifacts").exists()

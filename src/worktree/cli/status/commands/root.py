@@ -19,9 +19,9 @@ def status_command(
         context: CLI context instance.
         output_format: Presentation format ("terminal" or "json").
     """
-    reconciliation_result = reconcile_stale_runs(context.db.runs, path=context.cwd)
+    reconciliation_result = reconcile_stale_runs(context.db.runs, path=context.paths.root_dir)
 
-    result = Status(context.cwd).collect()
+    result = Status(context.paths).collect()
 
     if reconciliation_result.warning and reconciliation_result.warning not in result.warnings:
         result.warnings.insert(0, reconciliation_result.warning)

@@ -25,16 +25,6 @@ class ConfigValidationView(BaseModel):
     fixes: list[str] = Field(default_factory=list)
 
 
-class ConfigShowView(BaseModel):
-    """Semantic view of effective Worktree configuration."""
-
-    model_config = {"extra": "forbid", "strict": True}
-
-    config_path: Path
-    status: str = "valid"
-    config: WorktreeConfig
-
-
 class ConfigSetView(BaseModel):
     """Semantic view of configuration mutation results."""
 

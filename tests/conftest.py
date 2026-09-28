@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import subprocess
-from collections.abc import Callable, Generator
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -12,10 +12,11 @@ import pytest
 from typer.testing import CliRunner
 
 from worktree.common.constants import REQUIRED_SUBDIRS
-from worktree.common.filesystem import Filesystem
+from worktree.common.filesystem.models import RepositoryPaths, WorkspacePaths
 from worktree.common.filesystem.services.global_root import resolve_global_paths
 from worktree.core.config.models import ConfigTier
 from worktree.core.project.services.identity import generate_project_identity, save_project_identity
+from worktree.core.project.services.storage import resolve_workspace_paths
 
 
 @pytest.fixture(autouse=True)
@@ -29,17 +30,14 @@ def _isolated_worktree_home(tmp_path_factory: pytest.TempPathFactory, monkeypatc
     monkeypatch.setenv("WORKTREE_HOME", str(tmp_path_factory.mktemp("worktree_home")))
 
 
-@pytest.fixture(autouse=True)
-def _reset_filesystem_singleton() -> Generator[None]:
-    """Reset the Filesystem process-level singleton before and after each test.
+@pytest.fixture
+def workspace_paths_factory() -> Callable[[Path, Path | None], WorkspacePaths]:
+    """Return a builder that resolves a WorkspacePaths snapshot for an arbitrary repository/global root pair."""
 
-    Filesystem.configure() mutates class-level state that outlives the test
-    that called it. Without this reset, a later test on the same xdist worker
-    can observe a stale configured root from an earlier test.
-    """
-    Filesystem.reset()
-    yield
-    Filesystem.reset()
+    def _build(root: Path, global_root: Path | None = None) -> WorkspacePaths:
+        return resolve_workspace_paths(RepositoryPaths.from_root(root), resolve_global_paths(global_root))
+
+    return _build
 
 
 @pytest.fixture
@@ -65,6 +63,14 @@ def isolated_workspace(tmp_path: Path) -> Path:
     save_project_identity(dot_worktree / "project.json", generate_project_identity())
 
     return workspace
+
+
+@pytest.fixture
+def workspace_paths(
+    isolated_workspace: Path, workspace_paths_factory: Callable[[Path, Path | None], WorkspacePaths]
+) -> WorkspacePaths:
+    """Resolve the WorkspacePaths snapshot for isolated_workspace's initialized project identity."""
+    return workspace_paths_factory(isolated_workspace, None)
 
 
 @pytest.fixture

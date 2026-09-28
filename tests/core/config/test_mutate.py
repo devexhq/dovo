@@ -28,7 +28,7 @@ class ConfigMutationTests:
         payload = build_default_config("demo-workspace")
         Filesystem.atomic_write_json(config_path, payload)
 
-        result = set_config_value_result("agent.model", "qwen2.5-coder", path=isolated_workspace)
+        result = set_config_value_result("agent.model", "qwen2.5-coder", config_path=config_path)
 
         assert result.status == ConfigSetStatus.OK
         assert result.config_path == config_path
@@ -48,7 +48,7 @@ class ConfigMutationTests:
         payload = build_default_config("demo-workspace")
         Filesystem.atomic_write_json(config_path, payload)
 
-        bool_result = set_config_value_result("telemetry.enabled", "true", path=isolated_workspace)
+        bool_result = set_config_value_result("telemetry.enabled", "true", config_path=config_path)
         assert bool_result.status == ConfigSetStatus.OK
         assert bool_result.config_path == config_path
         assert bool_result.key == "telemetry.enabled"
@@ -59,7 +59,7 @@ class ConfigMutationTests:
         assert json.loads(config_path.read_text())["telemetry"]["enabled"] is True
 
         schema_error_result = set_config_value_result(
-            "sandbox.max_active_sandboxes", "not_an_int", path=isolated_workspace
+            "sandbox.max_active_sandboxes", "not_an_int", config_path=config_path
         )
         assert schema_error_result.status == ConfigSetStatus.SCHEMA_INVALID
         assert schema_error_result.config_path == config_path
@@ -79,7 +79,7 @@ class ConfigMutationTests:
         disk_data["agent"] = "scalar"
         Filesystem.atomic_write_json(config_path, disk_data)
 
-        collision_result = set_config_value_result("agent.model", "qwen2.5-coder", path=isolated_workspace)
+        collision_result = set_config_value_result("agent.model", "qwen2.5-coder", config_path=config_path)
         assert collision_result.status == ConfigSetStatus.TYPE_COLLISION
         assert collision_result.config_path == config_path
         assert collision_result.key == "agent.model"
@@ -167,7 +167,7 @@ class ConfigUnsetMutationTests:
         Filesystem.atomic_write_json(config_path, payload)
         previous_model = payload["agent"]["model"]
 
-        result = unset_config_value_result("agent.model", path=isolated_workspace)
+        result = unset_config_value_result("agent.model", config_path=config_path)
 
         assert result.status == ConfigUnsetStatus.OK
         assert result.config_path == config_path
@@ -188,7 +188,7 @@ class ConfigUnsetMutationTests:
         Filesystem.atomic_write_json(config_path, payload)
 
         for child_key in ("provider", "model", "endpoint", "temperature", "max_tokens"):
-            result = unset_config_value_result(f"agent.{child_key}", path=isolated_workspace)
+            result = unset_config_value_result(f"agent.{child_key}", config_path=config_path)
             assert result.ok
 
         data = json.loads(config_path.read_text())
@@ -201,7 +201,7 @@ class ConfigUnsetMutationTests:
         Filesystem.atomic_write_json(config_path, payload)
         before = config_path.read_bytes()
 
-        result = unset_config_value_result("telemetry.nonexistent", path=isolated_workspace)
+        result = unset_config_value_result("telemetry.nonexistent", config_path=config_path)
 
         assert result.status == ConfigUnsetStatus.OK
         assert result.config_path == config_path
@@ -217,7 +217,7 @@ class ConfigUnsetMutationTests:
         """[tier-1/domain] unset_config_value_result: a missing config.json returns ConfigUnsetStatus.NOT_FOUND."""
         config_path = isolated_workspace / ".worktree" / "config.json"
 
-        result = unset_config_value_result("agent.model", path=isolated_workspace)
+        result = unset_config_value_result("agent.model", config_path=config_path)
 
         assert result.status == ConfigUnsetStatus.NOT_FOUND
         assert result.config_path == config_path
@@ -233,7 +233,7 @@ class ConfigUnsetMutationTests:
         config_path = isolated_workspace / ".worktree" / "config.json"
         config_path.mkdir(parents=True)
 
-        result = unset_config_value_result("agent.model", path=isolated_workspace)
+        result = unset_config_value_result("agent.model", config_path=config_path)
 
         assert result.status == ConfigUnsetStatus.PATH_IS_DIRECTORY
         assert result.config_path == config_path
@@ -249,7 +249,7 @@ class ConfigUnsetMutationTests:
         config_path = isolated_workspace / ".worktree" / "config.json"
         config_path.write_text("{not valid json", encoding="utf-8")
 
-        result = unset_config_value_result("agent.model", path=isolated_workspace)
+        result = unset_config_value_result("agent.model", config_path=config_path)
 
         assert result.status == ConfigUnsetStatus.MALFORMED_JSON
         assert result.config_path == config_path
@@ -269,7 +269,7 @@ class ConfigUnsetMutationTests:
         config_path = isolated_workspace / ".worktree" / "config.json"
         config_path.write_text("[]", encoding="utf-8")
 
-        result = unset_config_value_result("agent.model", path=isolated_workspace)
+        result = unset_config_value_result("agent.model", config_path=config_path)
 
         assert result.status == ConfigUnsetStatus.ROOT_NOT_OBJECT
         assert result.config_path == config_path
@@ -289,7 +289,7 @@ class ConfigUnsetMutationTests:
         Filesystem.atomic_write_json(config_path, payload)
         before = config_path.read_bytes()
 
-        result = unset_config_value_result("project", path=isolated_workspace)
+        result = unset_config_value_result("project", config_path=config_path)
 
         assert result.status == ConfigUnsetStatus.SCHEMA_INVALID
         assert result.config_path == config_path
@@ -319,7 +319,7 @@ class ConfigUnsetMutationTests:
 
         monkeypatch.setattr(Filesystem, "atomic_write_json", staticmethod(_raise_os_error))
 
-        result = unset_config_value_result("agent.model", path=isolated_workspace)
+        result = unset_config_value_result("agent.model", config_path=config_path)
 
         assert result.status == ConfigUnsetStatus.WRITE_FAILED
         assert result.config_path == config_path
@@ -336,7 +336,7 @@ class ConfigUnsetMutationTests:
         payload = build_default_config("demo-workspace")
         Filesystem.atomic_write_json(config_path, payload)
 
-        result = unset_config_value_result("", path=isolated_workspace)
+        result = unset_config_value_result("", config_path=config_path)
 
         assert result.status == ConfigUnsetStatus.INVALID_PATH
         assert result.config_path == config_path
@@ -355,7 +355,7 @@ class ConfigUnsetMutationTests:
         Filesystem.atomic_write_json(config_path, payload)
         before = config_path.read_bytes()
 
-        result = unset_config_value_result("agent.model", path=isolated_workspace)
+        result = unset_config_value_result("agent.model", config_path=config_path)
 
         assert result.status == ConfigUnsetStatus.TYPE_COLLISION
         assert result.config_path == config_path

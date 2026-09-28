@@ -21,6 +21,6 @@ def config_show_command(
     Returns:
         ConfigLoadResult containing loaded config and errors.
     """
-    result = Config(path=context.cwd).load()
+    result = Config(context.paths).load()
     ui_dispatcher.dispatch(result, output_format=output_format)
     return result

@@ -9,9 +9,11 @@ from typing import Any
 from typer.testing import CliRunner
 
 from worktree.cli import app
+from worktree.common.filesystem.models import RepositoryPaths
+from worktree.common.filesystem.services.global_root import resolve_global_paths
 from worktree.core.db import RunStatus, WorktreeDb
 from worktree.core.logs import LogsShowResult, LogsShowStatus
-from worktree.core.project.services.storage import resolve_project_filesystem_paths
+from worktree.core.project.services.storage import resolve_workspace_paths
 from worktree.core.runtime import RunLogEvent, RunLogEventType
 
 _EVENTS = [
@@ -22,10 +24,11 @@ _EVENTS = [
 
 def _seed_session(workspace: Path) -> Path:
     """Persist a run record plus a run.log and build step captures for session 'sess-logs'."""
-    WorktreeDb(path=workspace).runs.create(
+    paths = resolve_workspace_paths(RepositoryPaths.from_root(workspace), resolve_global_paths(None))
+    WorktreeDb(database_file=paths.database_file, project_id=paths.project_id).runs.create(
         session_id="sess-logs", blueprint_name="bp", blueprint_key="bp", status=RunStatus.COMPLETED
     )
-    session_log_dir = resolve_project_filesystem_paths(workspace).logs_dir / "sess-logs"
+    session_log_dir = paths.logs_dir / "sess-logs"
     session_log_dir.mkdir(parents=True)
     (session_log_dir / "run.log").write_text("".join(e.model_dump_json() + "\n" for e in _EVENTS), encoding="utf-8")
     (session_log_dir / "01_build_attempt_1.stderr.log").write_text("first-attempt\n", encoding="utf-8")

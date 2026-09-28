@@ -14,7 +14,6 @@ from worktree.common.schema_validation import CONFIG_VALIDATOR
 from worktree.core.config.loader import (
     _map_worktree_config,
     clear_config_cache,
-    resolve_config_path,
 )
 from worktree.core.config.parser import parse_config_value
 
@@ -277,8 +276,7 @@ def set_config_value_result(
     key: str,
     value: Any,
     *,
-    path: Path | None = None,
-    config_path: Path | None = None,
+    config_path: Path,
 ) -> ConfigSetResult:
     """Load config JSON, set a dot-path value, and persist on success.
 
@@ -287,14 +285,12 @@ def set_config_value_result(
     Args:
         key: Dot-path key to set.
         value: Native Python value (or string) to assign.
-        path: Repository root used when ``config_path`` is omitted.
-        config_path: Explicit config path override.
+        config_path: Resolved configuration file path.
 
     Returns:
         Classified ``ConfigSetResult`` with absolute ``config_path``.
     """
-    resolved_path = resolve_config_path(path=path, config_path=config_path)
-    loaded = _read_config_object(resolved_path, key)
+    loaded = _read_config_object(config_path, key)
     if isinstance(loaded, ConfigSetResult):
         return loaded
 
@@ -311,32 +307,32 @@ def set_config_value_result(
         )
         return ConfigSetResult(
             status=status,
-            config_path=resolved_path,
+            config_path=config_path,
             key=key,
             value=parsed_value,
             errors=[message],
         )
 
-    schema_error = _validate_mutated_config(updated, resolved_path, key, value=parsed_value)
+    schema_error = _validate_mutated_config(updated, config_path, key, value=parsed_value)
     if schema_error is not None:
         return schema_error
 
     try:
-        Filesystem.atomic_write_json(resolved_path, updated)
+        Filesystem.atomic_write_json(config_path, updated)
     except OSError as exc:
         return ConfigSetResult(
             status=ConfigSetStatus.WRITE_FAILED,
-            config_path=resolved_path,
+            config_path=config_path,
             key=key,
             value=parsed_value,
-            errors=[f"Unable to write config.json at '{resolved_path}': {exc} (CONFIG_WRITE_FAILED)."],
+            errors=[f"Unable to write config.json at '{config_path}': {exc} (CONFIG_WRITE_FAILED)."],
             fixes=["Check file permissions and free disk space"],
         )
 
-    clear_config_cache(resolved_path)
+    clear_config_cache(config_path)
     return ConfigSetResult(
         status=ConfigSetStatus.OK,
-        config_path=resolved_path,
+        config_path=config_path,
         key=key,
         value=parsed_value,
         errors=[],
@@ -346,8 +342,7 @@ def set_config_value_result(
 def unset_config_value_result(
     key: str,
     *,
-    path: Path | None = None,
-    config_path: Path | None = None,
+    config_path: Path,
 ) -> ConfigUnsetResult:
     """Load config JSON, remove a dot-path value, and persist on success.
 
@@ -357,18 +352,16 @@ def unset_config_value_result(
 
     Args:
         key: Dot-path key to remove.
-        path: Repository root used when ``config_path`` is omitted.
-        config_path: Explicit config path override.
+        config_path: Resolved configuration file path.
 
     Returns:
         Classified ``ConfigUnsetResult`` with absolute ``config_path``.
     """
-    resolved_path = resolve_config_path(path=path, config_path=config_path)
-    loaded = _read_config_object(resolved_path, key)
+    loaded = _read_config_object(config_path, key)
     if isinstance(loaded, ConfigSetResult):
         return ConfigUnsetResult(
             status=ConfigUnsetStatus(loaded.status.value),
-            config_path=resolved_path,
+            config_path=config_path,
             key=key,
             existed=False,
             errors=loaded.errors,
@@ -387,7 +380,7 @@ def unset_config_value_result(
         )
         return ConfigUnsetResult(
             status=status,
-            config_path=resolved_path,
+            config_path=config_path,
             key=key,
             existed=False,
             errors=[message],
@@ -396,18 +389,18 @@ def unset_config_value_result(
     if not existed:
         return ConfigUnsetResult(
             status=ConfigUnsetStatus.OK,
-            config_path=resolved_path,
+            config_path=config_path,
             key=key,
             existed=False,
         )
 
     previous_value = _peek_nested_value(loaded, key)
 
-    schema_error = _validate_mutated_config(updated, resolved_path, key)
+    schema_error = _validate_mutated_config(updated, config_path, key)
     if schema_error is not None:
         return ConfigUnsetResult(
             status=ConfigUnsetStatus(schema_error.status.value),
-            config_path=resolved_path,
+            config_path=config_path,
             key=key,
             existed=True,
             previous_value=previous_value,
@@ -416,22 +409,22 @@ def unset_config_value_result(
         )
 
     try:
-        Filesystem.atomic_write_json(resolved_path, updated)
+        Filesystem.atomic_write_json(config_path, updated)
     except OSError as exc:
         return ConfigUnsetResult(
             status=ConfigUnsetStatus.WRITE_FAILED,
-            config_path=resolved_path,
+            config_path=config_path,
             key=key,
             existed=True,
             previous_value=previous_value,
-            errors=[f"Unable to write config.json at '{resolved_path}': {exc} (CONFIG_WRITE_FAILED)."],
+            errors=[f"Unable to write config.json at '{config_path}': {exc} (CONFIG_WRITE_FAILED)."],
             fixes=["Check file permissions and free disk space"],
         )
 
-    clear_config_cache(resolved_path)
+    clear_config_cache(config_path)
     return ConfigUnsetResult(
         status=ConfigUnsetStatus.OK,
-        config_path=resolved_path,
+        config_path=config_path,
         key=key,
         existed=True,
         previous_value=previous_value,

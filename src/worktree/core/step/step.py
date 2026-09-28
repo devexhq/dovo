@@ -8,6 +8,7 @@ from typing import Any
 
 from pydantic import ValidationError
 
+from worktree.common.filesystem.models import WorkspacePaths
 from worktree.core.catalog import Catalog, CatalogFileNotFoundError, CatalogYamlError
 from worktree.core.catalog.models import CatalogItemType
 from worktree.core.step.assertions import evaluate_assertions
@@ -56,7 +57,7 @@ class Step:
         cls,
         source: dict[str, Any] | Path | str | StepDefinition,
         *,
-        path: Path | None = None,
+        paths: WorkspacePaths | None = None,
         catalog: Catalog | None = None,
     ) -> Step | None:
         """Load a step from a dictionary, file path, StepDefinition, or catalog step ID."""
@@ -69,18 +70,23 @@ class Step:
                 return None
         if isinstance(source, Path) or (isinstance(source, str) and Path(source).is_file()):
             return cls.load_by_path(Path(source))
-        return cls.load_by_name(str(source), path=path, catalog=catalog)
+        return cls.load_by_name(str(source), paths=paths, catalog=catalog)
 
     @classmethod
     def load_by_name(
         cls,
         name: str,
         *,
-        path: Path | None = None,
+        paths: WorkspacePaths | None = None,
         catalog: Catalog | None = None,
     ) -> Step | None:
         """Resolve a catalog step by name or key via the Catalog index."""
-        cat = catalog if catalog is not None else Catalog(path or Path("."))
+        if catalog is not None:
+            cat = catalog
+        elif paths is not None:
+            cat = Catalog(paths)
+        else:
+            return None
         result = cat.get(name, item_type=cls.definition_type, definition_cls=cls.definition_cls)
         if result.ok and result.definition is not None:
             return cls(instance=result.definition)
@@ -98,11 +104,11 @@ class Step:
     def resolve(
         self,
         *,
-        path: Path | None = None,
+        paths: WorkspacePaths | None = None,
         catalog: Catalog | None = None,
     ) -> StepDefinition | None:
         """Resolve shorthand step fields (e.g. `uses: ...` or `run: ...`)."""
-        return self.resolve_step_definition(path=path, catalog=catalog)
+        return self.resolve_step_definition(paths=paths, catalog=catalog)
 
     # @staticmethod
     # def run(
@@ -213,7 +219,7 @@ class Step:
     def resolve_step_definition(
         self,
         *,
-        path: Path | None = None,
+        paths: WorkspacePaths | None = None,
         catalog: Catalog | None = None,
     ) -> StepDefinition | None:
         """Resolve a step, following its dependencies if any."""
@@ -221,7 +227,7 @@ class Step:
             return self._resolve_run()
 
         if self.instance.uses is not None:
-            return self._resolve_from_uses(path=path, catalog=catalog)
+            return self._resolve_from_uses(paths=paths, catalog=catalog)
 
         if self.instance.type is not None:
             return self.instance
@@ -247,20 +253,20 @@ class Step:
     def _resolve_from_uses(
         self,
         *,
-        path: Path | None = None,
+        paths: WorkspacePaths | None = None,
         catalog: Catalog | None = None,
     ) -> StepDefinition | None:
         """Load the referenced step and apply only fields explicitly set in this step."""
         if self.instance.uses is None:
             return None
-        if path is None and catalog is None:
+        if paths is None and catalog is None:
             return None
 
-        base_step = Step.load(str(self.instance.uses), path=path, catalog=catalog)
+        base_step = Step.load(str(self.instance.uses), paths=paths, catalog=catalog)
         if base_step is None:
             return None
 
-        base_definition = base_step.resolve(path=path, catalog=catalog) or base_step.instance
+        base_definition = base_step.resolve(paths=paths, catalog=catalog) or base_step.instance
         return merge_uses_step(self.instance, base_definition)
 
 
@@ -295,14 +301,14 @@ def merge_uses_step(using: StepDefinition, base_definition: StepDefinition) -> S
 def resolve_step_definition(
     step: StepDefinition | dict[str, Any],
     *,
-    path: Path | None = None,
+    paths: WorkspacePaths | None = None,
     catalog: Catalog | None = None,
 ) -> StepDefinition:
     """Resolve a step's 'run' or 'uses' shorthand into a concrete StepDefinition.
 
     Args:
         step: A StepDefinition instance or raw step dictionary mapping.
-        path: Optional workspace root directory for loading referenced catalog steps.
+        paths: Resolved workspace snapshot for loading referenced catalog steps.
         catalog: Optional Catalog instance for loading referenced catalog steps.
 
     Returns:
@@ -320,11 +326,11 @@ def resolve_step_definition(
     else:
         step_obj = Step(instance=step)
 
-    resolved = step_obj.resolve(path=path, catalog=catalog)
+    resolved = step_obj.resolve(paths=paths, catalog=catalog)
     if resolved is None:
         step_id = step_obj.instance.id
-        if step_obj.instance.uses is not None and path is None and catalog is None:
-            raise StepValidationError(f"Cannot resolve step '{step_id}' using 'uses' without workspace path.")
+        if step_obj.instance.uses is not None and paths is None and catalog is None:
+            raise StepValidationError(f"Cannot resolve step '{step_id}' using 'uses' without workspace paths.")
         raise StepValidationError(f"Step '{step_id}' must specify one of 'run', 'uses', or 'type'.")
 
     return resolved

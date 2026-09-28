@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from pathlib import Path
 
+from worktree.common.filesystem import WorkspacePaths
 from worktree.core.blueprint import (
     Blueprint,
     BlueprintLoadError,
@@ -31,7 +31,7 @@ class BlueprintRunService:
     """Service encapsulating the blueprint execution lifecycle."""
 
     name: str
-    path: Path
+    paths: WorkspacePaths
     runs_db: RunsRepository
     no_sandbox: bool = False
     keep: bool = False
@@ -46,17 +46,17 @@ class BlueprintRunService:
 
     def execute(self) -> BlueprintRunResult:
         """Run the full execution pipeline and return the outcome."""
-        reconciliation_result = reconcile_stale_runs(self.runs_db, path=self.path)
+        reconciliation_result = reconcile_stale_runs(self.runs_db, path=self.paths.root_dir)
         if reconciliation_result.warning:
             self.warnings.append(reconciliation_result.warning)
 
-        catalog = Catalog(path=self.path)
+        catalog = Catalog(self.paths)
         blueprint, fail_outcome = self._load_blueprint(catalog)
         if fail_outcome is not None or blueprint is None:
             return fail_outcome or fail(self.warnings, f"Failed to load Blueprint '{self.name}'.")
 
         try:
-            run_outcome = Engine(self.path, db=self.runs_db, catalog=catalog).run(
+            run_outcome = Engine(self.paths, db=self.runs_db, catalog=catalog).run(
                 blueprint,
                 RunRequest(
                     cli_args=self.cli_args,

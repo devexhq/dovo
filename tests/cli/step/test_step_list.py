@@ -8,8 +8,16 @@ from pathlib import Path
 from typer.testing import CliRunner
 
 from worktree.cli import app
+from worktree.common.filesystem.models import RepositoryPaths, WorkspacePaths
+from worktree.common.filesystem.services.global_root import resolve_global_paths
 from worktree.core.catalog import Catalog
 from worktree.core.catalog.models import CatalogItemType
+from worktree.core.project.services.storage import resolve_workspace_paths
+
+
+def _paths_for(root: Path) -> WorkspacePaths:
+    """Resolve the WorkspacePaths snapshot for root, reflecting its current project.json."""
+    return resolve_workspace_paths(RepositoryPaths.from_root(root), resolve_global_paths(None))
 
 
 class StepListCliIntegrationTests:
@@ -17,7 +25,7 @@ class StepListCliIntegrationTests:
 
     def test_step_list_cli_renders_terminal_table(self, cli_runner: CliRunner, isolated_workspace: Path) -> None:
         """wt step list: one repo-tier step on disk renders its name/tier/sha in the terminal table; exit 0."""
-        Catalog(isolated_workspace).create(CatalogItemType.STEP, "listed-step")
+        Catalog(_paths_for(isolated_workspace)).create(CatalogItemType.STEP, "listed-step")
 
         result = cli_runner.invoke(app, ["-p", str(isolated_workspace), "step", "list"])
 
@@ -29,7 +37,7 @@ class StepListCliIntegrationTests:
 
     def test_step_list_cli_renders_json(self, cli_runner: CliRunner, isolated_workspace: Path) -> None:
         """wt step list --format json: envelope's items include a 'tier' key absent from the old wt catalog list payload."""
-        Catalog(isolated_workspace).create(CatalogItemType.STEP, "json-step")
+        Catalog(_paths_for(isolated_workspace)).create(CatalogItemType.STEP, "json-step")
 
         result = cli_runner.invoke(app, ["-p", str(isolated_workspace), "step", "list", "--format", "json"])
 
@@ -40,8 +48,8 @@ class StepListCliIntegrationTests:
 
     def test_step_list_cli_only_returns_step_items(self, cli_runner: CliRunner, isolated_workspace: Path) -> None:
         """wt step list: a blueprint created alongside a step is excluded from the step listing (the packaged default.yml step template still appears, folded into items per every tier)."""
-        Catalog(isolated_workspace).create(CatalogItemType.STEP, "only-step")
-        Catalog(isolated_workspace).create(CatalogItemType.BLUEPRINT, "only-blueprint")
+        Catalog(_paths_for(isolated_workspace)).create(CatalogItemType.STEP, "only-step")
+        Catalog(_paths_for(isolated_workspace)).create(CatalogItemType.BLUEPRINT, "only-blueprint")
 
         result = cli_runner.invoke(app, ["-p", str(isolated_workspace), "step", "list", "--format", "json"])
 
@@ -61,7 +69,7 @@ class StepListCliIntegrationTests:
 
     def test_step_ls_alias_cli_matches_list_output(self, cli_runner: CliRunner, isolated_workspace: Path) -> None:
         """wt step ls: renders byte-identical terminal output to wt step list for the same workspace."""
-        Catalog(isolated_workspace).create(CatalogItemType.STEP, "alias-step")
+        Catalog(_paths_for(isolated_workspace)).create(CatalogItemType.STEP, "alias-step")
 
         list_result = cli_runner.invoke(app, ["-p", str(isolated_workspace), "step", "list"])
         ls_result = cli_runner.invoke(app, ["-p", str(isolated_workspace), "step", "ls"])

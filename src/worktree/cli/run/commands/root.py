@@ -77,7 +77,7 @@ def run_command(
     with observer:
         result = BlueprintRunService(
             name=name,
-            path=context.cwd,
+            paths=context.paths,
             runs_db=context.db.runs,
             no_sandbox=no_sandbox,
             keep=keep,

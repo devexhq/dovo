@@ -14,6 +14,6 @@ def artifacts_list_command(
     output_format: str = "terminal",
 ) -> ArtifactsListResult:
     """List artifacts for the current project, optionally filtered to one session."""
-    result = Artifacts(path=context.cwd, db=context.db.artifacts).list(session_id=session_id)
+    result = Artifacts(context.paths, db=context.db.artifacts).list(session_id=session_id)
     ui_dispatcher.dispatch(result, output_format=output_format)
     return result

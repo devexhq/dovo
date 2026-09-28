@@ -6,6 +6,7 @@ from typing import Any, Protocol, runtime_checkable
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from worktree.common.filesystem import WorkspacePaths
 from worktree.common.models import BaseResult
 from worktree.core.config.models import WorktreeConfig
 
@@ -37,6 +38,7 @@ class DoctorContext(BaseModel):
 
     cwd: Path
     config: WorktreeConfig | None = None
+    paths: WorkspacePaths
 
 
 class RemediationType(StrEnum):

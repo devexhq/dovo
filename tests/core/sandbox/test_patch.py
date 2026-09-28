@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from pathlib import Path
 
 import pytest
 
 from tests.harness.builders import WorkspaceBuilder
+from worktree.common.filesystem import WorkspacePaths
 from worktree.core.db import SandboxesRepository, SandboxStatus
 from worktree.core.git.runner import GitRunner
 from worktree.core.sandbox.models import (
@@ -20,6 +22,14 @@ from worktree.core.sandbox.services.patch import SandboxPatch, extract_conflicts
 def sandbox_workspace(tmp_path: Path) -> Path:
     """Create a fully initialized workspace with Git and SQLite DB."""
     return WorkspaceBuilder(tmp_path / "sandbox_ws").with_git().with_database().build()
+
+
+@pytest.fixture
+def sandbox_workspace_paths(
+    sandbox_workspace: Path, workspace_paths_factory: Callable[[Path, Path | None], WorkspacePaths]
+) -> WorkspacePaths:
+    """Resolve the command-scoped paths for this module's sandbox workspace."""
+    return workspace_paths_factory(sandbox_workspace, None)
 
 
 class SandboxConflictExtractionTests:
@@ -70,11 +80,14 @@ class SandboxApplyRollbackTests:
     def test_sandbox_patch_apply_rolls_back_partial_changes_on_conflict(
         self,
         sandbox_workspace: Path,
+        sandbox_workspace_paths: WorkspacePaths,
     ) -> None:
         """Conflict during patch application rolls back partial changes and preserves working tree."""
-        db = SandboxesRepository(sandbox_workspace)
-        lifecycle = SandboxLifecycle(sandbox_workspace, db)
-        patch_service = SandboxPatch(sandbox_workspace, db, lifecycle=lifecycle)
+        db = SandboxesRepository(
+            db_path=sandbox_workspace_paths.database_file, project_id=sandbox_workspace_paths.project_id
+        )
+        lifecycle = SandboxLifecycle(sandbox_workspace_paths, db)
+        patch_service = SandboxPatch(sandbox_workspace_paths, db, lifecycle=lifecycle)
 
         (sandbox_workspace / "target.py").write_text("line 1\nline 2\nline 3\n", encoding="utf-8")
         GitRunner.add_all(sandbox_workspace)

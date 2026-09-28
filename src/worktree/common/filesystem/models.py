@@ -1,11 +1,17 @@
 from __future__ import annotations
 
-import importlib.resources
 from importlib.resources.abc import Traversable
 from pathlib import Path
-from typing import Any, Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Any
 
 from pydantic import BaseModel, ConfigDict
+
+from worktree.common.lock import resolve_lock_file_path
+
+if TYPE_CHECKING:
+    # Annotation-only: from __future__ import annotations means this is never evaluated
+    # at runtime, so it carries zero real common -> core coupling (ARCH-001).
+    from worktree.core.catalog.models import CatalogTier
 
 
 class YamlFile(BaseModel):
@@ -23,89 +29,39 @@ class YamlFile(BaseModel):
     file_size: int | None = None
 
 
-@runtime_checkable
-class _GlobalRootModule(Protocol):
-    """Typed interface for the deferred global-root resolver import."""
+class RepositoryPaths(BaseModel):
+    """Repository-local paths discovered once per Filesystem instance."""
 
-    def resolve_global_paths(self) -> GlobalPaths:
-        """Resolve the configured global Worktree path hierarchy."""
-        ...
-
-
-class FilesystemPaths(BaseModel):
-    """Single source of truth for all resolved workspace paths."""
-
-    model_config = ConfigDict(extra="forbid", strict=True, arbitrary_types_allowed=True)
+    model_config = ConfigDict(extra="forbid", strict=True, frozen=True)
 
     root_dir: Path
     worktree_dir: Path
     config_file: Path
-    db_file: Path
     catalog_dir: Path
     catalog_steps_dir: Path
     catalog_blueprints_dir: Path
-    logs_dir: Path
-    sessions_dir: Path
-    artifacts_dir: Path
-    tmp_dir: Path
     sandboxes_dir: Path
     lock_file: Path
     gitignore_file: Path
-    catalog_templates_dir: Traversable
-    project_id: str | None = None
 
     @classmethod
-    def from_root(cls, root_dir: Path, project_id: str | None = None) -> FilesystemPaths:
-        """Construct workspace paths with optional project-global runtime storage."""
+    def from_root(cls, root_dir: Path) -> RepositoryPaths:
+        """Construct repository-local paths from a resolved repository root."""
         canonical_root = root_dir.expanduser().resolve()
         wt = canonical_root if canonical_root.name == ".worktree" else canonical_root / ".worktree"
         root_path = canonical_root.parent if canonical_root.name == ".worktree" else canonical_root
-        runtime_root = wt
-        if project_id is not None:
-            global_root_module = importlib.import_module("worktree.common.filesystem.services.global_root")
-            if not isinstance(global_root_module, _GlobalRootModule):
-                raise TypeError("Global root resolver is unavailable.")
-            runtime_root = global_root_module.resolve_global_paths().storage_dir / "projects" / project_id
 
         return cls(
             root_dir=root_path,
             worktree_dir=wt,
             config_file=wt / "config.json",
-            db_file=wt / "data.db",
             catalog_dir=wt / "catalog",
             catalog_steps_dir=wt / "catalog" / "steps",
             catalog_blueprints_dir=wt / "catalog" / "blueprints",
-            logs_dir=runtime_root / "logs",
-            sessions_dir=runtime_root / "sessions",
-            artifacts_dir=runtime_root / "artifacts",
-            tmp_dir=runtime_root / "tmp",
             sandboxes_dir=wt / "sandboxes",
-            lock_file=wt / "worktree.lock",
+            lock_file=resolve_lock_file_path(wt),
             gitignore_file=root_path / ".gitignore",
-            catalog_templates_dir=importlib.resources.files("worktree.core.catalog.templates"),
-            project_id=project_id,
         )
-
-    def project_storage_dir(self) -> Path | None:
-        """Return the project-global runtime root when a project identifier is active."""
-        if self.project_id is None:
-            return None
-        return self.sessions_dir.parent
-
-    def session_dir(self, session_id: str) -> Path:
-        """Return path to a specific session directory."""
-        return self.sessions_dir / session_id
-
-    def sandbox_dir(self, sandbox_id: str) -> Path:
-        """Return path to a specific sandbox directory."""
-        return self.sandboxes_dir / sandbox_id
-
-    def rel_to_root(self, path: Path | str) -> Path:
-        """Return path relative to workspace root."""
-        try:
-            return Path(path).resolve().relative_to(self.root_dir)
-        except ValueError:
-            return Path(path)
 
 
 class GlobalPaths(BaseModel):
@@ -134,3 +90,48 @@ class GlobalPaths(BaseModel):
             data_dir=canonical_root / "data",
             storage_dir=canonical_root / "storage",
         )
+
+
+class WorkspacePaths(BaseModel):
+    """Immutable command-invocation snapshot of every ambient workspace path."""
+
+    model_config = ConfigDict(extra="forbid", strict=True, frozen=True, arbitrary_types_allowed=True)
+
+    root_dir: Path
+    worktree_dir: Path
+    config_file: Path
+    catalog_dir: Path
+    catalog_steps_dir: Path
+    catalog_blueprints_dir: Path
+    sandboxes_dir: Path
+    lock_file: Path
+    gitignore_file: Path
+    catalog_templates_dir: Traversable
+
+    global_paths: GlobalPaths
+    database_file: Path
+
+    project_id: str | None
+    runtime_root: Path
+    logs_dir: Path
+    sessions_dir: Path
+    artifacts_dir: Path
+    tmp_dir: Path
+
+    def session_dir(self, session_id: str) -> Path:
+        """Return path to a specific session directory."""
+        return self.sessions_dir / session_id
+
+    def sandbox_dir(self, sandbox_id: str) -> Path:
+        """Return path to a specific sandbox directory."""
+        return self.sandboxes_dir / sandbox_id
+
+    def catalog_dir_for(self, tier: CatalogTier) -> Path:
+        """Return the disk-backed catalog directory root for tier; raises ValueError for CatalogTier.PACKAGED."""
+        if tier == "repo":
+            return self.catalog_dir
+        if tier == "user":
+            return self.global_paths.user_catalog_dir
+        if tier == "global":
+            return self.global_paths.global_catalog_dir
+        raise ValueError(f"Tier '{tier}' is not disk-backed and has no tier root.")

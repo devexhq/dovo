@@ -27,7 +27,7 @@ def sandbox_prune_command(
         Structured prune result.
     """
     result = Sandbox(
-        path=context.cwd,
+        context.paths,
         db=context.db.sandboxes,
         runs_db=context.db.runs,
     ).prune(

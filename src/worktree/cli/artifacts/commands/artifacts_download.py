@@ -18,6 +18,6 @@ def artifacts_download_command(
     output_format: str = "terminal",
 ) -> ArtifactDownloadResult:
     """Download and checksum-verify a named artifact bundle into dest."""
-    result = Artifacts(path=context.cwd, db=context.db.artifacts).download(session_id, name, dest=Path(dest))
+    result = Artifacts(context.paths, db=context.db.artifacts).download(session_id, name, dest=Path(dest))
     ui_dispatcher.dispatch(result, output_format=output_format)
     return result

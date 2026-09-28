@@ -76,7 +76,7 @@ def handle_artifacts_download(ctx: InternalCommandContext) -> StepDispatchOutcom
             error_message="Internal command 'artifacts.download' requires ARTIFACT_NAME and ARTIFACT_DEST.",
         )
 
-    session_id = ctx.env.get("ARTIFACT_SESSION_ID") or ctx.session_id
+    session_id = ctx.env.get("ARTIFACT_SESSION_ID", ctx.session_id)
     dest_path = Path(dest_raw)
     dest = dest_path if dest_path.is_absolute() else ctx.sandbox_path / dest_path
 

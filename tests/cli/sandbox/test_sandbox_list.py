@@ -9,9 +9,17 @@ from typing import Any
 from typer.testing import CliRunner
 
 from worktree.cli import app
+from worktree.common.filesystem.models import RepositoryPaths, WorkspacePaths
+from worktree.common.filesystem.services.global_root import resolve_global_paths
 from worktree.core.db import SandboxStatus
+from worktree.core.project.services.storage import resolve_workspace_paths
 from worktree.core.sandbox.facade import Sandbox
 from worktree.core.sandbox.models import SandboxListStatus
+
+
+def _paths_for(root: Path) -> WorkspacePaths:
+    """Resolve the WorkspacePaths snapshot for root, reflecting its current project.json."""
+    return resolve_workspace_paths(RepositoryPaths.from_root(root), resolve_global_paths(None))
 
 
 class SandboxListCliIntegrationTests:
@@ -34,7 +42,7 @@ class SandboxListCliIntegrationTests:
         self, cli_runner: CliRunner, sandbox_workspace: Path, dispatch_spy: list[Any]
     ) -> None:
         """wt sandbox list renders a facade-created sandbox's session_id in the terminal table and dispatches its exact record."""
-        create_result = Sandbox(path=sandbox_workspace).create(name="listed")
+        create_result = Sandbox(paths=_paths_for(sandbox_workspace)).create(name="listed")
         assert create_result.session is not None
         session = create_result.session
 
@@ -59,7 +67,7 @@ class SandboxListCliIntegrationTests:
         self, cli_runner: CliRunner, sandbox_workspace: Path, dispatch_spy: list[Any]
     ) -> None:
         """wt sandbox list --status merged excludes an active sandbox, reports no sandboxes, and dispatches an empty DTO."""
-        Sandbox(path=sandbox_workspace).create(name="listed")
+        Sandbox(paths=_paths_for(sandbox_workspace)).create(name="listed")
 
         result = cli_runner.invoke(app, ["-p", str(sandbox_workspace), "sandbox", "list", "--status", "merged"])
 

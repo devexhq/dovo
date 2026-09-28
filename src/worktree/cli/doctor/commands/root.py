@@ -13,6 +13,6 @@ def doctor_command(
     output_format: str = "terminal",
 ) -> DoctorReport:
     """Run registered diagnostic checks and print the doctor report."""
-    result = Doctor(context.cwd).run_diagnostics(categories=categories, config=context.config)
+    result = Doctor(context.paths).run_diagnostics(categories=categories, config=context.config)
     ui_dispatcher.dispatch(result, output_format=output_format)
     return result

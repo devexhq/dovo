@@ -8,12 +8,14 @@ from pathlib import Path
 from typing import Any
 
 from worktree.common.filesystem import Filesystem
+from worktree.common.filesystem.models import RepositoryPaths
+from worktree.common.filesystem.services.global_root import resolve_global_paths
 from worktree.core.bootstrap.services.bootstrap import bootstrap_worktree
 from worktree.core.catalog.services.seeder import seed_all_catalog_templates
 from worktree.core.config.generator import generate_default_config
-from worktree.core.db.connection import DEFAULT_DB_FILENAME
 from worktree.core.db.migrations import init_database
 from worktree.core.project.services.identity import generate_project_identity, save_project_identity
+from worktree.core.project.services.storage import resolve_workspace_paths
 
 
 class WorkspaceBuilder:
@@ -29,7 +31,6 @@ class WorkspaceBuilder:
         self._catalog_force: bool = True
         self._init_git: bool = False
         self._config_data: dict[str, Any] | None = None
-        self._db_filename: str = DEFAULT_DB_FILENAME
         self._git_branch: str = "main"
         self._git_user_name: str = "Test User"
         self._git_user_email: str = "test@example.com"
@@ -56,10 +57,9 @@ class WorkspaceBuilder:
         self._scaffold_config = False
         return self
 
-    def with_database(self, db_filename: str = DEFAULT_DB_FILENAME) -> WorkspaceBuilder:
+    def with_database(self) -> WorkspaceBuilder:
         """Enable SQLite database migration."""
         self._scaffold_database = True
-        self._db_filename = db_filename
         return self
 
     def without_database(self) -> WorkspaceBuilder:
@@ -115,10 +115,12 @@ class WorkspaceBuilder:
         if self._scaffold_database:
             identity = generate_project_identity()
             save_project_identity(dot_worktree / "project.json", identity)
-            init_database(db_filename=self._db_filename)
+            paths = resolve_workspace_paths(RepositoryPaths.from_root(workspace_root), resolve_global_paths(None))
+            init_database(paths.database_file)
 
         if self._scaffold_catalog:
-            seed_all_catalog_templates(workspace_root, force=self._catalog_force)
+            paths = resolve_workspace_paths(RepositoryPaths.from_root(workspace_root), resolve_global_paths(None))
+            seed_all_catalog_templates(paths, force=self._catalog_force)
 
         return workspace_root
 

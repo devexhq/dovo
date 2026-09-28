@@ -26,7 +26,7 @@ RecordClass = type[RunRecord] | type[SandboxRecord] | type[CostRecord] | type[Ar
 def migrated_engine(tmp_path: Path) -> Engine:
     """Engine bound to a freshly migrated, isolated SQLite database file."""
     db_path = tmp_path / "worktree.db"
-    init_database(db_path=db_path)
+    init_database(db_path)
     return get_engine(db_path)
 
 

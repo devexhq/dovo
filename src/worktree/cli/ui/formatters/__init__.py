@@ -23,7 +23,6 @@ from worktree.cli.ui.formatters.common import (
 from worktree.cli.ui.formatters.config import (
     ConfigLoadFormatter,
     ConfigSetFormatter,
-    ConfigShowFormatter,
     ConfigUnsetFormatter,
     ConfigValidateFormatter,
 )
@@ -84,7 +83,6 @@ __all__ = [
     "CatalogValidateFormatter",
     "ConfigLoadFormatter",
     "ConfigSetFormatter",
-    "ConfigShowFormatter",
     "ConfigUnsetFormatter",
     "ConfigValidateFormatter",
     "DiffResultFormatter",
