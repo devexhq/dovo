@@ -8,7 +8,7 @@ from typing import Any, Protocol
 import yaml
 
 from worktree.common.exceptions import DefinitionLoadError, DefinitionValidationError
-from worktree.common.filesystem import Filesystem
+from worktree.common.filesystem import Filesystem, WorkspacePaths
 from worktree.common.lock import WorkspaceLock
 from worktree.common.models import DefinitionResolutionResult, DefinitionResolutionStatus
 from worktree.core.catalog.exceptions import (
@@ -36,7 +36,6 @@ from worktree.core.catalog.services.inventory import (
     delete_catalog_item_by_sha_or_name,
     ensure_tier_catalog_dirs,
     find_catalog_record_matches,
-    find_packaged_templates,
     list_packaged_template_defaults,
     resolve_catalog_record_path,
     resolve_catalog_records,
@@ -59,11 +58,10 @@ class _PydanticModel(Protocol):
 class Catalog:
     """Unified entrypoint for blueprint catalog inventory and management."""
 
-    def __init__(self, path: Path = Path("."), global_root: Path | None = None) -> None:
-        """Bind this Catalog to a repository root and an optional override of the global tier root."""
-        self.path = path.resolve()
-        self.cwd = self.path
-        self.global_root = global_root
+    def __init__(self, paths: WorkspacePaths) -> None:
+        """Bind this Catalog to a resolved WorkspacePaths snapshot."""
+        self.paths = paths
+        self.path = paths.root_dir
 
     def list(
         self,
@@ -74,7 +72,7 @@ class Catalog:
         """Return indexed catalog records across all tiers, optionally filtered by item type."""
         filter_value = type_filter if type_filter is not None else kind
         scan_result = self.sync()
-        records = resolve_catalog_records(repo_root=self.path, global_root=self.global_root)
+        records = resolve_catalog_records(self.paths)
 
         if filter_value is not None and str(filter_value).lower() == "template":
             return self._list_packaged_templates_result(records, scan_result)
@@ -92,15 +90,14 @@ class Catalog:
             warnings=list(scan_result.errors),
         )
 
-    @staticmethod
     def _list_packaged_templates_result(
-        records: list[CatalogRecord], scan_result: CatalogScanResult
+        self, records: list[CatalogRecord], scan_result: CatalogScanResult
     ) -> CatalogListResult:
         """Build the CatalogListResult for the '--type template' sugar filter."""
         packaged_items = [record for record in records if record.tier == CatalogTier.PACKAGED]
         return CatalogListResult(
             items=packaged_items,
-            templates=list_packaged_template_defaults(),
+            templates=list_packaged_template_defaults(self.paths.catalog_templates_dir),
             type_filter="template",
             warnings=list(scan_result.errors),
         )
@@ -124,7 +121,7 @@ class Catalog:
         if not resolution_result.ok or item is None:
             return CatalogShowResult(errors=[f"Catalog blueprint or template '{sha_or_name}' not found."])
 
-        file_path = resolve_catalog_record_path(item, repo_root=self.path, global_root=self.global_root)
+        file_path = resolve_catalog_record_path(item, self.paths)
         try:
             content = file_path.read_text(encoding="utf-8")
         except OSError as exc:
@@ -145,9 +142,7 @@ class Catalog:
         """Retrieve the highest-precedence catalog record matching key_or_sha, optionally validating its content into definition_cls."""
         self.sync()
         parsed_item_type = coerce_catalog_item_type(item_type) if item_type is not None else None
-        matches = find_catalog_record_matches(
-            key_or_sha, parsed_item_type, repo_root=self.path, global_root=self.global_root
-        )
+        matches = find_catalog_record_matches(key_or_sha, parsed_item_type, self.paths)
 
         if not matches:
             return DefinitionResolutionResult[CatalogRecord](
@@ -199,14 +194,8 @@ class Catalog:
     ) -> CatalogCreateResult:
         """Create a new catalog blueprint or step file at the selected tier and reindex."""
         try:
-            record = create_catalog_item(
-                item_type=coerce_catalog_item_type(item_type),
-                name=name,
-                tier=tier,
-                repo_root=self.path,
-                global_root=self.global_root,
-            )
-            resolved_path = resolve_catalog_record_path(record, repo_root=self.path, global_root=self.global_root)
+            record = create_catalog_item(coerce_catalog_item_type(item_type), name, tier, self.paths)
+            resolved_path = resolve_catalog_record_path(record, self.paths)
             return CatalogCreateResult(item=record, resolved_path=resolved_path)
         except Exception as exc:
             return CatalogCreateResult(errors=[str(exc)])
@@ -214,9 +203,7 @@ class Catalog:
     def delete(self, sha_or_name: str) -> CatalogDeleteResult:
         """Delete a REPO-tier catalog blueprint file and reindex, refusing wt/-namespaced or non-REPO-tier matches."""
         try:
-            deleted_item = delete_catalog_item_by_sha_or_name(
-                sha_or_name, repo_root=self.path, global_root=self.global_root
-            )
+            deleted_item = delete_catalog_item_by_sha_or_name(sha_or_name, self.paths)
             if deleted_item is None:
                 return CatalogDeleteResult(errors=[f"Catalog blueprint '{sha_or_name}' not found."])
             return CatalogDeleteResult(item=deleted_item, deleted=True)
@@ -231,9 +218,9 @@ class Catalog:
         item_type: CatalogItemType | str,
     ) -> CatalogRecord:
         """Write YAML under the REPO tier's type folder and reindex. Overwrites an existing file."""
-        with WorkspaceLock(self.path):
+        with WorkspaceLock(self.paths.lock_file):
             type_enum = coerce_catalog_item_type(item_type)
-            catalog_dir = ensure_tier_catalog_dirs(CatalogTier.REPO, repo_root=self.path, global_root=self.global_root)
+            catalog_dir = ensure_tier_catalog_dirs(CatalogTier.REPO, self.paths)
             stem = self._strip_yaml_suffix(name)
             rel_path = Path(f"{type_enum.value}s") / f"{stem}.yml"
             target_path = catalog_dir / rel_path
@@ -246,7 +233,7 @@ class Catalog:
             except OSError as exc:
                 raise CatalogWriteError(f"Failed to write catalog blueprint '{target_path}': {exc}") from exc
 
-            scan_result = scan_and_index_tier(CatalogTier.REPO, repo_root=self.path, global_root=self.global_root)
+            scan_result = scan_and_index_tier(CatalogTier.REPO, self.paths)
             record = next((item for item in scan_result.items if item.path == rel_path), None)
             if record is None:
                 raise CatalogWriteError(f"Failed to reindex catalog blueprint '{rel_path.as_posix()}'.")
@@ -255,7 +242,7 @@ class Catalog:
 
     def seed(self, *, force: bool = False) -> SeedResult:
         """Seed packaged catalog templates into the workspace."""
-        return seed_all_catalog_templates(self.path, force=force)
+        return seed_all_catalog_templates(self.paths, force=force)
 
     def sync(self) -> CatalogScanResult:
         """Synchronize each disk-backed tier's index.json with its on-disk YAML blueprints.
@@ -266,7 +253,7 @@ class Catalog:
         exception within itself: a direct file-path target is inspected without calling ``get``/``sync``
         at all, so validating a file never touches the index or acquires the workspace lock.
         """
-        return scan_and_index_catalog(repo_root=self.path, global_root=self.global_root)
+        return scan_and_index_catalog(self.paths)
 
     def validate(
         self,
@@ -337,18 +324,8 @@ class Catalog:
             )
 
         record = resolution.resolved
-        resolved_path = resolve_catalog_record_path(record, repo_root=self.path, global_root=self.global_root)
+        resolved_path = resolve_catalog_record_path(record, self.paths)
         return resolved_path, record.item_type.value, record.key, list(resolution.warnings)
-
-    @staticmethod
-    def list_packaged_templates() -> list[tuple[str, str]]:
-        """Return (type, relative_path) pairs for the packaged default templates."""
-        return list_packaged_template_defaults()
-
-    @staticmethod
-    def find_packaged_templates(sha_or_name: str) -> list[tuple[str, str]]:
-        """Return (relative_path, content) pairs for packaged templates matching sha_or_name."""
-        return find_packaged_templates(sha_or_name)
 
     @staticmethod
     def read_yaml(path: Path) -> dict[str, Any]:
@@ -387,7 +364,7 @@ class Catalog:
         sha_or_name: str,
     ) -> DefinitionValidationOutcome:
         """Validate definition payload against model class, returning resolution outcome."""
-        file_path = resolve_catalog_record_path(winner, repo_root=self.path, global_root=self.global_root)
+        file_path = resolve_catalog_record_path(winner, self.paths)
         parse_outcome = self._read_and_parse_yaml(file_path, winner.path)
         if parse_outcome.errors or parse_outcome.parsed_data is None:
             return DefinitionValidationOutcome(

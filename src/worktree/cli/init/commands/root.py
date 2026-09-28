@@ -30,7 +30,7 @@ def init_command(
         force: When True with project_id, overwrite an existing project identity.
     """
     result = initialize_workspace(
-        context.cwd,
+        context.paths.root_dir,
         tool_version=tool_version,
         overwrite=overwrite,
         repair=repair,

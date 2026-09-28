@@ -7,7 +7,7 @@ from pathlib import Path
 from pydantic import ValidationError
 
 from worktree.common.filesystem.facade import Filesystem
-from worktree.common.lock import LockTimeoutError, WorkspaceLock
+from worktree.common.lock import LockTimeoutError, WorkspaceLock, resolve_lock_file_path
 from worktree.core.project.models import (
     PROJECT_ID_REGEX,
     ProjectIdentity,
@@ -87,7 +87,7 @@ def load_project_identity(path: Path) -> ProjectIdentityLoadResult:
 def save_project_identity(path: Path, identity: ProjectIdentity) -> ProjectIdentitySaveResult:
     """Persist a project identity atomically or return a classified write result."""
     try:
-        with WorkspaceLock(path.parent):
+        with WorkspaceLock(resolve_lock_file_path(path.parent)):
             Filesystem.atomic_write_json(path, identity.model_dump(mode="json"))
     except LockTimeoutError as exc:
         message = f"Unable to acquire project identity lock at '{path}': {exc} (PROJECT_IDENTITY_LOCKED)."

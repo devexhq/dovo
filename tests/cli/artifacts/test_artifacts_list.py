@@ -8,8 +8,16 @@ from pathlib import Path
 from typer.testing import CliRunner
 
 from worktree.cli import app
+from worktree.common.filesystem.models import RepositoryPaths, WorkspacePaths
+from worktree.common.filesystem.services.global_root import resolve_global_paths
 from worktree.core.artifacts import Artifacts
 from worktree.core.db import WorktreeDb
+from worktree.core.project.services.storage import resolve_workspace_paths
+
+
+def _paths_for(root: Path) -> WorkspacePaths:
+    """Resolve the WorkspacePaths snapshot for root, reflecting its current project.json."""
+    return resolve_workspace_paths(RepositoryPaths.from_root(root), resolve_global_paths(None))
 
 
 def _publish_artifact(workspace: Path, *, session_id: str, name: str) -> None:
@@ -17,8 +25,9 @@ def _publish_artifact(workspace: Path, *, session_id: str, name: str) -> None:
     sandbox_path = workspace / "sandbox-scratch" / session_id
     (sandbox_path / "dist").mkdir(parents=True, exist_ok=True)
     (sandbox_path / "dist" / "pkg.whl").write_bytes(b"package-bytes")
-    db = WorktreeDb(path=workspace)
-    Artifacts(path=workspace, db=db.artifacts).upload(session_id, name, "dist/*.whl", sandbox_path=sandbox_path)
+    paths = _paths_for(workspace)
+    db = WorktreeDb(database_file=paths.database_file, project_id=paths.project_id)
+    Artifacts(paths, db=db.artifacts).upload(session_id, name, "dist/*.whl", sandbox_path=sandbox_path)
 
 
 class ArtifactsListCliIntegrationTests:

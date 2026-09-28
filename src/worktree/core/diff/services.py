@@ -5,15 +5,15 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
+from worktree.common.filesystem import WorkspacePaths
 from worktree.core.diff.models import DiffResult, DiffStatus
-from worktree.core.project.services.storage import resolve_project_filesystem_paths
 
 
 @dataclass
 class DiffService:
     """Service encapsulating session unified diff retrieval."""
 
-    path: Path
+    paths: WorkspacePaths
     session_id: str | None = None
     raw: bool = False
     full: bool = False
@@ -110,7 +110,7 @@ class DiffService:
 
     def collect(self) -> DiffResult:
         """Collect and validate the diff artifact without side effects."""
-        sessions_dir = resolve_project_filesystem_paths(self.path).sessions_dir
+        sessions_dir = self.paths.sessions_dir
 
         target_dir, resolved_session_id, error_result = self._resolve_session_target(sessions_dir)
         if error_result is not None or target_dir is None or resolved_session_id is None:

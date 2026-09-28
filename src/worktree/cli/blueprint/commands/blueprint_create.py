@@ -43,6 +43,6 @@ def blueprint_create_command(
         ui_dispatcher.dispatch(tier_or_error, output_format=output_format)
         return tier_or_error
 
-    result = Catalog(path=context.cwd).create(item_type=CatalogItemType.BLUEPRINT, name=name, tier=tier_or_error)
+    result = Catalog(context.paths).create(item_type=CatalogItemType.BLUEPRINT, name=name, tier=tier_or_error)
     ui_dispatcher.dispatch(result, output_format=output_format)
     return result

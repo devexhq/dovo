@@ -8,7 +8,21 @@ from pathlib import Path
 from typer.testing import CliRunner
 
 from worktree.cli import app
+from worktree.common.filesystem.models import RepositoryPaths, WorkspacePaths
+from worktree.common.filesystem.services.global_root import resolve_global_paths
 from worktree.core.db import RunStatus, WorktreeDb
+from worktree.core.project.services.storage import resolve_workspace_paths
+
+
+def _paths_for(root: Path) -> WorkspacePaths:
+    """Resolve the WorkspacePaths snapshot for root, reflecting its current project.json."""
+    return resolve_workspace_paths(RepositoryPaths.from_root(root), resolve_global_paths(None))
+
+
+def _db_for(workspace: Path) -> WorktreeDb:
+    """Construct a WorktreeDb bound to workspace's resolved database file and project id."""
+    paths = _paths_for(workspace)
+    return WorktreeDb(database_file=paths.database_file, project_id=paths.project_id)
 
 
 class HistoryListCliIntegrationTests:
@@ -18,7 +32,7 @@ class HistoryListCliIntegrationTests:
         self, cli_runner: CliRunner, history_workspace: Path
     ) -> None:
         """wt history: bare invocation lists seeded COMPLETED and FAILED runs, exit 0, both session IDs in stdout."""
-        db = WorktreeDb(path=history_workspace)
+        db = _db_for(history_workspace)
         db.runs.create(
             session_id="session-completed", blueprint_name="task-a", blueprint_key="task-a", status=RunStatus.COMPLETED
         )
@@ -36,7 +50,7 @@ class HistoryListCliIntegrationTests:
         self, cli_runner: CliRunner, history_workspace: Path
     ) -> None:
         """wt history list --format json: stdout equals the literal HistoryListResult envelope for the two seeded runs."""
-        db = WorktreeDb(path=history_workspace)
+        db = _db_for(history_workspace)
         db.runs.create(
             session_id="session-completed", blueprint_name="task-a", blueprint_key="task-a", status=RunStatus.COMPLETED
         )

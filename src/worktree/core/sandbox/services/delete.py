@@ -2,19 +2,26 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
+from worktree.common.filesystem import WorkspacePaths
 from worktree.core.db import SandboxesRepository, SandboxStatus
 from worktree.core.sandbox.models import SandboxDeleteResult, SandboxDeleteStatus
 
 
 def collect_sandbox_delete(
-    path: Path,
+    paths: WorkspacePaths,
     db: SandboxesRepository,
     *,
     sandbox_id: str,
 ) -> SandboxDeleteResult:
     """Look up one sandbox for delete (no mutation)."""
+    if paths.project_id is None:
+        return SandboxDeleteResult(
+            status=SandboxDeleteStatus.NOT_INITIALIZED,
+            sandbox_id=sandbox_id,
+            errors=["Workspace is not initialized."],
+            fixes=["Run `wt init` to initialize this workspace."],
+        )
+
     row = db.get(sandbox_id)
     if row is None:
         return SandboxDeleteResult(

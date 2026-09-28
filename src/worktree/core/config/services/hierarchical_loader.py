@@ -9,10 +9,9 @@ from typing import Any
 
 from pydantic import ValidationError
 
-from worktree.common.filesystem.services.global_root import resolve_global_paths
+from worktree.common.filesystem import WorkspacePaths
 from worktree.core.config.exceptions import ConfigTierValidationError
 from worktree.core.config.generator import CANONICAL_V1_DEFAULTS
-from worktree.core.config.loader import resolve_config_path
 from worktree.core.config.models import (
     ConfigLayer,
     ConfigTier,
@@ -73,16 +72,14 @@ def _validate_merged_layer(tier: ConfigTier, path: Path, merged: dict[str, Any])
         raise ConfigTierValidationError(tier, path, str(exc)) from exc
 
 
-def resolve_config_layers(repo_root: Path, global_root: Path | None = None) -> list[ConfigLayer]:
+def resolve_config_layers(paths: WorkspacePaths) -> list[ConfigLayer]:
     """Resolve the Packaged, Global, User, and Repo config layers present on disk, in precedence order."""
-    global_paths = resolve_global_paths(global_root)
-
     layers = [ConfigLayer(tier=ConfigTier.PACKAGED, path=None, data=_packaged_defaults())]
 
     tier_paths = (
-        (ConfigTier.GLOBAL, global_paths.global_dir / "config.json"),
-        (ConfigTier.USER, global_paths.user_dir / "config.json"),
-        (ConfigTier.REPO, resolve_config_path(path=repo_root)),
+        (ConfigTier.GLOBAL, paths.global_paths.global_dir / "config.json"),
+        (ConfigTier.USER, paths.global_paths.user_dir / "config.json"),
+        (ConfigTier.REPO, paths.config_file),
     )
     for tier, path in tier_paths:
         data = _read_tier_file(tier, path)
@@ -103,10 +100,10 @@ def _classify_tier_error(details: str) -> HierarchicalConfigLoadStatus:
     return HierarchicalConfigLoadStatus.VALIDATION_FAILED
 
 
-def load_hierarchical_config(repo_root: Path, global_root: Path | None = None) -> HierarchicalConfigLoadResult:
+def load_hierarchical_config(paths: WorkspacePaths) -> HierarchicalConfigLoadResult:
     """Merge Packaged, Global, User, and Repo config tiers into one validated WorktreeConfig, without raising."""
     try:
-        layers = resolve_config_layers(repo_root, global_root)
+        layers = resolve_config_layers(paths)
 
         merged = _deep_merge({}, layers[0].data)
         for layer in layers[1:]:

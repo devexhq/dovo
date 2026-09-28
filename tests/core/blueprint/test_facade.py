@@ -2,9 +2,12 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from worktree.common.filesystem.models import RepositoryPaths
+from worktree.common.filesystem.services.global_root import resolve_global_paths
 from worktree.core.blueprint import Blueprint, BlueprintDefinition
 from worktree.core.catalog import Catalog
 from worktree.core.project.services.identity import generate_project_identity, save_project_identity
+from worktree.core.project.services.storage import resolve_workspace_paths
 from worktree.core.step.models import StepDefinition
 
 
@@ -19,7 +22,8 @@ class BlueprintDocumentNormalizationTests:
         raw_yaml = "steps:\n  - id: ruff\n    run: ruff check .\n"
         (blueprints_dir / "lint-task.yml").write_text(raw_yaml, encoding="utf-8")
 
-        blueprint = Blueprint.load("lint-task", catalog=Catalog(tmp_path))
+        paths = resolve_workspace_paths(RepositoryPaths.from_root(tmp_path), resolve_global_paths(None))
+        blueprint = Blueprint.load("lint-task", catalog=Catalog(paths))
 
         assert blueprint.definition.name == "lint-task"
         assert len(blueprint.definition.steps) == 1

@@ -4,14 +4,13 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from worktree.common.filesystem import Filesystem
+from worktree.common.filesystem import Filesystem, WorkspacePaths
 from worktree.core.config import Config, ConfigLoadStatus
 from worktree.core.db import (
     RunsRepository,
     SandboxesRepository,
     SandboxStatus,
 )
-from worktree.core.db.connection import resolve_db_path
 from worktree.core.git import (
     GitCommandError,
     GitNotFoundError,
@@ -63,9 +62,9 @@ def _collect_git_status(root_dir: Path) -> GitStatusInfo:
         )
 
 
-def _collect_config_status(root_dir: Path) -> ConfigStatusInfo:
+def _collect_config_status(paths: WorkspacePaths) -> ConfigStatusInfo:
     """Collect configuration file status without mutations."""
-    result = Config(root_dir).load()
+    result = Config(paths).load()
     return ConfigStatusInfo(
         status=result.status,
         config_path=result.config_path,
@@ -94,9 +93,8 @@ def _scan_catalog_category(category_dir: Path) -> tuple[int, int, list[str]]:
     return len(entries), invalid_count, names
 
 
-def _collect_catalog_status(root_dir: Path) -> CatalogStatusInfo:
+def _collect_catalog_status(catalog_dir: Path) -> CatalogStatusInfo:
     """Collect blueprint catalog directory health and item counts."""
-    catalog_dir = Filesystem(root_dir).catalog_dir
     if not catalog_dir.is_dir():
         return CatalogStatusInfo(
             exists=False,
@@ -128,9 +126,9 @@ def _collect_catalog_status(root_dir: Path) -> CatalogStatusInfo:
     )
 
 
-def _collect_database_status(root_dir: Path) -> DatabaseStatusInfo:
+def _collect_database_status(paths: WorkspacePaths) -> DatabaseStatusInfo:
     """Collect centralized SQLite database accessibility and total recorded runs."""
-    db_path = resolve_db_path()
+    db_path = paths.database_file
     if not db_path.is_file():
         return DatabaseStatusInfo(
             exists=False,
@@ -140,7 +138,7 @@ def _collect_database_status(root_dir: Path) -> DatabaseStatusInfo:
         )
 
     try:
-        runs_repo = RunsRepository(root_dir, auto_init=False)
+        runs_repo = RunsRepository(db_path=db_path, project_id=paths.project_id, auto_init=False)
         total_runs = len(runs_repo.list())
         return DatabaseStatusInfo(
             exists=True,
@@ -158,7 +156,7 @@ def _collect_database_status(root_dir: Path) -> DatabaseStatusInfo:
 
 
 def _collect_sandbox_status(
-    root_dir: Path,
+    paths: WorkspacePaths,
     config_status: ConfigStatusInfo,
     database_status: DatabaseStatusInfo,
 ) -> SandboxStatusInfo:
@@ -169,11 +167,13 @@ def _collect_sandbox_status(
         else 5
     )
 
-    sandboxes_dir = Filesystem(root_dir).sandboxes_dir
+    sandboxes_dir = paths.sandboxes_dir
 
     if database_status.is_accessible:
         try:
-            sandboxes_repo = SandboxesRepository(root_dir, auto_init=False)
+            sandboxes_repo = SandboxesRepository(
+                db_path=paths.database_file, project_id=paths.project_id, auto_init=False
+            )
             active_sandboxes = len(sandboxes_repo.list(status=SandboxStatus.ACTIVE))
             total_sandboxes = len(sandboxes_repo.list())
             return SandboxStatusInfo(
@@ -303,16 +303,13 @@ def _collect_fixes(
     return fixes
 
 
-def collect_status(cwd: Path | None = None) -> WorktreeStatusResult:
+def collect_status(paths: WorkspacePaths) -> WorktreeStatusResult:
     """Collect workspace health and runtime status without side effects."""
-    fs = Filesystem(cwd)
-    root_dir = fs.root_dir
-
-    git_status = _collect_git_status(root_dir)
-    config_status = _collect_config_status(root_dir)
-    catalog_status = _collect_catalog_status(root_dir)
-    database_status = _collect_database_status(root_dir)
-    sandbox_status = _collect_sandbox_status(root_dir, config_status, database_status)
+    git_status = _collect_git_status(paths.root_dir)
+    config_status = _collect_config_status(paths)
+    catalog_status = _collect_catalog_status(paths.catalog_dir)
+    database_status = _collect_database_status(paths)
+    sandbox_status = _collect_sandbox_status(paths, config_status, database_status)
     warnings = _collect_warnings(
         git=git_status,
         config=config_status,
@@ -324,10 +321,10 @@ def collect_status(cwd: Path | None = None) -> WorktreeStatusResult:
         config=config_status,
     )
 
-    is_initialized = fs.worktree_dir.is_dir() and config_status.status != ConfigLoadStatus.NOT_FOUND
+    is_initialized = paths.worktree_dir.is_dir() and config_status.status != ConfigLoadStatus.NOT_FOUND
 
     return WorktreeStatusResult(
-        root_dir=root_dir,
+        root_dir=paths.root_dir,
         is_initialized=is_initialized,
         git=git_status,
         config=config_status,

@@ -5,10 +5,18 @@ from __future__ import annotations
 from pathlib import Path
 
 from tests.harness.builders import StepBuilder
+from worktree.common.filesystem.models import RepositoryPaths, WorkspacePaths
+from worktree.common.filesystem.services.global_root import resolve_global_paths
+from worktree.core.project.services.storage import resolve_workspace_paths
 from worktree.core.runtime.checkpoint import Checkpoint, failed_step_message, pending_result_for_resume
 from worktree.core.runtime.models import RunCheckpoint, RunContext, RunPauseStore, StepLoopState
 from worktree.core.sandbox import SandboxSession
 from worktree.core.step.models import StepResult
+
+
+def _paths_for(root: Path) -> WorkspacePaths:
+    """Resolve the WorkspacePaths snapshot for root, reflecting its current project.json."""
+    return resolve_workspace_paths(RepositoryPaths.from_root(root), resolve_global_paths(None))
 
 
 class _RecordingPauseStore(RunPauseStore):
@@ -112,7 +120,15 @@ class CheckpointBuildTests:
             step_id="ok", status="completed", exit_code=0, stdout="", stderr="", duration_seconds=0.01
         )
         state = StepLoopState(target_dir=tmp_path, session=session, step_results=[prior_result])
-        context = RunContext(steps=[], cwd=tmp_path, use_sandbox=True, keep=True, agent="claude", inputs={"k": "v"})
+        context = RunContext(
+            steps=[],
+            cwd=tmp_path,
+            use_sandbox=True,
+            keep=True,
+            agent="claude",
+            inputs={"k": "v"},
+            paths=_paths_for(tmp_path),
+        )
         step = StepBuilder.command("exit 1").with_id("fail").build()
         result = _failed_result("fail")
 
@@ -136,7 +152,7 @@ class CheckpointBuildTests:
     def test_build_without_sandbox_session_falls_back_to_target_dir(self, tmp_path: Path) -> None:
         """[tier-1/unit] Checkpoint.build: with session=None, sandbox_path falls back to state.target_dir and the remaining sandbox_* fields are None."""
         state = StepLoopState(target_dir=tmp_path, session=None)
-        context = RunContext(steps=[], cwd=tmp_path, use_sandbox=False)
+        context = RunContext(steps=[], cwd=tmp_path, use_sandbox=False, paths=_paths_for(tmp_path))
         step = StepBuilder.command("exit 1").with_id("fail").build()
         result = _failed_result("fail")
 
@@ -154,7 +170,7 @@ class CheckpointTrySaveTests:
 
     def test_no_pause_store_returns_false_without_saving(self, tmp_path: Path) -> None:
         """[tier-1/unit] Checkpoint.try_save: context.pause_store=None returns False and appends no warnings."""
-        context = RunContext(steps=[], cwd=tmp_path, use_sandbox=False, pause_store=None)
+        context = RunContext(steps=[], cwd=tmp_path, use_sandbox=False, pause_store=None, paths=_paths_for(tmp_path))
         checkpoint = RunCheckpoint(next_step_index=0, pending_step_id="fail", diagnostic="boom")
         warnings: list[str] = []
 
@@ -166,7 +182,7 @@ class CheckpointTrySaveTests:
     def test_pause_store_success_returns_true_and_saves_checkpoint(self, tmp_path: Path) -> None:
         """[tier-1/unit] Checkpoint.try_save: a working pause_store receives the checkpoint and returns True."""
         store = _RecordingPauseStore()
-        context = RunContext(steps=[], cwd=tmp_path, use_sandbox=False, pause_store=store)
+        context = RunContext(steps=[], cwd=tmp_path, use_sandbox=False, pause_store=store, paths=_paths_for(tmp_path))
         checkpoint = RunCheckpoint(next_step_index=0, pending_step_id="fail", diagnostic="boom")
         warnings: list[str] = []
 
@@ -178,7 +194,9 @@ class CheckpointTrySaveTests:
 
     def test_pause_store_exception_returns_false_and_appends_warning(self, tmp_path: Path) -> None:
         """[tier-1/unit] Checkpoint.try_save: a raising pause_store returns False and appends a warning naming the failure."""
-        context = RunContext(steps=[], cwd=tmp_path, use_sandbox=False, pause_store=_ExplodingPauseStore())
+        context = RunContext(
+            steps=[], cwd=tmp_path, use_sandbox=False, pause_store=_ExplodingPauseStore(), paths=_paths_for(tmp_path)
+        )
         checkpoint = RunCheckpoint(next_step_index=0, pending_step_id="fail", diagnostic="boom")
         warnings: list[str] = []
 
@@ -194,7 +212,7 @@ class CheckpointTryClearTests:
 
     def test_no_pause_store_is_noop(self, tmp_path: Path) -> None:
         """[tier-1/unit] Checkpoint.try_clear: context.pause_store=None appends no warnings."""
-        context = RunContext(steps=[], cwd=tmp_path, use_sandbox=False, pause_store=None)
+        context = RunContext(steps=[], cwd=tmp_path, use_sandbox=False, pause_store=None, paths=_paths_for(tmp_path))
         warnings: list[str] = []
 
         Checkpoint(context).try_clear(warnings)
@@ -204,7 +222,7 @@ class CheckpointTryClearTests:
     def test_pause_store_success_clears_pause(self, tmp_path: Path) -> None:
         """[tier-1/unit] Checkpoint.try_clear: a working pause_store's clear_pause is invoked exactly once."""
         store = _RecordingPauseStore()
-        context = RunContext(steps=[], cwd=tmp_path, use_sandbox=False, pause_store=store)
+        context = RunContext(steps=[], cwd=tmp_path, use_sandbox=False, pause_store=store, paths=_paths_for(tmp_path))
         warnings: list[str] = []
 
         Checkpoint(context).try_clear(warnings)
@@ -214,7 +232,9 @@ class CheckpointTryClearTests:
 
     def test_pause_store_exception_appends_warning(self, tmp_path: Path) -> None:
         """[tier-1/unit] Checkpoint.try_clear: a raising pause_store appends a warning naming the failure instead of propagating."""
-        context = RunContext(steps=[], cwd=tmp_path, use_sandbox=False, pause_store=_ExplodingPauseStore())
+        context = RunContext(
+            steps=[], cwd=tmp_path, use_sandbox=False, pause_store=_ExplodingPauseStore(), paths=_paths_for(tmp_path)
+        )
         warnings: list[str] = []
 
         Checkpoint(context).try_clear(warnings)

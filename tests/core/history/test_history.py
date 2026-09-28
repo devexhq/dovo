@@ -7,16 +7,22 @@ from pathlib import Path
 
 import pytest
 
+from worktree.common.filesystem.models import RepositoryPaths, WorkspacePaths
+from worktree.common.filesystem.services.global_root import resolve_global_paths
 from worktree.core.db import RunRecord, RunsRepository, RunStatus
-from worktree.core.db.connection import resolve_db_path
 from worktree.core.engine.models import ReconciliationResult
 from worktree.core.history import History
 from worktree.core.history.models import (
     HistoryListStatus,
     HistoryShowStatus,
 )
-from worktree.core.project.services.storage import resolve_project_filesystem_paths
+from worktree.core.project.services.storage import resolve_workspace_paths
 from worktree.core.runtime import RunLogEvent, RunLogEventType
+
+
+def _paths_for(root: Path) -> WorkspacePaths:
+    """Resolve the WorkspacePaths snapshot for root, reflecting its current project.json."""
+    return resolve_workspace_paths(RepositoryPaths.from_root(root), resolve_global_paths(None))
 
 
 def _as_expected_record(record: RunRecord) -> RunRecord:
@@ -44,12 +50,12 @@ class HistoryInitializationTests:
         self, isolated_workspace: Path
     ) -> None:
         """[tier-1/unit] History.__init__: omitting db argument initializes RunsRepository with resolved path."""
-        history = History(path=isolated_workspace)
+        paths = _paths_for(isolated_workspace)
+        history = History(paths)
 
         assert history.path == isolated_workspace.resolve()
-        assert history.cwd == isolated_workspace.resolve()
         assert isinstance(history.db, RunsRepository)
-        assert history.db.db_path == resolve_db_path()
+        assert history.db.db_path == paths.database_file
 
 
 class HistoryListTests:
@@ -57,7 +63,7 @@ class HistoryListTests:
 
     def test_empty_database_returns_ok_status_with_empty_runs(self, isolated_workspace: Path) -> None:
         """[tier-1/integration] History.list: empty runs table returns HistoryListResult with status=OK, runs=[], warnings=[]."""
-        history = History(isolated_workspace)
+        history = History(_paths_for(isolated_workspace))
 
         result = history.list()
 
@@ -70,7 +76,7 @@ class HistoryListTests:
 
     def test_unfiltered_list_returns_runs_ordered_with_ok_status(self, isolated_workspace: Path) -> None:
         """[tier-1/integration] History.list: returns all runs up to default limit with status=OK in descending order."""
-        history = History(isolated_workspace)
+        history = History(_paths_for(isolated_workspace))
         run_first = history.db.create(
             session_id="session-001",
             blueprint_name="task-alpha",
@@ -95,7 +101,7 @@ class HistoryListTests:
 
     def test_limit_parameter_restricts_number_of_returned_runs(self, isolated_workspace: Path) -> None:
         """[tier-1/integration] History.list: limit=N restricts returned runs to N records."""
-        history = History(isolated_workspace)
+        history = History(_paths_for(isolated_workspace))
         history.db.create(
             session_id="session-001",
             blueprint_name="task-alpha",
@@ -138,7 +144,7 @@ class HistoryListTests:
         self, isolated_workspace: Path, status_arg: str, expected_session_id: str
     ) -> None:
         """[tier-1/integration] History.list: status filter correctly filters runs by status enum and case-insensitively."""
-        history = History(isolated_workspace)
+        history = History(_paths_for(isolated_workspace))
         run_comp = history.db.create(
             session_id="session-comp",
             blueprint_name="task-comp",
@@ -176,7 +182,7 @@ class HistoryListTests:
 
     def test_unknown_status_filter_fallback_passes_raw_string_to_query(self, isolated_workspace: Path) -> None:
         """[tier-1/integration] History.list: invalid status string falls back to raw string filter without raising ValueError."""
-        history = History(isolated_workspace)
+        history = History(_paths_for(isolated_workspace))
         history.db.create(
             session_id="session-comp",
             blueprint_name="task-comp",
@@ -197,7 +203,7 @@ class HistoryListTests:
         self, isolated_workspace: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """[tier-1/integration] History.list: reconciliation warning from reconcile_stale_runs is appended to warnings."""
-        history = History(isolated_workspace)
+        history = History(_paths_for(isolated_workspace))
 
         def _mock_reconcile(*_args: object, **_kwargs: object) -> ReconciliationResult:
             return ReconciliationResult(reconciled=[], warning="Session was terminated abnormally")
@@ -219,7 +225,7 @@ class HistoryShowTests:
 
     def test_missing_session_id_returns_not_found_status(self, isolated_workspace: Path) -> None:
         """[tier-1/integration] History.show: missing session_id returns HistoryShowResult with status=NOT_FOUND and run=None."""
-        history = History(isolated_workspace)
+        history = History(_paths_for(isolated_workspace))
 
         result = history.show("nonexistent-session")
 
@@ -233,7 +239,7 @@ class HistoryShowTests:
 
     def test_existing_session_id_returns_ok_status_with_run_record(self, isolated_workspace: Path) -> None:
         """[tier-1/integration] History.show: existing session_id returns HistoryShowResult with status=OK and run record."""
-        history = History(isolated_workspace)
+        history = History(_paths_for(isolated_workspace))
         seeded_run = history.db.create(
             session_id="session-alpha",
             blueprint_name="deploy-flow",
@@ -258,7 +264,9 @@ class HistoryShowIncludeLogsTests:
     def _seed_logged_session(self, history: History, workspace: Path) -> Path:
         """Persist a run record and a log directory with twelve run.log events and one stdout capture."""
         history.db.create(session_id="sess", blueprint_name="bp", blueprint_key="bp", status=RunStatus.COMPLETED)
-        session_log_dir = resolve_project_filesystem_paths(workspace).logs_dir / "sess"
+        session_log_dir = (
+            resolve_workspace_paths(RepositoryPaths.from_root(workspace), resolve_global_paths(None)).logs_dir / "sess"
+        )
         session_log_dir.mkdir(parents=True)
         events = [
             RunLogEvent(ts=f"2026-09-26T10:00:{i:02d}+00:00", event=RunLogEventType.STEP_START, step_id=f"s{i}")
@@ -270,7 +278,7 @@ class HistoryShowIncludeLogsTests:
 
     def test_show_include_logs_true_populates_log_files_and_snippet(self, isolated_workspace: Path) -> None:
         """[tier-1/integration] History.show: include_logs=True lists every file under logs_dir/<session_id>/ and renders the last 10 run.log events."""
-        history = History(isolated_workspace)
+        history = History(_paths_for(isolated_workspace))
         session_log_dir = self._seed_logged_session(history, isolated_workspace)
 
         result = history.show("sess", include_logs=True)
@@ -283,7 +291,7 @@ class HistoryShowIncludeLogsTests:
 
     def test_show_include_logs_false_default_leaves_log_fields_empty(self, isolated_workspace: Path) -> None:
         """[tier-1/integration] History.show: the default call leaves log_files and log_snippet empty even when logs exist."""
-        history = History(isolated_workspace)
+        history = History(_paths_for(isolated_workspace))
         self._seed_logged_session(history, isolated_workspace)
 
         result = history.show("sess")
@@ -293,7 +301,7 @@ class HistoryShowIncludeLogsTests:
     @pytest.mark.skipif(os.geteuid() == 0, reason="root bypasses file permissions")
     def test_show_include_logs_unreadable_run_log_returns_error_result(self, isolated_workspace: Path) -> None:
         """[tier-1/integration] History.show: an OSError reading run.log is returned in errors with empty log fields."""
-        history = History(isolated_workspace)
+        history = History(_paths_for(isolated_workspace))
         session_log_dir = self._seed_logged_session(history, isolated_workspace)
         (session_log_dir / "run.log").chmod(0)
 

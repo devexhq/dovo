@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from worktree.common.filesystem import WorkspacePaths
 from worktree.core.diff.models import DiffResult
 from worktree.core.diff.services import DiffService
 from worktree.core.diff.writer import get_session_dir, write_session_diff
@@ -12,8 +13,8 @@ from worktree.core.diff.writer import get_session_dir, write_session_diff
 class Diff:
     """Unified entrypoint for execution run diff artifacts inspection and writing."""
 
-    def __init__(self, path: Path = Path("."), raw: bool = False, full: bool = False, max_lines: int = 500) -> None:
-        self.path = path.resolve()
+    def __init__(self, paths: WorkspacePaths, raw: bool = False, full: bool = False, max_lines: int = 500) -> None:
+        self.paths = paths
         self.raw = raw
         self.full = full
         self.max_lines = max_lines
@@ -21,7 +22,7 @@ class Diff:
     def inspect(self, session_id: str | None = None) -> DiffResult:
         """Inspect and return structured diff result for a session or latest run."""
         service = DiffService(
-            path=self.path,
+            paths=self.paths,
             session_id=session_id,
             raw=self.raw,
             full=self.full,
@@ -30,9 +31,9 @@ class Diff:
         return service.collect()
 
     @staticmethod
-    def session_dir(root: Path, session_id: str) -> Path:
+    def session_dir(paths: WorkspacePaths, session_id: str) -> Path:
         """Return the target directory for storing session artifacts."""
-        return get_session_dir(root, session_id)
+        return get_session_dir(paths, session_id)
 
     @staticmethod
     def write(session_dir: Path, diff_text: str) -> Path:

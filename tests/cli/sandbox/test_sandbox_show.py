@@ -9,9 +9,17 @@ from typing import Any
 from typer.testing import CliRunner
 
 from worktree.cli import app
+from worktree.common.filesystem.models import RepositoryPaths, WorkspacePaths
+from worktree.common.filesystem.services.global_root import resolve_global_paths
 from worktree.core.db import SandboxStatus
+from worktree.core.project.services.storage import resolve_workspace_paths
 from worktree.core.sandbox.facade import Sandbox
 from worktree.core.sandbox.models import SandboxShowResult, SandboxShowStatus
+
+
+def _paths_for(root: Path) -> WorkspacePaths:
+    """Resolve the WorkspacePaths snapshot for root, reflecting its current project.json."""
+    return resolve_workspace_paths(RepositoryPaths.from_root(root), resolve_global_paths(None))
 
 
 class SandboxShowCliIntegrationTests:
@@ -21,7 +29,7 @@ class SandboxShowCliIntegrationTests:
         self, cli_runner: CliRunner, sandbox_workspace: Path, dispatch_spy: list[Any]
     ) -> None:
         """wt sandbox show <id> on an existing sandbox exits 0, renders its session_id, and dispatches the exact record."""
-        create_result = Sandbox(path=sandbox_workspace).create(name="show-me")
+        create_result = Sandbox(paths=_paths_for(sandbox_workspace)).create(name="show-me")
         assert create_result.session is not None
         session = create_result.session
 
@@ -67,7 +75,7 @@ class SandboxShowCliIntegrationTests:
 
     def test_sandbox_show_cli_renders_json(self, cli_runner: CliRunner, sandbox_workspace: Path) -> None:
         """wt sandbox show <id> --format json emits a SandboxShowResult envelope matching the seeded record."""
-        create_result = Sandbox(path=sandbox_workspace).create(name="show-me")
+        create_result = Sandbox(paths=_paths_for(sandbox_workspace)).create(name="show-me")
         assert create_result.session is not None
         session = create_result.session
 

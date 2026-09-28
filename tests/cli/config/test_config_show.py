@@ -13,10 +13,18 @@ from worktree.cli import app
 from worktree.cli.config.commands.config_show import config_show_command
 from worktree.cli.context import CliContext
 from worktree.common.filesystem import Filesystem
+from worktree.common.filesystem.models import RepositoryPaths, WorkspacePaths
+from worktree.common.filesystem.services.global_root import resolve_global_paths
 from worktree.core.config.generator import build_default_config
 from worktree.core.config.loader import ConfigLoadStatus
 from worktree.core.config.models import ConfigTier, WorktreeConfig
 from worktree.core.db.db import WorktreeDb
+from worktree.core.project.services.storage import resolve_workspace_paths
+
+
+def _paths_for(root: Path) -> WorkspacePaths:
+    """Resolve the WorkspacePaths snapshot for root, reflecting its current project.json."""
+    return resolve_workspace_paths(RepositoryPaths.from_root(root), resolve_global_paths(None))
 
 
 class ConfigShowRootTests:
@@ -28,8 +36,8 @@ class ConfigShowRootTests:
         payload = build_default_config("demo-workspace")
         Filesystem.atomic_write_json(config_path, payload)
 
-        fs = Filesystem.configure(isolated_workspace)
-        context = CliContext(cwd=isolated_workspace, db=WorktreeDb(path=isolated_workspace), fs=fs)
+        paths = _paths_for(isolated_workspace)
+        context = CliContext(paths=paths, db=WorktreeDb(database_file=paths.database_file, project_id=paths.project_id))
         result = config_show_command(context)
 
         assert result.status == ConfigLoadStatus.OK
@@ -43,8 +51,8 @@ class ConfigShowRootTests:
     def test_config_show_missing_config_returns_not_found(self, isolated_workspace: Path) -> None:
         """Handler returns NOT_FOUND status when config.json is missing."""
         config_path = isolated_workspace / ".worktree" / "config.json"
-        fs = Filesystem.configure(isolated_workspace)
-        context = CliContext(cwd=isolated_workspace, db=WorktreeDb(path=isolated_workspace), fs=fs)
+        paths = _paths_for(isolated_workspace)
+        context = CliContext(paths=paths, db=WorktreeDb(database_file=paths.database_file, project_id=paths.project_id))
         result = config_show_command(context)
 
         assert result.status == ConfigLoadStatus.NOT_FOUND

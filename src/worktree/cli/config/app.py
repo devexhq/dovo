@@ -1,9 +1,6 @@
 import typer
 
 from worktree.cli.context import CliContext
-from worktree.common.filesystem import Filesystem
-from worktree.core.config import Config
-from worktree.core.db.db import WorktreeDb
 
 from .commands.config_set import config_set_command
 from .commands.config_show import config_show_command
@@ -16,18 +13,6 @@ config_app = typer.Typer(
 )
 
 
-def _get_or_build_context(ctx: typer.Context) -> CliContext:
-    """Retrieve existing context or build a direct context without strict config gating."""
-    context: CliContext | None = ctx.obj.get("context") if ctx.obj else None
-    if context is not None:
-        return context
-    target_path = ctx.obj.get("path") if ctx.obj else None
-    fs = Filesystem.configure(target_path)
-    Config.configure(target_path)
-    cwd = fs.root_dir
-    return CliContext(cwd=cwd, db=WorktreeDb(path=cwd), fs=fs)
-
-
 @config_app.command("show")
 def config_show(
     ctx: typer.Context,
@@ -38,7 +23,7 @@ def config_show(
     ),
 ):
     """Display the full normalized effective configuration as JSON."""
-    context = _get_or_build_context(ctx)
+    context: CliContext = ctx.obj["context"]
     result = config_show_command(context, output_format=format)
     if not result.ok:
         raise typer.Exit(code=1)
@@ -62,7 +47,7 @@ def config_set(
     ),
 ):
     """Set a configuration value by key or nested dot-path."""
-    context = _get_or_build_context(ctx)
+    context: CliContext = ctx.obj["context"]
     result = config_set_command(context, key, value, output_format=format)
     if not result.ok:
         raise typer.Exit(code=1)
@@ -82,7 +67,7 @@ def config_unset(
     ),
 ):
     """Remove a configuration value by key or nested dot-path, falling back to its schema default."""
-    context = _get_or_build_context(ctx)
+    context: CliContext = ctx.obj["context"]
     result = config_unset_command(context, key, output_format=format)
     if not result.ok:
         raise typer.Exit(code=1)
@@ -98,7 +83,7 @@ def config_validate(
     ),
 ):
     """Validate .worktree/config.json against the V1 schema and semantic rules."""
-    context = _get_or_build_context(ctx)
+    context: CliContext = ctx.obj["context"]
     result = config_validate_command(context, output_format=format)
     if not result.ok:
         raise typer.Exit(code=1)

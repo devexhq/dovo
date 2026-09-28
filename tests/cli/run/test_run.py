@@ -14,10 +14,18 @@ from tests.harness.catalog import write_runnable_blueprint, write_runnable_step
 from worktree.cli import app
 from worktree.cli.ui.dispatcher import UiDispatcher, ui_dispatcher
 from worktree.common.filesystem import Filesystem
+from worktree.common.filesystem.models import RepositoryPaths, WorkspacePaths
+from worktree.common.filesystem.services.global_root import resolve_global_paths
 from worktree.core.config.models import ConfigTier
 from worktree.core.db import RunStatus, WorktreeDb
 from worktree.core.engine.writer import get_session_dir, load_session_run
+from worktree.core.project.services.storage import resolve_workspace_paths
 from worktree.core.runtime import RunContext, RunOutcome
+
+
+def _paths_for(root: Path) -> WorkspacePaths:
+    """Resolve the WorkspacePaths snapshot for root, reflecting its current project.json."""
+    return resolve_workspace_paths(RepositoryPaths.from_root(root), resolve_global_paths(None))
 
 
 def _raise_keyboard_interrupt(*_args: object, **_kwargs: object) -> str:
@@ -139,7 +147,10 @@ class RunCliIntegrationTests:
         )
 
         assert result.exit_code == 1
-        record = WorktreeDb(path=run_workspace).runs.get("paused-session-1")
+        run_paths = _paths_for(run_workspace)
+        record = WorktreeDb(database_file=run_paths.database_file, project_id=run_paths.project_id).runs.get(
+            "paused-session-1"
+        )
         assert record is not None
         assert record.status == RunStatus.PAUSED
 
@@ -234,10 +245,11 @@ class RunCliIntegrationTests:
         )
 
         assert result.exit_code == 0
-        session_dir = get_session_dir(run_workspace, "snap-1")
+        run_paths = _paths_for(run_workspace)
+        session_dir = get_session_dir(run_paths, "snap-1")
         assert (session_dir / "definitions" / "snapshot-task.yml").is_file()
         assert (session_dir / "definitions" / "steps" / "lint-check.yml").is_file()
-        payload = load_session_run(run_workspace, "snap-1")
+        payload = load_session_run(run_paths, "snap-1")
         assert payload is not None
         assert payload.definitions is not None
         assert len(payload.definitions.steps) == 1

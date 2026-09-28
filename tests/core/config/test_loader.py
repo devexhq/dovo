@@ -1,11 +1,12 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
 import pytest
 
-from worktree.common.filesystem import Filesystem
+from worktree.common.filesystem import Filesystem, WorkspacePaths
 from worktree.core.config.generator import build_default_config
 from worktree.core.config.loader import (
     ConfigLoadStatus,
@@ -46,12 +47,12 @@ SCHEMA_VIOLATION_PAYLOADS = [
 class ConfigLoaderTests:
     """Integration tests verifying config.json loading and schema parsing contracts."""
 
-    def test_load_returns_strongly_typed_worktree_config(self, isolated_workspace: Path) -> None:
-        config_path = isolated_workspace / ".worktree" / "config.json"
+    def test_load_returns_strongly_typed_worktree_config(self, workspace_paths: WorkspacePaths) -> None:
+        config_path = workspace_paths.config_file
         payload = build_default_config("demo-workspace")
         Filesystem.atomic_write_json(config_path, payload)
 
-        result = load_config(isolated_workspace)
+        result = load_config(workspace_paths)
 
         assert result.status == ConfigLoadStatus.OK
         assert result.config_path == config_path
@@ -61,10 +62,10 @@ class ConfigLoaderTests:
         assert result.warnings == []
         assert result.fixes == []
 
-    def test_load_missing_config_returns_failure_result(self, isolated_workspace: Path) -> None:
-        config_path = isolated_workspace / ".worktree" / "config.json"
+    def test_load_missing_config_returns_failure_result(self, workspace_paths: WorkspacePaths) -> None:
+        config_path = workspace_paths.config_file
 
-        result = load_config(isolated_workspace)
+        result = load_config(workspace_paths)
 
         assert result.status == ConfigLoadStatus.NOT_FOUND
         assert result.config_path == config_path
@@ -74,13 +75,13 @@ class ConfigLoaderTests:
         assert result.warnings == []
         assert result.fixes == ["Run `wt init` to create `.worktree/config.json`"]
 
-    def test_load_config_defaults_ignore_global_root_error_to_false(self, isolated_workspace: Path) -> None:
-        config_path = isolated_workspace / ".worktree" / "config.json"
+    def test_load_config_defaults_ignore_global_root_error_to_false(self, workspace_paths: WorkspacePaths) -> None:
+        config_path = workspace_paths.config_file
         legacy_payload = build_default_config("demo-workspace")
         legacy_payload.pop("ignore_global_root_error")
         Filesystem.atomic_write_json(config_path, legacy_payload)
 
-        result = load_config(isolated_workspace)
+        result = load_config(workspace_paths)
         generated_payload = build_default_config("demo-workspace")
 
         assert result.status == ConfigLoadStatus.OK
@@ -88,18 +89,18 @@ class ConfigLoaderTests:
         assert result.config.ignore_global_root_error is False
         assert generated_payload["ignore_global_root_error"] is False
 
-    def test_load_config_accepts_boolean_ignore_global_root_error(self, isolated_workspace: Path) -> None:
-        config_path = isolated_workspace / ".worktree" / "config.json"
+    def test_load_config_accepts_boolean_ignore_global_root_error(self, workspace_paths: WorkspacePaths) -> None:
+        config_path = workspace_paths.config_file
         enabled_payload = build_default_config("demo-workspace")
         enabled_payload["ignore_global_root_error"] = True
         Filesystem.atomic_write_json(config_path, enabled_payload)
 
-        enabled_result = load_config(isolated_workspace)
+        enabled_result = load_config(workspace_paths)
 
         invalid_payload = build_default_config("demo-workspace")
         invalid_payload["ignore_global_root_error"] = "true"
         Filesystem.atomic_write_json(config_path, invalid_payload)
-        invalid_result = load_config(isolated_workspace, bypass_cache=True)
+        invalid_result = load_config(workspace_paths, bypass_cache=True)
 
         assert enabled_result.status == ConfigLoadStatus.OK
         assert enabled_result.config is not None
@@ -110,14 +111,14 @@ class ConfigLoaderTests:
     @pytest.mark.parametrize(("payload", "expected_error"), SCHEMA_VIOLATION_PAYLOADS)
     def test_load_schema_violation_returns_validation_errors(
         self,
-        isolated_workspace: Path,
+        workspace_paths: WorkspacePaths,
         payload: dict[str, Any],
         expected_error: str,
     ) -> None:
-        config_path = isolated_workspace / ".worktree" / "config.json"
+        config_path = workspace_paths.config_file
         Filesystem.atomic_write_json(config_path, payload)
 
-        result = load_config(isolated_workspace)
+        result = load_config(workspace_paths)
 
         assert result.status == ConfigLoadStatus.SCHEMA_INVALID
         assert result.config_path == config_path
@@ -131,14 +132,13 @@ class ConfigLoaderTests:
         ]
 
     def test_load_malformed_json_returns_malformed_json_status_with_location_detail(
-        self, isolated_workspace: Path
+        self, workspace_paths: WorkspacePaths
     ) -> None:
         """[tier-1/unit] load_config: config.json containing invalid JSON syntax -> MALFORMED_JSON status, error names the file and a line/column location, config/raw are None."""
-        config_path = isolated_workspace / ".worktree" / "config.json"
-        config_path.parent.mkdir(parents=True, exist_ok=True)
+        config_path = workspace_paths.config_file
         config_path.write_text("{not valid json", encoding="utf-8")
 
-        result = load_config(isolated_workspace)
+        result = load_config(workspace_paths)
 
         assert result.status == ConfigLoadStatus.MALFORMED_JSON
         assert result.raw is None
@@ -151,31 +151,33 @@ class ClearConfigCacheTests:
     """[tier-1/unit] clear_config_cache: in-memory load_config cache invalidation."""
 
     def test_clearing_specific_path_forces_a_disk_reread_reflecting_the_new_content(
-        self, isolated_workspace: Path
+        self, workspace_paths: WorkspacePaths
     ) -> None:
-        """[tier-1/unit] clear_config_cache(path): a subsequent load_config call re-reads the file from disk instead of returning the stale cached result."""
-        config_path = isolated_workspace / ".worktree" / "config.json"
+        """[tier-1/unit] clear_config_cache(config_path): a subsequent load_config call re-reads the file from disk instead of returning the stale cached result."""
+        config_path = workspace_paths.config_file
         Filesystem.atomic_write_json(config_path, build_default_config("first-name"))
-        first = load_config(isolated_workspace)
+        first = load_config(workspace_paths)
         assert first.config is not None
         assert first.config.project.name == "first-name"
 
         Filesystem.atomic_write_json(config_path, build_default_config("second-name"))
-        clear_config_cache(isolated_workspace)
-        second = load_config(isolated_workspace)
+        clear_config_cache(config_path)
+        second = load_config(workspace_paths)
 
         assert second.config is not None
         assert second.config.project.name == "second-name"
 
-    def test_clearing_with_no_path_clears_every_cached_entry(self, tmp_path: Path) -> None:
+    def test_clearing_with_no_path_clears_every_cached_entry(
+        self, tmp_path: Path, workspace_paths_factory: Callable[[Path, Path | None], WorkspacePaths]
+    ) -> None:
         """[tier-1/unit] clear_config_cache(None): clears the entire cache, so a subsequent load for any previously cached workspace re-reads from disk."""
-        workspace_a = tmp_path / "a"
-        workspace_b = tmp_path / "b"
-        for workspace, name in ((workspace_a, "workspace-a"), (workspace_b, "workspace-b")):
-            Filesystem.atomic_write_json(workspace / ".worktree" / "config.json", build_default_config(name))
-            load_config(workspace)
+        workspace_a = workspace_paths_factory(tmp_path / "a", None)
+        workspace_b = workspace_paths_factory(tmp_path / "b", None)
+        for paths, name in ((workspace_a, "workspace-a"), (workspace_b, "workspace-b")):
+            Filesystem.atomic_write_json(paths.config_file, build_default_config(name))
+            load_config(paths)
 
-        Filesystem.atomic_write_json(workspace_a / ".worktree" / "config.json", build_default_config("renamed-a"))
+        Filesystem.atomic_write_json(workspace_a.config_file, build_default_config("renamed-a"))
         clear_config_cache()
         reloaded = load_config(workspace_a)
 

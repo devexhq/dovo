@@ -25,6 +25,6 @@ def sandbox_show_command(
         sandbox_id: Sandbox primary key to show.
         output_format: Presentation format ("terminal" or "json").
     """
-    result = Sandbox(path=context.cwd, db=context.db.sandboxes).show(sandbox_id)
+    result = Sandbox(context.paths, db=context.db.sandboxes).show(sandbox_id)
     ui_dispatcher.dispatch(result, output_format=output_format)
     return result

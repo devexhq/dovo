@@ -10,15 +10,26 @@ import pytest
 import yaml
 
 from tests.harness.catalog import write_runnable_blueprint
+from worktree.common.filesystem.models import RepositoryPaths, WorkspacePaths
+from worktree.common.filesystem.services.global_root import resolve_global_paths
 from worktree.core.blueprint.models import BlueprintDefinition
 from worktree.core.catalog import Catalog
 from worktree.core.catalog.models import CatalogItemType, CatalogValidateResult, CatalogValidateStatus
+from worktree.core.project.services.storage import resolve_workspace_paths
 from worktree.core.step.models import StepDefinition
 
 
-def _validate(target: str, *, path: Path, item_type: CatalogItemType | None = None) -> CatalogValidateResult:
+def _paths_for(root: Path) -> WorkspacePaths:
+    """Resolve the WorkspacePaths snapshot for root, reflecting its current project.json."""
+    return resolve_workspace_paths(RepositoryPaths.from_root(root), resolve_global_paths(None))
+
+
+def _validate(
+    target: str, *, path: Path, item_type: CatalogItemType | None = None, catalog: Catalog | None = None
+) -> CatalogValidateResult:
     """Call Catalog.validate with the real BlueprintDefinition/StepDefinition schema classes."""
-    return Catalog(path=path).validate(
+    cat = catalog if catalog is not None else Catalog(_paths_for(path))
+    return cat.validate(
         target,
         item_type=item_type,
         blueprint_cls=BlueprintDefinition,
@@ -88,13 +99,14 @@ class CatalogValidateServiceTests:
     ) -> None:
         """[tier-1/domain] Catalog.validate: file target with item_type=None returns status=TYPE_REQUIRED with CATALOG_TYPE_REQUIRED, never reading the file."""
         draft_path = _write_yaml(isolated_workspace / "draft.yml", {"name": "draft"})
+        catalog = Catalog(_paths_for(isolated_workspace))
 
         def _fail_read_text(self: Path, *args: object, **kwargs: object) -> str:
             raise AssertionError("draft.yml contents must not be read before --type is validated")
 
         monkeypatch.setattr(Path, "read_text", _fail_read_text)
 
-        result = _validate("draft.yml", path=isolated_workspace, item_type=None)
+        result = _validate("draft.yml", path=isolated_workspace, item_type=None, catalog=catalog)
 
         assert result.status == CatalogValidateStatus.TYPE_REQUIRED
         assert result.valid is False

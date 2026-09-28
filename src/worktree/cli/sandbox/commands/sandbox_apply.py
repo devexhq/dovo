@@ -30,7 +30,7 @@ def sandbox_apply_command(
         message: Optional commit message for squash strategy.
         output_format: Presentation format ("terminal" or "json").
     """
-    sandbox = Sandbox(path=context.cwd, db=context.db.sandboxes)
+    sandbox = Sandbox(context.paths, db=context.db.sandboxes)
     result = sandbox.apply(
         sandbox_id=sandbox_id,
         strategy=strategy,

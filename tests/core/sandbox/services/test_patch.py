@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from pathlib import Path
 
 import pytest
 
 from tests.harness import WorkspaceBuilder
+from worktree.common.filesystem import WorkspacePaths
 from worktree.core.db import SandboxesRepository
 from worktree.core.db.models import SandboxStatus
 from worktree.core.git.runner import GitRunner
@@ -47,9 +49,22 @@ def sandbox_workspace(tmp_path: Path) -> Path:
     return WorkspaceBuilder(tmp_path / "sandbox_ws").with_git().with_database().build()
 
 
-def _create_sandbox_with_change(workspace: Path, sandbox_id: str) -> None:
+@pytest.fixture
+def sandbox_workspace_paths(
+    sandbox_workspace: Path, workspace_paths_factory: Callable[[Path, Path | None], WorkspacePaths]
+) -> WorkspacePaths:
+    """Resolve the command-scoped paths for this module's sandbox workspace."""
+    return workspace_paths_factory(sandbox_workspace, None)
+
+
+def _repo(paths: WorkspacePaths) -> SandboxesRepository:
+    """Build a SandboxesRepository explicitly scoped to paths."""
+    return SandboxesRepository(db_path=paths.database_file, project_id=paths.project_id)
+
+
+def _create_sandbox_with_change(paths: WorkspacePaths, sandbox_id: str) -> None:
     """Create a real sandbox and commit one file change inside it."""
-    lifecycle = SandboxLifecycle(workspace, SandboxesRepository(workspace))
+    lifecycle = SandboxLifecycle(paths, _repo(paths))
     result = lifecycle.create(session_id=sandbox_id)
     assert result.session is not None
     sandbox_path = result.session.sandbox_path
@@ -59,47 +74,55 @@ def _create_sandbox_with_change(workspace: Path, sandbox_id: str) -> None:
 
 
 class SandboxPatchDiffTests:
-    def test_unknown_sandbox_id_returns_not_found(self, sandbox_workspace: Path) -> None:
+    def test_unknown_sandbox_id_returns_not_found(
+        self, sandbox_workspace: Path, sandbox_workspace_paths: WorkspacePaths
+    ) -> None:
         """[tier-1/integration] SandboxPatch.diff: no matching DB record -> NOT_FOUND with the sandbox id in errors."""
-        patch = SandboxPatch(sandbox_workspace, SandboxesRepository(sandbox_workspace))
+        patch = SandboxPatch(sandbox_workspace_paths, _repo(sandbox_workspace_paths))
 
         result = patch.diff("missing_sandbox")
 
         assert result.status == SandboxDiffStatus.NOT_FOUND
         assert "missing_sandbox" in result.errors[0]
 
-    def test_sandbox_directory_missing_on_disk_returns_not_found(self, sandbox_workspace: Path) -> None:
+    def test_sandbox_directory_missing_on_disk_returns_not_found(
+        self, sandbox_workspace: Path, sandbox_workspace_paths: WorkspacePaths
+    ) -> None:
         """[tier-1/integration] SandboxPatch.diff: DB record exists but its sandbox_path directory was deleted -> NOT_FOUND."""
-        db = SandboxesRepository(sandbox_workspace)
-        _create_sandbox_with_change(sandbox_workspace, "sbx_gone")
+        db = _repo(sandbox_workspace_paths)
+        _create_sandbox_with_change(sandbox_workspace_paths, "sbx_gone")
         record = db.get("sbx_gone")
         assert record is not None
         import shutil
 
         shutil.rmtree(record.sandbox_path)
-        patch = SandboxPatch(sandbox_workspace, db)
+        patch = SandboxPatch(sandbox_workspace_paths, db)
 
         result = patch.diff("sbx_gone")
 
         assert result.status == SandboxDiffStatus.NOT_FOUND
 
-    def test_sandbox_with_no_changes_returns_empty_diff(self, sandbox_workspace: Path) -> None:
+    def test_sandbox_with_no_changes_returns_empty_diff(
+        self, sandbox_workspace: Path, sandbox_workspace_paths: WorkspacePaths
+    ) -> None:
         """[tier-1/integration] SandboxPatch.diff: sandbox created with no further commits -> EMPTY_DIFF."""
-        db = SandboxesRepository(sandbox_workspace)
-        lifecycle = SandboxLifecycle(sandbox_workspace, db)
+        db = _repo(sandbox_workspace_paths)
+        lifecycle = SandboxLifecycle(sandbox_workspace_paths, db)
         create_result = lifecycle.create(session_id="sbx_empty")
         assert create_result.session is not None
-        patch = SandboxPatch(sandbox_workspace, db)
+        patch = SandboxPatch(sandbox_workspace_paths, db)
 
         result = patch.diff("sbx_empty")
 
         assert result.status == SandboxDiffStatus.EMPTY_DIFF
 
-    def test_sandbox_with_committed_change_returns_ok_with_touched_files(self, sandbox_workspace: Path) -> None:
+    def test_sandbox_with_committed_change_returns_ok_with_touched_files(
+        self, sandbox_workspace: Path, sandbox_workspace_paths: WorkspacePaths
+    ) -> None:
         """[tier-1/integration] SandboxPatch.diff: sandbox with one committed file change -> OK, files_changed lists it, diff_text is non-empty."""
-        db = SandboxesRepository(sandbox_workspace)
-        _create_sandbox_with_change(sandbox_workspace, "sbx_diffme")
-        patch = SandboxPatch(sandbox_workspace, db)
+        db = _repo(sandbox_workspace_paths)
+        _create_sandbox_with_change(sandbox_workspace_paths, "sbx_diffme")
+        patch = SandboxPatch(sandbox_workspace_paths, db)
 
         result = patch.diff("sbx_diffme")
 
@@ -109,53 +132,63 @@ class SandboxPatchDiffTests:
 
 
 class SandboxPatchApplyTests:
-    def test_unknown_sandbox_id_returns_not_found(self, sandbox_workspace: Path) -> None:
+    def test_unknown_sandbox_id_returns_not_found(
+        self, sandbox_workspace: Path, sandbox_workspace_paths: WorkspacePaths
+    ) -> None:
         """[tier-1/integration] SandboxPatch.apply: no matching DB record -> NOT_FOUND."""
-        patch = SandboxPatch(sandbox_workspace, SandboxesRepository(sandbox_workspace))
+        patch = SandboxPatch(sandbox_workspace_paths, _repo(sandbox_workspace_paths))
 
         result = patch.apply("missing_sandbox")
 
         assert result.status == SandboxApplyStatus.NOT_FOUND
 
-    def test_already_merged_sandbox_returns_already_merged_without_reapplying(self, sandbox_workspace: Path) -> None:
+    def test_already_merged_sandbox_returns_already_merged_without_reapplying(
+        self, sandbox_workspace: Path, sandbox_workspace_paths: WorkspacePaths
+    ) -> None:
         """[tier-1/integration] SandboxPatch.apply: DB record status is MERGED -> ALREADY_MERGED, no git apply attempted."""
-        db = SandboxesRepository(sandbox_workspace)
-        _create_sandbox_with_change(sandbox_workspace, "sbx_merged")
+        db = _repo(sandbox_workspace_paths)
+        _create_sandbox_with_change(sandbox_workspace_paths, "sbx_merged")
         db.update_status("sbx_merged", SandboxStatus.MERGED)
-        patch = SandboxPatch(sandbox_workspace, db)
+        patch = SandboxPatch(sandbox_workspace_paths, db)
 
         result = patch.apply("sbx_merged")
 
         assert result.status == SandboxApplyStatus.ALREADY_MERGED
 
-    def test_dirty_main_repo_without_allow_dirty_returns_main_repo_dirty(self, sandbox_workspace: Path) -> None:
+    def test_dirty_main_repo_without_allow_dirty_returns_main_repo_dirty(
+        self, sandbox_workspace: Path, sandbox_workspace_paths: WorkspacePaths
+    ) -> None:
         """[tier-1/integration] SandboxPatch.apply: uncommitted changes in the main workspace and allow_dirty=False -> MAIN_REPO_DIRTY, apply is refused."""
-        db = SandboxesRepository(sandbox_workspace)
-        _create_sandbox_with_change(sandbox_workspace, "sbx_dirty_main")
+        db = _repo(sandbox_workspace_paths)
+        _create_sandbox_with_change(sandbox_workspace_paths, "sbx_dirty_main")
         (sandbox_workspace / "uncommitted.txt").write_text("wip", encoding="utf-8")
-        patch = SandboxPatch(sandbox_workspace, db)
+        patch = SandboxPatch(sandbox_workspace_paths, db)
 
         result = patch.apply("sbx_dirty_main")
 
         assert result.status == SandboxApplyStatus.MAIN_REPO_DIRTY
 
-    def test_sandbox_with_no_changes_returns_empty_diff(self, sandbox_workspace: Path) -> None:
+    def test_sandbox_with_no_changes_returns_empty_diff(
+        self, sandbox_workspace: Path, sandbox_workspace_paths: WorkspacePaths
+    ) -> None:
         """[tier-1/integration] SandboxPatch.apply: sandbox has no commits beyond base -> EMPTY_DIFF, nothing applied."""
-        db = SandboxesRepository(sandbox_workspace)
-        lifecycle = SandboxLifecycle(sandbox_workspace, db)
+        db = _repo(sandbox_workspace_paths)
+        lifecycle = SandboxLifecycle(sandbox_workspace_paths, db)
         create_result = lifecycle.create(session_id="sbx_empty_apply")
         assert create_result.session is not None
-        patch = SandboxPatch(sandbox_workspace, db)
+        patch = SandboxPatch(sandbox_workspace_paths, db)
 
         result = patch.apply("sbx_empty_apply")
 
         assert result.status == SandboxApplyStatus.EMPTY_DIFF
 
-    def test_dry_run_reports_ok_without_modifying_main_workspace(self, sandbox_workspace: Path) -> None:
+    def test_dry_run_reports_ok_without_modifying_main_workspace(
+        self, sandbox_workspace: Path, sandbox_workspace_paths: WorkspacePaths
+    ) -> None:
         """[tier-1/integration] SandboxPatch.apply: dry_run=True -> OK with a dry-run warning, and the target file is not created in the main workspace."""
-        db = SandboxesRepository(sandbox_workspace)
-        _create_sandbox_with_change(sandbox_workspace, "sbx_dry_run")
-        patch = SandboxPatch(sandbox_workspace, db)
+        db = _repo(sandbox_workspace_paths)
+        _create_sandbox_with_change(sandbox_workspace_paths, "sbx_dry_run")
+        patch = SandboxPatch(sandbox_workspace_paths, db)
 
         result = patch.apply("sbx_dry_run", dry_run=True)
 
@@ -163,11 +196,13 @@ class SandboxPatchApplyTests:
         assert any("dry run" in w.lower() for w in result.warnings)
         assert not (sandbox_workspace / "new_file.txt").exists()
 
-    def test_patch_strategy_applies_changes_and_marks_sandbox_merged(self, sandbox_workspace: Path) -> None:
+    def test_patch_strategy_applies_changes_and_marks_sandbox_merged(
+        self, sandbox_workspace: Path, sandbox_workspace_paths: WorkspacePaths
+    ) -> None:
         """[tier-1/integration] SandboxPatch.apply: PATCH strategy applies the sandbox's file change into the main workspace and updates DB status to MERGED."""
-        db = SandboxesRepository(sandbox_workspace)
-        _create_sandbox_with_change(sandbox_workspace, "sbx_apply_patch")
-        patch = SandboxPatch(sandbox_workspace, db)
+        db = _repo(sandbox_workspace_paths)
+        _create_sandbox_with_change(sandbox_workspace_paths, "sbx_apply_patch")
+        patch = SandboxPatch(sandbox_workspace_paths, db)
 
         result = patch.apply("sbx_apply_patch", strategy=SandboxApplyStrategy.PATCH)
 
@@ -177,11 +212,13 @@ class SandboxPatchApplyTests:
         assert record is not None
         assert record.status == SandboxStatus.MERGED
 
-    def test_squash_strategy_creates_single_commit_with_default_message(self, sandbox_workspace: Path) -> None:
+    def test_squash_strategy_creates_single_commit_with_default_message(
+        self, sandbox_workspace: Path, sandbox_workspace_paths: WorkspacePaths
+    ) -> None:
         """[tier-1/integration] SandboxPatch.apply: SQUASH strategy without an explicit message commits with the default 'wt: apply changes from sandbox <id>' message and returns the new commit sha."""
-        db = SandboxesRepository(sandbox_workspace)
-        _create_sandbox_with_change(sandbox_workspace, "sbx_squash")
-        patch = SandboxPatch(sandbox_workspace, db)
+        db = _repo(sandbox_workspace_paths)
+        _create_sandbox_with_change(sandbox_workspace_paths, "sbx_squash")
+        patch = SandboxPatch(sandbox_workspace_paths, db)
 
         result = patch.apply("sbx_squash", strategy=SandboxApplyStrategy.SQUASH)
 

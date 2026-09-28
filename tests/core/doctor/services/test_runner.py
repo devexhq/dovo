@@ -1,9 +1,11 @@
 """Unit tests for worktree.core.doctor.services.runner."""
 
+from collections.abc import Callable
 from pathlib import Path
 
 import pytest
 
+from worktree.common.filesystem import WorkspacePaths
 from worktree.core.config.models import (
     DoctorConfig,
     ProjectConfig,
@@ -21,6 +23,8 @@ from worktree.core.doctor.services.runner import (
     DiagnosticRunner,
     execute_single_check,
 )
+
+WorkspacePathsFactory = Callable[[Path, Path | None], WorkspacePaths]
 
 
 class MockCheck:
@@ -67,7 +71,9 @@ class MockCheck:
 class DiagnosticRunnerFilteringTests:
     """Unit tests for DiagnosticRunner category filtering contracts."""
 
-    def test_category_filter_omits_non_matching_checks(self, tmp_path: Path) -> None:
+    def test_category_filter_omits_non_matching_checks(
+        self, tmp_path: Path, workspace_paths_factory: WorkspacePathsFactory
+    ) -> None:
         """[tier-1/unit] DiagnosticRunner.run_checks: category filter omits checks belonging to other categories from DoctorReport.checks."""
         registry = CheckRegistry()
         git_check = MockCheck(check_id="git.repo", category=CheckCategory.GIT)
@@ -79,7 +85,7 @@ class DiagnosticRunnerFilteringTests:
         registry.register(agent_check)
 
         runner = DiagnosticRunner(registry=registry)
-        context = DoctorContext(cwd=tmp_path, config=None)
+        context = DoctorContext(cwd=tmp_path, config=None, paths=workspace_paths_factory(tmp_path, None))
 
         report = runner.run_checks(context, categories=[CheckCategory.GIT, CheckCategory.AGENT])
 
@@ -102,6 +108,7 @@ class DiagnosticRunnerFilteringTests:
         self,
         tmp_path: Path,
         categories: list[CheckCategory] | None,
+        workspace_paths_factory: WorkspacePathsFactory,
     ) -> None:
         """[tier-1/unit] DiagnosticRunner.run_checks: passing categories=None or categories=[] considers all registered checks."""
         registry = CheckRegistry()
@@ -112,7 +119,7 @@ class DiagnosticRunnerFilteringTests:
         registry.register(check2)
 
         runner = DiagnosticRunner(registry=registry)
-        context = DoctorContext(cwd=tmp_path, config=None)
+        context = DoctorContext(cwd=tmp_path, config=None, paths=workspace_paths_factory(tmp_path, None))
 
         report = runner.run_checks(context, categories=categories)
 
@@ -162,6 +169,7 @@ class DiagnosticRunnerConfigToggleTests:
         toggle_attr: str,
         check_id: str,
         category: CheckCategory,
+        workspace_paths_factory: WorkspacePathsFactory,
     ) -> None:
         """[tier-1/unit] DiagnosticRunner.run_checks: config.doctor.<toggle>=False produces status SKIPPED and duration 0.0."""
         registry = CheckRegistry()
@@ -176,7 +184,7 @@ class DiagnosticRunnerConfigToggleTests:
         )
 
         runner = DiagnosticRunner(registry=registry)
-        context = DoctorContext(cwd=tmp_path, config=config)
+        context = DoctorContext(cwd=tmp_path, config=config, paths=workspace_paths_factory(tmp_path, None))
 
         report = runner.run_checks(context)
 
@@ -189,14 +197,16 @@ class DiagnosticRunnerConfigToggleTests:
         assert res.status == CheckStatus.SKIPPED
         assert res.message == f"Check '{check_id}' skipped by configuration."
 
-    def test_config_none_does_not_skip_checks(self, tmp_path: Path) -> None:
+    def test_config_none_does_not_skip_checks(
+        self, tmp_path: Path, workspace_paths_factory: WorkspacePathsFactory
+    ) -> None:
         """[tier-1/unit] DiagnosticRunner.run_checks: when context.config is None, config toggle skipping is bypassed and checks execute."""
         registry = CheckRegistry()
         check = MockCheck(check_id="git.repo", category=CheckCategory.GIT)
         registry.register(check)
 
         runner = DiagnosticRunner(registry=registry)
-        context = DoctorContext(cwd=tmp_path, config=None)
+        context = DoctorContext(cwd=tmp_path, config=None, paths=workspace_paths_factory(tmp_path, None))
 
         report = runner.run_checks(context)
 
@@ -207,7 +217,9 @@ class DiagnosticRunnerConfigToggleTests:
 class DiagnosticRunnerContainmentTests:
     """Unit tests for DiagnosticRunner exception containment contracts."""
 
-    def test_unhandled_exception_recorded_as_failed_with_doctor_check_crash(self, tmp_path: Path) -> None:
+    def test_unhandled_exception_recorded_as_failed_with_doctor_check_crash(
+        self, tmp_path: Path, workspace_paths_factory: WorkspacePathsFactory
+    ) -> None:
         """[tier-1/unit] execute_single_check: check raising unexpected RuntimeError returns status FAILED with error_code DOCTOR_CHECK_CRASH and measured duration."""
         check = MockCheck(
             check_id="crashing.check",
@@ -216,7 +228,7 @@ class DiagnosticRunnerContainmentTests:
             should_crash=True,
             crash_message="Simulated crash in sandbox inspection",
         )
-        context = DoctorContext(cwd=tmp_path, config=None)
+        context = DoctorContext(cwd=tmp_path, config=None, paths=workspace_paths_factory(tmp_path, None))
 
         result = execute_single_check(check, context)
 
@@ -234,7 +246,9 @@ class DiagnosticRunnerContainmentTests:
         assert result.remediations[0].code == "DOCTOR_CHECK_CRASH"
         assert result.remediations[0].action_type == RemediationType.MANUAL
 
-    def test_crashing_check_does_not_halt_subsequent_checks(self, tmp_path: Path) -> None:
+    def test_crashing_check_does_not_halt_subsequent_checks(
+        self, tmp_path: Path, workspace_paths_factory: WorkspacePathsFactory
+    ) -> None:
         """[tier-1/unit] DiagnosticRunner.run_checks: first check raising exception does not prevent subsequent checks from executing and reporting results."""
         registry = CheckRegistry()
         crash_check = MockCheck(
@@ -253,7 +267,7 @@ class DiagnosticRunnerContainmentTests:
         registry.register(healthy_check)
 
         runner = DiagnosticRunner(registry=registry)
-        context = DoctorContext(cwd=tmp_path, config=None)
+        context = DoctorContext(cwd=tmp_path, config=None, paths=workspace_paths_factory(tmp_path, None))
 
         report = runner.run_checks(context)
 
@@ -273,6 +287,7 @@ class DiagnosticRunnerMetricsTests:
         self,
         tmp_path: Path,
         monkeypatch: pytest.MonkeyPatch,
+        workspace_paths_factory: WorkspacePathsFactory,
     ) -> None:
         """[tier-1/unit] DiagnosticRunner.run_checks: total_duration_ms on DoctorReport captures check execution elapsed time and runner overhead."""
         registry = CheckRegistry()
@@ -296,7 +311,7 @@ class DiagnosticRunnerMetricsTests:
         )
 
         runner = DiagnosticRunner(registry=registry)
-        context = DoctorContext(cwd=tmp_path, config=None)
+        context = DoctorContext(cwd=tmp_path, config=None, paths=workspace_paths_factory(tmp_path, None))
 
         report = runner.run_checks(context)
 

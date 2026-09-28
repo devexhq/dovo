@@ -9,6 +9,7 @@ from typing import Any
 from typer.testing import CliRunner
 
 from worktree.cli import app
+from worktree.common.filesystem.services.global_root import resolve_global_paths
 from worktree.core.config.loader import ConfigLoadStatus
 from worktree.core.db.connection import resolve_db_path
 from worktree.core.status.models import (
@@ -46,7 +47,7 @@ class StatusCliIntegrationTests:
         assert result_dto.catalog.exists is False
         assert result_dto.catalog.total_items == 0
         assert result_dto.database.exists is True
-        assert result_dto.database.db_path == resolve_db_path()
+        assert result_dto.database.db_path == resolve_db_path(resolve_global_paths(None))
         assert result_dto.database.is_accessible is True
         assert result_dto.sandboxes.active_sandboxes == 0
         assert result_dto.sandboxes.max_active_sandboxes == 3
@@ -77,7 +78,7 @@ class StatusCliIntegrationTests:
         assert result_dto.catalog.exists is False
         assert result_dto.catalog.total_items == 0
         assert result_dto.database.exists is True
-        assert result_dto.database.db_path == resolve_db_path()
+        assert result_dto.database.db_path == resolve_db_path(resolve_global_paths(None))
         assert result_dto.database.is_accessible is True
         assert result_dto.sandboxes.active_sandboxes == 0
         assert result_dto.sandboxes.max_active_sandboxes == 3

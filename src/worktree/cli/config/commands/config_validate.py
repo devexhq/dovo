@@ -21,6 +21,6 @@ def config_validate_command(
     Returns:
         ConfigValidationResult containing validation results and errors.
     """
-    result = Config(path=context.cwd).validate()
+    result = Config(context.paths).validate()
     ui_dispatcher.dispatch(result, output_format=output_format)
     return result

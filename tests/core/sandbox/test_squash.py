@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from pathlib import Path
 
 import pytest
 
 from tests.harness.builders import WorkspaceBuilder
+from worktree.common.filesystem import WorkspacePaths
 from worktree.core.db import SandboxesRepository, SandboxStatus
 from worktree.core.git.runner import GitRunner
 from worktree.core.sandbox.models import (
@@ -22,17 +24,28 @@ def sandbox_workspace(tmp_path: Path) -> Path:
     return WorkspaceBuilder(tmp_path / "sandbox_ws").with_git().with_database().build()
 
 
+@pytest.fixture
+def sandbox_workspace_paths(
+    sandbox_workspace: Path, workspace_paths_factory: Callable[[Path, Path | None], WorkspacePaths]
+) -> WorkspacePaths:
+    """Resolve the command-scoped paths for this module's sandbox workspace."""
+    return workspace_paths_factory(sandbox_workspace, None)
+
+
 class SandboxSquashApplyTests:
     """Integration tests verifying squash apply strategy and branch cleanup."""
 
     def test_squash_apply_collapses_multiple_commits_into_single_commit(
         self,
         sandbox_workspace: Path,
+        sandbox_workspace_paths: WorkspacePaths,
     ) -> None:
         """Squash strategy collapses multiple intermediate sandbox commits into single commit with message."""
-        db = SandboxesRepository(sandbox_workspace)
-        lifecycle = SandboxLifecycle(sandbox_workspace, db)
-        patch_service = SandboxPatch(sandbox_workspace, db, lifecycle=lifecycle)
+        db = SandboxesRepository(
+            db_path=sandbox_workspace_paths.database_file, project_id=sandbox_workspace_paths.project_id
+        )
+        lifecycle = SandboxLifecycle(sandbox_workspace_paths, db)
+        patch_service = SandboxPatch(sandbox_workspace_paths, db, lifecycle=lifecycle)
 
         head_before = GitRunner.rev_parse(sandbox_workspace, rev="HEAD")
 
@@ -74,11 +87,14 @@ class SandboxSquashApplyTests:
     def test_squash_apply_deletes_sandbox_branch_and_marks_applied(
         self,
         sandbox_workspace: Path,
+        sandbox_workspace_paths: WorkspacePaths,
     ) -> None:
         """Squash apply with delete=True deletes sandbox branch, worktree directory, and marks sandbox merged."""
-        db = SandboxesRepository(sandbox_workspace)
-        lifecycle = SandboxLifecycle(sandbox_workspace, db)
-        patch_service = SandboxPatch(sandbox_workspace, db, lifecycle=lifecycle)
+        db = SandboxesRepository(
+            db_path=sandbox_workspace_paths.database_file, project_id=sandbox_workspace_paths.project_id
+        )
+        lifecycle = SandboxLifecycle(sandbox_workspace_paths, db)
+        patch_service = SandboxPatch(sandbox_workspace_paths, db, lifecycle=lifecycle)
 
         initial_commit = GitRunner.rev_parse(sandbox_workspace, rev="HEAD")
 

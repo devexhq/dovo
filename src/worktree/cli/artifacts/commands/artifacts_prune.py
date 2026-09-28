@@ -25,7 +25,7 @@ def artifacts_prune_command(
     Returns:
         Structured prune result.
     """
-    result = Artifacts(path=context.cwd, db=context.db.artifacts).prune(
+    result = Artifacts(context.paths, db=context.db.artifacts).prune(
         dry_run=dry_run,
         force=force,
         config=context.config,

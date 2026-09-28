@@ -11,7 +11,6 @@ from worktree.core.db import RunStatus, SandboxesRepository
 from worktree.core.db.repositories.artifacts import ArtifactsRepository
 from worktree.core.diff.writer import get_session_dir, write_session_diff
 from worktree.core.git.runner import GitRunner
-from worktree.core.project.services.storage import resolve_project_filesystem_paths
 from worktree.core.runtime.models import RunCheckpoint, RunContext
 from worktree.core.runtime.notify import safe_notify
 from worktree.core.sandbox import Sandbox, SandboxApplyStrategy, SandboxSession
@@ -50,7 +49,10 @@ class Workspace:
             return self.context.cwd.resolve(), None, None, f"Git sandbox is missing: {path}"
 
         session = self._session_from_checkpoint(checkpoint, path)
-        manager = Sandbox(self.context.cwd.resolve(), db=SandboxesRepository(self.context.cwd.resolve()))
+        manager = Sandbox(
+            self.context.paths,
+            db=SandboxesRepository(db_path=self.context.paths.database_file, project_id=self.context.paths.project_id),
+        )
         safe_notify(self.context.observer, "on_sandbox_ready", path, active=True)
         return path, manager, session, None
 
@@ -69,7 +71,10 @@ class Workspace:
             safe_notify(self.context.observer, "on_sandbox_ready", target_dir, active=False)
             return target_dir, None, None, None
 
-        manager = Sandbox(self.context.cwd.resolve(), db=SandboxesRepository(self.context.cwd.resolve()))
+        manager = Sandbox(
+            self.context.paths,
+            db=SandboxesRepository(db_path=self.context.paths.database_file, project_id=self.context.paths.project_id),
+        )
         session_id = None
         if self.context.identity is not None:
             session_id = self.context.identity.blueprint_key or None
@@ -148,7 +153,7 @@ class Workspace:
         try:
             GitRunner.add_intent_to_add(session.sandbox_path, target=".")
             diff_text = GitRunner.diff(session.sandbox_path, base_commit=session.base_commit, binary=True)
-            session_dir = get_session_dir(self.context.cwd, session_id)
+            session_dir = get_session_dir(self.context.paths, session_id)
             write_session_diff(session_dir, diff_text)
         except Exception as exc:
             warnings.append(f"Failed to persist session diff artifact: {exc}")
@@ -173,7 +178,7 @@ class Workspace:
         """Resolve and create the session scratch directory tree, or warn and return None."""
         if self.context.session_id is None:
             return None
-        tmp_dir = resolve_project_filesystem_paths(self.context.cwd).tmp_dir
+        tmp_dir = self.context.paths.tmp_dir
         session_tmp_dir = tmp_dir / self.context.session_id
         try:
             (session_tmp_dir / "steps").mkdir(parents=True, exist_ok=True)
@@ -186,14 +191,16 @@ class Workspace:
         """Resolve the project artifacts_dir and construct a per-run ArtifactsRepository once, or (None, None) without a session."""
         if self.context.session_id is None:
             return None, None
-        artifacts_dir = resolve_project_filesystem_paths(self.context.cwd).artifacts_dir
-        return artifacts_dir, ArtifactsRepository(self.context.cwd.resolve())
+        artifacts_dir = self.context.paths.artifacts_dir
+        return artifacts_dir, ArtifactsRepository(
+            db_path=self.context.paths.database_file, project_id=self.context.paths.project_id
+        )
 
     def prepare_session_log_dir(self, warnings: list[str]) -> Path | None:
         """Resolve and create the session log directory, or warn and return None."""
         if self.context.session_id is None:
             return None
-        logs_dir = resolve_project_filesystem_paths(self.context.cwd).logs_dir
+        logs_dir = self.context.paths.logs_dir
         session_log_dir = logs_dir / self.context.session_id
         try:
             session_log_dir.mkdir(parents=True, exist_ok=True)

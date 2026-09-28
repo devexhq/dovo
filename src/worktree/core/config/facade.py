@@ -5,13 +5,10 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from worktree.common.filesystem import Filesystem
+from worktree.common.filesystem import WorkspacePaths
 from worktree.core.config.exceptions import ConfigLoadError
 from worktree.core.config.generator import ConfigGenerationResult, generate_default_config
-from worktree.core.config.loader import (
-    ConfigLoadResult,
-    clear_config_cache,
-)
+from worktree.core.config.loader import ConfigLoadResult
 from worktree.core.config.models import (
     AgentConfig,
     ConcurrencyConfig,
@@ -38,74 +35,50 @@ from worktree.core.config.validate import (
 )
 
 
+def _require_config(result: ConfigLoadResult, root_dir: Path) -> WorktreeConfig:
+    """Return result.config or raise ConfigLoadError with its errors/fixes formatted into the message."""
+    if not result.ok or result.config is None:
+        parts = list(result.errors)
+        if result.fixes:
+            parts.append("Fix:\n" + "\n".join(f"- {f}" for f in result.fixes))
+        errors = "; ".join(parts) if parts else "unknown error"
+        raise ConfigLoadError(f"Failed to load config at '{root_dir}': {errors}", result)
+    return result.config
+
+
 class Config:
     """Unified entrypoint for workspace configuration loading, validation, mutation, and serialization."""
 
-    _instance: Config | None = None
-    _fs: Filesystem = None  # pyright: ignore[reportAssignmentType]
-    path: Path = Path(".")
-    cwd: Path = Path(".")
-    _cached_config: WorktreeConfig | None = None
-
-    def __new__(cls, path: Path | None = None) -> Config:
-        """Return singleton instance when path is omitted, or create a specific instance when path is provided."""
-        if path is None:
-            if cls._instance is None:
-                instance = super().__new__(cls)
-                instance._initialize(None)
-                cls._instance = instance
-            return cls._instance
-
-        instance = super().__new__(cls)
-        instance._initialize(path)
-        return instance
-
-    def _initialize(self, path: Path | None = None) -> None:
-        """Initialize Config singleton state with filesystem root and empty cached config."""
-        self._fs = Filesystem(path) if path is not None else Filesystem()
-        self.path = self._fs.root_dir
-        self.cwd = self.path
+    def __init__(self, paths: WorkspacePaths) -> None:
+        """Bind this Config instance to a resolved WorkspacePaths snapshot."""
+        self._paths = paths
         self._cached_config: WorktreeConfig | None = None
 
     @classmethod
-    def configure(cls, root: Path | str | None = None) -> Config:
-        """Configure the process-level root, reset caches, and return the active Config singleton."""
-        Filesystem.configure(root)
-        cls.reset()
-        return cls()
+    def load_required(cls, paths: WorkspacePaths) -> WorktreeConfig:
+        """Load and validate the effective config for paths, raising ConfigLoadError on failure."""
+        return _require_config(resolve_effective_config(paths), paths.root_dir)
 
-    @classmethod
-    def reset(cls) -> None:
-        """Reset the singleton instance and clear in-memory config loader caches."""
-        clear_config_cache()
-        cls._instance = None
-
-    @classmethod
-    def instance(cls) -> Config:
-        """Return the active singleton instance."""
-        return cls()
-
-    def load(self, *, config_path: Path | None = None) -> ConfigLoadResult:
+    def load(self) -> ConfigLoadResult:
         """Load the repo tier, merge Global/User tier overrides, and return a structured result."""
-        target_cfg = config_path if config_path is not None else self._fs.config_file
-        return resolve_effective_config(self._fs.root_dir, config_path=target_cfg)
+        return resolve_effective_config(self._paths)
 
     def validate(self, *, config_path: Path | None = None) -> ConfigValidationResult:
         """Validate ``config.json`` against schema constraints and return structured report."""
-        target_cfg = config_path if config_path is not None else self._fs.config_file
-        return validate_config_result(path=self._fs.root_dir, config_path=target_cfg)
+        target_cfg = config_path if config_path is not None else self._paths.config_file
+        return validate_config_result(target_cfg)
 
     def set(self, key: str, value: Any) -> ConfigSetResult:
         """Set a dot-path configuration key and persist to disk."""
         parsed_value = self.parse_value(value) if isinstance(value, str) else value
-        result = set_config_value_result(key, parsed_value, path=self._fs.root_dir)
+        result = set_config_value_result(key, parsed_value, config_path=self._paths.config_file)
         if result.ok:
             self._cached_config = None
         return result
 
     def unset(self, key: str) -> ConfigUnsetResult:
         """Remove a dot-path configuration key and persist to disk."""
-        result = unset_config_value_result(key, path=self._fs.root_dir)
+        result = unset_config_value_result(key, config_path=self._paths.config_file)
         if result.ok:
             self._cached_config = None
         return result
@@ -118,9 +91,9 @@ class Config:
         project_name: str | None = None,
     ) -> ConfigGenerationResult:
         """Generate a default ``config.json`` file in workspace."""
-        p_name = project_name or self._fs.root_dir.name
-        cfg_path = self._fs.config_file
-        result = generate_default_config(cfg_path, p_name, overwrite=overwrite, repair=repair)
+        _project_name = project_name or self._paths.root_dir.name
+        cfg_path = self._paths.config_file
+        result = generate_default_config(cfg_path, _project_name, overwrite=overwrite, repair=repair)
         if result.ok:
             self._cached_config = None
         return result
@@ -133,14 +106,7 @@ class Config:
     def _loaded_config(self) -> WorktreeConfig:
         """Load and cache the WorktreeConfig, raising ConfigLoadError on failure."""
         if self._cached_config is None:
-            result = self.load()
-            if not result.ok or result.config is None:
-                parts = list(result.errors)
-                if result.fixes:
-                    parts.append("Fix:\n" + "\n".join(f"- {f}" for f in result.fixes))
-                errors = "; ".join(parts) if parts else "unknown error"
-                raise ConfigLoadError(f"Failed to load config at '{self.path}': {errors}", result)
-            self._cached_config = result.config
+            self._cached_config = _require_config(self.load(), self._paths.root_dir)
         return self._cached_config
 
     @property

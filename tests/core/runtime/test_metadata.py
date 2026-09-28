@@ -4,10 +4,18 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from worktree.common.filesystem.models import RepositoryPaths, WorkspacePaths
+from worktree.common.filesystem.services.global_root import resolve_global_paths
 from worktree.common.models import FailurePolicy, OnFailureSpec
 from worktree.core.db import RunStatus
+from worktree.core.project.services.storage import resolve_workspace_paths
 from worktree.core.runtime import FailurePromptDecision, LoopPromptDecision, RunContext, run_steps
 from worktree.core.step.models import LoopStepBlock, StepDefinition, StepResult, StepType
+
+
+def _paths_for(root: Path) -> WorkspacePaths:
+    """Resolve the WorkspacePaths snapshot for root, reflecting its current project.json."""
+    return resolve_workspace_paths(RepositoryPaths.from_root(root), resolve_global_paths(None))
 
 
 class _ScriptedFailurePrompter:
@@ -39,6 +47,7 @@ class RunStepsMetadataPropagationTests:
             ],
             cwd=tmp_path,
             use_sandbox=False,
+            paths=_paths_for(tmp_path),
         )
 
         outcome = run_steps(context)
@@ -74,6 +83,7 @@ class RunStepsMetadataPropagationTests:
             ],
             cwd=tmp_path,
             use_sandbox=False,
+            paths=_paths_for(tmp_path),
         )
 
         outcome = run_steps(context)
@@ -117,6 +127,7 @@ class RunStepsMetadataPropagationTests:
             ],
             cwd=tmp_path,
             use_sandbox=False,
+            paths=_paths_for(tmp_path),
         )
 
         outcome = run_steps(context)
@@ -151,6 +162,7 @@ class RunStepsMetadataPropagationTests:
             cwd=tmp_path,
             use_sandbox=False,
             failure_prompter=prompter,
+            paths=_paths_for(tmp_path),
         )
 
         outcome = run_steps(context)
@@ -196,6 +208,7 @@ class RunStepsMetadataPropagationTests:
             ],
             cwd=tmp_path,
             use_sandbox=False,
+            paths=_paths_for(tmp_path),
         )
 
         outcome = run_steps(context)
@@ -251,6 +264,7 @@ class RunStepsOutputsPropagationTests:
             cwd=tmp_path,
             use_sandbox=False,
             session_id="session-outputs",
+            paths=_paths_for(tmp_path),
         )
 
         outcome = run_steps(context)
@@ -274,6 +288,7 @@ class RunStepsOutputsPropagationTests:
             cwd=tmp_path,
             use_sandbox=False,
             session_id="session-outputs-missing",
+            paths=_paths_for(tmp_path),
         )
 
         outcome = run_steps(context)
@@ -305,6 +320,7 @@ class RunStepsHistoricalMetadataAcrossLoopBoundaryTests:
             ],
             cwd=tmp_path,
             use_sandbox=False,
+            paths=_paths_for(tmp_path),
         )
 
         outcome = run_steps(context)

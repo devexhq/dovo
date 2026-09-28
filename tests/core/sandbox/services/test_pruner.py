@@ -10,9 +10,13 @@ from unittest.mock import patch
 import pytest
 
 from tests.harness import WorkspaceBuilder
+from worktree.common.filesystem import WorkspacePaths
+from worktree.common.filesystem.models import RepositoryPaths
+from worktree.common.filesystem.services.global_root import resolve_global_paths
 from worktree.common.lock import LockTimeoutError
 from worktree.core.db import SandboxesRepository, SandboxStatus
 from worktree.core.git.runner import GitRunner
+from worktree.core.project.services.storage import resolve_workspace_paths
 from worktree.core.sandbox import Sandbox
 from worktree.core.sandbox.models import (
     PruneAction,
@@ -30,12 +34,25 @@ def pruner_workspace(tmp_path: Path) -> Path:
     return WorkspaceBuilder(tmp_path / "pruner_ws").with_git().with_database().build()
 
 
+@pytest.fixture
+def pruner_workspace_paths(pruner_workspace: Path) -> WorkspacePaths:
+    """Resolve the WorkspacePaths snapshot for pruner_workspace."""
+    return resolve_workspace_paths(RepositoryPaths.from_root(pruner_workspace), resolve_global_paths(None))
+
+
+def _repo(paths: WorkspacePaths) -> SandboxesRepository:
+    """Build a SandboxesRepository explicitly scoped to paths."""
+    return SandboxesRepository(db_path=paths.database_file, project_id=paths.project_id)
+
+
 class SandboxPrunerBaselineTests:
     """Baseline tests for SandboxPruner on clean or simulated workspaces."""
 
-    def test_prune_clean_workspace_is_a_noop(self, pruner_workspace: Path) -> None:
+    def test_prune_clean_workspace_is_a_noop(
+        self, pruner_workspace: Path, pruner_workspace_paths: WorkspacePaths
+    ) -> None:
         """Pruning a clean workspace should return OK with 0 items."""
-        db = SandboxesRepository(pruner_workspace)
+        db = _repo(pruner_workspace_paths)
         pruner = SandboxPruner(pruner_workspace, db)
 
         result = pruner.prune()
@@ -49,9 +66,10 @@ class SandboxPrunerBaselineTests:
     def test_prune_dry_run_reports_all_categories_without_mutation(
         self,
         pruner_workspace: Path,
+        pruner_workspace_paths: WorkspacePaths,
     ) -> None:
         """Dry-run reports planned actions across categories without mutating disk, DB, or git."""
-        db = SandboxesRepository(pruner_workspace)
+        db = _repo(pruner_workspace_paths)
         sandboxes_dir = pruner_workspace / ".worktree" / "sandboxes"
         sandboxes_dir.mkdir(parents=True, exist_ok=True)
 
@@ -132,9 +150,11 @@ class SandboxPrunerBaselineTests:
 class SandboxPrunerSafetyTests:
     """Safety tests verifying preservation of dirty orphans without force."""
 
-    def test_dirty_orphan_skipped_without_force(self, pruner_workspace: Path) -> None:
+    def test_dirty_orphan_skipped_without_force(
+        self, pruner_workspace: Path, pruner_workspace_paths: WorkspacePaths
+    ) -> None:
         """Dirty orphan directory must be preserved with SKIPPED status when force=False."""
-        db = SandboxesRepository(pruner_workspace)
+        db = _repo(pruner_workspace_paths)
         sandboxes_dir = pruner_workspace / ".worktree" / "sandboxes"
         sandboxes_dir.mkdir(parents=True, exist_ok=True)
 
@@ -164,9 +184,11 @@ class SandboxPrunerSafetyTests:
         )
         assert dirty_dir.exists()
 
-    def test_dirty_orphan_deleted_with_force(self, pruner_workspace: Path) -> None:
+    def test_dirty_orphan_deleted_with_force(
+        self, pruner_workspace: Path, pruner_workspace_paths: WorkspacePaths
+    ) -> None:
         """Dirty orphan directory must be removed when force=True."""
-        db = SandboxesRepository(pruner_workspace)
+        db = _repo(pruner_workspace_paths)
         sandboxes_dir = pruner_workspace / ".worktree" / "sandboxes"
         sandboxes_dir.mkdir(parents=True, exist_ok=True)
 
@@ -195,9 +217,11 @@ class SandboxPrunerSafetyTests:
         assert item.reason == "Sandbox directory 'sbx_dirty_forced' is not tracked in the database"
         assert not dirty_dir.exists()
 
-    def test_clean_orphan_deleted_without_force(self, pruner_workspace: Path) -> None:
+    def test_clean_orphan_deleted_without_force(
+        self, pruner_workspace: Path, pruner_workspace_paths: WorkspacePaths
+    ) -> None:
         """Clean orphan directory must be deleted even with force=False."""
-        db = SandboxesRepository(pruner_workspace)
+        db = _repo(pruner_workspace_paths)
         sandboxes_dir = pruner_workspace / ".worktree" / "sandboxes"
         sandboxes_dir.mkdir(parents=True, exist_ok=True)
 
@@ -223,9 +247,9 @@ class SandboxPrunerSafetyTests:
 class SandboxPrunerCategoryTests:
     """Category-specific tests for worktree refs, DB records, and branches."""
 
-    def test_stale_worktree_ref_is_pruned(self, pruner_workspace: Path) -> None:
+    def test_stale_worktree_ref_is_pruned(self, pruner_workspace: Path, pruner_workspace_paths: WorkspacePaths) -> None:
         """Stale worktree administrative entries should be pruned."""
-        db = SandboxesRepository(pruner_workspace)
+        db = _repo(pruner_workspace_paths)
         target = pruner_workspace / ".worktree" / "sandboxes" / "sbx_stale_wt"
         GitRunner.worktree_add(
             pruner_workspace,
@@ -258,9 +282,11 @@ class SandboxPrunerCategoryTests:
             == "Sandbox branch 'worktree/sandbox-sbx_stale_wt' is not attached to any active sandbox or worktree"
         )
 
-    def test_stale_db_record_is_reconciled_to_cleaned(self, pruner_workspace: Path) -> None:
+    def test_stale_db_record_is_reconciled_to_cleaned(
+        self, pruner_workspace: Path, pruner_workspace_paths: WorkspacePaths
+    ) -> None:
         """Active DB records with missing paths must be updated to CLEANED."""
-        db = SandboxesRepository(pruner_workspace)
+        db = _repo(pruner_workspace_paths)
         missing_path = pruner_workspace / ".worktree" / "sandboxes" / "sbx_db_stale"
         db.create(
             id="sbx_db_stale",
@@ -294,9 +320,9 @@ class SandboxPrunerCategoryTests:
         assert record.sandbox_path == missing_path
         assert record.status == SandboxStatus.CLEANED
 
-    def test_stale_branch_is_deleted(self, pruner_workspace: Path) -> None:
+    def test_stale_branch_is_deleted(self, pruner_workspace: Path, pruner_workspace_paths: WorkspacePaths) -> None:
         """Stale sandbox temporary branches must be deleted."""
-        db = SandboxesRepository(pruner_workspace)
+        db = _repo(pruner_workspace_paths)
         branch_name = "worktree/sandbox-sbx_stale_branch"
         subprocess.run(
             ["git", "branch", branch_name],
@@ -325,9 +351,11 @@ class SandboxPrunerCategoryTests:
 class SandboxPrunerIdempotencyTests:
     """Tests verifying multi-resource pruning followed by an idempotent re-run."""
 
-    def test_combined_prune_then_idempotent_rerun(self, pruner_workspace: Path) -> None:
+    def test_combined_prune_then_idempotent_rerun(
+        self, pruner_workspace: Path, pruner_workspace_paths: WorkspacePaths
+    ) -> None:
         """Pruning multiple categories followed by a second run must be clean and idempotent."""
-        db = SandboxesRepository(pruner_workspace)
+        db = _repo(pruner_workspace_paths)
         sandboxes_dir = pruner_workspace / ".worktree" / "sandboxes"
         sandboxes_dir.mkdir(parents=True, exist_ok=True)
 
@@ -349,7 +377,7 @@ class SandboxPrunerIdempotencyTests:
             capture_output=True,
         )
 
-        manager = Sandbox(pruner_workspace, db)
+        manager = Sandbox(pruner_workspace_paths, db)
         create_res = manager.create(session_id="sbx_protected")
         assert create_res.ok
 
@@ -388,10 +416,11 @@ class SandboxPrunerFacadeTests:
     def test_prune_stale_sandboxes_helper_and_sandbox_facade_agree(
         self,
         pruner_workspace: Path,
+        pruner_workspace_paths: WorkspacePaths,
     ) -> None:
         """Helper and facade methods return equivalent results on clean workspace."""
-        db = SandboxesRepository(pruner_workspace)
-        manager = Sandbox(pruner_workspace, db)
+        db = _repo(pruner_workspace_paths)
+        manager = Sandbox(pruner_workspace_paths, db)
 
         res_helper = prune_stale_sandboxes(pruner_workspace, db, dry_run=True)
         res_manager = manager.prune(dry_run=True)
@@ -411,9 +440,10 @@ class SandboxPrunerFailureTests:
     def test_prune_aborts_with_git_failed_when_detection_fails(
         self,
         pruner_workspace: Path,
+        pruner_workspace_paths: WorkspacePaths,
     ) -> None:
         """When detector returns GIT_FAILED, prune should abort with GIT_FAILED status."""
-        db = SandboxesRepository(pruner_workspace)
+        db = _repo(pruner_workspace_paths)
         pruner = SandboxPruner(pruner_workspace, db)
 
         with patch.object(
@@ -436,9 +466,10 @@ class SandboxPrunerFailureTests:
     def test_prune_returns_locked_on_workspace_lock_timeout(
         self,
         pruner_workspace: Path,
+        pruner_workspace_paths: WorkspacePaths,
     ) -> None:
         """Workspace lock timeouts should return LOCKED status without crashing."""
-        db = SandboxesRepository(pruner_workspace)
+        db = _repo(pruner_workspace_paths)
         pruner = SandboxPruner(pruner_workspace, db)
 
         with patch(
@@ -453,9 +484,10 @@ class SandboxPrunerFailureTests:
     def test_prune_returns_partial_success_on_item_failure(
         self,
         pruner_workspace: Path,
+        pruner_workspace_paths: WorkspacePaths,
     ) -> None:
         """Errors during individual item pruning should produce PARTIAL_SUCCESS."""
-        db = SandboxesRepository(pruner_workspace)
+        db = _repo(pruner_workspace_paths)
         branch_name = "worktree/sandbox-sbx_fail_branch"
         subprocess.run(
             ["git", "branch", branch_name],

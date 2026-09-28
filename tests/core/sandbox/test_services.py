@@ -1,17 +1,25 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from pathlib import Path
 
 import pytest
 
 from tests.harness.builders import WorkspaceBuilder
 from worktree.common.constants import DEFAULT_MAXIMUM_SANDBOXES_ALLOWED
+from worktree.common.filesystem import WorkspacePaths
 from worktree.core.db import SandboxesRepository, SandboxStatus
 from worktree.core.git.runner import GitRunner
 from worktree.core.sandbox.models import (
     SandboxCreateStatus,
+    SandboxDeleteStatus,
+    SandboxListStatus,
+    SandboxShowStatus,
 )
+from worktree.core.sandbox.services.delete import collect_sandbox_delete
 from worktree.core.sandbox.services.lifecycle import SandboxLifecycle
+from worktree.core.sandbox.services.list import collect_sandbox_list
+from worktree.core.sandbox.services.show import collect_sandbox_show
 
 
 @pytest.fixture
@@ -20,16 +28,35 @@ def sandbox_workspace(tmp_path: Path) -> Path:
     return WorkspaceBuilder(tmp_path / "sandbox_ws").with_git().with_database().build()
 
 
+@pytest.fixture
+def sandbox_workspace_paths(
+    sandbox_workspace: Path, workspace_paths_factory: Callable[[Path, Path | None], WorkspacePaths]
+) -> WorkspacePaths:
+    """Resolve the command-scoped paths for this module's sandbox workspace."""
+    return workspace_paths_factory(sandbox_workspace, None)
+
+
+@pytest.fixture
+def workspace_paths_no_identity(
+    tmp_path: Path, workspace_paths_factory: Callable[[Path, Path | None], WorkspacePaths]
+) -> WorkspacePaths:
+    """Resolve a workspace snapshot without project identity for guard-path tests."""
+    return workspace_paths_factory(tmp_path / "uninitialized", None)
+
+
 class SandboxCreationTests:
     """Integration tests verifying worktree creation and metadata recording."""
 
     def test_create_initializes_worktree_and_branch_metadata(
         self,
         sandbox_workspace: Path,
+        sandbox_workspace_paths: WorkspacePaths,
     ) -> None:
         """Create initializes worktree on disk, git branch, and DB row."""
-        db = SandboxesRepository(sandbox_workspace)
-        lifecycle = SandboxLifecycle(sandbox_workspace, db)
+        db = SandboxesRepository(
+            db_path=sandbox_workspace_paths.database_file, project_id=sandbox_workspace_paths.project_id
+        )
+        lifecycle = SandboxLifecycle(sandbox_workspace_paths, db)
 
         result = lifecycle.create(session_id="sbx_test001", name="test-sandbox")
 
@@ -72,10 +99,13 @@ class SandboxCapacityTests:
     def test_create_enforces_max_active_sandboxes_limit(
         self,
         sandbox_workspace: Path,
+        sandbox_workspace_paths: WorkspacePaths,
     ) -> None:
         """Creating a sandbox beyond max_active_sandboxes returns CAPACITY_EXCEEDED."""
-        db = SandboxesRepository(sandbox_workspace)
-        lifecycle = SandboxLifecycle(sandbox_workspace, db)
+        db = SandboxesRepository(
+            db_path=sandbox_workspace_paths.database_file, project_id=sandbox_workspace_paths.project_id
+        )
+        lifecycle = SandboxLifecycle(sandbox_workspace_paths, db)
 
         assert DEFAULT_MAXIMUM_SANDBOXES_ALLOWED >= 1
         for idx in range(DEFAULT_MAXIMUM_SANDBOXES_ALLOWED):
@@ -97,3 +127,63 @@ class SandboxCapacityTests:
         assert not (sandbox_workspace / ".worktree" / "sandboxes" / overflow_id).exists()
         assert f"worktree/sandbox-{overflow_id}" not in GitRunner.list_branches(sandbox_workspace)
         assert db.get(overflow_id) is None
+
+
+class SandboxNotInitializedGateTests:
+    """[tier-1/unit] Defensive status gates avoid database and filesystem access."""
+
+    def test_sandbox_create_returns_not_initialized_without_touching_disk_or_db(
+        self, workspace_paths_no_identity: WorkspacePaths, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """create: absent project identity returns NOT_INITIALIZED before repository creation."""
+
+        def _unexpected_create(self: SandboxesRepository, *args: object, **kwargs: object) -> None:
+            raise AssertionError("database must not be used")
+
+        monkeypatch.setattr(SandboxesRepository, "create", _unexpected_create)
+        db = SandboxesRepository(
+            db_path=workspace_paths_no_identity.database_file, project_id=workspace_paths_no_identity.project_id
+        )
+
+        result = SandboxLifecycle(workspace_paths_no_identity, db).create("sbx_no_identity")
+
+        assert result.status == SandboxCreateStatus.NOT_INITIALIZED
+        assert not workspace_paths_no_identity.sandboxes_dir.exists()
+
+    def test_sandbox_list_returns_not_initialized_without_querying_db(
+        self, workspace_paths_no_identity: WorkspacePaths, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """list: absent project identity skips both reconciliation and row lookup."""
+
+        def _unexpected_query(self: SandboxesRepository, *args: object, **kwargs: object) -> None:
+            raise AssertionError("database must not be queried")
+
+        monkeypatch.setattr(SandboxesRepository, "reconcile_stale_active", _unexpected_query)
+        monkeypatch.setattr(SandboxesRepository, "list", _unexpected_query)
+        db = SandboxesRepository(
+            db_path=workspace_paths_no_identity.database_file, project_id=workspace_paths_no_identity.project_id
+        )
+
+        result = collect_sandbox_list(workspace_paths_no_identity, db)
+
+        assert result.status == SandboxListStatus.NOT_INITIALIZED
+        assert result.sandboxes == []
+
+    def test_sandbox_show_and_delete_return_not_initialized_without_querying_db(
+        self, workspace_paths_no_identity: WorkspacePaths, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """show/delete: absent project identity skips the repository lookup for both status variants."""
+
+        def _unexpected_get(self: SandboxesRepository, *args: object, **kwargs: object) -> None:
+            raise AssertionError("database must not be queried")
+
+        monkeypatch.setattr(SandboxesRepository, "get", _unexpected_get)
+        db = SandboxesRepository(
+            db_path=workspace_paths_no_identity.database_file, project_id=workspace_paths_no_identity.project_id
+        )
+
+        show_result = collect_sandbox_show(workspace_paths_no_identity, db, "sbx_no_identity")
+        delete_result = collect_sandbox_delete(workspace_paths_no_identity, db, sandbox_id="sbx_no_identity")
+
+        assert show_result.status == SandboxShowStatus.NOT_INITIALIZED
+        assert delete_result.status == SandboxDeleteStatus.NOT_INITIALIZED

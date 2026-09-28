@@ -193,18 +193,18 @@ class WorkspaceLock:
 
     def __init__(
         self,
-        root_dir: Path,
+        lock_path: Path,
         timeout_seconds: float = DEFAULT_LOCK_TIMEOUT_SECONDS,
         on_wait: Callable[[Path, str | None, float], None] | None = None,
     ) -> None:
-        """Initialize workspace lock bound to root_dir.
+        """Initialize workspace lock bound to a resolved lock file path.
 
         Args:
-            root_dir: Repository root or .worktree directory.
+            lock_path: The resolved .worktree/.lock (or global-tier) file path.
             timeout_seconds: Maximum seconds to wait for lock acquisition.
             on_wait: Optional callback invoked if lock is currently held.
         """
-        self.lock_path = resolve_lock_file_path(root_dir)
+        self.lock_path = lock_path
         self.timeout_seconds = max(0.1, float(timeout_seconds))
         self.on_wait = on_wait if on_wait is not None else _default_on_wait
         self._file_descriptor: int | None = None

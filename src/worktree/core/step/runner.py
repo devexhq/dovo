@@ -147,6 +147,7 @@ class StepExecution:
         self.session_id = metadata.session_id or ""
         self.artifacts_dir = metadata.artifacts_dir
         self.artifacts_db = metadata.artifacts_db
+        self.paths = metadata.paths
         self.log_warnings: list[str] = []
         self.step_scratch_dir: Path | None = None
         self.output_file: Path | None = None
@@ -184,7 +185,7 @@ class StepExecution:
     def _prepare(self) -> bool:
         """Resolve shorthand aliases and compute retry budget."""
         if self.step.instance.uses is not None or self.step.instance.run is not None:
-            resolved = self.step.resolve(path=self.sandbox_path)
+            resolved = self.step.resolve(paths=self.paths)
             if resolved is None:
                 return False
             self.step = Step(instance=resolved)

@@ -6,6 +6,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
+from worktree.common.filesystem import WorkspacePaths
 from worktree.common.models import BaseResult, FailurePolicy, OnFailureSpec
 from worktree.core.db.repositories.artifacts import ArtifactsRepository
 
@@ -293,6 +294,7 @@ class StepExecutionContext(BaseModel):
     session_id: str | None = None
     artifacts_dir: Path | None = None
     artifacts_db: ArtifactsRepository | None = None
+    paths: WorkspacePaths | None = None
 
 
 class InternalCommandContext(BaseModel):

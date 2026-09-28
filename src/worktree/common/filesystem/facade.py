@@ -1,10 +1,11 @@
 from __future__ import annotations
 
+from functools import cached_property
 from importlib.resources.abc import Traversable
 from pathlib import Path
 from typing import Any
 
-from worktree.common.filesystem.models import FilesystemPaths, YamlFile
+from worktree.common.filesystem.models import RepositoryPaths, YamlFile
 from worktree.common.filesystem.services.git import is_git_repository as _is_git_repository
 from worktree.common.filesystem.services.operations import (
     atomic_write_json as _atomic_write_json,
@@ -12,7 +13,10 @@ from worktree.common.filesystem.services.operations import (
     compute_content_checksum as _compute_content_checksum,
     delete_file as _delete_file,
 )
-from worktree.common.filesystem.services.paths import find_worktree_root as _find_worktree_root
+from worktree.common.filesystem.services.paths import (
+    find_worktree_root as _find_worktree_root,
+    get_catalog_templates_dir as _get_catalog_templates_dir,
+)
 from worktree.common.filesystem.services.yaml import (
     read_yaml_file as _read_yaml_file,
     scan_yaml_directory as _scan_yaml_directory,
@@ -20,157 +24,87 @@ from worktree.common.filesystem.services.yaml import (
 
 
 class Filesystem:
-    """Unified entrypoint for workspace filesystem paths, caching, and atomic I/O."""
+    """Unified entrypoint for repository-local workspace paths and atomic I/O."""
 
-    _instance: Filesystem | None = None
-    _configured_root: Path | None = None
-    _raw_path: Path | None = None
-    _cached_paths: FilesystemPaths | None = None
+    def __init__(self, start: Path | None = None) -> None:
+        """Bind this Filesystem instance to a repository start path, discovered lazily."""
+        self._start = start
 
-    def __new__(cls, path: Path | str | None = None) -> Filesystem:
-        """Return singleton instance when path is omitted, or create a specific instance when path is provided."""
-        if path is None:
-            if cls._instance is None:
-                instance = super().__new__(cls)
-                instance._initialize(cls._configured_root)
-                cls._instance = instance
-            return cls._instance
-
-        instance = super().__new__(cls)
-        instance._initialize(path)
-        return instance
-
-    def _initialize(self, path: Path | str | None = None) -> None:
-        """Initialize instance state with raw path and empty cached paths."""
-        self._raw_path: Path | None = Path(path) if path is not None else None
-        self._cached_paths: FilesystemPaths | None = None
-
-    @classmethod
-    def configure(cls, root: Path | str | None = None) -> Filesystem:
-        """Configure the process-level workspace root and return the active Filesystem singleton."""
-        if root is not None:
-            resolved = Path(root).expanduser().resolve()
-            cls._configured_root = _find_worktree_root(resolved)
-        else:
-            cls._configured_root = None
-        cls._instance = None
-        return cls()
-
-    @classmethod
-    def reset(cls) -> None:
-        """Reset the process-level singleton and configured root."""
-        cls._instance = None
-        cls._configured_root = None
-
-    @classmethod
-    def instance(cls) -> Filesystem:
-        """Return the active singleton instance."""
-        return cls()
-
-    @property
-    def paths(self) -> FilesystemPaths:
-        """Resolved and cached single source of truth for all workspace paths."""
-        if self._cached_paths is None:
-            resolved_root = _find_worktree_root(self._raw_path)
-            self._cached_paths = FilesystemPaths.from_root(resolved_root)
-        return self._cached_paths
+    @cached_property
+    def repository_paths(self) -> RepositoryPaths:
+        """Discover the repository once for this Filesystem instance."""
+        return RepositoryPaths.from_root(_find_worktree_root(self._start))
 
     @property
     def root_dir(self) -> Path:
         """Workspace root directory."""
-        return self.paths.root_dir
+        return self.repository_paths.root_dir
 
     @property
     def worktree_dir(self) -> Path:
         """Hidden .worktree workspace state directory."""
-        return self.paths.worktree_dir
+        return self.repository_paths.worktree_dir
 
     @property
     def config_file(self) -> Path:
         """Path to config.json."""
-        return self.paths.config_file
-
-    @property
-    def db_file(self) -> Path:
-        """Path to SQLite database file."""
-        return self.paths.db_file
+        return self.repository_paths.config_file
 
     @property
     def catalog_dir(self) -> Path:
         """Path to catalog root directory."""
-        return self.paths.catalog_dir
+        return self.repository_paths.catalog_dir
 
     @property
     def catalog_steps_dir(self) -> Path:
         """Path to catalog steps directory."""
-        return self.paths.catalog_steps_dir
+        return self.repository_paths.catalog_steps_dir
 
     @property
     def catalog_blueprints_dir(self) -> Path:
         """Path to catalog blueprints directory."""
-        return self.paths.catalog_blueprints_dir
-
-    @property
-    def logs_dir(self) -> Path:
-        """Path to execution logs directory."""
-        return self.paths.logs_dir
-
-    @property
-    def sessions_dir(self) -> Path:
-        """Path to session state directory."""
-        return self.paths.sessions_dir
-
-    @property
-    def artifacts_dir(self) -> Path:
-        """Path to generated artifacts directory."""
-        return self.paths.artifacts_dir
-
-    @property
-    def tmp_dir(self) -> Path:
-        """Path to temporary directory."""
-        return self.paths.tmp_dir
+        return self.repository_paths.catalog_blueprints_dir
 
     @property
     def sandboxes_dir(self) -> Path:
         """Path to sandboxes directory."""
-        return self.paths.sandboxes_dir
+        return self.repository_paths.sandboxes_dir
 
     @property
     def lock_file(self) -> Path:
         """Path to workspace lock file."""
-        return self.paths.lock_file
+        return self.repository_paths.lock_file
 
     @property
     def gitignore_file(self) -> Path:
         """Path to workspace .gitignore file."""
-        return self.paths.gitignore_file
+        return self.repository_paths.gitignore_file
 
     @property
     def catalog_templates_dir(self) -> Traversable:
         """Traversable resource path to bundled catalog templates."""
-        return self.paths.catalog_templates_dir
-
-    def session_dir(self, session_id: str) -> Path:
-        """Return path to a specific session directory."""
-        return self.paths.session_dir(session_id)
+        return _get_catalog_templates_dir()
 
     def sandbox_dir(self, sandbox_id: str) -> Path:
         """Return path to a specific sandbox directory."""
-        return self.paths.sandbox_dir(sandbox_id)
+        return self.repository_paths.sandboxes_dir / sandbox_id
 
     def rel_to_root(self, path: Path | str) -> Path:
         """Return path relative to workspace root."""
-        return self.paths.rel_to_root(path)
+        try:
+            return Path(path).resolve().relative_to(self.repository_paths.root_dir)
+        except ValueError:
+            return Path(path)
 
     def __getattr__(self, name: str) -> Any:
-        """Delegate fallback attribute lookups directly to self.paths."""
-        paths = self.paths
-        if hasattr(paths, name):
-            return getattr(paths, name)
+        """Delegate fallback attribute lookups directly to self.repository_paths."""
+        repository_paths = self.repository_paths
+        if hasattr(repository_paths, name):
+            return getattr(repository_paths, name)
         raise AttributeError(f"'{type(self).__name__}' object has no attribute '{name}'")
 
     def __repr__(self) -> str:
-        return f"Filesystem(root={self.paths.root_dir!r})"
+        return f"Filesystem(root={self.repository_paths.root_dir!r})"
 
     # Bound instance methods
     def write_text(self, path: Path, text: str) -> None:
@@ -195,7 +129,7 @@ class Filesystem:
 
     def is_git_repo(self, path: Path | None = None) -> bool:
         """Check whether the given directory contains a .git directory or file."""
-        target = path if path is not None else self.paths.root_dir
+        target = path if path is not None else self.repository_paths.root_dir
         return _is_git_repository(target)
 
     def checksum(self, content: str) -> str:

@@ -2,20 +2,18 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
+from worktree.common.filesystem import WorkspacePaths
 from worktree.core.db import RunsRepository
 from worktree.core.logs.models import LogsShowResult, LogsShowStatus, LogStreamFilter
 from worktree.core.logs.services.read import read_run_log_events, read_step_logs
-from worktree.core.project.services.storage import resolve_project_filesystem_paths
 
 
 class Logs:
     """Unified entrypoint for persisted session log inspection."""
 
-    def __init__(self, path: Path = Path("."), db: RunsRepository | None = None) -> None:
-        self.path = path.resolve()
-        self.db = db if db is not None else RunsRepository(self.path)
+    def __init__(self, paths: WorkspacePaths, db: RunsRepository | None = None) -> None:
+        self.paths = paths
+        self.db = db if db is not None else RunsRepository(db_path=paths.database_file, project_id=paths.project_id)
 
     def show(
         self,
@@ -34,7 +32,7 @@ class Logs:
         if self.db.get(session_id) is None:
             return LogsShowResult(status=LogsShowStatus.SESSION_NOT_FOUND, session_id=session_id)
 
-        session_log_dir = resolve_project_filesystem_paths(self.path).logs_dir / session_id
+        session_log_dir = self.paths.logs_dir / session_id
         if not session_log_dir.is_dir():
             return LogsShowResult(status=LogsShowStatus.SESSION_NOT_FOUND, session_id=session_id)
 

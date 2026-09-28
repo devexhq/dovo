@@ -9,7 +9,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from worktree.common.constants import DEFAULT_MAXIMUM_SANDBOXES_ALLOWED
-from worktree.common.filesystem import Filesystem
+from worktree.common.filesystem import WorkspacePaths
 from worktree.common.lock import WorkspaceLock
 from worktree.core.config import Config
 from worktree.core.config.models import SandboxConfig, WorktreeConfig
@@ -20,7 +20,6 @@ from worktree.core.git.exceptions import (
     GitPlumbingTimeoutError,
 )
 from worktree.core.git.runner import GitRunner
-from worktree.core.project.services.storage import resolve_project_filesystem_paths
 from worktree.core.sandbox.models import (
     SandboxCreateResult,
     SandboxCreateStatus,
@@ -56,31 +55,32 @@ class SandboxLifecycle:
 
     def __init__(
         self,
-        path: Path,
+        paths: WorkspacePaths,
         db: SandboxesRepository,
     ) -> None:
         """Initialize lifecycle manager.
 
         Args:
-            path: Target repository root path.
+            paths: Resolved command-invocation workspace paths.
             db: Explicit SandboxesRepository instance.
         """
-        self.path = path.expanduser().resolve()
+        self.paths = paths
+        self.path = paths.root_dir
         self.db = db
 
     @property
     def config(self) -> WorktreeConfig:
         """Return the loaded workspace config."""
-        return Config(self.path)._loaded_config
+        return Config(self.paths)._loaded_config
 
     @property
     def sandbox_base_dir(self) -> Path:
         """Base storage directory for created sandboxes."""
-        return Filesystem(self.path).sandboxes_dir
+        return self.paths.sandboxes_dir
 
     def _get_sandbox_config(self) -> SandboxConfig:
         """Return active sandbox configuration."""
-        return Config(self.path).sandbox
+        return Config(self.paths).sandbox
 
     def _ensure_sandbox_dir(self) -> None:
         """Create the parent sandbox storage directory if missing."""
@@ -221,7 +221,7 @@ class SandboxLifecycle:
 
     def _create_storage_bridge(self, sandbox_path: Path, session_id: str) -> SandboxCreateResult | None:
         """Create the sandbox run bridge or classify an unsafe bridge collision."""
-        session_dir = resolve_project_filesystem_paths(self.path).session_dir(session_id)
+        session_dir = self.paths.session_dir(session_id)
         bridge_dir = sandbox_path / ".worktree"
         bridge_path = bridge_dir / "run"
 
@@ -295,58 +295,78 @@ class SandboxLifecycle:
         Returns:
             Structured SandboxCreateResult containing session on success.
         """
-        with WorkspaceLock(self.path):
-            resolved_name = _clean_opt_str(name)
-            override_base_ref = _clean_opt_str(base_ref)
-            sandbox_cfg = self._get_sandbox_config()
+        if self.paths.project_id is None:
+            return SandboxCreateResult(
+                status=SandboxCreateStatus.NOT_INITIALIZED,
+                errors=["Workspace is not initialized."],
+                fixes=["Run `wt init` to initialize this workspace."],
+            )
 
+        with WorkspaceLock(self.paths.lock_file):
+            sandbox_cfg = self._get_sandbox_config()
             self._ensure_sandbox_dir()
             capacity_err = self._check_capacity(sandbox_cfg.max_active_sandboxes)
             if capacity_err is not None:
                 return capacity_err
 
-            sid = session_id or f"sbx_{uuid.uuid4().hex[:8]}"
-            sandbox_path = (self.sandbox_base_dir / sid).resolve()
-            temp_branch = f"worktree/sandbox-{sid}"
-            resolved_base = self._resolve_base_ref(override_base_ref, sandbox_cfg.base_ref)
-
-            worktree_err = self._create_worktree(sandbox_path, temp_branch, resolved_base)
-            if worktree_err is not None:
-                return worktree_err
-
-            base_commit, commit_err = self._resolve_base_commit(sandbox_path, temp_branch)
-            if commit_err is not None:
-                return commit_err
-
-            wip_paths: list[str] = []
-            if include_wip:
-                wip_paths, wip_err = self._overlay_wip(sandbox_path, temp_branch)
-                if wip_err is not None:
-                    return wip_err
-
-            bridge_result = self._create_storage_bridge(sandbox_path, sid)
-            if bridge_result is not None and bridge_result.status != SandboxCreateStatus.OK:
-                self.discard_partial(sandbox_path, temp_branch)
-                return bridge_result
-
-            session = SandboxSession(
-                session_id=sid,
-                target_branch=temp_branch,
-                sandbox_path=sandbox_path,
-                base_commit=base_commit,
-                name=resolved_name,
-                created_at=datetime.now(UTC).isoformat(),
-                wip_applied=bool(include_wip),
-                wip_paths=wip_paths,
+            return self._build_sandbox(
+                session_id, include_wip=include_wip, name=name, base_ref=base_ref, sandbox_cfg=sandbox_cfg
             )
 
-            bridge_warnings = bridge_result.warnings if bridge_result is not None else []
-            warnings = [*bridge_warnings, *self._persist_session(session)]
-            return SandboxCreateResult(
-                status=SandboxCreateStatus.OK,
-                session=session,
-                warnings=warnings,
-            )
+    def _build_sandbox(
+        self,
+        session_id: str | None,
+        *,
+        include_wip: bool,
+        name: str | None,
+        base_ref: str | None,
+        sandbox_cfg: SandboxConfig,
+    ) -> SandboxCreateResult:
+        """Create the worktree, resolve its base commit, overlay WIP, and bridge storage for a new sandbox session."""
+        resolved_name = _clean_opt_str(name)
+        override_base_ref = _clean_opt_str(base_ref)
+        sid = session_id or f"sbx_{uuid.uuid4().hex[:8]}"
+        sandbox_path = (self.sandbox_base_dir / sid).resolve()
+        temp_branch = f"worktree/sandbox-{sid}"
+        resolved_base = self._resolve_base_ref(override_base_ref, sandbox_cfg.base_ref)
+
+        worktree_err = self._create_worktree(sandbox_path, temp_branch, resolved_base)
+        if worktree_err is not None:
+            return worktree_err
+
+        base_commit, commit_err = self._resolve_base_commit(sandbox_path, temp_branch)
+        if commit_err is not None:
+            return commit_err
+
+        wip_paths: list[str] = []
+        if include_wip:
+            wip_paths, wip_err = self._overlay_wip(sandbox_path, temp_branch)
+            if wip_err is not None:
+                return wip_err
+
+        bridge_result = self._create_storage_bridge(sandbox_path, sid)
+        if bridge_result is not None and bridge_result.status != SandboxCreateStatus.OK:
+            self.discard_partial(sandbox_path, temp_branch)
+            return bridge_result
+
+        session = SandboxSession(
+            session_id=sid,
+            target_branch=temp_branch,
+            sandbox_path=sandbox_path,
+            base_commit=base_commit,
+            name=resolved_name,
+            created_at=datetime.now(UTC).isoformat(),
+            wip_applied=bool(include_wip),
+            wip_paths=wip_paths,
+        )
+
+        bridge_warnings = bridge_result.warnings if bridge_result is not None else []
+        warnings = [*bridge_warnings, *self._persist_session(session)]
+        return SandboxCreateResult(
+            status=SandboxCreateStatus.OK,
+            session=session,
+            warnings=warnings,
+        )
 
     def _remove_worktree_dir(self, sandbox_path: Path, *, force: bool) -> str | None:
         """Remove worktree directory with git worktree remove and rmtree fallback."""
@@ -388,7 +408,7 @@ class SandboxLifecycle:
         Returns:
             List of warning messages encountered during cleanup steps.
         """
-        with WorkspaceLock(self.path):
+        with WorkspaceLock(self.paths.lock_file):
             sandbox_path, session_id, branch_name = _extract_target_metadata(target)
             warnings: list[str] = []
 

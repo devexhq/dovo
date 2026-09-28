@@ -8,9 +8,11 @@ from pathlib import Path
 from typer.testing import CliRunner
 
 from worktree.cli import app
+from worktree.common.filesystem.models import RepositoryPaths
+from worktree.common.filesystem.services.global_root import resolve_global_paths
 from worktree.core.artifacts import Artifacts
 from worktree.core.db import WorktreeDb
-from worktree.core.project.services.storage import resolve_project_filesystem_paths
+from worktree.core.project.services.storage import resolve_workspace_paths
 
 
 def _publish_artifact(workspace: Path, *, session_id: str, name: str) -> Path:
@@ -18,10 +20,9 @@ def _publish_artifact(workspace: Path, *, session_id: str, name: str) -> Path:
     sandbox_path = workspace / "sandbox-scratch" / session_id
     (sandbox_path / "dist").mkdir(parents=True, exist_ok=True)
     (sandbox_path / "dist" / "pkg.whl").write_bytes(b"package-bytes")
-    db = WorktreeDb(path=workspace)
-    result = Artifacts(path=workspace, db=db.artifacts).upload(
-        session_id, name, "dist/*.whl", sandbox_path=sandbox_path
-    )
+    paths = resolve_workspace_paths(RepositoryPaths.from_root(workspace), resolve_global_paths(None))
+    db = WorktreeDb(database_file=paths.database_file, project_id=paths.project_id)
+    result = Artifacts(paths, db=db.artifacts).upload(session_id, name, "dist/*.whl", sandbox_path=sandbox_path)
     assert result.ok
     return sandbox_path
 
@@ -63,7 +64,9 @@ class ArtifactsDownloadCliIntegrationTests:
     ) -> None:
         """wt artifacts download: a corrupted on-disk file vs. manifest.json exits 1 with status CHECKSUM_MISMATCH and leaves --dest empty."""
         _publish_artifact(artifacts_workspace, session_id="wf_one", name="dist-packages")
-        artifacts_dir = resolve_project_filesystem_paths(artifacts_workspace).artifacts_dir
+        artifacts_dir = resolve_workspace_paths(
+            RepositoryPaths.from_root(artifacts_workspace), resolve_global_paths(None)
+        ).artifacts_dir
         artifact_dir = artifacts_dir / "wf_one" / "dist-packages"
         (artifact_dir / "dist" / "pkg.whl").write_bytes(b"corrupted-bytes")
         dest = tmp_path / "out"

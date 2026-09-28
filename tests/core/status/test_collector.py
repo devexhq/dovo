@@ -12,14 +12,22 @@ from typing import Any
 import pytest
 
 from tests.harness import WorkspaceBuilder
-from worktree.common.filesystem import Filesystem
+from worktree.common.filesystem import Filesystem, WorkspacePaths
+from worktree.common.filesystem.models import RepositoryPaths
+from worktree.common.filesystem.services.global_root import resolve_global_paths
 from worktree.core.config.loader import ConfigLoadStatus
 from worktree.core.config.models import AgentConfig, ProjectConfig, SandboxConfig, WorktreeConfig
 from worktree.core.db import RunsRepository, RunStatus, SandboxesRepository
 from worktree.core.db.connection import resolve_db_path
 from worktree.core.git import GitNotFoundError, GitPlumbingTimeoutError, GitRunner
+from worktree.core.project.services.storage import resolve_workspace_paths
 from worktree.core.status import Status, WorktreeStatusResult
 from worktree.core.status.services.collector import collect_status
+
+
+def _status_paths(workspace: Path) -> WorkspacePaths:
+    """Resolve the WorkspacePaths snapshot for a WorkspaceBuilder-scaffolded workspace root."""
+    return resolve_workspace_paths(RepositoryPaths.from_root(workspace), resolve_global_paths(None))
 
 
 def _config_payload(*, model: str | None = "gpt-4o", max_active_sandboxes: int = 5) -> dict[str, Any]:
@@ -44,7 +52,7 @@ class StatusFacadeTests:
     def test_status_collect_returns_worktree_status_result(
         self,
         tmp_path: Path,
-        invoke: Callable[[Path], WorktreeStatusResult],
+        invoke: Callable[[WorkspacePaths], WorktreeStatusResult],
     ) -> None:
         workspace = (
             WorkspaceBuilder(tmp_path / "facade_collect")
@@ -54,8 +62,9 @@ class StatusFacadeTests:
         )
         fs = Filesystem(workspace)
         Filesystem.atomic_write_json(fs.config_file, _config_payload(model="gpt-4o"))
+        paths = _status_paths(workspace)
 
-        result = invoke(workspace)
+        result = invoke(paths)
 
         assert result.root_dir == workspace
         assert result.is_initialized is True
@@ -74,6 +83,7 @@ class StatusCollectorGitCollectionTests:
             .without_catalog_templates()
             .build()
         )
+        paths = _status_paths(workspace)
         fs = Filesystem(workspace)
         config_data = _config_payload(model="gpt-4o", max_active_sandboxes=3)
         Filesystem.atomic_write_json(fs.config_file, config_data)
@@ -81,7 +91,7 @@ class StatusCollectorGitCollectionTests:
         Filesystem.atomic_write_text(fs.catalog_blueprints_dir / "lint-blueprint.yml", "name: lint-blueprint\n")
         Filesystem.atomic_write_text(fs.catalog_steps_dir / "test-step.yml", "name: test-step\n")
 
-        runs_repo = RunsRepository(workspace)
+        runs_repo = RunsRepository(db_path=paths.database_file, project_id=paths.project_id)
         runs_repo.create(
             session_id="sess-001",
             blueprint_name="deploy",
@@ -89,7 +99,7 @@ class StatusCollectorGitCollectionTests:
             status=RunStatus.COMPLETED,
         )
 
-        sandboxes_repo = SandboxesRepository(workspace)
+        sandboxes_repo = SandboxesRepository(db_path=paths.database_file, project_id=paths.project_id)
         sandboxes_repo.create(
             id="sb-001",
             branch_name="wt/sb-001",
@@ -97,7 +107,7 @@ class StatusCollectorGitCollectionTests:
             sandbox_path=fs.sandboxes_dir / "sb-001",
         )
 
-        result = collect_status(workspace)
+        result = collect_status(paths)
 
         assert result.is_initialized is True
         assert result.git.branch == "feature-status"
@@ -130,7 +140,7 @@ class StatusCollectorGitCollectionTests:
         untracked = workspace / "new_file.txt"
         untracked.write_text("hello", encoding="utf-8")
 
-        result = collect_status(workspace)
+        result = collect_status(_status_paths(workspace))
 
         assert result.git.branch == "feature-dirty"
         assert result.git.is_dirty is True
@@ -151,7 +161,7 @@ class StatusCollectorGitCollectionTests:
         commit_hash = GitRunner.run(["rev-parse", "HEAD"], path=workspace).strip()
         subprocess.run(["git", "checkout", commit_hash], cwd=workspace, check=True, capture_output=True)
 
-        result = collect_status(workspace)
+        result = collect_status(_status_paths(workspace))
 
         assert result.git.branch == "HEAD (detached)"
         assert result.git.is_git_repo is True
@@ -160,7 +170,7 @@ class StatusCollectorGitCollectionTests:
         non_git_dir = tmp_path / "non_git"
         non_git_dir.mkdir(parents=True, exist_ok=True)
 
-        result = collect_status(non_git_dir)
+        result = collect_status(_status_paths(non_git_dir))
 
         assert result.is_initialized is False
         assert result.git.is_git_repo is False
@@ -200,7 +210,7 @@ class StatusCollectorGitCollectionTests:
 
         monkeypatch.setattr(GitRunner, "run", mock_run)
 
-        result = collect_status(workspace)
+        result = collect_status(_status_paths(workspace))
 
         assert result.git.is_git_repo is False
         assert result.git.branch == "unknown"
@@ -222,7 +232,7 @@ class StatusCollectorGitCollectionTests:
 
         monkeypatch.setattr(GitRunner, "run", mock_run)
 
-        result = collect_status(workspace)
+        result = collect_status(_status_paths(workspace))
 
         assert result.git.is_git_repo is False
         assert result.git.branch == "none"
@@ -240,7 +250,7 @@ class StatusCollectorConfigAndCatalogTests:
             .without_catalog_templates()
             .build()
         )
-        result = collect_status(workspace)
+        result = collect_status(_status_paths(workspace))
 
         assert result.is_initialized is False
         assert result.git.branch == "feature-uninit"
@@ -258,7 +268,7 @@ class StatusCollectorConfigAndCatalogTests:
         fs = Filesystem(workspace)
         Filesystem.atomic_write_text(fs.config_file, "{invalid_json: true")
 
-        result = collect_status(workspace)
+        result = collect_status(_status_paths(workspace))
 
         assert result.config.status == ConfigLoadStatus.MALFORMED_JSON
         assert result.config.is_valid is False
@@ -277,7 +287,7 @@ class StatusCollectorConfigAndCatalogTests:
         fs = Filesystem(workspace)
         Filesystem.atomic_write_json(fs.config_file, _config_payload(model="gpt-4o"))
 
-        result = collect_status(workspace)
+        result = collect_status(_status_paths(workspace))
 
         assert result.is_initialized is True
         assert result.catalog.exists is False
@@ -295,7 +305,7 @@ class StatusCollectorConfigAndCatalogTests:
         Filesystem.atomic_write_text(fs.catalog_blueprints_dir / "valid-bp.yml", "name: valid-bp\n")
         Filesystem.atomic_write_text(fs.catalog_blueprints_dir / "bad.yml", "invalid: [yaml: broken\n")
 
-        result = collect_status(workspace)
+        result = collect_status(_status_paths(workspace))
 
         assert result.catalog.exists is True
         assert result.catalog.total_items == 2
@@ -318,7 +328,7 @@ class StatusCollectorDatabaseAndSandboxTests:
         fs = Filesystem(workspace)
         Filesystem.atomic_write_json(fs.config_file, _config_payload(model="gpt-4o"))
 
-        result = collect_status(workspace)
+        result = collect_status(_status_paths(workspace))
 
         assert result.database.exists is False
         assert result.database.is_accessible is False
@@ -333,9 +343,9 @@ class StatusCollectorDatabaseAndSandboxTests:
         )
         fs = Filesystem(workspace)
         Filesystem.atomic_write_json(fs.config_file, _config_payload(model="gpt-4o"))
-        resolve_db_path().write_bytes(b"NOT A SQLITE DATABASE")
+        resolve_db_path(resolve_global_paths(None)).write_bytes(b"NOT A SQLITE DATABASE")
 
-        result = collect_status(workspace)
+        result = collect_status(_status_paths(workspace))
 
         assert result.database.exists is True
         assert result.database.is_accessible is False
@@ -355,7 +365,7 @@ class StatusCollectorDatabaseAndSandboxTests:
         (fs.sandboxes_dir / "sb-1").mkdir(parents=True, exist_ok=True)
         (fs.sandboxes_dir / "sb-2").mkdir(parents=True, exist_ok=True)
 
-        result = collect_status(workspace)
+        result = collect_status(_status_paths(workspace))
 
         assert result.database.exists is False
         assert result.sandboxes.active_sandboxes == 2
@@ -374,10 +384,11 @@ class StatusCollectorDatabaseAndSandboxTests:
             .without_catalog_templates()
             .build()
         )
+        paths = _status_paths(workspace)
         fs = Filesystem(workspace)
         Filesystem.atomic_write_json(fs.config_file, _config_payload(model="gpt-4o"))
 
-        runs_repo = RunsRepository(workspace)
+        runs_repo = RunsRepository(db_path=paths.database_file, project_id=paths.project_id)
         runs_repo.create(
             session_id="sess-test",
             blueprint_name="test-bp",
@@ -391,7 +402,7 @@ class StatusCollectorDatabaseAndSandboxTests:
 
         monkeypatch.setattr(SandboxesRepository, "list", mock_list)
 
-        result = collect_status(workspace)
+        result = collect_status(paths)
 
         assert result.database.total_runs == 1
         assert result.sandboxes.active_sandboxes == 1
@@ -410,11 +421,12 @@ class StatusCollectorWarningsOrderingTests:
             .build()
         )
         fs = Filesystem(workspace)
+        paths = _status_paths(workspace)
 
         (workspace / "dirty.txt").write_text("dirty content", encoding="utf-8")
         Filesystem.atomic_write_text(fs.catalog_blueprints_dir / "broken.yml", "bad: [yaml\n")
 
-        result = collect_status(workspace)
+        result = collect_status(paths)
 
         assert result.warnings == [
             "Worktree workspace is not initialized. Run 'wt init' to configure.",
@@ -428,7 +440,7 @@ class StatusCollectorWarningsOrderingTests:
             _config_payload(model=None, max_active_sandboxes=8),
         )
 
-        result2 = collect_status(workspace)
+        result2 = collect_status(paths)
 
         assert result2.warnings == [
             "Active branch is 'main'. Automated workflows on primary branches are discouraged.",
@@ -451,7 +463,7 @@ class StatusCollectorFixesRemediationTests:
             .build()
         )
 
-        result = collect_status(workspace)
+        result = collect_status(_status_paths(workspace))
 
         assert result.fixes == ["Run 'wt init' to initialize Worktree in this repository."]
 
@@ -460,7 +472,7 @@ class StatusCollectorFixesRemediationTests:
         fs = Filesystem(non_git_dir)
         Filesystem.atomic_write_json(fs.config_file, _config_payload(model="gpt-4o"))
 
-        result = collect_status(non_git_dir)
+        result = collect_status(_status_paths(non_git_dir))
 
         assert result.fixes == ["Run 'git init' or navigate to a Git repository."]
 
@@ -499,7 +511,7 @@ class StatusCollectorFixesRemediationTests:
         fs = Filesystem(workspace)
         Filesystem.atomic_write_text(fs.config_file, payload)
 
-        result = collect_status(workspace)
+        result = collect_status(_status_paths(workspace))
 
         assert result.fixes == [expected_fix]
 
@@ -514,7 +526,7 @@ class StatusCollectorFixesRemediationTests:
         fs = Filesystem(workspace)
         fs.config_file.mkdir(parents=True, exist_ok=True)
 
-        result = collect_status(workspace)
+        result = collect_status(_status_paths(workspace))
 
         assert result.fixes == ["Remove directory at .worktree/config.json and run 'wt init'."]
 
@@ -532,7 +544,7 @@ class StatusCollectorFixesRemediationTests:
         try:
             if os.access(fs.config_file, os.R_OK):
                 pytest.skip("filesystem still allows reading unreadable mode")
-            result = collect_status(workspace)
+            result = collect_status(_status_paths(workspace))
             assert result.fixes == ["Check file permissions for .worktree/config.json."]
         finally:
             fs.config_file.chmod(stat.S_IRUSR | stat.S_IWUSR)

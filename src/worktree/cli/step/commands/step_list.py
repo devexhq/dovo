@@ -18,6 +18,6 @@ def step_list_command(context: CliContext, output_format: str = "terminal") -> C
     Returns:
         CatalogListResult containing listed records and errors.
     """
-    result = Catalog(path=context.cwd).list(type_filter=CatalogItemType.STEP)
+    result = Catalog(context.paths).list(type_filter=CatalogItemType.STEP)
     ui_dispatcher.dispatch(result, output_format=output_format)
     return result

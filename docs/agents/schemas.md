@@ -92,7 +92,8 @@ All operations that can fail return a Pydantic result object subclassing `BaseRe
 - `ConfigUnsetResult`: Result of removing a dot-path key from config (`status`, `config_path`, `key`, `existed`, `previous_value`, `errors`, `ok`).
 - `ConfigGenerationResult`: Result of creating, repairing, or overwriting config (`created`, `skipped_existing`, `repaired`, `overwritten`, `inserted_keys`, `warnings`, `errors`, `ok`).
 - [`GlobalPaths`](../../src/worktree/common/filesystem/models.py): Canonical paths for the global Worktree hierarchy.
-- [`FilesystemPaths`](../../src/worktree/common/filesystem/models.py): Keeps repository configuration, catalog, database, lock, and sandboxes local. When a persisted project identity is available, it resolves runtime sessions, artifacts, logs, and temporary files below `WORKTREE_HOME/storage/projects/<project-id>`; projects without an identity retain the repository-local runtime paths.
+- [`RepositoryPaths`](../../src/worktree/common/filesystem/models.py): Repo-local paths resolved from a root directory (`root_dir`, `worktree_dir`, `config_file`, `catalog_dir`, `catalog_steps_dir`, `catalog_blueprints_dir`, `sandboxes_dir`, `lock_file`, `gitignore_file`). Built via `RepositoryPaths.from_root(root)`.
+- [`WorkspacePaths`](../../src/worktree/common/filesystem/models.py): Extends `RepositoryPaths` with project-scoped, identity-dependent locations (`catalog_templates_dir`, `global_paths`, `database_file`, `project_id`, `runtime_root`, `logs_dir`, `sessions_dir`, `artifacts_dir`, `tmp_dir`) plus `session_dir(id)`/`sandbox_dir(id)`/`catalog_dir_for(tier)` helpers. Built via `resolve_workspace_paths(repository_paths, global_paths)` ([`core/project/services/storage.py`](../../src/worktree/core/project/services/storage.py)), which resolves `project_id` from `project.json` when present; projects without an identity retain repository-local runtime paths. Every domain facade/service takes `paths: WorkspacePaths` as its single source of ambient location state — see [architecture.md](architecture.md#path-ownership-repositorypaths--workspacepaths).
 - `ConfigTier`, `ConfigLayer`: Precedence-tier enum and resolved-layer DTO for hierarchical config resolution, defined in [`core/config/models.py`](../../src/worktree/core/config/models.py). [`core/config/services/hierarchical_loader.py`](../../src/worktree/core/config/services/hierarchical_loader.py) exposes `load_hierarchical_config` and `resolve_config_layers`, merging Packaged, Global, User, and Repo tiers into a validated `WorktreeConfig`.
 - `HierarchicalConfigLoadResult` / `HierarchicalConfigLoadStatus`: Non-raising result of `load_hierarchical_config` (`status`, `tier`, `path`, `config`, `errors`, `ok`); `status` classifies which tier's file was unreadable, malformed, non-object, or failed `WorktreeConfig` validation.
 
@@ -120,7 +121,7 @@ All operations that can fail return a Pydantic result object subclassing `BaseRe
 
 ### Runtime & Process Engine Models
 **Relevant sources:** `src/worktree/core/runtime/models.py`, `src/worktree/core/engine/models.py`.
-- `RunContext`: Immutable execution input bundle (`steps`, `cwd`, `use_sandbox`, `keep`, `agent`, `observer`, `inputs`, `no_tty`, `failure_prompter`, `pause_store`, `resume_from`).
+- `RunContext`: Immutable execution input bundle (`steps`, `cwd`, `use_sandbox`, `keep`, `agent`, `observer`, `inputs`, `no_tty`, `failure_prompter`, `pause_store`, `resume_from`, `paths`).
 - `RunOutcome`: Terminal run result (`status`, `step_results`, `errors`, `warnings`, `sandbox_kept`, `sandbox_path`, `session_id`, `ok`).
 - `RunStatus`: `StrEnum` (`pending`, `running`, `completed`, `failed`, `paused`, `cancelled`).
 - `RunCheckpoint`: JSON-serializable state for paused runs (`sandbox_path`, `sandbox_id`, `sandbox_branch`, `use_sandbox`, `keep`, `agent`, `inputs`, `pending_step_id`, `pending_result`, `diagnostic`, `next_step_index`).
@@ -200,7 +201,7 @@ All four tables live in one centralized SQLite database shared across projects (
 - Built-in checks (`src/worktree/core/doctor/checks/`, registered by `get_default_registry()` in `src/worktree/core/doctor/services/registry.py`):
   - `git.repo` (`GitRepoCheck`): validates the `git` binary is on `PATH` and `context.cwd` is a Git repository.
   - `config.schema` (`ConfigSchemaCheck`): validates `.worktree/config.json` exists and passes schema V1 validation.
-  - `filesystem.writable` (`FilesystemWritableCheck`): probes write access across `FilesystemPaths`-declared directories.
+  - `filesystem.writable` (`FilesystemWritableCheck`): probes write access across `WorkspacePaths`-declared directories.
   - `sandbox.refs` (`SandboxRefsCheck`): validates registered sandbox directories against `SandboxesRepository` and Git worktree state.
   - `env.binaries` (`EnvBinariesCheck`): validates required host and active agent provider CLI binaries are on `PATH`.
   - `agent.setup` (`AgentSetupCheck`): validates the active agent provider's credential and configured model.

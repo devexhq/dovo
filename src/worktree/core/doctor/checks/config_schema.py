@@ -2,8 +2,7 @@
 
 from __future__ import annotations
 
-from worktree.common.filesystem.services.paths import get_worktree_config_file
-from worktree.core.config.loader import ConfigLoadResult, ConfigLoadStatus, load_config
+from worktree.core.config.loader import ConfigLoadResult, ConfigLoadStatus, load_config_at
 from worktree.core.doctor.models import CheckCategory, CheckStatus, DiagnosticCheckResult, DoctorContext
 
 
@@ -15,8 +14,8 @@ class ConfigSchemaCheck:
     category: CheckCategory = CheckCategory.CONFIG
 
     def execute(self, context: DoctorContext) -> DiagnosticCheckResult:
-        """Load and validate `.worktree/config.json` under context.cwd against config schema V1."""
-        loaded = load_config(config_path=get_worktree_config_file(context.cwd))
+        """Load and validate `.worktree/config.json` under context.paths against config schema V1."""
+        loaded = load_config_at(context.paths.config_file)
 
         if loaded.status == ConfigLoadStatus.OK:
             return _ok_result(self.check_id, self.name, self.category)

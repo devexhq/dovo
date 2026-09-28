@@ -4,17 +4,14 @@ from __future__ import annotations
 
 from .config_load import ConfigLoadFormatter
 from .config_set import ConfigSetFormatter
-from .config_show import ConfigShowFormatter
 from .config_unset import ConfigUnsetFormatter
 from .config_validate import ConfigValidateFormatter
-from .config_views import ConfigSetView, ConfigShowView, ConfigValidationView
+from .config_views import ConfigSetView, ConfigValidationView
 
 __all__ = [
     "ConfigLoadFormatter",
     "ConfigSetFormatter",
     "ConfigSetView",
-    "ConfigShowFormatter",
-    "ConfigShowView",
     "ConfigUnsetFormatter",
     "ConfigValidateFormatter",
     "ConfigValidationView",

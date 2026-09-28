@@ -145,7 +145,15 @@ Created and repaired idempotently by [core/bootstrap](../../src/worktree/core/bo
   sandboxes/                  # git worktree checkouts
 ```
 
-`sessions/`, `artifacts/`, `tmp/`, and `logs/` are no longer created locally under `.worktree/`; that project-scoped runtime state resolves under the global `WORKTREE_HOME` storage root instead (see [`resolve_project_filesystem_paths`](../../src/worktree/core/project/services/storage.py)).
+`sessions/`, `artifacts/`, `tmp/`, and `logs/` are no longer created locally under `.worktree/`; that project-scoped runtime state resolves under the global `WORKTREE_HOME` storage root instead.
+
+### Path ownership: `RepositoryPaths` / `WorkspacePaths`
+
+**Relevant sources:** `src/worktree/common/filesystem/models.py`, `src/worktree/core/project/services/storage.py`
+
+- `RepositoryPaths` (`common/filesystem/models.py`) owns every repo-local path under a resolved root: `root_dir`, `worktree_dir`, `config_file`, `catalog_dir`/`catalog_steps_dir`/`catalog_blueprints_dir`, `sandboxes_dir`, `lock_file`, `gitignore_file`. Built via `RepositoryPaths.from_root(root)`.
+- `WorkspacePaths` (same module) extends `RepositoryPaths` with the project-scoped, identity-dependent locations: `catalog_templates_dir`, `global_paths`, `database_file`, `project_id`, `runtime_root`, `logs_dir`, `sessions_dir`, `artifacts_dir`, `tmp_dir`, plus `session_dir(id)`/`sandbox_dir(id)`/`catalog_dir_for(tier)` helpers. Built via `resolve_workspace_paths(repository_paths, global_paths)` in `core/project/services/storage.py`, which resolves `project_id` from `project.json` when present.
+- `CliContext.build()` (`cli/context.py`) resolves one `WorkspacePaths` snapshot per CLI invocation; CLI handlers construct their path-aware facades from that snapshot.
 
 ### Centralized SQLite database
 

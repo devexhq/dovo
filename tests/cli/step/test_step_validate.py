@@ -8,8 +8,16 @@ from pathlib import Path
 from typer.testing import CliRunner
 
 from worktree.cli import app
+from worktree.common.filesystem.models import RepositoryPaths, WorkspacePaths
+from worktree.common.filesystem.services.global_root import resolve_global_paths
 from worktree.core.catalog import Catalog
 from worktree.core.catalog.models import CatalogItemType
+from worktree.core.project.services.storage import resolve_workspace_paths
+
+
+def _paths_for(root: Path) -> WorkspacePaths:
+    """Resolve the WorkspacePaths snapshot for root, reflecting its current project.json."""
+    return resolve_workspace_paths(RepositoryPaths.from_root(root), resolve_global_paths(None))
 
 
 class StepValidateCliIntegrationTests:
@@ -17,7 +25,7 @@ class StepValidateCliIntegrationTests:
 
     def test_step_validate_cli_valid_step_exits_zero(self, cli_runner: CliRunner, isolated_workspace: Path) -> None:
         """wt step validate <name>: a step with a valid id/run schema passes validation; exit 0."""
-        Catalog(isolated_workspace).save(
+        Catalog(_paths_for(isolated_workspace)).save(
             "valid-step", {"id": "valid-step", "run": "echo hi"}, item_type=CatalogItemType.STEP
         )
 
@@ -28,7 +36,7 @@ class StepValidateCliIntegrationTests:
 
     def test_step_validate_cli_renders_json(self, cli_runner: CliRunner, isolated_workspace: Path) -> None:
         """wt step validate <name> --format json: envelope reports valid=true."""
-        Catalog(isolated_workspace).save(
+        Catalog(_paths_for(isolated_workspace)).save(
             "json-valid-step", {"id": "json-valid-step", "run": "echo hi"}, item_type=CatalogItemType.STEP
         )
 
@@ -45,7 +53,7 @@ class StepValidateCliIntegrationTests:
         self, cli_runner: CliRunner, isolated_workspace: Path
     ) -> None:
         """wt step validate <name>: a default-scaffolded step (missing required 'id') fails schema validation; exit 1."""
-        Catalog(isolated_workspace).create(CatalogItemType.STEP, "invalid-step")
+        Catalog(_paths_for(isolated_workspace)).create(CatalogItemType.STEP, "invalid-step")
 
         result = cli_runner.invoke(app, ["-p", str(isolated_workspace), "step", "validate", "invalid-step"])
 

@@ -5,6 +5,7 @@ from __future__ import annotations
 import shutil
 from pathlib import Path
 
+from worktree.common.filesystem.models import RepositoryPaths
 from worktree.common.lock import LockTimeoutError, WorkspaceLock
 from worktree.core.db import RunsRepository, SandboxesRepository, SandboxStatus
 from worktree.core.git.runner import GitRunner
@@ -312,7 +313,7 @@ class SandboxPruner:
             return self._execute_prune(dry_run=True, force=force)
 
         try:
-            with WorkspaceLock(self.path):
+            with WorkspaceLock(RepositoryPaths.from_root(self.path).lock_file):
                 return self._execute_prune(dry_run=False, force=force)
         except LockTimeoutError as exc:
             return SandboxPruneResult(

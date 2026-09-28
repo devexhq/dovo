@@ -25,6 +25,6 @@ def history_show_command(
     Returns:
         HistoryShowResult containing session details and errors.
     """
-    result = History(path=context.cwd, db=context.db.runs).show(session_id, include_logs=logs)
+    result = History(context.paths, db=context.db.runs).show(session_id, include_logs=logs)
     ui_dispatcher.dispatch(result, output_format=output_format)
     return result

@@ -23,7 +23,7 @@ def sandbox_diff_command(
         stat: When True, show diffstat summary instead of full unified diff.
         output_format: Presentation format ("terminal" or "json").
     """
-    sandbox = Sandbox(path=context.cwd, db=context.db.sandboxes)
+    sandbox = Sandbox(context.paths, db=context.db.sandboxes)
     result = sandbox.diff(sandbox_id, stat=stat)
 
     ui_dispatcher.dispatch(result, output_format=output_format)

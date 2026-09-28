@@ -26,7 +26,7 @@ def history_root_command(
     Returns:
         HistoryListResult containing listed runs and errors.
     """
-    result = History(path=context.cwd, db=context.db.runs).list(
+    result = History(context.paths, db=context.db.runs).list(
         limit=limit,
         status=status,
     )

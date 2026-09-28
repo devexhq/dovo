@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from worktree.common.filesystem import Filesystem
+from worktree.common.filesystem import Filesystem, WorkspacePaths
 from worktree.common.filesystem.services.global_root import resolve_global_paths
 from worktree.common.models import DefinitionResolutionStatus
 from worktree.core.catalog import Catalog
@@ -28,16 +28,16 @@ class CatalogTemplateScaffoldingTests:
     )
     def test_catalog_create_scaffolds_yaml_template_under_correct_type_dir(
         self,
-        isolated_workspace: Path,
+        workspace_paths: WorkspacePaths,
         item_type: CatalogItemType,
         name: str,
         expected_rel_path: Path,
     ) -> None:
         """Create scaffolds YAML templates under .worktree/catalog/blueprints and steps."""
-        catalog = Catalog(isolated_workspace)
+        catalog = Catalog(workspace_paths)
         result = catalog.create(item_type, name)
 
-        target_file = isolated_workspace / ".worktree" / "catalog" / expected_rel_path
+        target_file = workspace_paths.catalog_dir / expected_rel_path
         assert target_file.is_file()
 
         content = target_file.read_text(encoding="utf-8")
@@ -68,10 +68,10 @@ class CatalogProtectionTests:
         ],
     )
     def test_catalog_delete_rejects_deletion_of_bundled_packaged_templates(
-        self, isolated_workspace: Path, template_name: str
+        self, workspace_paths: WorkspacePaths, template_name: str
     ) -> None:
         """catalog.delete rejects deleting templates in the wt/ namespace with ok=False."""
-        catalog = Catalog(isolated_workspace)
+        catalog = Catalog(workspace_paths)
         result = catalog.delete(template_name)
 
         assert result.item is None
@@ -92,9 +92,11 @@ class CatalogDiscoveryFallbackTests:
             pytest.param("wt/fix-tests", id="namespaced-name"),
         ],
     )
-    def test_catalog_show_falls_back_to_bundled_template(self, isolated_workspace: Path, template_name: str) -> None:
+    def test_catalog_show_falls_back_to_bundled_template(
+        self, workspace_paths: WorkspacePaths, template_name: str
+    ) -> None:
         """catalog.show falls back to bundled templates via importlib.resources."""
-        catalog = Catalog(isolated_workspace)
+        catalog = Catalog(workspace_paths)
         result = catalog.show(template_name)
 
         expected_file = Filesystem().catalog_templates_dir / "blueprints" / "wt" / "fix-tests.yml"
@@ -131,17 +133,17 @@ class CatalogCollisionTests:
     )
     def test_catalog_create_collision_returns_error(
         self,
-        isolated_workspace: Path,
+        workspace_paths: WorkspacePaths,
         item_type: CatalogItemType,
         name: str,
         expected_rel_path: Path,
     ) -> None:
         """catalog.create returns an error when target template already exists."""
-        catalog = Catalog(isolated_workspace)
+        catalog = Catalog(workspace_paths)
         result_first = catalog.create(item_type, name)
         assert result_first.item is not None
 
-        target_file = isolated_workspace / ".worktree" / "catalog" / expected_rel_path
+        target_file = workspace_paths.catalog_dir / expected_rel_path
         assert target_file.is_file()
 
         result_second = catalog.create(item_type, name)
@@ -154,9 +156,9 @@ class CatalogCollisionTests:
 class CatalogNamespaceSplittingTests:
     """Tests verifying namespaced identifiers split on the literal '/' boundary, not by character set."""
 
-    def test_name_sharing_trailing_characters_with_namespace_resolves(self, isolated_workspace: Path) -> None:
+    def test_name_sharing_trailing_characters_with_namespace_resolves(self, workspace_paths: WorkspacePaths) -> None:
         """catalog.get resolves 'wt/run-test', whose name ends in characters ('t') also present in its 'wt' namespace."""
-        catalog = Catalog(isolated_workspace)
+        catalog = Catalog(workspace_paths)
         catalog.save(
             "wt/run-test",
             {"name": "run-test", "description": "Regression fixture", "action": "run"},
@@ -174,9 +176,9 @@ class CatalogNamespaceSplittingTests:
 class CatalogGetTests:
     """Tests verifying multi-tier resolution precedence and duplicate-tier warnings for Catalog.get."""
 
-    def test_get_returns_repo_tier_match_over_user_tier_duplicate(self, isolated_workspace: Path) -> None:
+    def test_get_returns_repo_tier_match_over_user_tier_duplicate(self, workspace_paths: WorkspacePaths) -> None:
         """Catalog.get: same key indexed at REPO and USER tier resolves to the REPO-tagged CatalogRecord with no warning."""
-        catalog = Catalog(isolated_workspace)
+        catalog = Catalog(workspace_paths)
         catalog.create(CatalogItemType.BLUEPRINT, "shared-name")
 
         user_catalog_dir = resolve_global_paths(None).user_catalog_dir
@@ -192,7 +194,7 @@ class CatalogGetTests:
         assert result.resolved.tier == CatalogTier.REPO
         assert result.warnings == []
 
-    def test_get_returns_user_tier_match_when_no_repo_tier_entry_exists(self, isolated_workspace: Path) -> None:
+    def test_get_returns_user_tier_match_when_no_repo_tier_entry_exists(self, workspace_paths: WorkspacePaths) -> None:
         """Catalog.get: key present only at USER tier resolves to that CatalogRecord tagged tier=user."""
         user_catalog_dir = resolve_global_paths(None).user_catalog_dir
         (user_catalog_dir / "steps").mkdir(parents=True, exist_ok=True)
@@ -200,7 +202,7 @@ class CatalogGetTests:
             "name: user-only\ndescription: User tier step\naction: run\n", encoding="utf-8"
         )
 
-        catalog = Catalog(isolated_workspace)
+        catalog = Catalog(workspace_paths)
         result = catalog.get("user-only", item_type=CatalogItemType.STEP)
 
         assert result.status == DefinitionResolutionStatus.OK
@@ -211,7 +213,7 @@ class CatalogGetTests:
 class CatalogDeleteTierGuardTests:
     """Tests verifying delete refuses to remove a match resolved from a non-REPO tier."""
 
-    def test_delete_user_tier_match_returns_not_deletable_error(self, isolated_workspace: Path) -> None:
+    def test_delete_user_tier_match_returns_not_deletable_error(self, workspace_paths: WorkspacePaths) -> None:
         """Catalog.delete: a USER-tier-only match returns deleted=False with a tier-specific error, and the file remains on disk."""
         user_catalog_dir = resolve_global_paths(None).user_catalog_dir
         (user_catalog_dir / "blueprints").mkdir(parents=True, exist_ok=True)
@@ -220,7 +222,7 @@ class CatalogDeleteTierGuardTests:
             'version: "1.0"\nname: user-only\ndescription: User tier blueprint\nsteps: []\n', encoding="utf-8"
         )
 
-        catalog = Catalog(isolated_workspace)
+        catalog = Catalog(workspace_paths)
         result = catalog.delete("user-only")
 
         assert result.deleted is False

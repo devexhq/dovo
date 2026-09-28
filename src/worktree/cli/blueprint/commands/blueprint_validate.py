@@ -25,7 +25,7 @@ def blueprint_validate_command(
     Returns:
         CatalogValidateResult containing status, resolved path, errors, and warnings.
     """
-    result = Catalog(path=context.cwd).validate(
+    result = Catalog(context.paths).validate(
         target,
         item_type=CatalogItemType.BLUEPRINT,
         blueprint_cls=BlueprintDefinition,

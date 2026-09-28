@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from worktree.common.filesystem import Filesystem
+from worktree.common.filesystem.services.global_root import resolve_global_paths
 from worktree.core.bootstrap.models import (
     InitFailureMode,
     WorkspaceInitResult,
@@ -14,6 +15,7 @@ from worktree.core.catalog.services.seeder import seed_all_catalog_templates
 from worktree.core.config.generator import generate_default_config
 from worktree.core.db import init_database
 from worktree.core.project.services.identity import provision_project_identity
+from worktree.core.project.services.storage import resolve_workspace_paths
 
 
 def initialize_workspace(
@@ -78,9 +80,10 @@ def initialize_workspace(
             failure_mode=InitFailureMode.CONFIG_GENERATION,
         )
 
-    init_database()
+    paths = resolve_workspace_paths(fs.repository_paths, resolve_global_paths())
+    init_database(paths.database_file)
 
-    seed_result = seed_all_catalog_templates(path=resolved_root)
+    seed_result = seed_all_catalog_templates(paths)
     return WorkspaceInitResult(
         bootstrap_result=result,
         identity_result=identity_result,

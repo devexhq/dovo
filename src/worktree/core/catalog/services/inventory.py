@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
+from importlib.resources.abc import Traversable
 from pathlib import Path
 
-from worktree.common.filesystem import Filesystem, YamlFile
-from worktree.common.filesystem.services.global_root import resolve_global_paths
-from worktree.common.lock import WorkspaceLock
+from worktree.common.filesystem import Filesystem, WorkspacePaths, YamlFile
+from worktree.common.filesystem.services.operations import delete_file
+from worktree.common.lock import WorkspaceLock, resolve_lock_file_path
 from worktree.core.catalog.exceptions import CatalogProtectionError, CatalogTierDeleteError, CatalogWriteError
 from worktree.core.catalog.models import (
     CatalogIndex,
@@ -20,14 +21,14 @@ from worktree.core.catalog.models import (
 )
 
 
-def get_catalog_dir(path: Path) -> Path:
+def get_catalog_dir(paths: WorkspacePaths) -> Path:
     """Return absolute path to local `.worktree/catalog/` blueprint directory."""
-    return Filesystem(path).catalog_dir
+    return paths.catalog_dir
 
 
-def ensure_tier_catalog_dirs(tier: CatalogTier, *, repo_root: Path, global_root: Path | None) -> Path:
+def ensure_tier_catalog_dirs(tier: CatalogTier, paths: WorkspacePaths) -> Path:
     """Ensure one tier's `blueprints`/`steps` subdirectories exist and return that tier's catalog root."""
-    tier_dir = tier_root(tier, repo_root=repo_root, global_root=global_root)
+    tier_dir = tier_root(tier, paths)
     (tier_dir / "blueprints").mkdir(parents=True, exist_ok=True)
     (tier_dir / "steps").mkdir(parents=True, exist_ok=True)
     return tier_dir
@@ -57,15 +58,9 @@ def _catalog_key(namespace: str | None, stem: str) -> str:
     return f"{namespace}/{stem}" if namespace else stem
 
 
-def tier_root(tier: CatalogTier, *, repo_root: Path, global_root: Path | None) -> Path:
+def tier_root(tier: CatalogTier, paths: WorkspacePaths) -> Path:
     """Return the disk-backed catalog directory root for one tier (PACKAGED is not disk-backed and is not a valid input)."""
-    if tier is CatalogTier.REPO:
-        return get_catalog_dir(repo_root)
-    if tier is CatalogTier.USER:
-        return resolve_global_paths(global_root).user_catalog_dir
-    if tier is CatalogTier.GLOBAL:
-        return resolve_global_paths(global_root).global_catalog_dir
-    raise ValueError(f"Tier '{tier}' is not disk-backed and has no tier root.")
+    return paths.catalog_dir_for(tier)
 
 
 def load_catalog_index(tier_dir: Path) -> CatalogIndex:
@@ -144,13 +139,18 @@ def _scan_tier_subdirectories(tier_dir: Path) -> CatalogSubdirectoryScanResult:
     return result
 
 
-def scan_and_index_tier(tier: CatalogTier, *, repo_root: Path, global_root: Path | None) -> CatalogScanResult:
+def _global_tier_lock_path(paths: WorkspacePaths) -> Path:
+    """Return the lock path used for GLOBAL/USER tier catalog mutations."""
+    return resolve_lock_file_path(paths.global_paths.data_dir)
+
+
+def scan_and_index_tier(tier: CatalogTier, paths: WorkspacePaths) -> CatalogScanResult:
     """Walk one tier's blueprints/steps directories, compute SHAs, and rewrite that tier's index.json wholesale."""
-    tier_dir = tier_root(tier, repo_root=repo_root, global_root=global_root)
+    tier_dir = tier_root(tier, paths)
     tier_dir.mkdir(parents=True, exist_ok=True)
 
-    lock_root = repo_root if tier is CatalogTier.REPO else resolve_global_paths(global_root).root
-    with WorkspaceLock(lock_root):
+    lock_path = paths.lock_file if tier is CatalogTier.REPO else _global_tier_lock_path(paths)
+    with WorkspaceLock(lock_path):
         scan_result = _scan_tier_subdirectories(tier_dir)
         write_catalog_index(tier_dir, CatalogIndex(items=scan_result.scanned_records))
 
@@ -158,23 +158,51 @@ def scan_and_index_tier(tier: CatalogTier, *, repo_root: Path, global_root: Path
         return CatalogScanResult(items=records, errors=scan_result.errors)
 
 
-def scan_and_index_catalog(*, repo_root: Path, global_root: Path | None = None) -> CatalogScanResult:
+def scan_and_index_catalog(paths: WorkspacePaths) -> CatalogScanResult:
     """Scan and reindex the GLOBAL, USER, and REPO catalog tiers in precedence order, aggregating warnings."""
     items: list[CatalogRecord] = []
     errors: list[str] = []
     for tier in (CatalogTier.GLOBAL, CatalogTier.USER, CatalogTier.REPO):
-        result = scan_and_index_tier(tier, repo_root=repo_root, global_root=global_root)
+        result = scan_and_index_tier(tier, paths)
         items.extend(result.items)
         errors.extend(result.errors)
 
     return CatalogScanResult(items=items, errors=errors)
 
 
-def _packaged_default_records() -> list[CatalogRecord]:
+def list_packaged_template_defaults(catalog_templates_dir: Traversable) -> list[tuple[str, str]]:
+    """Return (type, relative_path) pairs for the packaged `default.yml` templates."""
+    root = catalog_templates_dir
+    rows: list[tuple[str, str]] = []
+    for item_type in (CatalogItemType.BLUEPRINT, CatalogItemType.STEP):
+        rel_path = f"{item_type.value}s/default.yml"
+        if (root / rel_path).is_file():
+            rows.append((item_type.value, rel_path))
+    return rows
+
+
+def find_packaged_templates(sha_or_name: str, catalog_templates_dir: Traversable) -> list[tuple[str, str]]:
+    """Return (relative_path, content) pairs for packaged templates matching `sha_or_name`."""
+    root = catalog_templates_dir
+    clean_name = sha_or_name.removeprefix("wt/")
+    found: list[tuple[str, str]] = []
+    for type_dir in ("blueprints", "steps"):
+        candidate = (
+            (root / type_dir / "default.yml")
+            if clean_name == "default"
+            else (root / type_dir / "wt" / f"{clean_name}.yml")
+        )
+        if candidate.is_file():
+            rel_path = f"{type_dir}/default.yml" if clean_name == "default" else f"{type_dir}/wt/{clean_name}.yml"
+            found.append((rel_path, candidate.read_text(encoding="utf-8")))
+    return found
+
+
+def _packaged_default_records(catalog_templates_dir: Traversable) -> list[CatalogRecord]:
     """Build CatalogRecord entries for the packaged `default.yml` starter templates."""
-    root = Filesystem().catalog_templates_dir
+    root = catalog_templates_dir
     records: list[CatalogRecord] = []
-    for item_type_value, rel_path in list_packaged_template_defaults():
+    for item_type_value, rel_path in list_packaged_template_defaults(catalog_templates_dir):
         item_type = CatalogItemType(item_type_value)
         path = Path(rel_path)
         content = (root / rel_path).read_text(encoding="utf-8")
@@ -194,21 +222,23 @@ def _packaged_default_records() -> list[CatalogRecord]:
     return records
 
 
-def resolve_catalog_records(*, repo_root: Path, global_root: Path | None) -> list[CatalogRecord]:
+def resolve_catalog_records(paths: WorkspacePaths) -> list[CatalogRecord]:
     """Return every indexed record across all four tiers, ordered REPO, USER, GLOBAL, PACKAGED (most specific first)."""
     records: list[CatalogRecord] = []
     for tier in (CatalogTier.REPO, CatalogTier.USER, CatalogTier.GLOBAL):
-        tier_dir = tier_root(tier, repo_root=repo_root, global_root=global_root)
+        tier_dir = tier_root(tier, paths)
         index = load_catalog_index(tier_dir)
         records.extend(CatalogRecord(**entry.model_dump(), tier=tier) for entry in index.items)
 
-    records.extend(_packaged_default_records())
+    records.extend(_packaged_default_records(paths.catalog_templates_dir))
     return records
 
 
-def _resolve_packaged_wt_fallback(key_or_sha: str, item_type: CatalogItemType | None) -> CatalogRecord | None:
+def _resolve_packaged_wt_fallback(
+    key_or_sha: str, item_type: CatalogItemType | None, catalog_templates_dir: Traversable
+) -> CatalogRecord | None:
     """Resolve a `wt/`-namespaced packaged example by name, mirroring the pre-pivot lookup path."""
-    for rel_path, content in find_packaged_templates(key_or_sha):
+    for rel_path, content in find_packaged_templates(key_or_sha, catalog_templates_dir):
         path = Path(rel_path)
         type_enum = CatalogItemType.BLUEPRINT if path.parts[0] == "blueprints" else CatalogItemType.STEP
         if item_type is not None and type_enum != item_type:
@@ -231,12 +261,10 @@ def _resolve_packaged_wt_fallback(key_or_sha: str, item_type: CatalogItemType | 
 def find_catalog_record_matches(
     key_or_sha: str,
     item_type: CatalogItemType | None,
-    *,
-    repo_root: Path,
-    global_root: Path | None,
+    paths: WorkspacePaths,
 ) -> list[CatalogRecord]:
     """Return every CatalogRecord matching key_or_sha across tiers, in REPO, USER, GLOBAL, PACKAGED order."""
-    records = resolve_catalog_records(repo_root=repo_root, global_root=global_root)
+    records = resolve_catalog_records(paths)
     if item_type is not None:
         records = [record for record in records if record.item_type == item_type]
 
@@ -244,32 +272,30 @@ def find_catalog_record_matches(
     if matches:
         return matches
 
-    fallback = _resolve_packaged_wt_fallback(key_or_sha, item_type)
+    fallback = _resolve_packaged_wt_fallback(key_or_sha, item_type, paths.catalog_templates_dir)
     return [fallback] if fallback is not None else []
 
 
 def get_catalog_record(
     key_or_sha: str,
-    item_type: CatalogItemType | None = None,
-    *,
-    repo_root: Path,
-    global_root: Path | None,
+    item_type: CatalogItemType | None,
+    paths: WorkspacePaths,
 ) -> CatalogRecord | None:
     """Return the first CatalogRecord matching key_or_sha across tiers in REPO, USER, GLOBAL, PACKAGED order."""
-    matches = find_catalog_record_matches(key_or_sha, item_type, repo_root=repo_root, global_root=global_root)
+    matches = find_catalog_record_matches(key_or_sha, item_type, paths)
     return matches[0] if matches else None
 
 
-def resolve_catalog_record_path(record: CatalogRecord, *, repo_root: Path, global_root: Path | None) -> Path:
+def resolve_catalog_record_path(record: CatalogRecord, paths: WorkspacePaths) -> Path:
     """Return the absolute file path for an indexed record, resolved against its own tier's root."""
     if record.tier == CatalogTier.PACKAGED:
-        return Path(str(Filesystem().catalog_templates_dir)) / record.path
-    return tier_root(record.tier, repo_root=repo_root, global_root=global_root) / record.path
+        return Path(str(paths.catalog_templates_dir)) / record.path
+    return tier_root(record.tier, paths) / record.path
 
 
-def _get_initial_template_content(type_enum: CatalogItemType, stem: str) -> str:
+def _get_initial_template_content(type_enum: CatalogItemType, stem: str, catalog_templates_dir: Traversable) -> str:
     """Return initial template text for a catalog item or fall back to a default skeleton."""
-    template_path = Filesystem().catalog_templates_dir / f"{type_enum.value}s" / "default.yml"
+    template_path = catalog_templates_dir / f"{type_enum.value}s" / "default.yml"
     try:
         content = template_path.read_text(encoding="utf-8")
         placeholder = "my-step" if type_enum == CatalogItemType.STEP else "my-blueprint"
@@ -293,16 +319,14 @@ def coerce_catalog_item_type(item_type: CatalogItemType | str) -> CatalogItemTyp
 def create_catalog_item(
     item_type: CatalogItemType | str,
     name: str,
-    *,
-    tier: CatalogTier = CatalogTier.REPO,
-    repo_root: Path,
-    global_root: Path | None = None,
+    tier: CatalogTier,
+    paths: WorkspacePaths,
 ) -> CatalogRecord:
     """Create a new catalog item under the selected tier's `<type>s/<name>.yml` and reindex that tier."""
-    lock_root = repo_root if tier is CatalogTier.REPO else resolve_global_paths(global_root).root
-    with WorkspaceLock(lock_root):
+    lock_path = paths.lock_file if tier is CatalogTier.REPO else _global_tier_lock_path(paths)
+    with WorkspaceLock(lock_path):
         type_enum = coerce_catalog_item_type(item_type)
-        tier_dir = ensure_tier_catalog_dirs(tier, repo_root=repo_root, global_root=global_root)
+        tier_dir = ensure_tier_catalog_dirs(tier, paths)
         stem = name[:-4] if name.endswith(".yml") or name.endswith(".yaml") else name
         filename = f"{stem}.yml"
         target_path = tier_dir / f"{type_enum.value}s" / filename
@@ -311,10 +335,10 @@ def create_catalog_item(
             rel_path = target_path.relative_to(tier_dir)
             raise FileExistsError(f"Catalog blueprint collision at path '{rel_path}'")
 
-        content = _get_initial_template_content(type_enum, stem)
+        content = _get_initial_template_content(type_enum, stem, paths.catalog_templates_dir)
         Filesystem.atomic_write_text(target_path, content)
 
-        scan_result = scan_and_index_tier(tier, repo_root=repo_root, global_root=global_root)
+        scan_result = scan_and_index_tier(tier, paths)
         rel_path = target_path.relative_to(tier_dir)
         record = next((r for r in scan_result.items if r.path == rel_path), None)
         if record is None:
@@ -322,12 +346,7 @@ def create_catalog_item(
         return record
 
 
-def delete_catalog_item_by_sha_or_name(
-    sha_or_name: str,
-    *,
-    repo_root: Path,
-    global_root: Path | None,
-) -> CatalogRecord | None:
+def delete_catalog_item_by_sha_or_name(sha_or_name: str, paths: WorkspacePaths) -> CatalogRecord | None:
     """Delete a REPO-tier catalog file and reindex.
 
     Raises:
@@ -337,10 +356,10 @@ def delete_catalog_item_by_sha_or_name(
     if sha_or_name.startswith("wt/"):
         raise CatalogProtectionError(f"Cannot delete bundled catalog template '{sha_or_name}'.")
 
-    catalog_dir = get_catalog_dir(repo_root)
-    with WorkspaceLock(repo_root):
-        scan_and_index_catalog(repo_root=repo_root, global_root=global_root)
-        matches = find_catalog_record_matches(sha_or_name, None, repo_root=repo_root, global_root=global_root)
+    catalog_dir = paths.catalog_dir
+    with WorkspaceLock(paths.lock_file):
+        scan_and_index_catalog(paths)
+        matches = find_catalog_record_matches(sha_or_name, None, paths)
         if not matches:
             return None
 
@@ -354,35 +373,7 @@ def delete_catalog_item_by_sha_or_name(
             raise CatalogProtectionError(f"Cannot delete bundled catalog template '{item.key}'.")
 
         file_path = catalog_dir / item.path
-        Filesystem().delete_file(file_path)
+        delete_file(file_path)
 
-        scan_and_index_tier(CatalogTier.REPO, repo_root=repo_root, global_root=global_root)
+        scan_and_index_tier(CatalogTier.REPO, paths)
         return item
-
-
-def list_packaged_template_defaults() -> list[tuple[str, str]]:
-    """Return (type, relative_path) pairs for the packaged `default.yml` templates."""
-    root = Filesystem().catalog_templates_dir
-    rows: list[tuple[str, str]] = []
-    for item_type in (CatalogItemType.BLUEPRINT, CatalogItemType.STEP):
-        rel_path = f"{item_type.value}s/default.yml"
-        if (root / rel_path).is_file():
-            rows.append((item_type.value, rel_path))
-    return rows
-
-
-def find_packaged_templates(sha_or_name: str) -> list[tuple[str, str]]:
-    """Return (relative_path, content) pairs for packaged templates matching `sha_or_name`."""
-    root = Filesystem().catalog_templates_dir
-    clean_name = sha_or_name.removeprefix("wt/")
-    found: list[tuple[str, str]] = []
-    for type_dir in ("blueprints", "steps"):
-        candidate = (
-            (root / type_dir / "default.yml")
-            if clean_name == "default"
-            else (root / type_dir / "wt" / f"{clean_name}.yml")
-        )
-        if candidate.is_file():
-            rel_path = f"{type_dir}/default.yml" if clean_name == "default" else f"{type_dir}/wt/{clean_name}.yml"
-            found.append((rel_path, candidate.read_text(encoding="utf-8")))
-    return found

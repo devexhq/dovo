@@ -60,7 +60,6 @@ FORMATTER_REGISTRY: Final[dict[type[BaseModel], type[ComponentFormatter[Any, Any
     catalog_models.CatalogValidateResult: catalog_formatters.CatalogValidateFormatter,
     # Config
     config_models.ConfigLoadResult: config_formatters.ConfigLoadFormatter,
-    config_models.WorktreeConfig: config_formatters.ConfigShowFormatter,
     config_models.ConfigValidationResult: config_formatters.ConfigValidateFormatter,
     config_models.ConfigSetResult: config_formatters.ConfigSetFormatter,
     config_models.ConfigUnsetResult: config_formatters.ConfigUnsetFormatter,

@@ -8,8 +8,15 @@ from pathlib import Path
 from typer.testing import CliRunner
 
 from worktree.cli import app
+from worktree.common.filesystem.models import RepositoryPaths, WorkspacePaths
+from worktree.common.filesystem.services.global_root import resolve_global_paths
 from worktree.core.db import RunStatus, WorktreeDb
-from worktree.core.project.services.storage import resolve_project_filesystem_paths
+from worktree.core.project.services.storage import resolve_workspace_paths
+
+
+def _paths_for(root: Path) -> WorkspacePaths:
+    """Resolve the WorkspacePaths snapshot for root, reflecting its current project.json."""
+    return resolve_workspace_paths(RepositoryPaths.from_root(root), resolve_global_paths(None))
 
 
 class HistoryShowCliIntegrationTests:
@@ -17,7 +24,10 @@ class HistoryShowCliIntegrationTests:
 
     def test_history_show_cli_known_session_exits_zero(self, cli_runner: CliRunner, history_workspace: Path) -> None:
         """wt history show <session_id>: known session, exit 0, session ID and blueprint name in stdout."""
-        db = WorktreeDb(path=history_workspace)
+        db = WorktreeDb(
+            database_file=_paths_for(history_workspace).database_file,
+            project_id=_paths_for(history_workspace).project_id,
+        )
         db.runs.create(
             session_id="session-known", blueprint_name="task-a", blueprint_key="task-a", status=RunStatus.COMPLETED
         )
@@ -39,7 +49,10 @@ class HistoryShowCliIntegrationTests:
         self, cli_runner: CliRunner, history_workspace: Path
     ) -> None:
         """wt history show <session_id> --format json: stdout equals the literal HistoryShowResult envelope."""
-        db = WorktreeDb(path=history_workspace)
+        db = WorktreeDb(
+            database_file=_paths_for(history_workspace).database_file,
+            project_id=_paths_for(history_workspace).project_id,
+        )
         db.runs.create(
             session_id="session-known", blueprint_name="task-a", blueprint_key="task-a", status=RunStatus.COMPLETED
         )
@@ -85,10 +98,16 @@ class HistoryShowLogsCliIntegrationTests:
         self, cli_runner: CliRunner, history_workspace: Path
     ) -> None:
         """wt history show <session_id> --logs: exit 0 and stdout contains every persisted log file name."""
-        WorktreeDb(path=history_workspace).runs.create(
+        WorktreeDb(
+            database_file=_paths_for(history_workspace).database_file,
+            project_id=_paths_for(history_workspace).project_id,
+        ).runs.create(
             session_id="session-logs", blueprint_name="task-a", blueprint_key="task-a", status=RunStatus.COMPLETED
         )
-        session_log_dir = resolve_project_filesystem_paths(history_workspace).logs_dir / "session-logs"
+        session_log_dir = (
+            resolve_workspace_paths(RepositoryPaths.from_root(history_workspace), resolve_global_paths(None)).logs_dir
+            / "session-logs"
+        )
         session_log_dir.mkdir(parents=True)
         (session_log_dir / "run.log").write_text("", encoding="utf-8")
         (session_log_dir / "01_build_attempt_1.stdout.log").write_text("out\n", encoding="utf-8")

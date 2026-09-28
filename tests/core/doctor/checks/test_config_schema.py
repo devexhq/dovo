@@ -1,20 +1,25 @@
 """Unit tests for worktree.core.doctor.checks.config_schema."""
 
+from collections.abc import Callable
 from pathlib import Path
 
-from worktree.common.filesystem import Filesystem
+from worktree.common.filesystem import Filesystem, WorkspacePaths
 from worktree.core.config.generator import build_default_config
 from worktree.core.doctor.checks.config_schema import ConfigSchemaCheck
 from worktree.core.doctor.models import CheckCategory, CheckStatus, DoctorContext
+
+WorkspacePathsFactory = Callable[[Path, Path | None], WorkspacePaths]
 
 
 class ConfigSchemaCheckTests:
     """Unit tests for ConfigSchemaCheck diagnostic outcomes."""
 
-    def test_execute_missing_config_file_returns_not_found_failure(self, isolated_workspace: Path) -> None:
+    def test_execute_missing_config_file_returns_not_found_failure(
+        self, isolated_workspace: Path, workspace_paths_factory: WorkspacePathsFactory
+    ) -> None:
         """[tier-1/unit] ConfigSchemaCheck.execute: no .worktree/config.json -> FAILED with DOCTOR_CONFIG_NOT_FOUND."""
         check = ConfigSchemaCheck()
-        context = DoctorContext(cwd=isolated_workspace)
+        context = DoctorContext(cwd=isolated_workspace, paths=workspace_paths_factory(isolated_workspace, None))
 
         result = check.execute(context)
 
@@ -26,12 +31,14 @@ class ConfigSchemaCheckTests:
         assert f"Configuration file not found at '{config_path}'" in result.message
         assert result.errors == [result.message]
 
-    def test_execute_malformed_json_returns_malformed_failure(self, isolated_workspace: Path) -> None:
+    def test_execute_malformed_json_returns_malformed_failure(
+        self, isolated_workspace: Path, workspace_paths_factory: WorkspacePathsFactory
+    ) -> None:
         """[tier-1/unit] ConfigSchemaCheck.execute: invalid JSON syntax -> FAILED with DOCTOR_CONFIG_MALFORMED."""
         config_path = isolated_workspace / ".worktree" / "config.json"
         config_path.write_text("{not valid json", encoding="utf-8")
         check = ConfigSchemaCheck()
-        context = DoctorContext(cwd=isolated_workspace)
+        context = DoctorContext(cwd=isolated_workspace, paths=workspace_paths_factory(isolated_workspace, None))
 
         result = check.execute(context)
 
@@ -42,12 +49,14 @@ class ConfigSchemaCheckTests:
         assert "Malformed config.json" in result.message
         assert result.errors == [result.message]
 
-    def test_execute_schema_invalid_payload_returns_schema_invalid_failure(self, isolated_workspace: Path) -> None:
+    def test_execute_schema_invalid_payload_returns_schema_invalid_failure(
+        self, isolated_workspace: Path, workspace_paths_factory: WorkspacePathsFactory
+    ) -> None:
         """[tier-1/unit] ConfigSchemaCheck.execute: valid JSON missing required sections -> FAILED with DOCTOR_CONFIG_SCHEMA_INVALID."""
         config_path = isolated_workspace / ".worktree" / "config.json"
         Filesystem.atomic_write_json(config_path, {})
         check = ConfigSchemaCheck()
-        context = DoctorContext(cwd=isolated_workspace)
+        context = DoctorContext(cwd=isolated_workspace, paths=workspace_paths_factory(isolated_workspace, None))
 
         result = check.execute(context)
 
@@ -59,12 +68,14 @@ class ConfigSchemaCheckTests:
         assert result.errors == [result.message]
         assert result.details == {"schema_errors": [result.message]}
 
-    def test_execute_valid_config_returns_ok(self, isolated_workspace: Path) -> None:
+    def test_execute_valid_config_returns_ok(
+        self, isolated_workspace: Path, workspace_paths_factory: WorkspacePathsFactory
+    ) -> None:
         """[tier-1/unit] ConfigSchemaCheck.execute: schema-valid config.json -> OK with no errors."""
         config_path = isolated_workspace / ".worktree" / "config.json"
         Filesystem.atomic_write_json(config_path, build_default_config("demo-workspace"))
         check = ConfigSchemaCheck()
-        context = DoctorContext(cwd=isolated_workspace)
+        context = DoctorContext(cwd=isolated_workspace, paths=workspace_paths_factory(isolated_workspace, None))
 
         result = check.execute(context)
 

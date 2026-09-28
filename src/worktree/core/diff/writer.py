@@ -4,13 +4,12 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from worktree.common.filesystem import Filesystem
-from worktree.core.project.services.storage import resolve_project_filesystem_paths
+from worktree.common.filesystem import Filesystem, WorkspacePaths
 
 
-def get_session_dir(path: Path, session_id: str) -> Path:
+def get_session_dir(paths: WorkspacePaths, session_id: str) -> Path:
     """Resolve and create the project-aware session artifact directory on demand."""
-    target = resolve_project_filesystem_paths(path).session_dir(session_id)
+    target = paths.session_dir(session_id)
     target.mkdir(parents=True, exist_ok=True)
     return target
 

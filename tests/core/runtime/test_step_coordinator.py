@@ -8,7 +8,10 @@ from typing import Any
 import pytest
 
 from tests.harness.builders import StepBuilder
+from worktree.common.filesystem.models import RepositoryPaths, WorkspacePaths
+from worktree.common.filesystem.services.global_root import resolve_global_paths
 from worktree.common.models import FailurePolicy
+from worktree.core.project.services.storage import resolve_workspace_paths
 from worktree.core.runtime import USER_CONTINUED_MARKER
 from worktree.core.runtime.models import (
     FailurePromptDecision,
@@ -21,6 +24,11 @@ from worktree.core.runtime.models import (
 )
 from worktree.core.runtime.step_coordinator import StepCoordinator
 from worktree.core.step.models import StepResult
+
+
+def _paths_for(root: Path) -> WorkspacePaths:
+    """Resolve the WorkspacePaths snapshot for root, reflecting its current project.json."""
+    return resolve_workspace_paths(RepositoryPaths.from_root(root), resolve_global_paths(None))
 
 
 class _RefusingFailurePrompter(FailurePrompter):
@@ -72,7 +80,7 @@ class BuildStepContextTests:
 
     def test_no_agent_or_inputs_returns_none(self, tmp_path: Path) -> None:
         """[tier-1/unit] build_step_context: context.agent and context.inputs both unset returns None."""
-        context = RunContext(steps=[], cwd=tmp_path, use_sandbox=False)
+        context = RunContext(steps=[], cwd=tmp_path, use_sandbox=False, paths=_paths_for(tmp_path))
 
         step_context = StepCoordinator(context).build_step_context()
 
@@ -80,7 +88,14 @@ class BuildStepContextTests:
 
     def test_agent_and_inputs_set_returns_populated_dict(self, tmp_path: Path) -> None:
         """[tier-1/unit] build_step_context: context.agent and context.inputs are surfaced under their own keys."""
-        context = RunContext(steps=[], cwd=tmp_path, use_sandbox=False, agent="claude", inputs={"branch": "main"})
+        context = RunContext(
+            steps=[],
+            cwd=tmp_path,
+            use_sandbox=False,
+            agent="claude",
+            inputs={"branch": "main"},
+            paths=_paths_for(tmp_path),
+        )
 
         step_context = StepCoordinator(context).build_step_context()
 
@@ -92,7 +107,7 @@ class StepCoordinatorExecuteOneStepTests:
 
     def test_successful_step_returns_continue_with_result(self, tmp_path: Path) -> None:
         """[tier-1/integration] execute_one_step: a passing command returns ("continue", result, None)."""
-        context = RunContext(steps=[], cwd=tmp_path, use_sandbox=False)
+        context = RunContext(steps=[], cwd=tmp_path, use_sandbox=False, paths=_paths_for(tmp_path))
         step = StepBuilder.command("echo ok").with_id("s1").build()
 
         action, result, error_message = StepCoordinator(context).execute_one_step(
@@ -106,7 +121,7 @@ class StepCoordinatorExecuteOneStepTests:
 
     def test_failed_step_default_abort_policy_returns_abort_with_error_message(self, tmp_path: Path) -> None:
         """[tier-1/integration] execute_one_step: a failing command under the default abort policy returns ("abort", result, message)."""
-        context = RunContext(steps=[], cwd=tmp_path, use_sandbox=False)
+        context = RunContext(steps=[], cwd=tmp_path, use_sandbox=False, paths=_paths_for(tmp_path))
         step = StepBuilder.command("exit 1").with_id("fail").build()
 
         action, result, error_message = StepCoordinator(context).execute_one_step(
@@ -121,7 +136,9 @@ class StepCoordinatorExecuteOneStepTests:
     def test_prompt_user_retry_decision_reexecutes_step_until_success(self, tmp_path: Path) -> None:
         """[tier-1/integration] execute_one_step: a RETRY decision re-runs the step, incrementing attempts, until it succeeds."""
         prompter = _ScriptedFailurePrompter([FailurePromptDecision.RETRY])
-        context = RunContext(steps=[], cwd=tmp_path, use_sandbox=False, failure_prompter=prompter)
+        context = RunContext(
+            steps=[], cwd=tmp_path, use_sandbox=False, failure_prompter=prompter, paths=_paths_for(tmp_path)
+        )
         command = 'if [ "$WT_STEP_ATTEMPT" -eq 1 ]; then exit 1; else exit 0; fi'
         step = StepBuilder.command(command).with_id("fail").with_on_failure(FailurePolicy.PROMPT_USER).build()
 
@@ -138,7 +155,9 @@ class StepCoordinatorExecuteOneStepTests:
     def test_prompt_user_continue_decision_marks_step_ignored(self, tmp_path: Path) -> None:
         """[tier-1/integration] execute_one_step: a CONTINUE decision marks the failed result "ignored" with the continued marker and returns action "continue"."""
         prompter = _ScriptedFailurePrompter([FailurePromptDecision.CONTINUE])
-        context = RunContext(steps=[], cwd=tmp_path, use_sandbox=False, failure_prompter=prompter)
+        context = RunContext(
+            steps=[], cwd=tmp_path, use_sandbox=False, failure_prompter=prompter, paths=_paths_for(tmp_path)
+        )
         step = StepBuilder.command("exit 1").with_id("fail").with_on_failure(FailurePolicy.PROMPT_USER).build()
 
         action, result, error_message = StepCoordinator(context).execute_one_step(
@@ -154,7 +173,9 @@ class StepCoordinatorExecuteOneStepTests:
     def test_prompt_user_abort_decision_returns_abort(self, tmp_path: Path) -> None:
         """[tier-1/integration] execute_one_step: an ABORT decision returns ("abort", result, message)."""
         prompter = _ScriptedFailurePrompter([FailurePromptDecision.ABORT])
-        context = RunContext(steps=[], cwd=tmp_path, use_sandbox=False, failure_prompter=prompter)
+        context = RunContext(
+            steps=[], cwd=tmp_path, use_sandbox=False, failure_prompter=prompter, paths=_paths_for(tmp_path)
+        )
         step = StepBuilder.command("exit 1").with_id("fail").with_on_failure(FailurePolicy.PROMPT_USER).build()
 
         action, _, error_message = StepCoordinator(context).execute_one_step(
@@ -180,7 +201,14 @@ class StepCoordinatorExecuteOneStepTests:
         warning_substr: str,
     ) -> None:
         """[tier-1/integration] execute_one_step: no_tty or a missing failure_prompter degrades PROMPT_USER to abort, never invoking the prompter."""
-        context = RunContext(steps=[], cwd=tmp_path, use_sandbox=False, failure_prompter=prompter, **ctx_kwargs)
+        context = RunContext(
+            steps=[],
+            cwd=tmp_path,
+            use_sandbox=False,
+            failure_prompter=prompter,
+            **ctx_kwargs,
+            paths=_paths_for(tmp_path),
+        )
         step = StepBuilder.command("exit 1").with_id("fail").with_on_failure(FailurePolicy.PROMPT_USER).build()
         state = _state(tmp_path)
 
@@ -199,7 +227,14 @@ class StepCoordinatorExecuteOneStepTests:
         """[tier-1/integration] execute_one_step: a PROMPT_USER failure saves a checkpoint via pause_store before prompting and clears it after the decision."""
         store = _InMemoryPauseStore()
         prompter = _ScriptedFailurePrompter([FailurePromptDecision.ABORT])
-        context = RunContext(steps=[], cwd=tmp_path, use_sandbox=False, failure_prompter=prompter, pause_store=store)
+        context = RunContext(
+            steps=[],
+            cwd=tmp_path,
+            use_sandbox=False,
+            failure_prompter=prompter,
+            pause_store=store,
+            paths=_paths_for(tmp_path),
+        )
         step = StepBuilder.command("exit 1").with_id("fail").with_on_failure(FailurePolicy.PROMPT_USER).build()
 
         StepCoordinator(context).execute_one_step(
@@ -232,7 +267,9 @@ class StepCoordinatorResumePendingGateTests:
             pending_result=pending,
         )
         prompter = _ScriptedFailurePrompter([FailurePromptDecision.ABORT])
-        context = RunContext(steps=[], cwd=tmp_path, use_sandbox=False, failure_prompter=prompter)
+        context = RunContext(
+            steps=[], cwd=tmp_path, use_sandbox=False, failure_prompter=prompter, paths=_paths_for(tmp_path)
+        )
         step = (
             StepBuilder.command("echo should-not-run")
             .with_id("fail")
@@ -268,7 +305,9 @@ class StepCoordinatorResumePendingGateTests:
             pending_result=pending,
         )
         prompter = _ScriptedFailurePrompter([FailurePromptDecision.RETRY])
-        context = RunContext(steps=[], cwd=tmp_path, use_sandbox=False, failure_prompter=prompter)
+        context = RunContext(
+            steps=[], cwd=tmp_path, use_sandbox=False, failure_prompter=prompter, paths=_paths_for(tmp_path)
+        )
         step = StepBuilder.command("exit 0").with_id("fail").with_on_failure(FailurePolicy.PROMPT_USER).build()
 
         action, result, error_message = StepCoordinator(context).resume_pending_gate(
@@ -298,7 +337,7 @@ class StepCoordinatorLoopIterationForwardingTests:
         expected_filename: str,
     ) -> None:
         """[tier-1/unit] execute_one_step: calling execute_one_step(..., loop_iteration=2) with session_log_dir set writes the attempt log as '01_check_iter_2_attempt_1.stdout.log', while the default loop_iteration=None (today's top-level call shape) keeps the '_iter_' segment absent from the filename."""
-        context = RunContext(steps=[], cwd=tmp_path, use_sandbox=False)
+        context = RunContext(steps=[], cwd=tmp_path, use_sandbox=False, paths=_paths_for(tmp_path))
         step = StepBuilder.command("echo ok").with_id("check").build()
         state = StepLoopState(target_dir=tmp_path, session=None, session_log_dir=tmp_path)
 
