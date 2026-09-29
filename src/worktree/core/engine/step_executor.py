@@ -6,11 +6,9 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
-from worktree.common.models import FailurePolicy
 from worktree.core.artifacts.services.upload import publish_artifact
 from worktree.core.db.repositories.artifacts import ArtifactsRepository
 from worktree.core.engine.failure import (
-    effective_terminal_policy,
     failed_step_message,
     mark_continued_after_prompt,
     step_failure_diagnostic,
@@ -121,29 +119,6 @@ class StepCoordinator:
             return "continue", mark_continued_after_prompt(result), None
         return "abort", result, failed_step_message(result)
 
-    def _handle_failed_step(
-        self,
-        state: StepLoopState,
-        step: StepDefinition,
-        result: StepResult,
-    ) -> tuple[str, StepResult | None, str | None]:
-        """Apply effective terminal policy for a failed step result.
-
-        Returns:
-            ``(action, result_to_record, error_message)`` where action is one of
-            ``retry``, ``continue``, ``abort``.
-        """
-        policy = effective_terminal_policy(step.on_failure)
-        if policy == FailurePolicy.CONTINUE:
-            # Defensive: step-local continue already maps to ignored; treat as non-fatal.
-            return "continue", mark_continued_after_prompt(result), None
-        if policy == FailurePolicy.PROMPT_USER:
-            decision, warning = self.prompt_decision(step, result)
-            if warning is not None:
-                state.warnings.append(warning)
-            return self.apply_prompt_decision(decision, result)
-        return "abort", result, failed_step_message(result)
-
     def run_attempt(
         self,
         state: StepLoopState,
@@ -215,41 +190,3 @@ class StepCoordinator:
             )
             state.warnings.extend(publish_warnings)
         return result
-
-    def execute_one_step(
-        self,
-        state: StepLoopState,
-        step: StepDefinition,
-        *,
-        idx: int,
-        total: int,
-        step_context: dict[str, object] | None,
-        previous_step: PreviousStepMetadata | None = None,
-        steps: Sequence[PreviousStepMetadata] | None = None,
-        initial_attempt: int = 1,
-        loop_iteration: int | None = None,
-    ) -> tuple[str, StepResult | None, str | None]:
-        """Run a step until success, continue-after-failure, or abort.
-
-        Returns ``(action, result, error_message)`` with action ``continue`` or ``abort``.
-        """
-        current_attempt = initial_attempt
-        while True:
-            result = self.run_attempt(
-                state,
-                step,
-                idx=idx,
-                total=total,
-                step_context=step_context,
-                previous_step=previous_step,
-                steps=steps,
-                initial_attempt=current_attempt,
-                loop_iteration=loop_iteration,
-            )
-            if result.ok:
-                return "continue", result, None
-            action, recorded, error_message = self._handle_failed_step(state, step, result)
-            if action == "retry":
-                current_attempt = result.attempts + 1
-                continue
-            return action, recorded, error_message

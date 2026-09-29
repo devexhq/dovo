@@ -106,6 +106,10 @@ wt resume blueprint_a1b2c3d4
 
 Worktree reloads the retained sandbox and re-enters the failure prompt for the paused step using its recorded failed attempt, without re-running the failed command or any earlier completed step. Choosing retry starts the next attempt; continue and abort finish the step as ignored or failed.
 
+### Resuming a paused loop
+
+A loop is part of the same durable run state: the paused loop, its current iteration, and the paused body step are all persisted. `wt resume` re-enters the paused body step's prompt from its recorded failed attempt. It never re-runs finished body steps or earlier iterations, and it runs only the remaining body steps of the current iteration. The loop's `until` conditions are evaluated over every body step of that iteration, including those that finished before the pause. Granted iterations are persisted with the loop, so a resumed loop keeps its raised ceiling.
+
 ---
 
 ## Non-Interactive & CI/CD Execution

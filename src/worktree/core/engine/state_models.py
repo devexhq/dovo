@@ -73,6 +73,12 @@ class ExecutionLoopNode(BaseModel):
     on_max_iterations: FailurePolicy = FailurePolicy.PROMPT_USER
     state: NodeState = NodeState.PENDING
     iterations: list[ExecutionIterationRecord] = Field(default_factory=list)
+    granted_iterations: int = Field(default=0, ge=0)
+
+    @property
+    def iteration_ceiling(self) -> int:
+        """Return max_iterations plus every granted iteration."""
+        return self.max_iterations + self.granted_iterations
 
 
 ExecutionPlanNode = Annotated[ExecutionLeafNode | ExecutionLoopNode, Field(discriminator="kind")]

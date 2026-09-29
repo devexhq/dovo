@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from enum import StrEnum
@@ -25,15 +24,22 @@ from worktree.core.engine.failure import (
     failed_step_message,
     mark_continued_after_prompt,
 )
-from worktree.core.engine.loop_runner import LoopBlockRunner
+from worktree.core.engine.loop_events import LoopEventEmitter
+from worktree.core.engine.loop_policy import LoopDecision, LoopPolicy, LoopTransitionKind
 from worktree.core.engine.models import (
     FailurePrompter,
+    LoopPromptDecision,
     RunContext,
     RunObserver,
     RunOutcome,
     StepLoopState,
 )
-from worktree.core.engine.projection import flatten_step_results, terminal_step_metadata
+from worktree.core.engine.projection import (
+    flatten_step_results,
+    iter_leaves,
+    iteration_results,
+    terminal_step_metadata,
+)
 from worktree.core.engine.state_models import (
     TERMINAL_NODE_STATES,
     ExecutionIterationRecord,
@@ -43,7 +49,8 @@ from worktree.core.engine.state_models import (
     NodeState,
     StepAttemptRecord,
 )
-from worktree.core.engine.state_store import RunStateStore
+from worktree.core.engine.state_store import RunStateStore, new_iteration
+from worktree.core.engine.state_validation import validate_loop_structure
 from worktree.core.engine.step_executor import StepCoordinator
 from worktree.core.engine.writer import load_blueprint_from_snapshot
 from worktree.core.step import (
@@ -55,6 +62,7 @@ from worktree.core.step import (
 )
 
 _INTERRUPTED_MESSAGE = "Step attempt was interrupted before it recorded a result."
+_CEILING_GRANT_COUNT = 3
 
 
 class NodeTransitionKind(StrEnum):
@@ -125,29 +133,65 @@ class RunCoordinator:
         if self._loaded is None and not self._start():
             return NodeTransitionKind.FAILED
 
-        located = self._locate_leaf(node)
-        if located is None:
+        position, leaf = self._locate_node(node) or (-1, None)
+        if not isinstance(leaf, ExecutionLeafNode):
             self._errors.append(f"Step '{node.id}' is not part of the run state.")
             return NodeTransitionKind.FAILED
 
-        position, leaf = located
         self._in_flight = leaf
+        return self._advance_slot(
+            leaf, step_def, idx=position + 1, total=len(self._run.state.nodes), loop_iteration=None
+        )
+
+    def advance_loop(self, node: ExecutionLoopNode, loop_block: LoopStepBlock) -> NodeTransitionKind:
+        """Orchestrates loop iterations and child steps driven by LoopPolicy."""
+        if self._loaded is None and not self._start():
+            return NodeTransitionKind.FAILED
+
+        _, loop = self._locate_node(node) or (-1, None)
+        if not isinstance(loop, ExecutionLoopNode):
+            self._errors.append(f"Loop '{node.id}' is not part of the run state.")
+            return NodeTransitionKind.FAILED
+
+        self._in_flight = loop
+        events = LoopEventEmitter(loop.id, self._context.session_log_dir, self._observer)
+        if loop.state is NodeState.PENDING:
+            events.start(loop.max_iterations)
+            if not self._begin_iteration(loop, loop.iterations[0], events):
+                return NodeTransitionKind.FAILED
+
+        while True:
+            decision = LoopPolicy.evaluate_iteration(loop, loop.iterations[-1], loop_block.do)
+            transition = self._apply_loop_decision(loop, loop_block, decision, events)
+            if transition is not None:
+                return transition
+
+    def _advance_slot(
+        self,
+        leaf: ExecutionLeafNode,
+        step_def: StepDefinition,
+        *,
+        idx: int,
+        total: int,
+        loop_iteration: int | None,
+    ) -> NodeTransitionKind:
+        """Run or re-enter one live leaf at 1-based idx of total with the shared attempt, failure-gate, and commit path."""
         if leaf.state is NodeState.PAUSED:
             return self._resolve_failed_leaf(leaf, step_def)
         if leaf.state is NodeState.PENDING and not self._begin_attempt(leaf, 1):
             return NodeTransitionKind.FAILED
 
-        state = self._run.state
-        steps_metadata = terminal_step_metadata(state)
+        steps_metadata = terminal_step_metadata(self._run.state)
         result = self._run.step_coordinator.run_attempt(
             self._step_state(),
             step_def,
-            idx=position + 1,
-            total=len(state.nodes),
-            step_context=self._step_context(),
+            idx=idx,
+            total=total,
+            step_context=self._step_context(loop_iteration),
             previous_step=steps_metadata[-1] if steps_metadata else PreviousStepMetadata(),
             steps=steps_metadata,
             initial_attempt=leaf.attempts[-1].number,
+            loop_iteration=loop_iteration,
         )
         return self._settle_attempt(leaf, step_def, result)
 
@@ -158,9 +202,8 @@ class RunCoordinator:
             if upcoming is None:
                 return self._outcome(RunStatus.COMPLETED)
 
-            index, node = upcoming
-            self._in_flight = node
-            transition = self._dispatch(index, node)
+            self._in_flight = upcoming
+            transition = self._dispatch(upcoming)
             if transition is NodeTransitionKind.PAUSED:
                 return self._outcome(RunStatus.PAUSED)
             if transition is NodeTransitionKind.FAILED:
@@ -199,6 +242,11 @@ class RunCoordinator:
             self._errors.append(str(exc))
             return False
 
+        structure_errors = validate_loop_structure(loaded.state, blueprint)
+        if structure_errors:
+            self._errors.append(f"Execution state for run '{session_id}' is corrupt: {structure_errors[0]}")
+            return False
+
         self._warnings.extend(loaded.warnings)
         step_coordinator = StepCoordinator(
             RunContext(
@@ -223,8 +271,8 @@ class RunCoordinator:
     def _recover_interrupted(self) -> bool:
         """Close every RUNNING leaf whose last attempt has no result with a failed interrupted result and mark it PAUSED."""
         recovered = False
-        for node in self._run.state.nodes:
-            if node.kind != "step" or node.state is not NodeState.RUNNING:
+        for node in iter_leaves(self._run.state):
+            if node.state is not NodeState.RUNNING:
                 continue
             if not node.attempts or node.attempts[-1].result is not None:
                 continue
@@ -246,96 +294,165 @@ class RunCoordinator:
 
         return self._commit("while recovering interrupted attempts") if recovered else True
 
-    def _next_node(self) -> tuple[int, ExecutionLeafNode | ExecutionLoopNode] | None:
-        """Return the index and first top-level node not in a terminal state, or None."""
-        for index, node in enumerate(self._run.state.nodes):
+    def _next_node(self) -> ExecutionLeafNode | ExecutionLoopNode | None:
+        """Return the first top-level node not in a terminal state, or None."""
+        for node in self._run.state.nodes:
             if node.state not in TERMINAL_NODE_STATES:
-                return index, node
+                return node
         return None
 
-    def _locate_leaf(self, node: ExecutionLeafNode) -> tuple[int, ExecutionLeafNode] | None:
-        """Return the top-level position and the live tree leaf sharing node's id, or None when the tree has none."""
+    def _locate_node(
+        self, node: ExecutionLeafNode | ExecutionLoopNode
+    ) -> tuple[int, ExecutionLeafNode | ExecutionLoopNode] | None:
+        """Return the top-level position and the live tree node of the same kind and id as node, or None when the tree has none."""
         for position, candidate in enumerate(self._run.state.nodes):
-            if candidate.kind == "step" and candidate.id == node.id:
+            if candidate.kind == node.kind and candidate.id == node.id:
                 return position, candidate
         return None
 
-    def _dispatch(self, index: int, node: ExecutionLeafNode | ExecutionLoopNode) -> NodeTransitionKind:
-        """Route a leaf to advance_leaf or a loop to _advance_loop using the snapshot definition with the node's id."""
+    def _dispatch(self, node: ExecutionLeafNode | ExecutionLoopNode) -> NodeTransitionKind:
+        """Route a leaf to advance_leaf or a loop to advance_loop using the snapshot definition with the node's id."""
         definition = next((step for step in self._run.blueprint.steps if step.id == node.id), None)
         if isinstance(node, ExecutionLeafNode) and isinstance(definition, StepDefinition):
             return self.advance_leaf(node, definition)
         if isinstance(node, ExecutionLoopNode) and isinstance(definition, LoopStepBlock):
-            return self._advance_loop(index, node, definition)
+            return self.advance_loop(node, definition)
 
         self._errors.append(f"Step '{node.id}' has no matching definition in the run snapshot.")
         return NodeTransitionKind.FAILED
 
-    def _advance_loop(self, index: int, node: ExecutionLoopNode, loop: LoopStepBlock) -> NodeTransitionKind:
-        """Run a loop block through LoopBlockRunner between durable running and terminal loop-node commits."""
-        node.state = NodeState.RUNNING
-        if not self._commit(f"before loop '{node.id}' started"):
-            return NodeTransitionKind.FAILED
+    def _begin_iteration(
+        self, loop: ExecutionLoopNode, iteration: ExecutionIterationRecord, events: LoopEventEmitter
+    ) -> bool:
+        """Mark iteration and loop RUNNING, emit turn_start, and commit before the iteration's first body step runs."""
+        iteration.state = NodeState.RUNNING
+        loop.state = NodeState.RUNNING
+        events.turn_start(iteration.number, loop.iteration_ceiling)
+        return self._commit(f"before loop '{loop.id}' iteration {iteration.number} started")
 
-        step_coordinator = self._run.step_coordinator
-        runner = LoopBlockRunner(
-            loop=loop,
-            sandbox_path=self._context.target_dir,
-            coordinator=step_coordinator,
-            context=self._step_context(),
-            observer=self._observer,
-            failure_prompter=self._prompter,
-            no_tty=self._context.no_tty,
-            step_index=index + 1,
-            identity=step_coordinator.context.identity,
-            session_tmp_dir=self._context.session_tmp_dir,
-            session_log_dir=self._context.session_log_dir,
-            save_attempt_logs=self._context.save_attempt_logs,
-            session_id=self._context.session_id,
-            artifacts_dir=self._context.artifacts_dir,
-            artifacts_db=self._context.artifacts_db,
-        )
-        action, results, error = runner.run(self._step_state())
-        self._record_loop_iterations(node, loop, results)
-
-        if action == "abort":
-            node.state = NodeState.FAILED
-            if error:
-                self._errors.append(error)
-            self._commit(f"after loop '{node.id}' aborted")
-            return NodeTransitionKind.FAILED
-
-        node.state = NodeState.COMPLETED
-        if not self._commit(f"after loop '{node.id}' finished"):
-            return NodeTransitionKind.FAILED
-        return NodeTransitionKind.COMPLETED
-
-    def _record_loop_iterations(
+    def _apply_loop_decision(
         self,
-        node: ExecutionLoopNode,
-        loop: LoopStepBlock,
-        results: Sequence[StepResult],
-    ) -> None:
-        """Write the loop's per-turn results into node.iterations as terminal leaf attempts."""
-        width = len(loop.do)
-        for turn, start in enumerate(range(0, len(results), width), start=1):
-            chunk = results[start : start + width]
-            if turn == 1 and node.iterations:
-                iteration = node.iterations[0]
-            else:
-                iteration = ExecutionIterationRecord(
-                    number=turn,
-                    steps=[ExecutionLeafNode(id=step.id, name=step.name) for step in loop.do],
-                )
-                node.iterations.append(iteration)
+        loop: ExecutionLoopNode,
+        loop_block: LoopStepBlock,
+        decision: LoopDecision,
+        events: LoopEventEmitter,
+    ) -> NodeTransitionKind | None:
+        """Apply one LoopDecision durably; return the loop's terminal transition, or None to re-evaluate."""
+        action = decision.action
+        iteration = loop.iterations[-1]
+        if action is LoopTransitionKind.ADVANCE_BODY_STEP and decision.next_body_step_index is not None:
+            return self._advance_body_step(loop, loop_block, decision.next_body_step_index, events)
+        if action is LoopTransitionKind.COMPLETE_ITERATION:
+            return self._complete_iteration(loop, iteration, events)
+        if action is LoopTransitionKind.REPEAT_NEXT_ITERATION and decision.iteration_number is not None:
+            return self._repeat_iteration(loop, loop_block, decision.iteration_number, events)
+        if action is LoopTransitionKind.TERMINATE_LOOP_PASSED:
+            return self._finish_loop(loop, iteration, events, failed=False, diagnostic=None)
+        if action is LoopTransitionKind.TERMINATE_LOOP_CEILING:
+            failed = loop.on_max_iterations is FailurePolicy.ABORT
+            return self._finish_loop(loop, iteration, events, failed=failed, diagnostic=decision.diagnostic)
+        return self._resolve_ceiling(loop, loop_block, iteration, decision, events)
 
-            now = _now()
-            for leaf, result in zip(iteration.steps, chunk, strict=False):
-                leaf.attempts = [
-                    StepAttemptRecord(number=result.attempts, started_at=now, completed_at=now, result=result)
-                ]
-                leaf.state = NodeState(result.status)
-            iteration.state = NodeState.FAILED if chunk[-1].status == "failed" else NodeState.COMPLETED
+    def _advance_body_step(
+        self,
+        loop: ExecutionLoopNode,
+        loop_block: LoopStepBlock,
+        body_index: int,
+        events: LoopEventEmitter,
+    ) -> NodeTransitionKind | None:
+        """Advance the body leaf at body_index of the last iteration through _advance_slot; PAUSED returns PAUSED, FAILED fails the loop."""
+        iteration = loop.iterations[-1]
+        leaf = iteration.steps[body_index]
+        self._in_flight = leaf
+        transition = self._advance_slot(
+            leaf,
+            loop_block.do[body_index],
+            idx=body_index + 1,
+            total=len(loop_block.do),
+            loop_iteration=iteration.number,
+        )
+        if transition is NodeTransitionKind.PAUSED:
+            return transition
+        if transition is NodeTransitionKind.FAILED:
+            return self._finish_loop(loop, iteration, events, failed=True, diagnostic=None)
+        return None
+
+    def _complete_iteration(
+        self, loop: ExecutionLoopNode, iteration: ExecutionIterationRecord, events: LoopEventEmitter
+    ) -> NodeTransitionKind | None:
+        """Evaluate until over every terminal body result of iteration, persist until_passed with the iteration COMPLETED, and emit conditions_evaluated."""
+        conditions = LoopPolicy.evaluate_conditions(loop.until, iteration_results(iteration), iteration.number)
+        passed = all(condition.passed for condition in conditions)
+        iteration.until_passed = passed
+        iteration.state = NodeState.COMPLETED
+        boundary = f"after loop '{loop.id}' iteration {iteration.number} conditions evaluated"
+        if not self._commit(boundary):
+            return NodeTransitionKind.FAILED
+
+        has_next = not passed and iteration.number < loop.iteration_ceiling
+        events.conditions_evaluated(conditions, passed, iteration.number + 1 if has_next else None)
+        return None
+
+    def _repeat_iteration(
+        self, loop: ExecutionLoopNode, loop_block: LoopStepBlock, number: int, events: LoopEventEmitter
+    ) -> NodeTransitionKind | None:
+        """Append iteration number, mark it RUNNING with turn_start, and commit; FAILED when the commit fails."""
+        iteration = new_iteration(loop_block, number)
+        loop.iterations.append(iteration)
+        return None if self._begin_iteration(loop, iteration, events) else NodeTransitionKind.FAILED
+
+    def _finish_loop(
+        self,
+        loop: ExecutionLoopNode,
+        iteration: ExecutionIterationRecord,
+        events: LoopEventEmitter,
+        *,
+        failed: bool,
+        diagnostic: str | None,
+    ) -> NodeTransitionKind:
+        """Set the loop terminal, record diagnostic as error or warning, emit done, and commit."""
+        if diagnostic is not None:
+            (self._errors if failed else self._warnings).append(diagnostic)
+        if failed and iteration.state not in TERMINAL_NODE_STATES:
+            iteration.state = NodeState.FAILED
+
+        loop.state = NodeState.FAILED if failed else NodeState.COMPLETED
+        events.done("failed" if failed else "completed", iteration.number)
+        committed = self._commit(f"after loop '{loop.id}' {'aborted' if failed else 'finished'}")
+        return NodeTransitionKind.FAILED if failed or not committed else NodeTransitionKind.COMPLETED
+
+    def _resolve_ceiling(
+        self,
+        loop: ExecutionLoopNode,
+        loop_block: LoopStepBlock,
+        iteration: ExecutionIterationRecord,
+        decision: LoopDecision,
+        events: LoopEventEmitter,
+    ) -> NodeTransitionKind | None:
+        """Apply a prompt_user ceiling: grant three more iterations (None), continue, or abort."""
+        self._in_flight = loop
+        ceiling = loop.iteration_ceiling
+        if self._prompter is None or not self._run.step_coordinator.is_interactive:
+            diagnostic = f"Loop '{loop.id}' reached max_iterations ({ceiling}) and run is non-interactive."
+            return self._finish_loop(loop, iteration, events, failed=True, diagnostic=diagnostic)
+
+        answer = self._prompter.prompt_loop_max_iterations(
+            loop=loop_block,
+            iteration=iteration.number,
+            diagnostic=decision.diagnostic or "",
+            grant_count=_CEILING_GRANT_COUNT,
+        )
+        if answer is LoopPromptDecision.GRANT:
+            loop.granted_iterations += _CEILING_GRANT_COUNT
+            return None if self._commit(f"after loop '{loop.id}' ceiling granted") else NodeTransitionKind.FAILED
+        if answer is LoopPromptDecision.CONTINUE:
+            diagnostic = (
+                f"Loop '{loop.id}' reached max_iterations ({ceiling}) without meeting 'until' conditions; continuing."
+            )
+            return self._finish_loop(loop, iteration, events, failed=False, diagnostic=diagnostic)
+
+        diagnostic = f"Loop '{loop.id}' aborted by user after max_iterations."
+        return self._finish_loop(loop, iteration, events, failed=True, diagnostic=diagnostic)
 
     def _begin_attempt(self, node: ExecutionLeafNode, number: int, run_status: RunStatus | None = None) -> bool:
         """Append an unfinished attempt, mark the node RUNNING, and commit before the attempt executes."""
@@ -485,7 +602,6 @@ class RunCoordinator:
         return StepLoopState(
             target_dir=self._context.target_dir,
             session=self._context.sandbox,
-            step_results=flatten_step_results(self._run.state),
             session_tmp_dir=self._context.session_tmp_dir,
             session_log_dir=self._context.session_log_dir,
             save_attempt_logs=self._context.save_attempt_logs,
@@ -494,9 +610,12 @@ class RunCoordinator:
             artifacts_db=self._context.artifacts_db,
         )
 
-    def _step_context(self) -> dict[str, object] | None:
-        """Build the per-step context dict from the run row's agent and inputs."""
-        return self._run.step_coordinator.build_step_context()
+    def _step_context(self, loop_iteration: int | None = None) -> dict[str, object] | None:
+        """Build the per-step context dict, adding iteration_index when loop_iteration is given."""
+        context = self._run.step_coordinator.build_step_context()
+        if loop_iteration is None:
+            return context
+        return {**(context or {}), "iteration_index": loop_iteration}
 
     def _outcome(self, status: RunStatus) -> RunOutcome:
         """Build the RunOutcome for status from the flattened state, accumulated errors, warnings, and sandbox identity."""

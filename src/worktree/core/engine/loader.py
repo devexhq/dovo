@@ -11,6 +11,7 @@ from worktree.core.blueprint.exceptions import (
 from worktree.core.db import RunRecord, RunsRepository, RunStatus
 from worktree.core.engine.exceptions import EngineResumeError, EngineSnapshotMissingError
 from worktree.core.engine.models import DefinitionsManifest, EngineResumeStatus
+from worktree.core.engine.projection import iter_leaves
 from worktree.core.engine.state_models import (
     TERMINAL_NODE_STATES,
     ExecutionStateTree,
@@ -18,6 +19,7 @@ from worktree.core.engine.state_models import (
     RunStateLoadStatus,
 )
 from worktree.core.engine.state_store import RunStateStore
+from worktree.core.engine.state_validation import validate_loop_structure
 from worktree.core.engine.writer import get_session_dir, load_blueprint_from_snapshot
 
 
@@ -51,7 +53,7 @@ class EngineLoader:
 
         cls._validate_paused_leaves(session_id, loaded.state)
         cls._check_retained_sandbox(session_id, paths, row)
-        cls._check_definitions(session_id, paths, loaded.state.manifest)
+        cls._check_definitions(session_id, paths, loaded.state)
         return row, loaded.state, loaded.state.manifest
 
     @classmethod
@@ -74,13 +76,12 @@ class EngineLoader:
                 f"Cannot resume session '{session_id}': execution state has no step left to run.",
             )
 
-        for node in state.nodes:
-            if node.kind == "step" and node.state is NodeState.PAUSED:
-                if not node.attempts or node.attempts[-1].result is None:
-                    raise EngineResumeError(
-                        EngineResumeStatus.CORRUPT_STATE,
-                        f"Cannot resume session '{session_id}': paused step '{node.id}' has no recorded attempt result.",
-                    )
+        for leaf in iter_leaves(state):
+            if leaf.state is NodeState.PAUSED and (not leaf.attempts or leaf.attempts[-1].result is None):
+                raise EngineResumeError(
+                    EngineResumeStatus.CORRUPT_STATE,
+                    f"Cannot resume session '{session_id}': paused step '{leaf.id}' has no recorded attempt result.",
+                )
 
     @classmethod
     def _check_retained_sandbox(cls, session_id: str, paths: WorkspacePaths, row: RunRecord) -> None:
@@ -98,10 +99,10 @@ class EngineLoader:
         )
 
     @classmethod
-    def _check_definitions(cls, session_id: str, paths: WorkspacePaths, manifest: DefinitionsManifest) -> None:
-        """Raise MISSING_SNAPSHOT or FAILED when the snapshot blueprint cannot be rebuilt from its session files."""
+    def _check_definitions(cls, session_id: str, paths: WorkspacePaths, state: ExecutionStateTree) -> None:
+        """Raise MISSING_SNAPSHOT or FAILED when the snapshot blueprint cannot be rebuilt, CORRUPT_STATE when a loop's persisted structure differs from it."""
         try:
-            load_blueprint_from_snapshot(get_session_dir(paths, session_id), manifest)
+            blueprint = load_blueprint_from_snapshot(get_session_dir(paths, session_id), state.manifest)
         except EngineSnapshotMissingError as exc:
             raise EngineResumeError(
                 EngineResumeStatus.MISSING_SNAPSHOT,
@@ -112,3 +113,10 @@ class EngineLoader:
                 EngineResumeStatus.FAILED,
                 f"Cannot resume session '{session_id}': {exc}",
             ) from exc
+
+        structure_errors = validate_loop_structure(state, blueprint)
+        if structure_errors:
+            raise EngineResumeError(
+                EngineResumeStatus.CORRUPT_STATE,
+                f"Cannot resume session '{session_id}': execution state is corrupt: {structure_errors[0]}",
+            )

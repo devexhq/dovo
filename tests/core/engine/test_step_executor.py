@@ -88,130 +88,8 @@ class BuildStepContextTests:
         assert step_context == {"agent": "claude", "inputs": {"branch": "main"}}
 
 
-class StepCoordinatorExecuteOneStepTests:
-    """[tier-1/integration] StepCoordinator.execute_one_step: run-until-terminal contract for one step."""
-
-    def test_successful_step_returns_continue_with_result(self, tmp_path: Path) -> None:
-        """[tier-1/integration] execute_one_step: a passing command returns ("continue", result, None)."""
-        context = RunContext(steps=[], cwd=tmp_path, use_sandbox=False, paths=_paths_for(tmp_path))
-        step = StepBuilder.command("echo ok").with_id("s1").build()
-
-        action, result, error_message = StepCoordinator(context).execute_one_step(
-            _state(tmp_path), step, idx=1, total=1, step_context=None
-        )
-
-        assert action == "continue"
-        assert result is not None
-        assert (result.step_id, result.status, result.exit_code) == ("s1", "completed", 0)
-        assert error_message is None
-
-    def test_failed_step_default_abort_policy_returns_abort_with_error_message(self, tmp_path: Path) -> None:
-        """[tier-1/integration] execute_one_step: a failing command under the default abort policy returns ("abort", result, message)."""
-        context = RunContext(steps=[], cwd=tmp_path, use_sandbox=False, paths=_paths_for(tmp_path))
-        step = StepBuilder.command("exit 1").with_id("fail").build()
-
-        action, result, error_message = StepCoordinator(context).execute_one_step(
-            _state(tmp_path), step, idx=1, total=1, step_context=None
-        )
-
-        assert action == "abort"
-        assert result is not None
-        assert (result.step_id, result.status, result.exit_code) == ("fail", "failed", 1)
-        assert error_message == "Step 'fail' failed: Command failed with exit code 1."
-
-    def test_prompt_user_retry_decision_reexecutes_step_until_success(self, tmp_path: Path) -> None:
-        """[tier-1/integration] execute_one_step: a RETRY decision re-runs the step, incrementing attempts, until it succeeds."""
-        prompter = _ScriptedFailurePrompter([FailurePromptDecision.RETRY])
-        context = RunContext(
-            steps=[], cwd=tmp_path, use_sandbox=False, failure_prompter=prompter, paths=_paths_for(tmp_path)
-        )
-        command = 'if [ "$WT_STEP_ATTEMPT" -eq 1 ]; then exit 1; else exit 0; fi'
-        step = StepBuilder.command(command).with_id("fail").with_on_failure(FailurePolicy.PROMPT_USER).build()
-
-        action, result, error_message = StepCoordinator(context).execute_one_step(
-            _state(tmp_path), step, idx=1, total=1, step_context=None
-        )
-
-        assert action == "continue"
-        assert result is not None
-        assert (result.status, result.exit_code, result.attempts) == ("completed", 0, 2)
-        assert error_message is None
-        assert prompter.calls == 1
-
-    def test_prompt_user_continue_decision_marks_step_ignored(self, tmp_path: Path) -> None:
-        """[tier-1/integration] execute_one_step: a CONTINUE decision marks the failed result "ignored" with the continued marker and returns action "continue"."""
-        prompter = _ScriptedFailurePrompter([FailurePromptDecision.CONTINUE])
-        context = RunContext(
-            steps=[], cwd=tmp_path, use_sandbox=False, failure_prompter=prompter, paths=_paths_for(tmp_path)
-        )
-        step = StepBuilder.command("exit 1").with_id("fail").with_on_failure(FailurePolicy.PROMPT_USER).build()
-
-        action, result, error_message = StepCoordinator(context).execute_one_step(
-            _state(tmp_path), step, idx=1, total=1, step_context=None
-        )
-
-        assert action == "continue"
-        assert result is not None
-        assert result.status == "ignored"
-        assert result.error_message == f"Command failed with exit code 1. ({USER_CONTINUED_MARKER})"
-        assert error_message is None
-
-    def test_prompt_user_abort_decision_returns_abort(self, tmp_path: Path) -> None:
-        """[tier-1/integration] execute_one_step: an ABORT decision returns ("abort", result, message)."""
-        prompter = _ScriptedFailurePrompter([FailurePromptDecision.ABORT])
-        context = RunContext(
-            steps=[], cwd=tmp_path, use_sandbox=False, failure_prompter=prompter, paths=_paths_for(tmp_path)
-        )
-        step = StepBuilder.command("exit 1").with_id("fail").with_on_failure(FailurePolicy.PROMPT_USER).build()
-
-        action, _, error_message = StepCoordinator(context).execute_one_step(
-            _state(tmp_path), step, idx=1, total=1, step_context=None
-        )
-
-        assert action == "abort"
-        assert error_message == "Step 'fail' failed: Command failed with exit code 1."
-        assert prompter.calls == 1
-
-    @pytest.mark.parametrize(
-        ("ctx_kwargs", "prompter", "warning_substr"),
-        [
-            pytest.param({"no_tty": True}, _RefusingFailurePrompter(), "non-interactive", id="no_tty"),
-            pytest.param({}, None, "no failure prompter", id="no_prompter"),
-        ],
-    )
-    def test_prompt_user_skips_prompt_and_aborts_when_non_interactive(
-        self,
-        tmp_path: Path,
-        ctx_kwargs: dict[str, Any],
-        prompter: _RefusingFailurePrompter | None,
-        warning_substr: str,
-    ) -> None:
-        """[tier-1/integration] execute_one_step: no_tty or a missing failure_prompter degrades PROMPT_USER to abort, never invoking the prompter."""
-        context = RunContext(
-            steps=[],
-            cwd=tmp_path,
-            use_sandbox=False,
-            failure_prompter=prompter,
-            **ctx_kwargs,
-            paths=_paths_for(tmp_path),
-        )
-        step = StepBuilder.command("exit 1").with_id("fail").with_on_failure(FailurePolicy.PROMPT_USER).build()
-        state = _state(tmp_path)
-
-        action, _, error_message = StepCoordinator(context).execute_one_step(
-            state, step, idx=1, total=1, step_context=None
-        )
-
-        assert action == "abort"
-        assert error_message == "Step 'fail' failed: Command failed with exit code 1."
-        assert len(state.warnings) == 1
-        assert warning_substr in state.warnings[0]
-        if prompter is not None:
-            assert prompter.calls == 0
-
-
 class StepCoordinatorLoopIterationForwardingTests:
-    """[tier-1/unit] StepCoordinator.execute_one_step: the new loop_iteration parameter forwards to StepExecutionContext unchanged for top-level and loop callers."""
+    """[tier-1/unit] StepCoordinator.run_attempt: loop_iteration forwards to StepExecutionContext unchanged for top-level and loop callers."""
 
     @pytest.mark.parametrize(
         ("loop_iteration", "expected_filename"),
@@ -220,18 +98,18 @@ class StepCoordinatorLoopIterationForwardingTests:
             pytest.param(None, "01_check_attempt_1.stdout.log", id="loop_iteration_none"),
         ],
     )
-    def test_loop_iteration_forwards_to_attempt_log_filename_iter_segment(
+    def test_run_attempt_loop_iteration_forwards_to_attempt_log_filename(
         self,
         tmp_path: Path,
         loop_iteration: int | None,
         expected_filename: str,
     ) -> None:
-        """[tier-1/unit] execute_one_step: calling execute_one_step(..., loop_iteration=2) with session_log_dir set writes the attempt log as '01_check_iter_2_attempt_1.stdout.log', while the default loop_iteration=None (today's top-level call shape) keeps the '_iter_' segment absent from the filename."""
+        """[tier-1/unit] StepCoordinator.run_attempt: loop_iteration=2 with session_log_dir set writes '01_check_iter_2_attempt_1.stdout.log'; the default loop_iteration=None keeps the '_iter_' segment absent."""
         context = RunContext(steps=[], cwd=tmp_path, use_sandbox=False, paths=_paths_for(tmp_path))
         step = StepBuilder.command("echo ok").with_id("check").build()
         state = StepLoopState(target_dir=tmp_path, session=None, session_log_dir=tmp_path)
 
-        StepCoordinator(context).execute_one_step(
+        StepCoordinator(context).run_attempt(
             state, step, idx=1, total=1, step_context=None, loop_iteration=loop_iteration
         )
 

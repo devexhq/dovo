@@ -3,7 +3,12 @@
 from __future__ import annotations
 
 from worktree.core.engine.models import DefinitionRef, DefinitionsManifest
-from worktree.core.engine.projection import flatten_step_results, terminal_step_metadata
+from worktree.core.engine.projection import (
+    flatten_step_results,
+    iter_leaves,
+    iteration_results,
+    terminal_step_metadata,
+)
 from worktree.core.engine.state_models import (
     ExecutionIterationRecord,
     ExecutionLeafNode,
@@ -117,3 +122,45 @@ class ProjectionTests:
         tree = _tree(_leaf("a", NodeState.PENDING), _leaf("b", NodeState.PENDING))
 
         assert terminal_step_metadata(tree) == []
+
+
+class ProjectionIterLeavesTests:
+    """[tier-1/unit] iter_leaves: every leaf in tree order, descending through loop iterations."""
+
+    def test_iter_leaves_yields_top_level_and_loop_body_leaves_in_tree_order(self) -> None:
+        """[tier-1/unit] iter_leaves: tree [a, loop(iter1=[s1, s2], iter2=[s1, s2]), z] yields ids [a, s1, s2, s1, s2, z]."""
+        loop = ExecutionLoopNode(
+            id="loop",
+            max_iterations=2,
+            iterations=[
+                ExecutionIterationRecord(
+                    number=turn, steps=[_leaf("s1", NodeState.PENDING), _leaf("s2", NodeState.PENDING)]
+                )
+                for turn in (1, 2)
+            ],
+        )
+        tree = _tree(_leaf("a", NodeState.PENDING), loop, _leaf("z", NodeState.PENDING))
+
+        assert [leaf.id for leaf in iter_leaves(tree)] == ["a", "s1", "s2", "s1", "s2", "z"]
+
+
+class IterationResultsTests:
+    """[tier-1/unit] iteration_results: terminal body results of one iteration keyed by step id."""
+
+    def test_only_terminal_leaves_with_results_are_mapped_in_body_order(self) -> None:
+        """[tier-1/unit] iteration_results: leaves [completed a, ignored b, pending c, running-without-result d] return {a: result_a, b: result_b} in that order."""
+        result_a = _result("a")
+        result_b = _result("b", "ignored")
+        iteration = ExecutionIterationRecord(
+            number=1,
+            steps=[
+                _leaf("a", NodeState.COMPLETED, [result_a]),
+                _leaf("b", NodeState.IGNORED, [result_b]),
+                _leaf("c", NodeState.PENDING),
+                _leaf("d", NodeState.RUNNING, [None]),
+            ],
+        )
+
+        results = iteration_results(iteration)
+
+        assert list(results.items()) == [("a", result_a), ("b", result_b)]

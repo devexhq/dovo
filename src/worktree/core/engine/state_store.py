@@ -29,14 +29,19 @@ def _leaf_node(step: StepDefinition) -> ExecutionLeafNode:
     return ExecutionLeafNode(id=step.id, name=step.name)
 
 
+def new_iteration(loop: LoopStepBlock, number: int) -> ExecutionIterationRecord:
+    """Build a PENDING iteration numbered number holding a PENDING leaf per loop.do step, in order."""
+    return ExecutionIterationRecord(number=number, steps=[_leaf_node(sub_step) for sub_step in loop.do])
+
+
 def _loop_node(loop: LoopStepBlock) -> ExecutionLoopNode:
-    """Build a PENDING loop node with its frozen config and one PENDING iteration holding the do steps in order."""
+    """Build a PENDING loop node with its frozen config and PENDING iteration 1."""
     return ExecutionLoopNode(
         id=loop.id,
         max_iterations=loop.max_iterations,
         until=list(loop.until),
         on_max_iterations=loop.on_max_iterations,
-        iterations=[ExecutionIterationRecord(number=1, steps=[_leaf_node(sub_step) for sub_step in loop.do])],
+        iterations=[new_iteration(loop, 1)],
     )
 
 
