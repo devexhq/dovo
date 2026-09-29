@@ -252,6 +252,7 @@ class RunOutcome(BaseModel):
     sandbox_kept: bool = False
     sandbox_path: Path
     session_id: str | None = None
+    sandbox_id: str | None = None
 
     @property
     def ok(self) -> bool:

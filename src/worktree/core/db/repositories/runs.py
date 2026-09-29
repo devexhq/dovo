@@ -17,6 +17,13 @@ def _coerce_status(status: RunStatus | str | None) -> RunStatus | str | None:
     return RunStatus(status) if isinstance(status, str) and status in RunStatus._value2member_map_ else status
 
 
+def _completed_at_for(status: RunStatus, completed_at: str | None) -> str | None:
+    """Return completed_at, defaulting to now for terminal statuses."""
+    if completed_at is None and status in (RunStatus.COMPLETED, RunStatus.FAILED, RunStatus.CANCELLED):
+        return datetime.now(UTC).strftime("%Y-%m-%d %H:%M:%S")
+    return completed_at
+
+
 class RunsRepository(BaseRepository):
     """Repository managing unified blueprint execution tracking CRUD operations using SQLModel."""
 
@@ -28,8 +35,16 @@ class RunsRepository(BaseRepository):
         branch_name: str = "",
         status: RunStatus | str = RunStatus.RUNNING,
         pid: int | None = None,
+        *,
+        blueprint_tier: str | None = None,
+        commit_sha: str | None = None,
+        use_sandbox: bool = True,
+        keep: bool = False,
+        agent: str | None = None,
+        inputs_json: str | None = None,
+        auto_apply: bool = False,
     ) -> RunRecord:
-        """Insert a new run record and return the committed instance."""
+        """Insert a new run record with its resolved run configuration and return the committed instance."""
         status_enum = RunStatus(status) if isinstance(status, str) else status
 
         record = RunRecord(
@@ -40,6 +55,13 @@ class RunsRepository(BaseRepository):
             branch_name=branch_name,
             status=status_enum,
             pid=pid,
+            blueprint_tier=blueprint_tier,
+            commit_sha=commit_sha,
+            use_sandbox=use_sandbox,
+            keep=keep,
+            agent=agent,
+            inputs_json=inputs_json,
+            auto_apply=auto_apply,
         )
 
         with self.session() as session:
@@ -65,18 +87,14 @@ class RunsRepository(BaseRepository):
         checkpoint_json: str | None = None,
         completed_at: str | None = None,
         pid: int | None = None,
+        sandbox_id: str | None = None,
     ) -> RunRecord | None:
-        """Update status, optional timestamps, error message, checkpoint JSON, and PID."""
+        """Update status, optional timestamps, error message, checkpoint JSON, PID, and sandbox id."""
         status_enum = _coerce_status(status)
         if not isinstance(status_enum, RunStatus):
             raise ValueError(f"Invalid status constraint: {status}")
 
-        if completed_at is None and status_enum in (
-            RunStatus.COMPLETED,
-            RunStatus.FAILED,
-            RunStatus.CANCELLED,
-        ):
-            completed_at = datetime.now(UTC).strftime("%Y-%m-%d %H:%M:%S")
+        completed_at = _completed_at_for(status_enum, completed_at)
 
         with self.session() as session:
             statement = select(RunRecord).where(
@@ -93,11 +111,54 @@ class RunsRepository(BaseRepository):
                 record.pid = pid
             if checkpoint_json is not None:
                 record.checkpoint_json = checkpoint_json
+            if sandbox_id is not None:
+                record.sandbox_id = sandbox_id
 
             return self._commit(
                 session,
                 record,
                 f"Invalid status update constraint for session '{session_id}'",
+            )
+
+    def save_execution_state(
+        self,
+        session_id: str,
+        execution_state_json: str,
+        *,
+        expected_revision: int,
+        next_revision: int,
+        status: RunStatus | str | None = None,
+        error_message: str | None = None,
+        sandbox_id: str | None = None,
+    ) -> RunRecord | None:
+        """Compare-and-swap the execution-state document at expected_revision, optionally updating lifecycle fields and sandbox id in the same commit; None when no row matches."""
+        status_enum = _coerce_status(status)
+        if status_enum is not None and not isinstance(status_enum, RunStatus):
+            raise ValueError(f"Invalid status constraint: {status}")
+
+        with self.session() as session:
+            statement = select(RunRecord).where(
+                RunRecord.session_id == session_id,
+                RunRecord.project_id == self.project_id,
+                RunRecord.execution_state_revision == expected_revision,
+            )
+            record = session.exec(statement).first()
+            if record is None:
+                return None
+
+            record.execution_state_json = execution_state_json
+            record.execution_state_revision = next_revision
+            if status_enum is not None:
+                record.status = status_enum
+                record.completed_at = _completed_at_for(status_enum, None)
+                record.error_message = error_message
+            if sandbox_id is not None:
+                record.sandbox_id = sandbox_id
+
+            return self._commit(
+                session,
+                record,
+                f"Invalid execution state update constraint for session '{session_id}'",
             )
 
     def save_pause(

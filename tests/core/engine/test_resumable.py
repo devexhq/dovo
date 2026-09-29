@@ -14,9 +14,9 @@ from worktree.common.filesystem.services.global_root import resolve_global_paths
 from worktree.core.blueprint import Blueprint
 from worktree.core.catalog import Catalog
 from worktree.core.db import RunsRepository, RunStatus
-from worktree.core.engine import EngineResumeError, EngineResumeStatus, ResumableRun
-from worktree.core.engine.models import DefinitionsManifest, SessionRunPayload
-from worktree.core.engine.writer import get_session_dir, snapshot_definitions, write_session_run_json
+from worktree.core.engine import EngineResumeError, EngineResumeStatus, ResumableRun, RunStateStore
+from worktree.core.engine.models import DefinitionsManifest
+from worktree.core.engine.writer import get_session_dir, snapshot_definitions
 from worktree.core.project.services.storage import resolve_workspace_paths
 from worktree.core.runtime import RunCheckpoint
 from worktree.core.step.models import LoopStepBlock, StepDefinition
@@ -82,17 +82,8 @@ def _seed_snapshotted_paused_run(
     warnings: list[str] = []
     manifest = snapshot_definitions(catalog, blueprint, session_dir, warnings)
     assert manifest is not None
-    write_session_run_json(
-        session_dir,
-        SessionRunPayload(
-            session_id=session_id,
-            name=blueprint.name,
-            status="paused",
-            started_at="2026-09-25T19:00:00+00:00",
-            definitions=manifest,
-        ),
-    )
     runs_repo.create(session_id, blueprint_name=blueprint_key, blueprint_key=blueprint_key, status=RunStatus.RUNNING)
+    RunStateStore(runs_repo, paths, session_id).initialize(blueprint, manifest)
     runs_repo.save_pause(session_id, checkpoint.model_dump_json(), checkpoint.diagnostic)
     return manifest
 
@@ -252,7 +243,7 @@ class ResumableRunClassificationTests:
 
 
 class ResumableRunSnapshotResolutionTests:
-    """Contract tests for ResumableRun.load resolving a paused session's blueprint from its run.json snapshot."""
+    """Contract tests for ResumableRun.load resolving a paused session's blueprint from its execution-state snapshot."""
 
     def test_resumable_run_load_uses_snapshot_when_definitions_manifest_present_and_catalog_deleted(
         self, tmp_path: Path
@@ -338,3 +329,28 @@ class ResumableRunSnapshotResolutionTests:
 
         assert handle.is_resumable is False
         assert handle.status == EngineResumeStatus.FAILED
+
+
+class ResumableRunStateTests:
+    """Contract tests for ResumableRun.load classifying an unusable execution state."""
+
+    def test_resumable_run_load_corrupt_execution_state_is_classified_failed(self, tmp_path: Path) -> None:
+        """[tier-1/integration] ResumableRun.load: unparseable execution_state_json returns status FAILED with the store's error in the message."""
+        workspace = WorkspaceBuilder(tmp_path / "workspace").with_database().build()
+        paths = _paths_for(workspace)
+        runs_repo = RunsRepository(db_path=paths.database_file, project_id=paths.project_id)
+        write_runnable_blueprint(workspace, key="corrupt-state-task", steps=[{"id": "s1", "run": "echo one"}])
+        _seed_snapshotted_paused_run(
+            workspace,
+            runs_repo,
+            "state-1",
+            blueprint_key="corrupt-state-task",
+            checkpoint=_checkpoint(pending_step_id="s1"),
+        )
+        runs_repo.save_execution_state("state-1", "{not json", expected_revision=0, next_revision=0)
+
+        handle = ResumableRun.load("state-1", paths=paths, db=runs_repo, catalog=Catalog(paths))
+
+        assert handle.is_resumable is False
+        assert handle.status == EngineResumeStatus.FAILED
+        assert "Execution state for run 'state-1' is corrupt." in str(handle)

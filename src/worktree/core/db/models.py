@@ -158,7 +158,7 @@ class RunRecord(SQLModel, table=True):
     keep: bool = Field(default=False)
     agent: str | None = Field(default=None)
     inputs_json: str | None = Field(default=None)
-    auto_apply: bool = Field(default=True)
+    auto_apply: bool = Field(default=False)
     sandbox_id: str | None = Field(default=None)
 
     def __init__(self, **data: Any) -> None:
