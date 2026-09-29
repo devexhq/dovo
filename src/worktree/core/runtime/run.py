@@ -247,4 +247,5 @@ def run_steps(context: RunContext) -> RunOutcome:
         warnings=warnings,
         sandbox_kept=sandbox_kept,
         sandbox_path=session.sandbox_path if session is not None else target_dir,
+        sandbox_id=session.session_id if session is not None else None,
     )

@@ -18,8 +18,8 @@ from worktree.core.blueprint import Blueprint
 from worktree.core.catalog import Catalog
 from worktree.core.config.models import ConfigTier
 from worktree.core.db import RunStatus, WorktreeDb
-from worktree.core.engine.models import SessionRunPayload
-from worktree.core.engine.writer import get_session_dir, snapshot_definitions, write_session_run_json
+from worktree.core.engine import RunStateStore
+from worktree.core.engine.writer import get_session_dir, snapshot_definitions
 from worktree.core.project.services.storage import resolve_workspace_paths
 from worktree.core.runtime.models import RunCheckpoint
 
@@ -63,6 +63,7 @@ def _seed_snapshotted_paused_session(
     db.runs.create(
         session_id=session_id, blueprint_name=blueprint_key, blueprint_key=blueprint_key, status=RunStatus.RUNNING
     )
+    RunStateStore(db.runs, paths, session_id).initialize(blueprint, manifest)
     checkpoint = RunCheckpoint(
         next_step_index=next_step_index,
         pending_step_id=pending_step_id,
@@ -70,16 +71,6 @@ def _seed_snapshotted_paused_session(
         use_sandbox=False,
     )
     db.runs.save_pause(session_id, checkpoint.model_dump_json(), checkpoint.diagnostic)
-    write_session_run_json(
-        session_dir,
-        SessionRunPayload(
-            session_id=session_id,
-            name=blueprint.name,
-            status="paused",
-            started_at="2026-09-25T19:00:00+00:00",
-            definitions=manifest,
-        ),
-    )
 
 
 class ResumeCliIntegrationTests:

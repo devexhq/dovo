@@ -58,7 +58,7 @@ src/worktree/schemas/v1/             Packaged, versioned JSON Schemas (config.js
 - **Patch** (`core/patch/`): Unified-diff parsing and validation. Must not import agents, step, or runtime.
 - **Blueprint** (`core/blueprint/`): Unified task/workflow document handle (`Blueprint`), catalog/path loader, input declaration schema. Must not import runtime, engine, or cli.
 - **Runtime** (`core/runtime/`): Step-loop execution (`run_steps` in `run.py`), `LoopBlockRunner` (`loop_runner.py`), sandbox/session setup and cleanup (`Workspace` in `workspace.py`), pause/resume checkpoint construction and persistence (`Checkpoint` in `checkpoint.py`), per-step execution and failure-policy coordination (`StepCoordinator` in `step_coordinator.py`), observer dispatch (`safe_notify` in `notify.py`), terminal failure-policy resolution (`failure.py`), the `run.log` JSONL writer (`log_writer.py`), and shared models (`RunContext` / `RunObserver` / `RunOutcome` in `models.py`). Runtime must not import cli.
-- **Engine** (`core/engine/`): Process-level run persistence, session ID minting (`RunRequest`), DB run records, run/resume services (`BlueprintRunService`, `BlueprintResumeService`, `reconcile_stale_runs`). Must not import cli.
+- **Engine** (`core/engine/`): Process-level run persistence, session ID minting (`RunRequest`), DB run records, canonical run execution state (`state_store.py`), run/resume services (`BlueprintRunService`, `BlueprintResumeService`, `reconcile_stale_runs`). Must not import cli.
 - **Catalog** (`core/catalog/`): Disk-only, multi-tier (REPO/USER/GLOBAL/PACKAGED) template scanning and indexing via per-tier `index.json` caches, packaged seeds under `templates/`.
 - **History** (`core/history/`): `History` entrypoint (`history.py`), result models (`HistoryListResult`, `HistoryShowResult`). UI formatters reside in `cli/ui/formatters/history/`.
 - **Logs** (`core/logs/`): `Logs` entrypoint (`logs.py`), result models (`LogsShowResult`), `services/read.py` reading `run.log` and per-attempt step captures. `RunLogEvent` is produced by `core/runtime/`. UI formatters reside in `cli/ui/formatters/logs/`.
@@ -87,7 +87,7 @@ common/  ->  core/project/  ->  core/{db,git,sandbox,catalog,inputs,patch,diff,s
 - `core/step/` must not import `runtime`.
 - `core/runtime/` may use `step/`, `db/`, `sandbox/`, `project/`, `artifacts/`; must not import `blueprint/`, `engine/`, or `cli/`.
 - `core/blueprint/` may use `catalog/`, `inputs/`, `step/`; must not import `runtime/`, `engine/`, or `cli/`.
-- `core/engine/` may use `runtime/`, `blueprint/`, `db/`; must not import `history/`, `logs/`, or `cli/`.
+- `core/engine/` may use `runtime/`, `blueprint/`, `db/`, `git/`; must not import `history/`, `logs/`, or `cli/`.
 - `core/history/` may use `engine/`, `logs/`, `runtime/`, `db/`; `core/logs/` may use `runtime/`, `db/`; neither imports `cli/`.
 - `cli/` may import `core/` and `common/`; lower layers never import `cli/`.
 - CLI commands never render directly or import formatters; they emit results through `ui_dispatcher.dispatch(result)`.

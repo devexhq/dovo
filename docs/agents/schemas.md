@@ -41,7 +41,7 @@ Comprehensive reference for the shape of entities across the Worktree CLI codeba
   - `EngineRuntimeError`: Execution runtime error.
   - `EngineInputError`: Input resolution failure before run creation.
   - `EngineResumeError`: Incompatible or invalid run state during resume.
-  - `EngineSnapshotMissingError`: A `run.json` `definitions` manifest references a session snapshot file that is missing from disk at resume time.
+  - `EngineSnapshotMissingError`: A snapshot file referenced by the run's execution-state manifest is missing from disk at resume time.
 - **Git** (`core/git/exceptions.py`):
   - `GitError`: Base Git failure.
   - `GitCommandError`: Non-zero exit code from git subprocess.
@@ -122,13 +122,15 @@ All operations that can fail return a Pydantic result object subclassing `BaseRe
 ### Runtime & Process Engine Models
 **Relevant sources:** `src/worktree/core/runtime/models.py`, `src/worktree/core/engine/models.py`.
 - `RunContext`: Immutable execution input bundle (`steps`, `cwd`, `use_sandbox`, `keep`, `agent`, `observer`, `inputs`, `no_tty`, `failure_prompter`, `pause_store`, `resume_from`, `paths`).
-- `RunOutcome`: Terminal run result (`status`, `step_results`, `errors`, `warnings`, `sandbox_kept`, `sandbox_path`, `session_id`, `ok`).
+- [`RunOutcome`](../../src/worktree/core/runtime/models.py): Terminal run result, including the sandbox and session identifiers.
 - `RunStatus`: `StrEnum` (`pending`, `running`, `completed`, `failed`, `paused`, `cancelled`).
 - `RunCheckpoint`: JSON-serializable state for paused runs (`sandbox_path`, `sandbox_id`, `sandbox_branch`, `use_sandbox`, `keep`, `agent`, `inputs`, `pending_step_id`, `pending_result`, `diagnostic`, `next_step_index`).
 - `RunRequest`: Facade execution parameters for `Engine.run` (`inputs`, `cli_args`, `use_sandbox`, `keep`, `agent`, `session_id`, `observer`, `failure_prompter`, `no_tty`).
 - `ResumableRun`: Non-raising inspector and loader for paused runs.
 - `EngineResumeStatus`: `StrEnum` (`ok`, `not_found`, `wrong_status`, `missing_sandbox`, `corrupt_checkpoint`, `missing_snapshot`, `failed`).
-- `SessionRunPayload`: Persisted `run.json` execution results and telemetry for a session (`version`, `session_id`, `name`, `status`, `started_at`, `completed_at`, `error_message`, `step_results`, `definitions`). Written via `write_session_run_json` / read via `load_session_run` (`core/engine/writer.py`).
+- [`ExecutionStateTree`](../../src/worktree/core/engine/state_models.py): Versioned plan-and-progress document for one run (manifest plus ordered step and loop nodes).
+- [`RunStateStore`](../../src/worktree/core/engine/state_store.py): Builds, saves (revision compare-and-swap), and loads an `ExecutionStateTree` for one run row; returns `RunStateWriteResult` / `RunStateLoadResult` (`RunStateWriteStatus` / `RunStateLoadStatus` in [`state_models.py`](../../src/worktree/core/engine/state_models.py)). Does not lock; callers hold the workspace lock.
+- [`RunStartConfig`](../../src/worktree/core/engine/models.py): Resolved run options written to the run row when a run starts.
 - `DefinitionRef`: One snapshotted catalog item's resolved reference, content SHA, and resolution timestamp (`ref`, `sha`, `resolved_at`); `ref` is `"<tier>:<item_type>:<key>"`.
 - `DefinitionsManifest`: The blueprint's `DefinitionRef` plus a `DefinitionRef` per transitively-resolved `uses:` step (`blueprint`, `steps`), snapshotted by `Engine.run` into `<session_dir>/definitions/` and consumed by `ResumableRun`/`load_blueprint_from_snapshot` to resume without a live catalog read.
 - [`RunLogEvent`](../../src/worktree/core/runtime/models.py) / `RunLogEventType`: One `run.log` timeline record. `run_steps` and `LoopBlockRunner` append one JSON line per lifecycle event to `logs_dir/<session_id>/run.log` via `append_run_log_event` (`core/runtime/log_writer.py`), which stamps `ts` at write time and drops write failures silently. `event` decides which optional fields are populated. `core/logs` only reads these events.
@@ -177,7 +179,7 @@ The catalog is disk-only: each of the REPO, USER, and GLOBAL tiers keeps its own
 
 All four tables live in one centralized SQLite database shared across projects (`resolve_db_path` in `core/db/connection.py`), and every record carries `project_id`; every `BaseRepository` query scopes on it (`core/db/repositories/base.py`). The catalog is no longer one of them — see Catalog Models above.
 - `SandboxRecord`: Persisted sandbox rows in `sandboxes` table.
-- `RunRecord`: Persisted blueprint run rows in `runs` table (including `checkpoint_json` and the execution-state/config columns — see [`RunRecord`](../../src/worktree/core/db/models.py)).
+- `RunRecord`: Persisted blueprint run rows in `runs` table (including `checkpoint_json` and the execution-state/config columns — see [`RunRecord`](../../src/worktree/core/db/models.py)). The row (`execution_state_json`, `execution_state_revision`) is the canonical execution state; `<session-dir>/run.json` is its projection, regenerated from the row on load when missing, corrupt, or older, and a newer file is rejected rather than imported.
 - `CostRecord`: Persisted token and execution cost tracking in `costs` table.
 - `ArtifactRecord`: Persisted artifact metadata rows in `artifacts` table (`id`, `project_id`, `session_id`, `name`, `path`, `size_bytes`, `file_count`, `created_at`, `expires_at`); unique on `(project_id, session_id, name)`, upserted by `ArtifactsRepository.create`.
 

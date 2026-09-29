@@ -17,10 +17,11 @@ from worktree.common.models import FailurePolicy, OnFailureSpec
 from worktree.core.blueprint import Blueprint
 from worktree.core.catalog import Catalog
 from worktree.core.config.models import ConfigTier
-from worktree.core.db import RunsRepository, RunStatus
-from worktree.core.engine import Engine, EngineResumeError, EngineResumeStatus, RunRequest
-from worktree.core.engine.models import DefinitionRef, DefinitionsManifest, SessionRunPayload
-from worktree.core.engine.writer import get_session_dir, load_session_run, write_session_run_json
+from worktree.core.db import RunRecord, RunsRepository, RunStatus
+from worktree.core.engine import Engine, EngineResumeError, EngineResumeStatus, RunRequest, RunStateStore
+from worktree.core.engine.state_models import ExecutionLeafNode, ExecutionStateTree
+from worktree.core.engine.writer import get_session_dir, snapshot_definitions
+from worktree.core.git.runner import GitRunner
 from worktree.core.project.services.storage import resolve_workspace_paths
 from worktree.core.runtime import ExecutionIdentity, RunCheckpoint, RunContext, RunOutcome
 from worktree.core.step.models import LoopStepBlock, StepDefinition
@@ -436,7 +437,7 @@ class EngineRunContextSessionIdTests:
     def test_run_passes_generated_session_id_into_run_context(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """[tier-1/unit] Engine.run: RunContext.session_id captured via monkeypatched run_steps equals the generated blueprint_<hex> sid also used for run.json."""
+        """[tier-1/unit] Engine.run: RunContext.session_id captured via monkeypatched run_steps equals the generated blueprint_<hex> sid also used for the run row."""
         workspace = WorkspaceBuilder(tmp_path / "workspace").with_database().build()
         paths = _paths_for(workspace)
         runs_repo = RunsRepository(db_path=paths.database_file, project_id=paths.project_id)
@@ -532,10 +533,10 @@ class EngineSingleRunContextConstructionTests:
 class EngineRunSnapshotsDefinitionsTests:
     """[tier-1/unit] Engine.run: definitions snapshotting on run start."""
 
-    def test_run_writes_snapshot_files_and_populates_run_json_definitions(
+    def test_run_writes_snapshot_files_and_records_manifest_in_state(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """[tier-1/unit] Engine.run: a catalog-backed blueprint with one uses: step produces session_dir/definitions/<key>.yml, session_dir/definitions/steps/<step_key>.yml, and run.json's definitions manifest referencing both."""
+        """[tier-1/unit] Engine.run: a catalog-backed blueprint with one uses: step produces session_dir/definitions/<key>.yml, session_dir/definitions/steps/<step_key>.yml, and an execution state whose manifest references both."""
         workspace = WorkspaceBuilder(tmp_path / "workspace").with_database().build()
         paths = _paths_for(workspace)
         write_runnable_step(workspace, key="lint-check", definition={"id": "lint-check", "run": "echo lint"})
@@ -556,16 +557,78 @@ class EngineRunSnapshotsDefinitionsTests:
         session_dir = get_session_dir(paths, "snap-1")
         assert (session_dir / "definitions" / "snap-task.yml").is_file()
         assert (session_dir / "definitions" / "steps" / "lint-check.yml").is_file()
-        payload = load_session_run(paths, "snap-1")
-        assert payload is not None
-        assert payload.definitions is not None
-        assert payload.definitions.blueprint.ref == "repo:blueprint:snap-task"
-        assert [ref.ref for ref in payload.definitions.steps] == ["repo:step:lint-check"]
+        loaded = RunStateStore(runs_repo, paths, "snap-1").load()
+        assert loaded.state is not None
+        assert loaded.state.manifest.blueprint.ref == "repo:blueprint:snap-task"
+        assert [ref.ref for ref in loaded.state.manifest.steps] == ["repo:step:lint-check"]
 
-    def test_run_blueprint_not_catalog_backed_leaves_definitions_none_and_still_completes(
+    def test_run_persists_initial_state_and_projection_before_first_step(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """[tier-1/unit] Engine.run: an in-memory-only Blueprint (BlueprintBuilder, no catalog record) completes the run with RunOutcome.warnings naming the snapshot failure and run.json's definitions left None."""
+        """[tier-1/unit] Engine.run: when run_steps is entered, the row is RUNNING with execution_state_revision 0, RunStateStore.load() returns a tree whose nodes are the blueprint's steps in order, and run.json parses to that same tree."""
+        workspace = WorkspaceBuilder(tmp_path / "workspace").with_database().build()
+        paths = _paths_for(workspace)
+        write_runnable_blueprint(
+            workspace, key="init-task", steps=[{"id": "s1", "run": "echo one"}, {"id": "s2", "run": "echo two"}]
+        )
+        catalog = Catalog(paths)
+        blueprint = Blueprint.load("init-task", catalog=catalog)
+        runs_repo = RunsRepository(db_path=paths.database_file, project_id=paths.project_id)
+        observed: dict[str, object] = {}
+
+        def fake_run_steps(_context: RunContext) -> RunOutcome:
+            row = runs_repo.get("init-1")
+            assert row is not None
+            observed["status"] = row.status
+            observed["revision"] = row.execution_state_revision
+            observed["loaded"] = RunStateStore(runs_repo, paths, "init-1").load().state
+            observed["projection"] = ExecutionStateTree.model_validate_json(
+                (get_session_dir(paths, "init-1") / "run.json").read_text(encoding="utf-8")
+            )
+            return RunOutcome(status=RunStatus.COMPLETED, sandbox_path=workspace)
+
+        monkeypatch.setattr("worktree.core.engine.engine.run_steps", fake_run_steps)
+
+        Engine(paths, db=runs_repo, catalog=catalog).run(blueprint, RunRequest(session_id="init-1", use_sandbox=False))
+
+        loaded = observed["loaded"]
+        assert isinstance(loaded, ExecutionStateTree)
+        assert observed["status"] == RunStatus.RUNNING
+        assert observed["revision"] == 0
+        assert loaded.nodes == [ExecutionLeafNode(id="s1"), ExecutionLeafNode(id="s2")]
+        assert observed["projection"] == loaded
+
+    def test_run_finalizes_row_with_revision_one_and_completed_status(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """[tier-1/unit] Engine.run: a completing run leaves the row COMPLETED with completed_at set, execution_state_revision 1, and run.json at revision 1."""
+        workspace = WorkspaceBuilder(tmp_path / "workspace").with_database().build()
+        paths = _paths_for(workspace)
+        write_runnable_blueprint(workspace, key="final-task", steps=[{"id": "s1", "run": "echo one"}])
+        catalog = Catalog(paths)
+        blueprint = Blueprint.load("final-task", catalog=catalog)
+        runs_repo = RunsRepository(db_path=paths.database_file, project_id=paths.project_id)
+        monkeypatch.setattr(
+            "worktree.core.engine.engine.run_steps",
+            lambda _context: RunOutcome(status=RunStatus.COMPLETED, sandbox_path=workspace),
+        )
+
+        Engine(paths, db=runs_repo, catalog=catalog).run(blueprint, RunRequest(session_id="final-1", use_sandbox=False))
+
+        row = runs_repo.get("final-1")
+        assert row is not None
+        assert row.status == RunStatus.COMPLETED
+        assert row.completed_at is not None
+        assert row.execution_state_revision == 1
+        projection = ExecutionStateTree.model_validate_json(
+            (get_session_dir(paths, "final-1") / "run.json").read_text(encoding="utf-8")
+        )
+        assert projection.revision == 1
+
+    def test_run_blueprint_not_catalog_backed_runs_without_state_and_warns(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """[tier-1/unit] Engine.run: an in-memory-only Blueprint (BlueprintBuilder, no catalog record) completes with RunOutcome.warnings naming the snapshot failure, a COMPLETED row, and execution_state_json None."""
         workspace = WorkspaceBuilder(tmp_path / "workspace").with_database().build()
         paths = _paths_for(workspace)
         runs_repo = RunsRepository(db_path=paths.database_file, project_id=paths.project_id)
@@ -579,46 +642,286 @@ class EngineRunSnapshotsDefinitionsTests:
             blueprint, RunRequest(session_id="snap-2", use_sandbox=False)
         )
 
+        row = runs_repo.get("snap-2")
+        assert row is not None
         assert outcome.status == RunStatus.COMPLETED
         assert outcome.warnings == ["Failed to snapshot run definitions: blueprint 'lint' not found in catalog."]
-        payload = load_session_run(paths, "snap-2")
-        assert payload is not None
-        assert payload.definitions is None
+        assert row.status == RunStatus.COMPLETED
+        assert row.execution_state_json is None
 
 
 class EngineResumePreservesDefinitionsTests:
-    """[tier-1/unit] Engine.resume: run.json rewritten after resume carries the same definitions manifest captured by the original Engine.run, not None."""
+    """[tier-1/unit] Engine.resume: the execution state keeps the manifest captured by the original Engine.run."""
 
-    def test_resume_rewritten_run_json_keeps_original_definitions_manifest(
+    def test_resume_finalization_keeps_original_manifest_and_bumps_revision(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         workspace = WorkspaceBuilder(tmp_path / "workspace").with_database().build()
         paths = _paths_for(workspace)
-        runs_repo = RunsRepository(db_path=paths.database_file, project_id=paths.project_id)
-        blueprint, _ = _task_blueprint()
-        checkpoint = _checkpoint()
-        _seed_paused_run(runs_repo, "task_defs", checkpoint)
-        manifest = DefinitionsManifest(
-            blueprint=DefinitionRef(ref="repo:blueprint:lint", sha="abc123", resolved_at="2026-09-25T19:04:00+00:00"),
-            steps=[],
+        write_runnable_blueprint(
+            workspace,
+            key="task_defs",
+            steps=[{"id": "setup", "run": "echo setup"}, {"id": "publish", "run": "exit 1"}],
         )
-        write_session_run_json(
-            get_session_dir(paths, "task_defs"),
-            SessionRunPayload(
-                session_id="task_defs",
-                name="lint",
-                status="paused",
-                started_at="2026-09-25T19:00:00+00:00",
-                definitions=manifest,
-            ),
+        catalog = Catalog(paths)
+        blueprint = Blueprint.load("task_defs", catalog=catalog)
+        runs_repo = RunsRepository(db_path=paths.database_file, project_id=paths.project_id)
+        manifest = snapshot_definitions(catalog, blueprint, get_session_dir(paths, "task_defs"), [])
+        assert manifest is not None
+        checkpoint = _checkpoint()
+        _seed_paused_run(runs_repo, "task_defs", checkpoint, name="task_defs")
+        RunStateStore(runs_repo, paths, "task_defs").initialize(blueprint, manifest)
+        monkeypatch.setattr(
+            "worktree.core.engine.engine.run_steps",
+            lambda _context: RunOutcome(status=RunStatus.COMPLETED, sandbox_path=workspace),
+        )
+
+        Engine(paths, db=runs_repo, catalog=catalog).resume("task_defs", blueprint=blueprint)
+
+        loaded = RunStateStore(runs_repo, paths, "task_defs").load()
+        assert loaded.state is not None
+        assert loaded.state.manifest == manifest
+        assert loaded.state.revision == 1
+
+
+class EngineRunConfigPersistenceTests:
+    """[tier-1/unit] Engine.run: resolved run configuration lands on the run row."""
+
+    def test_run_persists_resolved_configuration_on_row(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """[tier-1/unit] Engine.run: RunRequest(use_sandbox=False, keep=True, agent='claude', auto_apply=True) with resolved inputs {'env': 'prod'} leaves a row with use_sandbox False, keep True, agent 'claude', inputs_json '{\"env\": \"prod\"}', auto_apply True, and commit_sha equal to git rev-parse HEAD."""
+        workspace = WorkspaceBuilder(tmp_path / "workspace").with_git().with_database().build()
+        paths = _paths_for(workspace)
+        runs_repo = RunsRepository(db_path=paths.database_file, project_id=paths.project_id)
+        blueprint = Blueprint(
+            BlueprintBuilder("cfg")
+            .with_use_sandbox(False)
+            .with_input("env", required=True)
+            .with_step(StepBuilder.command("echo hi").with_id("s1").build())
+            .build()
         )
         monkeypatch.setattr(
             "worktree.core.engine.engine.run_steps",
             lambda _context: RunOutcome(status=RunStatus.COMPLETED, sandbox_path=workspace),
         )
 
-        Engine(paths, db=runs_repo, catalog=Catalog(paths)).resume("task_defs", blueprint=blueprint)
+        Engine(paths, db=runs_repo, catalog=Catalog(paths)).run(
+            blueprint,
+            RunRequest(
+                session_id="cfg-1",
+                inputs={"env": "prod"},
+                use_sandbox=False,
+                keep=True,
+                agent="claude",
+                auto_apply=True,
+            ),
+        )
 
-        payload = load_session_run(paths, "task_defs")
-        assert payload is not None
-        assert payload.definitions == manifest
+        row = runs_repo.get("cfg-1")
+        assert row is not None
+        assert row.use_sandbox is False
+        assert row.keep is True
+        assert row.agent == "claude"
+        assert row.inputs_json == '{"env": "prod"}'
+        assert row.auto_apply is True
+        assert row.commit_sha == GitRunner.rev_parse(workspace)
+
+    def test_run_catalog_blueprint_records_manifest_tier_on_row(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """[tier-1/unit] Engine.run: a catalog-backed blueprint leaves blueprint_tier equal to the manifest blueprint ref's tier."""
+        workspace = WorkspaceBuilder(tmp_path / "workspace").with_database().build()
+        paths = _paths_for(workspace)
+        write_runnable_blueprint(workspace, key="tier-task", steps=[{"id": "s1", "run": "echo one"}])
+        catalog = Catalog(paths)
+        runs_repo = RunsRepository(db_path=paths.database_file, project_id=paths.project_id)
+        monkeypatch.setattr(
+            "worktree.core.engine.engine.run_steps",
+            lambda _context: RunOutcome(status=RunStatus.COMPLETED, sandbox_path=workspace),
+        )
+
+        Engine(paths, db=runs_repo, catalog=catalog).run(
+            Blueprint.load("tier-task", catalog=catalog), RunRequest(session_id="tier-1", use_sandbox=False)
+        )
+
+        row = runs_repo.get("tier-1")
+        assert row is not None
+        assert row.blueprint_tier == "repo"
+
+    def test_run_outside_git_repository_stores_null_commit_sha(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """[tier-1/unit] Engine.run: a workspace that is not a git repository completes with commit_sha None on the row."""
+        workspace = WorkspaceBuilder(tmp_path / "workspace").with_database().build()
+        paths = _paths_for(workspace)
+        runs_repo = RunsRepository(db_path=paths.database_file, project_id=paths.project_id)
+        blueprint, _ = _task_blueprint()
+        monkeypatch.setattr(
+            "worktree.core.engine.engine.run_steps",
+            lambda _context: RunOutcome(status=RunStatus.COMPLETED, sandbox_path=workspace),
+        )
+
+        outcome = Engine(paths, db=runs_repo, catalog=Catalog(paths)).run(
+            blueprint, RunRequest(session_id="nogit-1", use_sandbox=False)
+        )
+
+        row = runs_repo.get("nogit-1")
+        assert row is not None
+        assert outcome.status == RunStatus.COMPLETED
+        assert row.commit_sha is None
+
+    @pytest.mark.parametrize(
+        "catalog_backed", [pytest.param(True, id="state-backed"), pytest.param(False, id="stateless")]
+    )
+    @pytest.mark.parametrize(
+        ("outcome_status", "outcome_sandbox_id"),
+        [
+            pytest.param(RunStatus.COMPLETED, "sbx-1", id="completed-with-sandbox"),
+            pytest.param(RunStatus.PAUSED, "sbx-2", id="paused-with-sandbox"),
+            pytest.param(RunStatus.COMPLETED, None, id="completed-without-sandbox"),
+        ],
+    )
+    def test_run_records_outcome_sandbox_id_on_row(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        outcome_status: RunStatus,
+        outcome_sandbox_id: str | None,
+        catalog_backed: bool,
+    ) -> None:
+        """[tier-1/unit] Engine.run: row.sandbox_id equals the RunOutcome.sandbox_id run_steps reported, for completed and paused runs with and without persisted execution state, and stays None when no sandbox was used."""
+        workspace = WorkspaceBuilder(tmp_path / "workspace").with_database().build()
+        paths = _paths_for(workspace)
+        runs_repo = RunsRepository(db_path=paths.database_file, project_id=paths.project_id)
+        catalog = Catalog(paths)
+        if catalog_backed:
+            write_runnable_blueprint(workspace, key="sbx-task", steps=[{"id": "s1", "run": "echo one"}])
+            blueprint = Blueprint.load("sbx-task", catalog=catalog)
+        else:
+            blueprint, _ = _task_blueprint()
+        monkeypatch.setattr(
+            "worktree.core.engine.engine.run_steps",
+            lambda _context: RunOutcome(status=outcome_status, sandbox_path=workspace, sandbox_id=outcome_sandbox_id),
+        )
+
+        Engine(paths, db=runs_repo, catalog=catalog).run(
+            blueprint, RunRequest(session_id="sbx-run", use_sandbox=True, keep=True)
+        )
+
+        row = runs_repo.get("sbx-run")
+        assert row is not None
+        assert row.status == outcome_status
+        assert row.sandbox_id == outcome_sandbox_id
+
+
+class EngineStatePersistenceFailureTests:
+    """[tier-1/unit] Engine.run: execution-state persistence failures surface as outcome warnings without aborting the run."""
+
+    @pytest.mark.parametrize(
+        ("fault", "expected_warning", "expected_status", "expected_revision"),
+        [
+            pytest.param(
+                "initialize-conflict",
+                "Execution state for run 'fault-1' was changed by another writer.",
+                RunStatus.COMPLETED,
+                0,
+                id="initialize-reports-first-error",
+            ),
+            pytest.param(
+                "initialize-raises",
+                "Failed to initialize run state: boom",
+                RunStatus.COMPLETED,
+                None,
+                id="initialize-exception-becomes-warning",
+            ),
+            pytest.param(
+                "finalize-conflict",
+                "Execution state for run 'fault-1' was changed by another writer.",
+                RunStatus.RUNNING,
+                0,
+                id="finalize-save-conflict-leaves-row-running",
+            ),
+            pytest.param(
+                "corrupt-state",
+                "Execution state for run 'fault-1' is corrupt.",
+                RunStatus.COMPLETED,
+                0,
+                id="finalize-falls-back-when-state-corrupt",
+            ),
+        ],
+    )
+    def test_run_state_persistence_fault_appends_warning_and_completes(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        fault: str,
+        expected_warning: str,
+        expected_status: RunStatus,
+        expected_revision: int | None,
+    ) -> None:
+        workspace = WorkspaceBuilder(tmp_path / "workspace").with_database().build()
+        paths = _paths_for(workspace)
+        write_runnable_blueprint(workspace, key="fault-task", steps=[{"id": "s1", "run": "echo one"}])
+        catalog = Catalog(paths)
+        blueprint = Blueprint.load("fault-task", catalog=catalog)
+        runs_repo = RunsRepository(db_path=paths.database_file, project_id=paths.project_id)
+        real_save = runs_repo.save_execution_state
+        failing_call = {"initialize-conflict": 1, "finalize-conflict": 2}.get(fault)
+        save_calls: list[str] = []
+
+        def save_execution_state(*args: Any, **kwargs: Any) -> RunRecord | None:
+            save_calls.append("call")
+            if len(save_calls) == failing_call:
+                return None
+            return real_save(*args, **kwargs)
+
+        def initialize_raises(*_args: object, **_kwargs: object) -> None:
+            raise RuntimeError("boom")
+
+        def fake_run_steps(_context: RunContext) -> RunOutcome:
+            if fault == "corrupt-state":
+                real_save("fault-1", "not json", expected_revision=0, next_revision=0)
+            return RunOutcome(status=RunStatus.COMPLETED, sandbox_path=workspace)
+
+        monkeypatch.setattr(runs_repo, "save_execution_state", save_execution_state)
+        if fault == "initialize-raises":
+            monkeypatch.setattr(RunStateStore, "initialize", initialize_raises)
+        monkeypatch.setattr("worktree.core.engine.engine.run_steps", fake_run_steps)
+
+        outcome = Engine(paths, db=runs_repo, catalog=catalog).run(
+            blueprint, RunRequest(session_id="fault-1", use_sandbox=False)
+        )
+
+        row = runs_repo.get("fault-1")
+        assert row is not None
+        assert outcome.warnings == [expected_warning]
+        assert row.status == expected_status
+        if expected_revision is not None:
+            assert row.execution_state_revision == expected_revision
+
+
+class EngineResumeAutoApplyTests:
+    """[tier-1/unit] Engine.resume: auto_apply is restored from the run row."""
+
+    @pytest.mark.parametrize("auto_apply", [pytest.param(True, id="true"), pytest.param(False, id="false")])
+    def test_resume_restores_auto_apply_from_row(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, auto_apply: bool
+    ) -> None:
+        """[tier-1/unit] Engine.resume: a paused row with auto_apply set yields a run_steps RunContext with the same auto_apply."""
+        workspace = WorkspaceBuilder(tmp_path / "workspace").with_database().build()
+        paths = _paths_for(workspace)
+        runs_repo = RunsRepository(db_path=paths.database_file, project_id=paths.project_id)
+        blueprint, _ = _task_blueprint()
+        checkpoint = _checkpoint()
+        runs_repo.create("apply-1", blueprint_name="lint", blueprint_key="lint", auto_apply=auto_apply)
+        runs_repo.save_pause("apply-1", checkpoint.model_dump_json(), checkpoint.diagnostic)
+        captured: dict[str, RunContext] = {}
+
+        def fake_run_steps(context: RunContext) -> RunOutcome:
+            captured["context"] = context
+            return RunOutcome(status=RunStatus.COMPLETED, sandbox_path=workspace)
+
+        monkeypatch.setattr("worktree.core.engine.engine.run_steps", fake_run_steps)
+
+        Engine(paths, db=runs_repo, catalog=Catalog(paths)).resume("apply-1", blueprint=blueprint)
+
+        assert captured["context"].auto_apply is auto_apply

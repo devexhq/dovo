@@ -15,7 +15,9 @@ from worktree.core.catalog import Catalog
 from worktree.core.db import RunRecord, RunsRepository, RunStatus
 from worktree.core.engine.exceptions import EngineResumeError, EngineSnapshotMissingError
 from worktree.core.engine.models import DefinitionsManifest, EngineResumeStatus
-from worktree.core.engine.writer import get_session_dir, load_blueprint_from_snapshot, load_session_run
+from worktree.core.engine.state_models import RunStateLoadResult, RunStateLoadStatus
+from worktree.core.engine.state_store import RunStateStore
+from worktree.core.engine.writer import get_session_dir, load_blueprint_from_snapshot
 from worktree.core.runtime import RunCheckpoint, parse_checkpoint
 from worktree.core.step import LoopStepBlock, StepDefinition
 
@@ -49,6 +51,7 @@ class ResumableRun:
         steps: list[StepDefinition] | None = None,
         db: RunsRepository | None = None,
         blueprint: Blueprint | None = None,
+        auto_apply: bool = False,
     ) -> None:
         self.session_id = session_id
         self.paths = paths
@@ -60,6 +63,7 @@ class ResumableRun:
         self.steps = steps or []
         self.db = db
         self.blueprint = blueprint
+        self.auto_apply = auto_apply
 
     def __str__(self) -> str:
         """Return the classification message for EngineResumeError."""
@@ -127,7 +131,9 @@ class ResumableRun:
         if isinstance(checkpoint, ResumableRun):
             return checkpoint
 
-        loaded = blueprint if blueprint is not None else cls._load_blueprint(session_id, row, paths, catalog=catalog)
+        loaded = (
+            blueprint if blueprint is not None else cls._load_blueprint(session_id, row, paths, db=db, catalog=catalog)
+        )
         if isinstance(loaded, ResumableRun):
             return loaded
 
@@ -148,6 +154,7 @@ class ResumableRun:
             steps=steps,
             db=db,
             blueprint=loaded,
+            auto_apply=row.auto_apply,
         )
 
     @classmethod
@@ -209,13 +216,31 @@ class ResumableRun:
         row: RunRecord,
         paths: WorkspacePaths,
         *,
+        db: RunsRepository,
         catalog: Catalog,
     ) -> Blueprint | ResumableRun:
-        """Load the session's snapshot blueprint when run.json carries a definitions manifest, else the catalog blueprint."""
-        payload = load_session_run(paths, session_id)
-        if payload is not None and payload.definitions is not None:
-            return cls._load_blueprint_from_snapshot(session_id, paths, payload.definitions)
-        return cls._load_blueprint_from_catalog(session_id, row, paths, catalog=catalog)
+        """Load the session's snapshot blueprint from its execution state, or the catalog blueprint when the row has none."""
+        result = RunStateStore(db, paths, session_id).load()
+        if result.state is not None:
+            return cls._load_blueprint_from_snapshot(session_id, paths, result.state.manifest)
+        if result.status in (RunStateLoadStatus.NOT_FOUND, RunStateLoadStatus.MISSING_STATE):
+            return cls._load_blueprint_from_catalog(session_id, row, paths, catalog=catalog)
+        return cls._reject_state_failure(session_id, paths, result)
+
+    @classmethod
+    def _reject_state_failure(
+        cls,
+        session_id: str,
+        paths: WorkspacePaths,
+        result: RunStateLoadResult,
+    ) -> ResumableRun:
+        """Build a non-resumable handle for a missing-snapshot, corrupt-state, or inconsistent-projection load."""
+        status = (
+            EngineResumeStatus.MISSING_SNAPSHOT
+            if result.status is RunStateLoadStatus.MISSING_SNAPSHOT
+            else EngineResumeStatus.FAILED
+        )
+        return cls._rejected(session_id, paths, status, f"Cannot resume session '{session_id}': {result.errors[0]}")
 
     @classmethod
     def _load_blueprint_from_catalog(

@@ -1,4 +1,4 @@
-"""Atomic persistence and loading of session run payloads, and run-definitions snapshotting."""
+"""Run-definitions snapshotting and snapshot-blueprint loading."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ from typing import Any
 import yaml
 from pydantic import ValidationError
 
-from worktree.common.filesystem import Filesystem, WorkspacePaths
+from worktree.common.filesystem import Filesystem
 from worktree.core.blueprint import Blueprint
 from worktree.core.blueprint.exceptions import BlueprintLoadError, BlueprintValidationError
 from worktree.core.blueprint.models import BlueprintDefinition
@@ -17,27 +17,8 @@ from worktree.core.catalog import Catalog
 from worktree.core.catalog.models import CatalogItemType, CatalogRecord
 from worktree.core.diff.writer import get_session_dir, write_session_diff
 from worktree.core.engine.exceptions import EngineSnapshotMissingError
-from worktree.core.engine.models import DefinitionRef, DefinitionsManifest, SessionRunPayload
+from worktree.core.engine.models import DefinitionRef, DefinitionsManifest
 from worktree.core.step import LoopStepBlock, StepDefinition, merge_uses_step
-
-
-def write_session_run_json(session_dir: Path, payload: SessionRunPayload) -> Path:
-    """Atomically write run metadata and step results to run.json."""
-    target_file = session_dir / "run.json"
-    Filesystem.atomic_write_text(target_file, payload.model_dump_json(indent=2))
-    return target_file
-
-
-def load_session_run(paths: WorkspacePaths, session_id: str) -> SessionRunPayload | None:
-    """Load and parse project-aware session run metadata when present and valid."""
-    target_file = paths.session_dir(session_id) / "run.json"
-    if not target_file.is_file():
-        return None
-    try:
-        content = target_file.read_text(encoding="utf-8")
-        return SessionRunPayload.model_validate_json(content)
-    except Exception:
-        return None
 
 
 def _collect_uses_refs(steps: list[StepDefinition | LoopStepBlock]) -> list[str]:
@@ -96,6 +77,16 @@ def _resolve_uses_chain(
     return visited
 
 
+def snapshot_blueprint_path(session_dir: Path, blueprint_key: str) -> Path:
+    """Return the snapshot file path of the run's blueprint."""
+    return session_dir / "definitions" / f"{blueprint_key}.yml"
+
+
+def snapshot_step_path(session_dir: Path, step_key: str) -> Path:
+    """Return the snapshot file path of one resolved uses: step."""
+    return session_dir / "definitions" / "steps" / f"{step_key}.yml"
+
+
 def _write_definitions_snapshot(
     session_dir: Path,
     blueprint_key: str,
@@ -105,9 +96,9 @@ def _write_definitions_snapshot(
 ) -> bool:
     """Atomically write the blueprint and every visited step's raw YAML under session_dir/definitions/."""
     try:
-        Filesystem.atomic_write_text(session_dir / "definitions" / f"{blueprint_key}.yml", blueprint_content)
+        Filesystem.atomic_write_text(snapshot_blueprint_path(session_dir, blueprint_key), blueprint_content)
         for ref, (_, content) in visited.items():
-            Filesystem.atomic_write_text(session_dir / "definitions" / "steps" / f"{ref}.yml", content)
+            Filesystem.atomic_write_text(snapshot_step_path(session_dir, ref), content)
     except OSError as exc:
         warnings.append(f"Failed to write run definitions snapshot: {exc}")
         return False
@@ -213,13 +204,13 @@ def _resolve_snapshot_steps(
 def load_blueprint_from_snapshot(session_dir: Path, manifest: DefinitionsManifest) -> Blueprint:
     """Rebuild a Blueprint from its session snapshot, resolving each uses: step from the snapshot's own step files."""
     _, _, key = manifest.blueprint.ref.split(":", 2)
-    raw = _read_snapshot_yaml(session_dir / "definitions" / f"{key}.yml")
+    raw = _read_snapshot_yaml(snapshot_blueprint_path(session_dir, key))
     definition = BlueprintDefinition.from_document(raw, key=key)
 
     step_snapshots: dict[str, StepDefinition] = {}
     for step_ref in manifest.steps:
         _, _, step_key = step_ref.ref.split(":", 2)
-        raw_step = _read_snapshot_yaml(session_dir / "definitions" / "steps" / f"{step_key}.yml")
+        raw_step = _read_snapshot_yaml(snapshot_step_path(session_dir, step_key))
         try:
             step_snapshots[step_key] = StepDefinition.model_validate(raw_step)
         except ValidationError as exc:
@@ -235,8 +226,6 @@ __all__ = [
     "EngineSnapshotMissingError",
     "get_session_dir",
     "load_blueprint_from_snapshot",
-    "load_session_run",
     "snapshot_definitions",
     "write_session_diff",
-    "write_session_run_json",
 ]

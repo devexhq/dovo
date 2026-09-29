@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 from sqlalchemy import Engine
 from sqlalchemy.exc import IntegrityError
-from sqlmodel import Session, SQLModel
+from sqlmodel import Session, SQLModel, select
 
 from worktree.core.db.connection import get_engine
 from worktree.core.db.migrations import init_database
@@ -90,3 +90,19 @@ class DbRecordModelTests:
             session.add(record)
             with pytest.raises(IntegrityError):
                 session.commit()
+
+
+class RunRecordDefaultsTests:
+    """Contract tests for RunRecord column defaults."""
+
+    def test_run_record_without_auto_apply_defaults_false(self, migrated_engine: Engine) -> None:
+        """[tier-1/integration] RunRecord: a record committed without auto_apply reads back auto_apply False."""
+        with Session(migrated_engine) as session:
+            session.add(
+                RunRecord(project_id="proj-a", session_id="wf_a", blueprint_name="deploy", blueprint_key="deploy")
+            )
+            session.commit()
+
+        with Session(migrated_engine) as session:
+            record = session.exec(select(RunRecord)).one()
+            assert record.auto_apply is False

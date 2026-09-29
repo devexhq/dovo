@@ -10,7 +10,6 @@ from pydantic import BaseModel, Field
 from worktree.common.models import BaseResult
 from worktree.core.db import RunRecord
 from worktree.core.runtime.models import FailurePrompter, RunObserver
-from worktree.core.step.models import StepResult
 
 
 class EngineResumeStatus(StrEnum):
@@ -41,6 +40,19 @@ class RunRequest:
     auto_apply: bool = False
 
 
+@dataclass(frozen=True)
+class RunStartConfig:
+    """Resolved run options persisted on the run row at start."""
+
+    blueprint_tier: str | None
+    commit_sha: str | None
+    use_sandbox: bool
+    keep: bool
+    agent: str | None
+    inputs: dict[str, str | int | bool]
+    auto_apply: bool
+
+
 class DefinitionRef(BaseModel):
     """One snapshotted catalog item's resolved reference, content hash, and resolution time."""
 
@@ -58,22 +70,6 @@ class DefinitionsManifest(BaseModel):
 
     blueprint: DefinitionRef
     steps: list[DefinitionRef] = Field(default_factory=list)
-
-
-class SessionRunPayload(BaseModel):
-    """Persisted execution results and telemetry for a session."""
-
-    model_config = {"extra": "forbid", "strict": True}
-
-    version: int = 1
-    session_id: str
-    name: str
-    status: str
-    started_at: str
-    completed_at: str | None = None
-    error_message: str | None = None
-    step_results: list[StepResult] = Field(default_factory=list)
-    definitions: DefinitionsManifest | None = None
 
 
 class ReconciliationResult(BaseResult):

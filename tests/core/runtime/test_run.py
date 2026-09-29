@@ -13,6 +13,7 @@ from worktree.common.filesystem.models import RepositoryPaths, WorkspacePaths
 from worktree.common.filesystem.services.global_root import resolve_global_paths
 from worktree.common.models import FailurePolicy, OnFailureSpec
 from worktree.core.db import RunStatus
+from worktree.core.db.repositories.sandboxes import SandboxesRepository
 from worktree.core.project.services.storage import resolve_workspace_paths
 from worktree.core.runtime import (
     USER_CONTINUED_MARKER,
@@ -322,6 +323,41 @@ class RunStepsExecutionTests:
             [_step_result("s1", status="completed", exit_code=0, stdout="sandboxed\n")],
         )
         assert not outcome.sandbox_path.exists()
+
+
+class RunStepsSandboxIdTests:
+    """[tier-2/integration] run_steps: RunOutcome.sandbox_id reports the sandbox session id."""
+
+    def test_run_steps_with_sandbox_reports_session_id(self, tmp_path: Path) -> None:
+        """[tier-2/integration] run_steps: a sandboxed run returns RunOutcome.sandbox_id equal to the created SandboxSession.session_id."""
+        workspace = WorkspaceBuilder(tmp_path / "workspace").with_git().with_database().build()
+        paths = _paths_for(workspace)
+        context = RunContext(
+            steps=[StepBuilder.command("echo hi").with_id("s1").build()],
+            cwd=workspace,
+            use_sandbox=True,
+            keep=True,
+            paths=paths,
+        )
+
+        outcome = run_steps(context)
+
+        sandboxes = SandboxesRepository(db_path=paths.database_file, project_id=paths.project_id).list()
+        assert outcome.sandbox_id is not None
+        assert [record.id for record in sandboxes] == [outcome.sandbox_id]
+
+    def test_run_steps_without_sandbox_reports_none(self, tmp_path: Path) -> None:
+        """[tier-2/integration] run_steps: use_sandbox=False returns RunOutcome.sandbox_id None."""
+        context = RunContext(
+            steps=[StepBuilder.command("echo hi").with_id("s1").build()],
+            cwd=tmp_path,
+            use_sandbox=False,
+            paths=_paths_for(tmp_path),
+        )
+
+        outcome = run_steps(context)
+
+        assert outcome.sandbox_id is None
 
 
 class RunStepsDiffSessionColocationTests:

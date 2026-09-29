@@ -18,7 +18,8 @@ from worktree.common.filesystem.models import RepositoryPaths, WorkspacePaths
 from worktree.common.filesystem.services.global_root import resolve_global_paths
 from worktree.core.config.models import ConfigTier
 from worktree.core.db import RunStatus, WorktreeDb
-from worktree.core.engine.writer import get_session_dir, load_session_run
+from worktree.core.engine import RunStateStore
+from worktree.core.engine.writer import get_session_dir
 from worktree.core.project.services.storage import resolve_workspace_paths
 from worktree.core.runtime import RunContext, RunOutcome
 
@@ -236,7 +237,7 @@ class RunCliIntegrationTests:
     def test_run_cli_writes_definitions_snapshot_for_uses_step(
         self, cli_runner: CliRunner, run_workspace: Path
     ) -> None:
-        """wt run --no-sandbox --session-id snap-1: a blueprint with one uses: step writes .../sessions/snap-1/definitions/{key}.yml and .../definitions/steps/{step_key}.yml, and run.json's definitions.steps has one entry."""
+        """wt run --no-sandbox --session-id snap-1: a blueprint with one uses: step writes .../sessions/snap-1/definitions/{key}.yml and .../definitions/steps/{step_key}.yml, and RunStateStore.load().state.manifest.steps has one entry."""
         write_runnable_step(run_workspace, key="lint-check", definition={"id": "lint-check", "run": "true"})
         write_runnable_blueprint(run_workspace, key="snapshot-task", steps=[{"id": "s1", "uses": "lint-check"}])
 
@@ -249,7 +250,7 @@ class RunCliIntegrationTests:
         session_dir = get_session_dir(run_paths, "snap-1")
         assert (session_dir / "definitions" / "snapshot-task.yml").is_file()
         assert (session_dir / "definitions" / "steps" / "lint-check.yml").is_file()
-        payload = load_session_run(run_paths, "snap-1")
-        assert payload is not None
-        assert payload.definitions is not None
-        assert len(payload.definitions.steps) == 1
+        db = WorktreeDb(database_file=run_paths.database_file, project_id=run_paths.project_id)
+        loaded = RunStateStore(db.runs, run_paths, "snap-1").load()
+        assert loaded.state is not None
+        assert len(loaded.state.manifest.steps) == 1
