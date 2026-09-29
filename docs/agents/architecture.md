@@ -28,10 +28,9 @@ src/worktree/core/                   Domain business logic and orchestration (no
   artifacts/                         Session artifact publishing, listing, downloading, and pruning
   doctor/                            Diagnostic check registry, execution runner, and health validation engine
   history/                           Execution run queries and history presentation
-  logs/                              Persisted session log reading (run.log timeline, per-attempt step captures)
+  logs/                              Persisted session logs (run.log timeline events and appender, per-attempt step captures)
   step/                              Single-step execution, assertions evaluation, and step-local failure recovery
-  runtime/                           In-process step-loop orchestration (run_steps), failure prompter, and pause checkpoints
-  engine/                            Process facade (Engine), DB run persistence, session minting, and run/resume services
+  engine/                            Process facade (Engine), state-driven run coordinator, session lifecycle, and run/resume services
   agents/                            AI agent adapter protocol and provider integrations (local, ollama, cursor, gemini, copilot)
   patch/                             Unified-diff parsing and validation
 
@@ -45,26 +44,25 @@ src/worktree/schemas/v1/             Packaged, versioned JSON Schemas (config.js
 
 - Default for **new** domain code: `models.py` + `services/<verb>.py`. Do not extend the flat `config/` / `db/` pattern to new domains.
 - Single-step execution: `core/step/` (`runner.py`).
-- Multi-step orchestration: `core/runtime/` (`run.py` -> `run_steps`).
+- Multi-step orchestration: `core/engine/` (`RunCoordinator` in `coordinator.py`, driven by `drive_run` in `session.py`).
 - Process facade: `core/engine/` (`Engine.run` / `Engine.resume`, `BlueprintRunService` / `BlueprintResumeService`).
 
 ### Domain ownership
 
 **Relevant sources:** `src/worktree/core/`
 
-- **Inputs** (`core/inputs/`): `ParameterInput`, CLI flag resolution, `${{ inputs.* }}` placeholder interpolation. Must not import step, runtime, agents, or patch.
-- **Step** (`core/step/`): `StepDefinition`, `StepAssert` / assertions, `StepExecution`, step-local failure recovery. Must not import runtime.
-- **Agents** (`core/agents/`): Adapter protocol (`AgentAdapter`), provider implementations (`local`, `ollama`, `cursor`, `gemini`, `copilot`), failure payload models. Must not import step or runtime.
-- **Patch** (`core/patch/`): Unified-diff parsing and validation. Must not import agents, step, or runtime.
-- **Blueprint** (`core/blueprint/`): Unified task/workflow document handle (`Blueprint`), catalog/path loader, input declaration schema. Must not import runtime, engine, or cli.
-- **Runtime** (`core/runtime/`): Step-loop execution (`run_steps` in `run.py`), `LoopBlockRunner` (`loop_runner.py`), sandbox/session setup and cleanup (`Workspace` in `workspace.py`), pause/resume checkpoint construction and persistence (`Checkpoint` in `checkpoint.py`), per-step execution and failure-policy coordination (`StepCoordinator` in `step_coordinator.py`), observer dispatch (`safe_notify` in `notify.py`), terminal failure-policy resolution (`failure.py`), the `run.log` JSONL writer (`log_writer.py`), and shared models (`RunContext` / `RunObserver` / `RunOutcome` in `models.py`). Runtime must not import cli.
-- **Engine** (`core/engine/`): Process-level run persistence, session ID minting (`RunRequest`), DB run records, canonical run execution state (`state_store.py`), run/resume services (`BlueprintRunService`, `BlueprintResumeService`, `reconcile_stale_runs`). Must not import cli.
+- **Inputs** (`core/inputs/`): `ParameterInput`, CLI flag resolution, `${{ inputs.* }}` placeholder interpolation. Must not import step, agents, or patch.
+- **Step** (`core/step/`): `StepDefinition`, `StepAssert` / assertions, `StepExecution`, step-local failure recovery. Must not import engine.
+- **Agents** (`core/agents/`): Adapter protocol (`AgentAdapter`), provider implementations (`local`, `ollama`, `cursor`, `gemini`, `copilot`), failure payload models. Must not import step.
+- **Patch** (`core/patch/`): Unified-diff parsing and validation. Must not import agents or step.
+- **Blueprint** (`core/blueprint/`): Unified task/workflow document handle (`Blueprint`), catalog/path loader, input declaration schema. Must not import engine or cli.
+- **Engine** (`core/engine/`): Process-level run persistence, session ID minting (`RunRequest`), DB run records, canonical run execution state (`state_store.py`), the state-driven run coordinator (`coordinator.py`), paused-run validation (`loader.py`), the run session lifecycle (`session.py`), terminal-leaf projection (`projection.py`), sandbox/session infrastructure (`context.py`, `workspace.py`), per-step execution and loop adapters (`step_executor.py`, `loop_runner.py`), observer dispatch (`notify.py`), failure-policy resolution (`failure.py`), shared run models (`models.py`), run/resume services (`BlueprintRunService`, `BlueprintResumeService`, `reconcile_stale_runs`). May use `logs/`. Must not import history or cli.
 - **Catalog** (`core/catalog/`): Disk-only, multi-tier (REPO/USER/GLOBAL/PACKAGED) template scanning and indexing via per-tier `index.json` caches, packaged seeds under `templates/`.
 - **History** (`core/history/`): `History` entrypoint (`history.py`), result models (`HistoryListResult`, `HistoryShowResult`). UI formatters reside in `cli/ui/formatters/history/`.
-- **Logs** (`core/logs/`): `Logs` entrypoint (`logs.py`), result models (`LogsShowResult`), `services/read.py` reading `run.log` and per-attempt step captures. `RunLogEvent` is produced by `core/runtime/`. UI formatters reside in `cli/ui/formatters/logs/`.
+- **Logs** (`core/logs/`): `Logs` entrypoint (`logs.py`), result models (`LogsShowResult`), `services/read.py` reading `run.log` and per-attempt step captures, `services/write.py` appending `run.log` timeline events (`RunLogEvent` in `models.py`). UI formatters reside in `cli/ui/formatters/logs/`.
 - **Diff** (`core/diff/`): `DiffService`, session diff resolution, artifact loading, result models (`DiffResult`). UI formatters reside in `cli/ui/formatters/diff/`.
 - **Status** (`core/status/`): Workspace health and runtime telemetry collection (`collect_status`), result models (`WorktreeStatusResult`), warning aggregation.
-- **Artifacts** (`core/artifacts/`): Session artifact publishing (`publish_artifact`), listing, checksum-verified downloading, and expiry-based pruning (`Artifacts` entrypoint, `services/upload.py`, `services/download.py`, `services/prune.py`). Consumed by the `type: internal` `artifacts.upload`/`artifacts.download` step handlers and by `core/runtime/`'s declarative `artifacts:` block auto-publish.
+- **Artifacts** (`core/artifacts/`): Session artifact publishing (`publish_artifact`), listing, checksum-verified downloading, and expiry-based pruning (`Artifacts` entrypoint, `services/upload.py`, `services/download.py`, `services/prune.py`). Consumed by the `type: internal` `artifacts.upload`/`artifacts.download` step handlers and by `core/engine/step_executor.py`'s declarative `artifacts:` block auto-publish.
 - **Doctor** (`core/doctor/`): Diagnostic check registry (`CheckRegistry`), execution runner (`DiagnosticRunner`), entrypoint coordinator (`Doctor`), check protocol (`DiagnosticCheck`), and result models (`DiagnosticCheckResult`, `DoctorReport`).
 - **Sandbox** (`core/sandbox/`): Isolated git worktree checkout creation, deletion, listing, show, prune, and patch application (`Sandbox` facade, `services/lifecycle.py`).
 - **Project** (`core/project/`): Stable project identity model (`ProjectIdentity`) with generation and persistence services.
@@ -75,20 +73,20 @@ src/worktree/schemas/v1/             Packaged, versioned JSON Schemas (config.js
 Dependencies flow one way down the stack; do not import upward:
 
 ```
-common/  ->  core/project/  ->  core/{db,git,sandbox,catalog,inputs,patch,diff,status,artifacts}/  ->  core/agents/  ->  core/doctor/  ->  core/step/  ->  {core/runtime/, core/blueprint/}  ->  core/engine/  ->  {core/history/, core/logs/}  ->  cli/
+common/  ->  core/project/  ->  core/{db,git,sandbox,catalog,inputs,patch,diff,status,artifacts}/  ->  core/agents/  ->  core/doctor/  ->  core/step/  ->  {core/logs/, core/blueprint/}  ->  core/engine/  ->  core/history/  ->  cli/
 ```
 
 - `common/` never depends on `core/` or `cli/`.
-- `core/project/` depends only on `common/`; `core/db/`, `core/diff/`, `core/engine/`, `core/sandbox/`, `core/doctor/`, `core/runtime/`, `core/history/`, and `core/logs/` may resolve project identity via `core/project/services/storage`.
+- `core/project/` depends only on `common/`; `core/db/`, `core/diff/`, `core/engine/`, `core/sandbox/`, `core/doctor/`, `core/history/`, and `core/logs/` may resolve project identity via `core/project/services/storage`.
 - `core/` and `common/` never import `cli/` or `rich`. All terminal rendering is driven through `ui_dispatcher.dispatch(result)`.
-- `core/inputs/` must not import `step`, `runtime`, `agents`, or `patch`.
-- `core/patch/` must not import `agents`, `step`, or `runtime`.
-- `core/agents/` may use `patch/` and `config/`; must not import `step` or `runtime`.
-- `core/step/` must not import `runtime`.
-- `core/runtime/` may use `step/`, `db/`, `sandbox/`, `project/`, `artifacts/`; must not import `blueprint/`, `engine/`, or `cli/`.
-- `core/blueprint/` may use `catalog/`, `inputs/`, `step/`; must not import `runtime/`, `engine/`, or `cli/`.
-- `core/engine/` may use `runtime/`, `blueprint/`, `db/`, `git/`; must not import `history/`, `logs/`, or `cli/`.
-- `core/history/` may use `engine/`, `logs/`, `runtime/`, `db/`; `core/logs/` may use `runtime/`, `db/`; neither imports `cli/`.
+- `core/inputs/` must not import `step`, `agents`, or `patch`.
+- `core/patch/` must not import `agents` or `step`.
+- `core/agents/` may use `patch/` and `config/`; must not import `step`.
+- `core/step/` must not import `engine/`.
+- `core/logs/` may use `db/`; must not import `blueprint/`, `engine/`, `history/`, or `cli/`.
+- `core/blueprint/` may use `catalog/`, `inputs/`, `step/`; must not import `engine/` or `cli/`.
+- `core/engine/` may use `logs/`, `blueprint/`, `step/`, `db/`, `git/`, `sandbox/`, `project/`, `artifacts/`; must not import `history/` or `cli/`.
+- `core/history/` may use `engine/`, `logs/`, `db/`; it must not import `cli/`.
 - `cli/` may import `core/` and `common/`; lower layers never import `cli/`.
 - CLI commands never render directly or import formatters; they emit results through `ui_dispatcher.dispatch(result)`.
 - `cli/ui/` must not originate a domain fact. All domain facts, outcomes, warnings, and remediations originate in `core/` or `common/`; `cli/ui/` only derives presentation views.
@@ -108,7 +106,7 @@ common/  ->  core/project/  ->  core/{db,git,sandbox,catalog,inputs,patch,diff,s
 1. **Models**: `<X>Definition` in `core/<x>/models.py`.
 2. **Exceptions**: `<X>LoadError` / `<X>ValidationError` subclassing definition errors in `core/<x>/exceptions.py`.
 3. **Loader**: `core/<x>/services/loader.py` -> `Catalog.get(..., item_type=..., definition_cls=...)`.
-4. **Execution**: If executing steps, build `RunContext` and delegate to `run_steps` in `core.runtime.run`.
+4. **Execution**: If executing steps, run them through `Engine.run` (via a run service); do not add a separate step loop.
 5. **CLI**: Thin `commands/root.py`, UI formatters in `cli/ui/formatters/<x>/`, plain-text formatters in `core/<x>/services/renderer.py` if needed for non-interactive diagnostics.
 
 ## Adding a new agent provider

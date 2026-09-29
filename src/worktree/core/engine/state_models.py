@@ -24,6 +24,9 @@ class NodeState(StrEnum):
     CANCELLED = "cancelled"
 
 
+TERMINAL_NODE_STATES = frozenset({NodeState.COMPLETED, NodeState.IGNORED, NodeState.FAILED, NodeState.CANCELLED})
+
+
 class StepAttemptRecord(BaseModel):
     """One attempt at running a step."""
 

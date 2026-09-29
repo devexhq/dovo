@@ -14,8 +14,8 @@ from tests.harness.formatter import (
 )
 from worktree.cli.ui.formatters.logs.logs_show import LogsShowFormatter
 from worktree.cli.ui.formatters.logs.logs_views import LogsShowView
+from worktree.core.logs import RunLogEvent, RunLogEventType
 from worktree.core.logs.models import LogsShowResult, LogsShowStatus
-from worktree.core.runtime import RunLogEvent, RunLogEventType
 
 _STEP_EVENT = RunLogEvent(
     ts="2026-09-26T10:00:00+00:00", event=RunLogEventType.STEP_START, step_index=1, step_id="build", attempt=1

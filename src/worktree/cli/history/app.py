@@ -14,7 +14,7 @@ from .commands.show import history_show_command
 
 history_app = typer.Typer(
     name="history",
-    help="Inspect past blueprint execution sessions, step details, and checkpoints.",
+    help="Inspect past blueprint execution sessions and step details.",
     invoke_without_command=True,
 )
 
@@ -43,7 +43,7 @@ def history_callback(
         help="Presentation format ('terminal' or 'json').",
     ),
 ) -> None:
-    """Inspect past blueprint execution sessions, step details, and checkpoints."""
+    """Inspect past blueprint execution sessions and step details."""
     if ctx.invoked_subcommand is None:
         context: CliContext = ctx.obj["context"]
         result = history_root_command(
@@ -105,7 +105,7 @@ def history_show(
         help="Presentation format ('terminal' or 'json').",
     ),
 ) -> None:
-    """Show detailed metadata, error messages, and checkpoint state for a session."""
+    """Show detailed metadata and error messages for a session."""
     context: CliContext = ctx.obj["context"]
     result = history_show_command(
         context,

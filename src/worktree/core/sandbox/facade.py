@@ -6,7 +6,6 @@ from pathlib import Path
 
 from worktree.common.filesystem import WorkspacePaths
 from worktree.common.lock import WorkspaceLock
-from worktree.core.config.models import WorktreeConfig
 from worktree.core.db import RunsRepository, SandboxesRepository, SandboxRecord, SandboxStatus
 from worktree.core.sandbox.models import (
     SandboxApplyResult,
@@ -47,11 +46,6 @@ class Sandbox:
         self.runs_db = runs_db
         self.lifecycle = SandboxLifecycle(self.paths, self.db)
         self.patch = SandboxPatch(self.paths, self.db, lifecycle=self.lifecycle)
-
-    @property
-    def config(self) -> WorktreeConfig:
-        """Return the loaded workspace config."""
-        return self.lifecycle.config
 
     @property
     def sandbox_base_dir(self) -> Path:

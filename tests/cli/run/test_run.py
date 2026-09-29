@@ -21,7 +21,6 @@ from worktree.core.db import RunStatus, WorktreeDb
 from worktree.core.engine import RunStateStore
 from worktree.core.engine.writer import get_session_dir
 from worktree.core.project.services.storage import resolve_workspace_paths
-from worktree.core.runtime import RunContext, RunOutcome
 
 
 def _paths_for(root: Path) -> WorkspacePaths:
@@ -125,14 +124,14 @@ class RunCliIntegrationTests:
         assert result.exit_code == 0
         assert "Blueprint Run Completed:" in result.stdout
 
-    def test_run_cli_prompt_user_keyboard_interrupt_persists_paused_checkpoint(
+    def test_run_cli_prompt_user_keyboard_interrupt_persists_paused_state(
         self, monkeypatch: pytest.MonkeyPatch, cli_runner: CliRunner, run_workspace: Path
     ) -> None:
-        """wt run: a KeyboardInterrupt raised from the interactive prompter after the checkpoint is saved sets the run record's status to PAUSED.
+        """wt run: a KeyboardInterrupt raised from the interactive prompter after the paused state is saved sets the run record's status to PAUSED.
 
         `--no-tty` short-circuits to ABORT before the prompter is ever called, so PAUSED
         is only reachable via a KeyboardInterrupt from inside an interactive prompter
-        call; the run still exits 1 since the checkpoint's diagnostic populates `errors`.
+        call; the run still exits 1 since the failed-step diagnostic populates `errors`.
         """
         _force_interactive(monkeypatch)
         monkeypatch.setattr("builtins.input", _raise_keyboard_interrupt)
@@ -204,12 +203,11 @@ class RunCliIntegrationTests:
         self,
         cli_runner: CliRunner,
         run_workspace: Path,
-        monkeypatch: pytest.MonkeyPatch,
         write_tier_config: Callable[[ConfigTier, dict[str, Any] | str], Path],
     ) -> None:
-        """[tier-3/integration] wt config show --format json's config field equals RunContext.config (captured via monkeypatched run_steps) for the same Global/User/Repo tier setup during wt run."""
+        """[tier-3/integration] wt config show --format json's merged history.save_attempt_logs equals the value wt run applies: with the User tier disabling it, config show reports false and the run writes no attempt logs."""
         write_runnable_blueprint(run_workspace, key="identical-config-task", steps=[{"id": "s1", "run": "true"}])
-        write_tier_config(ConfigTier.USER, {"agent": {"model": "user-tier-model"}})
+        write_tier_config(ConfigTier.USER, {"history": {"save_attempt_logs": False}})
         Filesystem.atomic_write_json(
             run_workspace / ".worktree" / "config.json",
             {"version": 1, "project": {"name": "identical-config"}, "sandbox": {"base_ref": "main"}},
@@ -219,20 +217,14 @@ class RunCliIntegrationTests:
         assert show_result.exit_code == 0
         shown_config = json.loads(show_result.stdout)["payload"]["config"]
 
-        captured: dict[str, RunContext] = {}
-
-        def fake_run_steps(context: RunContext) -> RunOutcome:
-            captured["context"] = context
-            return RunOutcome(status=RunStatus.COMPLETED, sandbox_path=run_workspace)
-
-        monkeypatch.setattr("worktree.core.engine.engine.run_steps", fake_run_steps)
-
-        run_result = cli_runner.invoke(app, ["-p", str(run_workspace), "run", "identical-config-task", "--no-sandbox"])
+        run_result = cli_runner.invoke(
+            app,
+            ["-p", str(run_workspace), "run", "identical-config-task", "--no-sandbox", "--session-id", "cfg-1"],
+        )
 
         assert run_result.exit_code == 0
-        captured_config = captured["context"].config
-        assert captured_config is not None
-        assert captured_config.model_dump(mode="json") == shown_config
+        assert shown_config["history"]["save_attempt_logs"] is False
+        assert not list((_paths_for(run_workspace).logs_dir / "cfg-1").glob("*attempt*"))
 
     def test_run_cli_writes_definitions_snapshot_for_uses_step(
         self, cli_runner: CliRunner, run_workspace: Path

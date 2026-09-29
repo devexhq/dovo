@@ -5,8 +5,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from worktree.core.runtime import RunLogEvent, RunLogEventType
-from worktree.core.runtime.log_writer import append_run_log_event
+from worktree.core.logs import RunLogEvent, RunLogEventType, append_run_log_event
 
 
 class AppendRunLogEventTests:

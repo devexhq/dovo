@@ -8,8 +8,8 @@
       "severity": "BLOCKER",
       "domain": "all",
       "scope": "src/worktree/",
-      "evaluation_criteria": "Scan imports. Verify common/ imports no core/ or cli/; core/ and common/ import no cli/ or rich; inputs/ and patch/ import no step, runtime, agents; agents/ imports no step or runtime; step/ imports no runtime; runtime/ imports no blueprint, engine, history, logs, cli; blueprint/ imports no runtime, engine, cli; engine/ imports no history, logs, cli; history/ and logs/ import no cli.",
-      "bad_pattern": "from worktree.core.engine.engine import Engine  # upward import in core/runtime/"
+      "evaluation_criteria": "Scan imports. Verify common/ imports no core/ or cli/; core/ and common/ import no cli/ or rich; inputs/ and patch/ import no step or agents; agents/ imports no step; step/ imports no engine; logs/ imports no blueprint, engine, history, cli; blueprint/ imports no engine, cli; engine/ imports no history, cli; history/ imports no cli.",
+      "bad_pattern": "from worktree.core.engine.engine import Engine  # upward import in core/logs/"
     },
     {
       "id": "ARCH-002",

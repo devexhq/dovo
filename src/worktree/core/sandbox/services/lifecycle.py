@@ -12,7 +12,7 @@ from worktree.common.constants import DEFAULT_MAXIMUM_SANDBOXES_ALLOWED
 from worktree.common.filesystem import WorkspacePaths
 from worktree.common.lock import WorkspaceLock
 from worktree.core.config import Config
-from worktree.core.config.models import SandboxConfig, WorktreeConfig
+from worktree.core.config.models import SandboxConfig
 from worktree.core.db import SandboxesRepository, SandboxRecord, SandboxStatus
 from worktree.core.git.exceptions import (
     GitCommandError,
@@ -67,11 +67,6 @@ class SandboxLifecycle:
         self.paths = paths
         self.path = paths.root_dir
         self.db = db
-
-    @property
-    def config(self) -> WorktreeConfig:
-        """Return the loaded workspace config."""
-        return Config(self.paths)._loaded_config
 
     @property
     def sandbox_base_dir(self) -> Path:

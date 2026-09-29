@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from worktree.core.blueprint import BlueprintRunResult
 from worktree.core.db import RunRecord, RunsRepository
-from worktree.core.runtime import RunOutcome
+from worktree.core.engine.models import RunOutcome
 
 
 def fail(warnings: list[str], message: str) -> BlueprintRunResult:

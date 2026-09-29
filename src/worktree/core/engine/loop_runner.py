@@ -8,19 +8,15 @@ from typing import Any
 
 from worktree.common.models import FailurePolicy
 from worktree.core.db.repositories.artifacts import ArtifactsRepository
-from worktree.core.runtime.log_writer import append_run_log_event
-from worktree.core.runtime.models import (
+from worktree.core.engine.models import (
     FailurePrompter,
     LoopPromptDecision,
-    RunCheckpoint,
-    RunLogEvent,
-    RunLogEventType,
     RunObserver,
-    RunPauseStore,
     StepLoopState,
 )
-from worktree.core.runtime.notify import safe_notify
-from worktree.core.runtime.step_coordinator import StepCoordinator
+from worktree.core.engine.notify import safe_notify
+from worktree.core.engine.step_executor import StepCoordinator
+from worktree.core.logs import RunLogEvent, RunLogEventType, append_run_log_event
 from worktree.core.step.models import (
     ConditionEvaluationResult,
     ExecutionIdentity,
@@ -47,10 +43,8 @@ class LoopBlockRunner:
         observer: RunObserver | None = None,
         failure_prompter: FailurePrompter | None = None,
         no_tty: bool = False,
-        pause_store: RunPauseStore | None = None,
         step_index: int = 1,
         identity: ExecutionIdentity | None = None,
-        resume_from: RunCheckpoint | None = None,
         session_tmp_dir: Path | None = None,
         session_log_dir: Path | None = None,
         save_attempt_logs: bool = True,
@@ -66,10 +60,8 @@ class LoopBlockRunner:
         self.observer = observer
         self.failure_prompter = failure_prompter
         self.no_tty = no_tty
-        self.pause_store = pause_store
         self.step_index = step_index
         self.identity = identity
-        self.resume_from = resume_from
         self.session_tmp_dir = session_tmp_dir
         self.session_log_dir = session_log_dir
         self.save_attempt_logs = save_attempt_logs
@@ -147,7 +139,6 @@ class LoopBlockRunner:
             sub_step,
             idx=sub_idx,
             total=len(self.loop.do),
-            step_index=sub_idx - 1,
             step_context=self._build_step_context(turn),
             previous_step=previous_step,
             steps=historical,

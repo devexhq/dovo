@@ -33,28 +33,6 @@ class HistoryListView(BaseModel):
     fixes: list[str] = Field(default_factory=list)
 
 
-class CheckpointStepView(BaseModel):
-    """Semantic view of an individual checkpoint step outcome."""
-
-    model_config = {"extra": "forbid", "strict": True}
-
-    step_id: str
-    status: str
-    duration_seconds: float
-    error_message: str | None = None
-
-
-class CheckpointDetailsView(BaseModel):
-    """Semantic view of parsed runtime checkpoint metadata."""
-
-    model_config = {"extra": "forbid", "strict": True}
-
-    pending_step_id: str
-    next_step_index: int
-    diagnostic: str | None = None
-    step_results: list[CheckpointStepView] = Field(default_factory=list)
-
-
 class HistoryShowView(BaseModel):
     """Semantic view of execution history session detail."""
 
@@ -63,8 +41,6 @@ class HistoryShowView(BaseModel):
     status: HistoryShowStatus
     session_id: str | None = None
     run: RunSummaryView | None = None
-    checkpoint: CheckpointDetailsView | None = None
-    checkpoint_raw: str | None = None
     log_files: list[str] = Field(default_factory=list)
     log_snippet: list[str] = Field(default_factory=list)
     errors: list[str] = Field(default_factory=list)

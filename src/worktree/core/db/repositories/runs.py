@@ -84,12 +84,11 @@ class RunsRepository(BaseRepository):
         session_id: str,
         status: RunStatus | str,
         error_message: str | None = None,
-        checkpoint_json: str | None = None,
         completed_at: str | None = None,
         pid: int | None = None,
         sandbox_id: str | None = None,
     ) -> RunRecord | None:
-        """Update status, optional timestamps, error message, checkpoint JSON, PID, and sandbox id."""
+        """Update status, optional timestamps, error message, PID, and sandbox id."""
         status_enum = _coerce_status(status)
         if not isinstance(status_enum, RunStatus):
             raise ValueError(f"Invalid status constraint: {status}")
@@ -109,8 +108,6 @@ class RunsRepository(BaseRepository):
             record.error_message = error_message
             if pid is not None:
                 record.pid = pid
-            if checkpoint_json is not None:
-                record.checkpoint_json = checkpoint_json
             if sandbox_id is not None:
                 record.sandbox_id = sandbox_id
 
@@ -160,21 +157,6 @@ class RunsRepository(BaseRepository):
                 record,
                 f"Invalid execution state update constraint for session '{session_id}'",
             )
-
-    def save_pause(
-        self,
-        session_id: str,
-        checkpoint_json: str,
-        error_message: str | None = None,
-    ) -> RunRecord | None:
-        """Persist a paused checkpoint without completing the run."""
-        return self.update_status(
-            session_id=session_id,
-            status=RunStatus.PAUSED,
-            error_message=error_message,
-            checkpoint_json=checkpoint_json,
-            completed_at=None,
-        )
 
     def list(
         self,

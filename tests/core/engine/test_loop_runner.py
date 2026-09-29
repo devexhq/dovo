@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import dataclasses
 from collections import Counter
 from pathlib import Path
 
@@ -9,25 +8,20 @@ import pytest
 from worktree.common.filesystem.models import RepositoryPaths, WorkspacePaths
 from worktree.common.filesystem.services.global_root import resolve_global_paths
 from worktree.common.models import FailurePolicy, OnFailureSpec
-from worktree.core.db import RunStatus
 from worktree.core.db.repositories.artifacts import ArtifactsRepository
-from worktree.core.project.services.storage import resolve_workspace_paths
-from worktree.core.runtime import run_steps
-from worktree.core.runtime.failure import USER_CONTINUED_MARKER
-from worktree.core.runtime.loop_runner import LoopBlockRunner
-from worktree.core.runtime.models import (
+from worktree.core.engine.failure import USER_CONTINUED_MARKER
+from worktree.core.engine.loop_runner import LoopBlockRunner
+from worktree.core.engine.models import (
     FailurePromptDecision,
     FailurePrompter,
     LoopPromptDecision,
-    RunCheckpoint,
     RunContext,
-    RunLogEvent,
-    RunLogEventType,
     RunObserver,
-    RunPauseStore,
     StepLoopState,
 )
-from worktree.core.runtime.step_coordinator import StepCoordinator
+from worktree.core.engine.step_executor import StepCoordinator
+from worktree.core.logs import RunLogEvent, RunLogEventType
+from worktree.core.project.services.storage import resolve_workspace_paths
 from worktree.core.step.models import (
     ArtifactPublishSpec,
     ConditionEvaluationResult,
@@ -69,18 +63,6 @@ def _coordinator_for(
             paths=_paths_for(tmp_path),
         )
     )
-
-
-class LoopSubStepPathsIdentityTests:
-    """[tier-2/unit] Loop context copies retain the original path snapshot."""
-
-    def test_loop_coordinator_replace_carries_paths_unchanged(self, tmp_path: Path) -> None:
-        """dataclasses.replace preserves paths object identity when removing the pause store."""
-        context = RunContext(steps=[], cwd=tmp_path, use_sandbox=False, paths=_paths_for(tmp_path))
-
-        loop_context = dataclasses.replace(context, pause_store=None)
-
-        assert loop_context.paths is context.paths
 
 
 class GrantingFailurePrompter(FailurePrompter):
@@ -724,25 +706,12 @@ class _InterruptingFailurePrompter(FailurePrompter):
         raise AssertionError("prompt_loop_max_iterations should not be called")
 
 
-class _RecordingPauseStore(RunPauseStore):
-    """Test double recording every persisted checkpoint."""
+class LoopSubStepPromptUserInterruptPropagatesTests:
+    """[tier-1/integration] LoopBlockRunner.run: a loop sub-step's prompt_user KeyboardInterrupt propagates instead of being swallowed."""
 
-    def __init__(self) -> None:
-        self.checkpoints: list[RunCheckpoint] = []
-
-    def save_checkpoint(self, checkpoint: RunCheckpoint) -> None:
-        self.checkpoints.append(checkpoint)
-
-    def clear_pause(self) -> None:
-        pass
-
-
-class LoopSubStepPromptUserInterruptNeverPersistsCheckpointTests:
-    """[tier-1/integration] LoopBlockRunner via StepCoordinator._prompt_user_decision: a loop sub-step's prompt_user KeyboardInterrupt never persists a checkpoint, even when the top-level run has a pause_store configured."""
-
-    def test_loop_substep_keyboard_interrupt_never_saves_checkpoint_and_cancels_run(self, tmp_path: Path) -> None:
-        """[tier-1/integration] run_steps: a loop sub-step declaring on_failure prompt_user whose FailurePrompter raises KeyboardInterrupt yields RunOutcome(status=RunStatus.CANCELLED) and RunPauseStore.save_checkpoint is never called, even though RunContext.pause_store is set, because _dispatch_step builds the loop's StepCoordinator from dataclasses.replace(context, pause_store=None)."""
-        pause_store = _RecordingPauseStore()
+    def test_loop_substep_keyboard_interrupt_propagates_out_of_run(self, tmp_path: Path) -> None:
+        """[tier-1/integration] LoopBlockRunner.run: a loop sub-step declaring on_failure prompt_user whose FailurePrompter raises KeyboardInterrupt lets the KeyboardInterrupt escape run()."""
+        prompter = _InterruptingFailurePrompter()
         loop = LoopStepBlock(
             id="test-loop",
             type="loop",
@@ -757,16 +726,12 @@ class LoopSubStepPromptUserInterruptNeverPersistsCheckpointTests:
                 )
             ],
         )
-        context = RunContext(
-            steps=[loop],
-            cwd=tmp_path,
-            use_sandbox=False,
-            failure_prompter=_InterruptingFailurePrompter(),
-            pause_store=pause_store,
-            paths=_paths_for(tmp_path),
+        runner = LoopBlockRunner(
+            loop,
+            tmp_path,
+            coordinator=_coordinator_for(tmp_path, failure_prompter=prompter),
+            failure_prompter=prompter,
         )
 
-        outcome = run_steps(context)
-
-        assert outcome.status == RunStatus.CANCELLED
-        assert pause_store.checkpoints == []
+        with pytest.raises(KeyboardInterrupt):
+            runner.run(StepLoopState(target_dir=tmp_path, session=None))

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 from typing import Any
 
 import pytest
@@ -15,16 +14,9 @@ from tests.harness.formatter import (
 )
 from worktree.cli.ui.formatters.history.common import format_run_duration
 from worktree.cli.ui.formatters.history.history_show import HistoryShowFormatter
-from worktree.cli.ui.formatters.history.history_views import (
-    CheckpointDetailsView,
-    CheckpointStepView,
-    HistoryShowView,
-    RunSummaryView,
-)
+from worktree.cli.ui.formatters.history.history_views import HistoryShowView, RunSummaryView
 from worktree.core.db import RunRecord, RunStatus
 from worktree.core.history.models import HistoryShowResult, HistoryShowStatus
-from worktree.core.runtime import RunCheckpoint
-from worktree.core.step import StepResult
 
 
 def _sample_run_record(
@@ -36,7 +28,6 @@ def _sample_run_record(
     started_at: str | None = "2026-08-19 01:00:00",
     completed_at: str | None = "2026-08-19 01:00:10",
     error_message: str | None = None,
-    checkpoint_json: str | None = None,
 ) -> RunRecord:
     return RunRecord(
         id=1,
@@ -48,7 +39,6 @@ def _sample_run_record(
         started_at=started_at,
         completed_at=completed_at,
         error_message=error_message,
-        checkpoint_json=checkpoint_json,
     )
 
 
@@ -72,8 +62,6 @@ def _make_history_show_view(**overrides: Any) -> HistoryShowView:
         "status": HistoryShowStatus.OK,
         "session_id": "sess-12345678",
         "run": _make_run_summary_view(),
-        "checkpoint": None,
-        "checkpoint_raw": None,
         "log_files": [],
         "log_snippet": [],
         "errors": [],
@@ -108,70 +96,29 @@ FAILED_RUN_WITH_ERROR = FormatterCase(
     ],
 )
 
-_STEP_RESULT = StepResult(
-    step_id="step-1",
-    status="completed",
-    exit_code=0,
-    stdout="ok",
-    stderr="",
-    duration_seconds=1.23,
-)
-_CHECKPOINT = RunCheckpoint(
-    next_step_index=1,
-    pending_step_id="step-2",
-    diagnostic="Waiting for approval",
-    step_results=[_STEP_RESULT],
-)
-
-PAUSED_RUN_WITH_CHECKPOINT = FormatterCase(
+PAUSED_RUN_WITH_ERROR = FormatterCase(
     data=HistoryShowResult(
         status=HistoryShowStatus.OK,
         session_id="sess-12345678",
         run=_sample_run_record(
-            status=RunStatus.PAUSED, completed_at=None, checkpoint_json=_CHECKPOINT.model_dump_json()
+            status=RunStatus.PAUSED,
+            completed_at=None,
+            error_message="Step 'step-2' failed: Waiting for approval",
         ),
     ),
     view=_make_history_show_view(
-        run=_make_run_summary_view(status="paused", completed_at=None, duration_seconds=None),
-        checkpoint=CheckpointDetailsView(
-            pending_step_id="step-2",
-            next_step_index=1,
-            diagnostic="Waiting for approval",
-            step_results=[
-                CheckpointStepView(
-                    step_id="step-1",
-                    status="completed",
-                    duration_seconds=1.23,
-                    error_message=None,
-                )
-            ],
+        run=_make_run_summary_view(
+            status="paused",
+            completed_at=None,
+            duration_seconds=None,
+            error_message="Step 'step-2' failed: Waiting for approval",
         ),
     ),
     render_expectations=[
         "sess-12345678",
         "deploy-blueprint",
         "feature/test",
-        "step-2",
-        "Waiting for approval",
-        "step-1",
-        "1.23s",
-    ],
-)
-
-_RAW_JSON = json.dumps({"custom_field": "custom_val"})
-RUN_WITH_RAW_CHECKPOINT_FALLBACK = FormatterCase(
-    data=HistoryShowResult(
-        status=HistoryShowStatus.OK,
-        session_id="sess-12345678",
-        run=_sample_run_record(checkpoint_json=_RAW_JSON),
-    ),
-    view=_make_history_show_view(checkpoint_raw=_RAW_JSON),
-    render_expectations=[
-        "sess-12345678",
-        "deploy-blueprint",
-        "feature/test",
-        format_run_duration(10.0),
-        "custom_field",
+        "Step 'step-2' failed: Waiting for approval",
     ],
 )
 
@@ -204,8 +151,7 @@ SHOW_ERROR = FormatterCase(
 HISTORY_SHOW_CASES = [
     pytest.param(COMPLETED_RUN, id="completed_run"),
     pytest.param(FAILED_RUN_WITH_ERROR, id="failed_run_with_error"),
-    pytest.param(PAUSED_RUN_WITH_CHECKPOINT, id="paused_run_with_checkpoint"),
-    pytest.param(RUN_WITH_RAW_CHECKPOINT_FALLBACK, id="raw_checkpoint_fallback"),
+    pytest.param(PAUSED_RUN_WITH_ERROR, id="paused_run_with_error"),
     pytest.param(RUN_WITH_LOGS, id="run_with_logs"),
     pytest.param(NOT_FOUND, id="not_found"),
     pytest.param(SHOW_ERROR, id="show_error"),
@@ -227,8 +173,6 @@ HISTORY_SHOW_PAYLOAD_CASES = [
                 "duration_seconds": 10.0,
                 "error_message": None,
             },
-            "checkpoint": None,
-            "checkpoint_raw": None,
             "log_files": [],
             "log_snippet": [],
             "errors": [],
@@ -252,8 +196,6 @@ HISTORY_SHOW_PAYLOAD_CASES = [
                 "duration_seconds": 10.0,
                 "error_message": "Step 'checkout' failed with exit code 1.",
             },
-            "checkpoint": None,
-            "checkpoint_raw": None,
             "log_files": [],
             "log_snippet": [],
             "errors": [],
@@ -263,7 +205,7 @@ HISTORY_SHOW_PAYLOAD_CASES = [
         id="failed_run_with_error",
     ),
     pytest.param(
-        PAUSED_RUN_WITH_CHECKPOINT,
+        PAUSED_RUN_WITH_ERROR,
         {
             "status": "ok",
             "session_id": "sess-12345678",
@@ -275,54 +217,15 @@ HISTORY_SHOW_PAYLOAD_CASES = [
                 "started_at": "2026-08-19 01:00:00",
                 "completed_at": None,
                 "duration_seconds": None,
-                "error_message": None,
+                "error_message": "Step 'step-2' failed: Waiting for approval",
             },
-            "checkpoint": {
-                "pending_step_id": "step-2",
-                "next_step_index": 1,
-                "diagnostic": "Waiting for approval",
-                "step_results": [
-                    {
-                        "step_id": "step-1",
-                        "status": "completed",
-                        "duration_seconds": 1.23,
-                        "error_message": None,
-                    }
-                ],
-            },
-            "checkpoint_raw": None,
             "log_files": [],
             "log_snippet": [],
             "errors": [],
             "warnings": [],
             "fixes": [],
         },
-        id="paused_run_with_checkpoint",
-    ),
-    pytest.param(
-        RUN_WITH_RAW_CHECKPOINT_FALLBACK,
-        {
-            "status": "ok",
-            "session_id": "sess-12345678",
-            "run": {
-                "session_id": "sess-12345678",
-                "blueprint_name": "deploy-blueprint",
-                "status": "completed",
-                "branch_name": "feature/test",
-                "started_at": "2026-08-19 01:00:00",
-                "completed_at": "2026-08-19 01:00:10",
-                "duration_seconds": 10.0,
-                "error_message": None,
-            },
-            "checkpoint": None,
-            "checkpoint_raw": _RAW_JSON,
-            "log_files": [],
-            "log_snippet": [],
-            "errors": [],
-            "warnings": [],
-            "fixes": [],
-        },
-        id="raw_checkpoint_fallback",
+        id="paused_run_with_error",
     ),
     pytest.param(
         RUN_WITH_LOGS,
@@ -339,8 +242,6 @@ HISTORY_SHOW_PAYLOAD_CASES = [
                 "duration_seconds": 10.0,
                 "error_message": None,
             },
-            "checkpoint": None,
-            "checkpoint_raw": None,
             "log_files": [
                 "/logs/sess-12345678/01_build_attempt_1.stdout.log",
                 "/logs/sess-12345678/run.log",
@@ -358,8 +259,6 @@ HISTORY_SHOW_PAYLOAD_CASES = [
             "status": "not_found",
             "session_id": "nonexistent-sess",
             "run": None,
-            "checkpoint": None,
-            "checkpoint_raw": None,
             "log_files": [],
             "log_snippet": [],
             "errors": [],
@@ -374,8 +273,6 @@ HISTORY_SHOW_PAYLOAD_CASES = [
             "status": "ok",
             "session_id": "sess-1",
             "run": None,
-            "checkpoint": None,
-            "checkpoint_raw": None,
             "log_files": [],
             "log_snippet": [],
             "errors": ["Database locked"],

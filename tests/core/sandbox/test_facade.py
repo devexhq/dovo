@@ -53,10 +53,9 @@ class SandboxConstructionTests:
         assert sandbox.patch.db is db
         assert sandbox.patch.lifecycle is sandbox.lifecycle
 
-    def test_config_and_sandbox_base_dir_delegate_to_lifecycle(self, sandbox_workspace_paths: WorkspacePaths) -> None:
-        """[tier-1/unit] Sandbox.config/sandbox_base_dir: both properties return exactly what the underlying lifecycle returns."""
+    def test_sandbox_base_dir_delegates_to_lifecycle(self, sandbox_workspace_paths: WorkspacePaths) -> None:
+        """[tier-1/unit] Sandbox.sandbox_base_dir: the property returns exactly what the underlying lifecycle returns."""
         sandbox = Sandbox(sandbox_workspace_paths)
-        assert sandbox.config == sandbox.lifecycle.config
         assert sandbox.sandbox_base_dir == sandbox.lifecycle.sandbox_base_dir
 
 

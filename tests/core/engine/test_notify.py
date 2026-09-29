@@ -5,8 +5,8 @@ from __future__ import annotations
 from pathlib import Path
 
 from tests.harness.builders import StepBuilder
-from worktree.core.runtime.models import RunObserver
-from worktree.core.runtime.notify import safe_notify
+from worktree.core.engine.models import RunObserver
+from worktree.core.engine.notify import safe_notify
 from worktree.core.step.models import ConditionEvaluationResult, StepDefinition, StepResult
 
 

@@ -10,9 +10,9 @@ from worktree.core.config import ConfigLoadError
 from worktree.core.db import RunStatus, SandboxesRepository
 from worktree.core.db.repositories.artifacts import ArtifactsRepository
 from worktree.core.diff.writer import get_session_dir, write_session_diff
+from worktree.core.engine.models import RunContext
+from worktree.core.engine.notify import safe_notify
 from worktree.core.git.runner import GitRunner
-from worktree.core.runtime.models import RunCheckpoint, RunContext
-from worktree.core.runtime.notify import safe_notify
 from worktree.core.sandbox import Sandbox, SandboxApplyStrategy, SandboxSession
 
 
@@ -22,37 +22,31 @@ class Workspace:
 
     context: RunContext
 
-    @staticmethod
-    def _session_from_checkpoint(checkpoint: RunCheckpoint, path: Path) -> SandboxSession:
-        """Reconstruct SandboxSession from saved checkpoint fields."""
-        return SandboxSession(
-            session_id=checkpoint.sandbox_id or "resumed",
-            target_branch=checkpoint.sandbox_branch or "worktree/sandbox-resumed",
-            sandbox_path=path,
-            base_commit=checkpoint.sandbox_base_commit or "HEAD",
-            name=checkpoint.sandbox_name,
-            created_at="",
-        )
-
-    def _setup_resumed_sandbox(
+    def _setup_retained_sandbox(
         self,
-        checkpoint: RunCheckpoint,
+        sandbox_id: str,
     ) -> tuple[Path, Sandbox | None, SandboxSession | None, str | None]:
-        """Validate and prepare resumed sandbox session from checkpoint."""
-        if not checkpoint.use_sandbox:
-            target_dir = self.context.cwd.resolve()
-            safe_notify(self.context.observer, "on_sandbox_ready", target_dir, active=False)
-            return target_dir, None, None, None
-
-        path = Path(checkpoint.sandbox_path or "")
+        """Rebuild the retained sandbox session from paths.sandbox_dir(sandbox_id) and its sandboxes row, or return a setup error."""
+        path = self.context.paths.sandbox_dir(sandbox_id)
         if not path.exists():
             return self.context.cwd.resolve(), None, None, f"Git sandbox is missing: {path}"
 
-        session = self._session_from_checkpoint(checkpoint, path)
-        manager = Sandbox(
-            self.context.paths,
-            db=SandboxesRepository(db_path=self.context.paths.database_file, project_id=self.context.paths.project_id),
+        sandboxes = SandboxesRepository(
+            db_path=self.context.paths.database_file, project_id=self.context.paths.project_id
         )
+        record = sandboxes.get(sandbox_id)
+        if record is None:
+            return self.context.cwd.resolve(), None, None, f"Git sandbox record is missing: {sandbox_id}"
+
+        session = SandboxSession(
+            session_id=sandbox_id,
+            target_branch=record.branch_name,
+            sandbox_path=path,
+            base_commit=record.base_commit,
+            name=record.name,
+            created_at=record.created_at,
+        )
+        manager = Sandbox(self.context.paths, db=sandboxes)
         safe_notify(self.context.observer, "on_sandbox_ready", path, active=True)
         return path, manager, session, None
 
@@ -63,13 +57,13 @@ class Workspace:
             Tuple of (target_dir, manager, session, error_message).
             ``error_message`` is set when sandbox setup fails.
         """
-        if self.context.resume_from is not None:
-            return self._setup_resumed_sandbox(self.context.resume_from)
-
         if not self.context.use_sandbox:
             target_dir = self.context.cwd.resolve()
             safe_notify(self.context.observer, "on_sandbox_ready", target_dir, active=False)
             return target_dir, None, None, None
+
+        if self.context.sandbox_id is not None:
+            return self._setup_retained_sandbox(self.context.sandbox_id)
 
         manager = Sandbox(
             self.context.paths,

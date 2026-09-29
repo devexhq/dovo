@@ -16,14 +16,10 @@ from worktree.core.catalog import Catalog
 from worktree.core.db import RunsRepository
 from worktree.core.engine.engine import Engine
 from worktree.core.engine.exceptions import EngineInputError, EngineRuntimeError
-from worktree.core.engine.models import RunRequest
+from worktree.core.engine.models import FailurePrompter, RunObserver, RunRequest
 from worktree.core.engine.services._shared import fail, finalize
 from worktree.core.engine.services.reconcile import reconcile_stale_runs
 from worktree.core.inputs.services.resolve import format_input_error_message
-from worktree.core.runtime import (
-    FailurePrompter,
-    RunObserver,
-)
 
 
 @dataclass

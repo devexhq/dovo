@@ -4,10 +4,9 @@ from __future__ import annotations
 
 from enum import StrEnum
 
-from pydantic import Field
+from pydantic import BaseModel, Field
 
 from worktree.common.models import BaseResult
-from worktree.core.runtime import RunLogEvent
 
 
 class LogsShowStatus(StrEnum):
@@ -41,3 +40,42 @@ class LogsShowResult(BaseResult):
     def ok(self) -> bool:
         """True when log content is available to render."""
         return self.status == LogsShowStatus.OK and not self.errors
+
+
+class RunLogEventType(StrEnum):
+    """Discriminates which optional fields a RunLogEvent populates."""
+
+    RUN_STARTED = "run_started"
+    RUN_COMPLETED = "run_completed"
+    STEP_START = "step_start"
+    STEP_DONE = "step_done"
+    LOOP_START = "loop_start"
+    LOOP_TURN_START = "loop_turn_start"
+    LOOP_CONDITIONS_EVALUATED = "loop_conditions_evaluated"
+    LOOP_DONE = "loop_done"
+
+
+class RunLogEvent(BaseModel):
+    """One structured, ISO-timestamped run.log timeline record."""
+
+    model_config = {"extra": "forbid", "strict": True}
+
+    ts: str = ""
+    event: RunLogEventType
+    session_id: str | None = None
+    blueprint_key: str | None = None
+    step_index: int | None = None
+    step_id: str | None = None
+    attempt: int | None = None
+    status: str | None = None
+    exit_code: int | None = None
+    loop_id: str | None = None
+    turn: int | None = None
+    max_iterations: int | None = None
+    all_passed: bool | None = None
+    next_turn: int | None = None
+    conditions: list[dict[str, object]] | None = None
+
+    def details(self) -> dict[str, object]:
+        """Return the populated scalar fields beyond ts and event, in declaration order; conditions are omitted."""
+        return self.model_dump(exclude={"ts", "event", "conditions"}, exclude_none=True)

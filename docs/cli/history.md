@@ -1,6 +1,6 @@
 # `wt history`
 
-The `wt history` command inspects past blueprint executions, enabling developers to filter past runs and view granular step details, error messages, and checkpoint data.
+The `wt history` command inspects past blueprint executions, enabling developers to filter past runs and view granular step details and error messages.
 
 ## Usage
 
@@ -30,7 +30,7 @@ wt history list [OPTIONS]
 
 ### `wt history show`
 
-Show granular metadata, error details, and checkpoint contents for a specific execution session.
+Show granular metadata and error details for a specific execution session.
 
 ```bash
 wt history show <session_id> [OPTIONS]

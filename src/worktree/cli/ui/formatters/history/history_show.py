@@ -10,18 +10,12 @@ from rich.text import Text
 
 from worktree.cli.ui.formatters.common import build_error_panel
 from worktree.cli.ui.formatters.history.common import (
-    build_checkpoint_view_renderables,
     build_metadata_table,
     build_run_summary,
 )
-from worktree.cli.ui.formatters.history.history_views import (
-    CheckpointDetailsView,
-    CheckpointStepView,
-    HistoryShowView,
-)
+from worktree.cli.ui.formatters.history.history_views import HistoryShowView
 from worktree.common.types import ComponentFormatter
 from worktree.core.history.models import HistoryShowResult, HistoryShowStatus
-from worktree.core.runtime import parse_checkpoint
 
 
 def _render_show_not_found(session_id: str | None, fixes: list[str] | None = None) -> Panel:
@@ -51,35 +45,6 @@ def _render_show_error_panel(view: HistoryShowView) -> Panel | None:
     return None
 
 
-def _derive_checkpoint(
-    checkpoint_json: str | None,
-) -> tuple[CheckpointDetailsView | None, str | None]:
-    """Parse checkpoint JSON into typed view or retain raw payload as fallback."""
-    if not checkpoint_json or not checkpoint_json.strip():
-        return None, None
-    parsed = parse_checkpoint(checkpoint_json)
-    if parsed is None:
-        return None, checkpoint_json
-    step_results = [
-        CheckpointStepView(
-            step_id=step.step_id,
-            status=step.status,
-            duration_seconds=step.duration_seconds,
-            error_message=step.error_message,
-        )
-        for step in parsed.step_results
-    ]
-    return (
-        CheckpointDetailsView(
-            pending_step_id=parsed.pending_step_id,
-            next_step_index=parsed.next_step_index,
-            diagnostic=parsed.diagnostic,
-            step_results=step_results,
-        ),
-        None,
-    )
-
-
 def _render_show_run(view: HistoryShowView) -> Any:
     """Render detailed session metadata panel, error panel, and step timeline."""
     if view.run is None:
@@ -95,9 +60,6 @@ def _render_show_run(view: HistoryShowView) -> Any:
 
     if view.run.error_message:
         renderables.append(Panel(view.run.error_message, title="Error Details", border_style="red"))
-
-    if view.checkpoint is not None or view.checkpoint_raw is not None:
-        renderables.extend(build_checkpoint_view_renderables(view.checkpoint, view.checkpoint_raw))
 
     if view.log_files:
         renderables.append(
@@ -117,18 +79,13 @@ class HistoryShowFormatter(ComponentFormatter[HistoryShowResult, HistoryShowView
             data: Domain HistoryShowResult instance.
 
         Returns:
-            HistoryShowView containing mapped run summary and deserialized checkpoint details.
+            HistoryShowView containing the mapped run summary and session log details.
         """
         run_summary = build_run_summary(data.run) if data.run is not None else None
-        checkpoint, checkpoint_raw = (
-            _derive_checkpoint(data.run.checkpoint_json) if data.run is not None else (None, None)
-        )
         return HistoryShowView(
             status=data.status,
             session_id=data.session_id,
             run=run_summary,
-            checkpoint=checkpoint,
-            checkpoint_raw=checkpoint_raw,
             log_files=list(data.log_files),
             log_snippet=list(data.log_snippet),
             errors=list(data.errors),

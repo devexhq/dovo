@@ -9,19 +9,15 @@ from typing import Any
 
 from typer.testing import CliRunner
 
-from tests.harness.catalog import write_runnable_blueprint, write_runnable_step
+from tests.harness.catalog import write_runnable_step
+from tests.harness.runs import seed_paused_run
 from worktree.cli import app
 from worktree.cli.ui.dispatcher import ui_dispatcher
 from worktree.common.filesystem.models import RepositoryPaths, WorkspacePaths
 from worktree.common.filesystem.services.global_root import resolve_global_paths
-from worktree.core.blueprint import Blueprint
-from worktree.core.catalog import Catalog
 from worktree.core.config.models import ConfigTier
 from worktree.core.db import RunStatus, WorktreeDb
-from worktree.core.engine import RunStateStore
-from worktree.core.engine.writer import get_session_dir, snapshot_definitions
 from worktree.core.project.services.storage import resolve_workspace_paths
-from worktree.core.runtime.models import RunCheckpoint
 
 
 def _paths_for(root: Path) -> WorkspacePaths:
@@ -30,71 +26,30 @@ def _paths_for(root: Path) -> WorkspacePaths:
 
 
 def _seed_paused_session(
-    resume_workspace: Path, *, session_id: str, blueprint_key: str, pending_step_id: str, next_step_index: int
+    resume_workspace: Path, *, session_id: str, steps: list[dict[str, object]], paused_step_id: str
 ) -> None:
-    """Insert a RUNNING run row, then a saved checkpoint that pauses it."""
+    """Snapshot a blueprint with steps under session_id and pause it at paused_step_id after a failed attempt."""
     paths = _paths_for(resume_workspace)
     db = WorktreeDb(database_file=paths.database_file, project_id=paths.project_id)
-    db.runs.create(
-        session_id=session_id, blueprint_name=blueprint_key, blueprint_key=blueprint_key, status=RunStatus.RUNNING
-    )
-    checkpoint = RunCheckpoint(
-        next_step_index=next_step_index,
-        pending_step_id=pending_step_id,
-        diagnostic="Step failed during interactive prompt.",
-        use_sandbox=False,
-    )
-    db.runs.save_pause(session_id, checkpoint.model_dump_json(), checkpoint.diagnostic)
-
-
-def _seed_snapshotted_paused_session(
-    resume_workspace: Path, *, session_id: str, blueprint_key: str, pending_step_id: str, next_step_index: int
-) -> None:
-    """Snapshot blueprint_key's catalog blueprint/steps into session_id's definitions/ dir, matching Engine.run's own persistence, then seed a matching paused row."""
-    paths = _paths_for(resume_workspace)
-    catalog = Catalog(paths)
-    blueprint = Blueprint.load(blueprint_key, catalog=catalog)
-    session_dir = get_session_dir(paths, session_id)
-    warnings: list[str] = []
-    manifest = snapshot_definitions(catalog, blueprint, session_dir, warnings)
-    assert manifest is not None
-
-    db = WorktreeDb(database_file=paths.database_file, project_id=paths.project_id)
-    db.runs.create(
-        session_id=session_id, blueprint_name=blueprint_key, blueprint_key=blueprint_key, status=RunStatus.RUNNING
-    )
-    RunStateStore(db.runs, paths, session_id).initialize(blueprint, manifest)
-    checkpoint = RunCheckpoint(
-        next_step_index=next_step_index,
-        pending_step_id=pending_step_id,
-        diagnostic="Step failed during interactive prompt.",
-        use_sandbox=False,
-    )
-    db.runs.save_pause(session_id, checkpoint.model_dump_json(), checkpoint.diagnostic)
+    seed_paused_run(paths, db.runs, session_id=session_id, steps=steps, paused_step_id=paused_step_id)
 
 
 class ResumeCliIntegrationTests:
     """Typer runner integration tests for wt resume."""
 
-    def test_resume_cli_from_checkpoint_completes_remaining_steps_exits_zero(
+    def test_resume_cli_from_paused_state_completes_remaining_steps_exits_zero(
         self, cli_runner: CliRunner, resume_workspace: Path
     ) -> None:
-        """wt resume <session_id>: paused checkpoint with use_sandbox=False resumes and completes, exit 0, run record status becomes COMPLETED."""
-        write_runnable_blueprint(
+        """wt resume <session_id>: paused run state with use_sandbox=False resumes and completes, exit 0, run record status becomes COMPLETED."""
+        _seed_paused_session(
             resume_workspace,
-            key="resume-task",
+            session_id="paused-session-1",
             steps=[
                 {"id": "s1", "run": "true"},
                 {"id": "s2", "run": "true", "on_failure": "continue"},
                 {"id": "s3", "run": "touch resumed.marker"},
             ],
-        )
-        _seed_paused_session(
-            resume_workspace,
-            session_id="paused-session-1",
-            blueprint_key="resume-task",
-            pending_step_id="s2",
-            next_step_index=1,
+            paused_step_id="s2",
         )
 
         result = cli_runner.invoke(app, ["-p", str(resume_workspace), "resume", "paused-session-1"])
@@ -118,20 +73,14 @@ class ResumeCliIntegrationTests:
         self, cli_runner: CliRunner, resume_workspace: Path
     ) -> None:
         """wt resume <session_id> --format json: NDJSON stream includes a RunSuccessEvent with payload.status == 'completed'."""
-        write_runnable_blueprint(
+        _seed_paused_session(
             resume_workspace,
-            key="resume-json-task",
+            session_id="paused-session-2",
             steps=[
                 {"id": "s1", "run": "true"},
                 {"id": "s2", "run": "true", "on_failure": "continue"},
             ],
-        )
-        _seed_paused_session(
-            resume_workspace,
-            session_id="paused-session-2",
-            blueprint_key="resume-json-task",
-            pending_step_id="s2",
-            next_step_index=1,
+            paused_step_id="s2",
         )
 
         result = cli_runner.invoke(app, ["-p", str(resume_workspace), "resume", "paused-session-2", "--format", "json"])
@@ -170,23 +119,17 @@ class ResumeCliIntegrationTests:
         write_runnable_step(
             resume_workspace, key="lint-check", definition={"id": "lint-check", "type": "command", "command": "true"}
         )
-        write_runnable_blueprint(
+        _seed_paused_session(
             resume_workspace,
-            key="snapshot-resume-task",
+            session_id="snap-resume-1",
             steps=[
                 {"id": "s1", "uses": "lint-check"},
                 {"id": "s2", "run": "true", "on_failure": "continue"},
                 {"id": "s3", "run": "touch resumed.marker"},
             ],
+            paused_step_id="s2",
         )
-        _seed_snapshotted_paused_session(
-            resume_workspace,
-            session_id="snap-resume-1",
-            blueprint_key="snapshot-resume-task",
-            pending_step_id="s2",
-            next_step_index=1,
-        )
-        (resume_workspace / ".worktree" / "catalog" / "blueprints" / "snapshot-resume-task.yml").unlink()
+        (resume_workspace / ".worktree" / "catalog" / "blueprints" / "snap-resume-1.yml").unlink()
         (resume_workspace / ".worktree" / "catalog" / "steps" / "lint-check.yml").unlink()
 
         result = cli_runner.invoke(app, ["-p", str(resume_workspace), "resume", "snap-resume-1"])

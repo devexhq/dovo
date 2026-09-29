@@ -8,8 +8,7 @@ from typing import NamedTuple
 
 from pydantic import ValidationError
 
-from worktree.core.logs.models import LogStreamFilter
-from worktree.core.runtime import RunLogEvent
+from worktree.core.logs.models import LogStreamFilter, RunLogEvent
 
 _STEP_LOG_NAME_RE = re.compile(
     r"^(?P<index>\d+)_(?P<step_id>.+?)(?:_iter_(?P<iteration>\d+))?_attempt_(?P<attempt>\d+)\.(?P<stream>stdout|stderr)\.log$"

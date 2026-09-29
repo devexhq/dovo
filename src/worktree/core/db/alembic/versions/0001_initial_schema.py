@@ -72,7 +72,6 @@ def upgrade() -> None:
         ),
         sa.Column("completed_at", AutoString(), nullable=True),
         sa.Column("error_message", AutoString(), nullable=True),
-        sa.Column("checkpoint_json", AutoString(), nullable=True),
         sa.Column("execution_state_json", AutoString(), nullable=True),
         sa.Column("execution_state_revision", sa.Integer(), nullable=True, server_default=sa.text("0")),
         sa.Column("blueprint_tier", AutoString(), nullable=True),

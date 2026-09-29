@@ -10,11 +10,8 @@ from worktree.core.catalog import Catalog
 from worktree.core.db import RunsRepository
 from worktree.core.engine.engine import Engine
 from worktree.core.engine.exceptions import EngineResumeError, EngineRuntimeError
+from worktree.core.engine.models import FailurePrompter, RunObserver
 from worktree.core.engine.services._shared import fail, finalize, load_record
-from worktree.core.runtime import (
-    FailurePrompter,
-    RunObserver,
-)
 
 
 @dataclass
