@@ -29,6 +29,7 @@ If the input file is missing, stop and say so. Do not reconstruct a plan from th
 
 - **Never commit, stage, push, or touch PR state.** Not at the end, not "to be safe", not even when the gates pass. `/wt-push` owns that.
 - **Never run the full gate suite mid-implementation.** Scoped tests only until the work is complete.
+- **Run quality gates one at a time, never in parallel.** No concurrent tool calls, background jobs, or subagents for gate commands.
 - **The plan's contracts are binding.** Field names, types, defaults, flag names, exit codes, and message strings written as literal code in the plan are normative. Do not improve, rename, or extend them.
 - **Do not implement anything the plan marks out of scope or flags as a trap.**
 - **Never create a test file the plan's `### Tests` stubs do not list**, and never skip a deletion the deletion ledger lists (`PLAN-009`). Both directions are contract breaches, and the additive direction is the one that slips through unnoticed.
@@ -82,7 +83,7 @@ If the plan's ledger asks for a test whose contract you find already pinned else
 
 ## Completion gate (`CI-001`)
 
-Run this once, after implementation is complete, in this order. Each command's fix belongs in the code, never in a suppression or a lowered threshold — [docs/agents/ci-and-tooling.md](../../../docs/agents/ci-and-tooling.md) has what each gate actually checks, and [code-conventions.md](../../../docs/agents/code-conventions.md#type-checker-suppressions) has the only permitted suppressions:
+Run this once, after implementation is complete, **strictly sequentially, in this order**: one command per tool call, wait for it to finish, and never issue two gate commands in the same message, chain them in the background, or launch them concurrently. A failure stops the sequence: fix it, then resume from the failed gate and re-run the later ones, since a fix can invalidate earlier results (re-run from `ruff format` if formatting-affecting code changed). Each command's fix belongs in the code, never in a suppression or a lowered threshold — [docs/agents/ci-and-tooling.md](../../../docs/agents/ci-and-tooling.md) has what each gate actually checks, and [code-conventions.md](../../../docs/agents/code-conventions.md#type-checker-suppressions) has the only permitted suppressions:
 
 ```bash
 ruff format .
