@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+from pydantic import ValidationError
 
 from tests.harness.builders import BlueprintBuilder, StepBuilder, WorkspaceBuilder
 from worktree.common.filesystem import Filesystem
@@ -24,6 +25,7 @@ from worktree.core.engine.state_models import (
     RunStateLoadStatus,
     RunStateWriteStatus,
 )
+from worktree.core.engine.state_store import new_iteration
 from worktree.core.project.services.storage import resolve_workspace_paths
 from worktree.core.step.models import LoopStepBlock
 
@@ -91,6 +93,32 @@ class _Fixture:
     def projection(self) -> ExecutionStateTree:
         """Parse the current run.json."""
         return ExecutionStateTree.model_validate_json(self.run_json.read_text(encoding="utf-8"))
+
+
+class NewIterationTests:
+    """[tier-1/unit] new_iteration: the single builder for seeded and repeated loop iterations."""
+
+    def test_new_iteration_is_pending_with_pending_leaf_per_body_step(self) -> None:
+        """[tier-1/unit] new_iteration: loop.do [edit, verify], number 2 -> ExecutionIterationRecord(number=2, state=PENDING, steps=[ExecutionLeafNode(id="edit"), ExecutionLeafNode(id="verify")], until_passed=None)."""
+        loop = _blueprint().steps[1]
+        assert isinstance(loop, LoopStepBlock)
+
+        iteration = new_iteration(loop, 2)
+
+        assert iteration == ExecutionIterationRecord(
+            number=2,
+            state=NodeState.PENDING,
+            steps=[ExecutionLeafNode(id="edit"), ExecutionLeafNode(id="verify")],
+            until_passed=None,
+        )
+
+    def test_new_iteration_number_below_one_raises_validation_error(self) -> None:
+        """[tier-1/unit] new_iteration: number 0 raises pydantic.ValidationError."""
+        loop = _blueprint().steps[1]
+        assert isinstance(loop, LoopStepBlock)
+
+        with pytest.raises(ValidationError):
+            new_iteration(loop, 0)
 
 
 class RunStateStoreInitializeTests:

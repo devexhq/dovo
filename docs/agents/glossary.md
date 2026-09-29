@@ -9,7 +9,7 @@ Precise definitions for core concepts and terms in the Worktree CLI codebase.
   - *Runner:* `StepExecution` in [`core/step/runner.py`](../../src/worktree/core/step/runner.py).
 - **Loop Step**: A container step that repeats child steps (`do: []`) until a condition or iteration ceiling is reached.
   - *Model:* `LoopStepBlock` in [`core/step/models.py`](../../src/worktree/core/step/models.py).
-  - *Runner:* `LoopBlockRunner` in [`core/engine/loop_runner.py`](../../src/worktree/core/engine/loop_runner.py).
+  - *Execution:* `RunCoordinator.advance_loop` in [`core/engine/coordinator.py`](../../src/worktree/core/engine/coordinator.py), driven by `LoopPolicy` in [`core/engine/loop_policy.py`](../../src/worktree/core/engine/loop_policy.py).
 - **Task**: A blueprint containing linear steps without loop steps.
 - **Workflow**: A blueprint permitted to contain loop steps and multi-step orchestration.
 - **Blueprint**: The unified document model and handle representing tasks and workflows.
@@ -25,7 +25,7 @@ Precise definitions for core concepts and terms in the Worktree CLI codebase.
 - **Session**: Unique execution identifier (`{kind}_{8-hex}`) linking a run to its DB record in the centralized database and session artifacts in `.worktree/sessions/<id>/`.
 - **Sandbox**: An isolated git worktree checkout (`.worktree/sandboxes/<session_id>/`, branch `worktree/sandbox-<id>`).
   - *Facade/Services:* `Sandbox` in [`core/sandbox/facade.py`](../../src/worktree/core/sandbox/facade.py) and [`core/sandbox/services/lifecycle.py`](../../src/worktree/core/sandbox/services/lifecycle.py).
-- **Checkpoint**: A paused leaf step plus its last failed attempt in the run's `ExecutionStateTree`, allowing a paused run (`prompt_user`) to resume by re-entering the failure prompt without re-running the step.
+- **Checkpoint**: A paused leaf step (top-level or a loop body step) plus its last failed attempt in the run's `ExecutionStateTree`, allowing a paused run (`prompt_user`) to resume by re-entering the failure prompt without re-running the step.
   - *Model:* `ExecutionStateTree` in [`core/engine/state_models.py`](../../src/worktree/core/engine/state_models.py).
 - **Input (`ParameterInput`)**: A declared, typed parameter in a blueprint referenced via `${{ inputs.<name> }}` placeholders.
   - *Model:* `ParameterInput` in [`core/inputs/models.py`](../../src/worktree/core/inputs/models.py).

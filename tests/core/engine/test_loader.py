@@ -4,14 +4,29 @@ from __future__ import annotations
 
 import pytest
 
-from tests.harness.runs import seed_paused_run
+from tests.harness.runs import SEEDED_FAILURE, seed_new_run, seed_paused_run
 from worktree.common.filesystem.models import WorkspacePaths
 from worktree.core.db import RunRecord, RunsRepository, RunStatus
 from worktree.core.engine import EngineLoader, EngineResumeError, EngineResumeStatus, RunStateStore
-from worktree.core.engine.state_models import ExecutionLeafNode, NodeState
+from worktree.core.engine.state_models import (
+    ExecutionLeafNode,
+    ExecutionLoopNode,
+    NodeState,
+    StepAttemptRecord,
+)
 from worktree.core.engine.writer import snapshot_blueprint_path
+from worktree.core.step.models import StepResult
 
 _STEPS: list[dict[str, object]] = [{"id": "a", "run": "true"}, {"id": "b", "run": "exit 1"}]
+_LOOP_STEPS: list[dict[str, object]] = [
+    {
+        "id": "fix",
+        "type": "loop",
+        "max_iterations": 2,
+        "until": ["iteration.index >= 2"],
+        "do": [{"id": "edit", "run": "true"}, {"id": "verify", "run": "exit 1"}],
+    }
+]
 
 
 def _seed(
@@ -45,6 +60,41 @@ def _break_state(paths: WorkspacePaths, runs: RunsRepository, fault: str) -> Non
         for node in loaded.nodes:
             node.state = NodeState.COMPLETED
     assert store.save(loaded).ok
+
+
+def _seed_paused_loop(paths: WorkspacePaths, runs: RunsRepository) -> RunStateStore:
+    """Seed a paused run whose loop `fix` has completed body step `edit` and PAUSED body step `verify` on a failed attempt."""
+    seed_new_run(paths, runs, session_id="paused-1", steps=_LOOP_STEPS)
+    row = runs.get("paused-1")
+    assert row is not None
+    runs.update_status("paused-1", RunStatus.PAUSED)
+    store = RunStateStore(runs, paths, "paused-1")
+    state = store.load().state
+    assert state is not None
+    loop = state.nodes[0]
+    assert isinstance(loop, ExecutionLoopNode)
+
+    def attempt(step_id: str, status: str) -> StepAttemptRecord:
+        result = StepResult(
+            step_id=step_id,
+            status=status,
+            exit_code=0 if status == "completed" else 1,
+            stdout="",
+            stderr="",
+            duration_seconds=0.0,
+            error_message=None if status == "completed" else SEEDED_FAILURE,
+        )
+        return StepAttemptRecord(number=1, started_at="t", completed_at="t", result=result)
+
+    loop.state = NodeState.RUNNING
+    loop.iterations[0].state = NodeState.RUNNING
+    edit, verify = loop.iterations[0].steps
+    edit.attempts = [attempt("edit", "completed")]
+    edit.state = NodeState.COMPLETED
+    verify.attempts = [attempt("verify", "failed")]
+    verify.state = NodeState.PAUSED
+    assert store.save(state, run_status=RunStatus.PAUSED).ok
+    return store
 
 
 class EngineLoaderTests:
@@ -133,3 +183,62 @@ class EngineLoaderTests:
         assert exc_info.value.status == EngineResumeStatus.MISSING_SANDBOX
         assert "no longer exists" in str(exc_info.value)
         assert runs_repo.get("paused-1") is not None
+
+
+class EngineLoaderPausedBodyLeafTests:
+    """[tier-1/integration] EngineLoader.load_for_resume: paused loop-body leaves are validated like top-level leaves."""
+
+    def test_paused_body_leaf_with_recorded_result_loads(
+        self, engine_paths: WorkspacePaths, runs_repo: RunsRepository
+    ) -> None:
+        """[tier-1/integration] EngineLoader.load_for_resume: a paused run whose loop body leaf is PAUSED with a recorded failed result returns the state with that leaf paused."""
+        _seed_paused_loop(engine_paths, runs_repo)
+
+        _, state, _ = EngineLoader.load_for_resume(runs_repo, engine_paths, "paused-1")
+
+        loop = state.nodes[0]
+        assert isinstance(loop, ExecutionLoopNode)
+        assert [leaf.state for leaf in loop.iterations[0].steps] == [NodeState.COMPLETED, NodeState.PAUSED]
+
+    def test_paused_body_leaf_without_recorded_result_is_corrupt_state(
+        self, engine_paths: WorkspacePaths, runs_repo: RunsRepository
+    ) -> None:
+        """[tier-1/integration] EngineLoader.load_for_resume: a paused body leaf whose last attempt has no result raises EngineResumeError with status CORRUPT_STATE naming the leaf id."""
+        store = _seed_paused_loop(engine_paths, runs_repo)
+        state = store.load().state
+        assert state is not None
+        loop = state.nodes[0]
+        assert isinstance(loop, ExecutionLoopNode)
+        paused = loop.iterations[0].steps[1]
+        paused.attempts[-1] = paused.attempts[-1].model_copy(update={"result": None})
+        assert store.save(state).ok
+
+        with pytest.raises(EngineResumeError) as exc_info:
+            EngineLoader.load_for_resume(runs_repo, engine_paths, "paused-1")
+
+        assert exc_info.value.status == EngineResumeStatus.CORRUPT_STATE
+        assert "'verify'" in str(exc_info.value)
+
+
+class EngineLoaderCorruptLoopStateTests:
+    """[tier-1/integration] EngineLoader.load_for_resume: loop structure must match the run snapshot."""
+
+    def test_structurally_corrupt_loop_state_is_corrupt_state_on_resume(
+        self, engine_paths: WorkspacePaths, runs_repo: RunsRepository
+    ) -> None:
+        """[tier-1/integration] EngineLoader.load_for_resume: a paused run whose loop iteration children differ from the snapshot body raises EngineResumeError with status CORRUPT_STATE and a message ending with the validator's text."""
+        store = _seed_paused_loop(engine_paths, runs_repo)
+        state = store.load().state
+        assert state is not None
+        loop = state.nodes[0]
+        assert isinstance(loop, ExecutionLoopNode)
+        loop.iterations[0].steps.reverse()
+        assert store.save(state).ok
+
+        with pytest.raises(EngineResumeError) as exc_info:
+            EngineLoader.load_for_resume(runs_repo, engine_paths, "paused-1")
+
+        assert exc_info.value.status == EngineResumeStatus.CORRUPT_STATE
+        assert str(exc_info.value).endswith(
+            "Loop 'fix' iteration 1 steps ['verify', 'edit'] do not match the loop body ['edit', 'verify']."
+        )

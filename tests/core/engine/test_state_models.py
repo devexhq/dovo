@@ -61,3 +61,21 @@ class ExecutionStateTreeTests:
         """[tier-1/unit] ExecutionStateTree: an unexpected top-level key raises pydantic.ValidationError (extra=forbid)."""
         with pytest.raises(ValidationError):
             ExecutionStateTree.model_validate({"manifest": _manifest_dict(), "unexpected": 1})
+
+
+class ExecutionLoopNodeCeilingTests:
+    """[tier-1/unit] ExecutionLoopNode: the iteration ceiling is max_iterations plus granted_iterations."""
+
+    def test_iteration_ceiling_adds_granted_iterations_and_round_trips_through_json(self) -> None:
+        """[tier-1/unit] ExecutionLoopNode: max_iterations 2 with granted_iterations 3 has iteration_ceiling 5, default granted_iterations is 0, and the tree round-trips through model_dump_json / model_validate_json unchanged."""
+        granted = ExecutionLoopNode(id="l", max_iterations=2, granted_iterations=3)
+        tree = ExecutionStateTree(manifest=_MANIFEST, nodes=[granted])
+
+        assert granted.iteration_ceiling == 5
+        assert ExecutionLoopNode(id="l", max_iterations=2).granted_iterations == 0
+        assert ExecutionStateTree.model_validate_json(tree.model_dump_json()) == tree
+
+    def test_negative_granted_iterations_raises_validation_error(self) -> None:
+        """[tier-1/unit] ExecutionLoopNode: granted_iterations -1 raises pydantic.ValidationError."""
+        with pytest.raises(ValidationError):
+            ExecutionLoopNode(id="l", max_iterations=2, granted_iterations=-1)

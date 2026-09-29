@@ -139,7 +139,6 @@ class StepLoopState:
 
     target_dir: Path
     session: SandboxSession | None
-    step_results: list[StepResult] = field(default_factory=list)
     session_tmp_dir: Path | None = None
     session_log_dir: Path | None = None
     save_attempt_logs: bool = True
