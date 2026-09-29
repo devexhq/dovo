@@ -28,7 +28,7 @@ Trailing CLI arguments (after options) are forwarded to declared blueprint input
 1. **Resolution**: Resolves `<name>` from `.worktree/catalog/` via `Blueprint.load`.
 2. **Execution**: Runs the blueprint through the unified runtime engine (`BlueprintRunService`).
 3. **Exit Codes**:
-   - `0`: Successful run or paused run (with checkpoint saved).
+   - `0`: Successful run or paused run (with run state saved).
    - `1`: Failed or cancelled run.
 
 ## Examples

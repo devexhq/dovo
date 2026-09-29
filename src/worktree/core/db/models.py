@@ -148,7 +148,6 @@ class RunRecord(SQLModel, table=True):
     started_at: str = Field(default_factory=_now_utc_str, index=True)
     completed_at: str | None = Field(default=None)
     error_message: str | None = Field(default=None)
-    checkpoint_json: str | None = Field(default=None)
 
     execution_state_json: str | None = Field(default=None)
     execution_state_revision: int | None = Field(default=0)

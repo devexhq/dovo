@@ -13,10 +13,10 @@ from worktree.common.filesystem.services.global_root import resolve_global_paths
 from worktree.core.config import ConfigLoadError
 from worktree.core.config.loader import ConfigLoadResult, ConfigLoadStatus
 from worktree.core.db import RunStatus
+from worktree.core.engine.models import RunContext, RunObserver
+from worktree.core.engine.workspace import Workspace
 from worktree.core.git.runner import GitRunner
 from worktree.core.project.services.storage import resolve_workspace_paths
-from worktree.core.runtime.models import RunCheckpoint, RunContext, RunObserver
-from worktree.core.runtime.workspace import Workspace
 from worktree.core.sandbox import Sandbox, SandboxApplyResult, SandboxApplyStatus, SandboxSession
 from worktree.core.sandbox.models import SandboxCreateResult, SandboxCreateStatus
 
@@ -65,7 +65,7 @@ def _paths_for(root: Path) -> WorkspacePaths:
 
 
 class WorkspaceSetupTests:
-    """[tier-1/integration] Workspace.setup: sandbox creation, resume reconstruction, and no-sandbox passthrough."""
+    """[tier-1/integration] Workspace.setup: sandbox creation and no-sandbox passthrough."""
 
     def test_no_sandbox_returns_resolved_cwd_and_notifies_inactive(self, tmp_path: Path) -> None:
         """[tier-1/integration] setup: use_sandbox=False returns (cwd.resolve(), None, None, None) and notifies on_sandbox_ready(active=False)."""
@@ -132,67 +132,62 @@ class WorkspaceSetupTests:
         assert session is None
         assert error == "Git sandbox creation failed: malformed config.json"
 
-    def test_resume_without_sandbox_returns_resolved_cwd(self, tmp_path: Path) -> None:
-        """[tier-1/integration] setup: resume_from with use_sandbox=False returns cwd.resolve() without reconstructing a session."""
-        checkpoint = RunCheckpoint(next_step_index=0, pending_step_id="s1", diagnostic="d", use_sandbox=False)
-        context = RunContext(
-            steps=[], cwd=tmp_path, use_sandbox=True, resume_from=checkpoint, paths=_paths_for(tmp_path)
-        )
+    def test_sandbox_id_with_use_sandbox_false_returns_resolved_cwd(self, tmp_path: Path) -> None:
+        """[tier-1/integration] setup: use_sandbox=False ignores a retained sandbox_id and returns cwd.resolve() without reconstructing a session."""
+        context = RunContext(steps=[], cwd=tmp_path, use_sandbox=False, sandbox_id="sess-1", paths=_paths_for(tmp_path))
 
         target_dir, manager, session, error = Workspace(context).setup()
 
         assert (target_dir, manager, session, error) == (tmp_path.resolve(), None, None, None)
 
-    def test_resume_with_missing_sandbox_path_returns_error(self, tmp_path: Path) -> None:
-        """[tier-1/integration] setup: resume_from pointing at a sandbox_path that no longer exists on disk returns an error naming the missing path."""
-        missing_path = tmp_path / "gone"
-        checkpoint = RunCheckpoint(
-            next_step_index=0,
-            pending_step_id="s1",
-            diagnostic="d",
-            use_sandbox=True,
-            sandbox_path=str(missing_path),
-        )
-        context = RunContext(
-            steps=[], cwd=tmp_path, use_sandbox=True, resume_from=checkpoint, paths=_paths_for(tmp_path)
-        )
 
-        target_dir, manager, session, error = Workspace(context).setup()
+class WorkspaceRetainedSandboxTests:
+    """[tier-1/integration] Workspace.setup: a retained sandbox_id rebuilds its session from the sandboxes row."""
 
-        assert target_dir == tmp_path.resolve()
-        assert manager is None
-        assert session is None
-        assert error == f"Git sandbox is missing: {missing_path}"
-
-    def test_resume_with_existing_sandbox_path_reconstructs_session(self, tmp_path: Path) -> None:
-        """[tier-1/integration] setup: resume_from pointing at an existing sandbox_path reconstructs a SandboxSession from the checkpoint fields."""
-        sandbox_dir = tmp_path / "sandbox"
-        sandbox_dir.mkdir()
-        checkpoint = RunCheckpoint(
-            next_step_index=0,
-            pending_step_id="s1",
-            diagnostic="d",
-            use_sandbox=True,
-            sandbox_path=str(sandbox_dir),
-            sandbox_id="sess-1",
-            sandbox_name="my-sandbox",
-            sandbox_branch="worktree/sandbox-sess-1",
-            sandbox_base_commit="abc123",
-        )
-        context = RunContext(
-            steps=[], cwd=tmp_path, use_sandbox=True, resume_from=checkpoint, paths=_paths_for(tmp_path)
-        )
+    def test_retained_sandbox_id_rebuilds_session_from_row(self, tmp_path: Path) -> None:
+        """[tier-1/integration] Workspace.setup: RunContext(sandbox_id=X) with an existing directory and a sandboxes row returns a SandboxSession whose target_branch, base_commit, and name equal the row's."""
+        workspace_root = _sandboxed_workspace(tmp_path)
+        paths = _paths_for(workspace_root)
+        created = Sandbox(paths).create(name="retained")
+        assert created.session is not None
+        retained_id = created.session.session_id
+        context = RunContext(steps=[], cwd=workspace_root, use_sandbox=True, sandbox_id=retained_id, paths=paths)
 
         target_dir, manager, session, error = Workspace(context).setup()
 
         assert error is None
         assert manager is not None
-        assert target_dir == sandbox_dir
+        assert target_dir == paths.sandbox_dir(retained_id)
         assert session is not None
-        assert session.session_id == "sess-1"
-        assert session.name == "my-sandbox"
-        assert session.target_branch == "worktree/sandbox-sess-1"
-        assert session.base_commit == "abc123"
+        assert session.session_id == retained_id
+        assert session.target_branch == created.session.target_branch
+        assert session.base_commit == created.session.base_commit
+        assert session.name == "retained"
+
+    @pytest.mark.parametrize(
+        ("fault", "expected_error"),
+        [
+            pytest.param("no-directory", "Git sandbox is missing: {path}", id="no-directory"),
+            pytest.param("no-record", "Git sandbox record is missing: orphan", id="no-record"),
+        ],
+    )
+    def test_retained_sandbox_missing_returns_setup_error(
+        self, tmp_path: Path, fault: str, expected_error: str
+    ) -> None:
+        """[tier-1/integration] Workspace.setup: a retained sandbox_id with a missing directory returns error "Git sandbox is missing: <path>", and with a missing row "Git sandbox record is missing: <id>"."""
+        workspace_root = _sandboxed_workspace(tmp_path)
+        paths = _paths_for(workspace_root)
+        sandbox_id = "orphan"
+        if fault == "no-record":
+            paths.sandbox_dir(sandbox_id).mkdir(parents=True)
+        context = RunContext(steps=[], cwd=workspace_root, use_sandbox=True, sandbox_id=sandbox_id, paths=paths)
+
+        target_dir, manager, session, error = Workspace(context).setup()
+
+        assert target_dir == workspace_root.resolve()
+        assert manager is None
+        assert session is None
+        assert error == expected_error.format(path=paths.sandbox_dir(sandbox_id))
 
 
 class WorkspaceCleanupTests:

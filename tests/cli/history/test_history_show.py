@@ -81,8 +81,6 @@ class HistoryShowCliIntegrationTests:
                 "duration_seconds": None,
                 "error_message": None,
             },
-            "checkpoint": None,
-            "checkpoint_raw": None,
             "log_files": [],
             "log_snippet": [],
             "errors": [],

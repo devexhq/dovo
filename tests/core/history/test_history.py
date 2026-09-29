@@ -16,8 +16,8 @@ from worktree.core.history.models import (
     HistoryListStatus,
     HistoryShowStatus,
 )
+from worktree.core.logs import RunLogEvent, RunLogEventType
 from worktree.core.project.services.storage import resolve_workspace_paths
-from worktree.core.runtime import RunLogEvent, RunLogEventType
 
 
 def _paths_for(root: Path) -> WorkspacePaths:
@@ -39,7 +39,6 @@ def _as_expected_record(record: RunRecord) -> RunRecord:
         started_at=record.started_at,
         completed_at=record.completed_at,
         error_message=record.error_message,
-        checkpoint_json=record.checkpoint_json,
     )
 
 

@@ -11,8 +11,8 @@ from worktree.core.history.models import (
     HistoryShowResult,
     HistoryShowStatus,
 )
+from worktree.core.logs import RunLogEvent
 from worktree.core.logs.services.read import list_session_log_files, read_run_log_events
-from worktree.core.runtime import RunLogEvent
 
 
 def _render_run_log_line(event: RunLogEvent) -> str:

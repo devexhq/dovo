@@ -26,7 +26,7 @@ Worktree (`wt`) is designed around a clean separation between **isolated sandbox
 │                   │  - Evaluates inputs       │                         │
 │                   │  - Runs steps in sequence │                         │
 │                   │  - Checks assertions      │                         │
-│                   │  - Checkpoints on pause   │                         │
+│                   │  - Persists run state     │                         │
 │                   │  - Records to SQLite DB   │                         │
 │                   └───────────────────────────┘                         │
 │                                                                         │
@@ -95,7 +95,7 @@ Every execution via `wt run` is tracked as a **Session**:
 4. **Assertions & Quality Gates**: Output and filesystem state are validated after each step.
 5. **Resilience & Resumption**:
    - On error, `on_failure` policies determine whether to `abort`, `continue`, `retry`, or `prompt_user`.
-   - If an interactive prompt is interrupted or paused, a **checkpoint** is saved in the centralized database.
+   - If an interactive prompt is interrupted or paused, the run state is saved in the centralized database.
    - The session can be resumed at any time using `wt resume blueprint_<id>`.
 6. **Audit History**: All runs, durations, and outputs are recorded and accessible via `wt history`.
 

@@ -107,7 +107,7 @@ Every step can be configured with the following properties:
 
 | Field | Type | Default | Description |
 |---|---|---|---|
-| `id` | `string` | Auto-generated | Unique identifier for the step (used in logs and checkpoint tracking). |
+| `id` | `string` | Auto-generated | Unique identifier for the step (used in logs and run state tracking). |
 | `name` | `string` | `null` | Human-readable title displayed in the execution progress table. |
 | `description`| `string` | `null` | Optional description of what the step does. |
 | `timeout_seconds` | `integer` | `120` | Maximum duration before the step is terminated. |

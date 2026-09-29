@@ -51,8 +51,6 @@ Comprehensive reference for the shape of entities across the Worktree CLI codeba
   - `SandboxError`: Base sandbox failure.
   - `SandboxConfigError`: Invalid sandbox configuration parameters.
   - `SandboxCapacityError`: Active sandbox limit reached.
-- **Runtime** (`core/runtime/exceptions.py`):
-  - `PromptUserInterruptedError`: User aborted interactive failure prompt (e.g. Ctrl-C after checkpoint persisted).
 - **Patch** (`core/patch/exceptions.py`):
   - `MalformedDiffHeader`: Invalid unified diff format.
 - **Doctor** (`core/doctor/exceptions.py`):
@@ -119,21 +117,26 @@ All operations that can fail return a Pydantic result object subclassing `BaseRe
 - `StepResult`: Step execution outcome (`step_id`, `status`, `exit_code`, `stdout`, `stderr`, `duration_seconds`, `attempts`, `error_message`, `outputs`, `ok`).
 - `AssertionResult`: Assertion evaluation outcome (`passed`, `failed_conditions`, `message`).
 
-### Runtime & Process Engine Models
-**Relevant sources:** `src/worktree/core/runtime/models.py`, `src/worktree/core/engine/models.py`.
-- `RunContext`: Immutable execution input bundle (`steps`, `cwd`, `use_sandbox`, `keep`, `agent`, `observer`, `inputs`, `no_tty`, `failure_prompter`, `pause_store`, `resume_from`, `paths`).
-- [`RunOutcome`](../../src/worktree/core/runtime/models.py): Terminal run result, including the sandbox and session identifiers.
+### Run Engine Models
+**Relevant sources:** `src/worktree/core/engine/models.py`, `src/worktree/core/engine/context.py`, `src/worktree/core/logs/models.py`.
+- [`RunContext`](../../src/worktree/core/engine/models.py): Immutable input bundle for sandbox/session setup and step coordination (`use_sandbox`, `keep`, `agent`, `observer`, `inputs`, `no_tty`, `failure_prompter`, `auto_apply`, `sandbox_id`, `paths`).
+- [`RunSessionContext`](../../src/worktree/core/engine/context.py): Infrastructure resources for one run's execution; durable progress lives only in `ExecutionStateTree`.
+- [`RunOutcome`](../../src/worktree/core/engine/models.py): Terminal run result, including the sandbox and session identifiers.
+- [`StepLoopState`](../../src/worktree/core/engine/models.py): Mutable per-run bookkeeping threaded through step execution.
+- [`RunObserver`](../../src/worktree/core/engine/models.py), [`FailurePrompter`](../../src/worktree/core/engine/models.py), [`FailurePromptDecision`](../../src/worktree/core/engine/models.py), [`LoopPromptDecision`](../../src/worktree/core/engine/models.py): Caller-supplied progress hooks and failure/loop decision entrypoints.
 - `RunStatus`: `StrEnum` (`pending`, `running`, `completed`, `failed`, `paused`, `cancelled`).
-- `RunCheckpoint`: JSON-serializable state for paused runs (`sandbox_path`, `sandbox_id`, `sandbox_branch`, `use_sandbox`, `keep`, `agent`, `inputs`, `pending_step_id`, `pending_result`, `diagnostic`, `next_step_index`).
 - `RunRequest`: Facade execution parameters for `Engine.run` (`inputs`, `cli_args`, `use_sandbox`, `keep`, `agent`, `session_id`, `observer`, `failure_prompter`, `no_tty`).
-- `ResumableRun`: Non-raising inspector and loader for paused runs.
-- `EngineResumeStatus`: `StrEnum` (`ok`, `not_found`, `wrong_status`, `missing_sandbox`, `corrupt_checkpoint`, `missing_snapshot`, `failed`).
-- [`ExecutionStateTree`](../../src/worktree/core/engine/state_models.py): Versioned plan-and-progress document for one run (manifest plus ordered step and loop nodes).
+- [`RunCoordinator`](../../src/worktree/core/engine/coordinator.py) / `NodeTransitionKind`: State-driven execution of a run: selects the next non-terminal node, applies one durable transition through `RunStateStore`, and repeats until the run completes, pauses, or fails. `Engine.run` and `Engine.resume` reach it through `drive_run` ([`session.py`](../../src/worktree/core/engine/session.py)).
+- [`EngineLoader`](../../src/worktree/core/engine/loader.py): Validates a paused run's row, execution state, snapshots, and retained sandbox; raises `EngineResumeError` carrying an `EngineResumeStatus`.
+- [`flatten_step_results`](../../src/worktree/core/engine/projection.py): Projects the terminal leaf attempts of an `ExecutionStateTree` into the ordered `RunOutcome.step_results`.
+- `EngineResumeStatus`: `StrEnum` (`ok`, `not_found`, `wrong_status`, `missing_sandbox`, `corrupt_state`, `missing_snapshot`, `failed`).
+- [`ExecutionStateTree`](../../src/worktree/core/engine/state_models.py): Versioned plan-and-progress document for one run (manifest plus ordered step and loop nodes). A paused leaf keeps its failed attempt, so resume re-enters the failure prompt without re-running the step.
 - [`RunStateStore`](../../src/worktree/core/engine/state_store.py): Builds, saves (revision compare-and-swap), and loads an `ExecutionStateTree` for one run row; returns `RunStateWriteResult` / `RunStateLoadResult` (`RunStateWriteStatus` / `RunStateLoadStatus` in [`state_models.py`](../../src/worktree/core/engine/state_models.py)). Does not lock; callers hold the workspace lock.
 - [`RunStartConfig`](../../src/worktree/core/engine/models.py): Resolved run options written to the run row when a run starts.
 - `DefinitionRef`: One snapshotted catalog item's resolved reference, content SHA, and resolution timestamp (`ref`, `sha`, `resolved_at`); `ref` is `"<tier>:<item_type>:<key>"`.
-- `DefinitionsManifest`: The blueprint's `DefinitionRef` plus a `DefinitionRef` per transitively-resolved `uses:` step (`blueprint`, `steps`), snapshotted by `Engine.run` into `<session_dir>/definitions/` and consumed by `ResumableRun`/`load_blueprint_from_snapshot` to resume without a live catalog read.
-- [`RunLogEvent`](../../src/worktree/core/runtime/models.py) / `RunLogEventType`: One `run.log` timeline record. `run_steps` and `LoopBlockRunner` append one JSON line per lifecycle event to `logs_dir/<session_id>/run.log` via `append_run_log_event` (`core/runtime/log_writer.py`), which stamps `ts` at write time and drops write failures silently. `event` decides which optional fields are populated. `core/logs` only reads these events.
+- `DefinitionsManifest`: The blueprint's `DefinitionRef` plus a `DefinitionRef` per transitively-resolved `uses:` step (`blueprint`, `steps`), snapshotted by `Engine.run` into `<session_dir>/definitions/` and consumed by `RunCoordinator`/`load_blueprint_from_snapshot` to execute and resume without a live catalog read.
+- [`RunLogEvent`](../../src/worktree/core/logs/models.py) / `RunLogEventType`: One `run.log` timeline record. `drive_run`, `RunCoordinator`, `StepCoordinator`, and `LoopBlockRunner` append one JSON line per lifecycle event to `logs_dir/<session_id>/run.log` via `append_run_log_event` ([`core/logs/services/write.py`](../../src/worktree/core/logs/services/write.py)), which stamps `ts` at write time and drops write failures silently. `event` decides which optional fields are populated. `core/logs` reads these events back.
+- [`StepCoordinator`](../../src/worktree/core/engine/step_executor.py), [`LoopBlockRunner`](../../src/worktree/core/engine/loop_runner.py), [`Workspace`](../../src/worktree/core/engine/workspace.py): Per-step attempt and failure-prompt primitives, loop-block execution, and sandbox/session lifecycle used by the coordinator.
 
 ### Agent Provider Models
 **Relevant sources:** `src/worktree/core/agents/models.py`, `src/worktree/core/agents/cli_mutation.py`.
@@ -179,7 +182,7 @@ The catalog is disk-only: each of the REPO, USER, and GLOBAL tiers keeps its own
 
 All four tables live in one centralized SQLite database shared across projects (`resolve_db_path` in `core/db/connection.py`), and every record carries `project_id`; every `BaseRepository` query scopes on it (`core/db/repositories/base.py`). The catalog is no longer one of them — see Catalog Models above.
 - `SandboxRecord`: Persisted sandbox rows in `sandboxes` table.
-- `RunRecord`: Persisted blueprint run rows in `runs` table (including `checkpoint_json` and the execution-state/config columns — see [`RunRecord`](../../src/worktree/core/db/models.py)). The row (`execution_state_json`, `execution_state_revision`) is the canonical execution state; `<session-dir>/run.json` is its projection, regenerated from the row on load when missing, corrupt, or older, and a newer file is rejected rather than imported.
+- `RunRecord`: Persisted blueprint run rows in `runs` table (including the execution-state/config columns — see [`RunRecord`](../../src/worktree/core/db/models.py); `sandbox_id` is written by `RunCoordinator` when it creates or reuses a sandbox session). The row (`execution_state_json`, `execution_state_revision`) is the canonical execution state; `<session-dir>/run.json` is its projection, regenerated from the row on load when missing, corrupt, or older, and a newer file is rejected rather than imported.
 - `CostRecord`: Persisted token and execution cost tracking in `costs` table.
 - `ArtifactRecord`: Persisted artifact metadata rows in `artifacts` table (`id`, `project_id`, `session_id`, `name`, `path`, `size_bytes`, `file_count`, `created_at`, `expires_at`); unique on `(project_id, session_id, name)`, upserted by `ArtifactsRepository.create`.
 

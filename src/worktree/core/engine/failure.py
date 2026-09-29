@@ -33,3 +33,9 @@ def mark_continued_after_prompt(result: StepResult) -> StepResult:
     diagnostic = step_failure_diagnostic(result)
     marker = f"{diagnostic} ({USER_CONTINUED_MARKER})" if diagnostic else USER_CONTINUED_MARKER
     return result.model_copy(update={"status": "ignored", "error_message": marker})
+
+
+def failed_step_message(result: StepResult) -> str:
+    """Format diagnostic message describing step failure."""
+    detail = step_failure_diagnostic(result)
+    return f"Step '{result.step_id}' failed: {detail}"

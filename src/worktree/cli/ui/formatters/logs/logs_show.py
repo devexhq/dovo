@@ -11,8 +11,8 @@ from rich.text import Text
 from worktree.cli.ui.formatters.common import build_error_panel
 from worktree.cli.ui.formatters.logs.logs_views import LogsShowView
 from worktree.common.types import ComponentFormatter
+from worktree.core.logs import RunLogEvent
 from worktree.core.logs.models import LogsShowResult, LogsShowStatus
-from worktree.core.runtime import RunLogEvent
 
 
 def _event_details(event: RunLogEvent) -> str:

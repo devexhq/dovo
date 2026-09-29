@@ -6,14 +6,13 @@ rules:
   domain: all
   scope: src/worktree/
   guideline: 'Dependencies flow strictly one way: common/ -> core/{db,git,sandbox,catalog,inputs,patch,diff,status}/ ->
-    core/agents/ -> core/step/ -> {core/runtime/, core/blueprint/} -> core/engine/ -> {core/history/, core/logs/} -> cli/.
-    Upward imports are strictly prohibited.'
+    core/agents/ -> core/step/ -> {core/logs/, core/blueprint/} -> core/engine/ -> core/history/ -> cli/. Upward imports
+    are strictly prohibited.'
   evaluation_criteria: Scan imports. Verify common/ imports no core/ or cli/; core/ and common/ import no cli/ or rich; inputs/
-    and patch/ import no step, runtime, agents; agents/ imports no step or runtime; step/ imports no runtime; runtime/ imports
-    no blueprint, engine, history, logs, cli; blueprint/ imports no runtime, engine, cli; engine/ imports no history, logs,
-    cli; history/ and logs/ import no cli.
-  positive_example: 'from worktree.core.runtime.run import run_steps  # in core/engine/'
-  negative_example: 'from worktree.core.engine.engine import Engine  # upward import in core/runtime/'
+    and patch/ import no step or agents; agents/ imports no step; step/ imports no engine; logs/ imports no blueprint, engine,
+    history, cli; blueprint/ imports no engine, cli; engine/ imports no history, cli; history/ imports no cli.
+  positive_example: 'from worktree.core.logs import append_run_log_event  # in core/engine/'
+  negative_example: 'from worktree.core.engine.engine import Engine  # upward import in core/logs/'
   citation: docs/agents/architecture.md#package-boundaries-import-direction
 - id: ARCH-002
   title: CLI Logic Purity
@@ -349,7 +348,7 @@ rules:
     versioned Alembic revisions (op.execute()), not ad-hoc raw SQL in models.
   evaluation_criteria: Check Alembic migrations. Verify added columns/tables are actively queried and written by production
     services in the same PR.
-  positive_example: '# Migration adds checkpoint_json and engine persists RunCheckpoint to it'
+  positive_example: '# Migration adds a column and a repository method reads and writes it'
   negative_example: '# Migration adds column future_flag with zero callers in src/'
   citation: docs/agents/ci-and-tooling.md#database-migration-hygiene
 - id: PERF-003

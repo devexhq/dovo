@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from pydantic import BaseModel, Field
 
+from worktree.core.logs import RunLogEvent
 from worktree.core.logs.models import LogsShowStatus
-from worktree.core.runtime import RunLogEvent
 
 
 class LogsShowView(BaseModel):

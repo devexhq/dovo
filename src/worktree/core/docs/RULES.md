@@ -4,11 +4,11 @@
 > **Notice for Agents:** Code violating `BLOCKER` rules will fail verification.
 
 - **[ARCH-001] Strict Layered Import Flow (BLOCKER):**
-  Dependencies flow strictly one way: common/ -> core/{db,git,sandbox,catalog,inputs,patch,diff,status}/ -> core/agents/ -> core/step/ -> {core/runtime/, core/blueprint/} -> core/engine/ -> {core/history/, core/logs/} -> cli/. Upward imports are strictly prohibited.
+  Dependencies flow strictly one way: common/ -> core/{db,git,sandbox,catalog,inputs,patch,diff,status}/ -> core/agents/ -> core/step/ -> {core/logs/, core/blueprint/} -> core/engine/ -> core/history/ -> cli/. Upward imports are strictly prohibited.
 
 ```python
-# ✅ DO: from worktree.core.runtime.run import run_steps  # in core/engine/
-# ❌ DO NOT: from worktree.core.engine.engine import Engine  # upward import in core/runtime/
+# ✅ DO: from worktree.core.logs import append_run_log_event  # in core/engine/
+# ❌ DO NOT: from worktree.core.engine.engine import Engine  # upward import in core/logs/
 ```
 
 - **[ARCH-004] Standard Core Package Layout (Domain-Named Entrypoint) (BLOCKER):**
@@ -175,7 +175,7 @@ for item in items: repo.create(item)
   Every new table or column must have real caller sites in src/ in the same PR. One-time data backfills must be versioned Alembic revisions (op.execute()), not ad-hoc raw SQL in models.
 
 ```python
-# ✅ DO: # Migration adds checkpoint_json and engine persists RunCheckpoint to it
+# ✅ DO: # Migration adds a column and a repository method reads and writes it
 # ❌ DO NOT: # Migration adds column future_flag with zero callers in src/
 ```
 

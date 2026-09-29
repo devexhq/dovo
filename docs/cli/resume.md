@@ -28,10 +28,10 @@ wt resume [session_id] [OPTIONS]
    - If `session_id` is provided, resumes that specific session.
    - If `session_id` is omitted, queries `RunsRepository.get_latest_paused()` and picks up the most recent paused run. If no paused session is found, renders a formatted error panel and exits with code `1`.
 
-2. **Readiness Classification**: Validates that the session exists, is in `paused` status, and has an intact checkpoint and accessible sandbox (if sandboxed).
+2. **Readiness Classification**: Validates that the session exists, is in `paused` status, and has intact execution state and an accessible sandbox (if sandboxed).
 3. **Execution**: Re-enters step execution via `Engine.resume`.
 4. **Exit Codes**:
-   - `0`: Successful completion or paused run (checkpoint updated).
+   - `0`: Successful completion or paused run (run state updated).
    - `1`: Resume validation error, failed step, cancelled run, or no paused session found.
 
 ## Examples

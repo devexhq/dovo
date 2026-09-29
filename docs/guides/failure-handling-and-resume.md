@@ -1,6 +1,6 @@
 # Failure Handling & Session Resumption
 
-Worktree provides declarative quality assertions and durable session checkpoints so that long-running blueprints can recover gracefully from failures.
+Worktree provides declarative quality assertions and durable run state so that long-running blueprints can recover gracefully from failures.
 
 ---
 
@@ -75,23 +75,23 @@ For full details on assertion operators, see the [Assertions Schema Reference](.
 
 ---
 
-## Interactive Prompts & Durable Checkpoints
+## Interactive Prompts & Durable Run State
 
 When a step fails with `on_failure: prompt_user`:
 1. Worktree pauses the execution loop.
-2. A durable **session checkpoint** is persisted in the centralized database.
+2. The paused step and its failed attempt are persisted as **durable run state** in the centralized database.
 3. The user is prompted interactively:
    ```text
    Step 'verify-tests' failed (exit code: 1).
    [r]etry / [c]ontinue / [a]bort ?
    ```
 
-### Checkpoint Contents
-The checkpoint preserves:
-- The sandbox branch, path, and base commit.
-- Completed step outputs and execution logs.
-- Resolved parameter input values.
-- The index of the pending step.
+### Durable Run State Contents
+The run row preserves:
+- The paused step and the failed attempt that triggered the prompt.
+- The results of every completed step.
+- The sandbox identifier of the retained sandbox.
+- Resolved parameter input values and run options (`--keep`, `--agent`, `--auto-apply`).
 
 ---
 
@@ -104,7 +104,7 @@ If you exit or interrupt an interactive session (or if a prompt is left unresolv
 wt resume blueprint_a1b2c3d4
 ```
 
-Worktree will reload the sandbox and re-execute the pending step without re-running earlier completed steps.
+Worktree reloads the retained sandbox and re-enters the failure prompt for the paused step using its recorded failed attempt, without re-running the failed command or any earlier completed step. Choosing retry starts the next attempt; continue and abort finish the step as ignored or failed.
 
 ---
 

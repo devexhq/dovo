@@ -12,7 +12,7 @@ Key capabilities include:
 
 - **Isolated Sandboxes**: Safely iterate on feature code without dirtying your main working tree using `wt sandbox`.
 - **Unified Blueprint Execution**: Execute cataloged blueprints via `wt run`.
-- **Durable Resumption**: Seamlessly resume paused sessions from saved checkpoints via `wt resume`.
+- **Durable Resumption**: Seamlessly resume paused sessions from saved run state via `wt resume`.
 - **Execution History**: Inspect and audit recorded blueprint run sessions via `wt history`.
 - **Catalog System**: Discover and manage project blueprints and steps with `wt blueprint` and `wt step`.
 
@@ -50,7 +50,7 @@ wt sandbox create my-feature
 - **[Authoring Blueprints](guides/authoring-blueprints.md)**: Creating custom blueprint documents.
 - **[Working with Steps](guides/working-with-steps.md)**: Command, Agent, and Script steps, shorthands, and reusable catalog steps.
 - **[Parameter Inputs & Expressions](guides/passing-inputs.md)**: Declaring typed parameters, CLI flags, and `${{ inputs.* }}` interpolation.
-- **[Failure Handling & Resumption](guides/failure-handling-and-resume.md)**: Retry policies, interactive prompts, checkpoints, and `wt resume`.
+- **[Failure Handling & Resumption](guides/failure-handling-and-resume.md)**: Retry policies, interactive prompts, durable run state, and `wt resume`.
 - **[AI Agent Providers](guides/agent-providers.md)**: Adapter selection and the current agent-step limitation.
 
 ### 📚 Reference
@@ -70,7 +70,7 @@ wt sandbox create my-feature
 - **[Status (`wt status`)](cli/status.md)**: Inspect workspace health, catalog, sandboxes, and recorded sessions.
 - **[Config (`wt config`)](cli/config.md)**: Display, modify, and validate project configuration.
 - **[Run (`wt run`)](cli/run.md)**: Execute a blueprint by name.
-- **[Resume (`wt resume`)](cli/resume.md)**: Resume paused blueprint sessions from checkpoint.
+- **[Resume (`wt resume`)](cli/resume.md)**: Resume paused blueprint sessions from saved run state.
 - **[History (`wt history`)](cli/history.md)**: List and inspect recorded blueprint runs.
 - **[Logs (`wt logs`)](cli/logs.md)**: Show a session's run timeline or a step's captured output.
 - **[Diff (`wt diff`)](cli/diff.md)**: View the diff captured for an execution session.

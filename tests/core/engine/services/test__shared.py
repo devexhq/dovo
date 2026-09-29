@@ -11,9 +11,9 @@ from worktree.common.filesystem.models import RepositoryPaths
 from worktree.common.filesystem.services.global_root import resolve_global_paths
 from worktree.core.blueprint import BlueprintRunResult
 from worktree.core.db import RunsRepository, RunStatus
+from worktree.core.engine.models import RunOutcome
 from worktree.core.engine.services._shared import fail, finalize, load_record
 from worktree.core.project.services.storage import resolve_workspace_paths
-from worktree.core.runtime import RunOutcome
 
 
 def _repo(tmp_path: Path) -> RunsRepository:

@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from pathlib import Path
 
-from worktree.core.runtime.models import RunLogEvent
+from worktree.core.logs.models import RunLogEvent
 
 
 def append_run_log_event(session_log_dir: Path | None, event: RunLogEvent) -> None:

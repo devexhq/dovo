@@ -28,7 +28,6 @@ def _sample_run_record(
     started_at: str | None = "2026-08-19 01:00:00",
     completed_at: str | None = "2026-08-19 01:00:10",
     error_message: str | None = None,
-    checkpoint_json: str | None = None,
 ) -> RunRecord:
     return RunRecord(
         id=1,
@@ -40,7 +39,6 @@ def _sample_run_record(
         started_at=started_at,
         completed_at=completed_at,
         error_message=error_message,
-        checkpoint_json=checkpoint_json,
     )
 
 

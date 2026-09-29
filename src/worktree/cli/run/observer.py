@@ -15,7 +15,7 @@ from worktree.cli.ui.events import (
     StepStartEvent,
 )
 from worktree.common.models import DisplayFormatOptions, OutputFormatOptions
-from worktree.core.runtime.models import RunObserver
+from worktree.core.engine.models import RunObserver
 from worktree.core.step import ConditionEvaluationResult, StepDefinition, StepResult
 
 if TYPE_CHECKING:

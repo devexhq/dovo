@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from worktree.cli.ui.dispatcher import UiDispatcher
 from worktree.cli.ui.events import MessageEvent, PromptEvent, PromptOption
-from worktree.core.runtime.models import FailurePromptDecision, FailurePrompter, LoopPromptDecision
+from worktree.core.engine.models import FailurePromptDecision, FailurePrompter, LoopPromptDecision
 from worktree.core.step import LoopStepBlock, StepDefinition, StepResult
 
 _STEP_CHOICE_MAP: dict[str, FailurePromptDecision] = {

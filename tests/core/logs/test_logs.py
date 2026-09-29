@@ -10,10 +10,8 @@ import pytest
 from worktree.common.filesystem.models import RepositoryPaths, WorkspacePaths
 from worktree.common.filesystem.services.global_root import resolve_global_paths
 from worktree.core.db import RunStatus
-from worktree.core.logs import Logs, LogsShowStatus, LogStreamFilter
+from worktree.core.logs import Logs, LogsShowStatus, LogStreamFilter, RunLogEvent, RunLogEventType, append_run_log_event
 from worktree.core.project.services.storage import resolve_workspace_paths
-from worktree.core.runtime import RunLogEvent, RunLogEventType
-from worktree.core.runtime.log_writer import append_run_log_event
 
 
 def _paths_for(root: Path) -> WorkspacePaths:

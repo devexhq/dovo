@@ -11,8 +11,9 @@ from worktree.common.filesystem.models import RepositoryPaths, WorkspacePaths
 from worktree.common.filesystem.services.global_root import resolve_global_paths
 from worktree.core.blueprint import Blueprint
 from worktree.core.catalog import Catalog
-from worktree.core.engine.writer import snapshot_definitions
+from worktree.core.engine.writer import load_blueprint_from_snapshot, snapshot_definitions
 from worktree.core.project.services.storage import resolve_workspace_paths
+from worktree.core.step import StepDefinition, StepType
 
 
 def _paths_for(root: Path) -> WorkspacePaths:
@@ -119,3 +120,23 @@ class SnapshotDefinitionsTests:
         assert manifest is None
         assert warnings == ["Failed to snapshot run definitions: catalog step 'ghost-step' not found."]
         assert not (session_dir / "definitions").exists()
+
+
+class LoadBlueprintFromSnapshotTests:
+    """Contract tests for load_blueprint_from_snapshot rebuilding a run's blueprint from its session files."""
+
+    def test_uses_step_with_run_shorthand_base_resolves_to_command_step(self, tmp_path: Path) -> None:
+        """load_blueprint_from_snapshot: a uses: step whose snapshotted base step is written with run: shorthand resolves to a command step carrying that command."""
+        workspace = tmp_path / "workspace"
+        write_runnable_step(workspace, key="lint-check", definition={"id": "lint-check", "run": "echo lint"})
+        write_runnable_blueprint(workspace, key="shorthand-task", steps=[{"id": "s1", "uses": "lint-check"}])
+        catalog = Catalog(_paths_for(workspace))
+        session_dir = tmp_path / "session"
+        manifest = snapshot_definitions(catalog, Blueprint.load("shorthand-task", catalog=catalog), session_dir, [])
+        assert manifest is not None
+
+        rebuilt = load_blueprint_from_snapshot(session_dir, manifest)
+
+        step = rebuilt.steps[0]
+        assert isinstance(step, StepDefinition)
+        assert (step.id, step.type, step.command) == ("s1", StepType.COMMAND, "echo lint")

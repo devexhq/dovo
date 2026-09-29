@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from worktree.core.runtime.models import RunObserver
+from worktree.core.engine.models import RunObserver
 
 
 def safe_notify(observer: RunObserver | None, method_name: str, *args: object, **kwargs: object) -> None:

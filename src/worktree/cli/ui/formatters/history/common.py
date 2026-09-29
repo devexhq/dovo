@@ -2,17 +2,11 @@
 
 from __future__ import annotations
 
-import json
 from collections.abc import Sequence
 
-from rich.panel import Panel
-from rich.syntax import Syntax
 from rich.table import Table
 
-from worktree.cli.ui.formatters.history.history_views import (
-    CheckpointDetailsView,
-    RunSummaryView,
-)
+from worktree.cli.ui.formatters.history.history_views import RunSummaryView
 from worktree.common.utils import enum_value
 from worktree.core.db import RunRecord, RunStatus
 
@@ -112,53 +106,3 @@ def build_metadata_table(run: RunSummaryView) -> Table:
     for field in _SESSION_SHOW_FIELDS:
         table.add_row(f"{field}:", values[field])
     return table
-
-
-def build_step_results_table(checkpoint: CheckpointDetailsView) -> Table | None:
-    """Build a sub-table summarizing recorded step results in a checkpoint."""
-    if not checkpoint.step_results:
-        return None
-    table = Table(title="Step Results", title_justify="left", show_header=True)
-    table.add_column("Step ID", style="bold")
-    table.add_column("Status")
-    table.add_column("Duration", justify="right")
-    table.add_column("Error")
-
-    for step_result in checkpoint.step_results:
-        ok = step_result.status in ("completed", "ignored")
-        status_style = "green" if ok else "red"
-        status_label = f"[{status_style}]{step_result.status}[/{status_style}]"
-        step_duration = f"{step_result.duration_seconds:.2f}s"
-        error_label = step_result.error_message or "-"
-        table.add_row(step_result.step_id, status_label, step_duration, error_label)
-    return table
-
-
-def build_checkpoint_view_renderables(
-    checkpoint: CheckpointDetailsView | None,
-    checkpoint_raw: str | None = None,
-) -> list[Panel | Table]:
-    """Build checkpoint metadata and step details renderables or pretty JSON fallback."""
-    if checkpoint is not None:
-        checkpoint_table = Table(show_header=False, box=None, padding=(0, 2, 0, 0))
-        checkpoint_table.add_column(style="bold")
-        checkpoint_table.add_column()
-        checkpoint_table.add_row("Pending Step ID:", checkpoint.pending_step_id)
-        checkpoint_table.add_row("Next Step Index:", str(checkpoint.next_step_index))
-        if checkpoint.diagnostic:
-            checkpoint_table.add_row("Diagnostic:", checkpoint.diagnostic)
-
-        renderables: list[Panel | Table] = [Panel(checkpoint_table, title="Checkpoint Details", border_style="cyan")]
-        step_table = build_step_results_table(checkpoint)
-        if step_table is not None:
-            renderables.append(step_table)
-        return renderables
-
-    if checkpoint_raw is not None:
-        try:
-            formatted_json = json.dumps(json.loads(checkpoint_raw), indent=2)
-            return [Panel(Syntax(formatted_json, "json"), title="Checkpoint JSON", border_style="cyan")]
-        except Exception:
-            return [Panel(checkpoint_raw, title="Checkpoint Data", border_style="cyan")]
-
-    return []

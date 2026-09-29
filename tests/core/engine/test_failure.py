@@ -1,10 +1,15 @@
-"""Contract tests for runtime failure-orchestration helpers: policy resolution and diagnostics."""
+"""Contract tests for failure-orchestration helpers: policy resolution and diagnostics."""
 
 from __future__ import annotations
 
 from worktree.common.models import FailurePolicy, OnFailureSpec
-from worktree.core.runtime import USER_CONTINUED_MARKER, effective_terminal_policy
-from worktree.core.runtime.failure import mark_continued_after_prompt, step_failure_diagnostic
+from worktree.core.engine.failure import (
+    USER_CONTINUED_MARKER,
+    effective_terminal_policy,
+    failed_step_message,
+    mark_continued_after_prompt,
+    step_failure_diagnostic,
+)
 from worktree.core.step import StepResult
 
 
@@ -63,3 +68,21 @@ class FailurePolicyHelperTests:
         )
 
         assert step_failure_diagnostic(result) == "explicit failure"
+
+
+class FailedStepMessageTests:
+    """[tier-1/unit] failed_step_message: diagnostic message format."""
+
+    def test_formats_step_id_and_diagnostic_detail(self) -> None:
+        """[tier-1/unit] failed_step_message: renders "Step '<id>' failed: <diagnostic>" using error_message when present."""
+        result = StepResult(
+            step_id="fail",
+            status="failed",
+            exit_code=1,
+            stdout="",
+            stderr="",
+            duration_seconds=0.0,
+            error_message="Command failed with exit code 1.",
+        )
+
+        assert failed_step_message(result) == "Step 'fail' failed: Command failed with exit code 1."

@@ -1,5 +1,6 @@
 """Blueprint execution engine: persist a run and drive sequential steps."""
 
+from worktree.core.engine.coordinator import RunCoordinator
 from worktree.core.engine.engine import Engine
 from worktree.core.engine.exceptions import (
     EngineError,
@@ -8,6 +9,7 @@ from worktree.core.engine.exceptions import (
     EngineRuntimeError,
     EngineSnapshotMissingError,
 )
+from worktree.core.engine.loader import EngineLoader
 from worktree.core.engine.models import (
     DefinitionRef,
     DefinitionsManifest,
@@ -16,7 +18,6 @@ from worktree.core.engine.models import (
     RunRequest,
     RunStartConfig,
 )
-from worktree.core.engine.resumable import ResumableRun
 from worktree.core.engine.services import (
     STALE_RUN_ERROR_MESSAGE,
     BlueprintResumeService,
@@ -45,13 +46,14 @@ __all__ = [
     "Engine",
     "EngineError",
     "EngineInputError",
+    "EngineLoader",
     "EngineResumeError",
     "EngineResumeStatus",
     "EngineRuntimeError",
     "EngineSnapshotMissingError",
     "ExecutionStateTree",
     "ReconciliationResult",
-    "ResumableRun",
+    "RunCoordinator",
     "RunRequest",
     "RunStartConfig",
     "RunStateStore",

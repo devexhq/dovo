@@ -18,7 +18,13 @@ from worktree.core.catalog.models import CatalogItemType, CatalogRecord
 from worktree.core.diff.writer import get_session_dir, write_session_diff
 from worktree.core.engine.exceptions import EngineSnapshotMissingError
 from worktree.core.engine.models import DefinitionRef, DefinitionsManifest
-from worktree.core.step import LoopStepBlock, StepDefinition, merge_uses_step
+from worktree.core.step import (
+    LoopStepBlock,
+    StepDefinition,
+    StepValidationError,
+    merge_uses_step,
+    resolve_step_definition,
+)
 
 
 def _collect_uses_refs(steps: list[StepDefinition | LoopStepBlock]) -> list[str]:
@@ -212,8 +218,11 @@ def load_blueprint_from_snapshot(session_dir: Path, manifest: DefinitionsManifes
         _, _, step_key = step_ref.ref.split(":", 2)
         raw_step = _read_snapshot_yaml(snapshot_step_path(session_dir, step_key))
         try:
-            step_snapshots[step_key] = StepDefinition.model_validate(raw_step)
-        except ValidationError as exc:
+            snapshot_step = StepDefinition.model_validate(raw_step)
+            step_snapshots[step_key] = (
+                resolve_step_definition(snapshot_step) if snapshot_step.run is not None else snapshot_step
+            )
+        except (ValidationError, StepValidationError) as exc:
             raise BlueprintValidationError(f"Snapshot step '{step_key}' failed validation: {exc}") from exc
 
     resolved_steps = _resolve_snapshot_steps(definition.steps, step_snapshots)
