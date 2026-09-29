@@ -1,4 +1,4 @@
-"""Initial baseline database schema migration.
+"""Baseline database schema migration, flattened to the current schema.
 
 Revision ID: 0001_initial_schema
 Revises:
@@ -22,7 +22,7 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
-    """Create centralized, project-scoped tables for sandboxes, catalog, runs, and costs."""
+    """Create centralized, project-scoped tables for sandboxes, runs, costs, and artifacts."""
     op.create_table(
         "sandboxes",
         sa.Column("id", AutoString(), nullable=False),
@@ -55,40 +55,6 @@ def upgrade() -> None:
     op.create_index("idx_sandboxes_project_id", "sandboxes", ["project_id"], unique=False)
 
     op.create_table(
-        "catalog",
-        sa.Column("id", sa.Integer(), autoincrement=True, nullable=False),
-        sa.Column("project_id", AutoString(), nullable=False),
-        sa.Column("key", AutoString(), nullable=False),
-        sa.Column("sha", AutoString(), nullable=False),
-        sa.Column("item_type", AutoString(), nullable=False),
-        sa.Column("name", AutoString(), nullable=False),
-        sa.Column("namespace", AutoString(), nullable=True),
-        sa.Column("path", AutoString(), nullable=False),
-        sa.Column("checksum", AutoString(), nullable=False),
-        sa.Column(
-            "created_at",
-            AutoString(),
-            nullable=False,
-            server_default=sa.text("CURRENT_TIMESTAMP"),
-        ),
-        sa.Column(
-            "updated_at",
-            AutoString(),
-            nullable=False,
-            server_default=sa.text("CURRENT_TIMESTAMP"),
-        ),
-        sa.PrimaryKeyConstraint("id"),
-        sa.UniqueConstraint("project_id", "key", name="uq_catalog_project_key"),
-        sa.UniqueConstraint("project_id", "sha", name="uq_catalog_project_sha"),
-        sa.UniqueConstraint("project_id", "path", name="uq_catalog_project_path"),
-        sa.CheckConstraint(
-            "item_type IN ('blueprint', 'step')",
-            name="ck_catalog_item_type",
-        ),
-    )
-    op.create_index("idx_catalog_type", "catalog", ["item_type"], unique=False)
-
-    op.create_table(
         "runs",
         sa.Column("id", sa.Integer(), autoincrement=True, nullable=False),
         sa.Column("project_id", AutoString(), nullable=False),
@@ -107,6 +73,16 @@ def upgrade() -> None:
         sa.Column("completed_at", AutoString(), nullable=True),
         sa.Column("error_message", AutoString(), nullable=True),
         sa.Column("checkpoint_json", AutoString(), nullable=True),
+        sa.Column("execution_state_json", AutoString(), nullable=True),
+        sa.Column("execution_state_revision", sa.Integer(), nullable=True, server_default=sa.text("0")),
+        sa.Column("blueprint_tier", AutoString(), nullable=True),
+        sa.Column("commit_sha", AutoString(), nullable=True),
+        sa.Column("use_sandbox", sa.Boolean(), nullable=False, server_default=sa.text("1")),
+        sa.Column("keep", sa.Boolean(), nullable=False, server_default=sa.text("0")),
+        sa.Column("agent", AutoString(), nullable=True),
+        sa.Column("inputs_json", AutoString(), nullable=True),
+        sa.Column("auto_apply", sa.Boolean(), nullable=False, server_default=sa.text("1")),
+        sa.Column("sandbox_id", AutoString(), nullable=True),
         sa.PrimaryKeyConstraint("id"),
         sa.UniqueConstraint("session_id"),
         sa.CheckConstraint(
@@ -141,9 +117,37 @@ def upgrade() -> None:
     op.create_index("idx_costs_created", "costs", ["created_at"], unique=False)
     op.create_index("idx_costs_project_id", "costs", ["project_id"], unique=False)
 
+    op.create_table(
+        "artifacts",
+        sa.Column("id", sa.Integer(), autoincrement=True, nullable=False),
+        sa.Column("project_id", AutoString(), nullable=False),
+        sa.Column("session_id", AutoString(), nullable=False),
+        sa.Column("name", AutoString(), nullable=False),
+        sa.Column("path", AutoString(), nullable=False),
+        sa.Column("size_bytes", sa.Integer(), nullable=False, server_default="0"),
+        sa.Column("file_count", sa.Integer(), nullable=False, server_default="0"),
+        sa.Column(
+            "created_at",
+            AutoString(),
+            nullable=False,
+            server_default=sa.text("CURRENT_TIMESTAMP"),
+        ),
+        sa.Column("expires_at", AutoString(), nullable=True),
+        sa.PrimaryKeyConstraint("id"),
+        sa.UniqueConstraint("project_id", "session_id", "name", name="uq_artifacts_project_session_name"),
+    )
+    op.create_index("idx_artifacts_project_id", "artifacts", ["project_id"], unique=False)
+    op.create_index("idx_artifacts_session_id", "artifacts", ["session_id"], unique=False)
+    op.create_index("idx_artifacts_expires_at", "artifacts", ["expires_at"], unique=False)
+
 
 def downgrade() -> None:
-    """Drop all tables created in initial migration."""
+    """Drop all tables created in the baseline migration."""
+    op.drop_index("idx_artifacts_expires_at", table_name="artifacts")
+    op.drop_index("idx_artifacts_session_id", table_name="artifacts")
+    op.drop_index("idx_artifacts_project_id", table_name="artifacts")
+    op.drop_table("artifacts")
+
     op.drop_index("idx_costs_project_id", table_name="costs")
     op.drop_index("idx_costs_created", table_name="costs")
     op.drop_index("idx_costs_session", table_name="costs")
@@ -153,9 +157,6 @@ def downgrade() -> None:
     op.drop_index("idx_runs_started", table_name="runs")
     op.drop_index("idx_runs_status", table_name="runs")
     op.drop_table("runs")
-
-    op.drop_index("idx_catalog_type", table_name="catalog")
-    op.drop_table("catalog")
 
     op.drop_index("idx_sandboxes_project_id", table_name="sandboxes")
     op.drop_index("idx_sandboxes_status", table_name="sandboxes")
