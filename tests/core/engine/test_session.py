@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 from datetime import datetime
 from pathlib import Path
 
@@ -21,6 +20,7 @@ from worktree.core.engine.models import (
     RunOutcome,
 )
 from worktree.core.engine.session import drive_run
+from worktree.core.logs.services.read import read_run_log_events
 from worktree.core.project.services.storage import resolve_workspace_paths
 from worktree.core.sandbox import Sandbox, SandboxApplyResult, SandboxApplyStatus
 from worktree.core.step.models import LoopStepBlock, StepDefinition, StepResult
@@ -338,19 +338,41 @@ class DriveRunLifecycleTests:
         assert outcome.status == RunStatus.COMPLETED
         assert outcome.step_results[-1].outputs == {"fresh": "yes"}
 
-    def test_run_log_records_started_and_completed_events(
+    def test_run_log_round_trips_through_reader_for_three_step_run(
         self, engine_paths: WorkspacePaths, runs_repo: RunsRepository
     ) -> None:
-        """[tier-1/integration] drive_run: run.log begins with a run_started event carrying session_id and blueprint_key and ends with run_completed carrying status "completed", both with parseable ISO timestamps."""
-        seed_new_run(engine_paths, runs_repo, session_id="timeline", steps=[_step("a", "echo a")])
+        """[tier-1/integration] read_run_log_events: a drive_run 3-step run.log returns 8 events run_started, 3 step_start/step_done pairs (step_index 1..3, attempt 1, completed, exit_code 0), run_completed status "completed", none skipped, ts non-decreasing."""
+        seed_new_run(
+            engine_paths,
+            runs_repo,
+            session_id="timeline3",
+            steps=[_step("a", "echo a"), _step("b", "echo b"), _step("c", "echo c")],
+        )
 
-        _drive(engine_paths, runs_repo, "timeline")
+        _drive(engine_paths, runs_repo, "timeline3")
+        log_dir = engine_paths.logs_dir / "timeline3"
 
-        lines = (engine_paths.logs_dir / "timeline" / "run.log").read_text(encoding="utf-8").splitlines()
-        first, last = json.loads(lines[0]), json.loads(lines[-1])
-        assert (first["event"], first["session_id"], first["blueprint_key"]) == ("run_started", "timeline", "timeline")
-        assert (last["event"], last["status"]) == ("run_completed", "completed")
-        assert datetime.fromisoformat(first["ts"]) <= datetime.fromisoformat(last["ts"])
+        events = read_run_log_events(log_dir, tail=None)
+
+        assert len(events) == len((log_dir / "run.log").read_text(encoding="utf-8").splitlines())
+        step_events = [
+            event
+            for index, step_id in enumerate(("a", "b", "c"), start=1)
+            for event in (
+                ("step_start", {"step_index": index, "step_id": step_id, "attempt": 1}),
+                (
+                    "step_done",
+                    {"step_index": index, "step_id": step_id, "attempt": 1, "status": "completed", "exit_code": 0},
+                ),
+            )
+        ]
+        assert [(e.event.value, e.details()) for e in events] == [
+            ("run_started", {"session_id": "timeline3", "blueprint_key": "timeline3"}),
+            *step_events,
+            ("run_completed", {"status": "completed"}),
+        ]
+        timestamps = [datetime.fromisoformat(e.ts) for e in events]
+        assert timestamps == sorted(timestamps)
 
     @pytest.mark.parametrize(
         ("save_attempt_logs", "expect_log"),
