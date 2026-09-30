@@ -32,6 +32,7 @@ from worktree.core.engine.state_models import (
     StepAttemptRecord,
 )
 from worktree.core.engine.writer import load_blueprint_from_snapshot
+from worktree.core.logs.services.read import read_run_log_events
 from worktree.core.sandbox.models import SandboxSession
 from worktree.core.step import StepExecution
 from worktree.core.step.models import ConditionEvaluationResult, LoopStepBlock, StepDefinition, StepResult
@@ -87,18 +88,23 @@ class _Prompter(FailurePrompter):
         return self.loop_decisions.pop(0)
 
 
-class _RecordingObserver(NoOpRunObserver):
-    """RunObserver recording step start and done callbacks, and loop callbacks, in call order."""
+class _SequenceObserver(NoOpRunObserver):
+    """RunObserver recording every step and loop callback in one ordered list."""
 
     def __init__(self) -> None:
-        self.events: list[tuple[str, int, int, str]] = []
-        self.loop_events: list[tuple[object, ...]] = []
+        self.calls: list[tuple[object, ...]] = []
+
+    def on_step_start(self, idx: int, total: int, step: StepDefinition) -> None:
+        self.calls.append(("step_start", idx, total, step.id))
+
+    def on_step_done(self, idx: int, total: int, result: StepResult) -> None:
+        self.calls.append(("step_done", idx, total, result.step_id, result.status))
 
     def on_loop_start(self, loop_id: str, max_iterations: int) -> None:
-        self.loop_events.append(("start", loop_id, max_iterations))
+        self.calls.append(("loop_start", loop_id, max_iterations))
 
     def on_loop_turn_start(self, loop_id: str, turn: int, max_iterations: int) -> None:
-        self.loop_events.append(("turn_start", loop_id, turn, max_iterations))
+        self.calls.append(("loop_turn_start", loop_id, turn, max_iterations))
 
     def on_loop_conditions_evaluated(
         self,
@@ -107,16 +113,10 @@ class _RecordingObserver(NoOpRunObserver):
         all_passed: bool,
         next_turn: int | None = None,
     ) -> None:
-        self.loop_events.append(("conditions", loop_id, [r.passed for r in results], all_passed, next_turn))
+        self.calls.append(("loop_conditions_evaluated", loop_id, [r.passed for r in results], all_passed, next_turn))
 
     def on_loop_done(self, loop_id: str, status: str, turns: int) -> None:
-        self.loop_events.append(("done", loop_id, status, turns))
-
-    def on_step_start(self, idx: int, total: int, step: StepDefinition) -> None:
-        self.events.append(("start", idx, total, step.id))
-
-    def on_step_done(self, idx: int, total: int, result: StepResult) -> None:
-        self.events.append(("done", idx, total, result.step_id))
+        self.calls.append(("loop_done", loop_id, status, turns))
 
 
 class _RaisingObserver(NoOpRunObserver):
@@ -492,29 +492,6 @@ class CoordinatorExecuteTests:
         state = _state(engine_paths, runs_repo, "ctrl-c")
         assert [node.state for node in state.nodes] == [NodeState.CANCELLED, NodeState.PENDING]
 
-    def test_observer_and_run_log_follow_step_lifecycle(
-        self, engine_paths: WorkspacePaths, runs_repo: RunsRepository
-    ) -> None:
-        """[tier-1/integration] RunCoordinator.execute: a recording observer sees on_step_start(1, 2, a), on_step_done, on_step_start(2, 2, b), on_step_done in order, and run.log holds STEP_START/STEP_DONE events with step_index 1 then 2 and attempt 1."""
-        observer = _RecordingObserver()
-
-        _run_new(engine_paths, runs_repo, "obs", [_step("a", "echo a"), _step("b", "echo b")], observer=observer)
-
-        assert observer.events == [
-            ("start", 1, 2, "a"),
-            ("done", 1, 2, "a"),
-            ("start", 2, 2, "b"),
-            ("done", 2, 2, "b"),
-        ]
-        run_log = (engine_paths.logs_dir / "obs" / "run.log").read_text(encoding="utf-8")
-        events = [json.loads(line) for line in run_log.splitlines()]
-        assert [(e["event"], e["step_index"], e["attempt"]) for e in events] == [
-            ("step_start", 1, 1),
-            ("step_done", 1, 1),
-            ("step_start", 2, 1),
-            ("step_done", 2, 1),
-        ]
-
     def test_observer_exception_does_not_abort_run(
         self, engine_paths: WorkspacePaths, runs_repo: RunsRepository
     ) -> None:
@@ -573,6 +550,93 @@ class CoordinatorExecuteTests:
         )
 
         assert [record.name for record in artifacts_repository.list(session_id="arts")] == expected_artifacts
+
+
+class CoordinatorObserverContractTests:
+    """[tier-1/integration] RunCoordinator.execute: observer callback sequence and run.log round-trip contracts."""
+
+    def test_linear_run_emits_pinned_observer_sequence(
+        self, engine_paths: WorkspacePaths, runs_repo: RunsRepository
+    ) -> None:
+        """[tier-1/integration] RunCoordinator.execute: a 3-step run [a, b, c] gives one ordered observer sequence ("step_start", 1, 3, "a"), ("step_done", 1, 3, "a", "completed"), then the same pair at 2/3 for b and 3/3 for c, with no loop callbacks."""
+        observer = _SequenceObserver()
+
+        _run_new(
+            engine_paths,
+            runs_repo,
+            "linear",
+            [_step("a", "echo a"), _step("b", "echo b"), _step("c", "echo c")],
+            observer=observer,
+        )
+
+        assert observer.calls == [
+            ("step_start", 1, 3, "a"),
+            ("step_done", 1, 3, "a", "completed"),
+            ("step_start", 2, 3, "b"),
+            ("step_done", 2, 3, "b", "completed"),
+            ("step_start", 3, 3, "c"),
+            ("step_done", 3, 3, "c", "completed"),
+        ]
+
+    def test_loop_run_emits_pinned_observer_sequence(
+        self, engine_paths: WorkspacePaths, runs_repo: RunsRepository
+    ) -> None:
+        """[tier-1/integration] RunCoordinator.execute: a 2-iteration loop of [s1, s2] gives the 14-call ordered observer sequence loop_start(2), turn_start(1), s1 (1/2), s2 (2/2), conditions([False], False, next 2), turn_start(2), s1 (1/2), s2 (2/2), conditions([True], True, None), loop_done("completed", 2)."""
+        observer = _SequenceObserver()
+
+        _run_new(
+            engine_paths,
+            runs_repo,
+            "loop-seq",
+            [_loop("loop", [_step("s1", "true"), _step("s2", "true")])],
+            observer=observer,
+        )
+
+        assert observer.calls == [
+            ("loop_start", "loop", 2),
+            ("loop_turn_start", "loop", 1, 2),
+            ("step_start", 1, 2, "s1"),
+            ("step_done", 1, 2, "s1", "completed"),
+            ("step_start", 2, 2, "s2"),
+            ("step_done", 2, 2, "s2", "completed"),
+            ("loop_conditions_evaluated", "loop", [False], False, 2),
+            ("loop_turn_start", "loop", 2, 2),
+            ("step_start", 1, 2, "s1"),
+            ("step_done", 1, 2, "s1", "completed"),
+            ("step_start", 2, 2, "s2"),
+            ("step_done", 2, 2, "s2", "completed"),
+            ("loop_conditions_evaluated", "loop", [True], True, None),
+            ("loop_done", "loop", "completed", 2),
+        ]
+
+    def test_loop_run_log_round_trips_through_reader(
+        self, engine_paths: WorkspacePaths, runs_repo: RunsRepository
+    ) -> None:
+        """[tier-1/integration] read_run_log_events: a coordinator-written run.log for a 2-iteration loop of [s1, s2] returns one event per file line matching the pinned 14-event (event, details()) sequence, with conditions passed [False] then [True]."""
+        _run_new(engine_paths, runs_repo, "loop-log", [_loop("loop", [_step("s1", "true"), _step("s2", "true")])])
+        log_dir = engine_paths.logs_dir / "loop-log"
+
+        events = read_run_log_events(log_dir, tail=None)
+
+        assert len(events) == len((log_dir / "run.log").read_text(encoding="utf-8").splitlines())
+        turn_steps = [
+            ("step_start", {"step_index": 1, "step_id": "s1", "attempt": 1}),
+            ("step_done", {"step_index": 1, "step_id": "s1", "attempt": 1, "status": "completed", "exit_code": 0}),
+            ("step_start", {"step_index": 2, "step_id": "s2", "attempt": 1}),
+            ("step_done", {"step_index": 2, "step_id": "s2", "attempt": 1, "status": "completed", "exit_code": 0}),
+        ]
+        assert [(e.event.value, e.details()) for e in events] == [
+            ("loop_start", {"loop_id": "loop", "max_iterations": 2}),
+            ("loop_turn_start", {"loop_id": "loop", "turn": 1, "max_iterations": 2}),
+            *turn_steps,
+            ("loop_conditions_evaluated", {"loop_id": "loop", "all_passed": False, "next_turn": 2}),
+            ("loop_turn_start", {"loop_id": "loop", "turn": 2, "max_iterations": 2}),
+            *turn_steps,
+            ("loop_conditions_evaluated", {"loop_id": "loop", "all_passed": True}),
+            ("loop_done", {"loop_id": "loop", "status": "completed", "turn": 2}),
+        ]
+        evaluated = [e for e in events if e.event.value == "loop_conditions_evaluated"]
+        assert [[c["passed"] for c in e.conditions or []] for e in evaluated] == [[False], [True]]
 
 
 class CoordinatorMetadataTests:
@@ -1015,29 +1079,6 @@ class CoordinatorLoopBodyParityTests:
         assert looped.errors == top.errors
         assert looped.warnings == top.warnings
 
-    def test_loop_body_steps_report_body_relative_index_and_total(
-        self, engine_paths: WorkspacePaths, runs_repo: RunsRepository
-    ) -> None:
-        """[tier-1/integration] RunCoordinator.execute: a two-iteration loop with body [s1, s2] gives observer on_step_start (idx, total) == (1, 2), (2, 2), (1, 2), (2, 2) and STEP_START run.log step_index 1, 2, 1, 2."""
-        observer = _RecordingObserver()
-
-        _run_new(
-            engine_paths,
-            runs_repo,
-            "indexes",
-            [_loop("loop", [_step("s1", "true"), _step("s2", "true")])],
-            observer=observer,
-        )
-
-        assert [(idx, total) for kind, idx, total, _ in observer.events if kind == "start"] == [
-            (1, 2),
-            (2, 2),
-            (1, 2),
-            (2, 2),
-        ]
-        started = [event["step_index"] for event in _run_log(engine_paths, "indexes") if event["event"] == "step_start"]
-        assert started == [1, 2, 1, 2]
-
     def test_loop_body_step_declaring_artifacts_publishes_them(
         self,
         engine_paths: WorkspacePaths,
@@ -1281,7 +1322,7 @@ class CoordinatorLoopUntilTests:
             )
         ]
         _pause_loop(engine_paths, runs_repo, "loop-until", steps)
-        observer = _RecordingObserver()
+        observer = _SequenceObserver()
         prompter = _Prompter([FailurePromptDecision.RETRY], on_prompt=lambda: (engine_workspace / "allow").touch())
 
         outcome = _coordinator(engine_paths, runs_repo, "loop-until", prompter=prompter, observer=observer).execute()
@@ -1289,7 +1330,7 @@ class CoordinatorLoopUntilTests:
         assert outcome.status == RunStatus.COMPLETED
         loop = _loop_node(_state(engine_paths, runs_repo, "loop-until"))
         assert [(it.number, it.until_passed) for it in loop.iterations] == [(1, True)]
-        assert ("conditions", "loop", [True, True], True, None) in observer.loop_events
+        assert ("loop_conditions_evaluated", "loop", [True, True], True, None) in observer.calls
 
 
 class CoordinatorLoopTerminalTests:
@@ -1365,37 +1406,6 @@ class CoordinatorLoopTerminalTests:
         assert outcome.errors == [f"Step 's' failed: {_FAIL_DETAIL}"]
         loop = _loop_node(_state(engine_paths, runs_repo, "loop-abort"))
         assert (loop.iterations[0].state, loop.state) == (NodeState.FAILED, NodeState.FAILED)
-
-    def test_two_iteration_loop_emits_lifecycle_events_once_each(
-        self, engine_paths: WorkspacePaths, runs_repo: RunsRepository
-    ) -> None:
-        """[tier-1/integration] RunCoordinator.execute: a two-iteration loop of two steps writes 1 LOOP_START, 2 LOOP_TURN_START, 2 LOOP_CONDITIONS_EVALUATED (next_turn 2 then None), 1 LOOP_DONE status completed turn 2, and 4 STEP_START / 4 STEP_DONE, with matching observer calls."""
-        observer = _RecordingObserver()
-
-        _run_new(
-            engine_paths,
-            runs_repo,
-            "loop-events",
-            [_loop("loop", [_step("s1", "true"), _step("s2", "true")])],
-            observer=observer,
-        )
-
-        events = _run_log(engine_paths, "loop-events")
-        kinds = [event["event"] for event in events]
-        assert [kinds.count(kind) for kind in ("loop_start", "loop_turn_start", "loop_done")] == [1, 2, 1]
-        assert [kinds.count(kind) for kind in ("step_start", "step_done")] == [4, 4]
-        evaluated = [event for event in events if event["event"] == "loop_conditions_evaluated"]
-        assert [(e["all_passed"], e["next_turn"]) for e in evaluated] == [(False, 2), (True, None)]
-        done = next(event for event in events if event["event"] == "loop_done")
-        assert (done["status"], done["turn"]) == ("completed", 2)
-        assert observer.loop_events == [
-            ("start", "loop", 2),
-            ("turn_start", "loop", 1, 2),
-            ("conditions", "loop", [False], False, 2),
-            ("turn_start", "loop", 2, 2),
-            ("conditions", "loop", [True], True, None),
-            ("done", "loop", "completed", 2),
-        ]
 
 
 class CoordinatorLoopCeilingTests:
