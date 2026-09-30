@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -10,11 +11,11 @@ from worktree.common.filesystem.models import WorkspacePaths
 from worktree.core.blueprint import Blueprint
 from worktree.core.catalog import Catalog
 from worktree.core.db import RunRecord, RunsRepository, RunStatus
-from worktree.core.engine.models import RunObserver
+from worktree.core.engine.models import RunObserver, RunOutcome
 from worktree.core.engine.state_models import ExecutionLeafNode, NodeState, StepAttemptRecord
 from worktree.core.engine.state_store import RunStateStore
 from worktree.core.engine.writer import snapshot_definitions
-from worktree.core.step.models import ConditionEvaluationResult, StepDefinition, StepResult
+from worktree.core.step.models import ConditionEvaluationResult, LoopStepBlock, StepDefinition, StepResult
 
 SEEDED_FAILURE = "seeded failure"
 
@@ -38,13 +39,13 @@ class NoOpRunObserver(RunObserver):
     ) -> None:
         pass
 
-    def on_step_done(self, idx: int, total: int, result: StepResult) -> None:
+    def on_step_done(self, idx: int, total: int, step: StepDefinition, result: StepResult) -> None:
         pass
 
     def on_loop_start(self, loop_id: str, max_iterations: int) -> None:
         pass
 
-    def on_loop_turn_start(self, loop_id: str, turn: int, max_iterations: int) -> None:
+    def on_loop_iteration_start(self, loop_id: str, iteration: int, max_iterations: int) -> None:
         pass
 
     def on_loop_conditions_evaluated(
@@ -52,14 +53,20 @@ class NoOpRunObserver(RunObserver):
         loop_id: str,
         results: list[ConditionEvaluationResult],
         all_passed: bool,
-        next_turn: int | None = None,
+        next_iteration: int | None = None,
     ) -> None:
         pass
 
-    def on_loop_done(self, loop_id: str, status: str, turns: int) -> None:
+    def on_loop_done(self, loop_id: str, status: str, total_iterations: int) -> None:
         pass
 
     def on_sandbox_cleanup(self, kept: bool, path: Path) -> None:
+        pass
+
+    def on_run_started(self, steps: Sequence[StepDefinition | LoopStepBlock]) -> None:
+        pass
+
+    def on_run_completed(self, outcome: RunOutcome) -> None:
         pass
 
 

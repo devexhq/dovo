@@ -28,9 +28,9 @@ class ReadStepLogsTests:
                 id="non_loop",
             ),
             pytest.param(
-                [(2, 1, "turn2 out\n", "turn2 err\n"), (1, 1, "turn1 out\n", "turn1 err\n")],
+                [(2, 1, "iteration2 out\n", "iteration2 err\n"), (1, 1, "iteration1 out\n", "iteration1 err\n")],
                 LogStreamFilter.BOTH,
-                ["turn1 out", "turn1 err", "turn2 out", "turn2 err"],
+                ["iteration1 out", "iteration1 err", "iteration2 out", "iteration2 err"],
                 [1],
                 id="two_iteration_loop",
             ),

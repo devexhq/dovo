@@ -24,20 +24,22 @@ class _LoopObserver(NoOpRunObserver):
     def on_loop_start(self, loop_id: str, max_iterations: int) -> None:
         self.calls.append(("on_loop_start", (loop_id, max_iterations), {}))
 
-    def on_loop_turn_start(self, loop_id: str, turn: int, max_iterations: int) -> None:
-        self.calls.append(("on_loop_turn_start", (loop_id, turn, max_iterations), {}))
+    def on_loop_iteration_start(self, loop_id: str, iteration: int, max_iterations: int) -> None:
+        self.calls.append(("on_loop_iteration_start", (loop_id, iteration, max_iterations), {}))
 
     def on_loop_conditions_evaluated(
         self,
         loop_id: str,
         results: list[ConditionEvaluationResult],
         all_passed: bool,
-        next_turn: int | None = None,
+        next_iteration: int | None = None,
     ) -> None:
-        self.calls.append(("on_loop_conditions_evaluated", (loop_id, results, all_passed), {"next_turn": next_turn}))
+        self.calls.append(
+            ("on_loop_conditions_evaluated", (loop_id, results, all_passed), {"next_iteration": next_iteration})
+        )
 
-    def on_loop_done(self, loop_id: str, status: str, turns: int) -> None:
-        self.calls.append(("on_loop_done", (loop_id, status, turns), {}))
+    def on_loop_done(self, loop_id: str, status: str, total_iterations: int) -> None:
+        self.calls.append(("on_loop_done", (loop_id, status, total_iterations), {}))
 
 
 class LoopEventEmitterTests:
@@ -53,10 +55,10 @@ class LoopEventEmitterTests:
                 id="start",
             ),
             pytest.param(
-                lambda emitter: emitter.turn_start(2, 5),
-                {"event": "loop_turn_start", "loop_id": "l", "turn": 2, "max_iterations": 5},
-                ("on_loop_turn_start", ("l", 2, 5), {}),
-                id="turn-start",
+                lambda emitter: emitter.iteration_start(2, 5),
+                {"event": "loop_iteration_start", "loop_id": "l", "iteration": 2, "max_iterations": 5},
+                ("on_loop_iteration_start", ("l", 2, 5), {}),
+                id="iteration-start",
             ),
             pytest.param(
                 lambda emitter: emitter.conditions_evaluated([_CONDITION], False, 3),
@@ -64,15 +66,15 @@ class LoopEventEmitterTests:
                     "event": "loop_conditions_evaluated",
                     "loop_id": "l",
                     "all_passed": False,
-                    "next_turn": 3,
+                    "next_iteration": 3,
                     "conditions": [_CONDITION.model_dump()],
                 },
-                ("on_loop_conditions_evaluated", ("l", [_CONDITION], False), {"next_turn": 3}),
+                ("on_loop_conditions_evaluated", ("l", [_CONDITION], False), {"next_iteration": 3}),
                 id="conditions-evaluated",
             ),
             pytest.param(
                 lambda emitter: emitter.done("completed", 2),
-                {"event": "loop_done", "loop_id": "l", "status": "completed", "turn": 2},
+                {"event": "loop_done", "loop_id": "l", "status": "completed", "iteration": 2},
                 ("on_loop_done", ("l", "completed", 2), {}),
                 id="done",
             ),
@@ -85,7 +87,7 @@ class LoopEventEmitterTests:
         log_fields: dict[str, object],
         observer_call: tuple[str, tuple[object, ...], dict[str, object]],
     ) -> None:
-        """[tier-1/integration] LoopEventEmitter: start(5), turn_start(2, 5), conditions_evaluated([r], False, 3), done("completed", 2) each append one run.log line with event LOOP_START / LOOP_TURN_START / LOOP_CONDITIONS_EVALUATED / LOOP_DONE and loop_id, plus max_iterations / turn / all_passed+next_turn+conditions / status+turn, and call the matching on_loop_* hook with the same arguments."""
+        """[tier-1/integration] LoopEventEmitter: start(5), iteration_start(2, 5), conditions_evaluated([r], False, 3), done("completed", 2) each append one run.log line with event LOOP_START / LOOP_ITERATION_START / LOOP_CONDITIONS_EVALUATED / LOOP_DONE and loop_id, plus max_iterations / iteration / all_passed+next_iteration+conditions / status+iteration, and call the matching on_loop_* hook with the same arguments."""
         observer = _LoopObserver()
 
         emit(LoopEventEmitter("l", tmp_path, observer))
@@ -101,7 +103,7 @@ class LoopEventEmitterTests:
         emitter = LoopEventEmitter("l", None, None)
 
         emitter.start(5)
-        emitter.turn_start(1, 5)
+        emitter.iteration_start(1, 5)
         emitter.conditions_evaluated([_CONDITION], False, None)
         emitter.done("failed", 1)
 

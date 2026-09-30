@@ -107,6 +107,7 @@ class RunCoordinator:
         self._errors: list[str] = []
         self._warnings: list[str] = []
         self._loaded: _LoadedRun | None = None
+        self._load_ok: bool | None = None
         self._in_flight: ExecutionLeafNode | ExecutionLoopNode | None = None
 
     @property
@@ -116,9 +117,20 @@ class RunCoordinator:
             raise RuntimeError("RunCoordinator used before its run state was loaded.")
         return self._loaded
 
+    @property
+    def steps(self) -> list[StepDefinition | LoopStepBlock]:
+        """Return the loaded blueprint's top-level definitions; raise RuntimeError before a successful load()."""
+        return self._run.blueprint.steps
+
+    def load(self) -> bool:
+        """Load state, row, and snapshot definitions once; cache and return whether the run can execute."""
+        if self._load_ok is None:
+            self._load_ok = self._start()
+        return self._load_ok
+
     def execute(self) -> RunOutcome:
         """Run the execution state machine to completion, pause, or terminal failure."""
-        if not self._start():
+        if not self.load():
             return self._outcome(RunStatus.FAILED)
 
         try:
@@ -130,7 +142,7 @@ class RunCoordinator:
 
     def advance_leaf(self, node: ExecutionLeafNode, step_def: StepDefinition) -> NodeTransitionKind:
         """Execute a single leaf step, or if node.state is PAUSED, re-enter the failure gate with node.attempts[-1].result."""
-        if self._loaded is None and not self._start():
+        if not self.load():
             return NodeTransitionKind.FAILED
 
         position, leaf = self._locate_node(node) or (-1, None)
@@ -140,12 +152,16 @@ class RunCoordinator:
 
         self._in_flight = leaf
         return self._advance_slot(
-            leaf, step_def, idx=position + 1, total=len(self._run.state.nodes), loop_iteration=None
+            leaf,
+            step_def,
+            idx=position + 1,
+            total=len(self._run.state.nodes),
+            loop=None,
         )
 
     def advance_loop(self, node: ExecutionLoopNode, loop_block: LoopStepBlock) -> NodeTransitionKind:
         """Orchestrates loop iterations and child steps driven by LoopPolicy."""
-        if self._loaded is None and not self._start():
+        if not self.load():
             return NodeTransitionKind.FAILED
 
         _, loop = self._locate_node(node) or (-1, None)
@@ -173,9 +189,11 @@ class RunCoordinator:
         *,
         idx: int,
         total: int,
-        loop_iteration: int | None,
+        loop: ExecutionLoopNode | None,
     ) -> NodeTransitionKind:
-        """Run or re-enter one live leaf at 1-based idx of total with the shared attempt, failure-gate, and commit path."""
+        """Run or re-enter one live leaf at 1-based idx of total, attributed to the loop's last iteration when loop is set, with the shared attempt, failure-gate, and commit path."""
+        loop_id = loop.id if loop is not None else None
+        loop_iteration = loop.iterations[-1].number if loop is not None else None
         if leaf.state is NodeState.PAUSED:
             return self._resolve_failed_leaf(leaf, step_def)
         if leaf.state is NodeState.PENDING and not self._begin_attempt(leaf, 1):
@@ -192,6 +210,7 @@ class RunCoordinator:
             steps=steps_metadata,
             initial_attempt=leaf.attempts[-1].number,
             loop_iteration=loop_iteration,
+            loop_id=loop_id,
         )
         return self._settle_attempt(leaf, step_def, result)
 
@@ -324,10 +343,10 @@ class RunCoordinator:
     def _begin_iteration(
         self, loop: ExecutionLoopNode, iteration: ExecutionIterationRecord, events: LoopEventEmitter
     ) -> bool:
-        """Mark iteration and loop RUNNING, emit turn_start, and commit before the iteration's first body step runs."""
+        """Mark iteration and loop RUNNING, emit iteration_start, and commit before the iteration's first body step runs."""
         iteration.state = NodeState.RUNNING
         loop.state = NodeState.RUNNING
-        events.turn_start(iteration.number, loop.iteration_ceiling)
+        events.iteration_start(iteration.number, loop.iteration_ceiling)
         return self._commit(f"before loop '{loop.id}' iteration {iteration.number} started")
 
     def _apply_loop_decision(
@@ -369,7 +388,7 @@ class RunCoordinator:
             loop_block.do[body_index],
             idx=body_index + 1,
             total=len(loop_block.do),
-            loop_iteration=iteration.number,
+            loop=loop,
         )
         if transition is NodeTransitionKind.PAUSED:
             return transition
@@ -396,7 +415,7 @@ class RunCoordinator:
     def _repeat_iteration(
         self, loop: ExecutionLoopNode, loop_block: LoopStepBlock, number: int, events: LoopEventEmitter
     ) -> NodeTransitionKind | None:
-        """Append iteration number, mark it RUNNING with turn_start, and commit; FAILED when the commit fails."""
+        """Append iteration number, mark it RUNNING with iteration_start, and commit; FAILED when the commit fails."""
         iteration = new_iteration(loop_block, number)
         loop.iterations.append(iteration)
         return None if self._begin_iteration(loop, iteration, events) else NodeTransitionKind.FAILED

@@ -19,7 +19,7 @@ LOOP_START = FormatterCase(
     data=LoopLifecycleEvent(
         loop_id="loop_1",
         action="start",
-        turn=None,
+        iteration=None,
         max_iterations=5,
         status=None,
         message=None,
@@ -27,7 +27,7 @@ LOOP_START = FormatterCase(
     view=LoopLifecycleEvent(
         loop_id="loop_1",
         action="start",
-        turn=None,
+        iteration=None,
         max_iterations=5,
         status=None,
         message=None,
@@ -35,19 +35,19 @@ LOOP_START = FormatterCase(
     render_expectations=["loop_1"],
 )
 
-TURN_START = FormatterCase(
+ITERATION_START = FormatterCase(
     data=LoopLifecycleEvent(
         loop_id="loop_1",
-        action="turn_start",
-        turn=2,
+        action="iteration_start",
+        iteration=2,
         max_iterations=5,
         status=None,
         message=None,
     ),
     view=LoopLifecycleEvent(
         loop_id="loop_1",
-        action="turn_start",
-        turn=2,
+        action="iteration_start",
+        iteration=2,
         max_iterations=5,
         status=None,
         message=None,
@@ -59,26 +59,26 @@ CONDITIONS_EVALUATED = FormatterCase(
     data=LoopLifecycleEvent(
         loop_id="loop_1",
         action="conditions_evaluated",
-        turn=None,
+        iteration=None,
         max_iterations=None,
         status=None,
         message="Evaluated 1 condition(s)",
         conditions=[
             LoopConditionView(expression="steps.run-tests.exit_code == 0", passed=False, detail="FALSE (was 127)"),
         ],
-        next_turn=2,
+        next_iteration=2,
     ),
     view=LoopLifecycleEvent(
         loop_id="loop_1",
         action="conditions_evaluated",
-        turn=None,
+        iteration=None,
         max_iterations=None,
         status=None,
         message="Evaluated 1 condition(s)",
         conditions=[
             LoopConditionView(expression="steps.run-tests.exit_code == 0", passed=False, detail="FALSE (was 127)"),
         ],
-        next_turn=2,
+        next_iteration=2,
     ),
     render_expectations=["loop_1", "steps.run-tests.exit_code == 0", "FALSE (was 127)"],
 )
@@ -87,7 +87,7 @@ LOOP_DONE = FormatterCase(
     data=LoopLifecycleEvent(
         loop_id="loop_1",
         action="done",
-        turn=3,
+        iteration=3,
         max_iterations=5,
         status="completed",
         message=None,
@@ -95,7 +95,7 @@ LOOP_DONE = FormatterCase(
     view=LoopLifecycleEvent(
         loop_id="loop_1",
         action="done",
-        turn=3,
+        iteration=3,
         max_iterations=5,
         status="completed",
         message=None,
@@ -105,7 +105,7 @@ LOOP_DONE = FormatterCase(
 
 LOOP_CASES = [
     pytest.param(LOOP_START, id="loop_start"),
-    pytest.param(TURN_START, id="turn_start"),
+    pytest.param(ITERATION_START, id="iteration_start"),
     pytest.param(CONDITIONS_EVALUATED, id="conditions_evaluated"),
     pytest.param(LOOP_DONE, id="loop_done"),
 ]
@@ -116,42 +116,42 @@ LOOP_PAYLOAD_CASES = [
         {
             "loop_id": "loop_1",
             "action": "start",
-            "turn": None,
+            "iteration": None,
             "max_iterations": 5,
             "status": None,
             "message": None,
             "conditions": [],
-            "next_turn": None,
+            "next_iteration": None,
         },
         id="loop_start",
     ),
     pytest.param(
-        TURN_START,
+        ITERATION_START,
         {
             "loop_id": "loop_1",
-            "action": "turn_start",
-            "turn": 2,
+            "action": "iteration_start",
+            "iteration": 2,
             "max_iterations": 5,
             "status": None,
             "message": None,
             "conditions": [],
-            "next_turn": None,
+            "next_iteration": None,
         },
-        id="turn_start",
+        id="iteration_start",
     ),
     pytest.param(
         CONDITIONS_EVALUATED,
         {
             "loop_id": "loop_1",
             "action": "conditions_evaluated",
-            "turn": None,
+            "iteration": None,
             "max_iterations": None,
             "status": None,
             "message": "Evaluated 1 condition(s)",
             "conditions": [
                 {"expression": "steps.run-tests.exit_code == 0", "passed": False, "detail": "FALSE (was 127)"},
             ],
-            "next_turn": 2,
+            "next_iteration": 2,
         },
         id="conditions_evaluated",
     ),
@@ -160,12 +160,12 @@ LOOP_PAYLOAD_CASES = [
         {
             "loop_id": "loop_1",
             "action": "done",
-            "turn": 3,
+            "iteration": 3,
             "max_iterations": 5,
             "status": "completed",
             "message": None,
             "conditions": [],
-            "next_turn": None,
+            "next_iteration": None,
         },
         id="loop_done",
     ),

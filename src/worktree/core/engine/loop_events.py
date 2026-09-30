@@ -27,38 +27,48 @@ class LoopEventEmitter:
         )
         safe_notify(self.observer, "on_loop_start", self.loop_id, max_iterations)
 
-    def turn_start(self, turn: int, max_iterations: int) -> None:
-        """Log LOOP_TURN_START and call on_loop_turn_start(loop_id, turn, max_iterations)."""
+    def iteration_start(self, iteration: int, max_iterations: int) -> None:
+        """Log LOOP_ITERATION_START and call on_loop_iteration_start(loop_id, iteration, max_iterations)."""
         append_run_log_event(
             self.session_log_dir,
             RunLogEvent(
-                event=RunLogEventType.LOOP_TURN_START, loop_id=self.loop_id, turn=turn, max_iterations=max_iterations
+                event=RunLogEventType.LOOP_ITERATION_START,
+                loop_id=self.loop_id,
+                iteration=iteration,
+                max_iterations=max_iterations,
             ),
         )
-        safe_notify(self.observer, "on_loop_turn_start", self.loop_id, turn, max_iterations)
+        safe_notify(self.observer, "on_loop_iteration_start", self.loop_id, iteration, max_iterations)
 
     def conditions_evaluated(
-        self, results: list[ConditionEvaluationResult], all_passed: bool, next_turn: int | None
+        self, results: list[ConditionEvaluationResult], all_passed: bool, next_iteration: int | None
     ) -> None:
-        """Log LOOP_CONDITIONS_EVALUATED and call on_loop_conditions_evaluated(loop_id, results, all_passed, next_turn=next_turn)."""
+        """Log LOOP_CONDITIONS_EVALUATED and call on_loop_conditions_evaluated(loop_id, results, all_passed, next_iteration=next_iteration)."""
         append_run_log_event(
             self.session_log_dir,
             RunLogEvent(
                 event=RunLogEventType.LOOP_CONDITIONS_EVALUATED,
                 loop_id=self.loop_id,
                 all_passed=all_passed,
-                next_turn=next_turn,
+                next_iteration=next_iteration,
                 conditions=[result.model_dump() for result in results],
             ),
         )
         safe_notify(
-            self.observer, "on_loop_conditions_evaluated", self.loop_id, results, all_passed, next_turn=next_turn
+            self.observer,
+            "on_loop_conditions_evaluated",
+            self.loop_id,
+            results,
+            all_passed,
+            next_iteration=next_iteration,
         )
 
-    def done(self, status: str, turns: int) -> None:
-        """Log LOOP_DONE and call on_loop_done(loop_id, status, turns)."""
+    def done(self, status: str, total_iterations: int) -> None:
+        """Log LOOP_DONE with iteration=total_iterations and call on_loop_done(loop_id, status, total_iterations)."""
         append_run_log_event(
             self.session_log_dir,
-            RunLogEvent(event=RunLogEventType.LOOP_DONE, loop_id=self.loop_id, status=status, turn=turns),
+            RunLogEvent(
+                event=RunLogEventType.LOOP_DONE, loop_id=self.loop_id, status=status, iteration=total_iterations
+            ),
         )
-        safe_notify(self.observer, "on_loop_done", self.loop_id, status, turns)
+        safe_notify(self.observer, "on_loop_done", self.loop_id, status, total_iterations)

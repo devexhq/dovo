@@ -106,33 +106,35 @@ def build_live_output_panel(
     return Panel(body_text, title=f"Output: {step_name}", title_align="left")
 
 
-def _format_turn_marker(turn_number: int, current_turn: int | None, turn_results: Mapping[int, bool]) -> Text:
-    """Format a single turn-history marker: pass, fail, or pending, current turn distinguished."""
-    result = turn_results.get(turn_number)
+def _format_iteration_marker(
+    iteration_number: int, current_iteration: int | None, iteration_results: Mapping[int, bool]
+) -> Text:
+    """Format a single iteration-history marker: pass, fail, or pending, current iteration distinguished."""
+    result = iteration_results.get(iteration_number)
     if result is True:
-        marker = Text(f"{turn_number} ✔", style="bold green")
+        marker = Text(f"{iteration_number} ✔", style="bold green")
     elif result is False:
-        marker = Text(f"{turn_number} ✖", style="bold red")
+        marker = Text(f"{iteration_number} ✖", style="bold red")
     else:
-        marker = Text(f"{turn_number} ○", style="dim")
-    if turn_number == current_turn:
+        marker = Text(f"{iteration_number} ○", style="dim")
+    if iteration_number == current_iteration:
         marker.stylize("underline")
     return marker
 
 
 def build_loop_status_panel(
     loop_id: str,
-    turn: int | None,
+    iteration: int | None,
     max_iterations: int | None,
     conditions: Sequence[LoopConditionView],
-    turn_results: Mapping[int, bool],
+    iteration_results: Mapping[int, bool],
 ) -> Panel:
-    """Build the Rich Panel showing current loop/turn status and turn history."""
+    """Build the Rich Panel showing current loop/iteration status and iteration history."""
     lines: list[Text] = []
 
     header = Text(loop_id, style="bold cyan")
-    if turn is not None and max_iterations is not None:
-        header.append(f"  turn {turn}/{max_iterations}", style="dim")
+    if iteration is not None and max_iterations is not None:
+        header.append(f"  iteration {iteration}/{max_iterations}", style="dim")
     lines.append(header)
 
     for condition in conditions:
@@ -144,11 +146,11 @@ def build_loop_status_panel(
         lines.append(detail_line)
 
     if max_iterations is not None:
-        strip = Text("turns  ")
-        for turn_number in range(1, max_iterations + 1):
-            if turn_number > 1:
+        strip = Text("iterations  ")
+        for iteration_number in range(1, max_iterations + 1):
+            if iteration_number > 1:
                 strip.append("  ")
-            strip.append_text(_format_turn_marker(turn_number, turn, turn_results))
+            strip.append_text(_format_iteration_marker(iteration_number, iteration, iteration_results))
         lines.append(strip)
 
     return Panel(Group(*lines), title="Loop", title_align="left")
@@ -196,10 +198,10 @@ class LiveDisplayManager:
         self._active_output: deque[str] = deque(maxlen=output_buffer_size)
         self._live: Live | None = None
         self._loop_id: str | None = None
-        self._loop_turn: int | None = None
+        self._loop_iteration: int | None = None
         self._loop_max_iterations: int | None = None
         self._loop_conditions: list[LoopConditionView] = []
-        self._turn_results: dict[int, bool] = {}
+        self._iteration_results: dict[int, bool] = {}
 
     @property
     def is_active(self) -> bool:
@@ -264,18 +266,18 @@ class LiveDisplayManager:
         self._refresh()
 
     def handle_loop_lifecycle(self, event: LoopLifecycleEvent) -> None:
-        """Update tracked loop/turn state from a loop lifecycle event and refresh."""
+        """Update tracked loop/iteration state from a loop lifecycle event and refresh."""
         if event.action == "start":
             self._loop_id = event.loop_id
             self._loop_max_iterations = event.max_iterations
-        elif event.action == "turn_start":
-            self._loop_turn = event.turn
+        elif event.action == "iteration_start":
+            self._loop_iteration = event.iteration
             self._loop_conditions = []
             self.steps = []
         elif event.action == "conditions_evaluated":
             self._loop_conditions = event.conditions
-            if self._loop_turn is not None:
-                self._turn_results[self._loop_turn] = all(condition.passed for condition in event.conditions)
+            if self._loop_iteration is not None:
+                self._iteration_results[self._loop_iteration] = all(condition.passed for condition in event.conditions)
         self._refresh()
 
     def handle_sandbox(self, event: SandboxLifecycleEvent, rendered: Text) -> None:
@@ -297,10 +299,10 @@ class LiveDisplayManager:
         loop_panel = (
             build_loop_status_panel(
                 self._loop_id,
-                self._loop_turn,
+                self._loop_iteration,
                 self._loop_max_iterations,
                 self._loop_conditions,
-                self._turn_results,
+                self._iteration_results,
             )
             if self._loop_id is not None
             else None

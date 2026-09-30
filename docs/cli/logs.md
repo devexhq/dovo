@@ -12,7 +12,7 @@ logs/<session_id>/
 └── 02_check_iter_1_attempt_1.stdout.log   # loop sub-steps carry an _iter_<n> segment
 ```
 
-Per-attempt stdout/stderr capture is controlled by `history.save_attempt_logs` in `.worktree/config.json` (default `true`). `run.log` is always written when the run has a session ID. Loop sub-steps appear in `run.log` as their own `STEP_START`/`STEP_DONE` events, interleaved with the loop's `LOOP_*` events, exactly like top-level steps.
+Per-attempt stdout/stderr capture is controlled by `history.save_attempt_logs` in `.worktree/config.json` (default `true`). `run.log` is always written when the run has a session ID. Loop sub-steps appear in `run.log` as their own `STEP_START`/`STEP_DONE` events, interleaved with the loop's `LOOP_*` events, exactly like top-level steps; loop body events carry `loop_id` and `iteration`, and every step event carries `step_name` (`STEP_DONE` also `duration_seconds`).
 
 ## Usage
 
@@ -38,7 +38,7 @@ wt logs <session_id> [OPTIONS]
 
 `--attempt` and `--stream` only apply together with `--step`; without it they are ignored.
 
-For a loop sub-step, `--step` matches the captures of every loop turn: the selected attempt's output from each turn is shown concatenated in turn order, and the default attempt is the highest attempt number reached in any turn. Captures from any steps that share the same step ID, such as a top-level step and a loop sub-step, are grouped under that ID. Capture file names do not include the loop's ID, so two loops that have a sub-step with the same ID at the same position write to the same files, and the later loop overwrites the earlier one's captures. Give loop sub-steps distinct IDs to keep both.
+For a loop sub-step, `--step` matches the captures of every loop iteration: the selected attempt's output from each iteration is shown concatenated in iteration order, and the default attempt is the highest attempt number reached in any iteration. Captures from any steps that share the same step ID, such as a top-level step and a loop sub-step, are grouped under that ID. Capture file names do not include the loop's ID, so two loops that have a sub-step with the same ID at the same position write to the same files, and the later loop overwrites the earlier one's captures. Give loop sub-steps distinct IDs to keep both.
 
 ## Errors
 

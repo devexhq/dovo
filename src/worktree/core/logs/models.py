@@ -50,7 +50,7 @@ class RunLogEventType(StrEnum):
     STEP_START = "step_start"
     STEP_DONE = "step_done"
     LOOP_START = "loop_start"
-    LOOP_TURN_START = "loop_turn_start"
+    LOOP_ITERATION_START = "loop_iteration_start"
     LOOP_CONDITIONS_EVALUATED = "loop_conditions_evaluated"
     LOOP_DONE = "loop_done"
 
@@ -66,14 +66,16 @@ class RunLogEvent(BaseModel):
     blueprint_key: str | None = None
     step_index: int | None = None
     step_id: str | None = None
+    step_name: str | None = None
     attempt: int | None = None
     status: str | None = None
     exit_code: int | None = None
+    duration_seconds: float | None = None
     loop_id: str | None = None
-    turn: int | None = None
+    iteration: int | None = None
     max_iterations: int | None = None
     all_passed: bool | None = None
-    next_turn: int | None = None
+    next_iteration: int | None = None
     conditions: list[dict[str, object]] | None = None
 
     def details(self) -> dict[str, object]:

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from enum import StrEnum
 from pathlib import Path
@@ -191,7 +192,7 @@ class RunObserver(Protocol):
         """Called when a running step emits a line of output."""
         ...
 
-    def on_step_done(self, idx: int, total: int, result: StepResult) -> None:
+    def on_step_done(self, idx: int, total: int, step: StepDefinition, result: StepResult) -> None:
         """Called immediately after a step finishes."""
         ...
 
@@ -199,8 +200,8 @@ class RunObserver(Protocol):
         """Called when a loop block begins execution."""
         ...
 
-    def on_loop_turn_start(self, loop_id: str, turn: int, max_iterations: int) -> None:
-        """Called at the start of a loop turn."""
+    def on_loop_iteration_start(self, loop_id: str, iteration: int, max_iterations: int) -> None:
+        """Called at the start of a loop iteration."""
         ...
 
     def on_loop_conditions_evaluated(
@@ -208,17 +209,25 @@ class RunObserver(Protocol):
         loop_id: str,
         results: list[ConditionEvaluationResult],
         all_passed: bool,
-        next_turn: int | None = None,
+        next_iteration: int | None = None,
     ) -> None:
-        """Called after loop until conditions are evaluated for a turn."""
+        """Called after loop until conditions are evaluated for an iteration."""
         ...
 
-    def on_loop_done(self, loop_id: str, status: str, turns: int) -> None:
+    def on_loop_done(self, loop_id: str, status: str, total_iterations: int) -> None:
         """Called when a loop block finishes."""
         ...
 
     def on_sandbox_cleanup(self, kept: bool, path: Path) -> None:
         """Called after sandbox cleanup/keep decision is applied."""
+        ...
+
+    def on_run_started(self, steps: Sequence[StepDefinition | LoopStepBlock]) -> None:
+        """Called once per drive_run invocation, after definitions load and before the first step."""
+        ...
+
+    def on_run_completed(self, outcome: RunOutcome) -> None:
+        """Called once per drive_run invocation, after close-out, with the returned outcome."""
         ...
 
 

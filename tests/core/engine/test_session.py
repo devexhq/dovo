@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from datetime import datetime
 from pathlib import Path
 
@@ -20,10 +21,11 @@ from worktree.core.engine.models import (
     RunOutcome,
 )
 from worktree.core.engine.session import drive_run
+from worktree.core.engine.writer import snapshot_blueprint_path
 from worktree.core.logs.services.read import read_run_log_events
 from worktree.core.project.services.storage import resolve_workspace_paths
 from worktree.core.sandbox import Sandbox, SandboxApplyResult, SandboxApplyStatus
-from worktree.core.step.models import LoopStepBlock, StepDefinition, StepResult
+from worktree.core.step.models import ConditionEvaluationResult, LoopStepBlock, StepDefinition, StepResult
 
 
 class _Prompter(FailurePrompter):
@@ -60,15 +62,78 @@ class _LifecycleObserver(NoOpRunObserver):
     def on_step_output(self, idx: int, total: int, step: StepDefinition, line: str, stream: str = "stdout") -> None:
         self.events.append(("step_output", idx, total, step.id, line, stream))
 
-    def on_step_done(self, idx: int, total: int, result: StepResult) -> None:
+    def on_step_done(self, idx: int, total: int, step: StepDefinition, result: StepResult) -> None:
         self.events.append(("step_done", idx, total, result.step_id))
 
     def on_sandbox_cleanup(self, kept: bool, path: Path) -> None:
         self.events.append(("sandbox_cleanup", kept, path))
 
 
+class _SequenceObserver(NoOpRunObserver):
+    """RunObserver recording every callback in one ordered list."""
+
+    def __init__(self) -> None:
+        self.calls: list[tuple[object, ...]] = []
+
+    def on_sandbox_ready(self, path: Path, active: bool) -> None:
+        self.calls.append(("sandbox_ready",))
+
+    def on_run_started(self, steps: Sequence[StepDefinition | LoopStepBlock]) -> None:
+        self.calls.append(("run_started", [step.id for step in steps]))
+
+    def on_step_start(self, idx: int, total: int, step: StepDefinition) -> None:
+        self.calls.append(("step_start", idx, total, step.id))
+
+    def on_step_done(self, idx: int, total: int, step: StepDefinition, result: StepResult) -> None:
+        self.calls.append(("step_done", idx, total, step.id, result.status))
+
+    def on_loop_start(self, loop_id: str, max_iterations: int) -> None:
+        self.calls.append(("loop_start", max_iterations))
+
+    def on_loop_iteration_start(self, loop_id: str, iteration: int, max_iterations: int) -> None:
+        self.calls.append(("loop_iteration_start", iteration, max_iterations))
+
+    def on_loop_conditions_evaluated(
+        self,
+        loop_id: str,
+        results: list[ConditionEvaluationResult],
+        all_passed: bool,
+        next_iteration: int | None = None,
+    ) -> None:
+        self.calls.append(("loop_conditions_evaluated", [r.passed for r in results], all_passed, next_iteration))
+
+    def on_loop_done(self, loop_id: str, status: str, total_iterations: int) -> None:
+        self.calls.append(("loop_done", status, total_iterations))
+
+    def on_sandbox_cleanup(self, kept: bool, path: Path) -> None:
+        self.calls.append(("sandbox_cleanup",))
+
+    def on_run_completed(self, outcome: RunOutcome) -> None:
+        self.calls.append(("run_completed", outcome))
+
+
+class _RaisingRunLevelObserver(NoOpRunObserver):
+    """RunObserver raising from both run-level callbacks."""
+
+    def on_run_started(self, steps: Sequence[StepDefinition | LoopStepBlock]) -> None:
+        raise RuntimeError("observer run started")
+
+    def on_run_completed(self, outcome: RunOutcome) -> None:
+        raise RuntimeError("observer run completed")
+
+
 def _step(step_id: str, run: str, **extra: object) -> dict[str, object]:
     return {"id": step_id, "run": run, **extra}
+
+
+def _loop(loop_id: str, do: list[dict[str, object]], *, max_iterations: int = 2) -> dict[str, object]:
+    return {
+        "id": loop_id,
+        "type": "loop",
+        "max_iterations": max_iterations,
+        "until": [f"iteration.index >= {max_iterations}"],
+        "do": do,
+    }
 
 
 def _drive(
@@ -355,6 +420,9 @@ class DriveRunLifecycleTests:
         events = read_run_log_events(log_dir, tail=None)
 
         assert len(events) == len((log_dir / "run.log").read_text(encoding="utf-8").splitlines())
+        durations = [e.duration_seconds for e in events if e.event.value == "step_done"]
+        assert len(durations) == 3
+        assert all(isinstance(duration, float) for duration in durations)
         step_events = [
             event
             for index, step_id in enumerate(("a", "b", "c"), start=1)
@@ -366,7 +434,7 @@ class DriveRunLifecycleTests:
                 ),
             )
         ]
-        assert [(e.event.value, e.details()) for e in events] == [
+        assert [(e.event.value, {k: v for k, v in e.details().items() if k != "duration_seconds"}) for e in events] == [
             ("run_started", {"session_id": "timeline3", "blueprint_key": "timeline3"}),
             *step_events,
             ("run_completed", {"status": "completed"}),
@@ -399,23 +467,6 @@ class DriveRunLifecycleTests:
         attempt_logs = list((paths.logs_dir / "attempt-logs").glob("*attempt*"))
         assert bool(attempt_logs) is expect_log
 
-    def test_observer_receives_sandbox_step_and_cleanup_callbacks_in_order(
-        self, engine_paths: WorkspacePaths, runs_repo: RunsRepository
-    ) -> None:
-        """[tier-1/integration] drive_run: the observer sees sandbox_ready, step_start, step_done, then sandbox_cleanup in that order for a run without a sandbox."""
-        seed_new_run(engine_paths, runs_repo, session_id="observed", steps=[_step("s1", "echo one")])
-        observer = _LifecycleObserver()
-
-        _drive(engine_paths, runs_repo, "observed", observer=observer)
-
-        resolved = engine_paths.root_dir.resolve()
-        assert [event for event in observer.events if event[0] != "step_output"] == [
-            ("sandbox_ready", resolved, False),
-            ("step_start", 1, 1, "s1"),
-            ("step_done", 1, 1, "s1"),
-            ("sandbox_cleanup", False, resolved),
-        ]
-
     def test_step_output_streams_to_observer_by_line_and_stream(
         self, engine_paths: WorkspacePaths, runs_repo: RunsRepository
     ) -> None:
@@ -435,3 +486,154 @@ class DriveRunLifecycleTests:
             ("step_output", 1, 1, "s1", "err\n", "stderr"),
             ("step_output", 1, 1, "s1", "out\n", "stdout"),
         ]
+
+
+class DriveRunObserverContractTests:
+    """[tier-1/integration] drive_run: run-level and step-level observer callbacks and their order."""
+
+    def test_linear_run_emits_pinned_observer_sequence(
+        self, engine_paths: WorkspacePaths, runs_repo: RunsRepository
+    ) -> None:
+        """[tier-1/integration] drive_run: a 3-step run [a, b, c] without a sandbox gives the ordered observer sequence sandbox_ready, run_started(["a","b","c"]), step_start/step_done at 1/3, 2/3, 3/3 with step ids and "completed", sandbox_cleanup, run_completed(COMPLETED outcome equal to the returned outcome)."""
+        seed_new_run(
+            engine_paths,
+            runs_repo,
+            session_id="seq-linear",
+            steps=[_step("a", "true"), _step("b", "true"), _step("c", "true")],
+        )
+        observer = _SequenceObserver()
+
+        outcome = _drive(engine_paths, runs_repo, "seq-linear", observer=observer)
+
+        assert outcome.status == RunStatus.COMPLETED
+        assert observer.calls == [
+            ("sandbox_ready",),
+            ("run_started", ["a", "b", "c"]),
+            ("step_start", 1, 3, "a"),
+            ("step_done", 1, 3, "a", "completed"),
+            ("step_start", 2, 3, "b"),
+            ("step_done", 2, 3, "b", "completed"),
+            ("step_start", 3, 3, "c"),
+            ("step_done", 3, 3, "c", "completed"),
+            ("sandbox_cleanup",),
+            ("run_completed", outcome),
+        ]
+
+    def test_loop_run_emits_pinned_observer_sequence(
+        self, engine_paths: WorkspacePaths, runs_repo: RunsRepository
+    ) -> None:
+        """[tier-1/integration] drive_run: a 2-iteration loop "loop" of [s1, s2] gives run_started(["loop"]), loop_start(2), loop_iteration_start(1, 2), s1 (1/2), s2 (2/2), loop_conditions_evaluated([False], False, 2), loop_iteration_start(2, 2), s1 (1/2), s2 (2/2), loop_conditions_evaluated([True], True, None), loop_done("completed", 2), run_completed."""
+        seed_new_run(
+            engine_paths,
+            runs_repo,
+            session_id="seq-loop",
+            steps=[_loop("loop", [_step("s1", "true"), _step("s2", "true")])],
+        )
+        observer = _SequenceObserver()
+
+        outcome = _drive(engine_paths, runs_repo, "seq-loop", observer=observer)
+
+        iteration_steps = [
+            ("step_start", 1, 2, "s1"),
+            ("step_done", 1, 2, "s1", "completed"),
+            ("step_start", 2, 2, "s2"),
+            ("step_done", 2, 2, "s2", "completed"),
+        ]
+        assert observer.calls == [
+            ("sandbox_ready",),
+            ("run_started", ["loop"]),
+            ("loop_start", 2),
+            ("loop_iteration_start", 1, 2),
+            *iteration_steps,
+            ("loop_conditions_evaluated", [False], False, 2),
+            ("loop_iteration_start", 2, 2),
+            *iteration_steps,
+            ("loop_conditions_evaluated", [True], True, None),
+            ("loop_done", "completed", 2),
+            ("sandbox_cleanup",),
+            ("run_completed", outcome),
+        ]
+
+    def test_run_completed_receives_paused_outcome_and_resume_gets_its_own_pair(
+        self, engine_paths: WorkspacePaths, runs_repo: RunsRepository, engine_workspace: Path
+    ) -> None:
+        """[tier-1/integration] drive_run: a run pausing at a prompt_user failure gives run_started once and run_completed once with status PAUSED equal to the returned outcome; resuming it gives a second run_started and a run_completed with status COMPLETED."""
+        marker = engine_workspace / "retry.marker"
+        seed_new_run(
+            engine_paths,
+            runs_repo,
+            session_id="seq-pause",
+            steps=[_step("a", f"test -e {marker}", on_failure="prompt_user")],
+        )
+        observer = _SequenceObserver()
+
+        paused = _drive(engine_paths, runs_repo, "seq-pause", prompter=_Prompter(), observer=observer)
+        marker.touch()
+        resumed = _drive(
+            engine_paths,
+            runs_repo,
+            "seq-pause",
+            prompter=_Prompter([FailurePromptDecision.RETRY]),
+            observer=observer,
+        )
+
+        assert paused.status == RunStatus.PAUSED
+        assert resumed.status == RunStatus.COMPLETED
+        run_level = [call for call in observer.calls if call[0] in {"run_started", "run_completed"}]
+        assert run_level == [
+            ("run_started", ["a"]),
+            ("run_completed", paused),
+            ("run_started", ["a"]),
+            ("run_completed", resumed),
+        ]
+
+    def test_missing_snapshot_skips_run_started_and_completes_failed(
+        self, engine_paths: WorkspacePaths, runs_repo: RunsRepository
+    ) -> None:
+        """[tier-1/integration] drive_run: a seeded run whose definitions snapshot file is deleted returns FAILED, the observer records no run_started, and run_completed once with the returned FAILED outcome."""
+        seed_new_run(engine_paths, runs_repo, session_id="seq-nosnap", steps=[_step("a", "true")])
+        snapshot_blueprint_path(engine_paths.session_dir("seq-nosnap"), "seq-nosnap").unlink()
+        observer = _SequenceObserver()
+
+        outcome = _drive(engine_paths, runs_repo, "seq-nosnap", observer=observer)
+
+        assert outcome.status == RunStatus.FAILED
+        assert [call for call in observer.calls if str(call[0]).startswith("run_")] == [("run_completed", outcome)]
+
+    def test_setup_failure_notifies_run_completed_only(
+        self, engine_paths: WorkspacePaths, runs_repo: RunsRepository
+    ) -> None:
+        """[tier-1/integration] drive_run: use_sandbox=True outside a git repository returns FAILED with errors[0] starting "Git sandbox creation failed:", the observer records run_completed once with that outcome and no run_started."""
+        seed_new_run(engine_paths, runs_repo, session_id="seq-nogit", steps=[_step("a", "true")], use_sandbox=True)
+        observer = _SequenceObserver()
+
+        outcome = _drive(engine_paths, runs_repo, "seq-nogit", observer=observer)
+
+        assert outcome.status == RunStatus.FAILED
+        assert outcome.errors[0].startswith("Git sandbox creation failed:")
+        assert [call for call in observer.calls if str(call[0]).startswith("run_")] == [("run_completed", outcome)]
+
+    def test_missing_row_notifies_nothing(self, engine_paths: WorkspacePaths, runs_repo: RunsRepository) -> None:
+        """[tier-1/integration] drive_run: a session id with no run row returns FAILED with errors == ["Run 'missing' not found."] and the observer records no callback."""
+        observer = _SequenceObserver()
+
+        outcome = _drive(engine_paths, runs_repo, "missing", observer=observer)
+
+        assert outcome.status == RunStatus.FAILED
+        assert outcome.errors == ["Run 'missing' not found."]
+        assert observer.calls == []
+
+    def test_raising_run_level_observer_leaves_outcome_unchanged(
+        self, engine_paths: WorkspacePaths, runs_repo: RunsRepository
+    ) -> None:
+        """[tier-1/integration] drive_run: an observer raising from on_run_started and on_run_completed on a completed 1-step run returns a RunOutcome whose status, step_results statuses, errors, and warnings equal those from a no-op observer on an identical seeded run."""
+        for session_id in ("raise-plain", "raise-observed"):
+            seed_new_run(engine_paths, runs_repo, session_id=session_id, steps=[_step("a", "true")])
+
+        plain = _drive(engine_paths, runs_repo, "raise-plain", observer=NoOpRunObserver())
+        observed = _drive(engine_paths, runs_repo, "raise-observed", observer=_RaisingRunLevelObserver())
+
+        assert observed.status == plain.status == RunStatus.COMPLETED
+        assert [r.status for r in observed.step_results] == [r.status for r in plain.step_results]
+        assert observed.errors == plain.errors
+        assert observed.warnings == plain.warnings
