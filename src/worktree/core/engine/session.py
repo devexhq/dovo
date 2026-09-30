@@ -11,6 +11,7 @@ from worktree.core.db import RunRecord, RunsRepository, RunStatus
 from worktree.core.engine.context import RunSessionContext
 from worktree.core.engine.coordinator import RunCoordinator
 from worktree.core.engine.models import FailurePrompter, RunContext, RunObserver, RunOutcome
+from worktree.core.engine.notify import safe_notify
 from worktree.core.engine.state_store import RunStateStore
 from worktree.core.engine.workspace import Workspace
 from worktree.core.logs import RunLogEvent, RunLogEventType, append_run_log_event
@@ -37,7 +38,7 @@ def drive_run(
     prompter: FailurePrompter | None,
     no_tty: bool,
 ) -> RunOutcome:
-    """Open the run's workspace from its row, execute it through RunCoordinator, and close the workspace by outcome."""
+    """Open the run's workspace from its row, execute it through RunCoordinator, close the workspace by outcome, and notify on_run_completed."""
     row = runs.get(session_id)
     if row is None:
         return RunOutcome(
@@ -46,6 +47,22 @@ def drive_run(
             sandbox_path=paths.root_dir,
         )
 
+    outcome = _run_row(row, paths, runs, observer, prompter, no_tty)
+    safe_notify(observer, "on_run_completed", outcome)
+
+    return outcome
+
+
+def _run_row(
+    row: RunRecord,
+    paths: WorkspacePaths,
+    runs: RunsRepository,
+    observer: RunObserver | None,
+    prompter: FailurePrompter | None,
+    no_tty: bool,
+) -> RunOutcome:
+    """Open, execute, and close one found run's workspace, returning the final outcome."""
+    session_id = row.session_id
     workspace = Workspace(_workspace_context(row, paths, observer))
     opened = _open_session(workspace, paths, session_id, no_tty)
     if isinstance(opened, RunOutcome):
@@ -57,12 +74,16 @@ def drive_run(
     )
     apply_failed = False
     try:
-        outcome = RunCoordinator(RunStateStore(runs, paths, session_id), opened.context, observer, prompter).execute()
+        coordinator = RunCoordinator(RunStateStore(runs, paths, session_id), opened.context, observer, prompter)
+        if coordinator.load():
+            safe_notify(observer, "on_run_started", coordinator.steps)
+        outcome = coordinator.execute()
         outcome = outcome.model_copy(update={"warnings": [*opened.setup_warnings, *outcome.warnings]})
         outcome, apply_failed = _apply_sandbox_changes(workspace, opened, outcome)
     except BaseException:
         failed = RunOutcome(status=RunStatus.FAILED, sandbox_path=opened.context.target_dir)
-        _close_session(workspace, opened, failed, apply_failed, row.keep)
+        closed = _close_session(workspace, opened, failed, apply_failed, row.keep)
+        safe_notify(observer, "on_run_completed", closed)
         raise
 
     return _close_session(workspace, opened, outcome, apply_failed, row.keep)

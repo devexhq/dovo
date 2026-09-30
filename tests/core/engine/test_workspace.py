@@ -42,7 +42,7 @@ class _RecordingRunObserver(RunObserver):
     def on_loop_start(self, *args: object, **kwargs: object) -> None:
         pass
 
-    def on_loop_turn_start(self, *args: object, **kwargs: object) -> None:
+    def on_loop_iteration_start(self, *args: object, **kwargs: object) -> None:
         pass
 
     def on_loop_conditions_evaluated(self, *args: object, **kwargs: object) -> None:
@@ -53,6 +53,12 @@ class _RecordingRunObserver(RunObserver):
 
     def on_sandbox_cleanup(self, kept: bool, path: Path) -> None:
         self.events.append(("sandbox_cleanup", kept, path))
+
+    def on_run_started(self, *args: object, **kwargs: object) -> None:
+        pass
+
+    def on_run_completed(self, *args: object, **kwargs: object) -> None:
+        pass
 
 
 def _sandboxed_workspace(tmp_path: Path) -> Path:

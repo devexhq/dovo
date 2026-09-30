@@ -118,12 +118,12 @@ class LoopLifecycleEvent(BaseModel):
 
     loop_id: str
     action: str
-    turn: int | None = None
+    iteration: int | None = None
     max_iterations: int | None = None
     status: str | None = None
     message: str | None = None
     conditions: list[LoopConditionView] = []
-    next_turn: int | None = None
+    next_iteration: int | None = None
 
 
 class WelcomeBannerEvent(BaseModel):

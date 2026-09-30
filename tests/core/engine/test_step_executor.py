@@ -125,7 +125,7 @@ class _RecordingRunObserver(NoOpRunObserver):
     def on_step_start(self, idx: int, total: int, step: StepDefinition) -> None:
         self.events.append(f"start:{step.id}")
 
-    def on_step_done(self, idx: int, total: int, result: StepResult) -> None:
+    def on_step_done(self, idx: int, total: int, step: StepDefinition, result: StepResult) -> None:
         self.events.append(f"done:{result.step_id}")
 
 

@@ -62,14 +62,14 @@ class ProjectionTests:
             state=NodeState.COMPLETED,
             iterations=[
                 ExecutionIterationRecord(
-                    number=turn,
+                    number=iteration,
                     state=NodeState.COMPLETED,
                     steps=[
-                        _leaf("s1", NodeState.COMPLETED, [_result("s1", attempts=turn)]),
-                        _leaf("s2", NodeState.COMPLETED, [_result("s2", attempts=turn)]),
+                        _leaf("s1", NodeState.COMPLETED, [_result("s1", attempts=iteration)]),
+                        _leaf("s2", NodeState.COMPLETED, [_result("s2", attempts=iteration)]),
                     ],
                 )
-                for turn in (1, 2)
+                for iteration in (1, 2)
             ],
         )
         tree = _tree(
@@ -134,9 +134,9 @@ class ProjectionIterLeavesTests:
             max_iterations=2,
             iterations=[
                 ExecutionIterationRecord(
-                    number=turn, steps=[_leaf("s1", NodeState.PENDING), _leaf("s2", NodeState.PENDING)]
+                    number=iteration, steps=[_leaf("s1", NodeState.PENDING), _leaf("s2", NodeState.PENDING)]
                 )
-                for turn in (1, 2)
+                for iteration in (1, 2)
             ],
         )
         tree = _tree(_leaf("a", NodeState.PENDING), loop, _leaf("z", NodeState.PENDING))

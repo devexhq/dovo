@@ -31,13 +31,31 @@ from worktree.core.engine.state_models import (
     NodeState,
     StepAttemptRecord,
 )
-from worktree.core.engine.writer import load_blueprint_from_snapshot
+from worktree.core.engine.writer import load_blueprint_from_snapshot, snapshot_blueprint_path
+from worktree.core.logs import RunLogEvent, RunLogEventType
 from worktree.core.logs.services.read import read_run_log_events
 from worktree.core.sandbox.models import SandboxSession
 from worktree.core.step import StepExecution
 from worktree.core.step.models import ConditionEvaluationResult, LoopStepBlock, StepDefinition, StepResult
 
 _FAIL_DETAIL = "Command failed with exit code 1."
+
+
+def _timeline_entry(event: RunLogEvent) -> tuple[str, dict[str, object]]:
+    """Return the event name and details() minus the non-deterministic duration."""
+    return event.event.value, {k: v for k, v in event.details().items() if k != "duration_seconds"}
+
+
+def _loop_body_entries(iteration: int) -> list[tuple[str, dict[str, object]]]:
+    """Return the pinned s1/s2 step_start/step_done entries for one iteration of loop "loop"."""
+    loop_fields: dict[str, object] = {"loop_id": "loop", "iteration": iteration}
+    done: dict[str, object] = {"attempt": 1, "status": "completed", "exit_code": 0, **loop_fields}
+    return [
+        ("step_start", {"step_index": 1, "step_id": "s1", "attempt": 1, **loop_fields}),
+        ("step_done", {"step_index": 1, "step_id": "s1", **done}),
+        ("step_start", {"step_index": 2, "step_id": "s2", "attempt": 1, **loop_fields}),
+        ("step_done", {"step_index": 2, "step_id": "s2", **done}),
+    ]
 
 
 class _Prompter(FailurePrompter):
@@ -97,26 +115,28 @@ class _SequenceObserver(NoOpRunObserver):
     def on_step_start(self, idx: int, total: int, step: StepDefinition) -> None:
         self.calls.append(("step_start", idx, total, step.id))
 
-    def on_step_done(self, idx: int, total: int, result: StepResult) -> None:
-        self.calls.append(("step_done", idx, total, result.step_id, result.status))
+    def on_step_done(self, idx: int, total: int, step: StepDefinition, result: StepResult) -> None:
+        self.calls.append(("step_done", idx, total, step.id, result.status))
 
     def on_loop_start(self, loop_id: str, max_iterations: int) -> None:
         self.calls.append(("loop_start", loop_id, max_iterations))
 
-    def on_loop_turn_start(self, loop_id: str, turn: int, max_iterations: int) -> None:
-        self.calls.append(("loop_turn_start", loop_id, turn, max_iterations))
+    def on_loop_iteration_start(self, loop_id: str, iteration: int, max_iterations: int) -> None:
+        self.calls.append(("loop_iteration_start", loop_id, iteration, max_iterations))
 
     def on_loop_conditions_evaluated(
         self,
         loop_id: str,
         results: list[ConditionEvaluationResult],
         all_passed: bool,
-        next_turn: int | None = None,
+        next_iteration: int | None = None,
     ) -> None:
-        self.calls.append(("loop_conditions_evaluated", loop_id, [r.passed for r in results], all_passed, next_turn))
+        self.calls.append(
+            ("loop_conditions_evaluated", loop_id, [r.passed for r in results], all_passed, next_iteration)
+        )
 
-    def on_loop_done(self, loop_id: str, status: str, turns: int) -> None:
-        self.calls.append(("loop_done", loop_id, status, turns))
+    def on_loop_done(self, loop_id: str, status: str, total_iterations: int) -> None:
+        self.calls.append(("loop_done", loop_id, status, total_iterations))
 
 
 class _RaisingObserver(NoOpRunObserver):
@@ -135,7 +155,7 @@ class _RaisingObserver(NoOpRunObserver):
     ) -> None:
         raise RuntimeError("observer output")
 
-    def on_step_done(self, idx: int, total: int, result: StepResult) -> None:
+    def on_step_done(self, idx: int, total: int, step: StepDefinition, result: StepResult) -> None:
         raise RuntimeError("observer done")
 
 
@@ -581,7 +601,7 @@ class CoordinatorObserverContractTests:
     def test_loop_run_emits_pinned_observer_sequence(
         self, engine_paths: WorkspacePaths, runs_repo: RunsRepository
     ) -> None:
-        """[tier-1/integration] RunCoordinator.execute: a 2-iteration loop of [s1, s2] gives the 14-call ordered observer sequence loop_start(2), turn_start(1), s1 (1/2), s2 (2/2), conditions([False], False, next 2), turn_start(2), s1 (1/2), s2 (2/2), conditions([True], True, None), loop_done("completed", 2)."""
+        """[tier-1/integration] RunCoordinator.execute: a 2-iteration loop of [s1, s2] gives the 14-call ordered observer sequence loop_start(2), iteration_start(1), s1 (1/2), s2 (2/2), conditions([False], False, next 2), iteration_start(2), s1 (1/2), s2 (2/2), conditions([True], True, None), loop_done("completed", 2)."""
         observer = _SequenceObserver()
 
         _run_new(
@@ -594,13 +614,13 @@ class CoordinatorObserverContractTests:
 
         assert observer.calls == [
             ("loop_start", "loop", 2),
-            ("loop_turn_start", "loop", 1, 2),
+            ("loop_iteration_start", "loop", 1, 2),
             ("step_start", 1, 2, "s1"),
             ("step_done", 1, 2, "s1", "completed"),
             ("step_start", 2, 2, "s2"),
             ("step_done", 2, 2, "s2", "completed"),
             ("loop_conditions_evaluated", "loop", [False], False, 2),
-            ("loop_turn_start", "loop", 2, 2),
+            ("loop_iteration_start", "loop", 2, 2),
             ("step_start", 1, 2, "s1"),
             ("step_done", 1, 2, "s1", "completed"),
             ("step_start", 2, 2, "s2"),
@@ -612,31 +632,92 @@ class CoordinatorObserverContractTests:
     def test_loop_run_log_round_trips_through_reader(
         self, engine_paths: WorkspacePaths, runs_repo: RunsRepository
     ) -> None:
-        """[tier-1/integration] read_run_log_events: a coordinator-written run.log for a 2-iteration loop of [s1, s2] returns one event per file line matching the pinned 14-event (event, details()) sequence, with conditions passed [False] then [True]."""
+        """[tier-1/integration] read_run_log_events: a coordinator-written run.log for a 2-iteration loop "loop" of [s1, s2] returns one event per file line matching the pinned 14-event (event, details()) sequence, with step_start/step_done details carrying loop_id "loop", iteration 1 then 2 and step_name absent, step_done duration_seconds a float, loop_done iteration 2, and conditions passed [False] then [True]."""
         _run_new(engine_paths, runs_repo, "loop-log", [_loop("loop", [_step("s1", "true"), _step("s2", "true")])])
         log_dir = engine_paths.logs_dir / "loop-log"
 
         events = read_run_log_events(log_dir, tail=None)
 
         assert len(events) == len((log_dir / "run.log").read_text(encoding="utf-8").splitlines())
-        turn_steps = [
-            ("step_start", {"step_index": 1, "step_id": "s1", "attempt": 1}),
-            ("step_done", {"step_index": 1, "step_id": "s1", "attempt": 1, "status": "completed", "exit_code": 0}),
-            ("step_start", {"step_index": 2, "step_id": "s2", "attempt": 1}),
-            ("step_done", {"step_index": 2, "step_id": "s2", "attempt": 1, "status": "completed", "exit_code": 0}),
-        ]
-        assert [(e.event.value, e.details()) for e in events] == [
+        durations = [e.duration_seconds for e in events if e.event is RunLogEventType.STEP_DONE]
+        assert len(durations) == 4
+        assert all(isinstance(duration, float) for duration in durations)
+        assert [_timeline_entry(e) for e in events] == [
             ("loop_start", {"loop_id": "loop", "max_iterations": 2}),
-            ("loop_turn_start", {"loop_id": "loop", "turn": 1, "max_iterations": 2}),
-            *turn_steps,
-            ("loop_conditions_evaluated", {"loop_id": "loop", "all_passed": False, "next_turn": 2}),
-            ("loop_turn_start", {"loop_id": "loop", "turn": 2, "max_iterations": 2}),
-            *turn_steps,
+            ("loop_iteration_start", {"loop_id": "loop", "iteration": 1, "max_iterations": 2}),
+            *_loop_body_entries(1),
+            ("loop_conditions_evaluated", {"loop_id": "loop", "all_passed": False, "next_iteration": 2}),
+            ("loop_iteration_start", {"loop_id": "loop", "iteration": 2, "max_iterations": 2}),
+            *_loop_body_entries(2),
             ("loop_conditions_evaluated", {"loop_id": "loop", "all_passed": True}),
-            ("loop_done", {"loop_id": "loop", "status": "completed", "turn": 2}),
+            ("loop_done", {"loop_id": "loop", "status": "completed", "iteration": 2}),
         ]
-        evaluated = [e for e in events if e.event.value == "loop_conditions_evaluated"]
+        evaluated = [e for e in events if e.event is RunLogEventType.LOOP_CONDITIONS_EVALUATED]
         assert [[c["passed"] for c in e.conditions or []] for e in evaluated] == [[False], [True]]
+
+    def test_top_level_step_events_leave_loop_fields_null(
+        self, engine_paths: WorkspacePaths, runs_repo: RunsRepository
+    ) -> None:
+        """[tier-1/integration] read_run_log_events: a coordinator-written run.log for top-level steps [a, b] has step_start/step_done events whose loop_id and iteration are None."""
+        _run_new(engine_paths, runs_repo, "flat-log", [_step("a", "true"), _step("b", "true")])
+
+        events = read_run_log_events(engine_paths.logs_dir / "flat-log", tail=None)
+
+        step_events = [e for e in events if e.event.value in {"step_start", "step_done"}]
+        assert len(step_events) == 4
+        assert [(e.loop_id, e.iteration) for e in step_events] == [(None, None)] * 4
+
+    def test_step_name_and_duration_are_logged(self, engine_paths: WorkspacePaths, runs_repo: RunsRepository) -> None:
+        """[tier-1/integration] read_run_log_events: a run of [step "a" with name "Run tests", step "b" without name] gives step_start step_name "Run tests" then None, and step_done duration_seconds equal to the matching RunOutcome.step_results[i].duration_seconds."""
+        outcome = _run_new(
+            engine_paths,
+            runs_repo,
+            "named-log",
+            [_step("a", "true", name="Run tests"), _step("b", "true")],
+        )
+
+        events = read_run_log_events(engine_paths.logs_dir / "named-log", tail=None)
+
+        assert [e.step_name for e in events if e.event.value == "step_start"] == ["Run tests", None]
+        assert [e.duration_seconds for e in events if e.event.value == "step_done"] == [
+            result.duration_seconds for result in outcome.step_results
+        ]
+
+
+class CoordinatorLoadTests:
+    """[tier-1/integration] RunCoordinator.load and steps: memoized definition loading."""
+
+    def test_execute_after_failed_load_returns_failed_with_load_error_once(
+        self, engine_paths: WorkspacePaths, runs_repo: RunsRepository
+    ) -> None:
+        """[tier-1/integration] RunCoordinator.load: a run whose definitions snapshot is missing gives load() False, and a following execute() returns FAILED with the load error appearing exactly once in errors."""
+        seed_new_run(engine_paths, runs_repo, session_id="load-fail", steps=[_step("a", "true")])
+        snapshot_blueprint_path(engine_paths.session_dir("load-fail"), "load-fail").unlink()
+        coordinator = _coordinator(engine_paths, runs_repo, "load-fail")
+
+        assert coordinator.load() is False
+        outcome = coordinator.execute()
+
+        assert outcome.status == RunStatus.FAILED
+        assert len(outcome.errors) == 1
+
+    def test_steps_returns_top_level_definitions_after_load(
+        self, engine_paths: WorkspacePaths, runs_repo: RunsRepository
+    ) -> None:
+        """[tier-1/integration] RunCoordinator.steps: after load() on a run of [step "a", loop "loop"], steps ids are ["a", "loop"]; a second load() after deleting the snapshot still returns True."""
+        seed_new_run(
+            engine_paths,
+            runs_repo,
+            session_id="load-steps",
+            steps=[_step("a", "true"), _loop("loop", [_step("s1", "true")])],
+        )
+        coordinator = _coordinator(engine_paths, runs_repo, "load-steps")
+
+        assert coordinator.load() is True
+        snapshot_blueprint_path(engine_paths.session_dir("load-steps"), "load-steps").unlink()
+
+        assert [step.id for step in coordinator.steps] == ["a", "loop"]
+        assert coordinator.load() is True
 
 
 class CoordinatorMetadataTests:
@@ -779,10 +860,10 @@ class CoordinatorMetadataTests:
         assert outcome.status == RunStatus.COMPLETED
         assert outcome.step_results[1].stdout == expected
 
-    def test_final_step_sees_correctly_named_steps_for_prior_step_and_both_loop_turns(
+    def test_final_step_sees_correctly_named_steps_for_prior_step_and_both_loop_iterations(
         self, engine_paths: WorkspacePaths, runs_repo: RunsRepository
     ) -> None:
-        """[tier-1/integration] RunCoordinator.execute: a run of [top-level 'first', a 2-turn loop with one sub-step 'tick', top-level 'last'] gives 'last' a command '{{ steps[0].name }}|{{ steps[1].name }}|{{ steps[2].name }}' whose stdout is 'First|Tick|Tick'."""
+        """[tier-1/integration] RunCoordinator.execute: a run of [top-level 'first', a 2-iteration loop with one sub-step 'tick', top-level 'last'] gives 'last' a command '{{ steps[0].name }}|{{ steps[1].name }}|{{ steps[2].name }}' whose stdout is 'First|Tick|Tick'."""
         outcome = _run_new(
             engine_paths,
             runs_repo,
@@ -1291,10 +1372,10 @@ class CoordinatorLoopResumeTests:
         ]
         assert not (engine_workspace / "s.ran").exists()
 
-    def test_resume_emits_no_second_loop_start_or_turn_start_for_the_paused_iteration(
+    def test_resume_emits_no_second_loop_start_or_iteration_start_for_the_paused_iteration(
         self, engine_paths: WorkspacePaths, runs_repo: RunsRepository
     ) -> None:
-        """[tier-1/integration] RunCoordinator.execute: run.log after pause plus resume holds exactly one LOOP_START and one LOOP_TURN_START for iteration 1."""
+        """[tier-1/integration] RunCoordinator.execute: run.log after pause plus resume holds exactly one LOOP_START and one LOOP_ITERATION_START for iteration 1."""
         _pause_loop(engine_paths, runs_repo, "loop-events", [_loop("loop", _counting_body(1), max_iterations=1)])
 
         _coordinator(
@@ -1303,7 +1384,7 @@ class CoordinatorLoopResumeTests:
 
         events = [event["event"] for event in _run_log(engine_paths, "loop-events")]
         assert events.count("loop_start") == 1
-        assert events.count("loop_turn_start") == 1
+        assert events.count("loop_iteration_start") == 1
 
 
 class CoordinatorLoopUntilTests:

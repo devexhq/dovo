@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import pytest
+from pydantic import ValidationError
 
-from worktree.core.logs import LogsShowResult, LogsShowStatus
+from worktree.core.logs import LogsShowResult, LogsShowStatus, RunLogEvent, RunLogEventType
 
 
 class LogsShowResultOkTests:
@@ -23,3 +24,15 @@ class LogsShowResultOkTests:
     def test_ok_reflects_status_and_errors(self, status: LogsShowStatus, errors: list[str], expected_ok: bool) -> None:
         """[tier-1/unit] LogsShowResult.ok is True only for status OK with an empty errors list."""
         assert LogsShowResult(status=status, errors=errors).ok is expected_ok
+
+
+class RunLogEventTests:
+    """[tier-1/unit] RunLogEvent: optional field defaults and strict field set."""
+
+    def test_new_fields_default_to_none_and_unknown_field_is_rejected(self) -> None:
+        """[tier-1/unit] RunLogEvent: RunLogEvent(event=RunLogEventType.STEP_START) has step_name None and duration_seconds None; an unknown field raises ValidationError."""
+        event = RunLogEvent(event=RunLogEventType.STEP_START)
+
+        assert (event.step_name, event.duration_seconds) == (None, None)
+        with pytest.raises(ValidationError):
+            RunLogEvent.model_validate({"event": RunLogEventType.STEP_START, "unknown_field": 1})

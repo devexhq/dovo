@@ -131,12 +131,21 @@ class StepCoordinator:
         steps: Sequence[PreviousStepMetadata] | None = None,
         initial_attempt: int = 1,
         loop_iteration: int | None = None,
+        loop_id: str | None = None,
     ) -> StepResult:
         """Notify, log, run one StepExecution, and auto-publish artifacts when it succeeds."""
         safe_notify(self.context.observer, "on_step_start", idx, total, step)
         append_run_log_event(
             state.session_log_dir,
-            RunLogEvent(event=RunLogEventType.STEP_START, step_index=idx, step_id=step.id, attempt=initial_attempt),
+            RunLogEvent(
+                event=RunLogEventType.STEP_START,
+                step_index=idx,
+                step_id=step.id,
+                step_name=step.name,
+                attempt=initial_attempt,
+                loop_id=loop_id,
+                iteration=loop_iteration,
+            ),
         )
         on_output = (
             (
@@ -168,16 +177,20 @@ class StepCoordinator:
                 paths=self.context.paths,
             )
         ).run()
-        safe_notify(self.context.observer, "on_step_done", idx, total, result)
+        safe_notify(self.context.observer, "on_step_done", idx, total, step, result)
         append_run_log_event(
             state.session_log_dir,
             RunLogEvent(
                 event=RunLogEventType.STEP_DONE,
                 step_index=idx,
                 step_id=step.id,
+                step_name=step.name,
                 attempt=result.attempts,
                 status=result.status,
                 exit_code=result.exit_code,
+                duration_seconds=result.duration_seconds,
+                loop_id=loop_id,
+                iteration=loop_iteration,
             ),
         )
         if result.ok:

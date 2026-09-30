@@ -1,4 +1,4 @@
-"""Contract tests for LiveDisplayManager loop status folding and turn-scoped step table."""
+"""Contract tests for LiveDisplayManager loop status folding and iteration-scoped step table."""
 
 from __future__ import annotations
 
@@ -22,8 +22,8 @@ def _manager() -> LiveDisplayManager:
 class LiveDisplayManagerLoopTests:
     """Contract tests for LiveDisplayManager's loop lifecycle handling."""
 
-    def test_turn_start_clears_steps_table(self) -> None:
-        """LiveDisplayManager.handle_loop_lifecycle: turn_start clears self.steps before the new turn's StepStartEvents arrive."""
+    def test_iteration_start_clears_steps_table(self) -> None:
+        """LiveDisplayManager.handle_loop_lifecycle: iteration_start clears self.steps before the new iteration's StepStartEvents arrive."""
         manager = _manager()
         manager.handle_step_start(
             StepStartEvent(idx=1, total=2, step_id="run-tests", name="run-tests", command="pytest")
@@ -32,7 +32,7 @@ class LiveDisplayManagerLoopTests:
         assert len(manager.steps) == 1
 
         manager.handle_loop_lifecycle(
-            LoopLifecycleEvent(loop_id="dev-cycle", action="turn_start", turn=2, max_iterations=5)
+            LoopLifecycleEvent(loop_id="dev-cycle", action="iteration_start", iteration=2, max_iterations=5)
         )
 
         assert manager.steps == []
@@ -75,8 +75,8 @@ class LiveDisplayManagerLoopTests:
 class BuildLoopStatusPanelTests:
     """Contract tests for the build_loop_status_panel renderable builder."""
 
-    def test_turn_history_marks_pass_fail_current_and_pending(self) -> None:
-        """build_loop_status_panel: turn_results={1: False, 2: False}, turn=3, max_iterations=5 renders 5 turn markers."""
+    def test_iteration_history_marks_pass_fail_current_and_pending(self) -> None:
+        """build_loop_status_panel: iteration_results={1: False, 2: False}, iteration=3, max_iterations=5 renders 5 iteration markers."""
         panel = build_loop_status_panel(
             "dev-cycle",
             3,
@@ -90,6 +90,6 @@ class BuildLoopStatusPanelTests:
         rendered = console.export_text()
 
         assert "dev-cycle" in rendered
-        assert "turn 3/5" in rendered
-        for turn_number in range(1, 6):
-            assert str(turn_number) in rendered
+        assert "iteration 3/5" in rendered
+        for iteration_number in range(1, 6):
+            assert str(iteration_number) in rendered
