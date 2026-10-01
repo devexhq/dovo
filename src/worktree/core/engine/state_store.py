@@ -6,21 +6,23 @@ from pathlib import Path
 
 from pydantic import ValidationError
 
-from worktree.common.filesystem import Filesystem, WorkspacePaths
+from worktree.common.filesystem import WorkspacePaths
 from worktree.core.blueprint import Blueprint
 from worktree.core.db import RunRecord, RunsRepository, RunStatus
 from worktree.core.engine.models import DefinitionsManifest
+from worktree.core.engine.projection import build_run_json_payload
 from worktree.core.engine.state_models import (
     ExecutionIterationRecord,
     ExecutionLeafNode,
     ExecutionLoopNode,
     ExecutionStateTree,
+    RunJsonPayload,
     RunStateLoadResult,
     RunStateLoadStatus,
     RunStateWriteResult,
     RunStateWriteStatus,
 )
-from worktree.core.engine.writer import snapshot_blueprint_path, snapshot_step_path
+from worktree.core.engine.writer import snapshot_blueprint_path, snapshot_step_path, write_session_run_projection
 from worktree.core.step import LoopStepBlock, StepDefinition
 
 
@@ -58,6 +60,11 @@ def _missing_snapshot_paths(session_dir: Path, manifest: DefinitionsManifest) ->
     return [path for path in paths if not path.is_file()]
 
 
+def _projection_stale(projected: RunJsonPayload | None, state: ExecutionStateTree, row: RunRecord) -> bool:
+    """Return True when run.json is absent or differs from the projection of state and its run row."""
+    return projected != build_run_json_payload(state, row)
+
+
 class RunStateStore:
     """Canonical execution state for one run: the run row owns it and run.json is its projection."""
 
@@ -82,7 +89,7 @@ class RunStateStore:
         return RunStateWriteResult(
             status=RunStateWriteStatus.OK,
             state=state,
-            warnings=self._sync_projection(state),
+            warnings=self._sync_projection(state, row),
         )
 
     def load(self) -> RunStateLoadResult:
@@ -114,17 +121,17 @@ class RunStateStore:
                 errors=[f"Definition snapshot file missing: {path}" for path in missing],
             )
 
-        projection_revision = self._projection_revision()
-        if projection_revision is not None and projection_revision > state.revision:
+        projected = self._read_projection()
+        if projected is not None and projected.revision > state.revision:
             return RunStateLoadResult(
                 status=RunStateLoadStatus.INCONSISTENT_PROJECTION,
                 errors=[
-                    f"run.json for run '{self.session_id}' is at revision {projection_revision}, "
+                    f"run.json for run '{self.session_id}' is at revision {projected.revision}, "
                     f"newer than the database revision {state.revision}."
                 ],
             )
 
-        warnings = self._sync_projection(state) if projection_revision != state.revision else []
+        warnings = self._sync_projection(state, row) if _projection_stale(projected, state, row) else []
         return RunStateLoadResult(status=RunStateLoadStatus.OK, state=state, warnings=warnings)
 
     def save(
@@ -133,6 +140,7 @@ class RunStateStore:
         run_status: RunStatus | None = None,
         error_message: str | None = None,
         sandbox_id: str | None = None,
+        sandbox_kept: bool | None = None,
     ) -> RunStateWriteResult:
         """Commit state at revision + 1 with optional lifecycle fields and sandbox id, then sync the run.json projection."""
         next_state = state.model_copy(update={"revision": state.revision + 1})
@@ -144,6 +152,7 @@ class RunStateStore:
             status=run_status,
             error_message=error_message,
             sandbox_id=sandbox_id,
+            sandbox_kept=sandbox_kept,
         )
         if row is None:
             return self._classify_write_failure()
@@ -151,14 +160,13 @@ class RunStateStore:
         return RunStateWriteResult(
             status=RunStateWriteStatus.OK,
             state=next_state,
-            warnings=self._sync_projection(next_state),
+            warnings=self._sync_projection(next_state, row),
         )
 
-    def regenerate_projection(self, state: ExecutionStateTree) -> Path:
-        """Atomically write state to <session-dir>/run.json and return that path."""
-        target_file = self.paths.session_dir(self.session_id) / "run.json"
-        Filesystem.atomic_write_text(target_file, state.model_dump_json(indent=2))
-        return target_file
+    def regenerate_projection(self, state: ExecutionStateTree, row: RunRecord) -> Path:
+        """Atomically write the run.json projection of state and its run row and return that path."""
+        payload = build_run_json_payload(state, row)
+        return write_session_run_projection(self.paths.session_dir(self.session_id), payload)
 
     def _classify_write_failure(self) -> RunStateWriteResult:
         """Return NOT_FOUND when the run row is missing, else REVISION_CONFLICT, without touching the row or projection."""
@@ -173,10 +181,10 @@ class RunStateStore:
             errors=[f"Execution state for run '{self.session_id}' was changed by another writer."],
         )
 
-    def _sync_projection(self, state: ExecutionStateTree) -> list[str]:
+    def _sync_projection(self, state: ExecutionStateTree, row: RunRecord) -> list[str]:
         """Write the run.json projection, returning a warning list instead of raising on OSError."""
         try:
-            self.regenerate_projection(state)
+            self.regenerate_projection(state, row)
         except OSError as exc:
             return [f"Failed to write run.json projection: {exc}; it will be regenerated on the next load."]
         return []
@@ -193,10 +201,10 @@ class RunStateStore:
             return None
         return state
 
-    def _projection_revision(self) -> int | None:
-        """Return the run.json revision, or None when the file is absent, unreadable, or invalid."""
+    def _read_projection(self) -> RunJsonPayload | None:
+        """Return the run.json payload, or None when the file is absent, unreadable, or invalid."""
         target_file = self.paths.session_dir(self.session_id) / "run.json"
         try:
-            return ExecutionStateTree.model_validate_json(target_file.read_text(encoding="utf-8")).revision
+            return RunJsonPayload.model_validate_json(target_file.read_text(encoding="utf-8"))
         except (OSError, ValueError):
             return None

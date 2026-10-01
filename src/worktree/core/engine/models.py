@@ -108,6 +108,14 @@ class LoopPromptDecision(StrEnum):
     ABORT = "abort"
 
 
+class StepAction(StrEnum):
+    """Orchestration action chosen after a terminal step failure; distinct from user prompt decisions and persisted node transitions."""
+
+    RETRY = "retry"
+    CONTINUE = "continue"
+    ABORT = "abort"
+
+
 @runtime_checkable
 class FailurePrompter(Protocol):
     """Injectable decision entrypoint for interactive step-failure and loop-handling."""

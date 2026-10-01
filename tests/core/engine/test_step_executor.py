@@ -19,6 +19,7 @@ from worktree.core.engine.models import (
     FailurePrompter,
     LoopPromptDecision,
     RunContext,
+    StepAction,
     StepLoopState,
 )
 from worktree.core.engine.step_executor import StepCoordinator, auto_publish_step_artifacts
@@ -207,19 +208,21 @@ class StepCoordinatorPrimitiveTests:
     @pytest.mark.parametrize(
         ("decision", "expected_action", "expected_status", "expected_error"),
         [
-            pytest.param(FailurePromptDecision.RETRY, "retry", None, None, id="retry"),
-            pytest.param(FailurePromptDecision.CONTINUE, "continue", "ignored", None, id="continue"),
-            pytest.param(FailurePromptDecision.ABORT, "abort", "failed", "Step 'fail' failed: boom", id="abort"),
+            pytest.param(FailurePromptDecision.RETRY, StepAction.RETRY, None, None, id="retry"),
+            pytest.param(FailurePromptDecision.CONTINUE, StepAction.CONTINUE, "ignored", None, id="continue"),
+            pytest.param(
+                FailurePromptDecision.ABORT, StepAction.ABORT, "failed", "Step 'fail' failed: boom", id="abort"
+            ),
         ],
     )
     def test_apply_prompt_decision_maps_decision_to_action(
         self,
         decision: FailurePromptDecision,
-        expected_action: str,
+        expected_action: StepAction,
         expected_status: str | None,
         expected_error: str | None,
     ) -> None:
-        """[tier-1/unit] StepCoordinator.apply_prompt_decision: RETRY returns ("retry", None, None), CONTINUE an ignored result with the user-continued marker, ABORT the failed result with "Step '<id>' failed: <detail>"."""
+        """[tier-1/unit] StepCoordinator.apply_prompt_decision: RETRY returns (StepAction.RETRY, None, None), CONTINUE (StepAction.CONTINUE, an ignored result with the user-continued marker, None), ABORT (StepAction.ABORT, the failed result, "Step '<id>' failed: <detail>")."""
         failed = StepResult(
             step_id="fail",
             status="failed",
@@ -232,7 +235,7 @@ class StepCoordinatorPrimitiveTests:
 
         action, recorded, error_message = StepCoordinator.apply_prompt_decision(decision, failed)
 
-        assert action == expected_action
+        assert action is expected_action
         assert (recorded.status if recorded is not None else None) == expected_status
         assert error_message == expected_error
         if decision == FailurePromptDecision.CONTINUE:

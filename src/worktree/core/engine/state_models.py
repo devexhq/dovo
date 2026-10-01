@@ -8,6 +8,7 @@ from typing import Annotated, Literal
 from pydantic import BaseModel, Field
 
 from worktree.common.models import BaseResult, FailurePolicy
+from worktree.core.db import RunStatus
 from worktree.core.engine.models import DefinitionsManifest
 from worktree.core.step.models import StepResult
 
@@ -93,6 +94,32 @@ class ExecutionStateTree(BaseModel):
     revision: int = 0
     manifest: DefinitionsManifest
     nodes: list[ExecutionPlanNode] = Field(default_factory=list)
+
+
+class RunLifecycle(BaseModel):
+    """Row-derived lifecycle outcome embedded in run.json."""
+
+    model_config = {"extra": "forbid", "strict": True}
+
+    status: RunStatus
+    error_message: str | None = None
+    started_at: str
+    completed_at: str | None = None
+    sandbox_id: str | None = None
+    sandbox_kept: bool = False
+
+
+class RunJsonPayload(BaseModel):
+    """Database-derived run.json projection: frozen manifest, execution tree, lifecycle, and flattened results."""
+
+    model_config = {"extra": "forbid", "strict": True}
+
+    schema_version: int = 1
+    revision: int
+    manifest: DefinitionsManifest
+    nodes: list[ExecutionPlanNode] = Field(default_factory=list)
+    lifecycle: RunLifecycle
+    results: list[StepResult] = Field(default_factory=list)
 
 
 class RunStateWriteStatus(StrEnum):

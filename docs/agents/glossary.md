@@ -9,7 +9,7 @@ Precise definitions for core concepts and terms in the Worktree CLI codebase.
   - *Runner:* `StepExecution` in [`core/step/runner.py`](../../src/worktree/core/step/runner.py).
 - **Loop Step**: A container step that repeats child steps (`do: []`) until a condition or iteration ceiling is reached.
   - *Model:* `LoopStepBlock` in [`core/step/models.py`](../../src/worktree/core/step/models.py).
-  - *Execution:* `RunCoordinator.advance_loop` in [`core/engine/coordinator.py`](../../src/worktree/core/engine/coordinator.py), driven by `LoopPolicy` in [`core/engine/loop_policy.py`](../../src/worktree/core/engine/loop_policy.py).
+  - *Execution:* `RunCoordinator` in [`core/engine/coordinator.py`](../../src/worktree/core/engine/coordinator.py), driven by `LoopPolicy` in [`core/engine/loop_policy.py`](../../src/worktree/core/engine/loop_policy.py).
 - **Task**: A blueprint containing linear steps without loop steps.
 - **Workflow**: A blueprint permitted to contain loop steps and multi-step orchestration.
 - **Blueprint**: The unified document model and handle representing tasks and workflows.

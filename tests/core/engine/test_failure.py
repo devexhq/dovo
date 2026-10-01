@@ -2,14 +2,18 @@
 
 from __future__ import annotations
 
+import pytest
+
 from worktree.common.models import FailurePolicy, OnFailureSpec
 from worktree.core.engine.failure import (
     USER_CONTINUED_MARKER,
     effective_terminal_policy,
     failed_step_message,
     mark_continued_after_prompt,
+    resolve_terminal_action,
     step_failure_diagnostic,
 )
+from worktree.core.engine.models import StepAction
 from worktree.core.step import StepResult
 
 
@@ -86,3 +90,40 @@ class FailedStepMessageTests:
         )
 
         assert failed_step_message(result) == "Step 'fail' failed: Command failed with exit code 1."
+
+
+class ResolveTerminalActionTests:
+    """[tier-1/unit] resolve_terminal_action: non-prompt terminal policy to StepAction."""
+
+    @pytest.mark.parametrize(
+        ("policy", "action", "recorded_status", "error_message"),
+        [
+            pytest.param(FailurePolicy.CONTINUE, StepAction.CONTINUE, "ignored", None, id="continue"),
+            pytest.param(FailurePolicy.ABORT, StepAction.ABORT, "failed", "Step 'fail' failed: boom", id="abort"),
+        ],
+    )
+    def test_resolve_terminal_action_maps_policy_to_action_result_and_message(
+        self, policy: FailurePolicy, action: StepAction, recorded_status: str, error_message: str | None
+    ) -> None:
+        """[tier-1/unit] resolve_terminal_action: CONTINUE returns (StepAction.CONTINUE, an ignored result carrying the user-continued marker, None); ABORT returns (StepAction.ABORT, the unchanged failed result, "Step '<id>' failed: <detail>")."""
+        failed = StepResult(
+            step_id="fail",
+            status="failed",
+            exit_code=1,
+            stdout="",
+            stderr="",
+            duration_seconds=0.0,
+            error_message="boom",
+        )
+
+        resolved_action, recorded, message = resolve_terminal_action(policy, failed)
+
+        assert resolved_action is action
+        assert recorded is not None
+        assert recorded.status == recorded_status
+        assert message == error_message
+        if policy == FailurePolicy.CONTINUE:
+            assert recorded.error_message is not None
+            assert recorded.error_message.endswith(f"({USER_CONTINUED_MARKER})")
+        else:
+            assert recorded == failed

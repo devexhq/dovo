@@ -10,7 +10,7 @@ from rich.console import Console
 
 from worktree.cli.run.prompter import DispatcherFailurePrompter
 from worktree.cli.ui.dispatcher import UiDispatcher
-from worktree.core.engine.models import FailurePromptDecision, LoopPromptDecision
+from worktree.core.engine import FailurePromptDecision, LoopPromptDecision
 from worktree.core.step import LoopStepBlock, StepDefinition, StepResult
 
 

@@ -156,6 +156,22 @@ class RunsRepositoryExecutionStateTests:
         assert record.completed_at is not None
         assert record.sandbox_id == "sbx-1"
 
+    def test_save_execution_state_and_update_status_record_sandbox_kept(self, db_path: Path, db_engine: Engine) -> None:
+        """[tier-1/integration] RunsRepository.save_execution_state / update_status: sandbox_kept=True leaves get(session_id).sandbox_kept is True, and omitting it on a later call leaves it True."""
+        repo = RunsRepository(db_path=db_path, db_engine=db_engine, project_id="proj-a")
+        repo.create(session_id="wf_a", blueprint_name="deploy", blueprint_key="deploy")
+        repo.create(session_id="wf_b", blueprint_name="deploy", blueprint_key="deploy")
+
+        repo.save_execution_state("wf_a", "{}", expected_revision=0, next_revision=1, sandbox_kept=True)
+        repo.update_status("wf_a", RunStatus.COMPLETED)
+        repo.update_status("wf_b", RunStatus.COMPLETED, sandbox_kept=True)
+        repo.update_status("wf_b", RunStatus.COMPLETED)
+
+        for session_id in ("wf_a", "wf_b"):
+            record = repo.get(session_id)
+            assert record is not None
+            assert record.sandbox_kept is True
+
     def test_save_execution_state_stale_revision_returns_none_and_leaves_row(
         self, db_path: Path, db_engine: Engine
     ) -> None:

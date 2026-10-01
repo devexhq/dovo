@@ -13,7 +13,7 @@ from worktree.core.engine.failure import (
     mark_continued_after_prompt,
     step_failure_diagnostic,
 )
-from worktree.core.engine.models import FailurePromptDecision, RunContext, StepLoopState
+from worktree.core.engine.models import FailurePromptDecision, RunContext, StepAction, StepLoopState
 from worktree.core.engine.notify import safe_notify
 from worktree.core.logs import RunLogEvent, RunLogEventType, append_run_log_event
 from worktree.core.step import (
@@ -106,18 +106,13 @@ class StepCoordinator:
     def apply_prompt_decision(
         decision: FailurePromptDecision,
         result: StepResult,
-    ) -> tuple[str, StepResult | None, str | None]:
-        """Map a prompt decision to orchestration action.
-
-        Returns:
-            ``(action, result_to_record, error_message)`` where action is one of
-            ``retry``, ``continue``, ``abort``.
-        """
+    ) -> tuple[StepAction, StepResult | None, str | None]:
+        """Map a prompt decision to ``(StepAction, result_to_record, error_message)``."""
         if decision == FailurePromptDecision.RETRY:
-            return "retry", None, None
+            return StepAction.RETRY, None, None
         if decision == FailurePromptDecision.CONTINUE:
-            return "continue", mark_continued_after_prompt(result), None
-        return "abort", result, failed_step_message(result)
+            return StepAction.CONTINUE, mark_continued_after_prompt(result), None
+        return StepAction.ABORT, result, failed_step_message(result)
 
     def run_attempt(
         self,

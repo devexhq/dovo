@@ -18,6 +18,7 @@ from worktree.core.catalog.models import CatalogItemType, CatalogRecord
 from worktree.core.diff.writer import get_session_dir, write_session_diff
 from worktree.core.engine.exceptions import EngineSnapshotMissingError
 from worktree.core.engine.models import DefinitionRef, DefinitionsManifest
+from worktree.core.engine.state_models import RunJsonPayload
 from worktree.core.step import (
     LoopStepBlock,
     StepDefinition,
@@ -229,6 +230,13 @@ def load_blueprint_from_snapshot(session_dir: Path, manifest: DefinitionsManifes
     return Blueprint(definition.model_copy(update={"steps": resolved_steps}), key=key)
 
 
+def write_session_run_projection(session_dir: Path, payload: RunJsonPayload) -> Path:
+    """Atomically write payload to <session_dir>/run.json and return that path."""
+    target_file = session_dir / "run.json"
+    Filesystem.atomic_write_text(target_file, payload.model_dump_json(indent=2))
+    return target_file
+
+
 __all__ = [
     "DefinitionRef",
     "DefinitionsManifest",
@@ -237,4 +245,5 @@ __all__ = [
     "load_blueprint_from_snapshot",
     "snapshot_definitions",
     "write_session_diff",
+    "write_session_run_projection",
 ]
