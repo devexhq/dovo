@@ -87,11 +87,13 @@ When a step fails with `on_failure: prompt_user`:
    ```
 
 ### Durable Run State Contents
-The run row preserves:
+The run row owns the execution state and preserves:
 - The paused step and the failed attempt that triggered the prompt.
 - The results of every completed step.
 - The sandbox identifier of the retained sandbox.
 - Resolved parameter input values and run options (`--keep`, `--agent`, `--auto-apply`).
+
+`run.json` in the session directory is a projection of this state (manifest, execution tree, lifecycle, flattened results), regenerated from the row.
 
 ---
 

@@ -87,8 +87,9 @@ class RunsRepository(BaseRepository):
         completed_at: str | None = None,
         pid: int | None = None,
         sandbox_id: str | None = None,
+        sandbox_kept: bool | None = None,
     ) -> RunRecord | None:
-        """Update status, optional timestamps, error message, PID, and sandbox id."""
+        """Update status, optional timestamps, error message, PID, sandbox id, and sandbox-kept outcome."""
         status_enum = _coerce_status(status)
         if not isinstance(status_enum, RunStatus):
             raise ValueError(f"Invalid status constraint: {status}")
@@ -110,6 +111,8 @@ class RunsRepository(BaseRepository):
                 record.pid = pid
             if sandbox_id is not None:
                 record.sandbox_id = sandbox_id
+            if sandbox_kept is not None:
+                record.sandbox_kept = sandbox_kept
 
             return self._commit(
                 session,
@@ -127,8 +130,9 @@ class RunsRepository(BaseRepository):
         status: RunStatus | str | None = None,
         error_message: str | None = None,
         sandbox_id: str | None = None,
+        sandbox_kept: bool | None = None,
     ) -> RunRecord | None:
-        """Compare-and-swap the execution-state document at expected_revision, optionally updating lifecycle fields and sandbox id in the same commit; None when no row matches."""
+        """Compare-and-swap the execution-state document at expected_revision, optionally updating lifecycle fields, sandbox id, and sandbox-kept outcome in the same commit; None when no row matches."""
         status_enum = _coerce_status(status)
         if status_enum is not None and not isinstance(status_enum, RunStatus):
             raise ValueError(f"Invalid status constraint: {status}")
@@ -151,6 +155,8 @@ class RunsRepository(BaseRepository):
                 record.error_message = error_message
             if sandbox_id is not None:
                 record.sandbox_id = sandbox_id
+            if sandbox_kept is not None:
+                record.sandbox_kept = sandbox_kept
 
             return self._commit(
                 session,

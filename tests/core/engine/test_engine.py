@@ -22,6 +22,7 @@ from worktree.core.engine.models import (
     RunObserver,
     RunOutcome,
 )
+from worktree.core.engine.state_models import RunJsonPayload
 from worktree.core.engine.writer import get_session_dir
 from worktree.core.git.runner import GitRunner
 from worktree.core.project.services.storage import resolve_workspace_paths
@@ -316,7 +317,7 @@ class EngineRunSnapshotsDefinitionsTests:
     def test_run_persists_initial_state_and_projection_before_first_step(
         self, engine_paths: WorkspacePaths, runs_repo: RunsRepository, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """[tier-1/unit] Engine.run: when drive_run is entered, the row is RUNNING with execution_state_revision 0, RunStateStore.load() returns a tree whose nodes are the blueprint's steps in order, and run.json parses to that same tree."""
+        """[tier-1/unit] Engine.run: when drive_run is entered, the row is RUNNING with execution_state_revision 0, RunStateStore.load() returns a tree whose nodes are the blueprint's steps in order, and run.json parses to a RunJsonPayload whose nodes equal that tree's nodes."""
         blueprint = _catalog_blueprint(
             engine_paths, "init-task", [{"id": "s1", "run": "echo one"}, {"id": "s2", "run": "echo two"}]
         )
@@ -338,8 +339,10 @@ class EngineRunSnapshotsDefinitionsTests:
             observed["status"] = row.status
             observed["revision"] = row.execution_state_revision
             observed["nodes"] = [node.id for node in loaded.state.nodes]
-            observed["projection"] = (paths.session_dir(session_id) / "run.json").read_text(encoding="utf-8")
-            observed["state"] = loaded.state.model_dump_json(indent=2)
+            observed["projection"] = RunJsonPayload.model_validate_json(
+                (paths.session_dir(session_id) / "run.json").read_text(encoding="utf-8")
+            ).nodes
+            observed["state"] = loaded.state.nodes
             return RunOutcome(status=RunStatus.COMPLETED, sandbox_path=paths.root_dir)
 
         monkeypatch.setattr("worktree.core.engine.engine.drive_run", observing_drive_run)
@@ -500,6 +503,42 @@ class EngineRunConfigPersistenceTests:
         assert row is not None
         assert row.status == outcome_status
         assert row.sandbox_id == outcome_sandbox_id
+
+
+class EngineRunProjectionTests:
+    """[tier-1/integration] Engine.run: the terminal row and run.json agree."""
+
+    @pytest.mark.parametrize("keep", [False, True])
+    def test_run_terminal_row_and_run_json_agree(
+        self, engine_paths: WorkspacePaths, runs_repo: RunsRepository, monkeypatch: pytest.MonkeyPatch, keep: bool
+    ) -> None:
+        """[tier-1/integration] Engine.run: a completed sandboxed run leaves run.json.revision == row.execution_state_revision, run.json.results == outcome.step_results, and run.json.lifecycle equal to the row's status/error_message/completed_at/sandbox_id/sandbox_kept, with sandbox_kept == keep."""
+        blueprint = _catalog_blueprint(engine_paths, "proj-task", [{"id": "s1", "run": "echo one"}])
+        _patch_drive_run(
+            monkeypatch,
+            engine_paths,
+            RunOutcome(
+                status=RunStatus.COMPLETED, sandbox_path=engine_paths.root_dir, sandbox_id="sbx-1", sandbox_kept=keep
+            ),
+        )
+
+        outcome = _engine(engine_paths, runs_repo).run(
+            blueprint, RunRequest(session_id="proj-1", use_sandbox=True, keep=keep)
+        )
+
+        row = runs_repo.get("proj-1")
+        assert row is not None
+        payload = RunJsonPayload.model_validate_json(
+            (get_session_dir(engine_paths, "proj-1") / "run.json").read_text(encoding="utf-8")
+        )
+        assert payload.revision == row.execution_state_revision
+        assert payload.results == outcome.step_results
+        assert payload.lifecycle.status == row.status == RunStatus.COMPLETED
+        assert payload.lifecycle.error_message == row.error_message
+        assert payload.lifecycle.completed_at == row.completed_at
+        assert row.completed_at is not None
+        assert payload.lifecycle.sandbox_id == row.sandbox_id == "sbx-1"
+        assert payload.lifecycle.sandbox_kept is row.sandbox_kept is keep
 
 
 class EngineFinalizeFallbackTests:

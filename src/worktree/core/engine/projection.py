@@ -4,12 +4,15 @@ from __future__ import annotations
 
 from collections.abc import Iterator
 
+from worktree.core.db import RunRecord
 from worktree.core.engine.state_models import (
     TERMINAL_NODE_STATES,
     ExecutionIterationRecord,
     ExecutionLeafNode,
     ExecutionStateTree,
     NodeState,
+    RunJsonPayload,
+    RunLifecycle,
 )
 from worktree.core.step.models import PreviousStepMetadata, StepResult
 from worktree.core.step.services.metadata import previous_step_metadata_from_result
@@ -63,3 +66,21 @@ def terminal_step_metadata(state: ExecutionStateTree) -> list[PreviousStepMetada
         previous_step_metadata_from_result(result, step_index=position, step_name=leaf.name or "")
         for position, (leaf, result) in enumerate(_terminal_leaves(state), start=1)
     ]
+
+
+def build_run_json_payload(state: ExecutionStateTree, row: RunRecord) -> RunJsonPayload:
+    """Project the execution tree and its run row into the run.json payload, with results flattened from the tree."""
+    return RunJsonPayload(
+        revision=state.revision,
+        manifest=state.manifest,
+        nodes=state.nodes,
+        lifecycle=RunLifecycle(
+            status=row.status,
+            error_message=row.error_message,
+            started_at=row.started_at,
+            completed_at=row.completed_at,
+            sandbox_id=row.sandbox_id,
+            sandbox_kept=row.sandbox_kept,
+        ),
+        results=flatten_step_results(state),
+    )

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from worktree.common.models import FailurePolicy, OnFailureSpec
+from worktree.core.engine.models import StepAction
 from worktree.core.step import StepResult
 
 USER_CONTINUED_MARKER = "user continued after prompt_user"
@@ -39,3 +40,13 @@ def failed_step_message(result: StepResult) -> str:
     """Format diagnostic message describing step failure."""
     detail = step_failure_diagnostic(result)
     return f"Step '{result.step_id}' failed: {detail}"
+
+
+def resolve_terminal_action(
+    policy: FailurePolicy,
+    result: StepResult,
+) -> tuple[StepAction, StepResult | None, str | None]:
+    """Map a non-prompt terminal policy to ``(StepAction, result_to_record, error_message)``: CONTINUE records an ignored result; every other policy aborts with the failed result."""
+    if policy == FailurePolicy.CONTINUE:
+        return StepAction.CONTINUE, mark_continued_after_prompt(result), None
+    return StepAction.ABORT, result, failed_step_message(result)

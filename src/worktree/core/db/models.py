@@ -159,6 +159,7 @@ class RunRecord(SQLModel, table=True):
     inputs_json: str | None = Field(default=None)
     auto_apply: bool = Field(default=False)
     sandbox_id: str | None = Field(default=None)
+    sandbox_kept: bool = Field(default=False)
 
     def __init__(self, **data: Any) -> None:
         """Initialize RunRecord, coercing string enums to Enum instances."""

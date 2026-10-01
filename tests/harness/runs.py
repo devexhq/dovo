@@ -11,7 +11,7 @@ from worktree.common.filesystem.models import WorkspacePaths
 from worktree.core.blueprint import Blueprint
 from worktree.core.catalog import Catalog
 from worktree.core.db import RunRecord, RunsRepository, RunStatus
-from worktree.core.engine.models import RunObserver, RunOutcome
+from worktree.core.engine import RunObserver, RunOutcome
 from worktree.core.engine.state_models import ExecutionLeafNode, NodeState, StepAttemptRecord
 from worktree.core.engine.state_store import RunStateStore
 from worktree.core.engine.writer import snapshot_definitions

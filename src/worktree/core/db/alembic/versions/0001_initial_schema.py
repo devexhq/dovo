@@ -82,6 +82,7 @@ def upgrade() -> None:
         sa.Column("inputs_json", AutoString(), nullable=True),
         sa.Column("auto_apply", sa.Boolean(), nullable=False, server_default=sa.text("0")),
         sa.Column("sandbox_id", AutoString(), nullable=True),
+        sa.Column("sandbox_kept", sa.Boolean(), nullable=False, server_default=sa.text("0")),
         sa.PrimaryKeyConstraint("id"),
         sa.UniqueConstraint("session_id"),
         sa.CheckConstraint(

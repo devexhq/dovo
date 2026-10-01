@@ -15,7 +15,6 @@ from worktree.core.db import RunsRepository, RunStatus
 from worktree.core.db.repositories.artifacts import ArtifactsRepository
 from worktree.core.engine import RunCoordinator, RunStateStore
 from worktree.core.engine.context import RunSessionContext
-from worktree.core.engine.coordinator import NodeTransitionKind
 from worktree.core.engine.failure import USER_CONTINUED_MARKER
 from worktree.core.engine.models import (
     FailurePromptDecision,
@@ -31,7 +30,7 @@ from worktree.core.engine.state_models import (
     NodeState,
     StepAttemptRecord,
 )
-from worktree.core.engine.writer import load_blueprint_from_snapshot, snapshot_blueprint_path
+from worktree.core.engine.writer import snapshot_blueprint_path
 from worktree.core.logs import RunLogEvent, RunLogEventType
 from worktree.core.logs.services.read import read_run_log_events
 from worktree.core.sandbox.models import SandboxSession
@@ -293,6 +292,7 @@ def saved_statuses(monkeypatch: pytest.MonkeyPatch) -> list[RunStatus | str | No
         status: RunStatus | str | None = None,
         error_message: str | None = None,
         sandbox_id: str | None = None,
+        sandbox_kept: bool | None = None,
     ):
         recorded.append(status)
         return real(
@@ -304,6 +304,7 @@ def saved_statuses(monkeypatch: pytest.MonkeyPatch) -> list[RunStatus | str | No
             status=status,
             error_message=error_message,
             sandbox_id=sandbox_id,
+            sandbox_kept=sandbox_kept,
         )
 
     monkeypatch.setattr(RunsRepository, "save_execution_state", spy)
@@ -326,6 +327,7 @@ def saved_states(monkeypatch: pytest.MonkeyPatch) -> list[ExecutionStateTree]:
         status: RunStatus | str | None = None,
         error_message: str | None = None,
         sandbox_id: str | None = None,
+        sandbox_kept: bool | None = None,
     ):
         recorded.append(ExecutionStateTree.model_validate_json(execution_state_json))
         return real(
@@ -337,6 +339,7 @@ def saved_states(monkeypatch: pytest.MonkeyPatch) -> list[ExecutionStateTree]:
             status=status,
             error_message=error_message,
             sandbox_id=sandbox_id,
+            sandbox_kept=sandbox_kept,
         )
 
     monkeypatch.setattr(RunsRepository, "save_execution_state", spy)
@@ -451,6 +454,7 @@ class CoordinatorExecuteTests:
             status: RunStatus | str | None = None,
             error_message: str | None = None,
             sandbox_id: str | None = None,
+            sandbox_kept: bool | None = None,
         ):
             calls.append(next_revision)
             if len(calls) == 2:
@@ -464,6 +468,7 @@ class CoordinatorExecuteTests:
                 status=status,
                 error_message=error_message,
                 sandbox_id=sandbox_id,
+                sandbox_kept=sandbox_kept,
             )
 
         monkeypatch.setattr(RunsRepository, "save_execution_state", flaky)
@@ -879,63 +884,45 @@ class CoordinatorMetadataTests:
         assert outcome.step_results[-1].stdout == "First|Tick|Tick\n"
 
 
-class CoordinatorAdvanceLeafTests:
-    """[tier-1/integration] RunCoordinator.advance_leaf: one durable transition per leaf, including prompt decisions."""
-
-    @staticmethod
-    def _advance(
-        paths: WorkspacePaths,
-        runs: RunsRepository,
-        session_id: str,
-        steps: list[dict[str, object]],
-        *,
-        prompter: FailurePrompter | None = None,
-        no_tty: bool = False,
-    ) -> tuple[RunCoordinator, NodeTransitionKind]:
-        """Seed a fresh run and advance its first leaf once."""
-        seed_new_run(paths, runs, session_id=session_id, steps=steps)
-        coordinator = _coordinator(paths, runs, session_id, prompter=prompter, no_tty=no_tty)
-        state = _state(paths, runs, session_id)
-        node = state.nodes[0]
-        assert isinstance(node, ExecutionLeafNode)
-        definition = load_blueprint_from_snapshot(paths.session_dir(session_id), state.manifest).steps[0]
-        assert isinstance(definition, StepDefinition)
-        return coordinator, coordinator.advance_leaf(node, definition)
+class CoordinatorLeafTransitionTests:
+    """[tier-1/integration] RunCoordinator.execute: one durable transition per leaf, including prompt decisions."""
 
     def test_pending_leaf_success_returns_completed_and_persists_state(
         self, engine_paths: WorkspacePaths, runs_repo: RunsRepository
     ) -> None:
-        """[tier-1/integration] RunCoordinator.advance_leaf: a PENDING echo leaf returns NodeTransitionKind.COMPLETED, and the row's state shows the node completed with one attempt whose number is 1."""
-        _, transition = self._advance(engine_paths, runs_repo, "adv-ok", [_step("a", "echo a")])
+        """[tier-1/integration] RunCoordinator.execute: a PENDING echo leaf completes the run, and the row's state shows the node completed with one attempt whose number is 1."""
+        outcome = _run_new(engine_paths, runs_repo, "adv-ok", [_step("a", "echo a")])
 
         leaf = _leaf(_state(engine_paths, runs_repo, "adv-ok"), "a")
-        assert transition == NodeTransitionKind.COMPLETED
+        assert outcome.status == RunStatus.COMPLETED
         assert leaf.state == NodeState.COMPLETED
         assert [attempt.number for attempt in leaf.attempts] == [1]
 
-    def test_prompt_retry_decision_returns_retry_with_running_attempt_two(
+    def test_prompt_retry_then_abort_prompts_twice_and_fails_node_with_two_attempts(
         self, engine_paths: WorkspacePaths, runs_repo: RunsRepository
     ) -> None:
-        """[tier-1/integration] RunCoordinator.advance_leaf: a prompt_user failure answered retry returns NodeTransitionKind.RETRY, and the persisted node is running with attempts numbered [1, 2] and attempts[-1].result None."""
-        _, transition = self._advance(
+        """[tier-1/integration] RunCoordinator.execute: a prompt_user failure answered retry then abort prompts twice, and the persisted node is failed with two attempts."""
+        prompter = _Prompter([FailurePromptDecision.RETRY, FailurePromptDecision.ABORT])
+
+        outcome = _run_new(
             engine_paths,
             runs_repo,
             "adv-retry",
             [_step("a", "exit 1", on_failure="prompt_user")],
-            prompter=_Prompter([FailurePromptDecision.RETRY]),
+            prompter=prompter,
         )
 
         leaf = _leaf(_state(engine_paths, runs_repo, "adv-retry"), "a")
-        assert transition == NodeTransitionKind.RETRY
-        assert leaf.state == NodeState.RUNNING
+        assert outcome.status == RunStatus.FAILED
+        assert len(prompter.prompted) == 2
+        assert leaf.state == NodeState.FAILED
         assert [attempt.number for attempt in leaf.attempts] == [1, 2]
-        assert leaf.attempts[-1].result is None
 
     def test_prompt_continue_decision_ignores_node_with_user_continued_marker(
         self, engine_paths: WorkspacePaths, runs_repo: RunsRepository
     ) -> None:
-        """[tier-1/integration] RunCoordinator.advance_leaf: a prompt_user failure answered continue returns CONTINUED, the node is ignored, and attempts[-1].result.error_message ends "(user continued after prompt_user)"."""
-        _, transition = self._advance(
+        """[tier-1/integration] RunCoordinator.execute: a prompt_user failure answered continue completes the run, the node is ignored, and attempts[-1].result.error_message ends "(user continued after prompt_user)"."""
+        outcome = _run_new(
             engine_paths,
             runs_repo,
             "adv-continue",
@@ -944,7 +931,7 @@ class CoordinatorAdvanceLeafTests:
         )
 
         leaf = _leaf(_state(engine_paths, runs_repo, "adv-continue"), "a")
-        assert transition == NodeTransitionKind.CONTINUED
+        assert outcome.status == RunStatus.COMPLETED
         assert leaf.state == NodeState.IGNORED
         assert (_last_result(leaf).error_message or "").endswith("(user continued after prompt_user)")
 
@@ -1001,7 +988,7 @@ class CoordinatorAdvanceLeafTests:
     def test_prompt_persists_paused_state_before_prompter_is_consulted(
         self, engine_paths: WorkspacePaths, runs_repo: RunsRepository
     ) -> None:
-        """[tier-1/integration] RunCoordinator.advance_leaf: a prompter that reads the run row when called sees status paused and the leaf PAUSED with its failed attempt result; after the decision the row is running again."""
+        """[tier-1/integration] RunCoordinator.execute: a prompter that reads the run row when called sees status paused and the leaf PAUSED with its failed attempt result, and a continue decision then completes the run."""
         seen: dict[str, object] = {}
 
         def read_row() -> None:
@@ -1012,7 +999,7 @@ class CoordinatorAdvanceLeafTests:
             seen["leaf_state"] = leaf.state
             seen["result_status"] = _last_result(leaf).status
 
-        _, transition = self._advance(
+        outcome = _run_new(
             engine_paths,
             runs_repo,
             "adv-paused",
@@ -1021,33 +1008,12 @@ class CoordinatorAdvanceLeafTests:
         )
 
         assert seen == {"status": RunStatus.PAUSED, "leaf_state": NodeState.PAUSED, "result_status": "failed"}
-        assert transition == NodeTransitionKind.CONTINUED
-        row = runs_repo.get("adv-paused")
-        assert row is not None
-        assert row.status == RunStatus.RUNNING
-
-    def test_keyboard_interrupt_at_prompt_returns_paused_with_state_persisted(
-        self, engine_paths: WorkspacePaths, runs_repo: RunsRepository
-    ) -> None:
-        """[tier-1/integration] RunCoordinator.advance_leaf: a prompter raising KeyboardInterrupt returns NodeTransitionKind.PAUSED, and the row is paused with the leaf PAUSED."""
-        _, transition = self._advance(
-            engine_paths,
-            runs_repo,
-            "adv-interrupt",
-            [_step("a", "exit 1", on_failure="prompt_user")],
-            prompter=_Prompter(interrupt=True),
-        )
-
-        row = runs_repo.get("adv-interrupt")
-        assert row is not None
-        assert transition == NodeTransitionKind.PAUSED
-        assert row.status == RunStatus.PAUSED
-        assert _leaf(_state(engine_paths, runs_repo, "adv-interrupt"), "a").state == NodeState.PAUSED
+        assert outcome.status == RunStatus.COMPLETED
 
     def test_keyboard_interrupt_at_top_level_prompt_returns_paused_outcome_with_diagnostic(
         self, engine_paths: WorkspacePaths, runs_repo: RunsRepository
     ) -> None:
-        """[tier-1/integration] RunCoordinator.execute: a KeyboardInterrupt raised by the prompter of a top-level leaf returns a PAUSED outcome with the failed-step diagnostic as errors[0]."""
+        """[tier-1/integration] RunCoordinator.execute: a KeyboardInterrupt raised by the prompter of a top-level leaf returns a PAUSED outcome with the failed-step diagnostic as errors[0], the row paused, and the leaf PAUSED."""
         outcome = _run_new(
             engine_paths,
             runs_repo,
@@ -1057,16 +1023,20 @@ class CoordinatorAdvanceLeafTests:
         )
 
         assert outcome.status == RunStatus.PAUSED
+        row = runs_repo.get("adv-paused-outcome")
+        assert row is not None
         assert outcome.errors[0] == f"Step 'a' failed: {_FAIL_DETAIL}"
         assert outcome.step_results == []
+        assert row.status == RunStatus.PAUSED
+        assert _leaf(_state(engine_paths, runs_repo, "adv-paused-outcome"), "a").state == NodeState.PAUSED
 
     def test_retry_exhausted_escalates_to_on_max_retries_prompt(
         self, engine_paths: WorkspacePaths, runs_repo: RunsRepository
     ) -> None:
-        """[tier-1/integration] RunCoordinator.advance_leaf: retry max_retries 2 with on_max_retries prompt_user prompts once after both attempts fail, with the prompted result's attempts == 2."""
+        """[tier-1/integration] RunCoordinator.execute: retry max_retries 2 with on_max_retries prompt_user prompts once after both attempts fail, with the prompted result's attempts == 2."""
         prompter = _Prompter([FailurePromptDecision.ABORT])
 
-        _, transition = self._advance(
+        outcome = _run_new(
             engine_paths,
             runs_repo,
             "adv-exhausted",
@@ -1080,7 +1050,7 @@ class CoordinatorAdvanceLeafTests:
             prompter=prompter,
         )
 
-        assert transition == NodeTransitionKind.FAILED
+        assert outcome.status == RunStatus.FAILED
         assert [result.attempts for result in prompter.prompted] == [2]
 
 
@@ -1781,37 +1751,6 @@ class CoordinatorInvalidStateTests:
 
         assert outcome.status == RunStatus.FAILED
         assert outcome.errors == ["Run 'vanished' not found."]
-
-    def test_advance_leaf_for_node_outside_the_tree_fails_without_executing(
-        self, engine_paths: WorkspacePaths, runs_repo: RunsRepository, engine_workspace: Path
-    ) -> None:
-        """[tier-1/integration] RunCoordinator.advance_leaf: a leaf whose id is not in the state tree returns FAILED with errors naming the step and no marker file."""
-        seed_new_run(engine_paths, runs_repo, session_id="outside", steps=[_step("a", "touch a.ran")])
-        state = _state(engine_paths, runs_repo, "outside")
-        definition = load_blueprint_from_snapshot(engine_paths.session_dir("outside"), state.manifest).steps[0]
-        assert isinstance(definition, StepDefinition)
-        coordinator = _coordinator(engine_paths, runs_repo, "outside")
-
-        transition = coordinator.advance_leaf(ExecutionLeafNode(id="ghost"), definition)
-
-        assert transition == NodeTransitionKind.FAILED
-        assert not (engine_workspace / "a.ran").exists()
-
-    def test_advance_loop_for_node_outside_the_tree_fails_without_executing(
-        self, engine_paths: WorkspacePaths, runs_repo: RunsRepository, engine_workspace: Path
-    ) -> None:
-        """[tier-1/integration] RunCoordinator.advance_loop: a loop whose id is not in the state tree returns FAILED and runs no body step."""
-        body = [_step("edit", "touch edit.ran")]
-        seed_new_run(engine_paths, runs_repo, session_id="outside-loop", steps=[_loop("fix", body)])
-        state = _state(engine_paths, runs_repo, "outside-loop")
-        definition = load_blueprint_from_snapshot(engine_paths.session_dir("outside-loop"), state.manifest).steps[0]
-        assert isinstance(definition, LoopStepBlock)
-        coordinator = _coordinator(engine_paths, runs_repo, "outside-loop")
-
-        transition = coordinator.advance_loop(ExecutionLoopNode(id="ghost", max_iterations=1), definition)
-
-        assert transition == NodeTransitionKind.FAILED
-        assert not (engine_workspace / "edit.ran").exists()
 
 
 class CoordinatorSandboxIdTests:

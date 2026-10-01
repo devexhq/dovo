@@ -189,6 +189,7 @@ class Engine:
                 outcome.status,
                 error_message=error_message,
                 sandbox_id=outcome.sandbox_id,
+                sandbox_kept=outcome.sandbox_kept,
             )
             return
 
@@ -197,6 +198,7 @@ class Engine:
             run_status=outcome.status,
             error_message=error_message,
             sandbox_id=outcome.sandbox_id,
+            sandbox_kept=outcome.sandbox_kept,
         )
         warnings.extend([*loaded.warnings, *saved.warnings])
         if not saved.ok:

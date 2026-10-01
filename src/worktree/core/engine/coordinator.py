@@ -22,7 +22,7 @@ from worktree.core.engine.exceptions import EngineSnapshotMissingError
 from worktree.core.engine.failure import (
     effective_terminal_policy,
     failed_step_message,
-    mark_continued_after_prompt,
+    resolve_terminal_action,
 )
 from worktree.core.engine.loop_events import LoopEventEmitter
 from worktree.core.engine.loop_policy import LoopDecision, LoopPolicy, LoopTransitionKind
@@ -32,6 +32,7 @@ from worktree.core.engine.models import (
     RunContext,
     RunObserver,
     RunOutcome,
+    StepAction,
     StepLoopState,
 )
 from worktree.core.engine.projection import (
@@ -140,36 +141,18 @@ class RunCoordinator:
         except KeyboardInterrupt:
             return self._cancel()
 
-    def advance_leaf(self, node: ExecutionLeafNode, step_def: StepDefinition) -> NodeTransitionKind:
-        """Execute a single leaf step, or if node.state is PAUSED, re-enter the failure gate with node.attempts[-1].result."""
-        if not self.load():
-            return NodeTransitionKind.FAILED
-
-        position, leaf = self._locate_node(node) or (-1, None)
-        if not isinstance(leaf, ExecutionLeafNode):
-            self._errors.append(f"Step '{node.id}' is not part of the run state.")
-            return NodeTransitionKind.FAILED
-
-        self._in_flight = leaf
+    def _advance_leaf(self, node: ExecutionLeafNode, step_def: StepDefinition, position: int) -> NodeTransitionKind:
+        """Execute the leaf at top-level position, or if node.state is PAUSED, re-enter the failure gate with node.attempts[-1].result."""
         return self._advance_slot(
-            leaf,
+            node,
             step_def,
             idx=position + 1,
             total=len(self._run.state.nodes),
             loop=None,
         )
 
-    def advance_loop(self, node: ExecutionLoopNode, loop_block: LoopStepBlock) -> NodeTransitionKind:
+    def _advance_loop(self, loop: ExecutionLoopNode, loop_block: LoopStepBlock) -> NodeTransitionKind:
         """Orchestrates loop iterations and child steps driven by LoopPolicy."""
-        if not self.load():
-            return NodeTransitionKind.FAILED
-
-        _, loop = self._locate_node(node) or (-1, None)
-        if not isinstance(loop, ExecutionLoopNode):
-            self._errors.append(f"Loop '{node.id}' is not part of the run state.")
-            return NodeTransitionKind.FAILED
-
-        self._in_flight = loop
         events = LoopEventEmitter(loop.id, self._context.session_log_dir, self._observer)
         if loop.state is NodeState.PENDING:
             events.start(loop.max_iterations)
@@ -221,8 +204,9 @@ class RunCoordinator:
             if upcoming is None:
                 return self._outcome(RunStatus.COMPLETED)
 
-            self._in_flight = upcoming
-            transition = self._dispatch(upcoming)
+            position, node = upcoming
+            self._in_flight = node
+            transition = self._dispatch(position, node)
             if transition is NodeTransitionKind.PAUSED:
                 return self._outcome(RunStatus.PAUSED)
             if transition is NodeTransitionKind.FAILED:
@@ -313,29 +297,20 @@ class RunCoordinator:
 
         return self._commit("while recovering interrupted attempts") if recovered else True
 
-    def _next_node(self) -> ExecutionLeafNode | ExecutionLoopNode | None:
-        """Return the first top-level node not in a terminal state, or None."""
-        for node in self._run.state.nodes:
+    def _next_node(self) -> tuple[int, ExecutionLeafNode | ExecutionLoopNode] | None:
+        """Return the top-level position and node of the first node not in a terminal state, or None."""
+        for position, node in enumerate(self._run.state.nodes):
             if node.state not in TERMINAL_NODE_STATES:
-                return node
+                return position, node
         return None
 
-    def _locate_node(
-        self, node: ExecutionLeafNode | ExecutionLoopNode
-    ) -> tuple[int, ExecutionLeafNode | ExecutionLoopNode] | None:
-        """Return the top-level position and the live tree node of the same kind and id as node, or None when the tree has none."""
-        for position, candidate in enumerate(self._run.state.nodes):
-            if candidate.kind == node.kind and candidate.id == node.id:
-                return position, candidate
-        return None
-
-    def _dispatch(self, node: ExecutionLeafNode | ExecutionLoopNode) -> NodeTransitionKind:
-        """Route a leaf to advance_leaf or a loop to advance_loop using the snapshot definition with the node's id."""
+    def _dispatch(self, position: int, node: ExecutionLeafNode | ExecutionLoopNode) -> NodeTransitionKind:
+        """Route the leaf at position to _advance_leaf or a loop to _advance_loop using the snapshot definition with the node's id."""
         definition = next((step for step in self._run.blueprint.steps if step.id == node.id), None)
         if isinstance(node, ExecutionLeafNode) and isinstance(definition, StepDefinition):
-            return self.advance_leaf(node, definition)
+            return self._advance_leaf(node, definition, position)
         if isinstance(node, ExecutionLoopNode) and isinstance(definition, LoopStepBlock):
-            return self.advance_loop(node, definition)
+            return self._advance_loop(node, definition)
 
         self._errors.append(f"Step '{node.id}' has no matching definition in the run snapshot.")
         return NodeTransitionKind.FAILED
@@ -506,11 +481,11 @@ class RunCoordinator:
             return NodeTransitionKind.FAILED
 
         policy = effective_terminal_policy(step_def.on_failure)
-        if policy == FailurePolicy.CONTINUE:
-            return self._continue_leaf(node, mark_continued_after_prompt(result), None)
-        if policy != FailurePolicy.PROMPT_USER:
-            return self._abort_leaf(node, result, None)
-        return self._prompt_failed_leaf(node, step_def, result)
+        if policy == FailurePolicy.PROMPT_USER:
+            return self._prompt_failed_leaf(node, step_def, result)
+
+        action, recorded, _ = resolve_terminal_action(policy, result)
+        return self._apply_action(node, action, recorded or result, None)
 
     def _prompt_failed_leaf(
         self,
@@ -543,16 +518,16 @@ class RunCoordinator:
     def _apply_action(
         self,
         node: ExecutionLeafNode,
-        action: str,
+        action: StepAction,
         result: StepResult,
         run_status: RunStatus | None,
     ) -> NodeTransitionKind:
-        """Apply a prompt action: retry begins the next attempt, continue ignores the leaf, abort fails it."""
-        if action == "retry":
+        """Apply a StepAction: retry begins the next attempt, continue ignores the leaf, abort fails it."""
+        if action is StepAction.RETRY:
             if not self._begin_attempt(node, node.attempts[-1].number + 1, run_status=RunStatus.RUNNING):
                 return NodeTransitionKind.FAILED
             return NodeTransitionKind.RETRY
-        if action == "continue":
+        if action is StepAction.CONTINUE:
             return self._continue_leaf(node, result, run_status)
         return self._abort_leaf(node, result, run_status)
 

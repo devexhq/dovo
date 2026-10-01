@@ -11,7 +11,14 @@ from worktree.common.filesystem.models import RepositoryPaths, WorkspacePaths
 from worktree.common.filesystem.services.global_root import resolve_global_paths
 from worktree.core.blueprint import Blueprint
 from worktree.core.catalog import Catalog
-from worktree.core.engine.writer import load_blueprint_from_snapshot, snapshot_definitions
+from worktree.core.db import RunStatus
+from worktree.core.engine.models import DefinitionRef, DefinitionsManifest
+from worktree.core.engine.state_models import RunJsonPayload, RunLifecycle
+from worktree.core.engine.writer import (
+    load_blueprint_from_snapshot,
+    snapshot_definitions,
+    write_session_run_projection,
+)
 from worktree.core.project.services.storage import resolve_workspace_paths
 from worktree.core.step import StepDefinition, StepType
 
@@ -140,3 +147,23 @@ class LoadBlueprintFromSnapshotTests:
         step = rebuilt.steps[0]
         assert isinstance(step, StepDefinition)
         assert (step.id, step.type, step.command) == ("s1", StepType.COMMAND, "echo lint")
+
+
+class WriteSessionRunProjectionTests:
+    """Contract tests for write_session_run_projection writing run.json."""
+
+    def test_write_session_run_projection_writes_indented_payload_json_and_returns_path(self, tmp_path: Path) -> None:
+        """[tier-1/integration] write_session_run_projection: returns <session_dir>/run.json whose text equals payload.model_dump_json(indent=2) and that parses back to an equal RunJsonPayload."""
+        payload = RunJsonPayload(
+            revision=2,
+            manifest=DefinitionsManifest(
+                blueprint=DefinitionRef(ref="repo:blueprint:bp", sha="a", resolved_at="2026-09-28T00:00:00+00:00")
+            ),
+            lifecycle=RunLifecycle(status=RunStatus.RUNNING, started_at="2026-09-28T00:00:00+00:00"),
+        )
+
+        path = write_session_run_projection(tmp_path / "session", payload)
+
+        assert path == tmp_path / "session" / "run.json"
+        assert path.read_text(encoding="utf-8") == payload.model_dump_json(indent=2)
+        assert RunJsonPayload.model_validate_json(path.read_text(encoding="utf-8")) == payload

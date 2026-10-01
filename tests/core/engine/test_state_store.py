@@ -13,15 +13,17 @@ from worktree.common.filesystem.models import RepositoryPaths, WorkspacePaths
 from worktree.common.filesystem.services.global_root import resolve_global_paths
 from worktree.common.models import FailurePolicy
 from worktree.core.blueprint import Blueprint
-from worktree.core.db import RunsRepository, RunStatus
+from worktree.core.db import RunRecord, RunsRepository, RunStatus
 from worktree.core.engine import RunStateStore
 from worktree.core.engine.models import DefinitionRef, DefinitionsManifest
+from worktree.core.engine.projection import build_run_json_payload
 from worktree.core.engine.state_models import (
     ExecutionIterationRecord,
     ExecutionLeafNode,
     ExecutionLoopNode,
     ExecutionStateTree,
     NodeState,
+    RunJsonPayload,
     RunStateLoadStatus,
     RunStateWriteStatus,
 )
@@ -90,9 +92,15 @@ class _Fixture:
             state = saved.state
         return state
 
-    def projection(self) -> ExecutionStateTree:
+    def projection(self) -> RunJsonPayload:
         """Parse the current run.json."""
-        return ExecutionStateTree.model_validate_json(self.run_json.read_text(encoding="utf-8"))
+        return RunJsonPayload.model_validate_json(self.run_json.read_text(encoding="utf-8"))
+
+    def row(self) -> RunRecord:
+        """Return the run row."""
+        row = self.runs.get(SESSION_ID)
+        assert row is not None
+        return row
 
 
 class NewIterationTests:
@@ -150,7 +158,7 @@ class RunStateStoreInitializeTests:
         )
         assert result.status == RunStateWriteStatus.OK
         assert result.state == expected
-        assert fixture.projection() == expected
+        assert fixture.projection().nodes == expected.nodes
         row = fixture.runs.get(SESSION_ID)
         assert row is not None
         assert row.execution_state_revision == 0
@@ -256,6 +264,26 @@ class RunStateStoreSaveTests:
         assert row.completed_at is not None
         assert row.execution_state_revision == 1
 
+    def test_save_terminal_status_writes_row_equal_lifecycle_to_run_json(self, tmp_path: Path) -> None:
+        """[tier-1/integration] RunStateStore.save: run_status=FAILED, error_message='boom', sandbox_id='sbx-1', sandbox_kept=True leaves run.json.lifecycle equal to the row's status, error_message, started_at, completed_at, sandbox_id, and sandbox_kept, and run.json.revision == row.execution_state_revision."""
+        fixture = _Fixture(tmp_path)
+        state = fixture.initialized_at(0)
+
+        fixture.store.save(
+            state, run_status=RunStatus.FAILED, error_message="boom", sandbox_id="sbx-1", sandbox_kept=True
+        )
+
+        row = fixture.row()
+        lifecycle = fixture.projection().lifecycle
+        assert lifecycle.status == RunStatus.FAILED
+        assert lifecycle.error_message == "boom"
+        assert lifecycle.started_at == row.started_at
+        assert lifecycle.completed_at == row.completed_at
+        assert row.completed_at is not None
+        assert lifecycle.sandbox_id == "sbx-1"
+        assert lifecycle.sandbox_kept is True
+        assert fixture.projection().revision == row.execution_state_revision
+
 
 class RunStateStoreLoadTests:
     """Contract tests for RunStateStore.load."""
@@ -270,13 +298,14 @@ class RunStateStoreLoadTests:
         elif projection == "corrupt":
             fixture.run_json.write_text("{not json", encoding="utf-8")
         else:
-            fixture.run_json.write_text(state.model_copy(update={"revision": 1}).model_dump_json(), encoding="utf-8")
+            older = build_run_json_payload(state.model_copy(update={"revision": 1}), fixture.row())
+            fixture.run_json.write_text(older.model_dump_json(), encoding="utf-8")
 
         result = fixture.store.load()
 
         assert result.status == RunStateLoadStatus.OK
         assert result.state == state
-        assert fixture.projection() == state
+        assert fixture.projection() == build_run_json_payload(state, fixture.row())
 
     def test_load_newer_projection_returns_inconsistent_and_leaves_row(self, tmp_path: Path) -> None:
         """[tier-1/integration] RunStateStore.load: run.json at revision 3 over a row at revision 2 returns INCONSISTENT_PROJECTION with state None; the row's JSON and revision are unchanged."""
@@ -284,7 +313,8 @@ class RunStateStoreLoadTests:
         state = fixture.initialized_at(2)
         before = fixture.runs.get(SESSION_ID)
         assert before is not None
-        fixture.run_json.write_text(state.model_copy(update={"revision": 3}).model_dump_json(), encoding="utf-8")
+        newer = build_run_json_payload(state.model_copy(update={"revision": 3}), before)
+        fixture.run_json.write_text(newer.model_dump_json(), encoding="utf-8")
 
         result = fixture.store.load()
 
@@ -294,6 +324,19 @@ class RunStateStoreLoadTests:
         assert after is not None
         assert after.execution_state_json == before.execution_state_json
         assert after.execution_state_revision == 2
+
+    def test_load_rewrites_projection_when_row_lifecycle_changed_without_revision_bump(self, tmp_path: Path) -> None:
+        """[tier-1/integration] RunStateStore.load: after runs.update_status(FAILED, error_message='stale') at an unchanged revision, load returns OK and run.json.lifecycle.status == FAILED with error_message 'stale'."""
+        fixture = _Fixture(tmp_path)
+        fixture.initialized_at(2)
+        fixture.runs.update_status(SESSION_ID, RunStatus.FAILED, error_message="stale")
+
+        result = fixture.store.load()
+
+        lifecycle = fixture.projection().lifecycle
+        assert result.status == RunStateLoadStatus.OK
+        assert lifecycle.status == RunStatus.FAILED
+        assert lifecycle.error_message == "stale"
 
     def test_load_returns_validated_state_when_projection_matches(self, tmp_path: Path) -> None:
         """[tier-1/integration] RunStateStore.load: a row at revision 2 with a matching run.json returns OK with state equal to the saved tree and no warnings."""
@@ -359,15 +402,17 @@ class RunStateStoreLoadTests:
 class RunStateStoreRegenerateProjectionTests:
     """Contract tests for RunStateStore.regenerate_projection."""
 
-    def test_regenerate_projection_writes_state_json_and_returns_path(self, tmp_path: Path) -> None:
-        """[tier-1/integration] RunStateStore.regenerate_projection: returns <session-dir>/run.json whose contents equal state.model_dump_json(indent=2)."""
+    def test_regenerate_projection_writes_payload_json_and_returns_path(self, tmp_path: Path) -> None:
+        """[tier-1/integration] RunStateStore.regenerate_projection: returns <session-dir>/run.json whose contents equal build_run_json_payload(state, row).model_dump_json(indent=2)."""
         fixture = _Fixture(tmp_path)
         state = ExecutionStateTree(revision=3, manifest=fixture.manifest, nodes=[ExecutionLeafNode(id="setup")])
 
-        path = fixture.store.regenerate_projection(state)
+        row = fixture.row()
+
+        path = fixture.store.regenerate_projection(state, row)
 
         assert path == fixture.run_json
-        assert path.read_text(encoding="utf-8") == state.model_dump_json(indent=2)
+        assert path.read_text(encoding="utf-8") == build_run_json_payload(state, row).model_dump_json(indent=2)
 
     def test_regenerate_projection_unwritable_directory_raises_oserror(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -381,4 +426,4 @@ class RunStateStoreRegenerateProjectionTests:
         monkeypatch.setattr(Filesystem, "atomic_write_text", fail_write)
 
         with pytest.raises(OSError, match="read-only"):
-            fixture.store.regenerate_projection(ExecutionStateTree(manifest=fixture.manifest))
+            fixture.store.regenerate_projection(ExecutionStateTree(manifest=fixture.manifest), fixture.row())
