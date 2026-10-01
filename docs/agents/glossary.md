@@ -17,9 +17,9 @@ Precise definitions for core concepts and terms in the Worktree CLI codebase.
 - **Catalog**: The disk-only, multi-tier (REPO/USER/GLOBAL/PACKAGED) index of named blueprints and steps, each disk-backed tier rooted under its own `catalog/` directory with a derived `index.json` cache, plus packaged seeds.
   - *Facade:* `Catalog` in [`core/catalog/catalog.py`](../../src/worktree/core/catalog/catalog.py).
 - **Run**: A single execution of a blueprint from start to terminal outcome.
-  - *Models:* `RunSessionContext` in [`core/engine/context.py`](../../src/worktree/core/engine/context.py), `RunOutcome` in [`core/engine/models.py`](../../src/worktree/core/engine/models.py).
+  - *Models:* `RunContext` in [`core/engine/models.py`](../../src/worktree/core/engine/models.py), `RunOutcome` in [`core/engine/models.py`](../../src/worktree/core/engine/models.py).
 - **Run Context**: The infrastructure bundle for one run's execution (session id, paths, target directory, session scratch/log/artifact locations, sandbox); durable progress lives in the execution state, not the context.
-  - *Model:* `RunSessionContext` in [`core/engine/context.py`](../../src/worktree/core/engine/context.py).
+  - *Model:* `RunContext` in [`core/engine/models.py`](../../src/worktree/core/engine/models.py).
 - **Run Outcome**: The terminal execution result containing status, step results, warnings, and errors.
   - *Model:* `RunOutcome` in [`core/engine/models.py`](../../src/worktree/core/engine/models.py).
 - **Session**: Unique execution identifier (`{kind}_{8-hex}`) linking a run to its DB record in the centralized database and session artifacts in `.worktree/sessions/<id>/`.

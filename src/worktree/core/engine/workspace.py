@@ -10,7 +10,7 @@ from worktree.core.config import ConfigLoadError
 from worktree.core.db import RunStatus, SandboxesRepository
 from worktree.core.db.repositories.artifacts import ArtifactsRepository
 from worktree.core.diff.writer import get_session_dir, write_session_diff
-from worktree.core.engine.models import RunContext
+from worktree.core.engine.models import RunSettings
 from worktree.core.engine.notify import safe_notify
 from worktree.core.git.runner import GitRunner
 from worktree.core.sandbox import Sandbox, SandboxApplyStrategy, SandboxSession
@@ -20,7 +20,7 @@ from worktree.core.sandbox import Sandbox, SandboxApplyStrategy, SandboxSession
 class Workspace:
     """Sandbox/session lifecycle for one run's context: setup, cleanup, and session-scratch directories."""
 
-    context: RunContext
+    context: RunSettings
 
     def _setup_retained_sandbox(
         self,

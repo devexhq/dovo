@@ -14,12 +14,12 @@ from worktree.common.filesystem.models import WorkspacePaths
 from worktree.core.db import RunsRepository, RunStatus
 from worktree.core.db.repositories.artifacts import ArtifactsRepository
 from worktree.core.engine import RunCoordinator, RunStateStore
-from worktree.core.engine.context import RunSessionContext
 from worktree.core.engine.failure import USER_CONTINUED_MARKER
 from worktree.core.engine.models import (
     FailurePromptDecision,
     FailurePrompter,
     LoopPromptDecision,
+    RunContext,
     RunObserver,
     RunOutcome,
 )
@@ -189,13 +189,13 @@ def _context(
     sandbox: SandboxSession | None = None,
     no_tty: bool = False,
     artifacts_db: ArtifactsRepository | None = None,
-) -> RunSessionContext:
+) -> RunContext:
     """Session context with scratch and log directories created like drive_run does."""
     session_tmp_dir = paths.tmp_dir / session_id
     (session_tmp_dir / "steps").mkdir(parents=True, exist_ok=True)
     session_log_dir = paths.logs_dir / session_id
     session_log_dir.mkdir(parents=True, exist_ok=True)
-    return RunSessionContext(
+    return RunContext(
         session_id=session_id,
         paths=paths,
         target_dir=paths.root_dir,

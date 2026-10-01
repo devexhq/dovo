@@ -12,7 +12,6 @@ from pydantic import BaseModel, Field
 
 from worktree.common.filesystem import WorkspacePaths
 from worktree.common.models import BaseResult
-from worktree.core.config.models import WorktreeConfig
 from worktree.core.db import RunRecord, RunStatus
 from worktree.core.db.repositories.artifacts import ArtifactsRepository
 from worktree.core.sandbox import SandboxSession
@@ -142,25 +141,10 @@ class FailurePrompter(Protocol):
         ...
 
 
-@dataclass
-class StepLoopState:
-    """Mutable per-run bookkeeping threaded through the step loop."""
-
-    target_dir: Path
-    session: SandboxSession | None
-    session_tmp_dir: Path | None = None
-    session_log_dir: Path | None = None
-    save_attempt_logs: bool = True
-    warnings: list[str] = field(default_factory=list)
-    artifacts_dir: Path | None = None
-    artifacts_db: ArtifactsRepository | None = None
-
-
 @dataclass(frozen=True)
-class RunContext:
-    """Immutable inputs for a multi-step run."""
+class RunSettings:
+    """Settings and collaborators resolved from the run row, consumed by Workspace and StepCoordinator."""
 
-    steps: list[StepDefinition | LoopStepBlock]
     cwd: Path
     use_sandbox: bool = True
     keep: bool = False
@@ -173,8 +157,23 @@ class RunContext:
     failure_prompter: FailurePrompter | None = None
     auto_apply: bool = False
     sandbox_id: str | None = None
-    config: WorktreeConfig | None = None
     paths: WorkspacePaths = field(kw_only=True)
+
+
+@dataclass(frozen=True)
+class RunContext:
+    """Infrastructure resources for one run's execution; durable progress lives only in ExecutionStateTree."""
+
+    session_id: str
+    paths: WorkspacePaths
+    target_dir: Path
+    session_tmp_dir: Path | None
+    session_log_dir: Path | None
+    artifacts_dir: Path | None
+    artifacts_db: ArtifactsRepository | None = None
+    sandbox: SandboxSession | None = None
+    no_tty: bool = False
+    save_attempt_logs: bool = True
 
 
 @runtime_checkable

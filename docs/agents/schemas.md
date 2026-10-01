@@ -109,7 +109,7 @@ All operations that can fail return a Pydantic result object subclassing `BaseRe
 - `StepDefinition`: Executable step specification (`id`, `name`, `type`, `description`, `command`, `prompt`, `script_path`, `tools`, `env`, `timeout_seconds`, `assert_`, `on_failure`, `uses`, `run`, `artifacts`). `type` is a `StepType` (`command`, `agent`, `script`, `internal`); `internal` requires a non-empty `command` naming an `INTERNAL_COMMAND_HANDLERS` registry key (`core/step/services/internal_dispatch.py`). `artifacts: list[ArtifactPublishSpec]` declares bundles auto-published via `publish_artifact` after a successful step, on both top-level and loop `do:` sub-steps; see Artifacts Models below.
 - `ArtifactPublishSpec`: Declarative per-step artifact publish spec (`name`, `path`, `retention_days`).
 - `InternalCommandContext`: Structured inputs passed to an in-process `type: internal` handler (`sandbox_path`, `session_id`, `env`, `artifacts_dir`, `artifacts_db`); see [`src/worktree/core/step/models.py`](../../src/worktree/core/step/models.py).
-- `ExecutionMetadata.session_id`: The run's session ID, threaded from `RunContext.session_id` through `build_execution_metadata` and exposed to `type: command`/`script` steps as the `WT_SESSION_ID` environment variable (`core/step/services/metadata.py`).
+- `ExecutionMetadata.session_id`: The run's session ID, threaded from `RunSettings.session_id` through `build_execution_metadata` and exposed to `type: command`/`script` steps as the `WT_SESSION_ID` environment variable (`core/step/services/metadata.py`).
 - `StepAssert`: Verification conditions (`exit_code`, `output_contains`, `output_not_contains`, `regex_match`, `json_match`, `file_exists`, `file_not_exists`, `file_not_empty`).
 - `FailurePolicy`: `StrEnum` (`abort`, `continue`, `prompt_user`, `retry`). Terminal policies exclude `retry`.
 - `FailureSpec`: Normalized failure policy (`action`, `max_retries`, `backoff_ms`, `on_max_retries`).
@@ -118,11 +118,10 @@ All operations that can fail return a Pydantic result object subclassing `BaseRe
 - `AssertionResult`: Assertion evaluation outcome (`passed`, `failed_conditions`, `message`).
 
 ### Run Engine Models
-**Relevant sources:** `src/worktree/core/engine/models.py`, `src/worktree/core/engine/context.py`, `src/worktree/core/logs/models.py`.
-- [`RunContext`](../../src/worktree/core/engine/models.py): Immutable input bundle for sandbox/session setup and step coordination (`use_sandbox`, `keep`, `agent`, `observer`, `inputs`, `no_tty`, `failure_prompter`, `auto_apply`, `sandbox_id`, `paths`).
-- [`RunSessionContext`](../../src/worktree/core/engine/context.py): Infrastructure resources for one run's execution; durable progress lives only in `ExecutionStateTree`.
+**Relevant sources:** `src/worktree/core/engine/models.py`, `src/worktree/core/logs/models.py`.
+- [`RunSettings`](../../src/worktree/core/engine/models.py): Settings and collaborators resolved from the run row for sandbox/session setup and step coordination (`use_sandbox`, `keep`, `agent`, `observer`, `inputs`, `no_tty`, `failure_prompter`, `auto_apply`, `sandbox_id`, `paths`).
+- [`RunContext`](../../src/worktree/core/engine/models.py): Infrastructure resources for one run's execution; durable progress lives only in `ExecutionStateTree`.
 - [`RunOutcome`](../../src/worktree/core/engine/models.py): Terminal run result, including the sandbox and session identifiers.
-- [`StepLoopState`](../../src/worktree/core/engine/models.py): Mutable per-run bookkeeping threaded through step execution.
 - [`RunObserver`](../../src/worktree/core/engine/models.py), [`FailurePrompter`](../../src/worktree/core/engine/models.py), [`FailurePromptDecision`](../../src/worktree/core/engine/models.py), [`LoopPromptDecision`](../../src/worktree/core/engine/models.py): Caller-supplied progress hooks and failure/loop decision entrypoints. `RunObserver` callbacks: `on_run_started(steps)` and `on_run_completed(outcome)` (once per `drive_run` invocation; `on_run_started` is skipped when definitions fail to load, `on_run_completed` receives the returned outcome), `on_step_start`, `on_step_output`, `on_step_done(idx, total, step, result)`, `on_loop_start`, `on_loop_iteration_start`, `on_loop_conditions_evaluated`, `on_loop_done`, and the sandbox hooks.
 - [`StepAction`](../../src/worktree/core/engine/models.py): Orchestration action (retry, continue, abort) `RunCoordinator` applies after a terminal step failure; distinct from the user-input `FailurePromptDecision` and the persisted `NodeTransitionKind`.
 - `RunStatus`: `StrEnum` (`pending`, `running`, `completed`, `failed`, `paused`, `cancelled`).

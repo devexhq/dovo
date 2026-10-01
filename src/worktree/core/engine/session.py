@@ -6,9 +6,8 @@ from worktree.common.filesystem import WorkspacePaths
 from worktree.common.process import process_registry
 from worktree.core.config import Config
 from worktree.core.db import RunRecord, RunsRepository, RunStatus
-from worktree.core.engine.context import RunSessionContext
 from worktree.core.engine.coordinator import RunCoordinator
-from worktree.core.engine.models import FailurePrompter, RunContext, RunObserver, RunOutcome
+from worktree.core.engine.models import FailurePrompter, RunContext, RunObserver, RunOutcome, RunSettings
 from worktree.core.engine.notify import safe_notify
 from worktree.core.engine.state_store import RunStateStore
 from worktree.core.engine.workspace import Workspace
@@ -42,10 +41,9 @@ def drive_run(
     return outcome
 
 
-def _workspace_context(row: RunRecord, paths: WorkspacePaths, observer: RunObserver | None) -> RunContext:
+def _workspace_context(row: RunRecord, paths: WorkspacePaths, observer: RunObserver | None) -> RunSettings:
     """Build the Workspace input from the run row's use_sandbox, keep, auto_apply, sandbox_id, and blueprint identity."""
-    return RunContext(
-        steps=[],
+    return RunSettings(
         cwd=paths.root_dir,
         use_sandbox=row.use_sandbox,
         keep=row.keep,
@@ -69,7 +67,7 @@ class RunSession:
         observer: RunObserver | None,
         prompter: FailurePrompter | None,
         workspace: Workspace,
-        context: RunSessionContext,
+        context: RunContext,
         manager: Sandbox | None,
         sandbox: SandboxSession | None,
         setup_warnings: list[str],
@@ -112,7 +110,7 @@ class RunSession:
         session_tmp_dir = workspace.prepare_session_tmp_dir(setup_warnings)
         session_log_dir = workspace.prepare_session_log_dir(setup_warnings)
         artifacts_dir, artifacts_db = workspace.prepare_session_artifacts()
-        context = RunSessionContext(
+        context = RunContext(
             session_id=row.session_id,
             paths=paths,
             target_dir=target_dir,
