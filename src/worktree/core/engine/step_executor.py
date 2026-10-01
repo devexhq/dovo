@@ -13,7 +13,7 @@ from worktree.core.engine.failure import (
     mark_continued_after_prompt,
     step_failure_diagnostic,
 )
-from worktree.core.engine.models import FailurePromptDecision, RunContext, StepAction, StepLoopState
+from worktree.core.engine.models import FailurePromptDecision, RunContext, RunSettings, StepAction
 from worktree.core.engine.notify import safe_notify
 from worktree.core.logs import RunLogEvent, RunLogEventType, append_run_log_event
 from worktree.core.step import (
@@ -63,7 +63,7 @@ def auto_publish_step_artifacts(
 class StepCoordinator:
     """Per-step execution and failure-policy coordination for one run's context."""
 
-    context: RunContext
+    context: RunSettings
 
     def build_step_context(self) -> dict[str, object] | None:
         """Build the per-step execution context, including resolved inputs."""
@@ -116,7 +116,8 @@ class StepCoordinator:
 
     def run_attempt(
         self,
-        state: StepLoopState,
+        run_context: RunContext,
+        warnings: list[str],
         step: StepDefinition,
         *,
         idx: int,
@@ -131,7 +132,7 @@ class StepCoordinator:
         """Notify, log, run one StepExecution, and auto-publish artifacts when it succeeds."""
         safe_notify(self.context.observer, "on_step_start", idx, total, step)
         append_run_log_event(
-            state.session_log_dir,
+            run_context.session_log_dir,
             RunLogEvent(
                 event=RunLogEventType.STEP_START,
                 step_index=idx,
@@ -154,7 +155,7 @@ class StepCoordinator:
         result = StepExecution(
             StepExecutionContext(
                 step=step,
-                sandbox_path=state.target_dir,
+                sandbox_path=run_context.target_dir,
                 context=step_context,
                 on_output=on_output,
                 step_index=idx,
@@ -162,19 +163,19 @@ class StepCoordinator:
                 identity=self.context.identity,
                 previous_step=previous_step,
                 steps=steps,
-                session_tmp_dir=state.session_tmp_dir,
-                session_log_dir=state.session_log_dir,
-                save_attempt_logs=state.save_attempt_logs,
+                session_tmp_dir=run_context.session_tmp_dir,
+                session_log_dir=run_context.session_log_dir,
+                save_attempt_logs=run_context.save_attempt_logs,
                 loop_iteration=loop_iteration,
                 session_id=self.context.session_id or "",
-                artifacts_dir=state.artifacts_dir,
-                artifacts_db=state.artifacts_db,
+                artifacts_dir=run_context.artifacts_dir,
+                artifacts_db=run_context.artifacts_db,
                 paths=self.context.paths,
             )
         ).run()
         safe_notify(self.context.observer, "on_step_done", idx, total, step, result)
         append_run_log_event(
-            state.session_log_dir,
+            run_context.session_log_dir,
             RunLogEvent(
                 event=RunLogEventType.STEP_DONE,
                 step_index=idx,
@@ -191,10 +192,10 @@ class StepCoordinator:
         if result.ok:
             publish_warnings = auto_publish_step_artifacts(
                 step,
-                sandbox_path=state.target_dir,
+                sandbox_path=run_context.target_dir,
                 session_id=self.context.session_id or "",
-                artifacts_dir=state.artifacts_dir,
-                artifacts_db=state.artifacts_db,
+                artifacts_dir=run_context.artifacts_dir,
+                artifacts_db=run_context.artifacts_db,
             )
-            state.warnings.extend(publish_warnings)
+            warnings.extend(publish_warnings)
         return result

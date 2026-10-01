@@ -232,7 +232,7 @@ class PreviousStepMetadata(BaseModel):
 
 
 class ExecutionIdentity(BaseModel):
-    """Optional run-level identity passed into RunContext."""
+    """Optional run-level identity passed into RunSettings."""
 
     model_config = {"extra": "forbid", "strict": True}
 

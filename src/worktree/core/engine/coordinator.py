@@ -17,7 +17,6 @@ from worktree.core.blueprint.exceptions import (
     BlueprintValidationError,
 )
 from worktree.core.db import RunStatus
-from worktree.core.engine.context import RunSessionContext
 from worktree.core.engine.exceptions import EngineSnapshotMissingError
 from worktree.core.engine.failure import (
     effective_terminal_policy,
@@ -32,8 +31,8 @@ from worktree.core.engine.models import (
     RunContext,
     RunObserver,
     RunOutcome,
+    RunSettings,
     StepAction,
-    StepLoopState,
 )
 from worktree.core.engine.projection import (
     flatten_step_results,
@@ -96,7 +95,7 @@ class RunCoordinator:
     def __init__(
         self,
         state_store: RunStateStore,
-        context: RunSessionContext,
+        context: RunContext,
         observer: RunObserver | None = None,
         prompter: FailurePrompter | None = None,
     ) -> None:
@@ -184,7 +183,8 @@ class RunCoordinator:
 
         steps_metadata = terminal_step_metadata(self._run.state)
         result = self._run.step_coordinator.run_attempt(
-            self._step_state(),
+            self._context,
+            self._warnings,
             step_def,
             idx=idx,
             total=total,
@@ -252,8 +252,7 @@ class RunCoordinator:
 
         self._warnings.extend(loaded.warnings)
         step_coordinator = StepCoordinator(
-            RunContext(
-                steps=[],
+            RunSettings(
                 cwd=self._context.target_dir,
                 use_sandbox=row.use_sandbox,
                 keep=row.keep,
@@ -590,19 +589,6 @@ class RunCoordinator:
         self._run.state = saved.state
         self._warnings.extend(saved.warnings)
         return True
-
-    def _step_state(self) -> StepLoopState:
-        """Build the StepLoopState bridge for StepCoordinator from the session context and flattened results."""
-        return StepLoopState(
-            target_dir=self._context.target_dir,
-            session=self._context.sandbox,
-            session_tmp_dir=self._context.session_tmp_dir,
-            session_log_dir=self._context.session_log_dir,
-            save_attempt_logs=self._context.save_attempt_logs,
-            warnings=self._warnings,
-            artifacts_dir=self._context.artifacts_dir,
-            artifacts_db=self._context.artifacts_db,
-        )
 
     def _step_context(self, loop_iteration: int | None = None) -> dict[str, object] | None:
         """Build the per-step context dict, adding iteration_index when loop_iteration is given."""
