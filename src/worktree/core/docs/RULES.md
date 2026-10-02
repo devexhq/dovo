@@ -93,6 +93,17 @@ self.db.sandboxes.save(record)
 return result
 ```
 
+- **[CODE-003] Terse Docstrings, Description Only for Hidden Contracts (SUGGESTION):**
+  Every docstring opens with a one-line title stating what the thing is or does. Add a description only for what the code cannot show a reader and whose absence would cause wrong code - a hidden contract, a data-loss or safety behavior, a non-obvious ordering constraint, or a deliberate oddity. Do not narrate steps, restate parameters or types, or repeat the title.
+
+```python
+# ✅ DO:
+"""Base for providers that edit the sandbox directly instead of returning a diff.
+
+Edits that fail patch validation are discarded from the sandbox; a failed discard is reported in the response errors."""
+# ❌ DO NOT: """Run the provider. First resolve the baseline, then build the prompt, then run the tool, then diff the sandbox, then validate the patch."""
+```
+
 - **[TYPE-001] Ban on -> Any Return Annotations (BLOCKER):**
   -> Any on a public function is treated as a defect because it disables type checking transitively at every call site. Prefer object when values are only stored, compared, or passed through.
 

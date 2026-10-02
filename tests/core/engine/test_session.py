@@ -12,6 +12,7 @@ from tests.harness.builders import WorkspaceBuilder
 from tests.harness.runs import NoOpRunObserver, seed_new_run, seed_paused_run
 from worktree.common.filesystem.models import RepositoryPaths, WorkspacePaths
 from worktree.common.filesystem.services.global_root import resolve_global_paths
+from worktree.core.agents.models import ResolvedAgentSettings
 from worktree.core.db import RunsRepository, RunStatus, SandboxesRepository
 from worktree.core.engine.models import (
     FailurePromptDecision,
@@ -25,7 +26,14 @@ from worktree.core.engine.writer import snapshot_blueprint_path
 from worktree.core.logs.services.read import read_run_log_events
 from worktree.core.project.services.storage import resolve_workspace_paths
 from worktree.core.sandbox import Sandbox, SandboxApplyResult, SandboxApplyStatus
-from worktree.core.step.models import ConditionEvaluationResult, LoopStepBlock, StepDefinition, StepResult
+from worktree.core.step.models import (
+    ConditionEvaluationResult,
+    LoopStepBlock,
+    StepDefinition,
+    StepExecutionContext,
+    StepResult,
+)
+from worktree.core.step.runner import StepExecution
 
 
 class _Prompter(FailurePrompter):
@@ -637,3 +645,151 @@ class DriveRunObserverContractTests:
         assert [r.status for r in observed.step_results] == [r.status for r in plain.step_results]
         assert observed.errors == plain.errors
         assert observed.warnings == plain.warnings
+
+
+_OLLAMA_AGENT_CONFIG: dict[str, object] = {
+    "provider": "ollama",
+    "model": "llama3.1",
+    "endpoint": "http://127.0.0.1:11434",
+    "temperature": 0.7,
+    "max_tokens": 512,
+}
+
+
+def _agent_step(step_id: str, **extra: object) -> dict[str, object]:
+    return {"id": step_id, "type": "agent", "prompt": "fix it", **extra}
+
+
+def _agent_workspace(tmp_path: Path, agent: dict[str, object]) -> tuple[WorkspacePaths, RunsRepository]:
+    workspace = (
+        WorkspaceBuilder(tmp_path / "agent-workspace")
+        .with_database()
+        .with_config(data={"version": 1, "project": {"name": "session"}, "agent": agent})
+        .build()
+    )
+    paths = _paths_for(workspace)
+    return paths, RunsRepository(db_path=paths.database_file, project_id=paths.project_id)
+
+
+@pytest.fixture
+def captured_contexts(monkeypatch: pytest.MonkeyPatch) -> list[StepExecutionContext]:
+    """Contexts reaching StepExecution during drive_run, in construction order."""
+    captured: list[StepExecutionContext] = []
+
+    class _CapturingStepExecution(StepExecution):
+        def __init__(self, metadata: StepExecutionContext) -> None:
+            captured.append(metadata)
+            super().__init__(metadata)
+
+    monkeypatch.setattr("worktree.core.engine.step_executor.StepExecution", _CapturingStepExecution)
+    return captured
+
+
+class DriveRunAgentSettingsTests:
+    """[tier-1/integration] drive_run: effective agent settings resolved once per drive and propagated to StepExecution."""
+
+    def test_fresh_run_threads_effective_config_into_step_execution_context(
+        self, tmp_path: Path, captured_contexts: list[StepExecutionContext]
+    ) -> None:
+        """[tier-1/integration] drive_run: a fresh row with no override and an ollama config reaches StepExecution with the full ResolvedAgentSettings and no 'agent' key in context."""
+        paths, runs = _agent_workspace(tmp_path, _OLLAMA_AGENT_CONFIG)
+        seed_new_run(paths, runs, session_id="fresh", steps=[_agent_step("a")])
+
+        outcome = _drive(paths, runs, "fresh")
+
+        assert outcome.status == RunStatus.COMPLETED
+        assert [captured.agent for captured in captured_contexts] == [
+            ResolvedAgentSettings(
+                provider="ollama",
+                model="llama3.1",
+                endpoint="http://127.0.0.1:11434",
+                temperature=0.7,
+                max_tokens=512,
+            )
+        ]
+        assert "agent" not in (captured_contexts[0].context or {})
+
+    def test_resumed_run_override_changes_only_the_provider(
+        self, tmp_path: Path, captured_contexts: list[StepExecutionContext]
+    ) -> None:
+        """[tier-1/integration] drive_run: a paused agent-step row with agent='gemini' resumed with RETRY reaches StepExecution with provider 'gemini' and the config's model, endpoint, temperature, max_tokens."""
+        paths, runs = _agent_workspace(tmp_path, _OLLAMA_AGENT_CONFIG)
+        seed_paused_run(
+            paths,
+            runs,
+            session_id="resumed",
+            steps=[_agent_step("a", on_failure="prompt_user")],
+            paused_step_id="a",
+            agent="gemini",
+        )
+
+        outcome = _drive(paths, runs, "resumed", prompter=_Prompter([FailurePromptDecision.RETRY]))
+
+        assert outcome.status == RunStatus.COMPLETED
+        assert [captured.agent for captured in captured_contexts] == [
+            ResolvedAgentSettings(
+                provider="gemini",
+                model="llama3.1",
+                endpoint="http://127.0.0.1:11434",
+                temperature=0.7,
+                max_tokens=512,
+            )
+        ]
+
+    def test_settings_are_resolved_once_per_drive(
+        self, tmp_path: Path, captured_contexts: list[StepExecutionContext]
+    ) -> None:
+        """[tier-1/integration] drive_run: two agent steps in one drive receive the identical ResolvedAgentSettings object."""
+        paths, runs = _agent_workspace(tmp_path, _OLLAMA_AGENT_CONFIG)
+        seed_new_run(paths, runs, session_id="twice", steps=[_agent_step("a"), _agent_step("b")])
+
+        _drive(paths, runs, "twice")
+
+        assert len(captured_contexts) == 2
+        assert captured_contexts[0].agent is not None
+        assert captured_contexts[0].agent is captured_contexts[1].agent
+
+    def test_config_resolution_failure_fails_run_without_running_steps(
+        self, engine_paths: WorkspacePaths, runs_repo: RunsRepository
+    ) -> None:
+        """[tier-1/integration] drive_run: a malformed repo config.json returns FAILED with errors[0] containing 'CONFIG_MALFORMED_JSON', no step results, and on_run_completed notified exactly once."""
+        engine_paths.config_file.write_text("{not json", encoding="utf-8")
+        seed_new_run(engine_paths, runs_repo, session_id="bad-config", steps=[_step("a", "echo hi")])
+        observer = _SequenceObserver()
+
+        outcome = _drive(engine_paths, runs_repo, "bad-config", observer=observer)
+
+        assert outcome.status == RunStatus.FAILED
+        assert "CONFIG_MALFORMED_JSON" in outcome.errors[0]
+        assert outcome.step_results == []
+        assert [call[0] for call in observer.calls] == ["run_completed"]
+
+    def test_command_only_run_completes_with_unregistered_configured_provider(self, tmp_path: Path) -> None:
+        """[tier-1/integration] drive_run: config agent.provider 'openai' and a single command step returns COMPLETED with errors == []."""
+        paths, runs = _agent_workspace(tmp_path, {"provider": "openai", "model": "gpt"})
+        seed_new_run(paths, runs, session_id="cmd-only", steps=[_step("a", "echo hi")])
+
+        outcome = _drive(paths, runs, "cmd-only")
+
+        assert outcome.status == RunStatus.COMPLETED
+        assert outcome.errors == []
+
+    @pytest.mark.parametrize("source", ["config", "row_override"])
+    def test_agent_step_with_unregistered_effective_provider_fails(self, tmp_path: Path, source: str) -> None:
+        """[tier-1/integration] drive_run: an agent step whose effective provider 'openai' comes from config or from row.agent returns FAILED with the step's error_message naming AGENT_PROVIDER_UNSUPPORTED."""
+        configured: dict[str, object] = {"provider": "openai", "model": "gpt"} if source == "config" else {}
+        paths, runs = _agent_workspace(tmp_path, configured)
+        seed_new_run(
+            paths,
+            runs,
+            session_id="unregistered",
+            steps=[_agent_step("a")],
+            agent="openai" if source == "row_override" else None,
+        )
+
+        outcome = _drive(paths, runs, "unregistered")
+
+        assert outcome.status == RunStatus.FAILED
+        assert "Unsupported agent provider 'openai' (AGENT_PROVIDER_UNSUPPORTED)" in (
+            outcome.step_results[-1].error_message or ""
+        )

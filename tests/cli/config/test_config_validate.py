@@ -52,7 +52,7 @@ class ConfigValidateRootTests:
         """Handler returns VALID status with warnings for non-local provider missing model."""
         config_path = isolated_workspace / ".worktree" / "config.json"
         payload = build_default_config("demo-workspace")
-        payload["agent"]["provider"] = "openai"
+        payload["agent"]["provider"] = "gemini"
         payload["agent"]["model"] = None
         Filesystem.atomic_write_json(config_path, payload)
 
@@ -113,7 +113,7 @@ class ConfigValidateCliIntegrationTests:
         """wt config validate prints warnings for non-blocking issues."""
         config_path = isolated_workspace / ".worktree" / "config.json"
         payload = build_default_config("demo-workspace")
-        payload["agent"]["provider"] = "openai"
+        payload["agent"]["provider"] = "gemini"
         payload["agent"]["model"] = None
         Filesystem.atomic_write_json(config_path, payload)
 

@@ -8,12 +8,12 @@ import subprocess
 from typing import Any
 
 from worktree.common.process import run_isolated_process
-from worktree.core.agents.base import AgentRequest
 from worktree.core.agents.cli_mutation import (
     CliDirectMutationAdapter,
     CliMutationOutcome,
     CliMutationRunRequest,
 )
+from worktree.core.agents.models import AgentRequest
 
 COPILOT_TOKEN_ENVS = ("GH_TOKEN", "GITHUB_TOKEN")
 

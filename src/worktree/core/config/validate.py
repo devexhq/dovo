@@ -8,6 +8,7 @@ from typing import Any
 from urllib.parse import urlparse
 
 from worktree.common.models import BaseResult
+from worktree.core.agents.registry import PROVIDERS, unsupported_provider_message
 from worktree.core.config.loader import ConfigLoadStatus
 from worktree.core.config.models import WorktreeConfig
 
@@ -91,6 +92,18 @@ def validate_config_result(config_path: Path) -> ConfigValidationResult:
             fixes=[],
         )
 
+    provider_error = _unregistered_provider_error(loaded.config)
+    if provider_error is not None:
+        return ConfigValidationResult(
+            status=ConfigValidationStatus.INVALID,
+            config_path=loaded.config_path,
+            raw=loaded.raw,
+            config=None,
+            errors=[provider_error],
+            warnings=[],
+            fixes=["Set agent.provider to one of the supported providers named in the error"],
+        )
+
     warnings, warning_fixes = _semantic_warnings(loaded.config)
 
     return ConfigValidationResult(
@@ -102,6 +115,13 @@ def validate_config_result(config_path: Path) -> ConfigValidationResult:
         warnings=warnings,
         fixes=warning_fixes,
     )
+
+
+def _unregistered_provider_error(config: WorktreeConfig) -> str | None:
+    """Return the unsupported-provider message if the configured provider isn't registered, else None."""
+    if config.agent.provider in PROVIDERS:
+        return None
+    return unsupported_provider_message(config.agent.provider)
 
 
 def _semantic_warnings(config: WorktreeConfig) -> tuple[list[str], list[str]]:

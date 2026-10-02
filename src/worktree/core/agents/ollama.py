@@ -13,11 +13,8 @@ from urllib.parse import urlparse
 
 from pydantic import BaseModel, ValidationError
 
-from worktree.core.agents.base import (
-    AgentRequest,
-    AgentResponse,
-    AgentResponseStatus,
-)
+from worktree.core.agents.base import BaseAgentProvider
+from worktree.core.agents.models import AgentRequest, AgentResponse, AgentResponseStatus
 
 DEFAULT_OLLAMA_ENDPOINT = "http://localhost:11434"
 OLLAMA_HOST_ENV = "OLLAMA_HOST"
@@ -228,7 +225,7 @@ def _chat_content_from_response(data: dict[str, Any]) -> str | None:
     return None
 
 
-class OllamaAgentAdapter:
+class OllamaAgentAdapter(BaseAgentProvider):
     """Call a local Ollama server and map chat output to AgentResponse."""
 
     # complexipy: ignore (Revisit when we flesh out agents)

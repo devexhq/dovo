@@ -17,7 +17,6 @@ from worktree.core.agents import (
     AgentRequest,
     AgentResponseStatus,
     OllamaAgentAdapter,
-    get_agent_adapter,
 )
 from worktree.core.agents.ollama import (
     DEFAULT_OLLAMA_ENDPOINT,
@@ -50,12 +49,6 @@ def _ollama_request(
     if endpoint is not None:
         builder = builder.with_endpoint(endpoint)
     return builder.build()
-
-
-class FactoryOllamaTests:
-    def test_ollama_provider_id_returns_ollama_adapter(self) -> None:
-        """The factory returns an OllamaAgentAdapter for provider id 'ollama'."""
-        assert isinstance(get_agent_adapter("ollama"), OllamaAgentAdapter)
 
 
 class DefaultHttpPostTests:

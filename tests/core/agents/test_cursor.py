@@ -10,7 +10,7 @@ from types import SimpleNamespace
 import pytest
 
 from tests.harness import AgentRequestBuilder
-from worktree.core.agents import AgentResponseStatus, CursorAgentAdapter, get_agent_adapter
+from worktree.core.agents import AgentResponseStatus, CursorAgentAdapter
 from worktree.core.agents.cli_mutation import CliMutationOutcome, CliMutationRunRequest, CliMutationRunStatus
 from worktree.core.agents.cursor import (
     CURSOR_API_KEY_ENV,
@@ -24,21 +24,6 @@ from worktree.core.agents.cursor import (
 @pytest.fixture(autouse=True)
 def _cursor_api_key(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv(CURSOR_API_KEY_ENV, "test-key")
-
-
-class FactoryCursorTests:
-    def test_cursor_provider_id_returns_cursor_adapter(self) -> None:
-        """The factory returns a CursorAgentAdapter for provider id 'cursor'."""
-        assert isinstance(get_agent_adapter("cursor"), CursorAgentAdapter)
-
-    def test_unsupported_provider_lists_cursor_as_supported(self) -> None:
-        """The unsupported-provider error enumerates 'cursor' among supported ids."""
-        with pytest.raises(ValueError, match="AGENT_PROVIDER_UNSUPPORTED") as exc:
-            get_agent_adapter("openai")
-        assert str(exc.value) == (
-            "Unsupported agent provider 'openai' (AGENT_PROVIDER_UNSUPPORTED). "
-            "Supported v1 providers: local, ollama, cursor, gemini, copilot."
-        )
 
 
 class ResolveCursorApiKeyTests:

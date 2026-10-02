@@ -12,6 +12,7 @@ from pydantic import BaseModel, Field
 
 from worktree.common.filesystem import WorkspacePaths
 from worktree.common.models import BaseResult
+from worktree.core.agents.models import ResolvedAgentSettings
 from worktree.core.db import RunRecord, RunStatus
 from worktree.core.db.repositories.artifacts import ArtifactsRepository
 from worktree.core.sandbox import SandboxSession
@@ -141,14 +142,28 @@ class FailurePrompter(Protocol):
         ...
 
 
+class AgentSettingsResolution(BaseResult):
+    """Result of resolving the effective agent settings for one run drive."""
+
+    settings: ResolvedAgentSettings | None = None
+
+    @property
+    def ok(self) -> bool:
+        """Return True when settings resolved."""
+        return self.settings is not None
+
+
 @dataclass(frozen=True)
 class RunSettings:
-    """Settings and collaborators resolved from the run row, consumed by Workspace and StepCoordinator."""
+    """Settings and collaborators resolved from the run row, consumed by Workspace and StepCoordinator.
+
+    ``agent`` comes from effective config, not the row: the row only overrides its provider.
+    """
 
     cwd: Path
     use_sandbox: bool = True
     keep: bool = False
-    agent: str | None = None
+    agent: ResolvedAgentSettings | None = None
     observer: RunObserver | None = None
     inputs: dict[str, str | int | bool] | None = None
     identity: ExecutionIdentity | None = None

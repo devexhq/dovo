@@ -10,6 +10,7 @@ from enum import StrEnum
 from worktree.common.lock import WorkspaceLock
 from worktree.common.models import FailurePolicy
 from worktree.common.process import process_registry
+from worktree.core.agents.models import ResolvedAgentSettings
 from worktree.core.blueprint import Blueprint
 from worktree.core.blueprint.exceptions import (
     BlueprintLoadError,
@@ -98,12 +99,14 @@ class RunCoordinator:
         context: RunContext,
         observer: RunObserver | None = None,
         prompter: FailurePrompter | None = None,
+        agent: ResolvedAgentSettings | None = None,
     ) -> None:
-        """Bind the coordinator to one run's state store, session infrastructure, observer, and prompter."""
+        """Bind the coordinator to one run's state store, session infrastructure, observer, prompter, and resolved agent settings."""
         self._state_store = state_store
         self._context = context
         self._observer = observer
         self._prompter = prompter
+        self._agent = agent
         self._errors: list[str] = []
         self._warnings: list[str] = []
         self._loaded: _LoadedRun | None = None
@@ -256,7 +259,7 @@ class RunCoordinator:
                 cwd=self._context.target_dir,
                 use_sandbox=row.use_sandbox,
                 keep=row.keep,
-                agent=row.agent,
+                agent=self._agent,
                 observer=self._observer,
                 inputs=json.loads(row.inputs_json) if row.inputs_json else None,
                 identity=ExecutionIdentity(blueprint_name=row.blueprint_name, blueprint_key=row.blueprint_key),

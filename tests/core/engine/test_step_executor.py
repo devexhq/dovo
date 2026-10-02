@@ -12,6 +12,7 @@ from tests.harness.runs import NoOpRunObserver
 from worktree.common.filesystem.models import RepositoryPaths, WorkspacePaths
 from worktree.common.filesystem.services.global_root import resolve_global_paths
 from worktree.common.models import FailurePolicy
+from worktree.core.agents.models import ResolvedAgentSettings
 from worktree.core.db.repositories.artifacts import ArtifactsRepository
 from worktree.core.engine.failure import USER_CONTINUED_MARKER
 from worktree.core.engine.models import (
@@ -24,12 +25,24 @@ from worktree.core.engine.models import (
 )
 from worktree.core.engine.step_executor import StepCoordinator, auto_publish_step_artifacts
 from worktree.core.project.services.storage import resolve_workspace_paths
-from worktree.core.step.models import ArtifactPublishSpec, StepDefinition, StepResult, StepType
+from worktree.core.step.models import (
+    ArtifactPublishSpec,
+    StepDefinition,
+    StepExecutionContext,
+    StepResult,
+    StepType,
+)
+from worktree.core.step.runner import StepExecution
 
 
 def _paths_for(root: Path) -> WorkspacePaths:
     """Resolve the WorkspacePaths snapshot for root, reflecting its current project.json."""
     return resolve_workspace_paths(RepositoryPaths.from_root(root), resolve_global_paths(None))
+
+
+_AGENT_SETTINGS = ResolvedAgentSettings(
+    provider="ollama", model="llama3.1", endpoint="http://127.0.0.1:11434", temperature=0.7, max_tokens=512
+)
 
 
 class _RefusingFailurePrompter(FailurePrompter):
@@ -80,19 +93,41 @@ class BuildStepContextTests:
 
         assert step_context is None
 
-    def test_agent_and_inputs_set_returns_populated_dict(self, tmp_path: Path) -> None:
-        """[tier-1/unit] build_step_context: context.agent and context.inputs are surfaced under their own keys."""
-        context = RunSettings(
-            cwd=tmp_path,
-            use_sandbox=False,
-            agent="claude",
-            inputs={"branch": "main"},
-            paths=_paths_for(tmp_path),
-        )
+    def test_agent_set_without_inputs_returns_none(self, tmp_path: Path) -> None:
+        """[tier-1/unit] StepCoordinator.build_step_context: RunSettings(agent=ResolvedAgentSettings(...), inputs=None) returns None."""
+        context = RunSettings(cwd=tmp_path, use_sandbox=False, agent=_AGENT_SETTINGS, paths=_paths_for(tmp_path))
 
-        step_context = StepCoordinator(context).build_step_context()
+        assert StepCoordinator(context).build_step_context() is None
 
-        assert step_context == {"agent": "claude", "inputs": {"branch": "main"}}
+    def test_inputs_set_returns_inputs_only_dict(self, tmp_path: Path) -> None:
+        """[tier-1/unit] StepCoordinator.build_step_context: RunSettings(inputs={'branch': 'main'}) returns {'inputs': {'branch': 'main'}}."""
+        context = RunSettings(cwd=tmp_path, use_sandbox=False, inputs={"branch": "main"}, paths=_paths_for(tmp_path))
+
+        assert StepCoordinator(context).build_step_context() == {"inputs": {"branch": "main"}}
+
+
+class StepCoordinatorAgentForwardingTests:
+    """[tier-1/unit] StepCoordinator.run_attempt: RunSettings.agent forwards to StepExecutionContext.agent unchanged."""
+
+    def test_run_attempt_forwards_resolved_agent_object(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """[tier-1/unit] StepCoordinator.run_attempt: RunSettings.agent reaches StepExecutionContext.agent as the identical object."""
+        captured: list[StepExecutionContext] = []
+
+        class _CapturingStepExecution(StepExecution):
+            """StepExecution subclass recording the StepExecutionContext it is constructed with."""
+
+            def __init__(self, metadata: StepExecutionContext) -> None:
+                captured.append(metadata)
+                super().__init__(metadata)
+
+        monkeypatch.setattr("worktree.core.engine.step_executor.StepExecution", _CapturingStepExecution)
+        context = RunSettings(cwd=tmp_path, use_sandbox=False, agent=_AGENT_SETTINGS, paths=_paths_for(tmp_path))
+        step = StepBuilder.command("echo ok").with_id("ok").build()
+
+        StepCoordinator(context).run_attempt(_run_context(tmp_path), [], step, idx=1, total=1, step_context=None)
+
+        assert len(captured) == 1
+        assert captured[0].agent is _AGENT_SETTINGS
 
 
 class StepCoordinatorLoopIterationForwardingTests:

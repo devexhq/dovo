@@ -13,11 +13,8 @@ from typing import Any
 from pydantic import BaseModel, ValidationError
 
 from worktree.common.process import run_isolated_process
-from worktree.core.agents.base import (
-    AgentRequest,
-    AgentResponse,
-    AgentResponseStatus,
-)
+from worktree.core.agents.base import BaseAgentProvider
+from worktree.core.agents.models import AgentRequest, AgentResponse, AgentResponseStatus
 
 LOCAL_AGENT_CMD_ENV = "WORKTREE_LOCAL_AGENT_CMD"
 DEFAULT_LOCAL_AGENT_CMD = "worktree-local-agent"
@@ -192,7 +189,7 @@ def _parse_and_map_local_output(
     return _map_local_stdout(parsed, raw_text=stdout_text, duration_ms=duration_ms)
 
 
-class LocalAgentAdapter:
+class LocalAgentAdapter(BaseAgentProvider):
     """Invoke a local agent executable over JSON stdin/stdout."""
 
     def propose_fix(self, request: AgentRequest) -> AgentResponse:

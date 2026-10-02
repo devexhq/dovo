@@ -81,5 +81,5 @@ Direct-mutation adapter shelling out to GitHub CLI `gh copilot`.
 ## Cross-Provider Rules
 
 - All setup and preflight failures are non-raising and populate `AgentResponse.errors`.
-- Unimplemented provider tokens (`openai`, `anthropic`, `azure_openai`, `custom`) fail cleanly at adapter resolution (`get_agent_adapter`).
+- Unimplemented provider tokens (`openai`, `anthropic`, `azure_openai`, `custom`) are rejected by `wt config validate` and fail an agent step cleanly at adapter resolution (`get_agent_adapter`) with `AGENT_PROVIDER_UNSUPPORTED`.
 - Direct-mutation adapters share timeout and diff-validation behavior through `CliDirectMutationAdapter`.

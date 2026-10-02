@@ -1,8 +1,12 @@
 from __future__ import annotations
 
+import dataclasses
 from pathlib import Path
 
+import pytest
+
 from worktree.common.filesystem import Filesystem
+from worktree.core.agents.registry import PROVIDERS
 from worktree.core.config.generator import build_default_config
 from worktree.core.config.models import WorktreeConfig
 from worktree.core.config.validate import (
@@ -16,7 +20,7 @@ class ConfigSemanticValidationTests:
 
     def test_validate_config_warns_when_non_local_agent_has_no_model(self, tmp_path: Path) -> None:
         payload = build_default_config("demo")
-        payload["agent"]["provider"] = "openai"
+        payload["agent"]["provider"] = "gemini"
         payload["agent"]["model"] = None
         config_path = tmp_path / "config.json"
         Filesystem.atomic_write_json(config_path, payload)
@@ -66,3 +70,45 @@ class ConfigSemanticValidationTests:
         assert result.errors == []
         assert result.warnings == ["sandbox.max_active_sandboxes (11) exceeds 10 (CONFIG_WARN_SANDBOX_LIMIT)."]
         assert result.fixes == ["Lower sandbox.max_active_sandboxes to 10 or fewer"]
+
+
+class ConfigProviderRegistryValidationTests:
+    """[tier-1/unit] validate_config_result: agent.provider must be registered in PROVIDERS."""
+
+    @staticmethod
+    def _write_config(tmp_path: Path, provider: str) -> Path:
+        payload = build_default_config("demo")
+        payload["agent"]["provider"] = provider
+        config_path = tmp_path / "config.json"
+        Filesystem.atomic_write_json(config_path, payload)
+        return config_path
+
+    @pytest.mark.parametrize("token", ["openai", "anthropic", "azure_openai", "custom"])
+    def test_schema_valid_unregistered_provider_is_semantically_invalid(self, tmp_path: Path, token: str) -> None:
+        """[tier-1/unit] validate_config_result: agent.provider '<token>' returns status INVALID, ok False, the AGENT_PROVIDER_UNSUPPORTED error, and no warnings."""
+        result = validate_config_result(self._write_config(tmp_path, token))
+
+        assert result.status == ConfigValidationStatus.INVALID
+        assert result.ok is False
+        assert result.errors == [
+            f"Unsupported agent provider '{token}' (AGENT_PROVIDER_UNSUPPORTED). "
+            "Supported: copilot, cursor, gemini, local, ollama."
+        ]
+        assert result.warnings == []
+
+    def test_registering_adapter_makes_its_token_pass(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """[tier-1/unit] validate_config_result: after registering 'custom' in PROVIDERS, agent.provider 'custom' returns status VALID with no errors."""
+        monkeypatch.setitem(PROVIDERS, "custom", dataclasses.replace(PROVIDERS["local"], token="custom"))
+
+        result = validate_config_result(self._write_config(tmp_path, "custom"))
+
+        assert result.status == ConfigValidationStatus.VALID
+        assert result.errors == []
+
+    def test_schema_invalid_token_keeps_structural_failure(self, tmp_path: Path) -> None:
+        """[tier-1/unit] validate_config_result: agent.provider 'bogus' returns INVALID with CONFIG_SCHEMA_INVALID first and no AGENT_PROVIDER_UNSUPPORTED error."""
+        result = validate_config_result(self._write_config(tmp_path, "bogus"))
+
+        assert result.status == ConfigValidationStatus.INVALID
+        assert "CONFIG_SCHEMA_INVALID" in result.errors[0]
+        assert not any("AGENT_PROVIDER_UNSUPPORTED" in error for error in result.errors)

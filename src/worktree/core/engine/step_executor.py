@@ -66,10 +66,8 @@ class StepCoordinator:
     context: RunSettings
 
     def build_step_context(self) -> dict[str, object] | None:
-        """Build the per-step execution context, including resolved inputs."""
+        """Return the per-step context dict (inputs only), or None when there are no inputs."""
         step_context: dict[str, object] = {}
-        if self.context.agent:
-            step_context["agent"] = self.context.agent
         if self.context.inputs:
             step_context["inputs"] = self.context.inputs
         return step_context or None
@@ -157,6 +155,7 @@ class StepCoordinator:
                 step=step,
                 sandbox_path=run_context.target_dir,
                 context=step_context,
+                agent=self.context.agent,
                 on_output=on_output,
                 step_index=idx,
                 initial_attempt=initial_attempt,

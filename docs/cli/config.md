@@ -74,4 +74,4 @@ Validates `.worktree/config.json` against the Worktree V1 JSON Schema and semant
 wt config validate
 ```
 
-If validation fails, `wt config validate` prints detailed error descriptions highlighting missing required fields or invalid property types.
+If validation fails, `wt config validate` prints detailed error descriptions highlighting missing required fields or invalid property types. An `agent.provider` that the schema accepts but no adapter implements (`openai`, `anthropic`, `azure_openai`, `custom`) is reported as an error carrying `AGENT_PROVIDER_UNSUPPORTED`.

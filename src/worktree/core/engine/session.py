@@ -4,10 +4,18 @@ from __future__ import annotations
 
 from worktree.common.filesystem import WorkspacePaths
 from worktree.common.process import process_registry
+from worktree.core.agents.models import ResolvedAgentSettings
 from worktree.core.config import Config
 from worktree.core.db import RunRecord, RunsRepository, RunStatus
 from worktree.core.engine.coordinator import RunCoordinator
-from worktree.core.engine.models import FailurePrompter, RunContext, RunObserver, RunOutcome, RunSettings
+from worktree.core.engine.models import (
+    AgentSettingsResolution,
+    FailurePrompter,
+    RunContext,
+    RunObserver,
+    RunOutcome,
+    RunSettings,
+)
 from worktree.core.engine.notify import safe_notify
 from worktree.core.engine.state_store import RunStateStore
 from worktree.core.engine.workspace import Workspace
@@ -25,7 +33,10 @@ def drive_run(
     prompter: FailurePrompter | None,
     no_tty: bool,
 ) -> RunOutcome:
-    """Open the run's workspace from its row, execute it through RunCoordinator, close the workspace by outcome, and notify on_run_completed."""
+    """Drive one run to completion and notify on_run_completed.
+
+    A config failure while resolving agent settings fails the run before any sandbox is created.
+    """
     row = runs.get(session_id)
     if row is None:
         return RunOutcome(
@@ -34,11 +45,35 @@ def drive_run(
             sandbox_path=paths.root_dir,
         )
 
-    opened = RunSession.open(row, paths, runs, observer, prompter, no_tty)
+    resolution = _resolve_agent_settings(paths, row.agent)
+    if resolution.settings is None:
+        outcome = RunOutcome(status=RunStatus.FAILED, errors=list(resolution.errors), sandbox_path=paths.root_dir)
+        safe_notify(observer, "on_run_completed", outcome)
+        return outcome
+
+    opened = RunSession.open(row, paths, runs, observer, prompter, no_tty, resolution.settings)
     outcome = opened.run() if isinstance(opened, RunSession) else opened
     safe_notify(observer, "on_run_completed", outcome)
 
     return outcome
+
+
+def _resolve_agent_settings(paths: WorkspacePaths, override: str | None) -> AgentSettingsResolution:
+    """Resolve agent settings from effective config; a non-empty run-row override replaces only the provider."""
+    result = Config(paths).load()
+    if not result.ok or result.config is None:
+        return AgentSettingsResolution(errors=list(result.errors) or ["Failed to resolve agent settings."])
+
+    agent = result.config.agent
+    return AgentSettingsResolution(
+        settings=ResolvedAgentSettings(
+            provider=override or agent.provider,
+            model=agent.model,
+            endpoint=agent.endpoint,
+            temperature=agent.temperature,
+            max_tokens=agent.max_tokens,
+        )
+    )
 
 
 def _workspace_context(row: RunRecord, paths: WorkspacePaths, observer: RunObserver | None) -> RunSettings:
@@ -71,8 +106,9 @@ class RunSession:
         manager: Sandbox | None,
         sandbox: SandboxSession | None,
         setup_warnings: list[str],
+        agent: ResolvedAgentSettings,
     ) -> None:
-        """Bind the session to its run row, collaborators, and the infrastructure opened by RunSession.open."""
+        """Bind the session to its run row, collaborators, opened infrastructure, and resolved agent settings."""
         self._row = row
         self._paths = paths
         self._runs = runs
@@ -83,6 +119,7 @@ class RunSession:
         self._manager = manager
         self._sandbox = sandbox
         self._setup_warnings = setup_warnings
+        self._agent = agent
         self._apply_failed = False
 
     @classmethod
@@ -94,6 +131,7 @@ class RunSession:
         observer: RunObserver | None,
         prompter: FailurePrompter | None,
         no_tty: bool,
+        agent: ResolvedAgentSettings,
     ) -> RunSession | RunOutcome:
         """Set up the sandbox and session directories and return the session, or a FAILED outcome on setup error."""
         workspace = Workspace(_workspace_context(row, paths, observer))
@@ -122,7 +160,7 @@ class RunSession:
             no_tty=no_tty,
             save_attempt_logs=Config(paths).history.save_attempt_logs,
         )
-        return cls(row, paths, runs, observer, prompter, workspace, context, manager, sandbox, setup_warnings)
+        return cls(row, paths, runs, observer, prompter, workspace, context, manager, sandbox, setup_warnings, agent)
 
     def run(self) -> RunOutcome:
         """Execute the run, auto-apply sandbox changes, and close the workspace, returning the final outcome."""
@@ -146,7 +184,11 @@ class RunSession:
     def _execute(self) -> RunOutcome:
         """Run the coordinator against the opened context, prefixing the setup warnings onto its outcome."""
         coordinator = RunCoordinator(
-            RunStateStore(self._runs, self._paths, self._row.session_id), self._context, self._observer, self._prompter
+            RunStateStore(self._runs, self._paths, self._row.session_id),
+            self._context,
+            self._observer,
+            self._prompter,
+            self._agent,
         )
         if coordinator.load():
             safe_notify(self._observer, "on_run_started", coordinator.steps)

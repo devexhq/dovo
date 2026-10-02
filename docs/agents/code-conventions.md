@@ -48,6 +48,7 @@ Prioritize clarity and readability: code should read naturally and unambiguously
 - All non-test public functions and methods must carry a docstring following Google docstring style.
 - When documenting parameters (`Args:`), all function parameters must be documented (enforced by `D417`).
 - Test functions under `tests/` are exempt from Ruff `D` rules per [testing.md](testing.md).
+- Keep docstrings terse: a one-line title, plus a description only for hidden contracts or safety behavior the code cannot show (CODE-003).
 
 ---
 

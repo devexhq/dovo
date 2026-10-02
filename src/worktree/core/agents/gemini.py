@@ -7,12 +7,12 @@ import os
 import subprocess
 
 from worktree.common.process import run_isolated_process
-from worktree.core.agents.base import AgentRequest
 from worktree.core.agents.cli_mutation import (
     CliDirectMutationAdapter,
     CliMutationOutcome,
     CliMutationRunRequest,
 )
+from worktree.core.agents.models import AgentRequest
 
 GEMINI_API_KEY_ENV = "GEMINI_API_KEY"
 

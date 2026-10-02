@@ -211,6 +211,25 @@ rules:
 
     return result'
   citation: docs/agents/code-conventions.md#blank-lines-in-function-bodies
+- id: CODE-003
+  title: Terse Docstrings, Description Only for Hidden Contracts
+  severity: SUGGESTION
+  category: Code Conventions
+  domain: all
+  scope: src/
+  guideline: Every docstring opens with a one-line title stating what the thing is or does. Add a description only for what
+    the code cannot show a reader and whose absence would cause wrong code - a hidden contract, a data-loss or safety behavior,
+    a non-obvious ordering constraint, or a deliberate oddity. Do not narrate steps, restate parameters or types, or repeat
+    the title.
+  evaluation_criteria: Inspect new or modified docstrings. Flag a description that retells the body, lists what the signature
+    already shows, or restates the title. Flag a missing description where the code has a hidden contract or a safety behavior.
+  positive_example: '"""Base for providers that edit the sandbox directly instead of returning a diff.
+
+
+    Edits that fail patch validation are discarded from the sandbox; a failed discard is reported in the response errors."""'
+  negative_example: '"""Run the provider. First resolve the baseline, then build the prompt, then run the tool, then diff the
+    sandbox, then validate the patch."""'
+  citation: docs/agents/code-conventions.md#docstrings
 - id: TYPE-001
   title: Ban on -> Any Return Annotations
   severity: BLOCKER
@@ -627,7 +646,7 @@ rules:
   guideline: Test doubles must be types production actually passes or implement a Protocol production is typed against. Never
     build a stub whose interface is the union of every branch in a hasattr chain.
   evaluation_criteria: Inspect test doubles and stubs. Verify they inherit from production types or satisfy typing.Protocol.
-  positive_example: 'class FakeAgentAdapter(AgentAdapter): def propose_fix(self, req: AgentRequest) -> AgentResponse: ...'
+  positive_example: 'class FakeBaseAgentProvider(BaseAgentProvider): def propose_fix(self, req: AgentRequest) -> AgentResponse: ...'
   negative_example: 'class MockAdapter: def __getattr__(self, name): return MagicMock()'
   citation: docs/agents/testing.md#core-testing-rules
 - id: TEST-009
