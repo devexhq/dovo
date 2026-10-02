@@ -14,7 +14,7 @@ disable-model-invocation: true
 
 # wt-code
 
-Turn `.agentic/plan.md` into working code, or in review mode, turn `.agentic/review.md` findings into fixes.
+Turn `.agentic/plan.md` into working code, or in review mode, turn `.agentic/review.md` findings into fixes. Every run ends by writing or updating `.agentic/implementation-report.md`, which `/wt-review` reads to tell documented plan deviations from silent ones.
 
 ## Modes
 
@@ -34,6 +34,7 @@ If the input file is missing, stop and say so. Do not reconstruct a plan from th
 - **Do not implement anything the plan marks out of scope or flags as a trap.**
 - **Never create a test file the plan's `### Tests` stubs do not list**, and never skip a deletion the deletion ledger lists (`PLAN-009`). Both directions are contract breaches, and the additive direction is the one that slips through unnoticed.
 - **A green gate is not evidence that a check ran.** Report what each gate observed, never what a doc says it enforces.
+- **Never edit `.agentic/plan.md`, `.agentic/evidence.md`, `.agentic/review.md`, or `.agentic/review.json`.** The only `.agentic/` file this skill writes is `.agentic/implementation-report.md`.
 
 ## Implementation loop
 
@@ -105,6 +106,20 @@ Report the observed coverage percentage against the configured `fail_under` — 
 
 Loop until every gate is green, then report, per gate, the command and the number it produced — for anything the repo does not actually enforce, say so instead of listing it as a pass. Close with: what was implemented per FR, the deletions executed, the observed gate numbers, any 🚨 deviations, and confirmation that nothing was committed or pushed.
 
+## Implementation report (`.agentic/implementation-report.md`)
+
+Write it after the completion gate is green (or as green as it will get, with failures stated), overwriting any previous report from a plan run. Do not write it mid-implementation; keep a running list of deviations as you go so none are reconstructed from memory.
+
+Required sections, in this order:
+
+1. **Header**: issue or plan title, and one line stating nothing was committed or pushed.
+2. **Plan deviations**: every place the code differs from the plan, one numbered item each, with the reason. This includes judgement calls the plan left open, extra files or docs touched outside the plan's lists, renamed test classes, fixtures or helpers the plan did not name, and every 🚨 raised during the run (plan wrong, stale grounding, duplicate contract). Write `none` only if you checked. Also record how each plan Open Question was resolved in the code. A deviation not listed here counts as silent to the reviewer, so a missing entry is worse than a verbose one.
+3. **Implementation details**: what was built per package (production, tests, docs), and the deletions executed against the ledger.
+4. **Quality gates**: each command with the number it observed, the configured `fail_under`, and the `tests/` line delta against the plan's budget. State anything the repo does not enforce.
+5. **Changed files**: modified and new, from `git status --short`.
+
+Deviations must be factual. Do not use the report to pre-justify a contract change the plan forbids: a deviation that alters a literal contract (field name, message, flag, exit code) is a 🚨 for the human, not an accepted variance.
+
 ## Review mode (`/wt-code review`)
 
 1. Read `.agentic/review.md`. If it is absent, stop and say so.
@@ -116,5 +131,10 @@ Loop until every gate is green, then report, per gate, the command and the numbe
 6. For a fix to an enforcement defect (a check that did not check), watch it fail before you call it fixed: reproduce the violation the check missed, confirm the repaired check flags it, then revert the reproduction.
 7. Run the same completion gate above once the fixes are in.
 8. Do not edit or delete `.agentic/review.md` or `.agentic/review.json`. They are the reviewer's artifacts, and the next round is compared against them.
+9. Edit `.agentic/implementation-report.md` in place after the gate is green; if it is absent, create it per the section above. Keep earlier content that is still true, and:
+   - add a `### Review round <n>` subsection under Implementation details listing each finding as fixed, disputed, or deferred with the `path:line` changed;
+   - add any new deviation (including each disputed finding, with why it does not hold) to Plan deviations;
+   - refresh Quality gates and Changed files to the post-fix state;
+   - remove or correct any statement the fixes made false.
 
 Report each finding as fixed, disputed, or deferred, with the `path:line` you changed.

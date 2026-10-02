@@ -51,7 +51,7 @@ When this review is already running in a fresh session with no author bias to co
 
 ## 3. Load the standards yourself
 
-Do not review from memory of this repo. Read [AGENTS.md](../../../AGENTS.md) — the authority and the doc index for what governs what — the docs it names for the areas the diff touches, the domain-scoped `RULES.md` files, and [REVIEW_CHECKLIST.json](../../../docs/agents/REVIEW_CHECKLIST.json). Read `.agentic/plan.md` if it exists, as the change's contract.
+Do not review from memory of this repo. Read [AGENTS.md](../../../AGENTS.md) — the authority and the doc index for what governs what — the docs it names for the areas the diff touches, the domain-scoped `RULES.md` files, and [REVIEW_CHECKLIST.json](../../../docs/agents/REVIEW_CHECKLIST.json). Read `.agentic/plan.md` if it exists, as the change's contract. Also read `.agentic/implementation-report.md` if it exists: its **Plan deviations** section is the author's declared list of departures from the plan. It is a claim to verify against the diff, never evidence that the code is correct.
 
 When a doc's claim about a model, field list, or enum drives a finding, spot-check the source first. Source wins. **A stale doc is a finding, not a condition to route around**: a "enforced by" claim naming a file that doesn't exist, a documented helper that was never written, or a rule example that teaches the violation it forbids. Resolve every such claim that bears on this change (`rg --files -g '<name>'`) rather than working around a wrong sentence and leaving it for the next agent to trust.
 
@@ -65,7 +65,13 @@ Skip this axis only when `.agentic/plan.md` is absent, and say so in the report.
 - **Test stub fidelity, one by one.** Each `### Tests` stub the plan wrote exists at its planned test file, asserting the docstring's stated contract. Then check the other direction: every test file in the diff traces back to a stub. An unplanned test file is a scope breach that no gate catches.
 - **Deletion ledger fidelity.** Every entry is gone.
 - **Budget.** Compare the diff size against the plan's estimate.
-- Where the code deviates, the deviation was surfaced rather than absorbed silently.
+- Where the code deviates, the deviation was surfaced rather than absorbed silently. Match each difference you find against the implementation report's Plan deviations:
+  - **Documented and still compliant**: do not raise a plan-fidelity finding. List it under `Documented deviations` in the report so the human sees it.
+  - **Documented but it breaches a repo rule, a checklist clause, or a literal plan contract** (field name, message, flag, exit code) the plan marks binding: still a finding, cited under that rule. Documenting a breach does not waive it.
+  - **Documented but the diff does not match the description**: a finding; the report is inaccurate.
+  - **Not documented**: a plan-fidelity finding for silent deviation, as before.
+  - **Report absent**: say so; every deviation is undocumented.
+  Also verify the report's Changed files and gate numbers against the diff; a mismatch is a Warning.
 
 ## 5. Sweep the mechanical rules and invariant checklist
 
@@ -136,7 +142,9 @@ Write this to `.agentic/review.md` (create `.agentic/` if needed), overwriting t
 | `TEST-011` | no wall-clock sleeps | BLOCKER | FAIL | `tests/core/step/test_process_group.py:58` reads `time.sleep(0.05)` |
 
 ### Plan fidelity
-- <FR-n> - implemented as specified | deviates: <what> | missing
+- Implementation report: `.agentic/implementation-report.md` read | absent
+- Documented deviations: <report item> - accepted (compliant) | still flagged (<rule>) | report inaccurate | none
+- <FR-n> - implemented as specified | deviates: <what> (documented | silent) | missing
 - Test stubs: <k> planned stubs landed at path and marker | <deviations>
 - Unplanned test files: <paths or "none">
 - Deletion ledger: executed | <outstanding>
