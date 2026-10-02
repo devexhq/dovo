@@ -15,7 +15,7 @@ wt run <name> [OPTIONS] [-- <input-overrides>]
 | `--no-sandbox` | Run execution in-place in the working tree without creating a Git sandbox. |
 | `--keep` | Retain the sandbox worktree after execution. |
 | `--auto-apply` | Automatically apply sandbox changes to the main workspace on successful completion. |
-| `--agent <name>` | Override the adapter identifier selected for agent-step placeholders; this does not enable provider invocation. |
+| `--agent <name>` | Override the agent provider for this run (model, endpoint, temperature, and max tokens still come from config); an unregistered name fails an agent step with `AGENT_PROVIDER_UNSUPPORTED` and has no effect on command/script steps. This does not enable provider invocation. |
 | `--session-id <id>` | Explicit session identifier. |
 | `--no-tty` | Disable interactive prompts; prompt_user failures abort the run instead of blocking for input. |
 | `--format <terminal\|json>` | Presentation format (`terminal` or `json`). Defaults to `terminal`. |

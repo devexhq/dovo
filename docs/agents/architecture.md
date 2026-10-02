@@ -31,7 +31,7 @@ src/worktree/core/                   Domain business logic and orchestration (no
   logs/                              Persisted session logs (run.log timeline events and appender, per-attempt step captures)
   step/                              Single-step execution, assertions evaluation, and step-local failure recovery
   engine/                            Process facade (Engine), state-driven run coordinator, session lifecycle, and run/resume services
-  agents/                            AI agent adapter protocol and provider integrations (local, ollama, cursor, gemini, copilot)
+  agents/                            AI agent provider base class, descriptor registry, and provider integrations (local, ollama, cursor, gemini, copilot)
   patch/                             Unified-diff parsing and validation
 
 src/worktree/common/                 Shared foundational utilities (never imports core/ or cli/)
@@ -53,7 +53,7 @@ src/worktree/schemas/v1/             Packaged, versioned JSON Schemas (config.js
 
 - **Inputs** (`core/inputs/`): `ParameterInput`, CLI flag resolution, `${{ inputs.* }}` placeholder interpolation. Must not import step, agents, or patch.
 - **Step** (`core/step/`): `StepDefinition`, `StepAssert` / assertions, `StepExecution`, step-local failure recovery. Must not import engine.
-- **Agents** (`core/agents/`): Adapter protocol (`AgentAdapter`), provider implementations (`local`, `ollama`, `cursor`, `gemini`, `copilot`), failure payload models. Must not import step.
+- **Agents** (`core/agents/`): Provider base class (`BaseAgentProvider`), `ProviderSpec` registry (`PROVIDERS`), provider implementations (`local`, `ollama`, `cursor`, `gemini`, `copilot`), failure payload models. Must not import config, step, or engine.
 - **Patch** (`core/patch/`): Unified-diff parsing and validation. Must not import agents or step.
 - **Blueprint** (`core/blueprint/`): Unified task/workflow document handle (`Blueprint`), catalog/path loader, input declaration schema. Must not import engine or cli.
 - **Engine** (`core/engine/`): Process-level run persistence, session ID minting (`RunRequest`), DB run records, canonical run execution state (`state_store.py`), the state-driven run coordinator (`coordinator.py`), paused-run validation (`loader.py`), the run session lifecycle (`session.py`), tree/row projector for `run.json` (`projection.py`) and its writer (`writer.py`), sandbox/session infrastructure (`context.py`, `workspace.py`), per-step execution (`step_executor.py`), loop policy, events, and structural state validation (`loop_policy.py`, `loop_events.py`, `state_validation.py`), observer dispatch (`notify.py`), failure-policy resolution (`failure.py`), shared run models (`models.py`), run/resume services (`BlueprintRunService`, `BlueprintResumeService`, `reconcile_stale_runs`). May use `logs/`. Must not import history or cli.
@@ -81,7 +81,8 @@ common/  ->  core/project/  ->  core/{db,git,sandbox,catalog,inputs,patch,diff,s
 - `core/` and `common/` never import `cli/` or `rich`. All terminal rendering is driven through `ui_dispatcher.dispatch(result)`.
 - `core/inputs/` must not import `step`, `agents`, or `patch`.
 - `core/patch/` must not import `agents` or `step`.
-- `core/agents/` may use `patch/` and `config/`; must not import `step`.
+- `core/agents/` may use `patch/`; must not import `config/`, `step/`, or `engine/`.
+- `core/config/validate.py` may import `core/agents/registry`.
 - `core/step/` must not import `engine/`.
 - `core/logs/` may use `db/`; must not import `blueprint/`, `engine/`, `history/`, or `cli/`.
 - `core/blueprint/` may use `catalog/`, `inputs/`, `step/`; must not import `engine/` or `cli/`.
@@ -116,9 +117,9 @@ common/  ->  core/project/  ->  core/{db,git,sandbox,catalog,inputs,patch,diff,s
 1. Add provider token to `AgentProvider` in `core/config/models.py` if not already present.
 2. Select adapter pattern:
    - **Direct-mutation** (provider CLI/SDK directly edits files in sandbox — `cursor`, `gemini`, `copilot`): Subclass `CliDirectMutationAdapter` (`core/agents/cli_mutation.py`) and implement `_preflight`, `_provider_name`, and `_default_run`.
-   - **Diff-returning** (provider returns diff text — `local`, `ollama`): Implement `AgentAdapter.propose_fix` directly (`core/agents/base.py`).
+   - **Diff-returning** (provider returns diff text — `local`, `ollama`): Implement `BaseAgentProvider.propose_fix` directly (`core/agents/base.py`).
 3. Resolve secrets via module-level `resolve_<provider>_api_key()` from environment variables (never from `config.json`).
-4. Register in `get_agent_adapter` (`core/agents/factory.py`).
+4. Declare a `ProviderSpec` for it in `core/agents/registry.py` and add it to `PROVIDERS`.
 5. Add tests under `tests/core/agents/test_<provider>.py` with fake execution functions or transports.
 
 ## Secrets handling

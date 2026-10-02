@@ -79,6 +79,7 @@ def seed_new_run(
     use_sandbox: bool = False,
     keep: bool = False,
     auto_apply: bool = False,
+    agent: str | None = None,
 ) -> RunRecord:
     """Write and snapshot a catalog blueprint, insert a RUNNING row, and initialize its all-pending state tree."""
     write_runnable_blueprint(paths.root_dir, key=session_id, steps=steps)
@@ -96,6 +97,7 @@ def seed_new_run(
         keep=keep,
         inputs_json="{}",
         auto_apply=auto_apply,
+        agent=agent,
     )
     assert RunStateStore(runs, paths, session_id).initialize(blueprint, manifest).ok
     row = runs.get(session_id)
@@ -113,9 +115,18 @@ def seed_paused_run(
     use_sandbox: bool = False,
     sandbox_id: str | None = None,
     auto_apply: bool = False,
+    agent: str | None = None,
 ) -> RunRecord:
     """Write and snapshot a catalog blueprint, initialize its state, complete steps before paused_step_id, and PAUSE that leaf on a failed attempt."""
-    seed_new_run(paths, runs, session_id=session_id, steps=steps, use_sandbox=use_sandbox, auto_apply=auto_apply)
+    seed_new_run(
+        paths,
+        runs,
+        session_id=session_id,
+        steps=steps,
+        use_sandbox=use_sandbox,
+        auto_apply=auto_apply,
+        agent=agent,
+    )
     store = RunStateStore(runs, paths, session_id)
     state = store.load().state
     assert state is not None

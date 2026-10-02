@@ -16,7 +16,7 @@ The runtime-supported adapter identifiers are:
 | `gemini` | Selectable runtime adapter. |
 | `copilot` | Selectable runtime adapter. |
 
-The configuration schema additionally accepts `openai`, `anthropic`, `azure_openai`, and `custom`. Those values are schema-valid but are not runtime-supported adapter identifiers; an agent step using one fails adapter selection.
+The configuration schema additionally accepts `openai`, `anthropic`, `azure_openai`, and `custom`. Those values are schema-valid but are not runtime-supported adapter identifiers; `wt config validate` reports them as `AGENT_PROVIDER_UNSUPPORTED`, and an agent step using one fails adapter selection.
 
 `tools` in an agent step is accepted metadata. It currently has no execution effect.
 

@@ -10,11 +10,8 @@ from typing import Literal
 
 from pydantic import BaseModel
 
-from worktree.core.agents.base import (
-    AgentRequest,
-    AgentResponse,
-    AgentResponseStatus,
-)
+from worktree.core.agents.base import BaseAgentProvider
+from worktree.core.agents.models import AgentRequest, AgentResponse, AgentResponseStatus
 from worktree.core.agents.mutation_git import (
     MutationGitError,
     capture_diff_since,
@@ -74,8 +71,11 @@ def build_mutation_prompt(request: AgentRequest) -> str:
     return instructions + json.dumps(body, indent=2, ensure_ascii=False)
 
 
-class CliDirectMutationAdapter:
-    """Shared safety flow for providers that mutate the sandbox directly."""
+class CliDirectMutationAdapter(BaseAgentProvider):
+    """Base for providers that edit the sandbox directly instead of returning a diff.
+
+    Edits that fail patch validation are discarded from the sandbox; a failed discard is reported in the response errors.
+    """
 
     def _default_run(self, request: CliMutationRunRequest) -> CliMutationOutcome:
         """Execute the provider tool against the mutation request."""

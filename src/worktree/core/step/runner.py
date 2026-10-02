@@ -148,6 +148,7 @@ class StepExecution:
         self.artifacts_dir = metadata.artifacts_dir
         self.artifacts_db = metadata.artifacts_db
         self.paths = metadata.paths
+        self.agent = metadata.agent
         self.log_warnings: list[str] = []
         self.step_scratch_dir: Path | None = None
         self.output_file: Path | None = None
@@ -305,7 +306,7 @@ class StepExecution:
 
     def _execute_agent(self) -> StepDispatchOutcome:
         """Execute an AGENT step inside sandbox_path."""
-        provider = self.context.get("agent") or "local"
+        provider = self.agent.provider if self.agent is not None else "local"
         try:
             _ = get_agent_adapter(provider)
             stdout = f"Agent prompt executed with tools: {self.step.instance.tools}"

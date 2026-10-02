@@ -6,12 +6,12 @@ import os
 import threading
 from typing import Any
 
-from worktree.core.agents.base import AgentRequest
 from worktree.core.agents.cli_mutation import (
     CliDirectMutationAdapter,
     CliMutationOutcome,
     CliMutationRunRequest,
 )
+from worktree.core.agents.models import AgentRequest
 
 CURSOR_API_KEY_ENV = "CURSOR_API_KEY"
 

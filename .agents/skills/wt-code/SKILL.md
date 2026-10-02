@@ -61,6 +61,7 @@ Work one FR (or one testable clause) at a time, in the plan's order. For each:
    ```
 
 5. Fix what fails before moving to the next FR. Do not accumulate red tests across FRs.
+6. Re-read the docstring of every function, class, and module you added or changed, and of any whose behavior your change altered, and keep each accurate (`CODE-003`): a one-line title, plus a description only for a hidden contract or safety behavior the code cannot show. A docstring your change made false is a defect, so fix or delete the sentence in the same change.
 
 Execute the deletion ledger as you go, in the same change set as the code that supersedes each entry. Do not leave a compatibility shim, alias, or dual path behind unless the plan demanded one (`COMPAT-002`, `COMPAT-003`), and never leave a negative existence test behind as the record of a removal (`TEST-009`).
 

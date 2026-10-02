@@ -8,6 +8,7 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 
 from worktree.common.filesystem import WorkspacePaths
 from worktree.common.models import BaseResult, FailurePolicy, OnFailureSpec
+from worktree.core.agents.models import ResolvedAgentSettings
 from worktree.core.db.repositories.artifacts import ArtifactsRepository
 
 _DRIVE_PATH_RE = re.compile(r"^[A-Za-z]:/")
@@ -295,6 +296,7 @@ class StepExecutionContext(BaseModel):
     artifacts_dir: Path | None = None
     artifacts_db: ArtifactsRepository | None = None
     paths: WorkspacePaths | None = None
+    agent: ResolvedAgentSettings | None = None
 
 
 class InternalCommandContext(BaseModel):

@@ -119,7 +119,7 @@ All operations that can fail return a Pydantic result object subclassing `BaseRe
 
 ### Run Engine Models
 **Relevant sources:** `src/worktree/core/engine/models.py`, `src/worktree/core/logs/models.py`.
-- [`RunSettings`](../../src/worktree/core/engine/models.py): Settings and collaborators resolved from the run row for sandbox/session setup and step coordination (`use_sandbox`, `keep`, `agent`, `observer`, `inputs`, `no_tty`, `failure_prompter`, `auto_apply`, `sandbox_id`, `paths`).
+- [`RunSettings`](../../src/worktree/core/engine/models.py): Settings and collaborators resolved from the run row for sandbox/session setup and step coordination (`use_sandbox`, `keep`, `agent` as `ResolvedAgentSettings | None`, `observer`, `inputs`, `no_tty`, `failure_prompter`, `auto_apply`, `sandbox_id`, `paths`).
 - [`RunContext`](../../src/worktree/core/engine/models.py): Infrastructure resources for one run's execution; durable progress lives only in `ExecutionStateTree`.
 - [`RunOutcome`](../../src/worktree/core/engine/models.py): Terminal run result, including the sandbox and session identifiers.
 - [`RunObserver`](../../src/worktree/core/engine/models.py), [`FailurePrompter`](../../src/worktree/core/engine/models.py), [`FailurePromptDecision`](../../src/worktree/core/engine/models.py), [`LoopPromptDecision`](../../src/worktree/core/engine/models.py): Caller-supplied progress hooks and failure/loop decision entrypoints. `RunObserver` callbacks: `on_run_started(steps)` and `on_run_completed(outcome)` (once per `drive_run` invocation; `on_run_started` is skipped when definitions fail to load, `on_run_completed` receives the returned outcome), `on_step_start`, `on_step_output`, `on_step_done(idx, total, step, result)`, `on_loop_start`, `on_loop_iteration_start`, `on_loop_conditions_evaluated`, `on_loop_done`, and the sandbox hooks.
@@ -146,6 +146,7 @@ All operations that can fail return a Pydantic result object subclassing `BaseRe
 - `AgentResponse`: Adapter outcome (`status`, `patch`, `errors`, `warnings`, `summary`, `ok`).
 - `AgentResponseStatus`: `StrEnum` (`proposed_patch`, `no_op`, `unfixable`, `timeout`, `provider_error`).
 - `AgentFailurePayload`: Step failure context captured for agent prompts (`step_id`, `command`, `exit_code`, `stdout`, `stderr`, `duration_seconds`, `error_message`, `files`).
+- [`ResolvedAgentSettings`](../../src/worktree/core/agents/models.py): Resolved once per drive in `drive_run` from `Config(paths).load()`; a non-empty run-row override replaces only `provider`; carried to steps as `StepExecutionContext.agent`. [`ProviderSpec`](../../src/worktree/core/agents/base.py) / `PROVIDERS` (`core/agents/registry.py`) is the single provider list, read by the factory and `validate_config_result`.
 - `CliMutationRunRequest`: Subprocess execution payload for direct-mutation adapters (`prompt`, `sandbox_path`, `timeout_seconds`, `env`).
 - `CliMutationOutcome`: Direct-mutation subprocess result (`success`, `exit_code`, `stdout`, `stderr`, `error_message`).
 

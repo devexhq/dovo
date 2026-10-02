@@ -138,6 +138,15 @@
       "bad_pattern": "record = SandboxRecord(...)\nself.db.sandboxes.save(record)\nreturn result"
     },
     {
+      "id": "CODE-003",
+      "name": "Terse Docstrings, Description Only for Hidden Contracts",
+      "severity": "SUGGESTION",
+      "domain": "all",
+      "scope": "src/",
+      "evaluation_criteria": "Inspect new or modified docstrings. Flag a description that retells the body, lists what the signature already shows, or restates the title. Flag a missing description where the code has a hidden contract or a safety behavior.",
+      "bad_pattern": "\"\"\"Run the provider. First resolve the baseline, then build the prompt, then run the tool, then diff the sandbox, then validate the patch.\"\"\""
+    },
+    {
       "id": "TYPE-001",
       "name": "Ban on -> Any Return Annotations",
       "severity": "BLOCKER",

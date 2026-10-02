@@ -1,11 +1,6 @@
 """Agent adapter interfaces and provider implementations."""
 
-from worktree.core.agents.base import (
-    AgentAdapter,
-    AgentRequest,
-    AgentResponse,
-    AgentResponseStatus,
-)
+from worktree.core.agents.base import BaseAgentProvider, ProviderSpec
 from worktree.core.agents.cli_mutation import (
     DEFAULT_MAX_FILES,
     DEFAULT_MAX_PATCH_KB,
@@ -23,20 +18,27 @@ from worktree.core.agents.gemini import GeminiAgentAdapter
 from worktree.core.agents.local import LocalAgentAdapter, LocalAgentStdout
 from worktree.core.agents.models import (
     AgentFailurePayload,
+    AgentRequest,
+    AgentResponse,
+    AgentResponseStatus,
     PayloadFile,
     PayloadOmission,
+    ProviderKind,
+    ResolvedAgentSettings,
 )
 from worktree.core.agents.ollama import OllamaAgentAdapter
+from worktree.core.agents.registry import PROVIDERS
 
 __all__ = [
     "DEFAULT_MAX_FILES",
     "DEFAULT_MAX_PATCH_KB",
     "DEFAULT_REJECT_BINARY_CHANGES",
-    "AgentAdapter",
+    "PROVIDERS",
     "AgentFailurePayload",
     "AgentRequest",
     "AgentResponse",
     "AgentResponseStatus",
+    "BaseAgentProvider",
     "CliDirectMutationAdapter",
     "CliMutationOutcome",
     "CliMutationRunFn",
@@ -49,6 +51,9 @@ __all__ = [
     "OllamaAgentAdapter",
     "PayloadFile",
     "PayloadOmission",
+    "ProviderKind",
+    "ProviderSpec",
+    "ResolvedAgentSettings",
     "build_mutation_prompt",
     "get_agent_adapter",
 ]
