@@ -71,30 +71,39 @@ def validate_ollama_endpoint(base: str) -> str | None:
     return None
 
 
+_DIRECT_GUIDANCE = (
+    "Carry out the instruction. Return a unified_diff only when file changes are required; "
+    "otherwise set unified_diff to null and put your findings in summary, "
+    "or set unfixable=true with a short reason if you cannot."
+)
+_REMEDIATION_GUIDANCE = (
+    "Propose the smallest correct unified_diff that fixes the failure, "
+    "or set unfixable=true with a short reason if you cannot."
+)
+
+
 def build_ollama_messages(request: AgentRequest) -> list[dict[str, str]]:
     """Build system/user chat messages for the Ollama chat API."""
     system = (
-        "You are a coding agent that proposes fixes as unified diffs.\n"
+        "You are a coding agent that returns changes as unified diffs.\n"
         "Reply with ONLY one JSON object (no markdown, no prose) using exactly "
         "these fields:\n"
         '- "unfixable": boolean\n'
         '- "unfixable_reason": string or null\n'
         '- "unified_diff": string or null '
         "(git-style unified diff with diff --git a/... b/... paths relative "
-        "to the sandbox)\n"
-        '- "summary": string or null\n'
+        "to the sandbox; null when no file change is needed)\n"
+        '- "summary": string or null (your findings, plan, or review text)\n'
         "Do not apply patches yourself. Do not wrap the JSON in code fences."
     )
-    payload = request.payload.model_dump(mode="json")
-    user_obj = {
+    user_obj: dict[str, object] = {
         "mode": request.mode,
         "sandbox_path": str(request.sandbox_path),
-        "payload": payload,
-        "instructions": (
-            "Propose the smallest correct unified_diff that fixes the failure, "
-            "or set unfixable=true with a short reason if you cannot."
-        ),
+        "instruction": request.instruction,
     }
+    if request.payload is not None:
+        user_obj["payload"] = request.payload.model_dump(mode="json")
+    user_obj["guidance"] = _DIRECT_GUIDANCE if request.mode == "direct" else _REMEDIATION_GUIDANCE
     user = json.dumps(user_obj, indent=2, ensure_ascii=False)
     return [
         {"role": "system", "content": system},

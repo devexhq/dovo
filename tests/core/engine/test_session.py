@@ -8,11 +8,12 @@ from pathlib import Path
 
 import pytest
 
+from tests.harness import AGENT_ADAPTER_FACTORY, FakeAgentProvider, new_file_diff
 from tests.harness.builders import WorkspaceBuilder
 from tests.harness.runs import NoOpRunObserver, seed_new_run, seed_paused_run
 from worktree.common.filesystem.models import RepositoryPaths, WorkspacePaths
 from worktree.common.filesystem.services.global_root import resolve_global_paths
-from worktree.core.agents.models import ResolvedAgentSettings
+from worktree.core.agents.models import AgentResponse, AgentResponseStatus, ResolvedAgentSettings
 from worktree.core.db import RunsRepository, RunStatus, SandboxesRepository
 from worktree.core.engine.models import (
     FailurePromptDecision,
@@ -34,6 +35,7 @@ from worktree.core.step.models import (
     StepResult,
 )
 from worktree.core.step.runner import StepExecution
+from worktree.core.step.services.execute_agent import SANDBOX_REQUIRED_MESSAGE
 
 
 class _Prompter(FailurePrompter):
@@ -53,6 +55,20 @@ class _Prompter(FailurePrompter):
         self, *, loop: LoopStepBlock, iteration: int, diagnostic: str, grant_count: int = 3
     ) -> LoopPromptDecision:
         raise AssertionError("prompt_loop_max_iterations should not be called")
+
+
+class _DiagnosticPrompter(_Prompter):
+    """Scripted FailurePrompter that also records each failure diagnostic it is shown."""
+
+    def __init__(self, decisions: list[FailurePromptDecision] | None = None) -> None:
+        super().__init__(decisions)
+        self.diagnostics: list[str] = []
+
+    def prompt_step_failure(
+        self, *, step: StepDefinition, result: StepResult, diagnostic: str
+    ) -> FailurePromptDecision:
+        self.diagnostics.append(diagnostic)
+        return super().prompt_step_failure(step=step, result=result, diagnostic=diagnostic)
 
 
 class _LifecycleObserver(NoOpRunObserver):
@@ -663,6 +679,7 @@ def _agent_step(step_id: str, **extra: object) -> dict[str, object]:
 def _agent_workspace(tmp_path: Path, agent: dict[str, object]) -> tuple[WorkspacePaths, RunsRepository]:
     workspace = (
         WorkspaceBuilder(tmp_path / "agent-workspace")
+        .with_git()
         .with_database()
         .with_config(data={"version": 1, "project": {"name": "session"}, "agent": agent})
         .build()
@@ -685,15 +702,26 @@ def captured_contexts(monkeypatch: pytest.MonkeyPatch) -> list[StepExecutionCont
     return captured
 
 
+@pytest.fixture
+def noop_agent_provider(monkeypatch: pytest.MonkeyPatch) -> FakeAgentProvider:
+    """FakeAgentProvider answering NO_OP, installed behind the agent factory seam."""
+    provider = FakeAgentProvider(AgentResponse(status=AgentResponseStatus.NO_OP, summary="plan text"))
+    monkeypatch.setattr(AGENT_ADAPTER_FACTORY, lambda token: provider)
+    return provider
+
+
 class DriveRunAgentSettingsTests:
     """[tier-1/integration] drive_run: effective agent settings resolved once per drive and propagated to StepExecution."""
 
     def test_fresh_run_threads_effective_config_into_step_execution_context(
-        self, tmp_path: Path, captured_contexts: list[StepExecutionContext]
+        self,
+        tmp_path: Path,
+        captured_contexts: list[StepExecutionContext],
+        noop_agent_provider: FakeAgentProvider,
     ) -> None:
         """[tier-1/integration] drive_run: a fresh row with no override and an ollama config reaches StepExecution with the full ResolvedAgentSettings and no 'agent' key in context."""
         paths, runs = _agent_workspace(tmp_path, _OLLAMA_AGENT_CONFIG)
-        seed_new_run(paths, runs, session_id="fresh", steps=[_agent_step("a")])
+        seed_new_run(paths, runs, session_id="fresh", steps=[_agent_step("a")], use_sandbox=True)
 
         outcome = _drive(paths, runs, "fresh")
 
@@ -710,7 +738,10 @@ class DriveRunAgentSettingsTests:
         assert "agent" not in (captured_contexts[0].context or {})
 
     def test_resumed_run_override_changes_only_the_provider(
-        self, tmp_path: Path, captured_contexts: list[StepExecutionContext]
+        self,
+        tmp_path: Path,
+        captured_contexts: list[StepExecutionContext],
+        noop_agent_provider: FakeAgentProvider,
     ) -> None:
         """[tier-1/integration] drive_run: a paused agent-step row with agent='gemini' resumed with RETRY reaches StepExecution with provider 'gemini' and the config's model, endpoint, temperature, max_tokens."""
         paths, runs = _agent_workspace(tmp_path, _OLLAMA_AGENT_CONFIG)
@@ -720,6 +751,7 @@ class DriveRunAgentSettingsTests:
             session_id="resumed",
             steps=[_agent_step("a", on_failure="prompt_user")],
             paused_step_id="a",
+            use_sandbox=True,
             agent="gemini",
         )
 
@@ -737,11 +769,14 @@ class DriveRunAgentSettingsTests:
         ]
 
     def test_settings_are_resolved_once_per_drive(
-        self, tmp_path: Path, captured_contexts: list[StepExecutionContext]
+        self,
+        tmp_path: Path,
+        captured_contexts: list[StepExecutionContext],
+        noop_agent_provider: FakeAgentProvider,
     ) -> None:
         """[tier-1/integration] drive_run: two agent steps in one drive receive the identical ResolvedAgentSettings object."""
         paths, runs = _agent_workspace(tmp_path, _OLLAMA_AGENT_CONFIG)
-        seed_new_run(paths, runs, session_id="twice", steps=[_agent_step("a"), _agent_step("b")])
+        seed_new_run(paths, runs, session_id="twice", steps=[_agent_step("a"), _agent_step("b")], use_sandbox=True)
 
         _drive(paths, runs, "twice")
 
@@ -784,6 +819,7 @@ class DriveRunAgentSettingsTests:
             runs,
             session_id="unregistered",
             steps=[_agent_step("a")],
+            use_sandbox=True,
             agent="openai" if source == "row_override" else None,
         )
 
@@ -793,3 +829,127 @@ class DriveRunAgentSettingsTests:
         assert "Unsupported agent provider 'openai' (AGENT_PROVIDER_UNSUPPORTED)" in (
             outcome.step_results[-1].error_message or ""
         )
+
+
+class DriveRunAgentSandboxTests:
+    """[tier-1/integration] drive_run: agent steps are rejected outside a Worktree Git sandbox."""
+
+    @pytest.mark.parametrize("resumed", [pytest.param(False, id="fresh"), pytest.param(True, id="resumed")])
+    def test_in_place_run_rejects_agent_step_but_runs_command_steps(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, resumed: bool
+    ) -> None:
+        """[tier-1/integration] drive_run: with use_sandbox=False (fresh or resumed paused row), an agent step fails with errors containing SANDBOX_REQUIRED_MESSAGE, the factory spy records zero calls, and a command step in the same run completes in place."""
+        requested: list[str] = []
+
+        def _spy(token: str) -> FakeAgentProvider:
+            requested.append(token)
+            return FakeAgentProvider(AgentResponse(status=AgentResponseStatus.NO_OP))
+
+        monkeypatch.setattr(AGENT_ADAPTER_FACTORY, _spy)
+        paths, runs = _agent_workspace(tmp_path, _OLLAMA_AGENT_CONFIG)
+        steps = [
+            _step("before", "true"),
+            _agent_step("agent", on_failure="prompt_user"),
+            _step("after", "echo after", **{"assert": {"output_contains": "after"}}),
+        ]
+        prompter = _DiagnosticPrompter([FailurePromptDecision.CONTINUE])
+        if resumed:
+            seed_paused_run(paths, runs, session_id="in-place", steps=steps, paused_step_id="agent")
+            prompter.decisions.insert(0, FailurePromptDecision.RETRY)
+        else:
+            seed_new_run(paths, runs, session_id="in-place", steps=steps)
+
+        outcome = _drive(paths, runs, "in-place", prompter=prompter)
+
+        statuses = {result.step_id: result.status for result in outcome.step_results}
+        assert statuses["before"] == "completed"
+        assert statuses["agent"] == "ignored"
+        assert statuses["after"] == "completed"
+        assert SANDBOX_REQUIRED_MESSAGE in prompter.diagnostics[-1]
+        assert requested == []
+
+
+class DriveRunAgentExecutionTests:
+    """[tier-1/integration] drive_run: agent steps execute through resolved providers inside the sandbox."""
+
+    def test_agent_patch_applies_only_in_sandbox_and_following_assertion_passes(
+        self, git_paths: WorkspacePaths, git_runs: RunsRepository, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """[tier-1/integration] drive_run: a sandboxed run [failing command with on_failure continue, agent prompt interpolating previous_step.status, cat of the patched file with an output assertion] returns COMPLETED, the single request is direct with no payload and instruction 'Handle ignored', the file is absent from the source checkout, and the cat step output carries the patched content."""
+        provider = FakeAgentProvider(
+            AgentResponse(
+                status=AgentResponseStatus.PROPOSED_PATCH,
+                unified_diff=new_file_diff("agent.txt", "patched"),
+            )
+        )
+        monkeypatch.setattr(AGENT_ADAPTER_FACTORY, lambda token: provider)
+        seed_new_run(
+            git_paths,
+            git_runs,
+            session_id="agent-patch",
+            steps=[
+                _step("fail", "exit 1", on_failure="continue"),
+                {"id": "agent", "type": "agent", "prompt": "Handle ${{ previous_step.status }}"},
+                _step("check", "cat agent.txt", **{"assert": {"output_contains": "patched"}}),
+            ],
+            use_sandbox=True,
+        )
+
+        outcome = _drive(git_paths, git_runs, "agent-patch")
+
+        assert outcome.status == RunStatus.COMPLETED
+        assert len(provider.requests) == 1
+        assert provider.requests[0].mode == "direct"
+        assert provider.requests[0].payload is None
+        assert provider.requests[0].instruction == "Handle ignored"
+        assert not (git_paths.root_dir / "agent.txt").exists()
+        check = next(result for result in outcome.step_results if result.step_id == "check")
+        assert "patched" in check.stdout
+
+    def test_provider_override_and_tuning_reach_the_provider(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """[tier-1/integration] drive_run: config agent settings with row.agent 'cursor' asks the factory for 'cursor' and delivers an AgentRequest with the configured model, endpoint, temperature, max_tokens, and the step's timeout_seconds."""
+        paths, runs = _agent_workspace(tmp_path, _OLLAMA_AGENT_CONFIG)
+        provider = FakeAgentProvider(AgentResponse(status=AgentResponseStatus.NO_OP))
+        requested: list[str] = []
+
+        def _factory(token: str) -> FakeAgentProvider:
+            requested.append(token)
+            return provider
+
+        monkeypatch.setattr(AGENT_ADAPTER_FACTORY, _factory)
+        seed_new_run(
+            paths,
+            runs,
+            session_id="override",
+            steps=[_agent_step("a", timeout_seconds=77)],
+            use_sandbox=True,
+            agent="cursor",
+        )
+
+        outcome = _drive(paths, runs, "override")
+
+        assert outcome.status == RunStatus.COMPLETED
+        assert requested == ["cursor"]
+        request = provider.requests[0]
+        assert request.model == "llama3.1"
+        assert request.endpoint == "http://127.0.0.1:11434"
+        assert request.temperature == 0.7
+        assert request.max_tokens == 512
+        assert request.timeout_seconds == 77
+
+    def test_no_op_planning_step_reports_summary_to_observer(
+        self, git_paths: WorkspacePaths, git_runs: RunsRepository, noop_agent_provider: FakeAgentProvider
+    ) -> None:
+        """[tier-1/integration] drive_run: a NO_OP fake with summary 'plan text' returns COMPLETED and the observer's on_step_output receives the summary JSON line for the agent step."""
+        seed_new_run(git_paths, git_runs, session_id="plan-only", steps=[_agent_step("plan")], use_sandbox=True)
+        observer = _LifecycleObserver()
+
+        outcome = _drive(git_paths, git_runs, "plan-only", observer=observer)
+
+        assert outcome.status == RunStatus.COMPLETED
+        outputs = [event for event in observer.events if event[0] == "step_output" and event[3] == "plan"]
+        assert [event[4] for event in outputs] == [
+            '{"status":"no_op","summary":"plan text","unfixable_reason":null,"touched_files":[]}\n'
+        ]

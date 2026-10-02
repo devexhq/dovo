@@ -1,6 +1,6 @@
 # Working with Steps
 
-Steps are the fundamental building blocks of Worktree blueprints. A step executes a shell command or script, resolves a reusable catalog step, or records an agent-step placeholder result.
+Steps are the fundamental building blocks of Worktree blueprints. A step executes a shell command or script, resolves a reusable catalog step, or sends a prompt to an agent provider.
 
 ---
 
@@ -52,7 +52,7 @@ steps:
 ```
 
 #### Curated Built-in Steps (`wt/*`)
-Worktree can provide curated step templates under `wt/`. Inspect the checked-out catalog before relying on a particular template; an agent step still records only a placeholder result.
+Worktree can provide curated step templates under `wt/`. Inspect the checked-out catalog before relying on a particular template.
 
 ---
 
@@ -74,7 +74,7 @@ Executes a shell command with custom timeouts and environment variables:
 ```
 
 #### B. Agent Step (`type: agent`)
-Selects an adapter and records a completed placeholder result. It does not invoke a provider, enable listed tools, inspect files, or modify the sandbox. `tools` is accepted metadata with no execution effect:
+Sends the interpolated `prompt` to the resolved provider in the active Git sandbox and applies any returned change there; it fails without a sandbox. `tools` is accepted metadata that is not enforced. See [Agent-Step Adapters](agent-providers.md):
 
 ```yaml
 - id: fix-bug
@@ -131,9 +131,9 @@ steps:
       - steps.step_pytest_verify.exit_code == 0
     on_max_iterations: prompt_user
     do:
-      - id: record-agent-placeholder
+      - id: fix-failing-tests
         type: agent
-        prompt: "Record a placeholder result for this test run."
+        prompt: "Fix the failing tests under tests/ by changing the implementation."
 
       - id: step_pytest_verify
         name: Verify test suite

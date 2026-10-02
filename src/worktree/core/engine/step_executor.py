@@ -170,6 +170,7 @@ class StepCoordinator:
                 artifacts_dir=run_context.artifacts_dir,
                 artifacts_db=run_context.artifacts_db,
                 paths=self.context.paths,
+                sandbox_active=run_context.sandbox is not None,
             )
         ).run()
         safe_notify(self.context.observer, "on_step_done", idx, total, step, result)

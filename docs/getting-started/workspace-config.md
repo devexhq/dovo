@@ -149,7 +149,7 @@ For full details on each field and validation rule, see the [Project Config Sche
 
 ## API Keys & Environment Setup
 
-The configuration schema accepts `local`, `ollama`, `cursor`, `gemini`, `copilot`, `openai`, `anthropic`, `azure_openai`, and `custom`. Runtime adapter selection supports only `local`, `ollama`, `cursor`, `gemini`, and `copilot`; agent steps currently select an adapter and record a placeholder result rather than invoking a provider. Credentials can be checked by `wt doctor`, but setting them does not enable provider execution.
+The configuration schema accepts `local`, `ollama`, `cursor`, `gemini`, `copilot`, `openai`, `anthropic`, `azure_openai`, and `custom`. Runtime adapter selection supports only `local`, `ollama`, `cursor`, `gemini`, and `copilot`; agent steps invoke the selected adapter inside a Git sandbox. Credentials can be checked by `wt doctor`.
 
 ```bash
 # Gemini Provider

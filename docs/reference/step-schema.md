@@ -17,9 +17,9 @@ Every standard step accepts the following fields:
 | `uses` | `string` | Conditional | `null` | Reference to a reusable step ID (`wt/*` or catalog step). The current model does not enforce exclusivity with other mode-specific fields. |
 | `type` | `string` | Conditional | `null` | Primitive type: `command`, `agent`, or `script`. |
 | `command` | `string` | Conditional | `null` | Shell command string. Required when `type: command`. |
-| `prompt` | `string` | Conditional | `null` | AI agent instruction prompt. Required when `type: agent`. |
+| `prompt` | `string` | Conditional | `null` | Instruction sent to the agent provider after interpolation; it must not be blank. Required when `type: agent`. |
 | `script_path` | `string` | Conditional | `null` | Relative path to local script. Required when `type: script`. |
-| `tools` | `list[string]` | No | `[]` | Accepted agent-step metadata; it currently has no execution effect. |
+| `tools` | `list[string]` | No | `[]` | Accepted agent-step metadata; it is not enforced and does not restrict what the provider can do. |
 | `env` | `map[string, string]` | No | `{}` | Step-specific environment variables. Supports `${{ inputs.* }}` interpolation. |
 | `timeout_seconds`| `integer` | No | `120` | Maximum execution duration (seconds, $> 0$). |
 | `assert` | `StepAssert` | No | `null` | Verification criteria. See [Assertions Schema](assertions-schema.md). |

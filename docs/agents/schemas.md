@@ -142,7 +142,8 @@ All operations that can fail return a Pydantic result object subclassing `BaseRe
 
 ### Agent Provider Models
 **Relevant sources:** `src/worktree/core/agents/models.py`, `src/worktree/core/agents/cli_mutation.py`.
-- `AgentRequest`: Input payload to agent adapter (`prompt`, `failure_payload`, `timeout_seconds`, `config`, `sandbox_path`).
+- [`AgentRequest`](../../src/worktree/core/agents/models.py): Input to an agent adapter. `mode` is `direct` (authored step prompt as `instruction`, no `payload`), `fix_failure`, or `review_remediation` (both require an `AgentFailurePayload`); a blank `instruction` is rejected.
+- [`AgentStepSummary`](../../src/worktree/core/step/models.py): JSON object an agent step writes to stdout; built by [`execute_agent_step`](../../src/worktree/core/step/services/execute_agent.py). `StepExecutionContext.sandbox_active` carries whether the run has a Worktree Git sandbox, and agent steps fail without it.
 - `AgentResponse`: Adapter outcome (`status`, `patch`, `errors`, `warnings`, `summary`, `ok`).
 - `AgentResponseStatus`: `StrEnum` (`proposed_patch`, `no_op`, `unfixable`, `timeout`, `provider_error`).
 - `AgentFailurePayload`: Step failure context captured for agent prompts (`step_id`, `command`, `exit_code`, `stdout`, `stderr`, `duration_seconds`, `error_message`, `files`).

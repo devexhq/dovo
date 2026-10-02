@@ -1,6 +1,6 @@
-# Recipe: Agent-Step Placeholders and Quality Gates
+# Recipe: Agent Steps and Quality Gates
 
-This recipe demonstrates a blueprint containing agent-step placeholders alongside explicit quality-gate commands. Today, an agent step selects an adapter and records a placeholder result; it does not plan, patch, review, invoke a provider, or edit files.
+This recipe demonstrates a blueprint that runs agent steps for planning, patching, and review alongside explicit quality-gate commands. Each agent step sends its prompt to the configured provider inside the sandbox; see [Agent-Step Adapters](../guides/agent-providers.md).
 
 ---
 
@@ -10,8 +10,8 @@ Create `.worktree/catalog/blueprints/ai-feature-dev.yml`:
 
 ```yaml
 name: ai-feature-dev
-description: Record agent-step placeholders and run quality gates
-summary: Placeholder agent steps with explicit verification commands
+description: Plan, patch, and review with agent steps and run quality gates
+summary: Agent steps with explicit verification commands
 version: 1
 use_sandbox: true
 
@@ -27,18 +27,18 @@ steps:
   - id: git-sync
     uses: wt/git-sync-base
 
-  # 2. Record a planning placeholder
+  # 2. Plan the change
   - id: ai-planner
-    name: Record implementation-plan placeholder
+    name: Plan the implementation
     type: agent
-    prompt: "Record a planning placeholder for: ${{ inputs.issue_description }}"
+    prompt: "Plan the implementation for: ${{ inputs.issue_description }}. Report the plan and leave the files unchanged."
     timeout_seconds: 180
 
-  # 3. Record a patching placeholder
+  # 3. Implement the change
   - id: ai-patcher
-    name: Record implementation placeholder
+    name: Implement the change
     type: agent
-    prompt: "Record an implementation placeholder for: ${{ inputs.issue_description }}"
+    prompt: "Implement: ${{ inputs.issue_description }}"
     timeout_seconds: 300
 
   # 4. Verification & Quality Gates
@@ -59,11 +59,11 @@ steps:
     assert:
       exit_code: 0
 
-  # 5. Record a review placeholder
+  # 5. Review the change
   - id: ai-reviewer
-    name: Record code-review placeholder
+    name: Review the change
     type: agent
-    prompt: "Record a code-review placeholder for: ${{ inputs.issue_description }}"
+    prompt: "Review the changes in this sandbox for: ${{ inputs.issue_description }}. Report findings and leave the files unchanged."
     timeout_seconds: 180
 ```
 

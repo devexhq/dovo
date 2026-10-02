@@ -6,7 +6,7 @@ from enum import StrEnum
 from pathlib import Path
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 OmissionReason = Literal[
     "missing",
@@ -84,8 +84,9 @@ class AgentRequest(BaseModel):
 
     model_config = {"extra": "forbid", "strict": True}
 
-    mode: Literal["fix_failure", "review_remediation"]
-    payload: AgentFailurePayload
+    mode: Literal["direct", "fix_failure", "review_remediation"]
+    instruction: str = Field(min_length=1)
+    payload: AgentFailurePayload | None = None
     sandbox_path: Path
     timeout_seconds: int = Field(ge=1)
     model: str | None = None
@@ -95,6 +96,20 @@ class AgentRequest(BaseModel):
     max_files: int | None = None
     max_patch_kb: int | None = None
     reject_binary_changes: bool | None = None
+
+    @model_validator(mode="after")
+    def validate_mode_contract(self) -> AgentRequest:
+        """Reject a blank instruction, a direct request with a payload, and a remediation request without one."""
+        if not self.instruction.strip():
+            raise ValueError("AgentRequest.instruction must not be blank.")
+
+        if self.mode == "direct" and self.payload is not None:
+            raise ValueError("AgentRequest mode 'direct' must not carry a failure payload.")
+
+        if self.mode != "direct" and self.payload is None:
+            raise ValueError(f"AgentRequest mode '{self.mode}' requires a failure payload.")
+
+        return self
 
 
 class AgentResponse(BaseModel):
