@@ -10,6 +10,7 @@ from worktree.core.agents.cli_mutation import (
     CliMutationRunFn,
     CliMutationRunRequest,
     build_mutation_prompt,
+    validate_request_patch,
 )
 from worktree.core.agents.copilot import CopilotAgentAdapter
 from worktree.core.agents.cursor import CursorAgentAdapter
@@ -56,4 +57,5 @@ __all__ = [
     "ResolvedAgentSettings",
     "build_mutation_prompt",
     "get_agent_adapter",
+    "validate_request_patch",
 ]

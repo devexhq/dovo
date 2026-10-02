@@ -66,6 +66,7 @@ class AgentRequestBuilder:
             raise ValueError("AgentRequestBuilder requires with_sandbox_path(...) before build()")
         return AgentRequest(
             mode="fix_failure",
+            instruction="Fix the failing test.",
             payload=self._payload,
             sandbox_path=self._sandbox_path,
             timeout_seconds=self._timeout_seconds,

@@ -168,19 +168,35 @@ class ParseOllamaModelTextTests:
 
 
 class BuildOllamaMessagesTests:
-    def test_messages_embed_payload_and_instructions(self, tmp_path: Path) -> None:
-        """Chat messages are exactly a system prompt followed by one user message carrying the failure payload."""
+    def test_direct_request_messages_omit_payload_and_use_direct_guidance(self, tmp_path: Path) -> None:
+        """[tier-1/unit] build_ollama_messages: a direct request yields [system, user] whose user JSON equals {mode, sandbox_path, instruction, guidance(direct)} with no payload key."""
+        request = AgentRequest(mode="direct", instruction="Plan the change", sandbox_path=tmp_path, timeout_seconds=10)
+
+        messages = build_ollama_messages(request)
+
+        assert [message["role"] for message in messages] == ["system", "user"]
+        assert json.loads(messages[1]["content"]) == {
+            "mode": "direct",
+            "sandbox_path": str(tmp_path),
+            "instruction": "Plan the change",
+            "guidance": (
+                "Carry out the instruction. Return a unified_diff only when file changes are required; "
+                "otherwise set unified_diff to null and put your findings in summary, "
+                "or set unfixable=true with a short reason if you cannot."
+            ),
+        }
+
+    def test_remediation_request_messages_embed_payload_and_repair_guidance(self, tmp_path: Path) -> None:
+        """[tier-1/unit] build_ollama_messages: a fix_failure request yields user JSON {mode, sandbox_path, instruction, payload, guidance(remediation)}."""
         request = AgentRequestBuilder().with_sandbox_path(tmp_path).build()
 
         messages = build_ollama_messages(request)
 
-        assert len(messages) == 2
-        assert messages[0]["role"] == "system"
-        assert messages[1]["role"] == "user"
-        user_obj = json.loads(messages[1]["content"])
-        assert user_obj == {
+        assert [message["role"] for message in messages] == ["system", "user"]
+        assert json.loads(messages[1]["content"]) == {
             "mode": "fix_failure",
             "sandbox_path": str(tmp_path),
+            "instruction": "Fix the failing test.",
             "payload": AgentFailurePayload(
                 command="pytest",
                 args=["-q"],
@@ -191,7 +207,7 @@ class BuildOllamaMessagesTests:
                 stdout="boom",
                 stderr="",
             ).model_dump(mode="json"),
-            "instructions": (
+            "guidance": (
                 "Propose the smallest correct unified_diff that fixes the failure, "
                 "or set unfixable=true with a short reason if you cannot."
             ),

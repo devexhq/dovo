@@ -61,8 +61,8 @@ wt sandbox create my-feature
 - **[Project Config Schema](reference/config-schema.md)**: Full `.worktree/config.json` specification.
 
 ### 🍳 Recipes & Examples
-- **[TDD Loop](recipes/tdd-loop.md)**: A blueprint loop that records agent-step placeholder results and runs tests.
-- **[AI Code Patcher](recipes/ai-code-patcher.md)**: A blueprint that records agent-step placeholders alongside quality gates.
+- **[TDD Loop](recipes/tdd-loop.md)**: A blueprint loop that asks an agent step to fix failing tests and reruns them.
+- **[AI Code Patcher](recipes/ai-code-patcher.md)**: A blueprint that plans, patches, and reviews with agent steps alongside quality gates.
 - **[CI/CD Automation](recipes/ci-cd-automation.md)**: Running headless Worktree blueprints in GitHub Actions.
 
 ### 💻 CLI Reference

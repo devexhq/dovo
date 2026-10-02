@@ -18,7 +18,6 @@ from worktree.common.process import (
     process_registry,
     terminate_process_tree,
 )
-from worktree.core.agents.factory import get_agent_adapter
 from worktree.core.inputs.services.interpolate import interpolate_step_fields
 from worktree.core.step.assertions import evaluate_assertions
 from worktree.core.step.models import (
@@ -31,6 +30,7 @@ from worktree.core.step.models import (
     StepResult,
     StepType,
 )
+from worktree.core.step.services.execute_agent import execute_agent_step
 from worktree.core.step.services.internal_dispatch import INTERNAL_COMMAND_HANDLERS
 from worktree.core.step.services.metadata import (
     build_execution_metadata,
@@ -149,6 +149,7 @@ class StepExecution:
         self.artifacts_db = metadata.artifacts_db
         self.paths = metadata.paths
         self.agent = metadata.agent
+        self.sandbox_active = metadata.sandbox_active
         self.log_warnings: list[str] = []
         self.step_scratch_dir: Path | None = None
         self.output_file: Path | None = None
@@ -305,19 +306,14 @@ class StepExecution:
         )
 
     def _execute_agent(self) -> StepDispatchOutcome:
-        """Execute an AGENT step inside sandbox_path."""
-        provider = self.agent.provider if self.agent is not None else "local"
-        try:
-            _ = get_agent_adapter(provider)
-            stdout = f"Agent prompt executed with tools: {self.step.instance.tools}"
-            if self.on_output is not None:
-                try:
-                    self.on_output("stdout", stdout)
-                except Exception as exc:
-                    return _failed_dispatch(f"Agent output callback error: {exc}", stdout=stdout)
-            return StepDispatchOutcome(status="completed", exit_code=0, stdout=stdout, stderr="")
-        except Exception as exc:
-            return _failed_dispatch(f"Agent provider error: {exc}")
+        """Execute an AGENT step through its resolved provider in the active Git sandbox."""
+        return execute_agent_step(
+            self.step.instance,
+            agent=self.agent,
+            sandbox_path=self.sandbox_path,
+            sandbox_active=self.sandbox_active,
+            on_output=self.on_output,
+        )
 
     def _build_process_env(self, metadata: ExecutionMetadata) -> dict[str, str]:
         """Merge environment variables: explicit step env > WT_* metadata > ambient env."""

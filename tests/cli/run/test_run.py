@@ -67,6 +67,19 @@ class RunCliIntegrationTests:
         assert result.exit_code == 0
         assert "Sandbox: Active (" in result.stdout
 
+    def test_run_cli_no_sandbox_agent_step_exits_one_with_sandbox_diagnostic(
+        self, cli_runner: CliRunner, run_workspace: Path
+    ) -> None:
+        """[tier-3/integration] wt run --no-sandbox: a blueprint with one type: agent step exits 1 and stdout contains 'Agent steps require an active Worktree Git sandbox.'."""
+        write_runnable_blueprint(
+            run_workspace, key="agent-task", steps=[{"id": "plan", "type": "agent", "prompt": "Plan the change"}]
+        )
+
+        result = cli_runner.invoke(app, ["-p", str(run_workspace), "run", "agent-task", "--no-sandbox"])
+
+        assert result.exit_code == 1
+        assert "Agent steps require an active Worktree Git sandbox." in result.stdout
+
     def test_run_cli_prompt_user_retry_then_succeeds_exits_zero(
         self, monkeypatch: pytest.MonkeyPatch, cli_runner: CliRunner, run_workspace: Path
     ) -> None:

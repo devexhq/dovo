@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import dataclasses
 from pathlib import Path
 from typing import Any
 
@@ -25,6 +26,7 @@ from worktree.core.engine.models import (
 )
 from worktree.core.engine.step_executor import StepCoordinator, auto_publish_step_artifacts
 from worktree.core.project.services.storage import resolve_workspace_paths
+from worktree.core.sandbox import SandboxSession
 from worktree.core.step.models import (
     ArtifactPublishSpec,
     StepDefinition,
@@ -128,6 +130,43 @@ class StepCoordinatorAgentForwardingTests:
 
         assert len(captured) == 1
         assert captured[0].agent is _AGENT_SETTINGS
+
+
+class StepCoordinatorSandboxForwardingTests:
+    """[tier-1/unit] StepCoordinator.run_attempt: RunContext.sandbox activation forwards to StepExecutionContext.sandbox_active."""
+
+    @pytest.mark.parametrize(
+        ("has_sandbox", "expected"),
+        [pytest.param(True, True, id="active-sandbox"), pytest.param(False, False, id="no-sandbox")],
+    )
+    def test_run_attempt_sets_sandbox_active_from_run_context(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, has_sandbox: bool, expected: bool
+    ) -> None:
+        """[tier-1/unit] StepCoordinator.run_attempt: RunContext.sandbox set to a SandboxSession yields StepExecutionContext.sandbox_active True; None yields False."""
+        captured: list[StepExecutionContext] = []
+
+        class _CapturingStepExecution(StepExecution):
+            """StepExecution subclass recording the StepExecutionContext it is constructed with."""
+
+            def __init__(self, metadata: StepExecutionContext) -> None:
+                captured.append(metadata)
+                super().__init__(metadata)
+
+        monkeypatch.setattr("worktree.core.engine.step_executor.StepExecution", _CapturingStepExecution)
+        session = SandboxSession(
+            session_id="s",
+            target_branch="main",
+            sandbox_path=tmp_path,
+            base_commit="abc",
+            created_at="2026-01-01T00:00:00Z",
+        )
+        run_context = dataclasses.replace(_run_context(tmp_path), sandbox=session if has_sandbox else None)
+        context = RunSettings(cwd=tmp_path, use_sandbox=has_sandbox, paths=_paths_for(tmp_path))
+        step = StepBuilder.command("echo ok").with_id("ok").build()
+
+        StepCoordinator(context).run_attempt(run_context, [], step, idx=1, total=1, step_context=None)
+
+        assert [meta.sandbox_active for meta in captured] == [expected]
 
 
 class StepCoordinatorLoopIterationForwardingTests:

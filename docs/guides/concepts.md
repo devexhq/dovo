@@ -58,13 +58,13 @@ A **Blueprint** is a declarative YAML document that defines a sequence of steps.
 
 ```text
 Blueprint
- ├── Step (command, agent placeholder, script, or reusable `uses:` reference)
+ ├── Step (command, agent, script, or reusable `uses:` reference)
  └── Loop block (repeats nested steps until its conditions pass)
 ```
 
 | Concept | Type | Description | File Location |
 |---|---|---|---|
-| **Step** | Catalog item | A reusable shell-command, agent-placeholder, or script definition. | `.worktree/catalog/steps/` |
+| **Step** | Catalog item | A reusable shell-command, agent, or script definition. | `.worktree/catalog/steps/` |
 | **Blueprint** | Catalog item | A sequence of steps with inputs, assertions, failure policies, and optional loop blocks. | `.worktree/catalog/blueprints/` |
 
 ---

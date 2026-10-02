@@ -18,7 +18,7 @@ from worktree.core.agents.mutation_git import (
     discard_since,
     resolve_pre_agent_baseline,
 )
-from worktree.core.patch import PatchApplyStatus, validate_patch_text
+from worktree.core.patch import PatchApplyResult, PatchApplyStatus, validate_patch_text
 
 CliMutationRunStatus = Literal["finished", "timeout", "error"]
 
@@ -51,24 +51,56 @@ class CliMutationOutcome(BaseModel):
 CliMutationRunFn = Callable[[CliMutationRunRequest], CliMutationOutcome]
 
 
+_DIRECT_PROMPT_HEADER = (
+    "You are a coding agent running directly in this sandbox checkout.\n"
+    "- Carry out the instruction below.\n"
+    "- If it asks for planning or review, report your findings in your final message and leave the working tree unchanged.\n"
+    "- Stay inside this working directory; do not push, open a PR, or touch remotes.\n"
+    "- Do not modify files under .worktree/.\n\n"
+)
+_REMEDIATION_PROMPT_HEADER = (
+    "You are a coding agent running directly in this sandbox checkout. "
+    "Fix the failure described below.\n"
+    "- Make the smallest change that fixes the failure.\n"
+    "- Stay inside this working directory; do not push, open a PR, or "
+    "touch remotes.\n"
+    "- Prefer leaving tests green.\n"
+    "- Do not modify files under .worktree/.\n"
+    "- When finished, leave the working tree containing only the fix.\n\n"
+)
+
+
 def build_mutation_prompt(request: AgentRequest) -> str:
-    """Build the agent prompt from the mode and failure payload."""
-    instructions = (
-        "You are a coding agent running directly in this sandbox checkout. "
-        "Fix the failure described below.\n"
-        "- Make the smallest change that fixes the failure.\n"
-        "- Stay inside this working directory; do not push, open a PR, or "
-        "touch remotes.\n"
-        "- Prefer leaving tests green.\n"
-        "- Do not modify files under .worktree/.\n"
-        "- When finished, leave the working tree containing only the fix.\n\n"
-    )
-    body = {
+    """Build the agent prompt: direct mode carries the authored instruction only; remediation modes add the failure payload."""
+    header = _DIRECT_PROMPT_HEADER if request.mode == "direct" else _REMEDIATION_PROMPT_HEADER
+    return header + json.dumps(_prompt_body(request), indent=2, ensure_ascii=False)
+
+
+def _prompt_body(request: AgentRequest) -> dict[str, object]:
+    """Return the JSON body: mode, sandbox_path, instruction, plus payload only when the request carries one."""
+    body: dict[str, object] = {
         "mode": request.mode,
         "sandbox_path": str(request.sandbox_path),
-        "payload": request.payload.model_dump(mode="json"),
+        "instruction": request.instruction,
     }
-    return instructions + json.dumps(body, indent=2, ensure_ascii=False)
+    if request.payload is not None:
+        body["payload"] = request.payload.model_dump(mode="json")
+    return body
+
+
+def validate_request_patch(request: AgentRequest, diff: str) -> PatchApplyResult:
+    """Run the shared patch gate on ``diff`` with the request's bounds, falling back to the DEFAULT_* limits."""
+    return validate_patch_text(
+        diff,
+        max_files=request.max_files or DEFAULT_MAX_FILES,
+        max_patch_kb=request.max_patch_kb or DEFAULT_MAX_PATCH_KB,
+        reject_binary_changes=(
+            request.reject_binary_changes
+            if request.reject_binary_changes is not None
+            else DEFAULT_REJECT_BINARY_CHANGES
+        ),
+        sandbox_path=request.sandbox_path,
+    )
 
 
 class CliDirectMutationAdapter(BaseAgentProvider):
@@ -164,17 +196,7 @@ class CliDirectMutationAdapter(BaseAgentProvider):
                 raw_text=outcome.result_text,
             )
 
-        gate = validate_patch_text(
-            diff,
-            max_files=request.max_files or DEFAULT_MAX_FILES,
-            max_patch_kb=request.max_patch_kb or DEFAULT_MAX_PATCH_KB,
-            reject_binary_changes=(
-                request.reject_binary_changes
-                if request.reject_binary_changes is not None
-                else DEFAULT_REJECT_BINARY_CHANGES
-            ),
-            sandbox_path=request.sandbox_path,
-        )
+        gate = validate_request_patch(request, diff)
         if gate.status != PatchApplyStatus.CHECKED_OK:
             try:
                 discard_since(request.sandbox_path, baseline)

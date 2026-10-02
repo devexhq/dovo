@@ -1,6 +1,6 @@
 # Recipe: Test-Driven Development (TDD) Loop
 
-This recipe demonstrates a generic blueprint loop that records an agent-step placeholder and runs tests. The agent step does not write implementation code or invoke a provider.
+This recipe demonstrates a generic blueprint loop that asks an agent step to fix failing tests and reruns them until they pass. The agent step runs in the sandbox, so the loop needs a Git sandbox.
 
 ---
 
@@ -11,7 +11,7 @@ Create `.worktree/catalog/blueprints/tdd-cycle.yml`:
 ```yaml
 name: tdd-cycle
 description: Iterative test-driven development cycle
-summary: Record agent-step placeholders while rerunning tests
+summary: Agent-step fixes while rerunning tests
 version: 1
 use_sandbox: true
 
@@ -43,9 +43,9 @@ steps:
     on_max_iterations: prompt_user
     do:
       - id: ai-code-patcher
-        name: Record test-failure placeholder
+        name: Fix failing tests
         type: agent
-        prompt: "Record a placeholder for test failures in ${{ inputs.test_file }}."
+        prompt: "Make the tests in ${{ inputs.test_file }} pass by changing the implementation, not the tests."
         timeout_seconds: 180
 
       - id: run-test-suite
@@ -68,6 +68,6 @@ wt run tdd-cycle --test tests/test_calculator.py
 
 ### Execution Flow:
 1. Worktree spins up an isolated sandbox worktree.
-2. The agent step selects an adapter and records a placeholder result; it does not inspect or modify the codebase.
+2. The agent step sends its prompt to the configured provider and applies any change inside the sandbox.
 3. The test suite runs after each attempt.
 4. As soon as all assertions pass (`steps.run-test-suite.exit_code == 0`), the loop terminates with success.

@@ -8,7 +8,7 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 
 from worktree.common.filesystem import WorkspacePaths
 from worktree.common.models import BaseResult, FailurePolicy, OnFailureSpec
-from worktree.core.agents.models import ResolvedAgentSettings
+from worktree.core.agents.models import AgentResponseStatus, ResolvedAgentSettings
 from worktree.core.db.repositories.artifacts import ArtifactsRepository
 
 _DRIVE_PATH_RE = re.compile(r"^[A-Za-z]:/")
@@ -297,6 +297,7 @@ class StepExecutionContext(BaseModel):
     artifacts_db: ArtifactsRepository | None = None
     paths: WorkspacePaths | None = None
     agent: ResolvedAgentSettings | None = None
+    sandbox_active: bool = False
 
 
 class InternalCommandContext(BaseModel):
@@ -309,6 +310,17 @@ class InternalCommandContext(BaseModel):
     env: dict[str, str] = Field(default_factory=dict)
     artifacts_dir: Path | None = None
     artifacts_db: ArtifactsRepository | None = None
+
+
+class AgentStepSummary(BaseModel):
+    """JSON summary an agent step writes to stdout."""
+
+    model_config = {"extra": "forbid", "strict": True}
+
+    status: AgentResponseStatus
+    summary: str | None = None
+    unfixable_reason: str | None = None
+    touched_files: list[str] = Field(default_factory=list)
 
 
 class StepDispatchOutcome(BaseModel):

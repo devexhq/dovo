@@ -11,10 +11,13 @@ a pydantic model for inspecting call arguments.
 from __future__ import annotations
 
 import subprocess
+from collections.abc import Callable
 from pathlib import Path
 from typing import Self
 
 from pydantic import BaseModel
+
+from worktree.core.agents import AgentRequest, AgentResponse, BaseAgentProvider
 
 
 class FakeAgentRunnerCall(BaseModel):
@@ -80,3 +83,27 @@ class FakeAgentRunner:
         if not self.calls:
             raise AssertionError("FakeAgentRunner was never called")
         return self.calls[-1]
+
+
+class FakeAgentProvider(BaseAgentProvider):
+    """Provider double returning queued responses and recording every AgentRequest it receives."""
+
+    def __init__(self, *responses: AgentResponse, on_call: Callable[[AgentRequest], None] | None = None) -> None:
+        if not responses:
+            raise ValueError("FakeAgentProvider requires at least one response")
+        self._responses = list(responses)
+        self._on_call = on_call
+        self._requests: list[AgentRequest] = []
+
+    @property
+    def requests(self) -> list[AgentRequest]:
+        """Return the requests received, in call order."""
+        return self._requests
+
+    def propose_fix(self, request: AgentRequest) -> AgentResponse:
+        """Record the request, run on_call, and return the next queued response (the last repeats)."""
+        self._requests.append(request)
+        if self._on_call is not None:
+            self._on_call(request)
+        index = min(len(self._requests), len(self._responses)) - 1
+        return self._responses[index]
