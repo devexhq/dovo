@@ -1,27 +1,27 @@
-# Worktree CLI (`wt`)
+# Dovo CLI (`dovo`)
 
 [![CI](https://github.com/devexhq/worktree-cli/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/devexhq/worktree-cli/actions/workflows/ci.yml)
 [![License](https://img.shields.io/github/license/devexhq/worktree-cli.svg)](https://github.com/devexhq/worktree-cli/blob/main/LICENSE)
 [![Issues](https://img.shields.io/github/issues/devexhq/worktree-cli.svg)](https://github.com/devexhq/worktree-cli/issues)
 [![Last commit](https://img.shields.io/github/last-commit/devexhq/worktree-cli.svg)](https://github.com/devexhq/worktree-cli/commits/main)
-[![PyPI version](https://img.shields.io/pypi/v/worktree-cli.svg)](https://pypi.org/project/worktree-cli/)
-[![Python versions](https://img.shields.io/pypi/pyversions/worktree-cli.svg)](https://pypi.org/project/worktree-cli/)
+[![PyPI version](https://img.shields.io/pypi/v/devexhq-dovo.svg)](https://pypi.org/project/devexhq-dovo/)
+[![Python versions](https://img.shields.io/pypi/pyversions/devexhq-dovo.svg)](https://pypi.org/project/devexhq-dovo/)
 [![Stars](https://img.shields.io/github/stars/devexhq/worktree-cli.svg?style=social)](https://github.com/devexhq/worktree-cli/stargazers)
 
 Isolated git worktree developer workflows and autonomous AI agent workspaces.
 
-Worktree helps humans and agents build, test, and remediate in parallel without disturbing your active local branch.
+Dovo helps humans and agents build, test, and remediate in parallel without disturbing your active local branch.
 
 ## Installation
 
 ```bash
-pip install worktree-cli
+pip install devexhq-dovo
 ```
 
 Optional provider extras:
 
 ```bash
-pip install "worktree-cli[cursor]"
+pip install "devexhq-dovo[cursor]"
 ```
 
 ## Requirements
@@ -29,72 +29,72 @@ pip install "worktree-cli[cursor]"
 - Python 3.13+
 - Git
 - For provider-specific workflow runs:
-  - Cursor: `CURSOR_API_KEY` (+ `worktree-cli[cursor]`)
+  - Cursor: `CURSOR_API_KEY` (+ `devexhq-dovo[cursor]`)
   - Gemini: Gemini CLI on `PATH` + `GEMINI_API_KEY`
   - Copilot: GitHub CLI (`gh`) on `PATH` + `GH_TOKEN` or `GITHUB_TOKEN`
 
 ## Quick start
 
 ```bash
-wt init
-wt status
-wt config validate
-wt blueprint list
-wt run fix-tests
-wt history
+dovo init
+dovo status
+dovo config validate
+dovo blueprint list
+dovo run fix-tests
+dovo history
 ```
 
 ## Current command surface
 
 ### Top-level
 
-- `wt init`
-- `wt status`
-- `wt diff [session-id]` — view syntax-highlighted session diff
-- `wt doctor` — run diagnostic checks and print a workspace health report
-- `wt run <blueprint>` — execute a task or workflow blueprint
-- `wt resume <session-id>` — resume a paused run
-- `wt history [show <session-id> [--logs]]` — list or inspect past runs
-- `wt logs <session-id>` — show a session's run timeline or a step's captured output (`--step`, `--attempt`, `--stream`, `--tail`)
+- `dovo init`
+- `dovo status`
+- `dovo diff [session-id]` — view syntax-highlighted session diff
+- `dovo doctor` — run diagnostic checks and print a workspace health report
+- `dovo run <blueprint>` — execute a task or workflow blueprint
+- `dovo resume <session-id>` — resume a paused run
+- `dovo history [show <session-id> [--logs]]` — list or inspect past runs
+- `dovo logs <session-id>` — show a session's run timeline or a step's captured output (`--step`, `--attempt`, `--stream`, `--tail`)
 
 ### Config
 
-- `wt config show`
-- `wt config set <key> <value>`
-- `wt config unset <key>`
-- `wt config validate`
+- `dovo config show`
+- `dovo config set <key> <value>`
+- `dovo config unset <key>`
+- `dovo config validate`
 
 ### Blueprints
 
-- `wt blueprint list` / `wt blueprint ls` — list blueprint catalog items across all tiers
-- `wt blueprint create --name <name>` — create a new repo-tier blueprint
-- `wt blueprint show <sha-or-name>`
-- `wt blueprint delete <sha-or-name>`
-- `wt blueprint validate <target>` — validate a blueprint definition without executing it
+- `dovo blueprint list` / `dovo blueprint ls` — list blueprint catalog items across all tiers
+- `dovo blueprint create --name <name>` — create a new repo-tier blueprint
+- `dovo blueprint show <sha-or-name>`
+- `dovo blueprint delete <sha-or-name>`
+- `dovo blueprint validate <target>` — validate a blueprint definition without executing it
 
 ### Steps
 
-- `wt step list` / `wt step ls` — list step catalog items across all tiers
-- `wt step create --name <name>` — create a new repo-tier step
-- `wt step show <sha-or-name>`
-- `wt step delete <sha-or-name>`
-- `wt step validate <target>` — validate a step definition without executing it
+- `dovo step list` / `dovo step ls` — list step catalog items across all tiers
+- `dovo step create --name <name>` — create a new repo-tier step
+- `dovo step show <sha-or-name>`
+- `dovo step delete <sha-or-name>`
+- `dovo step validate <target>` — validate a step definition without executing it
 
 ### Sandbox
 
-- `wt sandbox create`
-- `wt sandbox list`
-- `wt sandbox show <sandbox-id>`
-- `wt sandbox prune` — safely prune stale sandboxes, orphaned directories, and temporary branches
-- `wt sandbox delete <sandbox-id>`
-- `wt sandbox apply <sandbox-id>` — apply sandbox changes back to workspace
-- `wt sandbox diff <sandbox-id>` — inspect differences from base commit
+- `dovo sandbox create`
+- `dovo sandbox list`
+- `dovo sandbox show <sandbox-id>`
+- `dovo sandbox prune` — safely prune stale sandboxes, orphaned directories, and temporary branches
+- `dovo sandbox delete <sandbox-id>`
+- `dovo sandbox apply <sandbox-id>` — apply sandbox changes back to workspace
+- `dovo sandbox diff <sandbox-id>` — inspect differences from base commit
 
 ### Artifacts
 
-- `wt artifacts list [--session <session-id>]` — list published session artifacts
-- `wt artifacts download <session-id> <name> --dest <path>` — checksum-verify and extract a published artifact bundle
-- `wt artifacts prune [--dry-run] [--force]` — delete expired artifact bundles
+- `dovo artifacts list [--session <session-id>]` — list published session artifacts
+- `dovo artifacts download <session-id> <name> --dest <path>` — checksum-verify and extract a published artifact bundle
+- `dovo artifacts prune [--dry-run] [--force]` — delete expired artifact bundles
 
 ## Agent providers for workflow runs
 
@@ -111,24 +111,24 @@ Provider behavior:
 - `local` and `ollama` return unified diffs
 - `cursor`, `gemini`, and `copilot` run as direct-mutation providers with shared safety gates before patches are accepted
 
-## Reserved `.worktree` paths
+## Reserved `.dovo` paths
 
-Worktree reserves these paths under the repository-local `.worktree/` directory:
+Dovo reserves these paths under the repository-local `.dovo/` directory:
 
-- `.worktree/config.json`
-- `.worktree/project.json`
-- `.worktree/catalog/workflows/*.yml`
-- `.worktree/catalog/tasks/*.yml`
-- `.worktree/sandboxes/`
-- `.worktree/worktree.lock`
-- `.worktree/sessions/`, `.worktree/artifacts/`, `.worktree/logs/`, and `.worktree/tmp/` for legacy projects without `project.json`
-- `<sandbox>/.worktree/run`, a symlink to the selected session directory for a sandbox
+- `.dovo/config.json`
+- `.dovo/project.json`
+- `.dovo/catalog/workflows/*.yml`
+- `.dovo/catalog/tasks/*.yml`
+- `.dovo/sandboxes/`
+- `.dovo/dovo.lock`
+- `.dovo/sessions/`, `.dovo/artifacts/`, `.dovo/logs/`, and `.dovo/tmp/` for legacy projects without `project.json`
+- `<sandbox>/.dovo/run`, a symlink to the selected session directory for a sandbox
 
 Identified projects keep runtime session, artifact, log, and temporary data outside the repository at:
 
-- `WORKTREE_HOME/storage/projects/<project-id>/sessions/` and `artifacts/` for projects with `.worktree/project.json` (`~/.worktree` when `WORKTREE_HOME` is unset)
+- `DOVO_HOME/storage/projects/<project-id>/sessions/` and `artifacts/` for projects with `.dovo/project.json` (`~/.dovo` when `DOVO_HOME` is unset)
 
-Projects without a persisted identity retain the legacy repository-local `.worktree/sessions/` and `.worktree/artifacts/` locations.
+Projects without a persisted identity retain the legacy repository-local `.dovo/sessions/` and `.dovo/artifacts/` locations.
 
 ## Development
 

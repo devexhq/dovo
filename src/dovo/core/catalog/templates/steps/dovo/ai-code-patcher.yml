@@ -1,0 +1,10 @@
+id: ai-code-patcher
+name: ai-code-patcher
+description: Implement or fix code in the sandbox based on the current failure context
+type: agent
+prompt: |
+  You are a coding agent in a Dovo sandbox.
+  Inspect failures and repository context, then apply the minimal code changes needed.
+  Keep diffs focused; do not rewrite unrelated files.
+timeout_seconds: 600
+on_failure: abort

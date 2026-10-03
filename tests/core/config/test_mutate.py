@@ -8,9 +8,9 @@ from typing import Any
 
 import pytest
 
-from worktree.common.filesystem import Filesystem
-from worktree.core.config.generator import build_default_config
-from worktree.core.config.mutate import (
+from dovo.common.filesystem import Filesystem
+from dovo.core.config.generator import build_default_config
+from dovo.core.config.mutate import (
     ConfigSetStatus,
     ConfigUnsetStatus,
     set_config_value_result,
@@ -24,7 +24,7 @@ class ConfigMutationTests:
 
     def test_set_dot_path_updates_scalar_value(self, isolated_workspace: Path) -> None:
         """Verify dot-path sets nested scalar value atomically and preserves siblings."""
-        config_path = isolated_workspace / ".worktree" / "config.json"
+        config_path = isolated_workspace / ".dovo" / "config.json"
         payload = build_default_config("demo-workspace")
         Filesystem.atomic_write_json(config_path, payload)
 
@@ -44,7 +44,7 @@ class ConfigMutationTests:
 
     def test_set_dot_path_converts_and_validates_types(self, isolated_workspace: Path) -> None:
         """Verify string "true" is converted to boolean True and invalid types are rejected."""
-        config_path = isolated_workspace / ".worktree" / "config.json"
+        config_path = isolated_workspace / ".dovo" / "config.json"
         payload = build_default_config("demo-workspace")
         Filesystem.atomic_write_json(config_path, payload)
 
@@ -69,8 +69,8 @@ class ConfigMutationTests:
             "Config schema validation failed (CONFIG_SCHEMA_INVALID):\n- sandbox.max_active_sandboxes: 'not_an_int' is not of type 'integer'"
         ]
         assert schema_error_result.fixes == [
-            "Run `wt config validate` for details",
-            "Or `wt init --repair` to insert missing keys without overwriting values",
+            "Run `dovo config validate` for details",
+            "Or `dovo init --repair` to insert missing keys without overwriting values",
         ]
         assert schema_error_result.warnings == []
         assert json.loads(config_path.read_text())["sandbox"]["max_active_sandboxes"] == 3
@@ -162,7 +162,7 @@ class ConfigUnsetMutationTests:
 
     def test_unset_dot_path_removes_scalar_value_and_persists(self, isolated_workspace: Path) -> None:
         """[tier-1/domain] unset_config_value_result: removing an existing nested leaf returns OK with existed=True and previous_value set, and persists the removal to disk."""
-        config_path = isolated_workspace / ".worktree" / "config.json"
+        config_path = isolated_workspace / ".dovo" / "config.json"
         payload = build_default_config("demo-workspace")
         Filesystem.atomic_write_json(config_path, payload)
         previous_model = payload["agent"]["model"]
@@ -183,7 +183,7 @@ class ConfigUnsetMutationTests:
 
     def test_unset_leaves_empty_parent_object_after_removing_all_children(self, isolated_workspace: Path) -> None:
         """[tier-1/domain] unset_config_value_result: removing every child key of a section leaves that section's JSON object present and empty, not deleted."""
-        config_path = isolated_workspace / ".worktree" / "config.json"
+        config_path = isolated_workspace / ".dovo" / "config.json"
         payload = build_default_config("demo-workspace")
         Filesystem.atomic_write_json(config_path, payload)
 
@@ -196,7 +196,7 @@ class ConfigUnsetMutationTests:
 
     def test_unset_missing_key_returns_ok_without_write(self, isolated_workspace: Path) -> None:
         """[tier-1/domain] unset_config_value_result: unsetting a key absent from config.json returns OK with existed=False and performs no disk write."""
-        config_path = isolated_workspace / ".worktree" / "config.json"
+        config_path = isolated_workspace / ".dovo" / "config.json"
         payload = build_default_config("demo-workspace")
         Filesystem.atomic_write_json(config_path, payload)
         before = config_path.read_bytes()
@@ -215,7 +215,7 @@ class ConfigUnsetMutationTests:
 
     def test_unset_missing_config_returns_not_found(self, isolated_workspace: Path) -> None:
         """[tier-1/domain] unset_config_value_result: a missing config.json returns ConfigUnsetStatus.NOT_FOUND."""
-        config_path = isolated_workspace / ".worktree" / "config.json"
+        config_path = isolated_workspace / ".dovo" / "config.json"
 
         result = unset_config_value_result("agent.model", config_path=config_path)
 
@@ -226,11 +226,11 @@ class ConfigUnsetMutationTests:
         assert result.previous_value is None
         assert result.errors == [f"Configuration file not found at '{config_path}' (CONFIG_NOT_FOUND)."]
         assert result.warnings == []
-        assert result.fixes == ["Run `wt init` to create `.worktree/config.json`"]
+        assert result.fixes == ["Run `dovo init` to create `.dovo/config.json`"]
 
     def test_unset_config_path_is_directory_returns_path_is_directory(self, isolated_workspace: Path) -> None:
         """[tier-1/domain] unset_config_value_result: config.json existing as a directory returns ConfigUnsetStatus.PATH_IS_DIRECTORY."""
-        config_path = isolated_workspace / ".worktree" / "config.json"
+        config_path = isolated_workspace / ".dovo" / "config.json"
         config_path.mkdir(parents=True)
 
         result = unset_config_value_result("agent.model", config_path=config_path)
@@ -246,7 +246,7 @@ class ConfigUnsetMutationTests:
 
     def test_unset_malformed_json_returns_malformed_json(self, isolated_workspace: Path) -> None:
         """[tier-1/domain] unset_config_value_result: invalid JSON text returns ConfigUnsetStatus.MALFORMED_JSON."""
-        config_path = isolated_workspace / ".worktree" / "config.json"
+        config_path = isolated_workspace / ".dovo" / "config.json"
         config_path.write_text("{not valid json", encoding="utf-8")
 
         result = unset_config_value_result("agent.model", config_path=config_path)
@@ -266,7 +266,7 @@ class ConfigUnsetMutationTests:
 
     def test_unset_root_not_object_returns_root_not_object(self, isolated_workspace: Path) -> None:
         """[tier-1/domain] unset_config_value_result: a JSON array root returns ConfigUnsetStatus.ROOT_NOT_OBJECT."""
-        config_path = isolated_workspace / ".worktree" / "config.json"
+        config_path = isolated_workspace / ".dovo" / "config.json"
         config_path.write_text("[]", encoding="utf-8")
 
         result = unset_config_value_result("agent.model", config_path=config_path)
@@ -284,7 +284,7 @@ class ConfigUnsetMutationTests:
 
     def test_unset_schema_invalid_removal_rejected_without_write(self, isolated_workspace: Path) -> None:
         """[tier-1/domain] unset_config_value_result: removing the required 'project' key returns ConfigUnsetStatus.SCHEMA_INVALID and leaves config.json unchanged on disk."""
-        config_path = isolated_workspace / ".worktree" / "config.json"
+        config_path = isolated_workspace / ".dovo" / "config.json"
         payload = build_default_config("demo-workspace")
         Filesystem.atomic_write_json(config_path, payload)
         before = config_path.read_bytes()
@@ -301,8 +301,8 @@ class ConfigUnsetMutationTests:
         ]
         assert result.warnings == []
         assert result.fixes == [
-            "Run `wt config validate` for details",
-            "Or `wt init --repair` to insert missing keys without overwriting values",
+            "Run `dovo config validate` for details",
+            "Or `dovo init --repair` to insert missing keys without overwriting values",
         ]
         assert config_path.read_bytes() == before
 
@@ -310,7 +310,7 @@ class ConfigUnsetMutationTests:
         self, isolated_workspace: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """[tier-1/domain] unset_config_value_result: an OSError from Filesystem.atomic_write_json returns ConfigUnsetStatus.WRITE_FAILED."""
-        config_path = isolated_workspace / ".worktree" / "config.json"
+        config_path = isolated_workspace / ".dovo" / "config.json"
         payload = build_default_config("demo-workspace")
         Filesystem.atomic_write_json(config_path, payload)
 
@@ -332,7 +332,7 @@ class ConfigUnsetMutationTests:
 
     def test_unset_empty_path_returns_invalid_path(self, isolated_workspace: Path) -> None:
         """[tier-1/domain] unset_config_value_result: an empty dot-path key returns ConfigUnsetStatus.INVALID_PATH."""
-        config_path = isolated_workspace / ".worktree" / "config.json"
+        config_path = isolated_workspace / ".dovo" / "config.json"
         payload = build_default_config("demo-workspace")
         Filesystem.atomic_write_json(config_path, payload)
 
@@ -349,7 +349,7 @@ class ConfigUnsetMutationTests:
 
     def test_unset_type_collision_returns_type_collision(self, isolated_workspace: Path) -> None:
         """[tier-1/domain] unset_config_value_result: traversing through a scalar-valued intermediate returns ConfigUnsetStatus.TYPE_COLLISION and leaves config.json unchanged."""
-        config_path = isolated_workspace / ".worktree" / "config.json"
+        config_path = isolated_workspace / ".dovo" / "config.json"
         payload = build_default_config("demo-workspace")
         payload["agent"] = "scalar"
         Filesystem.atomic_write_json(config_path, payload)

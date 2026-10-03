@@ -1,1 +1,1 @@
-"""Tests for worktree.core.doctor."""
+"""Tests for dovo.core.doctor."""

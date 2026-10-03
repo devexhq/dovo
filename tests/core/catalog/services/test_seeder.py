@@ -1,13 +1,13 @@
-"""Contract tests for seeding packaged catalog wt/ templates into a repository."""
+"""Contract tests for seeding packaged catalog dovo/ templates into a repository."""
 
 from __future__ import annotations
 
 from collections.abc import Callable
 from pathlib import Path
 
-from worktree.common.filesystem import WorkspacePaths
-from worktree.core.catalog.models import CatalogItemType
-from worktree.core.catalog.services.seeder import seed_all_catalog_templates, seed_catalog_templates
+from dovo.common.filesystem import WorkspacePaths
+from dovo.core.catalog.models import CatalogItemType
+from dovo.core.catalog.services.seeder import seed_all_catalog_templates, seed_catalog_templates
 
 WorkspacePathsFactory = Callable[[Path, Path | None], WorkspacePaths]
 
@@ -16,7 +16,7 @@ class SeedCatalogTemplatesTests:
     def test_fresh_repository_creates_every_packaged_wt_step_file(
         self, tmp_path: Path, workspace_paths_factory: WorkspacePathsFactory
     ) -> None:
-        """[tier-1/integration] seed_catalog_templates: no existing files -> every packaged steps/wt/*.yml is copied and listed in created_files, none skipped or overwritten."""
+        """[tier-1/integration] seed_catalog_templates: no existing files -> every packaged steps/dovo/*.yml is copied and listed in created_files, none skipped or overwritten."""
         result = seed_catalog_templates(CatalogItemType.STEP, workspace_paths_factory(tmp_path, None))
 
         assert result.ok
@@ -31,7 +31,7 @@ class SeedCatalogTemplatesTests:
         self, tmp_path: Path, workspace_paths_factory: WorkspacePathsFactory
     ) -> None:
         """[tier-1/integration] seed_catalog_templates: force=False and a target file already exists -> file is recorded in skipped_existing_files, its on-disk content is left untouched."""
-        target = tmp_path / ".worktree" / "catalog" / "steps" / "wt" / "run-tests.yml"
+        target = tmp_path / ".dovo" / "catalog" / "steps" / "dovo" / "run-tests.yml"
         target.parent.mkdir(parents=True)
         target.write_text("custom: content\n", encoding="utf-8")
 
@@ -45,7 +45,7 @@ class SeedCatalogTemplatesTests:
         self, tmp_path: Path, workspace_paths_factory: WorkspacePathsFactory
     ) -> None:
         """[tier-1/integration] seed_catalog_templates: force=True and a target file already exists -> file is recorded in overwritten_files and its content is replaced with the packaged template."""
-        target = tmp_path / ".worktree" / "catalog" / "steps" / "wt" / "run-tests.yml"
+        target = tmp_path / ".dovo" / "catalog" / "steps" / "dovo" / "run-tests.yml"
         target.parent.mkdir(parents=True)
         target.write_text("custom: content\n", encoding="utf-8")
 
@@ -58,7 +58,7 @@ class SeedCatalogTemplatesTests:
         self, tmp_path: Path, workspace_paths_factory: WorkspacePathsFactory
     ) -> None:
         """[tier-1/integration] seed_catalog_templates: a target path that already exists as a directory records an error for that file and is not treated as created/skipped/overwritten."""
-        target = tmp_path / ".worktree" / "catalog" / "steps" / "wt" / "run-tests.yml"
+        target = tmp_path / ".dovo" / "catalog" / "steps" / "dovo" / "run-tests.yml"
         target.mkdir(parents=True)
 
         result = seed_catalog_templates(CatalogItemType.STEP, workspace_paths_factory(tmp_path, None), force=True)
@@ -73,12 +73,12 @@ class SeedAllCatalogTemplatesTests:
     def test_aggregates_created_files_across_blueprint_and_step_types(
         self, tmp_path: Path, workspace_paths_factory: WorkspacePathsFactory
     ) -> None:
-        """[tier-1/integration] seed_all_catalog_templates: aggregate result's created_files includes packaged wt/ templates from both BLUEPRINT and STEP item types."""
+        """[tier-1/integration] seed_all_catalog_templates: aggregate result's created_files includes packaged dovo/ templates from both BLUEPRINT and STEP item types."""
         result = seed_all_catalog_templates(workspace_paths_factory(tmp_path, None))
 
         assert result.ok
-        blueprint_dir = tmp_path / ".worktree" / "catalog" / "blueprints" / "wt"
-        step_dir = tmp_path / ".worktree" / "catalog" / "steps" / "wt"
+        blueprint_dir = tmp_path / ".dovo" / "catalog" / "blueprints" / "dovo"
+        step_dir = tmp_path / ".dovo" / "catalog" / "steps" / "dovo"
         assert blueprint_dir.is_dir()
         assert step_dir.is_dir()
         assert any(p.is_relative_to(blueprint_dir) for p in result.created_files)

@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
-from worktree.core.logs import LogsShowResult, LogsShowStatus, RunLogEvent, RunLogEventType
+from dovo.core.logs import LogsShowResult, LogsShowStatus, RunLogEvent, RunLogEventType
 
 
 class LogsShowResultOkTests:

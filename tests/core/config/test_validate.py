@@ -5,11 +5,11 @@ from pathlib import Path
 
 import pytest
 
-from worktree.common.filesystem import Filesystem
-from worktree.core.agents.registry import PROVIDERS
-from worktree.core.config.generator import build_default_config
-from worktree.core.config.models import WorktreeConfig
-from worktree.core.config.validate import (
+from dovo.common.filesystem import Filesystem
+from dovo.core.agents.registry import PROVIDERS
+from dovo.core.config.generator import build_default_config
+from dovo.core.config.models import DovoConfig
+from dovo.core.config.validate import (
     ConfigValidationStatus,
     validate_config_result,
 )
@@ -30,7 +30,7 @@ class ConfigSemanticValidationTests:
         assert result.status == ConfigValidationStatus.VALID
         assert result.config_path == config_path
         assert result.raw == payload
-        assert result.config == WorktreeConfig.model_validate(payload)
+        assert result.config == DovoConfig.model_validate(payload)
         assert result.errors == []
         assert result.warnings == [
             "agent.provider is not 'local' but agent.model is missing (CONFIG_WARN_AGENT_MODEL_MISSING)."
@@ -48,7 +48,7 @@ class ConfigSemanticValidationTests:
         assert result.status == ConfigValidationStatus.VALID
         assert result.config_path == config_path
         assert result.raw == payload
-        assert result.config == WorktreeConfig.model_validate(payload)
+        assert result.config == DovoConfig.model_validate(payload)
         assert result.errors == []
         assert result.warnings == [
             "agent.endpoint is not an absolute http(s) URL: 'ftp://example.com/api' (CONFIG_WARN_AGENT_ENDPOINT)."
@@ -66,7 +66,7 @@ class ConfigSemanticValidationTests:
         assert result.status == ConfigValidationStatus.VALID
         assert result.config_path == config_path
         assert result.raw == payload
-        assert result.config == WorktreeConfig.model_validate(payload)
+        assert result.config == DovoConfig.model_validate(payload)
         assert result.errors == []
         assert result.warnings == ["sandbox.max_active_sandboxes (11) exceeds 10 (CONFIG_WARN_SANDBOX_LIMIT)."]
         assert result.fixes == ["Lower sandbox.max_active_sandboxes to 10 or fewer"]

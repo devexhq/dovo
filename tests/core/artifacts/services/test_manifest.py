@@ -5,8 +5,8 @@ from __future__ import annotations
 import hashlib
 from pathlib import Path
 
-from worktree.core.artifacts.models import ArtifactManifestFile
-from worktree.core.artifacts.services.manifest import build_manifest, compute_file_checksum
+from dovo.core.artifacts.models import ArtifactManifestFile
+from dovo.core.artifacts.services.manifest import build_manifest, compute_file_checksum
 
 
 class ManifestServiceTests:

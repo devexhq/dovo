@@ -6,7 +6,7 @@ This recipe demonstrates a generic blueprint loop that asks an agent step to fix
 
 ## The Blueprint
 
-Create `.worktree/catalog/blueprints/tdd-cycle.yml`:
+Create `.dovo/catalog/blueprints/tdd-cycle.yml`:
 
 ```yaml
 name: tdd-cycle
@@ -63,11 +63,11 @@ steps:
 2. Execute the TDD blueprint:
 
 ```bash
-wt run tdd-cycle --test tests/test_calculator.py
+dovo run tdd-cycle --test tests/test_calculator.py
 ```
 
 ### Execution Flow:
-1. Worktree spins up an isolated sandbox worktree.
+1. Dovo spins up an isolated sandbox worktree.
 2. The agent step sends its prompt to the configured provider and applies any change inside the sandbox.
 3. The test suite runs after each attempt.
 4. As soon as all assertions pass (`steps.run-test-suite.exit_code == 0`), the loop terminates with success.

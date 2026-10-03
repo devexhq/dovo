@@ -1,17 +1,17 @@
-"""Unit tests for worktree.core.doctor.services.remediation."""
+"""Unit tests for dovo.core.doctor.services.remediation."""
 
 from __future__ import annotations
 
 import pytest
 
-from worktree.core.doctor.models import (
+from dovo.core.doctor.models import (
     CheckCategory,
     CheckStatus,
     DiagnosticCheckResult,
     Remediation,
     RemediationType,
 )
-from worktree.core.doctor.services.remediation import format_remediation_summary, resolve_remediations
+from dovo.core.doctor.services.remediation import format_remediation_summary, resolve_remediations
 
 REMEDIATION_RESOLUTION_CASES = [
     pytest.param(
@@ -92,10 +92,10 @@ REMEDIATION_RESOLUTION_CASES = [
         [
             Remediation(
                 code="DOCTOR_CONFIG_NOT_FOUND",
-                title="Initialize Worktree workspace",
+                title="Initialize Dovo workspace",
                 action_type=RemediationType.COMMAND,
-                command="wt init",
-                description="Run `wt init` to create `.worktree/config.json` and the required workspace directory structure.",
+                command="dovo init",
+                description="Run `dovo init` to create `.dovo/config.json` and the required workspace directory structure.",
                 doc_path="docs/cli/init.md",
                 is_automated=False,
             )
@@ -116,8 +116,8 @@ REMEDIATION_RESOLUTION_CASES = [
                 code="DOCTOR_CONFIG_MALFORMED",
                 title="Repair configuration file",
                 action_type=RemediationType.COMMAND,
-                command="wt init --repair",
-                description="Run `wt init --repair` to restore missing schema keys, or edit `.worktree/config.json` by hand to fix the invalid JSON syntax.",
+                command="dovo init --repair",
+                description="Run `dovo init --repair` to restore missing schema keys, or edit `.dovo/config.json` by hand to fix the invalid JSON syntax.",
                 doc_path="docs/cli/init.md",
                 is_automated=False,
             )
@@ -138,8 +138,8 @@ REMEDIATION_RESOLUTION_CASES = [
                 code="DOCTOR_CONFIG_SCHEMA_INVALID",
                 title="Validate and repair configuration",
                 action_type=RemediationType.COMMAND,
-                command="wt config validate",
-                description="Run `wt config validate` to see detailed schema errors, then fix `.worktree/config.json` or run `wt init --repair` to restore missing defaults.",
+                command="dovo config validate",
+                description="Run `dovo config validate` to see detailed schema errors, then fix `.dovo/config.json` or run `dovo init --repair` to restore missing defaults.",
                 doc_path="docs/cli/config.md",
                 is_automated=False,
             )
@@ -153,7 +153,7 @@ REMEDIATION_RESOLUTION_CASES = [
             category=CheckCategory.FILESYSTEM,
             status=CheckStatus.FAILED,
             message="2 configured path(s) are not writable.",
-            details={"unwritable_paths": ["/repo/.worktree", "/repo/.worktree/sessions"]},
+            details={"unwritable_paths": ["/repo/.dovo", "/repo/.dovo/sessions"]},
             error_code="DOCTOR_FS_UNWRITABLE",
         ),
         [
@@ -161,8 +161,8 @@ REMEDIATION_RESOLUTION_CASES = [
                 code="DOCTOR_FS_UNWRITABLE",
                 title="Fix directory permissions",
                 action_type=RemediationType.COMMAND,
-                command="chmod u+w /repo/.worktree",
-                description="Grant the current user write access to '/repo/.worktree' so Worktree can create and update workspace state.",
+                command="chmod u+w /repo/.dovo",
+                description="Grant the current user write access to '/repo/.dovo' so Dovo can create and update workspace state.",
                 doc_path=None,
                 is_automated=False,
             ),
@@ -170,8 +170,8 @@ REMEDIATION_RESOLUTION_CASES = [
                 code="DOCTOR_FS_UNWRITABLE",
                 title="Fix directory permissions",
                 action_type=RemediationType.COMMAND,
-                command="chmod u+w /repo/.worktree/sessions",
-                description="Grant the current user write access to '/repo/.worktree/sessions' so Worktree can create and update workspace state.",
+                command="chmod u+w /repo/.dovo/sessions",
+                description="Grant the current user write access to '/repo/.dovo/sessions' so Dovo can create and update workspace state.",
                 doc_path=None,
                 is_automated=False,
             ),
@@ -192,8 +192,8 @@ REMEDIATION_RESOLUTION_CASES = [
                 code="DOCTOR_FS_UNWRITABLE",
                 title="Fix directory permissions",
                 action_type=RemediationType.COMMAND,
-                command="chmod u+w .worktree",
-                description="Grant the current user write access to '.worktree' so Worktree can create and update workspace state.",
+                command="chmod u+w .dovo",
+                description="Grant the current user write access to '.dovo' so Dovo can create and update workspace state.",
                 doc_path=None,
                 is_automated=False,
             ),
@@ -214,8 +214,8 @@ REMEDIATION_RESOLUTION_CASES = [
                 code="DOCTOR_SANDBOX_STALE",
                 title="Prune stale sandboxes",
                 action_type=RemediationType.COMMAND,
-                command="wt sandbox prune",
-                description="Run `wt sandbox prune` to reconcile sandbox database records that no longer match a live Git worktree.",
+                command="dovo sandbox prune",
+                description="Run `dovo sandbox prune` to reconcile sandbox database records that no longer match a live Git worktree.",
                 doc_path="docs/cli/sandbox.md",
                 is_automated=False,
             )
@@ -236,8 +236,8 @@ REMEDIATION_RESOLUTION_CASES = [
                 code="DOCTOR_SANDBOX_ORPHAN",
                 title="Prune orphan worktree directories",
                 action_type=RemediationType.COMMAND,
-                command="wt sandbox prune",
-                description="Run `wt sandbox prune` to remove sandbox worktree directories that have no matching database record.",
+                command="dovo sandbox prune",
+                description="Run `dovo sandbox prune` to remove sandbox worktree directories that have no matching database record.",
                 doc_path="docs/cli/sandbox.md",
                 is_automated=False,
             )
@@ -349,8 +349,8 @@ REMEDIATION_RESOLUTION_CASES = [
                 code="DOCTOR_AGENT_NO_MODEL",
                 title="Configure agent model",
                 action_type=RemediationType.COMMAND,
-                command='wt config set agent.model "<model>"',
-                description="Set `agent.model` in `.worktree/config.json` to a model supported by the configured provider, e.g. `wt config set agent.model <model-name>`.",
+                command='dovo config set agent.model "<model>"',
+                description="Set `agent.model` in `.dovo/config.json` to a model supported by the configured provider, e.g. `dovo config set agent.model <model-name>`.",
                 doc_path="docs/cli/config.md",
                 is_automated=False,
             )

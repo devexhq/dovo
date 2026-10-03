@@ -1,4 +1,4 @@
-"""Single-tier CLI smoke and crash-protection tests for the wt entrypoint."""
+"""Single-tier CLI smoke and crash-protection tests for the dovo entrypoint."""
 
 from __future__ import annotations
 
@@ -7,22 +7,22 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
-import worktree.cli.cli as cli_module
+import dovo.cli.cli as cli_module
+from dovo.cli import app
+from dovo.cli.context import CliContext
+from dovo.common.lock import LockTimeoutError
 from tests.harness.builders import WorkspaceBuilder
-from worktree.cli import app
-from worktree.cli.context import CliContext
-from worktree.common.lock import LockTimeoutError
 
 
 class CliSmokeTests:
-    """Smoke tests for top-level wt CLI behavior."""
+    """Smoke tests for top-level dovo CLI behavior."""
 
     def test_cli_bare_invocation_prints_banner_and_help_exits_zero(self, cli_runner: CliRunner) -> None:
-        """wt (bare invocation): exit 0, 'Worktree CLI' and 'init' in stdout."""
+        """dovo (bare invocation): exit 0, 'Dovo CLI' and 'init' in stdout."""
         result = cli_runner.invoke(app, [])
 
         assert result.exit_code == 0
-        assert "Worktree CLI" in result.stdout
+        assert "Dovo CLI" in result.stdout
         assert "init" in result.stdout
 
 
@@ -46,10 +46,10 @@ class CliContextBuildTests:
         second_workspace = WorkspaceBuilder(tmp_path / "second").without_config().build()
         first_home = tmp_path / "first_home"
         second_home = tmp_path / "second_home"
-        monkeypatch.setenv("WORKTREE_HOME", str(first_home))
+        monkeypatch.setenv("DOVO_HOME", str(first_home))
 
         first = CliContext.build(path=first_workspace, load_config=False)
-        monkeypatch.setenv("WORKTREE_HOME", str(second_home))
+        monkeypatch.setenv("DOVO_HOME", str(second_home))
         second = CliContext.build(path=second_workspace, load_config=False)
 
         assert first.paths.root_dir == first_workspace.resolve()

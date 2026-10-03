@@ -7,18 +7,18 @@ from pathlib import Path
 
 import pytest
 
+from dovo.common.filesystem.models import RepositoryPaths, WorkspacePaths
+from dovo.common.filesystem.services.global_root import resolve_global_paths
+from dovo.core.config import ConfigLoadError
+from dovo.core.config.loader import ConfigLoadResult, ConfigLoadStatus
+from dovo.core.db import RunStatus
+from dovo.core.git.runner import GitRunner
+from dovo.core.project.services.storage import resolve_workspace_paths
+from dovo.core.sandbox import Sandbox, SandboxApplyResult, SandboxApplyStatus, SandboxSession
+from dovo.core.sandbox.models import SandboxCreateResult, SandboxCreateStatus
+from dovo.engine.models import RunObserver, RunSettings
+from dovo.engine.workspace import Workspace
 from tests.harness.builders import WorkspaceBuilder
-from worktree.common.filesystem.models import RepositoryPaths, WorkspacePaths
-from worktree.common.filesystem.services.global_root import resolve_global_paths
-from worktree.core.config import ConfigLoadError
-from worktree.core.config.loader import ConfigLoadResult, ConfigLoadStatus
-from worktree.core.db import RunStatus
-from worktree.core.git.runner import GitRunner
-from worktree.core.project.services.storage import resolve_workspace_paths
-from worktree.core.sandbox import Sandbox, SandboxApplyResult, SandboxApplyStatus, SandboxSession
-from worktree.core.sandbox.models import SandboxCreateResult, SandboxCreateStatus
-from worktree.engine.models import RunObserver, RunSettings
-from worktree.engine.workspace import Workspace
 
 
 class _RecordingRunObserver(RunObserver):
@@ -521,7 +521,7 @@ class WorkspaceSinglePathResolutionTests:
         def _unexpected_resolution(*args: object, **kwargs: object) -> WorkspacePaths:
             raise AssertionError("workspace paths must be resolved once at the command boundary")
 
-        monkeypatch.setattr("worktree.core.project.services.storage.resolve_workspace_paths", _unexpected_resolution)
+        monkeypatch.setattr("dovo.core.project.services.storage.resolve_workspace_paths", _unexpected_resolution)
         workspace = Workspace(context)
         warnings: list[str] = []
         session = SandboxSession(

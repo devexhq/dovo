@@ -4,9 +4,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from worktree.core.catalog.definitions import StepDefinition
-from worktree.engine.executors.models import StepExecutionContext
-from worktree.engine.executors.step_executor import StepExecution
+from dovo.core.catalog.definitions import StepDefinition
+from dovo.engine.executors.models import StepExecutionContext
+from dovo.engine.executors.step_executor import StepExecution
 
 
 class StepExecutionResolutionTests:

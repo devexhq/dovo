@@ -1,4 +1,4 @@
-"""Unit tests for worktree.core.project.services.identity."""
+"""Unit tests for dovo.core.project.services.identity."""
 
 import json
 import re
@@ -9,8 +9,8 @@ from unittest.mock import patch
 import pytest
 from freezegun import freeze_time
 
-from worktree.common.lock import LockTimeoutError
-from worktree.core.project.models import (
+from dovo.common.lock import LockTimeoutError
+from dovo.core.project.models import (
     PROJECT_ID_REGEX,
     ProjectIdentity,
     ProjectIdentityErrorType,
@@ -18,8 +18,8 @@ from worktree.core.project.models import (
     ProjectIdentityProvisionStatus,
     ProjectIdentitySaveStatus,
 )
-from worktree.core.project.services import identity as identity_service
-from worktree.core.project.services.identity import (
+from dovo.core.project.services import identity as identity_service
+from dovo.core.project.services.identity import (
     generate_project_identity,
     load_project_identity,
     provision_project_identity,
@@ -177,7 +177,7 @@ class ProjectIdentityServiceTests:
         identity = ProjectIdentity(id="project-624", display_name="Project 624", created_at=UTC_TIMESTAMP)
 
         with patch(
-            "worktree.core.project.services.identity.WorkspaceLock.__enter__",
+            "dovo.core.project.services.identity.WorkspaceLock.__enter__",
             side_effect=LockTimeoutError("lock held"),
         ):
             result = save_project_identity(path, identity)

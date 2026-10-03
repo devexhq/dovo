@@ -1,4 +1,4 @@
-"""Single-tier CLI integration tests for wt sandbox delete."""
+"""Single-tier CLI integration tests for dovo sandbox delete."""
 
 from __future__ import annotations
 
@@ -9,12 +9,12 @@ from typing import Any
 import pytest
 from typer.testing import CliRunner
 
-from worktree.cli import app
-from worktree.common.filesystem.models import RepositoryPaths, WorkspacePaths
-from worktree.common.filesystem.services.global_root import resolve_global_paths
-from worktree.core.project.services.storage import resolve_workspace_paths
-from worktree.core.sandbox.facade import Sandbox
-from worktree.core.sandbox.models import SandboxDeleteStatus, SandboxSession
+from dovo.cli import app
+from dovo.common.filesystem.models import RepositoryPaths, WorkspacePaths
+from dovo.common.filesystem.services.global_root import resolve_global_paths
+from dovo.core.project.services.storage import resolve_workspace_paths
+from dovo.core.sandbox.facade import Sandbox
+from dovo.core.sandbox.models import SandboxDeleteStatus, SandboxSession
 
 
 def _paths_for(root: Path) -> WorkspacePaths:
@@ -30,12 +30,12 @@ def _create_sandbox(sandbox_workspace: Path) -> SandboxSession:
 
 
 class SandboxDeleteCliIntegrationTests:
-    """Typer runner integration tests for wt sandbox delete."""
+    """Typer runner integration tests for dovo sandbox delete."""
 
     def test_sandbox_delete_cli_declined_confirmation_exits_one(
         self, cli_runner: CliRunner, sandbox_workspace: Path, dispatch_spy: list[Any]
     ) -> None:
-        """wt sandbox delete <id> with input='n\\n' exits 1, leaves the sandbox dir on disk, and dispatches the exact ABORTED DTO."""
+        """dovo sandbox delete <id> with input='n\\n' exits 1, leaves the sandbox dir on disk, and dispatches the exact ABORTED DTO."""
         session = _create_sandbox(sandbox_workspace)
 
         result = cli_runner.invoke(
@@ -70,7 +70,7 @@ class SandboxDeleteCliIntegrationTests:
         extra_args: list[str],
         invoke_input: str | None,
     ) -> None:
-        """wt sandbox delete <id>, confirmed via stdin or --force, exits 0, removes the sandbox dir, and dispatches the exact DELETED DTO."""
+        """dovo sandbox delete <id>, confirmed via stdin or --force, exits 0, removes the sandbox dir, and dispatches the exact DELETED DTO."""
         session = _create_sandbox(sandbox_workspace)
 
         result = cli_runner.invoke(
@@ -95,7 +95,7 @@ class SandboxDeleteCliIntegrationTests:
     def test_sandbox_delete_cli_missing_sandbox_exits_one(
         self, cli_runner: CliRunner, sandbox_workspace: Path, dispatch_spy: list[Any]
     ) -> None:
-        """wt sandbox delete missing-id --force exits 1, reports not found, and dispatches the exact NOT_FOUND DTO."""
+        """dovo sandbox delete missing-id --force exits 1, reports not found, and dispatches the exact NOT_FOUND DTO."""
         result = cli_runner.invoke(app, ["-p", str(sandbox_workspace), "sandbox", "delete", "missing-id", "--force"])
 
         assert result.exit_code == 1
@@ -110,7 +110,7 @@ class SandboxDeleteCliIntegrationTests:
         assert payload.errors == ["Sandbox 'missing-id' not found."]
 
     def test_sandbox_delete_cli_renders_json(self, cli_runner: CliRunner, sandbox_workspace: Path) -> None:
-        """wt sandbox delete <id> --force --format json emits the 'deleted' SandboxDeleteResult envelope."""
+        """dovo sandbox delete <id> --force --format json emits the 'deleted' SandboxDeleteResult envelope."""
         session = _create_sandbox(sandbox_workspace)
 
         result = cli_runner.invoke(
@@ -161,7 +161,7 @@ class SandboxDeleteCliIntegrationTests:
     def test_sandbox_delete_cli_declined_confirmation_renders_json(
         self, cli_runner: CliRunner, sandbox_workspace: Path
     ) -> None:
-        """wt sandbox delete <id> --format json with input='n\\n' emits the 'aborted' SandboxDeleteResult envelope."""
+        """dovo sandbox delete <id> --format json with input='n\\n' emits the 'aborted' SandboxDeleteResult envelope."""
         session = _create_sandbox(sandbox_workspace)
 
         result = cli_runner.invoke(
@@ -205,7 +205,7 @@ class SandboxDeleteCliIntegrationTests:
     def test_sandbox_delete_cli_missing_sandbox_renders_json(
         self, cli_runner: CliRunner, sandbox_workspace: Path
     ) -> None:
-        """wt sandbox delete missing-id --force --format json emits the 'not_found' SandboxDeleteResult envelope."""
+        """dovo sandbox delete missing-id --force --format json emits the 'not_found' SandboxDeleteResult envelope."""
         result = cli_runner.invoke(
             app,
             ["-p", str(sandbox_workspace), "sandbox", "delete", "missing-id", "--force", "--format", "json"],
@@ -222,6 +222,6 @@ class SandboxDeleteCliIntegrationTests:
                 "error_code": None,
                 "errors": ["Sandbox 'missing-id' not found."],
                 "warnings": [],
-                "fixes": ["Run `wt sandbox list` to see known sandboxes"],
+                "fixes": ["Run `dovo sandbox list` to see known sandboxes"],
             },
         }

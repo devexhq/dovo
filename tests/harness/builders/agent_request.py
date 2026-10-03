@@ -1,11 +1,11 @@
-"""Fluent agent request builder for Worktree CLI test suite."""
+"""Fluent agent request builder for Dovo CLI test suite."""
 
 from __future__ import annotations
 
 from pathlib import Path
 from typing import Self
 
-from worktree.core.agents import AgentFailurePayload, AgentRequest
+from dovo.core.agents import AgentFailurePayload, AgentRequest
 
 
 class AgentRequestBuilder:

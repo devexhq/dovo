@@ -1,6 +1,6 @@
 # GitHub Issue Creation and Updates
 
-Use this guide when opening or revising GitHub issues for Worktree CLI.
+Use this guide when opening or revising GitHub issues for Dovo CLI.
 Canonical example of structure, depth, and tone:
 [docs/agents/examples/github-issue.md](examples/github-issue.md).
 
@@ -69,11 +69,11 @@ Good:
 
 ```markdown
 ### Out of scope
-- CLI subcommands (`wt config show|set|unset|validate`)
+- CLI subcommands (`dovo config show|set|unset|validate`)
 - Terminal rendering of effective config or source metadata
 - Mutating config on disk (set/unset/atomic write)
-- Exit-code policy for `wt config validate`
-- Config generation / repair (`wt init`)
+- Exit-code policy for `dovo config validate`
+- Config generation / repair (`dovo init`)
 ```
 
 Bad:
@@ -210,7 +210,7 @@ Typical contents:
 | Config keys / defaults | JSON paths, default values |
 | Templates | full YAML/JSON bodies or paths to package templates |
 | Constants | filenames, workflow `name` values, error codes |
-| Paths | `.worktree/workflows/fix-tests.yml`, etc. |
+| Paths | `.dovo/workflows/fix-tests.yml`, etc. |
 | APIs | function signatures, helper responsibilities |
 
 Use fenced code blocks for schemas, templates, and APIs. Keep template content
@@ -227,7 +227,7 @@ Show **exact or near-exact** user-visible copy for important outcomes:
 - Partial success
 - Validation or hard failure (include a short "Fix:" hint when useful)
 
-Prefer bullet trees that match existing `wt` console style. If output is
+Prefer bullet trees that match existing `dovo` console style. If output is
 structured data only (no new copy), say so and describe the fields rendered.
 
 ### 6. Error Cases to Handle
@@ -264,7 +264,7 @@ sections, such as:
 - Coverage completeness bars ("every `ConfigLoadStatus` has a test")
 - Greenfield cutover ("callers use the new API; superseded paths removed")
 - Docs or command wiring the issue owns
-- Explicit non-ships that are easy to miss ("this change does not add `wt config
+- Explicit non-ships that are easy to miss ("this change does not add `dovo config
   show`")
 - Cross-cutting ship bars (templates validate, tests in the suite pass)
 
@@ -285,11 +285,11 @@ Example shape:
 ```markdown
 ## Definition of done
 
-- After `wt init`, `load_config` succeeds on the generated file
+- After `dovo init`, `load_config` succeeds on the generated file
 - Tests cover every `ConfigLoadStatus` value
 - In-tree callers use `load_config`; old dual load paths are removed
 - `docs/agents/schemas.md` documents the load API and error codes
-- No `wt config` CLI subcommand is added in this change
+- No `dovo config` CLI subcommand is added in this change
 ```
 
 ## Extra sections (when they add clarity)
@@ -314,7 +314,7 @@ depth and directness (structure may differ where this guide says so):
 
 - Direct, specification-like; minimal marketing language
 - Short bullets over long prose
-- Concrete paths, command names (`wt init`), and schema versions
+- Concrete paths, command names (`dovo init`), and schema versions
 - Requirements as behaviors, not implementation micromanagement—unless
   predetermined data or safety (atomic write, non-destructive) requires it
 - Authoritative voice: the issue is the contract, not a menu of choices

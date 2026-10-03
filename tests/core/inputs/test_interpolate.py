@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from worktree.core.inputs.services.interpolate import interpolate_string
-from worktree.engine.executors.models import ExecutionMetadata, PreviousStepMetadata, StepMetadata
+from dovo.core.inputs.services.interpolate import interpolate_string
+from dovo.engine.executors.models import ExecutionMetadata, PreviousStepMetadata, StepMetadata
 
 
 def _metadata_with_step_a_outputs(outputs: dict[str, str]) -> ExecutionMetadata:

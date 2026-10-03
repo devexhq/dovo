@@ -1,4 +1,4 @@
-"""Fluent test data builders for Worktree CLI test suite."""
+"""Fluent test data builders for Dovo CLI test suite."""
 
 from tests.harness.builders.agent_request import AgentRequestBuilder
 from tests.harness.builders.blueprint import BlueprintBuilder

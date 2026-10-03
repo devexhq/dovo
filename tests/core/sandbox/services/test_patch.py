@@ -7,14 +7,14 @@ from pathlib import Path
 
 import pytest
 
+from dovo.common.filesystem import WorkspacePaths
+from dovo.core.db import SandboxesRepository
+from dovo.core.db.models import SandboxStatus
+from dovo.core.git.runner import GitRunner
+from dovo.core.sandbox.models import SandboxApplyStatus, SandboxApplyStrategy, SandboxDiffStatus
+from dovo.core.sandbox.services.lifecycle import SandboxLifecycle
+from dovo.core.sandbox.services.patch import SandboxPatch, extract_conflicts
 from tests.harness import WorkspaceBuilder
-from worktree.common.filesystem import WorkspacePaths
-from worktree.core.db import SandboxesRepository
-from worktree.core.db.models import SandboxStatus
-from worktree.core.git.runner import GitRunner
-from worktree.core.sandbox.models import SandboxApplyStatus, SandboxApplyStrategy, SandboxDiffStatus
-from worktree.core.sandbox.services.lifecycle import SandboxLifecycle
-from worktree.core.sandbox.services.patch import SandboxPatch, extract_conflicts
 
 
 class ExtractConflictsTests:

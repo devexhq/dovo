@@ -1,7 +1,7 @@
 ---
 name: pr-prep
 description: >-
-  Review the current uncommitted worktree-cli changes and draft
+  Review the current uncommitted Dovo CLI changes and draft
   .agentic/commit-msg, .agentic/pr-title, and .agentic/pr-description for a
   human to run `uv run python scripts/pr.py` against to commit, push, and
   open (or reuse) the pull request. Invoked as /pr-prep. Use when asked to

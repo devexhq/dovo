@@ -6,13 +6,13 @@ from pathlib import Path
 
 import pytest
 
+from dovo.common.filesystem.models import RepositoryPaths
+from dovo.common.filesystem.services.global_root import resolve_global_paths
+from dovo.core.db import RunsRepository, RunStatus
+from dovo.core.project.services.storage import resolve_workspace_paths
+from dovo.engine.models import BlueprintRunResult, RunOutcome
+from dovo.engine.services._shared import fail, finalize, load_record
 from tests.harness.builders import WorkspaceBuilder
-from worktree.common.filesystem.models import RepositoryPaths
-from worktree.common.filesystem.services.global_root import resolve_global_paths
-from worktree.core.db import RunsRepository, RunStatus
-from worktree.core.project.services.storage import resolve_workspace_paths
-from worktree.engine.models import BlueprintRunResult, RunOutcome
-from worktree.engine.services._shared import fail, finalize, load_record
 
 
 def _repo(tmp_path: Path) -> RunsRepository:

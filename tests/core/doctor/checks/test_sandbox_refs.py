@@ -1,4 +1,4 @@
-"""Unit tests for worktree.core.doctor.checks.sandbox_refs."""
+"""Unit tests for dovo.core.doctor.checks.sandbox_refs."""
 
 from __future__ import annotations
 
@@ -8,15 +8,15 @@ from pathlib import Path
 
 import pytest
 
+from dovo.common.filesystem import WorkspacePaths
+from dovo.common.filesystem.services.global_root import resolve_global_paths
+from dovo.core.db import SandboxesRepository
+from dovo.core.db.connection import resolve_db_path
+from dovo.core.doctor.checks.sandbox_refs import SandboxRefsCheck
+from dovo.core.doctor.models import CheckCategory, CheckStatus, DoctorContext
+from dovo.core.git.exceptions import GitCommandError
+from dovo.core.git.runner import GitRunner
 from tests.harness import WorkspaceBuilder
-from worktree.common.filesystem import WorkspacePaths
-from worktree.common.filesystem.services.global_root import resolve_global_paths
-from worktree.core.db import SandboxesRepository
-from worktree.core.db.connection import resolve_db_path
-from worktree.core.doctor.checks.sandbox_refs import SandboxRefsCheck
-from worktree.core.doctor.models import CheckCategory, CheckStatus, DoctorContext
-from worktree.core.git.exceptions import GitCommandError
-from worktree.core.git.runner import GitRunner
 
 WorkspacePathsFactory = Callable[[Path, Path | None], WorkspacePaths]
 
@@ -83,7 +83,7 @@ class SandboxRefsCheckTests:
         self, sandbox_refs_workspace: Path, sandbox_refs_workspace_paths: WorkspacePaths
     ) -> None:
         """[tier-1/unit] SandboxRefsCheck.execute: registered git worktree whose directory was removed -> WARNING, error_code='DOCTOR_SANDBOX_STALE', details={'stale_ids': [str(target_path)]}."""
-        target = sandbox_refs_workspace / ".worktree" / "sandboxes" / "sbx_wt1"
+        target = sandbox_refs_workspace / ".dovo" / "sandboxes" / "sbx_wt1"
         GitRunner.worktree_add(
             sandbox_refs_workspace,
             target_path=target,
@@ -110,7 +110,7 @@ class SandboxRefsCheckTests:
         sandbox_refs_repository: SandboxesRepository,
     ) -> None:
         """[tier-1/unit] SandboxRefsCheck.execute: active SandboxesRepository record 'sbx_missing' whose sandbox_path is absent on disk -> WARNING, error_code='DOCTOR_SANDBOX_STALE', details={'stale_ids': ['sbx_missing']}."""
-        missing_path = sandbox_refs_workspace / ".worktree" / "sandboxes" / "sbx_missing"
+        missing_path = sandbox_refs_workspace / ".dovo" / "sandboxes" / "sbx_missing"
         sandbox_refs_repository.create(
             id="sbx_missing",
             branch_name="worktree/sandbox-sbx_missing",
@@ -132,8 +132,8 @@ class SandboxRefsCheckTests:
     def test_execute_orphaned_directory_returns_warning_orphan(
         self, sandbox_refs_workspace: Path, sandbox_refs_workspace_paths: WorkspacePaths
     ) -> None:
-        """[tier-1/unit] SandboxRefsCheck.execute: untracked directory 'sbx_clean' under .worktree/sandboxes -> WARNING, error_code='DOCTOR_SANDBOX_ORPHAN', details={'orphan_directories': ['sbx_clean']}."""
-        sandboxes_dir = sandbox_refs_workspace / ".worktree" / "sandboxes"
+        """[tier-1/unit] SandboxRefsCheck.execute: untracked directory 'sbx_clean' under .dovo/sandboxes -> WARNING, error_code='DOCTOR_SANDBOX_ORPHAN', details={'orphan_directories': ['sbx_clean']}."""
+        sandboxes_dir = sandbox_refs_workspace / ".dovo" / "sandboxes"
         sandboxes_dir.mkdir(parents=True, exist_ok=True)
         (sandboxes_dir / "sbx_clean").mkdir()
         check = SandboxRefsCheck()
@@ -155,7 +155,7 @@ class SandboxRefsCheckTests:
         sandbox_refs_repository: SandboxesRepository,
     ) -> None:
         """[tier-1/unit] SandboxRefsCheck.execute: both a stale DB record 'sbx_missing' and an orphaned directory 'sbx_clean' exist -> WARNING, error_code='DOCTOR_SANDBOX_STALE', details=={'stale_ids': ['sbx_missing']} only (no 'orphan_directories' key)."""
-        sandboxes_dir = sandbox_refs_workspace / ".worktree" / "sandboxes"
+        sandboxes_dir = sandbox_refs_workspace / ".dovo" / "sandboxes"
         sandboxes_dir.mkdir(parents=True, exist_ok=True)
         (sandboxes_dir / "sbx_clean").mkdir()
         missing_path = sandboxes_dir / "sbx_missing"

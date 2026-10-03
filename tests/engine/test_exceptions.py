@@ -6,9 +6,9 @@ from pathlib import Path
 
 import pytest
 
-from worktree.core.inputs import InputResolveResult
-from worktree.engine.exceptions import EngineError, EngineInputError, EngineResumeError, EngineSnapshotMissingError
-from worktree.engine.models import EngineResumeStatus
+from dovo.core.inputs import InputResolveResult
+from dovo.engine.exceptions import EngineError, EngineInputError, EngineResumeError, EngineSnapshotMissingError
+from dovo.engine.models import EngineResumeStatus
 
 
 class EngineInputErrorTests:

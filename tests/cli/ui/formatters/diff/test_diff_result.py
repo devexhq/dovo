@@ -8,14 +8,14 @@ from typing import Any
 import pytest
 from rich.console import Console
 
+from dovo.cli.ui.formatters.diff import DiffResultFormatter, DiffResultView
+from dovo.core.diff.models import DiffResult, DiffStatus
 from tests.harness.formatter import (
     FormatterCase,
     assert_json_payload_matches_published_shape,
     assert_rich_render_shows_every_view_value,
     assert_transform_derives_expected_view,
 )
-from worktree.cli.ui.formatters.diff import DiffResultFormatter, DiffResultView
-from worktree.core.diff.models import DiffResult, DiffStatus
 
 _SAMPLE_DIFF = """diff --git a/src/main.py b/src/main.py
 --- a/src/main.py
@@ -31,8 +31,8 @@ def make_diff_view(**overrides: Any) -> DiffResultView:
     defaults: dict[str, Any] = {
         "status": DiffStatus.OK,
         "session_id": "sbx_fmt_1",
-        "artifact_path": Path("/repo/.worktree/sessions/sbx_fmt_1/diff.patch"),
-        "relative_path": "/repo/.worktree/sessions/sbx_fmt_1/diff.patch",
+        "artifact_path": Path("/repo/.dovo/sessions/sbx_fmt_1/diff.patch"),
+        "relative_path": "/repo/.dovo/sessions/sbx_fmt_1/diff.patch",
         "diff_text": _SAMPLE_DIFF,
         "raw": False,
         "full": False,
@@ -51,7 +51,7 @@ def make_diff_view(**overrides: Any) -> DiffResultView:
 OK_POPULATED_DATA = DiffResult(
     status=DiffStatus.OK,
     session_id="sbx_fmt_1",
-    artifact_path=Path("/repo/.worktree/sessions/sbx_fmt_1/diff.patch"),
+    artifact_path=Path("/repo/.dovo/sessions/sbx_fmt_1/diff.patch"),
     diff_text=_SAMPLE_DIFF,
     warnings=["Non-critical warning"],
 )
@@ -60,15 +60,15 @@ OK_POPULATED = FormatterCase(
     view=make_diff_view(
         status=DiffStatus.OK,
         session_id="sbx_fmt_1",
-        artifact_path=Path("/repo/.worktree/sessions/sbx_fmt_1/diff.patch"),
-        relative_path="/repo/.worktree/sessions/sbx_fmt_1/diff.patch",
+        artifact_path=Path("/repo/.dovo/sessions/sbx_fmt_1/diff.patch"),
+        relative_path="/repo/.dovo/sessions/sbx_fmt_1/diff.patch",
         diff_text=_SAMPLE_DIFF,
         total_lines=6,
         warnings=["Non-critical warning"],
     ),
     render_expectations=[
         "sbx_fmt_1",
-        "/repo/.worktree/sessions/sbx_fmt_1/diff.patch",
+        "/repo/.dovo/sessions/sbx_fmt_1/diff.patch",
         *(line.strip() for line in _SAMPLE_DIFF.splitlines()),
     ],
 )
@@ -76,7 +76,7 @@ OK_POPULATED = FormatterCase(
 EMPTY_DIFF_DATA = DiffResult(
     status=DiffStatus.EMPTY_DIFF,
     session_id="sbx_fmt_empty",
-    artifact_path=Path("/repo/.worktree/sessions/sbx_fmt_empty/diff.patch"),
+    artifact_path=Path("/repo/.dovo/sessions/sbx_fmt_empty/diff.patch"),
     diff_text="",
 )
 EMPTY_DIFF = FormatterCase(
@@ -84,8 +84,8 @@ EMPTY_DIFF = FormatterCase(
     view=make_diff_view(
         status=DiffStatus.EMPTY_DIFF,
         session_id="sbx_fmt_empty",
-        artifact_path=Path("/repo/.worktree/sessions/sbx_fmt_empty/diff.patch"),
-        relative_path="/repo/.worktree/sessions/sbx_fmt_empty/diff.patch",
+        artifact_path=Path("/repo/.dovo/sessions/sbx_fmt_empty/diff.patch"),
+        relative_path="/repo/.dovo/sessions/sbx_fmt_empty/diff.patch",
         diff_text="",
         total_lines=0,
     ),
@@ -95,8 +95,8 @@ EMPTY_DIFF = FormatterCase(
 SESSION_NOT_FOUND_DATA = DiffResult(
     status=DiffStatus.SESSION_NOT_FOUND,
     session_id="sbx_missing_99",
-    errors=["Session 'sbx_missing_99' not found under .worktree/sessions/."],
-    fixes=["Run `wt sandbox list` or check .worktree/sessions/ for valid session IDs"],
+    errors=["Session 'sbx_missing_99' not found under .dovo/sessions/."],
+    fixes=["Run `dovo sandbox list` or check .dovo/sessions/ for valid session IDs"],
 )
 SESSION_NOT_FOUND = FormatterCase(
     data=SESSION_NOT_FOUND_DATA,
@@ -104,23 +104,23 @@ SESSION_NOT_FOUND = FormatterCase(
         status=DiffStatus.SESSION_NOT_FOUND,
         session_id="sbx_missing_99",
         artifact_path=None,
-        relative_path=".worktree/sessions/sbx_missing_99/diff.patch",
+        relative_path=".dovo/sessions/sbx_missing_99/diff.patch",
         diff_text="",
         total_lines=0,
-        errors=["Session 'sbx_missing_99' not found under .worktree/sessions/."],
-        fixes=["Run `wt sandbox list` or check .worktree/sessions/ for valid session IDs"],
+        errors=["Session 'sbx_missing_99' not found under .dovo/sessions/."],
+        fixes=["Run `dovo sandbox list` or check .dovo/sessions/ for valid session IDs"],
     ),
     render_expectations=[
         "sbx_missing_99",
-        "Session 'sbx_missing_99' not found under .worktree/sessions/.",
-        "Run `wt sandbox list` or check .worktree/sessions/ for valid session IDs",
+        "Session 'sbx_missing_99' not found under .dovo/sessions/.",
+        "Run `dovo sandbox list` or check .dovo/sessions/ for valid session IDs",
     ],
 )
 
 DIFF_TRUNCATED_TRUE_DATA = DiffResult(
     status=DiffStatus.OK,
     session_id="sbx_truncated_true",
-    artifact_path=Path("/repo/.worktree/sessions/sbx_truncated_true/diff.patch"),
+    artifact_path=Path("/repo/.dovo/sessions/sbx_truncated_true/diff.patch"),
     diff_text=_SAMPLE_DIFF,
     max_lines=2,
 )
@@ -129,8 +129,8 @@ DIFF_WITH_TRUNCATED_TRUE = FormatterCase(
     view=make_diff_view(
         status=DiffStatus.OK,
         session_id="sbx_truncated_true",
-        artifact_path=Path("/repo/.worktree/sessions/sbx_truncated_true/diff.patch"),
-        relative_path="/repo/.worktree/sessions/sbx_truncated_true/diff.patch",
+        artifact_path=Path("/repo/.dovo/sessions/sbx_truncated_true/diff.patch"),
+        relative_path="/repo/.dovo/sessions/sbx_truncated_true/diff.patch",
         diff_text=_SAMPLE_DIFF,
         max_lines=2,
         total_lines=6,
@@ -139,7 +139,7 @@ DIFF_WITH_TRUNCATED_TRUE = FormatterCase(
     ),
     render_expectations=[
         "sbx_truncated_true",
-        "/repo/.worktree/sessions/sbx_truncated_true/diff.patch",
+        "/repo/.dovo/sessions/sbx_truncated_true/diff.patch",
         "2",
         "6",
     ],
@@ -158,8 +158,8 @@ DIFF_PAYLOAD_CASES = [
         {
             "status": "ok",
             "session_id": "sbx_fmt_1",
-            "artifact_path": "/repo/.worktree/sessions/sbx_fmt_1/diff.patch",
-            "relative_path": "/repo/.worktree/sessions/sbx_fmt_1/diff.patch",
+            "artifact_path": "/repo/.dovo/sessions/sbx_fmt_1/diff.patch",
+            "relative_path": "/repo/.dovo/sessions/sbx_fmt_1/diff.patch",
             "diff_text": _SAMPLE_DIFF,
             "raw": False,
             "full": False,
@@ -178,8 +178,8 @@ DIFF_PAYLOAD_CASES = [
         {
             "status": "empty_diff",
             "session_id": "sbx_fmt_empty",
-            "artifact_path": "/repo/.worktree/sessions/sbx_fmt_empty/diff.patch",
-            "relative_path": "/repo/.worktree/sessions/sbx_fmt_empty/diff.patch",
+            "artifact_path": "/repo/.dovo/sessions/sbx_fmt_empty/diff.patch",
+            "relative_path": "/repo/.dovo/sessions/sbx_fmt_empty/diff.patch",
             "diff_text": "",
             "raw": False,
             "full": False,
@@ -199,7 +199,7 @@ DIFF_PAYLOAD_CASES = [
             "status": "session_not_found",
             "session_id": "sbx_missing_99",
             "artifact_path": None,
-            "relative_path": ".worktree/sessions/sbx_missing_99/diff.patch",
+            "relative_path": ".dovo/sessions/sbx_missing_99/diff.patch",
             "diff_text": "",
             "raw": False,
             "full": False,
@@ -207,9 +207,9 @@ DIFF_PAYLOAD_CASES = [
             "total_lines": 0,
             "truncated": False,
             "truncated_lines": 0,
-            "errors": ["Session 'sbx_missing_99' not found under .worktree/sessions/."],
+            "errors": ["Session 'sbx_missing_99' not found under .dovo/sessions/."],
             "warnings": [],
-            "fixes": ["Run `wt sandbox list` or check .worktree/sessions/ for valid session IDs"],
+            "fixes": ["Run `dovo sandbox list` or check .dovo/sessions/ for valid session IDs"],
         },
         id="session_not_found",
     ),
@@ -221,7 +221,7 @@ TO_RAW_CASES = [
         DiffResult(
             status=DiffStatus.OK,
             session_id="sbx_raw_1",
-            artifact_path=Path("/repo/.worktree/sessions/sbx_raw_1/diff.patch"),
+            artifact_path=Path("/repo/.dovo/sessions/sbx_raw_1/diff.patch"),
             diff_text="diff --git a/a.txt b/a.txt\n+line\n",
             raw=True,
         ),
@@ -233,7 +233,7 @@ TO_RAW_CASES = [
         DiffResult(
             status=DiffStatus.EMPTY_DIFF,
             session_id="sbx_raw_empty",
-            artifact_path=Path("/repo/.worktree/sessions/sbx_raw_empty/diff.patch"),
+            artifact_path=Path("/repo/.dovo/sessions/sbx_raw_empty/diff.patch"),
             diff_text="",
         ),
         "No changes recorded for session sbx_raw_empty.",
@@ -244,7 +244,7 @@ TO_RAW_CASES = [
         DiffResult(
             status=DiffStatus.SESSION_NOT_FOUND,
             session_id="sbx_missing_raw",
-            errors=["Session 'sbx_missing_raw' not found under .worktree/sessions/."],
+            errors=["Session 'sbx_missing_raw' not found under .dovo/sessions/."],
         ),
         "Session 'sbx_missing_raw' not found",
         id="session_not_found_renders_error_panel_text",
@@ -254,7 +254,7 @@ TO_RAW_CASES = [
         DiffResult(
             status=DiffStatus.OK,
             session_id="sbx_trunc",
-            artifact_path=Path("/repo/.worktree/sessions/sbx_trunc/diff.patch"),
+            artifact_path=Path("/repo/.dovo/sessions/sbx_trunc/diff.patch"),
             diff_text="line 1\nline 2\nline 3\nline 4\n",
             raw=False,
         ),
@@ -266,7 +266,7 @@ TO_RAW_CASES = [
         DiffResult(
             status=DiffStatus.OK,
             session_id="sbx_trunc",
-            artifact_path=Path("/repo/.worktree/sessions/sbx_trunc/diff.patch"),
+            artifact_path=Path("/repo/.dovo/sessions/sbx_trunc/diff.patch"),
             diff_text="line 1\nline 2\nline 3\nline 4\n",
             raw=False,
         ),
@@ -278,7 +278,7 @@ TO_RAW_CASES = [
         DiffResult(
             status=DiffStatus.OK,
             session_id="sbx_trunc",
-            artifact_path=Path("/repo/.worktree/sessions/sbx_trunc/diff.patch"),
+            artifact_path=Path("/repo/.dovo/sessions/sbx_trunc/diff.patch"),
             diff_text="line 1\nline 2\nline 3\nline 4\n",
             raw=False,
         ),

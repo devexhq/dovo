@@ -8,34 +8,34 @@ from typing import Any
 
 import pytest
 
+from dovo.cli.ui.formatters.init import (
+    WorkspaceInitFormatter,
+    WorkspaceInitView,
+)
+from dovo.common.constants import DOVO_GITIGNORE_TRACKED_ENTRIES
+from dovo.core.bootstrap.models import (
+    BootstrapOutcome,
+    BootstrapResult,
+    InitFailureMode,
+    WorkspaceInitResult,
+)
+from dovo.core.catalog.models import SeedResult
+from dovo.core.config.generator import ConfigGenerationResult
+from dovo.core.project.models import ProjectIdentity, ProjectIdentityProvisionResult, ProjectIdentityProvisionStatus
 from tests.harness.formatter import (
     FormatterCase,
     assert_json_payload_matches_published_shape,
     assert_rich_render_shows_every_view_value,
     assert_transform_derives_expected_view,
 )
-from worktree.cli.ui.formatters.init import (
-    WorkspaceInitFormatter,
-    WorkspaceInitView,
-)
-from worktree.common.constants import WORKTREE_GITIGNORE_TRACKED_ENTRIES
-from worktree.core.bootstrap.models import (
-    BootstrapOutcome,
-    BootstrapResult,
-    InitFailureMode,
-    WorkspaceInitResult,
-)
-from worktree.core.catalog.models import SeedResult
-from worktree.core.config.generator import ConfigGenerationResult
-from worktree.core.project.models import ProjectIdentity, ProjectIdentityProvisionResult, ProjectIdentityProvisionStatus
 
 ROOT = Path("/workspace/my-repo")
-WORKTREE = ROOT / ".worktree"
-CONFIG_PATH = WORKTREE / "config.json"
+DOVO = ROOT / ".dovo"
+CONFIG_PATH = DOVO / "config.json"
 
 BASELINE_IDENTITY_RESULT = ProjectIdentityProvisionResult(
     status=ProjectIdentityProvisionStatus.CREATED,
-    path=WORKTREE / "project.json",
+    path=DOVO / "project.json",
     identity=ProjectIdentity(id="test-project", created_at=datetime(2026, 1, 1, tzinfo=UTC)),
 )
 
@@ -44,22 +44,22 @@ def make_init_view(**overrides: Any) -> WorkspaceInitView:
     """Helper to construct a WorkspaceInitView with baseline initialized defaults."""
     defaults: dict[str, Any] = {
         "ok": True,
-        "root_path": WORKTREE,
-        "root_path_relative": ".worktree",
+        "root_path": DOVO,
+        "root_path_relative": ".dovo",
         "bootstrap_outcome": BootstrapOutcome.INITIALIZED,
-        "dirs_created": [".worktree/sessions"],
+        "dirs_created": [".dovo/sessions"],
         "project_id": None,
         "identity_path_relative": None,
         "identity_preserved": False,
-        "gitignore_path_relative": ".worktree/.gitignore",
-        "gitignore_tracked_entries": list(WORKTREE_GITIGNORE_TRACKED_ENTRIES),
+        "gitignore_path_relative": ".dovo/.gitignore",
+        "gitignore_tracked_entries": list(DOVO_GITIGNORE_TRACKED_ENTRIES),
         "config_created": True,
         "config_overwritten": False,
         "config_repaired": False,
         "config_skipped_existing": False,
-        "config_path_relative": ".worktree/config.json",
+        "config_path_relative": ".dovo/config.json",
         "inserted_keys": [],
-        "seeded_files": [".worktree/workflows/test.yml"],
+        "seeded_files": [".dovo/workflows/test.yml"],
         "skipped_seed_files": [],
         "overwritten_seed_files": [],
         "failure_mode": None,
@@ -74,9 +74,9 @@ def make_init_view(**overrides: Any) -> WorkspaceInitView:
 INITIALIZED = FormatterCase(
     data=WorkspaceInitResult(
         bootstrap_result=BootstrapResult(
-            root_path=WORKTREE,
+            root_path=DOVO,
             root_created=True,
-            dirs_created=[WORKTREE / "sessions"],
+            dirs_created=[DOVO / "sessions"],
         ),
         identity_result=BASELINE_IDENTITY_RESULT,
         config_result=ConfigGenerationResult(
@@ -84,32 +84,32 @@ INITIALIZED = FormatterCase(
             created=True,
         ),
         seed_result=SeedResult(
-            created_files=[WORKTREE / "workflows" / "test.yml"],
+            created_files=[DOVO / "workflows" / "test.yml"],
         ),
     ),
     view=make_init_view(
         project_id="test-project",
-        identity_path_relative=".worktree/project.json",
+        identity_path_relative=".dovo/project.json",
     ),
     render_expectations=[
-        ".worktree",
-        ".worktree/config.json",
-        ".worktree/sessions",
-        ".worktree/workflows/test.yml",
+        ".dovo",
+        ".dovo/config.json",
+        ".dovo/sessions",
+        ".dovo/workflows/test.yml",
     ],
 )
 
 INITIALIZED_WITH_IDENTITY = FormatterCase(
     data=WorkspaceInitResult(
         bootstrap_result=BootstrapResult(
-            root_path=WORKTREE,
+            root_path=DOVO,
             root_created=True,
-            dirs_created=[WORKTREE / ".meta"],
+            dirs_created=[DOVO / ".meta"],
             gitignore_created=True,
         ),
         identity_result=ProjectIdentityProvisionResult(
             status=ProjectIdentityProvisionStatus.CREATED,
-            path=WORKTREE / "project.json",
+            path=DOVO / "project.json",
             identity=ProjectIdentity(id="brave-otter", created_at=datetime(2026, 1, 1, tzinfo=UTC)),
         ),
         config_result=ConfigGenerationResult(
@@ -117,22 +117,22 @@ INITIALIZED_WITH_IDENTITY = FormatterCase(
             created=True,
         ),
         seed_result=SeedResult(
-            created_files=[WORKTREE / "workflows" / "test.yml"],
+            created_files=[DOVO / "workflows" / "test.yml"],
         ),
     ),
     view=make_init_view(
-        dirs_created=[".worktree/.meta"],
+        dirs_created=[".dovo/.meta"],
         project_id="brave-otter",
-        identity_path_relative=".worktree/project.json",
+        identity_path_relative=".dovo/project.json",
         identity_preserved=False,
     ),
     render_expectations=[
-        ".worktree",
-        ".worktree/config.json",
-        ".worktree/.meta",
-        ".worktree/workflows/test.yml",
+        ".dovo",
+        ".dovo/config.json",
+        ".dovo/.meta",
+        ".dovo/workflows/test.yml",
         "brave-otter",
-        ".worktree/project.json",
+        ".dovo/project.json",
         "catalog/",
     ],
 )
@@ -140,9 +140,9 @@ INITIALIZED_WITH_IDENTITY = FormatterCase(
 REPAIRED = FormatterCase(
     data=WorkspaceInitResult(
         bootstrap_result=BootstrapResult(
-            root_path=WORKTREE,
+            root_path=DOVO,
             repaired=True,
-            dirs_created=[WORKTREE / "sessions"],
+            dirs_created=[DOVO / "sessions"],
         ),
         identity_result=BASELINE_IDENTITY_RESULT,
         config_result=ConfigGenerationResult(
@@ -151,32 +151,32 @@ REPAIRED = FormatterCase(
             inserted_keys=["telemetry.enabled"],
         ),
         seed_result=SeedResult(
-            skipped_existing_files=[WORKTREE / "workflows" / "fix-tests.yml"],
+            skipped_existing_files=[DOVO / "workflows" / "fix-tests.yml"],
         ),
     ),
     view=make_init_view(
         bootstrap_outcome=BootstrapOutcome.REPAIRED,
         project_id="test-project",
-        identity_path_relative=".worktree/project.json",
+        identity_path_relative=".dovo/project.json",
         config_created=False,
         config_repaired=True,
         inserted_keys=["telemetry.enabled"],
         seeded_files=[],
-        skipped_seed_files=[".worktree/workflows/fix-tests.yml"],
+        skipped_seed_files=[".dovo/workflows/fix-tests.yml"],
     ),
     render_expectations=[
-        ".worktree",
-        ".worktree/config.json",
-        ".worktree/sessions",
+        ".dovo",
+        ".dovo/config.json",
+        ".dovo/sessions",
         "telemetry.enabled",
-        ".worktree/workflows/fix-tests.yml",
+        ".dovo/workflows/fix-tests.yml",
     ],
 )
 
 ALREADY_INITIALIZED_OVERWRITTEN = FormatterCase(
     data=WorkspaceInitResult(
         bootstrap_result=BootstrapResult(
-            root_path=WORKTREE,
+            root_path=DOVO,
             outcome=BootstrapOutcome.ALREADY_INITIALIZED,
             dirs_created=[],
         ),
@@ -186,26 +186,26 @@ ALREADY_INITIALIZED_OVERWRITTEN = FormatterCase(
             overwritten=True,
         ),
         seed_result=SeedResult(
-            overwritten_files=[WORKTREE / "workflows" / "x.yml"],
+            overwritten_files=[DOVO / "workflows" / "x.yml"],
         ),
     ),
     view=make_init_view(
         bootstrap_outcome=BootstrapOutcome.ALREADY_INITIALIZED,
         dirs_created=[],
         project_id="test-project",
-        identity_path_relative=".worktree/project.json",
+        identity_path_relative=".dovo/project.json",
         config_created=False,
         config_overwritten=True,
         seeded_files=[],
-        overwritten_seed_files=[".worktree/workflows/x.yml"],
+        overwritten_seed_files=[".dovo/workflows/x.yml"],
     ),
-    render_expectations=[".worktree", ".worktree/config.json"],
+    render_expectations=[".dovo", ".dovo/config.json"],
 )
 
 CONFIG_SKIPPED_EXISTING = FormatterCase(
     data=WorkspaceInitResult(
         bootstrap_result=BootstrapResult(
-            root_path=WORKTREE,
+            root_path=DOVO,
             outcome=BootstrapOutcome.INITIALIZED,
             dirs_created=[],
         ),
@@ -219,18 +219,18 @@ CONFIG_SKIPPED_EXISTING = FormatterCase(
     view=make_init_view(
         dirs_created=[],
         project_id="test-project",
-        identity_path_relative=".worktree/project.json",
+        identity_path_relative=".dovo/project.json",
         config_created=False,
         config_skipped_existing=True,
         seeded_files=[],
     ),
-    render_expectations=[".worktree", ".worktree/config.json"],
+    render_expectations=[".dovo", ".dovo/config.json"],
 )
 
 NO_CONFIG_PATH = FormatterCase(
     data=WorkspaceInitResult(
         bootstrap_result=BootstrapResult(
-            root_path=WORKTREE,
+            root_path=DOVO,
             outcome=BootstrapOutcome.INITIALIZED,
             dirs_created=[],
         ),
@@ -241,17 +241,17 @@ NO_CONFIG_PATH = FormatterCase(
     view=make_init_view(
         dirs_created=[],
         project_id="test-project",
-        identity_path_relative=".worktree/project.json",
+        identity_path_relative=".dovo/project.json",
         config_created=False,
         config_path_relative=None,
         seeded_files=[],
     ),
-    render_expectations=[".worktree"],
+    render_expectations=[".dovo"],
 )
 
 SEEDING_ERROR = FormatterCase(
     data=WorkspaceInitResult(
-        bootstrap_result=BootstrapResult(root_path=WORKTREE),
+        bootstrap_result=BootstrapResult(root_path=DOVO),
         config_result=ConfigGenerationResult(
             config_path=CONFIG_PATH,
             created=True,
@@ -265,13 +265,13 @@ SEEDING_ERROR = FormatterCase(
         seeded_files=[],
         errors=["could not seed"],
     ),
-    render_expectations=[".worktree", ".worktree/config.json", "could not seed"],
+    render_expectations=[".dovo", ".dovo/config.json", "could not seed"],
 )
 
 PREFLIGHT_FAILURE = FormatterCase(
     data=WorkspaceInitResult(
         errors=["The current directory is not a valid Git repository."],
-        fixes=["Run 'git init' before running 'wt init'."],
+        fixes=["Run 'git init' before running 'dovo init'."],
         failure_mode=InitFailureMode.PREFLIGHT,
     ),
     view=make_init_view(
@@ -287,22 +287,22 @@ PREFLIGHT_FAILURE = FormatterCase(
         seeded_files=[],
         failure_mode=InitFailureMode.PREFLIGHT,
         errors=["The current directory is not a valid Git repository."],
-        fixes=["Run 'git init' before running 'wt init'."],
+        fixes=["Run 'git init' before running 'dovo init'."],
     ),
     render_expectations=[
         "The current directory is not a valid Git repository.",
-        "Run 'git init' before running 'wt init'.",
+        "Run 'git init' before running 'dovo init'.",
     ],
 )
 
 BOOTSTRAP_FAILURE = FormatterCase(
     data=WorkspaceInitResult(
         bootstrap_result=BootstrapResult(
-            root_path=WORKTREE,
-            errors=["path conflict: .worktree is a file"],
+            root_path=DOVO,
+            errors=["path conflict: .dovo is a file"],
             fixes=["Remove the conflicting file."],
         ),
-        errors=["path conflict: .worktree is a file"],
+        errors=["path conflict: .dovo is a file"],
         fixes=["Remove the conflicting file."],
         failure_mode=InitFailureMode.BOOTSTRAP,
     ),
@@ -314,25 +314,25 @@ BOOTSTRAP_FAILURE = FormatterCase(
         config_path_relative=None,
         seeded_files=[],
         failure_mode=InitFailureMode.BOOTSTRAP,
-        errors=["path conflict: .worktree is a file"],
+        errors=["path conflict: .dovo is a file"],
         fixes=["Remove the conflicting file."],
     ),
     render_expectations=[
-        "path conflict: .worktree is a file",
+        "path conflict: .dovo is a file",
         "Remove the conflicting file.",
     ],
 )
 
 CONFIG_GENERATION_FAILURE = FormatterCase(
     data=WorkspaceInitResult(
-        bootstrap_result=BootstrapResult(root_path=WORKTREE),
+        bootstrap_result=BootstrapResult(root_path=DOVO),
         config_result=ConfigGenerationResult(
             config_path=CONFIG_PATH,
             errors=["CONFIG_WRITE_FAILED: permission denied"],
-            fixes=["Check file permissions for .worktree/config.json."],
+            fixes=["Check file permissions for .dovo/config.json."],
         ),
         errors=["CONFIG_WRITE_FAILED: permission denied"],
-        fixes=["Check file permissions for .worktree/config.json."],
+        fixes=["Check file permissions for .dovo/config.json."],
         failure_mode=InitFailureMode.CONFIG_GENERATION,
     ),
     view=make_init_view(
@@ -340,15 +340,15 @@ CONFIG_GENERATION_FAILURE = FormatterCase(
         bootstrap_outcome=BootstrapOutcome.ALREADY_INITIALIZED,
         dirs_created=[],
         config_created=False,
-        config_path_relative=".worktree/config.json",
+        config_path_relative=".dovo/config.json",
         seeded_files=[],
         failure_mode=InitFailureMode.CONFIG_GENERATION,
         errors=["CONFIG_WRITE_FAILED: permission denied"],
-        fixes=["Check file permissions for .worktree/config.json."],
+        fixes=["Check file permissions for .dovo/config.json."],
     ),
     render_expectations=[
         "CONFIG_WRITE_FAILED: permission denied",
-        "Check file permissions for .worktree/config.json.",
+        "Check file permissions for .dovo/config.json.",
     ],
 )
 
@@ -370,22 +370,22 @@ INIT_PAYLOAD_CASES = [
         INITIALIZED,
         {
             "ok": True,
-            "root_path": "/workspace/my-repo/.worktree",
-            "root_path_relative": ".worktree",
+            "root_path": "/workspace/my-repo/.dovo",
+            "root_path_relative": ".dovo",
             "bootstrap_outcome": "initialized",
-            "dirs_created": [".worktree/sessions"],
+            "dirs_created": [".dovo/sessions"],
             "project_id": "test-project",
-            "identity_path_relative": ".worktree/project.json",
+            "identity_path_relative": ".dovo/project.json",
             "identity_preserved": False,
-            "gitignore_path_relative": ".worktree/.gitignore",
-            "gitignore_tracked_entries": list(WORKTREE_GITIGNORE_TRACKED_ENTRIES),
+            "gitignore_path_relative": ".dovo/.gitignore",
+            "gitignore_tracked_entries": list(DOVO_GITIGNORE_TRACKED_ENTRIES),
             "config_created": True,
             "config_overwritten": False,
             "config_repaired": False,
             "config_skipped_existing": False,
-            "config_path_relative": ".worktree/config.json",
+            "config_path_relative": ".dovo/config.json",
             "inserted_keys": [],
-            "seeded_files": [".worktree/workflows/test.yml"],
+            "seeded_files": [".dovo/workflows/test.yml"],
             "skipped_seed_files": [],
             "overwritten_seed_files": [],
             "failure_mode": None,
@@ -399,22 +399,22 @@ INIT_PAYLOAD_CASES = [
         INITIALIZED_WITH_IDENTITY,
         {
             "ok": True,
-            "root_path": "/workspace/my-repo/.worktree",
-            "root_path_relative": ".worktree",
+            "root_path": "/workspace/my-repo/.dovo",
+            "root_path_relative": ".dovo",
             "bootstrap_outcome": "initialized",
-            "dirs_created": [".worktree/.meta"],
+            "dirs_created": [".dovo/.meta"],
             "project_id": "brave-otter",
-            "identity_path_relative": ".worktree/project.json",
+            "identity_path_relative": ".dovo/project.json",
             "identity_preserved": False,
-            "gitignore_path_relative": ".worktree/.gitignore",
-            "gitignore_tracked_entries": list(WORKTREE_GITIGNORE_TRACKED_ENTRIES),
+            "gitignore_path_relative": ".dovo/.gitignore",
+            "gitignore_tracked_entries": list(DOVO_GITIGNORE_TRACKED_ENTRIES),
             "config_created": True,
             "config_overwritten": False,
             "config_repaired": False,
             "config_skipped_existing": False,
-            "config_path_relative": ".worktree/config.json",
+            "config_path_relative": ".dovo/config.json",
             "inserted_keys": [],
-            "seeded_files": [".worktree/workflows/test.yml"],
+            "seeded_files": [".dovo/workflows/test.yml"],
             "skipped_seed_files": [],
             "overwritten_seed_files": [],
             "failure_mode": None,
@@ -428,23 +428,23 @@ INIT_PAYLOAD_CASES = [
         REPAIRED,
         {
             "ok": True,
-            "root_path": "/workspace/my-repo/.worktree",
-            "root_path_relative": ".worktree",
+            "root_path": "/workspace/my-repo/.dovo",
+            "root_path_relative": ".dovo",
             "bootstrap_outcome": "repaired",
-            "dirs_created": [".worktree/sessions"],
+            "dirs_created": [".dovo/sessions"],
             "project_id": "test-project",
-            "identity_path_relative": ".worktree/project.json",
+            "identity_path_relative": ".dovo/project.json",
             "identity_preserved": False,
-            "gitignore_path_relative": ".worktree/.gitignore",
-            "gitignore_tracked_entries": list(WORKTREE_GITIGNORE_TRACKED_ENTRIES),
+            "gitignore_path_relative": ".dovo/.gitignore",
+            "gitignore_tracked_entries": list(DOVO_GITIGNORE_TRACKED_ENTRIES),
             "config_created": False,
             "config_overwritten": False,
             "config_repaired": True,
             "config_skipped_existing": False,
-            "config_path_relative": ".worktree/config.json",
+            "config_path_relative": ".dovo/config.json",
             "inserted_keys": ["telemetry.enabled"],
             "seeded_files": [],
-            "skipped_seed_files": [".worktree/workflows/fix-tests.yml"],
+            "skipped_seed_files": [".dovo/workflows/fix-tests.yml"],
             "overwritten_seed_files": [],
             "failure_mode": None,
             "errors": [],
@@ -478,7 +478,7 @@ INIT_PAYLOAD_CASES = [
             "failure_mode": "preflight",
             "errors": ["The current directory is not a valid Git repository."],
             "warnings": [],
-            "fixes": ["Run 'git init' before running 'wt init'."],
+            "fixes": ["Run 'git init' before running 'dovo init'."],
         },
         id="preflight_failure_payload",
     ),

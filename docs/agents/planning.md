@@ -34,10 +34,10 @@ Read the codebase directly before planning; never plan from memory (PLAN-007, PL
 
 1. Read the always-on docs listed in [AGENTS.md](../../AGENTS.md).
 2. Read the existing code for every domain touched: `core/<domain>/{models,exceptions,facade}.py`, `services/`, `cli/<name>/app.py` and `commands/`, `cli/ui/formatters/<domain>/`, and mirrored tests.
-3. **Name the closest existing implementation to mirror**, with `file:line` citations (e.g. `wt config set` -> `Config.set` in `src/worktree/core/config/mutate.py` -> `ConfigSetResult` -> `config_set_command` -> `ConfigSetFormatter`). Quote a mirrored symbol as signature + docstring only, never its body.
+3. **Name the closest existing implementation to mirror**, with `file:line` citations (e.g. `dovo config set` -> `Config.set` in `src/dovo/core/config/mutate.py` -> `ConfigSetResult` -> `config_set_command` -> `ConfigSetFormatter`). Quote a mirrored symbol as signature + docstring only, never its body.
 4. **Verify doc field lists against source code**; record stale doc claims as traps.
 5. If the issue's description of current state differs from the codebase, state the discrepancy and the corrected state.
-6. **Name every trap**: dead code, lookalike symbols, duplicate implementations, stale docs. Mark each out of scope. (Use `/wt-test-planner` Steps 1b-1d to audit dead status values and existing coverage.)
+6. **Name every trap**: dead code, lookalike symbols, duplicate implementations, stale docs. Mark each out of scope. (Use `/dovo-test-planner` Steps 1b-1d to audit dead status values and existing coverage.)
 
 Record findings as a ground-truth table (`Surface`, `Location`, `What exists`), one clause per cell, `file:line` citations, no narrative. Write the ground-truth table and **Pattern to mirror** to `.agentic/evidence.md`, under a `## Ground truth` heading matching `plan.md`'s — they are citations an implementing agent consults on demand (to verify a claim, or when a cited symbol seems stale), not instructions it needs loaded up front, since each FR's own Instructions already embed the specific file:line detail it needs. **Traps** stay in `.agentic/plan.md` itself, as their own top-level `## Traps` section, not nested under Ground truth: traps are the one thing that actively prevents a bad implementation choice, so a human or implementing agent must see them without opening a second file. Do not repeat Ground truth, Pattern to mirror, or Traps content in Instructions, Decisions, or Edge cases.
 
@@ -49,7 +49,7 @@ Produce an inventory with one row per file touched (exact path, exact identifier
 
 | Artifact | Kind | Path | New or changed | Requirement |
 |---|---|---|---|---|
-| `SandboxPruneResult` | DTO | `src/worktree/core/sandbox/models.py` | new | FR-2 |
+| `SandboxPruneResult` | DTO | `src/dovo/core/sandbox/models.py` | new | FR-2 |
 
 Write this table to `.agentic/evidence.md` under an `## Artifact inventory` heading, together with the **"none"** list below it — `plan.md`'s own `## Artifact inventory` heading holds only a one-line pointer to that file (see the Plan document template). State **"none"** for each kind the issue does not need. Path per kind:
 
@@ -61,7 +61,7 @@ Write this table to `.agentic/evidence.md` under an `## Artifact inventory` head
 - **Typer registration** -> `cli/<name>/app.py` (and `cli/cli.py` for new top-level groups)
 - **Formatter** -> `cli/ui/formatters/<domain>/<name>.py`; view models in `<domain>_views.py` or `<name>_view.py`; register in `register_<domain>_formatters` and `__all__`
 - **Config key** -> `core/config/models.py` + `schemas/v1/config.json` + defaults generator
-- **JSON / YAML schema** -> `src/worktree/schemas/v1/*.json`
+- **JSON / YAML schema** -> `src/dovo/schemas/v1/*.json`
 - **DB model or migration** -> `core/db/models.py` + Alembic migration
 - **Tests** -> mirrored `tests/` path, tier named (see `docs/agents/testing.md#the-four-execution-tiers`)
 - **Docs** -> only docs matching [docs/agents/documentation.md](documentation.md) gates (`docs/cli/`, `schemas.md`, `architecture.md`, `README.md`)
@@ -101,7 +101,7 @@ Structure each FR (or testable group of FRs) under these subheadings:
 6. `### Tests`
 
 > [!TIP]
-> Run `/wt-test-planner --plan` to generate the `### Tests` stubs.
+> Run `/dovo-test-planner --plan` to generate the `### Tests` stubs.
 
 ### Instructions: Imperative verbs only
 
@@ -142,11 +142,11 @@ def prune_sandboxes(context: CliContext, dry_run: bool = False) -> SandboxPruneR
 ```python
 class SandboxPruneCliIntegrationTests:
     def test_prune_empty_returns_nothing_to_prune(self, cli_runner: CliRunner, sandbox_workspace: Path) -> None:
-        """[tier-3/integration] wt sandbox prune: empty sandboxes directory prints 'Nothing to prune'; exit 0."""
+        """[tier-3/integration] dovo sandbox prune: empty sandboxes directory prints 'Nothing to prune'; exit 0."""
         raise NotImplementedError
 ```
 
-Use absolute `worktree.*` imports at module top level and reference only symbols verified in Step 2.
+Use absolute `dovo.*` imports at module top level and reference only symbols verified in Step 2.
 
 ### Decisions: The sole home for rationale
 

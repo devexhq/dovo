@@ -8,9 +8,9 @@ from pathlib import Path
 
 import pytest
 
+from dovo.engine.executors.models import ConditionEvaluationResult
+from dovo.engine.loop_events import LoopEventEmitter
 from tests.harness.runs import NoOpRunObserver
-from worktree.engine.executors.models import ConditionEvaluationResult
-from worktree.engine.loop_events import LoopEventEmitter
 
 _CONDITION = ConditionEvaluationResult(expression="iteration.index >= 3", passed=False)
 

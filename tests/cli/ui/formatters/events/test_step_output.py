@@ -6,13 +6,13 @@ from typing import Any
 
 import pytest
 
+from dovo.cli.ui.events import StepOutputEvent
+from dovo.cli.ui.formatters.events.step_output import StepOutputFormatter
 from tests.harness.formatter import (
     FormatterCase,
     assert_json_payload_matches_published_shape,
     assert_rich_render_shows_every_view_value,
 )
-from worktree.cli.ui.events import StepOutputEvent
-from worktree.cli.ui.formatters.events.step_output import StepOutputFormatter
 
 STDOUT_LINE = FormatterCase(
     data=StepOutputEvent(step_id="step-1", line="building...", stream="stdout"),

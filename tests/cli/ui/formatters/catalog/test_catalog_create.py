@@ -7,13 +7,13 @@ from typing import Any
 
 import pytest
 
+from dovo.cli.ui.formatters.catalog.catalog_create import CatalogCreateFormatter
+from dovo.core.catalog.models import CatalogCreateResult, CatalogItemType, CatalogRecord, CatalogTier
 from tests.harness.formatter import (
     FormatterCase,
     assert_json_payload_matches_published_shape,
     assert_rich_render_shows_every_view_value,
 )
-from worktree.cli.ui.formatters.catalog.catalog_create import CatalogCreateFormatter
-from worktree.core.catalog.models import CatalogCreateResult, CatalogItemType, CatalogRecord, CatalogTier
 
 _RECORD = CatalogRecord(
     key="test-blueprint",
@@ -25,7 +25,7 @@ _RECORD = CatalogRecord(
     checksum="1234567890abcdef",
     tier=CatalogTier.REPO,
 )
-_REPO_RESOLVED_PATH = Path("/repo/.worktree/catalog/blueprints/test-blueprint.yml")
+_REPO_RESOLVED_PATH = Path("/repo/.dovo/catalog/blueprints/test-blueprint.yml")
 
 _USER_RECORD = CatalogRecord(
     key="user-blueprint",
@@ -37,12 +37,12 @@ _USER_RECORD = CatalogRecord(
     checksum="89abcdef01234567",
     tier=CatalogTier.USER,
 )
-_USER_RESOLVED_PATH = Path("/home/user/.worktree/user/catalog/blueprints/user-blueprint.yml")
+_USER_RESOLVED_PATH = Path("/home/user/.dovo/user/catalog/blueprints/user-blueprint.yml")
 
 CREATED_BLUEPRINT = FormatterCase(
     data=CatalogCreateResult(item=_RECORD, resolved_path=_REPO_RESOLVED_PATH),
     view=CatalogCreateResult(item=_RECORD, resolved_path=_REPO_RESOLVED_PATH),
-    render_expectations=["blueprint", "test-blueprint", "repo", ".worktree/catalog/blueprints/test-blueprint.yml"],
+    render_expectations=["blueprint", "test-blueprint", "repo", ".dovo/catalog/blueprints/test-blueprint.yml"],
 )
 
 CREATED_USER_BLUEPRINT = FormatterCase(

@@ -4,23 +4,23 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from tests.harness.builders import BlueprintBuilder, StepBuilder
-from tests.harness.catalog import write_runnable_blueprint, write_runnable_step
-from worktree.common.filesystem import Filesystem
-from worktree.common.filesystem.models import RepositoryPaths, WorkspacePaths
-from worktree.common.filesystem.services.global_root import resolve_global_paths
-from worktree.core.catalog import Catalog
-from worktree.core.catalog.blueprint import Blueprint
-from worktree.core.catalog.definitions import StepDefinition, StepType
-from worktree.core.db import RunStatus
-from worktree.core.project.services.storage import resolve_workspace_paths
-from worktree.engine.models import DefinitionRef, DefinitionsManifest
-from worktree.engine.state_models import RunJsonPayload, RunLifecycle
-from worktree.engine.writer import (
+from dovo.common.filesystem import Filesystem
+from dovo.common.filesystem.models import RepositoryPaths, WorkspacePaths
+from dovo.common.filesystem.services.global_root import resolve_global_paths
+from dovo.core.catalog import Catalog
+from dovo.core.catalog.blueprint import Blueprint
+from dovo.core.catalog.definitions import StepDefinition, StepType
+from dovo.core.db import RunStatus
+from dovo.core.project.services.storage import resolve_workspace_paths
+from dovo.engine.models import DefinitionRef, DefinitionsManifest
+from dovo.engine.state_models import RunJsonPayload, RunLifecycle
+from dovo.engine.writer import (
     load_blueprint_from_snapshot,
     snapshot_definitions,
     write_session_run_projection,
 )
+from tests.harness.builders import BlueprintBuilder, StepBuilder
+from tests.harness.catalog import write_runnable_blueprint, write_runnable_step
 
 
 def _paths_for(root: Path) -> WorkspacePaths:

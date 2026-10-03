@@ -1,55 +1,55 @@
-# `wt sandbox`
+# `dovo sandbox`
 
-The `wt sandbox` command provisions and manages isolated Git worktrees to allow AI agents or human developers to run experiments safely.
+The `dovo sandbox` command provisions and manages isolated Git worktrees to allow AI agents or human developers to run experiments safely.
 
 ## Subcommands
 
-### `wt sandbox list`
+### `dovo sandbox list`
 
 List all active sandboxes associated with the current project repository:
 
 ```bash
-wt sandbox list [--format terminal|json]
+dovo sandbox list [--format terminal|json]
 ```
 
-### `wt sandbox create`
+### `dovo sandbox create`
 
 Create a new isolated Git worktree:
 
 ```bash
-wt sandbox create [--name <name>] [--base-ref <ref>] [--wip/--no-wip] [--format terminal|json]
+dovo sandbox create [--name <name>] [--base-ref <ref>] [--wip/--no-wip] [--format terminal|json]
 ```
 
-### `wt sandbox show`
+### `dovo sandbox show`
 
 Inspect sandbox details, path, branch, and status:
 
 ```bash
-wt sandbox show <sandbox-id> [--format terminal|json]
+dovo sandbox show <sandbox-id> [--format terminal|json]
 ```
 
-### `wt sandbox prune`
+### `dovo sandbox prune`
 
 Safely prune stale sandboxes, orphaned directories, and temporary branches:
 
 ```bash
-wt sandbox prune [--dry-run] [--force] [--format terminal|json]
+dovo sandbox prune [--dry-run] [--force] [--format terminal|json]
 ```
 
-### `wt sandbox delete`
+### `dovo sandbox delete`
 
 Remove an isolated worktree sandbox when work is complete:
 
 ```bash
-wt sandbox delete <sandbox-id> [--force] [--format terminal|json]
+dovo sandbox delete <sandbox-id> [--force] [--format terminal|json]
 ```
 
-### `wt sandbox apply`
+### `dovo sandbox apply`
 
 Apply changes from an isolated sandbox worktree back into the main workspace:
 
 ```bash
-wt sandbox apply <sandbox-id> [OPTIONS]
+dovo sandbox apply <sandbox-id> [OPTIONS]
 ```
 
 #### Options
@@ -67,20 +67,20 @@ wt sandbox apply <sandbox-id> [OPTIONS]
 
 Apply changes as working tree modifications:
 ```bash
-wt sandbox apply sbx_8f2a1b9c
+dovo sandbox apply sbx_8f2a1b9c
 ```
 
 Apply and squash into a commit, then remove the sandbox:
 ```bash
-wt sandbox apply sbx_8f2a1b9c --strategy squash --message "feat: implement auth service" --delete
+dovo sandbox apply sbx_8f2a1b9c --strategy squash --message "feat: implement auth service" --delete
 ```
 
-### `wt sandbox diff`
+### `dovo sandbox diff`
 
 Inspect differences between the sandbox worktree and its base commit:
 
 ```bash
-wt sandbox diff <sandbox-id> [OPTIONS]
+dovo sandbox diff <sandbox-id> [OPTIONS]
 ```
 
 #### Options
@@ -94,10 +94,10 @@ wt sandbox diff <sandbox-id> [OPTIONS]
 
 View unified diff:
 ```bash
-wt sandbox diff sbx_8f2a1b9c
+dovo sandbox diff sbx_8f2a1b9c
 ```
 
 View diffstat summary:
 ```bash
-wt sandbox diff sbx_8f2a1b9c --stat
+dovo sandbox diff sbx_8f2a1b9c --stat
 ```

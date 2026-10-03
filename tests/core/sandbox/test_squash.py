@@ -5,17 +5,17 @@ from pathlib import Path
 
 import pytest
 
-from tests.harness.builders import WorkspaceBuilder
-from worktree.common.filesystem import WorkspacePaths
-from worktree.core.db import SandboxesRepository, SandboxStatus
-from worktree.core.git.runner import GitRunner
-from worktree.core.sandbox.models import (
+from dovo.common.filesystem import WorkspacePaths
+from dovo.core.db import SandboxesRepository, SandboxStatus
+from dovo.core.git.runner import GitRunner
+from dovo.core.sandbox.models import (
     SandboxApplyStatus,
     SandboxApplyStrategy,
     SandboxCreateStatus,
 )
-from worktree.core.sandbox.services.lifecycle import SandboxLifecycle
-from worktree.core.sandbox.services.patch import SandboxPatch
+from dovo.core.sandbox.services.lifecycle import SandboxLifecycle
+from dovo.core.sandbox.services.patch import SandboxPatch
+from tests.harness.builders import WorkspaceBuilder
 
 
 @pytest.fixture
@@ -52,7 +52,7 @@ class SandboxSquashApplyTests:
         create_result = lifecycle.create(session_id="sbx_squash")
         assert create_result.status == SandboxCreateStatus.OK
 
-        sandbox_dir = sandbox_workspace / ".worktree" / "sandboxes" / "sbx_squash"
+        sandbox_dir = sandbox_workspace / ".dovo" / "sandboxes" / "sbx_squash"
 
         (sandbox_dir / "feature1.py").write_text("feature 1\n", encoding="utf-8")
         GitRunner.add_all(sandbox_dir)
@@ -101,7 +101,7 @@ class SandboxSquashApplyTests:
         create_result = lifecycle.create(session_id="sbx_squash_del")
         assert create_result.status == SandboxCreateStatus.OK
 
-        sandbox_dir = sandbox_workspace / ".worktree" / "sandboxes" / "sbx_squash_del"
+        sandbox_dir = sandbox_workspace / ".dovo" / "sandboxes" / "sbx_squash_del"
 
         (sandbox_dir / "feature.py").write_text("squash feature\n", encoding="utf-8")
         GitRunner.add_all(sandbox_dir)
@@ -126,7 +126,7 @@ class SandboxSquashApplyTests:
         assert result.fixes == []
 
         assert "worktree/sandbox-sbx_squash_del" not in GitRunner.list_branches(sandbox_workspace)
-        assert not (sandbox_workspace / ".worktree" / "sandboxes" / "sbx_squash_del").exists()
+        assert not (sandbox_workspace / ".dovo" / "sandboxes" / "sbx_squash_del").exists()
 
         record = db.get("sbx_squash_del")
         assert record is not None
@@ -134,7 +134,7 @@ class SandboxSquashApplyTests:
         assert record.name is None
         assert record.branch_name == "worktree/sandbox-sbx_squash_del"
         assert record.base_commit == initial_commit
-        assert record.sandbox_path == (sandbox_workspace / ".worktree" / "sandboxes" / "sbx_squash_del").resolve()
+        assert record.sandbox_path == (sandbox_workspace / ".dovo" / "sandboxes" / "sbx_squash_del").resolve()
         assert record.status == SandboxStatus.MERGED
         assert record.created_at is not None
         assert record.updated_at is not None

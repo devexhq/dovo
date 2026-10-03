@@ -5,10 +5,10 @@ from __future__ import annotations
 from collections.abc import Callable
 from pathlib import Path
 
-from worktree.common.filesystem import WorkspacePaths
-from worktree.core.diff.facade import Diff
-from worktree.core.diff.models import DiffStatus
-from worktree.core.diff.writer import get_session_dir, write_session_diff
+from dovo.common.filesystem import WorkspacePaths
+from dovo.core.diff.facade import Diff
+from dovo.core.diff.models import DiffStatus
+from dovo.core.diff.writer import get_session_dir, write_session_diff
 
 WorkspacePathsFactory = Callable[[Path, Path | None], WorkspacePaths]
 

@@ -6,28 +6,28 @@ from pathlib import Path
 
 import pytest
 
-from tests.harness.builders import BlueprintBuilder, StepBuilder, WorkspaceBuilder
-from tests.harness.catalog import write_runnable_blueprint, write_runnable_step
-from tests.harness.runs import seed_paused_run
-from worktree.common.filesystem.models import RepositoryPaths, WorkspacePaths
-from worktree.common.filesystem.services.global_root import resolve_global_paths
-from worktree.core.catalog import Catalog
-from worktree.core.catalog.blueprint import Blueprint
-from worktree.core.catalog.definitions import LoopStepBlock, StepDefinition
-from worktree.core.db import RunsRepository, RunStatus
-from worktree.core.git.runner import GitRunner
-from worktree.core.project.services.storage import resolve_workspace_paths
-from worktree.engine import Engine, EngineResumeError, EngineResumeStatus, RunRequest, RunStateStore
-from worktree.engine.executors.models import StepResult
-from worktree.engine.models import (
+from dovo.common.filesystem.models import RepositoryPaths, WorkspacePaths
+from dovo.common.filesystem.services.global_root import resolve_global_paths
+from dovo.core.catalog import Catalog
+from dovo.core.catalog.blueprint import Blueprint
+from dovo.core.catalog.definitions import LoopStepBlock, StepDefinition
+from dovo.core.db import RunsRepository, RunStatus
+from dovo.core.git.runner import GitRunner
+from dovo.core.project.services.storage import resolve_workspace_paths
+from dovo.engine import Engine, EngineResumeError, EngineResumeStatus, RunRequest, RunStateStore
+from dovo.engine.executors.models import StepResult
+from dovo.engine.models import (
     FailurePromptDecision,
     FailurePrompter,
     LoopPromptDecision,
     RunObserver,
     RunOutcome,
 )
-from worktree.engine.state_models import RunJsonPayload
-from worktree.engine.writer import get_session_dir
+from dovo.engine.state_models import RunJsonPayload
+from dovo.engine.writer import get_session_dir
+from tests.harness.builders import BlueprintBuilder, StepBuilder, WorkspaceBuilder
+from tests.harness.catalog import write_runnable_blueprint, write_runnable_step
+from tests.harness.runs import seed_paused_run
 
 
 class _ContinuePrompter(FailurePrompter):
@@ -68,7 +68,7 @@ def _patch_drive_run(monkeypatch: pytest.MonkeyPatch, paths: WorkspacePaths, out
     ) -> RunOutcome:
         return result
 
-    monkeypatch.setattr("worktree.engine.engine.drive_run", fake_drive_run)
+    monkeypatch.setattr("dovo.engine.engine.drive_run", fake_drive_run)
 
 
 class EngineRunStartFailureTests:
@@ -219,7 +219,7 @@ class EngineDispatchTests:
             seen.append(session_id)
             return RunOutcome(status=RunStatus.COMPLETED, sandbox_path=paths.root_dir)
 
-        monkeypatch.setattr("worktree.engine.engine.drive_run", recording_drive_run)
+        monkeypatch.setattr("dovo.engine.engine.drive_run", recording_drive_run)
         engine = _engine(engine_paths, runs_repo)
         if entry == "resume":
             seed_paused_run(
@@ -346,7 +346,7 @@ class EngineRunSnapshotsDefinitionsTests:
             observed["state"] = loaded.state.nodes
             return RunOutcome(status=RunStatus.COMPLETED, sandbox_path=paths.root_dir)
 
-        monkeypatch.setattr("worktree.engine.engine.drive_run", observing_drive_run)
+        monkeypatch.setattr("dovo.engine.engine.drive_run", observing_drive_run)
 
         _engine(engine_paths, runs_repo).run(blueprint, RunRequest(session_id="init-1", use_sandbox=False))
 
@@ -563,7 +563,7 @@ class EngineFinalizeFallbackTests:
             runs.save_execution_state(session_id, "not json", expected_revision=0, next_revision=0)
             return RunOutcome(status=RunStatus.COMPLETED, sandbox_path=paths.root_dir)
 
-        monkeypatch.setattr("worktree.engine.engine.drive_run", corrupting_drive_run)
+        monkeypatch.setattr("dovo.engine.engine.drive_run", corrupting_drive_run)
 
         outcome = _engine(engine_paths, runs_repo).run(blueprint, RunRequest(session_id="corrupt-1", use_sandbox=False))
 

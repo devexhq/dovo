@@ -1,4 +1,4 @@
-"""Unit tests for worktree.core.project.models."""
+"""Unit tests for dovo.core.project.models."""
 
 from datetime import UTC, datetime, timedelta, timezone
 from pathlib import Path
@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 from pydantic import BaseModel, ValidationError
 
-from worktree.core.project.models import (
+from dovo.core.project.models import (
     ProjectIdentity,
     ProjectIdentityError,
     ProjectIdentityErrorType,
@@ -28,7 +28,7 @@ class ProjectIdentityModelsTests:
         ("project_id", "display_name"),
         [
             pytest.param("abc", None, id="minimum_length"),
-            pytest.param("a" + "b" * 62, "Worktree CLI", id="maximum_length"),
+            pytest.param("a" + "b" * 62, "Dovo CLI", id="maximum_length"),
         ],
     )
     def test_valid_slug_boundaries_create_strict_identity(self, project_id: str, display_name: str | None) -> None:

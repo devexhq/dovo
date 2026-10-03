@@ -8,6 +8,7 @@ import pytest
 from pydantic import BaseModel
 from rich.panel import Panel
 
+from dovo.common.types import ComponentFormatter
 from tests.harness.formatter import (
     FormatterCase,
     assert_json_payload_matches_published_shape,
@@ -15,7 +16,6 @@ from tests.harness.formatter import (
     assert_transform_derives_expected_view,
     render_rich,
 )
-from worktree.common.types import ComponentFormatter
 
 
 class DummyData(BaseModel):

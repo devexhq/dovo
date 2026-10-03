@@ -5,21 +5,21 @@ from pathlib import Path
 
 import pytest
 
-from tests.harness.builders import WorkspaceBuilder
-from worktree.common.constants import DEFAULT_MAXIMUM_SANDBOXES_ALLOWED
-from worktree.common.filesystem import WorkspacePaths
-from worktree.core.db import SandboxesRepository, SandboxStatus
-from worktree.core.git.runner import GitRunner
-from worktree.core.sandbox.models import (
+from dovo.common.constants import DEFAULT_MAXIMUM_SANDBOXES_ALLOWED
+from dovo.common.filesystem import WorkspacePaths
+from dovo.core.db import SandboxesRepository, SandboxStatus
+from dovo.core.git.runner import GitRunner
+from dovo.core.sandbox.models import (
     SandboxCreateStatus,
     SandboxDeleteStatus,
     SandboxListStatus,
     SandboxShowStatus,
 )
-from worktree.core.sandbox.services.delete import collect_sandbox_delete
-from worktree.core.sandbox.services.lifecycle import SandboxLifecycle
-from worktree.core.sandbox.services.list import collect_sandbox_list
-from worktree.core.sandbox.services.show import collect_sandbox_show
+from dovo.core.sandbox.services.delete import collect_sandbox_delete
+from dovo.core.sandbox.services.lifecycle import SandboxLifecycle
+from dovo.core.sandbox.services.list import collect_sandbox_list
+from dovo.core.sandbox.services.show import collect_sandbox_show
+from tests.harness.builders import WorkspaceBuilder
 
 
 @pytest.fixture
@@ -60,7 +60,7 @@ class SandboxCreationTests:
 
         result = lifecycle.create(session_id="sbx_test001", name="test-sandbox")
 
-        expected_sandbox_path = (sandbox_workspace / ".worktree" / "sandboxes" / "sbx_test001").resolve()
+        expected_sandbox_path = (sandbox_workspace / ".dovo" / "sandboxes" / "sbx_test001").resolve()
         expected_branch = "worktree/sandbox-sbx_test001"
         head_commit = GitRunner.rev_parse(sandbox_workspace, rev="HEAD")
 
@@ -121,10 +121,10 @@ class SandboxCapacityTests:
         ]
         assert overflow.warnings == []
         assert overflow.fixes == [
-            "Run `wt prune` to remove stale sandboxes, or",
-            "Raise sandbox.max_active_sandboxes in .worktree/config.json",
+            "Run `dovo prune` to remove stale sandboxes, or",
+            "Raise sandbox.max_active_sandboxes in .dovo/config.json",
         ]
-        assert not (sandbox_workspace / ".worktree" / "sandboxes" / overflow_id).exists()
+        assert not (sandbox_workspace / ".dovo" / "sandboxes" / overflow_id).exists()
         assert f"worktree/sandbox-{overflow_id}" not in GitRunner.list_branches(sandbox_workspace)
         assert db.get(overflow_id) is None
 

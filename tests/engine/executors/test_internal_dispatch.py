@@ -4,9 +4,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from worktree.core.db.repositories.artifacts import ArtifactsRepository
-from worktree.engine.executors.internal_dispatch import handle_artifacts_upload
-from worktree.engine.executors.models import InternalCommandContext
+from dovo.core.db.repositories.artifacts import ArtifactsRepository
+from dovo.engine.executors.internal_dispatch import handle_artifacts_upload
+from dovo.engine.executors.models import InternalCommandContext
 
 
 class HandleArtifactsUploadTests:

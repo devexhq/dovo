@@ -6,82 +6,82 @@ from pathlib import Path
 
 import pytest
 
-from worktree.common.filesystem.services.paths import (
-    find_worktree_root,
+from dovo.common.filesystem.services.paths import (
+    find_dovo_root,
     get_catalog_templates_dir,
+    get_dovo_config_file,
+    get_dovo_dir,
     get_gitignore_file,
-    get_worktree_config_file,
-    get_worktree_dir,
 )
 
 
-class FindWorktreeRootTests:
-    def test_worktree_config_json_present_returns_that_directory(self, tmp_path: Path) -> None:
-        """[tier-1/integration] find_worktree_root: an ancestor with .worktree/config.json is returned directly."""
+class FindDovoRootTests:
+    def test_dovo_config_json_present_returns_that_directory(self, tmp_path: Path) -> None:
+        """[tier-1/integration] find_dovo_root: an ancestor with .dovo/config.json is returned directly."""
         root = tmp_path / "repo"
-        (root / ".worktree").mkdir(parents=True)
-        (root / ".worktree" / "config.json").write_text("{}", encoding="utf-8")
+        (root / ".dovo").mkdir(parents=True)
+        (root / ".dovo" / "config.json").write_text("{}", encoding="utf-8")
 
-        assert find_worktree_root(root) == root.resolve()
+        assert find_dovo_root(root) == root.resolve()
 
-    def test_worktree_dir_without_config_json_still_returns_that_directory(self, tmp_path: Path) -> None:
-        """[tier-1/integration] find_worktree_root: an ancestor with a bare .worktree directory (no config.json yet) is returned directly."""
+    def test_dovo_dir_without_config_json_still_returns_that_directory(self, tmp_path: Path) -> None:
+        """[tier-1/integration] find_dovo_root: an ancestor with a bare .dovo directory (no config.json yet) is returned directly."""
         root = tmp_path / "repo"
-        (root / ".worktree").mkdir(parents=True)
+        (root / ".dovo").mkdir(parents=True)
 
-        assert find_worktree_root(root) == root.resolve()
+        assert find_dovo_root(root) == root.resolve()
 
-    def test_git_directory_present_without_worktree_returns_that_directory(self, tmp_path: Path) -> None:
-        """[tier-1/integration] find_worktree_root: no .worktree anywhere, but an ancestor has .git -> that ancestor is returned."""
+    def test_git_directory_present_without_dovo_returns_that_directory(self, tmp_path: Path) -> None:
+        """[tier-1/integration] find_dovo_root: no .dovo anywhere, but an ancestor has .git -> that ancestor is returned."""
         root = tmp_path / "repo"
         (root / ".git").mkdir(parents=True)
 
-        assert find_worktree_root(root) == root.resolve()
+        assert find_dovo_root(root) == root.resolve()
 
     def test_searches_upward_from_nested_start_directory(self, tmp_path: Path) -> None:
-        """[tier-1/integration] find_worktree_root: starting several directories below the root, the nearest ancestor with .git is still found."""
+        """[tier-1/integration] find_dovo_root: starting several directories below the root, the nearest ancestor with .git is still found."""
         root = tmp_path / "repo"
         nested = root / "a" / "b" / "c"
         (root / ".git").mkdir(parents=True)
         nested.mkdir(parents=True)
 
-        assert find_worktree_root(nested) == root.resolve()
+        assert find_dovo_root(nested) == root.resolve()
 
-    def test_worktree_marker_takes_precedence_over_git_marker(self, tmp_path: Path) -> None:
-        """[tier-1/integration] find_worktree_root: when a nested ancestor has .worktree and a further ancestor has .git, the nearer .worktree ancestor wins."""
+    def test_dovo_marker_takes_precedence_over_git_marker(self, tmp_path: Path) -> None:
+        """[tier-1/integration] find_dovo_root: when a nested ancestor has .dovo and a further ancestor has .git, the nearer .dovo ancestor wins."""
         outer = tmp_path / "outer"
         inner = outer / "inner"
         (outer / ".git").mkdir(parents=True)
-        (inner / ".worktree").mkdir(parents=True)
+        (inner / ".dovo").mkdir(parents=True)
 
-        assert find_worktree_root(inner) == inner.resolve()
+        assert find_dovo_root(inner) == inner.resolve()
 
     def test_neither_marker_found_falls_back_to_resolved_start(self, tmp_path: Path) -> None:
-        """[tier-1/integration] find_worktree_root: no .worktree or .git in any ancestor up to filesystem root -> returns the resolved start path unchanged."""
+        """[tier-1/integration] find_dovo_root: no .dovo or .git in any ancestor up to filesystem root -> returns the resolved start path unchanged."""
         isolated = tmp_path / "no-markers-here"
         isolated.mkdir()
 
-        assert find_worktree_root(isolated) == isolated.resolve()
+        assert find_dovo_root(isolated) == isolated.resolve()
 
     def test_none_start_defaults_to_current_working_directory(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """[tier-1/integration] find_worktree_root: start=None resolves from the process CWD, not an arbitrary default."""
+        """[tier-1/integration] find_dovo_root: start=None resolves from the process CWD, not an arbitrary default."""
         root = tmp_path / "repo"
         (root / ".git").mkdir(parents=True)
         monkeypatch.chdir(root)
 
-        assert find_worktree_root(None) == root.resolve()
+        assert find_dovo_root(None) == root.resolve()
 
 
 class DerivedPathHelperTests:
-    def test_get_worktree_dir_joins_dot_worktree_onto_cwd(self, tmp_path: Path) -> None:
-        """[tier-1/unit] get_worktree_dir: returns cwd / '.worktree'."""
-        assert get_worktree_dir(tmp_path) == tmp_path / ".worktree"
+    def test_get_dovo_dir_joins_dot_dovo_onto_cwd(self, tmp_path: Path) -> None:
+        """[tier-1/unit] get_dovo_dir: returns cwd / '.dovo'."""
+        assert get_dovo_dir(tmp_path) == tmp_path / ".dovo"
 
-    def test_get_worktree_config_file_joins_config_json_under_worktree_dir(self, tmp_path: Path) -> None:
-        """[tier-1/unit] get_worktree_config_file: returns cwd / '.worktree' / 'config.json'."""
-        assert get_worktree_config_file(tmp_path) == tmp_path / ".worktree" / "config.json"
+    def test_get_dovo_config_file_joins_config_json_under_dovo_dir(self, tmp_path: Path) -> None:
+        """[tier-1/unit] get_dovo_config_file: returns cwd / '.dovo' / 'config.json'."""
+        assert get_dovo_config_file(tmp_path) == tmp_path / ".dovo" / "config.json"
 
     def test_get_gitignore_file_joins_gitignore_onto_cwd(self, tmp_path: Path) -> None:
         """[tier-1/unit] get_gitignore_file: returns cwd / '.gitignore'."""

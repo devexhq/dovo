@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from worktree.engine.executors.assertions.process import (
+from dovo.engine.executors.assertions.process import (
     evaluate_exit_code,
     evaluate_output_contains,
     evaluate_output_not_contains,

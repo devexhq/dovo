@@ -1,4 +1,4 @@
-"""Tests for worktree.core.status.collector and Status facade."""
+"""Tests for dovo.core.status.collector and Status facade."""
 
 from __future__ import annotations
 
@@ -11,18 +11,18 @@ from typing import Any
 
 import pytest
 
+from dovo.common.filesystem import Filesystem, WorkspacePaths
+from dovo.common.filesystem.models import RepositoryPaths
+from dovo.common.filesystem.services.global_root import resolve_global_paths
+from dovo.core.config.loader import ConfigLoadStatus
+from dovo.core.config.models import AgentConfig, DovoConfig, ProjectConfig, SandboxConfig
+from dovo.core.db import RunsRepository, RunStatus, SandboxesRepository
+from dovo.core.db.connection import resolve_db_path
+from dovo.core.git import GitNotFoundError, GitPlumbingTimeoutError, GitRunner
+from dovo.core.project.services.storage import resolve_workspace_paths
+from dovo.core.status import DovoStatusResult, Status
+from dovo.core.status.services.collector import collect_status
 from tests.harness import WorkspaceBuilder
-from worktree.common.filesystem import Filesystem, WorkspacePaths
-from worktree.common.filesystem.models import RepositoryPaths
-from worktree.common.filesystem.services.global_root import resolve_global_paths
-from worktree.core.config.loader import ConfigLoadStatus
-from worktree.core.config.models import AgentConfig, ProjectConfig, SandboxConfig, WorktreeConfig
-from worktree.core.db import RunsRepository, RunStatus, SandboxesRepository
-from worktree.core.db.connection import resolve_db_path
-from worktree.core.git import GitNotFoundError, GitPlumbingTimeoutError, GitRunner
-from worktree.core.project.services.storage import resolve_workspace_paths
-from worktree.core.status import Status, WorktreeStatusResult
-from worktree.core.status.services.collector import collect_status
 
 
 def _status_paths(workspace: Path) -> WorkspacePaths:
@@ -31,7 +31,7 @@ def _status_paths(workspace: Path) -> WorkspacePaths:
 
 
 def _config_payload(*, model: str | None = "gpt-4o", max_active_sandboxes: int = 5) -> dict[str, Any]:
-    return WorktreeConfig(
+    return DovoConfig(
         version=1,
         project=ProjectConfig(name="status-ws"),
         agent=AgentConfig(model=model),
@@ -49,10 +49,10 @@ class StatusFacadeTests:
             pytest.param(Status.collect_at, id="classmethod"),
         ],
     )
-    def test_status_collect_returns_worktree_status_result(
+    def test_status_collect_returns_dovo_status_result(
         self,
         tmp_path: Path,
-        invoke: Callable[[WorkspacePaths], WorktreeStatusResult],
+        invoke: Callable[[WorkspacePaths], DovoStatusResult],
     ) -> None:
         workspace = (
             WorkspaceBuilder(tmp_path / "facade_collect")
@@ -102,7 +102,7 @@ class StatusCollectorGitCollectionTests:
         sandboxes_repo = SandboxesRepository(db_path=paths.database_file, project_id=paths.project_id)
         sandboxes_repo.create(
             id="sb-001",
-            branch_name="wt/sb-001",
+            branch_name="dovo/sb-001",
             base_commit="HEAD",
             sandbox_path=fs.sandboxes_dir / "sb-001",
         )
@@ -177,9 +177,9 @@ class StatusCollectorGitCollectionTests:
         assert result.git.branch == "none"
         assert result.config.is_valid is False
         assert result.database.exists is False
-        assert result.warnings == ["Worktree workspace is not initialized. Run 'wt init' to configure."]
+        assert result.warnings == ["Dovo workspace is not initialized. Run 'dovo init' to configure."]
         assert result.fixes == [
-            "Run 'wt init' to initialize Worktree in this repository.",
+            "Run 'dovo init' to initialize Dovo in this repository.",
             "Run 'git init' or navigate to a Git repository.",
         ]
 
@@ -255,8 +255,8 @@ class StatusCollectorConfigAndCatalogTests:
         assert result.is_initialized is False
         assert result.git.branch == "feature-uninit"
         assert result.config.is_valid is False
-        assert result.warnings == ["Worktree workspace is not initialized. Run 'wt init' to configure."]
-        assert result.fixes == ["Run 'wt init' to initialize Worktree in this repository."]
+        assert result.warnings == ["Dovo workspace is not initialized. Run 'dovo init' to configure."]
+        assert result.fixes == ["Run 'dovo init' to initialize Dovo in this repository."]
 
     def test_collect_status_malformed_config(self, tmp_path: Path) -> None:
         workspace = (
@@ -275,7 +275,7 @@ class StatusCollectorConfigAndCatalogTests:
         assert any("CONFIG_MALFORMED_JSON" in err for err in result.config.errors)
         assert result.config.fixes == ["Repair JSON syntax, or restore from backup"]
         assert any("Malformed config.json" in w for w in result.warnings)
-        assert result.fixes == ["Repair JSON syntax in .worktree/config.json or restore from backup."]
+        assert result.fixes == ["Repair JSON syntax in .dovo/config.json or restore from backup."]
 
     def test_collect_status_missing_catalog_directory(self, tmp_path: Path) -> None:
         workspace = (
@@ -429,7 +429,7 @@ class StatusCollectorWarningsOrderingTests:
         result = collect_status(paths)
 
         assert result.warnings == [
-            "Worktree workspace is not initialized. Run 'wt init' to configure.",
+            "Dovo workspace is not initialized. Run 'dovo init' to configure.",
             "Active branch is 'main'. Automated workflows on primary branches are discouraged.",
             "Working tree has 1 uncommitted change(s).",
             "1 invalid blueprint file(s) detected in catalog.",
@@ -465,7 +465,7 @@ class StatusCollectorFixesRemediationTests:
 
         result = collect_status(_status_paths(workspace))
 
-        assert result.fixes == ["Run 'wt init' to initialize Worktree in this repository."]
+        assert result.fixes == ["Run 'dovo init' to initialize Dovo in this repository."]
 
     def test_collect_status_fixes_for_non_git_repo(self, tmp_path: Path) -> None:
         non_git_dir = tmp_path / "non_git_repo"
@@ -481,17 +481,17 @@ class StatusCollectorFixesRemediationTests:
         [
             pytest.param(
                 "{bad json: true",
-                "Repair JSON syntax in .worktree/config.json or restore from backup.",
+                "Repair JSON syntax in .dovo/config.json or restore from backup.",
                 id="malformed_json",
             ),
             pytest.param(
                 "{}",
-                "Run 'wt config validate' to inspect schema errors or 'wt init --repair' to insert missing keys.",
+                "Run 'dovo config validate' to inspect schema errors or 'dovo init --repair' to insert missing keys.",
                 id="schema_invalid",
             ),
             pytest.param(
                 '["not", "an", "object"]',
-                "Ensure .worktree/config.json contains a JSON object root.",
+                "Ensure .dovo/config.json contains a JSON object root.",
                 id="root_not_object",
             ),
         ],
@@ -528,7 +528,7 @@ class StatusCollectorFixesRemediationTests:
 
         result = collect_status(_status_paths(workspace))
 
-        assert result.fixes == ["Remove directory at .worktree/config.json and run 'wt init'."]
+        assert result.fixes == ["Remove directory at .dovo/config.json and run 'dovo init'."]
 
     def test_collect_status_fixes_for_unreadable(self, tmp_path: Path) -> None:
         workspace = (
@@ -545,6 +545,6 @@ class StatusCollectorFixesRemediationTests:
             if os.access(fs.config_file, os.R_OK):
                 pytest.skip("filesystem still allows reading unreadable mode")
             result = collect_status(_status_paths(workspace))
-            assert result.fixes == ["Check file permissions for .worktree/config.json."]
+            assert result.fixes == ["Check file permissions for .dovo/config.json."]
         finally:
             fs.config_file.chmod(stat.S_IRUSR | stat.S_IWUSR)

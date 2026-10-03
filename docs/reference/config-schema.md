@@ -1,6 +1,6 @@
 # Project Config Schema Reference
 
-This reference documents the complete JSON schema for `.worktree/config.json` (Version 1).
+This reference documents the complete JSON schema for `.dovo/config.json` (Version 1).
 
 ---
 

@@ -1,4 +1,4 @@
-"""CLI integration tests for wt config unset."""
+"""CLI integration tests for dovo config unset."""
 
 from __future__ import annotations
 
@@ -7,19 +7,19 @@ from pathlib import Path
 
 from typer.testing import CliRunner
 
-from worktree.cli import app
-from worktree.common.filesystem import Filesystem
-from worktree.core.config.generator import build_default_config
+from dovo.cli import app
+from dovo.common.filesystem import Filesystem
+from dovo.core.config.generator import build_default_config
 
 
 class ConfigUnsetCliIntegrationTests:
-    """Typer runner integration tests for wt config unset."""
+    """Typer runner integration tests for dovo config unset."""
 
     def test_config_unset_cli_removes_value_and_exits_zero(
         self, cli_runner: CliRunner, isolated_workspace: Path
     ) -> None:
-        """[tier-3/integration] wt config unset: removing an existing value exits 0, prints the confirmation line, and deletes the key from config.json."""
-        config_path = isolated_workspace / ".worktree" / "config.json"
+        """[tier-3/integration] dovo config unset: removing an existing value exits 0, prints the confirmation line, and deletes the key from config.json."""
+        config_path = isolated_workspace / ".dovo" / "config.json"
         payload = build_default_config("demo-workspace")
         Filesystem.atomic_write_json(config_path, payload)
 
@@ -35,8 +35,8 @@ class ConfigUnsetCliIntegrationTests:
     def test_config_unset_cli_missing_key_exits_zero_without_write(
         self, cli_runner: CliRunner, isolated_workspace: Path
     ) -> None:
-        """[tier-3/integration] wt config unset: a non-existent key exits 0 and leaves config.json's bytes unchanged on disk."""
-        config_path = isolated_workspace / ".worktree" / "config.json"
+        """[tier-3/integration] dovo config unset: a non-existent key exits 0 and leaves config.json's bytes unchanged on disk."""
+        config_path = isolated_workspace / ".dovo" / "config.json"
         payload = build_default_config("demo-workspace")
         Filesystem.atomic_write_json(config_path, payload)
         before = config_path.read_bytes()
@@ -50,8 +50,8 @@ class ConfigUnsetCliIntegrationTests:
         assert config_path.read_bytes() == before
 
     def test_config_unset_cli_schema_violation_exits_one(self, cli_runner: CliRunner, isolated_workspace: Path) -> None:
-        """[tier-3/integration] wt config unset: removing a required key exits 1 with a Config Error panel naming CONFIG_SCHEMA_INVALID."""
-        config_path = isolated_workspace / ".worktree" / "config.json"
+        """[tier-3/integration] dovo config unset: removing a required key exits 1 with a Config Error panel naming CONFIG_SCHEMA_INVALID."""
+        config_path = isolated_workspace / ".dovo" / "config.json"
         payload = build_default_config("demo-workspace")
         Filesystem.atomic_write_json(config_path, payload)
 
@@ -65,8 +65,8 @@ class ConfigUnsetCliIntegrationTests:
         assert "CONFIG_SCHEMA_INVALID" in res.stdout
 
     def test_config_unset_cli_format_json_emits_event(self, cli_runner: CliRunner, isolated_workspace: Path) -> None:
-        """[tier-3/integration] wt config unset --format json: emits the exact ConfigUnsetResult NDJSON envelope literal."""
-        config_path = isolated_workspace / ".worktree" / "config.json"
+        """[tier-3/integration] dovo config unset --format json: emits the exact ConfigUnsetResult NDJSON envelope literal."""
+        config_path = isolated_workspace / ".dovo" / "config.json"
         payload = build_default_config("demo-workspace")
         Filesystem.atomic_write_json(config_path, payload)
 

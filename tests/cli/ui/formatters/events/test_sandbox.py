@@ -6,13 +6,13 @@ from typing import Any
 
 import pytest
 
+from dovo.cli.ui.events import SandboxLifecycleEvent
+from dovo.cli.ui.formatters.events.sandbox import SandboxLifecycleFormatter
 from tests.harness.formatter import (
     FormatterCase,
     assert_json_payload_matches_published_shape,
     assert_rich_render_shows_every_view_value,
 )
-from worktree.cli.ui.events import SandboxLifecycleEvent
-from worktree.cli.ui.formatters.events.sandbox import SandboxLifecycleFormatter
 
 READY_ACTIVE = FormatterCase(
     data=SandboxLifecycleEvent(action="ready", path="/tmp/sbx1", active=True, kept=None),

@@ -6,12 +6,12 @@ from collections.abc import Callable
 
 import pytest
 
+from dovo.common.filesystem.models import WorkspacePaths
+from dovo.core.db import RunsRepository, RunStatus
+from dovo.core.history.models import ReconciliationResult
+from dovo.engine.models import RunOutcome
+from dovo.engine.services.run import BlueprintRunService
 from tests.harness.catalog import write_runnable_blueprint
-from worktree.common.filesystem.models import WorkspacePaths
-from worktree.core.db import RunsRepository, RunStatus
-from worktree.core.history.models import ReconciliationResult
-from worktree.engine.models import RunOutcome
-from worktree.engine.services.run import BlueprintRunService
 
 
 class BlueprintRunServiceExecuteTests:
@@ -75,7 +75,7 @@ class BlueprintRunServiceExecuteTests:
     ) -> None:
         """[tier-1/integration] BlueprintRunService.execute: a blueprint declaring a required input run without it returns run_record None and one error naming the missing input."""
         write_runnable_blueprint(engine_paths.root_dir, key="needs-input", steps=[{"id": "a", "run": "true"}])
-        blueprint_path = engine_paths.root_dir / ".worktree" / "catalog" / "blueprints" / "needs-input.yml"
+        blueprint_path = engine_paths.root_dir / ".dovo" / "catalog" / "blueprints" / "needs-input.yml"
         blueprint_path.write_text(
             blueprint_path.read_text(encoding="utf-8").replace(
                 "steps:", "inputs:\n- name: target\n  type: string\n  required: true\nsteps:", 1
@@ -100,7 +100,7 @@ class BlueprintRunServiceExecuteTests:
     ) -> None:
         """[tier-1/unit] BlueprintRunService.execute: a stale-run reconciliation warning is appended to warnings before the blueprint loads, so even a failed load reports it."""
         monkeypatch.setattr(
-            "worktree.engine.services.run.reconcile_stale_runs",
+            "dovo.engine.services.run.reconcile_stale_runs",
             lambda runs_db, *, path: ReconciliationResult(warning="reconciled 1 stale run"),
         )
 

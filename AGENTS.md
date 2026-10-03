@@ -1,7 +1,7 @@
 # AGENTS.md
 
-`Worktree` (`wt`) is a Typer-based CLI providing isolated Git worktree
-developer workflows and AI agent workspaces, backed by a local `.worktree/` state
+`Dovo` (`dovo`) is a Typer-based CLI providing isolated Git worktree
+developer workflows and AI agent workspaces, backed by a local `.dovo/` state
 directory.
 
 ## Domain rules (RULES.md)
@@ -10,10 +10,10 @@ Do not read broad always-on documentation before starting a task. Instead, read 
 
 | When editing files under | Read and apply |
 |---|---|
-| `src/worktree/cli/` | [src/worktree/cli/docs/RULES.md](src/worktree/cli/docs/RULES.md) |
-| `src/worktree/common/` | [src/worktree/common/docs/RULES.md](src/worktree/common/docs/RULES.md) |
-| `src/worktree/core/` | [src/worktree/core/docs/RULES.md](src/worktree/core/docs/RULES.md) |
-| `src/worktree/engine/` | [src/worktree/engine/docs/RULES.md](src/worktree/engine/docs/RULES.md) |
+| `src/dovo/cli/` | [src/dovo/cli/docs/RULES.md](src/dovo/cli/docs/RULES.md) |
+| `src/dovo/common/` | [src/dovo/common/docs/RULES.md](src/dovo/common/docs/RULES.md) |
+| `src/dovo/core/` | [src/dovo/core/docs/RULES.md](src/dovo/core/docs/RULES.md) |
+| `src/dovo/engine/` | [src/dovo/engine/docs/RULES.md](src/dovo/engine/docs/RULES.md) |
 | `tests/` | [tests/docs/RULES.md](tests/docs/RULES.md) |
 
 ## Agentic process
@@ -62,7 +62,7 @@ Documentation update gates, accuracy rules, and user-facing doc sync policies ar
 
 | Doc | When to use |
 |-----|-------------|
-| [docs/agents/architecture.md](docs/agents/architecture.md) | Module layout, domain ownership, import boundaries, `.worktree/` layout (structure only) |
+| [docs/agents/architecture.md](docs/agents/architecture.md) | Module layout, domain ownership, import boundaries, `.dovo/` layout (structure only) |
 | [docs/agents/code-conventions.md](docs/agents/code-conventions.md) | Python style, models placement, Result/Outcome, writes, console output, backwards compatibility |
 | [docs/agents/documentation.md](docs/agents/documentation.md) | Documentation update gates, accuracy rules, and user-facing doc sync |
 | [docs/agents/planning.md](docs/agents/planning.md) | Planning an issue before implementation (artifact inventory, code samples, plan template) |
@@ -74,4 +74,4 @@ Documentation update gates, accuracy rules, and user-facing doc sync policies ar
 | [docs/agents/github-issues.md](docs/agents/github-issues.md) | Creating or updating GitHub issues (structure, tone, required sections) |
 | [docs/agents/ci-and-tooling.md](docs/agents/ci-and-tooling.md) | Understanding lint/CI requirements or release versioning |
 | [docs/agents/rules_spec.yaml](docs/agents/rules_spec.yaml) | Source specification for domain rules and invariants (recompile with `compile_rules.py` after changes) |
-| [docs/cli/](docs/cli/) | Per-command reference (`wt catalog`, `wt run`, `wt config`, etc.) for user-facing behavior and flags |
+| [docs/cli/](docs/cli/) | Per-command reference (`dovo catalog`, `dovo run`, `dovo config`, etc.) for user-facing behavior and flags |

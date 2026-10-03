@@ -6,15 +6,15 @@ from typing import Any
 
 import pytest
 
+from dovo.cli.ui.formatters.sandbox.sandbox_diff import SandboxDiffFormatter
+from dovo.core.sandbox.models import (
+    SandboxDiffResult,
+    SandboxDiffStatus,
+)
 from tests.harness.formatter import (
     FormatterCase,
     assert_json_payload_matches_published_shape,
     assert_rich_render_shows_every_view_value,
-)
-from worktree.cli.ui.formatters.sandbox.sandbox_diff import SandboxDiffFormatter
-from worktree.core.sandbox.models import (
-    SandboxDiffResult,
-    SandboxDiffStatus,
 )
 
 OK_WITH_DIFF = FormatterCase(
@@ -48,18 +48,18 @@ NOT_FOUND = FormatterCase(
         status=SandboxDiffStatus.NOT_FOUND,
         sandbox_id="sbx_missing",
         errors=["Sandbox 'sbx_missing' not found."],
-        fixes=["Run `wt sandbox list` to see known sandboxes"],
+        fixes=["Run `dovo sandbox list` to see known sandboxes"],
     ),
     view=SandboxDiffResult(
         status=SandboxDiffStatus.NOT_FOUND,
         sandbox_id="sbx_missing",
         errors=["Sandbox 'sbx_missing' not found."],
-        fixes=["Run `wt sandbox list` to see known sandboxes"],
+        fixes=["Run `dovo sandbox list` to see known sandboxes"],
     ),
     render_expectations=[
         "sbx_missing",
         "Sandbox 'sbx_missing' not found.",
-        "Run `wt sandbox list` to see known sandboxes",
+        "Run `dovo sandbox list` to see known sandboxes",
     ],
 )
 
@@ -111,7 +111,7 @@ SANDBOX_DIFF_PAYLOAD_CASES = [
             "warnings": [],
             "errors": ["Sandbox 'sbx_missing' not found."],
             "error_code": None,
-            "fixes": ["Run `wt sandbox list` to see known sandboxes"],
+            "fixes": ["Run `dovo sandbox list` to see known sandboxes"],
         },
         id="not_found",
     ),

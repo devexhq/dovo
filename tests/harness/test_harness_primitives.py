@@ -10,20 +10,20 @@ import pytest
 import typer
 from typer.testing import CliRunner
 
+from dovo.common.constants import REQUIRED_SUBDIRS
 from tests.harness import FakeAgentRunner, FakeAgentRunnerCall
-from worktree.common.constants import REQUIRED_SUBDIRS
 
 
 class IsolatedWorkspaceFixtureTests:
     """Verification tests for isolated_workspace fixture."""
 
-    def test_isolated_workspace_creates_worktree_structure(self, isolated_workspace: Path) -> None:
-        dot_worktree = isolated_workspace / ".worktree"
-        assert dot_worktree.is_dir()
+    def test_isolated_workspace_creates_dovo_structure(self, isolated_workspace: Path) -> None:
+        dot_dovo = isolated_workspace / ".dovo"
+        assert dot_dovo.is_dir()
         for subdir in REQUIRED_SUBDIRS:
-            assert (dot_worktree / subdir).is_dir()
-        assert (dot_worktree / "sandboxes").is_dir()
-        assert (dot_worktree / "catalog").is_dir()
+            assert (dot_dovo / subdir).is_dir()
+        assert (dot_dovo / "sandboxes").is_dir()
+        assert (dot_dovo / "catalog").is_dir()
 
 
 class GitRepoFixtureTests:

@@ -1,6 +1,6 @@
 # Failure Handling & Session Resumption
 
-Worktree provides declarative quality assertions and durable run state so that long-running blueprints can recover gracefully from failures.
+Dovo provides declarative quality assertions and durable run state so that long-running blueprints can recover gracefully from failures.
 
 ---
 
@@ -77,7 +77,7 @@ For full details on assertion operators, see the [Assertions Schema Reference](.
 
 ### Agent step failures
 
-A failed agent attempt records exit code `201` (`unfixable`), `202` (`timeout`), or `203` (`provider_error`) together with its JSON summary on stdout, and both are kept across `wt resume`. See [Agent step outcomes](../reference/step-schema.md#agent-step-outcomes) for the full mapping.
+A failed agent attempt records exit code `201` (`unfixable`), `202` (`timeout`), or `203` (`provider_error`) together with its JSON summary on stdout, and both are kept across `dovo resume`. See [Agent step outcomes](../reference/step-schema.md#agent-step-outcomes) for the full mapping.
 
 - `on_failure: continue` records the step as `ignored` with exit code `0`, so `steps.<id>.exit_code` no longer shows the failure. The stdout summary keeps the original status, so branch on `steps.<id>.outputs.status`.
 - Retries follow the authored `on_failure` policy only. A `no_op` completes the step and is never retried.
@@ -88,7 +88,7 @@ A failed agent attempt records exit code `201` (`unfixable`), `202` (`timeout`),
 ## Interactive Prompts & Durable Run State
 
 When a step fails with `on_failure: prompt_user`:
-1. Worktree pauses the execution loop.
+1. Dovo pauses the execution loop.
 2. The paused step and its failed attempt are persisted as **durable run state** in the centralized database.
 3. The user is prompted interactively:
    ```text
@@ -107,20 +107,20 @@ The run row owns the execution state and preserves:
 
 ---
 
-## Resuming Sessions (`wt resume`)
+## Resuming Sessions (`dovo resume`)
 
-If you exit or interrupt an interactive session (or if a prompt is left unresolved), the sandbox remains preserved. You can resume execution from the exact point of failure using `wt resume`:
+If you exit or interrupt an interactive session (or if a prompt is left unresolved), the sandbox remains preserved. You can resume execution from the exact point of failure using `dovo resume`:
 
 ```bash
 # Resume by session ID
-wt resume blueprint_a1b2c3d4
+dovo resume blueprint_a1b2c3d4
 ```
 
-Worktree reloads the retained sandbox and re-enters the failure prompt for the paused step using its recorded failed attempt, without re-running the failed command or any earlier completed step. Choosing retry starts the next attempt; continue and abort finish the step as ignored or failed.
+Dovo reloads the retained sandbox and re-enters the failure prompt for the paused step using its recorded failed attempt, without re-running the failed command or any earlier completed step. Choosing retry starts the next attempt; continue and abort finish the step as ignored or failed.
 
 ### Resuming a paused loop
 
-A loop is part of the same durable run state: the paused loop, its current iteration, and the paused body step are all persisted. `wt resume` re-enters the paused body step's prompt from its recorded failed attempt. It never re-runs finished body steps or earlier iterations, and it runs only the remaining body steps of the current iteration. The loop's `until` conditions are evaluated over every body step of that iteration, including those that finished before the pause. Granted iterations are persisted with the loop, so a resumed loop keeps its raised ceiling.
+A loop is part of the same durable run state: the paused loop, its current iteration, and the paused body step are all persisted. `dovo resume` re-enters the paused body step's prompt from its recorded failed attempt. It never re-runs finished body steps or earlier iterations, and it runs only the remaining body steps of the current iteration. The loop's `until` conditions are evaluated over every body step of that iteration, including those that finished before the pause. Granted iterations are persisted with the loop, so a resumed loop keeps its raised ceiling.
 
 ---
 
@@ -131,7 +131,7 @@ In automated environments (such as CI pipelines or background cron jobs), intera
 Pass the `--no-tty` flag:
 
 ```bash
-wt run test-suite --no-tty
+dovo run test-suite --no-tty
 ```
 
 When `--no-tty` is enabled, any `prompt_user` policy automatically degrades to `abort` and emits a warning.

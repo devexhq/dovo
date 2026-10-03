@@ -6,23 +6,23 @@ from typing import Any
 
 import pytest
 
+from dovo.cli.ui.events import LockWaitEvent
+from dovo.cli.ui.formatters.events.lock_wait import LockWaitFormatter
 from tests.harness.formatter import (
     FormatterCase,
     assert_json_payload_matches_published_shape,
     assert_rich_render_shows_every_view_value,
 )
-from worktree.cli.ui.events import LockWaitEvent
-from worktree.cli.ui.formatters.events.lock_wait import LockWaitFormatter
 
 LOCK_WAIT_WITH_HOLDER = FormatterCase(
-    data=LockWaitEvent(lock_path="/path/to/.worktree/.lock", holder_pid="12345", timeout_seconds=30.0),
-    view=LockWaitEvent(lock_path="/path/to/.worktree/.lock", holder_pid="12345", timeout_seconds=30.0),
+    data=LockWaitEvent(lock_path="/path/to/.dovo/.lock", holder_pid="12345", timeout_seconds=30.0),
+    view=LockWaitEvent(lock_path="/path/to/.dovo/.lock", holder_pid="12345", timeout_seconds=30.0),
     render_expectations=[".lock", "30.0s", "12345"],
 )
 
 LOCK_WAIT_WITHOUT_HOLDER = FormatterCase(
-    data=LockWaitEvent(lock_path="/path/to/.worktree/.lock", holder_pid=None, timeout_seconds=15.0),
-    view=LockWaitEvent(lock_path="/path/to/.worktree/.lock", holder_pid=None, timeout_seconds=15.0),
+    data=LockWaitEvent(lock_path="/path/to/.dovo/.lock", holder_pid=None, timeout_seconds=15.0),
+    view=LockWaitEvent(lock_path="/path/to/.dovo/.lock", holder_pid=None, timeout_seconds=15.0),
     render_expectations=[".lock", "15.0s"],
 )
 
@@ -35,7 +35,7 @@ LOCK_WAIT_PAYLOAD_CASES = [
     pytest.param(
         LOCK_WAIT_WITH_HOLDER,
         {
-            "lock_path": "/path/to/.worktree/.lock",
+            "lock_path": "/path/to/.dovo/.lock",
             "holder_pid": "12345",
             "timeout_seconds": 30.0,
         },
@@ -44,7 +44,7 @@ LOCK_WAIT_PAYLOAD_CASES = [
     pytest.param(
         LOCK_WAIT_WITHOUT_HOLDER,
         {
-            "lock_path": "/path/to/.worktree/.lock",
+            "lock_path": "/path/to/.dovo/.lock",
             "holder_pid": None,
             "timeout_seconds": 15.0,
         },

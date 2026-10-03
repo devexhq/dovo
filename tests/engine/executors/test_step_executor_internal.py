@@ -6,10 +6,10 @@ from pathlib import Path
 
 import pytest
 
-from worktree.core.catalog.definitions import StepDefinition, StepType
-from worktree.engine.executors import step_executor
-from worktree.engine.executors.models import StepExecutionContext
-from worktree.engine.executors.step_executor import StepExecution
+from dovo.core.catalog.definitions import StepDefinition, StepType
+from dovo.engine.executors import step_executor
+from dovo.engine.executors.models import StepExecutionContext
+from dovo.engine.executors.step_executor import StepExecution
 
 
 class InternalCommandDispatchTests:

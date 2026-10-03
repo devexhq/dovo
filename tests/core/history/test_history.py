@@ -7,17 +7,17 @@ from pathlib import Path
 
 import pytest
 
-from worktree.common.filesystem.models import RepositoryPaths, WorkspacePaths
-from worktree.common.filesystem.services.global_root import resolve_global_paths
-from worktree.core.db import RunRecord, RunsRepository, RunStatus
-from worktree.core.history import History
-from worktree.core.history.models import (
+from dovo.common.filesystem.models import RepositoryPaths, WorkspacePaths
+from dovo.common.filesystem.services.global_root import resolve_global_paths
+from dovo.core.db import RunRecord, RunsRepository, RunStatus
+from dovo.core.history import History
+from dovo.core.history.models import (
     HistoryListStatus,
     HistoryShowStatus,
     ReconciliationResult,
 )
-from worktree.core.logs import RunLogEvent, RunLogEventType
-from worktree.core.project.services.storage import resolve_workspace_paths
+from dovo.core.logs import RunLogEvent, RunLogEventType
+from dovo.core.project.services.storage import resolve_workspace_paths
 
 
 def _paths_for(root: Path) -> WorkspacePaths:
@@ -207,7 +207,7 @@ class HistoryListTests:
         def _mock_reconcile(*_args: object, **_kwargs: object) -> ReconciliationResult:
             return ReconciliationResult(reconciled=[], warning="Session was terminated abnormally")
 
-        monkeypatch.setattr("worktree.core.history.history.reconcile_stale_runs", _mock_reconcile)
+        monkeypatch.setattr("dovo.core.history.history.reconcile_stale_runs", _mock_reconcile)
 
         result = history.list()
 

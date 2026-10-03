@@ -1,4 +1,4 @@
-"""Single-tier CLI integration tests for wt resume."""
+"""Single-tier CLI integration tests for dovo resume."""
 
 from __future__ import annotations
 
@@ -9,15 +9,15 @@ from typing import Any
 
 from typer.testing import CliRunner
 
+from dovo.cli import app
+from dovo.cli.ui.dispatcher import ui_dispatcher
+from dovo.common.filesystem.models import RepositoryPaths, WorkspacePaths
+from dovo.common.filesystem.services.global_root import resolve_global_paths
+from dovo.core.config.models import ConfigTier
+from dovo.core.db import DovoDb, RunStatus
+from dovo.core.project.services.storage import resolve_workspace_paths
 from tests.harness.catalog import write_runnable_step
 from tests.harness.runs import seed_paused_run
-from worktree.cli import app
-from worktree.cli.ui.dispatcher import ui_dispatcher
-from worktree.common.filesystem.models import RepositoryPaths, WorkspacePaths
-from worktree.common.filesystem.services.global_root import resolve_global_paths
-from worktree.core.config.models import ConfigTier
-from worktree.core.db import RunStatus, WorktreeDb
-from worktree.core.project.services.storage import resolve_workspace_paths
 
 
 def _paths_for(root: Path) -> WorkspacePaths:
@@ -30,17 +30,17 @@ def _seed_paused_session(
 ) -> None:
     """Snapshot a blueprint with steps under session_id and pause it at paused_step_id after a failed attempt."""
     paths = _paths_for(resume_workspace)
-    db = WorktreeDb(database_file=paths.database_file, project_id=paths.project_id)
+    db = DovoDb(database_file=paths.database_file, project_id=paths.project_id)
     seed_paused_run(paths, db.runs, session_id=session_id, steps=steps, paused_step_id=paused_step_id)
 
 
 class ResumeCliIntegrationTests:
-    """Typer runner integration tests for wt resume."""
+    """Typer runner integration tests for dovo resume."""
 
     def test_resume_cli_from_paused_state_completes_remaining_steps_exits_zero(
         self, cli_runner: CliRunner, resume_workspace: Path
     ) -> None:
-        """wt resume <session_id>: paused run state with use_sandbox=False resumes and completes, exit 0, run record status becomes COMPLETED."""
+        """dovo resume <session_id>: paused run state with use_sandbox=False resumes and completes, exit 0, run record status becomes COMPLETED."""
         _seed_paused_session(
             resume_workspace,
             session_id="paused-session-1",
@@ -55,7 +55,7 @@ class ResumeCliIntegrationTests:
         result = cli_runner.invoke(app, ["-p", str(resume_workspace), "resume", "paused-session-1"])
 
         assert result.exit_code == 0
-        record = WorktreeDb(
+        record = DovoDb(
             database_file=_paths_for(resume_workspace).database_file, project_id=_paths_for(resume_workspace).project_id
         ).runs.get("paused-session-1")
         assert record is not None
@@ -63,7 +63,7 @@ class ResumeCliIntegrationTests:
         assert (resume_workspace / "resumed.marker").exists()
 
     def test_resume_cli_unknown_session_exits_one(self, cli_runner: CliRunner, resume_workspace: Path) -> None:
-        """wt resume <unknown-id>: no matching paused session, exit 1, 'Resume Failed' in stdout."""
+        """dovo resume <unknown-id>: no matching paused session, exit 1, 'Resume Failed' in stdout."""
         result = cli_runner.invoke(app, ["-p", str(resume_workspace), "resume", "does-not-exist"])
 
         assert result.exit_code == 1
@@ -72,7 +72,7 @@ class ResumeCliIntegrationTests:
     def test_resume_cli_json_format_emits_run_success_event(
         self, cli_runner: CliRunner, resume_workspace: Path
     ) -> None:
-        """wt resume <session_id> --format json: NDJSON stream includes a RunSuccessEvent with payload.status == 'completed'."""
+        """dovo resume <session_id> --format json: NDJSON stream includes a RunSuccessEvent with payload.status == 'completed'."""
         _seed_paused_session(
             resume_workspace,
             session_id="paused-session-2",
@@ -97,7 +97,7 @@ class ResumeCliIntegrationTests:
         resume_workspace: Path,
         write_tier_config: Callable[[ConfigTier, dict[str, Any] | str], Path],
     ) -> None:
-        """[tier-3/integration] wt resume: malformed User tier config.json → exit 1, tier-attributed message in stdout, no unhandled exception.
+        """[tier-3/integration] dovo resume: malformed User tier config.json → exit 1, tier-attributed message in stdout, no unhandled exception.
 
         The top-level callback resolves config before the resume handler ever runs, so a
         tier failure here renders a "Config Error" panel, not "Resume Failed" — no paused
@@ -115,7 +115,7 @@ class ResumeCliIntegrationTests:
     def test_resume_cli_completes_after_source_catalog_blueprint_deleted(
         self, cli_runner: CliRunner, resume_workspace: Path
     ) -> None:
-        """[tier-3/integration] wt resume <session_id>: a session paused by wt run with a uses: step still resumes and completes exit 0 after both the catalog blueprint and step YAML files are deleted from disk."""
+        """[tier-3/integration] dovo resume <session_id>: a session paused by dovo run with a uses: step still resumes and completes exit 0 after both the catalog blueprint and step YAML files are deleted from disk."""
         write_runnable_step(
             resume_workspace, key="lint-check", definition={"id": "lint-check", "type": "command", "command": "true"}
         )
@@ -129,13 +129,13 @@ class ResumeCliIntegrationTests:
             ],
             paused_step_id="s2",
         )
-        (resume_workspace / ".worktree" / "catalog" / "blueprints" / "snap-resume-1.yml").unlink()
-        (resume_workspace / ".worktree" / "catalog" / "steps" / "lint-check.yml").unlink()
+        (resume_workspace / ".dovo" / "catalog" / "blueprints" / "snap-resume-1.yml").unlink()
+        (resume_workspace / ".dovo" / "catalog" / "steps" / "lint-check.yml").unlink()
 
         result = cli_runner.invoke(app, ["-p", str(resume_workspace), "resume", "snap-resume-1"])
 
         assert result.exit_code == 0
-        record = WorktreeDb(
+        record = DovoDb(
             database_file=_paths_for(resume_workspace).database_file, project_id=_paths_for(resume_workspace).project_id
         ).runs.get("snap-resume-1")
         assert record is not None

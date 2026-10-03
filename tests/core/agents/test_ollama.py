@@ -11,14 +11,13 @@ from urllib.error import HTTPError, URLError
 
 import pytest
 
-from tests.harness import AgentRequestBuilder
-from worktree.core.agents import (
+from dovo.core.agents import (
     AgentFailurePayload,
     AgentRequest,
     AgentResponseStatus,
     OllamaAgentAdapter,
 )
-from worktree.core.agents.ollama import (
+from dovo.core.agents.ollama import (
     DEFAULT_OLLAMA_ENDPOINT,
     MODEL_OUTPUT_UNPARSEABLE,
     OLLAMA_HOST_ENV,
@@ -30,6 +29,7 @@ from worktree.core.agents.ollama import (
     resolve_ollama_endpoint,
     validate_ollama_endpoint,
 )
+from tests.harness import AgentRequestBuilder
 
 
 def _chat_body(content: str) -> str:
@@ -232,7 +232,7 @@ class OllamaAdapterTests:
             }
             return 200, _chat_body(content)
 
-        monkeypatch.setattr("worktree.core.agents.ollama.default_http_post", http_post)
+        monkeypatch.setattr("dovo.core.agents.ollama.default_http_post", http_post)
 
         resp = OllamaAgentAdapter().propose_fix(request)
 
@@ -245,7 +245,7 @@ class OllamaAdapterTests:
         """A model response declaring unfixable=true maps to UNFIXABLE with its reason and summary."""
         content = json.dumps({"unfixable": True, "unfixable_reason": "needs redesign", "summary": "nope"})
         monkeypatch.setattr(
-            "worktree.core.agents.ollama.default_http_post", lambda *args, **kwargs: (200, _chat_body(content))
+            "dovo.core.agents.ollama.default_http_post", lambda *args, **kwargs: (200, _chat_body(content))
         )
 
         resp = OllamaAgentAdapter().propose_fix(_ollama_request(tmp_path))
@@ -259,7 +259,7 @@ class OllamaAdapterTests:
         """An explicit empty unified_diff maps to NO_OP, preserving the empty string rather than None."""
         content = json.dumps({"unified_diff": "", "summary": "nothing"})
         monkeypatch.setattr(
-            "worktree.core.agents.ollama.default_http_post", lambda *args, **kwargs: (200, _chat_body(content))
+            "dovo.core.agents.ollama.default_http_post", lambda *args, **kwargs: (200, _chat_body(content))
         )
 
         resp = OllamaAgentAdapter().propose_fix(_ollama_request(tmp_path))
@@ -273,7 +273,7 @@ class OllamaAdapterTests:
         """Model output wrapped in a ```json fence is unwrapped before parsing, and raw_text keeps the fence."""
         content = '```json\n{"unified_diff": "d\\n", "summary": "x"}\n```'
         monkeypatch.setattr(
-            "worktree.core.agents.ollama.default_http_post", lambda *args, **kwargs: (200, _chat_body(content))
+            "dovo.core.agents.ollama.default_http_post", lambda *args, **kwargs: (200, _chat_body(content))
         )
 
         resp = OllamaAgentAdapter().propose_fix(_ollama_request(tmp_path))
@@ -286,7 +286,7 @@ class OllamaAdapterTests:
     def test_unparseable_model_text_returns_unfixable(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """Model text with no extractable JSON object maps to UNFIXABLE with the unparseable-output reason."""
         monkeypatch.setattr(
-            "worktree.core.agents.ollama.default_http_post",
+            "dovo.core.agents.ollama.default_http_post",
             lambda *args, **kwargs: (200, _chat_body("sorry I cannot produce JSON today")),
         )
 
@@ -302,14 +302,14 @@ class OllamaAdapterTests:
         def _unreachable(url: str, body: bytes, timeout: float) -> tuple[int, str]:
             return pytest.fail("must not be called when model is missing")
 
-        monkeypatch.setattr("worktree.core.agents.ollama.default_http_post", _unreachable)
+        monkeypatch.setattr("dovo.core.agents.ollama.default_http_post", _unreachable)
 
         resp = OllamaAgentAdapter().propose_fix(_ollama_request(tmp_path, model=None))
 
         assert resp.status == AgentResponseStatus.PROVIDER_ERROR
         assert resp.errors == [
             "Agent provider error (AGENT_PROVIDER_ERROR): "
-            "ollama requires a non-empty model. Fix: set agent.model in .worktree/config.json"
+            "ollama requires a non-empty model. Fix: set agent.model in .dovo/config.json"
         ]
 
     def test_invalid_endpoint_scheme_returns_provider_error(
@@ -320,7 +320,7 @@ class OllamaAdapterTests:
         def _unreachable(url: str, body: bytes, timeout: float) -> tuple[int, str]:
             return pytest.fail("must not be called when the endpoint is invalid")
 
-        monkeypatch.setattr("worktree.core.agents.ollama.default_http_post", _unreachable)
+        monkeypatch.setattr("dovo.core.agents.ollama.default_http_post", _unreachable)
 
         resp = OllamaAgentAdapter().propose_fix(_ollama_request(tmp_path, endpoint="127.0.0.1:11434"))
 
@@ -345,7 +345,7 @@ class OllamaAdapterTests:
         def http_post(url: str, body: bytes, timeout: float) -> tuple[int, str]:
             raise URLError(reason)
 
-        monkeypatch.setattr("worktree.core.agents.ollama.default_http_post", http_post)
+        monkeypatch.setattr("dovo.core.agents.ollama.default_http_post", http_post)
 
         resp = OllamaAgentAdapter().propose_fix(_ollama_request(tmp_path))
 
@@ -356,9 +356,7 @@ class OllamaAdapterTests:
 
     def test_http_500_status_returns_provider_error(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """A non-2xx HTTP status maps to PROVIDER_ERROR naming the status and response snippet."""
-        monkeypatch.setattr(
-            "worktree.core.agents.ollama.default_http_post", lambda *args, **kwargs: (500, "internal boom")
-        )
+        monkeypatch.setattr("dovo.core.agents.ollama.default_http_post", lambda *args, **kwargs: (500, "internal boom"))
 
         resp = OllamaAgentAdapter().propose_fix(_ollama_request(tmp_path))
 
@@ -375,7 +373,7 @@ class OllamaAdapterTests:
         def http_post(url: str, body: bytes, timeout: float) -> tuple[int, str]:
             raise TimeoutError("timed out")
 
-        monkeypatch.setattr("worktree.core.agents.ollama.default_http_post", http_post)
+        monkeypatch.setattr("dovo.core.agents.ollama.default_http_post", http_post)
 
         resp = OllamaAgentAdapter().propose_fix(_ollama_request(tmp_path))
 
@@ -386,7 +384,7 @@ class OllamaAdapterTests:
 
     def test_non_object_json_body_returns_provider_error(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """A JSON array or scalar chat body maps to PROVIDER_ERROR rather than crashing on attribute access."""
-        monkeypatch.setattr("worktree.core.agents.ollama.default_http_post", lambda *args, **kwargs: (200, "[1, 2, 3]"))
+        monkeypatch.setattr("dovo.core.agents.ollama.default_http_post", lambda *args, **kwargs: (200, "[1, 2, 3]"))
 
         resp = OllamaAgentAdapter().propose_fix(_ollama_request(tmp_path))
 
@@ -399,7 +397,7 @@ class OllamaAdapterTests:
     ) -> None:
         """A chat body whose message omits content maps to PROVIDER_ERROR."""
         body = '{"message": {"role": "assistant"}}'
-        monkeypatch.setattr("worktree.core.agents.ollama.default_http_post", lambda *args, **kwargs: (200, body))
+        monkeypatch.setattr("dovo.core.agents.ollama.default_http_post", lambda *args, **kwargs: (200, body))
 
         resp = OllamaAgentAdapter().propose_fix(_ollama_request(tmp_path))
 
@@ -414,7 +412,7 @@ class OllamaAdapterTests:
     ) -> None:
         """Malformed JSON in the chat body maps to PROVIDER_ERROR carrying the decode error detail."""
         monkeypatch.setattr(
-            "worktree.core.agents.ollama.default_http_post", lambda *args, **kwargs: (200, "invalid json {")
+            "dovo.core.agents.ollama.default_http_post", lambda *args, **kwargs: (200, "invalid json {")
         )
 
         resp = OllamaAgentAdapter().propose_fix(_ollama_request(tmp_path))

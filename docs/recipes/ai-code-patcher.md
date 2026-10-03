@@ -6,7 +6,7 @@ This recipe demonstrates a blueprint that runs agent steps for planning, patchin
 
 ## The Blueprint
 
-Create `.worktree/catalog/blueprints/ai-feature-dev.yml`:
+Create `.dovo/catalog/blueprints/ai-feature-dev.yml`:
 
 ```yaml
 name: ai-feature-dev
@@ -25,7 +25,7 @@ inputs:
 steps:
   # 1. Sync branch state
   - id: git-sync
-    uses: wt/git-sync-base
+    uses: dovo/git-sync-base
 
   # 2. Plan the change
   - id: ai-planner
@@ -74,7 +74,7 @@ steps:
 Execute the blueprint with a feature description:
 
 ```bash
-wt run ai-feature-dev --desc "Add support for custom HTTP timeouts in the API client"
+dovo run ai-feature-dev --desc "Add support for custom HTTP timeouts in the API client"
 ```
 
-If a command step fails, you can interactively choose to retry, or later resume with `wt resume blueprint_<id>`.
+If a command step fails, you can interactively choose to retry, or later resume with `dovo resume blueprint_<id>`.

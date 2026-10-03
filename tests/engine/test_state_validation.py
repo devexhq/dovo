@@ -4,18 +4,18 @@ from __future__ import annotations
 
 import pytest
 
-from tests.harness.builders import BlueprintBuilder, StepBuilder
-from worktree.common.models import FailurePolicy
-from worktree.core.catalog.blueprint import Blueprint
-from worktree.core.catalog.definitions import LoopStepBlock
-from worktree.engine.models import DefinitionRef, DefinitionsManifest
-from worktree.engine.state_models import (
+from dovo.common.models import FailurePolicy
+from dovo.core.catalog.blueprint import Blueprint
+from dovo.core.catalog.definitions import LoopStepBlock
+from dovo.engine.models import DefinitionRef, DefinitionsManifest
+from dovo.engine.state_models import (
     ExecutionIterationRecord,
     ExecutionLeafNode,
     ExecutionLoopNode,
     ExecutionStateTree,
 )
-from worktree.engine.state_validation import validate_loop_structure
+from dovo.engine.state_validation import validate_loop_structure
+from tests.harness.builders import BlueprintBuilder, StepBuilder
 
 _MANIFEST = DefinitionsManifest(blueprint=DefinitionRef(ref="repo:blueprint:bp", sha="a", resolved_at="now"))
 _BODY_IDS = ["edit", "verify"]

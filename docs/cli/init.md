@@ -1,11 +1,11 @@
-# `wt init`
+# `dovo init`
 
-The `wt init` command initializes a project repository for Worktree (`wt`), provisioning the `.worktree/` directory structure, a stable project identity, canonical configuration defaults, a local `.worktree/.gitignore`, catalog folders, and centrally stored runtime state scoped to the project.
+The `dovo init` command initializes a project repository for Dovo (`dovo`), provisioning the `.dovo/` directory structure, a stable project identity, canonical configuration defaults, a local `.dovo/.gitignore`, catalog folders, and centrally stored runtime state scoped to the project.
 
 ## Usage
 
 ```bash
-wt init [OPTIONS]
+dovo init [OPTIONS]
 ```
 
 ## Options
@@ -21,31 +21,31 @@ wt init [OPTIONS]
 
 ### `--id` / `--display-name` / `--force`
 
-`wt init` writes `<repo>/.worktree/project.json` containing a stable project identity (`id`, `display_name`, `created_at`). Without `--id`, a generated slug (e.g. `brave-otter`) is used. Rerunning `wt init` preserves an existing identity unless both `--id` and `--force` are passed together, in which case the identity is overwritten with the new `--id`. `--force` alone, without `--id`, has no effect on an existing identity or on `config.json`.
+`dovo init` writes `<repo>/.dovo/project.json` containing a stable project identity (`id`, `display_name`, `created_at`). Without `--id`, a generated slug (e.g. `brave-otter`) is used. Rerunning `dovo init` preserves an existing identity unless both `--id` and `--force` are passed together, in which case the identity is overwritten with the new `--id`. `--force` alone, without `--id`, has no effect on an existing identity or on `config.json`.
 
 ```bash
-wt init --id my-project --display-name "My Project"
-wt init --id my-project --force   # only effective on a rerun that changes the id
+dovo init --id my-project --display-name "My Project"
+dovo init --id my-project --force   # only effective on a rerun that changes the id
 ```
 
-### `.worktree/.gitignore`
+### `.dovo/.gitignore`
 
-`wt init` pre-seeds `<repo>/.worktree/.gitignore`, scoping the local ignore rules to `.worktree/` itself rather than the repository root `.gitignore`. See `WORKTREE_LOCAL_GITIGNORE_ENTRIES` for the exact tracked and ignored entries; the repository-root `.gitignore` is never modified by `wt init`.
+`dovo init` pre-seeds `<repo>/.dovo/.gitignore`, scoping the local ignore rules to `.dovo/` itself rather than the repository root `.gitignore`. See `DOVO_LOCAL_GITIGNORE_ENTRIES` for the exact tracked and ignored entries; the repository-root `.gitignore` is never modified by `dovo init`.
 
 ### `--repair`
 
-Non-destructively repairs an existing configuration file. It scans `.worktree/config.json` and inserts any missing schema keys using default V1 canonical values, preserving your existing user configurations and initialization timestamps.
+Non-destructively repairs an existing configuration file. It scans `.dovo/config.json` and inserts any missing schema keys using default V1 canonical values, preserving your existing user configurations and initialization timestamps.
 
 ```bash
-wt init --repair
+dovo init --repair
 ```
 
 ### `--overwrite`
 
-Destructively overwrites an existing `.worktree/config.json` file with fresh canonical V1 defaults. Does not affect the project identity in `project.json`.
+Destructively overwrites an existing `.dovo/config.json` file with fresh canonical V1 defaults. Does not affect the project identity in `project.json`.
 
 ```bash
-wt init --overwrite
+dovo init --overwrite
 ```
 
 ### `--format`
@@ -53,7 +53,7 @@ wt init --overwrite
 Specifies the output presentation format. When set to `json`, emits structured NDJSON envelopes suitable for desktop and UI integrations.
 
 ```bash
-wt init --format json
+dovo init --format json
 ```
 
 ## Examples
@@ -62,29 +62,29 @@ wt init --format json
 
 ```bash
 cd /path/to/my-repo
-wt init
+dovo init
 ```
 
 ### Initializing with an explicit project id
 
 ```bash
-wt init --id my-project --display-name "My Project"
+dovo init --id my-project --display-name "My Project"
 ```
 
-### Repairing schema drift after updating `wt`
+### Repairing schema drift after updating `dovo`
 
 ```bash
-wt init --repair
+dovo init --repair
 ```
 
 ### JSON structured output
 
 ```bash
-wt init --id my-project --format json
+dovo init --id my-project --format json
 ```
 
 Emits a structured NDJSON payload (see `WorkspaceInitView` for the full field list):
 
 ```json
-{"event_type": "WorkspaceInitResult", "payload": {"ok": true, "root_path": "/path/to/my-repo/.worktree", "root_path_relative": ".worktree", "bootstrap_outcome": "initialized", "dirs_created": [".worktree/.meta"], "project_id": "my-project", "identity_path_relative": ".worktree/project.json", "identity_preserved": false, "gitignore_path_relative": ".worktree/.gitignore", "gitignore_tracked_entries": ["config.json", "project.json", "catalog/"], "config_created": true, "config_overwritten": false, "config_repaired": false, "config_skipped_existing": false, "config_path_relative": ".worktree/config.json", "inserted_keys": [], "seeded_files": [".worktree/catalog/blueprints/wt/fix-tests.yml", ".worktree/catalog/blueprints/wt/review-fix.yml", ".worktree/catalog/steps/wt/ai-code-patcher.yml", ".worktree/catalog/steps/wt/ai-planner.yml", ".worktree/catalog/steps/wt/ai-reviewer.yml", ".worktree/catalog/steps/wt/git-sync-base.yml", ".worktree/catalog/steps/wt/run-tests.yml"], "skipped_seed_files": [], "overwritten_seed_files": [], "failure_mode": null, "errors": [], "warnings": [], "fixes": []}}
+{"event_type": "WorkspaceInitResult", "payload": {"ok": true, "root_path": "/path/to/my-repo/.dovo", "root_path_relative": ".dovo", "bootstrap_outcome": "initialized", "dirs_created": [".dovo/.meta"], "project_id": "my-project", "identity_path_relative": ".dovo/project.json", "identity_preserved": false, "gitignore_path_relative": ".dovo/.gitignore", "gitignore_tracked_entries": ["config.json", "project.json", "catalog/"], "config_created": true, "config_overwritten": false, "config_repaired": false, "config_skipped_existing": false, "config_path_relative": ".dovo/config.json", "inserted_keys": [], "seeded_files": [".dovo/catalog/blueprints/dovo/fix-tests.yml", ".dovo/catalog/blueprints/dovo/review-fix.yml", ".dovo/catalog/steps/dovo/ai-code-patcher.yml", ".dovo/catalog/steps/dovo/ai-planner.yml", ".dovo/catalog/steps/dovo/ai-reviewer.yml", ".dovo/catalog/steps/dovo/git-sync-base.yml", ".dovo/catalog/steps/dovo/run-tests.yml"], "skipped_seed_files": [], "overwritten_seed_files": [], "failure_mode": null, "errors": [], "warnings": [], "fixes": []}}
 ```

@@ -7,27 +7,27 @@ from typing import Any
 
 import pytest
 
+from dovo.cli.ui.formatters.config.config_load import ConfigLoadFormatter
+from dovo.core.config.loader import ConfigLoadResult, ConfigLoadStatus
+from dovo.core.config.models import DovoConfig, ProjectConfig
 from tests.harness.formatter import (
     FormatterCase,
     assert_json_payload_matches_published_shape,
     assert_rich_render_shows_every_view_value,
 )
-from worktree.cli.ui.formatters.config.config_load import ConfigLoadFormatter
-from worktree.core.config.loader import ConfigLoadResult, ConfigLoadStatus
-from worktree.core.config.models import ProjectConfig, WorktreeConfig
 
-_CONFIG_PATH = Path("/workspace/.worktree/config.json")
+_CONFIG_PATH = Path("/workspace/.dovo/config.json")
 
 VALID_CONFIG = FormatterCase(
     data=ConfigLoadResult(
         status=ConfigLoadStatus.OK,
         config_path=_CONFIG_PATH,
-        config=WorktreeConfig(version=1, project=ProjectConfig(name="test-project")),
+        config=DovoConfig(version=1, project=ProjectConfig(name="test-project")),
     ),
     view=ConfigLoadResult(
         status=ConfigLoadStatus.OK,
         config_path=_CONFIG_PATH,
-        config=WorktreeConfig(version=1, project=ProjectConfig(name="test-project")),
+        config=DovoConfig(version=1, project=ProjectConfig(name="test-project")),
     ),
     render_expectations=["test-project", _CONFIG_PATH.as_posix()],
 )
@@ -36,18 +36,18 @@ NOT_FOUND = FormatterCase(
     data=ConfigLoadResult(
         status=ConfigLoadStatus.NOT_FOUND,
         config_path=_CONFIG_PATH,
-        errors=["Configuration file not found at '/workspace/.worktree/config.json' (CONFIG_NOT_FOUND)."],
-        fixes=["Run `wt init` to initialize Worktree"],
+        errors=["Configuration file not found at '/workspace/.dovo/config.json' (CONFIG_NOT_FOUND)."],
+        fixes=["Run `dovo init` to initialize Dovo"],
     ),
     view=ConfigLoadResult(
         status=ConfigLoadStatus.NOT_FOUND,
         config_path=_CONFIG_PATH,
-        errors=["Configuration file not found at '/workspace/.worktree/config.json' (CONFIG_NOT_FOUND)."],
-        fixes=["Run `wt init` to initialize Worktree"],
+        errors=["Configuration file not found at '/workspace/.dovo/config.json' (CONFIG_NOT_FOUND)."],
+        fixes=["Run `dovo init` to initialize Dovo"],
     ),
     render_expectations=[
-        "Configuration file not found at '/workspace/.worktree/config.json' (CONFIG_NOT_FOUND).",
-        "Run `wt init` to initialize Worktree",
+        "Configuration file not found at '/workspace/.dovo/config.json' (CONFIG_NOT_FOUND).",
+        "Run `dovo init` to initialize Dovo",
     ],
 )
 
@@ -61,7 +61,7 @@ CONFIG_LOAD_PAYLOAD_CASES = [
         VALID_CONFIG,
         {
             "status": "ok",
-            "config_path": "/workspace/.worktree/config.json",
+            "config_path": "/workspace/.dovo/config.json",
             "raw": None,
             "config": {
                 "version": 1,
@@ -119,12 +119,12 @@ CONFIG_LOAD_PAYLOAD_CASES = [
         NOT_FOUND,
         {
             "status": "not_found",
-            "config_path": "/workspace/.worktree/config.json",
+            "config_path": "/workspace/.dovo/config.json",
             "raw": None,
             "config": None,
             "warnings": [],
-            "errors": ["Configuration file not found at '/workspace/.worktree/config.json' (CONFIG_NOT_FOUND)."],
-            "fixes": ["Run `wt init` to initialize Worktree"],
+            "errors": ["Configuration file not found at '/workspace/.dovo/config.json' (CONFIG_NOT_FOUND)."],
+            "fixes": ["Run `dovo init` to initialize Dovo"],
             "error_code": None,
         },
         id="not_found",

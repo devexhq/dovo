@@ -1,10 +1,10 @@
-"""Fluent blueprint data builder for Worktree CLI test suite."""
+"""Fluent blueprint data builder for Dovo CLI test suite."""
 
 from __future__ import annotations
 
+from dovo.core.catalog.definitions import BlueprintDefaults, BlueprintDefinition, LoopStepBlock, StepDefinition
+from dovo.core.inputs.models import InputType, ParameterInput
 from tests.harness.builders.step import StepBuilder
-from worktree.core.catalog.definitions import BlueprintDefaults, BlueprintDefinition, LoopStepBlock, StepDefinition
-from worktree.core.inputs.models import InputType, ParameterInput
 
 
 class BlueprintBuilder:

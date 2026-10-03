@@ -8,18 +8,16 @@ from pathlib import Path
 
 import pytest
 
-from tests.harness import AGENT_ADAPTER_FACTORY, FakeAgentProvider, new_file_diff
-from tests.harness.builders import StepBuilder
-from worktree.core.agents import (
+from dovo.core.agents import (
     AgentAttempt,
     AgentResponse,
     AgentResponseStatus,
     BaseAgentProvider,
     ResolvedAgentSettings,
 )
-from worktree.core.catalog.definitions import StepDefinition
-from worktree.core.git import GitRunner
-from worktree.engine.executors.agent_step import (
+from dovo.core.catalog.definitions import StepDefinition
+from dovo.core.git import GitRunner
+from dovo.engine.executors.agent_step import (
     AGENT_OUTCOME_EXIT_CODES,
     BLANK_PROMPT_MESSAGE,
     MISSING_SETTINGS_MESSAGE,
@@ -27,7 +25,9 @@ from worktree.engine.executors.agent_step import (
     build_agent_step_runner,
     execute_agent_step,
 )
-from worktree.engine.executors.models import StepDispatchOutcome
+from dovo.engine.executors.models import StepDispatchOutcome
+from tests.harness import AGENT_ADAPTER_FACTORY, FakeAgentProvider, new_file_diff
+from tests.harness.builders import StepBuilder
 
 _NO_OP_SUMMARY = "Inspected the repository; no edits were required."
 
@@ -130,7 +130,7 @@ class ExecuteAgentStepRequestTests:
             )
             return AgentAttempt(status=AgentResponseStatus.NO_OP)
 
-        monkeypatch.setattr("worktree.engine.executors.agent_step.run_direct_attempt", _record)
+        monkeypatch.setattr("dovo.engine.executors.agent_step.run_direct_attempt", _record)
 
         _run(git_repo)
 
@@ -336,7 +336,7 @@ class BuildAgentStepRunnerTests:
         """[tier-1/unit] build_agent_step_runner: build_agent_step_runner(settings, sandbox_active=False) returns a runner whose call yields status 'failed' with error_message containing SANDBOX_REQUIRED_MESSAGE and run_direct_attempt is called zero times."""
         calls: list[object] = []
         monkeypatch.setattr(
-            "worktree.engine.executors.agent_step.run_direct_attempt",
+            "dovo.engine.executors.agent_step.run_direct_attempt",
             lambda **kwargs: calls.append(kwargs) or AgentAttempt(status=AgentResponseStatus.NO_OP),
         )
 
@@ -359,7 +359,7 @@ class BuildAgentStepRunnerTests:
             calls.append({"instruction": instruction, "settings": settings, "sandbox_path": sandbox_path})
             return AgentAttempt(status=AgentResponseStatus.NO_OP)
 
-        monkeypatch.setattr("worktree.engine.executors.agent_step.run_direct_attempt", _record)
+        monkeypatch.setattr("dovo.engine.executors.agent_step.run_direct_attempt", _record)
         settings = _settings()
         step = _step()
         emitted: list[tuple[str, str]] = []

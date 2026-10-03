@@ -7,22 +7,21 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
-from tests.harness.builders import BlueprintBuilder, StepBuilder, WorkspaceBuilder
-from worktree.common.filesystem import Filesystem
-from worktree.common.filesystem.models import RepositoryPaths, WorkspacePaths
-from worktree.common.filesystem.services.global_root import resolve_global_paths
-from worktree.common.models import FailurePolicy
-from worktree.core.agents import AgentResponseStatus
-from worktree.core.catalog.blueprint import Blueprint
-from worktree.core.catalog.definitions import LoopStepBlock
-from worktree.core.db import RunRecord, RunsRepository, RunStatus
-from worktree.core.project.services.storage import resolve_workspace_paths
-from worktree.engine import RunStateStore
-from worktree.engine.executors.agent_step import AGENT_OUTCOME_EXIT_CODES
-from worktree.engine.executors.models import StepResult
-from worktree.engine.models import DefinitionRef, DefinitionsManifest
-from worktree.engine.projection import build_run_json_payload
-from worktree.engine.state_models import (
+from dovo.common.filesystem import Filesystem
+from dovo.common.filesystem.models import RepositoryPaths, WorkspacePaths
+from dovo.common.filesystem.services.global_root import resolve_global_paths
+from dovo.common.models import FailurePolicy
+from dovo.core.agents import AgentResponseStatus
+from dovo.core.catalog.blueprint import Blueprint
+from dovo.core.catalog.definitions import LoopStepBlock
+from dovo.core.db import RunRecord, RunsRepository, RunStatus
+from dovo.core.project.services.storage import resolve_workspace_paths
+from dovo.engine import RunStateStore
+from dovo.engine.executors.agent_step import AGENT_OUTCOME_EXIT_CODES
+from dovo.engine.executors.models import StepResult
+from dovo.engine.models import DefinitionRef, DefinitionsManifest
+from dovo.engine.projection import build_run_json_payload
+from dovo.engine.state_models import (
     ExecutionIterationRecord,
     ExecutionLeafNode,
     ExecutionLoopNode,
@@ -33,7 +32,8 @@ from worktree.engine.state_models import (
     RunStateWriteStatus,
     StepAttemptRecord,
 )
-from worktree.engine.state_store import new_iteration
+from dovo.engine.state_store import new_iteration
+from tests.harness.builders import BlueprintBuilder, StepBuilder, WorkspaceBuilder
 
 SESSION_ID = "state-1"
 

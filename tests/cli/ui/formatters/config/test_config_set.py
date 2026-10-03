@@ -7,16 +7,16 @@ from typing import Any
 
 import pytest
 
+from dovo.cli.ui.formatters.config import ConfigSetFormatter, ConfigSetView
+from dovo.core.config.mutate import ConfigSetResult, ConfigSetStatus
 from tests.harness.formatter import (
     FormatterCase,
     assert_json_payload_matches_published_shape,
     assert_rich_render_shows_every_view_value,
     assert_transform_derives_expected_view,
 )
-from worktree.cli.ui.formatters.config import ConfigSetFormatter, ConfigSetView
-from worktree.core.config.mutate import ConfigSetResult, ConfigSetStatus
 
-CONFIG_PATH = Path("/workspace/.worktree/config.json")
+CONFIG_PATH = Path("/workspace/.dovo/config.json")
 
 SUCCESS_STR_CASE = FormatterCase(
     data=ConfigSetResult(
@@ -122,7 +122,7 @@ ERROR_SCHEMA_INVALID_CASE = FormatterCase(
         value=None,
         errors=["Config schema validation failed (CONFIG_SCHEMA_INVALID): extra property not allowed"],
         warnings=[],
-        fixes=["Run `wt config validate` for details"],
+        fixes=["Run `dovo config validate` for details"],
     ),
     view=ConfigSetView(
         status=ConfigSetStatus.SCHEMA_INVALID,
@@ -133,11 +133,11 @@ ERROR_SCHEMA_INVALID_CASE = FormatterCase(
         value_type="NoneType",
         errors=["Config schema validation failed (CONFIG_SCHEMA_INVALID): extra property not allowed"],
         warnings=[],
-        fixes=["Run `wt config validate` for details"],
+        fixes=["Run `dovo config validate` for details"],
     ),
     render_expectations=[
         "Config schema validation failed (CONFIG_SCHEMA_INVALID): extra property not allowed",
-        "Run `wt config validate` for details",
+        "Run `dovo config validate` for details",
     ],
 )
 
@@ -154,7 +154,7 @@ SET_PAYLOAD_CASES = [
         SUCCESS_STR_CASE,
         {
             "status": "ok",
-            "config_path": "/workspace/.worktree/config.json",
+            "config_path": "/workspace/.dovo/config.json",
             "key": "agent.model",
             "value": "qwen2.5-coder",
             "value_str": "qwen2.5-coder",
@@ -169,7 +169,7 @@ SET_PAYLOAD_CASES = [
         SUCCESS_BOOL_CASE,
         {
             "status": "ok",
-            "config_path": "/workspace/.worktree/config.json",
+            "config_path": "/workspace/.dovo/config.json",
             "key": "telemetry.enabled",
             "value": True,
             "value_str": "true",
@@ -184,14 +184,14 @@ SET_PAYLOAD_CASES = [
         ERROR_SCHEMA_INVALID_CASE,
         {
             "status": "schema_invalid",
-            "config_path": "/workspace/.worktree/config.json",
+            "config_path": "/workspace/.dovo/config.json",
             "key": "agent.invalid_key",
             "value": None,
             "value_str": "None",
             "value_type": "NoneType",
             "errors": ["Config schema validation failed (CONFIG_SCHEMA_INVALID): extra property not allowed"],
             "warnings": [],
-            "fixes": ["Run `wt config validate` for details"],
+            "fixes": ["Run `dovo config validate` for details"],
         },
         id="error_schema_invalid_payload",
     ),

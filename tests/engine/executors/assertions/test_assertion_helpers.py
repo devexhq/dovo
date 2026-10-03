@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from worktree.engine.executors.assertions.assertion_helpers import safe_repr, short_pair, short_repr, shorten
+from dovo.engine.executors.assertions.assertion_helpers import safe_repr, short_pair, short_repr, shorten
 
 
 class _BrokenRepr:

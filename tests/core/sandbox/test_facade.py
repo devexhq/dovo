@@ -7,17 +7,17 @@ from pathlib import Path
 
 import pytest
 
-from tests.harness import WorkspaceBuilder
-from worktree.common.filesystem import WorkspacePaths
-from worktree.core.db import SandboxesRepository
-from worktree.core.sandbox.facade import Sandbox
-from worktree.core.sandbox.models import (
+from dovo.common.filesystem import WorkspacePaths
+from dovo.core.db import SandboxesRepository
+from dovo.core.sandbox.facade import Sandbox
+from dovo.core.sandbox.models import (
     SandboxApplyStatus,
     SandboxCreateStatus,
     SandboxDiffStatus,
     SandboxListStatus,
     SandboxShowStatus,
 )
+from tests.harness import WorkspaceBuilder
 
 
 @pytest.fixture
@@ -102,7 +102,7 @@ class SandboxCleanupPruneGetActiveDelegationTests:
 
         assert create_result.session.sandbox_path in active
 
-    def test_cleanup_removes_the_sandbox_worktree_directory(self, sandbox_workspace_paths: WorkspacePaths) -> None:
+    def test_cleanup_removes_the_sandbox_dovo_directory(self, sandbox_workspace_paths: WorkspacePaths) -> None:
         """[tier-1/integration] Sandbox.create/.cleanup: cleanup() removes the sandbox worktree directory created by create()."""
         sandbox = Sandbox(sandbox_workspace_paths)
         create_result = sandbox.create(session_id="sbx_facade_cleanup")

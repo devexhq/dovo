@@ -1,4 +1,4 @@
-"""Single-tier CLI integration tests for wt sandbox diff."""
+"""Single-tier CLI integration tests for dovo sandbox diff."""
 
 from __future__ import annotations
 
@@ -8,13 +8,13 @@ from typing import Any
 
 from typer.testing import CliRunner
 
-from worktree.cli import app
-from worktree.common.filesystem.models import RepositoryPaths, WorkspacePaths
-from worktree.common.filesystem.services.global_root import resolve_global_paths
-from worktree.core.git.runner import GitRunner
-from worktree.core.project.services.storage import resolve_workspace_paths
-from worktree.core.sandbox.facade import Sandbox
-from worktree.core.sandbox.models import SandboxDiffStatus, SandboxSession
+from dovo.cli import app
+from dovo.common.filesystem.models import RepositoryPaths, WorkspacePaths
+from dovo.common.filesystem.services.global_root import resolve_global_paths
+from dovo.core.git.runner import GitRunner
+from dovo.core.project.services.storage import resolve_workspace_paths
+from dovo.core.sandbox.facade import Sandbox
+from dovo.core.sandbox.models import SandboxDiffStatus, SandboxSession
 
 
 def _paths_for(root: Path) -> WorkspacePaths:
@@ -49,12 +49,12 @@ def _assert_dispatches_ok_diff(dispatch_spy: list[Any], session_id: str) -> None
 
 
 class SandboxDiffCliIntegrationTests:
-    """Typer runner integration tests for wt sandbox diff."""
+    """Typer runner integration tests for dovo sandbox diff."""
 
     def test_sandbox_diff_cli_renders_unified_diff_exits_zero(
         self, cli_runner: CliRunner, sandbox_workspace: Path, dispatch_spy: list[Any]
     ) -> None:
-        """wt sandbox diff <id> renders the changed filename for a committed change, exits 0, and dispatches the exact OK DTO."""
+        """dovo sandbox diff <id> renders the changed filename for a committed change, exits 0, and dispatches the exact OK DTO."""
         session = _create_sandbox_with_committed_change(sandbox_workspace)
 
         result = cli_runner.invoke(app, ["-p", str(sandbox_workspace), "sandbox", "diff", session.session_id])
@@ -66,7 +66,7 @@ class SandboxDiffCliIntegrationTests:
     def test_sandbox_diff_cli_stat_flag_renders_diffstat(
         self, cli_runner: CliRunner, sandbox_workspace: Path, dispatch_spy: list[Any]
     ) -> None:
-        """wt sandbox diff <id> --stat renders a diffstat summary, same as the default (stat_text is always populated and preferred by the formatter regardless of --stat; see 🚨 in the implementation report)."""
+        """dovo sandbox diff <id> --stat renders a diffstat summary, same as the default (stat_text is always populated and preferred by the formatter regardless of --stat; see 🚨 in the implementation report)."""
         session = _create_sandbox_with_committed_change(sandbox_workspace)
 
         result = cli_runner.invoke(app, ["-p", str(sandbox_workspace), "sandbox", "diff", session.session_id, "--stat"])
@@ -79,7 +79,7 @@ class SandboxDiffCliIntegrationTests:
     def test_sandbox_diff_cli_missing_sandbox_exits_one(
         self, cli_runner: CliRunner, sandbox_workspace: Path, dispatch_spy: list[Any]
     ) -> None:
-        """wt sandbox diff on a missing id exits 1, reports not found, and dispatches the exact NOT_FOUND DTO."""
+        """dovo sandbox diff on a missing id exits 1, reports not found, and dispatches the exact NOT_FOUND DTO."""
         result = cli_runner.invoke(app, ["-p", str(sandbox_workspace), "sandbox", "diff", "missing-id"])
 
         assert result.exit_code == 1
@@ -94,7 +94,7 @@ class SandboxDiffCliIntegrationTests:
         assert captured.errors == ["Sandbox 'missing-id' not found."]
 
     def test_sandbox_diff_cli_renders_json(self, cli_runner: CliRunner, sandbox_workspace: Path) -> None:
-        """wt sandbox diff <id> --format json emits a SandboxDiffResult envelope."""
+        """dovo sandbox diff <id> --format json emits a SandboxDiffResult envelope."""
         session = _create_sandbox_with_committed_change(sandbox_workspace)
 
         result = cli_runner.invoke(

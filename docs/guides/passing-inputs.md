@@ -1,6 +1,6 @@
 # Parameter Inputs & Expressions
 
-Worktree allows blueprint authors to define dynamic parameter inputs. Inputs can be customized from the command line and referenced inside step commands, agent prompts, script paths, and environment variables using `${{ inputs.<name> }}` interpolation placeholders.
+Dovo allows blueprint authors to define dynamic parameter inputs. Inputs can be customized from the command line and referenced inside step commands, agent prompts, script paths, and environment variables using `${{ inputs.<name> }}` interpolation placeholders.
 
 ---
 
@@ -59,20 +59,20 @@ steps:
 
 ## Passing Inputs via CLI
 
-When executing a blueprint with `wt run`, you can supply input values using declared aliases or generic input flags:
+When executing a blueprint with `dovo run`, you can supply input values using declared aliases or generic input flags:
 
 ### 1. Using Declared Aliases
 Pass arguments directly using any of the alias flags declared in the blueprint:
 
 ```bash
-wt run test-runner --target tests/unit -v --retries 3
+dovo run test-runner --target tests/unit -v --retries 3
 ```
 
 ### 2. Using Generic `-i` / `--input` Overrides
 Supply key-value pairs using the generic `-i` or `--input` options:
 
 ```bash
-wt run test-runner -i target=tests/integration -i verbose=true -i api_token=secret123
+dovo run test-runner -i target=tests/integration -i verbose=true -i api_token=secret123
 ```
 
 ### 3. Boolean Flag Shorthand
@@ -80,7 +80,7 @@ For boolean inputs, passing the bare flag sets the value to `true`:
 
 ```bash
 # Sets verbose=true
-wt run test-runner --verbose
+dovo run test-runner --verbose
 ```
 
 ---
@@ -107,13 +107,13 @@ Interpolation is evaluated at runtime in the following step fields:
 
 ## Input Validation & Error Handling
 
-If a required input is missing or fails type validation, Worktree reports a structured error before creating the sandbox:
+If a required input is missing or fails type validation, Dovo reports a structured error before creating the sandbox:
 
 ```text
 Error: Missing required input 'api_token' for blueprint 'test-runner'.
 
 Usage:
-  wt run test-runner -i api_token=<value>
+  dovo run test-runner -i api_token=<value>
 ```
 
 ---

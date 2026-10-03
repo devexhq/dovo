@@ -4,7 +4,7 @@ rules:
   severity: BLOCKER
   category: Architecture
   domain: all
-  scope: src/worktree/
+  scope: src/dovo/
   guideline: 'Dependencies flow strictly one way: common/ -> core/ -> engine/ -> cli/. Within core/: project/ ->
     {db,git,sandbox,catalog,inputs,patch,diff,status,artifacts}/ -> agents/ -> doctor/ -> logs/ -> history/. Upward
     imports are strictly prohibited.'
@@ -12,18 +12,18 @@ rules:
     or rich; engine/ imports no cli/; inputs/ imports no catalog or agents; patch/ imports no agents; catalog/ imports
     no agents, logs, history, engine, cli; artifacts/ imports no engine; agents/ imports no engine; logs/ imports no
     engine, history, cli; history/ imports no engine, cli.
-  positive_example: 'from worktree.core.logs import append_run_log_event  # in engine/'
-  negative_example: 'from worktree.engine.engine import Engine  # upward import in core/logs/'
+  positive_example: 'from dovo.core.logs import append_run_log_event  # in engine/'
+  negative_example: 'from dovo.engine.engine import Engine  # upward import in core/logs/'
   citation: docs/agents/architecture.md#package-boundaries-import-direction
 - id: ARCH-002
   title: CLI Logic Purity
   severity: BLOCKER
   category: Architecture
   domain: cli
-  scope: src/worktree/cli/
+  scope: src/dovo/cli/
   guideline: CLI command handlers take CliContext, invoke underlying domain services or facades, and return a BaseResult model.
     CLI packages must remain completely free of business logic, direct SQLite queries, or direct filesystem scans.
-  evaluation_criteria: Inspect CLI command handlers in src/worktree/cli/*/commands/. Flag direct SQL execution, domain orchestration,
+  evaluation_criteria: Inspect CLI command handlers in src/dovo/cli/*/commands/. Flag direct SQL execution, domain orchestration,
     or business logic.
   positive_example: result = context.facade.status.collect(context.root_dir); ui_dispatcher.dispatch(result)
   negative_example: rows = context.db.connection.execute('SELECT * FROM sandboxes').fetchall()
@@ -33,7 +33,7 @@ rules:
   severity: BLOCKER
   category: Architecture
   domain: cli
-  scope: src/worktree/cli/ui/
+  scope: src/dovo/cli/ui/
   guideline: cli/ui/ must not originate a domain fact. All domain facts, outcomes, warnings, and remediations originate in
     core/ or common/; cli/ui/ only derives presentation views.
   evaluation_criteria: Verify formatters only map existing fields from domain models without inventing new statuses, error
@@ -46,7 +46,7 @@ rules:
   severity: BLOCKER
   category: Architecture
   domain: [core, engine]
-  scope: src/worktree/core/, src/worktree/engine/
+  scope: src/dovo/core/, src/dovo/engine/
   guideline: 'Default layout for new domain code is core/<domain>/: models.py (types), exceptions.py (errors), <domain>.py
     (entrypoint coordinator/service, e.g. prune.py, moving away from generic facade.py), and services/<verb>.py (imperative
     operations). Do not use generic facade.py, do not put logic directly in package root without structured modules, do not
@@ -54,18 +54,18 @@ rules:
   evaluation_criteria: Check package directory structure for new domains. Verify the entrypoint module is named after the
     domain (e.g. prune.py) rather than generic facade.py. Flag any monolithic single-file domain layout or public models defined
     in services/.
-  positive_example: src/worktree/core/prune/ -> models.py, exceptions.py, prune.py, services/
-  negative_example: 'src/worktree/core/prune/ -> facade.py  # or monolithic prune.py mixing models & logic'
+  positive_example: src/dovo/core/prune/ -> models.py, exceptions.py, prune.py, services/
+  negative_example: 'src/dovo/core/prune/ -> facade.py  # or monolithic prune.py mixing models & logic'
   citation: docs/agents/architecture.md#adding-a-new-catalog-backed-domain
 - id: ARCH-006
   title: Secrets Environment Resolution
   severity: BLOCKER
   category: Architecture
   domain: core
-  scope: src/worktree/core/agents/, src/worktree/core/config/
+  scope: src/dovo/core/agents/, src/dovo/core/config/
   guideline: API keys and secrets must be resolved from environment variables at call time via module-level resolve_<provider>_api_key().
     Secrets must never be stored in config.json, persisted to data.db, or passed into prompt builders.
-  evaluation_criteria: Search for API key field additions in WorktreeConfig or SQLite models. Ensure environment resolution
+  evaluation_criteria: Search for API key field additions in DovoConfig or SQLite models. Ensure environment resolution
     helpers are used.
   positive_example: 'api_key = resolve_cursor_api_key()  # reads environment dynamically'
   negative_example: 'api_key = config.agent.cursor_api_key  # serializing secrets in static config'
@@ -75,9 +75,9 @@ rules:
   severity: BLOCKER
   category: Rendering
   domain: cli
-  scope: src/worktree/cli/, src/worktree/core/
+  scope: src/dovo/cli/, src/dovo/core/
   guideline: Terminal output routes through ui_dispatcher.dispatch(result). Direct print(), rich imports, typer.echo, and
-    console writes belong only in src/worktree/cli/ui/.
+    console writes belong only in src/dovo/cli/ui/.
   evaluation_criteria: Ensure core services never instantiate RichOutput or Console. Verify .print() is only called at the
     CLI command/orchestrator level, not inside core services.
   positive_example: 'self.output.add_error(''failed'')  # cli edge calls context.output.print()'
@@ -88,7 +88,7 @@ rules:
   severity: BLOCKER
   category: Rendering
   domain: cli
-  scope: src/worktree/cli/ui/formatters/
+  scope: src/dovo/cli/ui/formatters/
   guideline: to_rich(data) derives nothing. It calls transform(data) and lays out the resulting view model into Rich renderables.
   evaluation_criteria: Inspect to_rich() implementations. Flag any business logic, status calculations, or string manipulations
     that do not come directly from the view model.
@@ -100,7 +100,7 @@ rules:
   severity: SUGGESTION
   category: Rendering
   domain: all
-  scope: src/worktree/
+  scope: src/dovo/
   guideline: Construct errors, warnings, and fixes strings using inline f-strings or literals at call sites. Do not create
     private single-message formatting wrappers.
   evaluation_criteria: Flag private helper functions whose sole purpose is formatting a single error or warning string.
@@ -112,7 +112,7 @@ rules:
   severity: WARNING
   category: Rendering
   domain: cli
-  scope: src/worktree/cli/ui/formatters/
+  scope: src/dovo/cli/ui/formatters/
   guideline: A table-building helper shared by more than one formatter within a domain lives in that domain's
     cli/ui/formatters/<domain>/common.py, not duplicated per formatter module and not hoisted into the
     package-wide cli/ui/formatters/common.py unless it is genuinely shared across domains.
@@ -120,7 +120,7 @@ rules:
     formatter in the same domain needs the same table shape. Flag a helper duplicated across sibling formatter
     modules instead of factored into that domain's common.py, and flag a domain-specific helper placed in the
     package-wide common.py.
-  positive_example: 'src/worktree/cli/ui/formatters/sandbox/common.py -> build_sandbox_table(), reused by list.py
+  positive_example: 'src/dovo/cli/ui/formatters/sandbox/common.py -> build_sandbox_table(), reused by list.py
     and status.py'
   negative_example: '# Nearly identical build_table() duplicated in both sandbox/list.py and sandbox/status.py'
   citation: docs/agents/code-conventions.md#console-output-and-terminal-formatting
@@ -129,7 +129,7 @@ rules:
   severity: BLOCKER
   category: Models
   domain: all
-  scope: src/worktree/
+  scope: src/dovo/
   guideline: Scoped exceptions allowing extra='ignore' are restricted to hand-authored YAML models (BlueprintDefinition,
     LoopStepBlock) and LLM JSON output (OllamaModelStdout), and MUST carry a justifying comment.
   evaluation_criteria: Flag any model using extra='ignore' or omitting strict=True outside the approved list or without a
@@ -144,7 +144,7 @@ rules:
   severity: BLOCKER
   category: Models
   domain: [core, engine]
-  scope: src/worktree/core/, src/worktree/engine/
+  scope: src/dovo/core/, src/dovo/engine/
   guideline: Operations that can fail must return a Pydantic result object subclassing BaseResult instead of raising exceptions.
     Callers check .ok and render .errors/.warnings rather than catching exceptions.
   evaluation_criteria: Inspect service methods. Flag methods that raise exceptions for business/operational failures instead
@@ -157,7 +157,7 @@ rules:
   severity: BLOCKER
   category: Models
   domain: [core, engine]
-  scope: src/worktree/core/*/models.py, src/worktree/engine/**/models.py
+  scope: src/dovo/core/*/models.py, src/dovo/engine/**/models.py
   guideline: Every status StrEnum variant on a BaseResult model must be reachable from production code and covered by a test.
   evaluation_criteria: Check all enum values of StrEnum classes in models.py. Ensure each variant is emitted in src/ and asserted
     in tests/.
@@ -169,7 +169,7 @@ rules:
   severity: BLOCKER
   category: Models
   domain: core
-  scope: src/worktree/core/*/exceptions.py
+  scope: src/dovo/core/*/exceptions.py
   guideline: Catalog-backed domain exceptions must subclass DefinitionError, DefinitionNotFoundError, DefinitionLoadError,
     or DefinitionValidationError from common/exceptions.py.
   evaluation_criteria: Inspect domain exception inheritance. Flag exceptions that inherit directly from Exception or ValueError
@@ -248,7 +248,7 @@ rules:
   severity: BLOCKER
   category: Typing
   domain: all
-  scope: src/worktree/
+  scope: src/dovo/
   guideline: 'Any is permitted strictly in: (1) Pydantic mode=''before'' validators, (2) dict[str, Any] at serialization boundaries,
     (3) values read from user documents and compared, and (4) **kwargs: Any pass-throughs.'
   evaluation_criteria: Audit Any occurrences. Flag any usage outside the four permitted boundaries.
@@ -274,7 +274,7 @@ rules:
   severity: NIT
   category: Typing
   domain: core
-  scope: src/worktree/core/db/models.py
+  scope: src/dovo/core/db/models.py
   guideline: Typing table names or string constants as Any or bare string instead of explicit ClassVar[str] causes type checker
     ambiguity. Declare class-level SQL constants explicitly.
   evaluation_criteria: Inspect SQLModel definitions. Verify __tablename__ and table constants are annotated as ClassVar[str].
@@ -322,7 +322,7 @@ rules:
   severity: SUGGESTION
   category: Encapsulation
   domain: all
-  scope: src/worktree/
+  scope: src/dovo/
   guideline: Expose public boolean query properties (e.g. is_interactive, is_enabled, has_*) on classes rather than referencing
     private members from external callers.
   evaluation_criteria: Flag external callers inspecting internal private state; suggest adding a query property.
@@ -336,7 +336,7 @@ rules:
   severity: BLOCKER
   category: Encapsulation
   domain: all
-  scope: src/worktree/
+  scope: src/dovo/
   guideline: Never add a parameter, kwarg, or callback solely for test injection. A parameter production never reads is dead
     code with a test attached. Monkeypatch collaborators at module boundaries instead.
   evaluation_criteria: Inspect parameters of touched functions. If a parameter has a default and is only ever passed in tests,
@@ -350,9 +350,9 @@ rules:
   category: Performance
   domain: all
   scope: All source and test files
-  guideline: Never instantiate a repository or WorktreeDb inside loops or test helpers. Inject pre-initialized instances to
+  guideline: Never instantiate a repository or DovoDb inside loops or test helpers. Inject pre-initialized instances to
     prevent N+1 SQLite connection/migration checks.
-  evaluation_criteria: Detect repository or WorktreeDb instantiations inside for/while loops or inside reusable helper functions.
+  evaluation_criteria: Detect repository or DovoDb instantiations inside for/while loops or inside reusable helper functions.
   positive_example: 'repo = RunsRepository(path)
 
     for item in items: repo.create(item)'
@@ -363,7 +363,7 @@ rules:
   severity: BLOCKER
   category: Performance
   domain: core
-  scope: src/worktree/core/db/
+  scope: src/dovo/core/db/
   guideline: Every new table or column must have real caller sites in src/ in the same PR. One-time data backfills must be
     versioned Alembic revisions (op.execute()), not ad-hoc raw SQL in models.
   evaluation_criteria: Check Alembic migrations. Verify added columns/tables are actively queried and written by production
@@ -376,7 +376,7 @@ rules:
   severity: WARNING
   category: Performance
   domain: [core, engine]
-  scope: src/worktree/core/db/, src/worktree/core/*/services/, src/worktree/engine/services/
+  scope: src/dovo/core/db/, src/dovo/core/*/services/, src/dovo/engine/services/
   guideline: Do not perform O(n) in-memory list comprehensions or linear scans over repository records when an indexed database
     column exists (e.g., querying _record_for_rel_path). Query the repository slice directly with filtered SQL.
   evaluation_criteria: Scan for in-memory list comprehensions or filter loops over full table fetches when an indexed query
@@ -389,7 +389,7 @@ rules:
   severity: WARNING
   category: Architecture
   domain: core
-  scope: src/worktree/core/db/repositories/
+  scope: src/dovo/core/db/repositories/
   guideline: Maintain consistent method naming across sibling repositories. Standardize on canonical CRUD verbs (create(),
     get(), list(), delete(), save()). Avoid ad-hoc verb variants like insert(), add(), or upsert() unless explicitly justified.
   evaluation_criteria: Inspect repository public methods. Flag divergence in verb naming across sibling repository classes.
@@ -401,7 +401,7 @@ rules:
   severity: WARNING
   category: Architecture
   domain: [core, engine]
-  scope: src/worktree/core/db/, src/worktree/core/*/services/, src/worktree/engine/services/
+  scope: src/dovo/core/db/, src/dovo/core/*/services/, src/dovo/engine/services/
   guideline: Maintain consistent error handling semantics across identical query paths. Do not swallow invalid enums or corrupt
     rows in one repository method while raising or returning BaseResult errors in another.
   evaluation_criteria: Audit repository query methods for divergent exception handling (e.g. bare except returning None vs
@@ -414,7 +414,7 @@ rules:
   severity: SUGGESTION
   category: Code Conventions
   domain: core
-  scope: src/worktree/core/db/repositories/
+  scope: src/dovo/core/db/repositories/
   guideline: Repetitive database transaction boilerplate (_commit, _delete_one_where, rollback handling, session lifecycle)
     should be consolidated into BaseRepository rather than duplicated across individual repository classes.
   evaluation_criteria: Flag identical session commit/rollback and single-record deletion boilerplate repeated across sibling
@@ -427,7 +427,7 @@ rules:
   severity: NIT
   category: Database
   domain: core
-  scope: src/worktree/core/db/models.py
+  scope: src/dovo/core/db/models.py
   guideline: Declaring index=True on a column that already declares unique=True creates redundant SQLite B-tree indexes. A
     unique constraint already creates a backing index automatically.
   evaluation_criteria: Inspect SQLModel Field definitions. Flag fields specifying both `unique=True` and `index=True`.
@@ -439,7 +439,7 @@ rules:
   severity: BLOCKER
   category: Filesystem
   domain: all
-  scope: src/worktree/
+  scope: src/dovo/
   guideline: Never write config or state files directly in-place. Write to a .tmp sibling, flush, os.fsync, and atomically
     swap via Path.replace using Filesystem.atomic_write_json and Filesystem.atomic_write_text.
   evaluation_criteria: Scan for direct open(..., 'w') or Path.write_text on state or configuration files.
@@ -451,19 +451,19 @@ rules:
   severity: BLOCKER
   category: Filesystem
   domain: all
-  scope: src/worktree/
-  guideline: Multi-process sandbox, catalog, or state mutations must acquire the .worktree/.lock advisory lock using common/lock.py
+  scope: src/dovo/
+  guideline: Multi-process sandbox, catalog, or state mutations must acquire the .dovo/.lock advisory lock using common/lock.py
     and handle LockTimeoutError.
   evaluation_criteria: Check concurrent operations for advisory lock wrapping.
   positive_example: 'with file_lock(lock_path, timeout=10.0): sandbox_service.create(...)'
   negative_example: 'sandbox_service.create(...)  # mutating shared dir without acquiring lock'
-  citation: docs/agents/architecture.md#the-worktree-directory
+  citation: docs/agents/architecture.md#the-dovo-directory
 - id: COMPAT-001
   title: Strict Public-Only Backwards Compatibility
   severity: BLOCKER
   category: Compatibility
   domain: all
-  scope: src/worktree/
+  scope: src/dovo/
   guideline: 'Maintain backwards compatibility ONLY for surfaces users interact with directly: CLI command surface (commands,
     subcommands, arguments, flags), configuration files and blueprint YAMLs (config.json), and stable machine-readable output
     formats (JSON event envelopes).'
@@ -476,7 +476,7 @@ rules:
   severity: BLOCKER
   category: Compatibility
   domain: all
-  scope: src/worktree/common/, src/worktree/core/, internal src/worktree/cli/
+  scope: src/dovo/common/, src/dovo/core/, internal src/dovo/cli/
   guideline: Do NOT preserve backwards compatibility aliases, compatibility properties, or shim layers for internal code (common/,
     core/, or internal CLI modules) when refactoring or renaming symbols. Update callers and tests directly.
   evaluation_criteria: Scan internal classes for deprecated aliases or shim properties.
@@ -490,7 +490,7 @@ rules:
   severity: BLOCKER
   category: Compatibility
   domain: all
-  scope: src/worktree/
+  scope: src/dovo/
   guideline: 'Treat the repository as greenfield by default: plan no dual code paths, fallback adapters, or deprecation windows
     unless an issue explicitly demands one. Replace superseded paths and update callers in the same change set.'
   evaluation_criteria: Flag dual implementations or fallback branches created without an explicit issue requirement.
@@ -516,14 +516,14 @@ rules:
   domain: tests
   scope: tests/
   guideline: >-
-    Test structure mirrors src/worktree/ 1:1 under tests/, one test file per source module, and every test
+    Test structure mirrors src/dovo/ 1:1 under tests/, one test file per source module, and every test
     directory carries an __init__.py because basenames repeat across the tree. Five mappings are fixed:
-    src/worktree/common/<m>.py to tests/common/test_<m>.py, src/worktree/core/<domain>/<m>.py to
-    tests/core/<domain>/test_<m>.py, src/worktree/cli/ui/formatters/<domain>/<name>.py to
-    tests/cli/ui/formatters/<domain>/test_<name>.py, and src/worktree/cli/<command>/commands/<action>.py to
+    src/dovo/common/<m>.py to tests/common/test_<m>.py, src/dovo/core/<domain>/<m>.py to
+    tests/core/<domain>/test_<m>.py, src/dovo/cli/ui/formatters/<domain>/<name>.py to
+    tests/cli/ui/formatters/<domain>/test_<name>.py, and src/dovo/cli/<command>/commands/<action>.py to
     tests/cli/<command>/test_<command>_<action>.py — a subdirectory per CLI command domain, mirroring
-    src/worktree/cli/<command>/ (the commands/ subpackage level collapses; a per-domain conftest.py holds
-    fixtures that domain's test files share, never fixtures another domain needs). The fifth is src/worktree/engine/<m>.py to tests/engine/test_<m>.py (executors/ and services/ subpackages mirror as tests/engine/executors/ and tests/engine/services/). One test file per CLI
+    src/dovo/cli/<command>/ (the commands/ subpackage level collapses; a per-domain conftest.py holds
+    fixtures that domain's test files share, never fixtures another domain needs). The fifth is src/dovo/engine/<m>.py to tests/engine/test_<m>.py (executors/ and services/ subpackages mirror as tests/engine/executors/ and tests/engine/services/). One test file per CLI
     command action, not one file per command domain. Every source module must have a corresponding test
     file; there is no exemption list. Grouping several formatters, domains, or command actions into one part-numbered or collapsed file is
     prohibited.
@@ -533,7 +533,7 @@ rules:
     than one command action), a CLI command test file left flat under tests/cli/ instead of nested under its
     own tests/cli/<command>/ subdirectory, missing __init__.py files, and source modules with no test
     file.
-  positive_example: src/worktree/cli/sandbox/commands/sandbox_create.py -> tests/cli/sandbox/test_sandbox_create.py
+  positive_example: src/dovo/cli/sandbox/commands/sandbox_create.py -> tests/cli/sandbox/test_sandbox_create.py
   negative_example: 'tests/cli/commands/test_sandbox_create.py  # flat under tests/cli/commands/, not nested under tests/cli/sandbox/'
   citation: docs/agents/testing.md#11-source-parity-layout
 - id: TEST-003
@@ -743,7 +743,7 @@ rules:
     parameters against what production passes. No MagicMock in helper signatures.
   evaluation_criteria: Inspect type annotations in tests/helpers/ and fixture functions. Flag missing types or MagicMock in
     signatures.
-  positive_example: 'def create_test_session(db: WorktreeDb, session_id: str) -> RunRecord: ...'
+  positive_example: 'def create_test_session(db: DovoDb, session_id: str) -> RunRecord: ...'
   negative_example: 'def create_test_session(db: Any, mock_obj: MagicMock) -> Any: ...'
   citation: docs/agents/testing.md#core-testing-rules
 - id: TEST-015
@@ -825,13 +825,13 @@ rules:
   category: Testing
   domain: tests
   scope: tests/core/
-  guideline: tests/core/** must never import worktree.cli.*. A core test proves the domain layer's contract
+  guideline: tests/core/** must never import dovo.cli.*. A core test proves the domain layer's contract
     independent of any presentation concern, and an import of the CLI package from a core test either leaks a
     presentation dependency into the domain suite or signals the test belongs under tests/cli/ instead.
   evaluation_criteria: Scan import statements in changed files under tests/core/. Flag any import of
-    worktree.cli or a submodule of it.
-  positive_example: 'from worktree.core.sandbox.prune import prune_sandboxes  # tests/core/sandbox/test_prune.py'
-  negative_example: 'from worktree.cli.sandbox.commands.prune import prune_command  # imported from tests/core/sandbox/test_prune.py'
+    dovo.cli or a submodule of it.
+  positive_example: 'from dovo.core.sandbox.prune import prune_sandboxes  # tests/core/sandbox/test_prune.py'
+  negative_example: 'from dovo.cli.sandbox.commands.prune import prune_command  # imported from tests/core/sandbox/test_prune.py'
   citation: docs/agents/testing.md#11-source-parity-layout
 - id: TEST-019
   title: Command Result DTO Spy Scope for CLI Integration Tests
@@ -844,8 +844,8 @@ rules:
     json's wire payload already proves, with a call-through spy fixture on ui_dispatcher.dispatch that still
     exercises the real formatter and render path (never a replacement stub, so this does not trip TEST-008). What
     that spy may be asserted against is scoped to one thing: the command action's own terminal BaseResult — the
-    same type its facade or service call returns and the JSON envelope wraps (SandboxCreateResult for wt sandbox
-    create, WorktreeStatusResult for wt status). It is never used to assert on other objects the same invocation
+    same type its facade or service call returns and the JSON envelope wraps (SandboxCreateResult for dovo sandbox
+    create, DovoStatusResult for dovo status). It is never used to assert on other objects the same invocation
     dispatches — MessageEvent, WarningEvent, PromptEvent, or a lifecycle/progress event — even when the spy's
     fixture captures them incidentally. A command action known to dispatch only its own terminal result per
     invocation may assert the spy's sole captured item directly; a command action that also dispatches other
@@ -892,7 +892,7 @@ rules:
   category: Documentation
   domain: all
   scope: docs/agents/schemas.md
-  guideline: Update docs/agents/schemas.md whenever .worktree/config.json keys, blueprint YAML fields, domain DTOs, or database
+  guideline: Update docs/agents/schemas.md whenever .dovo/config.json keys, blueprint YAML fields, domain DTOs, or database
     record shapes change.
   evaluation_criteria: Verify schemas.md is updated whenever new DTOs, Result models, or config fields are added in src/.
   positive_example: '# Adding SandboxPruneResult to section 2 of schemas.md'
@@ -907,7 +907,7 @@ rules:
   guideline: Docs must not hand-copy Pydantic model signatures, field tables, or enum lists that a Read of the source already
     gives unambiguously. Link to the model file and document only unexpressed behavior (validators, resolution order).
   evaluation_criteria: Flag doc changes that copy-paste field lists or enum members from source models without adding context.
-  positive_example: See [`SandboxSession`](src/worktree/core/sandbox/models.py). Sandboxes live under .worktree/sandboxes/.
+  positive_example: See [`SandboxSession`](src/dovo/core/sandbox/models.py). Sandboxes live under .dovo/sandboxes/.
   negative_example: '| Field | Type | Default |
 
     | session_id | str | required |'
@@ -1059,7 +1059,7 @@ planner_rules:
   positive_example: '# Agent reads files and gh issues, then writes only to .agentic/plan.md
 
     '
-  negative_example: '# Agent runs `inv test` or edits `src/worktree/cli/app.py` while planning
+  negative_example: '# Agent runs `inv test` or edits `src/dovo/cli/app.py` while planning
 
     '
   citation: docs/agents/planning.md#planning-before-implementation
@@ -1079,7 +1079,7 @@ planner_rules:
     generated.
   positive_example: 'rm -rf .agentic && mkdir -p .agentic'
   negative_example: 'rm -f .agentic && mkdir -p .agentic  # fails on a directory, mkdir never runs, nothing is cleared'
-  citation: .agents/skills/wt-plan/SKILL.md#1-discovery-and-boundary-auditing
+  citation: .agents/skills/dovo-plan/SKILL.md#1-discovery-and-boundary-auditing
 - id: PLAN-003
   title: Verbatim Contract Extraction
   category: Planning
@@ -1091,7 +1091,7 @@ planner_rules:
   validation_check: Diff issue text against plan contract section. Flag any dropped clause or paraphrase.
   positive_example: '## Contract
 
-    - **FR-1**: Add `wt sandbox prune` command to remove unreferenced sandboxes.
+    - **FR-1**: Add `dovo sandbox prune` command to remove unreferenced sandboxes.
 
     - **FR-2**: Prune operation must delete worktree branches matching `worktree/sandbox-*`.
 
@@ -1176,12 +1176,12 @@ planner_rules:
 
     | Surface | Location | What exists |
 
-    | CLI app | `src/worktree/cli/sandbox/app.py:24` | Typer app registering sandbox subcommands |
+    | CLI app | `src/dovo/cli/sandbox/app.py:24` | Typer app registering sandbox subcommands |
 
-    | Lifecycle | `src/worktree/core/sandbox/services/lifecycle.py:80` | `delete_sandbox` method |
+    | Lifecycle | `src/dovo/core/sandbox/services/lifecycle.py:80` | `delete_sandbox` method |
 
 
-    **Pattern to mirror:** `src/worktree/cli/config/commands/config_set.py:30`
+    **Pattern to mirror:** `src/dovo/cli/config/commands/config_set.py:30`
 
     ```python
 
@@ -1289,7 +1289,7 @@ planner_rules:
         def test_create_cli_capacity_exceeded_exits_one(
             self, cli_runner: CliRunner, sandbox_workspace: Path
         ) -> None:
-            """[tier-3/integration] wt sandbox create: 3 prior sandboxes exist → exit 1, 'Maximum active sandboxes reached' in stdout."""
+            """[tier-3/integration] dovo sandbox create: 3 prior sandboxes exist → exit 1, 'Maximum active sandboxes reached' in stdout."""
             raise NotImplementedError
     ```
   negative_example: |
@@ -1345,7 +1345,7 @@ planner_rules:
     a one-paragraph summary, all 🚨 decisions and open questions, and state plainly that this was planning only: nothing was
     implemented, tested, committed, or pushed. Stop and wait for human review.'
   deliverable_contract: File written to .agentic/plan.md. Agent turn terminates without executing implementation commands.
-  validation_check: Ensure the agent does not immediately proceed to invoke /wt-code or edit production files.
+  validation_check: Ensure the agent does not immediately proceed to invoke /dovo-code or edit production files.
   positive_example: '"Plan saved to .agentic/plan.md. Planning only; nothing was implemented or committed.
 
     Open decisions requiring confirmation:

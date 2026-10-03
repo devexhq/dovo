@@ -6,16 +6,16 @@ from typing import Any
 
 import pytest
 
+from dovo.cli.ui.formatters.sandbox.sandbox_apply import SandboxApplyFormatter
+from dovo.core.sandbox.models import (
+    SandboxApplyResult,
+    SandboxApplyStatus,
+    SandboxApplyStrategy,
+)
 from tests.harness.formatter import (
     FormatterCase,
     assert_json_payload_matches_published_shape,
     assert_rich_render_shows_every_view_value,
-)
-from worktree.cli.ui.formatters.sandbox.sandbox_apply import SandboxApplyFormatter
-from worktree.core.sandbox.models import (
-    SandboxApplyResult,
-    SandboxApplyStatus,
-    SandboxApplyStrategy,
 )
 
 APPLIED_SQUASH = FormatterCase(

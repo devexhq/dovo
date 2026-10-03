@@ -7,16 +7,16 @@ from typing import Any
 
 import pytest
 
+from dovo.cli.ui.formatters.sandbox.sandbox_create import SandboxCreateFormatter
+from dovo.core.sandbox.models import (
+    SandboxCreateResult,
+    SandboxCreateStatus,
+    SandboxSession,
+)
 from tests.harness.formatter import (
     FormatterCase,
     assert_json_payload_matches_published_shape,
     assert_rich_render_shows_every_view_value,
-)
-from worktree.cli.ui.formatters.sandbox.sandbox_create import SandboxCreateFormatter
-from worktree.core.sandbox.models import (
-    SandboxCreateResult,
-    SandboxCreateStatus,
-    SandboxSession,
 )
 
 _SESSION = SandboxSession(

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-AGENT_ADAPTER_FACTORY = "worktree.core.agents.services.run_direct.get_agent_adapter"
+AGENT_ADAPTER_FACTORY = "dovo.core.agents.services.run_direct.get_agent_adapter"
 
 
 def new_file_diff(name: str, content: str = "hello") -> str:

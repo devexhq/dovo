@@ -1,1 +1,1 @@
-"""Tests for the wt doctor CLI command."""
+"""Tests for the dovo doctor CLI command."""

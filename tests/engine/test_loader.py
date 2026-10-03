@@ -4,18 +4,18 @@ from __future__ import annotations
 
 import pytest
 
-from tests.harness.runs import SEEDED_FAILURE, seed_new_run, seed_paused_run
-from worktree.common.filesystem.models import WorkspacePaths
-from worktree.core.db import RunRecord, RunsRepository, RunStatus
-from worktree.engine import EngineLoader, EngineResumeError, EngineResumeStatus, RunStateStore
-from worktree.engine.executors.models import StepResult
-from worktree.engine.state_models import (
+from dovo.common.filesystem.models import WorkspacePaths
+from dovo.core.db import RunRecord, RunsRepository, RunStatus
+from dovo.engine import EngineLoader, EngineResumeError, EngineResumeStatus, RunStateStore
+from dovo.engine.executors.models import StepResult
+from dovo.engine.state_models import (
     ExecutionLeafNode,
     ExecutionLoopNode,
     NodeState,
     StepAttemptRecord,
 )
-from worktree.engine.writer import snapshot_blueprint_path
+from dovo.engine.writer import snapshot_blueprint_path
+from tests.harness.runs import SEEDED_FAILURE, seed_new_run, seed_paused_run
 
 _STEPS: list[dict[str, object]] = [{"id": "a", "run": "true"}, {"id": "b", "run": "exit 1"}]
 _LOOP_STEPS: list[dict[str, object]] = [

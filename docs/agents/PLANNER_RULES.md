@@ -17,7 +17,7 @@
 
 <!-- ❌ NEGATIVE EXAMPLE -->
 ```markdown
-# Agent runs `inv test` or edits `src/worktree/cli/app.py` while planning
+# Agent runs `inv test` or edits `src/dovo/cli/app.py` while planning
 ```
 
 ## [PLAN-002] Workspace Reset and State Isolation
@@ -47,7 +47,7 @@ rm -f .agentic && mkdir -p .agentic  # fails on a directory, mkdir never runs, n
 <!-- ✅ POSITIVE EXAMPLE -->
 ```markdown
 ## Contract
-- **FR-1**: Add `wt sandbox prune` command to remove unreferenced sandboxes.
+- **FR-1**: Add `dovo sandbox prune` command to remove unreferenced sandboxes.
 - **FR-2**: Prune operation must delete worktree branches matching `worktree/sandbox-*`.
 ```
 
@@ -124,10 +124,10 @@ We will implement sandbox pruning for stale directories.
 ```markdown
 ## Ground truth
 | Surface | Location | What exists |
-| CLI app | `src/worktree/cli/sandbox/app.py:24` | Typer app registering sandbox subcommands |
-| Lifecycle | `src/worktree/core/sandbox/services/lifecycle.py:80` | `delete_sandbox` method |
+| CLI app | `src/dovo/cli/sandbox/app.py:24` | Typer app registering sandbox subcommands |
+| Lifecycle | `src/dovo/core/sandbox/services/lifecycle.py:80` | `delete_sandbox` method |
 
-**Pattern to mirror:** `src/worktree/cli/config/commands/config_set.py:30`
+**Pattern to mirror:** `src/dovo/cli/config/commands/config_set.py:30`
 ```python
 def config_set_command(context: CliContext, key: str, value: str) -> ConfigSetResult: """Set a single config key and persist it to the active scope."""
 ```
@@ -249,7 +249,7 @@ class SandboxCreateCliIntegrationTests:
     def test_create_cli_capacity_exceeded_exits_one(
         self, cli_runner: CliRunner, sandbox_workspace: Path
     ) -> None:
-        """[tier-3/integration] wt sandbox create: 3 prior sandboxes exist → exit 1, 'Maximum active sandboxes reached' in stdout."""
+        """[tier-3/integration] dovo sandbox create: 3 prior sandboxes exist → exit 1, 'Maximum active sandboxes reached' in stdout."""
         raise NotImplementedError
 ```
 ```
@@ -303,7 +303,7 @@ def prune_sandboxes(...) -> SandboxPruneResult: ...
 - **Scope:** `Deliverable file & Chat response`
 - **Requirement:** Write the plan to .agentic/plan.md. Run the 9-item self-check before handing off. In chat, report the path, a one-paragraph summary, all 🚨 decisions and open questions, and state plainly that this was planning only: nothing was implemented, tested, committed, or pushed. Stop and wait for human review.
 - **Deliverable Contract:** File written to .agentic/plan.md. Agent turn terminates without executing implementation commands.
-- **Validation Check:** Ensure the agent does not immediately proceed to invoke /wt-code or edit production files.
+- **Validation Check:** Ensure the agent does not immediately proceed to invoke /dovo-code or edit production files.
 
 <!-- ✅ POSITIVE EXAMPLE -->
 ```markdown

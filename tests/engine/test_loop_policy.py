@@ -4,17 +4,17 @@ from __future__ import annotations
 
 import pytest
 
-from tests.harness.builders import StepBuilder
-from worktree.common.models import FailurePolicy
-from worktree.core.catalog.definitions import StepDefinition
-from worktree.engine.executors.models import StepResult
-from worktree.engine.loop_policy import LoopDecision, LoopPolicy, LoopTransitionKind
-from worktree.engine.state_models import (
+from dovo.common.models import FailurePolicy
+from dovo.core.catalog.definitions import StepDefinition
+from dovo.engine.executors.models import StepResult
+from dovo.engine.loop_policy import LoopDecision, LoopPolicy, LoopTransitionKind
+from dovo.engine.state_models import (
     ExecutionIterationRecord,
     ExecutionLeafNode,
     ExecutionLoopNode,
     NodeState,
 )
+from tests.harness.builders import StepBuilder
 
 _BODY: list[StepDefinition] = [StepBuilder.command("true").with_id(step_id).build() for step_id in ("a", "b", "c")]
 

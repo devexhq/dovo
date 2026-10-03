@@ -6,9 +6,9 @@ from pathlib import Path
 
 import pytest
 
+from dovo.engine.executors.models import StepExecutionContext
+from dovo.engine.executors.step_executor import StepExecution
 from tests.harness.builders import StepBuilder
-from worktree.engine.executors.models import StepExecutionContext
-from worktree.engine.executors.step_executor import StepExecution
 
 
 class StepExecutionAttemptLogFileTests:

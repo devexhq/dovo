@@ -1,1 +1,1 @@
-"""CLI integration tests for wt artifacts."""
+"""CLI integration tests for dovo artifacts."""

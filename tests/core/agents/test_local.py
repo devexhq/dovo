@@ -9,8 +9,8 @@ from pathlib import Path
 
 import pytest
 
-from worktree.core.agents import AgentRequest, AgentResponseStatus, LocalAgentAdapter
-from worktree.core.agents.local import LOCAL_AGENT_CMD_ENV
+from dovo.core.agents import AgentRequest, AgentResponseStatus, LocalAgentAdapter
+from dovo.core.agents.local import LOCAL_AGENT_CMD_ENV
 
 _RECORDING_SCRIPT = """\
 import sys
@@ -25,7 +25,7 @@ class LocalAgentAdapterTests:
     def test_stdin_json_carries_instruction_mode_and_null_payload(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """[tier-1/unit] LocalAgentAdapter.propose_fix: with WORKTREE_LOCAL_AGENT_CMD pointing at a python script that records stdin, a direct request delivers JSON with mode 'direct', the instruction, payload null, and the sandbox path; the reply maps to NO_OP."""
+        """[tier-1/unit] LocalAgentAdapter.propose_fix: with DOVO_LOCAL_AGENT_CMD pointing at a python script that records stdin, a direct request delivers JSON with mode 'direct', the instruction, payload null, and the sandbox path; the reply maps to NO_OP."""
         script = tmp_path / "record.py"
         script.write_text(_RECORDING_SCRIPT, encoding="utf-8")
         recorded = tmp_path / "stdin.json"

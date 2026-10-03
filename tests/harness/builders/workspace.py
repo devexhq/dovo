@@ -1,4 +1,4 @@
-"""Fluent workspace data builder for Worktree CLI test suite."""
+"""Fluent workspace data builder for Dovo CLI test suite."""
 
 from __future__ import annotations
 
@@ -7,15 +7,15 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
-from worktree.common.filesystem import Filesystem
-from worktree.common.filesystem.models import RepositoryPaths
-from worktree.common.filesystem.services.global_root import resolve_global_paths
-from worktree.core.bootstrap.services.bootstrap import bootstrap_worktree
-from worktree.core.catalog.services.seeder import seed_all_catalog_templates
-from worktree.core.config.generator import generate_default_config
-from worktree.core.db.migrations import init_database
-from worktree.core.project.services.identity import generate_project_identity, save_project_identity
-from worktree.core.project.services.storage import resolve_workspace_paths
+from dovo.common.filesystem import Filesystem
+from dovo.common.filesystem.models import RepositoryPaths
+from dovo.common.filesystem.services.global_root import resolve_global_paths
+from dovo.core.bootstrap.services.bootstrap import bootstrap_dovo
+from dovo.core.catalog.services.seeder import seed_all_catalog_templates
+from dovo.core.config.generator import generate_default_config
+from dovo.core.db.migrations import init_database
+from dovo.core.project.services.identity import generate_project_identity, save_project_identity
+from dovo.core.project.services.storage import resolve_workspace_paths
 
 
 class WorkspaceBuilder:
@@ -100,21 +100,21 @@ class WorkspaceBuilder:
         else:
             workspace_root = Path(tempfile.mkdtemp(prefix="wt_workspace_")).resolve()
 
-        dot_worktree = workspace_root / ".worktree"
-        dot_worktree.mkdir(parents=True, exist_ok=True)
-        bootstrap_worktree(dot_worktree)
+        dot_dovo = workspace_root / ".dovo"
+        dot_dovo.mkdir(parents=True, exist_ok=True)
+        bootstrap_dovo(dot_dovo)
 
-        (dot_worktree / "sandboxes").mkdir(parents=True, exist_ok=True)
+        (dot_dovo / "sandboxes").mkdir(parents=True, exist_ok=True)
 
         if self._init_git:
             self._scaffold_git_repository(workspace_root)
 
         if self._scaffold_config:
-            self._scaffold_workspace_config(workspace_root, dot_worktree)
+            self._scaffold_workspace_config(workspace_root, dot_dovo)
 
         if self._scaffold_database:
             identity = generate_project_identity()
-            save_project_identity(dot_worktree / "project.json", identity)
+            save_project_identity(dot_dovo / "project.json", identity)
             paths = resolve_workspace_paths(RepositoryPaths.from_root(workspace_root), resolve_global_paths(None))
             init_database(paths.database_file)
 
@@ -153,7 +153,7 @@ class WorkspaceBuilder:
 
         gitignore_path = workspace_root / ".gitignore"
         if not gitignore_path.exists():
-            gitignore_path.write_text("/.worktree/\n", encoding="utf-8")
+            gitignore_path.write_text("/.dovo/\n", encoding="utf-8")
 
         subprocess.run(
             ["git", "add", "README.md", ".gitignore"],
@@ -170,8 +170,8 @@ class WorkspaceBuilder:
             text=True,
         )
 
-    def _scaffold_workspace_config(self, workspace_root: Path, dot_worktree: Path) -> None:
-        config_path = dot_worktree / "config.json"
+    def _scaffold_workspace_config(self, workspace_root: Path, dot_dovo: Path) -> None:
+        config_path = dot_dovo / "config.json"
         if self._config_data is not None:
             if not self._config_overwrite and config_path.exists():
                 return

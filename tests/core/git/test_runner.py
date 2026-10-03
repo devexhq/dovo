@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from worktree.core.git.models import GitWorktreeEntry
-from worktree.core.git.runner import GitRunner
+from dovo.core.git.models import GitWorktreeEntry
+from dovo.core.git.runner import GitRunner
 
 
 class GitRunnerPlumbingTests:

@@ -1,11 +1,11 @@
-# `wt run`
+# `dovo run`
 
-The `wt run` command executes a blueprint by name from the catalog.
+The `dovo run` command executes a blueprint by name from the catalog.
 
 ## Usage
 
 ```bash
-wt run <name> [OPTIONS] [-- <input-overrides>]
+dovo run <name> [OPTIONS] [-- <input-overrides>]
 ```
 
 ### Options
@@ -25,9 +25,9 @@ Trailing CLI arguments (after options) are forwarded to declared blueprint input
 
 ### Behavior
 
-1. **Resolution**: Resolves `<name>` from `.worktree/catalog/` via `Blueprint.load`.
+1. **Resolution**: Resolves `<name>` from `.dovo/catalog/` via `Blueprint.load`.
 2. **Execution**: Runs the blueprint through the unified runtime engine (`BlueprintRunService`).
-3. **Agent steps**: An agent step sends its interpolated `prompt` to the resolved provider in `direct` mode and applies any returned patch inside the sandbox only. It fails with `Agent steps require an active Worktree Git sandbox.` under `--no-sandbox` or a resumed in-place run. Its stdout is one JSON object (`status`, `summary`, `unfixable_reason`, `touched_files`); see [Agent-Step Adapters](../guides/agent-providers.md).
+3. **Agent steps**: An agent step sends its interpolated `prompt` to the resolved provider in `direct` mode and applies any returned patch inside the sandbox only. It fails with `Agent steps require an active Dovo Git sandbox.` under `--no-sandbox` or a resumed in-place run. Its stdout is one JSON object (`status`, `summary`, `unfixable_reason`, `touched_files`); see [Agent-Step Adapters](../guides/agent-providers.md).
 4. **Exit Codes**:
    - `0`: Successful run or paused run (with run state saved).
    - `1`: Failed or cancelled run.
@@ -37,23 +37,23 @@ Trailing CLI arguments (after options) are forwarded to declared blueprint input
 Run a blueprint:
 
 ```bash
-wt run build-task
+dovo run build-task
 ```
 
 Run a blueprint in-place without sandbox:
 
 ```bash
-wt run release-flow --no-sandbox
+dovo run release-flow --no-sandbox
 ```
 
 Pass declared blueprint inputs:
 
 ```bash
-wt run test-suite --target src/worktree --verbose true
+dovo run test-suite --target src/dovo --verbose true
 ```
 
 Run non-interactively in CI:
 
 ```bash
-wt run lint-all --no-tty
+dovo run lint-all --no-tty
 ```

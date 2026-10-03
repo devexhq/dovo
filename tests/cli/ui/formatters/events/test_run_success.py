@@ -6,14 +6,14 @@ from typing import Any
 
 import pytest
 
+from dovo.cli.ui.events import RunSuccessEvent
+from dovo.cli.ui.formatters.events.run_success import RunSuccessFormatter
+from dovo.core.db import RunStatus
 from tests.harness.formatter import (
     FormatterCase,
     assert_json_payload_matches_published_shape,
     assert_rich_render_shows_every_view_value,
 )
-from worktree.cli.ui.events import RunSuccessEvent
-from worktree.cli.ui.formatters.events.run_success import RunSuccessFormatter
-from worktree.core.db import RunStatus
 
 FIRST_COMPLETED = FormatterCase(
     data=RunSuccessEvent(session_id="sess_123", blueprint_name="my_blueprint", status=RunStatus.COMPLETED),

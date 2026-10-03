@@ -6,16 +6,16 @@ from typing import Any
 
 import pytest
 
+from dovo.cli.ui.formatters.sandbox.sandbox_show import SandboxShowFormatter
+from dovo.core.db import SandboxRecord, SandboxStatus
+from dovo.core.sandbox.models import (
+    SandboxShowResult,
+    SandboxShowStatus,
+)
 from tests.harness.formatter import (
     FormatterCase,
     assert_json_payload_matches_published_shape,
     assert_rich_render_shows_every_view_value,
-)
-from worktree.cli.ui.formatters.sandbox.sandbox_show import SandboxShowFormatter
-from worktree.core.db import SandboxRecord, SandboxStatus
-from worktree.core.sandbox.models import (
-    SandboxShowResult,
-    SandboxShowStatus,
 )
 
 _RECORD = SandboxRecord(
@@ -63,14 +63,14 @@ NOT_FOUND = FormatterCase(
     data=SandboxShowResult(
         status=SandboxShowStatus.NOT_FOUND,
         errors=["Sandbox 'sbx_missing' not found."],
-        fixes=["Run `wt sandbox list` to see known sandboxes"],
+        fixes=["Run `dovo sandbox list` to see known sandboxes"],
     ),
     view=SandboxShowResult(
         status=SandboxShowStatus.NOT_FOUND,
         errors=["Sandbox 'sbx_missing' not found."],
-        fixes=["Run `wt sandbox list` to see known sandboxes"],
+        fixes=["Run `dovo sandbox list` to see known sandboxes"],
     ),
-    render_expectations=["Sandbox 'sbx_missing' not found.", "Run `wt sandbox list` to see known sandboxes"],
+    render_expectations=["Sandbox 'sbx_missing' not found.", "Run `dovo sandbox list` to see known sandboxes"],
 )
 
 SANDBOX_SHOW_CASES = [
@@ -136,7 +136,7 @@ SANDBOX_SHOW_PAYLOAD_CASES = [
             "warnings": [],
             "errors": ["Sandbox 'sbx_missing' not found."],
             "error_code": None,
-            "fixes": ["Run `wt sandbox list` to see known sandboxes"],
+            "fixes": ["Run `dovo sandbox list` to see known sandboxes"],
         },
         id="not_found",
     ),

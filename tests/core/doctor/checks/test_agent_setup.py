@@ -1,4 +1,4 @@
-"""Unit tests for worktree.core.doctor.checks.agent_setup."""
+"""Unit tests for dovo.core.doctor.checks.agent_setup."""
 
 from __future__ import annotations
 
@@ -7,16 +7,16 @@ from pathlib import Path
 
 import pytest
 
-from worktree.common.filesystem import WorkspacePaths
-from worktree.core.config.models import AgentConfig, AgentProvider, ProjectConfig, WorktreeConfig
-from worktree.core.doctor.checks.agent_setup import PROVIDER_CREDENTIAL_RESOLVERS, AgentSetupCheck
-from worktree.core.doctor.models import CheckCategory, CheckStatus, DoctorContext
+from dovo.common.filesystem import WorkspacePaths
+from dovo.core.config.models import AgentConfig, AgentProvider, DovoConfig, ProjectConfig
+from dovo.core.doctor.checks.agent_setup import PROVIDER_CREDENTIAL_RESOLVERS, AgentSetupCheck
+from dovo.core.doctor.models import CheckCategory, CheckStatus, DoctorContext
 
 WorkspacePathsFactory = Callable[[Path, Path | None], WorkspacePaths]
 
 
 def _context_with_agent(cwd: Path, agent: AgentConfig, workspace_paths_factory: WorkspacePathsFactory) -> DoctorContext:
-    config = WorktreeConfig(version=1, project=ProjectConfig(name="demo"), agent=agent)
+    config = DovoConfig(version=1, project=ProjectConfig(name="demo"), agent=agent)
     return DoctorContext(cwd=cwd, config=config, paths=workspace_paths_factory(cwd, None))
 
 
@@ -43,10 +43,10 @@ class AgentSetupCheckTests:
     def test_execute_local_provider_with_model_returns_ok(
         self, tmp_path: Path, workspace_paths_factory: WorkspacePathsFactory
     ) -> None:
-        """[tier-1/unit] AgentSetupCheck.execute: agent.provider='local', agent.model='worktree-local-agent' -> OK, error_code=None, details={'provider': 'local', 'model': 'worktree-local-agent'}."""
+        """[tier-1/unit] AgentSetupCheck.execute: agent.provider='local', agent.model='dovo-local-agent' -> OK, error_code=None, details={'provider': 'local', 'model': 'dovo-local-agent'}."""
         check = AgentSetupCheck()
         context = _context_with_agent(
-            tmp_path, AgentConfig(provider="local", model="worktree-local-agent"), workspace_paths_factory
+            tmp_path, AgentConfig(provider="local", model="dovo-local-agent"), workspace_paths_factory
         )
 
         result = check.execute(context)
@@ -55,7 +55,7 @@ class AgentSetupCheckTests:
         assert result.category == CheckCategory.AGENT
         assert result.status == CheckStatus.OK
         assert result.error_code is None
-        assert result.details == {"provider": "local", "model": "worktree-local-agent"}
+        assert result.details == {"provider": "local", "model": "dovo-local-agent"}
 
     def test_execute_ollama_provider_no_resolver_missing_model_returns_warning(
         self, tmp_path: Path, workspace_paths_factory: WorkspacePathsFactory

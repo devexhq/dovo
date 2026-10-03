@@ -14,10 +14,10 @@ import yaml
 VALID_DOMAINS: set[str] = {"all", "core", "common", "cli", "engine", "tests"}
 
 PACKAGE_DOMAINS: dict[str, tuple[str, tuple[str, ...]]] = {
-    "core": ("Core Domain", ("src", "worktree", "core", "docs", "RULES.md")),
-    "common": ("Common Domain", ("src", "worktree", "common", "docs", "RULES.md")),
-    "cli": ("CLI Domain", ("src", "worktree", "cli", "docs", "RULES.md")),
-    "engine": ("Engine Domain", ("src", "worktree", "engine", "docs", "RULES.md")),
+    "core": ("Core Domain", ("src", "dovo", "core", "docs", "RULES.md")),
+    "common": ("Common Domain", ("src", "dovo", "common", "docs", "RULES.md")),
+    "cli": ("CLI Domain", ("src", "dovo", "cli", "docs", "RULES.md")),
+    "engine": ("Engine Domain", ("src", "dovo", "engine", "docs", "RULES.md")),
     "tests": ("Tests Domain", ("tests", "docs", "RULES.md")),
 }
 

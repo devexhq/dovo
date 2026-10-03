@@ -1,12 +1,12 @@
 # Working with Steps
 
-Steps are the fundamental building blocks of Worktree blueprints. A step executes a shell command or script, resolves a reusable catalog step, or sends a prompt to an agent provider.
+Steps are the fundamental building blocks of Dovo blueprints. A step executes a shell command or script, resolves a reusable catalog step, or sends a prompt to an agent provider.
 
 ---
 
 ## Step Execution Modes
 
-Worktree supports three primary ways to define a step:
+Dovo supports three primary ways to define a step:
 
 ```text
 Step Definition
@@ -32,27 +32,27 @@ steps:
     run: ruff check .
 ```
 
-*When `run:` is provided, Worktree automatically maps it to a command step.*
+*When `run:` is provided, Dovo automatically maps it to a command step.*
 
 ---
 
 ### 2. Reusable Catalog Steps (`uses:`)
 
-Steps can be authored as standalone, reusable YAML files in `.worktree/catalog/steps/` and referenced by other blueprints via `uses:`.
+Steps can be authored as standalone, reusable YAML files in `.dovo/catalog/steps/` and referenced by other blueprints via `uses:`.
 
 ```yaml
 steps:
   # Reference a built-in curated step
   - id: sync-git
-    uses: wt/git-sync-base
+    uses: dovo/git-sync-base
 
   # Reference a project-local catalog step
   - id: verify-build
     uses: build-and-test
 ```
 
-#### Curated Built-in Steps (`wt/*`)
-Worktree can provide curated step templates under `wt/`. Inspect the checked-out catalog before relying on a particular template.
+#### Curated Built-in Steps (`dovo/*`)
+Dovo can provide curated step templates under `dovo/`. Inspect the checked-out catalog before relying on a particular template.
 
 ---
 
@@ -146,37 +146,37 @@ steps:
 
 ## Runtime Execution Metadata & Environment Variables
 
-Worktree automatically exposes structured runtime metadata to step commands and templates through process environment variables (`WT_*`) and template interpolation (`{{ ... }}` or `${{ ... }}`).
+Dovo automatically exposes structured runtime metadata to step commands and templates through process environment variables (`DOVO_*`) and template interpolation (`{{ ... }}` or `${{ ... }}`).
 
 ### Environment Variables
 
-Every step execution receives the complete set of `WT_*` environment variables. Values are always strings (empty string when not applicable):
+Every step execution receives the complete set of `DOVO_*` environment variables. Values are always strings (empty string when not applicable):
 
 | Environment Variable | Source | Description |
 |---|---|---|
-| `WT_STEP_ID` | `step.id` | Unique ID of the current step. |
-| `WT_STEP_NAME` | `step.name` | Display name of the current step (empty if unset). |
-| `WT_STEP_INDEX` | `step.index` | 1-based index of this step in the run sequence. |
-| `WT_STEP_ATTEMPT` | `step.attempt` | 1-based attempt counter (increments on retries and prompt resume). |
-| `WT_ITERATION_INDEX` | `iteration.index` | 1-based loop iteration index. |
-| `WT_BLUEPRINT_NAME` | `blueprint.name` | Name of the parent blueprint (empty if unknown). |
-| `WT_BLUEPRINT_SHA` | `blueprint.sha` | Catalog key of the parent blueprint (empty if unknown). |
-| `WT_PREVIOUS_STEP_ID` | `previous_step.id` | ID of the immediately prior completed step (empty on first step). |
-| `WT_PREVIOUS_STEP_NAME` | `previous_step.name` | Name of the immediately prior completed step (empty if unset). |
-| `WT_PREVIOUS_STEP_INDEX` | `previous_step.index` | 1-based index of the previous step (empty on first step). |
-| `WT_PREVIOUS_STEP_STATUS` | `previous_step.status` | Recorded status of previous step (`completed`, `failed`, `ignored`). |
-| `WT_PREVIOUS_STEP_EXIT_CODE` | `previous_step.exit_code` | Decimal exit code of previous step (`0`, `1`, etc.; empty on first step). |
-| `WT_STEPS_JSON` | `steps` | JSON array of all finished step metadata objects in run order (`[]` when none finished yet); step outputs are never included here — use `{{ steps.<id>.outputs.<key> }}` instead. |
-| `WT_TEMP` | `tmp.session_dir` | Session scratch directory, shared across every step in the run (empty when no session ID is set). |
-| `WT_RUNNER_TEMP` | `tmp.session_dir` | Alias for `WT_TEMP`, for GitHub Actions parity. |
-| `WT_STEP_TEMP` | `tmp.step_dir` | Step-specific scratch subdirectory under `WT_TEMP`. |
-| `WT_OUTPUT` | `tmp.output_file` | Path to append `key=value` (or heredoc) lines that become this step's `outputs`. |
+| `DOVO_STEP_ID` | `step.id` | Unique ID of the current step. |
+| `DOVO_STEP_NAME` | `step.name` | Display name of the current step (empty if unset). |
+| `DOVO_STEP_INDEX` | `step.index` | 1-based index of this step in the run sequence. |
+| `DOVO_STEP_ATTEMPT` | `step.attempt` | 1-based attempt counter (increments on retries and prompt resume). |
+| `DOVO_ITERATION_INDEX` | `iteration.index` | 1-based loop iteration index. |
+| `DOVO_BLUEPRINT_NAME` | `blueprint.name` | Name of the parent blueprint (empty if unknown). |
+| `DOVO_BLUEPRINT_SHA` | `blueprint.sha` | Catalog key of the parent blueprint (empty if unknown). |
+| `DOVO_PREVIOUS_STEP_ID` | `previous_step.id` | ID of the immediately prior completed step (empty on first step). |
+| `DOVO_PREVIOUS_STEP_NAME` | `previous_step.name` | Name of the immediately prior completed step (empty if unset). |
+| `DOVO_PREVIOUS_STEP_INDEX` | `previous_step.index` | 1-based index of the previous step (empty on first step). |
+| `DOVO_PREVIOUS_STEP_STATUS` | `previous_step.status` | Recorded status of previous step (`completed`, `failed`, `ignored`). |
+| `DOVO_PREVIOUS_STEP_EXIT_CODE` | `previous_step.exit_code` | Decimal exit code of previous step (`0`, `1`, etc.; empty on first step). |
+| `DOVO_STEPS_JSON` | `steps` | JSON array of all finished step metadata objects in run order (`[]` when none finished yet); step outputs are never included here — use `{{ steps.<id>.outputs.<key> }}` instead. |
+| `DOVO_TEMP` | `tmp.session_dir` | Session scratch directory, shared across every step in the run (empty when no session ID is set). |
+| `DOVO_RUNNER_TEMP` | `tmp.session_dir` | Alias for `DOVO_TEMP`, for GitHub Actions parity. |
+| `DOVO_STEP_TEMP` | `tmp.step_dir` | Step-specific scratch subdirectory under `DOVO_TEMP`. |
+| `DOVO_OUTPUT` | `tmp.output_file` | Path to append `key=value` (or heredoc) lines that become this step's `outputs`. |
 
 ### Environment Precedence
 
 When resolving environment variables for step execution:
 1. **Explicit step `env`**: Key-value pairs declared under `env:` in the step definition take highest precedence.
-2. **`WT_*` runtime metadata**: Automatically injected metadata variables.
+2. **`DOVO_*` runtime metadata**: Automatically injected metadata variables.
 3. **Ambient process environment**: Process environment variables from the host runner.
 
 ### Interpolation Paths
@@ -190,7 +190,7 @@ Step fields (`run`, `command`, `prompt`, `script_path`, and `env`) can reference
   * `{{ steps[0].id }}`: First completed step ID
   * `{{ steps[-1].status }}`: Most recently finished step status (equivalent to `{{ previous_step.status }}`)
   * `{{ steps.build.exit_code }}`: Exit code of step with `id: build`
-  * `{{ steps.build.outputs.artifact_path }}` / `{{ steps['build'].outputs.artifact_path }}`: A specific output value step `build` wrote to `$WT_OUTPUT` (see [Step Outputs](#step-outputs-wt_output) below). An unknown step ID or output key resolves to an empty string.
+  * `{{ steps.build.outputs.artifact_path }}` / `{{ steps['build'].outputs.artifact_path }}`: A specific output value step `build` wrote to `$DOVO_OUTPUT` (see [Step Outputs](#step-outputs-wt_output) below). An unknown step ID or output key resolves to an empty string.
   * Historical steps contain only completed/finished steps — the in-flight current step is never included in `steps`. Out-of-range indices or unknown step IDs resolve safely to an empty string.
 
 ```yaml
@@ -202,7 +202,7 @@ steps:
   - id: test-with-retry
     name: Run flaky test suite
     run: |
-      if [ "$WT_STEP_ATTEMPT" -eq 1 ]; then
+      if [ "$DOVO_STEP_ATTEMPT" -eq 1 ]; then
         exit 1
       else
         echo "Passed on attempt {{ step.attempt }}"
@@ -220,16 +220,16 @@ steps:
       echo "Previous step {{ previous_step.id }} finished with status {{ steps[-1].status }}"
 ```
 
-### Step Outputs (`$WT_OUTPUT`)
+### Step Outputs (`$DOVO_OUTPUT`)
 
-A step can write `key=value` lines to the file at `$WT_OUTPUT` to expose values to later steps. Blank lines and lines starting with `#` are ignored, and a malformed line (missing `=`) is skipped with a warning rather than failing the step:
+A step can write `key=value` lines to the file at `$DOVO_OUTPUT` to expose values to later steps. Blank lines and lines starting with `#` are ignored, and a malformed line (missing `=`) is skipped with a warning rather than failing the step:
 
 ```yaml
 steps:
   - id: build
     name: Build artifact
     run: |
-      echo "artifact_path=dist/app.tar.gz" >> "$WT_OUTPUT"
+      echo "artifact_path=dist/app.tar.gz" >> "$DOVO_OUTPUT"
 
   - id: publish
     name: Publish built artifact
@@ -243,9 +243,9 @@ steps:
   - id: changelog
     name: Collect changelog entries
     run: |
-      echo "entries<<CHANGELOG_EOF" >> "$WT_OUTPUT"
-      git log --oneline -5 >> "$WT_OUTPUT"
-      echo "CHANGELOG_EOF" >> "$WT_OUTPUT"
+      echo "entries<<CHANGELOG_EOF" >> "$DOVO_OUTPUT"
+      git log --oneline -5 >> "$DOVO_OUTPUT"
+      echo "CHANGELOG_EOF" >> "$DOVO_OUTPUT"
 
   - id: notify
     name: Print collected changelog

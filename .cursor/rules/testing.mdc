@@ -1,5 +1,5 @@
 ---
-description: Test methodology for worktree-cli - contracts over implementation
+description: Test methodology for Dovo CLI - contracts over implementation
 globs: ["tests/**/*.py"]
 alwaysApply: true
 ---
@@ -58,7 +58,7 @@ is implementation. Do not assert on it.
 - **Cover every branch** of a factory or dispatch chain. A covered *line* in a
   two-branch function proves nothing.
 - **Move the test when the module moves.** `tests/core/**` must never import
-  `worktree.cli.*`.
+  `dovo.cli.*`.
 - **Add the invariant instead of the instance** when a whole category can be
   checked in `tests/lint/`.
 

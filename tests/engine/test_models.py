@@ -7,9 +7,9 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
-from worktree.core.agents.models import ResolvedAgentSettings
-from worktree.core.db import RunRecord, RunStatus
-from worktree.engine.models import AgentSettingsResolution, BlueprintRunResult, DefinitionRef, RunOutcome
+from dovo.core.agents.models import ResolvedAgentSettings
+from dovo.core.db import RunRecord, RunStatus
+from dovo.engine.models import AgentSettingsResolution, BlueprintRunResult, DefinitionRef, RunOutcome
 
 
 class BlueprintRunResultTests:

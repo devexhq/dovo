@@ -1,4 +1,4 @@
-"""Single-tier CLI integration tests for wt sandbox apply."""
+"""Single-tier CLI integration tests for dovo sandbox apply."""
 
 from __future__ import annotations
 
@@ -8,13 +8,13 @@ from typing import Any
 
 from typer.testing import CliRunner
 
-from worktree.cli import app
-from worktree.common.filesystem.models import RepositoryPaths, WorkspacePaths
-from worktree.common.filesystem.services.global_root import resolve_global_paths
-from worktree.core.git.runner import GitRunner
-from worktree.core.project.services.storage import resolve_workspace_paths
-from worktree.core.sandbox.facade import Sandbox
-from worktree.core.sandbox.models import SandboxApplyStatus, SandboxApplyStrategy, SandboxSession
+from dovo.cli import app
+from dovo.common.filesystem.models import RepositoryPaths, WorkspacePaths
+from dovo.common.filesystem.services.global_root import resolve_global_paths
+from dovo.core.git.runner import GitRunner
+from dovo.core.project.services.storage import resolve_workspace_paths
+from dovo.core.sandbox.facade import Sandbox
+from dovo.core.sandbox.models import SandboxApplyStatus, SandboxApplyStrategy, SandboxSession
 
 
 def _paths_for(root: Path) -> WorkspacePaths:
@@ -36,12 +36,12 @@ def _create_sandbox_with_committed_change(sandbox_workspace: Path) -> SandboxSes
 
 
 class SandboxApplyCliIntegrationTests:
-    """Typer runner integration tests for wt sandbox apply."""
+    """Typer runner integration tests for dovo sandbox apply."""
 
     def test_sandbox_apply_cli_patch_strategy_exits_zero(
         self, cli_runner: CliRunner, sandbox_workspace: Path, dispatch_spy: list[Any]
     ) -> None:
-        """wt sandbox apply <id> (patch strategy) writes the change to the main tree, exits 0, and dispatches the exact SandboxApplyResult DTO."""
+        """dovo sandbox apply <id> (patch strategy) writes the change to the main tree, exits 0, and dispatches the exact SandboxApplyResult DTO."""
         session = _create_sandbox_with_committed_change(sandbox_workspace)
 
         result = cli_runner.invoke(app, ["-p", str(sandbox_workspace), "sandbox", "apply", session.session_id])
@@ -64,7 +64,7 @@ class SandboxApplyCliIntegrationTests:
     def test_sandbox_apply_cli_missing_sandbox_exits_one(
         self, cli_runner: CliRunner, sandbox_workspace: Path, dispatch_spy: list[Any]
     ) -> None:
-        """wt sandbox apply on a missing id exits 1, reports not found, and dispatches the exact NOT_FOUND DTO."""
+        """dovo sandbox apply on a missing id exits 1, reports not found, and dispatches the exact NOT_FOUND DTO."""
         result = cli_runner.invoke(app, ["-p", str(sandbox_workspace), "sandbox", "apply", "missing-id"])
 
         assert result.exit_code == 1
@@ -79,10 +79,10 @@ class SandboxApplyCliIntegrationTests:
         assert dispatch_spy[0].commit_sha is None
         assert dispatch_spy[0].errors == ["Sandbox 'missing-id' not found."]
         assert dispatch_spy[0].warnings == []
-        assert dispatch_spy[0].fixes == ["Run `wt sandbox list` to see known sandboxes"]
+        assert dispatch_spy[0].fixes == ["Run `dovo sandbox list` to see known sandboxes"]
 
     def test_sandbox_apply_cli_renders_json(self, cli_runner: CliRunner, sandbox_workspace: Path) -> None:
-        """wt sandbox apply <id> --format json emits a SandboxApplyResult envelope."""
+        """dovo sandbox apply <id> --format json emits a SandboxApplyResult envelope."""
         session = _create_sandbox_with_committed_change(sandbox_workspace)
 
         result = cli_runner.invoke(

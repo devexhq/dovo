@@ -1,4 +1,4 @@
-"""Unit tests for worktree.core.doctor.checks.env_binaries."""
+"""Unit tests for dovo.core.doctor.checks.env_binaries."""
 
 from __future__ import annotations
 
@@ -7,10 +7,10 @@ from pathlib import Path
 
 import pytest
 
-from worktree.common.filesystem import WorkspacePaths
-from worktree.core.config.models import AgentConfig, AgentProvider, ProjectConfig, WorktreeConfig
-from worktree.core.doctor.checks.env_binaries import EnvBinariesCheck
-from worktree.core.doctor.models import CheckCategory, CheckStatus, DoctorContext
+from dovo.common.filesystem import WorkspacePaths
+from dovo.core.config.models import AgentConfig, AgentProvider, DovoConfig, ProjectConfig
+from dovo.core.doctor.checks.env_binaries import EnvBinariesCheck
+from dovo.core.doctor.models import CheckCategory, CheckStatus, DoctorContext
 
 WorkspacePathsFactory = Callable[[Path, Path | None], WorkspacePaths]
 
@@ -18,7 +18,7 @@ WorkspacePathsFactory = Callable[[Path, Path | None], WorkspacePaths]
 def _context_with_provider(
     cwd: Path, provider: AgentProvider, workspace_paths_factory: WorkspacePathsFactory
 ) -> DoctorContext:
-    config = WorktreeConfig(version=1, project=ProjectConfig(name="demo"), agent=AgentConfig(provider=provider))
+    config = DovoConfig(version=1, project=ProjectConfig(name="demo"), agent=AgentConfig(provider=provider))
     return DoctorContext(cwd=cwd, config=config, paths=workspace_paths_factory(cwd, None))
 
 
@@ -29,7 +29,7 @@ class EnvBinariesCheckTests:
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, workspace_paths_factory: WorkspacePathsFactory
     ) -> None:
         """[tier-1/unit] EnvBinariesCheck.execute: shutil.which('git') is None, config=None -> WARNING, error_code='DOCTOR_BINARY_MISSING', details={'missing_binaries': ['git']}."""
-        monkeypatch.setattr("worktree.core.doctor.checks.env_binaries.shutil.which", lambda _name: None)
+        monkeypatch.setattr("dovo.core.doctor.checks.env_binaries.shutil.which", lambda _name: None)
         check = EnvBinariesCheck()
         context = DoctorContext(cwd=tmp_path, paths=workspace_paths_factory(tmp_path, None))
 
@@ -47,7 +47,7 @@ class EnvBinariesCheckTests:
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, workspace_paths_factory: WorkspacePathsFactory
     ) -> None:
         """[tier-1/unit] EnvBinariesCheck.execute: context.config=None, git present on PATH -> OK, details={'verified_binaries': ['git']}, error_code=None."""
-        monkeypatch.setattr("worktree.core.doctor.checks.env_binaries.shutil.which", lambda _name: "/usr/bin/git")
+        monkeypatch.setattr("dovo.core.doctor.checks.env_binaries.shutil.which", lambda _name: "/usr/bin/git")
         check = EnvBinariesCheck()
         context = DoctorContext(cwd=tmp_path, paths=workspace_paths_factory(tmp_path, None))
 
@@ -71,7 +71,7 @@ class EnvBinariesCheckTests:
         workspace_paths_factory: WorkspacePathsFactory,
     ) -> None:
         """[tier-1/unit] EnvBinariesCheck.execute: agent.provider has no PROVIDER_REQUIRED_BINARY entry, git present -> OK, details={'verified_binaries': ['git']}."""
-        monkeypatch.setattr("worktree.core.doctor.checks.env_binaries.shutil.which", lambda _name: "/usr/bin/git")
+        monkeypatch.setattr("dovo.core.doctor.checks.env_binaries.shutil.which", lambda _name: "/usr/bin/git")
         check = EnvBinariesCheck()
         context = _context_with_provider(tmp_path, provider, workspace_paths_factory)
 
@@ -100,7 +100,7 @@ class EnvBinariesCheckTests:
         def _which(name: str) -> str | None:
             return "/usr/bin/git" if name == "git" else None
 
-        monkeypatch.setattr("worktree.core.doctor.checks.env_binaries.shutil.which", _which)
+        monkeypatch.setattr("dovo.core.doctor.checks.env_binaries.shutil.which", _which)
         check = EnvBinariesCheck()
         context = _context_with_provider(tmp_path, provider, workspace_paths_factory)
 
@@ -127,7 +127,7 @@ class EnvBinariesCheckTests:
         workspace_paths_factory: WorkspacePathsFactory,
     ) -> None:
         """[tier-1/unit] EnvBinariesCheck.execute: git and provider CLI binary both present -> OK, details={'verified_binaries': ['git', provider_binary]}."""
-        monkeypatch.setattr("worktree.core.doctor.checks.env_binaries.shutil.which", lambda _name: "/usr/bin/tool")
+        monkeypatch.setattr("dovo.core.doctor.checks.env_binaries.shutil.which", lambda _name: "/usr/bin/tool")
         check = EnvBinariesCheck()
         context = _context_with_provider(tmp_path, provider, workspace_paths_factory)
 

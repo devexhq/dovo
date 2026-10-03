@@ -7,20 +7,20 @@ from typing import Any
 
 import pytest
 
-from tests.harness.formatter import (
-    FormatterCase,
-    assert_json_payload_matches_published_shape,
-    assert_rich_render_shows_every_view_value,
-    assert_transform_derives_expected_view,
-)
-from worktree.cli.ui.formatters.doctor import DoctorCheckView, DoctorReportFormatter, DoctorReportView
-from worktree.core.doctor import (
+from dovo.cli.ui.formatters.doctor import DoctorCheckView, DoctorReportFormatter, DoctorReportView
+from dovo.core.doctor import (
     CheckCategory,
     CheckStatus,
     DiagnosticCheckResult,
     DoctorReport,
     Remediation,
     RemediationType,
+)
+from tests.harness.formatter import (
+    FormatterCase,
+    assert_json_payload_matches_published_shape,
+    assert_rich_render_shows_every_view_value,
+    assert_transform_derives_expected_view,
 )
 
 ROOT = Path("/workspace/my-repo")
@@ -55,10 +55,10 @@ WARNING_CHECK = DiagnosticCheckResult(
             code="DOCTOR_AGENT_NO_MODEL",
             title="Configure agent model",
             action_type=RemediationType.COMMAND,
-            command='wt config set agent.model "<model>"',
+            command='dovo config set agent.model "<model>"',
             description=(
-                "Set `agent.model` in `.worktree/config.json` to a model supported by the configured provider, "
-                "e.g. `wt config set agent.model <model-name>`."
+                "Set `agent.model` in `.dovo/config.json` to a model supported by the configured provider, "
+                "e.g. `dovo config set agent.model <model-name>`."
             ),
             doc_path="docs/cli/config.md",
             is_automated=False,
@@ -71,19 +71,19 @@ FAILED_CHECK = DiagnosticCheckResult(
     name="Config Schema Check",
     category=CheckCategory.CONFIG,
     status=CheckStatus.FAILED,
-    message="Configuration file not found at '/workspace/my-repo/.worktree/config.json'.",
+    message="Configuration file not found at '/workspace/my-repo/.dovo/config.json'.",
     details={},
     duration_ms=0.3,
     error_code="DOCTOR_CONFIG_NOT_FOUND",
-    errors=["Configuration file not found at '/workspace/my-repo/.worktree/config.json'."],
+    errors=["Configuration file not found at '/workspace/my-repo/.dovo/config.json'."],
     warnings=[],
     remediations=[
         Remediation(
             code="DOCTOR_CONFIG_NOT_FOUND",
-            title="Initialize Worktree workspace",
+            title="Initialize Dovo workspace",
             action_type=RemediationType.COMMAND,
-            command="wt init",
-            description="Run `wt init` to create `.worktree/config.json` and the required workspace directory structure.",
+            command="dovo init",
+            description="Run `dovo init` to create `.dovo/config.json` and the required workspace directory structure.",
             doc_path="docs/cli/init.md",
             is_automated=False,
         )
@@ -146,9 +146,9 @@ MIXED_STATUS = FormatterCase(
         "SKIPPED",
         "4 checks: 1 ok, 1 warning, 1 failed (12.4ms)",
         "Configure agent model:",
-        'wt config set agent.model "<model>"',
-        "Initialize Worktree workspace:",
-        "wt init",
+        'dovo config set agent.model "<model>"',
+        "Initialize Dovo workspace:",
+        "dovo init",
     ],
 )
 
@@ -201,10 +201,10 @@ DOCTOR_REPORT_PAYLOAD_CASES = [
                             "code": "DOCTOR_AGENT_NO_MODEL",
                             "title": "Configure agent model",
                             "action_type": "command",
-                            "command": 'wt config set agent.model "<model>"',
+                            "command": 'dovo config set agent.model "<model>"',
                             "description": (
-                                "Set `agent.model` in `.worktree/config.json` to a model supported by the "
-                                "configured provider, e.g. `wt config set agent.model <model-name>`."
+                                "Set `agent.model` in `.dovo/config.json` to a model supported by the "
+                                "configured provider, e.g. `dovo config set agent.model <model-name>`."
                             ),
                             "doc_path": "docs/cli/config.md",
                             "is_automated": False,
@@ -216,20 +216,20 @@ DOCTOR_REPORT_PAYLOAD_CASES = [
                     "name": "Config Schema Check",
                     "category": "config",
                     "status": "failed",
-                    "message": "Configuration file not found at '/workspace/my-repo/.worktree/config.json'.",
+                    "message": "Configuration file not found at '/workspace/my-repo/.dovo/config.json'.",
                     "details": {},
                     "duration_ms": 0.3,
                     "error_code": "DOCTOR_CONFIG_NOT_FOUND",
-                    "errors": ["Configuration file not found at '/workspace/my-repo/.worktree/config.json'."],
+                    "errors": ["Configuration file not found at '/workspace/my-repo/.dovo/config.json'."],
                     "warnings": [],
                     "remediations": [
                         {
                             "code": "DOCTOR_CONFIG_NOT_FOUND",
-                            "title": "Initialize Worktree workspace",
+                            "title": "Initialize Dovo workspace",
                             "action_type": "command",
-                            "command": "wt init",
+                            "command": "dovo init",
                             "description": (
-                                "Run `wt init` to create `.worktree/config.json` and the required workspace "
+                                "Run `dovo init` to create `.dovo/config.json` and the required workspace "
                                 "directory structure."
                             ),
                             "doc_path": "docs/cli/init.md",

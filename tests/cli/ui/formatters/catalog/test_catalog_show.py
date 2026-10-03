@@ -7,19 +7,19 @@ from typing import Any
 
 import pytest
 
+from dovo.cli.ui.formatters.catalog.catalog_show import CatalogShowFormatter
+from dovo.cli.ui.formatters.catalog.catalog_views import (
+    CatalogItemView,
+    CatalogShowView,
+    CatalogTemplateView,
+)
+from dovo.core.catalog.models import CatalogItemType, CatalogRecord, CatalogShowResult, CatalogTier
 from tests.harness.formatter import (
     FormatterCase,
     assert_json_payload_matches_published_shape,
     assert_rich_render_shows_every_view_value,
     assert_transform_derives_expected_view,
 )
-from worktree.cli.ui.formatters.catalog.catalog_show import CatalogShowFormatter
-from worktree.cli.ui.formatters.catalog.catalog_views import (
-    CatalogItemView,
-    CatalogShowView,
-    CatalogTemplateView,
-)
-from worktree.core.catalog.models import CatalogItemType, CatalogRecord, CatalogShowResult, CatalogTier
 
 
 def _sample_catalog_record() -> CatalogRecord:
@@ -61,7 +61,7 @@ BLUEPRINT_FOUND = FormatterCase(
         ),
         content="name: test-blueprint\nversion: 1\n",
         template_matches=[],
-        catalog_path_relative=".worktree/catalog/blueprints/test-blueprint.yml",
+        catalog_path_relative=".dovo/catalog/blueprints/test-blueprint.yml",
         errors=[],
         warnings=[],
         fixes=[],
@@ -71,7 +71,7 @@ BLUEPRINT_FOUND = FormatterCase(
         "blueprint_1234567",
         "blueprint",
         "1234567890abcdef",
-        ".worktree/catalog/blueprints/test-blueprint.yml",
+        ".dovo/catalog/blueprints/test-blueprint.yml",
         "name: test-blueprint",
         "version: 1",
     ],
@@ -90,7 +90,7 @@ STEP_FOUND = FormatterCase(
         ),
         content="name: test-step\naction: run\n",
         template_matches=[],
-        catalog_path_relative=".worktree/catalog/steps/test-step.yml",
+        catalog_path_relative=".dovo/catalog/steps/test-step.yml",
         errors=[],
         warnings=[],
         fixes=[],
@@ -153,7 +153,7 @@ PAYLOAD_CASES = [
             },
             "content": "name: test-blueprint\nversion: 1\n",
             "template_matches": [],
-            "catalog_path_relative": ".worktree/catalog/blueprints/test-blueprint.yml",
+            "catalog_path_relative": ".dovo/catalog/blueprints/test-blueprint.yml",
         },
         id="blueprint_found_payload",
     ),

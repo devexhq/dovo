@@ -8,9 +8,8 @@ from typing import Literal
 
 import pytest
 
-from tests.harness import AgentRequestBuilder, new_file_diff
-from worktree.core.agents import AgentRequest, AgentResponseStatus
-from worktree.core.agents.cli_mutation import (
+from dovo.core.agents import AgentRequest, AgentResponseStatus
+from dovo.core.agents.cli_mutation import (
     CliDirectMutationAdapter,
     CliMutationOutcome,
     CliMutationRunFn,
@@ -19,8 +18,9 @@ from worktree.core.agents.cli_mutation import (
     build_mutation_prompt,
     validate_request_patch,
 )
-from worktree.core.agents.mutation_git import MutationGitError
-from worktree.core.patch import PatchApplyStatus
+from dovo.core.agents.mutation_git import MutationGitError
+from dovo.core.patch import PatchApplyStatus
+from tests.harness import AgentRequestBuilder, new_file_diff
 
 
 def _fake_run(
@@ -89,7 +89,7 @@ class BuildMutationPromptTests:
             "- Stay inside this working directory; do not push, open a PR, or "
             "touch remotes.\n"
             "- Prefer leaving tests green.\n"
-            "- Do not modify files under .worktree/.\n"
+            "- Do not modify files under .dovo/.\n"
             "- When finished, leave the working tree containing only the fix.\n\n"
         ) + json.dumps(expected_body, indent=2, ensure_ascii=False)
 
@@ -104,7 +104,7 @@ class BuildMutationPromptTests:
             "- Carry out the instruction below.\n"
             "- If it asks for planning or review, report your findings in your final message and leave the working tree unchanged.\n"
             "- Stay inside this working directory; do not push, open a PR, or touch remotes.\n"
-            "- Do not modify files under .worktree/.\n\n"
+            "- Do not modify files under .dovo/.\n\n"
         ) + json.dumps(expected_body, indent=2, ensure_ascii=False)
 
         prompt = build_mutation_prompt(request)
@@ -203,7 +203,7 @@ class SharedMutationAdapterTests:
         def _fail_discard(*a: object, **k: object) -> None:
             raise MutationGitError("git reset failed: index locked")
 
-        monkeypatch.setattr("worktree.core.agents.cli_mutation.discard_since", _fail_discard)
+        monkeypatch.setattr("dovo.core.agents.cli_mutation.discard_since", _fail_discard)
 
         resp = adapter.propose_fix(AgentRequestBuilder().with_sandbox_path(git_repo).with_max_files(1).build())
 

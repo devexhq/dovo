@@ -6,13 +6,13 @@ from typing import Any
 
 import pytest
 
+from dovo.cli.ui.events import ErrorPanelEvent
+from dovo.cli.ui.formatters.events.error_panel import ErrorPanelFormatter
 from tests.harness.formatter import (
     FormatterCase,
     assert_json_payload_matches_published_shape,
     assert_rich_render_shows_every_view_value,
 )
-from worktree.cli.ui.events import ErrorPanelEvent
-from worktree.cli.ui.formatters.events.error_panel import ErrorPanelFormatter
 
 ERROR_PANEL_DEFAULT_BORDER = FormatterCase(
     data=ErrorPanelEvent(title="Custom Error", message="Something broke", border_style="red"),

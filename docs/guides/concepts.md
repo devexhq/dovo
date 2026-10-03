@@ -1,18 +1,18 @@
 # Core Concepts & Mental Model
 
-Worktree (`wt`) is designed around a clean separation between **isolated sandboxes**, **declarative blueprints**, and a **stateful runtime engine**.
+Dovo (`dovo`) is designed around a clean separation between **isolated sandboxes**, **declarative blueprints**, and a **stateful runtime engine**.
 
 ```text
 ┌─────────────────────────────────────────────────────────────────────────┐
-│                           Worktree CLI (wt)                             │
+│                           Dovo CLI (dovo)                             │
 ├─────────────────────────────────────────────────────────────────────────┤
 │                                                                         │
-│  wt run <blueprint>                                                     │
+│  dovo run <blueprint>                                                     │
 │       │                                                                 │
 │       ▼                                                                 │
 │  ┌───────────────────────┐         ┌─────────────────────────────────┐  │
 │  │ Blueprint Catalog     │         │ Git Sandbox Manager             │  │
-│  │ (.worktree/catalog/)  │         │                                 │  │
+│  │ (.dovo/catalog/)  │         │                                 │  │
 │  │  - blueprints/*.yml   │         │  Creates isolated worktree      │  │
 │  │  - steps/*.yml        │         │  Branch: worktree/sandbox-*     │  │
 │  └───────────┬───────────┘         └────────────────┬────────────────┘  │
@@ -37,7 +37,7 @@ Worktree (`wt`) is designed around a clean separation between **isolated sandbox
 
 ## 1. Ephemeral Git Sandboxes
 
-When you execute a blueprint, Worktree normally creates an isolated **Git worktree** using a dedicated `worktree/sandbox-*` branch.
+When you execute a blueprint, Dovo normally creates an isolated **Git worktree** using a dedicated `worktree/sandbox-*` branch.
 
 ### Why Sandboxes?
 - **Zero Pollution**: Your active working directory and branch remain untouched while steps run.
@@ -47,7 +47,7 @@ When you execute a blueprint, Worktree normally creates an isolated **Git worktr
 If you ever want to run a blueprint directly in your current working directory without sandbox isolation (e.g. in CI or a container), use the `--no-sandbox` flag:
 
 ```bash
-wt run my-blueprint --no-sandbox
+dovo run my-blueprint --no-sandbox
 ```
 
 ---
@@ -64,30 +64,30 @@ Blueprint
 
 | Concept | Type | Description | File Location |
 |---|---|---|---|
-| **Step** | Catalog item | A reusable shell-command, agent, or script definition. | `.worktree/catalog/steps/` |
-| **Blueprint** | Catalog item | A sequence of steps with inputs, assertions, failure policies, and optional loop blocks. | `.worktree/catalog/blueprints/` |
+| **Step** | Catalog item | A reusable shell-command, agent, or script definition. | `.dovo/catalog/steps/` |
+| **Blueprint** | Catalog item | A sequence of steps with inputs, assertions, failure policies, and optional loop blocks. | `.dovo/catalog/blueprints/` |
 
 ---
 
 ## 3. The Blueprint Catalog
 
-Blueprints live in your project's `.worktree/catalog/` directory:
+Blueprints live in your project's `.dovo/catalog/` directory:
 
 ```text
-.worktree/catalog/
+.dovo/catalog/
 ├── blueprints/         # Executable blueprints (e.g. fix-tests.yml)
 └── steps/              # Reusable step definitions (e.g. run-tests.yml)
 ```
 
 ### Local Blueprints vs. Curated Templates
 - **Local Blueprints**: Created and maintained within your repository for project-specific automation.
-- **Curated Templates (`wt/*`)**: Built-in catalog steps can be referenced using `uses: wt/<name>`.
+- **Curated Templates (`dovo/*`)**: Built-in catalog steps can be referenced using `uses: dovo/<name>`.
 
 ---
 
 ## 4. Execution Lifecycle & Sessions
 
-Every execution via `wt run` is tracked as a **Session**:
+Every execution via `dovo run` is tracked as a **Session**:
 
 1. **Input Resolution**: Declared parameters and CLI flags are parsed and validated.
 2. **Sandbox Creation**: Ephemeral Git worktree branch is provisioned.
@@ -96,8 +96,8 @@ Every execution via `wt run` is tracked as a **Session**:
 5. **Resilience & Resumption**:
    - On error, `on_failure` policies determine whether to `abort`, `continue`, `retry`, or `prompt_user`.
    - If an interactive prompt is interrupted or paused, the run state is saved in the centralized database.
-   - The session can be resumed at any time using `wt resume blueprint_<id>`.
-6. **Audit History**: All runs, durations, and outputs are recorded and accessible via `wt history`.
+   - The session can be resumed at any time using `dovo resume blueprint_<id>`.
+6. **Audit History**: All runs, durations, and outputs are recorded and accessible via `dovo history`.
 
 ---
 

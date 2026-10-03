@@ -9,7 +9,7 @@ from typing import Any
 from pydantic import BaseModel
 from rich.console import Console
 
-from worktree.common.types import ComponentFormatter
+from dovo.common.types import ComponentFormatter
 
 
 @dataclass

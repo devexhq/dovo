@@ -1,34 +1,34 @@
-"""Unit tests for worktree.core.doctor.doctor entrypoint coordinator."""
+"""Unit tests for dovo.core.doctor.doctor entrypoint coordinator."""
 
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-from worktree.common.filesystem import Filesystem
-from worktree.common.filesystem.models import RepositoryPaths, WorkspacePaths
-from worktree.common.filesystem.services.global_root import resolve_global_paths
-from worktree.core.config.models import (
+from dovo.common.filesystem import Filesystem
+from dovo.common.filesystem.models import RepositoryPaths, WorkspacePaths
+from dovo.common.filesystem.services.global_root import resolve_global_paths
+from dovo.core.config.models import (
     ConfigTier,
     DoctorConfig,
+    DovoConfig,
     ProjectConfig,
-    WorktreeConfig,
 )
-from worktree.core.config.serialize import serialize_config
-from worktree.core.doctor.checks.agent_setup import AgentSetupCheck
-from worktree.core.doctor.checks.config_schema import ConfigSchemaCheck
-from worktree.core.doctor.checks.env_binaries import EnvBinariesCheck
-from worktree.core.doctor.checks.filesystem_writable import FilesystemWritableCheck
-from worktree.core.doctor.checks.git_repo import GitRepoCheck
-from worktree.core.doctor.checks.sandbox_refs import SandboxRefsCheck
-from worktree.core.doctor.doctor import Doctor
-from worktree.core.doctor.models import (
+from dovo.core.config.serialize import serialize_config
+from dovo.core.doctor.checks.agent_setup import AgentSetupCheck
+from dovo.core.doctor.checks.config_schema import ConfigSchemaCheck
+from dovo.core.doctor.checks.env_binaries import EnvBinariesCheck
+from dovo.core.doctor.checks.filesystem_writable import FilesystemWritableCheck
+from dovo.core.doctor.checks.git_repo import GitRepoCheck
+from dovo.core.doctor.checks.sandbox_refs import SandboxRefsCheck
+from dovo.core.doctor.doctor import Doctor
+from dovo.core.doctor.models import (
     CheckCategory,
     CheckStatus,
     DiagnosticCheckResult,
     DoctorContext,
 )
-from worktree.core.doctor.services.registry import CheckRegistry
-from worktree.core.project.services.storage import resolve_workspace_paths
+from dovo.core.doctor.services.registry import CheckRegistry
+from dovo.core.project.services.storage import resolve_workspace_paths
 
 
 def _paths_for(root: Path) -> WorkspacePaths:
@@ -89,9 +89,9 @@ class DoctorCoordinatorTests:
 
     def test_run_diagnostics_resolves_config_when_none_provided(self, tmp_path: Path) -> None:
         """[tier-2/unit] Doctor.run_diagnostics: when config is None, attempts loading config from path and attaches to DoctorContext."""
-        config_dir = tmp_path / ".worktree"
+        config_dir = tmp_path / ".dovo"
         config_dir.mkdir(parents=True, exist_ok=True)
-        config = WorktreeConfig(
+        config = DovoConfig(
             version=1,
             project=ProjectConfig(name="resolved-project"),
             doctor=DoctorConfig(check_git=False),
@@ -116,7 +116,7 @@ class DoctorCoordinatorTests:
         """[tier-2/unit] Doctor.run_diagnostics: User tier doctor.check_git=False (absent from repo config) skips the git.repo check, proving a non-config-domain Config consumer observes a Global/User tier override."""
         write_tier_config(ConfigTier.USER, {"doctor": {"check_git": False}})
 
-        config_dir = tmp_path / ".worktree"
+        config_dir = tmp_path / ".dovo"
         config_dir.mkdir(parents=True, exist_ok=True)
         Filesystem.atomic_write_json(
             config_dir / "config.json", {"version": 1, "project": {"name": "resolved-project"}}
@@ -134,7 +134,7 @@ class DoctorCoordinatorTests:
 
     def test_run_diagnostics_uses_explicit_config_when_provided(self, tmp_path: Path) -> None:
         """[tier-2/unit] Doctor.run_diagnostics: when config is provided explicitly, uses it directly in DoctorContext."""
-        explicit_config = WorktreeConfig(
+        explicit_config = DovoConfig(
             version=1,
             project=ProjectConfig(name="explicit-project"),
             doctor=DoctorConfig(check_git=False),

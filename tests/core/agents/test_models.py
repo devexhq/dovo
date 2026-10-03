@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
-from worktree.core.agents import AgentAttempt, AgentFailurePayload, AgentRequest, AgentResponseStatus
+from dovo.core.agents import AgentAttempt, AgentFailurePayload, AgentRequest, AgentResponseStatus
 
 _PAYLOAD = AgentFailurePayload(
     command="pytest",

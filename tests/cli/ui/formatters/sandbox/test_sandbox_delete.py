@@ -6,15 +6,15 @@ from typing import Any
 
 import pytest
 
+from dovo.cli.ui.formatters.sandbox.sandbox_delete import SandboxDeleteFormatter
+from dovo.core.sandbox.models import (
+    SandboxDeleteResult,
+    SandboxDeleteStatus,
+)
 from tests.harness.formatter import (
     FormatterCase,
     assert_json_payload_matches_published_shape,
     assert_rich_render_shows_every_view_value,
-)
-from worktree.cli.ui.formatters.sandbox.sandbox_delete import SandboxDeleteFormatter
-from worktree.core.sandbox.models import (
-    SandboxDeleteResult,
-    SandboxDeleteStatus,
 )
 
 DELETED = FormatterCase(
@@ -65,19 +65,19 @@ NOT_FOUND = FormatterCase(
         sandbox_id="sbx_missing",
         deleted=False,
         errors=["Sandbox 'sbx_missing' not found."],
-        fixes=["Run `wt sandbox list` to see known sandboxes"],
+        fixes=["Run `dovo sandbox list` to see known sandboxes"],
     ),
     view=SandboxDeleteResult(
         status=SandboxDeleteStatus.NOT_FOUND,
         sandbox_id="sbx_missing",
         deleted=False,
         errors=["Sandbox 'sbx_missing' not found."],
-        fixes=["Run `wt sandbox list` to see known sandboxes"],
+        fixes=["Run `dovo sandbox list` to see known sandboxes"],
     ),
     render_expectations=[
         "sbx_missing",
         "Sandbox 'sbx_missing' not found.",
-        "Run `wt sandbox list` to see known sandboxes",
+        "Run `dovo sandbox list` to see known sandboxes",
     ],
 )
 
@@ -141,7 +141,7 @@ SANDBOX_DELETE_PAYLOAD_CASES = [
             "warnings": [],
             "errors": ["Sandbox 'sbx_missing' not found."],
             "error_code": None,
-            "fixes": ["Run `wt sandbox list` to see known sandboxes"],
+            "fixes": ["Run `dovo sandbox list` to see known sandboxes"],
         },
         id="not_found",
     ),

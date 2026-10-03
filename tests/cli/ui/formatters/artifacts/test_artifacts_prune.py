@@ -6,15 +6,15 @@ from typing import Any
 
 import pytest
 
+from dovo.cli.ui.formatters.artifacts.artifacts_prune import ArtifactsPruneFormatter
+from dovo.cli.ui.formatters.artifacts.artifacts_views import ArtifactsPruneView
+from dovo.core.artifacts.models import ArtifactsPruneResult, ArtifactsPruneStatus, PrunedArtifact
 from tests.harness.formatter import (
     FormatterCase,
     assert_json_payload_matches_published_shape,
     assert_rich_render_shows_every_view_value,
     assert_transform_derives_expected_view,
 )
-from worktree.cli.ui.formatters.artifacts.artifacts_prune import ArtifactsPruneFormatter
-from worktree.cli.ui.formatters.artifacts.artifacts_views import ArtifactsPruneView
-from worktree.core.artifacts.models import ArtifactsPruneResult, ArtifactsPruneStatus, PrunedArtifact
 
 WITH_PRUNED_ITEM = FormatterCase(
     data=ArtifactsPruneResult(

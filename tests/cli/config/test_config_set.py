@@ -1,4 +1,4 @@
-"""Dual-tier matrix tests for wt config set."""
+"""Dual-tier matrix tests for dovo config set."""
 
 from __future__ import annotations
 
@@ -7,16 +7,16 @@ from pathlib import Path
 
 from typer.testing import CliRunner
 
-from worktree.cli import app
-from worktree.cli.config.commands.config_set import config_set_command
-from worktree.cli.context import CliContext
-from worktree.common.filesystem import Filesystem
-from worktree.common.filesystem.models import RepositoryPaths, WorkspacePaths
-from worktree.common.filesystem.services.global_root import resolve_global_paths
-from worktree.core.config.generator import build_default_config
-from worktree.core.config.mutate import ConfigSetStatus
-from worktree.core.db.db import WorktreeDb
-from worktree.core.project.services.storage import resolve_workspace_paths
+from dovo.cli import app
+from dovo.cli.config.commands.config_set import config_set_command
+from dovo.cli.context import CliContext
+from dovo.common.filesystem import Filesystem
+from dovo.common.filesystem.models import RepositoryPaths, WorkspacePaths
+from dovo.common.filesystem.services.global_root import resolve_global_paths
+from dovo.core.config.generator import build_default_config
+from dovo.core.config.mutate import ConfigSetStatus
+from dovo.core.db.db import DovoDb
+from dovo.core.project.services.storage import resolve_workspace_paths
 
 
 def _paths_for(root: Path) -> WorkspacePaths:
@@ -29,12 +29,12 @@ class ConfigSetRootTests:
 
     def test_config_set_updates_scalar_value_returns_ok(self, isolated_workspace: Path) -> None:
         """Handler returns OK ConfigSetResult and mutates config atomically."""
-        config_path = isolated_workspace / ".worktree" / "config.json"
+        config_path = isolated_workspace / ".dovo" / "config.json"
         payload = build_default_config("demo-workspace")
         Filesystem.atomic_write_json(config_path, payload)
 
         paths = _paths_for(isolated_workspace)
-        context = CliContext(paths=paths, db=WorktreeDb(database_file=paths.database_file, project_id=paths.project_id))
+        context = CliContext(paths=paths, db=DovoDb(database_file=paths.database_file, project_id=paths.project_id))
         result = config_set_command(context, "agent.model", "qwen2.5-coder")
 
         assert result.status == ConfigSetStatus.OK
@@ -48,12 +48,12 @@ class ConfigSetRootTests:
 
     def test_config_set_schema_violation_returns_error(self, isolated_workspace: Path) -> None:
         """Handler returns SCHEMA_INVALID ConfigSetResult on bad schema key."""
-        config_path = isolated_workspace / ".worktree" / "config.json"
+        config_path = isolated_workspace / ".dovo" / "config.json"
         payload = build_default_config("demo-workspace")
         Filesystem.atomic_write_json(config_path, payload)
 
         paths = _paths_for(isolated_workspace)
-        context = CliContext(paths=paths, db=WorktreeDb(database_file=paths.database_file, project_id=paths.project_id))
+        context = CliContext(paths=paths, db=DovoDb(database_file=paths.database_file, project_id=paths.project_id))
         result = config_set_command(context, "sandboxes.max_active_sandboxes", "3")
 
         assert result.status == ConfigSetStatus.SCHEMA_INVALID
@@ -64,19 +64,19 @@ class ConfigSetRootTests:
             "Config schema validation failed (CONFIG_SCHEMA_INVALID):\n- (root): Additional properties are not allowed ('sandboxes' was unexpected)"
         ]
         assert result.fixes == [
-            "Run `wt config validate` for details",
-            "Or `wt init --repair` to insert missing keys without overwriting values",
+            "Run `dovo config validate` for details",
+            "Or `dovo init --repair` to insert missing keys without overwriting values",
         ]
         assert result.warnings == []
         assert json.loads(config_path.read_text()) == payload
 
 
 class ConfigSetCliIntegrationTests:
-    """Typer runner integration tests for wt config set."""
+    """Typer runner integration tests for dovo config set."""
 
     def test_config_set_cli_mutates_value_and_exits_zero(self, cli_runner: CliRunner, isolated_workspace: Path) -> None:
-        """wt config set updates value and displays confirmation."""
-        config_path = isolated_workspace / ".worktree" / "config.json"
+        """dovo config set updates value and displays confirmation."""
+        config_path = isolated_workspace / ".dovo" / "config.json"
         payload = build_default_config("demo-workspace")
         Filesystem.atomic_write_json(config_path, payload)
 
@@ -92,8 +92,8 @@ class ConfigSetCliIntegrationTests:
     def test_config_set_cli_stores_boolean_true_from_string(
         self, cli_runner: CliRunner, isolated_workspace: Path
     ) -> None:
-        """wt config set converts "true" to boolean True and stores True in config.json."""
-        config_path = isolated_workspace / ".worktree" / "config.json"
+        """dovo config set converts "true" to boolean True and stores True in config.json."""
+        config_path = isolated_workspace / ".dovo" / "config.json"
         payload = build_default_config("demo-workspace")
         Filesystem.atomic_write_json(config_path, payload)
 
@@ -107,8 +107,8 @@ class ConfigSetCliIntegrationTests:
         assert json.loads(config_path.read_text())["telemetry"]["enabled"] is True
 
     def test_config_set_cli_schema_violation_exits_one(self, cli_runner: CliRunner, isolated_workspace: Path) -> None:
-        """wt config set exits with error panel on schema violation."""
-        config_path = isolated_workspace / ".worktree" / "config.json"
+        """dovo config set exits with error panel on schema violation."""
+        config_path = isolated_workspace / ".dovo" / "config.json"
         payload = build_default_config("demo-workspace")
         Filesystem.atomic_write_json(config_path, payload)
 
@@ -130,8 +130,8 @@ class ConfigSetCliIntegrationTests:
         assert "CONFIG_SCHEMA_INVALID" in res.stdout
 
     def test_config_set_cli_format_json_emits_event(self, cli_runner: CliRunner, isolated_workspace: Path) -> None:
-        """wt config set --format json emits NDJSON ConfigSetResult event."""
-        config_path = isolated_workspace / ".worktree" / "config.json"
+        """dovo config set --format json emits NDJSON ConfigSetResult event."""
+        config_path = isolated_workspace / ".dovo" / "config.json"
         payload = build_default_config("demo-workspace")
         Filesystem.atomic_write_json(config_path, payload)
 

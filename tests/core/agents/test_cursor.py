@@ -9,16 +9,16 @@ from types import SimpleNamespace
 
 import pytest
 
-from tests.harness import AgentRequestBuilder
-from worktree.core.agents import AgentResponseStatus, CursorAgentAdapter
-from worktree.core.agents.cli_mutation import CliMutationOutcome, CliMutationRunRequest, CliMutationRunStatus
-from worktree.core.agents.cursor import (
+from dovo.core.agents import AgentResponseStatus, CursorAgentAdapter
+from dovo.core.agents.cli_mutation import CliMutationOutcome, CliMutationRunRequest, CliMutationRunStatus
+from dovo.core.agents.cursor import (
     CURSOR_API_KEY_ENV,
     cancel_cursor_run,
     cursor_outcome_from_result,
     default_cursor_run,
     resolve_cursor_api_key,
 )
+from tests.harness import AgentRequestBuilder
 
 
 @pytest.fixture(autouse=True)
@@ -110,7 +110,7 @@ class CursorAdapterTests:
     ) -> None:
         """Cursor's own preflight requires a non-empty model, independent of the shared base."""
         monkeypatch.setattr(
-            "worktree.core.agents.cursor.default_cursor_run",
+            "dovo.core.agents.cursor.default_cursor_run",
             lambda _req: pytest.fail("must not be called when preflight fails"),
         )
         adapter = CursorAgentAdapter()
@@ -120,7 +120,7 @@ class CursorAdapterTests:
         assert resp.status == AgentResponseStatus.PROVIDER_ERROR
         assert resp.errors == [
             "Agent provider error (AGENT_PROVIDER_ERROR): "
-            "cursor requires a non-empty model. Fix: set agent.model in .worktree/config.json"
+            "cursor requires a non-empty model. Fix: set agent.model in .dovo/config.json"
         ]
 
     def test_missing_api_key_returns_provider_error_before_run(
@@ -222,7 +222,7 @@ class DefaultCursorRunTests:
         fake_sdk = SimpleNamespace(Agent=object, AgentOptions=object, LocalAgentOptions=object)
         monkeypatch.setitem(sys.modules, "cursor_sdk", fake_sdk)
         monkeypatch.setattr(
-            "worktree.core.agents.cursor._run_cursor_agent_thread",
+            "dovo.core.agents.cursor._run_cursor_agent_thread",
             lambda *args, **kwargs: {"exception": RuntimeError("socket closed")},
         )
 
@@ -240,7 +240,7 @@ class DefaultCursorRunTests:
         """A worker thread that produces neither a result nor an exception is still an error."""
         fake_sdk = SimpleNamespace(Agent=object, AgentOptions=object, LocalAgentOptions=object)
         monkeypatch.setitem(sys.modules, "cursor_sdk", fake_sdk)
-        monkeypatch.setattr("worktree.core.agents.cursor._run_cursor_agent_thread", lambda *args, **kwargs: {})
+        monkeypatch.setattr("dovo.core.agents.cursor._run_cursor_agent_thread", lambda *args, **kwargs: {})
 
         outcome = default_cursor_run(
             CliMutationRunRequest(model="composer-2.5", sandbox_path=tmp_path, prompt="fix it", timeout_seconds=1.0)

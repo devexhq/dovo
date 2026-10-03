@@ -9,7 +9,7 @@ import urllib.request
 import pytest
 from pydantic import ValidationError
 
-from worktree.core.agents import (
+from dovo.core.agents import (
     BaseAgentProvider,
     CopilotAgentAdapter,
     CursorAgentAdapter,
@@ -20,7 +20,7 @@ from worktree.core.agents import (
     ResolvedAgentSettings,
     get_agent_adapter,
 )
-from worktree.core.agents.registry import PROVIDERS
+from dovo.core.agents.registry import PROVIDERS
 
 
 class BaseAgentProviderTests:

@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import pytest
 
-from worktree.common.models import FailurePolicy
-from worktree.core.catalog.definitions import BlueprintDefinition, StepDefinition
-from worktree.core.catalog.exceptions import BlueprintValidationError
+from dovo.common.models import FailurePolicy
+from dovo.core.catalog.definitions import BlueprintDefinition, StepDefinition
+from dovo.core.catalog.exceptions import BlueprintValidationError
 
 
 class BlueprintDefinitionValidatorTests:

@@ -7,8 +7,8 @@
   Dependencies flow strictly one way: common/ -> core/ -> engine/ -> cli/. Within core/: project/ -> {db,git,sandbox,catalog,inputs,patch,diff,status,artifacts}/ -> agents/ -> doctor/ -> logs/ -> history/. Upward imports are strictly prohibited.
 
 ```python
-# ✅ DO: from worktree.core.logs import append_run_log_event  # in engine/
-# ❌ DO NOT: from worktree.engine.engine import Engine  # upward import in core/logs/
+# ✅ DO: from dovo.core.logs import append_run_log_event  # in engine/
+# ❌ DO NOT: from dovo.engine.engine import Engine  # upward import in core/logs/
 ```
 
 - **[RENDER-003] Inline Error and Warning String Construction (SUGGESTION):**
@@ -125,7 +125,7 @@ def is_running(self) -> bool: return self._proc is not None and self._proc.poll(
 ```
 
 - **[PERF-001] No Ad-Hoc DB Instantiations in Loops (BLOCKER):**
-  Never instantiate a repository or WorktreeDb inside loops or test helpers. Inject pre-initialized instances to prevent N+1 SQLite connection/migration checks.
+  Never instantiate a repository or DovoDb inside loops or test helpers. Inject pre-initialized instances to prevent N+1 SQLite connection/migration checks.
 
 ```python
 # ✅ DO:
@@ -143,7 +143,7 @@ for item in items: repo.create(item)
 ```
 
 - **[FS-002] Advisory Cross-Process Locking (BLOCKER):**
-  Multi-process sandbox, catalog, or state mutations must acquire the .worktree/.lock advisory lock using common/lock.py and handle LockTimeoutError.
+  Multi-process sandbox, catalog, or state mutations must acquire the .dovo/.lock advisory lock using common/lock.py and handle LockTimeoutError.
 
 ```python
 # ✅ DO: with file_lock(lock_path, timeout=10.0): sandbox_service.create(...)
@@ -185,10 +185,10 @@ _unlock = _unlock_fd  # internal shim alias
 ```
 
 - **[TEST-002] 1:1 Source Parity Layout (BLOCKER):**
-  Test structure mirrors src/worktree/ 1:1 under tests/, one test file per source module, and every test directory carries an __init__.py because basenames repeat across the tree. Five mappings are fixed: src/worktree/common/<m>.py to tests/common/test_<m>.py, src/worktree/core/<domain>/<m>.py to tests/core/<domain>/test_<m>.py, src/worktree/cli/ui/formatters/<domain>/<name>.py to tests/cli/ui/formatters/<domain>/test_<name>.py, and src/worktree/cli/<command>/commands/<action>.py to tests/cli/<command>/test_<command>_<action>.py — a subdirectory per CLI command domain, mirroring src/worktree/cli/<command>/ (the commands/ subpackage level collapses; a per-domain conftest.py holds fixtures that domain's test files share, never fixtures another domain needs). The fifth is src/worktree/engine/<m>.py to tests/engine/test_<m>.py (executors/ and services/ subpackages mirror as tests/engine/executors/ and tests/engine/services/). One test file per CLI command action, not one file per command domain. Every source module must have a corresponding test file; there is no exemption list. Grouping several formatters, domains, or command actions into one part-numbered or collapsed file is prohibited.
+  Test structure mirrors src/dovo/ 1:1 under tests/, one test file per source module, and every test directory carries an __init__.py because basenames repeat across the tree. Five mappings are fixed: src/dovo/common/<m>.py to tests/common/test_<m>.py, src/dovo/core/<domain>/<m>.py to tests/core/<domain>/test_<m>.py, src/dovo/cli/ui/formatters/<domain>/<name>.py to tests/cli/ui/formatters/<domain>/test_<name>.py, and src/dovo/cli/<command>/commands/<action>.py to tests/cli/<command>/test_<command>_<action>.py — a subdirectory per CLI command domain, mirroring src/dovo/cli/<command>/ (the commands/ subpackage level collapses; a per-domain conftest.py holds fixtures that domain's test files share, never fixtures another domain needs). The fifth is src/dovo/engine/<m>.py to tests/engine/test_<m>.py (executors/ and services/ subpackages mirror as tests/engine/executors/ and tests/engine/services/). One test file per CLI command action, not one file per command domain. Every source module must have a corresponding test file; there is no exemption list. Grouping several formatters, domains, or command actions into one part-numbered or collapsed file is prohibited.
 
 ```python
-# ✅ DO: src/worktree/cli/sandbox/commands/sandbox_create.py -> tests/cli/sandbox/test_sandbox_create.py
+# ✅ DO: src/dovo/cli/sandbox/commands/sandbox_create.py -> tests/cli/sandbox/test_sandbox_create.py
 # ❌ DO NOT: tests/cli/commands/test_sandbox_create.py  # flat under tests/cli/commands/, not nested under tests/cli/sandbox/
 ```
 
@@ -293,7 +293,7 @@ assert 'wf_abcdef12' in rendered  # view value, not a caption
   Annotate test helpers and fixtures as tightly as production code. Give fixtures real return types and type helper parameters against what production passes. No MagicMock in helper signatures.
 
 ```python
-# ✅ DO: def create_test_session(db: WorktreeDb, session_id: str) -> RunRecord: ...
+# ✅ DO: def create_test_session(db: DovoDb, session_id: str) -> RunRecord: ...
 # ❌ DO NOT: def create_test_session(db: Any, mock_obj: MagicMock) -> Any: ...
 ```
 
@@ -332,15 +332,15 @@ assert "Status: valid with warnings" in res.stdout  # literal rendered output, n
 ```
 
 - **[TEST-018] Test Layer Import Boundary (BLOCKER):**
-  tests/core/** must never import worktree.cli.*. A core test proves the domain layer's contract independent of any presentation concern, and an import of the CLI package from a core test either leaks a presentation dependency into the domain suite or signals the test belongs under tests/cli/ instead.
+  tests/core/** must never import dovo.cli.*. A core test proves the domain layer's contract independent of any presentation concern, and an import of the CLI package from a core test either leaks a presentation dependency into the domain suite or signals the test belongs under tests/cli/ instead.
 
 ```python
-# ✅ DO: from worktree.core.sandbox.prune import prune_sandboxes  # tests/core/sandbox/test_prune.py
-# ❌ DO NOT: from worktree.cli.sandbox.commands.prune import prune_command  # imported from tests/core/sandbox/test_prune.py
+# ✅ DO: from dovo.core.sandbox.prune import prune_sandboxes  # tests/core/sandbox/test_prune.py
+# ❌ DO NOT: from dovo.cli.sandbox.commands.prune import prune_command  # imported from tests/core/sandbox/test_prune.py
 ```
 
 - **[TEST-019] Command Result DTO Spy Scope for CLI Integration Tests (BLOCKER):**
-  A *CliIntegrationTests suite may pin the exact domain DTO a command handler produces, beyond what --format json's wire payload already proves, with a call-through spy fixture on ui_dispatcher.dispatch that still exercises the real formatter and render path (never a replacement stub, so this does not trip TEST-008). What that spy may be asserted against is scoped to one thing: the command action's own terminal BaseResult — the same type its facade or service call returns and the JSON envelope wraps (SandboxCreateResult for wt sandbox create, WorktreeStatusResult for wt status). It is never used to assert on other objects the same invocation dispatches — MessageEvent, WarningEvent, PromptEvent, or a lifecycle/progress event — even when the spy's fixture captures them incidentally. A command action known to dispatch only its own terminal result per invocation may assert the spy's sole captured item directly; a command action that also dispatches other event types must first isolate the captured instance of its own Result type rather than assume position or length. This is a genuine contract comparison against a BaseResult (TEST-001's good pattern), not a call-count check on a mocked collaborator, because the spy calls through to production and the assertion targets the DTO's fields, not the fact that dispatch fired.
+  A *CliIntegrationTests suite may pin the exact domain DTO a command handler produces, beyond what --format json's wire payload already proves, with a call-through spy fixture on ui_dispatcher.dispatch that still exercises the real formatter and render path (never a replacement stub, so this does not trip TEST-008). What that spy may be asserted against is scoped to one thing: the command action's own terminal BaseResult — the same type its facade or service call returns and the JSON envelope wraps (SandboxCreateResult for dovo sandbox create, DovoStatusResult for dovo status). It is never used to assert on other objects the same invocation dispatches — MessageEvent, WarningEvent, PromptEvent, or a lifecycle/progress event — even when the spy's fixture captures them incidentally. A command action known to dispatch only its own terminal result per invocation may assert the spy's sole captured item directly; a command action that also dispatches other event types must first isolate the captured instance of its own Result type rather than assume position or length. This is a genuine contract comparison against a BaseResult (TEST-001's good pattern), not a call-count check on a mocked collaborator, because the spy calls through to production and the assertion targets the DTO's fields, not the fact that dispatch fired.
 
 ```python
 # ✅ DO: assert len(dispatch_spy) == 1; assert isinstance(dispatch_spy[0], SandboxCreateResult)  # sandbox create dispatches only its own terminal result
@@ -356,7 +356,7 @@ assert "Status: valid with warnings" in res.stdout  # literal rendered output, n
 ```
 
 - **[DOC-003] Schema and Entity Documentation Gate (BLOCKER):**
-  Update docs/agents/schemas.md whenever .worktree/config.json keys, blueprint YAML fields, domain DTOs, or database record shapes change.
+  Update docs/agents/schemas.md whenever .dovo/config.json keys, blueprint YAML fields, domain DTOs, or database record shapes change.
 
 ```python
 # ✅ DO: # Adding SandboxPruneResult to section 2 of schemas.md
@@ -367,7 +367,7 @@ assert "Status: valid with warnings" in res.stdout  # literal rendered output, n
   Docs must not hand-copy Pydantic model signatures, field tables, or enum lists that a Read of the source already gives unambiguously. Link to the model file and document only unexpressed behavior (validators, resolution order).
 
 ```python
-# ✅ DO: See [`SandboxSession`](src/worktree/core/sandbox/models.py). Sandboxes live under .worktree/sandboxes/.
+# ✅ DO: See [`SandboxSession`](src/dovo/core/sandbox/models.py). Sandboxes live under .dovo/sandboxes/.
 # ❌ DO NOT:
 | Field | Type | Default |
 | session_id | str | required |

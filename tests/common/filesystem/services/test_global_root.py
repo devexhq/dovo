@@ -1,4 +1,4 @@
-"""Contract tests for global Worktree root provisioning."""
+"""Contract tests for global Dovo root provisioning."""
 
 from __future__ import annotations
 
@@ -7,8 +7,8 @@ from pathlib import Path
 
 import pytest
 
-from worktree.common.filesystem import InvalidGlobalRootError
-from worktree.common.filesystem.services.global_root import ensure_global_layout, resolve_global_paths
+from dovo.common.filesystem import InvalidGlobalRootError
+from dovo.common.filesystem.services.global_root import ensure_global_layout, resolve_global_paths
 
 REQUIRED_LAYOUT_RELATIVE_PATHS = (
     Path("."),
@@ -27,13 +27,13 @@ REQUIRED_LAYOUT_RELATIVE_PATHS = (
 
 
 class GlobalRootTests:
-    """Contract tests for global Worktree root resolution and layout creation."""
+    """Contract tests for global Dovo root resolution and layout creation."""
 
-    def test_resolve_global_paths_override_precedes_worktree_home(
+    def test_resolve_global_paths_override_precedes_dovo_home(
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
     ) -> None:
         override_root = tmp_path / "override"
-        monkeypatch.setenv("WORKTREE_HOME", str(tmp_path / "environment"))
+        monkeypatch.setenv("DOVO_HOME", str(tmp_path / "environment"))
 
         paths = resolve_global_paths(override_root)
 
@@ -45,15 +45,15 @@ class GlobalRootTests:
         assert paths.data_dir == expected_root / "data"
         assert paths.storage_dir == expected_root / "storage"
 
-    def test_resolve_global_paths_uses_worktree_home_without_override(
+    def test_resolve_global_paths_uses_dovo_home_without_override(
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
     ) -> None:
-        worktree_home = tmp_path / "environment"
-        monkeypatch.setenv("WORKTREE_HOME", str(worktree_home))
+        dovo_home = tmp_path / "environment"
+        monkeypatch.setenv("DOVO_HOME", str(dovo_home))
 
         paths = resolve_global_paths()
 
-        expected_root = worktree_home.resolve()
+        expected_root = dovo_home.resolve()
         assert paths.root == expected_root
         assert paths.global_dir == expected_root / "global"
         assert paths.user_dir == expected_root / "user"
@@ -61,14 +61,14 @@ class GlobalRootTests:
         assert paths.data_dir == expected_root / "data"
         assert paths.storage_dir == expected_root / "storage"
 
-    def test_resolve_global_paths_uses_home_dot_worktree_without_override_or_environment(
+    def test_resolve_global_paths_uses_home_dot_dovo_without_override_or_environment(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        monkeypatch.delenv("WORKTREE_HOME", raising=False)
+        monkeypatch.delenv("DOVO_HOME", raising=False)
 
         paths = resolve_global_paths()
 
-        expected_root = (Path.home() / ".worktree").resolve()
+        expected_root = (Path.home() / ".dovo").resolve()
         assert paths.root == expected_root
         assert paths.global_dir == expected_root / "global"
         assert paths.user_dir == expected_root / "user"
@@ -130,8 +130,8 @@ class GlobalRootTests:
             ensure_global_layout(root)
 
         assert str(exc_info.value) == (
-            f"Global Worktree root '{root.resolve()}' must not be a Git repository; "
-            "remove its .git directory or choose a different WORKTREE_HOME."
+            f"Global Dovo root '{root.resolve()}' must not be a Git repository; "
+            "remove its .git directory or choose a different DOVO_HOME."
         )
         assert not (root / "user" / "catalog" / "blueprints").exists()
 

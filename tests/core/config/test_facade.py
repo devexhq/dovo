@@ -6,11 +6,11 @@ from typing import Any
 
 import pytest
 
-from worktree.common.filesystem import Filesystem, WorkspacePaths
-from worktree.core.config.exceptions import ConfigLoadError
-from worktree.core.config.facade import Config
-from worktree.core.config.generator import build_default_config
-from worktree.core.config.models import ConfigTier
+from dovo.common.filesystem import Filesystem, WorkspacePaths
+from dovo.core.config.exceptions import ConfigLoadError
+from dovo.core.config.facade import Config
+from dovo.core.config.generator import build_default_config
+from dovo.core.config.models import ConfigTier
 
 WorkspacePathsFactory = Callable[[Path, Path | None], WorkspacePaths]
 
@@ -19,7 +19,7 @@ WorkspacePathsFactory = Callable[[Path, Path | None], WorkspacePaths]
 def workspace_paths_no_config(tmp_path: Path, workspace_paths_factory: WorkspacePathsFactory) -> WorkspacePaths:
     """Resolve paths for a repository whose config.json does not exist."""
     repository = tmp_path / "workspace-no-config"
-    (repository / ".worktree").mkdir(parents=True)
+    (repository / ".dovo").mkdir(parents=True)
     return workspace_paths_factory(repository, None)
 
 
@@ -81,7 +81,7 @@ class ConfigLoadedConfigAccessorTests:
         message = str(exc_info.value)
         assert str(paths.root_dir) in message
         assert "CONFIG_NOT_FOUND" in message
-        assert "Fix:\n- Run `wt init` to create `.worktree/config.json`" in message
+        assert "Fix:\n- Run `dovo init` to create `.dovo/config.json`" in message
 
     def test_loaded_config_is_cached_after_first_successful_load(
         self, isolated_workspace: Path, workspace_paths_factory: WorkspacePathsFactory
@@ -104,7 +104,7 @@ class ConfigAccessorPropertyTests:
     def test_version_project_and_agent_properties_expose_loaded_config_sections(
         self, isolated_workspace: Path, workspace_paths_factory: WorkspacePathsFactory
     ) -> None:
-        """[tier-1/unit] Config.version/.project/.agent: each returns the matching section of the loaded WorktreeConfig."""
+        """[tier-1/unit] Config.version/.project/.agent: each returns the matching section of the loaded DovoConfig."""
         paths = workspace_paths_factory(isolated_workspace, None)
         Filesystem.atomic_write_json(paths.config_file, build_default_config("prop-project"))
         config = Config(paths)
@@ -117,7 +117,7 @@ class ConfigAccessorPropertyTests:
     def test_sandbox_history_doctor_prune_telemetry_concurrency_properties_expose_loaded_config_sections(
         self, isolated_workspace: Path, workspace_paths_factory: WorkspacePathsFactory
     ) -> None:
-        """[tier-1/unit] Config.sandbox/.history/.doctor/.prune/.telemetry/.concurrency: each returns the matching section of the loaded WorktreeConfig."""
+        """[tier-1/unit] Config.sandbox/.history/.doctor/.prune/.telemetry/.concurrency: each returns the matching section of the loaded DovoConfig."""
         paths = workspace_paths_factory(isolated_workspace, None)
         Filesystem.atomic_write_json(paths.config_file, build_default_config("prop-project"))
         config = Config(paths)

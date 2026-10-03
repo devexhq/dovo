@@ -7,9 +7,9 @@ from pathlib import Path
 
 import pytest
 
-from worktree.core.artifacts.models import ArtifactUploadStatus
-from worktree.core.artifacts.services.upload import publish_artifact
-from worktree.core.db.repositories.artifacts import ArtifactsRepository
+from dovo.core.artifacts.models import ArtifactUploadStatus
+from dovo.core.artifacts.services.upload import publish_artifact
+from dovo.core.db.repositories.artifacts import ArtifactsRepository
 
 
 class UploadServiceTests:
@@ -86,7 +86,7 @@ class UploadServiceTests:
         def _broken_copy2(*_args: object, **_kwargs: object) -> None:
             raise OSError("disk full")
 
-        monkeypatch.setattr("worktree.core.artifacts.services.upload.shutil.copy2", _broken_copy2)
+        monkeypatch.setattr("dovo.core.artifacts.services.upload.shutil.copy2", _broken_copy2)
 
         result = publish_artifact(
             sandbox_path,

@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Final
 
 REPO_ROOT: Final[Path] = Path(__file__).parent.parent.parent
-SRC_ROOT: Final[Path] = REPO_ROOT / "src" / "worktree"
+SRC_ROOT: Final[Path] = REPO_ROOT / "src" / "dovo"
 TESTS_ROOT: Final[Path] = REPO_ROOT / "tests"
 
 

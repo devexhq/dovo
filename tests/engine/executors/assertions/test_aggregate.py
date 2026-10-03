@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from worktree.core.catalog.definitions import StepAssert
-from worktree.engine.executors.assertions import evaluate_assertions
+from dovo.core.catalog.definitions import StepAssert
+from dovo.engine.executors.assertions import evaluate_assertions
 
 
 class EvaluateAssertionsTests:

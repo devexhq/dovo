@@ -8,8 +8,8 @@ import pytest
 from rich.console import Console
 from rich.text import Text
 
-from worktree.cli.ui.events import StepDoneEvent, StepOutputEvent, StepStartEvent
-from worktree.cli.ui.tail import _CURSOR_UP, _ERASE_LINE, CollapsingTailDisplay
+from dovo.cli.ui.events import StepDoneEvent, StepOutputEvent, StepStartEvent
+from dovo.cli.ui.tail import _CURSOR_UP, _ERASE_LINE, CollapsingTailDisplay
 
 
 def _display(*, tail_size: int = 2) -> tuple[CollapsingTailDisplay, io.StringIO, io.StringIO]:

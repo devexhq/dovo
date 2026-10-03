@@ -7,18 +7,18 @@ from pathlib import Path
 
 import pytest
 
+from dovo.common.filesystem import Filesystem, WorkspacePaths
+from dovo.common.filesystem.models import RepositoryPaths
+from dovo.common.filesystem.services.global_root import resolve_global_paths
+from dovo.core.db import SandboxesRepository
+from dovo.core.git.runner import GitRunner
+from dovo.core.project.models import ProjectIdentity
+from dovo.core.project.services.identity import save_project_identity
+from dovo.core.project.services.storage import resolve_workspace_paths
+from dovo.core.sandbox.models import SandboxCreateStatus
+from dovo.core.sandbox.services import lifecycle as lifecycle_module
+from dovo.core.sandbox.services.lifecycle import SandboxLifecycle
 from tests.harness import WorkspaceBuilder
-from worktree.common.filesystem import Filesystem, WorkspacePaths
-from worktree.common.filesystem.models import RepositoryPaths
-from worktree.common.filesystem.services.global_root import resolve_global_paths
-from worktree.core.db import SandboxesRepository
-from worktree.core.git.runner import GitRunner
-from worktree.core.project.models import ProjectIdentity
-from worktree.core.project.services.identity import save_project_identity
-from worktree.core.project.services.storage import resolve_workspace_paths
-from worktree.core.sandbox.models import SandboxCreateStatus
-from worktree.core.sandbox.services import lifecycle as lifecycle_module
-from worktree.core.sandbox.services.lifecycle import SandboxLifecycle
 
 
 @pytest.fixture
@@ -35,7 +35,7 @@ def _paths(workspace: Path) -> WorkspacePaths:
 def _save_project_identity(workspace: Path) -> None:
     """Persist the fixed project identity used by storage bridge tests."""
     identity = ProjectIdentity(id="project-626", created_at=datetime(2026, 1, 1, tzinfo=UTC))
-    save_project_identity(workspace / ".worktree" / "project.json", identity)
+    save_project_identity(workspace / ".dovo" / "project.json", identity)
 
 
 class SandboxLifecycleStorageBridgeTests:
@@ -46,7 +46,7 @@ class SandboxLifecycleStorageBridgeTests:
     ) -> None:
         """An identified sandbox links its runtime bridge to global session storage."""
         global_root = tmp_path / "global"
-        monkeypatch.setenv("WORKTREE_HOME", str(global_root))
+        monkeypatch.setenv("DOVO_HOME", str(global_root))
         _save_project_identity(sandbox_workspace)
         paths = _paths(sandbox_workspace)
         lifecycle = SandboxLifecycle(
@@ -55,20 +55,20 @@ class SandboxLifecycleStorageBridgeTests:
 
         result = lifecycle.create(session_id="sbx_bridge_626")
 
-        bridge_path = sandbox_workspace / ".worktree" / "sandboxes" / "sbx_bridge_626" / ".worktree" / "run"
+        bridge_path = sandbox_workspace / ".dovo" / "sandboxes" / "sbx_bridge_626" / ".dovo" / "run"
         session_dir = global_root / "storage" / "projects" / "project-626" / "sessions" / "sbx_bridge_626"
         assert result.status == SandboxCreateStatus.OK
         assert bridge_path.is_symlink()
         assert bridge_path.resolve() == session_dir
         assert session_dir.is_dir()
-        assert not (sandbox_workspace / ".worktree" / "sessions" / "sbx_bridge_626").exists()
+        assert not (sandbox_workspace / ".dovo" / "sessions" / "sbx_bridge_626").exists()
 
     def test_cleanup_unlinks_run_symlink_and_preserves_global_session_contents(
         self, monkeypatch: pytest.MonkeyPatch, sandbox_workspace: Path, tmp_path: Path
     ) -> None:
         """Cleanup removes only the bridge and leaves global session contents intact."""
         global_root = tmp_path / "global"
-        monkeypatch.setenv("WORKTREE_HOME", str(global_root))
+        monkeypatch.setenv("DOVO_HOME", str(global_root))
         _save_project_identity(sandbox_workspace)
         paths = _paths(sandbox_workspace)
         lifecycle = SandboxLifecycle(
@@ -76,7 +76,7 @@ class SandboxLifecycleStorageBridgeTests:
         )
         result = lifecycle.create(session_id="sbx_bridge_626")
         assert result.session is not None
-        bridge_path = result.session.sandbox_path / ".worktree" / "run"
+        bridge_path = result.session.sandbox_path / ".dovo" / "run"
         sentinel_path = bridge_path.resolve() / "sentinel.txt"
         Filesystem.atomic_write_text(sentinel_path, "preserve me")
 
@@ -91,11 +91,11 @@ class SandboxLifecycleStorageBridgeTests:
     ) -> None:
         """A tracked broken bridge is replaced with the selected session target."""
         global_root = tmp_path / "global"
-        source_bridge = sandbox_workspace / ".worktree" / "run"
-        monkeypatch.setenv("WORKTREE_HOME", str(global_root))
+        source_bridge = sandbox_workspace / ".dovo" / "run"
+        monkeypatch.setenv("DOVO_HOME", str(global_root))
         _save_project_identity(sandbox_workspace)
         source_bridge.symlink_to(tmp_path / "missing-session")
-        GitRunner.run(["add", "-f", ".worktree/run"], path=sandbox_workspace)
+        GitRunner.run(["add", "-f", ".dovo/run"], path=sandbox_workspace)
         GitRunner.run(["commit", "-m", "Add stale storage bridge"], path=sandbox_workspace)
         paths = _paths(sandbox_workspace)
         lifecycle = SandboxLifecycle(
@@ -104,7 +104,7 @@ class SandboxLifecycleStorageBridgeTests:
 
         result = lifecycle.create(session_id="sbx_bridge_626")
 
-        bridge_path = sandbox_workspace / ".worktree" / "sandboxes" / "sbx_bridge_626" / ".worktree" / "run"
+        bridge_path = sandbox_workspace / ".dovo" / "sandboxes" / "sbx_bridge_626" / ".dovo" / "run"
         session_dir = global_root / "storage" / "projects" / "project-626" / "sessions" / "sbx_bridge_626"
         assert result.status == SandboxCreateStatus.OK
         assert bridge_path.is_symlink()
@@ -127,11 +127,11 @@ class SandboxLifecycleStorageBridgeTests:
 
         result = lifecycle.create(session_id="sbx_bridge_626")
 
-        bridge_path = sandbox_workspace / ".worktree" / "sandboxes" / "sbx_bridge_626" / ".worktree" / "run"
+        bridge_path = sandbox_workspace / ".dovo" / "sandboxes" / "sbx_bridge_626" / ".dovo" / "run"
         assert result.status == SandboxCreateStatus.OK
         assert len(result.warnings) == 1
         assert "symlink privilege unavailable" in result.warnings[0]
-        assert (sandbox_workspace / ".worktree" / "sandboxes" / "sbx_bridge_626").is_dir()
+        assert (sandbox_workspace / ".dovo" / "sandboxes" / "sbx_bridge_626").is_dir()
         assert not bridge_path.exists()
 
     def test_create_when_symlink_creation_fails_returns_storage_bridge_failed_and_discards_partial_sandbox(
@@ -150,7 +150,7 @@ class SandboxLifecycleStorageBridgeTests:
 
         result = lifecycle.create(session_id="sbx_bridge_626")
 
-        sandbox_path = sandbox_workspace / ".worktree" / "sandboxes" / "sbx_bridge_626"
+        sandbox_path = sandbox_workspace / ".dovo" / "sandboxes" / "sbx_bridge_626"
         assert result.status == SandboxCreateStatus.STORAGE_BRIDGE_FAILED
         assert not sandbox_path.exists()
         assert "worktree/sandbox-sbx_bridge_626" not in GitRunner.list_branches(sandbox_workspace)
@@ -162,11 +162,11 @@ class SandboxLifecycleStorageBridgeTests:
         self, sandbox_workspace: Path
     ) -> None:
         """A sandbox-side bridge collision discards only the partial sandbox, never the source branch's committed content or already-persisted session storage."""
-        source_sentinel = sandbox_workspace / ".worktree" / "run" / "sentinel.txt"
+        source_sentinel = sandbox_workspace / ".dovo" / "run" / "sentinel.txt"
         Filesystem.atomic_write_text(source_sentinel, "do not delete")
-        GitRunner.run(["add", "-f", ".worktree/run/sentinel.txt"], path=sandbox_workspace)
+        GitRunner.run(["add", "-f", ".dovo/run/sentinel.txt"], path=sandbox_workspace)
         GitRunner.run(["commit", "-m", "Add storage bridge collision"], path=sandbox_workspace)
-        session_dir = sandbox_workspace / ".worktree" / "sessions" / "sbx_bridge_626"
+        session_dir = sandbox_workspace / ".dovo" / "sessions" / "sbx_bridge_626"
         preexisting_session_file = session_dir / "run.json"
         Filesystem.atomic_write_text(preexisting_session_file, "preserve me too")
         paths = _paths(sandbox_workspace)
@@ -176,7 +176,7 @@ class SandboxLifecycleStorageBridgeTests:
 
         result = lifecycle.create(session_id="sbx_bridge_626")
 
-        sandbox_path = sandbox_workspace / ".worktree" / "sandboxes" / "sbx_bridge_626"
+        sandbox_path = sandbox_workspace / ".dovo" / "sandboxes" / "sbx_bridge_626"
         assert result.status == SandboxCreateStatus.STORAGE_BRIDGE_FAILED
         assert source_sentinel.read_text(encoding="utf-8") == "do not delete"
         assert preexisting_session_file.read_text(encoding="utf-8") == "preserve me too"
@@ -205,14 +205,14 @@ class SandboxLifecycleCapacityTests:
         result = lifecycle.create(session_id="sbx_cap_overflow")
 
         assert result.status == SandboxCreateStatus.CAPACITY_EXCEEDED
-        assert not (sandbox_workspace / ".worktree" / "sandboxes" / "sbx_cap_overflow").exists()
+        assert not (sandbox_workspace / ".dovo" / "sandboxes" / "sbx_cap_overflow").exists()
         assert "worktree/sandbox-sbx_cap_overflow" not in GitRunner.list_branches(sandbox_workspace)
 
 
 class SandboxLifecycleCleanupTests:
     """[tier-1/integration] SandboxLifecycle.cleanup: worktree removal and branch deletion."""
 
-    def test_cleanup_removes_worktree_directory_and_deletes_temporary_branch(self, sandbox_workspace: Path) -> None:
+    def test_cleanup_removes_dovo_directory_and_deletes_temporary_branch(self, sandbox_workspace: Path) -> None:
         """[tier-1/integration] SandboxLifecycle.cleanup: removes the sandbox worktree directory from disk and deletes its temporary worktree/sandbox-<id> branch, with no warnings."""
         paths = _paths(sandbox_workspace)
         lifecycle = SandboxLifecycle(
@@ -249,13 +249,13 @@ class SandboxLifecycleCleanupTests:
 class SandboxLifecycleDiscardPartialTests:
     """[tier-1/integration] SandboxLifecycle.discard_partial: best-effort cleanup after a failed create."""
 
-    def test_discard_partial_removes_worktree_directory_and_branch(self, sandbox_workspace: Path) -> None:
+    def test_discard_partial_removes_dovo_directory_and_branch(self, sandbox_workspace: Path) -> None:
         """[tier-1/integration] SandboxLifecycle.discard_partial: removes the given worktree directory and deletes the given branch."""
         paths = _paths(sandbox_workspace)
         lifecycle = SandboxLifecycle(
             paths, SandboxesRepository(db_path=paths.database_file, project_id=paths.project_id)
         )
-        sandbox_path = sandbox_workspace / ".worktree" / "sandboxes" / "sbx_discard"
+        sandbox_path = sandbox_workspace / ".dovo" / "sandboxes" / "sbx_discard"
         temp_branch = "worktree/sandbox-sbx_discard"
         GitRunner.worktree_add(sandbox_workspace, sandbox_path, temp_branch, "HEAD")
         assert sandbox_path.is_dir()
@@ -273,5 +273,5 @@ class SandboxLifecycleDiscardPartialTests:
         )
 
         lifecycle.discard_partial(
-            sandbox_workspace / ".worktree" / "sandboxes" / "never-existed", "worktree/sandbox-never-existed"
+            sandbox_workspace / ".dovo" / "sandboxes" / "never-existed", "worktree/sandbox-never-existed"
         )

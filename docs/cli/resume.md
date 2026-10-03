@@ -1,11 +1,11 @@
-# `wt resume`
+# `dovo resume`
 
-The `wt resume` command continues a paused blueprint execution session, either by specifying an explicit session ID or by automatically resuming the latest paused run.
+The `dovo resume` command continues a paused blueprint execution session, either by specifying an explicit session ID or by automatically resuming the latest paused run.
 
 ## Usage
 
 ```bash
-wt resume [session_id] [OPTIONS]
+dovo resume [session_id] [OPTIONS]
 ```
 
 ### Arguments
@@ -39,17 +39,17 @@ wt resume [session_id] [OPTIONS]
 Auto-resume the latest paused run:
 
 ```bash
-wt resume
+dovo resume
 ```
 
 Resume a specific session by ID:
 
 ```bash
-wt resume blueprint_a1b2c3d4
+dovo resume blueprint_a1b2c3d4
 ```
 
 Resume non-interactively (e.g. in automated scripts):
 
 ```bash
-wt resume --no-tty
+dovo resume --no-tty
 ```

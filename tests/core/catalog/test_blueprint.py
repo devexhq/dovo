@@ -2,13 +2,13 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from worktree.common.filesystem.models import RepositoryPaths
-from worktree.common.filesystem.services.global_root import resolve_global_paths
-from worktree.core.catalog import Catalog
-from worktree.core.catalog.blueprint import Blueprint
-from worktree.core.catalog.definitions import BlueprintDefinition, StepDefinition
-from worktree.core.project.services.identity import generate_project_identity, save_project_identity
-from worktree.core.project.services.storage import resolve_workspace_paths
+from dovo.common.filesystem.models import RepositoryPaths
+from dovo.common.filesystem.services.global_root import resolve_global_paths
+from dovo.core.catalog import Catalog
+from dovo.core.catalog.blueprint import Blueprint
+from dovo.core.catalog.definitions import BlueprintDefinition, StepDefinition
+from dovo.core.project.services.identity import generate_project_identity, save_project_identity
+from dovo.core.project.services.storage import resolve_workspace_paths
 
 
 class BlueprintDocumentNormalizationTests:
@@ -16,9 +16,9 @@ class BlueprintDocumentNormalizationTests:
 
     def test_blueprint_defaults_missing_name_from_file_stem(self, tmp_path: Path) -> None:
         """Blueprint loaded without explicit 'name' inherits catalog key / file stem."""
-        blueprints_dir = tmp_path / ".worktree" / "catalog" / "blueprints"
+        blueprints_dir = tmp_path / ".dovo" / "catalog" / "blueprints"
         blueprints_dir.mkdir(parents=True, exist_ok=True)
-        save_project_identity(tmp_path / ".worktree" / "project.json", generate_project_identity())
+        save_project_identity(tmp_path / ".dovo" / "project.json", generate_project_identity())
         raw_yaml = "steps:\n  - id: ruff\n    run: ruff check .\n"
         (blueprints_dir / "lint-task.yml").write_text(raw_yaml, encoding="utf-8")
 

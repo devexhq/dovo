@@ -1,4 +1,4 @@
-"""Tier 4 invariant: every module- and class-level function and method in src/worktree must carry a docstring."""
+"""Tier 4 invariant: every module- and class-level function and method in src/dovo must carry a docstring."""
 
 from __future__ import annotations
 
@@ -87,7 +87,7 @@ class DocstringsCoverageTests:
     """Tier 4 invariant: docstrings coverage across all production functions and methods."""
 
     def test_all_production_functions_and_methods_have_docstrings(self) -> None:
-        """[tier-4/unit] Ensure every function and method under src/worktree/ has a non-empty docstring."""
+        """[tier-4/unit] Ensure every function and method under src/dovo/ has a non-empty docstring."""
         files = collect_python_files(SRC_ROOT)
         violations: list[str] = []
 

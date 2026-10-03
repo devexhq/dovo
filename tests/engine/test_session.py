@@ -8,34 +8,34 @@ from pathlib import Path
 
 import pytest
 
-from tests.harness import AGENT_ADAPTER_FACTORY, FakeAgentProvider, new_file_diff
-from tests.harness.builders import WorkspaceBuilder
-from tests.harness.runs import NoOpRunObserver, seed_new_run, seed_paused_run
-from worktree.common.filesystem.models import RepositoryPaths, WorkspacePaths
-from worktree.common.filesystem.services.global_root import resolve_global_paths
-from worktree.core.agents.models import AgentResponse, AgentResponseStatus, ResolvedAgentSettings
-from worktree.core.catalog.definitions import LoopStepBlock, StepDefinition
-from worktree.core.db import RunsRepository, RunStatus, SandboxesRepository
-from worktree.core.logs.services.read import read_run_log_events
-from worktree.core.project.services.storage import resolve_workspace_paths
-from worktree.core.sandbox import Sandbox, SandboxApplyResult, SandboxApplyStatus
-from worktree.engine.executors.agent_step import SANDBOX_REQUIRED_MESSAGE, build_agent_step_runner
-from worktree.engine.executors.models import (
+from dovo.common.filesystem.models import RepositoryPaths, WorkspacePaths
+from dovo.common.filesystem.services.global_root import resolve_global_paths
+from dovo.core.agents.models import AgentResponse, AgentResponseStatus, ResolvedAgentSettings
+from dovo.core.catalog.definitions import LoopStepBlock, StepDefinition
+from dovo.core.db import RunsRepository, RunStatus, SandboxesRepository
+from dovo.core.logs.services.read import read_run_log_events
+from dovo.core.project.services.storage import resolve_workspace_paths
+from dovo.core.sandbox import Sandbox, SandboxApplyResult, SandboxApplyStatus
+from dovo.engine.executors.agent_step import SANDBOX_REQUIRED_MESSAGE, build_agent_step_runner
+from dovo.engine.executors.models import (
     AgentStepRunner,
     ConditionEvaluationResult,
     StepExecutionContext,
     StepResult,
 )
-from worktree.engine.executors.step_executor import StepExecution
-from worktree.engine.models import (
+from dovo.engine.executors.step_executor import StepExecution
+from dovo.engine.models import (
     FailurePromptDecision,
     FailurePrompter,
     LoopPromptDecision,
     RunObserver,
     RunOutcome,
 )
-from worktree.engine.session import drive_run
-from worktree.engine.writer import snapshot_blueprint_path
+from dovo.engine.session import drive_run
+from dovo.engine.writer import snapshot_blueprint_path
+from tests.harness import AGENT_ADAPTER_FACTORY, FakeAgentProvider, new_file_diff
+from tests.harness.builders import WorkspaceBuilder
+from tests.harness.runs import NoOpRunObserver, seed_new_run, seed_paused_run
 
 
 class _Prompter(FailurePrompter):
@@ -378,9 +378,9 @@ class DriveRunLifecycleTests:
     @pytest.mark.parametrize(
         ("keep", "command", "expect_preserved"),
         [
-            pytest.param(False, '[ -d "$WT_TEMP/steps" ]', False, id="completed-no-keep-deletes"),
-            pytest.param(True, '[ -d "$WT_TEMP/steps" ]', True, id="completed-keep-preserves"),
-            pytest.param(False, '[ -d "$WT_TEMP/steps" ] && exit 1', True, id="failed-preserves"),
+            pytest.param(False, '[ -d "$DOVO_TEMP/steps" ]', False, id="completed-no-keep-deletes"),
+            pytest.param(True, '[ -d "$DOVO_TEMP/steps" ]', True, id="completed-keep-preserves"),
+            pytest.param(False, '[ -d "$DOVO_TEMP/steps" ] && exit 1', True, id="failed-preserves"),
         ],
     )
     def test_session_scratch_dir_created_before_first_step_and_removed_when_completed_unkept(
@@ -391,7 +391,7 @@ class DriveRunLifecycleTests:
         command: str,
         expect_preserved: bool,
     ) -> None:
-        """[tier-1/integration] drive_run: a step asserting [ -d "$WT_TEMP/steps" ] passes; after a completed unkept run the session tmp directory no longer exists, and after a failed or kept run it remains."""
+        """[tier-1/integration] drive_run: a step asserting [ -d "$DOVO_TEMP/steps" ] passes; after a completed unkept run the session tmp directory no longer exists, and after a failed or kept run it remains."""
         seed_new_run(engine_paths, runs_repo, session_id="scratch", steps=[_step("s1", command)], keep=keep)
 
         outcome = _drive(engine_paths, runs_repo, "scratch")
@@ -402,16 +402,16 @@ class DriveRunLifecycleTests:
     def test_resume_reuses_same_session_tmp_dir_and_truncates_stale_output(
         self, engine_paths: WorkspacePaths, runs_repo: RunsRepository
     ) -> None:
-        """[tier-1/integration] drive_run: a resumed run sees step_a's earlier scratch file under the same WT_TEMP, and a re-run step's StepResult.outputs equals {"fresh": "yes"} with no stale key."""
+        """[tier-1/integration] drive_run: a resumed run sees step_a's earlier scratch file under the same DOVO_TEMP, and a re-run step's StepResult.outputs equals {"fresh": "yes"} with no stale key."""
         seed_paused_run(
             engine_paths,
             runs_repo,
             session_id="resume-tmp",
             steps=[
-                _step("step_a", 'echo "marker=yes" >> "$WT_OUTPUT"'),
+                _step("step_a", 'echo "marker=yes" >> "$DOVO_OUTPUT"'),
                 _step(
                     "step_b",
-                    '[ -f "$WT_TEMP/step_step_a.output" ] && echo "fresh=yes" >> "$WT_OUTPUT"',
+                    '[ -f "$DOVO_TEMP/step_step_a.output" ] && echo "fresh=yes" >> "$DOVO_OUTPUT"',
                     on_failure="prompt_user",
                 ),
             ],
@@ -698,7 +698,7 @@ def captured_contexts(monkeypatch: pytest.MonkeyPatch) -> list[StepExecutionCont
             captured.append(metadata)
             super().__init__(metadata)
 
-    monkeypatch.setattr("worktree.engine.step_coordinator.StepExecution", _CapturingStepExecution)
+    monkeypatch.setattr("dovo.engine.step_coordinator.StepExecution", _CapturingStepExecution)
     return captured
 
 
@@ -711,7 +711,7 @@ def captured_agent_args(monkeypatch: pytest.MonkeyPatch) -> list[ResolvedAgentSe
         captured.append(agent)
         return build_agent_step_runner(agent, sandbox_active)
 
-    monkeypatch.setattr("worktree.engine.step_coordinator.build_agent_step_runner", _recording_build)
+    monkeypatch.setattr("dovo.engine.step_coordinator.build_agent_step_runner", _recording_build)
     return captured
 
 
@@ -846,7 +846,7 @@ class DriveRunAgentSettingsTests:
 
 
 class DriveRunAgentSandboxTests:
-    """[tier-1/integration] drive_run: agent steps are rejected outside a Worktree Git sandbox."""
+    """[tier-1/integration] drive_run: agent steps are rejected outside a Dovo Git sandbox."""
 
     @pytest.mark.parametrize("resumed", [pytest.param(False, id="fresh"), pytest.param(True, id="resumed")])
     def test_in_place_run_rejects_agent_step_but_runs_command_steps(

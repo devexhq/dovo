@@ -6,14 +6,14 @@ from typing import Any
 
 import pytest
 
-from worktree.common.filesystem import Filesystem, WorkspacePaths
-from worktree.core.config.generator import build_default_config
-from worktree.core.config.loader import (
+from dovo.common.filesystem import Filesystem, WorkspacePaths
+from dovo.core.config.generator import build_default_config
+from dovo.core.config.loader import (
     ConfigLoadStatus,
     clear_config_cache,
     load_config,
 )
-from worktree.core.config.models import WorktreeConfig
+from dovo.core.config.models import DovoConfig
 
 SCHEMA_VIOLATION_PAYLOADS = [
     pytest.param(
@@ -47,7 +47,7 @@ SCHEMA_VIOLATION_PAYLOADS = [
 class ConfigLoaderTests:
     """Integration tests verifying config.json loading and schema parsing contracts."""
 
-    def test_load_returns_strongly_typed_worktree_config(self, workspace_paths: WorkspacePaths) -> None:
+    def test_load_returns_strongly_typed_dovo_config(self, workspace_paths: WorkspacePaths) -> None:
         config_path = workspace_paths.config_file
         payload = build_default_config("demo-workspace")
         Filesystem.atomic_write_json(config_path, payload)
@@ -57,7 +57,7 @@ class ConfigLoaderTests:
         assert result.status == ConfigLoadStatus.OK
         assert result.config_path == config_path
         assert result.raw == payload
-        assert result.config == WorktreeConfig.model_validate(payload)
+        assert result.config == DovoConfig.model_validate(payload)
         assert result.errors == []
         assert result.warnings == []
         assert result.fixes == []
@@ -73,7 +73,7 @@ class ConfigLoaderTests:
         assert result.config is None
         assert result.errors == [f"Configuration file not found at '{config_path}' (CONFIG_NOT_FOUND)."]
         assert result.warnings == []
-        assert result.fixes == ["Run `wt init` to create `.worktree/config.json`"]
+        assert result.fixes == ["Run `dovo init` to create `.dovo/config.json`"]
 
     def test_load_config_defaults_ignore_global_root_error_to_false(self, workspace_paths: WorkspacePaths) -> None:
         config_path = workspace_paths.config_file
@@ -127,8 +127,8 @@ class ConfigLoaderTests:
         assert result.errors == [expected_error]
         assert result.warnings == []
         assert result.fixes == [
-            "Run `wt config validate` for details",
-            "Or `wt init --repair` to insert missing keys without overwriting values",
+            "Run `dovo config validate` for details",
+            "Or `dovo init --repair` to insert missing keys without overwriting values",
         ]
 
     def test_load_malformed_json_returns_malformed_json_status_with_location_detail(

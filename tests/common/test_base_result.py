@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import pytest
 
-from worktree.common.error_codes import ErrorCode
-from worktree.common.models import BaseResult
+from dovo.common.error_codes import ErrorCode
+from dovo.common.models import BaseResult
 
 ERROR_CODE_VALUE_CASES = [
     pytest.param(ErrorCode.GIT_NOT_REPO, "GIT_NOT_REPO", id="enum_member"),

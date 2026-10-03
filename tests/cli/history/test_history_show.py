@@ -1,4 +1,4 @@
-"""Single-tier CLI integration tests for wt history show."""
+"""Single-tier CLI integration tests for dovo history show."""
 
 from __future__ import annotations
 
@@ -7,11 +7,11 @@ from pathlib import Path
 
 from typer.testing import CliRunner
 
-from worktree.cli import app
-from worktree.common.filesystem.models import RepositoryPaths, WorkspacePaths
-from worktree.common.filesystem.services.global_root import resolve_global_paths
-from worktree.core.db import RunStatus, WorktreeDb
-from worktree.core.project.services.storage import resolve_workspace_paths
+from dovo.cli import app
+from dovo.common.filesystem.models import RepositoryPaths, WorkspacePaths
+from dovo.common.filesystem.services.global_root import resolve_global_paths
+from dovo.core.db import DovoDb, RunStatus
+from dovo.core.project.services.storage import resolve_workspace_paths
 
 
 def _paths_for(root: Path) -> WorkspacePaths:
@@ -20,11 +20,11 @@ def _paths_for(root: Path) -> WorkspacePaths:
 
 
 class HistoryShowCliIntegrationTests:
-    """Typer runner integration tests for wt history show."""
+    """Typer runner integration tests for dovo history show."""
 
     def test_history_show_cli_known_session_exits_zero(self, cli_runner: CliRunner, history_workspace: Path) -> None:
-        """wt history show <session_id>: known session, exit 0, session ID and blueprint name in stdout."""
-        db = WorktreeDb(
+        """dovo history show <session_id>: known session, exit 0, session ID and blueprint name in stdout."""
+        db = DovoDb(
             database_file=_paths_for(history_workspace).database_file,
             project_id=_paths_for(history_workspace).project_id,
         )
@@ -39,7 +39,7 @@ class HistoryShowCliIntegrationTests:
         assert "task-a" in result.stdout
 
     def test_history_show_cli_unknown_session_exits_one(self, cli_runner: CliRunner, history_workspace: Path) -> None:
-        """wt history show <unknown-id>: exit 1, 'not found' in stdout."""
+        """dovo history show <unknown-id>: exit 1, 'not found' in stdout."""
         result = cli_runner.invoke(app, ["-p", str(history_workspace), "history", "show", "missing-id"])
 
         assert result.exit_code == 1
@@ -48,8 +48,8 @@ class HistoryShowCliIntegrationTests:
     def test_history_show_cli_json_emits_literal_wire_payload(
         self, cli_runner: CliRunner, history_workspace: Path
     ) -> None:
-        """wt history show <session_id> --format json: stdout equals the literal HistoryShowResult envelope."""
-        db = WorktreeDb(
+        """dovo history show <session_id> --format json: stdout equals the literal HistoryShowResult envelope."""
+        db = DovoDb(
             database_file=_paths_for(history_workspace).database_file,
             project_id=_paths_for(history_workspace).project_id,
         )
@@ -90,13 +90,13 @@ class HistoryShowCliIntegrationTests:
 
 
 class HistoryShowLogsCliIntegrationTests:
-    """Typer runner integration tests for wt history show --logs."""
+    """Typer runner integration tests for dovo history show --logs."""
 
     def test_history_show_logs_flag_exit_0_lists_log_paths(
         self, cli_runner: CliRunner, history_workspace: Path
     ) -> None:
-        """wt history show <session_id> --logs: exit 0 and stdout contains every persisted log file name."""
-        WorktreeDb(
+        """dovo history show <session_id> --logs: exit 0 and stdout contains every persisted log file name."""
+        DovoDb(
             database_file=_paths_for(history_workspace).database_file,
             project_id=_paths_for(history_workspace).project_id,
         ).runs.create(

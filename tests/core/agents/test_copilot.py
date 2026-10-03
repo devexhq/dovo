@@ -7,14 +7,14 @@ from pathlib import Path
 
 import pytest
 
-from tests.harness import AgentRequestBuilder, FakeAgentRunner
-from worktree.core.agents import AgentResponseStatus
-from worktree.core.agents.cli_mutation import CliMutationRunRequest
-from worktree.core.agents.copilot import (
+from dovo.core.agents import AgentResponseStatus
+from dovo.core.agents.cli_mutation import CliMutationRunRequest
+from dovo.core.agents.copilot import (
     CopilotAgentAdapter,
     default_copilot_run,
     resolve_copilot_token,
 )
+from tests.harness import AgentRequestBuilder, FakeAgentRunner
 
 
 @pytest.fixture(autouse=True)
@@ -57,7 +57,7 @@ class CopilotRunTests:
                 b'{"type":"assistant.message","data":{"content":"hello"}}\n{"type":"result","data":{"exitCode":0}}\n'
             )
         )
-        monkeypatch.setattr("worktree.core.agents.copilot.run_isolated_process", runner)
+        monkeypatch.setattr("dovo.core.agents.copilot.run_isolated_process", runner)
 
         outcome = default_copilot_run(
             CliMutationRunRequest(sandbox_path=tmp_path, prompt="hi", model=None, timeout_seconds=3)
@@ -89,7 +89,7 @@ class CopilotRunTests:
     def test_missing_gh_binary_returns_error_status(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """A missing gh binary maps to an error outcome naming the GitHub CLI."""
         runner = FakeAgentRunner().raising(FileNotFoundError("gh"))
-        monkeypatch.setattr("worktree.core.agents.copilot.run_isolated_process", runner)
+        monkeypatch.setattr("dovo.core.agents.copilot.run_isolated_process", runner)
 
         outcome = default_copilot_run(
             CliMutationRunRequest(sandbox_path=tmp_path, prompt="hi", model=None, timeout_seconds=3)
@@ -104,7 +104,7 @@ class CopilotRunTests:
     def test_process_timeout_returns_timeout_status(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """A subprocess timeout maps to a timeout outcome."""
         runner = FakeAgentRunner().raising(subprocess.TimeoutExpired(cmd="gh", timeout=3))
-        monkeypatch.setattr("worktree.core.agents.copilot.run_isolated_process", runner)
+        monkeypatch.setattr("dovo.core.agents.copilot.run_isolated_process", runner)
 
         outcome = default_copilot_run(
             CliMutationRunRequest(sandbox_path=tmp_path, prompt="hi", model=None, timeout_seconds=3)

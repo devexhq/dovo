@@ -8,21 +8,19 @@ from typing import Any
 
 import pytest
 
-from tests.harness.builders import StepBuilder
-from tests.harness.runs import NoOpRunObserver
-from worktree.common.filesystem.models import RepositoryPaths, WorkspacePaths
-from worktree.common.filesystem.services.global_root import resolve_global_paths
-from worktree.common.models import FailurePolicy
-from worktree.core.agents.models import ResolvedAgentSettings
-from worktree.core.catalog.definitions import ArtifactPublishSpec, StepDefinition, StepType
-from worktree.core.db.repositories.artifacts import ArtifactsRepository
-from worktree.core.project.services.storage import resolve_workspace_paths
-from worktree.core.sandbox import SandboxSession
-from worktree.engine.executors.agent_step import build_agent_step_runner
-from worktree.engine.executors.models import StepExecutionContext, StepResult
-from worktree.engine.executors.step_executor import StepExecution
-from worktree.engine.failure import USER_CONTINUED_MARKER
-from worktree.engine.models import (
+from dovo.common.filesystem.models import RepositoryPaths, WorkspacePaths
+from dovo.common.filesystem.services.global_root import resolve_global_paths
+from dovo.common.models import FailurePolicy
+from dovo.core.agents.models import ResolvedAgentSettings
+from dovo.core.catalog.definitions import ArtifactPublishSpec, StepDefinition, StepType
+from dovo.core.db.repositories.artifacts import ArtifactsRepository
+from dovo.core.project.services.storage import resolve_workspace_paths
+from dovo.core.sandbox import SandboxSession
+from dovo.engine.executors.agent_step import build_agent_step_runner
+from dovo.engine.executors.models import StepExecutionContext, StepResult
+from dovo.engine.executors.step_executor import StepExecution
+from dovo.engine.failure import USER_CONTINUED_MARKER
+from dovo.engine.models import (
     FailurePromptDecision,
     FailurePrompter,
     LoopPromptDecision,
@@ -30,7 +28,9 @@ from worktree.engine.models import (
     RunSettings,
     StepAction,
 )
-from worktree.engine.step_coordinator import StepCoordinator, auto_publish_step_artifacts
+from dovo.engine.step_coordinator import StepCoordinator, auto_publish_step_artifacts
+from tests.harness.builders import StepBuilder
+from tests.harness.runs import NoOpRunObserver
 
 
 def _paths_for(root: Path) -> WorkspacePaths:
@@ -124,8 +124,8 @@ class StepCoordinatorAgentRunnerTests:
                 runners.append(metadata.agent_runner)
                 super().__init__(metadata)
 
-        monkeypatch.setattr("worktree.engine.step_coordinator.build_agent_step_runner", _recording_build)
-        monkeypatch.setattr("worktree.engine.step_coordinator.StepExecution", _CapturingStepExecution)
+        monkeypatch.setattr("dovo.engine.step_coordinator.build_agent_step_runner", _recording_build)
+        monkeypatch.setattr("dovo.engine.step_coordinator.StepExecution", _CapturingStepExecution)
         return builds, runners
 
     def test_run_attempt_builds_runner_from_resolved_agent_identity(

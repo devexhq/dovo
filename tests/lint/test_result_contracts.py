@@ -7,8 +7,8 @@ import importlib
 import inspect
 from pathlib import Path
 
+from dovo.common.models import BaseResult
 from tests.lint.astlib import REPO_ROOT, SRC_ROOT, collect_python_files
-from worktree.common.models import BaseResult
 
 
 def _has_result_class_def(tree: ast.AST) -> bool:
@@ -41,7 +41,7 @@ def _inspect_module_result_classes(file_path: Path) -> list[str]:
     """Inspect classes ending with Result in a module to ensure BaseResult inheritance.
 
     Args:
-        file_path: Path to the Python file in src/worktree.
+        file_path: Path to the Python file in src/dovo.
 
     Returns:
         List of violation strings naming offending classes.
@@ -68,7 +68,7 @@ class ResultContractsTests:
     """Tier 4 result-hierarchy invariant tests."""
 
     def test_all_result_dtos_inherit_from_base_result(self) -> None:
-        """Ensure all *Result DTO classes across src/worktree inherit from BaseResult."""
+        """Ensure all *Result DTO classes across src/dovo inherit from BaseResult."""
         files = collect_python_files(SRC_ROOT)
         violations: list[str] = []
         for file_path in files:

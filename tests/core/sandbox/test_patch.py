@@ -5,17 +5,17 @@ from pathlib import Path
 
 import pytest
 
-from tests.harness.builders import WorkspaceBuilder
-from worktree.common.filesystem import WorkspacePaths
-from worktree.core.db import SandboxesRepository, SandboxStatus
-from worktree.core.git.runner import GitRunner
-from worktree.core.sandbox.models import (
+from dovo.common.filesystem import WorkspacePaths
+from dovo.core.db import SandboxesRepository, SandboxStatus
+from dovo.core.git.runner import GitRunner
+from dovo.core.sandbox.models import (
     SandboxApplyStatus,
     SandboxApplyStrategy,
     SandboxCreateStatus,
 )
-from worktree.core.sandbox.services.lifecycle import SandboxLifecycle
-from worktree.core.sandbox.services.patch import SandboxPatch, extract_conflicts
+from dovo.core.sandbox.services.lifecycle import SandboxLifecycle
+from dovo.core.sandbox.services.patch import SandboxPatch, extract_conflicts
+from tests.harness.builders import WorkspaceBuilder
 
 
 @pytest.fixture
@@ -97,7 +97,7 @@ class SandboxApplyRollbackTests:
         create_result = lifecycle.create(session_id="sbx_conflict")
         assert create_result.status == SandboxCreateStatus.OK
 
-        sandbox_dir = sandbox_workspace / ".worktree" / "sandboxes" / "sbx_conflict"
+        sandbox_dir = sandbox_workspace / ".dovo" / "sandboxes" / "sbx_conflict"
         (sandbox_dir / "target.py").write_text("line 1\nsandbox edit\nline 3\n", encoding="utf-8")
         GitRunner.add_all(sandbox_dir)
         GitRunner.commit(sandbox_dir, "Sandbox change to target.py")
@@ -122,7 +122,7 @@ class SandboxApplyRollbackTests:
         ]
         assert result.warnings == []
         assert result.fixes == [
-            "Inspect sandbox differences with `wt sandbox diff sbx_conflict`",
+            "Inspect sandbox differences with `dovo sandbox diff sbx_conflict`",
             "Resolve conflicts in the main workspace or sandbox worktree",
         ]
 
@@ -134,5 +134,5 @@ class SandboxApplyRollbackTests:
         assert record.name is None
         assert record.branch_name == "worktree/sandbox-sbx_conflict"
         assert record.base_commit == initial_commit
-        assert record.sandbox_path == (sandbox_workspace / ".worktree" / "sandboxes" / "sbx_conflict").resolve()
+        assert record.sandbox_path == (sandbox_workspace / ".dovo" / "sandboxes" / "sbx_conflict").resolve()
         assert record.status == SandboxStatus.CONFLICT

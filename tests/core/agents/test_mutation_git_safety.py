@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from worktree.core.agents.mutation_git import (
+from dovo.core.agents.mutation_git import (
     MutationGitError,
     capture_diff_since,
     discard_since,
@@ -85,7 +85,7 @@ class ResolvePreAgentBaselineTests:
             text=True,
             check=True,
         ).stdout.strip()
-        assert log == "wt: pre-agent baseline"
+        assert log == "dovo: pre-agent baseline"
         assert (git_repo / "README.md").read_text(encoding="utf-8") == "wip change\n"
 
     def test_raises_on_git_failure(self, tmp_path: Path) -> None:
@@ -98,7 +98,7 @@ class ResolvePreAgentBaselineTests:
 
     def test_raises_on_git_timeout(self, git_repo: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """A git subprocess timeout raises MutationGitError tagged GIT_TIMEOUT."""
-        import worktree.core.agents.mutation_git as mutation_mod
+        import dovo.core.agents.mutation_git as mutation_mod
 
         def _timeout(*_args: object, **_kwargs: object) -> object:
             raise subprocess.TimeoutExpired(cmd=["git"], timeout=120)

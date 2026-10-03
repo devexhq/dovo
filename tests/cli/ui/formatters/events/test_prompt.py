@@ -6,13 +6,13 @@ from typing import Any
 
 import pytest
 
+from dovo.cli.ui.events import PromptEvent, PromptOption
+from dovo.cli.ui.formatters.events.prompt import PromptFormatter
 from tests.harness.formatter import (
     FormatterCase,
     assert_json_payload_matches_published_shape,
     assert_rich_render_shows_every_view_value,
 )
-from worktree.cli.ui.events import PromptEvent, PromptOption
-from worktree.cli.ui.formatters.events.prompt import PromptFormatter
 
 _CONTINUE_OPTION = PromptOption(key="c", label="Continue", decision="continue")
 _ABORT_OPTION = PromptOption(key="a", label="Abort", decision="abort")

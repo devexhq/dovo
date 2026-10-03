@@ -6,13 +6,13 @@ from typing import Any
 
 import pytest
 
+from dovo.cli.ui.events import WelcomeBannerEvent
+from dovo.cli.ui.formatters.global_cli.banner import WelcomeBannerFormatter
 from tests.harness.formatter import (
     FormatterCase,
     assert_json_payload_matches_published_shape,
     assert_rich_render_shows_every_view_value,
 )
-from worktree.cli.ui.events import WelcomeBannerEvent
-from worktree.cli.ui.formatters.global_cli.banner import WelcomeBannerFormatter
 
 STANDARD_VERSION = FormatterCase(
     data=WelcomeBannerEvent(version="0.1.0"),

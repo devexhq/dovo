@@ -6,7 +6,7 @@ from typing import Any
 
 import pytest
 
-from worktree.cli.ui.dispatcher import ui_dispatcher
+from dovo.cli.ui.dispatcher import ui_dispatcher
 
 
 @pytest.fixture(autouse=True)

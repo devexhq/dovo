@@ -1,4 +1,4 @@
-"""Single-tier CLI integration tests for wt sandbox create."""
+"""Single-tier CLI integration tests for dovo sandbox create."""
 
 from __future__ import annotations
 
@@ -8,18 +8,18 @@ from typing import Any
 
 from typer.testing import CliRunner
 
-from worktree.cli import app
-from worktree.core.git.runner import GitRunner
-from worktree.core.sandbox.models import SandboxCreateStatus
+from dovo.cli import app
+from dovo.core.git.runner import GitRunner
+from dovo.core.sandbox.models import SandboxCreateStatus
 
 
 class SandboxCreateCliIntegrationTests:
-    """Typer runner integration tests for wt sandbox create."""
+    """Typer runner integration tests for dovo sandbox create."""
 
     def test_sandbox_create_cli_creates_worktree_and_branch_exits_zero(
         self, cli_runner: CliRunner, sandbox_workspace: Path, dispatch_spy: list[Any]
     ) -> None:
-        """wt sandbox create --name demo creates the worktree dir and branch, exits 0, and dispatches the exact SandboxCreateResult DTO."""
+        """dovo sandbox create --name demo creates the worktree dir and branch, exits 0, and dispatches the exact SandboxCreateResult DTO."""
         result = cli_runner.invoke(
             app,
             ["-p", str(sandbox_workspace), "sandbox", "create", "--name", "demo"],
@@ -28,7 +28,7 @@ class SandboxCreateCliIntegrationTests:
         assert result.exit_code == 0
         assert "Sandbox created:" in result.stdout
 
-        sandbox_dirs = list((sandbox_workspace / ".worktree" / "sandboxes").iterdir())
+        sandbox_dirs = list((sandbox_workspace / ".dovo" / "sandboxes").iterdir())
         assert len(sandbox_dirs) == 1
         session_id = sandbox_dirs[0].name
         assert sandbox_dirs[0].is_dir()
@@ -51,7 +51,7 @@ class SandboxCreateCliIntegrationTests:
     def test_sandbox_create_cli_capacity_exceeded_exits_one(
         self, cli_runner: CliRunner, sandbox_workspace: Path, dispatch_spy: list[Any]
     ) -> None:
-        """A 4th wt sandbox create beyond the default limit of 3 exits 1 and dispatches the exact CAPACITY_EXCEEDED DTO."""
+        """A 4th dovo sandbox create beyond the default limit of 3 exits 1 and dispatches the exact CAPACITY_EXCEEDED DTO."""
         for _ in range(3):
             create_result = cli_runner.invoke(app, ["-p", str(sandbox_workspace), "sandbox", "create"])
             assert create_result.exit_code == 0
@@ -68,7 +68,7 @@ class SandboxCreateCliIntegrationTests:
         assert len(payload.fixes) > 0
 
     def test_sandbox_create_cli_renders_json(self, cli_runner: CliRunner, sandbox_workspace: Path) -> None:
-        """wt sandbox create --name demo --format json emits a SandboxCreateResult envelope."""
+        """dovo sandbox create --name demo --format json emits a SandboxCreateResult envelope."""
         result = cli_runner.invoke(
             app,
             ["-p", str(sandbox_workspace), "sandbox", "create", "--name", "demo", "--format", "json"],
@@ -106,7 +106,7 @@ class SandboxCreateCliIntegrationTests:
     def test_sandbox_create_cli_with_wip_flag_overlays_and_exits_zero(
         self, cli_runner: CliRunner, sandbox_workspace: Path, dispatch_spy: list[Any]
     ) -> None:
-        """wt sandbox create --wip binds the flag and dispatches SandboxCreateResult with wip_applied=True."""
+        """dovo sandbox create --wip binds the flag and dispatches SandboxCreateResult with wip_applied=True."""
         (sandbox_workspace / "dirty.txt").write_text("uncommitted\n", encoding="utf-8")
 
         result = cli_runner.invoke(
@@ -127,7 +127,7 @@ class SandboxCreateCliIntegrationTests:
     def test_sandbox_create_cli_with_base_ref_option_branches_from_specified_target(
         self, cli_runner: CliRunner, sandbox_workspace: Path, dispatch_spy: list[Any]
     ) -> None:
-        """wt sandbox create --base-ref binds the option and creates a sandbox branching from the specified ref."""
+        """dovo sandbox create --base-ref binds the option and creates a sandbox branching from the specified ref."""
         (sandbox_workspace / "first.txt").write_text("first commit\n", encoding="utf-8")
         GitRunner.add_all(sandbox_workspace)
         GitRunner.commit(sandbox_workspace, "Add first.txt")

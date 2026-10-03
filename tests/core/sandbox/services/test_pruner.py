@@ -9,23 +9,23 @@ from unittest.mock import patch
 
 import pytest
 
-from tests.harness import WorkspaceBuilder
-from worktree.common.filesystem import WorkspacePaths
-from worktree.common.filesystem.models import RepositoryPaths
-from worktree.common.filesystem.services.global_root import resolve_global_paths
-from worktree.common.lock import LockTimeoutError
-from worktree.core.db import SandboxesRepository, SandboxStatus
-from worktree.core.git.runner import GitRunner
-from worktree.core.project.services.storage import resolve_workspace_paths
-from worktree.core.sandbox import Sandbox
-from worktree.core.sandbox.models import (
+from dovo.common.filesystem import WorkspacePaths
+from dovo.common.filesystem.models import RepositoryPaths
+from dovo.common.filesystem.services.global_root import resolve_global_paths
+from dovo.common.lock import LockTimeoutError
+from dovo.core.db import SandboxesRepository, SandboxStatus
+from dovo.core.git.runner import GitRunner
+from dovo.core.project.services.storage import resolve_workspace_paths
+from dovo.core.sandbox import Sandbox
+from dovo.core.sandbox.models import (
     PruneAction,
     SandboxDetectionResult,
     SandboxDetectionStatus,
     SandboxPruneStatus,
     StaleSandboxCategory,
 )
-from worktree.core.sandbox.services.pruner import SandboxPruner, prune_stale_sandboxes
+from dovo.core.sandbox.services.pruner import SandboxPruner, prune_stale_sandboxes
+from tests.harness import WorkspaceBuilder
 
 
 @pytest.fixture
@@ -70,7 +70,7 @@ class SandboxPrunerBaselineTests:
     ) -> None:
         """Dry-run reports planned actions across categories without mutating disk, DB, or git."""
         db = _repo(pruner_workspace_paths)
-        sandboxes_dir = pruner_workspace / ".worktree" / "sandboxes"
+        sandboxes_dir = pruner_workspace / ".dovo" / "sandboxes"
         sandboxes_dir.mkdir(parents=True, exist_ok=True)
 
         clean_dir = sandboxes_dir / "sbx_clean"
@@ -155,7 +155,7 @@ class SandboxPrunerSafetyTests:
     ) -> None:
         """Dirty orphan directory must be preserved with SKIPPED status when force=False."""
         db = _repo(pruner_workspace_paths)
-        sandboxes_dir = pruner_workspace / ".worktree" / "sandboxes"
+        sandboxes_dir = pruner_workspace / ".dovo" / "sandboxes"
         sandboxes_dir.mkdir(parents=True, exist_ok=True)
 
         dirty_dir = sandboxes_dir / "sbx_dirty_orphan"
@@ -189,7 +189,7 @@ class SandboxPrunerSafetyTests:
     ) -> None:
         """Dirty orphan directory must be removed when force=True."""
         db = _repo(pruner_workspace_paths)
-        sandboxes_dir = pruner_workspace / ".worktree" / "sandboxes"
+        sandboxes_dir = pruner_workspace / ".dovo" / "sandboxes"
         sandboxes_dir.mkdir(parents=True, exist_ok=True)
 
         dirty_dir = sandboxes_dir / "sbx_dirty_forced"
@@ -222,7 +222,7 @@ class SandboxPrunerSafetyTests:
     ) -> None:
         """Clean orphan directory must be deleted even with force=False."""
         db = _repo(pruner_workspace_paths)
-        sandboxes_dir = pruner_workspace / ".worktree" / "sandboxes"
+        sandboxes_dir = pruner_workspace / ".dovo" / "sandboxes"
         sandboxes_dir.mkdir(parents=True, exist_ok=True)
 
         clean_dir = sandboxes_dir / "sbx_clean_orphan"
@@ -250,7 +250,7 @@ class SandboxPrunerCategoryTests:
     def test_stale_worktree_ref_is_pruned(self, pruner_workspace: Path, pruner_workspace_paths: WorkspacePaths) -> None:
         """Stale worktree administrative entries should be pruned."""
         db = _repo(pruner_workspace_paths)
-        target = pruner_workspace / ".worktree" / "sandboxes" / "sbx_stale_wt"
+        target = pruner_workspace / ".dovo" / "sandboxes" / "sbx_stale_wt"
         GitRunner.worktree_add(
             pruner_workspace,
             target_path=target,
@@ -287,7 +287,7 @@ class SandboxPrunerCategoryTests:
     ) -> None:
         """Active DB records with missing paths must be updated to CLEANED."""
         db = _repo(pruner_workspace_paths)
-        missing_path = pruner_workspace / ".worktree" / "sandboxes" / "sbx_db_stale"
+        missing_path = pruner_workspace / ".dovo" / "sandboxes" / "sbx_db_stale"
         db.create(
             id="sbx_db_stale",
             branch_name="worktree/sandbox-sbx_db_stale",
@@ -356,7 +356,7 @@ class SandboxPrunerIdempotencyTests:
     ) -> None:
         """Pruning multiple categories followed by a second run must be clean and idempotent."""
         db = _repo(pruner_workspace_paths)
-        sandboxes_dir = pruner_workspace / ".worktree" / "sandboxes"
+        sandboxes_dir = pruner_workspace / ".dovo" / "sandboxes"
         sandboxes_dir.mkdir(parents=True, exist_ok=True)
 
         dir1 = sandboxes_dir / "sbx_c1"
@@ -473,7 +473,7 @@ class SandboxPrunerFailureTests:
         pruner = SandboxPruner(pruner_workspace, db)
 
         with patch(
-            "worktree.core.sandbox.services.pruner.WorkspaceLock.__enter__",
+            "dovo.core.sandbox.services.pruner.WorkspaceLock.__enter__",
             side_effect=LockTimeoutError("Locked"),
         ):
             result = pruner.prune()

@@ -4,7 +4,7 @@ import socket
 
 import pytest
 
-from worktree.common.schema_validation import PROJECT_VALIDATOR
+from dovo.common.schema_validation import PROJECT_VALIDATOR
 
 
 class ProjectSchemaTests:
@@ -19,7 +19,7 @@ class ProjectSchemaTests:
         result = PROJECT_VALIDATOR.validate(
             {
                 "id": "project-623",
-                "display_name": "Worktree CLI",
+                "display_name": "Dovo CLI",
                 "created_at": "2026-01-02T03:04:05Z",
             }
         )

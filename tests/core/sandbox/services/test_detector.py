@@ -8,20 +8,20 @@ from unittest.mock import patch
 
 import pytest
 
-from tests.harness import WorkspaceBuilder
-from worktree.common.filesystem import WorkspacePaths
-from worktree.common.filesystem.models import RepositoryPaths
-from worktree.common.filesystem.services.global_root import resolve_global_paths
-from worktree.core.db import SandboxesRepository, SandboxStatus
-from worktree.core.git.exceptions import GitCommandError
-from worktree.core.git.runner import GitRunner
-from worktree.core.project.services.storage import resolve_workspace_paths
-from worktree.core.sandbox import Sandbox
-from worktree.core.sandbox.models import (
+from dovo.common.filesystem import WorkspacePaths
+from dovo.common.filesystem.models import RepositoryPaths
+from dovo.common.filesystem.services.global_root import resolve_global_paths
+from dovo.core.db import SandboxesRepository, SandboxStatus
+from dovo.core.git.exceptions import GitCommandError
+from dovo.core.git.runner import GitRunner
+from dovo.core.project.services.storage import resolve_workspace_paths
+from dovo.core.sandbox import Sandbox
+from dovo.core.sandbox.models import (
     SandboxDetectionStatus,
     StaleSandboxCategory,
 )
-from worktree.core.sandbox.services.detector import SandboxDetector, detect_stale_sandboxes
+from dovo.core.sandbox.services.detector import SandboxDetector, detect_stale_sandboxes
+from tests.harness import WorkspaceBuilder
 
 
 @pytest.fixture
@@ -92,7 +92,7 @@ class SandboxDetectorCategoryTests:
     ) -> None:
         """Stale worktree administrative entries and their unattached branches should be detected."""
         db = _repo(detector_workspace_paths)
-        target = detector_workspace / ".worktree" / "sandboxes" / "sbx_wt1"
+        target = detector_workspace / ".dovo" / "sandboxes" / "sbx_wt1"
         GitRunner.worktree_add(
             detector_workspace,
             target_path=target,
@@ -130,7 +130,7 @@ class SandboxDetectorCategoryTests:
     ) -> None:
         """Orphaned directories should be classified with their dirty state and DB reconciliation reason."""
         db = _repo(detector_workspace_paths)
-        sandboxes_dir = detector_workspace / ".worktree" / "sandboxes"
+        sandboxes_dir = detector_workspace / ".dovo" / "sandboxes"
         sandboxes_dir.mkdir(parents=True, exist_ok=True)
 
         clean_dir = sandboxes_dir / "sbx_clean"
@@ -188,7 +188,7 @@ class SandboxDetectorCategoryTests:
     ) -> None:
         """Active database records with missing sandbox directories should be detected."""
         db = _repo(detector_workspace_paths)
-        missing_path = detector_workspace / ".worktree" / "sandboxes" / "sbx_missing"
+        missing_path = detector_workspace / ".dovo" / "sandboxes" / "sbx_missing"
         db.create(
             id="sbx_missing",
             branch_name="worktree/sandbox-sbx_missing",

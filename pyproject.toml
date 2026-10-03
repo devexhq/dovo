@@ -1,5 +1,5 @@
 [project]
-name = "worktree-cli"
+name = "devexhq-dovo"
 dynamic = ["version"]
 authors = [
     { name = "DevEx HQ Team", email = "team@devexhq.com" }
@@ -51,15 +51,15 @@ cursor = [
 ]
 
 [project.scripts]
-wt = "worktree.cli.cli:app"
+dovo = "dovo.cli.cli:app"
 
 [build-system]
 requires = ["hatchling", "hatch-vcs"]
 build-backend = "hatchling.build"
 
-# Installable import package lives at src/worktree (src-layout).
+# Installable import package lives at src/dovo (src-layout).
 [tool.hatch.build.targets.wheel]
-packages = ["src/worktree"]
+packages = ["src/dovo"]
 # Editable: add src/ to sys.path via .pth only (avoid copying into site-packages).
 dev-mode-dirs = ["src"]
 
@@ -93,7 +93,7 @@ COLUMNS = "160"
 PYTHONIOENCODING = "utf-8"
 
 [tool.coverage.run]
-source = ["worktree"]
+source = ["dovo"]
 branch = true
 
 [tool.coverage.report]
@@ -106,7 +106,7 @@ target-version = "py313"
 line-length = 120
 exclude = [
     ".git",
-    ".worktree",
+    ".dovo",
     "__pycache__",
     "build",
     "dist",
@@ -136,7 +136,7 @@ ban-relative-imports = "parents"
 
 [tool.ruff.lint.flake8-tidy-imports.banned-api]
 "typing.cast".msg = "Do not use cast() to silence the type checker; fix the type or model properly."
-"rich".msg = "Direct 'rich' imports are prohibited outside of 'src/worktree/cli/ui/'."
+"rich".msg = "Direct 'rich' imports are prohibited outside of 'src/dovo/cli/ui/'."
 "typer.echo".msg = "Direct console output via typer.echo is prohibited. Route output through ui_dispatcher.dispatch()."
 "typer.secho".msg = "Direct console output via typer.secho is prohibited. Route output through ui_dispatcher.dispatch()."
 "click.echo".msg = "Direct console output via click.echo is prohibited. Route output through ui_dispatcher.dispatch()."
@@ -150,47 +150,47 @@ max-args = 5
 "tests/*" = ["D", "T201", "T203", "TID251", "S101", "SLF001", "PLR0913", "PLC0415"]
 "tasks.py" = ["T201", "PLR0913"]
 "scripts/*" = ["PLR0913"]
-"src/worktree/cli/ui/**" = ["TID251"]
-"src/worktree/cli/ui/dispatcher.py" = ["TID251", "T201", "PLC0415"]
-"src/worktree/cli/run/observer.py" = ["TID251"]
+"src/dovo/cli/ui/**" = ["TID251"]
+"src/dovo/cli/ui/dispatcher.py" = ["TID251", "T201", "PLC0415"]
+"src/dovo/cli/run/observer.py" = ["TID251"]
 
 # Legacy exceptions scoped for follow-up refactoring:
-"src/worktree/cli/cli.py" = ["SLF001"]
-"src/worktree/cli/context.py" = ["SLF001"]
-"src/worktree/cli/run/app.py" = ["SLF001", "PLR0913"]
-"src/worktree/core/db/db.py" = ["SLF001"]
-"src/worktree/engine/engine.py" = ["PLR0913"]
-"src/worktree/engine/session.py" = ["PLR0913"]
-"src/worktree/cli/diff/commands/root.py" = ["PLR0913"]
-"src/worktree/cli/init/app.py" = ["PLR0913"]
-"src/worktree/cli/init/commands/root.py" = ["PLR0913"]
-"src/worktree/cli/logs/app.py" = ["PLR0913"]
-"src/worktree/cli/logs/commands/show.py" = ["PLR0913"]
-"src/worktree/cli/run/commands/root.py" = ["PLR0913"]
-"src/worktree/cli/sandbox/app.py" = ["PLR0913"]
-"src/worktree/cli/sandbox/commands/sandbox_apply.py" = ["PLR0913"]
-"src/worktree/cli/ui/formatters/common.py" = ["PLR0913"]
-"src/worktree/common/process.py" = ["PLR0913"]
-"src/worktree/core/bootstrap/services/initialize.py" = ["PLR0913"]
-"src/worktree/core/db/repositories/*.py" = ["PLR0913"]
-"src/worktree/engine/step_coordinator.py" = ["PLR0913"]
-"src/worktree/core/sandbox/facade.py" = ["PLR0913"]
-"src/worktree/core/sandbox/services/patch.py" = ["PLR0913"]
-"src/worktree/engine/executors/**/*.py" = ["PLR0913"]
-"src/worktree/core/artifacts/**/*.py" = ["PLR0913"]
-"src/worktree/core/config/facade.py" = ["PLC0415"]
-"src/worktree/core/config/validate.py" = ["PLC0415"]
-"src/worktree/core/status/facade.py" = ["PLC0415"]
-"src/worktree/core/agents/cursor.py" = ["PLC0415"]
-"src/worktree/core/history/services/reconcile.py" = ["PLC0415"]
-"src/worktree/core/db/alembic/env.py" = ["PLC0415"]
-"src/worktree/core/catalog/services/inventory.py" = ["TID251"]
-"src/worktree/core/catalog/services/validate.py" = ["PLR0913"]
-"src/worktree/common/types.py" = ["TID251"]
+"src/dovo/cli/cli.py" = ["SLF001"]
+"src/dovo/cli/context.py" = ["SLF001"]
+"src/dovo/cli/run/app.py" = ["SLF001", "PLR0913"]
+"src/dovo/core/db/db.py" = ["SLF001"]
+"src/dovo/engine/engine.py" = ["PLR0913"]
+"src/dovo/engine/session.py" = ["PLR0913"]
+"src/dovo/cli/diff/commands/root.py" = ["PLR0913"]
+"src/dovo/cli/init/app.py" = ["PLR0913"]
+"src/dovo/cli/init/commands/root.py" = ["PLR0913"]
+"src/dovo/cli/logs/app.py" = ["PLR0913"]
+"src/dovo/cli/logs/commands/show.py" = ["PLR0913"]
+"src/dovo/cli/run/commands/root.py" = ["PLR0913"]
+"src/dovo/cli/sandbox/app.py" = ["PLR0913"]
+"src/dovo/cli/sandbox/commands/sandbox_apply.py" = ["PLR0913"]
+"src/dovo/cli/ui/formatters/common.py" = ["PLR0913"]
+"src/dovo/common/process.py" = ["PLR0913"]
+"src/dovo/core/bootstrap/services/initialize.py" = ["PLR0913"]
+"src/dovo/core/db/repositories/*.py" = ["PLR0913"]
+"src/dovo/engine/step_coordinator.py" = ["PLR0913"]
+"src/dovo/core/sandbox/facade.py" = ["PLR0913"]
+"src/dovo/core/sandbox/services/patch.py" = ["PLR0913"]
+"src/dovo/engine/executors/**/*.py" = ["PLR0913"]
+"src/dovo/core/artifacts/**/*.py" = ["PLR0913"]
+"src/dovo/core/config/facade.py" = ["PLC0415"]
+"src/dovo/core/config/validate.py" = ["PLC0415"]
+"src/dovo/core/status/facade.py" = ["PLC0415"]
+"src/dovo/core/agents/cursor.py" = ["PLC0415"]
+"src/dovo/core/history/services/reconcile.py" = ["PLC0415"]
+"src/dovo/core/db/alembic/env.py" = ["PLC0415"]
+"src/dovo/core/catalog/services/inventory.py" = ["TID251"]
+"src/dovo/core/catalog/services/validate.py" = ["PLR0913"]
+"src/dovo/common/types.py" = ["TID251"]
 
 [tool.ruff.lint.isort]
 combine-as-imports = true
-known-first-party = ["worktree"]
+known-first-party = ["dovo"]
 split-on-trailing-comma = true
 
 [tool.ruff.lint.pydocstyle]

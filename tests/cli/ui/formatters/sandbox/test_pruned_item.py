@@ -7,18 +7,18 @@ from typing import Any
 
 import pytest
 
+from dovo.cli.ui.formatters.sandbox.pruned_item import PrunedItemFormatter
+from dovo.cli.ui.formatters.sandbox.sandbox_views import PrunedItemView
+from dovo.core.sandbox.models import (
+    PruneAction,
+    PrunedItem,
+    StaleSandboxCategory,
+)
 from tests.harness.formatter import (
     FormatterCase,
     assert_json_payload_matches_published_shape,
     assert_rich_render_shows_every_view_value,
     assert_transform_derives_expected_view,
-)
-from worktree.cli.ui.formatters.sandbox.pruned_item import PrunedItemFormatter
-from worktree.cli.ui.formatters.sandbox.sandbox_views import PrunedItemView
-from worktree.core.sandbox.models import (
-    PruneAction,
-    PrunedItem,
-    StaleSandboxCategory,
 )
 
 DRY_RUN_STALE_BRANCH = FormatterCase(

@@ -27,8 +27,8 @@ dist/
 wheels/
 *.egg
 
-# Local runtime state (wt)
-.worktree/
+# Local runtime state (dovo)
+.dovo/
 
 # Secrets / local env
 .env

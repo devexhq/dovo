@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from worktree.common.filesystem.services.global_root import resolve_global_paths
-from worktree.core.db.connection import resolve_db_path
+from dovo.common.filesystem.services.global_root import resolve_global_paths
+from dovo.core.db.connection import resolve_db_path
 
 
 class ConnectionTests:
@@ -17,7 +17,7 @@ class ConnectionTests:
 
         result = resolve_db_path(global_paths)
 
-        assert result == tmp_path.resolve() / "data" / "worktree.db"
+        assert result == tmp_path.resolve() / "data" / "dovo.db"
 
     def test_resolve_db_path_accepts_custom_filename(self, tmp_path: Path) -> None:
         """[tier-1/unit] resolve_db_path: an explicit db_filename overrides the default filename."""

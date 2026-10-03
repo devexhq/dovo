@@ -325,6 +325,71 @@ wheels = [
 ]
 
 [[package]]
+name = "devexhq-dovo"
+source = { editable = "." }
+dependencies = [
+    { name = "alembic" },
+    { name = "jsonschema" },
+    { name = "pre-commit" },
+    { name = "pydantic" },
+    { name = "pyyaml" },
+    { name = "sqlmodel" },
+    { name = "typer" },
+]
+
+[package.optional-dependencies]
+cursor = [
+    { name = "cursor-sdk" },
+]
+dev = [
+    { name = "basedpyright" },
+    { name = "complexipy" },
+    { name = "freezegun" },
+    { name = "invoke" },
+    { name = "pytest" },
+    { name = "pytest-cov" },
+    { name = "pytest-env" },
+    { name = "pytest-xdist" },
+    { name = "ruff" },
+]
+docs = [
+    { name = "mkdocs" },
+    { name = "mkdocs-material" },
+]
+
+[package.dev-dependencies]
+dev = [
+    { name = "basedpyright" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "alembic", specifier = ">=1.13.0" },
+    { name = "basedpyright", marker = "extra == 'dev'", specifier = ">=1.39.10" },
+    { name = "complexipy", marker = "extra == 'dev'", specifier = ">=6.2.0" },
+    { name = "cursor-sdk", marker = "extra == 'cursor'", specifier = ">=1.0.26,<2" },
+    { name = "freezegun", marker = "extra == 'dev'", specifier = ">=1.5.5" },
+    { name = "invoke", marker = "extra == 'dev'", specifier = ">=2.0.0" },
+    { name = "jsonschema", specifier = ">=4.0.0" },
+    { name = "mkdocs", marker = "extra == 'docs'", specifier = ">=1.5.0" },
+    { name = "mkdocs-material", marker = "extra == 'docs'", specifier = ">=9.5.0" },
+    { name = "pre-commit", specifier = ">=4.6.2" },
+    { name = "pydantic", specifier = ">=2.0.0" },
+    { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0.0" },
+    { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=4.0.0" },
+    { name = "pytest-env", marker = "extra == 'dev'", specifier = ">=1.1.0" },
+    { name = "pytest-xdist", marker = "extra == 'dev'", specifier = ">=3.5.0" },
+    { name = "pyyaml", specifier = ">=6.0.0" },
+    { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.6.0" },
+    { name = "sqlmodel", specifier = ">=0.0.22" },
+    { name = "typer", specifier = ">=0.9.0" },
+]
+provides-extras = ["cursor", "dev", "docs"]
+
+[package.metadata.requires-dev]
+dev = [{ name = "basedpyright", specifier = ">=1.39.10" }]
+
+[[package]]
 name = "distlib"
 version = "0.4.3"
 source = { registry = "https://pypi.org/simple" }
@@ -1345,68 +1410,3 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/db/d9/c495884c6e548fce18a8f40568ff120bc3a4b7b99813081c8ac0c936fa64/watchdog-6.0.0-py3-none-win_amd64.whl", hash = "sha256:cbafb470cf848d93b5d013e2ecb245d4aa1c8fd0504e863ccefa32445359d680", size = 79070, upload-time = "2024-11-01T14:07:10.686Z" },
     { url = "https://files.pythonhosted.org/packages/33/e8/e40370e6d74ddba47f002a32919d91310d6074130fe4e17dabcafc15cbf1/watchdog-6.0.0-py3-none-win_ia64.whl", hash = "sha256:a1914259fa9e1454315171103c6a30961236f508b9b623eae470268bbcc6a22f", size = 79067, upload-time = "2024-11-01T14:07:11.845Z" },
 ]
-
-[[package]]
-name = "worktree-cli"
-source = { editable = "." }
-dependencies = [
-    { name = "alembic" },
-    { name = "jsonschema" },
-    { name = "pre-commit" },
-    { name = "pydantic" },
-    { name = "pyyaml" },
-    { name = "sqlmodel" },
-    { name = "typer" },
-]
-
-[package.optional-dependencies]
-cursor = [
-    { name = "cursor-sdk" },
-]
-dev = [
-    { name = "basedpyright" },
-    { name = "complexipy" },
-    { name = "freezegun" },
-    { name = "invoke" },
-    { name = "pytest" },
-    { name = "pytest-cov" },
-    { name = "pytest-env" },
-    { name = "pytest-xdist" },
-    { name = "ruff" },
-]
-docs = [
-    { name = "mkdocs" },
-    { name = "mkdocs-material" },
-]
-
-[package.dev-dependencies]
-dev = [
-    { name = "basedpyright" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "alembic", specifier = ">=1.13.0" },
-    { name = "basedpyright", marker = "extra == 'dev'", specifier = ">=1.39.10" },
-    { name = "complexipy", marker = "extra == 'dev'", specifier = ">=6.2.0" },
-    { name = "cursor-sdk", marker = "extra == 'cursor'", specifier = ">=1.0.26,<2" },
-    { name = "freezegun", marker = "extra == 'dev'", specifier = ">=1.5.5" },
-    { name = "invoke", marker = "extra == 'dev'", specifier = ">=2.0.0" },
-    { name = "jsonschema", specifier = ">=4.0.0" },
-    { name = "mkdocs", marker = "extra == 'docs'", specifier = ">=1.5.0" },
-    { name = "mkdocs-material", marker = "extra == 'docs'", specifier = ">=9.5.0" },
-    { name = "pre-commit", specifier = ">=4.6.2" },
-    { name = "pydantic", specifier = ">=2.0.0" },
-    { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0.0" },
-    { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=4.0.0" },
-    { name = "pytest-env", marker = "extra == 'dev'", specifier = ">=1.1.0" },
-    { name = "pytest-xdist", marker = "extra == 'dev'", specifier = ">=3.5.0" },
-    { name = "pyyaml", specifier = ">=6.0.0" },
-    { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.6.0" },
-    { name = "sqlmodel", specifier = ">=0.0.22" },
-    { name = "typer", specifier = ">=0.9.0" },
-]
-provides-extras = ["cursor", "dev", "docs"]
-
-[package.metadata.requires-dev]
-dev = [{ name = "basedpyright", specifier = ">=1.39.10" }]

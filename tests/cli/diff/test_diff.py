@@ -1,4 +1,4 @@
-"""Single-tier CLI integration tests for wt diff."""
+"""Single-tier CLI integration tests for dovo diff."""
 
 from __future__ import annotations
 
@@ -9,13 +9,13 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
-from worktree.cli import app
-from worktree.common.filesystem.models import RepositoryPaths, WorkspacePaths
-from worktree.common.filesystem.services.global_root import resolve_global_paths
-from worktree.core.diff.writer import get_session_dir, write_session_diff
-from worktree.core.project.models import ProjectIdentity
-from worktree.core.project.services.identity import save_project_identity
-from worktree.core.project.services.storage import resolve_workspace_paths
+from dovo.cli import app
+from dovo.common.filesystem.models import RepositoryPaths, WorkspacePaths
+from dovo.common.filesystem.services.global_root import resolve_global_paths
+from dovo.core.diff.writer import get_session_dir, write_session_diff
+from dovo.core.project.models import ProjectIdentity
+from dovo.core.project.services.identity import save_project_identity
+from dovo.core.project.services.storage import resolve_workspace_paths
 
 
 def _paths_for(root: Path) -> WorkspacePaths:
@@ -35,14 +35,14 @@ _PATCH_TEXT = (
 
 
 def _write_session_diff(diff_workspace: Path, session_id: str) -> Path:
-    """Write a real unified-diff patch file directly under .worktree/sessions/<id>/diff.patch.
+    """Write a real unified-diff patch file directly under .dovo/sessions/<id>/diff.patch.
 
     diff_workspace is built via WorkspaceBuilder.with_database(), which now persists a project
     identity; remove it so session storage resolves to this local path rather than global
     per-project storage (see resolve_workspace_paths).
     """
-    (diff_workspace / ".worktree" / "project.json").unlink(missing_ok=True)
-    session_dir = diff_workspace / ".worktree" / "sessions" / session_id
+    (diff_workspace / ".dovo" / "project.json").unlink(missing_ok=True)
+    session_dir = diff_workspace / ".dovo" / "sessions" / session_id
     session_dir.mkdir(parents=True, exist_ok=True)
     patch_path = session_dir / "diff.patch"
     patch_path.write_text(_PATCH_TEXT, encoding="utf-8")
@@ -52,16 +52,16 @@ def _write_session_diff(diff_workspace: Path, session_id: str) -> Path:
 def _write_global_session_diff(diff_workspace: Path, session_id: str) -> Path:
     """Persist an identified project's patch in selected global session storage."""
     identity = ProjectIdentity(id="project-626", created_at=datetime(2026, 1, 1, tzinfo=UTC))
-    save_project_identity(diff_workspace / ".worktree" / "project.json", identity)
+    save_project_identity(diff_workspace / ".dovo" / "project.json", identity)
     session_dir = get_session_dir(_paths_for(diff_workspace), session_id)
     return write_session_diff(session_dir, _PATCH_TEXT)
 
 
 class DiffCliIntegrationTests:
-    """Typer runner integration tests for wt diff."""
+    """Typer runner integration tests for dovo diff."""
 
     def test_diff_cli_known_session_renders_patch_exits_zero(self, cli_runner: CliRunner, diff_workspace: Path) -> None:
-        """wt diff <session_id>: reads diff.patch off disk, exit 0, patch content in stdout."""
+        """dovo diff <session_id>: reads diff.patch off disk, exit 0, patch content in stdout."""
         _write_session_diff(diff_workspace, "sess-diff-1")
 
         result = cli_runner.invoke(app, ["-p", str(diff_workspace), "diff", "sess-diff-1"])
@@ -72,14 +72,14 @@ class DiffCliIntegrationTests:
         assert "+new line" in result.stdout
 
     def test_diff_cli_unknown_session_exits_one(self, cli_runner: CliRunner, diff_workspace: Path) -> None:
-        """wt diff <unknown-id>: exit 1, 'not found under .worktree/sessions' in stdout."""
+        """dovo diff <unknown-id>: exit 1, 'not found under .dovo/sessions' in stdout."""
         result = cli_runner.invoke(app, ["-p", str(diff_workspace), "diff", "unknown-session"])
 
         assert result.exit_code == 1
-        assert "not found under .worktree/sessions" in result.stdout
+        assert "not found under .dovo/sessions" in result.stdout
 
     def test_diff_cli_json_emits_literal_wire_payload(self, cli_runner: CliRunner, diff_workspace: Path) -> None:
-        """wt diff <session_id> --format json: stdout equals the literal DiffResultView envelope."""
+        """dovo diff <session_id> --format json: stdout equals the literal DiffResultView envelope."""
         patch_path = _write_session_diff(diff_workspace, "sess-diff-1")
 
         result = cli_runner.invoke(app, ["-p", str(diff_workspace), "diff", "sess-diff-1", "--format", "json"])
@@ -110,7 +110,7 @@ class DiffCliIntegrationTests:
     ) -> None:
         """An identified project presents the patch persisted in global storage."""
         global_root = tmp_path / "global"
-        monkeypatch.setenv("WORKTREE_HOME", str(global_root))
+        monkeypatch.setenv("DOVO_HOME", str(global_root))
         _write_global_session_diff(diff_workspace, "session-626")
 
         result = cli_runner.invoke(app, ["-p", str(diff_workspace), "diff", "session-626"])
@@ -124,7 +124,7 @@ class DiffCliIntegrationTests:
     ) -> None:
         """JSON output exposes the exact global patch path and patch body."""
         global_root = tmp_path / "global"
-        monkeypatch.setenv("WORKTREE_HOME", str(global_root))
+        monkeypatch.setenv("DOVO_HOME", str(global_root))
         patch_path = _write_global_session_diff(diff_workspace, "session-626")
 
         result = cli_runner.invoke(app, ["-p", str(diff_workspace), "diff", "session-626", "--format", "json"])

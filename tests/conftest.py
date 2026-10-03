@@ -11,23 +11,23 @@ from typing import Any
 import pytest
 from typer.testing import CliRunner
 
-from worktree.common.constants import REQUIRED_SUBDIRS
-from worktree.common.filesystem.models import RepositoryPaths, WorkspacePaths
-from worktree.common.filesystem.services.global_root import resolve_global_paths
-from worktree.core.config.models import ConfigTier
-from worktree.core.project.services.identity import generate_project_identity, save_project_identity
-from worktree.core.project.services.storage import resolve_workspace_paths
+from dovo.common.constants import REQUIRED_SUBDIRS
+from dovo.common.filesystem.models import RepositoryPaths, WorkspacePaths
+from dovo.common.filesystem.services.global_root import resolve_global_paths
+from dovo.core.config.models import ConfigTier
+from dovo.core.project.services.identity import generate_project_identity, save_project_identity
+from dovo.core.project.services.storage import resolve_workspace_paths
 
 
 @pytest.fixture(autouse=True)
-def _isolated_worktree_home(tmp_path_factory: pytest.TempPathFactory, monkeypatch: pytest.MonkeyPatch) -> None:
-    """Redirect WORKTREE_HOME to an ephemeral per-test directory.
+def _isolated_dovo_home(tmp_path_factory: pytest.TempPathFactory, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Redirect DOVO_HOME to an ephemeral per-test directory.
 
     The centralized database and other global-path resolution default to
-    WORKTREE_HOME (or ~/.worktree). Without this override every test would
-    read and write the real machine's global Worktree directory.
+    DOVO_HOME (or ~/.dovo). Without this override every test would
+    read and write the real machine's global Dovo directory.
     """
-    monkeypatch.setenv("WORKTREE_HOME", str(tmp_path_factory.mktemp("worktree_home")))
+    monkeypatch.setenv("DOVO_HOME", str(tmp_path_factory.mktemp("dovo_home")))
 
 
 @pytest.fixture
@@ -42,25 +42,25 @@ def workspace_paths_factory() -> Callable[[Path, Path | None], WorkspacePaths]:
 
 @pytest.fixture
 def isolated_workspace(tmp_path: Path) -> Path:
-    """Create a clean filesystem root with standard .worktree/ structure.
+    """Create a clean filesystem root with standard .dovo/ structure.
 
     Args:
         tmp_path: Ephemeral pytest directory fixture.
 
     Returns:
-        Path to the isolated workspace root containing .worktree/.
+        Path to the isolated workspace root containing .dovo/.
     """
     workspace = tmp_path / "workspace"
-    dot_worktree = workspace / ".worktree"
-    dot_worktree.mkdir(parents=True, exist_ok=True)
+    dot_dovo = workspace / ".dovo"
+    dot_dovo.mkdir(parents=True, exist_ok=True)
 
     for subdir in REQUIRED_SUBDIRS:
-        (dot_worktree / subdir).mkdir(parents=True, exist_ok=True)
+        (dot_dovo / subdir).mkdir(parents=True, exist_ok=True)
 
-    (dot_worktree / "sandboxes").mkdir(parents=True, exist_ok=True)
-    (dot_worktree / "catalog").mkdir(parents=True, exist_ok=True)
+    (dot_dovo / "sandboxes").mkdir(parents=True, exist_ok=True)
+    (dot_dovo / "catalog").mkdir(parents=True, exist_ok=True)
 
-    save_project_identity(dot_worktree / "project.json", generate_project_identity())
+    save_project_identity(dot_dovo / "project.json", generate_project_identity())
 
     return workspace
 
@@ -131,7 +131,7 @@ def git_repo(tmp_path: Path) -> Path:
 
 @pytest.fixture
 def write_tier_config() -> Callable[[ConfigTier, dict[str, Any] | str], Path]:
-    """Write a Global or User tier config.json under the test's isolated WORKTREE_HOME; returns its path."""
+    """Write a Global or User tier config.json under the test's isolated DOVO_HOME; returns its path."""
 
     def _write(tier: ConfigTier, payload: dict[str, Any] | str) -> Path:
         global_paths = resolve_global_paths(None)

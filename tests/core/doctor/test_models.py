@@ -1,4 +1,4 @@
-"""Unit tests for worktree.core.doctor.models."""
+"""Unit tests for dovo.core.doctor.models."""
 
 from collections.abc import Callable
 from pathlib import Path
@@ -6,9 +6,9 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
-from worktree.common.filesystem import WorkspacePaths
-from worktree.core.config.models import ProjectConfig, WorktreeConfig
-from worktree.core.doctor.models import (
+from dovo.common.filesystem import WorkspacePaths
+from dovo.core.config.models import DovoConfig, ProjectConfig
+from dovo.core.doctor.models import (
     CheckCategory,
     CheckStatus,
     DiagnosticCheck,
@@ -100,8 +100,8 @@ class DoctorModelsTests:
             DoctorContext.model_validate({"cwd": str(tmp_path), "paths": paths, "unknown_field": "disallowed"})
 
     def test_doctor_context_with_config(self, tmp_path: Path, workspace_paths_factory: WorkspacePathsFactory) -> None:
-        """[tier-1/unit] DoctorContext: correctly holds WorktreeConfig when provided."""
-        config = WorktreeConfig(version=1, project=ProjectConfig(name="test-project"))
+        """[tier-1/unit] DoctorContext: correctly holds DovoConfig when provided."""
+        config = DovoConfig(version=1, project=ProjectConfig(name="test-project"))
         context = DoctorContext(cwd=tmp_path, config=config, paths=workspace_paths_factory(tmp_path, None))
 
         assert context.cwd == tmp_path

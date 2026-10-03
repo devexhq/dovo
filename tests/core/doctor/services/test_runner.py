@@ -1,25 +1,25 @@
-"""Unit tests for worktree.core.doctor.services.runner."""
+"""Unit tests for dovo.core.doctor.services.runner."""
 
 from collections.abc import Callable
 from pathlib import Path
 
 import pytest
 
-from worktree.common.filesystem import WorkspacePaths
-from worktree.core.config.models import (
+from dovo.common.filesystem import WorkspacePaths
+from dovo.core.config.models import (
     DoctorConfig,
+    DovoConfig,
     ProjectConfig,
-    WorktreeConfig,
 )
-from worktree.core.doctor.models import (
+from dovo.core.doctor.models import (
     CheckCategory,
     CheckStatus,
     DiagnosticCheckResult,
     DoctorContext,
     RemediationType,
 )
-from worktree.core.doctor.services.registry import CheckRegistry
-from worktree.core.doctor.services.runner import (
+from dovo.core.doctor.services.registry import CheckRegistry
+from dovo.core.doctor.services.runner import (
     DiagnosticRunner,
     execute_single_check,
 )
@@ -177,7 +177,7 @@ class DiagnosticRunnerConfigToggleTests:
         registry.register(check)
 
         doctor_config = DoctorConfig(**{toggle_attr: False})
-        config = WorktreeConfig(
+        config = DovoConfig(
             version=1,
             project=ProjectConfig(name="test"),
             doctor=doctor_config,
@@ -306,7 +306,7 @@ class DiagnosticRunnerMetricsTests:
         # 6. run_checks finish:         20.0s (3000ms overhead after checks)
         tick_sequence = iter([10.0, 11.0, 13.0, 14.0, 17.0, 20.0])
         monkeypatch.setattr(
-            "worktree.core.doctor.services.runner.time.perf_counter",
+            "dovo.core.doctor.services.runner.time.perf_counter",
             lambda: next(tick_sequence),
         )
 

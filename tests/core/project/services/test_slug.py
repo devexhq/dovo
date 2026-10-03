@@ -1,9 +1,9 @@
-"""Unit tests for worktree.core.project.services.slug."""
+"""Unit tests for dovo.core.project.services.slug."""
 
 import re
 
-from worktree.core.project.models import PROJECT_ID_REGEX
-from worktree.core.project.services.slug import ADJECTIVES, NOUNS, generate_slug
+from dovo.core.project.models import PROJECT_ID_REGEX
+from dovo.core.project.services.slug import ADJECTIVES, NOUNS, generate_slug
 
 
 class ProjectSlugServiceTests:

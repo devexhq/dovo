@@ -5,7 +5,7 @@ from __future__ import annotations
 import sqlite3
 from pathlib import Path
 
-from worktree.core.db.migrations import init_database
+from dovo.core.db.migrations import init_database
 
 
 class InitDatabaseTests:
@@ -13,7 +13,7 @@ class InitDatabaseTests:
 
     def test_database_file_creates_tables_at_that_exact_location(self, tmp_path: Path) -> None:
         """[tier-1/integration] init_database(database_file): schema is created at the caller-supplied path, and that exact path is returned."""
-        explicit_path = tmp_path / "custom" / "nested" / "worktree.db"
+        explicit_path = tmp_path / "custom" / "nested" / "dovo.db"
 
         returned_path = init_database(explicit_path)
 
@@ -28,7 +28,7 @@ class InitDatabaseTests:
 
     def test_database_file_with_missing_parent_directories_creates_them(self, tmp_path: Path) -> None:
         """[tier-1/integration] init_database(database_file): parent directories that do not yet exist are created before the database file is written."""
-        explicit_path = tmp_path / "does" / "not" / "exist" / "yet" / "worktree.db"
+        explicit_path = tmp_path / "does" / "not" / "exist" / "yet" / "dovo.db"
         assert not explicit_path.parent.exists()
 
         init_database(explicit_path)

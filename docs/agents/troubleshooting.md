@@ -2,18 +2,18 @@
 
 Diagnostic reference for agent adapter setup and runtime failure modes. All provider adapters return classified `AgentResponse` objects and do not raise on expected failure conditions.
 
-**Relevant sources:** `src/worktree/core/agents/`
+**Relevant sources:** `src/dovo/core/agents/`
 
 ---
 
 ## 1. Local (`local`)
 
-**Relevant sources:** [`src/worktree/core/agents/local.py`](../../src/worktree/core/agents/local.py)
-Subprocess agent communicating over JSON stdin/stdout (`WORKTREE_LOCAL_AGENT_CMD`).
+**Relevant sources:** [`src/dovo/core/agents/local.py`](../../src/dovo/core/agents/local.py)
+Subprocess agent communicating over JSON stdin/stdout (`DOVO_LOCAL_AGENT_CMD`).
 
 | Symptom | Cause | Resolution |
 |:---|:---|:---|
-| `status=provider_error`, `"failed to start ..."` | Command binary not on `PATH` | Install local agent binary or set `WORKTREE_LOCAL_AGENT_CMD` |
+| `status=provider_error`, `"failed to start ..."` | Command binary not on `PATH` | Install local agent binary or set `DOVO_LOCAL_AGENT_CMD` |
 | `status=timeout` | Process exceeded `timeout_seconds` | Increase `agent.timeout_seconds` or optimize agent execution |
 | `status=provider_error`, `"invalid JSON on stdout"` | Binary did not emit JSON | Ensure local agent prints valid `LocalAgentStdout` JSON |
 | `status=provider_error`, `"stdout JSON failed schema validation"` | Missing/extra keys in JSON | Match exact `LocalAgentStdout` schema |
@@ -22,12 +22,12 @@ Subprocess agent communicating over JSON stdin/stdout (`WORKTREE_LOCAL_AGENT_CMD
 
 ## 2. Ollama (`ollama`)
 
-**Relevant sources:** [`src/worktree/core/agents/ollama.py`](../../src/worktree/core/agents/ollama.py)
+**Relevant sources:** [`src/dovo/core/agents/ollama.py`](../../src/dovo/core/agents/ollama.py)
 Direct HTTP client to Ollama API (`<endpoint>/api/chat`).
 
 | Symptom | Cause | Resolution |
 |:---|:---|:---|
-| `status=provider_error`, `"ollama requires a non-empty model"` | `agent.model` not configured | Configure model: `wt config set agent.model <name>` |
+| `status=provider_error`, `"ollama requires a non-empty model"` | `agent.model` not configured | Configure model: `dovo config set agent.model <name>` |
 | `status=provider_error`, `"invalid Ollama endpoint"` | Endpoint is not absolute URL | Set valid endpoint in config or `OLLAMA_HOST` env var |
 | `status=provider_error`, `"failed to reach Ollama at ..."` | Connection refused / server down | Start Ollama server (default `http://127.0.0.1:11434`) |
 | `status=timeout` | HTTP request timed out | Increase `agent.timeout_seconds` or use a smaller model |
@@ -38,12 +38,12 @@ Direct HTTP client to Ollama API (`<endpoint>/api/chat`).
 
 ## 3. Cursor (`cursor`)
 
-**Relevant sources:** [`src/worktree/core/agents/cursor.py`](../../src/worktree/core/agents/cursor.py)
+**Relevant sources:** [`src/dovo/core/agents/cursor.py`](../../src/dovo/core/agents/cursor.py)
 Direct-mutation adapter using `cursor-sdk`.
 
 | Symptom | Cause | Resolution |
 |:---|:---|:---|
-| `status=provider_error`, `"cursor requires a non-empty model"` | `agent.model` unset | Set model: `wt config set agent.model <name>` |
+| `status=provider_error`, `"cursor requires a non-empty model"` | `agent.model` unset | Set model: `dovo config set agent.model <name>` |
 | `status=provider_error`, `"missing CURSOR_API_KEY"` | API key env var missing | Export `CURSOR_API_KEY=...` |
 | `status=provider_error`, `"cursor-sdk is not installed"` | Missing python dependency | Install optional dependency: `pip install ".[cursor]"` |
 | `status=timeout` | SDK call timed out | Increase `agent.timeout_seconds` |
@@ -52,7 +52,7 @@ Direct-mutation adapter using `cursor-sdk`.
 
 ## 4. Gemini (`gemini`)
 
-**Relevant sources:** [`src/worktree/core/agents/gemini.py`](../../src/worktree/core/agents/gemini.py)
+**Relevant sources:** [`src/dovo/core/agents/gemini.py`](../../src/dovo/core/agents/gemini.py)
 Direct-mutation adapter shelling out to `gemini` CLI.
 
 | Symptom | Cause | Resolution |
@@ -66,7 +66,7 @@ Direct-mutation adapter shelling out to `gemini` CLI.
 
 ## 5. Copilot (`copilot`)
 
-**Relevant sources:** [`src/worktree/core/agents/copilot.py`](../../src/worktree/core/agents/copilot.py)
+**Relevant sources:** [`src/dovo/core/agents/copilot.py`](../../src/dovo/core/agents/copilot.py)
 Direct-mutation adapter shelling out to GitHub CLI `gh copilot`.
 
 | Symptom | Cause | Resolution |
@@ -81,5 +81,5 @@ Direct-mutation adapter shelling out to GitHub CLI `gh copilot`.
 ## Cross-Provider Rules
 
 - All setup and preflight failures are non-raising and populate `AgentResponse.errors`.
-- Unimplemented provider tokens (`openai`, `anthropic`, `azure_openai`, `custom`) are rejected by `wt config validate` and fail an agent step cleanly at adapter resolution (`get_agent_adapter`) with `AGENT_PROVIDER_UNSUPPORTED`.
+- Unimplemented provider tokens (`openai`, `anthropic`, `azure_openai`, `custom`) are rejected by `dovo config validate` and fail an agent step cleanly at adapter resolution (`get_agent_adapter`) with `AGENT_PROVIDER_UNSUPPORTED`.
 - Direct-mutation adapters share timeout and diff-validation behavior through `CliDirectMutationAdapter`.

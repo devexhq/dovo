@@ -8,8 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from tests.harness import AGENT_ADAPTER_FACTORY, FakeAgentProvider, new_file_diff
-from worktree.core.agents import (
+from dovo.core.agents import (
     AgentAttempt,
     AgentRequest,
     AgentResponse,
@@ -21,7 +20,8 @@ from worktree.core.agents import (
     ResolvedAgentSettings,
     run_direct_attempt,
 )
-from worktree.core.git import GitPlumbingTimeoutError, GitRunner
+from dovo.core.git import GitPlumbingTimeoutError, GitRunner
+from tests.harness import AGENT_ADAPTER_FACTORY, FakeAgentProvider, new_file_diff
 
 _NO_OP_SUMMARY = "Inspected the repository; no edits were required."
 

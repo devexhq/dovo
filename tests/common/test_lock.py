@@ -10,7 +10,7 @@ from pathlib import Path
 
 import pytest
 
-from worktree.common.lock import (
+from dovo.common.lock import (
     LockTimeoutError,
     WorkspaceLock,
     resolve_lock_file_path,
@@ -70,7 +70,7 @@ class WorkspaceLockTests:
 
     def test_lock_dispatches_on_wait_callback_on_contention(self, tmp_path: Path) -> None:
         """Verify on_wait callback is dispatched after 200ms when lock is contested and timeout raises LockTimeoutError."""
-        lock_file = (tmp_path / ".worktree" / ".lock").resolve()
+        lock_file = (tmp_path / ".dovo" / ".lock").resolve()
         lock_file.parent.mkdir(parents=True, exist_ok=True)
         file_descriptor = os.open(str(lock_file), os.O_RDWR | os.O_CREAT, 0o644)
         acquired = try_acquire_file_descriptor_lock(file_descriptor)
@@ -109,7 +109,7 @@ class WorkspaceLockTests:
         child_code = f"""
 import time
 from pathlib import Path
-from worktree.common.lock import WorkspaceLock, resolve_lock_file_path
+from dovo.common.lock import WorkspaceLock, resolve_lock_file_path
 
 lock = WorkspaceLock(resolve_lock_file_path(Path({str(tmp_path)!r})))
 with lock:

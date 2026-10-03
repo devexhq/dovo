@@ -1,12 +1,12 @@
 # Code Conventions
 
-Coding standards and patterns for the Worktree CLI codebase.
+Coding standards and patterns for the Dovo CLI codebase.
 
 ---
 
 ## Pydantic Models
 
-**Relevant sources:** `src/worktree/core/*/models.py`, `src/worktree/common/models.py`
+**Relevant sources:** `src/dovo/core/*/models.py`, `src/dovo/common/models.py`
 
 - Scoped exceptions allowing non-strict model configuration (must carry a justifying comment):
   - `OllamaModelStdout` (`core/agents/ollama.py`): leniency for LLM-generated JSON.
@@ -54,7 +54,7 @@ Prioritize clarity and readability: code should read naturally and unambiguously
 
 ## Core Package Layout
 
-**Relevant sources:** `src/worktree/core/`
+**Relevant sources:** `src/dovo/core/`
 
 Standard package skeleton for domain logic:
 
@@ -75,7 +75,7 @@ core/<domain>/
 
 ## Result/Outcome Pattern
 
-**Relevant sources:** `src/worktree/common/models.py`, `src/worktree/core/*/models.py`
+**Relevant sources:** `src/dovo/common/models.py`, `src/dovo/core/*/models.py`
 
 Operations that can fail return a Pydantic result object subclassing `BaseResult` instead of raising:
 - `status: StrEnum`: Outcome state.
@@ -89,7 +89,7 @@ Operations that can fail return a Pydantic result object subclassing `BaseResult
 
 ## Atomic File Writes
 
-**Relevant sources:** `src/worktree/common/filesystem/services/operations.py`, `src/worktree/common/filesystem/facade.py`
+**Relevant sources:** `src/dovo/common/filesystem/services/operations.py`, `src/dovo/common/filesystem/facade.py`
 
 - Never write config or state files directly in-place.
 - Write to a `.tmp` sibling, flush, `os.fsync`, and atomically swap via `Path.replace`.
@@ -99,11 +99,11 @@ Operations that can fail return a Pydantic result object subclassing `BaseResult
 
 ## Console Output and Terminal Formatting
 
-**Relevant sources:** `src/worktree/cli/ui/`
+**Relevant sources:** `src/dovo/cli/ui/`
 
 - `to_rich` derives nothing. It reads `transform(data)` and lays it out into Rich renderables.
 - `to_raw` bypasses the view entirely and returns bytes the caller asked for; `DiffResultFormatter` is the only implementation.
-- Domain shared table builders reside in `src/worktree/cli/ui/formatters/<domain>/common.py`.
+- Domain shared table builders reside in `src/dovo/cli/ui/formatters/<domain>/common.py`.
 - Construct `errors` and `warnings` messages using inline f-strings or literals at call sites. Do not create private single-message formatting wrappers (domain lookup tables of constant remediation strings, such as `REMEDIATION_MAP` in `core/status/services/collector.py`, are permitted as tables of literals).
 
 ---

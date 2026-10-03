@@ -6,16 +6,16 @@ from typing import Any
 
 import pytest
 
+from dovo.cli.ui.formatters.sandbox.sandbox_list import SandboxListFormatter
+from dovo.core.db import SandboxRecord, SandboxStatus
+from dovo.core.sandbox.models import (
+    SandboxListResult,
+    SandboxListStatus,
+)
 from tests.harness.formatter import (
     FormatterCase,
     assert_json_payload_matches_published_shape,
     assert_rich_render_shows_every_view_value,
-)
-from worktree.cli.ui.formatters.sandbox.sandbox_list import SandboxListFormatter
-from worktree.core.db import SandboxRecord, SandboxStatus
-from worktree.core.sandbox.models import (
-    SandboxListResult,
-    SandboxListStatus,
 )
 
 _RECORD = SandboxRecord(
@@ -45,16 +45,16 @@ NOT_INITIALIZED = FormatterCase(
     data=SandboxListResult(
         status=SandboxListStatus.NOT_INITIALIZED,
         sandboxes=[],
-        errors=["Worktree workspace is not initialized."],
-        fixes=["Run `wt init` to create `.worktree/config.json`"],
+        errors=["Dovo workspace is not initialized."],
+        fixes=["Run `dovo init` to create `.dovo/config.json`"],
     ),
     view=SandboxListResult(
         status=SandboxListStatus.NOT_INITIALIZED,
         sandboxes=[],
-        errors=["Worktree workspace is not initialized."],
-        fixes=["Run `wt init` to create `.worktree/config.json`"],
+        errors=["Dovo workspace is not initialized."],
+        fixes=["Run `dovo init` to create `.dovo/config.json`"],
     ),
-    render_expectations=["Worktree workspace is not initialized.", "Run `wt init` to create `.worktree/config.json`"],
+    render_expectations=["Dovo workspace is not initialized.", "Run `dovo init` to create `.dovo/config.json`"],
 )
 
 SANDBOX_LIST_CASES = [
@@ -105,9 +105,9 @@ SANDBOX_LIST_PAYLOAD_CASES = [
             "status": "not_initialized",
             "sandboxes": [],
             "warnings": [],
-            "errors": ["Worktree workspace is not initialized."],
+            "errors": ["Dovo workspace is not initialized."],
             "error_code": None,
-            "fixes": ["Run `wt init` to create `.worktree/config.json`"],
+            "fixes": ["Run `dovo init` to create `.dovo/config.json`"],
         },
         id="not_initialized",
     ),
