@@ -68,6 +68,40 @@ A generic-blueprint composite step block that repeats a list of steps in `do` un
 
 ---
 
+## Agent step outcomes
+
+An agent step records one outcome per attempt. The canonical mapping is `AGENT_OUTCOME_EXIT_CODES` in [`agent_step.py`](../../src/worktree/engine/executors/agent_step.py).
+
+| JSON status | Dispatch | Code |
+|---|---|---|
+| `proposed_patch` | `completed` | `0` |
+| `no_op` | `completed` | `0` |
+| `unfixable` | `failed` | `201` |
+| `timeout` | `failed` | `202` |
+| `provider_error` | `failed` | `203` |
+
+Preflight failures (inactive sandbox, missing agent settings, blank prompt), provider exceptions, patches that fail to apply, and an output callback that raises all record `provider_error` with `203`.
+
+Stdout is always one JSON object followed by a newline, so `steps.<id>.outputs.status` can branch on it:
+
+```json
+{"status":"no_op","summary":"Reviewed the changes; no edits were needed.","unfixable_reason":null,"touched_files":[]}
+```
+
+`summary` and `unfixable_reason` are `string | null`; `touched_files` is a sorted list of sandbox-relative paths.
+
+```text
+steps.agent.outputs.status == "no_op"
+steps.agent.outputs.status == "provider_error"
+steps.agent.exit_code == 202
+```
+
+- `no_op` succeeds with `0`. A planning or review step that finds nothing to change therefore completes, and `steps.<id>.outputs.status` is what tells `proposed_patch` from `no_op`.
+- `outputs.status` reads the JSON summary in the step's stdout. It does not read `$WT_OUTPUT` values.
+- These codes are step outcomes recorded per attempt. `wt run` keeps its own exit contract, and command and script step exit codes are unchanged.
+
+---
+
 ## Runtime Execution Metadata & Environment Variables
 
 Step executions receive structured runtime context through `WT_*` environment variables and template interpolation paths:

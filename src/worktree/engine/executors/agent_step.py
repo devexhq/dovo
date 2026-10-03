@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from pathlib import Path
+from types import MappingProxyType
+from typing import Final
 
 from worktree.core.agents import AgentAttempt, AgentResponseStatus, ResolvedAgentSettings, run_direct_attempt
 from worktree.core.catalog.definitions import StepDefinition
@@ -14,6 +17,17 @@ MISSING_SETTINGS_MESSAGE = (
     "(agent.provider, agent.model, agent.endpoint, agent.temperature, agent.max_tokens)."
 )
 BLANK_PROMPT_MESSAGE = "Agent step prompt is blank after interpolation."
+
+# Step outcome code per agent status; 200 is unused and 204 is reserved for a future blocked status.
+AGENT_OUTCOME_EXIT_CODES: Final[Mapping[AgentResponseStatus, int]] = MappingProxyType(
+    {
+        AgentResponseStatus.PROPOSED_PATCH: 0,
+        AgentResponseStatus.NO_OP: 0,
+        AgentResponseStatus.UNFIXABLE: 201,
+        AgentResponseStatus.TIMEOUT: 202,
+        AgentResponseStatus.PROVIDER_ERROR: 203,
+    }
+)
 
 
 def execute_agent_step(
@@ -100,13 +114,26 @@ def _to_outcome(attempt: AgentAttempt, on_output: OutputCallback | None) -> Step
     line = _summary_line(attempt)
     callback_error = _emit_summary(on_output, line)
 
-    if attempt.completed and callback_error is None:
-        return StepDispatchOutcome(status="completed", exit_code=0, stdout=line, stderr="", error_message=None)
+    if not attempt.completed:
+        return _failed_outcome(attempt.status, line, _failure_text(attempt))
 
-    if attempt.completed:
-        message = f"Agent output callback error: {callback_error}"
-        line = _summary_line(attempt, status=AgentResponseStatus.PROVIDER_ERROR)
-    else:
-        message = _failure_text(attempt)
+    if callback_error is not None:
+        downgraded = _summary_line(attempt, status=AgentResponseStatus.PROVIDER_ERROR)
+        return _failed_outcome(
+            AgentResponseStatus.PROVIDER_ERROR, downgraded, f"Agent output callback error: {callback_error}"
+        )
 
-    return StepDispatchOutcome(status="failed", exit_code=1, stdout=line, stderr=message, error_message=message)
+    return StepDispatchOutcome(
+        status="completed",
+        exit_code=AGENT_OUTCOME_EXIT_CODES[attempt.status],
+        stdout=line,
+        stderr="",
+        error_message=None,
+    )
+
+
+def _failed_outcome(status: AgentResponseStatus, line: str, message: str) -> StepDispatchOutcome:
+    """Build the failed dispatch outcome carrying the mapped exit code for status, the summary line, and the diagnostic."""
+    return StepDispatchOutcome(
+        status="failed", exit_code=AGENT_OUTCOME_EXIT_CODES[status], stdout=line, stderr=message, error_message=message
+    )
