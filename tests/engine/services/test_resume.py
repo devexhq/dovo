@@ -4,11 +4,11 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
+from dovo.common.filesystem.models import WorkspacePaths
+from dovo.core.db import RunsRepository
+from dovo.engine.models import RunOutcome
+from dovo.engine.services.resume import BlueprintResumeService
 from tests.harness.runs import seed_paused_run
-from worktree.common.filesystem.models import WorkspacePaths
-from worktree.core.db import RunsRepository
-from worktree.engine.models import RunOutcome
-from worktree.engine.services.resume import BlueprintResumeService
 
 
 def _seed(paths: WorkspacePaths, runs: RunsRepository, session_id: str) -> None:

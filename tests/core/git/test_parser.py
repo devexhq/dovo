@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from worktree.core.git.models import GitWorktreeEntry
-from worktree.core.git.runner import parse_worktree_porcelain
+from dovo.core.git.models import GitWorktreeEntry
+from dovo.core.git.runner import parse_worktree_porcelain
 
 
 class GitWorktreeOutputParserTests:
@@ -14,7 +14,7 @@ class GitWorktreeOutputParserTests:
     def test_parse_worktree_machine_output_parses_detached_and_locked_states(self) -> None:
         """Parse multi-stanza porcelain output containing detached and locked states."""
         raw = (
-            "worktree /path/to/wt\n"
+            "worktree /path/to/worktree\n"
             "HEAD 1234abc\n"
             "branch refs/heads/feature\n"
             "\n"
@@ -28,7 +28,7 @@ class GitWorktreeOutputParserTests:
 
         assert entries == [
             GitWorktreeEntry(
-                path=Path("/path/to/wt"),
+                path=Path("/path/to/worktree"),
                 head_sha="1234abc",
                 branch="feature",
             ),

@@ -1,14 +1,14 @@
-"""Unit tests for worktree.core.doctor.checks.git_repo."""
+"""Unit tests for dovo.core.doctor.checks.git_repo."""
 
 from collections.abc import Callable
 from pathlib import Path
 
 import pytest
 
-from worktree.common.filesystem import WorkspacePaths
-from worktree.core.doctor.checks.git_repo import GitRepoCheck
-from worktree.core.doctor.models import CheckCategory, CheckStatus, DoctorContext
-from worktree.core.git import GitNotFoundError
+from dovo.common.filesystem import WorkspacePaths
+from dovo.core.doctor.checks.git_repo import GitRepoCheck
+from dovo.core.doctor.models import CheckCategory, CheckStatus, DoctorContext
+from dovo.core.git import GitNotFoundError
 
 WorkspacePathsFactory = Callable[[Path, Path | None], WorkspacePaths]
 
@@ -20,7 +20,7 @@ class GitRepoCheckTests:
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, workspace_paths_factory: WorkspacePathsFactory
     ) -> None:
         """[tier-1/unit] GitRepoCheck.execute: shutil.which('git') is None -> FAILED with DOCTOR_GIT_BINARY_MISSING."""
-        monkeypatch.setattr("worktree.core.doctor.checks.git_repo.shutil.which", lambda _name: None)
+        monkeypatch.setattr("dovo.core.doctor.checks.git_repo.shutil.which", lambda _name: None)
         check = GitRepoCheck()
         context = DoctorContext(cwd=tmp_path, paths=workspace_paths_factory(tmp_path, None))
 
@@ -36,12 +36,12 @@ class GitRepoCheckTests:
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, workspace_paths_factory: WorkspacePathsFactory
     ) -> None:
         """[tier-1/unit] GitRepoCheck.execute: shutil.which finds git but GitRunner.run raises GitNotFoundError -> FAILED with DOCTOR_GIT_BINARY_MISSING."""
-        monkeypatch.setattr("worktree.core.doctor.checks.git_repo.shutil.which", lambda _name: "/usr/bin/git")
+        monkeypatch.setattr("dovo.core.doctor.checks.git_repo.shutil.which", lambda _name: "/usr/bin/git")
 
         def _raise_not_found(*_args: object, **_kwargs: object) -> str:
             raise GitNotFoundError("git not found")
 
-        monkeypatch.setattr("worktree.core.doctor.checks.git_repo.GitRunner.run", _raise_not_found)
+        monkeypatch.setattr("dovo.core.doctor.checks.git_repo.GitRunner.run", _raise_not_found)
         check = GitRepoCheck()
         context = DoctorContext(cwd=tmp_path, paths=workspace_paths_factory(tmp_path, None))
 

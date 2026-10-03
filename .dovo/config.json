@@ -1,0 +1,44 @@
+{
+  "version": 1,
+  "project": {
+    "name": "dovo",
+    "initialized_at": "2026-08-28T03:50:32.381997+00:00"
+  },
+  "worktree": {
+    "base_ref": "HEAD",
+    "max_active_worktrees": 3,
+    "default_timeout_seconds": 900
+  },
+  "agent": {
+    "provider": "anthropic",
+    "model": "qwen2.5-coder",
+    "endpoint": null,
+    "temperature": 0.2,
+    "max_tokens": 4096
+  },
+  "history": {
+    "save_attempt_logs": true,
+    "save_agent_payloads": true,
+    "save_final_diff": true,
+    "max_sessions": 1000
+  },
+  "doctor": {
+    "check_git": true,
+    "check_paths_writable": true,
+    "check_config_schema": true,
+    "check_stale_worktrees": true,
+    "check_required_binaries": true
+  },
+  "prune": {
+    "remove_stale_worktrees": true,
+    "remove_orphaned_worktrees": true,
+    "remove_expired_artifacts": false,
+    "artifact_ttl_days": 30
+  },
+  "telemetry": {
+    "enabled": false
+  },
+  "concurrency": {
+    "lock_timeout_seconds": 30.0
+  }
+}

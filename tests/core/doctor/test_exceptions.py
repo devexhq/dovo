@@ -1,6 +1,6 @@
-"""Unit tests for worktree.core.doctor.exceptions."""
+"""Unit tests for dovo.core.doctor.exceptions."""
 
-from worktree.core.doctor.exceptions import CheckRegistrationError, DoctorError
+from dovo.core.doctor.exceptions import CheckRegistrationError, DoctorError
 
 
 class DoctorExceptionsTests:

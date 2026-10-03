@@ -6,9 +6,9 @@ from pathlib import Path
 
 import pytest
 
-from worktree.core.logs import LogStreamFilter
-from worktree.core.logs.services.read import read_step_logs
-from worktree.engine.executors.metadata import resolve_step_log_paths
+from dovo.core.logs import LogStreamFilter
+from dovo.core.logs.services.read import read_step_logs
+from dovo.engine.executors.metadata import resolve_step_log_paths
 
 # (iteration, attempt, stdout text, stderr text) per capture pair written for step "build" at index 1.
 type CaptureSpec = tuple[int | None, int, str, str]

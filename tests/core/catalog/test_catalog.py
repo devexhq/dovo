@@ -6,12 +6,12 @@ from pathlib import Path
 
 import pytest
 
-from worktree.common.filesystem import Filesystem, WorkspacePaths
-from worktree.common.filesystem.services.global_root import resolve_global_paths
-from worktree.common.models import DefinitionResolutionStatus
-from worktree.core.catalog import Catalog
-from worktree.core.catalog.models import CatalogItemType, CatalogTier
-from worktree.core.catalog.services.inventory import compute_catalog_sha
+from dovo.common.filesystem import Filesystem, WorkspacePaths
+from dovo.common.filesystem.services.global_root import resolve_global_paths
+from dovo.common.models import DefinitionResolutionStatus
+from dovo.core.catalog import Catalog
+from dovo.core.catalog.models import CatalogItemType, CatalogTier
+from dovo.core.catalog.services.inventory import compute_catalog_sha
 
 
 class CatalogTemplateScaffoldingTests:
@@ -33,7 +33,7 @@ class CatalogTemplateScaffoldingTests:
         name: str,
         expected_rel_path: Path,
     ) -> None:
-        """Create scaffolds YAML templates under .worktree/catalog/blueprints and steps."""
+        """Create scaffolds YAML templates under .dovo/catalog/blueprints and steps."""
         catalog = Catalog(workspace_paths)
         result = catalog.create(item_type, name)
 
@@ -58,19 +58,19 @@ class CatalogTemplateScaffoldingTests:
 
 
 class CatalogProtectionTests:
-    """Tests verifying protection of bundled templates in the wt/ namespace."""
+    """Tests verifying protection of bundled templates in the dovo/ namespace."""
 
     @pytest.mark.parametrize(
         "template_name",
         [
-            pytest.param("wt/starter-task", id="starter-task"),
-            pytest.param("wt/fix-tests", id="fix-tests"),
+            pytest.param("dovo/starter-task", id="starter-task"),
+            pytest.param("dovo/fix-tests", id="fix-tests"),
         ],
     )
     def test_catalog_delete_rejects_deletion_of_bundled_packaged_templates(
         self, workspace_paths: WorkspacePaths, template_name: str
     ) -> None:
-        """catalog.delete rejects deleting templates in the wt/ namespace with ok=False."""
+        """catalog.delete rejects deleting templates in the dovo/ namespace with ok=False."""
         catalog = Catalog(workspace_paths)
         result = catalog.delete(template_name)
 
@@ -89,7 +89,7 @@ class CatalogDiscoveryFallbackTests:
         "template_name",
         [
             pytest.param("fix-tests", id="bare-name"),
-            pytest.param("wt/fix-tests", id="namespaced-name"),
+            pytest.param("dovo/fix-tests", id="namespaced-name"),
         ],
     )
     def test_catalog_show_falls_back_to_bundled_template(
@@ -99,13 +99,13 @@ class CatalogDiscoveryFallbackTests:
         catalog = Catalog(workspace_paths)
         result = catalog.show(template_name)
 
-        expected_file = Filesystem().catalog_templates_dir / "blueprints" / "wt" / "fix-tests.yml"
+        expected_file = Filesystem().catalog_templates_dir / "blueprints" / "dovo" / "fix-tests.yml"
         expected_content = expected_file.read_text(encoding="utf-8")
 
         assert result.item is not None
         assert result.item.tier == CatalogTier.PACKAGED
         assert result.content == expected_content
-        assert result.template_matches == [("blueprints/wt/fix-tests.yml", expected_content)]
+        assert result.template_matches == [("blueprints/dovo/fix-tests.yml", expected_content)]
         assert result.errors == []
         assert result.warnings == []
         assert result.fixes == []
@@ -157,20 +157,20 @@ class CatalogNamespaceSplittingTests:
     """Tests verifying namespaced identifiers split on the literal '/' boundary, not by character set."""
 
     def test_name_sharing_trailing_characters_with_namespace_resolves(self, workspace_paths: WorkspacePaths) -> None:
-        """catalog.get resolves 'wt/run-test', whose name ends in characters ('t') also present in its 'wt' namespace."""
+        """catalog.get resolves 'dovo/run-test', whose name ends in characters ('t') also present in its 'dovo' namespace."""
         catalog = Catalog(workspace_paths)
         catalog.save(
-            "wt/run-test",
+            "dovo/run-test",
             {"name": "run-test", "description": "Regression fixture", "action": "run"},
             item_type=CatalogItemType.STEP,
         )
 
-        result = catalog.get("wt/run-test", item_type=CatalogItemType.STEP)
+        result = catalog.get("dovo/run-test", item_type=CatalogItemType.STEP)
 
         assert result.status == DefinitionResolutionStatus.OK
         assert result.resolved is not None
         assert result.resolved.name == "run-test"
-        assert result.resolved.namespace == "wt"
+        assert result.resolved.namespace == "dovo"
 
 
 class CatalogGetTests:

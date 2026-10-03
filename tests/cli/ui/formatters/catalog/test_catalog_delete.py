@@ -7,13 +7,13 @@ from typing import Any
 
 import pytest
 
+from dovo.cli.ui.formatters.catalog.catalog_delete import CatalogDeleteFormatter
+from dovo.core.catalog.models import CatalogDeleteResult, CatalogItemType, CatalogRecord, CatalogTier
 from tests.harness.formatter import (
     FormatterCase,
     assert_json_payload_matches_published_shape,
     assert_rich_render_shows_every_view_value,
 )
-from worktree.cli.ui.formatters.catalog.catalog_delete import CatalogDeleteFormatter
-from worktree.core.catalog.models import CatalogDeleteResult, CatalogItemType, CatalogRecord, CatalogTier
 
 _RECORD = CatalogRecord(
     key="test-blueprint",
@@ -44,18 +44,18 @@ DELETE_ERROR = FormatterCase(
         deleted=False,
         cancelled=False,
         errors=["Catalog blueprint 'missing' not found."],
-        fixes=["Run `wt blueprint list` to inspect available items"],
+        fixes=["Run `dovo blueprint list` to inspect available items"],
     ),
     view=CatalogDeleteResult(
         item=None,
         deleted=False,
         cancelled=False,
         errors=["Catalog blueprint 'missing' not found."],
-        fixes=["Run `wt blueprint list` to inspect available items"],
+        fixes=["Run `dovo blueprint list` to inspect available items"],
     ),
     render_expectations=[
         "Catalog blueprint 'missing' not found.",
-        "Run `wt blueprint list` to inspect available items",
+        "Run `dovo blueprint list` to inspect available items",
     ],
 )
 
@@ -106,7 +106,7 @@ CATALOG_DELETE_PAYLOAD_CASES = [
         {
             "errors": ["Catalog blueprint 'missing' not found."],
             "warnings": [],
-            "fixes": ["Run `wt blueprint list` to inspect available items"],
+            "fixes": ["Run `dovo blueprint list` to inspect available items"],
             "error_code": None,
             "item": None,
             "deleted": False,

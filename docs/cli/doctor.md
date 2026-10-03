@@ -1,43 +1,43 @@
-# `wt doctor`
+# `dovo doctor`
 
-The `wt doctor` command runs the registered diagnostic checks and prints a scannable workspace health report covering Git, configuration, filesystem permissions, sandbox references, environment binaries, and agent setup.
+The `dovo doctor` command runs the registered diagnostic checks and prints a scannable workspace health report covering Git, configuration, filesystem permissions, worktree references, environment binaries, and agent setup.
 
 ## Usage
 
 ```bash
-wt doctor [--category <name>] [--format terminal|json]
+dovo doctor [--category <name>] [--format terminal|json]
 ```
 
 ## Options
 
 | Flag | Description |
 | --- | --- |
-| `--category <git\|config\|filesystem\|sandbox\|agent\|environment>` | Restrict execution to a single check category. Defaults to running every registered check. |
+| `--category <git\|config\|filesystem\|worktree\|agent\|environment>` | Restrict execution to a single check category. Defaults to running every registered check. |
 | `--format <terminal\|json>` | Presentation format (`terminal` or `json`). Defaults to `terminal`. |
 
 ## Description
 
-`wt doctor` runs every registered diagnostic check (or, with `--category`, only the checks in that category) and reports one row per check: its id, category, status, and message. Below the table it prints a one-line summary of how many checks are `OK`, `WARNING`, or `FAILED`, and — when any check surfaced a remediation — a `Fixes:` section listing one actionable step per check.
+`dovo doctor` runs every registered diagnostic check (or, with `--category`, only the checks in that category) and reports one row per check: its id, category, status, and message. Below the table it prints a one-line summary of how many checks are `OK`, `WARNING`, or `FAILED`, and — when any check surfaced a remediation — a `Fixes:` section listing one actionable step per check.
 
 The command exits `1` when at least one check has status `FAILED`, and `0` otherwise (including when checks have `WARNING` or `SKIPPED` status). Passing an unrecognized `--category` value exits `2` before any check runs.
 
 ## Examples
 
 ```bash
-wt doctor
+dovo doctor
 ```
 
 ### Healthy workspace output
 
 ```text
-Worktree Doctor Report
+Dovo Doctor Report
 ┌──────────────┬─────────────┬────────┬──────────────────────────────────────────────────────────┐
 │ Check        │ Category    │ Status │ Message                                                    │
 ├──────────────┼─────────────┼────────┼──────────────────────────────────────────────────────────┤
 │ git.repo     │ git         │ OK     │ Git repository detected at '/repo' on branch 'main'.       │
-│ config.schema│ config      │ OK     │ `.worktree/config.json` is present and passes schema V1... │
+│ config.schema│ config      │ OK     │ `.dovo/config.json` is present and passes schema V1... │
 │ filesystem.writable │ filesystem │ OK │ All configured workspace paths are writable.               │
-│ sandbox.refs │ sandbox     │ OK     │ 2 sandbox(es) verified against database and Git worktree... │
+│ worktree.refs │ worktree     │ OK     │ 2 worktree(es) verified against database and Git worktree... │
 │ env.binaries │ environment │ OK     │ 2 required binary(s) verified on PATH.                     │
 │ agent.setup  │ agent       │ OK     │ Agent provider 'gemini' is configured with model '...'.    │
 └──────────────┴─────────────┴────────┴──────────────────────────────────────────────────────────┘
@@ -47,7 +47,7 @@ Worktree Doctor Report
 ### Warnings present output
 
 ```text
-Worktree Doctor Report
+Dovo Doctor Report
 ┌──────────────┬─────────────┬─────────┬────────────────────────────────────────────────────┐
 │ Check        │ Category    │ Status  │ Message                                              │
 ├──────────────┼─────────────┼─────────┼────────────────────────────────────────────────────┤
@@ -57,31 +57,31 @@ Worktree Doctor Report
 2 checks: 1 ok, 1 warning, 0 failed (4.1ms)
 
 Fixes:
-  • agent.setup: Configure `agent.model` in `.worktree/config.json`
+  • agent.setup: Configure `agent.model` in `.dovo/config.json`
 ```
 
 ### Failures present output
 
 ```text
-Worktree Doctor Report
+Dovo Doctor Report
 ┌──────────────┬─────────┬────────┬──────────────────────────────────────────────────────────────┐
 │ Check        │ Category│ Status │ Message                                                        │
 ├──────────────┼─────────┼────────┼──────────────────────────────────────────────────────────────┤
 │ git.repo     │ git     │ OK     │ Git repository detected at '/repo' on branch 'main'.          │
-│ config.schema│ config  │ FAILED │ Configuration file not found at '/repo/.worktree/config.json'. │
+│ config.schema│ config  │ FAILED │ Configuration file not found at '/repo/.dovo/config.json'. │
 └──────────────┴─────────┴────────┴──────────────────────────────────────────────────────────────┘
 2 checks: 1 ok, 0 warning, 1 failed (3.2ms)
 
 Fixes:
-  • config.schema: Run `wt init` to create `.worktree/config.json`
+  • config.schema: Run `dovo init` to create `.dovo/config.json`
 ```
 
-Running `wt doctor` against this workspace exits with status code `1`.
+Running `dovo doctor` against this workspace exits with status code `1`.
 
 ### JSON structured output
 
 ```bash
-wt doctor --format json
+dovo doctor --format json
 ```
 
 Emits a structured NDJSON payload suitable for automation and GUI integrations:

@@ -1,19 +1,19 @@
 # Authoring Blueprints
 
-Blueprints are declarative YAML files stored in your project's catalog (`.worktree/catalog/`) that specify what commands, scripts, or AI agent prompts to execute.
+Blueprints are declarative YAML files stored in your project's catalog (`.dovo/catalog/`) that specify what commands, scripts, or AI agent prompts to execute.
 
 ---
 
 ## Blueprint Anatomy
 
-Blueprints are stored under `.worktree/catalog/blueprints/*.yml` and use one generic top-level document structure:
+Blueprints are stored under `.dovo/catalog/blueprints/*.yml` and use one generic top-level document structure:
 
 ```yaml
 name: build-and-test
 description: Build package artifacts and run the full test suite
 summary: Full build & verification pipeline
 version: 1
-use_sandbox: true
+use_worktree: true
 timeout_seconds: 300
 
 env:
@@ -57,11 +57,11 @@ A blueprint may contain sequential steps, assertions, failure policies, and loop
 ### 1. Identity & Metadata
 * `name` *(string, optional)*: Unique display name; when omitted, it defaults to the catalog key.
 * `description` *(string, optional)*: In-depth explanation of the blueprint's purpose.
-* `summary` *(string, optional)*: Short single-sentence summary shown in `wt blueprint list`.
+* `summary` *(string, optional)*: Short single-sentence summary shown in `dovo blueprint list`.
 * `version` *(integer | string, default `1`)*: Format schema version.
 
 ### 2. Execution Controls
-* `use_sandbox` *(boolean, default `true`)*: Whether to create an isolated Git worktree sandbox for execution.
+* `use_worktree` *(boolean, default `true`)*: Whether to create an isolated Git worktree for execution.
 * `timeout_seconds` *(integer, optional)*: Accepted blueprint metadata; the current runtime does not apply it as an overall timeout.
 * `env` *(map[string, string], optional)*: Accepted blueprint metadata; the current runtime does not inject it into child steps.
 
@@ -100,16 +100,16 @@ If a step defines its own `on_failure`, the step-specific configuration takes pr
 
 ## Creating Blueprints via CLI
 
-You can generate blueprint template scaffolds using `wt blueprint create`:
+You can generate blueprint template scaffolds using `dovo blueprint create`:
 
 ```bash
 # Create a new blueprint
-wt blueprint create --name fix-issue
+dovo blueprint create --name fix-issue
 
-wt blueprint create --name audit-deps
+dovo blueprint create --name audit-deps
 ```
 
-This generates a pre-populated template in `.worktree/catalog/blueprints/<name>.yml`.
+This generates a pre-populated template in `.dovo/catalog/blueprints/<name>.yml`.
 
 ---
 

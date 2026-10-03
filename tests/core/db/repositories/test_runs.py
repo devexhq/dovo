@@ -8,17 +8,17 @@ from pathlib import Path
 import pytest
 from sqlalchemy import Engine
 
-from worktree.core.db.connection import get_engine
-from worktree.core.db.migrations import init_database
-from worktree.core.db.models import RunStatus
-from worktree.core.db.repositories.runs import RunsRepository
-from worktree.core.db.repositories.sandboxes import SandboxesRepository
+from dovo.core.db.connection import get_engine
+from dovo.core.db.migrations import init_database
+from dovo.core.db.models import RunStatus
+from dovo.core.db.repositories.runs import RunsRepository
+from dovo.core.db.repositories.worktrees import WorktreesRepository
 
 
 @pytest.fixture
 def db_path(tmp_path: Path) -> Path:
     """Path to a freshly migrated, isolated SQLite database file."""
-    path = tmp_path / "worktree.db"
+    path = tmp_path / "dovo.db"
     init_database(path)
     return path
 
@@ -60,28 +60,28 @@ class RunsRepositoryTests:
         assert record.project_id == "proj-a"
 
 
-class SandboxRunIndependenceTests:
-    """[tier-1/integration] Cross-repository contract: sandbox deletion never mutates a referencing RunRecord."""
+class WorktreeRunIndependenceTests:
+    """[tier-1/integration] Cross-repository contract: worktree deletion never mutates a referencing RunRecord."""
 
-    def test_deleting_sandbox_record_does_not_alter_associated_run_record(
+    def test_deleting_worktree_record_does_not_alter_associated_run_record(
         self, db_path: Path, db_engine: Engine, tmp_path: Path
     ) -> None:
-        """[tier-1/integration] SandboxesRepository.delete: deleting a sandbox row referenced by RunRecord.sandbox_id leaves RunsRepository.get(session_id) returning the same, unmodified RunRecord."""
+        """[tier-1/integration] WorktreesRepository.delete: deleting a worktree row referenced by RunRecord.worktree_id leaves RunsRepository.get(session_id) returning the same, unmodified RunRecord."""
         runs_repo = RunsRepository(db_path=db_path, db_engine=db_engine, project_id="proj-a")
-        sandboxes_repo = SandboxesRepository(db_path=db_path, db_engine=db_engine, project_id="proj-a")
+        worktrees_repo = WorktreesRepository(db_path=db_path, db_engine=db_engine, project_id="proj-a")
         runs_repo.create(session_id="wf_a", blueprint_name="deploy", blueprint_key="deploy")
-        sandboxes_repo.create(
-            id="sbx_123", branch_name="feature", base_commit="abc123", sandbox_path=tmp_path / "sbx_123"
+        worktrees_repo.create(
+            id="dovo_123", branch_name="feature", base_commit="abc123", worktree_path=tmp_path / "dovo_123"
         )
         connection = sqlite3.connect(db_path)
         try:
-            connection.execute("UPDATE runs SET sandbox_id = ? WHERE session_id = ?", ("sbx_123", "wf_a"))
+            connection.execute("UPDATE runs SET worktree_id = ? WHERE session_id = ?", ("dovo_123", "wf_a"))
             connection.commit()
         finally:
             connection.close()
         before = runs_repo.get("wf_a")
 
-        deleted = sandboxes_repo.delete("sbx_123")
+        deleted = worktrees_repo.delete("dovo_123")
 
         assert deleted is True
         assert runs_repo.get("wf_a") == before
@@ -91,7 +91,7 @@ class RunsRepositoryConfigTests:
     """Contract tests for run configuration columns written by RunsRepository."""
 
     def test_create_persists_run_configuration_columns(self, db_path: Path, db_engine: Engine) -> None:
-        """[tier-1/integration] RunsRepository.create: keyword arguments blueprint_tier, commit_sha, use_sandbox, keep, agent, inputs_json, auto_apply round-trip through RunsRepository.get unchanged."""
+        """[tier-1/integration] RunsRepository.create: keyword arguments blueprint_tier, commit_sha, use_worktree, keep, agent, inputs_json, auto_apply round-trip through RunsRepository.get unchanged."""
         repo = RunsRepository(db_path=db_path, db_engine=db_engine, project_id="proj-a")
         repo.create(
             session_id="wf_a",
@@ -99,7 +99,7 @@ class RunsRepositoryConfigTests:
             blueprint_key="deploy",
             blueprint_tier="repo",
             commit_sha="abc123",
-            use_sandbox=False,
+            use_worktree=False,
             keep=True,
             agent="claude",
             inputs_json='{"env": "prod"}',
@@ -111,23 +111,23 @@ class RunsRepositoryConfigTests:
         assert record is not None
         assert record.blueprint_tier == "repo"
         assert record.commit_sha == "abc123"
-        assert record.use_sandbox is False
+        assert record.use_worktree is False
         assert record.keep is True
         assert record.agent == "claude"
         assert record.inputs_json == '{"env": "prod"}'
         assert record.auto_apply is True
 
-    def test_update_status_with_sandbox_id_records_it(self, db_path: Path, db_engine: Engine) -> None:
-        """[tier-1/integration] RunsRepository.update_status: sandbox_id='sbx-1' leaves get(session_id).sandbox_id == 'sbx-1', and omitting it leaves an existing value unchanged."""
+    def test_update_status_with_worktree_id_records_it(self, db_path: Path, db_engine: Engine) -> None:
+        """[tier-1/integration] RunsRepository.update_status: worktree_id='dovo_1' leaves get(session_id).worktree_id == 'dovo_1', and omitting it leaves an existing value unchanged."""
         repo = RunsRepository(db_path=db_path, db_engine=db_engine, project_id="proj-a")
         repo.create(session_id="wf_a", blueprint_name="deploy", blueprint_key="deploy")
 
-        repo.update_status("wf_a", RunStatus.PAUSED, sandbox_id="sbx-1")
+        repo.update_status("wf_a", RunStatus.PAUSED, worktree_id="dovo_1")
         repo.update_status("wf_a", RunStatus.COMPLETED)
 
         record = repo.get("wf_a")
         assert record is not None
-        assert record.sandbox_id == "sbx-1"
+        assert record.worktree_id == "dovo_1"
 
 
 class RunsRepositoryExecutionStateTests:
@@ -146,7 +146,7 @@ class RunsRepositoryExecutionStateTests:
             expected_revision=0,
             next_revision=1,
             status=RunStatus.COMPLETED,
-            sandbox_id="sbx-1",
+            worktree_id="dovo_1",
         )
 
         assert record is not None
@@ -154,23 +154,25 @@ class RunsRepositoryExecutionStateTests:
         assert record.execution_state_revision == 1
         assert record.status == RunStatus.COMPLETED
         assert record.completed_at is not None
-        assert record.sandbox_id == "sbx-1"
+        assert record.worktree_id == "dovo_1"
 
-    def test_save_execution_state_and_update_status_record_sandbox_kept(self, db_path: Path, db_engine: Engine) -> None:
-        """[tier-1/integration] RunsRepository.save_execution_state / update_status: sandbox_kept=True leaves get(session_id).sandbox_kept is True, and omitting it on a later call leaves it True."""
+    def test_save_execution_state_and_update_status_record_worktree_kept(
+        self, db_path: Path, db_engine: Engine
+    ) -> None:
+        """[tier-1/integration] RunsRepository.save_execution_state / update_status: worktree_kept=True leaves get(session_id).worktree_kept is True, and omitting it on a later call leaves it True."""
         repo = RunsRepository(db_path=db_path, db_engine=db_engine, project_id="proj-a")
         repo.create(session_id="wf_a", blueprint_name="deploy", blueprint_key="deploy")
         repo.create(session_id="wf_b", blueprint_name="deploy", blueprint_key="deploy")
 
-        repo.save_execution_state("wf_a", "{}", expected_revision=0, next_revision=1, sandbox_kept=True)
+        repo.save_execution_state("wf_a", "{}", expected_revision=0, next_revision=1, worktree_kept=True)
         repo.update_status("wf_a", RunStatus.COMPLETED)
-        repo.update_status("wf_b", RunStatus.COMPLETED, sandbox_kept=True)
+        repo.update_status("wf_b", RunStatus.COMPLETED, worktree_kept=True)
         repo.update_status("wf_b", RunStatus.COMPLETED)
 
         for session_id in ("wf_a", "wf_b"):
             record = repo.get(session_id)
             assert record is not None
-            assert record.sandbox_kept is True
+            assert record.worktree_kept is True
 
     def test_save_execution_state_stale_revision_returns_none_and_leaves_row(
         self, db_path: Path, db_engine: Engine

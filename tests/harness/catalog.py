@@ -7,11 +7,11 @@ from pathlib import Path
 
 import yaml
 
-from worktree.common.filesystem.models import RepositoryPaths, WorkspacePaths
-from worktree.common.filesystem.services.global_root import resolve_global_paths
-from worktree.core.catalog.models import CatalogTier
-from worktree.core.catalog.services.inventory import ensure_tier_catalog_dirs, scan_and_index_catalog
-from worktree.core.project.services.storage import resolve_workspace_paths
+from dovo.common.filesystem.models import RepositoryPaths, WorkspacePaths
+from dovo.common.filesystem.services.global_root import resolve_global_paths
+from dovo.core.catalog.models import CatalogTier
+from dovo.core.catalog.services.inventory import ensure_tier_catalog_dirs, scan_and_index_catalog
+from dovo.core.project.services.storage import resolve_workspace_paths
 
 
 def _workspace_paths(workspace: Path) -> WorkspacePaths:
@@ -25,7 +25,7 @@ def write_runnable_blueprint(
     steps: list[dict[str, object]],
     timeout_seconds: int = 60,
 ) -> None:
-    """Write a minimal blueprint YAML under .worktree/catalog/blueprints/ and index it into the catalog DB."""
+    """Write a minimal blueprint YAML under .dovo/catalog/blueprints/ and index it into the catalog DB."""
     paths = _workspace_paths(workspace)
     catalog_dir = ensure_tier_catalog_dirs(CatalogTier.REPO, paths)
     blueprint_path = catalog_dir / "blueprints" / f"{key}.yml"
@@ -47,7 +47,7 @@ def write_runnable_step(
     key: str,
     definition: dict[str, object],
 ) -> None:
-    """Write a minimal step YAML under .worktree/catalog/steps/ and index it into the catalog DB."""
+    """Write a minimal step YAML under .dovo/catalog/steps/ and index it into the catalog DB."""
     paths = _workspace_paths(workspace)
     catalog_dir = ensure_tier_catalog_dirs(CatalogTier.REPO, paths)
     step_path = catalog_dir / "steps" / f"{key}.yml"

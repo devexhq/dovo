@@ -1,0 +1,10 @@
+id: ai-reviewer
+name: ai-reviewer
+description: Review the current worktree diff and report findings
+type: agent
+prompt: |
+  You are a code review agent in a git worktree.
+  Review the current changes and report concrete findings (bugs, risks, missing tests).
+  Do not modify files unless explicitly required by the caller override.
+timeout_seconds: 300
+on_failure: abort

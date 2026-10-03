@@ -7,22 +7,22 @@ from typing import Any
 
 import pytest
 
+from dovo.cli.ui.formatters.catalog.catalog_validate import CatalogValidateFormatter
+from dovo.cli.ui.formatters.catalog.catalog_views import CatalogValidateView
+from dovo.core.catalog.models import CatalogValidateResult, CatalogValidateStatus
 from tests.harness.formatter import (
     FormatterCase,
     assert_json_payload_matches_published_shape,
     assert_rich_render_shows_every_view_value,
     assert_transform_derives_expected_view,
 )
-from worktree.cli.ui.formatters.catalog.catalog_validate import CatalogValidateFormatter
-from worktree.cli.ui.formatters.catalog.catalog_views import CatalogValidateView
-from worktree.core.catalog.models import CatalogValidateResult, CatalogValidateStatus
 
 VALID_CASE = FormatterCase(
     data=CatalogValidateResult(
         status=CatalogValidateStatus.OK,
         valid=True,
         target="my-flow",
-        resolved_path=Path(".worktree/catalog/blueprints/my-flow.yml"),
+        resolved_path=Path(".dovo/catalog/blueprints/my-flow.yml"),
         item_type="blueprint",
         errors=[],
         warnings=[],
@@ -33,7 +33,7 @@ VALID_CASE = FormatterCase(
         valid=True,
         status_label="PASSED",
         target="my-flow",
-        resolved_path=".worktree/catalog/blueprints/my-flow.yml",
+        resolved_path=".dovo/catalog/blueprints/my-flow.yml",
         item_type="blueprint",
         errors=[],
         warnings=[],
@@ -86,7 +86,7 @@ PAYLOAD_CASES = [
             "valid": True,
             "status_label": "PASSED",
             "target": "my-flow",
-            "resolved_path": ".worktree/catalog/blueprints/my-flow.yml",
+            "resolved_path": ".dovo/catalog/blueprints/my-flow.yml",
             "item_type": "blueprint",
             "errors": [],
             "warnings": [],

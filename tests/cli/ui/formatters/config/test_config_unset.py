@@ -7,15 +7,15 @@ from typing import Any
 
 import pytest
 
+from dovo.cli.ui.formatters.config.config_unset import ConfigUnsetFormatter
+from dovo.core.config.mutate import ConfigUnsetResult, ConfigUnsetStatus
 from tests.harness.formatter import (
     FormatterCase,
     assert_json_payload_matches_published_shape,
     assert_rich_render_shows_every_view_value,
 )
-from worktree.cli.ui.formatters.config.config_unset import ConfigUnsetFormatter
-from worktree.core.config.mutate import ConfigUnsetResult, ConfigUnsetStatus
 
-_CONFIG_PATH = Path("/workspace/.worktree/config.json")
+_CONFIG_PATH = Path("/workspace/.dovo/config.json")
 
 OK_EXISTED = FormatterCase(
     data=ConfigUnsetResult(
@@ -62,8 +62,8 @@ SCHEMA_INVALID = FormatterCase(
         previous_value={"name": "demo-workspace", "initialized_at": None},
         errors=["Config schema validation failed (CONFIG_SCHEMA_INVALID):\n- (root): 'project' is a required property"],
         fixes=[
-            "Run `wt config validate` for details",
-            "Or `wt init --repair` to insert missing keys without overwriting values",
+            "Run `dovo config validate` for details",
+            "Or `dovo init --repair` to insert missing keys without overwriting values",
         ],
     ),
     view=ConfigUnsetResult(
@@ -74,8 +74,8 @@ SCHEMA_INVALID = FormatterCase(
         previous_value={"name": "demo-workspace", "initialized_at": None},
         errors=["Config schema validation failed (CONFIG_SCHEMA_INVALID):\n- (root): 'project' is a required property"],
         fixes=[
-            "Run `wt config validate` for details",
-            "Or `wt init --repair` to insert missing keys without overwriting values",
+            "Run `dovo config validate` for details",
+            "Or `dovo init --repair` to insert missing keys without overwriting values",
         ],
     ),
     render_expectations=["'project' is a required property"],
@@ -91,7 +91,7 @@ CONFIG_UNSET_PAYLOAD_CASES = [
         OK_EXISTED,
         {
             "status": "ok",
-            "config_path": "/workspace/.worktree/config.json",
+            "config_path": "/workspace/.dovo/config.json",
             "key": "agent.model",
             "existed": True,
             "previous_value": "qwen2.5-coder",
@@ -106,7 +106,7 @@ CONFIG_UNSET_PAYLOAD_CASES = [
         OK_NOT_EXISTED,
         {
             "status": "ok",
-            "config_path": "/workspace/.worktree/config.json",
+            "config_path": "/workspace/.dovo/config.json",
             "key": "telemetry.nonexistent",
             "existed": False,
             "previous_value": None,
@@ -121,7 +121,7 @@ CONFIG_UNSET_PAYLOAD_CASES = [
         SCHEMA_INVALID,
         {
             "status": "schema_invalid",
-            "config_path": "/workspace/.worktree/config.json",
+            "config_path": "/workspace/.dovo/config.json",
             "key": "project",
             "existed": True,
             "previous_value": {"name": "demo-workspace", "initialized_at": None},
@@ -131,8 +131,8 @@ CONFIG_UNSET_PAYLOAD_CASES = [
             ],
             "error_code": None,
             "fixes": [
-                "Run `wt config validate` for details",
-                "Or `wt init --repair` to insert missing keys without overwriting values",
+                "Run `dovo config validate` for details",
+                "Or `dovo init --repair` to insert missing keys without overwriting values",
             ],
         },
         id="schema_invalid",

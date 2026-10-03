@@ -6,7 +6,7 @@ from typing import Any
 
 import pytest
 
-from worktree.engine.executors.assertions import evaluate_json_match
+from dovo.engine.executors.assertions import evaluate_json_match
 
 
 def _config(path: str, operator: str, value: object) -> dict[str, Any]:

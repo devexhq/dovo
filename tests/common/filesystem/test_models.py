@@ -7,12 +7,12 @@ from pathlib import Path
 
 import pytest
 
-from worktree.common.filesystem.models import GlobalPaths, RepositoryPaths, WorkspacePaths
-from worktree.common.filesystem.services.paths import get_catalog_templates_dir
-from worktree.core.catalog.models import CatalogTier
-from worktree.core.project.models import ProjectIdentity
-from worktree.core.project.services.identity import save_project_identity
-from worktree.core.project.services.storage import resolve_workspace_paths
+from dovo.common.filesystem.models import GlobalPaths, RepositoryPaths, WorkspacePaths
+from dovo.common.filesystem.services.paths import get_catalog_templates_dir
+from dovo.core.catalog.models import CatalogTier
+from dovo.core.project.models import ProjectIdentity
+from dovo.core.project.services.identity import save_project_identity
+from dovo.core.project.services.storage import resolve_workspace_paths
 
 
 class GlobalPathsTests:
@@ -37,50 +37,50 @@ class RepositoryPathsTests:
     """Contract tests for repository-local path discovery."""
 
     def test_from_root_derives_repository_local_paths(self, tmp_path: Path) -> None:
-        """[tier-1/unit] RepositoryPaths.from_root: derives every repo-local child path under .worktree/, and the real .lock filename."""
+        """[tier-1/unit] RepositoryPaths.from_root: derives every repo-local child path under .dovo/, and the real .lock filename."""
         repo_root = tmp_path / "repository"
 
         paths = RepositoryPaths.from_root(repo_root)
 
-        worktree_dir = repo_root / ".worktree"
+        dovo_dir = repo_root / ".dovo"
         assert paths.root_dir == repo_root
-        assert paths.worktree_dir == worktree_dir
-        assert paths.config_file == worktree_dir / "config.json"
-        assert paths.catalog_dir == worktree_dir / "catalog"
-        assert paths.catalog_steps_dir == worktree_dir / "catalog" / "steps"
-        assert paths.catalog_blueprints_dir == worktree_dir / "catalog" / "blueprints"
-        assert paths.sandboxes_dir == worktree_dir / "sandboxes"
-        assert paths.lock_file == worktree_dir / ".lock"
+        assert paths.dovo_dir == dovo_dir
+        assert paths.config_file == dovo_dir / "config.json"
+        assert paths.catalog_dir == dovo_dir / "catalog"
+        assert paths.catalog_steps_dir == dovo_dir / "catalog" / "steps"
+        assert paths.catalog_blueprints_dir == dovo_dir / "catalog" / "blueprints"
+        assert paths.worktrees_dir == dovo_dir / "worktrees"
+        assert paths.lock_file == dovo_dir / ".lock"
         assert paths.gitignore_file == repo_root / ".gitignore"
 
-    def test_from_root_given_worktree_dir_resolves_parent_as_root(self, tmp_path: Path) -> None:
-        """[tier-1/unit] RepositoryPaths.from_root: passing the .worktree directory itself resolves root_dir to its parent."""
+    def test_from_root_given_dovo_dir_resolves_parent_as_root(self, tmp_path: Path) -> None:
+        """[tier-1/unit] RepositoryPaths.from_root: passing the .dovo directory itself resolves root_dir to its parent."""
         repo_root = tmp_path / "repository"
-        worktree_dir = repo_root / ".worktree"
+        dovo_dir = repo_root / ".dovo"
 
-        paths = RepositoryPaths.from_root(worktree_dir)
+        paths = RepositoryPaths.from_root(dovo_dir)
 
         assert paths.root_dir == repo_root
-        assert paths.worktree_dir == worktree_dir
+        assert paths.dovo_dir == dovo_dir
 
 
 def _build_workspace_paths(root: Path, global_root: Path, *, project_id: str | None = None) -> WorkspacePaths:
     repository_paths = RepositoryPaths.from_root(root)
     global_paths = GlobalPaths.from_root(global_root)
-    runtime_root = global_paths.storage_dir / "projects" / project_id if project_id else repository_paths.worktree_dir
+    runtime_root = global_paths.storage_dir / "projects" / project_id if project_id else repository_paths.dovo_dir
     return WorkspacePaths(
         root_dir=repository_paths.root_dir,
-        worktree_dir=repository_paths.worktree_dir,
+        dovo_dir=repository_paths.dovo_dir,
         config_file=repository_paths.config_file,
         catalog_dir=repository_paths.catalog_dir,
         catalog_steps_dir=repository_paths.catalog_steps_dir,
         catalog_blueprints_dir=repository_paths.catalog_blueprints_dir,
-        sandboxes_dir=repository_paths.sandboxes_dir,
+        worktrees_dir=repository_paths.worktrees_dir,
         lock_file=repository_paths.lock_file,
         gitignore_file=repository_paths.gitignore_file,
         catalog_templates_dir=get_catalog_templates_dir(),
         global_paths=global_paths,
-        database_file=global_paths.data_dir / "worktree.db",
+        database_file=global_paths.data_dir / "dovo.db",
         project_id=project_id,
         runtime_root=runtime_root,
         logs_dir=runtime_root / "logs",
@@ -107,10 +107,10 @@ def fixture_repo_no_identity(tmp_path: Path) -> Path:
 def fixture_repo_with_identity(tmp_path: Path) -> Path:
     """Create a repository root with a persisted identity for global runtime storage."""
     repository = tmp_path / "fixture-repository-with-identity"
-    worktree_dir = repository / ".worktree"
-    worktree_dir.mkdir(parents=True)
+    dovo_dir = repository / ".dovo"
+    dovo_dir.mkdir(parents=True)
     identity = ProjectIdentity(id="project-626", created_at=datetime(2026, 1, 1, tzinfo=UTC))
-    save_project_identity(worktree_dir / "project.json", identity)
+    save_project_identity(dovo_dir / "project.json", identity)
     return repository
 
 
@@ -144,17 +144,17 @@ class WorkspacePathsContractTests:
 
         assert sample_workspace_paths.catalog_dir_for(tier) == expected
 
-    def test_session_dir_and_sandbox_dir_do_not_create_directories(
+    def test_session_dir_and_worktree_dir_do_not_create_directories(
         self, sample_workspace_paths: WorkspacePaths, tmp_path: Path
     ) -> None:
-        """[tier-1/unit] WorkspacePaths.session_dir/sandbox_dir: returned paths do not exist on disk after the call (no mkdir side effect)."""
+        """[tier-1/unit] WorkspacePaths.session_dir/worktree_dir: returned paths do not exist on disk after the call (no mkdir side effect)."""
         session_dir = sample_workspace_paths.session_dir("sess_1")
-        sandbox_dir = sample_workspace_paths.sandbox_dir("sbx_1")
+        worktree_dir = sample_workspace_paths.worktree_dir("dovo_1")
 
         assert session_dir == sample_workspace_paths.sessions_dir / "sess_1"
-        assert sandbox_dir == sample_workspace_paths.sandboxes_dir / "sbx_1"
+        assert worktree_dir == sample_workspace_paths.worktrees_dir / "dovo_1"
         assert not session_dir.exists()
-        assert not sandbox_dir.exists()
+        assert not worktree_dir.exists()
 
 
 class WorkspacePathsParityTests:
@@ -163,42 +163,42 @@ class WorkspacePathsParityTests:
     ) -> None:
         """[tier-2/unit] WorkspacePaths keeps the legacy local-runtime layout except for the lock filename."""
         paths = _resolve_fixture_workspace_paths(fixture_repo_no_identity)
-        legacy_worktree_dir = fixture_repo_no_identity / ".worktree"
+        legacy_dovo_dir = fixture_repo_no_identity / ".dovo"
         legacy_layout = {
             "root_dir": fixture_repo_no_identity,
-            "worktree_dir": legacy_worktree_dir,
-            "config_file": legacy_worktree_dir / "config.json",
-            "catalog_dir": legacy_worktree_dir / "catalog",
-            "catalog_steps_dir": legacy_worktree_dir / "catalog" / "steps",
-            "catalog_blueprints_dir": legacy_worktree_dir / "catalog" / "blueprints",
-            "sandboxes_dir": legacy_worktree_dir / "sandboxes",
+            "dovo_dir": legacy_dovo_dir,
+            "config_file": legacy_dovo_dir / "config.json",
+            "catalog_dir": legacy_dovo_dir / "catalog",
+            "catalog_steps_dir": legacy_dovo_dir / "catalog" / "steps",
+            "catalog_blueprints_dir": legacy_dovo_dir / "catalog" / "blueprints",
+            "worktrees_dir": legacy_dovo_dir / "worktrees",
             "gitignore_file": fixture_repo_no_identity / ".gitignore",
-            "logs_dir": legacy_worktree_dir / "logs",
-            "sessions_dir": legacy_worktree_dir / "sessions",
-            "artifacts_dir": legacy_worktree_dir / "artifacts",
-            "tmp_dir": legacy_worktree_dir / "tmp",
+            "logs_dir": legacy_dovo_dir / "logs",
+            "sessions_dir": legacy_dovo_dir / "sessions",
+            "artifacts_dir": legacy_dovo_dir / "artifacts",
+            "tmp_dir": legacy_dovo_dir / "tmp",
         }
 
         for field, expected_path in legacy_layout.items():
             assert getattr(paths, field) == expected_path
-        assert paths.lock_file == legacy_worktree_dir / ".lock"
-        assert paths.lock_file != legacy_worktree_dir / "worktree.lock"
+        assert paths.lock_file == legacy_dovo_dir / ".lock"
+        assert paths.lock_file != legacy_dovo_dir / "dovo.lock"
 
     def test_workspace_paths_matches_legacy_resolution_with_project_identity(
         self, fixture_repo_with_identity: Path
     ) -> None:
         """[tier-2/unit] WorkspacePaths keeps the legacy project-aware runtime layout field-for-field."""
         paths = _resolve_fixture_workspace_paths(fixture_repo_with_identity)
-        legacy_worktree_dir = fixture_repo_with_identity / ".worktree"
+        legacy_dovo_dir = fixture_repo_with_identity / ".dovo"
         legacy_runtime_root = paths.global_paths.storage_dir / "projects" / "project-626"
         legacy_layout = {
             "root_dir": fixture_repo_with_identity,
-            "worktree_dir": legacy_worktree_dir,
-            "config_file": legacy_worktree_dir / "config.json",
-            "catalog_dir": legacy_worktree_dir / "catalog",
-            "catalog_steps_dir": legacy_worktree_dir / "catalog" / "steps",
-            "catalog_blueprints_dir": legacy_worktree_dir / "catalog" / "blueprints",
-            "sandboxes_dir": legacy_worktree_dir / "sandboxes",
+            "dovo_dir": legacy_dovo_dir,
+            "config_file": legacy_dovo_dir / "config.json",
+            "catalog_dir": legacy_dovo_dir / "catalog",
+            "catalog_steps_dir": legacy_dovo_dir / "catalog" / "steps",
+            "catalog_blueprints_dir": legacy_dovo_dir / "catalog" / "blueprints",
+            "worktrees_dir": legacy_dovo_dir / "worktrees",
             "gitignore_file": fixture_repo_with_identity / ".gitignore",
             "runtime_root": legacy_runtime_root,
             "logs_dir": legacy_runtime_root / "logs",
@@ -209,5 +209,5 @@ class WorkspacePathsParityTests:
 
         for field, expected_path in legacy_layout.items():
             assert getattr(paths, field) == expected_path
-        assert paths.lock_file == legacy_worktree_dir / ".lock"
-        assert paths.lock_file != legacy_worktree_dir / "worktree.lock"
+        assert paths.lock_file == legacy_dovo_dir / ".lock"
+        assert paths.lock_file != legacy_dovo_dir / "dovo.lock"

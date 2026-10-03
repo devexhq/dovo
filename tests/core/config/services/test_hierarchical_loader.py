@@ -10,11 +10,11 @@ from typing import Any
 
 import pytest
 
-from worktree.common.filesystem import WorkspacePaths
-from worktree.common.filesystem.services.global_root import resolve_global_paths
-from worktree.core.config.generator import CANONICAL_V1_DEFAULTS
-from worktree.core.config.models import ConfigTier, HierarchicalConfigLoadStatus, WorktreeConfig
-from worktree.core.config.services.hierarchical_loader import (
+from dovo.common.filesystem import WorkspacePaths
+from dovo.common.filesystem.services.global_root import resolve_global_paths
+from dovo.core.config.generator import CANONICAL_V1_DEFAULTS
+from dovo.core.config.models import ConfigTier, DovoConfig, HierarchicalConfigLoadStatus
+from dovo.core.config.services.hierarchical_loader import (
     load_hierarchical_config,
     resolve_config_layers,
 )
@@ -35,7 +35,7 @@ def _tier_config_path(tier: ConfigTier, isolated_workspace: Path, global_root: P
         return global_paths.global_dir / "config.json"
     if tier == ConfigTier.USER:
         return global_paths.user_dir / "config.json"
-    return isolated_workspace / ".worktree" / "config.json"
+    return isolated_workspace / ".dovo" / "config.json"
 
 
 FILE_BASED_TIERS = [
@@ -72,11 +72,11 @@ class ConfigLayerResolutionTests:
         global_paths = resolve_global_paths(global_root)
         global_config_path = global_paths.global_dir / "config.json"
         user_config_path = global_paths.user_dir / "config.json"
-        repo_config_path = repo_root / ".worktree" / "config.json"
+        repo_config_path = repo_root / ".dovo" / "config.json"
 
         global_data = {"agent": {"temperature": 0.5}}
         user_data = {"agent": {"model": "local-llm"}}
-        repo_data = {"sandbox": {"base_ref": "main"}}
+        repo_data = {"worktree": {"base_ref": "main"}}
         _write_tier_config(global_config_path, global_data)
         _write_tier_config(user_config_path, user_data)
         _write_tier_config(repo_config_path, repo_data)
@@ -105,9 +105,9 @@ class ConfigLayerResolutionTests:
 
         global_paths = resolve_global_paths(global_root)
         user_config_path = global_paths.user_dir / "config.json"
-        repo_config_path = repo_root / ".worktree" / "config.json"
+        repo_config_path = repo_root / ".dovo" / "config.json"
         _write_tier_config(user_config_path, {"agent": {"model": "gemini-pro"}})
-        _write_tier_config(repo_config_path, {"sandbox": {"base_ref": "main"}})
+        _write_tier_config(repo_config_path, {"worktree": {"base_ref": "main"}})
 
         layers = resolve_config_layers(workspace_paths_factory(repo_root, global_root))
 
@@ -117,7 +117,7 @@ class ConfigLayerResolutionTests:
 class HierarchicalConfigMergeTests:
     """[tier-1/unit] Precedence and recursive-merge contracts for load_hierarchical_config."""
 
-    def test_no_tier_files_returns_packaged_defaults_as_worktree_config(
+    def test_no_tier_files_returns_packaged_defaults_as_dovo_config(
         self, tmp_path: Path, workspace_paths_factory: WorkspacePathsFactory
     ) -> None:
         repo_root = tmp_path / "repo"
@@ -127,7 +127,7 @@ class HierarchicalConfigMergeTests:
 
         expected_data = {**CANONICAL_V1_DEFAULTS, "project": {"name": "unnamed_project", "initialized_at": None}}
         assert result.status == HierarchicalConfigLoadStatus.OK
-        assert result.config == WorktreeConfig.model_validate(expected_data)
+        assert result.config == DovoConfig.model_validate(expected_data)
 
     def test_user_tier_overrides_agent_model_when_repo_leaves_unset(
         self, isolated_workspace: Path, tmp_path: Path, workspace_paths_factory: WorkspacePathsFactory
@@ -135,25 +135,25 @@ class HierarchicalConfigMergeTests:
         global_root = tmp_path / "global_home"
         global_paths = resolve_global_paths(global_root)
         _write_tier_config(global_paths.user_dir / "config.json", {"agent": {"model": "gemini-pro"}})
-        _write_tier_config(isolated_workspace / ".worktree" / "config.json", {"sandbox": {"base_ref": "main"}})
+        _write_tier_config(isolated_workspace / ".dovo" / "config.json", {"worktree": {"base_ref": "main"}})
 
         result = load_hierarchical_config(workspace_paths_factory(isolated_workspace, global_root))
 
         assert result.config is not None
         assert result.config.agent.model == "gemini-pro"
 
-    def test_repo_tier_overrides_sandbox_base_ref_over_user_default(
+    def test_repo_tier_overrides_worktree_base_ref_over_user_default(
         self, isolated_workspace: Path, tmp_path: Path, workspace_paths_factory: WorkspacePathsFactory
     ) -> None:
         global_root = tmp_path / "global_home"
         global_paths = resolve_global_paths(global_root)
-        _write_tier_config(global_paths.user_dir / "config.json", {"sandbox": {"base_ref": "develop"}})
-        _write_tier_config(isolated_workspace / ".worktree" / "config.json", {"sandbox": {"base_ref": "main"}})
+        _write_tier_config(global_paths.user_dir / "config.json", {"worktree": {"base_ref": "develop"}})
+        _write_tier_config(isolated_workspace / ".dovo" / "config.json", {"worktree": {"base_ref": "main"}})
 
         result = load_hierarchical_config(workspace_paths_factory(isolated_workspace, global_root))
 
         assert result.config is not None
-        assert result.config.sandbox.base_ref == "main"
+        assert result.config.worktree.base_ref == "main"
 
     def test_nested_dict_keys_merge_recursively_across_tiers(
         self, isolated_workspace: Path, tmp_path: Path, workspace_paths_factory: WorkspacePathsFactory
@@ -171,7 +171,7 @@ class HierarchicalConfigMergeTests:
         assert result.config.agent.temperature == 0.5
         assert result.config.agent.model == "local-llm"
 
-    def test_global_root_none_resolves_via_worktree_home_env(
+    def test_global_root_none_resolves_via_dovo_home_env(
         self,
         isolated_workspace: Path,
         monkeypatch: pytest.MonkeyPatch,
@@ -179,15 +179,15 @@ class HierarchicalConfigMergeTests:
         workspace_paths_factory: WorkspacePathsFactory,
     ) -> None:
         custom_home = tmp_path / "custom_home"
-        monkeypatch.setenv("WORKTREE_HOME", str(custom_home))
+        monkeypatch.setenv("DOVO_HOME", str(custom_home))
         _write_tier_config(custom_home / "global" / "config.json", {"agent": {"temperature": 0.7}})
-        _write_tier_config(custom_home / "user" / "config.json", {"agent": {"model": "worktree-home-model"}})
+        _write_tier_config(custom_home / "user" / "config.json", {"agent": {"model": "dovo-home-model"}})
 
         result = load_hierarchical_config(workspace_paths_factory(isolated_workspace, None))
 
         assert result.config is not None
         assert result.config.agent.temperature == 0.7
-        assert result.config.agent.model == "worktree-home-model"
+        assert result.config.agent.model == "dovo-home-model"
 
 
 class HierarchicalConfigErrorTests:
@@ -224,14 +224,14 @@ class HierarchicalConfigErrorTests:
     ) -> None:
         global_root = tmp_path / "global_home"
         tier_config_path = _tier_config_path(tier, isolated_workspace, global_root)
-        _write_tier_config(tier_config_path, {"sandbox": {"max_active_sandboxes": "many"}})
+        _write_tier_config(tier_config_path, {"worktree": {"max_active_worktrees": "many"}})
 
         result = load_hierarchical_config(workspace_paths_factory(isolated_workspace, global_root))
 
         assert result.status == HierarchicalConfigLoadStatus.VALIDATION_FAILED
         assert result.tier == tier
         assert result.path == tier_config_path
-        assert "max_active_sandboxes" in result.errors[0]
+        assert "max_active_worktrees" in result.errors[0]
 
     @pytest.mark.parametrize("tier", FILE_BASED_TIERS)
     def test_unreadable_tier_file_returns_unreadable_status(
@@ -284,7 +284,7 @@ class HierarchicalMergePurityTests:
         global_root = tmp_path / "global_home"
         global_paths = resolve_global_paths(global_root)
         _write_tier_config(global_paths.user_dir / "config.json", {"agent": {"model": "gemini-pro"}})
-        _write_tier_config(isolated_workspace / ".worktree" / "config.json", {"agent": {"temperature": 0.9}})
+        _write_tier_config(isolated_workspace / ".dovo" / "config.json", {"agent": {"temperature": 0.9}})
 
         paths = workspace_paths_factory(isolated_workspace, global_root)
         layers = resolve_config_layers(paths)
@@ -304,13 +304,13 @@ class HierarchicalMergePurityTests:
         repo_root_b = tmp_path / "repo_b"
         repo_root_b.mkdir()
 
-        (repo_root_a / ".worktree").mkdir()
-        (repo_root_a / ".worktree" / "config.json").write_text(
-            '{"sandbox": {"base_ref": "main"}, "agent": {"model": "x"}}', encoding="utf-8"
+        (repo_root_a / ".dovo").mkdir()
+        (repo_root_a / ".dovo" / "config.json").write_text(
+            '{"worktree": {"base_ref": "main"}, "agent": {"model": "x"}}', encoding="utf-8"
         )
-        (repo_root_b / ".worktree").mkdir()
-        (repo_root_b / ".worktree" / "config.json").write_text(
-            '{"agent": {"model": "x"}, "sandbox": {"base_ref": "main"}}', encoding="utf-8"
+        (repo_root_b / ".dovo").mkdir()
+        (repo_root_b / ".dovo" / "config.json").write_text(
+            '{"agent": {"model": "x"}, "worktree": {"base_ref": "main"}}', encoding="utf-8"
         )
 
         result_a = load_hierarchical_config(workspace_paths_factory(repo_root_a, global_root))

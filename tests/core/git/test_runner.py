@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from worktree.core.git.models import GitWorktreeEntry
-from worktree.core.git.runner import GitRunner
+from dovo.core.git.models import GitWorktreeEntry
+from dovo.core.git.runner import GitRunner
 
 
 class GitRunnerPlumbingTests:
@@ -13,33 +13,33 @@ class GitRunnerPlumbingTests:
 
     def test_worktree_add_creates_new_working_tree_and_branch(self, git_repo: Path, tmp_path: Path) -> None:
         """Add worktree creates directory and sets active branch."""
-        wt_path = tmp_path / "feature-wt"
+        worktree_path = tmp_path / "feature-worktree"
 
-        GitRunner.worktree_add(git_repo, wt_path, "feature-wt", "main")
+        GitRunner.worktree_add(git_repo, worktree_path, "feature-worktree", "main")
 
-        assert wt_path.is_dir() is True
-        assert GitRunner.get_current_branch(wt_path) == "feature-wt"
+        assert worktree_path.is_dir() is True
+        assert GitRunner.get_current_branch(worktree_path) == "feature-worktree"
 
         entries = GitRunner.worktree_list(git_repo)
-        wt_entries = [e for e in entries if e.path.resolve() == wt_path.resolve()]
-        assert len(wt_entries) == 1
-        assert wt_entries[0] == GitWorktreeEntry(
-            path=wt_path.resolve(),
-            head_sha=GitRunner.rev_parse(wt_path, rev="HEAD"),
-            branch="feature-wt",
+        worktree_entries = [e for e in entries if e.path.resolve() == worktree_path.resolve()]
+        assert len(worktree_entries) == 1
+        assert worktree_entries[0] == GitWorktreeEntry(
+            path=worktree_path.resolve(),
+            head_sha=GitRunner.rev_parse(worktree_path, rev="HEAD"),
+            branch="feature-worktree",
         )
 
     def test_worktree_remove_detaches_and_cleans_directory(self, git_repo: Path, tmp_path: Path) -> None:
         """Remove worktree deletes directory and unregisters worktree."""
-        wt_path = tmp_path / "feature-remove"
-        GitRunner.worktree_add(git_repo, wt_path, "feature-remove", "main")
-        assert wt_path.is_dir() is True
+        worktree_path = tmp_path / "feature-remove"
+        GitRunner.worktree_add(git_repo, worktree_path, "feature-remove", "main")
+        assert worktree_path.is_dir() is True
 
-        GitRunner.worktree_remove(git_repo, wt_path, force=True)
+        GitRunner.worktree_remove(git_repo, worktree_path, force=True)
 
-        assert wt_path.exists() is False
+        assert worktree_path.exists() is False
         entries = GitRunner.worktree_list(git_repo)
-        matching = [e for e in entries if e.path.resolve() == wt_path.resolve()]
+        matching = [e for e in entries if e.path.resolve() == worktree_path.resolve()]
         assert matching == []
 
     def test_has_uncommitted_changes_detects_staged_and_unstaged_files(self, git_repo: Path) -> None:

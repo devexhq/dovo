@@ -7,19 +7,19 @@ from typing import Any
 
 import pytest
 
+from dovo.cli.ui.formatters.catalog.catalog_list import CatalogListFormatter
+from dovo.cli.ui.formatters.catalog.catalog_views import (
+    CatalogItemView,
+    CatalogListView,
+    CatalogTemplateView,
+)
+from dovo.core.catalog.models import CatalogItemType, CatalogListResult, CatalogRecord, CatalogTier
 from tests.harness.formatter import (
     FormatterCase,
     assert_json_payload_matches_published_shape,
     assert_rich_render_shows_every_view_value,
     assert_transform_derives_expected_view,
 )
-from worktree.cli.ui.formatters.catalog.catalog_list import CatalogListFormatter
-from worktree.cli.ui.formatters.catalog.catalog_views import (
-    CatalogItemView,
-    CatalogListView,
-    CatalogTemplateView,
-)
-from worktree.core.catalog.models import CatalogItemType, CatalogListResult, CatalogRecord, CatalogTier
 
 
 def _sample_catalog_record() -> CatalogRecord:

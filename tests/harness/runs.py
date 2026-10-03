@@ -6,17 +6,17 @@ from collections.abc import Sequence
 from datetime import UTC, datetime
 from pathlib import Path
 
+from dovo.common.filesystem.models import WorkspacePaths
+from dovo.core.catalog import Catalog
+from dovo.core.catalog.blueprint import Blueprint
+from dovo.core.catalog.definitions import LoopStepBlock, StepDefinition
+from dovo.core.db import RunRecord, RunsRepository, RunStatus
+from dovo.engine import RunObserver, RunOutcome
+from dovo.engine.executors.models import ConditionEvaluationResult, StepResult
+from dovo.engine.state_models import ExecutionLeafNode, NodeState, StepAttemptRecord
+from dovo.engine.state_store import RunStateStore
+from dovo.engine.writer import snapshot_definitions
 from tests.harness.catalog import write_runnable_blueprint
-from worktree.common.filesystem.models import WorkspacePaths
-from worktree.core.catalog import Catalog
-from worktree.core.catalog.blueprint import Blueprint
-from worktree.core.catalog.definitions import LoopStepBlock, StepDefinition
-from worktree.core.db import RunRecord, RunsRepository, RunStatus
-from worktree.engine import RunObserver, RunOutcome
-from worktree.engine.executors.models import ConditionEvaluationResult, StepResult
-from worktree.engine.state_models import ExecutionLeafNode, NodeState, StepAttemptRecord
-from worktree.engine.state_store import RunStateStore
-from worktree.engine.writer import snapshot_definitions
 
 SEEDED_FAILURE = "seeded failure"
 
@@ -24,7 +24,7 @@ SEEDED_FAILURE = "seeded failure"
 class NoOpRunObserver(RunObserver):
     """RunObserver ignoring every hook; subclass and override only the callbacks a test records."""
 
-    def on_sandbox_ready(self, path: Path, active: bool) -> None:
+    def on_worktree_ready(self, path: Path, active: bool) -> None:
         pass
 
     def on_step_start(self, idx: int, total: int, step: StepDefinition) -> None:
@@ -61,7 +61,7 @@ class NoOpRunObserver(RunObserver):
     def on_loop_done(self, loop_id: str, status: str, total_iterations: int) -> None:
         pass
 
-    def on_sandbox_cleanup(self, kept: bool, path: Path) -> None:
+    def on_worktree_cleanup(self, kept: bool, path: Path) -> None:
         pass
 
     def on_run_started(self, steps: Sequence[StepDefinition | LoopStepBlock]) -> None:
@@ -77,7 +77,7 @@ def seed_new_run(
     *,
     session_id: str,
     steps: list[dict[str, object]],
-    use_sandbox: bool = False,
+    use_worktree: bool = False,
     keep: bool = False,
     auto_apply: bool = False,
     agent: str | None = None,
@@ -94,7 +94,7 @@ def seed_new_run(
         blueprint_name=session_id,
         blueprint_key=session_id,
         status=RunStatus.RUNNING,
-        use_sandbox=use_sandbox,
+        use_worktree=use_worktree,
         keep=keep,
         inputs_json="{}",
         auto_apply=auto_apply,
@@ -113,8 +113,8 @@ def seed_paused_run(
     session_id: str,
     steps: list[dict[str, object]],
     paused_step_id: str,
-    use_sandbox: bool = False,
-    sandbox_id: str | None = None,
+    use_worktree: bool = False,
+    worktree_id: str | None = None,
     auto_apply: bool = False,
     agent: str | None = None,
 ) -> RunRecord:
@@ -124,7 +124,7 @@ def seed_paused_run(
         runs,
         session_id=session_id,
         steps=steps,
-        use_sandbox=use_sandbox,
+        use_worktree=use_worktree,
         auto_apply=auto_apply,
         agent=agent,
     )
@@ -154,7 +154,7 @@ def seed_paused_run(
         state,
         run_status=RunStatus.PAUSED,
         error_message=f"Step '{paused_step_id}' failed: {SEEDED_FAILURE}",
-        sandbox_id=sandbox_id,
+        worktree_id=worktree_id,
     )
     assert saved.ok
     row = runs.get(session_id)

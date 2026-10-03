@@ -1,7 +1,0 @@
-id: download-artifact
-name: download-artifact
-description: Download a named artifact bundle from persistent storage into the sandbox
-type: internal
-command: artifacts.download
-timeout_seconds: 120
-on_failure: abort

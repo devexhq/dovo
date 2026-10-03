@@ -1,5 +1,5 @@
-site_name: Worktree CLI Documentation
-site_description: Documentation for Worktree CLI (wt) - isolated Git worktrees and AI agent workspaces
+site_name: Dovo CLI Documentation
+site_description: Documentation for Dovo CLI (dovo) - isolated Git worktrees and AI agent workspaces
 theme:
   name: material
   palette:
@@ -42,21 +42,21 @@ nav:
       - Step Schema & Types: reference/step-schema.md
       - Inputs & Placeholders: reference/inputs-schema.md
       - Assertions & Verification: reference/assertions-schema.md
-      - Project Config (.worktree/config.json): reference/config-schema.md
+      - Project Config (.dovo/config.json): reference/config-schema.md
   - Recipes & Examples:
       - TDD Loop: recipes/tdd-loop.md
       - AI Code Patcher: recipes/ai-code-patcher.md
       - CI/CD Automation: recipes/ci-cd-automation.md
   - CLI Reference:
-      - Workspace Init (wt init): cli/init.md
-      - Status (wt status): cli/status.md
-      - Diff (wt diff): cli/diff.md
-      - Config (wt config): cli/config.md
-      - Run (wt run): cli/run.md
-      - Resume (wt resume): cli/resume.md
-      - History (wt history): cli/history.md
-      - Logs (wt logs): cli/logs.md
-      - Sandbox (wt sandbox): cli/sandbox.md
+      - Workspace Init (dovo init): cli/init.md
+      - Status (dovo status): cli/status.md
+      - Diff (dovo diff): cli/diff.md
+      - Config (dovo config): cli/config.md
+      - Run (dovo run): cli/run.md
+      - Resume (dovo resume): cli/resume.md
+      - History (dovo history): cli/history.md
+      - Logs (dovo logs): cli/logs.md
+      - Worktree (dovo worktree): cli/worktree.md
 exclude_docs: |
   agents/*
   agents/**/*

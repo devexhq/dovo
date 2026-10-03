@@ -1,4 +1,4 @@
-"""Single-tier CLI integration tests for wt logs."""
+"""Single-tier CLI integration tests for dovo logs."""
 
 from __future__ import annotations
 
@@ -8,12 +8,12 @@ from typing import Any
 
 from typer.testing import CliRunner
 
-from worktree.cli import app
-from worktree.common.filesystem.models import RepositoryPaths
-from worktree.common.filesystem.services.global_root import resolve_global_paths
-from worktree.core.db import RunStatus, WorktreeDb
-from worktree.core.logs import LogsShowResult, LogsShowStatus, RunLogEvent, RunLogEventType
-from worktree.core.project.services.storage import resolve_workspace_paths
+from dovo.cli import app
+from dovo.common.filesystem.models import RepositoryPaths
+from dovo.common.filesystem.services.global_root import resolve_global_paths
+from dovo.core.db import DovoDb, RunStatus
+from dovo.core.logs import LogsShowResult, LogsShowStatus, RunLogEvent, RunLogEventType
+from dovo.core.project.services.storage import resolve_workspace_paths
 
 _EVENTS = [
     RunLogEvent(ts="2026-09-26T10:00:00+00:00", event=RunLogEventType.RUN_STARTED, session_id="sess-logs"),
@@ -24,7 +24,7 @@ _EVENTS = [
 def _seed_session(workspace: Path) -> Path:
     """Persist a run record plus a run.log and build step captures for session 'sess-logs'."""
     paths = resolve_workspace_paths(RepositoryPaths.from_root(workspace), resolve_global_paths(None))
-    WorktreeDb(database_file=paths.database_file, project_id=paths.project_id).runs.create(
+    DovoDb(database_file=paths.database_file, project_id=paths.project_id).runs.create(
         session_id="sess-logs", blueprint_name="bp", blueprint_key="bp", status=RunStatus.COMPLETED
     )
     session_log_dir = paths.logs_dir / "sess-logs"
@@ -39,12 +39,12 @@ def _seed_session(workspace: Path) -> Path:
 
 
 class LogsCliIntegrationTests:
-    """Typer runner integration tests for wt logs."""
+    """Typer runner integration tests for dovo logs."""
 
     def test_logs_command_exit_0_prints_run_log_events_for_valid_session(
         self, cli_runner: CliRunner, logs_workspace: Path
     ) -> None:
-        """wt logs <session_id>: exit 0 and stdout renders every run.log event."""
+        """dovo logs <session_id>: exit 0 and stdout renders every run.log event."""
         _seed_session(logs_workspace)
 
         result = cli_runner.invoke(app, ["-p", str(logs_workspace), "logs", "sess-logs"])
@@ -57,7 +57,7 @@ class LogsCliIntegrationTests:
     def test_logs_command_step_attempt_stream_tail_options_bind_to_service_call(
         self, cli_runner: CliRunner, logs_workspace: Path, dispatch_spy: list[Any]
     ) -> None:
-        """wt logs <session_id> --step build --attempt 2 --stream stderr --tail 5: the result holds attempt 2's last five stderr lines."""
+        """dovo logs <session_id> --step build --attempt 2 --stream stderr --tail 5: the result holds attempt 2's last five stderr lines."""
         _seed_session(logs_workspace)
 
         result = cli_runner.invoke(
@@ -88,14 +88,14 @@ class LogsCliIntegrationTests:
     def test_logs_command_unknown_session_exits_1_with_not_found_message(
         self, cli_runner: CliRunner, logs_workspace: Path
     ) -> None:
-        """wt logs ghost-session: exit 1 with the not-found message."""
+        """dovo logs ghost-session: exit 1 with the not-found message."""
         result = cli_runner.invoke(app, ["-p", str(logs_workspace), "logs", "ghost-session"])
 
         assert result.exit_code == 1
         assert "No logs found for session 'ghost-session'" in result.stdout
 
     def test_logs_command_format_json_matches_wire_schema(self, cli_runner: CliRunner, logs_workspace: Path) -> None:
-        """wt logs <session_id> --format json: stdout equals the literal LogsShowResult envelope."""
+        """dovo logs <session_id> --format json: stdout equals the literal LogsShowResult envelope."""
         _seed_session(logs_workspace)
 
         result = cli_runner.invoke(app, ["-p", str(logs_workspace), "logs", "sess-logs", "--format", "json"])

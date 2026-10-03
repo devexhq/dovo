@@ -1,6 +1,6 @@
 # Testing
 
-Testing conventions, taxonomy, and execution patterns for Worktree CLI. Narrative companion to
+Testing conventions, taxonomy, and execution patterns for Dovo CLI. Narrative companion to
 `tests/docs/RULES.md` (auto-generated, TEST-001+); where the two disagree, RULES.md wins.
 
 ## The rule that matters most
@@ -12,16 +12,16 @@ must not be asserted on.
 
 ## 1:1 Source Parity Layout
 
-Test structure mirrors `src/worktree/` 1:1 under `tests/`. Fixed mappings:
-- `src/worktree/common/<m>.py` -> `tests/common/test_<m>.py`
-- `src/worktree/core/<domain>/<m>.py` -> `tests/core/<domain>/test_<m>.py`
-- `src/worktree/cli/ui/formatters/<domain>/<name>.py` -> `tests/cli/ui/formatters/<domain>/test_<name>.py`
-- `src/worktree/cli/<command>/commands/<action>.py` -> `tests/cli/<command>/test_<command>_<action>.py`
+Test structure mirrors `src/dovo/` 1:1 under `tests/`. Fixed mappings:
+- `src/dovo/common/<m>.py` -> `tests/common/test_<m>.py`
+- `src/dovo/core/<domain>/<m>.py` -> `tests/core/<domain>/test_<m>.py`
+- `src/dovo/cli/ui/formatters/<domain>/<name>.py` -> `tests/cli/ui/formatters/<domain>/test_<name>.py`
+- `src/dovo/cli/<command>/commands/<action>.py` -> `tests/cli/<command>/test_<command>_<action>.py`
   (one subdirectory per CLI command domain, `commands/` collapses, one file per action)
 
 Rules: every source module has a test file, no exemption list; every test directory gets an
 `__init__.py`; one test file per source module unless a stated architectural rule says otherwise;
-`tests/core/**` never imports `worktree.cli.*`; no part-numbered or grab-bag files.
+`tests/core/**` never imports `dovo.cli.*`; no part-numbered or grab-bag files.
 
 ## Naming Conventions
 
@@ -44,7 +44,7 @@ side effects (files, git refs, DB rows). No mocks except genuine process/network
 real `tmp_path`, SQLite, `GitWorkspaceHarness`.
 
 ### Tier 2 - Presentation Contracts (Three Tests Per Formatter, Never One)
-Every formatter under `src/worktree/cli/ui/formatters/<domain>/` gets three tests in
+Every formatter under `src/dovo/cli/ui/formatters/<domain>/` gets three tests in
 `tests/cli/ui/formatters/<domain>/test_<name>.py`, built on `tests.harness.formatter.FormatterCase`:
 1. **Transform:** `transform(model) == ExpectedView(...)`.
 2. **JSON wire:** `to_json_serializable(model)` as an exact literal dict, pinned at
@@ -74,7 +74,7 @@ TEST-019.
 ### Tier 4 - Invariants (`tests/lint/`)
 Static AST analysis and architectural boundary enforcement: layer isolation, output routing
 (no direct `print`/`echo` outside the dispatcher), `*Result` hierarchy, remediation capitalization,
-`wt --help` vs `README.md` parity.
+`dovo --help` vs `README.md` parity.
 
 ## Test Harness and Assertion Helpers
 
@@ -131,7 +131,7 @@ Always `pytest.param(..., id="descriptive_case_id")`, no broad `Any` in signatur
 - `is not None` is not a complete assertion; `isinstance` only when it distinguishes two real code paths.
 - Annotate test helpers as tightly as production; `Any` rules in `code-conventions.md` apply unchanged.
 - Never `# pyright: ignore` a test-tree error — fix the fixture. Exception: `pytest.raises(TypeError)`.
-- Never assert help text wording — assert Click metadata instead. Exception: the `wt --help` vs
+- Never assert help text wording — assert Click metadata instead. Exception: the `dovo --help` vs
   `README.md` check in `tests/lint/`.
 - Cover every branch of a factory, dispatcher, or `elif` chain.
 

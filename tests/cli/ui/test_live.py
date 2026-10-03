@@ -8,9 +8,9 @@ from rich.console import Console, Group
 from rich.panel import Panel
 from rich.table import Table
 
-from worktree.cli.ui.dispatcher import UiDispatcher
-from worktree.cli.ui.events import LoopLifecycleEvent, StepDoneEvent, StepStartEvent
-from worktree.cli.ui.live import LiveDisplayManager, build_loop_status_panel
+from dovo.cli.ui.dispatcher import UiDispatcher
+from dovo.cli.ui.events import LoopLifecycleEvent, StepDoneEvent, StepStartEvent
+from dovo.cli.ui.live import LiveDisplayManager, build_loop_status_panel
 
 
 def _manager() -> LiveDisplayManager:

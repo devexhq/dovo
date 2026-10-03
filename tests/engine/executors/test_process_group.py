@@ -9,9 +9,9 @@ from unittest.mock import patch
 
 import pytest
 
+from dovo.engine.executors.models import StepExecutionContext
+from dovo.engine.executors.step_executor import StepExecution
 from tests.harness.builders import StepBuilder
-from worktree.engine.executors.models import StepExecutionContext
-from worktree.engine.executors.step_executor import StepExecution
 
 pytestmark = pytest.mark.slow
 
@@ -59,7 +59,7 @@ class ProcessGroupEscalationTests:
         step = StepBuilder.command(cmd).with_id("timeout-escalate").with_timeout(1).build()
 
         start_time = time.monotonic()
-        execution = StepExecution(StepExecutionContext(step=step, sandbox_path=tmp_path))
+        execution = StepExecution(StepExecutionContext(step=step, worktree_path=tmp_path))
         result = execution.run()
         elapsed = time.monotonic() - start_time
 
@@ -104,7 +104,7 @@ time.sleep(30)
         (tmp_path / "tree_script.py").write_text(script_content)
         cmd = f"{sys.executable} tree_script.py"
         step = StepBuilder.command(cmd).with_id("interrupt-tree").with_timeout(30).build()
-        execution = StepExecution(StepExecutionContext(step=step, sandbox_path=tmp_path))
+        execution = StepExecution(StepExecutionContext(step=step, worktree_path=tmp_path))
 
         def mock_wait(self_proc: subprocess.Popen[str], *args: object, **kwargs: object) -> int:
             _sync_and_interrupt(tmp_path)

@@ -1,6 +1,6 @@
 """Fake process-boundary runner for direct-mutation agent adapter tests.
 
-Stands in for worktree.common.process.run_isolated_process's call signature at the
+Stands in for dovo.common.process.run_isolated_process's call signature at the
 subprocess boundary, so a test can monkeypatch a single configurable object instead of
 hand-rolling a `fake_run` closure with an ad-hoc captured dict per test file. Configure it
 to return a canned CompletedProcess via `.returning(...)`, or to raise a canned exception
@@ -17,7 +17,7 @@ from typing import Self
 
 from pydantic import BaseModel
 
-from worktree.core.agents import AgentRequest, AgentResponse, BaseAgentProvider
+from dovo.core.agents import AgentRequest, AgentResponse, BaseAgentProvider
 
 
 class FakeAgentRunnerCall(BaseModel):

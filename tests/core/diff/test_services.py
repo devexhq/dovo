@@ -8,12 +8,12 @@ from pathlib import Path
 
 import pytest
 
-from worktree.common.filesystem import WorkspacePaths
-from worktree.core.diff.models import DiffStatus
-from worktree.core.diff.services import DiffService
-from worktree.core.diff.writer import get_session_dir, write_session_diff
-from worktree.core.project.models import ProjectIdentity
-from worktree.core.project.services.identity import save_project_identity
+from dovo.common.filesystem import WorkspacePaths
+from dovo.core.diff.models import DiffStatus
+from dovo.core.diff.services import DiffService
+from dovo.core.diff.writer import get_session_dir, write_session_diff
+from dovo.core.project.models import ProjectIdentity
+from dovo.core.project.services.identity import save_project_identity
 
 WorkspacePathsFactory = Callable[[Path, Path | None], WorkspacePaths]
 
@@ -29,8 +29,8 @@ class DiffServiceTests:
         repository = tmp_path / "repository"
         identity = ProjectIdentity(id="project-626", created_at=datetime(2026, 1, 1, tzinfo=UTC))
         patch_text = "diff --git a/file.txt b/file.txt\n-old\n+new\n"
-        monkeypatch.setenv("WORKTREE_HOME", str(global_root))
-        save_project_identity(repository / ".worktree" / "project.json", identity)
+        monkeypatch.setenv("DOVO_HOME", str(global_root))
+        save_project_identity(repository / ".dovo" / "project.json", identity)
         paths = workspace_paths_factory(repository, None)
         patch_path = write_session_diff(get_session_dir(paths, "session-626"), patch_text)
 
@@ -48,8 +48,8 @@ class DiffServiceTests:
         global_root = tmp_path / "global"
         repository = tmp_path / "repository"
         identity = ProjectIdentity(id="project-626", created_at=datetime(2026, 1, 1, tzinfo=UTC))
-        monkeypatch.setenv("WORKTREE_HOME", str(global_root))
-        save_project_identity(repository / ".worktree" / "project.json", identity)
+        monkeypatch.setenv("DOVO_HOME", str(global_root))
+        save_project_identity(repository / ".dovo" / "project.json", identity)
         paths = workspace_paths_factory(repository, None)
 
         result = DiffService(paths, session_id="session-626").collect()

@@ -6,20 +6,20 @@ from pathlib import Path
 
 import pytest
 
-from worktree.core.artifacts.models import ArtifactDownloadStatus
-from worktree.core.artifacts.services.download import download_artifact
-from worktree.core.artifacts.services.upload import publish_artifact
-from worktree.core.db.repositories.artifacts import ArtifactsRepository
+from dovo.core.artifacts.models import ArtifactDownloadStatus
+from dovo.core.artifacts.services.download import download_artifact
+from dovo.core.artifacts.services.upload import publish_artifact
+from dovo.core.db.repositories.artifacts import ArtifactsRepository
 
 
 def _publish(tmp_path: Path, artifacts_repository: ArtifactsRepository, *, session_id: str, name: str) -> Path:
     """Publish a real artifact bundle for download-service tests and return artifacts_dir."""
-    sandbox_path = tmp_path / "sandbox"
-    (sandbox_path / "dist").mkdir(parents=True, exist_ok=True)
-    (sandbox_path / "dist" / "pkg.whl").write_bytes(b"package-bytes")
+    worktree_path = tmp_path / "worktree"
+    (worktree_path / "dist").mkdir(parents=True, exist_ok=True)
+    (worktree_path / "dist" / "pkg.whl").write_bytes(b"package-bytes")
     artifacts_dir = tmp_path / "artifacts"
     result = publish_artifact(
-        sandbox_path,
+        worktree_path,
         artifacts_dir,
         artifacts_repository,
         session_id=session_id,
@@ -71,7 +71,7 @@ class DownloadServiceTests:
         def _broken_copy2(*_args: object, **_kwargs: object) -> None:
             raise OSError("disk full")
 
-        monkeypatch.setattr("worktree.core.artifacts.services.download.shutil.copy2", _broken_copy2)
+        monkeypatch.setattr("dovo.core.artifacts.services.download.shutil.copy2", _broken_copy2)
         dest = tmp_path / "out"
 
         result = download_artifact(

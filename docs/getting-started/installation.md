@@ -1,6 +1,6 @@
 # Installation
 
-Worktree CLI (`wt`) can be installed using Python package managers.
+Dovo CLI (`dovo`) can be installed using Python package managers.
 
 ## Recommended Installation
 
@@ -9,19 +9,19 @@ Worktree CLI (`wt`) can be installed using Python package managers.
 Install the package directly via `pip`:
 
 ```bash
-pip install worktree-cli
+pip install devexhq-dovo
 ```
 
 Using `pipx` (isolated application environments):
 
 ```bash
-pipx install worktree-cli
+pipx install devexhq-dovo
 ```
 
 Using `uv`:
 
 ```bash
-uv tool install worktree-cli
+uv tool install devexhq-dovo
 ```
 
 ### Local Development / Source Installation
@@ -43,14 +43,14 @@ uv sync --extra docs
 
 ## Verification
 
-Verify that `wt` is installed and check your version:
+Verify that `dovo` is installed and check your version:
 
 ```bash
-wt --version
+dovo --version
 ```
 
 Output:
 
 ```text
-wt version <installed-version>
+dovo version <installed-version>
 ```

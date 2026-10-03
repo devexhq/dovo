@@ -4,18 +4,18 @@ from __future__ import annotations
 
 import pytest
 
-from tests.harness.runs import SEEDED_FAILURE, seed_new_run, seed_paused_run
-from worktree.common.filesystem.models import WorkspacePaths
-from worktree.core.db import RunRecord, RunsRepository, RunStatus
-from worktree.engine import EngineLoader, EngineResumeError, EngineResumeStatus, RunStateStore
-from worktree.engine.executors.models import StepResult
-from worktree.engine.state_models import (
+from dovo.common.filesystem.models import WorkspacePaths
+from dovo.core.db import RunRecord, RunsRepository, RunStatus
+from dovo.engine import EngineLoader, EngineResumeError, EngineResumeStatus, RunStateStore
+from dovo.engine.executors.models import StepResult
+from dovo.engine.state_models import (
     ExecutionLeafNode,
     ExecutionLoopNode,
     NodeState,
     StepAttemptRecord,
 )
-from worktree.engine.writer import snapshot_blueprint_path
+from dovo.engine.writer import snapshot_blueprint_path
+from tests.harness.runs import SEEDED_FAILURE, seed_new_run, seed_paused_run
 
 _STEPS: list[dict[str, object]] = [{"id": "a", "run": "true"}, {"id": "b", "run": "exit 1"}]
 _LOOP_STEPS: list[dict[str, object]] = [
@@ -33,8 +33,8 @@ def _seed(
     paths: WorkspacePaths,
     runs: RunsRepository,
     *,
-    use_sandbox: bool = False,
-    sandbox_id: str | None = None,
+    use_worktree: bool = False,
+    worktree_id: str | None = None,
 ) -> RunRecord:
     return seed_paused_run(
         paths,
@@ -42,8 +42,8 @@ def _seed(
         session_id="paused-1",
         steps=_STEPS,
         paused_step_id="b",
-        use_sandbox=use_sandbox,
-        sandbox_id=sandbox_id,
+        use_worktree=use_worktree,
+        worktree_id=worktree_id,
     )
 
 
@@ -157,30 +157,30 @@ class EngineLoaderTests:
         prefix = "Session 'paused-1' not found." if fault == "no-row" else "Cannot resume session 'paused-1'"
         assert str(exc_info.value).startswith(prefix)
 
-    def test_sandboxed_run_with_existing_directory_loads(
+    def test_worktree_run_with_existing_directory_loads(
         self, engine_paths: WorkspacePaths, runs_repo: RunsRepository
     ) -> None:
-        """[tier-1/integration] EngineLoader.load_for_resume: use_sandbox=True with sandbox_id set and paths.sandbox_dir(sandbox_id) present returns the row with that sandbox_id unchanged."""
-        _seed(engine_paths, runs_repo, use_sandbox=True, sandbox_id="sbx-1")
-        engine_paths.sandbox_dir("sbx-1").mkdir(parents=True)
+        """[tier-1/integration] EngineLoader.load_for_resume: use_worktree=True with worktree_id set and paths.worktree_dir(worktree_id) present returns the row with that worktree_id unchanged."""
+        _seed(engine_paths, runs_repo, use_worktree=True, worktree_id="dovo_1")
+        engine_paths.worktree_dir("dovo_1").mkdir(parents=True)
 
         row, _, _ = EngineLoader.load_for_resume(runs_repo, engine_paths, "paused-1")
 
-        assert row.sandbox_id == "sbx-1"
+        assert row.worktree_id == "dovo_1"
 
     @pytest.mark.parametrize(
-        "sandbox_id", [pytest.param(None, id="no-id"), pytest.param("gone", id="deleted-directory")]
+        "worktree_id", [pytest.param(None, id="no-id"), pytest.param("gone", id="deleted-directory")]
     )
-    def test_sandboxed_run_without_retained_directory_raises_missing_sandbox_and_keeps_row(
-        self, engine_paths: WorkspacePaths, runs_repo: RunsRepository, sandbox_id: str | None
+    def test_worktree_run_without_retained_directory_raises_missing_worktree_and_keeps_row(
+        self, engine_paths: WorkspacePaths, runs_repo: RunsRepository, worktree_id: str | None
     ) -> None:
-        """[tier-1/integration] EngineLoader.load_for_resume: use_sandbox=True with sandbox_id None or a missing directory raises EngineResumeError(MISSING_SANDBOX) and runs_repo.get(session_id) still returns the row."""
-        _seed(engine_paths, runs_repo, use_sandbox=True, sandbox_id=sandbox_id)
+        """[tier-1/integration] EngineLoader.load_for_resume: use_worktree=True with worktree_id None or a missing directory raises EngineResumeError(MISSING_WORKTREE) and runs_repo.get(session_id) still returns the row."""
+        _seed(engine_paths, runs_repo, use_worktree=True, worktree_id=worktree_id)
 
         with pytest.raises(EngineResumeError) as exc_info:
             EngineLoader.load_for_resume(runs_repo, engine_paths, "paused-1")
 
-        assert exc_info.value.status == EngineResumeStatus.MISSING_SANDBOX
+        assert exc_info.value.status == EngineResumeStatus.MISSING_WORKTREE
         assert "no longer exists" in str(exc_info.value)
         assert runs_repo.get("paused-1") is not None
 

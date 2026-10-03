@@ -9,22 +9,22 @@ from pathlib import Path
 
 import pytest
 
-from tests.harness import (
-    BlueprintBuilder,
-    StepBuilder,
-    WorkspaceBuilder,
-)
-from worktree.common.filesystem.services.global_root import resolve_global_paths
-from worktree.common.models import FailurePolicy, OnFailureSpec
-from worktree.core.catalog.definitions import (
+from dovo.common.filesystem.services.global_root import resolve_global_paths
+from dovo.common.models import FailurePolicy, OnFailureSpec
+from dovo.core.catalog.definitions import (
     BlueprintDefaults,
     BlueprintDefinition,
     StepAssert,
     StepDefinition,
     StepType,
 )
-from worktree.core.db.connection import resolve_db_path
-from worktree.core.inputs.models import InputType, ParameterInput
+from dovo.core.db.connection import resolve_db_path
+from dovo.core.inputs.models import InputType, ParameterInput
+from tests.harness import (
+    BlueprintBuilder,
+    StepBuilder,
+    WorkspaceBuilder,
+)
 
 
 class StepBuilderTests:
@@ -80,10 +80,10 @@ class StepBuilderTests:
         assert step == expected
 
     def test_uses_factory_initializes_step_inheritance(self) -> None:
-        step = StepBuilder.uses("wt/ai-code-patcher").build()
+        step = StepBuilder.uses("dovo/ai-code-patcher").build()
         expected = StepDefinition(
             id="step-1",
-            uses="wt/ai-code-patcher",
+            uses="dovo/ai-code-patcher",
             timeout_seconds=30,
         )
         assert step == expected
@@ -437,9 +437,9 @@ class BlueprintBuilderTests:
         blueprint = BlueprintBuilder().with_defaults(defaults).build()
         assert blueprint == BlueprintDefinition(name="test-blueprint", defaults=defaults)
 
-    def test_with_use_sandbox_and_timeout_sets_execution_options(self) -> None:
-        blueprint = BlueprintBuilder().with_use_sandbox(False).with_timeout(300).build()
-        assert blueprint == BlueprintDefinition(name="test-blueprint", use_sandbox=False, timeout_seconds=300)
+    def test_with_use_worktree_and_timeout_sets_execution_options(self) -> None:
+        blueprint = BlueprintBuilder().with_use_worktree(False).with_timeout(300).build()
+        assert blueprint == BlueprintDefinition(name="test-blueprint", use_worktree=False, timeout_seconds=300)
 
     def test_with_metadata_sets_description_summary_and_version(self) -> None:
         blueprint = BlueprintBuilder().with_description("desc").with_summary("summary").with_version(2).build()
@@ -459,21 +459,21 @@ class WorkspaceBuilderTests:
         workspace = WorkspaceBuilder().build()
         try:
             assert workspace.is_dir()
-            assert (workspace / ".worktree/config.json").is_file()
+            assert (workspace / ".dovo/config.json").is_file()
             assert resolve_db_path(resolve_global_paths(None)).is_file()
-            assert (workspace / ".worktree/catalog").is_dir()
+            assert (workspace / ".dovo/catalog").is_dir()
         finally:
             shutil.rmtree(workspace, ignore_errors=True)
 
     def test_build_scaffolds_default_workspace_structure(self, tmp_path: Path) -> None:
         workspace = WorkspaceBuilder(tmp_path / "custom").build()
-        assert (workspace / ".worktree/config.json").is_file()
+        assert (workspace / ".dovo/config.json").is_file()
         assert resolve_db_path(resolve_global_paths(None)).is_file()
-        assert (workspace / ".worktree/catalog").is_dir()
+        assert (workspace / ".dovo/catalog").is_dir()
 
     def test_with_project_name_sets_custom_name_in_config(self, tmp_path: Path) -> None:
         workspace = WorkspaceBuilder(tmp_path / "project_ws").with_project_name("custom-project").build()
-        config_text = (workspace / ".worktree/config.json").read_text(encoding="utf-8")
+        config_text = (workspace / ".dovo/config.json").read_text(encoding="utf-8")
         config_payload = json.loads(config_text)
         assert config_payload["project"]["name"] == "custom-project"
 
@@ -483,13 +483,13 @@ class WorkspaceBuilderTests:
 
     def test_without_catalog_templates_skips_seeding(self, tmp_path: Path) -> None:
         workspace = WorkspaceBuilder(tmp_path / "no_catalog").without_catalog_templates().build()
-        yaml_files = list((workspace / ".worktree/catalog").rglob("*.yml"))
+        yaml_files = list((workspace / ".dovo/catalog").rglob("*.yml"))
         assert len(yaml_files) == 0
-        assert not (workspace / ".worktree/catalog").exists()
+        assert not (workspace / ".dovo/catalog").exists()
 
     def test_without_config_skips_config_generation(self, tmp_path: Path) -> None:
         workspace = WorkspaceBuilder(tmp_path / "no_cfg").without_config().build()
-        assert not (workspace / ".worktree/config.json").exists()
+        assert not (workspace / ".dovo/config.json").exists()
 
     def test_with_git_initializes_valid_git_repository(self, tmp_path: Path) -> None:
         workspace = WorkspaceBuilder(tmp_path / "git_ws").with_git().build()
@@ -499,22 +499,22 @@ class WorkspaceBuilderTests:
     def test_with_custom_config_data_writes_specified_payload(self, tmp_path: Path) -> None:
         custom_payload = {"version": 1, "custom": "val"}
         workspace = WorkspaceBuilder(tmp_path / "custom_cfg").with_config(data=custom_payload).build()
-        config_text = (workspace / ".worktree/config.json").read_text(encoding="utf-8")
+        config_text = (workspace / ".dovo/config.json").read_text(encoding="utf-8")
         config_payload = json.loads(config_text)
         assert config_payload["custom"] == "val"
 
     def test_with_config_overwrite_false_preserves_existing_config(self, tmp_path: Path) -> None:
         workspace_dir = tmp_path / "custom_preserve"
-        initial_config = workspace_dir / ".worktree/config.json"
+        initial_config = workspace_dir / ".dovo/config.json"
         initial_config.parent.mkdir(parents=True, exist_ok=True)
         initial_config.write_text('{"preserved": true}', encoding="utf-8")
         workspace = WorkspaceBuilder(workspace_dir).with_config(data={"overwritten": True}, overwrite=False).build()
-        assert json.loads((workspace / ".worktree/config.json").read_text(encoding="utf-8")) == {"preserved": True}
+        assert json.loads((workspace / ".dovo/config.json").read_text(encoding="utf-8")) == {"preserved": True}
 
     def test_with_catalog_templates_force_false_skips_existing_files(self, tmp_path: Path) -> None:
         workspace_dir = tmp_path / "custom_catalog_force"
         WorkspaceBuilder(workspace_dir).build()
-        seeded_file = next((workspace_dir / ".worktree/catalog").rglob("*.yml"))
+        seeded_file = next((workspace_dir / ".dovo/catalog").rglob("*.yml"))
         seeded_file.write_text("custom: preserved\n", encoding="utf-8")
         WorkspaceBuilder(workspace_dir).with_catalog_templates(force=False).build()
         assert seeded_file.read_text(encoding="utf-8") == "custom: preserved\n"

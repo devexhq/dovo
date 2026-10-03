@@ -1,7 +1,0 @@
-.meta/
-.lock
-sandboxes/
-*.db
-*.db-journal
-*.db-wal
-catalog/index.json

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from worktree.core.catalog.definitions import ParsedCondition, parse_condition_expression, validate_condition_expression
+from dovo.core.catalog.definitions import ParsedCondition, parse_condition_expression, validate_condition_expression
 
 PARSER_OPERATOR_CASES = [
     pytest.param(

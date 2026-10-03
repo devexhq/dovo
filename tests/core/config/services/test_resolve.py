@@ -6,25 +6,25 @@ from typing import Any
 
 import pytest
 
-from worktree.common.filesystem import Filesystem, WorkspacePaths
-from worktree.core.config.generator import build_default_config
-from worktree.core.config.loader import ConfigLoadStatus, load_config
-from worktree.core.config.models import ConfigTier, WorktreeConfig
-from worktree.core.config.services.resolve import resolve_effective_config
+from dovo.common.filesystem import Filesystem, WorkspacePaths
+from dovo.core.config.generator import build_default_config
+from dovo.core.config.loader import ConfigLoadStatus, load_config
+from dovo.core.config.models import ConfigTier, DovoConfig
+from dovo.core.config.services.resolve import resolve_effective_config
 
 
 class ResolveEffectiveConfigTests:
     """[tier-1/unit] Repo/Global/User precedence and error-attribution contracts for resolve_effective_config."""
 
     def test_repo_only_config_matches_flat_load_result(self, workspace_paths: WorkspacePaths) -> None:
-        """[tier-1/unit] resolve_effective_config: repo tier alone → OK, config equals WorktreeConfig.model_validate(repo payload), raw equals config.model_dump(mode='json')."""
+        """[tier-1/unit] resolve_effective_config: repo tier alone → OK, config equals DovoConfig.model_validate(repo payload), raw equals config.model_dump(mode='json')."""
         config_path = workspace_paths.config_file
         payload = build_default_config("demo-workspace")
         Filesystem.atomic_write_json(config_path, payload)
 
         result = resolve_effective_config(workspace_paths)
 
-        expected_config = WorktreeConfig.model_validate(payload)
+        expected_config = DovoConfig.model_validate(payload)
         assert result.status == ConfigLoadStatus.OK
         assert result.config_path == config_path
         assert result.config == expected_config
@@ -34,14 +34,14 @@ class ResolveEffectiveConfigTests:
     def test_global_and_user_tier_overrides_merge_over_repo_and_packaged(
         self, workspace_paths: WorkspacePaths, write_tier_config: Callable[[ConfigTier, dict[str, Any] | str], Path]
     ) -> None:
-        """[tier-1/unit] resolve_effective_config: Global agent.temperature, User agent.model, and Repo sandbox.base_ref all present in the merged WorktreeConfig, with Repo overriding a User sandbox.base_ref."""
+        """[tier-1/unit] resolve_effective_config: Global agent.temperature, User agent.model, and Repo worktree.base_ref all present in the merged DovoConfig, with Repo overriding a User worktree.base_ref."""
         write_tier_config(ConfigTier.GLOBAL, {"agent": {"temperature": 0.6}})
-        write_tier_config(ConfigTier.USER, {"agent": {"model": "user-model"}, "sandbox": {"base_ref": "develop"}})
+        write_tier_config(ConfigTier.USER, {"agent": {"model": "user-model"}, "worktree": {"base_ref": "develop"}})
 
         repo_payload = {
             "version": 1,
             "project": {"name": "demo-workspace"},
-            "sandbox": {"base_ref": "main"},
+            "worktree": {"base_ref": "main"},
         }
         Filesystem.atomic_write_json(workspace_paths.config_file, repo_payload)
 
@@ -51,12 +51,12 @@ class ResolveEffectiveConfigTests:
         assert result.config is not None
         assert result.config.agent.temperature == 0.6
         assert result.config.agent.model == "user-model"
-        assert result.config.sandbox.base_ref == "main"
+        assert result.config.worktree.base_ref == "main"
 
     def test_missing_repo_config_returns_not_found_without_packaged_backfill(
         self, workspace_paths: WorkspacePaths
     ) -> None:
-        """[tier-1/unit] resolve_effective_config: no .worktree/config.json → status NOT_FOUND, config is None, errors[0] identical to load_config's own CONFIG_NOT_FOUND message."""
+        """[tier-1/unit] resolve_effective_config: no .dovo/config.json → status NOT_FOUND, config is None, errors[0] identical to load_config's own CONFIG_NOT_FOUND message."""
         flat_result = load_config(workspace_paths)
 
         result = resolve_effective_config(workspace_paths)

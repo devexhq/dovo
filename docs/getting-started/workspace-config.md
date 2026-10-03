@@ -1,21 +1,21 @@
 # Workspace Configuration
 
-Worktree (`wt`) operates with a local `.worktree/` directory in your Git repository root. This directory contains the configuration file (`config.json`) and the blueprint catalog (`catalog/`). Run and session state lives in a centralized SQLite database shared across all projects (under `WORKTREE_HOME` or `~/.worktree` by default), scoped to this project.
+Dovo (`dovo`) operates with a local `.dovo/` directory in your Git repository root. This directory contains the configuration file (`config.json`) and the blueprint catalog (`catalog/`). Run and session state lives in a centralized SQLite database shared across all projects (under `DOVO_HOME` or `~/.dovo` by default), scoped to this project.
 
 ---
 
-## Workspace Setup (`wt init`)
+## Workspace Setup (`dovo init`)
 
-Run `wt init` at the root of your Git repository:
+Run `dovo init` at the root of your Git repository:
 
 ```bash
-wt init
+dovo init
 ```
 
-This provisions the local `.worktree/` directory structure:
+This provisions the local `.dovo/` directory structure:
 
 ```text
-.worktree/
+.dovo/
 ├── .gitignore          # Local state exclusions
 ├── .meta/              # Catalog metadata
 ├── config.json         # Workspace configuration settings
@@ -27,48 +27,48 @@ This provisions the local `.worktree/` directory structure:
 
 ### Flags & Repair Options
 
-* `--repair`: Non-destructively inserts missing required keys into `.worktree/config.json` while preserving your custom project settings and timestamps.
-* `--overwrite`: Completely replaces `.worktree/config.json` with fresh canonical V1 defaults (destructive).
+* `--repair`: Non-destructively inserts missing required keys into `.dovo/config.json` while preserving your custom project settings and timestamps.
+* `--overwrite`: Completely replaces `.dovo/config.json` with fresh canonical V1 defaults (destructive).
 
 ```bash
 # Repair an existing config file with updated schema keys
-wt init --repair
+dovo init --repair
 
 # Reset configuration to fresh defaults
-wt init --overwrite
+dovo init --overwrite
 ```
 
 ---
 
-## Workspace Status (`wt status`)
+## Workspace Status (`dovo status`)
 
-Inspect workspace health, configuration, catalog, sandboxes, and recorded sessions:
+Inspect workspace health, configuration, catalog, worktrees, and recorded sessions:
 
 ```bash
-wt status
+dovo status
 ```
 
 Output includes:
 * Project configuration validation status.
 * Database path and session record counts.
-* Active Git worktree sandboxes (`worktree/sandbox-*` branches).
+* Active Git worktrees (`dovo/dovo_*` branches).
 
 ---
 
-## Managing Configuration (`wt config`)
+## Managing Configuration (`dovo config`)
 
-Inspect and modify your Worktree configuration directly using the `wt config` subcommands.
+Inspect and modify your Dovo configuration directly using the `dovo config` subcommands.
 
 ### Configuration Precedence
 
-`wt config show` and blueprint execution (`wt run`/`wt resume`) both resolve the identical four-tier merged configuration: Packaged defaults, then Global (`$WORKTREE_HOME/global/config.json`), User (`$WORKTREE_HOME/user/config.json`), and Repo (`.worktree/config.json`), each tier overriding the fields the previous tiers set. `WORKTREE_HOME` defaults to `~/.worktree` when unset. See [`wt config`](../cli/config.md#configuration-precedence) for the full precedence and error-handling contract.
+`dovo config show` and blueprint execution (`dovo run`/`dovo resume`) both resolve the identical four-tier merged configuration: Packaged defaults, then Global (`$DOVO_HOME/global/config.json`), User (`$DOVO_HOME/user/config.json`), and Repo (`.dovo/config.json`), each tier overriding the fields the previous tiers set. `DOVO_HOME` defaults to `~/.dovo` when unset. See [`dovo config`](../cli/config.md#configuration-precedence) for the full precedence and error-handling contract.
 
 ### Show Effective Configuration
 
 Display normalized effective configuration as formatted JSON:
 
 ```bash
-wt config show
+dovo config show
 ```
 
 ### Update Configuration Values
@@ -76,24 +76,24 @@ wt config show
 Set specific configuration keys or nested dot-paths:
 
 ```bash
-wt config set agent.provider ollama
-wt config set agent.model llama3.1
-wt config set sandbox.base_ref main
+dovo config set agent.provider ollama
+dovo config set agent.model llama3.1
+dovo config set worktree.base_ref main
 ```
 
 ### Validate Configuration
 
-Validate `.worktree/config.json` against the schema and semantic rules:
+Validate `.dovo/config.json` against the schema and semantic rules:
 
 ```bash
-wt config validate
+dovo config validate
 ```
 
 ---
 
 ## Configuration Overview
 
-Below is the canonical `.worktree/config.json` structure:
+Below is the canonical `.dovo/config.json` structure:
 
 ```json
 {
@@ -103,9 +103,9 @@ Below is the canonical `.worktree/config.json` structure:
     "initialized_at": "2026-08-06T00:00:00Z"
   },
   "ignore_global_root_error": false,
-  "sandbox": {
+  "worktree": {
     "base_ref": "HEAD",
-    "max_active_sandboxes": 3,
+    "max_active_worktrees": 3,
     "default_timeout_seconds": 900
   },
   "agent": {
@@ -130,7 +130,7 @@ Below is the canonical `.worktree/config.json` structure:
   },
   "prune": {
     "remove_stale_worktrees": true,
-    "remove_orphaned_sandboxes": true,
+    "remove_orphaned_worktrees": true,
     "remove_expired_artifacts": false,
     "artifact_ttl_days": 30
   },
@@ -149,7 +149,7 @@ For full details on each field and validation rule, see the [Project Config Sche
 
 ## API Keys & Environment Setup
 
-The configuration schema accepts `local`, `ollama`, `cursor`, `gemini`, `copilot`, `openai`, `anthropic`, `azure_openai`, and `custom`. Runtime adapter selection supports only `local`, `ollama`, `cursor`, `gemini`, and `copilot`; agent steps invoke the selected adapter inside a Git sandbox. Credentials can be checked by `wt doctor`.
+The configuration schema accepts `local`, `ollama`, `cursor`, `gemini`, `copilot`, `openai`, `anthropic`, `azure_openai`, and `custom`. Runtime adapter selection supports only `local`, `ollama`, `cursor`, `gemini`, and `copilot`; agent steps invoke the selected adapter inside a Git worktree. Credentials can be checked by `dovo doctor`.
 
 ```bash
 # Gemini Provider

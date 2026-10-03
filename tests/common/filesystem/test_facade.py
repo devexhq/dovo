@@ -7,23 +7,23 @@ from pathlib import Path
 
 import pytest
 
-from worktree.common.filesystem.facade import Filesystem
-from worktree.common.filesystem.models import YamlFile
+from dovo.common.filesystem.facade import Filesystem
+from dovo.common.filesystem.models import YamlFile
 
 
 class FilesystemPathPropertiesTests:
     def test_path_properties_delegate_to_resolved_repository_paths(self, tmp_path: Path) -> None:
-        """[tier-1/unit] Filesystem path properties (root_dir, worktree_dir, config_file, catalog_dir, catalog_steps_dir, catalog_blueprints_dir, sandboxes_dir, lock_file, gitignore_file): each equals the corresponding field on fs.repository_paths for the same root."""
+        """[tier-1/unit] Filesystem path properties (root_dir, dovo_dir, config_file, catalog_dir, catalog_steps_dir, catalog_blueprints_dir, worktrees_dir, lock_file, gitignore_file): each equals the corresponding field on fs.repository_paths for the same root."""
         fs = Filesystem(tmp_path)
         resolved = fs.repository_paths
 
         assert fs.root_dir == resolved.root_dir
-        assert fs.worktree_dir == resolved.worktree_dir
+        assert fs.dovo_dir == resolved.dovo_dir
         assert fs.config_file == resolved.config_file
         assert fs.catalog_dir == resolved.catalog_dir
         assert fs.catalog_steps_dir == resolved.catalog_steps_dir
         assert fs.catalog_blueprints_dir == resolved.catalog_blueprints_dir
-        assert fs.sandboxes_dir == resolved.sandboxes_dir
+        assert fs.worktrees_dir == resolved.worktrees_dir
         assert fs.lock_file == resolved.lock_file
         assert fs.gitignore_file == resolved.gitignore_file
 
@@ -34,10 +34,10 @@ class FilesystemPathPropertiesTests:
         second = fs.repository_paths
         assert first is second
 
-    def test_sandbox_dir_joins_the_identifier_onto_sandboxes_dir(self, tmp_path: Path) -> None:
-        """[tier-1/unit] Filesystem.sandbox_dir: returns sandboxes_dir/<id>."""
+    def test_worktree_dir_joins_the_identifier_onto_worktrees_dir(self, tmp_path: Path) -> None:
+        """[tier-1/unit] Filesystem.worktree_dir: returns worktrees_dir/<id>."""
         fs = Filesystem(tmp_path)
-        assert fs.sandbox_dir("sbx_1") == fs.sandboxes_dir / "sbx_1"
+        assert fs.worktree_dir("dovo_1") == fs.worktrees_dir / "dovo_1"
 
     def test_rel_to_root_returns_path_relative_to_workspace_root(self, tmp_path: Path) -> None:
         """[tier-1/unit] Filesystem.rel_to_root: a path under root_dir is returned relative to it; a path outside root_dir is returned unchanged."""
@@ -130,7 +130,7 @@ class FilesystemBoundIoHelperTests:
 
 
 class FilesystemStaticHelperTests:
-    def test_find_root_delegates_to_find_worktree_root(self, tmp_path: Path) -> None:
+    def test_find_root_delegates_to_find_dovo_root(self, tmp_path: Path) -> None:
         """[tier-1/unit] Filesystem.find_root: static helper returns the same result as constructing a Filesystem for the same start path."""
         repo_root = tmp_path / "repo"
         (repo_root / ".git").mkdir(parents=True)

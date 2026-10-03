@@ -5,8 +5,8 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
-from worktree.core.agents import AgentResponseStatus
-from worktree.engine.executors.models import AgentStepSummary
+from dovo.core.agents import AgentResponseStatus
+from dovo.engine.executors.models import AgentStepSummary
 
 
 class AgentStepSummaryTests:

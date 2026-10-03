@@ -6,8 +6,8 @@ from pathlib import Path
 
 import pytest
 
-from worktree.core.db.repositories.runs import RunsRepository
-from worktree.core.db.repositories.sandboxes import SandboxesRepository
+from dovo.core.db.repositories.runs import RunsRepository
+from dovo.core.db.repositories.worktrees import WorktreesRepository
 
 
 class BaseRepositoryTests:
@@ -35,36 +35,36 @@ class BaseRepositoryTests:
 
     def test_db_path_returns_explicitly_provided_value(self, tmp_path: Path) -> None:
         """[tier-1/unit] BaseRepository.db_path: returns the exact value supplied at construction."""
-        database_file = tmp_path / "worktree.db"
+        database_file = tmp_path / "dovo.db"
         repo = RunsRepository(db_path=database_file)
 
         assert repo.db_path == database_file
 
 
 class BaseRepositoryCommitRollbackTests:
-    """[tier-1/integration] BaseRepository._commit: constraint-violation rollback, surfaced through SandboxesRepository.create."""
+    """[tier-1/integration] BaseRepository._commit: constraint-violation rollback, surfaced through WorktreesRepository.create."""
 
     def test_duplicate_primary_key_rolls_back_and_raises_value_error_with_conflict_message(
         self, tmp_path: Path
     ) -> None:
-        """[tier-1/integration] SandboxesRepository.create: creating a second row with the same id raises ValueError with the repository's conflict_message, and the original row's data is unaffected (transaction rolled back, not partially applied)."""
-        repo = SandboxesRepository(db_path=tmp_path / "worktree.db", project_id="proj-commit")
+        """[tier-1/integration] WorktreesRepository.create: creating a second row with the same id raises ValueError with the repository's conflict_message, and the original row's data is unaffected (transaction rolled back, not partially applied)."""
+        repo = WorktreesRepository(db_path=tmp_path / "dovo.db", project_id="proj-commit")
         repo.create(
-            id="sbx_dup",
-            branch_name="worktree/sandbox-sbx_dup",
+            id="dovo_dup",
+            branch_name="dovo/dovo_dup",
             base_commit="abc123",
-            sandbox_path=tmp_path / "sbx_dup",
+            worktree_path=tmp_path / "dovo_dup",
         )
 
-        with pytest.raises(ValueError, match="Sandbox with id 'sbx_dup' already exists"):
+        with pytest.raises(ValueError, match="Worktree with id 'dovo_dup' already exists"):
             repo.create(
-                id="sbx_dup",
-                branch_name="worktree/sandbox-other",
+                id="dovo_dup",
+                branch_name="dovo/other",
                 base_commit="def456",
-                sandbox_path=tmp_path / "other",
+                worktree_path=tmp_path / "other",
             )
 
-        stored = repo.get("sbx_dup")
+        stored = repo.get("dovo_dup")
         assert stored is not None
-        assert stored.branch_name == "worktree/sandbox-sbx_dup"
+        assert stored.branch_name == "dovo/dovo_dup"
         assert stored.base_commit == "abc123"

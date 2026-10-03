@@ -1,6 +1,6 @@
 # Documentation
 
-Guidelines for maintaining and updating documentation in Worktree CLI.
+Guidelines for maintaining and updating documentation in Dovo CLI.
 
 ## Documentation update gates
 
@@ -69,7 +69,7 @@ the source is trust, and that only holds if the doc holds up.
 
 ## Keeping user-facing docs in sync
 
-`README.md`'s command surface must match `wt --help` (i.e. the
+`README.md`'s command surface must match `dovo --help` (i.e. the
 `add_typer`/`register_*` calls in
-[src/worktree/cli/cli.py](../../src/worktree/cli/cli.py)) exactly. When a command is added, renamed, or removed in
+[src/dovo/cli/cli.py](../../src/dovo/cli/cli.py)) exactly. When a command is added, renamed, or removed in
 `cli.py`, update `README.md` in the same PR.

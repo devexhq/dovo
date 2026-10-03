@@ -1,4 +1,4 @@
-"""Dual-tier matrix tests for wt config validate."""
+"""Dual-tier matrix tests for dovo config validate."""
 
 from __future__ import annotations
 
@@ -7,19 +7,19 @@ from pathlib import Path
 
 from typer.testing import CliRunner
 
-from worktree.cli import app
-from worktree.cli.config.commands.config_validate import config_validate_command
-from worktree.cli.context import CliContext
-from worktree.common.filesystem import Filesystem
-from worktree.common.filesystem.models import RepositoryPaths, WorkspacePaths
-from worktree.common.filesystem.services.global_root import resolve_global_paths
-from worktree.core.config.generator import build_default_config
-from worktree.core.config.models import WorktreeConfig
-from worktree.core.config.validate import (
+from dovo.cli import app
+from dovo.cli.config.commands.config_validate import config_validate_command
+from dovo.cli.context import CliContext
+from dovo.common.filesystem import Filesystem
+from dovo.common.filesystem.models import RepositoryPaths, WorkspacePaths
+from dovo.common.filesystem.services.global_root import resolve_global_paths
+from dovo.core.config.generator import build_default_config
+from dovo.core.config.models import DovoConfig
+from dovo.core.config.validate import (
     ConfigValidationStatus,
 )
-from worktree.core.db.db import WorktreeDb
-from worktree.core.project.services.storage import resolve_workspace_paths
+from dovo.core.db.db import DovoDb
+from dovo.core.project.services.storage import resolve_workspace_paths
 
 
 def _paths_for(root: Path) -> WorkspacePaths:
@@ -32,17 +32,17 @@ class ConfigValidateRootTests:
 
     def test_config_validate_clean_returns_valid(self, isolated_workspace: Path) -> None:
         """Handler returns VALID ConfigValidationResult for clean config."""
-        config_path = isolated_workspace / ".worktree" / "config.json"
+        config_path = isolated_workspace / ".dovo" / "config.json"
         payload = build_default_config("demo-workspace")
         Filesystem.atomic_write_json(config_path, payload)
 
         paths = _paths_for(isolated_workspace)
-        context = CliContext(paths=paths, db=WorktreeDb(database_file=paths.database_file, project_id=paths.project_id))
+        context = CliContext(paths=paths, db=DovoDb(database_file=paths.database_file, project_id=paths.project_id))
         result = config_validate_command(context)
 
         assert result.status == ConfigValidationStatus.VALID
         assert result.config_path == config_path
-        assert result.config == WorktreeConfig.model_validate(payload)
+        assert result.config == DovoConfig.model_validate(payload)
         assert result.raw == payload
         assert result.warnings == []
         assert result.errors == []
@@ -50,19 +50,19 @@ class ConfigValidateRootTests:
 
     def test_config_validate_with_warnings_returns_valid_status(self, isolated_workspace: Path) -> None:
         """Handler returns VALID status with warnings for non-local provider missing model."""
-        config_path = isolated_workspace / ".worktree" / "config.json"
+        config_path = isolated_workspace / ".dovo" / "config.json"
         payload = build_default_config("demo-workspace")
         payload["agent"]["provider"] = "gemini"
         payload["agent"]["model"] = None
         Filesystem.atomic_write_json(config_path, payload)
 
         paths = _paths_for(isolated_workspace)
-        context = CliContext(paths=paths, db=WorktreeDb(database_file=paths.database_file, project_id=paths.project_id))
+        context = CliContext(paths=paths, db=DovoDb(database_file=paths.database_file, project_id=paths.project_id))
         result = config_validate_command(context)
 
         assert result.status == ConfigValidationStatus.VALID
         assert result.config_path == config_path
-        assert result.config == WorktreeConfig.model_validate(payload)
+        assert result.config == DovoConfig.model_validate(payload)
         assert result.raw == payload
         assert result.warnings == [
             "agent.provider is not 'local' but agent.model is missing (CONFIG_WARN_AGENT_MODEL_MISSING)."
@@ -72,12 +72,12 @@ class ConfigValidateRootTests:
 
     def test_config_validate_error_returns_invalid_status(self, isolated_workspace: Path) -> None:
         """Handler returns INVALID status for schema-invalid config."""
-        config_path = isolated_workspace / ".worktree" / "config.json"
+        config_path = isolated_workspace / ".dovo" / "config.json"
         invalid_payload = {"version": 1}
         Filesystem.atomic_write_json(config_path, invalid_payload)
 
         paths = _paths_for(isolated_workspace)
-        context = CliContext(paths=paths, db=WorktreeDb(database_file=paths.database_file, project_id=paths.project_id))
+        context = CliContext(paths=paths, db=DovoDb(database_file=paths.database_file, project_id=paths.project_id))
         result = config_validate_command(context)
 
         assert result.status == ConfigValidationStatus.INVALID
@@ -89,17 +89,17 @@ class ConfigValidateRootTests:
         ]
         assert result.warnings == []
         assert result.fixes == [
-            "Run `wt config validate` for details",
-            "Or `wt init --repair` to insert missing keys without overwriting values",
+            "Run `dovo config validate` for details",
+            "Or `dovo init --repair` to insert missing keys without overwriting values",
         ]
 
 
 class ConfigValidateCliIntegrationTests:
-    """Typer runner integration tests for wt config validate."""
+    """Typer runner integration tests for dovo config validate."""
 
     def test_config_validate_cli_clean_exits_zero(self, cli_runner: CliRunner, isolated_workspace: Path) -> None:
-        """wt config validate prints valid status on clean config."""
-        config_path = isolated_workspace / ".worktree" / "config.json"
+        """dovo config validate prints valid status on clean config."""
+        config_path = isolated_workspace / ".dovo" / "config.json"
         payload = build_default_config("demo-workspace")
         Filesystem.atomic_write_json(config_path, payload)
 
@@ -110,8 +110,8 @@ class ConfigValidateCliIntegrationTests:
         assert "Config is valid." in res.stdout
 
     def test_config_validate_cli_warnings_exits_zero(self, cli_runner: CliRunner, isolated_workspace: Path) -> None:
-        """wt config validate prints warnings for non-blocking issues."""
-        config_path = isolated_workspace / ".worktree" / "config.json"
+        """dovo config validate prints warnings for non-blocking issues."""
+        config_path = isolated_workspace / ".dovo" / "config.json"
         payload = build_default_config("demo-workspace")
         payload["agent"]["provider"] = "gemini"
         payload["agent"]["model"] = None
@@ -124,8 +124,8 @@ class ConfigValidateCliIntegrationTests:
         assert "Warnings:" in res.stdout
 
     def test_config_validate_cli_schema_error_exits_one(self, cli_runner: CliRunner, isolated_workspace: Path) -> None:
-        """wt config validate exits with error panel on schema violation."""
-        config_path = isolated_workspace / ".worktree" / "config.json"
+        """dovo config validate exits with error panel on schema violation."""
+        config_path = isolated_workspace / ".dovo" / "config.json"
         invalid_payload = {"version": 1}
         Filesystem.atomic_write_json(config_path, invalid_payload)
 
@@ -136,8 +136,8 @@ class ConfigValidateCliIntegrationTests:
         assert "CONFIG_SCHEMA_INVALID" in res.stdout
 
     def test_config_validate_cli_format_json_emits_event(self, cli_runner: CliRunner, isolated_workspace: Path) -> None:
-        """wt config validate --format json emits NDJSON ConfigValidationResult event."""
-        config_path = isolated_workspace / ".worktree" / "config.json"
+        """dovo config validate --format json emits NDJSON ConfigValidationResult event."""
+        config_path = isolated_workspace / ".dovo" / "config.json"
         payload = build_default_config("demo-workspace")
         Filesystem.atomic_write_json(config_path, payload)
 

@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://devex.sh/schemas/v1/project.json",
+  "title": "DovoProjectIdentity",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "created_at"],
+  "properties": {
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9-_]{2,62}$",
+      "description": "Unique project identifier across Dovo environments."
+    },
+    "display_name": {
+      "type": ["string", "null"],
+      "minLength": 1,
+      "pattern": "\\S",
+      "description": "Optional human-readable project name."
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "(Z|[+-]00:00)$",
+      "description": "UTC timestamp of project initialization."
+    }
+  }
+}

@@ -9,10 +9,10 @@ from pathlib import Path
 
 import pytest
 
-from worktree.common.filesystem.models import RepositoryPaths
-from worktree.common.filesystem.services.global_root import resolve_global_paths
-from worktree.core.db import RunsRepository, RunStatus
-from worktree.core.history import (
+from dovo.common.filesystem.models import RepositoryPaths
+from dovo.common.filesystem.services.global_root import resolve_global_paths
+from dovo.core.db import RunsRepository, RunStatus
+from dovo.core.history import (
     STALE_RUN_ERROR_MESSAGE,
     ReconciliationResult,
     format_reconciliation_warning,
@@ -21,7 +21,7 @@ from worktree.core.history import (
     is_run_stale,
     reconcile_stale_runs,
 )
-from worktree.core.project.services.storage import resolve_workspace_paths
+from dovo.core.project.services.storage import resolve_workspace_paths
 
 DEAD_PID = 4242
 
@@ -38,7 +38,7 @@ def _kill_reports_no_such_process(monkeypatch: pytest.MonkeyPatch) -> None:
     def _kill(_pid: int, _signal: int) -> None:
         raise ProcessLookupError
 
-    monkeypatch.setattr("worktree.core.history.services.reconcile.os.kill", _kill)
+    monkeypatch.setattr("dovo.core.history.services.reconcile.os.kill", _kill)
 
 
 class IsPidAliveTests:
@@ -64,7 +64,7 @@ class IsPidAliveTests:
             if kill_error is not None:
                 raise kill_error
 
-        monkeypatch.setattr("worktree.core.history.services.reconcile.os.kill", _kill)
+        monkeypatch.setattr("dovo.core.history.services.reconcile.os.kill", _kill)
 
         assert is_pid_alive(pid) is expected
         assert kill_calls == ([] if pid <= 0 else [pid])

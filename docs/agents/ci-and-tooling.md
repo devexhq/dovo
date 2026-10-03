@@ -23,7 +23,7 @@ Guidelines and requirements for local quality gates and continuous integration.
 
 **Relevant sources:** `pyproject.toml` (`[tool.basedpyright]`)
 
-- Config lives in `pyproject.toml` (`typeCheckingMode = "recommended"`, package `src/worktree/`).
+- Config lives in `pyproject.toml` (`typeCheckingMode = "recommended"`, package `src/dovo/`).
 - Commands:
   ```bash
   basedpyright src                # typecheck
@@ -43,7 +43,7 @@ Guidelines and requirements for local quality gates and continuous integration.
 - Commands:
   ```bash
   inv complexity                                          # whole tree
-  inv complexity --paths src/worktree/cli/run/app.py       # scoped to specific paths
+  inv complexity --paths src/dovo/cli/run/app.py       # scoped to specific paths
   inv complexity --plain                                  # plain output for scripts/agents
   inv complexity --plain --failed                         # report failures only
   inv complexity --local                                  # check staged files
@@ -66,7 +66,7 @@ Four CI jobs run on pushes to `main` and on pull requests:
 
 ## Database Migration Hygiene
 
-**Relevant sources:** `src/worktree/core/db/`, `src/worktree/core/db/alembic/`
+**Relevant sources:** `src/dovo/core/db/`, `src/dovo/core/db/alembic/`
 
 - Every new table or column must have real producer and consumer call sites in `src/` in the same PR.
 - One-time data backfills must be versioned Alembic revisions (`op.execute()`), not ad-hoc raw SQL in models.

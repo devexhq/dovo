@@ -1,4 +1,4 @@
-"""CLI integration tests for wt blueprint list."""
+"""CLI integration tests for dovo blueprint list."""
 
 from __future__ import annotations
 
@@ -7,12 +7,12 @@ from pathlib import Path
 
 from typer.testing import CliRunner
 
-from worktree.cli import app
-from worktree.common.filesystem.models import RepositoryPaths, WorkspacePaths
-from worktree.common.filesystem.services.global_root import resolve_global_paths
-from worktree.core.catalog import Catalog
-from worktree.core.catalog.models import CatalogItemType
-from worktree.core.project.services.storage import resolve_workspace_paths
+from dovo.cli import app
+from dovo.common.filesystem.models import RepositoryPaths, WorkspacePaths
+from dovo.common.filesystem.services.global_root import resolve_global_paths
+from dovo.core.catalog import Catalog
+from dovo.core.catalog.models import CatalogItemType
+from dovo.core.project.services.storage import resolve_workspace_paths
 
 
 def _paths_for(root: Path) -> WorkspacePaths:
@@ -21,10 +21,10 @@ def _paths_for(root: Path) -> WorkspacePaths:
 
 
 class BlueprintListCliIntegrationTests:
-    """Typer runner integration tests for wt blueprint list."""
+    """Typer runner integration tests for dovo blueprint list."""
 
     def test_blueprint_list_cli_renders_terminal_table(self, cli_runner: CliRunner, isolated_workspace: Path) -> None:
-        """wt blueprint list: one repo-tier blueprint on disk renders its name/tier/sha in the terminal table; exit 0."""
+        """dovo blueprint list: one repo-tier blueprint on disk renders its name/tier/sha in the terminal table; exit 0."""
         Catalog(_paths_for(isolated_workspace)).create(CatalogItemType.BLUEPRINT, "listed-blueprint")
 
         result = cli_runner.invoke(app, ["-p", str(isolated_workspace), "blueprint", "list"])
@@ -35,7 +35,7 @@ class BlueprintListCliIntegrationTests:
         assert "Blueprints:" in result.stdout
 
     def test_blueprint_list_cli_renders_json(self, cli_runner: CliRunner, isolated_workspace: Path) -> None:
-        """wt blueprint list --format json: envelope's items include a 'tier' key absent from the old wt catalog list payload."""
+        """dovo blueprint list --format json: envelope's items include a 'tier' key absent from the old dovo catalog list payload."""
         Catalog(_paths_for(isolated_workspace)).create(CatalogItemType.BLUEPRINT, "json-blueprint")
 
         result = cli_runner.invoke(app, ["-p", str(isolated_workspace), "blueprint", "list", "--format", "json"])
@@ -48,7 +48,7 @@ class BlueprintListCliIntegrationTests:
     def test_blueprint_list_cli_only_returns_blueprint_items(
         self, cli_runner: CliRunner, isolated_workspace: Path
     ) -> None:
-        """wt blueprint list: a step created alongside a blueprint is excluded from the blueprint listing (the packaged default.yml blueprint template still appears, folded into items per every tier)."""
+        """dovo blueprint list: a step created alongside a blueprint is excluded from the blueprint listing (the packaged default.yml blueprint template still appears, folded into items per every tier)."""
         Catalog(_paths_for(isolated_workspace)).create(CatalogItemType.BLUEPRINT, "only-blueprint")
         Catalog(_paths_for(isolated_workspace)).create(CatalogItemType.STEP, "only-step")
 
@@ -62,14 +62,14 @@ class BlueprintListCliIntegrationTests:
     def test_blueprint_list_cli_uninitialized_git_repo_exits_nonzero_without_writing(
         self, cli_runner: CliRunner, git_repo: Path
     ) -> None:
-        """wt blueprint list: non-worktree, non-git directory exits nonzero and writes no .worktree/ directory."""
+        """dovo blueprint list: non-worktree, non-git directory exits nonzero and writes no .dovo/ directory."""
         result = cli_runner.invoke(app, ["-p", str(git_repo), "blueprint", "list"])
 
         assert result.exit_code != 0
-        assert not (git_repo / ".worktree").exists()
+        assert not (git_repo / ".dovo").exists()
 
     def test_blueprint_ls_alias_cli_matches_list_output(self, cli_runner: CliRunner, isolated_workspace: Path) -> None:
-        """wt blueprint ls: renders byte-identical terminal output to wt blueprint list for the same workspace."""
+        """dovo blueprint ls: renders byte-identical terminal output to dovo blueprint list for the same workspace."""
         Catalog(_paths_for(isolated_workspace)).create(CatalogItemType.BLUEPRINT, "alias-blueprint")
 
         list_result = cli_runner.invoke(app, ["-p", str(isolated_workspace), "blueprint", "list"])

@@ -1,4 +1,4 @@
-"""Tier 1 domain contract tests for Catalog.validate (wt blueprint validate / wt step validate)."""
+"""Tier 1 domain contract tests for Catalog.validate (dovo blueprint validate / dovo step validate)."""
 
 from __future__ import annotations
 
@@ -9,13 +9,13 @@ from pathlib import Path
 import pytest
 import yaml
 
+from dovo.common.filesystem.models import RepositoryPaths, WorkspacePaths
+from dovo.common.filesystem.services.global_root import resolve_global_paths
+from dovo.core.catalog import Catalog
+from dovo.core.catalog.definitions import BlueprintDefinition, StepDefinition
+from dovo.core.catalog.models import CatalogItemType, CatalogValidateResult, CatalogValidateStatus
+from dovo.core.project.services.storage import resolve_workspace_paths
 from tests.harness.catalog import write_runnable_blueprint
-from worktree.common.filesystem.models import RepositoryPaths, WorkspacePaths
-from worktree.common.filesystem.services.global_root import resolve_global_paths
-from worktree.core.catalog import Catalog
-from worktree.core.catalog.definitions import BlueprintDefinition, StepDefinition
-from worktree.core.catalog.models import CatalogItemType, CatalogValidateResult, CatalogValidateStatus
-from worktree.core.project.services.storage import resolve_workspace_paths
 
 
 def _paths_for(root: Path) -> WorkspacePaths:
@@ -72,7 +72,7 @@ class CatalogValidateServiceTests:
         assert result.status == CatalogValidateStatus.OK
         assert result.valid is True
         assert result.target == "sample-flow"
-        assert result.resolved_path == isolated_workspace / ".worktree" / "catalog" / "blueprints" / "sample-flow.yml"
+        assert result.resolved_path == isolated_workspace / ".dovo" / "catalog" / "blueprints" / "sample-flow.yml"
         assert result.item_type == "blueprint"
         assert result.errors == []
         assert result.warnings == []
@@ -187,7 +187,7 @@ class CatalogValidateServiceTests:
         """[tier-1/domain] Catalog.validate: run+uses conflict on a step (item_type=STEP) surfaces as a schema error, not a separate semantic check."""
         _write_yaml(
             isolated_workspace / "conflict.yml",
-            {"id": "s1", "run": "pytest", "uses": "wt/ai-code-patcher"},
+            {"id": "s1", "run": "pytest", "uses": "dovo/ai-code-patcher"},
         )
 
         result = _validate("conflict.yml", path=isolated_workspace, item_type=CatalogItemType.STEP)

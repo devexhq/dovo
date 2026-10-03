@@ -7,25 +7,25 @@
       "name": "Strict Layered Import Flow",
       "severity": "BLOCKER",
       "domain": "all",
-      "scope": "src/worktree/",
+      "scope": "src/dovo/",
       "evaluation_criteria": "Scan imports. Verify common/ imports no core/, engine/, or cli/; core/ imports no engine/, cli/, or rich; engine/ imports no cli/; inputs/ imports no catalog or agents; patch/ imports no agents; catalog/ imports no agents, logs, history, engine, cli; artifacts/ imports no engine; agents/ imports no engine; logs/ imports no engine, history, cli; history/ imports no engine, cli.",
-      "bad_pattern": "from worktree.engine.engine import Engine  # upward import in core/logs/"
+      "bad_pattern": "from dovo.engine.engine import Engine  # upward import in core/logs/"
     },
     {
       "id": "ARCH-002",
       "name": "CLI Logic Purity",
       "severity": "BLOCKER",
       "domain": "cli",
-      "scope": "src/worktree/cli/",
-      "evaluation_criteria": "Inspect CLI command handlers in src/worktree/cli/*/commands/. Flag direct SQL execution, domain orchestration, or business logic.",
-      "bad_pattern": "rows = context.db.connection.execute('SELECT * FROM sandboxes').fetchall()"
+      "scope": "src/dovo/cli/",
+      "evaluation_criteria": "Inspect CLI command handlers in src/dovo/cli/*/commands/. Flag direct SQL execution, domain orchestration, or business logic.",
+      "bad_pattern": "rows = context.db.connection.execute('SELECT * FROM worktrees').fetchall()"
     },
     {
       "id": "ARCH-003",
       "name": "Domain Fact Origin Invariant",
       "severity": "BLOCKER",
       "domain": "cli",
-      "scope": "src/worktree/cli/ui/",
+      "scope": "src/dovo/cli/ui/",
       "evaluation_criteria": "Verify formatters only map existing fields from domain models without inventing new statuses, error categories, or domain rules.",
       "bad_pattern": "if not result.git_status: result.warnings.append('Git not found')  # originates fact"
     },
@@ -37,17 +37,17 @@
         "core",
         "engine"
       ],
-      "scope": "src/worktree/core/, src/worktree/engine/",
+      "scope": "src/dovo/core/, src/dovo/engine/",
       "evaluation_criteria": "Check package directory structure for new domains. Verify the entrypoint module is named after the domain (e.g. prune.py) rather than generic facade.py. Flag any monolithic single-file domain layout or public models defined in services/.",
-      "bad_pattern": "src/worktree/core/prune/ -> facade.py  # or monolithic prune.py mixing models & logic"
+      "bad_pattern": "src/dovo/core/prune/ -> facade.py  # or monolithic prune.py mixing models & logic"
     },
     {
       "id": "ARCH-006",
       "name": "Secrets Environment Resolution",
       "severity": "BLOCKER",
       "domain": "core",
-      "scope": "src/worktree/core/agents/, src/worktree/core/config/",
-      "evaluation_criteria": "Search for API key field additions in WorktreeConfig or SQLite models. Ensure environment resolution helpers are used.",
+      "scope": "src/dovo/core/agents/, src/dovo/core/config/",
+      "evaluation_criteria": "Search for API key field additions in DovoConfig or SQLite models. Ensure environment resolution helpers are used.",
       "bad_pattern": "api_key = config.agent.cursor_api_key  # serializing secrets in static config"
     },
     {
@@ -55,7 +55,7 @@
       "name": "Stateful Builder Pattern for RichOutput",
       "severity": "BLOCKER",
       "domain": "cli",
-      "scope": "src/worktree/cli/, src/worktree/core/",
+      "scope": "src/dovo/cli/, src/dovo/core/",
       "evaluation_criteria": "Ensure core services never instantiate RichOutput or Console. Verify .print() is only called at the CLI command/orchestrator level, not inside core services.",
       "bad_pattern": "output = RichOutput(); output.console.print('failed')"
     },
@@ -64,7 +64,7 @@
       "name": "Pure Layout in to_rich",
       "severity": "BLOCKER",
       "domain": "cli",
-      "scope": "src/worktree/cli/ui/formatters/",
+      "scope": "src/dovo/cli/ui/formatters/",
       "evaluation_criteria": "Inspect to_rich() implementations. Flag any business logic, status calculations, or string manipulations that do not come directly from the view model.",
       "bad_pattern": "color = 'green' if len(data.errors) == 0 else 'red'; return Panel(Text(color))"
     },
@@ -73,7 +73,7 @@
       "name": "Inline Error and Warning String Construction",
       "severity": "SUGGESTION",
       "domain": "all",
-      "scope": "src/worktree/",
+      "scope": "src/dovo/",
       "evaluation_criteria": "Flag private helper functions whose sole purpose is formatting a single error or warning string.",
       "bad_pattern": "errors.append(self._format_validation_error(path, err))"
     },
@@ -82,16 +82,16 @@
       "name": "Domain Shared Table Builders in common.py",
       "severity": "WARNING",
       "domain": "cli",
-      "scope": "src/worktree/cli/ui/formatters/",
+      "scope": "src/dovo/cli/ui/formatters/",
       "evaluation_criteria": "When a new or changed formatter defines a table-construction helper, check whether another formatter in the same domain needs the same table shape. Flag a helper duplicated across sibling formatter modules instead of factored into that domain's common.py, and flag a domain-specific helper placed in the package-wide common.py.",
-      "bad_pattern": "# Nearly identical build_table() duplicated in both sandbox/list.py and sandbox/status.py"
+      "bad_pattern": "# Nearly identical build_table() duplicated in both worktree/list.py and worktree/status.py"
     },
     {
       "id": "MODEL-001",
       "name": "Scoped Model Exceptions with Justifying Comment",
       "severity": "BLOCKER",
       "domain": "all",
-      "scope": "src/worktree/",
+      "scope": "src/dovo/",
       "evaluation_criteria": "Flag any model using extra='ignore' or omitting strict=True outside the approved list or without a justifying comment.",
       "bad_pattern": "model_config = {'extra': 'ignore'}  # missing justifying comment"
     },
@@ -103,9 +103,9 @@
         "core",
         "engine"
       ],
-      "scope": "src/worktree/core/, src/worktree/engine/",
+      "scope": "src/dovo/core/, src/dovo/engine/",
       "evaluation_criteria": "Inspect service methods. Flag methods that raise exceptions for business/operational failures instead of returning a BaseResult.",
-      "bad_pattern": "raise SandboxNotFoundError('Sandbox does not exist')"
+      "bad_pattern": "raise WorktreeNotFoundError('Worktree does not exist')"
     },
     {
       "id": "MODEL-003",
@@ -115,7 +115,7 @@
         "core",
         "engine"
       ],
-      "scope": "src/worktree/core/*/models.py, src/worktree/engine/**/models.py",
+      "scope": "src/dovo/core/*/models.py, src/dovo/engine/**/models.py",
       "evaluation_criteria": "Check all enum values of StrEnum classes in models.py. Ensure each variant is emitted in src/ and asserted in tests/.",
       "bad_pattern": "class PruneStatus(StrEnum): UNKNOWN = 'unknown'  # never emitted in src/"
     },
@@ -124,7 +124,7 @@
       "name": "Definition Exception Hierarchy",
       "severity": "BLOCKER",
       "domain": "core",
-      "scope": "src/worktree/core/*/exceptions.py",
+      "scope": "src/dovo/core/*/exceptions.py",
       "evaluation_criteria": "Inspect domain exception inheritance. Flag exceptions that inherit directly from Exception or ValueError instead of the Definition base hierarchy.",
       "bad_pattern": "class BlueprintLoadError(Exception): \"\"\"YAML syntax error.\"\"\""
     },
@@ -144,7 +144,7 @@
       "domain": "all",
       "scope": "src/",
       "evaluation_criteria": "Check function bodies. Flag dense unseparated blocks or excessive random spacing.",
-      "bad_pattern": "record = SandboxRecord(...)\nself.db.sandboxes.save(record)\nreturn result"
+      "bad_pattern": "record = WorktreeRecord(...)\nself.db.worktrees.save(record)\nreturn result"
     },
     {
       "id": "CODE-003",
@@ -153,7 +153,7 @@
       "domain": "all",
       "scope": "src/",
       "evaluation_criteria": "Inspect new or modified docstrings. Flag a description that retells the body, lists what the signature already shows, or restates the title. Flag a missing description where the code has a hidden contract or a safety behavior.",
-      "bad_pattern": "\"\"\"Run the provider. First resolve the baseline, then build the prompt, then run the tool, then diff the sandbox, then validate the patch.\"\"\""
+      "bad_pattern": "\"\"\"Run the provider. First resolve the baseline, then build the prompt, then run the tool, then diff the worktree, then validate the patch.\"\"\""
     },
     {
       "id": "TYPE-001",
@@ -169,7 +169,7 @@
       "name": "Strict Scoping of Permitted Any",
       "severity": "BLOCKER",
       "domain": "all",
-      "scope": "src/worktree/",
+      "scope": "src/dovo/",
       "evaluation_criteria": "Audit Any occurrences. Flag any usage outside the four permitted boundaries.",
       "bad_pattern": "def execute_step(step: Any) -> StepResult: ..."
     },
@@ -187,9 +187,9 @@
       "name": "Explicit ClassVar Typing for Table Names and Constants",
       "severity": "NIT",
       "domain": "core",
-      "scope": "src/worktree/core/db/models.py",
+      "scope": "src/dovo/core/db/models.py",
       "evaluation_criteria": "Inspect SQLModel definitions. Verify __tablename__ and table constants are annotated as ClassVar[str].",
-      "bad_pattern": "__tablename__ = 'sandboxes'"
+      "bad_pattern": "__tablename__ = 'worktrees'"
     },
     {
       "id": "TYPE-005",
@@ -214,7 +214,7 @@
       "name": "Expose Public Query Properties",
       "severity": "SUGGESTION",
       "domain": "all",
-      "scope": "src/worktree/",
+      "scope": "src/dovo/",
       "evaluation_criteria": "Flag external callers inspecting internal private state; suggest adding a query property.",
       "bad_pattern": "if runner._process is not None: ...  # caller inspecting private state"
     },
@@ -223,7 +223,7 @@
       "name": "No Test Seams in Production Signatures",
       "severity": "BLOCKER",
       "domain": "all",
-      "scope": "src/worktree/",
+      "scope": "src/dovo/",
       "evaluation_criteria": "Inspect parameters of touched functions. If a parameter has a default and is only ever passed in tests, flag it.",
       "bad_pattern": "def run(self, cwd: Path, _runner: GitRunner | None = None) -> RunOutcome: ..."
     },
@@ -233,7 +233,7 @@
       "severity": "BLOCKER",
       "domain": "all",
       "scope": "All source and test files",
-      "evaluation_criteria": "Detect repository or WorktreeDb instantiations inside for/while loops or inside reusable helper functions.",
+      "evaluation_criteria": "Detect repository or DovoDb instantiations inside for/while loops or inside reusable helper functions.",
       "bad_pattern": "for item in items: repo = RunsRepository(path); repo.create(item)"
     },
     {
@@ -241,7 +241,7 @@
       "name": "Database Migration Hygiene and Consumer Call Sites",
       "severity": "BLOCKER",
       "domain": "core",
-      "scope": "src/worktree/core/db/",
+      "scope": "src/dovo/core/db/",
       "evaluation_criteria": "Check Alembic migrations. Verify added columns/tables are actively queried and written by production services in the same PR.",
       "bad_pattern": "# Migration adds column future_flag with zero callers in src/"
     },
@@ -253,7 +253,7 @@
         "core",
         "engine"
       ],
-      "scope": "src/worktree/core/db/, src/worktree/core/*/services/, src/worktree/engine/services/",
+      "scope": "src/dovo/core/db/, src/dovo/core/*/services/, src/dovo/engine/services/",
       "evaluation_criteria": "Scan for in-memory list comprehensions or filter loops over full table fetches when an indexed query method could be used.",
       "bad_pattern": "record = next((r for r in repo.list() if r.path == rel_path), None)"
     },
@@ -262,7 +262,7 @@
       "name": "Sibling Repository CRUD Method Naming Consistency",
       "severity": "WARNING",
       "domain": "core",
-      "scope": "src/worktree/core/db/repositories/",
+      "scope": "src/dovo/core/db/repositories/",
       "evaluation_criteria": "Inspect repository public methods. Flag divergence in verb naming across sibling repository classes.",
       "bad_pattern": "repo.insert(record)  # sibling repositories use .create()"
     },
@@ -274,7 +274,7 @@
         "core",
         "engine"
       ],
-      "scope": "src/worktree/core/db/, src/worktree/core/*/services/, src/worktree/engine/services/",
+      "scope": "src/dovo/core/db/, src/dovo/core/*/services/, src/dovo/engine/services/",
       "evaluation_criteria": "Audit repository query methods for divergent exception handling (e.g. bare except returning None vs structured Result error capture).",
       "bad_pattern": "except ValidationError: return None  # inconsistently swallows error"
     },
@@ -283,7 +283,7 @@
       "name": "Shared Repository Transaction Logic in BaseRepository",
       "severity": "SUGGESTION",
       "domain": "core",
-      "scope": "src/worktree/core/db/repositories/",
+      "scope": "src/dovo/core/db/repositories/",
       "evaluation_criteria": "Flag identical session commit/rollback and single-record deletion boilerplate repeated across sibling repositories.",
       "bad_pattern": "with self.session() as s: s.query(...).delete(); s.commit()  # duplicated across repos"
     },
@@ -292,7 +292,7 @@
       "name": "Redundant Index Declaration on Unique Columns",
       "severity": "NIT",
       "domain": "core",
-      "scope": "src/worktree/core/db/models.py",
+      "scope": "src/dovo/core/db/models.py",
       "evaluation_criteria": "Inspect SQLModel Field definitions. Flag fields specifying both `unique=True` and `index=True`.",
       "bad_pattern": "session_id: str = Field(unique=True, index=True)"
     },
@@ -301,7 +301,7 @@
       "name": "Atomic File Writes via Temporary Sibling",
       "severity": "BLOCKER",
       "domain": "all",
-      "scope": "src/worktree/",
+      "scope": "src/dovo/",
       "evaluation_criteria": "Scan for direct open(..., 'w') or Path.write_text on state or configuration files.",
       "bad_pattern": "with open(config_path, 'w') as f: json.dump(data, f)"
     },
@@ -310,16 +310,16 @@
       "name": "Advisory Cross-Process Locking",
       "severity": "BLOCKER",
       "domain": "all",
-      "scope": "src/worktree/",
+      "scope": "src/dovo/",
       "evaluation_criteria": "Check concurrent operations for advisory lock wrapping.",
-      "bad_pattern": "sandbox_service.create(...)  # mutating shared dir without acquiring lock"
+      "bad_pattern": "worktree_service.create(...)  # mutating shared dir without acquiring lock"
     },
     {
       "id": "COMPAT-001",
       "name": "Strict Public-Only Backwards Compatibility",
       "severity": "BLOCKER",
       "domain": "all",
-      "scope": "src/worktree/",
+      "scope": "src/dovo/",
       "evaluation_criteria": "Inspect PR diffs. Flag breaking renames to CLI options, config keys, or published JSON outputs.",
       "bad_pattern": "# Renaming user CLI option --timeout to --wait without alias"
     },
@@ -328,7 +328,7 @@
       "name": "Ban on Internal Compatibility Shims and Aliases",
       "severity": "BLOCKER",
       "domain": "all",
-      "scope": "src/worktree/common/, src/worktree/core/, internal src/worktree/cli/",
+      "scope": "src/dovo/common/, src/dovo/core/, internal src/dovo/cli/",
       "evaluation_criteria": "Scan internal classes for deprecated aliases or shim properties.",
       "bad_pattern": "def _unlock_fd(self): ...\n_unlock = _unlock_fd  # internal shim alias"
     },
@@ -337,7 +337,7 @@
       "name": "Greenfield Architecture Default",
       "severity": "BLOCKER",
       "domain": "all",
-      "scope": "src/worktree/",
+      "scope": "src/dovo/",
       "evaluation_criteria": "Flag dual implementations or fallback branches created without an explicit issue requirement.",
       "bad_pattern": "if config.use_legacy: return LegacyLoader().load()  # unnecessary compatibility branch"
     },
@@ -357,7 +357,7 @@
       "domain": "tests",
       "scope": "tests/",
       "evaluation_criteria": "Check every test file path against its source module using the fixed mappings. Flag part-numbered or grab-bag files (for example test_command_formatters_part1.py or a single test_<command>.py holding more than one command action), a CLI command test file left flat under tests/cli/ instead of nested under its own tests/cli/<command>/ subdirectory, missing __init__.py files, and source modules with no test file.",
-      "bad_pattern": "tests/cli/commands/test_sandbox_create.py  # flat under tests/cli/commands/, not nested under tests/cli/sandbox/"
+      "bad_pattern": "tests/cli/commands/test_worktree_create.py  # flat under tests/cli/commands/, not nested under tests/cli/worktree/"
     },
     {
       "id": "TEST-003",
@@ -402,7 +402,7 @@
       "domain": "tests",
       "scope": "tests/",
       "evaluation_criteria": "Flag tests that mechanically enumerate empty or default envelope fields (error_code=None, warnings=[], fixes=[]) when testing unrelated behavior. Verify that models have dedicated contract tests asserting their defaults and schema. In scenario tests, verify assertions check meaningful domain contracts rather than incidental defaults.",
-      "bad_pattern": "assert result == SandboxDiffResult(status=NOT_FOUND, diff_text='', stat_text='', files_changed=[], errors=['...'], warnings=[], fixes=[], error_code=None)  # mechanical enumeration of incidental defaults"
+      "bad_pattern": "assert result == WorktreeDiffResult(status=NOT_FOUND, diff_text='', stat_text='', files_changed=[], errors=['...'], warnings=[], fixes=[], error_code=None)  # mechanical enumeration of incidental defaults"
     },
     {
       "id": "TEST-008",
@@ -500,8 +500,8 @@
       "severity": "BLOCKER",
       "domain": "tests",
       "scope": "tests/core/",
-      "evaluation_criteria": "Scan import statements in changed files under tests/core/. Flag any import of worktree.cli or a submodule of it.",
-      "bad_pattern": "from worktree.cli.sandbox.commands.prune import prune_command  # imported from tests/core/sandbox/test_prune.py"
+      "evaluation_criteria": "Scan import statements in changed files under tests/core/. Flag any import of dovo.cli or a submodule of it.",
+      "bad_pattern": "from dovo.cli.worktree.commands.prune import prune_command  # imported from tests/core/worktree/test_prune.py"
     },
     {
       "id": "TEST-019",
@@ -600,7 +600,7 @@
       "domain": "all",
       "scope": "Git commits & PRs",
       "evaluation_criteria": "Inspect commit message trailers and PR descriptions. Flag AI co-author trailers.",
-      "bad_pattern": "feat: prune sandboxes\n\nCo-authored-by: Cursor <cursor@cursor.sh>"
+      "bad_pattern": "feat: prune worktrees\n\nCo-authored-by: Cursor <cursor@cursor.sh>"
     },
     {
       "id": "CI-003",

@@ -1,0 +1,7 @@
+.meta/
+.lock
+worktrees/
+*.db
+*.db-journal
+*.db-wal
+catalog/index.json

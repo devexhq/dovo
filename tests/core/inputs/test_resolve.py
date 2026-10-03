@@ -6,11 +6,11 @@ import re
 
 import pytest
 
-from worktree.core.inputs.models import (
+from dovo.core.inputs.models import (
     InputType,
     ParameterInput,
 )
-from worktree.core.inputs.services.resolve import (
+from dovo.core.inputs.services.resolve import (
     format_missing_inputs_error,
     is_truthy_bool,
     resolve_inputs,
@@ -149,9 +149,9 @@ class InputSyntaxValidationTests:
             "Missing required input 'message' for 'deploy'.\n"
             "Also missing: 'target'.\n\n"
             "Usage:\n"
-            "  wt run deploy -m <value>\n"
-            "  wt run deploy -i message=<value>\n"
-            "  wt run deploy -i target=<value>"
+            "  dovo run deploy -m <value>\n"
+            "  dovo run deploy -i message=<value>\n"
+            "  dovo run deploy -i target=<value>"
         )
 
         assert error_message == expected_message

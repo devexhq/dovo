@@ -8,10 +8,10 @@ from pathlib import Path
 
 import pytest
 
-from worktree.common.filesystem import WorkspacePaths
-from worktree.core.diff.writer import get_session_dir
-from worktree.core.project.models import ProjectIdentity
-from worktree.core.project.services.identity import save_project_identity
+from dovo.common.filesystem import WorkspacePaths
+from dovo.core.diff.writer import get_session_dir
+from dovo.core.project.models import ProjectIdentity
+from dovo.core.project.services.identity import save_project_identity
 
 WorkspacePathsFactory = Callable[[Path, Path | None], WorkspacePaths]
 
@@ -26,12 +26,12 @@ class SessionWriterTests:
         global_root = tmp_path / "global"
         repository = tmp_path / "repository"
         identity = ProjectIdentity(id="project-626", created_at=datetime(2026, 1, 1, tzinfo=UTC))
-        monkeypatch.setenv("WORKTREE_HOME", str(global_root))
-        save_project_identity(repository / ".worktree" / "project.json", identity)
+        monkeypatch.setenv("DOVO_HOME", str(global_root))
+        save_project_identity(repository / ".dovo" / "project.json", identity)
 
         session_dir = get_session_dir(workspace_paths_factory(repository, None), "session-626")
 
         expected_session_dir = global_root / "storage" / "projects" / "project-626" / "sessions" / "session-626"
         assert session_dir == expected_session_dir
         assert session_dir.is_dir()
-        assert not (repository / ".worktree" / "sessions" / "session-626").exists()
+        assert not (repository / ".dovo" / "sessions" / "session-626").exists()

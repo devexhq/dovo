@@ -1,9 +1,9 @@
-"""Fluent step data builder for Worktree CLI test suite."""
+"""Fluent step data builder for Dovo CLI test suite."""
 
 from __future__ import annotations
 
-from worktree.common.models import FailurePolicy, OnFailureSpec
-from worktree.core.catalog.definitions import StepAssert, StepDefinition, StepType
+from dovo.common.models import FailurePolicy, OnFailureSpec
+from dovo.core.catalog.definitions import StepAssert, StepDefinition, StepType
 
 
 def _merge_string_items(

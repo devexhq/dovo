@@ -1,6 +1,6 @@
 # Parameter Inputs & Template Schema Reference
 
-This reference documents the parameter input declaration schema and `${{ inputs.<name> }}` template placeholder mechanics in Worktree blueprints.
+This reference documents the parameter input declaration schema and `${{ inputs.<name> }}` template placeholder mechanics in Dovo blueprints.
 
 ---
 
@@ -30,7 +30,7 @@ Each entry in a blueprint's `inputs:` mapping accepts the following fields:
 
 ## CLI Flag Mapping
 
-Worktree maps CLI arguments to declared inputs in two ways:
+Dovo maps CLI arguments to declared inputs in two ways:
 
 1. **Declared Aliases**:
    ```yaml
@@ -41,13 +41,13 @@ Worktree maps CLI arguments to declared inputs in two ways:
    ```
    Can be passed as:
    ```bash
-   wt run my-blueprint --target src/main.py
-   wt run my-blueprint -t src/main.py
+   dovo run my-blueprint --target src/main.py
+   dovo run my-blueprint -t src/main.py
    ```
 
 2. **Generic `-i` / `--input` Flag**:
    ```bash
-   wt run my-blueprint -i target=src/main.py -i retries=3
+   dovo run my-blueprint -i target=src/main.py -i retries=3
    ```
 
 3. **Bare Boolean Flags**:

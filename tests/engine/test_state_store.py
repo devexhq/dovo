@@ -7,22 +7,21 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
-from tests.harness.builders import BlueprintBuilder, StepBuilder, WorkspaceBuilder
-from worktree.common.filesystem import Filesystem
-from worktree.common.filesystem.models import RepositoryPaths, WorkspacePaths
-from worktree.common.filesystem.services.global_root import resolve_global_paths
-from worktree.common.models import FailurePolicy
-from worktree.core.agents import AgentResponseStatus
-from worktree.core.catalog.blueprint import Blueprint
-from worktree.core.catalog.definitions import LoopStepBlock
-from worktree.core.db import RunRecord, RunsRepository, RunStatus
-from worktree.core.project.services.storage import resolve_workspace_paths
-from worktree.engine import RunStateStore
-from worktree.engine.executors.agent_step import AGENT_OUTCOME_EXIT_CODES
-from worktree.engine.executors.models import StepResult
-from worktree.engine.models import DefinitionRef, DefinitionsManifest
-from worktree.engine.projection import build_run_json_payload
-from worktree.engine.state_models import (
+from dovo.common.filesystem import Filesystem
+from dovo.common.filesystem.models import RepositoryPaths, WorkspacePaths
+from dovo.common.filesystem.services.global_root import resolve_global_paths
+from dovo.common.models import FailurePolicy
+from dovo.core.agents import AgentResponseStatus
+from dovo.core.catalog.blueprint import Blueprint
+from dovo.core.catalog.definitions import LoopStepBlock
+from dovo.core.db import RunRecord, RunsRepository, RunStatus
+from dovo.core.project.services.storage import resolve_workspace_paths
+from dovo.engine import RunStateStore
+from dovo.engine.executors.agent_step import AGENT_OUTCOME_EXIT_CODES
+from dovo.engine.executors.models import StepResult
+from dovo.engine.models import DefinitionRef, DefinitionsManifest
+from dovo.engine.projection import build_run_json_payload
+from dovo.engine.state_models import (
     ExecutionIterationRecord,
     ExecutionLeafNode,
     ExecutionLoopNode,
@@ -33,7 +32,8 @@ from worktree.engine.state_models import (
     RunStateWriteStatus,
     StepAttemptRecord,
 )
-from worktree.engine.state_store import new_iteration
+from dovo.engine.state_store import new_iteration
+from tests.harness.builders import BlueprintBuilder, StepBuilder, WorkspaceBuilder
 
 SESSION_ID = "state-1"
 
@@ -269,12 +269,12 @@ class RunStateStoreSaveTests:
         assert row.execution_state_revision == 1
 
     def test_save_terminal_status_writes_row_equal_lifecycle_to_run_json(self, tmp_path: Path) -> None:
-        """[tier-1/integration] RunStateStore.save: run_status=FAILED, error_message='boom', sandbox_id='sbx-1', sandbox_kept=True leaves run.json.lifecycle equal to the row's status, error_message, started_at, completed_at, sandbox_id, and sandbox_kept, and run.json.revision == row.execution_state_revision."""
+        """[tier-1/integration] RunStateStore.save: run_status=FAILED, error_message='boom', worktree_id='dovo_1', worktree_kept=True leaves run.json.lifecycle equal to the row's status, error_message, started_at, completed_at, worktree_id, and worktree_kept, and run.json.revision == row.execution_state_revision."""
         fixture = _Fixture(tmp_path)
         state = fixture.initialized_at(0)
 
         fixture.store.save(
-            state, run_status=RunStatus.FAILED, error_message="boom", sandbox_id="sbx-1", sandbox_kept=True
+            state, run_status=RunStatus.FAILED, error_message="boom", worktree_id="dovo_1", worktree_kept=True
         )
 
         row = fixture.row()
@@ -284,8 +284,8 @@ class RunStateStoreSaveTests:
         assert lifecycle.started_at == row.started_at
         assert lifecycle.completed_at == row.completed_at
         assert row.completed_at is not None
-        assert lifecycle.sandbox_id == "sbx-1"
-        assert lifecycle.sandbox_kept is True
+        assert lifecycle.worktree_id == "dovo_1"
+        assert lifecycle.worktree_kept is True
         assert fixture.projection().revision == row.execution_state_revision
 
 

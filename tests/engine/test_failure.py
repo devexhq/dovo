@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import pytest
 
-from worktree.common.models import FailurePolicy, OnFailureSpec
-from worktree.engine.executors.models import StepResult
-from worktree.engine.failure import (
+from dovo.common.models import FailurePolicy, OnFailureSpec
+from dovo.engine.executors.models import StepResult
+from dovo.engine.failure import (
     USER_CONTINUED_MARKER,
     effective_terminal_policy,
     failed_step_message,
@@ -14,7 +14,7 @@ from worktree.engine.failure import (
     resolve_terminal_action,
     step_failure_diagnostic,
 )
-from worktree.engine.models import StepAction
+from dovo.engine.models import StepAction
 
 
 class FailurePolicyHelperTests:

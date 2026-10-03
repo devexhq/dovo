@@ -1,4 +1,4 @@
-"""Contract tests for RunCoordinator: durable leaf transitions, prompt recovery, loops, and sandbox identity."""
+"""Contract tests for RunCoordinator: durable leaf transitions, prompt recovery, loops, and worktree identity."""
 
 from __future__ import annotations
 
@@ -9,19 +9,18 @@ from typing import ClassVar
 
 import pytest
 
-from tests.harness.runs import SEEDED_FAILURE, NoOpRunObserver, seed_new_run, seed_paused_run
-from worktree.common.filesystem.models import WorkspacePaths
-from worktree.core.catalog.definitions import LoopStepBlock, StepDefinition
-from worktree.core.db import RunsRepository, RunStatus
-from worktree.core.db.repositories.artifacts import ArtifactsRepository
-from worktree.core.logs import RunLogEvent, RunLogEventType
-from worktree.core.logs.services.read import read_run_log_events
-from worktree.core.sandbox.models import SandboxSession
-from worktree.engine import RunCoordinator, RunStateStore
-from worktree.engine.executors import StepExecution
-from worktree.engine.executors.models import ConditionEvaluationResult, StepResult
-from worktree.engine.failure import USER_CONTINUED_MARKER
-from worktree.engine.models import (
+from dovo.common.filesystem.models import WorkspacePaths
+from dovo.core.catalog.definitions import LoopStepBlock, StepDefinition
+from dovo.core.db import RunsRepository, RunStatus
+from dovo.core.db.repositories.artifacts import ArtifactsRepository
+from dovo.core.logs import RunLogEvent, RunLogEventType
+from dovo.core.logs.services.read import read_run_log_events
+from dovo.core.worktree.models import WorktreeSession
+from dovo.engine import RunCoordinator, RunStateStore
+from dovo.engine.executors import StepExecution
+from dovo.engine.executors.models import ConditionEvaluationResult, StepResult
+from dovo.engine.failure import USER_CONTINUED_MARKER
+from dovo.engine.models import (
     FailurePromptDecision,
     FailurePrompter,
     LoopPromptDecision,
@@ -29,14 +28,15 @@ from worktree.engine.models import (
     RunObserver,
     RunOutcome,
 )
-from worktree.engine.state_models import (
+from dovo.engine.state_models import (
     ExecutionLeafNode,
     ExecutionLoopNode,
     ExecutionStateTree,
     NodeState,
     StepAttemptRecord,
 )
-from worktree.engine.writer import snapshot_blueprint_path
+from dovo.engine.writer import snapshot_blueprint_path
+from tests.harness.runs import SEEDED_FAILURE, NoOpRunObserver, seed_new_run, seed_paused_run
 
 _FAIL_DETAIL = "Command failed with exit code 1."
 
@@ -187,7 +187,7 @@ def _context(
     paths: WorkspacePaths,
     session_id: str,
     *,
-    sandbox: SandboxSession | None = None,
+    worktree: WorktreeSession | None = None,
     no_tty: bool = False,
     artifacts_db: ArtifactsRepository | None = None,
 ) -> RunContext:
@@ -204,7 +204,7 @@ def _context(
         session_log_dir=session_log_dir,
         artifacts_dir=paths.artifacts_dir if artifacts_db is not None else None,
         artifacts_db=artifacts_db,
-        sandbox=sandbox,
+        worktree=worktree,
         no_tty=no_tty,
     )
 
@@ -216,13 +216,13 @@ def _coordinator(
     *,
     prompter: FailurePrompter | None = None,
     observer: RunObserver | None = None,
-    sandbox: SandboxSession | None = None,
+    worktree: WorktreeSession | None = None,
     no_tty: bool = False,
     artifacts_db: ArtifactsRepository | None = None,
 ) -> RunCoordinator:
     return RunCoordinator(
         RunStateStore(runs, paths, session_id),
-        _context(paths, session_id, sandbox=sandbox, no_tty=no_tty, artifacts_db=artifacts_db),
+        _context(paths, session_id, worktree=worktree, no_tty=no_tty, artifacts_db=artifacts_db),
         observer=observer,
         prompter=prompter,
     )
@@ -292,8 +292,8 @@ def saved_statuses(monkeypatch: pytest.MonkeyPatch) -> list[RunStatus | str | No
         next_revision: int,
         status: RunStatus | str | None = None,
         error_message: str | None = None,
-        sandbox_id: str | None = None,
-        sandbox_kept: bool | None = None,
+        worktree_id: str | None = None,
+        worktree_kept: bool | None = None,
     ):
         recorded.append(status)
         return real(
@@ -304,8 +304,8 @@ def saved_statuses(monkeypatch: pytest.MonkeyPatch) -> list[RunStatus | str | No
             next_revision=next_revision,
             status=status,
             error_message=error_message,
-            sandbox_id=sandbox_id,
-            sandbox_kept=sandbox_kept,
+            worktree_id=worktree_id,
+            worktree_kept=worktree_kept,
         )
 
     monkeypatch.setattr(RunsRepository, "save_execution_state", spy)
@@ -327,8 +327,8 @@ def saved_states(monkeypatch: pytest.MonkeyPatch) -> list[ExecutionStateTree]:
         next_revision: int,
         status: RunStatus | str | None = None,
         error_message: str | None = None,
-        sandbox_id: str | None = None,
-        sandbox_kept: bool | None = None,
+        worktree_id: str | None = None,
+        worktree_kept: bool | None = None,
     ):
         recorded.append(ExecutionStateTree.model_validate_json(execution_state_json))
         return real(
@@ -339,8 +339,8 @@ def saved_states(monkeypatch: pytest.MonkeyPatch) -> list[ExecutionStateTree]:
             next_revision=next_revision,
             status=status,
             error_message=error_message,
-            sandbox_id=sandbox_id,
-            sandbox_kept=sandbox_kept,
+            worktree_id=worktree_id,
+            worktree_kept=worktree_kept,
         )
 
     monkeypatch.setattr(RunsRepository, "save_execution_state", spy)
@@ -454,8 +454,8 @@ class CoordinatorExecuteTests:
             next_revision: int,
             status: RunStatus | str | None = None,
             error_message: str | None = None,
-            sandbox_id: str | None = None,
-            sandbox_kept: bool | None = None,
+            worktree_id: str | None = None,
+            worktree_kept: bool | None = None,
         ):
             calls.append(next_revision)
             if len(calls) == 2:
@@ -468,8 +468,8 @@ class CoordinatorExecuteTests:
                 next_revision=next_revision,
                 status=status,
                 error_message=error_message,
-                sandbox_id=sandbox_id,
-                sandbox_kept=sandbox_kept,
+                worktree_id=worktree_id,
+                worktree_kept=worktree_kept,
             )
 
         monkeypatch.setattr(RunsRepository, "save_execution_state", flaky)
@@ -732,12 +732,12 @@ class CoordinatorMetadataTests:
     def test_first_step_sees_empty_previous_step_env_vars(
         self, engine_paths: WorkspacePaths, runs_repo: RunsRepository
     ) -> None:
-        """[tier-1/integration] RunCoordinator.execute: the first step's WT_PREVIOUS_STEP_ID and WT_PREVIOUS_STEP_STATUS are empty."""
+        """[tier-1/integration] RunCoordinator.execute: the first step's DOVO_PREVIOUS_STEP_ID and DOVO_PREVIOUS_STEP_STATUS are empty."""
         outcome = _run_new(
             engine_paths,
             runs_repo,
             "meta-first",
-            [_step("first_step", 'echo "PREV_ID=[$WT_PREVIOUS_STEP_ID] PREV_STATUS=[$WT_PREVIOUS_STEP_STATUS]"')],
+            [_step("first_step", 'echo "PREV_ID=[$DOVO_PREVIOUS_STEP_ID] PREV_STATUS=[$DOVO_PREVIOUS_STEP_STATUS]"')],
         )
 
         assert outcome.step_results[0].stdout == "PREV_ID=[] PREV_STATUS=[]\n"
@@ -745,7 +745,7 @@ class CoordinatorMetadataTests:
     def test_second_step_sees_previous_step_id_name_index_status_exit_code_env_vars(
         self, engine_paths: WorkspacePaths, runs_repo: RunsRepository
     ) -> None:
-        """[tier-1/integration] RunCoordinator.execute: the second step's WT_PREVIOUS_STEP_* variables carry the first step's id, name, 1-based index, status, and exit code."""
+        """[tier-1/integration] RunCoordinator.execute: the second step's DOVO_PREVIOUS_STEP_* variables carry the first step's id, name, 1-based index, status, and exit code."""
         outcome = _run_new(
             engine_paths,
             runs_repo,
@@ -754,9 +754,9 @@ class CoordinatorMetadataTests:
                 _step("setup_step", "echo 'setup done'", name="Setup Step"),
                 _step(
                     "verify_step",
-                    'echo "PREV_ID=$WT_PREVIOUS_STEP_ID PREV_NAME=$WT_PREVIOUS_STEP_NAME '
-                    "PREV_IDX=$WT_PREVIOUS_STEP_INDEX PREV_STATUS=$WT_PREVIOUS_STEP_STATUS "
-                    'PREV_EXIT=$WT_PREVIOUS_STEP_EXIT_CODE"',
+                    'echo "PREV_ID=$DOVO_PREVIOUS_STEP_ID PREV_NAME=$DOVO_PREVIOUS_STEP_NAME '
+                    "PREV_IDX=$DOVO_PREVIOUS_STEP_INDEX PREV_STATUS=$DOVO_PREVIOUS_STEP_STATUS "
+                    'PREV_EXIT=$DOVO_PREVIOUS_STEP_EXIT_CODE"',
                 ),
             ],
         )
@@ -778,8 +778,8 @@ class CoordinatorMetadataTests:
                 _step("failing_step", "exit 3", on_failure="continue"),
                 _step(
                     "next_step",
-                    'echo "PREV_ID=$WT_PREVIOUS_STEP_ID PREV_STATUS=$WT_PREVIOUS_STEP_STATUS '
-                    'PREV_EXIT=$WT_PREVIOUS_STEP_EXIT_CODE"',
+                    'echo "PREV_ID=$DOVO_PREVIOUS_STEP_ID PREV_STATUS=$DOVO_PREVIOUS_STEP_STATUS '
+                    'PREV_EXIT=$DOVO_PREVIOUS_STEP_EXIT_CODE"',
                 ),
             ],
         )
@@ -790,7 +790,7 @@ class CoordinatorMetadataTests:
     def test_prompt_user_retry_increments_step_attempt_env_var_from_one_to_two(
         self, engine_paths: WorkspacePaths, runs_repo: RunsRepository
     ) -> None:
-        """[tier-1/integration] RunCoordinator.execute: a prompt_user retry runs the step again with WT_STEP_ATTEMPT 2 and records attempts == 2."""
+        """[tier-1/integration] RunCoordinator.execute: a prompt_user retry runs the step again with DOVO_STEP_ATTEMPT 2 and records attempts == 2."""
         outcome = _run_new(
             engine_paths,
             runs_repo,
@@ -798,7 +798,7 @@ class CoordinatorMetadataTests:
             [
                 _step(
                     "retry_on_prompt",
-                    'if [ "$WT_STEP_ATTEMPT" -eq 1 ]; then echo fail1 >&2; exit 1; else echo success2; fi',
+                    'if [ "$DOVO_STEP_ATTEMPT" -eq 1 ]; then echo fail1 >&2; exit 1; else echo success2; fi',
                     on_failure="prompt_user",
                 )
             ],
@@ -808,19 +808,19 @@ class CoordinatorMetadataTests:
         assert outcome.status == RunStatus.COMPLETED
         assert (outcome.step_results[0].stdout, outcome.step_results[0].attempts) == ("success2\n", 2)
 
-    def test_three_step_run_propagates_steps_context_and_wt_steps_json_excluding_in_flight_step(
+    def test_three_step_run_propagates_steps_context_and_dovo_steps_json_excluding_in_flight_step(
         self, engine_paths: WorkspacePaths, runs_repo: RunsRepository
     ) -> None:
-        """[tier-1/integration] RunCoordinator.execute: later steps see only finished steps through the steps template context and WT_STEPS_JSON."""
+        """[tier-1/integration] RunCoordinator.execute: later steps see only finished steps through the steps template context and DOVO_STEPS_JSON."""
         outcome = _run_new(
             engine_paths,
             runs_repo,
             "meta-json",
             [
-                _step("step_a", 'echo "A_STEPS=[{{ steps[0].id }}] A_JSON=$WT_STEPS_JSON"', name="Step Alpha"),
+                _step("step_a", 'echo "A_STEPS=[{{ steps[0].id }}] A_JSON=$DOVO_STEPS_JSON"', name="Step Alpha"),
                 _step(
                     "step_b",
-                    'echo "B_LAST={{ steps[-1].id }} B_A_STAT={{ steps.step_a.status }} B_JSON=$WT_STEPS_JSON"',
+                    'echo "B_LAST={{ steps[-1].id }} B_A_STAT={{ steps.step_a.status }} B_JSON=$DOVO_STEPS_JSON"',
                     name="Step Beta",
                 ),
                 _step("step_c", 'echo "C_SECOND={{ steps[1].id }} C_PREV={{ previous_step.id }}"'),
@@ -839,7 +839,7 @@ class CoordinatorMetadataTests:
         ("producer", "consumer", "expected"),
         [
             pytest.param(
-                'echo "greeting=hello" >> "$WT_OUTPUT"',
+                'echo "greeting=hello" >> "$DOVO_OUTPUT"',
                 "{{ steps.step_a.outputs.greeting }}",
                 "hello\n",
                 id="known-key",
@@ -855,7 +855,7 @@ class CoordinatorMetadataTests:
         consumer: str,
         expected: str,
     ) -> None:
-        """[tier-1/integration] RunCoordinator.execute: step_b's '{{ steps.step_a.outputs.<key> }}' interpolates to step_a's $WT_OUTPUT value, or an empty string for an unknown key."""
+        """[tier-1/integration] RunCoordinator.execute: step_b's '{{ steps.step_a.outputs.<key> }}' interpolates to step_a's $DOVO_OUTPUT value, or an empty string for an unknown key."""
         outcome = _run_new(
             engine_paths,
             runs_repo,
@@ -1171,7 +1171,7 @@ class CoordinatorLoopBodyParityTests:
         self, engine_paths: WorkspacePaths, runs_repo: RunsRepository
     ) -> None:
         """[tier-1/integration] RunCoordinator.execute: a two-iteration loop writes attempt logs whose names contain `_iter_1_` and `_iter_2_` and neither overwrites the other."""
-        _run_new(engine_paths, runs_repo, "loop-logs", [_loop("loop", [_step("s", "echo $WT_ITERATION_INDEX")])])
+        _run_new(engine_paths, runs_repo, "loop-logs", [_loop("loop", [_step("s", "echo $DOVO_ITERATION_INDEX")])])
 
         names = sorted(path.name for path in (engine_paths.logs_dir / "loop-logs").glob("*.stdout.log"))
         assert names == ["01_s_iter_1_attempt_1.stdout.log", "01_s_iter_2_attempt_1.stdout.log"]
@@ -1754,43 +1754,43 @@ class CoordinatorInvalidStateTests:
         assert outcome.errors == ["Run 'vanished' not found."]
 
 
-class CoordinatorSandboxIdTests:
-    """[tier-1/integration] RunCoordinator sandbox identity: the row's sandbox_id follows the session's sandbox."""
+class CoordinatorWorktreeIdTests:
+    """[tier-1/integration] RunCoordinator worktree identity: the row's worktree_id follows the session's worktree."""
 
-    def test_sandboxed_run_persists_sandbox_id_on_first_transition_save(
+    def test_worktree_run_persists_worktree_id_on_first_transition_save(
         self, engine_paths: WorkspacePaths, runs_repo: RunsRepository, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """[tier-1/integration] RunCoordinator.execute: with context.sandbox set, the row read from inside the first step's command already has sandbox_id equal to context.sandbox.session_id."""
-        sandbox = SandboxSession(
-            session_id="sbx-77",
-            target_branch="worktree/sandbox-sbx-77",
-            sandbox_path=engine_paths.root_dir,
+        """[tier-1/integration] RunCoordinator.execute: with context.worktree set, the row read from inside the first step's command already has worktree_id equal to context.worktree.session_id."""
+        worktree = WorktreeSession(
+            session_id="dovo_77",
+            target_branch="dovo/dovo_77",
+            worktree_path=engine_paths.root_dir,
             base_commit="abc",
             created_at="now",
         )
         observed: list[str | None] = []
 
         def read_row_from_step(self: StepExecution) -> StepResult:
-            row = runs_repo.get("sbx-run")
+            row = runs_repo.get("worktree-run")
             assert row is not None
-            observed.append(row.sandbox_id)
+            observed.append(row.worktree_id)
             return StepResult(step_id="a", status="completed", exit_code=0, stdout="", stderr="", duration_seconds=0.0)
 
         monkeypatch.setattr(StepExecution, "run", read_row_from_step)
-        seed_new_run(engine_paths, runs_repo, session_id="sbx-run", steps=[_step("a", "true")])
+        seed_new_run(engine_paths, runs_repo, session_id="worktree-run", steps=[_step("a", "true")])
 
-        outcome = _coordinator(engine_paths, runs_repo, "sbx-run", sandbox=sandbox).execute()
+        outcome = _coordinator(engine_paths, runs_repo, "worktree-run", worktree=worktree).execute()
 
-        assert observed == ["sbx-77"]
-        assert outcome.sandbox_id == "sbx-77"
+        assert observed == ["dovo_77"]
+        assert outcome.worktree_id == "dovo_77"
 
-    def test_run_without_sandbox_leaves_sandbox_id_none(
+    def test_run_without_worktree_leaves_worktree_id_none(
         self, engine_paths: WorkspacePaths, runs_repo: RunsRepository
     ) -> None:
-        """[tier-1/integration] RunCoordinator.execute: with context.sandbox None the completed row has sandbox_id None."""
-        outcome = _run_new(engine_paths, runs_repo, "no-sbx", [_step("a", "true")])
+        """[tier-1/integration] RunCoordinator.execute: with context.worktree None the completed row has worktree_id None."""
+        outcome = _run_new(engine_paths, runs_repo, "no-worktree", [_step("a", "true")])
 
-        row = runs_repo.get("no-sbx")
+        row = runs_repo.get("no-worktree")
         assert row is not None
-        assert row.sandbox_id is None
-        assert outcome.sandbox_id is None
+        assert row.worktree_id is None
+        assert outcome.worktree_id is None

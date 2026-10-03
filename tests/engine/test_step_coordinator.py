@@ -8,21 +8,19 @@ from typing import Any
 
 import pytest
 
-from tests.harness.builders import StepBuilder
-from tests.harness.runs import NoOpRunObserver
-from worktree.common.filesystem.models import RepositoryPaths, WorkspacePaths
-from worktree.common.filesystem.services.global_root import resolve_global_paths
-from worktree.common.models import FailurePolicy
-from worktree.core.agents.models import ResolvedAgentSettings
-from worktree.core.catalog.definitions import ArtifactPublishSpec, StepDefinition, StepType
-from worktree.core.db.repositories.artifacts import ArtifactsRepository
-from worktree.core.project.services.storage import resolve_workspace_paths
-from worktree.core.sandbox import SandboxSession
-from worktree.engine.executors.agent_step import build_agent_step_runner
-from worktree.engine.executors.models import StepExecutionContext, StepResult
-from worktree.engine.executors.step_executor import StepExecution
-from worktree.engine.failure import USER_CONTINUED_MARKER
-from worktree.engine.models import (
+from dovo.common.filesystem.models import RepositoryPaths, WorkspacePaths
+from dovo.common.filesystem.services.global_root import resolve_global_paths
+from dovo.common.models import FailurePolicy
+from dovo.core.agents.models import ResolvedAgentSettings
+from dovo.core.catalog.definitions import ArtifactPublishSpec, StepDefinition, StepType
+from dovo.core.db.repositories.artifacts import ArtifactsRepository
+from dovo.core.project.services.storage import resolve_workspace_paths
+from dovo.core.worktree import WorktreeSession
+from dovo.engine.executors.agent_step import build_agent_step_runner
+from dovo.engine.executors.models import StepExecutionContext, StepResult
+from dovo.engine.executors.step_executor import StepExecution
+from dovo.engine.failure import USER_CONTINUED_MARKER
+from dovo.engine.models import (
     FailurePromptDecision,
     FailurePrompter,
     LoopPromptDecision,
@@ -30,7 +28,9 @@ from worktree.engine.models import (
     RunSettings,
     StepAction,
 )
-from worktree.engine.step_coordinator import StepCoordinator, auto_publish_step_artifacts
+from dovo.engine.step_coordinator import StepCoordinator, auto_publish_step_artifacts
+from tests.harness.builders import StepBuilder
+from tests.harness.runs import NoOpRunObserver
 
 
 def _paths_for(root: Path) -> WorkspacePaths:
@@ -85,7 +85,7 @@ class BuildStepContextTests:
 
     def test_no_agent_or_inputs_returns_none(self, tmp_path: Path) -> None:
         """[tier-1/unit] build_step_context: context.agent and context.inputs both unset returns None."""
-        context = RunSettings(cwd=tmp_path, use_sandbox=False, paths=_paths_for(tmp_path))
+        context = RunSettings(cwd=tmp_path, use_worktree=False, paths=_paths_for(tmp_path))
 
         step_context = StepCoordinator(context).build_step_context()
 
@@ -93,19 +93,19 @@ class BuildStepContextTests:
 
     def test_agent_set_without_inputs_returns_none(self, tmp_path: Path) -> None:
         """[tier-1/unit] StepCoordinator.build_step_context: RunSettings(agent=ResolvedAgentSettings(...), inputs=None) returns None."""
-        context = RunSettings(cwd=tmp_path, use_sandbox=False, agent=_AGENT_SETTINGS, paths=_paths_for(tmp_path))
+        context = RunSettings(cwd=tmp_path, use_worktree=False, agent=_AGENT_SETTINGS, paths=_paths_for(tmp_path))
 
         assert StepCoordinator(context).build_step_context() is None
 
     def test_inputs_set_returns_inputs_only_dict(self, tmp_path: Path) -> None:
         """[tier-1/unit] StepCoordinator.build_step_context: RunSettings(inputs={'branch': 'main'}) returns {'inputs': {'branch': 'main'}}."""
-        context = RunSettings(cwd=tmp_path, use_sandbox=False, inputs={"branch": "main"}, paths=_paths_for(tmp_path))
+        context = RunSettings(cwd=tmp_path, use_worktree=False, inputs={"branch": "main"}, paths=_paths_for(tmp_path))
 
         assert StepCoordinator(context).build_step_context() == {"inputs": {"branch": "main"}}
 
 
 class StepCoordinatorAgentRunnerTests:
-    """[tier-1/unit] StepCoordinator.run_attempt: the agent runner is built from the run's agent identity and sandbox state."""
+    """[tier-1/unit] StepCoordinator.run_attempt: the agent runner is built from the run's agent identity and worktree state."""
 
     @staticmethod
     def _spy(monkeypatch: pytest.MonkeyPatch) -> tuple[list[tuple[ResolvedAgentSettings | None, bool]], list[Any]]:
@@ -113,9 +113,9 @@ class StepCoordinatorAgentRunnerTests:
         builds: list[tuple[ResolvedAgentSettings | None, bool]] = []
         runners: list[Any] = []
 
-        def _recording_build(agent: ResolvedAgentSettings | None, sandbox_active: bool) -> Any:
-            builds.append((agent, sandbox_active))
-            return build_agent_step_runner(agent, sandbox_active)
+        def _recording_build(agent: ResolvedAgentSettings | None, worktree_active: bool) -> Any:
+            builds.append((agent, worktree_active))
+            return build_agent_step_runner(agent, worktree_active)
 
         class _CapturingStepExecution(StepExecution):
             """StepExecution subclass recording the agent_runner of the StepExecutionContext it is constructed with."""
@@ -124,8 +124,8 @@ class StepCoordinatorAgentRunnerTests:
                 runners.append(metadata.agent_runner)
                 super().__init__(metadata)
 
-        monkeypatch.setattr("worktree.engine.step_coordinator.build_agent_step_runner", _recording_build)
-        monkeypatch.setattr("worktree.engine.step_coordinator.StepExecution", _CapturingStepExecution)
+        monkeypatch.setattr("dovo.engine.step_coordinator.build_agent_step_runner", _recording_build)
+        monkeypatch.setattr("dovo.engine.step_coordinator.StepExecution", _CapturingStepExecution)
         return builds, runners
 
     def test_run_attempt_builds_runner_from_resolved_agent_identity(
@@ -133,7 +133,7 @@ class StepCoordinatorAgentRunnerTests:
     ) -> None:
         """[tier-1/unit] StepCoordinator.run_attempt: RunSettings(agent=_AGENT_SETTINGS) calls build_agent_step_runner once with the identical _AGENT_SETTINGS object and passes its return value as StepExecutionContext.agent_runner."""
         builds, runners = self._spy(monkeypatch)
-        context = RunSettings(cwd=tmp_path, use_sandbox=False, agent=_AGENT_SETTINGS, paths=_paths_for(tmp_path))
+        context = RunSettings(cwd=tmp_path, use_worktree=False, agent=_AGENT_SETTINGS, paths=_paths_for(tmp_path))
         step = StepBuilder.command("echo ok").with_id("ok").build()
 
         StepCoordinator(context).run_attempt(_run_context(tmp_path), [], step, idx=1, total=1, step_context=None)
@@ -144,28 +144,28 @@ class StepCoordinatorAgentRunnerTests:
         assert runners[0] is not None
 
     @pytest.mark.parametrize(
-        ("has_sandbox", "expected"),
-        [pytest.param(True, True, id="active-sandbox"), pytest.param(False, False, id="no-sandbox")],
+        ("has_worktree", "expected"),
+        [pytest.param(True, True, id="active-worktree"), pytest.param(False, False, id="no-worktree")],
     )
-    def test_run_attempt_binds_sandbox_active_from_run_context(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, has_sandbox: bool, expected: bool
+    def test_run_attempt_binds_worktree_active_from_run_context(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, has_worktree: bool, expected: bool
     ) -> None:
-        """[tier-1/unit] StepCoordinator.run_attempt: RunContext.sandbox set to a SandboxSession calls build_agent_step_runner with sandbox_active True; None calls it with False."""
+        """[tier-1/unit] StepCoordinator.run_attempt: RunContext.worktree set to a WorktreeSession calls build_agent_step_runner with worktree_active True; None calls it with False."""
         builds, _ = self._spy(monkeypatch)
-        session = SandboxSession(
+        session = WorktreeSession(
             session_id="s",
             target_branch="main",
-            sandbox_path=tmp_path,
+            worktree_path=tmp_path,
             base_commit="abc",
             created_at="2026-01-01T00:00:00Z",
         )
-        run_context = dataclasses.replace(_run_context(tmp_path), sandbox=session if has_sandbox else None)
-        context = RunSettings(cwd=tmp_path, use_sandbox=has_sandbox, paths=_paths_for(tmp_path))
+        run_context = dataclasses.replace(_run_context(tmp_path), worktree=session if has_worktree else None)
+        context = RunSettings(cwd=tmp_path, use_worktree=has_worktree, paths=_paths_for(tmp_path))
         step = StepBuilder.command("echo ok").with_id("ok").build()
 
         StepCoordinator(context).run_attempt(run_context, [], step, idx=1, total=1, step_context=None)
 
-        assert [sandbox_active for _, sandbox_active in builds] == [expected]
+        assert [worktree_active for _, worktree_active in builds] == [expected]
 
 
 class StepCoordinatorLoopIterationForwardingTests:
@@ -185,7 +185,7 @@ class StepCoordinatorLoopIterationForwardingTests:
         expected_filename: str,
     ) -> None:
         """[tier-1/unit] StepCoordinator.run_attempt: loop_iteration=2 with session_log_dir set writes '01_check_iter_2_attempt_1.stdout.log'; the default loop_iteration=None keeps the '_iter_' segment absent."""
-        context = RunSettings(cwd=tmp_path, use_sandbox=False, paths=_paths_for(tmp_path))
+        context = RunSettings(cwd=tmp_path, use_worktree=False, paths=_paths_for(tmp_path))
         step = StepBuilder.command("echo ok").with_id("check").build()
         run_context = _run_context(tmp_path, session_log_dir=tmp_path)
 
@@ -215,7 +215,7 @@ class StepCoordinatorPrimitiveTests:
     def test_run_attempt_returns_completed_result_and_notifies_observer(self, tmp_path: Path) -> None:
         """[tier-1/integration] StepCoordinator.run_attempt: a passing echo step returns a StepResult with status "completed" and attempts 1 and the observer receives on_step_start then on_step_done."""
         observer = _RecordingRunObserver()
-        context = RunSettings(cwd=tmp_path, use_sandbox=False, observer=observer, paths=_paths_for(tmp_path))
+        context = RunSettings(cwd=tmp_path, use_worktree=False, observer=observer, paths=_paths_for(tmp_path))
         step = StepBuilder.command("echo ok").with_id("ok").build()
 
         result = StepCoordinator(context).run_attempt(
@@ -228,7 +228,7 @@ class StepCoordinatorPrimitiveTests:
     def test_run_attempt_returns_failed_result_without_applying_policy(self, tmp_path: Path) -> None:
         """[tier-1/integration] StepCoordinator.run_attempt: an exit-1 step under prompt_user returns a StepResult with status "failed" and the prompter is never consulted."""
         prompter = _RefusingFailurePrompter()
-        context = RunSettings(cwd=tmp_path, use_sandbox=False, failure_prompter=prompter, paths=_paths_for(tmp_path))
+        context = RunSettings(cwd=tmp_path, use_worktree=False, failure_prompter=prompter, paths=_paths_for(tmp_path))
         step = StepBuilder.command("exit 1").with_id("fail").with_on_failure(FailurePolicy.PROMPT_USER).build()
 
         result = StepCoordinator(context).run_attempt(
@@ -255,7 +255,7 @@ class StepCoordinatorPrimitiveTests:
         """[tier-1/unit] StepCoordinator.prompt_decision: no_tty=True or a missing prompter returns (ABORT, "Warning: step '<id>' requested prompt_user but ... aborting.")."""
         context = RunSettings(
             cwd=tmp_path,
-            use_sandbox=False,
+            use_worktree=False,
             failure_prompter=prompter,
             **ctx_kwargs,
             paths=_paths_for(tmp_path),
@@ -275,7 +275,7 @@ class StepCoordinatorPrimitiveTests:
     def test_prompt_decision_interactive_returns_prompter_decision(self, tmp_path: Path) -> None:
         """[tier-1/unit] StepCoordinator.prompt_decision: an interactive run returns the prompter's decision with no warning."""
         prompter = _ScriptedFailurePrompter([FailurePromptDecision.RETRY])
-        context = RunSettings(cwd=tmp_path, use_sandbox=False, failure_prompter=prompter, paths=_paths_for(tmp_path))
+        context = RunSettings(cwd=tmp_path, use_worktree=False, failure_prompter=prompter, paths=_paths_for(tmp_path))
         step = StepBuilder.command("exit 1").with_id("fail").with_on_failure(FailurePolicy.PROMPT_USER).build()
         failed = StepResult(step_id="fail", status="failed", exit_code=1, stdout="", stderr="", duration_seconds=0.0)
         coordinator = StepCoordinator(context)
@@ -336,7 +336,7 @@ class AutoPublishStepArtifactsTests:
 
         warnings = auto_publish_step_artifacts(
             step,
-            sandbox_path=tmp_path,
+            worktree_path=tmp_path,
             session_id="wf_abc123",
             artifacts_dir=None,
             artifacts_db=None,
@@ -357,7 +357,7 @@ class AutoPublishStepArtifactsTests:
 
         warnings = auto_publish_step_artifacts(
             step,
-            sandbox_path=tmp_path,
+            worktree_path=tmp_path,
             session_id="wf_abc123",
             artifacts_dir=tmp_path / "artifacts",
             artifacts_db=artifacts_repository,

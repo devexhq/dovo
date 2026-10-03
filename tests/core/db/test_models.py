@@ -10,22 +10,22 @@ from sqlalchemy import Engine
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, SQLModel, select
 
-from worktree.core.db.connection import get_engine
-from worktree.core.db.migrations import init_database
-from worktree.core.db.models import (
+from dovo.core.db.connection import get_engine
+from dovo.core.db.migrations import init_database
+from dovo.core.db.models import (
     ArtifactRecord,
     CostRecord,
     RunRecord,
-    SandboxRecord,
+    WorktreeRecord,
 )
 
-RecordClass = type[RunRecord] | type[SandboxRecord] | type[CostRecord] | type[ArtifactRecord]
+RecordClass = type[RunRecord] | type[WorktreeRecord] | type[CostRecord] | type[ArtifactRecord]
 
 
 @pytest.fixture
 def migrated_engine(tmp_path: Path) -> Engine:
     """Engine bound to a freshly migrated, isolated SQLite database file."""
-    db_path = tmp_path / "worktree.db"
+    db_path = tmp_path / "dovo.db"
     init_database(db_path)
     return get_engine(db_path)
 
@@ -37,7 +37,7 @@ class DbRecordModelTests:
         ("record_cls", "expected_tablename"),
         [
             pytest.param(RunRecord, "runs", id="run_record"),
-            pytest.param(SandboxRecord, "sandboxes", id="sandbox_record"),
+            pytest.param(WorktreeRecord, "worktrees", id="worktree_record"),
             pytest.param(CostRecord, "costs", id="cost_record"),
             pytest.param(ArtifactRecord, "artifacts", id="artifact_record"),
         ],
@@ -57,13 +57,13 @@ class DbRecordModelTests:
                 id="run_record",
             ),
             pytest.param(
-                lambda: SandboxRecord(
-                    id="sbx_abc123",
-                    branch_name="worktree/sandbox-sbx_abc123",
+                lambda: WorktreeRecord(
+                    id="dovo_abc123",
+                    branch_name="dovo/dovo_abc123",
                     base_commit="deadbeef",
-                    sandbox_path="/tmp/sbx_abc123",
+                    worktree_path="/tmp/dovo_abc123",
                 ),
-                id="sandbox_record",
+                id="worktree_record",
             ),
             pytest.param(
                 lambda: CostRecord(  # pyright: ignore[reportCallIssue] # intentional: omitted project_id is this test's subject
@@ -84,7 +84,7 @@ class DbRecordModelTests:
         migrated_engine: Engine,
         record_factory: Callable[[], SQLModel],
     ) -> None:
-        """[tier-1/integration] RunRecord/SandboxRecord/CostRecord/ArtifactRecord: omitting project_id raises IntegrityError on commit."""
+        """[tier-1/integration] RunRecord/WorktreeRecord/CostRecord/ArtifactRecord: omitting project_id raises IntegrityError on commit."""
         record = record_factory()
         with Session(migrated_engine) as session:
             session.add(record)

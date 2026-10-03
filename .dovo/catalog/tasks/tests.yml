@@ -1,0 +1,11 @@
+name: test
+description: Run pytest suite in-place without worktree isolation
+use_worktree: false
+
+steps:
+  - id: run-tests
+    name: Run tests
+    type: command
+    command: uv run inv test
+    timeout_seconds: 300
+    on_failure: abort

@@ -1,0 +1,28 @@
+name: format
+id: format
+description: Run ruff format and check --fix
+summary: Format files
+version: 1
+use_worktree: false
+on_failure: prompt
+
+inputs:
+  test_args:
+    type: string
+    description: Extra arguments forwarded to `inv test`
+    default: "-c"
+    aliases: ["-t", "--test-args"]
+
+steps:
+  - id: sync
+    name: Install dependencies
+    run: uv sync --all-extras
+    timeout_seconds: 900
+
+  - id: format-all
+    name: Ruff format check
+    run: uv run ruff format .
+
+  - id: lint-all
+    name: Ruff lint
+    run: uv run ruff check --fix .

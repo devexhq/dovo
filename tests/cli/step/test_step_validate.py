@@ -1,4 +1,4 @@
-"""CLI integration tests for wt step validate."""
+"""CLI integration tests for dovo step validate."""
 
 from __future__ import annotations
 
@@ -7,12 +7,12 @@ from pathlib import Path
 
 from typer.testing import CliRunner
 
-from worktree.cli import app
-from worktree.common.filesystem.models import RepositoryPaths, WorkspacePaths
-from worktree.common.filesystem.services.global_root import resolve_global_paths
-from worktree.core.catalog import Catalog
-from worktree.core.catalog.models import CatalogItemType
-from worktree.core.project.services.storage import resolve_workspace_paths
+from dovo.cli import app
+from dovo.common.filesystem.models import RepositoryPaths, WorkspacePaths
+from dovo.common.filesystem.services.global_root import resolve_global_paths
+from dovo.core.catalog import Catalog
+from dovo.core.catalog.models import CatalogItemType
+from dovo.core.project.services.storage import resolve_workspace_paths
 
 
 def _paths_for(root: Path) -> WorkspacePaths:
@@ -21,10 +21,10 @@ def _paths_for(root: Path) -> WorkspacePaths:
 
 
 class StepValidateCliIntegrationTests:
-    """Typer runner integration tests for wt step validate."""
+    """Typer runner integration tests for dovo step validate."""
 
     def test_step_validate_cli_valid_step_exits_zero(self, cli_runner: CliRunner, isolated_workspace: Path) -> None:
-        """wt step validate <name>: a step with a valid id/run schema passes validation; exit 0."""
+        """dovo step validate <name>: a step with a valid id/run schema passes validation; exit 0."""
         Catalog(_paths_for(isolated_workspace)).save(
             "valid-step", {"id": "valid-step", "run": "echo hi"}, item_type=CatalogItemType.STEP
         )
@@ -35,7 +35,7 @@ class StepValidateCliIntegrationTests:
         assert "PASSED" in result.stdout
 
     def test_step_validate_cli_renders_json(self, cli_runner: CliRunner, isolated_workspace: Path) -> None:
-        """wt step validate <name> --format json: envelope reports valid=true."""
+        """dovo step validate <name> --format json: envelope reports valid=true."""
         Catalog(_paths_for(isolated_workspace)).save(
             "json-valid-step", {"id": "json-valid-step", "run": "echo hi"}, item_type=CatalogItemType.STEP
         )
@@ -52,7 +52,7 @@ class StepValidateCliIntegrationTests:
     def test_step_validate_cli_invalid_step_schema_exits_one(
         self, cli_runner: CliRunner, isolated_workspace: Path
     ) -> None:
-        """wt step validate <name>: a default-scaffolded step (missing required 'id') fails schema validation; exit 1."""
+        """dovo step validate <name>: a default-scaffolded step (missing required 'id') fails schema validation; exit 1."""
         Catalog(_paths_for(isolated_workspace)).create(CatalogItemType.STEP, "invalid-step")
 
         result = cli_runner.invoke(app, ["-p", str(isolated_workspace), "step", "validate", "invalid-step"])
@@ -61,7 +61,7 @@ class StepValidateCliIntegrationTests:
         assert "FAILED" in result.stdout
 
     def test_step_validate_cli_missing_exits_two(self, cli_runner: CliRunner, isolated_workspace: Path) -> None:
-        """wt step validate missing-step: exits 2 (CATALOG_ITEM_NOT_FOUND)."""
+        """dovo step validate missing-step: exits 2 (CATALOG_ITEM_NOT_FOUND)."""
         result = cli_runner.invoke(app, ["-p", str(isolated_workspace), "step", "validate", "missing-step"])
 
         assert result.exit_code == 2

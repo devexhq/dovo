@@ -1,12 +1,12 @@
-# `wt history`
+# `dovo history`
 
-The `wt history` command inspects past blueprint executions, enabling developers to filter past runs and view granular step details and error messages.
+The `dovo history` command inspects past blueprint executions, enabling developers to filter past runs and view granular step details and error messages.
 
 ## Usage
 
 ```bash
-wt history [OPTIONS]
-wt history list [OPTIONS]
+dovo history [OPTIONS]
+dovo history list [OPTIONS]
 ```
 
 ### Options
@@ -19,21 +19,21 @@ wt history list [OPTIONS]
 
 ## Subcommands
 
-### `wt history` / `wt history list` (Default)
+### `dovo history` / `dovo history list` (Default)
 
-Lists execution history runs recorded in the centralized database. Executing `wt history` without subcommands defaults to listing runs.
+Lists execution history runs recorded in the centralized database. Executing `dovo history` without subcommands defaults to listing runs.
 
 ```bash
-wt history [OPTIONS]
-wt history list [OPTIONS]
+dovo history [OPTIONS]
+dovo history list [OPTIONS]
 ```
 
-### `wt history show`
+### `dovo history show`
 
 Show granular metadata and error details for a specific execution session.
 
 ```bash
-wt history show <session_id> [OPTIONS]
+dovo history show <session_id> [OPTIONS]
 ```
 
 #### Arguments
@@ -46,7 +46,7 @@ wt history show <session_id> [OPTIONS]
 
 | Flag | Description |
 | --- | --- |
-| `--logs` | Also list the session's log files and the last 10 `run.log` events. See [`wt logs`](logs.md) for full log output. The command exits `1` if the session's logs cannot be read. |
+| `--logs` | Also list the session's log files and the last 10 `run.log` events. See [`dovo logs`](logs.md) for full log output. The command exits `1` if the session's logs cannot be read. |
 | `--format [terminal\|json]` | Presentation format (`terminal` or `json`). |
 
 ## Examples
@@ -54,29 +54,29 @@ wt history show <session_id> [OPTIONS]
 List recent blueprint execution history:
 
 ```bash
-wt history
+dovo history
 ```
 
 List failed executions limited to the 5 most recent runs:
 
 ```bash
-wt history --status failed --limit 5
+dovo history --status failed --limit 5
 ```
 
 Output history list as structured NDJSON envelopes:
 
 ```bash
-wt history list --format json
+dovo history list --format json
 ```
 
 Inspect details for a specific session:
 
 ```bash
-wt history show blueprint_a1b2c3d4
+dovo history show blueprint_a1b2c3d4
 ```
 
 Inspect session details in JSON format:
 
 ```bash
-wt history show blueprint_a1b2c3d4 --format json
+dovo history show blueprint_a1b2c3d4 --format json
 ```

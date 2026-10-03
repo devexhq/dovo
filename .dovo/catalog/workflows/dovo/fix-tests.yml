@@ -1,0 +1,21 @@
+version: "1.0"
+name: "fix-tests"
+id: "fix-tests"
+description: "Iteratively fix failing tests until they pass or attempts are exhausted"
+timeout_seconds: 600
+
+steps:
+  - id: dev-cycle
+    type: loop
+    max_iterations: 5
+    until:
+      - "steps.run-tests.exit_code == 0"
+    on_max_iterations: prompt_user
+    do:
+      - id: run-tests
+        run: pytest
+        on_failure: continue
+
+      - id: ai-fix
+        uses: dovo/ai-code-patcher
+        on_failure: abort

@@ -5,17 +5,17 @@ from __future__ import annotations
 from collections.abc import Sequence
 from pathlib import Path
 
+from dovo.core.catalog.definitions import LoopStepBlock, StepDefinition
+from dovo.engine.executors.models import ConditionEvaluationResult, StepResult
+from dovo.engine.models import RunObserver, RunOutcome
+from dovo.engine.notify import safe_notify
 from tests.harness.builders import StepBuilder
-from worktree.core.catalog.definitions import LoopStepBlock, StepDefinition
-from worktree.engine.executors.models import ConditionEvaluationResult, StepResult
-from worktree.engine.models import RunObserver, RunOutcome
-from worktree.engine.notify import safe_notify
 
 
 class _NoOpRunObserver(RunObserver):
     """Test double implementing every RunObserver hook as a no-op; subclass and override only what a test needs."""
 
-    def on_sandbox_ready(self, path: Path, active: bool) -> None:
+    def on_worktree_ready(self, path: Path, active: bool) -> None:
         pass
 
     def on_step_start(self, idx: int, total: int, step: StepDefinition) -> None:
@@ -45,7 +45,7 @@ class _NoOpRunObserver(RunObserver):
     def on_loop_done(self, loop_id: str, status: str, total_iterations: int) -> None:
         pass
 
-    def on_sandbox_cleanup(self, kept: bool, path: Path) -> None:
+    def on_worktree_cleanup(self, kept: bool, path: Path) -> None:
         pass
 
     def on_run_started(self, steps: Sequence[StepDefinition | LoopStepBlock]) -> None:

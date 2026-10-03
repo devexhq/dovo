@@ -5,10 +5,10 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
-from worktree.common.models import FailurePolicy
-from worktree.engine.executors.models import StepResult
-from worktree.engine.models import DefinitionRef, DefinitionsManifest
-from worktree.engine.state_models import (
+from dovo.common.models import FailurePolicy
+from dovo.engine.executors.models import StepResult
+from dovo.engine.models import DefinitionRef, DefinitionsManifest
+from dovo.engine.state_models import (
     ExecutionIterationRecord,
     ExecutionLeafNode,
     ExecutionLoopNode,

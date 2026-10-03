@@ -7,15 +7,15 @@ from pathlib import Path
 
 import pytest
 
-from tests.harness import AgentRequestBuilder, FakeAgentRunner
-from worktree.core.agents import AgentResponseStatus
-from worktree.core.agents.cli_mutation import CliMutationRunRequest
-from worktree.core.agents.gemini import (
+from dovo.core.agents import AgentResponseStatus
+from dovo.core.agents.cli_mutation import CliMutationRunRequest
+from dovo.core.agents.gemini import (
     GEMINI_API_KEY_ENV,
     GeminiAgentAdapter,
     default_gemini_run,
     resolve_gemini_api_key,
 )
+from tests.harness import AgentRequestBuilder, FakeAgentRunner
 
 
 @pytest.fixture(autouse=True)
@@ -40,7 +40,7 @@ class GeminiAuthTests:
         monkeypatch.delenv(GEMINI_API_KEY_ENV, raising=False)
         adapter = GeminiAgentAdapter()
 
-        resp = adapter.propose_fix(AgentRequestBuilder().with_sandbox_path(tmp_path).build())
+        resp = adapter.propose_fix(AgentRequestBuilder().with_worktree_path(tmp_path).build())
 
         assert resp.status == AgentResponseStatus.PROVIDER_ERROR
         assert resp.errors == [
@@ -52,11 +52,11 @@ class GeminiRunTests:
     def test_default_run_parses_json(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """gemini is invoked with the fixed argv plus the requested model, and its JSON stdout is parsed to text."""
         runner = FakeAgentRunner().returning(stdout=b'{"response": "pong"}')
-        monkeypatch.setattr("worktree.core.agents.gemini.run_isolated_process", runner)
+        monkeypatch.setattr("dovo.core.agents.gemini.run_isolated_process", runner)
 
         outcome = default_gemini_run(
             CliMutationRunRequest(
-                sandbox_path=tmp_path,
+                worktree_path=tmp_path,
                 prompt="hi",
                 model="gemini-2.5-flash",
                 timeout_seconds=3,
@@ -77,10 +77,10 @@ class GeminiRunTests:
     def test_missing_gemini_binary_returns_error_status(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """A missing gemini binary maps to an error outcome naming the Gemini CLI."""
         runner = FakeAgentRunner().raising(FileNotFoundError("gemini"))
-        monkeypatch.setattr("worktree.core.agents.gemini.run_isolated_process", runner)
+        monkeypatch.setattr("dovo.core.agents.gemini.run_isolated_process", runner)
 
         outcome = default_gemini_run(
-            CliMutationRunRequest(sandbox_path=tmp_path, prompt="hi", model=None, timeout_seconds=3)
+            CliMutationRunRequest(worktree_path=tmp_path, prompt="hi", model=None, timeout_seconds=3)
         )
 
         assert outcome.status == "error"
@@ -90,10 +90,10 @@ class GeminiRunTests:
     def test_process_timeout_returns_timeout_status(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """A subprocess timeout maps to a timeout outcome."""
         runner = FakeAgentRunner().raising(subprocess.TimeoutExpired(cmd="gemini", timeout=3))
-        monkeypatch.setattr("worktree.core.agents.gemini.run_isolated_process", runner)
+        monkeypatch.setattr("dovo.core.agents.gemini.run_isolated_process", runner)
 
         outcome = default_gemini_run(
-            CliMutationRunRequest(sandbox_path=tmp_path, prompt="hi", model=None, timeout_seconds=3)
+            CliMutationRunRequest(worktree_path=tmp_path, prompt="hi", model=None, timeout_seconds=3)
         )
 
         assert outcome.status == "timeout"

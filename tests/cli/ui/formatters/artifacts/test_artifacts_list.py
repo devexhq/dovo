@@ -6,16 +6,16 @@ from typing import Any
 
 import pytest
 
+from dovo.cli.ui.formatters.artifacts.artifacts_list import ArtifactsListFormatter
+from dovo.cli.ui.formatters.artifacts.artifacts_views import ArtifactRowView, ArtifactsListView
+from dovo.core.artifacts.models import ArtifactsListResult, ArtifactsListStatus
+from dovo.core.db.models import ArtifactRecord
 from tests.harness.formatter import (
     FormatterCase,
     assert_json_payload_matches_published_shape,
     assert_rich_render_shows_every_view_value,
     assert_transform_derives_expected_view,
 )
-from worktree.cli.ui.formatters.artifacts.artifacts_list import ArtifactsListFormatter
-from worktree.cli.ui.formatters.artifacts.artifacts_views import ArtifactRowView, ArtifactsListView
-from worktree.core.artifacts.models import ArtifactsListResult, ArtifactsListStatus
-from worktree.core.db.models import ArtifactRecord
 
 _RECORD = ArtifactRecord(
     project_id="proj-a",

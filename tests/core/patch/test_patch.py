@@ -1,10 +1,10 @@
-"""Tests for worktree.core.patch.GitDiffParser."""
+"""Tests for dovo.core.patch.GitDiffParser."""
 
 from __future__ import annotations
 
 import pytest
 
-from worktree.core.patch import GitDiffParser
+from dovo.core.patch import GitDiffParser
 
 
 class GitDiffParserTests:

@@ -6,10 +6,10 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from unittest.mock import patch
 
-from worktree.common.lock import LockTimeoutError
-from worktree.core.artifacts.models import ArtifactsPruneStatus
-from worktree.core.artifacts.services.prune import prune_artifacts
-from worktree.core.db.repositories.artifacts import ArtifactsRepository
+from dovo.common.lock import LockTimeoutError
+from dovo.core.artifacts.models import ArtifactsPruneStatus
+from dovo.core.artifacts.services.prune import prune_artifacts
+from dovo.core.db.repositories.artifacts import ArtifactsRepository
 
 
 def _past_timestamp() -> str:
@@ -34,7 +34,7 @@ class PruneArtifactsServiceTests:
     ) -> None:
         """[tier-1/unit] prune_artifacts: WorkspaceLock.__enter__ raising LockTimeoutError returns ArtifactsPruneStatus.LOCKED without raising."""
         with patch(
-            "worktree.core.artifacts.services.prune.WorkspaceLock.__enter__",
+            "dovo.core.artifacts.services.prune.WorkspaceLock.__enter__",
             side_effect=LockTimeoutError("locked by another process"),
         ):
             result = prune_artifacts(tmp_path, tmp_path / "artifacts", artifacts_repository, remove_expired=True)
@@ -86,7 +86,7 @@ class PruneArtifactsServiceTests:
     def test_prune_artifacts_locks_workspace_root_not_artifacts_dir(
         self, tmp_path: Path, artifacts_repository: ArtifactsRepository
     ) -> None:
-        """[tier-1/unit] prune_artifacts: the advisory lock file lands under workspace_root/.worktree/.lock, not under artifacts_dir, so it coordinates with every other WorkspaceLock caller."""
+        """[tier-1/unit] prune_artifacts: the advisory lock file lands under workspace_root/.dovo/.lock, not under artifacts_dir, so it coordinates with every other WorkspaceLock caller."""
         artifacts_dir = tmp_path / "artifacts"
         artifact_dir = artifacts_dir / "wf_abc123" / "dist-packages"
         artifact_dir.mkdir(parents=True)
@@ -96,5 +96,5 @@ class PruneArtifactsServiceTests:
 
         prune_artifacts(tmp_path, artifacts_dir, artifacts_repository, remove_expired=True)
 
-        assert (tmp_path / ".worktree" / ".lock").exists()
-        assert not (artifacts_dir / ".worktree").exists()
+        assert (tmp_path / ".dovo" / ".lock").exists()
+        assert not (artifacts_dir / ".dovo").exists()

@@ -7,11 +7,11 @@ from pathlib import Path
 
 import pytest
 
-from worktree.common.filesystem.models import RepositoryPaths, WorkspacePaths
-from worktree.common.filesystem.services.global_root import resolve_global_paths
-from worktree.core.db import RunStatus
-from worktree.core.logs import Logs, LogsShowStatus, LogStreamFilter, RunLogEvent, RunLogEventType, append_run_log_event
-from worktree.core.project.services.storage import resolve_workspace_paths
+from dovo.common.filesystem.models import RepositoryPaths, WorkspacePaths
+from dovo.common.filesystem.services.global_root import resolve_global_paths
+from dovo.core.db import RunStatus
+from dovo.core.logs import Logs, LogsShowStatus, LogStreamFilter, RunLogEvent, RunLogEventType, append_run_log_event
+from dovo.core.project.services.storage import resolve_workspace_paths
 
 
 def _paths_for(root: Path) -> WorkspacePaths:

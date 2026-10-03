@@ -1,0 +1,38 @@
+name: verify
+id: verify
+description: Run the full pre-commit gate (format, lint, types, tests) in an isolated worktree
+summary: Full pre-commit gate
+version: 1
+use_worktree: false
+on_failure: prompt
+
+inputs:
+  test_args:
+    type: string
+    description: Extra arguments forwarded to `inv test`
+    default: "-c"
+    aliases: ["-t", "--test-args"]
+
+steps:
+  - id: sync
+    name: Install dependencies
+    run: uv sync --all-extras
+    timeout_seconds: 900
+
+  - id: format-check
+    name: Ruff format check
+    run: uv run ruff format --check .
+
+  - id: lint
+    name: Ruff lint
+    run: uv run ruff check .
+
+  - id: types
+    name: Basedpyright
+    run: uv run basedpyright src --level error
+    timeout_seconds: 600
+
+  - id: tests
+    name: Test suite
+    run: uv run inv test ${{ inputs.test_args }}
+    timeout_seconds: 2400

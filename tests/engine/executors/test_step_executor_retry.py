@@ -3,21 +3,21 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
+from dovo.engine.executors.models import StepExecutionContext
+from dovo.engine.executors.step_executor import StepExecution
 from tests.harness.builders import StepBuilder
-from worktree.engine.executors.models import StepExecutionContext
-from worktree.engine.executors.step_executor import StepExecution
 
 
 class StepRetryExecutionTests:
     """Integration tests verifying step execution retry loops and environment propagation."""
 
     def test_step_command_adapts_behavior_based_on_attempt_counter(self, tmp_path: Path) -> None:
-        """Verify step command receives incremented WT_STEP_ATTEMPT and succeeds on retry."""
+        """Verify step command receives incremented DOVO_STEP_ATTEMPT and succeeds on retry."""
         script_file = tmp_path / "retry_script.py"
         script_file.write_text(
             "import os\n"
             "import sys\n\n"
-            "attempt = os.environ.get('WT_STEP_ATTEMPT', '0')\n"
+            "attempt = os.environ.get('DOVO_STEP_ATTEMPT', '0')\n"
             "if attempt == '1':\n"
             "    print('attempt 1')\n"
             "    sys.exit(1)\n"
@@ -29,7 +29,7 @@ class StepRetryExecutionTests:
         )
         cmd = f"{sys.executable} retry_script.py"
         step = StepBuilder.command(cmd).with_id("retry-adapt").with_retry(max_retries=2, backoff_ms=0).build()
-        result = StepExecution(StepExecutionContext(step=step, sandbox_path=tmp_path)).run()
+        result = StepExecution(StepExecutionContext(step=step, worktree_path=tmp_path)).run()
 
         assert result.step_id == "retry-adapt"
         assert result.status == "completed"
@@ -66,7 +66,7 @@ class StepRunnerRobustnessTests:
         result = StepExecution(
             StepExecutionContext(
                 step=step,
-                sandbox_path=tmp_path,
+                worktree_path=tmp_path,
                 on_output=failing_observer,
             )
         ).run()

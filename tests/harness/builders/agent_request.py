@@ -1,11 +1,11 @@
-"""Fluent agent request builder for Worktree CLI test suite."""
+"""Fluent agent request builder for Dovo CLI test suite."""
 
 from __future__ import annotations
 
 from pathlib import Path
 from typing import Self
 
-from worktree.core.agents import AgentFailurePayload, AgentRequest
+from dovo.core.agents import AgentFailurePayload, AgentRequest
 
 
 class AgentRequestBuilder:
@@ -22,7 +22,7 @@ class AgentRequestBuilder:
             stdout="boom",
             stderr="",
         )
-        self._sandbox_path: Path | None = None
+        self._worktree_path: Path | None = None
         self._timeout_seconds: int = 10
         self._model: str | None = None
         self._endpoint: str | None = None
@@ -30,9 +30,9 @@ class AgentRequestBuilder:
         self._max_tokens: int | None = None
         self._max_files: int | None = None
 
-    def with_sandbox_path(self, sandbox_path: Path) -> Self:
-        """Set the sandbox checkout the agent request runs against."""
-        self._sandbox_path = sandbox_path
+    def with_worktree_path(self, worktree_path: Path) -> Self:
+        """Set the worktree checkout the agent request runs against."""
+        self._worktree_path = worktree_path
         return self
 
     def with_model(self, model: str) -> Self:
@@ -62,13 +62,13 @@ class AgentRequestBuilder:
 
     def build(self) -> AgentRequest:
         """Assemble and return the complete AgentRequest."""
-        if self._sandbox_path is None:
-            raise ValueError("AgentRequestBuilder requires with_sandbox_path(...) before build()")
+        if self._worktree_path is None:
+            raise ValueError("AgentRequestBuilder requires with_worktree_path(...) before build()")
         return AgentRequest(
             mode="fix_failure",
             instruction="Fix the failing test.",
             payload=self._payload,
-            sandbox_path=self._sandbox_path,
+            worktree_path=self._worktree_path,
             timeout_seconds=self._timeout_seconds,
             model=self._model,
             endpoint=self._endpoint,

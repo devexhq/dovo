@@ -7,42 +7,42 @@ from typing import Any
 
 import pytest
 
+from dovo.cli.ui.formatters.config import (
+    ConfigValidateFormatter,
+    ConfigValidationView,
+)
+from dovo.core.config.models import (
+    AgentConfig,
+    ConcurrencyConfig,
+    DoctorConfig,
+    DovoConfig,
+    HistoryConfig,
+    ProjectConfig,
+    PruneConfig,
+    TelemetryConfig,
+    WorktreeConfig,
+)
+from dovo.core.config.validate import (
+    ConfigValidationResult,
+    ConfigValidationStatus,
+)
 from tests.harness.formatter import (
     FormatterCase,
     assert_json_payload_matches_published_shape,
     assert_rich_render_shows_every_view_value,
     assert_transform_derives_expected_view,
 )
-from worktree.cli.ui.formatters.config import (
-    ConfigValidateFormatter,
-    ConfigValidationView,
-)
-from worktree.core.config.models import (
-    AgentConfig,
-    ConcurrencyConfig,
-    DoctorConfig,
-    HistoryConfig,
-    ProjectConfig,
-    PruneConfig,
-    SandboxConfig,
-    TelemetryConfig,
-    WorktreeConfig,
-)
-from worktree.core.config.validate import (
-    ConfigValidationResult,
-    ConfigValidationStatus,
-)
 
-CONFIG_PATH = Path("/workspace/.worktree/config.json")
+CONFIG_PATH = Path("/workspace/.dovo/config.json")
 
 
-def _make_config(name: str = "valid-proj") -> WorktreeConfig:
-    return WorktreeConfig(
+def _make_config(name: str = "valid-proj") -> DovoConfig:
+    return DovoConfig(
         version=1,
         project=ProjectConfig(name=name, initialized_at=None),
-        sandbox=SandboxConfig(
+        worktree=WorktreeConfig(
             base_ref="HEAD",
-            max_active_sandboxes=3,
+            max_active_worktrees=3,
             default_timeout_seconds=900,
         ),
         agent=AgentConfig(
@@ -67,7 +67,7 @@ def _make_config(name: str = "valid-proj") -> WorktreeConfig:
         ),
         prune=PruneConfig(
             remove_stale_worktrees=True,
-            remove_orphaned_sandboxes=True,
+            remove_orphaned_worktrees=True,
             remove_expired_artifacts=False,
             artifact_ttl_days=30,
         ),
@@ -107,7 +107,7 @@ VALID_WITH_WARNINGS_CASE = FormatterCase(
         config=VALID_CONFIG,
         warnings=["agent.provider is not 'local' but agent.model is missing (CONFIG_WARN_AGENT_MODEL_MISSING)."],
         errors=[],
-        fixes=["Set agent.model in .worktree/config.json"],
+        fixes=["Set agent.model in .dovo/config.json"],
     ),
     view=ConfigValidationView(
         status=ConfigValidationStatus.VALID,
@@ -117,13 +117,13 @@ VALID_WITH_WARNINGS_CASE = FormatterCase(
         config=VALID_CONFIG,
         errors=[],
         warnings=["agent.provider is not 'local' but agent.model is missing (CONFIG_WARN_AGENT_MODEL_MISSING)."],
-        fixes=["Set agent.model in .worktree/config.json"],
+        fixes=["Set agent.model in .dovo/config.json"],
     ),
     render_expectations=[
         CONFIG_PATH.as_posix(),
         "valid with warnings",
         "agent.provider is not 'local' but agent.model is missing (CONFIG_WARN_AGENT_MODEL_MISSING).",
-        "Set agent.model in .worktree/config.json",
+        "Set agent.model in .dovo/config.json",
     ],
 )
 
@@ -187,7 +187,7 @@ VALIDATION_PAYLOAD_CASES = [
         VALID_CASE,
         {
             "status": "valid",
-            "config_path": "/workspace/.worktree/config.json",
+            "config_path": "/workspace/.dovo/config.json",
             "status_label": "valid",
             "raw": None,
             "config": {
@@ -197,9 +197,9 @@ VALIDATION_PAYLOAD_CASES = [
                     "initialized_at": None,
                 },
                 "ignore_global_root_error": False,
-                "sandbox": {
+                "worktree": {
                     "base_ref": "HEAD",
-                    "max_active_sandboxes": 3,
+                    "max_active_worktrees": 3,
                     "default_timeout_seconds": 900,
                 },
                 "agent": {
@@ -224,7 +224,7 @@ VALIDATION_PAYLOAD_CASES = [
                 },
                 "prune": {
                     "remove_stale_worktrees": True,
-                    "remove_orphaned_sandboxes": True,
+                    "remove_orphaned_worktrees": True,
                     "remove_expired_artifacts": False,
                     "artifact_ttl_days": 30,
                 },
@@ -245,7 +245,7 @@ VALIDATION_PAYLOAD_CASES = [
         INVALID_CASE,
         {
             "status": "invalid",
-            "config_path": "/workspace/.worktree/config.json",
+            "config_path": "/workspace/.dovo/config.json",
             "status_label": "invalid",
             "raw": None,
             "config": None,

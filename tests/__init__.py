@@ -1,1 +1,1 @@
-"""Worktree CLI contract test suite."""
+"""Dovo CLI contract test suite."""

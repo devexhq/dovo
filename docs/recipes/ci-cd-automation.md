@@ -1,17 +1,17 @@
 # Recipe: CI/CD Automation & GitHub Actions
 
-Worktree blueprints can be executed inside Continuous Integration (CI) pipelines to standardize local developer runs and remote CI validation.
+Dovo blueprints can be executed inside Continuous Integration (CI) pipelines to standardize local developer runs and remote CI validation.
 
 ---
 
 ## Key CLI Flags for CI/CD
 
-When executing Worktree in automated environments:
-* `--no-sandbox`: Disables Git worktree branch creation and executes steps directly in the runner workspace.
+When executing Dovo in automated environments:
+* `--no-worktree`: Disables Git worktree branch creation and executes steps directly in the runner workspace.
 * `--no-tty`: Ensures `prompt_user` failure directives degrade safely to `abort` rather than hanging on standard input.
 
 ```bash
-wt run build-and-test --no-sandbox --no-tty
+dovo run build-and-test --no-worktree --no-tty
 ```
 
 ---
@@ -21,7 +21,7 @@ wt run build-and-test --no-sandbox --no-tty
 Create `.github/workflows/verify-blueprints.yml`:
 
 ```yaml
-name: Verify Worktree Blueprints
+name: Verify Dovo Blueprints
 
 on:
   push:
@@ -47,24 +47,24 @@ jobs:
           pip install uv
           uv sync --all-extras
 
-      - name: Initialize Worktree Workspace
-        run: wt init
+      - name: Initialize Dovo Workspace
+        run: dovo init
 
-      - name: Validate Worktree Config
-        run: wt config validate
+      - name: Validate Dovo Config
+        run: dovo config validate
 
       - name: Execute Full Verification Blueprint
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         run: |
-          wt run lint-and-test --no-sandbox --no-tty
+          dovo run lint-and-test --no-worktree --no-tty
 ```
 
 ---
 
 ## Automated Failure Diagnostics
 
-In CI, when a step assertion fails, Worktree prints formatted diagnostics and non-zero exit codes that integrate with CI log viewers:
+In CI, when a step assertion fails, Dovo prints formatted diagnostics and non-zero exit codes that integrate with CI log viewers:
 
 ```text
 Step 'run-tests' failed assertions:

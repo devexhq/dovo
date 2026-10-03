@@ -1,10 +1,10 @@
-"""Fluent blueprint data builder for Worktree CLI test suite."""
+"""Fluent blueprint data builder for Dovo CLI test suite."""
 
 from __future__ import annotations
 
+from dovo.core.catalog.definitions import BlueprintDefaults, BlueprintDefinition, LoopStepBlock, StepDefinition
+from dovo.core.inputs.models import InputType, ParameterInput
 from tests.harness.builders.step import StepBuilder
-from worktree.core.catalog.definitions import BlueprintDefaults, BlueprintDefinition, LoopStepBlock, StepDefinition
-from worktree.core.inputs.models import InputType, ParameterInput
 
 
 class BlueprintBuilder:
@@ -15,7 +15,7 @@ class BlueprintBuilder:
         self._description: str = ""
         self._summary: str = ""
         self._version: int | str = 1
-        self._use_sandbox: bool = True
+        self._use_worktree: bool = True
         self._timeout_seconds: int | None = None
         self._env: dict[str, str] = {}
         self._inputs: dict[str, ParameterInput] = {}
@@ -52,9 +52,9 @@ class BlueprintBuilder:
         self._version = version
         return self
 
-    def with_use_sandbox(self, use_sandbox: bool) -> BlueprintBuilder:
-        """Configure whether blueprint executes in an isolated sandbox."""
-        self._use_sandbox = use_sandbox
+    def with_use_worktree(self, use_worktree: bool) -> BlueprintBuilder:
+        """Configure whether blueprint executes in an isolated worktree."""
+        self._use_worktree = use_worktree
         return self
 
     def with_timeout(self, timeout_seconds: int) -> BlueprintBuilder:
@@ -121,7 +121,7 @@ class BlueprintBuilder:
             description=self._description,
             summary=self._summary,
             version=self._version,
-            use_sandbox=self._use_sandbox,
+            use_worktree=self._use_worktree,
             timeout_seconds=self._timeout_seconds,
             env=dict(self._env),
             inputs=dict(self._inputs),

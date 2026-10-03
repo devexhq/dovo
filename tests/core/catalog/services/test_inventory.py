@@ -7,10 +7,10 @@ from pathlib import Path
 
 import pytest
 
-from worktree.common.filesystem import WorkspacePaths
-from worktree.common.filesystem.services.global_root import resolve_global_paths
-from worktree.core.catalog.models import CatalogIndexEntry, CatalogItemType, CatalogTier
-from worktree.core.catalog.services.inventory import (
+from dovo.common.filesystem import WorkspacePaths
+from dovo.common.filesystem.services.global_root import resolve_global_paths
+from dovo.core.catalog.models import CatalogIndexEntry, CatalogItemType, CatalogTier
+from dovo.core.catalog.services.inventory import (
     compute_catalog_sha,
     create_catalog_item,
     load_catalog_index,
@@ -70,9 +70,7 @@ class CatalogReindexSingleResolutionTests:
         def _unexpected_resolution(*args: object, **kwargs: object) -> object:
             raise AssertionError("catalog reindex must use the supplied WorkspacePaths")
 
-        monkeypatch.setattr(
-            "worktree.common.filesystem.services.global_root.resolve_global_paths", _unexpected_resolution
-        )
+        monkeypatch.setattr("dovo.common.filesystem.services.global_root.resolve_global_paths", _unexpected_resolution)
 
         result = scan_and_index_catalog(workspace_paths)
 
@@ -164,15 +162,15 @@ class CreateCatalogItemTests:
     def test_create_catalog_item_user_tier_acquires_lock_under_global_data_dir_not_repo_root(
         self, tmp_path: Path, workspace_paths_factory: WorkspacePathsFactory
     ) -> None:
-        """create_catalog_item(tier=USER): <global_root>/data/.worktree/.lock exists afterward; <repo_root>/.worktree/.lock does not."""
+        """create_catalog_item(tier=USER): <global_root>/data/.dovo/.lock exists afterward; <repo_root>/.dovo/.lock does not."""
         repo_root = tmp_path / "repo"
         global_root = tmp_path / "global_home"
         paths = workspace_paths_factory(repo_root, global_root)
 
         create_catalog_item(CatalogItemType.BLUEPRINT, "my-blueprint", CatalogTier.USER, paths)
 
-        assert (global_root / "data" / ".worktree" / ".lock").exists()
-        assert not (repo_root / ".worktree" / ".lock").exists()
+        assert (global_root / "data" / ".dovo" / ".lock").exists()
+        assert not (repo_root / ".dovo" / ".lock").exists()
 
     def test_create_catalog_item_collision_at_selected_tier_raises_file_exists_error(
         self, tmp_path: Path, workspace_paths_factory: WorkspacePathsFactory

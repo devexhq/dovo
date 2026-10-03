@@ -1,21 +1,21 @@
-"""Unit tests for worktree.core.doctor.services.registry."""
+"""Unit tests for dovo.core.doctor.services.registry."""
 
 import pytest
 
-from worktree.core.doctor.checks.agent_setup import AgentSetupCheck
-from worktree.core.doctor.checks.config_schema import ConfigSchemaCheck
-from worktree.core.doctor.checks.env_binaries import EnvBinariesCheck
-from worktree.core.doctor.checks.filesystem_writable import FilesystemWritableCheck
-from worktree.core.doctor.checks.git_repo import GitRepoCheck
-from worktree.core.doctor.checks.sandbox_refs import SandboxRefsCheck
-from worktree.core.doctor.exceptions import CheckRegistrationError
-from worktree.core.doctor.models import (
+from dovo.core.doctor.checks.agent_setup import AgentSetupCheck
+from dovo.core.doctor.checks.config_schema import ConfigSchemaCheck
+from dovo.core.doctor.checks.env_binaries import EnvBinariesCheck
+from dovo.core.doctor.checks.filesystem_writable import FilesystemWritableCheck
+from dovo.core.doctor.checks.git_repo import GitRepoCheck
+from dovo.core.doctor.checks.worktree_refs import WorktreeRefsCheck
+from dovo.core.doctor.exceptions import CheckRegistrationError
+from dovo.core.doctor.models import (
     CheckCategory,
     CheckStatus,
     DiagnosticCheckResult,
     DoctorContext,
 )
-from worktree.core.doctor.services.registry import CheckRegistry, get_default_registry
+from dovo.core.doctor.services.registry import CheckRegistry, get_default_registry
 
 
 class DummyCheck:
@@ -124,6 +124,6 @@ class DefaultRegistryTests:
         assert isinstance(registry.get("git.repo"), GitRepoCheck)
         assert isinstance(registry.get("config.schema"), ConfigSchemaCheck)
         assert isinstance(registry.get("filesystem.writable"), FilesystemWritableCheck)
-        assert isinstance(registry.get("sandbox.refs"), SandboxRefsCheck)
+        assert isinstance(registry.get("worktree.refs"), WorktreeRefsCheck)
         assert isinstance(registry.get("env.binaries"), EnvBinariesCheck)
         assert isinstance(registry.get("agent.setup"), AgentSetupCheck)

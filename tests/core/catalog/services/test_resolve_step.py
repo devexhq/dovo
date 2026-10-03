@@ -5,22 +5,22 @@ from pathlib import Path
 
 import pytest
 
-from worktree.common.filesystem import WorkspacePaths
-from worktree.core.catalog.definitions import StepDefinition, StepType
-from worktree.core.catalog.exceptions import StepValidationError
-from worktree.core.catalog.services.resolve_step import (
+from dovo.common.filesystem import WorkspacePaths
+from dovo.core.catalog.definitions import StepDefinition, StepType
+from dovo.core.catalog.exceptions import StepValidationError
+from dovo.core.catalog.services.resolve_step import (
     load_step,
     load_step_by_name,
     load_step_by_path,
     merge_uses_step,
     resolve_step_definition,
 )
-from worktree.core.project.services.identity import generate_project_identity, save_project_identity
+from dovo.core.project.services.identity import generate_project_identity, save_project_identity
 
 
 def _persist_project_identity(root: Path) -> None:
     """Persist a project identity so catalog-backed step resolution can resolve project_id."""
-    save_project_identity(root / ".worktree" / "project.json", generate_project_identity())
+    save_project_identity(root / ".dovo" / "project.json", generate_project_identity())
 
 
 class StepResolutionTests:
@@ -39,7 +39,7 @@ class StepResolutionTests:
         self, tmp_path: Path, workspace_paths_factory: Callable[[Path, Path | None], WorkspacePaths]
     ) -> None:
         """Inherited step overlays explicitly set fields while preserving base definition defaults."""
-        steps_dir = tmp_path / ".worktree" / "catalog" / "steps"
+        steps_dir = tmp_path / ".dovo" / "catalog" / "steps"
         steps_dir.mkdir(parents=True, exist_ok=True)
         _persist_project_identity(tmp_path)
         base_yaml = (
@@ -83,7 +83,7 @@ class StepResolutionTests:
         self, tmp_path: Path, workspace_paths_factory: Callable[[Path, Path | None], WorkspacePaths]
     ) -> None:
         """Step inheriting from another shorthand step resolves recursively."""
-        steps_dir = tmp_path / ".worktree" / "catalog" / "steps"
+        steps_dir = tmp_path / ".dovo" / "catalog" / "steps"
         steps_dir.mkdir(parents=True, exist_ok=True)
         _persist_project_identity(tmp_path)
         (steps_dir / "root.yaml").write_text("id: root\nrun: echo root\n", encoding="utf-8")
@@ -119,7 +119,7 @@ class StepLoadingTests:
         self, tmp_path: Path, workspace_paths_factory: Callable[[Path, Path | None], WorkspacePaths]
     ) -> None:
         """load_step_by_name resolves an indexed step from the workspace catalog."""
-        steps_dir = tmp_path / ".worktree" / "catalog" / "steps"
+        steps_dir = tmp_path / ".dovo" / "catalog" / "steps"
         steps_dir.mkdir(parents=True, exist_ok=True)
         _persist_project_identity(tmp_path)
         (steps_dir / "catalog-step.yaml").write_text("id: catalog-step\nrun: echo hello\n", encoding="utf-8")

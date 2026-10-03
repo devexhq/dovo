@@ -31,7 +31,7 @@ jobs:
 
       - name: Run tests with coverage
         # fail_under=80 is configured in pyproject.toml [tool.coverage.report]
-        run: uv run python -m pytest --cov=worktree --cov-report=term-missing --cov-report=xml tests/ -q -n auto
+        run: uv run python -m pytest --cov=dovo --cov-report=term-missing --cov-report=xml tests/ -q -n auto
 
   prek:
     name: Prek

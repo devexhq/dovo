@@ -6,16 +6,16 @@ from typing import Any
 
 import pytest
 
+from dovo.cli.ui.formatters.logs.logs_show import LogsShowFormatter
+from dovo.cli.ui.formatters.logs.logs_views import LogsShowView
+from dovo.core.logs import RunLogEvent, RunLogEventType
+from dovo.core.logs.models import LogsShowResult, LogsShowStatus
 from tests.harness.formatter import (
     FormatterCase,
     assert_json_payload_matches_published_shape,
     assert_rich_render_shows_every_view_value,
     assert_transform_derives_expected_view,
 )
-from worktree.cli.ui.formatters.logs.logs_show import LogsShowFormatter
-from worktree.cli.ui.formatters.logs.logs_views import LogsShowView
-from worktree.core.logs import RunLogEvent, RunLogEventType
-from worktree.core.logs.models import LogsShowResult, LogsShowStatus
 
 _STEP_EVENT = RunLogEvent(
     ts="2026-09-26T10:00:00+00:00", event=RunLogEventType.STEP_START, step_index=1, step_id="build", attempt=1

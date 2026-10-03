@@ -6,13 +6,13 @@ from pathlib import Path
 
 import pytest
 
+from dovo.common.filesystem.models import RepositoryPaths
+from dovo.common.filesystem.services.global_root import resolve_global_paths
+from dovo.core.db import RunsRepository, RunStatus
+from dovo.core.project.services.storage import resolve_workspace_paths
+from dovo.engine.models import BlueprintRunResult, RunOutcome
+from dovo.engine.services._shared import fail, finalize, load_record
 from tests.harness.builders import WorkspaceBuilder
-from worktree.common.filesystem.models import RepositoryPaths
-from worktree.common.filesystem.services.global_root import resolve_global_paths
-from worktree.core.db import RunsRepository, RunStatus
-from worktree.core.project.services.storage import resolve_workspace_paths
-from worktree.engine.models import BlueprintRunResult, RunOutcome
-from worktree.engine.services._shared import fail, finalize, load_record
 
 
 def _repo(tmp_path: Path) -> RunsRepository:
@@ -65,7 +65,7 @@ class SharedFinalizeTests:
     def test_finalize_with_missing_record_leaves_run_record_none(self, tmp_path: Path) -> None:
         """[tier-1/domain] finalize: no DB record for session_id returns BlueprintRunResult.run_record is None, with no fallback record ever substituted, for the same input shape both BlueprintRunService and BlueprintResumeService pass."""
         repo = _repo(tmp_path)
-        outcome = RunOutcome(status=RunStatus.FAILED, sandbox_path=tmp_path, errors=["step failed"])
+        outcome = RunOutcome(status=RunStatus.FAILED, worktree_path=tmp_path, errors=["step failed"])
         warnings: list[str] = []
 
         result = finalize(repo, warnings, outcome, "missing-session")
@@ -77,7 +77,7 @@ class SharedFinalizeTests:
         """[tier-1/domain] finalize: an existing RunsRepository record for session_id is returned unchanged as BlueprintRunResult.run_record."""
         repo = _repo(tmp_path)
         created = repo.create(session_id="sess-3", blueprint_name="lint", blueprint_key="lint")
-        outcome = RunOutcome(status=RunStatus.COMPLETED, sandbox_path=tmp_path)
+        outcome = RunOutcome(status=RunStatus.COMPLETED, worktree_path=tmp_path)
         warnings: list[str] = []
 
         result = finalize(repo, warnings, outcome, "sess-3")
@@ -87,7 +87,7 @@ class SharedFinalizeTests:
     def test_finalize_extends_passed_warnings_list_in_place(self, tmp_path: Path) -> None:
         """[tier-1/domain] finalize: mutates the caller's warnings list object with run_outcome.warnings rather than returning a new list, so the caller's own field reflects the extension after the call."""
         repo = _repo(tmp_path)
-        outcome = RunOutcome(status=RunStatus.COMPLETED, sandbox_path=tmp_path, warnings=["outcome warning"])
+        outcome = RunOutcome(status=RunStatus.COMPLETED, worktree_path=tmp_path, warnings=["outcome warning"])
         warnings: list[str] = ["caller warning"]
 
         finalize(repo, warnings, outcome, "missing-session")

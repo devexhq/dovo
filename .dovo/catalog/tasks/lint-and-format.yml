@@ -1,0 +1,14 @@
+name: lint-and-format
+description: Run code linters and formatters in an isolated environment
+use_worktree: false
+
+steps:
+  - id: check-lint
+    name: Lint code
+    run: uv run ruff check .
+    on_failure: abort
+
+  - id: check-format
+    name: Format check
+    run: uv run ruff format --check .
+    on_failure: abort

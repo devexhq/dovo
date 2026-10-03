@@ -8,8 +8,8 @@ import pytest
 from rich.console import Console
 from rich.text import Text
 
-from worktree.cli.ui.events import StepDoneEvent, StepOutputEvent, StepStartEvent
-from worktree.cli.ui.tail import _CURSOR_UP, _ERASE_LINE, CollapsingTailDisplay
+from dovo.cli.ui.events import StepDoneEvent, StepOutputEvent, StepStartEvent
+from dovo.cli.ui.tail import _CURSOR_UP, _ERASE_LINE, CollapsingTailDisplay
 
 
 def _display(*, tail_size: int = 2) -> tuple[CollapsingTailDisplay, io.StringIO, io.StringIO]:
@@ -72,7 +72,7 @@ class CollapsingTailDisplayTests:
         display.handle_step_output(StepOutputEvent(step_id="s1", line="L1"))
         display.handle_step_output(StepOutputEvent(step_id="s1", line="L2"))
 
-        display.print_above(Text("Sandbox: Active (/tmp/x)"))
+        display.print_above(Text("Worktree: Active (/tmp/x)"))
 
-        assert "Sandbox: Active (/tmp/x)" in console_buffer.getvalue()
+        assert "Worktree: Active (/tmp/x)" in console_buffer.getvalue()
         assert stream.getvalue().endswith("L1\nL2\n")

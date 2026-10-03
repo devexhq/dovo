@@ -7,9 +7,9 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
-from worktree.core.agents.models import ResolvedAgentSettings
-from worktree.core.db import RunRecord, RunStatus
-from worktree.engine.models import AgentSettingsResolution, BlueprintRunResult, DefinitionRef, RunOutcome
+from dovo.core.agents.models import ResolvedAgentSettings
+from dovo.core.db import RunRecord, RunStatus
+from dovo.engine.models import AgentSettingsResolution, BlueprintRunResult, DefinitionRef, RunOutcome
 
 
 class BlueprintRunResultTests:
@@ -44,7 +44,7 @@ class RunOutcomeTests:
         self, tmp_path: Path, status: RunStatus, errors: list[str], expected: bool
     ) -> None:
         """[tier-1/unit] RunOutcome.ok: True only for status COMPLETED with an empty errors list."""
-        outcome = RunOutcome(status=status, sandbox_path=tmp_path, errors=errors)
+        outcome = RunOutcome(status=status, worktree_path=tmp_path, errors=errors)
 
         assert outcome.ok is expected
 

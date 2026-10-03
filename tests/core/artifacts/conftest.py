@@ -6,11 +6,11 @@ from pathlib import Path
 
 import pytest
 
+from dovo.common.filesystem.models import RepositoryPaths
+from dovo.common.filesystem.services.global_root import resolve_global_paths
+from dovo.core.db.repositories.artifacts import ArtifactsRepository
+from dovo.core.project.services.storage import resolve_workspace_paths
 from tests.harness.builders import WorkspaceBuilder
-from worktree.common.filesystem.models import RepositoryPaths
-from worktree.common.filesystem.services.global_root import resolve_global_paths
-from worktree.core.db.repositories.artifacts import ArtifactsRepository
-from worktree.core.project.services.storage import resolve_workspace_paths
 
 
 @pytest.fixture

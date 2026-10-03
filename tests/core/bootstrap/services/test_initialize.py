@@ -1,14 +1,14 @@
-"""Contract tests for worktree.core.bootstrap.services.initialize.initialize_workspace."""
+"""Contract tests for dovo.core.bootstrap.services.initialize.initialize_workspace."""
 
 from __future__ import annotations
 
 import json
 from pathlib import Path
 
+from dovo.core.bootstrap.models import BootstrapOutcome, InitFailureMode
+from dovo.core.bootstrap.services.initialize import initialize_workspace
+from dovo.core.project.models import ProjectIdentityProvisionStatus
 from tests.harness.builders import WorkspaceBuilder
-from worktree.core.bootstrap.models import BootstrapOutcome, InitFailureMode
-from worktree.core.bootstrap.services.initialize import initialize_workspace
-from worktree.core.project.models import ProjectIdentityProvisionStatus
 
 
 class InitializeWorkspaceTests:
@@ -24,16 +24,16 @@ class InitializeWorkspaceTests:
         assert len(result.errors) == 1
         assert "not a valid Git repository" in result.errors[0]
 
-    def test_initialize_workspace_outside_git_repo_creates_no_worktree_directory(self, tmp_path: Path) -> None:
-        """initialize_workspace: non-git root leaves no '.worktree' directory on disk after the call."""
+    def test_initialize_workspace_outside_git_repo_creates_no_dovo_directory(self, tmp_path: Path) -> None:
+        """initialize_workspace: non-git root leaves no '.dovo' directory on disk after the call."""
         initialize_workspace(tmp_path)
 
-        assert not (tmp_path / ".worktree").exists()
+        assert not (tmp_path / ".dovo").exists()
 
     def test_initialize_workspace_idempotent_rerun_preserves_custom_setting(self, tmp_path: Path) -> None:
         """initialize_workspace: rerunning on an initialized git workspace with a custom config.json value returns ok=True, bootstrap_result.outcome=ALREADY_INITIALIZED, and leaves the custom value unchanged."""
         workspace = WorkspaceBuilder(tmp_path / "workspace").with_git().build()
-        config_path = workspace / ".worktree" / "config.json"
+        config_path = workspace / ".dovo" / "config.json"
         config_data = json.loads(config_path.read_text(encoding="utf-8"))
         config_data["project"]["name"] = "custom-project-name"
         config_path.write_text(json.dumps(config_data), encoding="utf-8")
@@ -53,7 +53,7 @@ class InitializeWorkspaceTests:
         assert result.ok is True
         assert result.identity_result is not None
         assert result.identity_result.status == ProjectIdentityProvisionStatus.CREATED
-        assert (git_repo / ".worktree" / "project.json").exists()
+        assert (git_repo / ".dovo" / "project.json").exists()
 
     def test_initialize_workspace_rerun_without_force_preserves_identity(self, git_repo: Path) -> None:
         """initialize_workspace: rerunning without --id/--force preserves the previously generated identity."""
@@ -89,10 +89,10 @@ class InitializeWorkspaceTests:
         assert result.ok is False
         assert result.failure_mode == InitFailureMode.INVALID_PROJECT_ID
         assert result.config_result is None
-        assert not (git_repo / ".worktree" / "project.json").exists()
+        assert not (git_repo / ".dovo" / "project.json").exists()
 
     def test_initialize_workspace_fresh_repo_creates_only_meta_subdir(self, git_repo: Path) -> None:
-        """initialize_workspace: fresh git repo, bootstrap_result.dirs_created == [worktree_dir / '.meta'], no sessions/artifacts/tmp/logs directories created."""
+        """initialize_workspace: fresh git repo, bootstrap_result.dirs_created == [dovo_dir / '.meta'], no sessions/artifacts/tmp/logs directories created."""
         result = initialize_workspace(git_repo)
 
         assert result.bootstrap_result is not None
@@ -101,9 +101,9 @@ class InitializeWorkspaceTests:
             assert not (result.bootstrap_result.root_path / legacy_dir).exists()
 
     def test_initialize_workspace_rerun_preserves_legacy_runtime_dirs_and_contents(self, git_repo: Path) -> None:
-        """initialize_workspace: rerun on a workspace with a pre-existing .worktree/sessions/existing.json leaves that file's bytes and the directory unchanged."""
+        """initialize_workspace: rerun on a workspace with a pre-existing .dovo/sessions/existing.json leaves that file's bytes and the directory unchanged."""
         initialize_workspace(git_repo)
-        legacy_file = git_repo / ".worktree" / "sessions" / "existing.json"
+        legacy_file = git_repo / ".dovo" / "sessions" / "existing.json"
         legacy_file.parent.mkdir(parents=True, exist_ok=True)
         legacy_file.write_text('{"a": 1}', encoding="utf-8")
 

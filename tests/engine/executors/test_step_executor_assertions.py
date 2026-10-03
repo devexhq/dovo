@@ -3,9 +3,9 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-from worktree.core.catalog.definitions import StepAssert, StepDefinition, StepType
-from worktree.engine.executors.models import StepExecutionContext
-from worktree.engine.executors.step_executor import StepExecution
+from dovo.core.catalog.definitions import StepAssert, StepDefinition, StepType
+from dovo.engine.executors.models import StepExecutionContext
+from dovo.engine.executors.step_executor import StepExecution
 
 
 class StepRunnerAssertionContractTests:
@@ -19,7 +19,7 @@ class StepRunnerAssertionContractTests:
             command=f"{sys.executable} -c \"print('ok')\"",
             assert_=StepAssert(file_exists="missing.bin"),
         )
-        result = StepExecution(StepExecutionContext(step=step, sandbox_path=tmp_path)).run()
+        result = StepExecution(StepExecutionContext(step=step, worktree_path=tmp_path)).run()
 
         assert result.step_id == "test-assert-fail"
         assert result.status == "failed"

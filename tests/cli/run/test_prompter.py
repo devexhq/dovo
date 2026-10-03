@@ -8,11 +8,11 @@ import json
 import pytest
 from rich.console import Console
 
-from worktree.cli.run.prompter import DispatcherFailurePrompter
-from worktree.cli.ui.dispatcher import UiDispatcher
-from worktree.core.catalog.definitions import LoopStepBlock, StepDefinition
-from worktree.engine import FailurePromptDecision, LoopPromptDecision
-from worktree.engine.executors.models import StepResult
+from dovo.cli.run.prompter import DispatcherFailurePrompter
+from dovo.cli.ui.dispatcher import UiDispatcher
+from dovo.core.catalog.definitions import LoopStepBlock, StepDefinition
+from dovo.engine import FailurePromptDecision, LoopPromptDecision
+from dovo.engine.executors.models import StepResult
 
 
 def _buffered_dispatcher(*, force_terminal: bool, output_format: str = "terminal") -> tuple[UiDispatcher, io.StringIO]:

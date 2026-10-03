@@ -1,11 +1,11 @@
-# `wt diff`
+# `dovo diff`
 
-The `wt diff` command views syntax-highlighted unified diffs from loop run sessions directly in the terminal without manually locating their session storage.
+The `dovo diff` command views syntax-highlighted unified diffs from loop run sessions directly in the terminal without manually locating their session storage.
 
 ## Usage
 
 ```bash
-wt diff [session_id] [OPTIONS]
+dovo diff [session_id] [OPTIONS]
 ```
 
 ### Arguments
@@ -25,8 +25,8 @@ wt diff [session_id] [OPTIONS]
 ## Behavior
 
 1. **Session Resolution**:
-   - For a workspace with `.worktree/project.json`, sessions resolve below `WORKTREE_HOME/storage/projects/<project-id>/sessions/` (or `~/.worktree/storage/projects/<project-id>/sessions/` when `WORKTREE_HOME` is unset).
-   - A workspace without a project identity retains the legacy `.worktree/sessions/` location.
+   - For a workspace with `.dovo/project.json`, sessions resolve below `DOVO_HOME/storage/projects/<project-id>/sessions/` (or `~/.dovo/storage/projects/<project-id>/sessions/` when `DOVO_HOME` is unset).
+   - A workspace without a project identity retains the legacy `.dovo/sessions/` location.
    - When `session_id` is supplied: resolves that session's `diff.patch`.
    - When `session_id` is omitted: discovers the most recently modified session directory in the selected session store.
    - If no session exists: displays a **Session Not Found** error panel and exits with code `1`.
@@ -48,17 +48,17 @@ wt diff [session_id] [OPTIONS]
 View diff for the latest session:
 
 ```bash
-wt diff
+dovo diff
 ```
 
 View diff for an explicit session ID:
 
 ```bash
-wt diff blueprint_a1b2c3d4
+dovo diff blueprint_a1b2c3d4
 ```
 
 Output raw patch text (useful for piping into `git apply` or saving to a file):
 
 ```bash
-wt diff blueprint_a1b2c3d4 --raw > latest_fix.patch
+dovo diff blueprint_a1b2c3d4 --raw > latest_fix.patch
 ```
