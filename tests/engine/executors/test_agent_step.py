@@ -20,6 +20,7 @@ from worktree.core.agents import (
 from worktree.core.catalog.definitions import StepDefinition
 from worktree.core.git import GitRunner
 from worktree.engine.executors.agent_step import (
+    AGENT_OUTCOME_EXIT_CODES,
     BLANK_PROMPT_MESSAGE,
     MISSING_SETTINGS_MESSAGE,
     SANDBOX_REQUIRED_MESSAGE,
@@ -96,6 +97,19 @@ def _forbid_git_apply(monkeypatch: pytest.MonkeyPatch) -> list[str]:
     return calls
 
 
+class AgentOutcomeMappingTests:
+    def test_mapping_covers_every_status_with_issue_codes(self) -> None:
+        """[tier-1/unit] AGENT_OUTCOME_EXIT_CODES: equals {PROPOSED_PATCH: 0, NO_OP: 0, UNFIXABLE: 201, TIMEOUT: 202, PROVIDER_ERROR: 203} and its keys equal set(AgentResponseStatus)."""
+        assert dict(AGENT_OUTCOME_EXIT_CODES) == {
+            AgentResponseStatus.PROPOSED_PATCH: 0,
+            AgentResponseStatus.NO_OP: 0,
+            AgentResponseStatus.UNFIXABLE: 201,
+            AgentResponseStatus.TIMEOUT: 202,
+            AgentResponseStatus.PROVIDER_ERROR: 203,
+        }
+        assert set(AGENT_OUTCOME_EXIT_CODES) == set(AgentResponseStatus)
+
+
 class ExecuteAgentStepRequestTests:
     def test_valid_step_forwards_prompt_settings_sandbox_and_timeout_to_run_direct_attempt(
         self, git_repo: Path, monkeypatch: pytest.MonkeyPatch
@@ -138,7 +152,7 @@ class ExecuteAgentStepRequestTests:
         outcome = execute_agent_step(_step(), agent=None, sandbox_path=git_repo, sandbox_active=True, on_output=None)
 
         assert outcome.status == "failed"
-        assert outcome.exit_code == 1
+        assert outcome.exit_code == 203
         assert outcome.error_message == MISSING_SETTINGS_MESSAGE
         assert _summary(outcome)["status"] == "provider_error"
         assert requested == []
@@ -152,6 +166,7 @@ class ExecuteAgentStepRequestTests:
         outcome = _run(git_repo, step=_step(prompt="   "))
 
         assert outcome.status == "failed"
+        assert outcome.exit_code == 203
         assert outcome.error_message == BLANK_PROMPT_MESSAGE
         assert requested == []
 
@@ -167,7 +182,7 @@ class ExecuteAgentStepSandboxTests:
         outcome = _run(git_repo, sandbox_active=False)
 
         assert outcome.status == "failed"
-        assert outcome.exit_code == 1
+        assert outcome.exit_code == 203
         assert outcome.error_message == SANDBOX_REQUIRED_MESSAGE
         assert outcome.stderr == SANDBOX_REQUIRED_MESSAGE
         assert (
@@ -197,10 +212,11 @@ class ExecuteAgentStepOutputTests:
         )
 
     @pytest.mark.parametrize(
-        ("status", "unfixable_reason", "errors", "expected_error"),
+        ("status", "code", "unfixable_reason", "errors", "expected_error"),
         [
             pytest.param(
                 AgentResponseStatus.UNFIXABLE,
+                201,
                 "needs a human",
                 [],
                 "Agent reported the task unfixable: needs a human",
@@ -208,6 +224,7 @@ class ExecuteAgentStepOutputTests:
             ),
             pytest.param(
                 AgentResponseStatus.TIMEOUT,
+                202,
                 None,
                 ["Agent timed out after 45s (provider=ollama)."],
                 "Agent timed out after 45s (provider=ollama).",
@@ -215,6 +232,7 @@ class ExecuteAgentStepOutputTests:
             ),
             pytest.param(
                 AgentResponseStatus.PROVIDER_ERROR,
+                203,
                 None,
                 ["Agent provider error (AGENT_PROVIDER_ERROR): down"],
                 "Agent provider error (AGENT_PROVIDER_ERROR): down",
@@ -222,27 +240,57 @@ class ExecuteAgentStepOutputTests:
             ),
         ],
     )
-    def test_failure_statuses_fail_with_exit_one_and_summary(
+    def test_failure_statuses_fail_with_mapped_code_and_summary(
         self,
         git_repo: Path,
         monkeypatch: pytest.MonkeyPatch,
         status: AgentResponseStatus,
+        code: int,
         unfixable_reason: str | None,
         errors: list[str],
         expected_error: str,
     ) -> None:
-        """[tier-1/unit] execute_agent_step: UNFIXABLE/TIMEOUT/PROVIDER_ERROR fail with exit 1, stderr == error_message == the diagnostic, and the matching stdout status."""
+        """[tier-1/unit] execute_agent_step: UNFIXABLE/TIMEOUT/PROVIDER_ERROR fail with exit 201/202/203, stderr == error_message == the diagnostic, and the matching stdout status."""
         response = AgentResponse(status=status, unfixable_reason=unfixable_reason, errors=errors)
         _use_provider(monkeypatch, FakeAgentProvider(response))
 
         outcome = _run(git_repo)
 
         assert outcome.status == "failed"
-        assert outcome.exit_code == 1
+        assert outcome.exit_code == code
         assert outcome.stderr == expected_error
         assert outcome.error_message == expected_error
         assert _summary(outcome)["status"] == status.value
         assert _summary(outcome)["unfixable_reason"] == unfixable_reason
+
+    def test_proposed_patch_completes_with_exit_zero_and_sorted_touched_files(
+        self, git_repo: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """[tier-1/unit] execute_agent_step: PROPOSED_PATCH with a clean new-file diff completes with exit 0, empty stderr, and one-line stdout status 'proposed_patch' with touched_files ['a.txt']."""
+        _use_provider(monkeypatch, FakeAgentProvider(_patch("a.txt")))
+
+        outcome = _run(git_repo)
+
+        assert outcome.status == "completed"
+        assert outcome.exit_code == 0
+        assert outcome.stderr == ""
+        summary = _summary(outcome)
+        assert summary["status"] == "proposed_patch"
+        assert summary["touched_files"] == ["a.txt"]
+
+    def test_unappliable_patch_fails_as_provider_error_203(
+        self, git_repo: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """[tier-1/unit] execute_agent_step: PROPOSED_PATCH whose new-file diff targets an existing a.txt fails with exit 203, stdout status 'provider_error', and error_message starting 'Patch does not apply cleanly'."""
+        (git_repo / "a.txt").write_text("existing\n")
+        _use_provider(monkeypatch, FakeAgentProvider(_patch("a.txt")))
+
+        outcome = _run(git_repo)
+
+        assert outcome.status == "failed"
+        assert outcome.exit_code == 203
+        assert (outcome.error_message or "").startswith("Patch does not apply cleanly")
+        assert _summary(outcome)["status"] == "provider_error"
 
     def test_missing_summary_falls_back_to_raw_text_and_escapes_newlines(
         self, git_repo: Path, monkeypatch: pytest.MonkeyPatch
@@ -275,7 +323,7 @@ class ExecuteAgentStepOutputTests:
         outcome = _run(git_repo, on_output=_broken)
 
         assert outcome.status == "failed"
-        assert outcome.exit_code == 1
+        assert outcome.exit_code == 203
         assert outcome.error_message == "Agent output callback error: ui down"
         assert _summary(outcome)["status"] == "provider_error"
         assert _summary(outcome)["touched_files"] == ["a.txt"]

@@ -12,11 +12,14 @@ from worktree.common.filesystem import Filesystem
 from worktree.common.filesystem.models import RepositoryPaths, WorkspacePaths
 from worktree.common.filesystem.services.global_root import resolve_global_paths
 from worktree.common.models import FailurePolicy
+from worktree.core.agents import AgentResponseStatus
 from worktree.core.catalog.blueprint import Blueprint
 from worktree.core.catalog.definitions import LoopStepBlock
 from worktree.core.db import RunRecord, RunsRepository, RunStatus
 from worktree.core.project.services.storage import resolve_workspace_paths
 from worktree.engine import RunStateStore
+from worktree.engine.executors.agent_step import AGENT_OUTCOME_EXIT_CODES
+from worktree.engine.executors.models import StepResult
 from worktree.engine.models import DefinitionRef, DefinitionsManifest
 from worktree.engine.projection import build_run_json_payload
 from worktree.engine.state_models import (
@@ -28,6 +31,7 @@ from worktree.engine.state_models import (
     RunJsonPayload,
     RunStateLoadStatus,
     RunStateWriteStatus,
+    StepAttemptRecord,
 )
 from worktree.engine.state_store import new_iteration
 
@@ -397,6 +401,39 @@ class RunStateStoreLoadTests:
         result = RunStateStore(fixture.runs, fixture.paths, "unknown").load()
 
         assert result.status == RunStateLoadStatus.NOT_FOUND
+
+
+class RunStateStoreAgentAttemptTests:
+    def test_failed_agent_attempt_roundtrips_code_and_summary_stdout(self, tmp_path: Path) -> None:
+        """[tier-1/integration] RunStateStore.save/load: a saved failed agent attempt with exit_code 202 and stdout '{"status":"timeout","summary":null,"unfixable_reason":null,"touched_files":[]}\\n' loads with the same exit_code, byte-identical stdout, and error_message."""
+        fixture = _Fixture(tmp_path)
+        state = fixture.initialized_at(0)
+        leaf = state.nodes[0]
+        assert isinstance(leaf, ExecutionLeafNode)
+        stdout = '{"status":"timeout","summary":null,"unfixable_reason":null,"touched_files":[]}\n'
+        result = StepResult(
+            step_id=leaf.id,
+            status="failed",
+            exit_code=AGENT_OUTCOME_EXIT_CODES[AgentResponseStatus.TIMEOUT],
+            stdout=stdout,
+            stderr="Agent timed out",
+            duration_seconds=0.5,
+            error_message="Agent timed out",
+        )
+        leaf.attempts = [StepAttemptRecord(number=1, started_at="2026-10-03T00:00:00+00:00", result=result)]
+
+        saved = fixture.store.save(state)
+        loaded = fixture.store.load()
+
+        assert saved.status == RunStateWriteStatus.OK
+        assert loaded.state is not None
+        loaded_leaf = loaded.state.nodes[0]
+        assert isinstance(loaded_leaf, ExecutionLeafNode)
+        loaded_result = loaded_leaf.attempts[0].result
+        assert loaded_result is not None
+        assert loaded_result.exit_code == 202
+        assert loaded_result.stdout == stdout
+        assert loaded_result.error_message == "Agent timed out"
 
 
 class RunStateStoreRegenerateProjectionTests:

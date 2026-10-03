@@ -9,6 +9,7 @@ import pytest
 
 from tests.harness import AGENT_ADAPTER_FACTORY, FakeAgentProvider
 from tests.harness.builders import StepBuilder
+from worktree.common.models import FailurePolicy
 from worktree.core.agents import AgentResponse, AgentResponseStatus, ResolvedAgentSettings
 from worktree.core.catalog.definitions import StepAssert
 from worktree.engine.executors.agent_step import MISSING_SETTINGS_MESSAGE, build_agent_step_runner
@@ -49,6 +50,7 @@ class AgentStepRunnerTests:
 
         assert matching.status == "completed"
         assert missing.status == "failed"
+        assert json.loads(missing.stdout)["status"] == "no_op"
         assert "[FAIL]" in (missing.error_message or "")
 
     def test_retry_invokes_provider_once_per_attempt(self, git_repo: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -66,14 +68,27 @@ class AgentStepRunnerTests:
         assert len(provider.requests) == 2
 
     def test_exhausted_retries_fail_with_last_summary(self, git_repo: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        """[tier-1/unit] StepExecution.run: on_failure retry max_retries=2 with a fake always answering TIMEOUT returns status 'failed', attempts 2, and stdout JSON status 'timeout'."""
+        """[tier-1/unit] StepExecution.run: on_failure retry max_retries=2 with a fake always answering TIMEOUT returns status 'failed', attempts 2, exit_code 202, and stdout JSON status 'timeout'."""
         _use_provider(monkeypatch, FakeAgentProvider(AgentResponse(status=AgentResponseStatus.TIMEOUT)))
 
         result = _run_agent_step(git_repo, StepBuilder.agent("plan").with_retry(max_retries=2, backoff_ms=0))
 
         assert result.status == "failed"
         assert result.attempts == 2
+        assert result.exit_code == 202
         assert json.loads(result.stdout)["status"] == "timeout"
+
+    def test_continue_policy_ignores_unfixable_step_but_keeps_summary_status(
+        self, git_repo: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """[tier-1/unit] StepExecution.run: on_failure continue with a fake answering UNFIXABLE returns status 'ignored', exit_code 0, and stdout JSON status 'unfixable'."""
+        _use_provider(monkeypatch, FakeAgentProvider(AgentResponse(status=AgentResponseStatus.UNFIXABLE)))
+
+        result = _run_agent_step(git_repo, StepBuilder.agent("plan").with_on_failure(FailurePolicy.CONTINUE))
+
+        assert result.status == "ignored"
+        assert result.exit_code == 0
+        assert json.loads(result.stdout)["status"] == "unfixable"
 
 
 class StepExecutionAgentRunnerTests:
