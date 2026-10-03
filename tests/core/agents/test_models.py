@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
-from worktree.core.agents import AgentFailurePayload, AgentRequest
+from worktree.core.agents import AgentAttempt, AgentFailurePayload, AgentRequest, AgentResponseStatus
 
 _PAYLOAD = AgentFailurePayload(
     command="pytest",
@@ -86,3 +86,12 @@ class AgentRequestContractTests:
                     "timeout_seconds": 5,
                 }
             )
+
+
+class AgentAttemptContractTests:
+    @pytest.mark.parametrize("status", list(AgentResponseStatus))
+    def test_completed_is_true_only_for_proposed_patch_and_no_op(self, status: AgentResponseStatus) -> None:
+        """[tier-1/unit] AgentAttempt.completed: True for PROPOSED_PATCH and NO_OP; False for UNFIXABLE, TIMEOUT, and PROVIDER_ERROR."""
+        expected = status in {AgentResponseStatus.PROPOSED_PATCH, AgentResponseStatus.NO_OP}
+
+        assert AgentAttempt(status=status).completed is expected

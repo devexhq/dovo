@@ -18,6 +18,7 @@ from worktree.core.agents.factory import get_agent_adapter
 from worktree.core.agents.gemini import GeminiAgentAdapter
 from worktree.core.agents.local import LocalAgentAdapter, LocalAgentStdout
 from worktree.core.agents.models import (
+    AgentAttempt,
     AgentFailurePayload,
     AgentRequest,
     AgentResponse,
@@ -29,12 +30,14 @@ from worktree.core.agents.models import (
 )
 from worktree.core.agents.ollama import OllamaAgentAdapter
 from worktree.core.agents.registry import PROVIDERS
+from worktree.core.agents.services.run_direct import run_direct_attempt
 
 __all__ = [
     "DEFAULT_MAX_FILES",
     "DEFAULT_MAX_PATCH_KB",
     "DEFAULT_REJECT_BINARY_CHANGES",
     "PROVIDERS",
+    "AgentAttempt",
     "AgentFailurePayload",
     "AgentRequest",
     "AgentResponse",
@@ -57,5 +60,6 @@ __all__ = [
     "ResolvedAgentSettings",
     "build_mutation_prompt",
     "get_agent_adapter",
+    "run_direct_attempt",
     "validate_request_patch",
 ]

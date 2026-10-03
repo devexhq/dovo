@@ -557,7 +557,7 @@ class CoordinatorExecuteTests:
             pytest.param("echo hi > out.txt; exit 1", [], id="failing-publishes-nothing"),
         ],
     )
-    def test_completed_leaf_with_declared_artifacts_publishes_them_through_step_executor(
+    def test_completed_leaf_with_declared_artifacts_publishes_them_through_step_coordinator(
         self,
         engine_paths: WorkspacePaths,
         runs_repo: RunsRepository,
