@@ -4,11 +4,11 @@ from pathlib import Path
 
 from worktree.common.filesystem.models import RepositoryPaths
 from worktree.common.filesystem.services.global_root import resolve_global_paths
-from worktree.core.blueprint import Blueprint, BlueprintDefinition
 from worktree.core.catalog import Catalog
+from worktree.core.catalog.blueprint import Blueprint
+from worktree.core.catalog.definitions import BlueprintDefinition, StepDefinition
 from worktree.core.project.services.identity import generate_project_identity, save_project_identity
 from worktree.core.project.services.storage import resolve_workspace_paths
-from worktree.core.step.models import StepDefinition
 
 
 class BlueprintDocumentNormalizationTests:

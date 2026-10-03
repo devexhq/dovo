@@ -3,11 +3,7 @@
 from __future__ import annotations
 
 from worktree.common.models import FailurePolicy, OnFailureSpec
-from worktree.core.step.models import (
-    StepAssert,
-    StepDefinition,
-    StepType,
-)
+from worktree.core.catalog.definitions import StepAssert, StepDefinition, StepType
 
 
 def _merge_string_items(

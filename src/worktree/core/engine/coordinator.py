@@ -11,12 +11,9 @@ from worktree.common.lock import WorkspaceLock
 from worktree.common.models import FailurePolicy
 from worktree.common.process import process_registry
 from worktree.core.agents.models import ResolvedAgentSettings
-from worktree.core.blueprint import Blueprint
-from worktree.core.blueprint.exceptions import (
-    BlueprintLoadError,
-    BlueprintNotFoundError,
-    BlueprintValidationError,
-)
+from worktree.core.catalog.blueprint import Blueprint
+from worktree.core.catalog.definitions import LoopStepBlock, StepDefinition
+from worktree.core.catalog.exceptions import BlueprintLoadError, BlueprintNotFoundError, BlueprintValidationError
 from worktree.core.db import RunStatus
 from worktree.core.engine.exceptions import EngineSnapshotMissingError
 from worktree.core.engine.failure import (
@@ -54,13 +51,7 @@ from worktree.core.engine.state_store import RunStateStore, new_iteration
 from worktree.core.engine.state_validation import validate_loop_structure
 from worktree.core.engine.step_coordinator import StepCoordinator
 from worktree.core.engine.writer import load_blueprint_from_snapshot
-from worktree.core.step import (
-    ExecutionIdentity,
-    LoopStepBlock,
-    PreviousStepMetadata,
-    StepDefinition,
-    StepResult,
-)
+from worktree.core.step import ExecutionIdentity, PreviousStepMetadata, StepResult
 
 _INTERRUPTED_MESSAGE = "Step attempt was interrupted before it recorded a result."
 _CEILING_GRANT_COUNT = 3

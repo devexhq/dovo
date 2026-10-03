@@ -12,7 +12,8 @@ from worktree.common.filesystem import Filesystem
 from worktree.common.filesystem.models import RepositoryPaths, WorkspacePaths
 from worktree.common.filesystem.services.global_root import resolve_global_paths
 from worktree.common.models import FailurePolicy
-from worktree.core.blueprint import Blueprint
+from worktree.core.catalog.blueprint import Blueprint
+from worktree.core.catalog.definitions import LoopStepBlock
 from worktree.core.db import RunRecord, RunsRepository, RunStatus
 from worktree.core.engine import RunStateStore
 from worktree.core.engine.models import DefinitionRef, DefinitionsManifest
@@ -29,7 +30,6 @@ from worktree.core.engine.state_models import (
 )
 from worktree.core.engine.state_store import new_iteration
 from worktree.core.project.services.storage import resolve_workspace_paths
-from worktree.core.step.models import LoopStepBlock
 
 SESSION_ID = "state-1"
 

@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from worktree.core.blueprint import Blueprint
+from worktree.core.catalog.blueprint import Blueprint
+from worktree.core.catalog.definitions import LoopStepBlock
 from worktree.core.engine.state_models import ExecutionLoopNode, ExecutionStateTree
-from worktree.core.step import LoopStepBlock
 
 
 def _iteration_errors(loop_node: ExecutionLoopNode, loop: LoopStepBlock) -> list[str]:

@@ -6,6 +6,7 @@ import pytest
 
 from tests.harness.builders import StepBuilder
 from worktree.common.models import FailurePolicy
+from worktree.core.catalog.definitions import StepDefinition
 from worktree.core.engine.loop_policy import LoopDecision, LoopPolicy, LoopTransitionKind
 from worktree.core.engine.state_models import (
     ExecutionIterationRecord,
@@ -13,7 +14,7 @@ from worktree.core.engine.state_models import (
     ExecutionLoopNode,
     NodeState,
 )
-from worktree.core.step.models import StepDefinition, StepResult
+from worktree.core.step.models import StepResult
 
 _BODY: list[StepDefinition] = [StepBuilder.command("true").with_id(step_id).build() for step_id in ("a", "b", "c")]
 

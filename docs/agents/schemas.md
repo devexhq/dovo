@@ -19,14 +19,12 @@ Comprehensive reference for the shape of entities across the Worktree CLI codeba
 - `DefinitionValidationError` (`common/exceptions.py`): Schema or Pydantic validation failure.
 
 ### Domain Exceptions
-- **Blueprint** (`core/blueprint/exceptions.py`):
+- **Catalog** (`core/catalog/exceptions.py`):
   - `BlueprintNotFoundError` (subclasses `DefinitionNotFoundError`)
   - `BlueprintLoadError` (subclasses `DefinitionLoadError`)
   - `BlueprintValidationError` (subclasses `DefinitionValidationError`)
-- **Step** (`core/step/exceptions.py`):
   - `StepNotFoundError` (subclasses `DefinitionNotFoundError`)
   - `StepValidationError` (subclasses `DefinitionValidationError`)
-- **Catalog** (`core/catalog/exceptions.py`):
   - `CatalogError` (subclasses `DefinitionError`): Base catalog exception.
   - `CatalogFileNotFoundError`: Specified catalog resource not on disk.
   - `CatalogYamlError`: YAML syntax error when parsing catalog item.
@@ -101,8 +99,8 @@ All operations that can fail return a Pydantic result object subclassing `BaseRe
 - `ProjectIdentityProvisionResult` / `ProjectIdentityProvisionStatus`: Non-raising outcome of `wt init`'s create-or-preserve-or-overwrite identity provisioning (`src/worktree/core/project/services/identity.py:provision_project_identity`).
 
 ### Blueprint & Step Models
-**Relevant sources:** `src/worktree/core/blueprint/models.py`, `src/worktree/core/step/models.py`, `src/worktree/core/inputs/models.py`.
-- `BlueprintDefinition`: Unified model for executable blueprints. See [`src/worktree/core/blueprint/models.py`](../../src/worktree/core/blueprint/models.py) for its fields; it carries no `kind` discriminator.
+**Relevant sources:** `src/worktree/core/catalog/definitions/`, `src/worktree/core/step/models.py`, `src/worktree/core/inputs/models.py`.
+- `BlueprintDefinition`: Unified model for executable blueprints. See [`src/worktree/core/catalog/definitions/blueprint.py`](../../src/worktree/core/catalog/definitions/blueprint.py) for its fields; it carries no `kind` discriminator.
 - `BlueprintDefaults`: Blueprint-level defaults (`on_failure`).
 - `ParameterInput`: Declared parameter input (`type`, `description`, `required`, `default`, `aliases`).
 - `InputResolveResult`: Result of resolving input values from CLI flags and defaults (`values`, `missing`, `errors`, `warnings`, `ok`).
@@ -253,12 +251,11 @@ Each core domain exposes a cohesive facade class that encapsulates domain servic
 | `Artifacts` | `core/artifacts/artifacts.py` | Session artifact publishing, listing, downloading, and pruning (`upload`, `list`, `download`, `prune`). |
 | `Inputs` | `core/inputs/facade.py` | Input flag parsing, default resolution, and placeholder interpolation (`parse_args`, `resolve`, `interpolate`). |
 | `Catalog` | `core/catalog/catalog.py` | Disk-only, multi-tier template scanning, indexing, retrieval, and seeding (`list`, `show`, `get`, `create`, `delete`, `sync`, `validate`, `seed`). |
-| `Blueprint` | `core/blueprint/facade.py` | Loading and rendering unified blueprint documents (`load`, `from_path`, `from_document`, `render_show`). |
+| `Blueprint` | `core/catalog/blueprint.py` | Loading a catalog blueprint document (`load`, `steps`, `inputs`, `use_sandbox`, `dump`, `resolve_inputs`). |
 | `Diff` | `core/diff/facade.py` | Session diff calculation, artifact loading, and rendering (`get_diff`, `render`). |
 | `Status` | `core/status/facade.py` | Workspace health and telemetry aggregation (`collect`). |
 | `History` | `core/history/history.py` | Execution history query and display (`list`, `show`). |
 | `Logs` | `core/logs/logs.py` | Persisted session log inspection (`show`); session existence is checked against `RunsRepository`, then the global `logs_dir/<session_id>/`. |
-| `Step` | `core/step/facade.py` | Step blueprint load, resolution, and isolated execution (`load`, `resolve`, `execute`, `assert_step`). |
 | `Engine` | `core/engine/engine.py` | Process-level run persistence, session minting, execution, and resume (`run`, `resume`). |
 | `Filesystem` | `common/filesystem/facade.py` | Atomic writes, safe path operations, and YAML parsing (`atomic_write_json`, `atomic_write_text`, `read_yaml`). |
 

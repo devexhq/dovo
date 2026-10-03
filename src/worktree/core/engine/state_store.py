@@ -7,7 +7,8 @@ from pathlib import Path
 from pydantic import ValidationError
 
 from worktree.common.filesystem import WorkspacePaths
-from worktree.core.blueprint import Blueprint
+from worktree.core.catalog.blueprint import Blueprint
+from worktree.core.catalog.definitions import LoopStepBlock, StepDefinition
 from worktree.core.db import RunRecord, RunsRepository, RunStatus
 from worktree.core.engine.models import DefinitionsManifest
 from worktree.core.engine.projection import build_run_json_payload
@@ -23,7 +24,6 @@ from worktree.core.engine.state_models import (
     RunStateWriteStatus,
 )
 from worktree.core.engine.writer import snapshot_blueprint_path, snapshot_step_path, write_session_run_projection
-from worktree.core.step import LoopStepBlock, StepDefinition
 
 
 def _leaf_node(step: StepDefinition) -> ExecutionLeafNode:

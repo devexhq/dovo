@@ -9,8 +9,9 @@ from tests.harness.catalog import write_runnable_blueprint, write_runnable_step
 from worktree.common.filesystem import Filesystem
 from worktree.common.filesystem.models import RepositoryPaths, WorkspacePaths
 from worktree.common.filesystem.services.global_root import resolve_global_paths
-from worktree.core.blueprint import Blueprint
 from worktree.core.catalog import Catalog
+from worktree.core.catalog.blueprint import Blueprint
+from worktree.core.catalog.definitions import StepDefinition, StepType
 from worktree.core.db import RunStatus
 from worktree.core.engine.models import DefinitionRef, DefinitionsManifest
 from worktree.core.engine.state_models import RunJsonPayload, RunLifecycle
@@ -20,7 +21,6 @@ from worktree.core.engine.writer import (
     write_session_run_projection,
 )
 from worktree.core.project.services.storage import resolve_workspace_paths
-from worktree.core.step import StepDefinition, StepType
 
 
 def _paths_for(root: Path) -> WorkspacePaths:

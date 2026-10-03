@@ -11,8 +11,9 @@ from tests.harness.catalog import write_runnable_blueprint, write_runnable_step
 from tests.harness.runs import seed_paused_run
 from worktree.common.filesystem.models import RepositoryPaths, WorkspacePaths
 from worktree.common.filesystem.services.global_root import resolve_global_paths
-from worktree.core.blueprint import Blueprint
 from worktree.core.catalog import Catalog
+from worktree.core.catalog.blueprint import Blueprint
+from worktree.core.catalog.definitions import LoopStepBlock, StepDefinition
 from worktree.core.db import RunsRepository, RunStatus
 from worktree.core.engine import Engine, EngineResumeError, EngineResumeStatus, RunRequest, RunStateStore
 from worktree.core.engine.models import (
@@ -26,7 +27,7 @@ from worktree.core.engine.state_models import RunJsonPayload
 from worktree.core.engine.writer import get_session_dir
 from worktree.core.git.runner import GitRunner
 from worktree.core.project.services.storage import resolve_workspace_paths
-from worktree.core.step.models import LoopStepBlock, StepDefinition, StepResult
+from worktree.core.step.models import StepResult
 
 
 class _ContinuePrompter(FailurePrompter):

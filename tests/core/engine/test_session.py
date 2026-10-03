@@ -14,6 +14,7 @@ from tests.harness.runs import NoOpRunObserver, seed_new_run, seed_paused_run
 from worktree.common.filesystem.models import RepositoryPaths, WorkspacePaths
 from worktree.common.filesystem.services.global_root import resolve_global_paths
 from worktree.core.agents.models import AgentResponse, AgentResponseStatus, ResolvedAgentSettings
+from worktree.core.catalog.definitions import LoopStepBlock, StepDefinition
 from worktree.core.db import RunsRepository, RunStatus, SandboxesRepository
 from worktree.core.engine.models import (
     FailurePromptDecision,
@@ -27,13 +28,7 @@ from worktree.core.engine.writer import snapshot_blueprint_path
 from worktree.core.logs.services.read import read_run_log_events
 from worktree.core.project.services.storage import resolve_workspace_paths
 from worktree.core.sandbox import Sandbox, SandboxApplyResult, SandboxApplyStatus
-from worktree.core.step.models import (
-    ConditionEvaluationResult,
-    LoopStepBlock,
-    StepDefinition,
-    StepExecutionContext,
-    StepResult,
-)
+from worktree.core.step.models import ConditionEvaluationResult, StepExecutionContext, StepResult
 from worktree.core.step.runner import StepExecution
 from worktree.core.step.services.execute_agent import SANDBOX_REQUIRED_MESSAGE
 

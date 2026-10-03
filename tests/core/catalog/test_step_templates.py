@@ -5,7 +5,7 @@ from __future__ import annotations
 import yaml
 
 from worktree.common.filesystem import Filesystem
-from worktree.core.step.models import StepDefinition, StepType
+from worktree.core.catalog.definitions import StepDefinition, StepType
 
 
 class UploadArtifactCatalogStepValidationTests:

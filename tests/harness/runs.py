@@ -8,14 +8,15 @@ from pathlib import Path
 
 from tests.harness.catalog import write_runnable_blueprint
 from worktree.common.filesystem.models import WorkspacePaths
-from worktree.core.blueprint import Blueprint
 from worktree.core.catalog import Catalog
+from worktree.core.catalog.blueprint import Blueprint
+from worktree.core.catalog.definitions import LoopStepBlock, StepDefinition
 from worktree.core.db import RunRecord, RunsRepository, RunStatus
 from worktree.core.engine import RunObserver, RunOutcome
 from worktree.core.engine.state_models import ExecutionLeafNode, NodeState, StepAttemptRecord
 from worktree.core.engine.state_store import RunStateStore
 from worktree.core.engine.writer import snapshot_definitions
-from worktree.core.step.models import ConditionEvaluationResult, LoopStepBlock, StepDefinition, StepResult
+from worktree.core.step.models import ConditionEvaluationResult, StepResult
 
 SEEDED_FAILURE = "seeded failure"
 

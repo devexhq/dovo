@@ -3,9 +3,8 @@
 from __future__ import annotations
 
 from tests.harness.builders.step import StepBuilder
-from worktree.core.blueprint.models import BlueprintDefaults, BlueprintDefinition
+from worktree.core.catalog.definitions import BlueprintDefaults, BlueprintDefinition, LoopStepBlock, StepDefinition
 from worktree.core.inputs.models import InputType, ParameterInput
-from worktree.core.step.models import LoopStepBlock, StepDefinition
 
 
 class BlueprintBuilder:

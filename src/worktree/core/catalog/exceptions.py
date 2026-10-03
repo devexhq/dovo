@@ -1,8 +1,13 @@
-"""Exceptions for the catalog inventory facade."""
+"""Exceptions for the catalog inventory facade and authored definitions."""
 
 from __future__ import annotations
 
-from worktree.common.exceptions import DefinitionError
+from worktree.common.exceptions import (
+    DefinitionError,
+    DefinitionLoadError,
+    DefinitionNotFoundError,
+    DefinitionValidationError,
+)
 
 
 class CatalogError(DefinitionError):
@@ -27,3 +32,23 @@ class CatalogProtectionError(CatalogError):
 
 class CatalogTierDeleteError(CatalogError):
     """Raised when attempting to delete a catalog item resolved from a non-REPO tier."""
+
+
+class BlueprintNotFoundError(DefinitionNotFoundError):
+    """Raised when a blueprint name/SHA is not in the task/blueprint catalog."""
+
+
+class BlueprintLoadError(DefinitionLoadError):
+    """Raised when blueprint YAML syntax is invalid or unreadable."""
+
+
+class BlueprintValidationError(DefinitionValidationError):
+    """Raised when blueprint model validation fails."""
+
+
+class StepNotFoundError(DefinitionNotFoundError):
+    """Raised when a step definition file or ID cannot be found."""
+
+
+class StepValidationError(DefinitionValidationError):
+    """Raised when step definition YAML parsing or schema validation fails."""

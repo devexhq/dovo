@@ -5,15 +5,15 @@ Precise definitions for core concepts and terms in the Worktree CLI codebase.
 **Relevant sources:** `src/worktree/core/`
 
 - **Step**: The smallest unit of execution: a command, agent prompt, or script, with optional `assert` conditions and `on_failure` policies.
-  - *Model:* `StepDefinition` in [`core/step/models.py`](../../src/worktree/core/step/models.py).
+  - *Model:* `StepDefinition` in [`core/catalog/definitions/step.py`](../../src/worktree/core/catalog/definitions/step.py).
   - *Runner:* `StepExecution` in [`core/step/runner.py`](../../src/worktree/core/step/runner.py).
 - **Loop Step**: A container step that repeats child steps (`do: []`) until a condition or iteration ceiling is reached.
-  - *Model:* `LoopStepBlock` in [`core/step/models.py`](../../src/worktree/core/step/models.py).
+  - *Model:* `LoopStepBlock` in [`core/catalog/definitions/step.py`](../../src/worktree/core/catalog/definitions/step.py).
   - *Execution:* `RunCoordinator` in [`core/engine/coordinator.py`](../../src/worktree/core/engine/coordinator.py), driven by `LoopPolicy` in [`core/engine/loop_policy.py`](../../src/worktree/core/engine/loop_policy.py).
 - **Task**: A blueprint containing linear steps without loop steps.
 - **Workflow**: A blueprint permitted to contain loop steps and multi-step orchestration.
 - **Blueprint**: The unified document model and handle representing tasks and workflows.
-  - *Model/Facade:* `BlueprintDefinition` and `Blueprint` in [`core/blueprint/`](../../src/worktree/core/blueprint/).
+  - *Model/Facade:* `BlueprintDefinition` in [`core/catalog/definitions/blueprint.py`](../../src/worktree/core/catalog/definitions/blueprint.py) and `Blueprint` in [`core/catalog/blueprint.py`](../../src/worktree/core/catalog/blueprint.py).
 - **Catalog**: The disk-only, multi-tier (REPO/USER/GLOBAL/PACKAGED) index of named blueprints and steps, each disk-backed tier rooted under its own `catalog/` directory with a derived `index.json` cache, plus packaged seeds.
   - *Facade:* `Catalog` in [`core/catalog/catalog.py`](../../src/worktree/core/catalog/catalog.py).
 - **Run**: A single execution of a blueprint from start to terminal outcome.

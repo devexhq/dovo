@@ -4,9 +4,9 @@ from pathlib import Path
 
 import pytest
 
+from worktree.core.catalog.definitions import StepAssert
 from worktree.core.step.assertions import evaluate_assertions, evaluate_json_match
 from worktree.core.step.assertions.filesystem import evaluate_file_exists
-from worktree.core.step.models import StepAssert
 
 
 class StepAssertionOrderingTests:

@@ -6,8 +6,9 @@ from pathlib import Path
 
 import pytest
 
+from worktree.core.catalog.definitions import StepDefinition, StepType
 from worktree.core.step import runner
-from worktree.core.step.models import StepDefinition, StepExecutionContext, StepType
+from worktree.core.step.models import StepExecutionContext
 from worktree.core.step.runner import StepExecution
 
 

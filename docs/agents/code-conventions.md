@@ -10,7 +10,7 @@ Coding standards and patterns for the Worktree CLI codebase.
 
 - Scoped exceptions allowing non-strict model configuration (must carry a justifying comment):
   - `OllamaModelStdout` (`core/agents/ollama.py`): leniency for LLM-generated JSON.
-  - `BlueprintDefinition`, `BlueprintDefaults`, `LoopStepBlock` (`core/blueprint/models.py`, `core/step/models.py`): hand-authored YAML models using `extra: "ignore"`.
+  - `BlueprintDefinition`, `LoopStepBlock` (`core/catalog/definitions/blueprint.py`, `core/catalog/definitions/step.py`): hand-authored YAML models using `extra: "ignore"`.
 
 ---
 
@@ -129,8 +129,8 @@ through. `object` forces a narrow before use; `Any` forces nothing.
 
 1. **Pydantic `mode="before"` validator signatures.** A pre-validator receives
    whatever the user wrote in `config.json` or a blueprint YAML, so
-   `(cls, val: Any) -> Any` is the contract. See `core/step/models.py`,
-   `core/inputs/models.py`, `core/blueprint/models.py`.
+   `(cls, val: Any) -> Any` is the contract. See `core/catalog/definitions/step.py`,
+   `core/inputs/models.py`, `core/catalog/definitions/blueprint.py`.
 2. **`dict[str, Any]` at a serialization boundary.** The result of
    `model_dump(mode="json")`, parsed YAML, or a JSON payload.
 3. **Values read out of a user document and then compared.**

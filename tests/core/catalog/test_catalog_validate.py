@@ -12,11 +12,10 @@ import yaml
 from tests.harness.catalog import write_runnable_blueprint
 from worktree.common.filesystem.models import RepositoryPaths, WorkspacePaths
 from worktree.common.filesystem.services.global_root import resolve_global_paths
-from worktree.core.blueprint.models import BlueprintDefinition
 from worktree.core.catalog import Catalog
+from worktree.core.catalog.definitions import BlueprintDefinition, StepDefinition
 from worktree.core.catalog.models import CatalogItemType, CatalogValidateResult, CatalogValidateStatus
 from worktree.core.project.services.storage import resolve_workspace_paths
-from worktree.core.step.models import StepDefinition
 
 
 def _paths_for(root: Path) -> WorkspacePaths:

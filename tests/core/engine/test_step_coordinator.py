@@ -14,6 +14,7 @@ from worktree.common.filesystem.models import RepositoryPaths, WorkspacePaths
 from worktree.common.filesystem.services.global_root import resolve_global_paths
 from worktree.common.models import FailurePolicy
 from worktree.core.agents.models import ResolvedAgentSettings
+from worktree.core.catalog.definitions import ArtifactPublishSpec, StepDefinition, StepType
 from worktree.core.db.repositories.artifacts import ArtifactsRepository
 from worktree.core.engine.failure import USER_CONTINUED_MARKER
 from worktree.core.engine.models import (
@@ -27,13 +28,7 @@ from worktree.core.engine.models import (
 from worktree.core.engine.step_coordinator import StepCoordinator, auto_publish_step_artifacts
 from worktree.core.project.services.storage import resolve_workspace_paths
 from worktree.core.sandbox import SandboxSession
-from worktree.core.step.models import (
-    ArtifactPublishSpec,
-    StepDefinition,
-    StepExecutionContext,
-    StepResult,
-    StepType,
-)
+from worktree.core.step.models import StepExecutionContext, StepResult
 from worktree.core.step.runner import StepExecution
 
 
