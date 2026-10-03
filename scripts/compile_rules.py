@@ -11,14 +11,33 @@ from typing import Any
 
 import yaml
 
-VALID_DOMAINS: set[str] = {"all", "core", "common", "cli", "tests"}
+VALID_DOMAINS: set[str] = {"all", "core", "common", "cli", "engine", "tests"}
 
 PACKAGE_DOMAINS: dict[str, tuple[str, tuple[str, ...]]] = {
     "core": ("Core Domain", ("src", "worktree", "core", "docs", "RULES.md")),
     "common": ("Common Domain", ("src", "worktree", "common", "docs", "RULES.md")),
     "cli": ("CLI Domain", ("src", "worktree", "cli", "docs", "RULES.md")),
+    "engine": ("Engine Domain", ("src", "worktree", "engine", "docs", "RULES.md")),
     "tests": ("Tests Domain", ("tests", "docs", "RULES.md")),
 }
+
+
+def _rule_domains(rule: dict[str, Any]) -> list[str]:
+    """Return the rule's domain tag(s) as a list, accepting a single string or a list of strings; empty when missing."""
+    domain = rule.get("domain")
+    if isinstance(domain, str):
+        return [domain]
+    if isinstance(domain, list):
+        return [str(item) for item in domain]
+    return []
+
+
+def _validate_rule_domains(rules: list[dict[str, Any]]) -> None:
+    """Raise ValueError for the first rule whose domain tag(s) are missing or outside VALID_DOMAINS."""
+    for rule in rules:
+        domains = _rule_domains(rule)
+        if not domains or not set(domains) <= VALID_DOMAINS:
+            raise ValueError(f"Rule '{rule.get('id')}' has invalid or missing domain: {rule.get('domain')}")
 
 
 def _format_example_block(rule: dict[str, Any]) -> list[str]:
@@ -169,10 +188,7 @@ def build_artifacts(spec_path: Path, root: Path | None = None) -> dict[Path, str
     rules: list[dict[str, Any]] = data.get("rules", [])
     planner_rules: list[dict[str, Any]] = data.get("planner_rules", [])
 
-    for rule in rules:
-        domain = rule.get("domain")
-        if domain not in VALID_DOMAINS:
-            raise ValueError(f"Rule '{rule.get('id')}' has invalid or missing domain: {domain}")
+    _validate_rule_domains(rules)
 
     artifacts: dict[Path, str] = {
         resolved_root / "docs" / "agents" / "REVIEW_CHECKLIST.json": generate_review_checklist_json(rules),
@@ -183,7 +199,7 @@ def build_artifacts(spec_path: Path, root: Path | None = None) -> dict[Path, str
         artifacts[planner_path] = generate_planner_rules_md(planner_rules)
 
     for domain_name, (domain_label, path_parts) in PACKAGE_DOMAINS.items():
-        domain_rules = [r for r in rules if r.get("domain") in ("all", domain_name)]
+        domain_rules = [r for r in rules if {"all", domain_name} & set(_rule_domains(r))]
         target_path = resolved_root.joinpath(*path_parts)
         artifacts[target_path] = generate_coding_rules_md(domain_rules, title_suffix=f" ({domain_label})")
 

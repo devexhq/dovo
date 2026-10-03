@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from worktree.core.inputs.services.interpolate import interpolate_string
-from worktree.core.step.models import ExecutionMetadata, PreviousStepMetadata, StepMetadata
+from worktree.engine.executors.models import ExecutionMetadata, PreviousStepMetadata, StepMetadata
 
 
 def _metadata_with_step_a_outputs(outputs: dict[str, str]) -> ExecutionMetadata:

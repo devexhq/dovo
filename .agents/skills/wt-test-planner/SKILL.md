@@ -30,7 +30,7 @@ Given a source module or an in-progress plan, produce a skeleton of test class(e
 The skill supports two data sources:
 
 - **Existing-code mode** (default, `--plan` omitted):
-  - **Invocation**: `/wt-test-planner <source-module>` (e.g. `/wt-test-planner src/worktree/core/engine/engine.py`).
+  - **Invocation**: `/wt-test-planner <source-module>` (e.g. `/wt-test-planner src/worktree/engine/engine.py`).
   - **Data source**: A Python source file under `src/`.
   - **Audit**: Grep source code and audit existing test suites under `tests/`.
 - **Planning mode** (`--plan` provided):
@@ -249,7 +249,7 @@ In planning mode, emit the `### Tests` section containing the summary table and 
 ````markdown
 ### Tests
 
-#### Target file: `tests/core/engine/test_engine.py`
+#### Target file: `tests/engine/test_engine.py`
 
 | Test | Tier | Outcome |
 |---|---|---|
@@ -258,7 +258,7 @@ In planning mode, emit the `### Tests` section containing the summary table and 
 | `RunStepsExecutionTests::test_observer_receives_lifecycle_callbacks_in_order` | Tier 1 (integration) | observer receives callbacks in order |
 
 ```python
-# tests/core/engine/test_engine.py
+# tests/engine/test_engine.py
 
 
 class RunStepsExecutionTests:
@@ -281,7 +281,7 @@ class RunStepsExecutionTests:
 Present stubs as a fenced Python block explicitly qualified with the target test file path. Group methods into tier-labelled classes. Every method contains its single-line `[<tier>/<type>]` docstring. Do not include import blocks or fixture bodies.
 
 ```python
-# Target file: tests/core/engine/test_engine.py
+# Target file: tests/engine/test_engine.py
 # ── Unit tests ──────────────────────────────────────────────────────────────
 
 

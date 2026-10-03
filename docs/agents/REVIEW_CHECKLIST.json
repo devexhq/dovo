@@ -8,8 +8,8 @@
       "severity": "BLOCKER",
       "domain": "all",
       "scope": "src/worktree/",
-      "evaluation_criteria": "Scan imports. Verify common/ imports no core/ or cli/; core/ and common/ import no cli/ or rich; inputs/ imports no catalog, step, or agents; patch/ imports no step or agents; catalog/ imports no agents, step, engine, blueprint, logs, history, cli; agents/ imports no step; step/ imports no engine; logs/ imports no blueprint, engine, history, cli; blueprint/ imports no engine, cli; history/ imports no engine, cli; engine/ imports no cli.",
-      "bad_pattern": "from worktree.core.engine.engine import Engine  # upward import in core/logs/"
+      "evaluation_criteria": "Scan imports. Verify common/ imports no core/, engine/, or cli/; core/ imports no engine/, cli/, or rich; engine/ imports no cli/; inputs/ imports no catalog or agents; patch/ imports no agents; catalog/ imports no agents, logs, history, engine, cli; artifacts/ imports no engine; agents/ imports no engine; logs/ imports no engine, history, cli; history/ imports no engine, cli.",
+      "bad_pattern": "from worktree.engine.engine import Engine  # upward import in core/logs/"
     },
     {
       "id": "ARCH-002",
@@ -33,8 +33,11 @@
       "id": "ARCH-004",
       "name": "Standard Core Package Layout (Domain-Named Entrypoint)",
       "severity": "BLOCKER",
-      "domain": "core",
-      "scope": "src/worktree/core/",
+      "domain": [
+        "core",
+        "engine"
+      ],
+      "scope": "src/worktree/core/, src/worktree/engine/",
       "evaluation_criteria": "Check package directory structure for new domains. Verify the entrypoint module is named after the domain (e.g. prune.py) rather than generic facade.py. Flag any monolithic single-file domain layout or public models defined in services/.",
       "bad_pattern": "src/worktree/core/prune/ -> facade.py  # or monolithic prune.py mixing models & logic"
     },
@@ -96,8 +99,11 @@
       "id": "MODEL-002",
       "name": "Result/Outcome Pattern over Exceptions",
       "severity": "BLOCKER",
-      "domain": "core",
-      "scope": "src/worktree/core/",
+      "domain": [
+        "core",
+        "engine"
+      ],
+      "scope": "src/worktree/core/, src/worktree/engine/",
       "evaluation_criteria": "Inspect service methods. Flag methods that raise exceptions for business/operational failures instead of returning a BaseResult.",
       "bad_pattern": "raise SandboxNotFoundError('Sandbox does not exist')"
     },
@@ -105,8 +111,11 @@
       "id": "MODEL-003",
       "name": "Reachable and Tested Status Enums",
       "severity": "BLOCKER",
-      "domain": "core",
-      "scope": "src/worktree/core/*/models.py",
+      "domain": [
+        "core",
+        "engine"
+      ],
+      "scope": "src/worktree/core/*/models.py, src/worktree/engine/**/models.py",
       "evaluation_criteria": "Check all enum values of StrEnum classes in models.py. Ensure each variant is emitted in src/ and asserted in tests/.",
       "bad_pattern": "class PruneStatus(StrEnum): UNKNOWN = 'unknown'  # never emitted in src/"
     },
@@ -240,8 +249,11 @@
       "id": "PERF-003",
       "name": "Indexed Column Queries vs O(n) In-Memory Lookups",
       "severity": "WARNING",
-      "domain": "core",
-      "scope": "src/worktree/core/db/, src/worktree/core/*/services/",
+      "domain": [
+        "core",
+        "engine"
+      ],
+      "scope": "src/worktree/core/db/, src/worktree/core/*/services/, src/worktree/engine/services/",
       "evaluation_criteria": "Scan for in-memory list comprehensions or filter loops over full table fetches when an indexed query method could be used.",
       "bad_pattern": "record = next((r for r in repo.list() if r.path == rel_path), None)"
     },
@@ -258,8 +270,11 @@
       "id": "API-002",
       "name": "Consistent Error Semantics Across Queries",
       "severity": "WARNING",
-      "domain": "core",
-      "scope": "src/worktree/core/db/, src/worktree/core/*/services/",
+      "domain": [
+        "core",
+        "engine"
+      ],
+      "scope": "src/worktree/core/db/, src/worktree/core/*/services/, src/worktree/engine/services/",
       "evaluation_criteria": "Audit repository query methods for divergent exception handling (e.g. bare except returning None vs structured Result error capture).",
       "bad_pattern": "except ValidationError: return None  # inconsistently swallows error"
     },
@@ -457,7 +472,7 @@
       "name": "Orchestration Path Test Coverage",
       "severity": "WARNING",
       "domain": "tests",
-      "scope": "tests/cli/, tests/core/engine/",
+      "scope": "tests/cli/, tests/engine/",
       "evaluation_criteria": "Verify that PRs modifying command routing or multi-step orchestration include a test exercising the updated execution branch.",
       "bad_pattern": "# PR modifying Engine.resume() without integration tests for resumed step loop"
     },

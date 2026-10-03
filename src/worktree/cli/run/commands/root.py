@@ -13,9 +13,9 @@ from worktree.cli.ui import (
     ui_dispatcher,
 )
 from worktree.common.models import DisplayFormatOptions, OutputFormatOptions
-from worktree.core.blueprint.models import BlueprintRunResult
 from worktree.core.db import RunRecord, RunStatus
-from worktree.core.engine import BlueprintRunService
+from worktree.engine import BlueprintRunService
+from worktree.engine.models import BlueprintRunResult
 
 
 def _first_error(result: BlueprintRunResult, fallback: str) -> str:

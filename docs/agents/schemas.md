@@ -34,7 +34,7 @@ Comprehensive reference for the shape of entities across the Worktree CLI codeba
 - **Config** (`core/config/exceptions.py`):
   - `ConfigLoadError`: Fatal configuration loading failure.
   - `ConfigTierValidationError`: A hierarchical config tier file is unreadable, malformed, or fails `WorktreeConfig` validation; carries `tier`, `path`, and `details`.
-- **Engine** (`core/engine/exceptions.py`):
+- **Engine** (`engine/exceptions.py`):
   - `EngineError`: Base process engine error.
   - `EngineRuntimeError`: Execution runtime error.
   - `EngineInputError`: Input resolution failure before run creation.
@@ -99,15 +99,15 @@ All operations that can fail return a Pydantic result object subclassing `BaseRe
 - `ProjectIdentityProvisionResult` / `ProjectIdentityProvisionStatus`: Non-raising outcome of `wt init`'s create-or-preserve-or-overwrite identity provisioning (`src/worktree/core/project/services/identity.py:provision_project_identity`).
 
 ### Blueprint & Step Models
-**Relevant sources:** `src/worktree/core/catalog/definitions/`, `src/worktree/core/step/models.py`, `src/worktree/core/inputs/models.py`.
+**Relevant sources:** `src/worktree/core/catalog/definitions/`, `src/worktree/engine/executors/models.py`, `src/worktree/core/inputs/models.py`.
 - `BlueprintDefinition`: Unified model for executable blueprints. See [`src/worktree/core/catalog/definitions/blueprint.py`](../../src/worktree/core/catalog/definitions/blueprint.py) for its fields; it carries no `kind` discriminator.
 - `BlueprintDefaults`: Blueprint-level defaults (`on_failure`).
 - `ParameterInput`: Declared parameter input (`type`, `description`, `required`, `default`, `aliases`).
 - `InputResolveResult`: Result of resolving input values from CLI flags and defaults (`values`, `missing`, `errors`, `warnings`, `ok`).
-- `StepDefinition`: Executable step specification (`id`, `name`, `type`, `description`, `command`, `prompt`, `script_path`, `tools`, `env`, `timeout_seconds`, `assert_`, `on_failure`, `uses`, `run`, `artifacts`). `type` is a `StepType` (`command`, `agent`, `script`, `internal`); `internal` requires a non-empty `command` naming an `INTERNAL_COMMAND_HANDLERS` registry key (`core/step/services/internal_dispatch.py`). `artifacts: list[ArtifactPublishSpec]` declares bundles auto-published via `publish_artifact` after a successful step, on both top-level and loop `do:` sub-steps; see Artifacts Models below.
+- `StepDefinition`: Executable step specification (`id`, `name`, `type`, `description`, `command`, `prompt`, `script_path`, `tools`, `env`, `timeout_seconds`, `assert_`, `on_failure`, `uses`, `run`, `artifacts`). `type` is a `StepType` (`command`, `agent`, `script`, `internal`); `internal` requires a non-empty `command` naming an `INTERNAL_COMMAND_HANDLERS` registry key (`engine/executors/internal_dispatch.py`). `artifacts: list[ArtifactPublishSpec]` declares bundles auto-published via `publish_artifact` after a successful step, on both top-level and loop `do:` sub-steps; see Artifacts Models below.
 - `ArtifactPublishSpec`: Declarative per-step artifact publish spec (`name`, `path`, `retention_days`).
-- `InternalCommandContext`: Structured inputs passed to an in-process `type: internal` handler (`sandbox_path`, `session_id`, `env`, `artifacts_dir`, `artifacts_db`); see [`src/worktree/core/step/models.py`](../../src/worktree/core/step/models.py).
-- `ExecutionMetadata.session_id`: The run's session ID, threaded from `RunSettings.session_id` through `build_execution_metadata` and exposed to `type: command`/`script` steps as the `WT_SESSION_ID` environment variable (`core/step/services/metadata.py`).
+- `InternalCommandContext`: Structured inputs passed to an in-process `type: internal` handler (`sandbox_path`, `session_id`, `env`, `artifacts_dir`, `artifacts_db`); see [`src/worktree/engine/executors/models.py`](../../src/worktree/engine/executors/models.py).
+- `ExecutionMetadata.session_id`: The run's session ID, threaded from `RunSettings.session_id` through `build_execution_metadata` and exposed to `type: command`/`script` steps as the `WT_SESSION_ID` environment variable (`engine/executors/metadata.py`).
 - `StepAssert`: Verification conditions (`exit_code`, `output_contains`, `output_not_contains`, `regex_match`, `json_match`, `file_exists`, `file_not_exists`, `file_not_empty`).
 - `FailurePolicy`: `StrEnum` (`abort`, `continue`, `prompt_user`, `retry`). Terminal policies exclude `retry`.
 - `FailureSpec`: Normalized failure policy (`action`, `max_retries`, `backoff_ms`, `on_max_retries`).
@@ -116,32 +116,33 @@ All operations that can fail return a Pydantic result object subclassing `BaseRe
 - `AssertionResult`: Assertion evaluation outcome (`passed`, `failed_conditions`, `message`).
 
 ### Run Engine Models
-**Relevant sources:** `src/worktree/core/engine/models.py`, `src/worktree/core/logs/models.py`.
-- [`RunSettings`](../../src/worktree/core/engine/models.py): Settings and collaborators resolved from the run row for sandbox/session setup and step coordination (`use_sandbox`, `keep`, `agent` as `ResolvedAgentSettings | None`, `observer`, `inputs`, `no_tty`, `failure_prompter`, `auto_apply`, `sandbox_id`, `paths`).
-- [`RunContext`](../../src/worktree/core/engine/models.py): Infrastructure resources for one run's execution; durable progress lives only in `ExecutionStateTree`.
-- [`RunOutcome`](../../src/worktree/core/engine/models.py): Terminal run result, including the sandbox and session identifiers.
-- [`RunObserver`](../../src/worktree/core/engine/models.py), [`FailurePrompter`](../../src/worktree/core/engine/models.py), [`FailurePromptDecision`](../../src/worktree/core/engine/models.py), [`LoopPromptDecision`](../../src/worktree/core/engine/models.py): Caller-supplied progress hooks and failure/loop decision entrypoints. `RunObserver` callbacks: `on_run_started(steps)` and `on_run_completed(outcome)` (once per `drive_run` invocation; `on_run_started` is skipped when definitions fail to load, `on_run_completed` receives the returned outcome), `on_step_start`, `on_step_output`, `on_step_done(idx, total, step, result)`, `on_loop_start`, `on_loop_iteration_start`, `on_loop_conditions_evaluated`, `on_loop_done`, and the sandbox hooks.
-- [`StepAction`](../../src/worktree/core/engine/models.py): Orchestration action (retry, continue, abort) `RunCoordinator` applies after a terminal step failure; distinct from the user-input `FailurePromptDecision` and the persisted `NodeTransitionKind`.
+**Relevant sources:** `src/worktree/engine/models.py`, `src/worktree/core/logs/models.py`.
+- [`RunSettings`](../../src/worktree/engine/models.py): Settings and collaborators resolved from the run row for sandbox/session setup and step coordination (`use_sandbox`, `keep`, `agent` as `ResolvedAgentSettings | None`, `observer`, `inputs`, `no_tty`, `failure_prompter`, `auto_apply`, `sandbox_id`, `paths`).
+- [`RunContext`](../../src/worktree/engine/models.py): Infrastructure resources for one run's execution; durable progress lives only in `ExecutionStateTree`.
+- [`RunOutcome`](../../src/worktree/engine/models.py): Terminal run result, including the sandbox and session identifiers.
+- [`RunObserver`](../../src/worktree/engine/models.py), [`FailurePrompter`](../../src/worktree/engine/models.py), [`FailurePromptDecision`](../../src/worktree/engine/models.py), [`LoopPromptDecision`](../../src/worktree/engine/models.py): Caller-supplied progress hooks and failure/loop decision entrypoints. `RunObserver` callbacks: `on_run_started(steps)` and `on_run_completed(outcome)` (once per `drive_run` invocation; `on_run_started` is skipped when definitions fail to load, `on_run_completed` receives the returned outcome), `on_step_start`, `on_step_output`, `on_step_done(idx, total, step, result)`, `on_loop_start`, `on_loop_iteration_start`, `on_loop_conditions_evaluated`, `on_loop_done`, and the sandbox hooks.
+- [`StepAction`](../../src/worktree/engine/models.py): Orchestration action (retry, continue, abort) `RunCoordinator` applies after a terminal step failure; distinct from the user-input `FailurePromptDecision` and the persisted `NodeTransitionKind`.
 - `RunStatus`: `StrEnum` (`pending`, `running`, `completed`, `failed`, `paused`, `cancelled`).
 - `RunRequest`: Facade execution parameters for `Engine.run` (`inputs`, `cli_args`, `use_sandbox`, `keep`, `agent`, `session_id`, `observer`, `failure_prompter`, `no_tty`).
-- [`RunCoordinator`](../../src/worktree/core/engine/coordinator.py) / `NodeTransitionKind`: State-driven execution of a run: selects the next non-terminal node, applies one durable transition through `RunStateStore`, and repeats until the run completes, pauses, or fails. `Engine.run` and `Engine.resume` reach it through `drive_run` ([`session.py`](../../src/worktree/core/engine/session.py)).
-- [`EngineLoader`](../../src/worktree/core/engine/loader.py): Validates a paused run's row, execution state, snapshots, and retained sandbox; raises `EngineResumeError` carrying an `EngineResumeStatus`.
-- [`flatten_step_results`](../../src/worktree/core/engine/projection.py): Projects the terminal leaf attempts of an `ExecutionStateTree` into the ordered `RunOutcome.step_results`.
+- [`RunCoordinator`](../../src/worktree/engine/coordinator.py) / `NodeTransitionKind`: State-driven execution of a run: selects the next non-terminal node, applies one durable transition through `RunStateStore`, and repeats until the run completes, pauses, or fails. `Engine.run` and `Engine.resume` reach it through `drive_run` ([`session.py`](../../src/worktree/engine/session.py)).
+- [`EngineLoader`](../../src/worktree/engine/loader.py): Validates a paused run's row, execution state, snapshots, and retained sandbox; raises `EngineResumeError` carrying an `EngineResumeStatus`.
+- [`flatten_step_results`](../../src/worktree/engine/projection.py): Projects the terminal leaf attempts of an `ExecutionStateTree` into the ordered `RunOutcome.step_results`.
 - `EngineResumeStatus`: `StrEnum` (`ok`, `not_found`, `wrong_status`, `missing_sandbox`, `corrupt_state`, `missing_snapshot`, `failed`).
-- [`ExecutionStateTree`](../../src/worktree/core/engine/state_models.py): Versioned plan-and-progress document for one run (manifest plus ordered step and loop nodes). A paused leaf (top-level or loop body) keeps its failed attempt, so resume re-enters the failure prompt without re-running the step. `ExecutionLoopNode.granted_iterations` records ceiling grants; the effective ceiling is `max_iterations + granted_iterations`.
-- [`RunLifecycle`](../../src/worktree/core/engine/state_models.py) / [`RunJsonPayload`](../../src/worktree/core/engine/state_models.py): The `run.json` projection of a run: frozen manifest, execution tree, row-derived lifecycle outcome, and results flattened from the tree. Built by [`build_run_json_payload`](../../src/worktree/core/engine/projection.py) and written by [`write_session_run_projection`](../../src/worktree/core/engine/writer.py).
-- [`RunStateStore`](../../src/worktree/core/engine/state_store.py): Builds, saves (revision compare-and-swap), and loads an `ExecutionStateTree` for one run row; returns `RunStateWriteResult` / `RunStateLoadResult` (`RunStateWriteStatus` / `RunStateLoadStatus` in [`state_models.py`](../../src/worktree/core/engine/state_models.py)). Does not lock; callers hold the workspace lock.
-- [`RunStartConfig`](../../src/worktree/core/engine/models.py): Resolved run options written to the run row when a run starts.
+- [`ExecutionStateTree`](../../src/worktree/engine/state_models.py): Versioned plan-and-progress document for one run (manifest plus ordered step and loop nodes). A paused leaf (top-level or loop body) keeps its failed attempt, so resume re-enters the failure prompt without re-running the step. `ExecutionLoopNode.granted_iterations` records ceiling grants; the effective ceiling is `max_iterations + granted_iterations`.
+- [`RunLifecycle`](../../src/worktree/engine/state_models.py) / [`RunJsonPayload`](../../src/worktree/engine/state_models.py): The `run.json` projection of a run: frozen manifest, execution tree, row-derived lifecycle outcome, and results flattened from the tree. Built by [`build_run_json_payload`](../../src/worktree/engine/projection.py) and written by [`write_session_run_projection`](../../src/worktree/engine/writer.py).
+- [`RunStateStore`](../../src/worktree/engine/state_store.py): Builds, saves (revision compare-and-swap), and loads an `ExecutionStateTree` for one run row; returns `RunStateWriteResult` / `RunStateLoadResult` (`RunStateWriteStatus` / `RunStateLoadStatus` in [`state_models.py`](../../src/worktree/engine/state_models.py)). Does not lock; callers hold the workspace lock.
+- [`RunStartConfig`](../../src/worktree/engine/models.py): Resolved run options written to the run row when a run starts.
 - `DefinitionRef`: One snapshotted catalog item's resolved reference, content SHA, and resolution timestamp (`ref`, `sha`, `resolved_at`); `ref` is `"<tier>:<item_type>:<key>"`.
 - `DefinitionsManifest`: The blueprint's `DefinitionRef` plus a `DefinitionRef` per transitively-resolved `uses:` step (`blueprint`, `steps`), snapshotted by `Engine.run` into `<session_dir>/definitions/` and consumed by `RunCoordinator`/`load_blueprint_from_snapshot` to execute and resume without a live catalog read.
 - [`RunLogEvent`](../../src/worktree/core/logs/models.py) / `RunLogEventType`: One `run.log` timeline record. `drive_run`, `RunCoordinator`, `StepCoordinator`, and `LoopEventEmitter` append one JSON line per lifecycle event to `logs_dir/<session_id>/run.log` via `append_run_log_event` ([`core/logs/services/write.py`](../../src/worktree/core/logs/services/write.py)), which stamps `ts` at write time and drops write failures silently. `event` decides which optional fields are populated. `step_start`/`step_done` events carry `step_name` (`null` when the step has none) and, for loop body steps, `loop_id` and the 1-based `iteration`; `step_done` also carries `duration_seconds`. Loop events use `iteration` and `next_iteration`, and `loop_done` carries the loop's total iteration count in `iteration`. `core/logs` reads these events back.
-- [`StepCoordinator`](../../src/worktree/core/engine/step_coordinator.py), [`Workspace`](../../src/worktree/core/engine/workspace.py): Per-step attempt and failure-prompt primitives and sandbox/session lifecycle used by the coordinator.
-- [`LoopPolicy`](../../src/worktree/core/engine/loop_policy.py) / `LoopDecision` / `LoopTransitionKind`: Pure loop decisions (advance a body step, complete an iteration, repeat, terminate, or apply the `max_iterations` ceiling) that `RunCoordinator` applies durably. [`LoopEventEmitter`](../../src/worktree/core/engine/loop_events.py) emits the loop `run.log` events and observer callbacks; `validate_loop_structure` in [`state_validation.py`](../../src/worktree/core/engine/state_validation.py) rejects persisted loop state whose ids or body order differ from the run snapshot.
+- [`StepCoordinator`](../../src/worktree/engine/step_coordinator.py), [`Workspace`](../../src/worktree/engine/workspace.py): Per-step attempt and failure-prompt primitives and sandbox/session lifecycle used by the coordinator.
+- [`LoopPolicy`](../../src/worktree/engine/loop_policy.py) / `LoopDecision` / `LoopTransitionKind`: Pure loop decisions (advance a body step, complete an iteration, repeat, terminate, or apply the `max_iterations` ceiling) that `RunCoordinator` applies durably. [`LoopEventEmitter`](../../src/worktree/engine/loop_events.py) emits the loop `run.log` events and observer callbacks; `validate_loop_structure` in [`state_validation.py`](../../src/worktree/engine/state_validation.py) rejects persisted loop state whose ids or body order differ from the run snapshot.
 
 ### Agent Provider Models
 **Relevant sources:** `src/worktree/core/agents/models.py`, `src/worktree/core/agents/cli_mutation.py`.
 - [`AgentRequest`](../../src/worktree/core/agents/models.py): Input to an agent adapter. `mode` is `direct` (authored step prompt as `instruction`, no `payload`), `fix_failure`, or `review_remediation` (both require an `AgentFailurePayload`); a blank `instruction` is rejected.
-- [`AgentStepSummary`](../../src/worktree/core/step/models.py): JSON object an agent step writes to stdout; built by [`execute_agent_step`](../../src/worktree/core/step/services/execute_agent.py) from an `AgentAttempt`. `StepExecutionContext.sandbox_active` carries whether the run has a Worktree Git sandbox, and agent steps fail without it.
+- [`AgentStepSummary`](../../src/worktree/engine/executors/models.py): JSON object an agent step writes to stdout; built by [`execute_agent_step`](../../src/worktree/engine/executors/agent_step.py) from an `AgentAttempt`. `StepExecutionContext.agent_runner` (built by `build_agent_step_runner`) carries the run's provider settings and sandbox state, and agent steps fail without an active Worktree Git sandbox.
+- `AgentStepRunner` / `OutputCallback`: Type aliases in [`engine/executors/models.py`](../../src/worktree/engine/executors/models.py); `AgentStepRunner` is the `(StepDefinition, Path, OutputCallback | None) -> StepDispatchOutcome` callable `StepExecution` invokes for agent steps, and `OutputCallback` is the `(stream, text)` output sink.
 - [`AgentAttempt`](../../src/worktree/core/agents/models.py): Classified result of `run_direct_attempt` ([`core/agents/services/run_direct.py`](../../src/worktree/core/agents/services/run_direct.py)); `completed` is true only for `proposed_patch` and `no_op`.
 - `AgentResponse`: Adapter outcome (`status`, `patch`, `errors`, `warnings`, `summary`, `ok`).
 - `AgentResponseStatus`: `StrEnum` (`proposed_patch`, `no_op`, `unfixable`, `timeout`, `provider_error`).
@@ -236,7 +237,7 @@ All four tables live in one centralized SQLite database shared across projects (
 **Relevant sources:**
 - `src/worktree/core/*/facade.py`
 - `src/worktree/common/filesystem/facade.py`
-- `src/worktree/core/engine/engine.py`
+- `src/worktree/engine/engine.py`
 - `src/worktree/core/git/runner.py`
 
 Each core domain exposes a cohesive facade class that encapsulates domain services, queries, and repositories:
@@ -256,7 +257,7 @@ Each core domain exposes a cohesive facade class that encapsulates domain servic
 | `Status` | `core/status/facade.py` | Workspace health and telemetry aggregation (`collect`). |
 | `History` | `core/history/history.py` | Execution history query and display (`list`, `show`). |
 | `Logs` | `core/logs/logs.py` | Persisted session log inspection (`show`); session existence is checked against `RunsRepository`, then the global `logs_dir/<session_id>/`. |
-| `Engine` | `core/engine/engine.py` | Process-level run persistence, session minting, execution, and resume (`run`, `resume`). |
+| `Engine` | `engine/engine.py` | Process-level run persistence, session minting, execution, and resume (`run`, `resume`). |
 | `Filesystem` | `common/filesystem/facade.py` | Atomic writes, safe path operations, and YAML parsing (`atomic_write_json`, `atomic_write_text`, `read_yaml`). |
 
 ---
