@@ -10,11 +10,11 @@ import pytest
 from worktree.common.filesystem.models import RepositoryPaths, WorkspacePaths
 from worktree.common.filesystem.services.global_root import resolve_global_paths
 from worktree.core.db import RunRecord, RunsRepository, RunStatus
-from worktree.core.engine.models import ReconciliationResult
 from worktree.core.history import History
 from worktree.core.history.models import (
     HistoryListStatus,
     HistoryShowStatus,
+    ReconciliationResult,
 )
 from worktree.core.logs import RunLogEvent, RunLogEventType
 from worktree.core.project.services.storage import resolve_workspace_paths

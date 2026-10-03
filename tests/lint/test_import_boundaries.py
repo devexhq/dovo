@@ -1,4 +1,4 @@
-"""Tier 4 invariant: layer isolation between worktree.core / tests.core and worktree.cli."""
+"""Tier 4 invariant: layer isolation of worktree.core (no cli, no engine outside core/engine/) and tests.core (no cli)."""
 
 from __future__ import annotations
 
@@ -17,6 +17,12 @@ from tests.lint.astlib import (
 
 CORE_ROOT: Final[Path] = SRC_ROOT / "core"
 CORE_TESTS_ROOT: Final[Path] = TESTS_ROOT / "core"
+ENGINE_ROOT: Final[Path] = CORE_ROOT / "engine"
+
+
+def _core_files_outside_engine() -> list[Path]:
+    """Collect core source files that are not inside core/engine/."""
+    return [path for path in collect_python_files(CORE_ROOT) if ENGINE_ROOT not in path.parents]
 
 
 def _scan_file_for_banned_imports(file_path: Path, banned_prefix: str) -> list[str]:
@@ -53,6 +59,16 @@ class ImportBoundariesTests:
             violations.extend(_scan_file_for_banned_imports(file_path, "worktree.cli"))
 
         assert not violations, "Found prohibited worktree.cli imports in src/worktree/core:\n" + "\n".join(violations)
+
+    def test_core_outside_engine_never_imports_worktree_core_engine(self) -> None:
+        """Ensure no src/worktree/core module outside core/engine/ imports worktree.core.engine."""
+        violations: list[str] = []
+        for file_path in _core_files_outside_engine():
+            violations.extend(_scan_file_for_banned_imports(file_path, "worktree.core.engine"))
+
+        assert not violations, "Found prohibited worktree.core.engine imports outside core/engine:\n" + "\n".join(
+            violations
+        )
 
     def test_tests_core_never_imports_worktree_cli(self) -> None:
         """Ensure core tests never import from worktree.cli."""

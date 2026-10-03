@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from worktree.cli.context import CliContext
 from worktree.cli.ui.dispatcher import ui_dispatcher
-from worktree.core.engine import reconcile_stale_runs
+from worktree.core.history import reconcile_stale_runs
 from worktree.core.status import Status
 from worktree.core.status.models import WorktreeStatusResult
 

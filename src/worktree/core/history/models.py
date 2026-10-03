@@ -48,3 +48,10 @@ class HistoryShowResult(BaseResult):
     def ok(self) -> bool:
         """True when a run record is available to render."""
         return self.status == HistoryShowStatus.OK and self.run is not None and not self.errors
+
+
+class ReconciliationResult(BaseResult):
+    """Result of reconciling stale running sessions."""
+
+    reconciled: list[RunRecord] = Field(default_factory=list)
+    warning: str | None = None
