@@ -11,7 +11,6 @@ from dovo.core.doctor.models import CheckCategory, CheckStatus, DiagnosticCheckR
 REQUIRED_HOST_BINARIES: Final[tuple[str, ...]] = ("git",)
 
 PROVIDER_REQUIRED_BINARY: Final[dict[AgentProvider, str]] = {
-    "gemini": "gemini",
     "copilot": "gh",
 }
 

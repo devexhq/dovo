@@ -10,7 +10,7 @@ import pytest
 
 from dovo.common.filesystem.models import RepositoryPaths, WorkspacePaths
 from dovo.common.filesystem.services.global_root import resolve_global_paths
-from dovo.core.agents.models import AgentResponse, AgentResponseStatus, ResolvedAgentSettings
+from dovo.core.agents.models import AgentRequest, AgentResponse, AgentResponseStatus, ResolvedAgentSettings
 from dovo.core.catalog.definitions import LoopStepBlock, StepDefinition
 from dovo.core.db import RunsRepository, RunStatus, WorktreesRepository
 from dovo.core.logs.services.read import read_run_log_events
@@ -663,10 +663,10 @@ class DriveRunObserverContractTests:
         assert observed.warnings == plain.warnings
 
 
-_OLLAMA_AGENT_CONFIG: dict[str, object] = {
-    "provider": "ollama",
-    "model": "llama3.1",
-    "endpoint": "http://127.0.0.1:11434",
+_AGENT_CONFIG: dict[str, object] = {
+    "provider": "copilot",
+    "model": "test-model",
+    "endpoint": "http://127.0.0.1:9999",
     "temperature": 0.7,
     "max_tokens": 512,
 }
@@ -733,8 +733,8 @@ class DriveRunAgentSettingsTests:
         captured_agent_args: list[ResolvedAgentSettings | None],
         noop_agent_provider: FakeAgentProvider,
     ) -> None:
-        """[tier-1/integration] drive_run: a fresh row with no override and an ollama config reaches StepExecution with the full ResolvedAgentSettings and no 'agent' key in context."""
-        paths, runs = _agent_workspace(tmp_path, _OLLAMA_AGENT_CONFIG)
+        """[tier-1/integration] drive_run: a fresh row with no override and a copilot config reaches StepExecution with the full ResolvedAgentSettings and no 'agent' key in context."""
+        paths, runs = _agent_workspace(tmp_path, _AGENT_CONFIG)
         seed_new_run(paths, runs, session_id="fresh", steps=[_agent_step("a")], use_worktree=True)
 
         outcome = _drive(paths, runs, "fresh")
@@ -742,9 +742,9 @@ class DriveRunAgentSettingsTests:
         assert outcome.status == RunStatus.COMPLETED
         assert captured_agent_args == [
             ResolvedAgentSettings(
-                provider="ollama",
-                model="llama3.1",
-                endpoint="http://127.0.0.1:11434",
+                provider="copilot",
+                model="test-model",
+                endpoint="http://127.0.0.1:9999",
                 temperature=0.7,
                 max_tokens=512,
             )
@@ -757,8 +757,8 @@ class DriveRunAgentSettingsTests:
         captured_agent_args: list[ResolvedAgentSettings | None],
         noop_agent_provider: FakeAgentProvider,
     ) -> None:
-        """[tier-1/integration] drive_run: a paused agent-step row with agent='gemini' resumed with RETRY reaches StepExecution with provider 'gemini' and the config's model, endpoint, temperature, max_tokens."""
-        paths, runs = _agent_workspace(tmp_path, _OLLAMA_AGENT_CONFIG)
+        """[tier-1/integration] drive_run: a paused agent-step row with agent='fake-provider' resumed with RETRY reaches StepExecution with provider 'fake-provider' and the config's model, endpoint, temperature, max_tokens."""
+        paths, runs = _agent_workspace(tmp_path, _AGENT_CONFIG)
         seed_paused_run(
             paths,
             runs,
@@ -766,7 +766,7 @@ class DriveRunAgentSettingsTests:
             steps=[_agent_step("a", on_failure="prompt_user")],
             paused_step_id="a",
             use_worktree=True,
-            agent="gemini",
+            agent="fake-provider",
         )
 
         outcome = _drive(paths, runs, "resumed", prompter=_Prompter([FailurePromptDecision.RETRY]))
@@ -774,9 +774,9 @@ class DriveRunAgentSettingsTests:
         assert outcome.status == RunStatus.COMPLETED
         assert captured_agent_args == [
             ResolvedAgentSettings(
-                provider="gemini",
-                model="llama3.1",
-                endpoint="http://127.0.0.1:11434",
+                provider="fake-provider",
+                model="test-model",
+                endpoint="http://127.0.0.1:9999",
                 temperature=0.7,
                 max_tokens=512,
             )
@@ -789,7 +789,7 @@ class DriveRunAgentSettingsTests:
         noop_agent_provider: FakeAgentProvider,
     ) -> None:
         """[tier-1/integration] drive_run: two agent steps in one drive receive the identical ResolvedAgentSettings object."""
-        paths, runs = _agent_workspace(tmp_path, _OLLAMA_AGENT_CONFIG)
+        paths, runs = _agent_workspace(tmp_path, _AGENT_CONFIG)
         seed_new_run(paths, runs, session_id="twice", steps=[_agent_step("a"), _agent_step("b")], use_worktree=True)
 
         _drive(paths, runs, "twice")
@@ -813,34 +813,22 @@ class DriveRunAgentSettingsTests:
         assert outcome.step_results == []
         assert [call[0] for call in observer.calls] == ["run_completed"]
 
-    def test_command_only_run_completes_with_unregistered_configured_provider(self, tmp_path: Path) -> None:
-        """[tier-1/integration] drive_run: config agent.provider 'openai' and a single command step returns COMPLETED with errors == []."""
-        paths, runs = _agent_workspace(tmp_path, {"provider": "openai", "model": "gpt"})
-        seed_new_run(paths, runs, session_id="cmd-only", steps=[_step("a", "echo hi")])
-
-        outcome = _drive(paths, runs, "cmd-only")
-
-        assert outcome.status == RunStatus.COMPLETED
-        assert outcome.errors == []
-
-    @pytest.mark.parametrize("source", ["config", "row_override"])
-    def test_agent_step_with_unregistered_effective_provider_fails(self, tmp_path: Path, source: str) -> None:
-        """[tier-1/integration] drive_run: an agent step whose effective provider 'openai' comes from config or from row.agent returns FAILED with the step's error_message naming AGENT_PROVIDER_UNSUPPORTED."""
-        configured: dict[str, object] = {"provider": "openai", "model": "gpt"} if source == "config" else {}
-        paths, runs = _agent_workspace(tmp_path, configured)
+    def test_agent_step_with_unregistered_effective_provider_fails(self, tmp_path: Path) -> None:
+        """[tier-1/integration] drive_run: an agent step whose run row sets agent 'unregistered' returns FAILED with the step's error_message containing "Unsupported agent provider 'unregistered' (AGENT_PROVIDER_UNSUPPORTED)"."""
+        paths, runs = _agent_workspace(tmp_path, {})
         seed_new_run(
             paths,
             runs,
             session_id="unregistered",
             steps=[_agent_step("a")],
             use_worktree=True,
-            agent="openai" if source == "row_override" else None,
+            agent="unregistered",
         )
 
         outcome = _drive(paths, runs, "unregistered")
 
         assert outcome.status == RunStatus.FAILED
-        assert "Unsupported agent provider 'openai' (AGENT_PROVIDER_UNSUPPORTED)" in (
+        assert "Unsupported agent provider 'unregistered' (AGENT_PROVIDER_UNSUPPORTED)" in (
             outcome.step_results[-1].error_message or ""
         )
 
@@ -860,7 +848,7 @@ class DriveRunAgentWorktreeTests:
             return FakeAgentProvider(AgentResponse(status=AgentResponseStatus.NO_OP))
 
         monkeypatch.setattr(AGENT_ADAPTER_FACTORY, _spy)
-        paths, runs = _agent_workspace(tmp_path, _OLLAMA_AGENT_CONFIG)
+        paths, runs = _agent_workspace(tmp_path, _AGENT_CONFIG)
         steps = [
             _step("before", "true"),
             _agent_step("agent", on_failure="prompt_user"),
@@ -890,11 +878,16 @@ class DriveRunAgentExecutionTests:
         self, git_paths: WorkspacePaths, git_runs: RunsRepository, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """[tier-1/integration] drive_run: a worktree-backed run [failing command with on_failure continue, agent prompt interpolating previous_step.status, cat of the patched file with an output assertion] returns COMPLETED, the single request is direct with no payload and instruction 'Handle ignored', the file is absent from the source checkout, and the cat step output carries the patched content."""
+
+        def _write_file(request: AgentRequest) -> None:
+            (request.worktree_path / "agent.txt").write_text("patched\n", encoding="utf-8")
+
         provider = FakeAgentProvider(
             AgentResponse(
                 status=AgentResponseStatus.PROPOSED_PATCH,
                 unified_diff=new_file_diff("agent.txt", "patched"),
-            )
+            ),
+            on_call=_write_file,
         )
         monkeypatch.setattr(AGENT_ADAPTER_FACTORY, lambda token: provider)
         seed_new_run(
@@ -923,8 +916,8 @@ class DriveRunAgentExecutionTests:
     def test_provider_override_and_tuning_reach_the_provider(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """[tier-1/integration] drive_run: config agent settings with row.agent 'cursor' asks the factory for 'cursor' and delivers an AgentRequest with the configured model, endpoint, temperature, max_tokens, and the step's timeout_seconds."""
-        paths, runs = _agent_workspace(tmp_path, _OLLAMA_AGENT_CONFIG)
+        """[tier-1/integration] drive_run: config agent settings with row.agent 'fake-provider' asks the factory for 'fake-provider' and delivers an AgentRequest with the configured model, endpoint, temperature, max_tokens, and the step's timeout_seconds."""
+        paths, runs = _agent_workspace(tmp_path, _AGENT_CONFIG)
         provider = FakeAgentProvider(AgentResponse(status=AgentResponseStatus.NO_OP))
         requested: list[str] = []
 
@@ -939,16 +932,16 @@ class DriveRunAgentExecutionTests:
             session_id="override",
             steps=[_agent_step("a", timeout_seconds=77)],
             use_worktree=True,
-            agent="cursor",
+            agent="fake-provider",
         )
 
         outcome = _drive(paths, runs, "override")
 
         assert outcome.status == RunStatus.COMPLETED
-        assert requested == ["cursor"]
+        assert requested == ["fake-provider"]
         request = provider.requests[0]
-        assert request.model == "llama3.1"
-        assert request.endpoint == "http://127.0.0.1:11434"
+        assert request.model == "test-model"
+        assert request.endpoint == "http://127.0.0.1:9999"
         assert request.temperature == 0.7
         assert request.max_tokens == 512
         assert request.timeout_seconds == 77

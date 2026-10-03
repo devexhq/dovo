@@ -312,7 +312,7 @@ Each CLI command package under `src/dovo/cli/<name>/` contains:
   - Validates `.dovo/config.json`.
   - Enforces `additionalProperties: false` across all objects.
   - Required top-level keys: `version`, `project`, `worktree`, `agent`, `history`, `doctor`, `prune`, `telemetry`, `concurrency`.
-  - Supported agent provider tokens: `local`, `ollama`, `cursor`, `gemini`, `copilot`, `openai`, `anthropic`, `azure_openai`, `custom`.
+  - Supported agent provider tokens: `copilot`.
 - **Workflow V1 (`v1/workflow.json`)**:
   - Validates workflow and task YAML definitions.
   - Enforces schema for `steps`, `inputs`, `defaults`, and `assert` blocks.

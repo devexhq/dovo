@@ -39,7 +39,7 @@ def _paths_for(root: Path) -> WorkspacePaths:
 
 
 _AGENT_SETTINGS = ResolvedAgentSettings(
-    provider="ollama", model="llama3.1", endpoint="http://127.0.0.1:11434", temperature=0.7, max_tokens=512
+    provider="copilot", model="test-model", endpoint="http://127.0.0.1:9999", temperature=0.7, max_tokens=512
 )
 
 

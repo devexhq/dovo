@@ -67,8 +67,8 @@ rules:
     Secrets must never be stored in config.json, persisted to data.db, or passed into prompt builders.
   evaluation_criteria: Search for API key field additions in DovoConfig or SQLite models. Ensure environment resolution
     helpers are used.
-  positive_example: 'api_key = resolve_cursor_api_key()  # reads environment dynamically'
-  negative_example: 'api_key = config.agent.cursor_api_key  # serializing secrets in static config'
+  positive_example: 'api_key = resolve_copilot_token()  # reads environment dynamically'
+  negative_example: 'api_key = config.agent.copilot_token  # serializing secrets in static config'
   citation: docs/agents/architecture.md#secrets-handling
 - id: RENDER-001
   title: Stateful Builder Pattern for RichOutput
@@ -131,7 +131,7 @@ rules:
   domain: all
   scope: src/dovo/
   guideline: Scoped exceptions allowing extra='ignore' are restricted to hand-authored YAML models (BlueprintDefinition,
-    LoopStepBlock) and LLM JSON output (OllamaModelStdout), and MUST carry a justifying comment.
+    LoopStepBlock) and MUST carry a justifying comment.
   evaluation_criteria: Flag any model using extra='ignore' or omitting strict=True outside the approved list or without a
     justifying comment.
   positive_example: '# User YAML models permit forward-compatible extra keys

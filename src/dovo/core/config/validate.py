@@ -124,14 +124,23 @@ def _unregistered_provider_error(config: DovoConfig) -> str | None:
     return unsupported_provider_message(config.agent.provider)
 
 
+def _provider_requires_model(provider: str) -> bool:
+    """Return True when the registered provider descriptor requires agent.model."""
+    spec = PROVIDERS.get(provider)
+
+    return spec is not None and spec.requires_model
+
+
 def _semantic_warnings(config: DovoConfig) -> tuple[list[str], list[str]]:
     """Return semantic warnings and fixes in FR-7 rule order."""
     warnings: list[str] = []
     fixes: list[str] = []
 
-    if config.agent.provider != "local" and config.agent.model is None:
-        warnings.append("agent.provider is not 'local' but agent.model is missing (CONFIG_WARN_AGENT_MODEL_MISSING).")
-        fixes.append("Set agent.model or use provider=local")
+    if _provider_requires_model(config.agent.provider) and config.agent.model is None:
+        warnings.append(
+            f"agent.provider '{config.agent.provider}' requires agent.model but it is missing (CONFIG_WARN_AGENT_MODEL_MISSING)."
+        )
+        fixes.append("Set agent.model")
 
     endpoint = config.agent.endpoint
     if endpoint is not None and not _is_absolute_http_url(endpoint):

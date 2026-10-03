@@ -55,7 +55,7 @@ jobs:
 
       - name: Execute Full Verification Blueprint
         env:
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
         run: |
           dovo run lint-and-test --no-worktree --no-tty
 ```

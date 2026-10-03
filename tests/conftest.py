@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import dataclasses
 import json
 import subprocess
 from collections.abc import Callable
@@ -14,6 +15,7 @@ from typer.testing import CliRunner
 from dovo.common.constants import REQUIRED_SUBDIRS
 from dovo.common.filesystem.models import RepositoryPaths, WorkspacePaths
 from dovo.common.filesystem.services.global_root import resolve_global_paths
+from dovo.core.agents.registry import PROVIDERS
 from dovo.core.config.models import ConfigTier
 from dovo.core.project.services.identity import generate_project_identity, save_project_identity
 from dovo.core.project.services.storage import resolve_workspace_paths
@@ -28,6 +30,12 @@ def _isolated_dovo_home(tmp_path_factory: pytest.TempPathFactory, monkeypatch: p
     read and write the real machine's global Dovo directory.
     """
     monkeypatch.setenv("DOVO_HOME", str(tmp_path_factory.mktemp("dovo_home")))
+
+
+@pytest.fixture
+def model_required_provider(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Patch PROVIDERS['copilot'] so requires_model is True for the test."""
+    monkeypatch.setitem(PROVIDERS, "copilot", dataclasses.replace(PROVIDERS["copilot"], requires_model=True))
 
 
 @pytest.fixture

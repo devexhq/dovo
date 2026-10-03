@@ -106,7 +106,7 @@ class ConfigLayerResolutionTests:
         global_paths = resolve_global_paths(global_root)
         user_config_path = global_paths.user_dir / "config.json"
         repo_config_path = repo_root / ".dovo" / "config.json"
-        _write_tier_config(user_config_path, {"agent": {"model": "gemini-pro"}})
+        _write_tier_config(user_config_path, {"agent": {"model": "test-model"}})
         _write_tier_config(repo_config_path, {"worktree": {"base_ref": "main"}})
 
         layers = resolve_config_layers(workspace_paths_factory(repo_root, global_root))
@@ -134,13 +134,13 @@ class HierarchicalConfigMergeTests:
     ) -> None:
         global_root = tmp_path / "global_home"
         global_paths = resolve_global_paths(global_root)
-        _write_tier_config(global_paths.user_dir / "config.json", {"agent": {"model": "gemini-pro"}})
+        _write_tier_config(global_paths.user_dir / "config.json", {"agent": {"model": "test-model"}})
         _write_tier_config(isolated_workspace / ".dovo" / "config.json", {"worktree": {"base_ref": "main"}})
 
         result = load_hierarchical_config(workspace_paths_factory(isolated_workspace, global_root))
 
         assert result.config is not None
-        assert result.config.agent.model == "gemini-pro"
+        assert result.config.agent.model == "test-model"
 
     def test_repo_tier_overrides_worktree_base_ref_over_user_default(
         self, isolated_workspace: Path, tmp_path: Path, workspace_paths_factory: WorkspacePathsFactory
@@ -283,7 +283,7 @@ class HierarchicalMergePurityTests:
     ) -> None:
         global_root = tmp_path / "global_home"
         global_paths = resolve_global_paths(global_root)
-        _write_tier_config(global_paths.user_dir / "config.json", {"agent": {"model": "gemini-pro"}})
+        _write_tier_config(global_paths.user_dir / "config.json", {"agent": {"model": "test-model"}})
         _write_tier_config(isolated_workspace / ".dovo" / "config.json", {"agent": {"temperature": 0.9}})
 
         paths = workspace_paths_factory(isolated_workspace, global_root)

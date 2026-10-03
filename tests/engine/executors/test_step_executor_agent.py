@@ -18,7 +18,7 @@ from tests.harness.builders import StepBuilder
 
 
 def _settings() -> ResolvedAgentSettings:
-    return ResolvedAgentSettings(provider="ollama", model=None, endpoint=None, temperature=0.2, max_tokens=4096)
+    return ResolvedAgentSettings(provider="copilot", model=None, endpoint=None, temperature=0.2, max_tokens=4096)
 
 
 def _run_agent_step(worktree: Path, step_builder: StepBuilder) -> StepResult:

@@ -36,20 +36,7 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "provider": {
-          "type": "string",
-          "enum": [
-            "local",
-            "ollama",
-            "cursor",
-            "gemini",
-            "copilot",
-            "openai",
-            "anthropic",
-            "azure_openai",
-            "custom"
-          ]
-        },
+        "provider": { "type": "string", "enum": ["copilot"], "default": "copilot" },
         "model": { "type": ["string", "null"], "minLength": 1 },
         "endpoint": { "type": ["string", "null"], "minLength": 1 },
         "temperature": { "type": "number", "minimum": 0, "maximum": 2 },

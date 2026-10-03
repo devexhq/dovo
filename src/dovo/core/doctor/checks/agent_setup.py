@@ -6,14 +6,10 @@ from collections.abc import Callable
 from typing import Final
 
 from dovo.core.agents.copilot import resolve_copilot_token
-from dovo.core.agents.cursor import resolve_cursor_api_key
-from dovo.core.agents.gemini import resolve_gemini_api_key
 from dovo.core.config.models import AgentConfig, AgentProvider
 from dovo.core.doctor.models import CheckCategory, CheckStatus, DiagnosticCheckResult, DoctorContext
 
 PROVIDER_CREDENTIAL_RESOLVERS: Final[dict[AgentProvider, tuple[Callable[[], str | None], str]]] = {
-    "cursor": (resolve_cursor_api_key, "CURSOR_API_KEY"),
-    "gemini": (resolve_gemini_api_key, "GEMINI_API_KEY"),
     "copilot": (resolve_copilot_token, "GH_TOKEN or GITHUB_TOKEN"),
 }
 

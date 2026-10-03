@@ -6,7 +6,7 @@ import abc
 from collections.abc import Callable
 from dataclasses import dataclass
 
-from dovo.core.agents.models import AgentRequest, AgentResponse, ProviderKind
+from dovo.core.agents.models import AgentRequest, AgentResponse
 
 
 class BaseAgentProvider(abc.ABC):
@@ -27,7 +27,6 @@ class ProviderSpec:
     """
 
     token: str
-    kind: ProviderKind
     credential_envs: tuple[str, ...]
     requires_model: bool
     supports_tool_policy: bool

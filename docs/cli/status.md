@@ -41,7 +41,7 @@ Dovo Workspace Status
 │ Project Name         │ dovo                        │
 │ Config Status        │ ok (.dovo/config.json)      │
 │ Active Git Branch    │ feature/status-cmd          │
-│ Agent Model          │ gemini-2.5-flash            │
+│ Agent Model          │ gpt-4.1                     │
 │ Active Worktrees     │ 1 / 5 max                   │
 │ Catalog Items        │ 2 valid / 2 total           │
 └──────────────────────┴─────────────────────────────┘

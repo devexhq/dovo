@@ -39,10 +39,12 @@ Dovo Doctor Report
 │ filesystem.writable │ filesystem │ OK │ All configured workspace paths are writable.               │
 │ worktree.refs │ worktree     │ OK     │ 2 worktree(es) verified against database and Git worktree... │
 │ env.binaries │ environment │ OK     │ 2 required binary(s) verified on PATH.                     │
-│ agent.setup  │ agent       │ OK     │ Agent provider 'gemini' is configured with model '...'.    │
+│ agent.setup  │ agent       │ OK     │ Agent provider 'copilot' is configured with model '...'.   │
 └──────────────┴─────────────┴────────┴──────────────────────────────────────────────────────────┘
 6 checks: 6 ok, 0 warning, 0 failed (8.4ms)
 ```
+
+The default provider (`copilot`) requires `gh` on `PATH` and a `GH_TOKEN` or `GITHUB_TOKEN` credential; without them `env.binaries` warns and `agent.setup` fails.
 
 ### Warnings present output
 
@@ -52,7 +54,7 @@ Dovo Doctor Report
 │ Check        │ Category    │ Status  │ Message                                              │
 ├──────────────┼─────────────┼─────────┼────────────────────────────────────────────────────┤
 │ git.repo     │ git         │ OK      │ Git repository detected at '/repo' on branch 'main'. │
-│ agent.setup  │ agent       │ WARNING │ Agent provider 'local' has no model configured.      │
+│ agent.setup  │ agent       │ WARNING │ Agent provider 'copilot' has no model configured.    │
 └──────────────┴─────────────┴─────────┴────────────────────────────────────────────────────┘
 2 checks: 1 ok, 1 warning, 0 failed (4.1ms)
 
@@ -87,7 +89,7 @@ dovo doctor --format json
 Emits a structured NDJSON payload suitable for automation and GUI integrations:
 
 ```json
-{"event_type": "DoctorReport", "payload": {"ok": false, "has_warnings": true, "workspace_root": "/abs/path/to/repo", "total_duration_ms": 12.4, "checks": [{"check_id": "git.repo", "name": "Git Repository Check", "category": "git", "status": "ok", "message": "Git repository detected at '/abs/path/to/repo' on branch 'main'.", "details": {"root": "/abs/path/to/repo", "branch": "main"}, "duration_ms": 2.1, "error_code": null, "errors": [], "warnings": [], "remediations": []}, {"check_id": "agent.setup", "name": "Agent Setup Check", "category": "agent", "status": "failed", "message": "Missing required credential for agent provider 'gemini': GEMINI_API_KEY.", "details": {"provider": "gemini", "missing_env_var": "GEMINI_API_KEY"}, "duration_ms": 0.3, "error_code": "DOCTOR_AGENT_KEY_MISSING", "errors": ["Missing required credential for agent provider 'gemini': GEMINI_API_KEY."], "warnings": [], "remediations": ["Export GEMINI_API_KEY"]}]}}
+{"event_type": "DoctorReport", "payload": {"ok": false, "has_warnings": true, "workspace_root": "/abs/path/to/repo", "total_duration_ms": 12.4, "checks": [{"check_id": "git.repo", "name": "Git Repository Check", "category": "git", "status": "ok", "message": "Git repository detected at '/abs/path/to/repo' on branch 'main'.", "details": {"root": "/abs/path/to/repo", "branch": "main"}, "duration_ms": 2.1, "error_code": null, "errors": [], "warnings": [], "remediations": []}, {"check_id": "agent.setup", "name": "Agent Setup Check", "category": "agent", "status": "failed", "message": "Missing required credential for agent provider 'copilot': GH_TOKEN or GITHUB_TOKEN.", "details": {"provider": "copilot", "missing_env_var": "GH_TOKEN or GITHUB_TOKEN"}, "duration_ms": 0.3, "error_code": "DOCTOR_AGENT_KEY_MISSING", "errors": ["Missing required credential for agent provider 'copilot': GH_TOKEN or GITHUB_TOKEN."], "warnings": [], "remediations": ["Export GH_TOKEN or GITHUB_TOKEN"]}]}}
 ```
 
 See [`DoctorReport`/`DiagnosticCheckResult`](../agents/schemas.md#doctor-models) for the full field reference and built-in check inventory.

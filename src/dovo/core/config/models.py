@@ -11,17 +11,7 @@ from pydantic import BaseModel, Field
 from dovo.common.constants import DEFAULT_MAXIMUM_WORKTREES_ALLOWED
 from dovo.common.models import BaseResult
 
-AgentProvider = Literal[
-    "local",
-    "ollama",
-    "cursor",
-    "gemini",
-    "copilot",
-    "openai",
-    "anthropic",
-    "azure_openai",
-    "custom",
-]
+AgentProvider = Literal["copilot"]  # "claude" is added by the Claude adapter change
 
 
 class ProjectConfig(BaseModel):
@@ -48,7 +38,7 @@ class AgentConfig(BaseModel):
 
     model_config = {"extra": "forbid", "strict": True}
 
-    provider: AgentProvider = "local"
+    provider: AgentProvider = "copilot"
     model: str | None = Field(default=None, min_length=1)
     endpoint: str | None = Field(default=None, min_length=1)
     temperature: float = Field(default=0.2, ge=0, le=2)

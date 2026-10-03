@@ -53,7 +53,7 @@ class AgentSettingsResolutionTests:
     def test_ok_is_false_without_settings_and_true_with_them(self) -> None:
         """[tier-1/unit] AgentSettingsResolution.ok: False when settings is None, True when resolved settings are present."""
         settings = ResolvedAgentSettings(
-            provider="local", model="m", endpoint="http://localhost", temperature=0.0, max_tokens=1
+            provider="copilot", model="m", endpoint="http://localhost", temperature=0.0, max_tokens=1
         )
 
         assert AgentSettingsResolution().ok is False

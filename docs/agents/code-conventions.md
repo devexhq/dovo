@@ -9,7 +9,6 @@ Coding standards and patterns for the Dovo CLI codebase.
 **Relevant sources:** `src/dovo/core/*/models.py`, `src/dovo/common/models.py`
 
 - Scoped exceptions allowing non-strict model configuration (must carry a justifying comment):
-  - `OllamaModelStdout` (`core/agents/ollama.py`): leniency for LLM-generated JSON.
   - `BlueprintDefinition`, `LoopStepBlock` (`core/catalog/definitions/blueprint.py`, `core/catalog/definitions/step.py`): hand-authored YAML models using `extra: "ignore"`.
 
 ---

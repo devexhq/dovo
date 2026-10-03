@@ -1,22 +1,18 @@
-"""Direct-mode agent attempt: provider invocation, patch validation, and worktree patch application."""
+"""Direct-mode agent attempt: provider invocation and classification of the provider response."""
 
 from __future__ import annotations
 
 from pathlib import Path
 
-from dovo.core.agents.cli_mutation import validate_request_patch
 from dovo.core.agents.factory import get_agent_adapter
 from dovo.core.agents.models import (
     AgentAttempt,
     AgentRequest,
     AgentResponse,
     AgentResponseStatus,
-    ProviderKind,
     ResolvedAgentSettings,
 )
-from dovo.core.agents.registry import PROVIDERS
-from dovo.core.git import GitError, GitRunner
-from dovo.core.patch import GitDiffParser, PatchApplyStatus
+from dovo.core.patch import GitDiffParser
 
 
 def run_direct_attempt(
@@ -55,7 +51,7 @@ def _run_provider(request: AgentRequest, provider: str) -> AgentAttempt:
         adapter = get_agent_adapter(provider)
         response = adapter.propose_fix(request)
 
-        return _settle(PROVIDERS[provider].kind, request, response)
+        return _settle(response)
     except Exception as exc:
         return AgentAttempt(status=AgentResponseStatus.PROVIDER_ERROR, diagnostics=[f"Agent provider error: {exc}"])
 
@@ -65,12 +61,10 @@ def _response_text(response: AgentResponse) -> str | None:
     return response.summary or response.raw_text
 
 
-def _settle(kind: ProviderKind, request: AgentRequest, response: AgentResponse) -> AgentAttempt:
-    """Classify a provider response: patches settle by provider kind, every other status maps straight through."""
+def _settle(response: AgentResponse) -> AgentAttempt:
+    """Accept a PROPOSED_PATCH as a direct mutation; every other status maps straight through."""
     if response.status == AgentResponseStatus.PROPOSED_PATCH:
-        if kind == ProviderKind.DIRECT_MUTATION:
-            return _accept_direct_mutation(response)
-        return _settle_diff_returning(request, response)
+        return _accept_direct_mutation(response)
 
     return AgentAttempt(
         status=response.status,
@@ -78,46 +72,6 @@ def _settle(kind: ProviderKind, request: AgentRequest, response: AgentResponse) 
         unfixable_reason=response.unfixable_reason,
         diagnostics=list(response.errors),
     )
-
-
-def _settle_diff_returning(request: AgentRequest, response: AgentResponse) -> AgentAttempt:
-    """Require a non-empty diff, validate it, apply it in the worktree, and report PROPOSED_PATCH only after apply succeeds."""
-    summary = _response_text(response)
-    diff = response.unified_diff or ""
-
-    if not diff.strip():
-        diagnostics = ["Agent returned a proposed patch without a diff."]
-    else:
-        gate = validate_request_patch(request, diff)
-        diagnostics = (
-            _apply_in_worktree(request.worktree_path, diff)
-            if gate.status == PatchApplyStatus.CHECKED_OK
-            else list(gate.errors)
-        )
-        if not diagnostics:
-            return AgentAttempt(
-                status=AgentResponseStatus.PROPOSED_PATCH,
-                summary=summary,
-                touched_files=sorted(set(gate.touched_files)),
-            )
-
-    return AgentAttempt(status=AgentResponseStatus.PROVIDER_ERROR, summary=summary, diagnostics=diagnostics)
-
-
-def _apply_in_worktree(worktree_path: Path, diff: str) -> list[str]:
-    """Run apply_check then apply in the worktree and return failure diagnostics (empty when the patch applied)."""
-    try:
-        returncode, _, stderr = GitRunner.apply_check(worktree_path, diff)
-        if returncode != 0:
-            return [f"Patch does not apply cleanly: {stderr.strip()}"]
-
-        returncode, _, stderr = GitRunner.apply(worktree_path, diff)
-        if returncode != 0:
-            return [f"Patch application failed: {stderr.strip()}"]
-    except GitError as exc:
-        return [f"Patch application failed: {exc}"]
-
-    return []
 
 
 def _accept_direct_mutation(response: AgentResponse) -> AgentAttempt:

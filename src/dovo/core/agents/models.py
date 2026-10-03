@@ -1,4 +1,4 @@
-"""Agent request/response DTOs, failure payloads, provider kind, and resolved settings."""
+"""Agent request/response DTOs, failure payloads, and resolved settings."""
 
 from __future__ import annotations
 
@@ -131,13 +131,6 @@ class AgentResponse(BaseModel):
     def ok(self) -> bool:
         """Return True only when a patch was proposed."""
         return self.status == AgentResponseStatus.PROPOSED_PATCH
-
-
-class ProviderKind(StrEnum):
-    """How a provider applies its fix: by editing the worktree directly or by returning a diff."""
-
-    DIRECT_MUTATION = "direct_mutation"
-    DIFF_RETURNING = "diff_returning"
 
 
 @dataclass(frozen=True)
