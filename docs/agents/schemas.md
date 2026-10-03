@@ -258,7 +258,7 @@ Each core domain exposes a cohesive facade class that encapsulates domain servic
 | `History` | `core/history/history.py` | Execution history query and display (`list`, `show`). |
 | `Logs` | `core/logs/logs.py` | Persisted session log inspection (`show`); session existence is checked against `RunsRepository`, then the global `logs_dir/<session_id>/`. |
 | `Step` | `core/step/facade.py` | Step blueprint load, resolution, and isolated execution (`load`, `resolve`, `execute`, `assert_step`). |
-| `Engine` | `core/engine/engine.py` | Process-level run persistence, session minting, execution, and resume (`run`, `resume`, `reconcile`). |
+| `Engine` | `core/engine/engine.py` | Process-level run persistence, session minting, execution, and resume (`run`, `resume`). |
 | `Filesystem` | `common/filesystem/facade.py` | Atomic writes, safe path operations, and YAML parsing (`atomic_write_json`, `atomic_write_text`, `read_yaml`). |
 
 ---

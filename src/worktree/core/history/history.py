@@ -4,13 +4,13 @@ from __future__ import annotations
 
 from worktree.common.filesystem import WorkspacePaths
 from worktree.core.db import RunsRepository, RunStatus
-from worktree.core.engine.services.reconcile import reconcile_stale_runs
 from worktree.core.history.models import (
     HistoryListResult,
     HistoryListStatus,
     HistoryShowResult,
     HistoryShowStatus,
 )
+from worktree.core.history.services.reconcile import reconcile_stale_runs
 from worktree.core.logs import RunLogEvent
 from worktree.core.logs.services.read import list_session_log_files, read_run_log_events
 

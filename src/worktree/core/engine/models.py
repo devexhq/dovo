@@ -13,7 +13,7 @@ from pydantic import BaseModel, Field
 from worktree.common.filesystem import WorkspacePaths
 from worktree.common.models import BaseResult
 from worktree.core.agents.models import ResolvedAgentSettings
-from worktree.core.db import RunRecord, RunStatus
+from worktree.core.db import RunStatus
 from worktree.core.db.repositories.artifacts import ArtifactsRepository
 from worktree.core.sandbox import SandboxSession
 from worktree.core.step import (
@@ -83,13 +83,6 @@ class DefinitionsManifest(BaseModel):
 
     blueprint: DefinitionRef
     steps: list[DefinitionRef] = Field(default_factory=list)
-
-
-class ReconciliationResult(BaseResult):
-    """Result of reconciling stale running sessions."""
-
-    reconciled: list[RunRecord] = Field(default_factory=list)
-    warning: str | None = None
 
 
 class FailurePromptDecision(StrEnum):

@@ -9,7 +9,7 @@ from pathlib import Path
 from worktree.common.filesystem.models import RepositoryPaths
 from worktree.common.lock import WorkspaceLock
 from worktree.core.db import RunRecord, RunsRepository, RunStatus
-from worktree.core.engine.models import ReconciliationResult
+from worktree.core.history.models import ReconciliationResult
 
 STALE_RUN_ERROR_MESSAGE = "Session interrupted by abnormal process termination"
 
