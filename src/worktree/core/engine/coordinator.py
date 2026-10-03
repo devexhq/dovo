@@ -52,7 +52,7 @@ from worktree.core.engine.state_models import (
 )
 from worktree.core.engine.state_store import RunStateStore, new_iteration
 from worktree.core.engine.state_validation import validate_loop_structure
-from worktree.core.engine.step_executor import StepCoordinator
+from worktree.core.engine.step_coordinator import StepCoordinator
 from worktree.core.engine.writer import load_blueprint_from_snapshot
 from worktree.core.step import (
     ExecutionIdentity,

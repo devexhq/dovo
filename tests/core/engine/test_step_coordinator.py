@@ -24,7 +24,7 @@ from worktree.core.engine.models import (
     RunSettings,
     StepAction,
 )
-from worktree.core.engine.step_executor import StepCoordinator, auto_publish_step_artifacts
+from worktree.core.engine.step_coordinator import StepCoordinator, auto_publish_step_artifacts
 from worktree.core.project.services.storage import resolve_workspace_paths
 from worktree.core.sandbox import SandboxSession
 from worktree.core.step.models import (
@@ -122,7 +122,7 @@ class StepCoordinatorAgentForwardingTests:
                 captured.append(metadata)
                 super().__init__(metadata)
 
-        monkeypatch.setattr("worktree.core.engine.step_executor.StepExecution", _CapturingStepExecution)
+        monkeypatch.setattr("worktree.core.engine.step_coordinator.StepExecution", _CapturingStepExecution)
         context = RunSettings(cwd=tmp_path, use_sandbox=False, agent=_AGENT_SETTINGS, paths=_paths_for(tmp_path))
         step = StepBuilder.command("echo ok").with_id("ok").build()
 
@@ -152,7 +152,7 @@ class StepCoordinatorSandboxForwardingTests:
                 captured.append(metadata)
                 super().__init__(metadata)
 
-        monkeypatch.setattr("worktree.core.engine.step_executor.StepExecution", _CapturingStepExecution)
+        monkeypatch.setattr("worktree.core.engine.step_coordinator.StepExecution", _CapturingStepExecution)
         session = SandboxSession(
             session_id="s",
             target_branch="main",

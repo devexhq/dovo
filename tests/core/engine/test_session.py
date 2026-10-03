@@ -698,7 +698,7 @@ def captured_contexts(monkeypatch: pytest.MonkeyPatch) -> list[StepExecutionCont
             captured.append(metadata)
             super().__init__(metadata)
 
-    monkeypatch.setattr("worktree.core.engine.step_executor.StepExecution", _CapturingStepExecution)
+    monkeypatch.setattr("worktree.core.engine.step_coordinator.StepExecution", _CapturingStepExecution)
     return captured
 
 

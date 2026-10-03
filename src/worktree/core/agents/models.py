@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass, field
 from enum import StrEnum
 from pathlib import Path
 from typing import Literal
@@ -137,3 +138,19 @@ class ProviderKind(StrEnum):
 
     DIRECT_MUTATION = "direct_mutation"
     DIFF_RETURNING = "diff_returning"
+
+
+@dataclass(frozen=True)
+class AgentAttempt:
+    """Classified result of one agent attempt before an adapter turns it into a caller-specific outcome."""
+
+    status: AgentResponseStatus
+    summary: str | None = None
+    unfixable_reason: str | None = None
+    touched_files: list[str] = field(default_factory=list)
+    diagnostics: list[str] = field(default_factory=list)
+
+    @property
+    def completed(self) -> bool:
+        """Return True for PROPOSED_PATCH and NO_OP."""
+        return self.status in {AgentResponseStatus.PROPOSED_PATCH, AgentResponseStatus.NO_OP}
