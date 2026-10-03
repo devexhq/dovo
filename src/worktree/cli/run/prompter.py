@@ -5,8 +5,8 @@ from __future__ import annotations
 from worktree.cli.ui.dispatcher import UiDispatcher
 from worktree.cli.ui.events import MessageEvent, PromptEvent, PromptOption
 from worktree.core.catalog.definitions import LoopStepBlock, StepDefinition
-from worktree.core.engine import FailurePromptDecision, FailurePrompter, LoopPromptDecision
-from worktree.core.step import StepResult
+from worktree.engine import FailurePromptDecision, FailurePrompter, LoopPromptDecision
+from worktree.engine.executors.models import StepResult
 
 _STEP_CHOICE_MAP: dict[str, FailurePromptDecision] = {
     "r": FailurePromptDecision.RETRY,

@@ -134,7 +134,7 @@ through. `object` forces a narrow before use; `Any` forces nothing.
 2. **`dict[str, Any]` at a serialization boundary.** The result of
    `model_dump(mode="json")`, parsed YAML, or a JSON payload.
 3. **Values read out of a user document and then compared.**
-   `core/step/services/conditions.py` evaluates `until:` expressions against
+   `engine/executors/conditions.py` evaluates `until:` expressions against
    arbitrary JSON. Use `object` where only equality or truthiness is needed;
    keep `Any` where the value is indexed or used arithmetically.
 4. **`**kwargs: Any` on a pass-through wrapper** that does not inspect the

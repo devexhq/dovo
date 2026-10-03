@@ -17,8 +17,8 @@ from worktree.cli.ui.events import (
 )
 from worktree.common.models import DisplayFormatOptions, OutputFormatOptions
 from worktree.core.catalog.definitions import LoopStepBlock, StepDefinition
-from worktree.core.engine import RunObserver, RunOutcome
-from worktree.core.step import ConditionEvaluationResult, StepResult
+from worktree.engine import RunObserver, RunOutcome
+from worktree.engine.executors.models import ConditionEvaluationResult, StepResult
 
 if TYPE_CHECKING:
     from types import TracebackType

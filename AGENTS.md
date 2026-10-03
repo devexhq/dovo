@@ -13,6 +13,7 @@ Do not read broad always-on documentation before starting a task. Instead, read 
 | `src/worktree/cli/` | [src/worktree/cli/docs/RULES.md](src/worktree/cli/docs/RULES.md) |
 | `src/worktree/common/` | [src/worktree/common/docs/RULES.md](src/worktree/common/docs/RULES.md) |
 | `src/worktree/core/` | [src/worktree/core/docs/RULES.md](src/worktree/core/docs/RULES.md) |
+| `src/worktree/engine/` | [src/worktree/engine/docs/RULES.md](src/worktree/engine/docs/RULES.md) |
 | `tests/` | [tests/docs/RULES.md](tests/docs/RULES.md) |
 
 ## Agentic process

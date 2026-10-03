@@ -4,11 +4,11 @@
 > **Notice for Agents:** Code violating `BLOCKER` rules will fail verification.
 
 - **[ARCH-001] Strict Layered Import Flow (BLOCKER):**
-  Dependencies flow strictly one way: common/ -> core/{db,git,sandbox,inputs,patch,diff,status}/ -> core/catalog/ -> core/agents/ -> core/step/ -> {core/logs/, core/blueprint/} -> core/history/ -> core/engine/ -> cli/. Upward imports are strictly prohibited.
+  Dependencies flow strictly one way: common/ -> core/ -> engine/ -> cli/. Within core/: project/ -> {db,git,sandbox,catalog,inputs,patch,diff,status,artifacts}/ -> agents/ -> doctor/ -> logs/ -> history/. Upward imports are strictly prohibited.
 
 ```python
-# ✅ DO: from worktree.core.logs import append_run_log_event  # in core/engine/
-# ❌ DO NOT: from worktree.core.engine.engine import Engine  # upward import in core/logs/
+# ✅ DO: from worktree.core.logs import append_run_log_event  # in engine/
+# ❌ DO NOT: from worktree.engine.engine import Engine  # upward import in core/logs/
 ```
 
 - **[RENDER-003] Inline Error and Warning String Construction (SUGGESTION):**
@@ -185,7 +185,7 @@ _unlock = _unlock_fd  # internal shim alias
 ```
 
 - **[TEST-002] 1:1 Source Parity Layout (BLOCKER):**
-  Test structure mirrors src/worktree/ 1:1 under tests/, one test file per source module, and every test directory carries an __init__.py because basenames repeat across the tree. Four mappings are fixed: src/worktree/common/<m>.py to tests/common/test_<m>.py, src/worktree/core/<domain>/<m>.py to tests/core/<domain>/test_<m>.py, src/worktree/cli/ui/formatters/<domain>/<name>.py to tests/cli/ui/formatters/<domain>/test_<name>.py, and src/worktree/cli/<command>/commands/<action>.py to tests/cli/<command>/test_<command>_<action>.py — a subdirectory per CLI command domain, mirroring src/worktree/cli/<command>/ (the commands/ subpackage level collapses; a per-domain conftest.py holds fixtures that domain's test files share, never fixtures another domain needs). One test file per CLI command action, not one file per command domain. Every source module must have a corresponding test file; there is no exemption list. Grouping several formatters, domains, or command actions into one part-numbered or collapsed file is prohibited.
+  Test structure mirrors src/worktree/ 1:1 under tests/, one test file per source module, and every test directory carries an __init__.py because basenames repeat across the tree. Five mappings are fixed: src/worktree/common/<m>.py to tests/common/test_<m>.py, src/worktree/core/<domain>/<m>.py to tests/core/<domain>/test_<m>.py, src/worktree/cli/ui/formatters/<domain>/<name>.py to tests/cli/ui/formatters/<domain>/test_<name>.py, and src/worktree/cli/<command>/commands/<action>.py to tests/cli/<command>/test_<command>_<action>.py — a subdirectory per CLI command domain, mirroring src/worktree/cli/<command>/ (the commands/ subpackage level collapses; a per-domain conftest.py holds fixtures that domain's test files share, never fixtures another domain needs). The fifth is src/worktree/engine/<m>.py to tests/engine/test_<m>.py (executors/ and services/ subpackages mirror as tests/engine/executors/ and tests/engine/services/). One test file per CLI command action, not one file per command domain. Every source module must have a corresponding test file; there is no exemption list. Grouping several formatters, domains, or command actions into one part-numbered or collapsed file is prohibited.
 
 ```python
 # ✅ DO: src/worktree/cli/sandbox/commands/sandbox_create.py -> tests/cli/sandbox/test_sandbox_create.py

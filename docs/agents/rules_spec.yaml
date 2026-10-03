@@ -5,15 +5,15 @@ rules:
   category: Architecture
   domain: all
   scope: src/worktree/
-  guideline: 'Dependencies flow strictly one way: common/ -> core/{db,git,sandbox,inputs,patch,diff,status}/ ->
-    core/catalog/ -> core/agents/ -> core/step/ -> {core/logs/, core/blueprint/} -> core/history/ -> core/engine/ -> cli/. Upward imports
-    are strictly prohibited.'
-  evaluation_criteria: Scan imports. Verify common/ imports no core/ or cli/; core/ and common/ import no cli/ or rich; inputs/
-    imports no catalog, step, or agents; patch/ imports no step or agents; catalog/ imports no agents, step, engine, blueprint,
-    logs, history, cli; agents/ imports no step; step/ imports no engine; logs/ imports no blueprint, engine,
-    history, cli; blueprint/ imports no engine, cli; history/ imports no engine, cli; engine/ imports no cli.
-  positive_example: 'from worktree.core.logs import append_run_log_event  # in core/engine/'
-  negative_example: 'from worktree.core.engine.engine import Engine  # upward import in core/logs/'
+  guideline: 'Dependencies flow strictly one way: common/ -> core/ -> engine/ -> cli/. Within core/: project/ ->
+    {db,git,sandbox,catalog,inputs,patch,diff,status,artifacts}/ -> agents/ -> doctor/ -> logs/ -> history/. Upward
+    imports are strictly prohibited.'
+  evaluation_criteria: Scan imports. Verify common/ imports no core/, engine/, or cli/; core/ imports no engine/, cli/,
+    or rich; engine/ imports no cli/; inputs/ imports no catalog or agents; patch/ imports no agents; catalog/ imports
+    no agents, logs, history, engine, cli; artifacts/ imports no engine; agents/ imports no engine; logs/ imports no
+    engine, history, cli; history/ imports no engine, cli.
+  positive_example: 'from worktree.core.logs import append_run_log_event  # in engine/'
+  negative_example: 'from worktree.engine.engine import Engine  # upward import in core/logs/'
   citation: docs/agents/architecture.md#package-boundaries-import-direction
 - id: ARCH-002
   title: CLI Logic Purity
@@ -45,8 +45,8 @@ rules:
   title: Standard Core Package Layout (Domain-Named Entrypoint)
   severity: BLOCKER
   category: Architecture
-  domain: core
-  scope: src/worktree/core/
+  domain: [core, engine]
+  scope: src/worktree/core/, src/worktree/engine/
   guideline: 'Default layout for new domain code is core/<domain>/: models.py (types), exceptions.py (errors), <domain>.py
     (entrypoint coordinator/service, e.g. prune.py, moving away from generic facade.py), and services/<verb>.py (imperative
     operations). Do not use generic facade.py, do not put logic directly in package root without structured modules, do not
@@ -143,8 +143,8 @@ rules:
   title: Result/Outcome Pattern over Exceptions
   severity: BLOCKER
   category: Models
-  domain: core
-  scope: src/worktree/core/
+  domain: [core, engine]
+  scope: src/worktree/core/, src/worktree/engine/
   guideline: Operations that can fail must return a Pydantic result object subclassing BaseResult instead of raising exceptions.
     Callers check .ok and render .errors/.warnings rather than catching exceptions.
   evaluation_criteria: Inspect service methods. Flag methods that raise exceptions for business/operational failures instead
@@ -156,8 +156,8 @@ rules:
   title: Reachable and Tested Status Enums
   severity: BLOCKER
   category: Models
-  domain: core
-  scope: src/worktree/core/*/models.py
+  domain: [core, engine]
+  scope: src/worktree/core/*/models.py, src/worktree/engine/**/models.py
   guideline: Every status StrEnum variant on a BaseResult model must be reachable from production code and covered by a test.
   evaluation_criteria: Check all enum values of StrEnum classes in models.py. Ensure each variant is emitted in src/ and asserted
     in tests/.
@@ -375,8 +375,8 @@ rules:
   title: Indexed Column Queries vs O(n) In-Memory Lookups
   severity: WARNING
   category: Performance
-  domain: core
-  scope: src/worktree/core/db/, src/worktree/core/*/services/
+  domain: [core, engine]
+  scope: src/worktree/core/db/, src/worktree/core/*/services/, src/worktree/engine/services/
   guideline: Do not perform O(n) in-memory list comprehensions or linear scans over repository records when an indexed database
     column exists (e.g., querying _record_for_rel_path). Query the repository slice directly with filtered SQL.
   evaluation_criteria: Scan for in-memory list comprehensions or filter loops over full table fetches when an indexed query
@@ -400,8 +400,8 @@ rules:
   title: Consistent Error Semantics Across Queries
   severity: WARNING
   category: Architecture
-  domain: core
-  scope: src/worktree/core/db/, src/worktree/core/*/services/
+  domain: [core, engine]
+  scope: src/worktree/core/db/, src/worktree/core/*/services/, src/worktree/engine/services/
   guideline: Maintain consistent error handling semantics across identical query paths. Do not swallow invalid enums or corrupt
     rows in one repository method while raising or returning BaseResult errors in another.
   evaluation_criteria: Audit repository query methods for divergent exception handling (e.g. bare except returning None vs
@@ -517,13 +517,13 @@ rules:
   scope: tests/
   guideline: >-
     Test structure mirrors src/worktree/ 1:1 under tests/, one test file per source module, and every test
-    directory carries an __init__.py because basenames repeat across the tree. Four mappings are fixed:
+    directory carries an __init__.py because basenames repeat across the tree. Five mappings are fixed:
     src/worktree/common/<m>.py to tests/common/test_<m>.py, src/worktree/core/<domain>/<m>.py to
     tests/core/<domain>/test_<m>.py, src/worktree/cli/ui/formatters/<domain>/<name>.py to
     tests/cli/ui/formatters/<domain>/test_<name>.py, and src/worktree/cli/<command>/commands/<action>.py to
     tests/cli/<command>/test_<command>_<action>.py — a subdirectory per CLI command domain, mirroring
     src/worktree/cli/<command>/ (the commands/ subpackage level collapses; a per-domain conftest.py holds
-    fixtures that domain's test files share, never fixtures another domain needs). One test file per CLI
+    fixtures that domain's test files share, never fixtures another domain needs). The fifth is src/worktree/engine/<m>.py to tests/engine/test_<m>.py (executors/ and services/ subpackages mirror as tests/engine/executors/ and tests/engine/services/). One test file per CLI
     command action, not one file per command domain. Every source module must have a corresponding test
     file; there is no exemption list. Grouping several formatters, domains, or command actions into one part-numbered or collapsed file is
     prohibited.
@@ -751,7 +751,7 @@ rules:
   severity: WARNING
   category: Testing
   domain: tests
-  scope: tests/cli/, tests/core/engine/
+  scope: tests/cli/, tests/engine/
   guideline: Modified command orchestration paths and multi-step dispatch workflows must include covering integration tests.
     Merging changes with gaps in end-to-end orchestration tests leaves regression risks.
   evaluation_criteria: Verify that PRs modifying command routing or multi-step orchestration include a test exercising the

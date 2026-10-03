@@ -139,7 +139,7 @@ Write this to `.agentic/review.md` (create `.agentic/` if needed), overwriting t
 | Rule ID | Clause | Severity | Status | Evidence (quoted) |
 |---|---|---|---|---|
 | `TEST-007` | assert relevant domain invariants | SUGGESTION | FAIL | `tests/cli/sandbox/test_diff.py:88` mechanically asserts empty default envelope fields instead of targeted domain invariants |
-| `TEST-011` | no wall-clock sleeps | BLOCKER | FAIL | `tests/core/step/test_process_group.py:58` reads `time.sleep(0.05)` |
+| `TEST-011` | no wall-clock sleeps | BLOCKER | FAIL | `tests/engine/executors/test_process_group.py:58` reads `time.sleep(0.05)` |
 
 ### Plan fidelity
 - Implementation report: `.agentic/implementation-report.md` read | absent
