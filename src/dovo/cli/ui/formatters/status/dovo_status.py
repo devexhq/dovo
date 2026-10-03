@@ -35,11 +35,11 @@ def _derive_project_name(data: DovoStatusResult) -> str | None:
     return None
 
 
-def _derive_sandbox_counts(data: DovoStatusResult) -> tuple[int | None, int | None]:
-    """Derive active and maximum sandbox counts, or None when config invalid."""
+def _derive_worktree_counts(data: DovoStatusResult) -> tuple[int | None, int | None]:
+    """Derive active and maximum worktree counts, or None when config invalid."""
     if not data.config.is_valid:
         return None, None
-    return data.sandboxes.active_sandboxes, data.sandboxes.max_active_sandboxes
+    return data.worktrees.active_worktrees, data.worktrees.max_active_worktrees
 
 
 def _derive_catalog_counts(data: DovoStatusResult) -> tuple[int | None, int | None]:
@@ -55,7 +55,7 @@ class DovoStatusFormatter(ComponentFormatter[DovoStatusResult, StatusView]):
 
     def transform(self, data: DovoStatusResult) -> StatusView:
         """Derive the presentation-ready view from workspace status domain data."""
-        active_sandboxes, max_sandboxes = _derive_sandbox_counts(data)
+        active_worktrees, max_worktrees = _derive_worktree_counts(data)
         valid_items, total_items = _derive_catalog_counts(data)
         agent_model = (
             data.config.config.agent.model
@@ -74,8 +74,8 @@ class DovoStatusFormatter(ComponentFormatter[DovoStatusResult, StatusView]):
             git_is_dirty=data.git.is_dirty,
             uncommitted_files=data.git.uncommitted_files,
             agent_model=agent_model,
-            active_sandboxes=active_sandboxes,
-            max_active_sandboxes=max_sandboxes,
+            active_worktrees=active_worktrees,
+            max_active_worktrees=max_worktrees,
             valid_catalog_items=valid_items,
             total_catalog_items=total_items,
             total_runs=data.database.total_runs,

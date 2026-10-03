@@ -32,7 +32,7 @@ class CliMutationRunRequest(BaseModel):
 
     model_config = {"extra": "forbid", "strict": True}
 
-    sandbox_path: Path
+    worktree_path: Path
     prompt: str
     model: str | None = None
     timeout_seconds: float
@@ -52,14 +52,14 @@ CliMutationRunFn = Callable[[CliMutationRunRequest], CliMutationOutcome]
 
 
 _DIRECT_PROMPT_HEADER = (
-    "You are a coding agent running directly in this sandbox checkout.\n"
+    "You are a coding agent running directly in this worktree checkout.\n"
     "- Carry out the instruction below.\n"
     "- If it asks for planning or review, report your findings in your final message and leave the working tree unchanged.\n"
     "- Stay inside this working directory; do not push, open a PR, or touch remotes.\n"
     "- Do not modify files under .dovo/.\n\n"
 )
 _REMEDIATION_PROMPT_HEADER = (
-    "You are a coding agent running directly in this sandbox checkout. "
+    "You are a coding agent running directly in this worktree checkout. "
     "Fix the failure described below.\n"
     "- Make the smallest change that fixes the failure.\n"
     "- Stay inside this working directory; do not push, open a PR, or "
@@ -77,10 +77,10 @@ def build_mutation_prompt(request: AgentRequest) -> str:
 
 
 def _prompt_body(request: AgentRequest) -> dict[str, object]:
-    """Return the JSON body: mode, sandbox_path, instruction, plus payload only when the request carries one."""
+    """Return the JSON body: mode, worktree_path, instruction, plus payload only when the request carries one."""
     body: dict[str, object] = {
         "mode": request.mode,
-        "sandbox_path": str(request.sandbox_path),
+        "worktree_path": str(request.worktree_path),
         "instruction": request.instruction,
     }
     if request.payload is not None:
@@ -99,14 +99,14 @@ def validate_request_patch(request: AgentRequest, diff: str) -> PatchApplyResult
             if request.reject_binary_changes is not None
             else DEFAULT_REJECT_BINARY_CHANGES
         ),
-        sandbox_path=request.sandbox_path,
+        worktree_path=request.worktree_path,
     )
 
 
 class CliDirectMutationAdapter(BaseAgentProvider):
-    """Base for providers that edit the sandbox directly instead of returning a diff.
+    """Base for providers that edit the worktree directly instead of returning a diff.
 
-    Edits that fail patch validation are discarded from the sandbox; a failed discard is reported in the response errors.
+    Edits that fail patch validation are discarded from the worktree; a failed discard is reported in the response errors.
     """
 
     def _default_run(self, request: CliMutationRunRequest) -> CliMutationOutcome:
@@ -122,7 +122,7 @@ class CliDirectMutationAdapter(BaseAgentProvider):
         return "direct-mutation"
 
     def propose_fix(self, request: AgentRequest) -> AgentResponse:
-        """Run the provider in the sandbox; never raises for classified outcomes."""
+        """Run the provider in the worktree; never raises for classified outcomes."""
         started = time.monotonic()
 
         preflight_error = self._preflight(request)
@@ -134,18 +134,18 @@ class CliDirectMutationAdapter(BaseAgentProvider):
             )
 
         try:
-            baseline = resolve_pre_agent_baseline(request.sandbox_path)
+            baseline = resolve_pre_agent_baseline(request.worktree_path)
         except MutationGitError as exc:
             return AgentResponse(
                 status=AgentResponseStatus.PROVIDER_ERROR,
                 duration_ms=_elapsed_ms(started),
-                errors=[f"Agent provider error (AGENT_PROVIDER_ERROR): failed to resolve sandbox baseline: {exc}"],
+                errors=[f"Agent provider error (AGENT_PROVIDER_ERROR): failed to resolve worktree baseline: {exc}"],
             )
 
         prompt = build_mutation_prompt(request)
         outcome = self._default_run(
             CliMutationRunRequest(
-                sandbox_path=request.sandbox_path,
+                worktree_path=request.worktree_path,
                 prompt=prompt,
                 model=request.model,
                 timeout_seconds=float(request.timeout_seconds),
@@ -178,14 +178,14 @@ class CliDirectMutationAdapter(BaseAgentProvider):
             )
 
         try:
-            diff, _ = capture_diff_since(request.sandbox_path, baseline)
+            diff, _ = capture_diff_since(request.worktree_path, baseline)
         except MutationGitError as exc:
             return AgentResponse(
                 status=AgentResponseStatus.PROVIDER_ERROR,
                 duration_ms=duration_ms,
                 mutation_baseline_ref=baseline,
                 raw_text=outcome.result_text,
-                errors=[f"Agent provider error (AGENT_PROVIDER_ERROR): failed to capture sandbox diff: {exc}"],
+                errors=[f"Agent provider error (AGENT_PROVIDER_ERROR): failed to capture worktree diff: {exc}"],
             )
 
         if not diff.strip():
@@ -199,10 +199,10 @@ class CliDirectMutationAdapter(BaseAgentProvider):
         gate = validate_request_patch(request, diff)
         if gate.status != PatchApplyStatus.CHECKED_OK:
             try:
-                discard_since(request.sandbox_path, baseline)
+                discard_since(request.worktree_path, baseline)
             except MutationGitError as exc:
                 gate.errors.append(
-                    f"Agent provider error (AGENT_PROVIDER_ERROR): failed to discard rejected sandbox edit: {exc}"
+                    f"Agent provider error (AGENT_PROVIDER_ERROR): failed to discard rejected worktree edit: {exc}"
                 )
             return AgentResponse(
                 status=AgentResponseStatus.PROVIDER_ERROR,

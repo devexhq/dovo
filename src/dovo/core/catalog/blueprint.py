@@ -76,9 +76,9 @@ class Blueprint:
         return self._instance.inputs
 
     @property
-    def use_sandbox(self) -> bool:
-        """Return whether the document requests a git sandbox."""
-        return self._instance.use_sandbox
+    def use_worktree(self) -> bool:
+        """Return whether the document requests a git worktree."""
+        return self._instance.use_worktree
 
     def dump(self) -> dict[str, Any]:
         """Return the in-memory document as a JSON-mode dict, including derived kind."""

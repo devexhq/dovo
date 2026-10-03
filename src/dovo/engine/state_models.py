@@ -105,8 +105,8 @@ class RunLifecycle(BaseModel):
     error_message: str | None = None
     started_at: str
     completed_at: str | None = None
-    sandbox_id: str | None = None
-    sandbox_kept: bool = False
+    worktree_id: str | None = None
+    worktree_kept: bool = False
 
 
 class RunJsonPayload(BaseModel):

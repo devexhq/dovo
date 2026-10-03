@@ -17,8 +17,8 @@ import dovo.cli.ui.formatters.global_cli as global_formatters
 import dovo.cli.ui.formatters.history as history_formatters
 import dovo.cli.ui.formatters.init as init_formatters
 import dovo.cli.ui.formatters.logs as logs_formatters
-import dovo.cli.ui.formatters.sandbox as sandbox_formatters
 import dovo.cli.ui.formatters.status as status_formatters
+import dovo.cli.ui.formatters.worktree as worktree_formatters
 import dovo.core.artifacts as artifacts_models
 import dovo.core.bootstrap as bootstrap_models
 import dovo.core.catalog as catalog_models
@@ -27,8 +27,8 @@ import dovo.core.diff as diff_models
 import dovo.core.doctor as doctor_models
 import dovo.core.history as history_models
 import dovo.core.logs as logs_models
-import dovo.core.sandbox as sandbox_models
 import dovo.core.status as status_models
+import dovo.core.worktree as worktree_models
 from dovo.cli.ui.formatters.common import DispatcherProtocol
 from dovo.common.types import ComponentFormatter
 
@@ -49,7 +49,7 @@ FORMATTER_REGISTRY: Final[dict[type[BaseModel], type[ComponentFormatter[Any, Any
     event_models.StepStartEvent: event_formatters.StepStartFormatter,
     event_models.StepDoneEvent: event_formatters.StepDoneFormatter,
     event_models.StepOutputEvent: event_formatters.StepOutputFormatter,
-    event_models.SandboxLifecycleEvent: event_formatters.SandboxLifecycleFormatter,
+    event_models.WorktreeLifecycleEvent: event_formatters.WorktreeLifecycleFormatter,
     event_models.LoopLifecycleEvent: event_formatters.LoopLifecycleFormatter,
     event_models.PromptEvent: event_formatters.PromptFormatter,
     # Catalog
@@ -74,15 +74,15 @@ FORMATTER_REGISTRY: Final[dict[type[BaseModel], type[ComponentFormatter[Any, Any
     logs_models.LogsShowResult: logs_formatters.LogsShowFormatter,
     # Init
     bootstrap_models.WorkspaceInitResult: init_formatters.WorkspaceInitFormatter,
-    # Sandbox
-    sandbox_models.PrunedItem: sandbox_formatters.PrunedItemFormatter,
-    sandbox_models.SandboxPruneResult: sandbox_formatters.SandboxPruneFormatter,
-    sandbox_models.SandboxShowResult: sandbox_formatters.SandboxShowFormatter,
-    sandbox_models.SandboxListResult: sandbox_formatters.SandboxListFormatter,
-    sandbox_models.SandboxCreateResult: sandbox_formatters.SandboxCreateFormatter,
-    sandbox_models.SandboxApplyResult: sandbox_formatters.SandboxApplyFormatter,
-    sandbox_models.SandboxDeleteResult: sandbox_formatters.SandboxDeleteFormatter,
-    sandbox_models.SandboxDiffResult: sandbox_formatters.SandboxDiffFormatter,
+    # Worktree
+    worktree_models.PrunedItem: worktree_formatters.PrunedItemFormatter,
+    worktree_models.WorktreePruneResult: worktree_formatters.WorktreePruneFormatter,
+    worktree_models.WorktreeShowResult: worktree_formatters.WorktreeShowFormatter,
+    worktree_models.WorktreeListResult: worktree_formatters.WorktreeListFormatter,
+    worktree_models.WorktreeCreateResult: worktree_formatters.WorktreeCreateFormatter,
+    worktree_models.WorktreeApplyResult: worktree_formatters.WorktreeApplyFormatter,
+    worktree_models.WorktreeDeleteResult: worktree_formatters.WorktreeDeleteFormatter,
+    worktree_models.WorktreeDiffResult: worktree_formatters.WorktreeDiffFormatter,
     # Status
     status_models.DovoStatusResult: status_formatters.DovoStatusFormatter,
     # Global CLI

@@ -6,7 +6,7 @@ rules:
   domain: all
   scope: src/dovo/
   guideline: 'Dependencies flow strictly one way: common/ -> core/ -> engine/ -> cli/. Within core/: project/ ->
-    {db,git,sandbox,catalog,inputs,patch,diff,status,artifacts}/ -> agents/ -> doctor/ -> logs/ -> history/. Upward
+    {db,git,worktree,catalog,inputs,patch,diff,status,artifacts}/ -> agents/ -> doctor/ -> logs/ -> history/. Upward
     imports are strictly prohibited.'
   evaluation_criteria: Scan imports. Verify common/ imports no core/, engine/, or cli/; core/ imports no engine/, cli/,
     or rich; engine/ imports no cli/; inputs/ imports no catalog or agents; patch/ imports no agents; catalog/ imports
@@ -26,7 +26,7 @@ rules:
   evaluation_criteria: Inspect CLI command handlers in src/dovo/cli/*/commands/. Flag direct SQL execution, domain orchestration,
     or business logic.
   positive_example: result = context.facade.status.collect(context.root_dir); ui_dispatcher.dispatch(result)
-  negative_example: rows = context.db.connection.execute('SELECT * FROM sandboxes').fetchall()
+  negative_example: rows = context.db.connection.execute('SELECT * FROM worktrees').fetchall()
   citation: docs/agents/architecture.md#adding-a-new-command
 - id: ARCH-003
   title: Domain Fact Origin Invariant
@@ -120,9 +120,9 @@ rules:
     formatter in the same domain needs the same table shape. Flag a helper duplicated across sibling formatter
     modules instead of factored into that domain's common.py, and flag a domain-specific helper placed in the
     package-wide common.py.
-  positive_example: 'src/dovo/cli/ui/formatters/sandbox/common.py -> build_sandbox_table(), reused by list.py
+  positive_example: 'src/dovo/cli/ui/formatters/worktree/common.py -> build_worktree_table(), reused by list.py
     and status.py'
-  negative_example: '# Nearly identical build_table() duplicated in both sandbox/list.py and sandbox/status.py'
+  negative_example: '# Nearly identical build_table() duplicated in both worktree/list.py and worktree/status.py'
   citation: docs/agents/code-conventions.md#console-output-and-terminal-formatting
 - id: MODEL-001
   title: Scoped Model Exceptions with Justifying Comment
@@ -149,8 +149,8 @@ rules:
     Callers check .ok and render .errors/.warnings rather than catching exceptions.
   evaluation_criteria: Inspect service methods. Flag methods that raise exceptions for business/operational failures instead
     of returning a BaseResult.
-  positive_example: return SandboxDeleteResult(status=SandboxDeleteStatus.NOT_FOUND, errors=['not found'])
-  negative_example: raise SandboxNotFoundError('Sandbox does not exist')
+  positive_example: return WorktreeDeleteResult(status=WorktreeDeleteStatus.NOT_FOUND, errors=['not found'])
+  negative_example: raise WorktreeNotFoundError('Worktree does not exist')
   citation: docs/agents/code-conventions.md#resultoutcome-pattern
 - id: MODEL-003
   title: Reachable and Tested Status Enums
@@ -199,16 +199,16 @@ rules:
   guideline: Separate distinct logical phases (setup, validate, persist, return) with a blank line. Keep cohesive, tightly
     coupled lines together.
   evaluation_criteria: Check function bodies. Flag dense unseparated blocks or excessive random spacing.
-  positive_example: 'record = SandboxRecord(...)
+  positive_example: 'record = WorktreeRecord(...)
 
 
-    self.db.sandboxes.save(record)
+    self.db.worktrees.save(record)
 
 
     return result'
-  negative_example: 'record = SandboxRecord(...)
+  negative_example: 'record = WorktreeRecord(...)
 
-    self.db.sandboxes.save(record)
+    self.db.worktrees.save(record)
 
     return result'
   citation: docs/agents/code-conventions.md#blank-lines-in-function-bodies
@@ -224,12 +224,12 @@ rules:
     the title.
   evaluation_criteria: Inspect new or modified docstrings. Flag a description that retells the body, lists what the signature
     already shows, or restates the title. Flag a missing description where the code has a hidden contract or a safety behavior.
-  positive_example: '"""Base for providers that edit the sandbox directly instead of returning a diff.
+  positive_example: '"""Base for providers that edit the worktree directly instead of returning a diff.
 
 
-    Edits that fail patch validation are discarded from the sandbox; a failed discard is reported in the response errors."""'
+    Edits that fail patch validation are discarded from the worktree; a failed discard is reported in the response errors."""'
   negative_example: '"""Run the provider. First resolve the baseline, then build the prompt, then run the tool, then diff the
-    sandbox, then validate the patch."""'
+    worktree, then validate the patch."""'
   citation: docs/agents/code-conventions.md#docstrings
 - id: TYPE-001
   title: Ban on -> Any Return Annotations
@@ -278,8 +278,8 @@ rules:
   guideline: Typing table names or string constants as Any or bare string instead of explicit ClassVar[str] causes type checker
     ambiguity. Declare class-level SQL constants explicitly.
   evaluation_criteria: Inspect SQLModel definitions. Verify __tablename__ and table constants are annotated as ClassVar[str].
-  positive_example: '__tablename__: ClassVar[str] = ''sandboxes'''
-  negative_example: __tablename__ = 'sandboxes'
+  positive_example: '__tablename__: ClassVar[str] = ''worktrees'''
+  negative_example: __tablename__ = 'worktrees'
   citation: docs/agents/code-conventions.md#type-checker-suppressions
 - id: TYPE-005
   title: Precise Parameterization for Generator Types
@@ -419,7 +419,7 @@ rules:
     should be consolidated into BaseRepository rather than duplicated across individual repository classes.
   evaluation_criteria: Flag identical session commit/rollback and single-record deletion boilerplate repeated across sibling
     repositories.
-  positive_example: self._delete_one_where(SandboxRecord.session_id == session_id)
+  positive_example: self._delete_one_where(WorktreeRecord.session_id == session_id)
   negative_example: 'with self.session() as s: s.query(...).delete(); s.commit()  # duplicated across repos'
   citation: docs/agents/code-conventions.md#structure-and-complexity
 - id: DB-001
@@ -452,11 +452,11 @@ rules:
   category: Filesystem
   domain: all
   scope: src/dovo/
-  guideline: Multi-process sandbox, catalog, or state mutations must acquire the .dovo/.lock advisory lock using common/lock.py
+  guideline: Multi-process worktree, catalog, or state mutations must acquire the .dovo/.lock advisory lock using common/lock.py
     and handle LockTimeoutError.
   evaluation_criteria: Check concurrent operations for advisory lock wrapping.
-  positive_example: 'with file_lock(lock_path, timeout=10.0): sandbox_service.create(...)'
-  negative_example: 'sandbox_service.create(...)  # mutating shared dir without acquiring lock'
+  positive_example: 'with file_lock(lock_path, timeout=10.0): worktree_service.create(...)'
+  negative_example: 'worktree_service.create(...)  # mutating shared dir without acquiring lock'
   citation: docs/agents/architecture.md#the-dovo-directory
 - id: COMPAT-001
   title: Strict Public-Only Backwards Compatibility
@@ -533,8 +533,8 @@ rules:
     than one command action), a CLI command test file left flat under tests/cli/ instead of nested under its
     own tests/cli/<command>/ subdirectory, missing __init__.py files, and source modules with no test
     file.
-  positive_example: src/dovo/cli/sandbox/commands/sandbox_create.py -> tests/cli/sandbox/test_sandbox_create.py
-  negative_example: 'tests/cli/commands/test_sandbox_create.py  # flat under tests/cli/commands/, not nested under tests/cli/sandbox/'
+  positive_example: src/dovo/cli/worktree/commands/worktree_create.py -> tests/cli/worktree/test_worktree_create.py
+  negative_example: 'tests/cli/commands/test_worktree_create.py  # flat under tests/cli/commands/, not nested under tests/cli/worktree/'
   citation: docs/agents/testing.md#11-source-parity-layout
 - id: TEST-003
   title: Standardized Test Naming and Vague Name Ban
@@ -635,8 +635,8 @@ rules:
     Flag tests that mechanically enumerate empty or default envelope fields (error_code=None, warnings=[], fixes=[])
     when testing unrelated behavior. Verify that models have dedicated contract tests asserting their defaults and
     schema. In scenario tests, verify assertions check meaningful domain contracts rather than incidental defaults.
-  positive_example: "assert result.status == SandboxDiffStatus.NOT_FOUND; assert 'not found' in result.errors[0].lower()"
-  negative_example: "assert result == SandboxDiffResult(status=NOT_FOUND, diff_text='', stat_text='', files_changed=[], errors=['...'], warnings=[], fixes=[], error_code=None)  # mechanical enumeration of incidental defaults"
+  positive_example: "assert result.status == WorktreeDiffStatus.NOT_FOUND; assert 'not found' in result.errors[0].lower()"
+  negative_example: "assert result == WorktreeDiffResult(status=NOT_FOUND, diff_text='', stat_text='', files_changed=[], errors=['...'], warnings=[], fixes=[], error_code=None)  # mechanical enumeration of incidental defaults"
   citation: docs/agents/testing.md#core-testing-rules
 - id: TEST-008
   title: Test Double Realism and Production Types
@@ -730,7 +730,7 @@ rules:
     Verify every touched production function has a real caller in src/. Verify every harness symbol has at least
     one caller outside tests/harness/. Flag harness verification suites that exhaustively permute options no
     domain test uses.
-  positive_example: '# WorkspaceBuilder.with_git() used by tests/core/sandbox/test_services.py'
+  positive_example: '# WorkspaceBuilder.with_git() used by tests/core/worktree/test_services.py'
   negative_example: '# StepBuilder.with_retry() exercised only by tests/harness/test_builders.py'
   citation: docs/agents/testing.md#core-testing-rules
 - id: TEST-014
@@ -830,8 +830,8 @@ rules:
     presentation dependency into the domain suite or signals the test belongs under tests/cli/ instead.
   evaluation_criteria: Scan import statements in changed files under tests/core/. Flag any import of
     dovo.cli or a submodule of it.
-  positive_example: 'from dovo.core.sandbox.prune import prune_sandboxes  # tests/core/sandbox/test_prune.py'
-  negative_example: 'from dovo.cli.sandbox.commands.prune import prune_command  # imported from tests/core/sandbox/test_prune.py'
+  positive_example: 'from dovo.core.worktree.prune import prune_worktrees  # tests/core/worktree/test_prune.py'
+  negative_example: 'from dovo.cli.worktree.commands.prune import prune_command  # imported from tests/core/worktree/test_prune.py'
   citation: docs/agents/testing.md#11-source-parity-layout
 - id: TEST-019
   title: Command Result DTO Spy Scope for CLI Integration Tests
@@ -844,7 +844,7 @@ rules:
     json's wire payload already proves, with a call-through spy fixture on ui_dispatcher.dispatch that still
     exercises the real formatter and render path (never a replacement stub, so this does not trip TEST-008). What
     that spy may be asserted against is scoped to one thing: the command action's own terminal BaseResult — the
-    same type its facade or service call returns and the JSON envelope wraps (SandboxCreateResult for dovo sandbox
+    same type its facade or service call returns and the JSON envelope wraps (WorktreeCreateResult for dovo worktree
     create, DovoStatusResult for dovo status). It is never used to assert on other objects the same invocation
     dispatches — MessageEvent, WarningEvent, PromptEvent, or a lifecycle/progress event — even when the spy's
     fixture captures them incidentally. A command action known to dispatch only its own terminal result per
@@ -859,7 +859,7 @@ rules:
     other dispatched event type captured by the same spy, and flag spy[0]/len(spy) == 1 relied on without
     isolating the command's own Result type for a command action that can plausibly dispatch more than its
     terminal result in the same invocation.
-  positive_example: 'assert len(dispatch_spy) == 1; assert isinstance(dispatch_spy[0], SandboxCreateResult)  # sandbox create dispatches only its own terminal result'
+  positive_example: 'assert len(dispatch_spy) == 1; assert isinstance(dispatch_spy[0], WorktreeCreateResult)  # worktree create dispatches only its own terminal result'
   negative_example: 'assert isinstance(dispatch_spy[-1], MessageEvent)  # asserting an incidental progress event through the result spy'
   citation: docs/agents/testing.md#tier-3---cli-wiring-runner-required-root-tests-when-earned
 - id: DOC-001
@@ -895,7 +895,7 @@ rules:
   guideline: Update docs/agents/schemas.md whenever .dovo/config.json keys, blueprint YAML fields, domain DTOs, or database
     record shapes change.
   evaluation_criteria: Verify schemas.md is updated whenever new DTOs, Result models, or config fields are added in src/.
-  positive_example: '# Adding SandboxPruneResult to section 2 of schemas.md'
+  positive_example: '# Adding WorktreePruneResult to section 2 of schemas.md'
   negative_example: '# Adding new Result model in core/models.py without updating schemas.md'
   citation: docs/agents/documentation.md
 - id: DOC-004
@@ -907,7 +907,7 @@ rules:
   guideline: Docs must not hand-copy Pydantic model signatures, field tables, or enum lists that a Read of the source already
     gives unambiguously. Link to the model file and document only unexpressed behavior (validators, resolution order).
   evaluation_criteria: Flag doc changes that copy-paste field lists or enum members from source models without adding context.
-  positive_example: See [`SandboxSession`](src/dovo/core/sandbox/models.py). Sandboxes live under .dovo/sandboxes/.
+  positive_example: See [`WorktreeSession`](src/dovo/core/worktree/models.py). Worktrees live under .dovo/worktrees/.
   negative_example: '| Field | Type | Default |
 
     | session_id | str | required |'
@@ -949,7 +949,7 @@ rules:
   domain: all
   scope: docs/, src/
   guideline: Adhere strictly to definitions in docs/agents/glossary.md. Do not conflate Task (linear steps only) vs Workflow
-    (allows loop steps), Blueprint (unified document), Step, Run, Session, Sandbox, Checkpoint.
+    (allows loop steps), Blueprint (unified document), Step, Run, Session, Worktree, Checkpoint.
   evaluation_criteria: Check doc prose and code comments for misuse of terms (e.g. calling a workflow with loops a 'task').
   positive_example: '''Task blueprint containing only linear step definitions.'''
   negative_example: '''Task blueprint containing a loop block.''  # tasks are strictly linear'
@@ -1003,8 +1003,8 @@ rules:
   guideline: 'Commit messages must be semantic, imperative, and contain NO AI trailers (Co-authored-by: Cursor, Co-authored-by:
     ...). PRs must have single responsibility and contain concise Why, Approach, and Linkage sections.'
   evaluation_criteria: Inspect commit message trailers and PR descriptions. Flag AI co-author trailers.
-  positive_example: 'feat(sandbox): add prune subcommand for stale sandboxes'
-  negative_example: 'feat: prune sandboxes
+  positive_example: 'feat(worktree): add prune subcommand for stale worktrees'
+  negative_example: 'feat: prune worktrees
 
 
     Co-authored-by: Cursor <cursor@cursor.sh>'
@@ -1021,7 +1021,7 @@ rules:
     state declaration as advisory warning.
   positive_example: 'Governing directive: docs/agents/testing.md
 
-    Target scope: tests/core/sandbox/test_lifecycle.py'
+    Target scope: tests/core/worktree/test_lifecycle.py'
   negative_example: Running write_to_file without stating governing directive or target scope
   citation: AGENTS.md#agentic-process
 - id: CI-004
@@ -1091,14 +1091,14 @@ planner_rules:
   validation_check: Diff issue text against plan contract section. Flag any dropped clause or paraphrase.
   positive_example: '## Contract
 
-    - **FR-1**: Add `dovo sandbox prune` command to remove unreferenced sandboxes.
+    - **FR-1**: Add `dovo worktree prune` command to remove unreferenced worktrees.
 
-    - **FR-2**: Prune operation must delete worktree branches matching `worktree/sandbox-*`.
+    - **FR-2**: Prune operation must delete worktree branches matching `dovo/dovo_*`.
 
     '
   negative_example: '## Contract
 
-    We will implement sandbox pruning for stale directories.
+    We will implement worktree pruning for stale directories.
 
     '
   citation: docs/agents/planning.md#step-1-extract-the-contract-from-the-issue
@@ -1113,14 +1113,14 @@ planner_rules:
   validation_check: Verify all field names, types, and defaults in code samples match the issue's Pre-determined data.
   positive_example: '### Pre-determined data
 
-    - Model: `SandboxPruneResult`
+    - Model: `WorktreePruneResult`
 
     - Field: `pruned_items: list[str] = []`
 
     - Exit code on error: `1`
 
     '
-  negative_example: '# Plan renames `pruned_items` to `deleted_sandboxes` because it sounds "better"
+  negative_example: '# Plan renames `pruned_items` to `deleted_worktrees` because it sounds "better"
 
     '
   citation: docs/agents/planning.md#step-1-extract-the-contract-from-the-issue
@@ -1137,7 +1137,7 @@ planner_rules:
 
     - Interactive confirmation prompt before pruning
 
-    - Pruning sandboxes on remote git repositories
+    - Pruning worktrees on remote git repositories
 
     '
   negative_example: '# Omitting Out of scope section or planning an interactive confirmation prompt
@@ -1153,10 +1153,10 @@ planner_rules:
     states a compatibility constraint. Plan to replace superseded paths and update callers in the same change set.
   deliverable_contract: Direct replacements planned; zero shims or legacy fallback adapters in artifact inventory.
   validation_check: Check artifact inventory for compatibility wrappers or fallback flags.
-  positive_example: '# Plan directly replaces SandboxService.delete() with unified lifecycle pruner
+  positive_example: '# Plan directly replaces WorktreeService.delete() with unified lifecycle pruner
 
     '
-  negative_example: '# Plan introduces `LegacySandboxService` and adds deprecation warning shims
+  negative_example: '# Plan introduces `LegacyWorktreeService` and adds deprecation warning shims
 
     '
   citation: docs/agents/planning.md#step-1-extract-the-contract-from-the-issue
@@ -1176,9 +1176,9 @@ planner_rules:
 
     | Surface | Location | What exists |
 
-    | CLI app | `src/dovo/cli/sandbox/app.py:24` | Typer app registering sandbox subcommands |
+    | CLI app | `src/dovo/cli/worktree/app.py:24` | Typer app registering worktree subcommands |
 
-    | Lifecycle | `src/dovo/core/sandbox/services/lifecycle.py:80` | `delete_sandbox` method |
+    | Lifecycle | `src/dovo/core/worktree/services/lifecycle.py:80` | `delete_worktree` method |
 
 
     **Pattern to mirror:** `src/dovo/cli/config/commands/config_set.py:30`
@@ -1246,10 +1246,10 @@ planner_rules:
     and error/warning strings.'
   deliverable_contract: Fully typed models, signatures, and literal dictionaries in code blocks.
   validation_check: Verify contract code blocks leave no ambiguous types, missing defaults, or unspecified flags.
-  positive_example: "```python\nclass SandboxPruneStatus(StrEnum):\n    OK = \"ok\"\n    NOTHING_TO_PRUNE = \"nothing_to_prune\"\
-    \n    FAILED = \"failed\"\n\nclass SandboxPruneResult(BaseResult):\n    model_config = {\"extra\": \"forbid\", \"strict\"\
-    : True}\n    status: SandboxPruneStatus\n    pruned_items: list[str] = []\n```\n"
-  negative_example: "```python\n# Plan writes vague sketch:\nclass SandboxPruneResult:\n    # fields for status and pruned\
+  positive_example: "```python\nclass WorktreePruneStatus(StrEnum):\n    OK = \"ok\"\n    NOTHING_TO_PRUNE = \"nothing_to_prune\"\
+    \n    FAILED = \"failed\"\n\nclass WorktreePruneResult(BaseResult):\n    model_config = {\"extra\": \"forbid\", \"strict\"\
+    : True}\n    status: WorktreePruneStatus\n    pruned_items: list[str] = []\n```\n"
+  negative_example: "```python\n# Plan writes vague sketch:\nclass WorktreePruneResult:\n    # fields for status and pruned\
     \ items\n    pass\n```\n"
   citation: docs/agents/planning.md#code-sample-rules
 - id: PLAN-011
@@ -1263,8 +1263,8 @@ planner_rules:
   deliverable_contract: 'Signature + one-line intent docstring + `raise NotImplementedError` — no steps, no body.'
   validation_check: 'Flag any production stub with numbered steps, setup comments, or body code beyond the docstring,
     and any docstring that narrates implementation steps instead of stating intent.'
-  positive_example: "```python\ndef prune_sandboxes(db: SandboxesRepository, cwd: Path) -> SandboxPruneResult:\n    \"\"\"Delete unreferenced sandbox worktrees and branches under cwd.\"\"\"\n    raise NotImplementedError\n```\n"
-  negative_example: "```python\ndef prune_sandboxes(db: SandboxesRepository, cwd: Path) -> SandboxPruneResult:\n    \"\"\"Prune sandboxes.\n\n    1. Query active sandboxes from db\n    2. Diff against on-disk worktrees\n    3. Delete unreferenced ones\n    \"\"\"\n    raise NotImplementedError\n```\n"
+  positive_example: "```python\ndef prune_worktrees(db: WorktreesRepository, cwd: Path) -> WorktreePruneResult:\n    \"\"\"Delete unreferenced worktrees and branches under cwd.\"\"\"\n    raise NotImplementedError\n```\n"
+  negative_example: "```python\ndef prune_worktrees(db: WorktreesRepository, cwd: Path) -> WorktreePruneResult:\n    \"\"\"Prune worktrees.\n\n    1. Query active worktrees from db\n    2. Diff against on-disk worktrees\n    3. Delete unreferenced ones\n    \"\"\"\n    raise NotImplementedError\n```\n"
   citation: docs/agents/planning.md#code-sample-rules
 - id: PLAN-018
   title: Test Stubs with Mandatory Tier, Type, and Contract Docstrings
@@ -1282,19 +1282,19 @@ planner_rules:
 
     | Test | Tier | Outcome |
     |---|---|---|
-    | `SandboxCreateCliIntegrationTests::test_create_cli_capacity_exceeded_exits_one` | Tier 3 (integration) | exit 1; capacity exceeded error |
+    | `WorktreeCreateCliIntegrationTests::test_create_cli_capacity_exceeded_exits_one` | Tier 3 (integration) | exit 1; capacity exceeded error |
 
     ```python
-    class SandboxCreateCliIntegrationTests:
+    class WorktreeCreateCliIntegrationTests:
         def test_create_cli_capacity_exceeded_exits_one(
-            self, cli_runner: CliRunner, sandbox_workspace: Path
+            self, cli_runner: CliRunner, worktree_workspace: Path
         ) -> None:
-            """[tier-3/integration] dovo sandbox create: 3 prior sandboxes exist → exit 1, 'Maximum active sandboxes reached' in stdout."""
+            """[tier-3/integration] dovo worktree create: 3 prior worktrees exist → exit 1, 'Maximum active worktrees reached' in stdout."""
             raise NotImplementedError
     ```
   negative_example: |
     # Test stub missing tier/type tag and specific contract
-    def test_create_cli_capacity_exceeded_exits_one(self, cli_runner, sandbox_workspace):
+    def test_create_cli_capacity_exceeded_exits_one(self, cli_runner, worktree_workspace):
         """Verifies create fails when capacity exceeded."""
         raise NotImplementedError
   citation: docs/agents/planning.md#code-sample-rules
@@ -1307,11 +1307,11 @@ planner_rules:
     cognitive complexity <= 10.
   deliverable_contract: Multiple focused function signatures with single responsibilities rather than one large function.
   validation_check: Verify no single planned function contains more than 3 branching levels or complex nested loops.
-  positive_example: 'def prune_stale_records(db: SandboxesRepository) -> list[str]: ...
+  positive_example: 'def prune_stale_records(db: WorktreesRepository) -> list[str]: ...
 
-    def prune_orphaned_directories(sandboxes_dir: Path) -> list[str]: ...
+    def prune_orphaned_directories(worktrees_dir: Path) -> list[str]: ...
 
-    def prune_sandboxes(...) -> SandboxPruneResult: ...
+    def prune_worktrees(...) -> WorktreePruneResult: ...
 
     '
   negative_example: '# Single 80-line function planned to do querying, directory diffing, git branch deleting, and error handling
@@ -1328,8 +1328,8 @@ planner_rules:
     catch it.'
   deliverable_contract: 'Decision bullet: - **<point>:** <choice>, because <reason>. Rejected: <alt>. 🚨.'
   validation_check: Verify all unspecified assumptions are flagged with 🚨 in the plan and restated in the agent handoff message.
-  positive_example: '- **Prune branch deletion policy:** Delete local branches matching `worktree/sandbox-*` automatically,
-    because active sandboxes track branches 1:1. Rejected: prompt user for each branch. 🚨
+  positive_example: '- **Prune branch deletion policy:** Delete local branches matching `dovo/dovo_*` automatically,
+    because active worktrees track branches 1:1. Rejected: prompt user for each branch. 🚨
 
     '
   negative_example: '# Silent design choice made without recording alternative or flagging with 🚨
@@ -1350,7 +1350,7 @@ planner_rules:
 
     Open decisions requiring confirmation:
 
-    - 🚨 Prune branch deletion policy: auto-delete worktree/sandbox-* branches."
+    - 🚨 Prune branch deletion policy: auto-delete dovo/dovo_* branches."
 
     '
   negative_example: '"Plan written. Now I will start writing the code..."
@@ -1372,7 +1372,7 @@ planner_rules:
     against each BLOCKER clause directly (e.g. reread Phase 2 imports for ARCH-001, reread ledger paths for TEST-002).
     Flag anything the agent could only justify by restating the rule rather than pointing at the plan''s own text.'
   positive_example: 'Before saving, reread the Phase 2 service stub and confirmed it imports only from common/ and
-    core/sandbox/ (ARCH-001), and reread the ledger path against the TEST-002 mapping — no BLOCKER violated, plan
+    core/worktree/ (ARCH-001), and reread the ledger path against the TEST-002 mapping — no BLOCKER violated, plan
     saved with no compliance table.'
   negative_example: '# Plan asserts "Complies with ARCH-001, TEST-002" without rereading the actual planned imports or
     paths'

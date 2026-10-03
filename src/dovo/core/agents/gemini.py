@@ -65,7 +65,7 @@ def default_gemini_run(request: CliMutationRunRequest) -> CliMutationOutcome:
     try:
         completed = run_isolated_process(
             cmd,
-            cwd=request.sandbox_path,
+            cwd=request.worktree_path,
             env=env,
             input_data=request.prompt.encode("utf-8"),
             timeout_seconds=request.timeout_seconds,

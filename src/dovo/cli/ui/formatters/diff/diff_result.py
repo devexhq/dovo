@@ -24,7 +24,7 @@ def _format_session_not_found_panel(data: DiffResult | DiffResultView, *, raw: b
         if data.session_id
         else "No loop run sessions found."
     )
-    fixes = data.fixes or ["Run `dovo sandbox list` or check .dovo/sessions/ for valid session IDs"]
+    fixes = data.fixes or ["Run `dovo worktree list` or check .dovo/sessions/ for valid session IDs"]
     return build_error_panel("Session Not Found", data.errors, default, fixes, raw=raw)
 
 

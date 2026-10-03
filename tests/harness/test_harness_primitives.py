@@ -22,7 +22,7 @@ class IsolatedWorkspaceFixtureTests:
         assert dot_dovo.is_dir()
         for subdir in REQUIRED_SUBDIRS:
             assert (dot_dovo / subdir).is_dir()
-        assert (dot_dovo / "sandboxes").is_dir()
+        assert (dot_dovo / "worktrees").is_dir()
         assert (dot_dovo / "catalog").is_dir()
 
 

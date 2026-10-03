@@ -12,7 +12,7 @@ This reference documents the complete YAML schema for generic blueprint definiti
 | `description` | `string` | No | `""` | Detailed description of the blueprint's goal and behavior. |
 | `summary` | `string` | No | `""` | Short single-line description shown in `dovo blueprint list` output. |
 | `version` | `integer \| string` | No | `1` | Blueprint schema format version. |
-| `use_sandbox` | `boolean` | No | `true` | When `true`, execution normally runs in an isolated Git worktree branch (`worktree/sandbox-*`). |
+| `use_worktree` | `boolean` | No | `true` | When `true`, execution normally runs in an isolated Git worktree branch (`dovo/dovo_*`). |
 | `timeout_seconds`| `integer` | No | `null` | Accepted metadata; the current runtime does not apply it as an overall timeout. |
 | `env` | `map[string, string]` | No | `{}` | Accepted metadata; the current runtime does not inject it into child step environments. |
 | `inputs` | `map[string, ParameterInput]` | No | `{}` | Parameter inputs accepted by the blueprint. See [Inputs Schema](inputs-schema.md). |
@@ -44,7 +44,7 @@ name: full-verification-flow
 description: End-to-end code generation, testing, and validation workflow
 summary: Verify codebase and run full regression suite
 version: 1
-use_sandbox: true
+use_worktree: true
 timeout_seconds: 600
 
 env:

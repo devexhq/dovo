@@ -47,14 +47,14 @@ rm -f .agentic && mkdir -p .agentic  # fails on a directory, mkdir never runs, n
 <!-- ✅ POSITIVE EXAMPLE -->
 ```markdown
 ## Contract
-- **FR-1**: Add `dovo sandbox prune` command to remove unreferenced sandboxes.
-- **FR-2**: Prune operation must delete worktree branches matching `worktree/sandbox-*`.
+- **FR-1**: Add `dovo worktree prune` command to remove unreferenced worktrees.
+- **FR-2**: Prune operation must delete worktree branches matching `dovo/dovo_*`.
 ```
 
 <!-- ❌ NEGATIVE EXAMPLE -->
 ```markdown
 ## Contract
-We will implement sandbox pruning for stale directories.
+We will implement worktree pruning for stale directories.
 ```
 
 ## [PLAN-004] Normative Pre-Determined Data Preservation
@@ -67,14 +67,14 @@ We will implement sandbox pruning for stale directories.
 <!-- ✅ POSITIVE EXAMPLE -->
 ```markdown
 ### Pre-determined data
-- Model: `SandboxPruneResult`
+- Model: `WorktreePruneResult`
 - Field: `pruned_items: list[str] = []`
 - Exit code on error: `1`
 ```
 
 <!-- ❌ NEGATIVE EXAMPLE -->
 ```markdown
-# Plan renames `pruned_items` to `deleted_sandboxes` because it sounds "better"
+# Plan renames `pruned_items` to `deleted_worktrees` because it sounds "better"
 ```
 
 ## [PLAN-005] Out-of-Scope Guardrails
@@ -88,7 +88,7 @@ We will implement sandbox pruning for stale directories.
 ```markdown
 ### Out of scope (verbatim from the issue)
 - Interactive confirmation prompt before pruning
-- Pruning sandboxes on remote git repositories
+- Pruning worktrees on remote git repositories
 ```
 
 <!-- ❌ NEGATIVE EXAMPLE -->
@@ -105,12 +105,12 @@ We will implement sandbox pruning for stale directories.
 
 <!-- ✅ POSITIVE EXAMPLE -->
 ```markdown
-# Plan directly replaces SandboxService.delete() with unified lifecycle pruner
+# Plan directly replaces WorktreeService.delete() with unified lifecycle pruner
 ```
 
 <!-- ❌ NEGATIVE EXAMPLE -->
 ```markdown
-# Plan introduces `LegacySandboxService` and adds deprecation warning shims
+# Plan introduces `LegacyWorktreeService` and adds deprecation warning shims
 ```
 
 ## [PLAN-007] Tree Grounding and Neighbor Mirroring
@@ -124,8 +124,8 @@ We will implement sandbox pruning for stale directories.
 ```markdown
 ## Ground truth
 | Surface | Location | What exists |
-| CLI app | `src/dovo/cli/sandbox/app.py:24` | Typer app registering sandbox subcommands |
-| Lifecycle | `src/dovo/core/sandbox/services/lifecycle.py:80` | `delete_sandbox` method |
+| CLI app | `src/dovo/cli/worktree/app.py:24` | Typer app registering worktree subcommands |
+| Lifecycle | `src/dovo/core/worktree/services/lifecycle.py:80` | `delete_worktree` method |
 
 **Pattern to mirror:** `src/dovo/cli/config/commands/config_set.py:30`
 ```python
@@ -184,21 +184,21 @@ def config_set_command(context: CliContext, key: str, value: str) -> ConfigSetRe
 
 <!-- ✅ POSITIVE EXAMPLE -->
 ```python
-class SandboxPruneStatus(StrEnum):
+class WorktreePruneStatus(StrEnum):
     OK = "ok"
     NOTHING_TO_PRUNE = "nothing_to_prune"
     FAILED = "failed"
 
-class SandboxPruneResult(BaseResult):
+class WorktreePruneResult(BaseResult):
     model_config = {"extra": "forbid", "strict": True}
-    status: SandboxPruneStatus
+    status: WorktreePruneStatus
     pruned_items: list[str] = []
 ```
 
 <!-- ❌ NEGATIVE EXAMPLE -->
 ```python
 # Plan writes vague sketch:
-class SandboxPruneResult:
+class WorktreePruneResult:
     # fields for status and pruned items
     pass
 ```
@@ -212,17 +212,17 @@ class SandboxPruneResult:
 
 <!-- ✅ POSITIVE EXAMPLE -->
 ```python
-def prune_sandboxes(db: SandboxesRepository, cwd: Path) -> SandboxPruneResult:
-    """Delete unreferenced sandbox worktrees and branches under cwd."""
+def prune_worktrees(db: WorktreesRepository, cwd: Path) -> WorktreePruneResult:
+    """Delete unreferenced worktrees and branches under cwd."""
     raise NotImplementedError
 ```
 
 <!-- ❌ NEGATIVE EXAMPLE -->
 ```python
-def prune_sandboxes(db: SandboxesRepository, cwd: Path) -> SandboxPruneResult:
-    """Prune sandboxes.
+def prune_worktrees(db: WorktreesRepository, cwd: Path) -> WorktreePruneResult:
+    """Prune worktrees.
 
-    1. Query active sandboxes from db
+    1. Query active worktrees from db
     2. Diff against on-disk worktrees
     3. Delete unreferenced ones
     """
@@ -242,14 +242,14 @@ def prune_sandboxes(db: SandboxesRepository, cwd: Path) -> SandboxPruneResult:
 
 | Test | Tier | Outcome |
 |---|---|---|
-| `SandboxCreateCliIntegrationTests::test_create_cli_capacity_exceeded_exits_one` | Tier 3 (integration) | exit 1; capacity exceeded error |
+| `WorktreeCreateCliIntegrationTests::test_create_cli_capacity_exceeded_exits_one` | Tier 3 (integration) | exit 1; capacity exceeded error |
 
 ```python
-class SandboxCreateCliIntegrationTests:
+class WorktreeCreateCliIntegrationTests:
     def test_create_cli_capacity_exceeded_exits_one(
-        self, cli_runner: CliRunner, sandbox_workspace: Path
+        self, cli_runner: CliRunner, worktree_workspace: Path
     ) -> None:
-        """[tier-3/integration] dovo sandbox create: 3 prior sandboxes exist → exit 1, 'Maximum active sandboxes reached' in stdout."""
+        """[tier-3/integration] dovo worktree create: 3 prior worktrees exist → exit 1, 'Maximum active worktrees reached' in stdout."""
         raise NotImplementedError
 ```
 ```
@@ -257,7 +257,7 @@ class SandboxCreateCliIntegrationTests:
 <!-- ❌ NEGATIVE EXAMPLE -->
 ```markdown
 # Test stub missing tier/type tag and specific contract
-def test_create_cli_capacity_exceeded_exits_one(self, cli_runner, sandbox_workspace):
+def test_create_cli_capacity_exceeded_exits_one(self, cli_runner, worktree_workspace):
     """Verifies create fails when capacity exceeded."""
     raise NotImplementedError
 ```
@@ -271,9 +271,9 @@ def test_create_cli_capacity_exceeded_exits_one(self, cli_runner, sandbox_worksp
 
 <!-- ✅ POSITIVE EXAMPLE -->
 ```markdown
-def prune_stale_records(db: SandboxesRepository) -> list[str]: ...
-def prune_orphaned_directories(sandboxes_dir: Path) -> list[str]: ...
-def prune_sandboxes(...) -> SandboxPruneResult: ...
+def prune_stale_records(db: WorktreesRepository) -> list[str]: ...
+def prune_orphaned_directories(worktrees_dir: Path) -> list[str]: ...
+def prune_worktrees(...) -> WorktreePruneResult: ...
 ```
 
 <!-- ❌ NEGATIVE EXAMPLE -->
@@ -290,7 +290,7 @@ def prune_sandboxes(...) -> SandboxPruneResult: ...
 
 <!-- ✅ POSITIVE EXAMPLE -->
 ```markdown
-- **Prune branch deletion policy:** Delete local branches matching `worktree/sandbox-*` automatically, because active sandboxes track branches 1:1. Rejected: prompt user for each branch. 🚨
+- **Prune branch deletion policy:** Delete local branches matching `dovo/dovo_*` automatically, because active worktrees track branches 1:1. Rejected: prompt user for each branch. 🚨
 ```
 
 <!-- ❌ NEGATIVE EXAMPLE -->
@@ -309,7 +309,7 @@ def prune_sandboxes(...) -> SandboxPruneResult: ...
 ```markdown
 "Plan saved to .agentic/plan.md. Planning only; nothing was implemented or committed.
 Open decisions requiring confirmation:
-- 🚨 Prune branch deletion policy: auto-delete worktree/sandbox-* branches."
+- 🚨 Prune branch deletion policy: auto-delete dovo/dovo_* branches."
 ```
 
 <!-- ❌ NEGATIVE EXAMPLE -->
@@ -326,7 +326,7 @@ Open decisions requiring confirmation:
 
 <!-- ✅ POSITIVE EXAMPLE -->
 ```markdown
-Before saving, reread the Phase 2 service stub and confirmed it imports only from common/ and core/sandbox/ (ARCH-001), and reread the ledger path against the TEST-002 mapping — no BLOCKER violated, plan saved with no compliance table.
+Before saving, reread the Phase 2 service stub and confirmed it imports only from common/ and core/worktree/ (ARCH-001), and reread the ledger path against the TEST-002 mapping — no BLOCKER violated, plan saved with no compliance table.
 ```
 
 <!-- ❌ NEGATIVE EXAMPLE -->

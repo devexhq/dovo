@@ -1,4 +1,4 @@
-"""Direct-mode agent attempt: provider invocation, patch validation, and sandbox patch application."""
+"""Direct-mode agent attempt: provider invocation, patch validation, and worktree patch application."""
 
 from __future__ import annotations
 
@@ -23,24 +23,24 @@ def run_direct_attempt(
     *,
     instruction: str,
     settings: ResolvedAgentSettings,
-    sandbox_path: Path,
+    worktree_path: Path,
     timeout_seconds: int,
 ) -> AgentAttempt:
     """Run one direct-mode agent attempt through the resolved provider and return the classified attempt."""
-    request = _build_request(instruction, settings, sandbox_path, timeout_seconds)
+    request = _build_request(instruction, settings, worktree_path, timeout_seconds)
 
     return _run_provider(request, settings.provider)
 
 
 def _build_request(
-    instruction: str, settings: ResolvedAgentSettings, sandbox_path: Path, timeout_seconds: int
+    instruction: str, settings: ResolvedAgentSettings, worktree_path: Path, timeout_seconds: int
 ) -> AgentRequest:
     """Build the direct-mode AgentRequest from the instruction and the resolved settings."""
     return AgentRequest(
         mode="direct",
         instruction=instruction,
         payload=None,
-        sandbox_path=sandbox_path,
+        worktree_path=worktree_path,
         timeout_seconds=timeout_seconds,
         model=settings.model,
         endpoint=settings.endpoint,
@@ -81,7 +81,7 @@ def _settle(kind: ProviderKind, request: AgentRequest, response: AgentResponse) 
 
 
 def _settle_diff_returning(request: AgentRequest, response: AgentResponse) -> AgentAttempt:
-    """Require a non-empty diff, validate it, apply it in the sandbox, and report PROPOSED_PATCH only after apply succeeds."""
+    """Require a non-empty diff, validate it, apply it in the worktree, and report PROPOSED_PATCH only after apply succeeds."""
     summary = _response_text(response)
     diff = response.unified_diff or ""
 
@@ -90,7 +90,7 @@ def _settle_diff_returning(request: AgentRequest, response: AgentResponse) -> Ag
     else:
         gate = validate_request_patch(request, diff)
         diagnostics = (
-            _apply_in_sandbox(request.sandbox_path, diff)
+            _apply_in_worktree(request.worktree_path, diff)
             if gate.status == PatchApplyStatus.CHECKED_OK
             else list(gate.errors)
         )
@@ -104,14 +104,14 @@ def _settle_diff_returning(request: AgentRequest, response: AgentResponse) -> Ag
     return AgentAttempt(status=AgentResponseStatus.PROVIDER_ERROR, summary=summary, diagnostics=diagnostics)
 
 
-def _apply_in_sandbox(sandbox_path: Path, diff: str) -> list[str]:
-    """Run apply_check then apply in the sandbox and return failure diagnostics (empty when the patch applied)."""
+def _apply_in_worktree(worktree_path: Path, diff: str) -> list[str]:
+    """Run apply_check then apply in the worktree and return failure diagnostics (empty when the patch applied)."""
     try:
-        returncode, _, stderr = GitRunner.apply_check(sandbox_path, diff)
+        returncode, _, stderr = GitRunner.apply_check(worktree_path, diff)
         if returncode != 0:
             return [f"Patch does not apply cleanly: {stderr.strip()}"]
 
-        returncode, _, stderr = GitRunner.apply(sandbox_path, diff)
+        returncode, _, stderr = GitRunner.apply(worktree_path, diff)
         if returncode != 0:
             return [f"Patch application failed: {stderr.strip()}"]
     except GitError as exc:

@@ -10,10 +10,10 @@ from rich.console import Console
 from dovo.cli.ui.events import (
     LoopLifecycleEvent,
     PromptEvent,
-    SandboxLifecycleEvent,
     StepDoneEvent,
     StepOutputEvent,
     StepStartEvent,
+    WorktreeLifecycleEvent,
 )
 from dovo.cli.ui.live import LiveDisplayManager
 from dovo.cli.ui.tail import CollapsingTailDisplay
@@ -203,8 +203,8 @@ class UiDispatcher:
             self._tail_display.handle_step_output(data)
         elif isinstance(data, StepDoneEvent):
             self._tail_display.handle_step_done(data)
-        elif isinstance(data, SandboxLifecycleEvent):
-            self._tail_display.handle_sandbox(data, formatter.to_rich(data))
+        elif isinstance(data, WorktreeLifecycleEvent):
+            self._tail_display.handle_worktree(data, formatter.to_rich(data))
         else:
             self._tail_display.print_above(formatter.to_rich(data))
 
@@ -218,8 +218,8 @@ class UiDispatcher:
             self._live_display.handle_step_output(data)
         elif isinstance(data, StepDoneEvent):
             self._live_display.handle_step_done(data)
-        elif isinstance(data, SandboxLifecycleEvent):
-            self._live_display.handle_sandbox(data, formatter.to_rich(data))
+        elif isinstance(data, WorktreeLifecycleEvent):
+            self._live_display.handle_worktree(data, formatter.to_rich(data))
         elif isinstance(data, LoopLifecycleEvent):
             self._live_display.handle_loop_lifecycle(data)
         else:

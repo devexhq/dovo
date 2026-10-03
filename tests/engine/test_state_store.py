@@ -269,12 +269,12 @@ class RunStateStoreSaveTests:
         assert row.execution_state_revision == 1
 
     def test_save_terminal_status_writes_row_equal_lifecycle_to_run_json(self, tmp_path: Path) -> None:
-        """[tier-1/integration] RunStateStore.save: run_status=FAILED, error_message='boom', sandbox_id='sbx-1', sandbox_kept=True leaves run.json.lifecycle equal to the row's status, error_message, started_at, completed_at, sandbox_id, and sandbox_kept, and run.json.revision == row.execution_state_revision."""
+        """[tier-1/integration] RunStateStore.save: run_status=FAILED, error_message='boom', worktree_id='dovo_1', worktree_kept=True leaves run.json.lifecycle equal to the row's status, error_message, started_at, completed_at, worktree_id, and worktree_kept, and run.json.revision == row.execution_state_revision."""
         fixture = _Fixture(tmp_path)
         state = fixture.initialized_at(0)
 
         fixture.store.save(
-            state, run_status=RunStatus.FAILED, error_message="boom", sandbox_id="sbx-1", sandbox_kept=True
+            state, run_status=RunStatus.FAILED, error_message="boom", worktree_id="dovo_1", worktree_kept=True
         )
 
         row = fixture.row()
@@ -284,8 +284,8 @@ class RunStateStoreSaveTests:
         assert lifecycle.started_at == row.started_at
         assert lifecycle.completed_at == row.completed_at
         assert row.completed_at is not None
-        assert lifecycle.sandbox_id == "sbx-1"
-        assert lifecycle.sandbox_kept is True
+        assert lifecycle.worktree_id == "dovo_1"
+        assert lifecycle.worktree_kept is True
         assert fixture.projection().revision == row.execution_state_revision
 
 

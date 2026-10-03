@@ -30,7 +30,7 @@ class ResolveWorkspacePathsTests:
         assert paths.artifacts_dir == project_storage / "artifacts"
         assert paths.logs_dir == project_storage / "logs"
         assert paths.tmp_dir == project_storage / "tmp"
-        assert paths.sandboxes_dir == repository / ".dovo" / "sandboxes"
+        assert paths.worktrees_dir == repository / ".dovo" / "worktrees"
 
     def test_resolve_workspace_paths_no_project_identity_uses_dovo_dir_as_runtime_root(self, tmp_path: Path) -> None:
         """[tier-1/unit] resolve_workspace_paths: no project.json present -> runtime_root equals repository_paths.dovo_dir and project_id is None."""
@@ -47,7 +47,7 @@ class ResolveWorkspacePathsTests:
         assert paths.artifacts_dir == dovo_dir / "artifacts"
         assert paths.logs_dir == dovo_dir / "logs"
         assert paths.tmp_dir == dovo_dir / "tmp"
-        assert paths.sandboxes_dir == dovo_dir / "sandboxes"
+        assert paths.worktrees_dir == dovo_dir / "worktrees"
 
     def test_resolve_workspace_paths_with_undecodable_identity_uses_dovo_dir_as_runtime_root(
         self, tmp_path: Path

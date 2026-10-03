@@ -57,7 +57,7 @@ def isolated_workspace(tmp_path: Path) -> Path:
     for subdir in REQUIRED_SUBDIRS:
         (dot_dovo / subdir).mkdir(parents=True, exist_ok=True)
 
-    (dot_dovo / "sandboxes").mkdir(parents=True, exist_ok=True)
+    (dot_dovo / "worktrees").mkdir(parents=True, exist_ok=True)
     (dot_dovo / "catalog").mkdir(parents=True, exist_ok=True)
 
     save_project_identity(dot_dovo / "project.json", generate_project_identity())

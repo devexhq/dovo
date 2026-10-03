@@ -1,6 +1,6 @@
 # `dovo artifacts`
 
-The `dovo artifacts` command group inspects and manages session artifacts: named file bundles published from a running blueprint's sandbox into persistent storage, so they can be listed, downloaded, and eventually pruned once expired.
+The `dovo artifacts` command group inspects and manages session artifacts: named file bundles published from a running blueprint's worktree into persistent storage, so they can be listed, downloaded, and eventually pruned once expired.
 
 Artifacts live under the global storage root: `~/.dovo/storage/projects/<project_id>/artifacts/<session_id>/<name>/` (the root honors `DOVO_HOME`). A workspace with no project identity yet (no `.dovo/project.json`) keeps them in the repository at `.dovo/artifacts/<session_id>/<name>/`. Each published bundle carries a `manifest.json` listing every file's relative path, SHA256 checksum, and size — see [`ArtifactManifest`](../../src/dovo/core/artifacts/models.py).
 
@@ -9,7 +9,7 @@ There is no `dovo artifacts upload` command. Publishing happens two ways, both d
 - A step referencing the seeded catalog step `dovo/upload-artifact` (`type: internal`, `command: artifacts.upload`), parameterized via `env:` (`ARTIFACT_NAME`, `ARTIFACT_PATH`, optional `ARTIFACT_RETENTION_DAYS`).
 - A step declaring a declarative `artifacts:` block (`name`, `path`, optional `retention_days`), auto-published on success — this applies identically to a top-level step and to a loop `do:` sub-step, and a publish failure is recorded as a non-fatal warning rather than failing the step.
 
-Symmetrically, `dovo/download-artifact` (`command: artifacts.download`, `env:` keys `ARTIFACT_NAME`, `ARTIFACT_DEST`, optional `ARTIFACT_SESSION_ID`) downloads a published bundle back into the running sandbox from inside a blueprint.
+Symmetrically, `dovo/download-artifact` (`command: artifacts.download`, `env:` keys `ARTIFACT_NAME`, `ARTIFACT_DEST`, optional `ARTIFACT_SESSION_ID`) downloads a published bundle back into the running worktree from inside a blueprint.
 
 ## Usage
 

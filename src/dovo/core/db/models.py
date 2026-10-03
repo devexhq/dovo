@@ -9,8 +9,8 @@ from sqlalchemy import String, TypeDecorator, UniqueConstraint
 from sqlmodel import Field, SQLModel
 
 
-class SandboxStatus(StrEnum):
-    """Lifecycle status for a persisted sandbox metadata row."""
+class WorktreeStatus(StrEnum):
+    """Lifecycle status for a persisted worktree metadata row."""
 
     ACTIVE = "active"
     MERGED = "merged"
@@ -70,23 +70,23 @@ class PathType(TypeDecorator[Path]):
         return Path(value)
 
 
-class SandboxStatusType(TypeDecorator[SandboxStatus]):
-    """SQLAlchemy type for coercing SandboxStatus enums to strings and back."""
+class WorktreeStatusType(TypeDecorator[WorktreeStatus]):
+    """SQLAlchemy type for coercing WorktreeStatus enums to strings and back."""
 
     impl = String
     cache_ok = True
 
-    def process_bind_param(self, value: SandboxStatus | str | None, dialect: Any) -> str | None:
-        """Coerce incoming SandboxStatus or str to string for SQLite storage."""
+    def process_bind_param(self, value: WorktreeStatus | str | None, dialect: Any) -> str | None:
+        """Coerce incoming WorktreeStatus or str to string for SQLite storage."""
         if value is None:
             return None
-        return value.value if isinstance(value, SandboxStatus) else str(value)
+        return value.value if isinstance(value, WorktreeStatus) else str(value)
 
-    def process_result_value(self, value: str | None, dialect: Any) -> SandboxStatus | None:
-        """Coerce retrieved database string value back into a SandboxStatus instance."""
+    def process_result_value(self, value: str | None, dialect: Any) -> WorktreeStatus | None:
+        """Coerce retrieved database string value back into a WorktreeStatus instance."""
         if value is None:
             return None
-        return SandboxStatus(value)
+        return WorktreeStatus(value)
 
 
 class RunStatusType(TypeDecorator[RunStatus]):
@@ -108,10 +108,10 @@ class RunStatusType(TypeDecorator[RunStatus]):
         return RunStatus(value)
 
 
-class SandboxRecord(SQLModel, table=True):
-    """Row shape for the centralized `sandboxes` table."""
+class WorktreeRecord(SQLModel, table=True):
+    """Row shape for the centralized `worktrees` table."""
 
-    __tablename__: ClassVar[str] = "sandboxes"  # pyright: ignore[reportIncompatibleVariableOverride]
+    __tablename__: ClassVar[str] = "worktrees"  # pyright: ignore[reportIncompatibleVariableOverride]
     model_config = {"extra": "forbid"}
 
     id: str = Field(primary_key=True)
@@ -119,15 +119,15 @@ class SandboxRecord(SQLModel, table=True):
     name: str | None = Field(default=None)
     branch_name: str
     base_commit: str
-    sandbox_path: Path = Field(sa_type=PathType, unique=True)
-    status: SandboxStatus = Field(default=SandboxStatus.ACTIVE, sa_type=SandboxStatusType, index=True)
+    worktree_path: Path = Field(sa_type=PathType, unique=True)
+    status: WorktreeStatus = Field(default=WorktreeStatus.ACTIVE, sa_type=WorktreeStatusType, index=True)
     created_at: str = Field(default_factory=_now_utc_str)
     updated_at: str = Field(default_factory=_now_utc_str)
 
     def __init__(self, **data: Any) -> None:
-        """Initialize SandboxRecord, coercing string paths to Path instances."""
-        if "sandbox_path" in data and isinstance(data["sandbox_path"], str):
-            data["sandbox_path"] = Path(data["sandbox_path"])
+        """Initialize WorktreeRecord, coercing string paths to Path instances."""
+        if "worktree_path" in data and isinstance(data["worktree_path"], str):
+            data["worktree_path"] = Path(data["worktree_path"])
         super().__init__(**data)
 
 
@@ -153,13 +153,13 @@ class RunRecord(SQLModel, table=True):
     execution_state_revision: int | None = Field(default=0)
     blueprint_tier: str | None = Field(default=None)
     commit_sha: str | None = Field(default=None)
-    use_sandbox: bool = Field(default=True)
+    use_worktree: bool = Field(default=True)
     keep: bool = Field(default=False)
     agent: str | None = Field(default=None)
     inputs_json: str | None = Field(default=None)
     auto_apply: bool = Field(default=False)
-    sandbox_id: str | None = Field(default=None)
-    sandbox_kept: bool = Field(default=False)
+    worktree_id: str | None = Field(default=None)
+    worktree_kept: bool = Field(default=False)
 
     def __init__(self, **data: Any) -> None:
         """Initialize RunRecord, coercing string enums to Enum instances."""

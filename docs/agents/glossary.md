@@ -18,13 +18,13 @@ Precise definitions for core concepts and terms in the Dovo CLI codebase.
   - *Facade:* `Catalog` in [`core/catalog/catalog.py`](../../src/dovo/core/catalog/catalog.py).
 - **Run**: A single execution of a blueprint from start to terminal outcome.
   - *Models:* `RunContext` in [`engine/models.py`](../../src/dovo/engine/models.py), `RunOutcome` in [`engine/models.py`](../../src/dovo/engine/models.py).
-- **Run Context**: The infrastructure bundle for one run's execution (session id, paths, target directory, session scratch/log/artifact locations, sandbox); durable progress lives in the execution state, not the context.
+- **Run Context**: The infrastructure bundle for one run's execution (session id, paths, target directory, session scratch/log/artifact locations, worktree); durable progress lives in the execution state, not the context.
   - *Model:* `RunContext` in [`engine/models.py`](../../src/dovo/engine/models.py).
 - **Run Outcome**: The terminal execution result containing status, step results, warnings, and errors.
   - *Model:* `RunOutcome` in [`engine/models.py`](../../src/dovo/engine/models.py).
 - **Session**: Unique execution identifier (`{kind}_{8-hex}`) linking a run to its DB record in the centralized database and session artifacts in `.dovo/sessions/<id>/`.
-- **Sandbox**: An isolated git worktree checkout (`.dovo/sandboxes/<session_id>/`, branch `worktree/sandbox-<id>`).
-  - *Facade/Services:* `Sandbox` in [`core/sandbox/facade.py`](../../src/dovo/core/sandbox/facade.py) and [`core/sandbox/services/lifecycle.py`](../../src/dovo/core/sandbox/services/lifecycle.py).
+- **Worktree**: An isolated git worktree checkout (`.dovo/worktrees/<session_id>/`, branch `dovo/<id>`).
+  - *Facade/Services:* `Worktree` in [`core/worktree/facade.py`](../../src/dovo/core/worktree/facade.py) and [`core/worktree/services/lifecycle.py`](../../src/dovo/core/worktree/services/lifecycle.py).
 - **Checkpoint**: A paused leaf step (top-level or a loop body step) plus its last failed attempt in the run's `ExecutionStateTree`, allowing a paused run (`prompt_user`) to resume by re-entering the failure prompt without re-running the step.
   - *Model:* `ExecutionStateTree` in [`engine/state_models.py`](../../src/dovo/engine/state_models.py).
 - **Input (`ParameterInput`)**: A declared, typed parameter in a blueprint referenced via `${{ inputs.<name> }}` placeholders.

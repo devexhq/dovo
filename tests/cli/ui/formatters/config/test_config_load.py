@@ -70,9 +70,9 @@ CONFIG_LOAD_PAYLOAD_CASES = [
                     "initialized_at": None,
                 },
                 "ignore_global_root_error": False,
-                "sandbox": {
+                "worktree": {
                     "base_ref": "HEAD",
-                    "max_active_sandboxes": 3,
+                    "max_active_worktrees": 3,
                     "default_timeout_seconds": 900,
                 },
                 "agent": {
@@ -97,7 +97,7 @@ CONFIG_LOAD_PAYLOAD_CASES = [
                 },
                 "prune": {
                     "remove_stale_worktrees": True,
-                    "remove_orphaned_sandboxes": True,
+                    "remove_orphaned_worktrees": True,
                     "remove_expired_artifacts": False,
                     "artifact_ttl_days": 30,
                 },

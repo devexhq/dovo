@@ -28,7 +28,7 @@ A pure refactor that does not change public layout or ownership needs no `archit
 - **Unavoidable field tables need a test.** When a table is the specification for something external (a JSON Schema, a stable CLI output format), a test must fail when table and source disagree. A doc claim with no test behind it will eventually be wrong.
 - **Prefer deletion over accretion.** A stale bullet replaced is better than a parallel truth appended. Flag a doc that now states two contradictory things.
 - **Right doc for the content.** Feature behavior narrative in `architecture.md`, or user-facing CLI behavior anywhere but `docs/cli/`, is misplaced.
-- **Terminology.** Task, workflow, blueprint, step, run, session, sandbox, and checkpoint each mean something specific; check new prose against `docs/agents/glossary.md`.
+- **Terminology.** Task, workflow, blueprint, step, run, session, worktree, and checkpoint each mean something specific; check new prose against `docs/agents/glossary.md`.
 
 ## Process directives
 

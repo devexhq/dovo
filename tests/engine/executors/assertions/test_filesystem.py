@@ -34,7 +34,7 @@ class EvaluateFileExistsTests:
 
     def test_path_escaping_the_root_fails_closed(self, tmp_path: Path) -> None:
         """[tier-1/unit] evaluate_file_exists: a traversal outside the root reports an escape failure even if the target exists."""
-        root = tmp_path / "sandbox"
+        root = tmp_path / "worktree"
         root.mkdir()
         (tmp_path / "outside.txt").write_text("x", encoding="utf-8")
 
@@ -58,7 +58,7 @@ class EvaluateFileNotExistsTests:
 
     def test_path_escaping_the_root_fails_closed(self, tmp_path: Path) -> None:
         """[tier-1/unit] evaluate_file_not_exists: a traversal outside the root reports an escape failure."""
-        root = tmp_path / "sandbox"
+        root = tmp_path / "worktree"
         root.mkdir()
 
         assert evaluate_file_not_exists("../x", root) == ["file_not_exists: path '../x' escapes the root path"]
@@ -90,7 +90,7 @@ class EvaluateFileNotEmptyTests:
 
     def test_path_escaping_the_root_fails_closed(self, tmp_path: Path) -> None:
         """[tier-1/unit] evaluate_file_not_empty: a traversal outside the root reports an escape failure."""
-        root = tmp_path / "sandbox"
+        root = tmp_path / "worktree"
         root.mkdir()
 
         assert evaluate_file_not_empty("../x", root) == ["file_not_empty: path '../x' escapes the root path"]

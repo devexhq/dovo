@@ -30,8 +30,8 @@ class StatusView(BaseModel):
     git_is_dirty: bool
     uncommitted_files: int
     agent_model: str | None
-    active_sandboxes: int | None
-    max_active_sandboxes: int | None
+    active_worktrees: int | None
+    max_active_worktrees: int | None
     valid_catalog_items: int | None
     total_catalog_items: int | None
     total_runs: int

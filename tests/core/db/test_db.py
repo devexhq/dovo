@@ -11,7 +11,7 @@ from dovo.core.db.migrations import init_database
 from dovo.core.db.repositories.artifacts import ArtifactsRepository
 from dovo.core.db.repositories.costs import CostsRepository
 from dovo.core.db.repositories.runs import RunsRepository
-from dovo.core.db.repositories.sandboxes import SandboxesRepository
+from dovo.core.db.repositories.worktrees import WorktreesRepository
 
 
 class DovoDbTests:
@@ -40,7 +40,7 @@ class DovoDbTests:
     @pytest.mark.parametrize(
         ("attribute", "repo_type"),
         [
-            pytest.param("sandboxes", SandboxesRepository, id="sandboxes"),
+            pytest.param("worktrees", WorktreesRepository, id="worktrees"),
             pytest.param("runs", RunsRepository, id="runs"),
             pytest.param("costs", CostsRepository, id="costs"),
             pytest.param("artifacts", ArtifactsRepository, id="artifacts"),

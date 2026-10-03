@@ -1,6 +1,6 @@
 # Recipe: Agent Steps and Quality Gates
 
-This recipe demonstrates a blueprint that runs agent steps for planning, patching, and review alongside explicit quality-gate commands. Each agent step sends its prompt to the configured provider inside the sandbox; see [Agent-Step Adapters](../guides/agent-providers.md).
+This recipe demonstrates a blueprint that runs agent steps for planning, patching, and review alongside explicit quality-gate commands. Each agent step sends its prompt to the configured provider inside the worktree; see [Agent-Step Adapters](../guides/agent-providers.md).
 
 ---
 
@@ -13,7 +13,7 @@ name: ai-feature-dev
 description: Plan, patch, and review with agent steps and run quality gates
 summary: Agent steps with explicit verification commands
 version: 1
-use_sandbox: true
+use_worktree: true
 
 inputs:
   issue_description:
@@ -63,7 +63,7 @@ steps:
   - id: ai-reviewer
     name: Review the change
     type: agent
-    prompt: "Review the changes in this sandbox for: ${{ inputs.issue_description }}. Report findings and leave the files unchanged."
+    prompt: "Review the changes in this worktree for: ${{ inputs.issue_description }}. Report findings and leave the files unchanged."
     timeout_seconds: 180
 ```
 

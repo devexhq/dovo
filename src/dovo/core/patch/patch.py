@@ -218,8 +218,8 @@ def _strip_ab_prefix(token: str) -> str:
     return token
 
 
-def _is_unsafe_path(rel_path: str, sandbox_path: Path) -> bool:
-    """Return True if ``rel_path`` is absolute or would escape ``sandbox_path``."""
+def _is_unsafe_path(rel_path: str, worktree_path: Path) -> bool:
+    """Return True if ``rel_path`` is absolute or would escape ``worktree_path``."""
     if not rel_path or rel_path == "(unknown)":
         return True
     candidate = Path(rel_path)
@@ -230,9 +230,9 @@ def _is_unsafe_path(rel_path: str, sandbox_path: Path) -> bool:
     if any(part == ".." for part in candidate.parts):
         return True
     try:
-        sandbox_resolved = sandbox_path.resolve()
-        resolved = (sandbox_resolved / candidate).resolve()
-        resolved.relative_to(sandbox_resolved)
+        worktree_resolved = worktree_path.resolve()
+        resolved = (worktree_resolved / candidate).resolve()
+        resolved.relative_to(worktree_resolved)
     except (OSError, ValueError):
         return True
     return False
@@ -293,29 +293,29 @@ def _patch_parse_and_limits_result(
     return touched, None
 
 
-def _sandbox_path_safety_result(
+def _worktree_path_safety_result(
     touched: list[str],
-    sandbox_path: Path,
+    worktree_path: Path,
 ) -> PatchApplyResult | None:
-    """Reject missing sandboxes and paths that escape the sandbox root."""
+    """Reject missing worktrees and paths that escape the worktree root."""
     try:
-        sandbox_ok = sandbox_path.is_dir()
+        worktree_ok = worktree_path.is_dir()
     except OSError:
-        sandbox_ok = False
-    if not sandbox_ok:
+        worktree_ok = False
+    if not worktree_ok:
         return PatchApplyResult(
-            status=PatchApplyStatus.SANDBOX_MISSING,
+            status=PatchApplyStatus.WORKTREE_MISSING,
             touched_files=list(touched),
-            errors=[f"Sandbox path does not exist or is not a directory: '{sandbox_path}'."],
-            fixes=["Create the sandbox before applying a patch"],
+            errors=[f"Worktree path does not exist or is not a directory: '{worktree_path}'."],
+            fixes=["Create the worktree before applying a patch"],
         )
     for rel in touched:
-        if _is_unsafe_path(rel, sandbox_path):
+        if _is_unsafe_path(rel, worktree_path):
             return PatchApplyResult(
                 status=PatchApplyStatus.UNSAFE_PATH,
                 touched_files=list(touched),
-                errors=[f"Patch path is absolute or escapes the sandbox: '{rel}'."],
-                fixes=["Use sandbox-relative paths only (no absolute paths or '..' segments)"],
+                errors=[f"Patch path is absolute or escapes the worktree: '{rel}'."],
+                fixes=["Use worktree-relative paths only (no absolute paths or '..' segments)"],
             )
     return None
 
@@ -326,7 +326,7 @@ def validate_patch_text(
     max_files: int,
     max_patch_kb: int,
     reject_binary_changes: bool,
-    sandbox_path: Path,
+    worktree_path: Path,
 ) -> PatchApplyResult:
     """Validate diff text against size/count/binary/path limits, no git apply.
 
@@ -341,7 +341,7 @@ def validate_patch_text(
         max_files: Maximum distinct target files allowed.
         max_patch_kb: Maximum UTF-8 byte size of the diff in KiB.
         reject_binary_changes: When True, reject binary file markers.
-        sandbox_path: Sandbox root used for the unsafe-path check.
+        worktree_path: Worktree root used for the unsafe-path check.
 
     Returns:
         Structured :class:`PatchApplyResult` with status, touched files, errors.
@@ -358,7 +358,7 @@ def validate_patch_text(
     if limit_result is not None:
         return limit_result
 
-    safety = _sandbox_path_safety_result(touched, sandbox_path)
+    safety = _worktree_path_safety_result(touched, worktree_path)
     if safety is not None:
         return safety
 

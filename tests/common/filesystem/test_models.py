@@ -49,7 +49,7 @@ class RepositoryPathsTests:
         assert paths.catalog_dir == dovo_dir / "catalog"
         assert paths.catalog_steps_dir == dovo_dir / "catalog" / "steps"
         assert paths.catalog_blueprints_dir == dovo_dir / "catalog" / "blueprints"
-        assert paths.sandboxes_dir == dovo_dir / "sandboxes"
+        assert paths.worktrees_dir == dovo_dir / "worktrees"
         assert paths.lock_file == dovo_dir / ".lock"
         assert paths.gitignore_file == repo_root / ".gitignore"
 
@@ -75,7 +75,7 @@ def _build_workspace_paths(root: Path, global_root: Path, *, project_id: str | N
         catalog_dir=repository_paths.catalog_dir,
         catalog_steps_dir=repository_paths.catalog_steps_dir,
         catalog_blueprints_dir=repository_paths.catalog_blueprints_dir,
-        sandboxes_dir=repository_paths.sandboxes_dir,
+        worktrees_dir=repository_paths.worktrees_dir,
         lock_file=repository_paths.lock_file,
         gitignore_file=repository_paths.gitignore_file,
         catalog_templates_dir=get_catalog_templates_dir(),
@@ -144,17 +144,17 @@ class WorkspacePathsContractTests:
 
         assert sample_workspace_paths.catalog_dir_for(tier) == expected
 
-    def test_session_dir_and_sandbox_dir_do_not_create_directories(
+    def test_session_dir_and_worktree_dir_do_not_create_directories(
         self, sample_workspace_paths: WorkspacePaths, tmp_path: Path
     ) -> None:
-        """[tier-1/unit] WorkspacePaths.session_dir/sandbox_dir: returned paths do not exist on disk after the call (no mkdir side effect)."""
+        """[tier-1/unit] WorkspacePaths.session_dir/worktree_dir: returned paths do not exist on disk after the call (no mkdir side effect)."""
         session_dir = sample_workspace_paths.session_dir("sess_1")
-        sandbox_dir = sample_workspace_paths.sandbox_dir("sbx_1")
+        worktree_dir = sample_workspace_paths.worktree_dir("dovo_1")
 
         assert session_dir == sample_workspace_paths.sessions_dir / "sess_1"
-        assert sandbox_dir == sample_workspace_paths.sandboxes_dir / "sbx_1"
+        assert worktree_dir == sample_workspace_paths.worktrees_dir / "dovo_1"
         assert not session_dir.exists()
-        assert not sandbox_dir.exists()
+        assert not worktree_dir.exists()
 
 
 class WorkspacePathsParityTests:
@@ -171,7 +171,7 @@ class WorkspacePathsParityTests:
             "catalog_dir": legacy_dovo_dir / "catalog",
             "catalog_steps_dir": legacy_dovo_dir / "catalog" / "steps",
             "catalog_blueprints_dir": legacy_dovo_dir / "catalog" / "blueprints",
-            "sandboxes_dir": legacy_dovo_dir / "sandboxes",
+            "worktrees_dir": legacy_dovo_dir / "worktrees",
             "gitignore_file": fixture_repo_no_identity / ".gitignore",
             "logs_dir": legacy_dovo_dir / "logs",
             "sessions_dir": legacy_dovo_dir / "sessions",
@@ -198,7 +198,7 @@ class WorkspacePathsParityTests:
             "catalog_dir": legacy_dovo_dir / "catalog",
             "catalog_steps_dir": legacy_dovo_dir / "catalog" / "steps",
             "catalog_blueprints_dir": legacy_dovo_dir / "catalog" / "blueprints",
-            "sandboxes_dir": legacy_dovo_dir / "sandboxes",
+            "worktrees_dir": legacy_dovo_dir / "worktrees",
             "gitignore_file": fixture_repo_with_identity / ".gitignore",
             "runtime_root": legacy_runtime_root,
             "logs_dir": legacy_runtime_root / "logs",

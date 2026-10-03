@@ -100,7 +100,7 @@ When a step fails with `on_failure: prompt_user`:
 The run row owns the execution state and preserves:
 - The paused step and the failed attempt that triggered the prompt.
 - The results of every completed step.
-- The sandbox identifier of the retained sandbox.
+- The worktree identifier of the retained worktree.
 - Resolved parameter input values and run options (`--keep`, `--agent`, `--auto-apply`).
 
 `run.json` in the session directory is a projection of this state (manifest, execution tree, lifecycle, flattened results), regenerated from the row.
@@ -109,14 +109,14 @@ The run row owns the execution state and preserves:
 
 ## Resuming Sessions (`dovo resume`)
 
-If you exit or interrupt an interactive session (or if a prompt is left unresolved), the sandbox remains preserved. You can resume execution from the exact point of failure using `dovo resume`:
+If you exit or interrupt an interactive session (or if a prompt is left unresolved), the worktree remains preserved. You can resume execution from the exact point of failure using `dovo resume`:
 
 ```bash
 # Resume by session ID
 dovo resume blueprint_a1b2c3d4
 ```
 
-Dovo reloads the retained sandbox and re-enters the failure prompt for the paused step using its recorded failed attempt, without re-running the failed command or any earlier completed step. Choosing retry starts the next attempt; continue and abort finish the step as ignored or failed.
+Dovo reloads the retained worktree and re-enters the failure prompt for the paused step using its recorded failed attempt, without re-running the failed command or any earlier completed step. Choosing retry starts the next attempt; continue and abort finish the step as ignored or failed.
 
 ### Resuming a paused loop
 

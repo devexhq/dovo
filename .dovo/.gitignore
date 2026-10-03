@@ -1,6 +1,6 @@
 .meta/
 .lock
-sandboxes/
+worktrees/
 *.db
 *.db-journal
 *.db-wal

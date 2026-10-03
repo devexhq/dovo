@@ -3,7 +3,7 @@ name: commit-plan
 id: commit-plan
 description: Copy plan from .agentic/plan.md into worktree-plans repository and commit/push upstream
 summary: Commit and push plan to worktree-plans repo
-use_sandbox: false
+use_worktree: false
 
 inputs:
   issue:

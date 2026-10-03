@@ -23,8 +23,8 @@ from dovo.core.db.models import (
     CostRecord,
     RunRecord,
     RunStatus,
-    SandboxRecord,
-    SandboxStatus,
+    WorktreeRecord,
+    WorktreeStatus,
     parse_timestamp,
 )
 from dovo.core.db.repositories import (
@@ -32,7 +32,7 @@ from dovo.core.db.repositories import (
     BaseRepository,
     CostsRepository,
     RunsRepository,
-    SandboxesRepository,
+    WorktreesRepository,
 )
 
 __all__ = [
@@ -48,9 +48,9 @@ __all__ = [
     "RunRecord",
     "RunStatus",
     "RunsRepository",
-    "SandboxRecord",
-    "SandboxStatus",
-    "SandboxesRepository",
+    "WorktreeRecord",
+    "WorktreeStatus",
+    "WorktreesRepository",
     "get_db_connection",
     "get_engine",
     "get_session",

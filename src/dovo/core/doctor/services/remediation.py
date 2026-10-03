@@ -142,31 +142,31 @@ def _fs_unwritable(result: DiagnosticCheckResult) -> list[Remediation]:
     ]
 
 
-def _sandbox_stale(result: DiagnosticCheckResult) -> list[Remediation]:
-    """Return the remediation for stale sandbox database references (DOCTOR_SANDBOX_STALE)."""
+def _worktree_stale(result: DiagnosticCheckResult) -> list[Remediation]:
+    """Return the remediation for stale worktree database references (DOCTOR_WORKTREE_STALE)."""
     return [
         Remediation(
-            code="DOCTOR_SANDBOX_STALE",
-            title="Prune stale sandboxes",
+            code="DOCTOR_WORKTREE_STALE",
+            title="Prune stale worktrees",
             action_type=RemediationType.COMMAND,
-            command="dovo sandbox prune",
-            description="Run `dovo sandbox prune` to reconcile sandbox database records that no longer match a live Git worktree.",
-            doc_path="docs/cli/sandbox.md",
+            command="dovo worktree prune",
+            description="Run `dovo worktree prune` to reconcile worktree database records that no longer match a live Git worktree.",
+            doc_path="docs/cli/worktree.md",
             is_automated=False,
         )
     ]
 
 
-def _sandbox_orphan(result: DiagnosticCheckResult) -> list[Remediation]:
-    """Return the remediation for orphaned sandbox worktree directories (DOCTOR_SANDBOX_ORPHAN)."""
+def _worktree_orphan(result: DiagnosticCheckResult) -> list[Remediation]:
+    """Return the remediation for orphaned worktree directories (DOCTOR_WORKTREE_ORPHAN)."""
     return [
         Remediation(
-            code="DOCTOR_SANDBOX_ORPHAN",
+            code="DOCTOR_WORKTREE_ORPHAN",
             title="Prune orphan worktree directories",
             action_type=RemediationType.COMMAND,
-            command="dovo sandbox prune",
-            description="Run `dovo sandbox prune` to remove sandbox worktree directories that have no matching database record.",
-            doc_path="docs/cli/sandbox.md",
+            command="dovo worktree prune",
+            description="Run `dovo worktree prune` to remove worktree directories that have no matching database record.",
+            doc_path="docs/cli/worktree.md",
             is_automated=False,
         )
     ]
@@ -229,8 +229,8 @@ _ERROR_CODE_BUILDERS: Final[dict[str, Callable[[DiagnosticCheckResult], list[Rem
     "DOCTOR_CONFIG_MALFORMED": _config_malformed,
     "DOCTOR_CONFIG_SCHEMA_INVALID": _config_schema_invalid,
     "DOCTOR_FS_UNWRITABLE": _fs_unwritable,
-    "DOCTOR_SANDBOX_STALE": _sandbox_stale,
-    "DOCTOR_SANDBOX_ORPHAN": _sandbox_orphan,
+    "DOCTOR_WORKTREE_STALE": _worktree_stale,
+    "DOCTOR_WORKTREE_ORPHAN": _worktree_orphan,
     "DOCTOR_BINARY_MISSING": _binary_missing,
     "DOCTOR_AGENT_KEY_MISSING": _agent_key_missing,
     "DOCTOR_AGENT_NO_MODEL": _agent_no_model,

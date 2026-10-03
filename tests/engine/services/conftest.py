@@ -18,7 +18,7 @@ def stub_drive_run(
     """Replace drive_run so Engine persistence runs without executing steps; the callable sets the returned outcome."""
 
     def _install(outcome: RunOutcome | None = None) -> None:
-        result = outcome or RunOutcome(status=RunStatus.COMPLETED, sandbox_path=engine_paths.root_dir)
+        result = outcome or RunOutcome(status=RunStatus.COMPLETED, worktree_path=engine_paths.root_dir)
 
         def fake_drive_run(
             paths: WorkspacePaths,

@@ -12,11 +12,11 @@ from dovo.common.filesystem.models import RepositoryPaths, WorkspacePaths
 from dovo.common.filesystem.services.global_root import resolve_global_paths
 from dovo.core.agents.models import AgentResponse, AgentResponseStatus, ResolvedAgentSettings
 from dovo.core.catalog.definitions import LoopStepBlock, StepDefinition
-from dovo.core.db import RunsRepository, RunStatus, SandboxesRepository
+from dovo.core.db import RunsRepository, RunStatus, WorktreesRepository
 from dovo.core.logs.services.read import read_run_log_events
 from dovo.core.project.services.storage import resolve_workspace_paths
-from dovo.core.sandbox import Sandbox, SandboxApplyResult, SandboxApplyStatus
-from dovo.engine.executors.agent_step import SANDBOX_REQUIRED_MESSAGE, build_agent_step_runner
+from dovo.core.worktree import Worktree, WorktreeApplyResult, WorktreeApplyStatus
+from dovo.engine.executors.agent_step import WORKTREE_REQUIRED_MESSAGE, build_agent_step_runner
 from dovo.engine.executors.models import (
     AgentStepRunner,
     ConditionEvaluationResult,
@@ -72,13 +72,13 @@ class _DiagnosticPrompter(_Prompter):
 
 
 class _LifecycleObserver(NoOpRunObserver):
-    """RunObserver recording sandbox, step, and streamed-output callbacks in call order."""
+    """RunObserver recording worktree, step, and streamed-output callbacks in call order."""
 
     def __init__(self) -> None:
         self.events: list[tuple[object, ...]] = []
 
-    def on_sandbox_ready(self, path: Path, active: bool) -> None:
-        self.events.append(("sandbox_ready", path, active))
+    def on_worktree_ready(self, path: Path, active: bool) -> None:
+        self.events.append(("worktree_ready", path, active))
 
     def on_step_start(self, idx: int, total: int, step: StepDefinition) -> None:
         self.events.append(("step_start", idx, total, step.id))
@@ -89,8 +89,8 @@ class _LifecycleObserver(NoOpRunObserver):
     def on_step_done(self, idx: int, total: int, step: StepDefinition, result: StepResult) -> None:
         self.events.append(("step_done", idx, total, result.step_id))
 
-    def on_sandbox_cleanup(self, kept: bool, path: Path) -> None:
-        self.events.append(("sandbox_cleanup", kept, path))
+    def on_worktree_cleanup(self, kept: bool, path: Path) -> None:
+        self.events.append(("worktree_cleanup", kept, path))
 
 
 class _SequenceObserver(NoOpRunObserver):
@@ -99,8 +99,8 @@ class _SequenceObserver(NoOpRunObserver):
     def __init__(self) -> None:
         self.calls: list[tuple[object, ...]] = []
 
-    def on_sandbox_ready(self, path: Path, active: bool) -> None:
-        self.calls.append(("sandbox_ready",))
+    def on_worktree_ready(self, path: Path, active: bool) -> None:
+        self.calls.append(("worktree_ready",))
 
     def on_run_started(self, steps: Sequence[StepDefinition | LoopStepBlock]) -> None:
         self.calls.append(("run_started", [step.id for step in steps]))
@@ -129,8 +129,8 @@ class _SequenceObserver(NoOpRunObserver):
     def on_loop_done(self, loop_id: str, status: str, total_iterations: int) -> None:
         self.calls.append(("loop_done", status, total_iterations))
 
-    def on_sandbox_cleanup(self, kept: bool, path: Path) -> None:
-        self.calls.append(("sandbox_cleanup",))
+    def on_worktree_cleanup(self, kept: bool, path: Path) -> None:
+        self.calls.append(("worktree_cleanup",))
 
     def on_run_completed(self, outcome: RunOutcome) -> None:
         self.calls.append(("run_completed", outcome))
@@ -177,7 +177,7 @@ def _paths_for(root: Path) -> WorkspacePaths:
 
 @pytest.fixture
 def git_paths(tmp_path: Path) -> WorkspacePaths:
-    """WorkspacePaths for a git-backed workspace where sandboxes can be created."""
+    """WorkspacePaths for a git-backed workspace where worktrees can be created."""
     return _paths_for(WorkspaceBuilder(tmp_path / "git-workspace").with_git().with_database().build())
 
 
@@ -187,72 +187,72 @@ def git_runs(git_paths: WorkspacePaths) -> RunsRepository:
     return RunsRepository(db_path=git_paths.database_file, project_id=git_paths.project_id)
 
 
-class DriveRunSandboxTests:
-    """[tier-1/integration] drive_run: sandbox reuse, identity, and setup failure."""
+class DriveRunWorktreeTests:
+    """[tier-1/integration] drive_run: worktree reuse, identity, and setup failure."""
 
-    def test_resumed_run_reuses_retained_sandbox_and_keeps_sandbox_id(
+    def test_resumed_run_reuses_retained_worktree_and_keeps_worktree_id(
         self, git_paths: WorkspacePaths, git_runs: RunsRepository
     ) -> None:
-        """[tier-1/integration] drive_run: a paused sandboxed row with an existing sandbox directory runs its steps with cwd equal to paths.sandbox_dir(sandbox_id), and the finished row's sandbox_id is unchanged."""
-        created = Sandbox(
-            git_paths, db=SandboxesRepository(db_path=git_paths.database_file, project_id=git_paths.project_id)
+        """[tier-1/integration] drive_run: a paused worktree-backed row with an existing worktree directory runs its steps with cwd equal to paths.worktree_dir(worktree_id), and the finished row's worktree_id is unchanged."""
+        created = Worktree(
+            git_paths, db=WorktreesRepository(db_path=git_paths.database_file, project_id=git_paths.project_id)
         ).create(session_id="retained")
         assert created.session is not None
-        sandbox_id = created.session.session_id
-        expected_cwd = git_paths.sandbox_dir(sandbox_id).resolve()
+        worktree_id = created.session.session_id
+        expected_cwd = git_paths.worktree_dir(worktree_id).resolve()
         seed_paused_run(
             git_paths,
             git_runs,
-            session_id="resume-sbx",
+            session_id="resume-worktree",
             steps=[_step("a", "true"), _step("b", f'test "$(pwd -P)" = "{expected_cwd}"', on_failure="prompt_user")],
             paused_step_id="b",
-            use_sandbox=True,
-            sandbox_id=sandbox_id,
+            use_worktree=True,
+            worktree_id=worktree_id,
         )
 
-        outcome = _drive(git_paths, git_runs, "resume-sbx", prompter=_Prompter([FailurePromptDecision.RETRY]))
+        outcome = _drive(git_paths, git_runs, "resume-worktree", prompter=_Prompter([FailurePromptDecision.RETRY]))
 
         assert outcome.status == RunStatus.COMPLETED
-        assert outcome.sandbox_id == sandbox_id
-        row = git_runs.get("resume-sbx")
+        assert outcome.worktree_id == worktree_id
+        row = git_runs.get("resume-worktree")
         assert row is not None
-        assert row.sandbox_id == sandbox_id
+        assert row.worktree_id == worktree_id
 
-    def test_sandboxed_run_reports_session_id_and_removes_worktree(
+    def test_worktree_run_reports_session_id_and_removes_worktree(
         self, git_paths: WorkspacePaths, git_runs: RunsRepository
     ) -> None:
-        """[tier-1/integration] drive_run: a completed unkept sandboxed run returns RunOutcome.sandbox_id equal to the created session id, sandbox_kept False, and the worktree directory removed."""
-        seed_new_run(git_paths, git_runs, session_id="sbx-done", steps=[_step("a", "echo hi")], use_sandbox=True)
+        """[tier-1/integration] drive_run: a completed unkept worktree-backed run returns RunOutcome.worktree_id equal to the created session id, worktree_kept False, and the worktree directory removed."""
+        seed_new_run(git_paths, git_runs, session_id="worktree-done", steps=[_step("a", "echo hi")], use_worktree=True)
 
-        outcome = _drive(git_paths, git_runs, "sbx-done")
+        outcome = _drive(git_paths, git_runs, "worktree-done")
 
-        sandboxes = SandboxesRepository(db_path=git_paths.database_file, project_id=git_paths.project_id).list()
+        worktrees = WorktreesRepository(db_path=git_paths.database_file, project_id=git_paths.project_id).list()
         assert outcome.status == RunStatus.COMPLETED
-        assert [record.id for record in sandboxes] == [outcome.sandbox_id]
-        assert outcome.sandbox_kept is False
-        assert not outcome.sandbox_path.exists()
+        assert [record.id for record in worktrees] == [outcome.worktree_id]
+        assert outcome.worktree_kept is False
+        assert not outcome.worktree_path.exists()
 
-    def test_no_sandbox_run_reports_none_sandbox_id(
+    def test_no_worktree_run_reports_none_worktree_id(
         self, engine_paths: WorkspacePaths, runs_repo: RunsRepository
     ) -> None:
-        """[tier-1/integration] drive_run: use_sandbox=False returns RunOutcome.sandbox_id None and sandbox_path equal to the resolved cwd."""
-        seed_new_run(engine_paths, runs_repo, session_id="no-sbx", steps=[_step("a", "echo hi")])
+        """[tier-1/integration] drive_run: use_worktree=False returns RunOutcome.worktree_id None and worktree_path equal to the resolved cwd."""
+        seed_new_run(engine_paths, runs_repo, session_id="no-worktree", steps=[_step("a", "echo hi")])
 
-        outcome = _drive(engine_paths, runs_repo, "no-sbx")
+        outcome = _drive(engine_paths, runs_repo, "no-worktree")
 
-        assert outcome.sandbox_id is None
-        assert outcome.sandbox_path == engine_paths.root_dir.resolve()
+        assert outcome.worktree_id is None
+        assert outcome.worktree_path == engine_paths.root_dir.resolve()
 
-    def test_sandbox_creation_failure_returns_failed_outcome_without_running_steps(
+    def test_worktree_creation_failure_returns_failed_outcome_without_running_steps(
         self, engine_paths: WorkspacePaths, runs_repo: RunsRepository, engine_workspace: Path
     ) -> None:
-        """[tier-1/integration] drive_run: use_sandbox=True in a directory that is not a git repository returns FAILED with errors[0] starting "Git sandbox creation failed:" and no step marker file."""
-        seed_new_run(engine_paths, runs_repo, session_id="no-git", steps=[_step("a", "touch a.ran")], use_sandbox=True)
+        """[tier-1/integration] drive_run: use_worktree=True in a directory that is not a git repository returns FAILED with errors[0] starting "Git worktree creation failed:" and no step marker file."""
+        seed_new_run(engine_paths, runs_repo, session_id="no-git", steps=[_step("a", "touch a.ran")], use_worktree=True)
 
         outcome = _drive(engine_paths, runs_repo, "no-git")
 
         assert outcome.status == RunStatus.FAILED
-        assert outcome.errors[0].startswith("Git sandbox creation failed:")
+        assert outcome.errors[0].startswith("Git worktree creation failed:")
         assert not (engine_workspace / "a.ran").exists()
 
 
@@ -260,12 +260,12 @@ class DriveRunMissingRowTests:
     def test_unknown_session_returns_failed_outcome_without_running_steps(
         self, engine_paths: WorkspacePaths, runs_repo: RunsRepository
     ) -> None:
-        """[tier-1/integration] drive_run: a session id with no run row returns FAILED with errors == ["Run 'missing' not found."] and sandbox_path equal to the workspace root."""
+        """[tier-1/integration] drive_run: a session id with no run row returns FAILED with errors == ["Run 'missing' not found."] and worktree_path equal to the workspace root."""
         outcome = _drive(engine_paths, runs_repo, "missing")
 
         assert outcome.status == RunStatus.FAILED
         assert outcome.errors == ["Run 'missing' not found."]
-        assert outcome.sandbox_path == engine_paths.root_dir
+        assert outcome.worktree_path == engine_paths.root_dir
 
 
 class DriveRunLifecycleTests:
@@ -274,43 +274,43 @@ class DriveRunLifecycleTests:
     def test_keep_true_preserves_worktree_after_completed_run(
         self, git_paths: WorkspacePaths, git_runs: RunsRepository
     ) -> None:
-        """[tier-1/integration] drive_run: row keep=True with a completed sandboxed run returns sandbox_kept True and the worktree directory still present."""
+        """[tier-1/integration] drive_run: row keep=True with a completed worktree-backed run returns worktree_kept True and the worktree directory still present."""
         seed_new_run(
-            git_paths, git_runs, session_id="keep", steps=[_step("a", "echo keep")], use_sandbox=True, keep=True
+            git_paths, git_runs, session_id="keep", steps=[_step("a", "echo keep")], use_worktree=True, keep=True
         )
 
         outcome = _drive(git_paths, git_runs, "keep")
 
         assert outcome.status == RunStatus.COMPLETED
-        assert outcome.sandbox_kept is True
-        assert outcome.sandbox_path.is_dir()
+        assert outcome.worktree_kept is True
+        assert outcome.worktree_path.is_dir()
 
-    def test_paused_outcome_keeps_sandbox(self, git_paths: WorkspacePaths, git_runs: RunsRepository) -> None:
-        """[tier-1/integration] drive_run: a run that pauses at a prompt returns status PAUSED, sandbox_kept True, and the worktree directory present."""
+    def test_paused_outcome_keeps_worktree(self, git_paths: WorkspacePaths, git_runs: RunsRepository) -> None:
+        """[tier-1/integration] drive_run: a run that pauses at a prompt returns status PAUSED, worktree_kept True, and the worktree directory present."""
         seed_new_run(
             git_paths,
             git_runs,
             session_id="pause",
             steps=[_step("a", "exit 1", on_failure="prompt_user")],
-            use_sandbox=True,
+            use_worktree=True,
         )
 
         outcome = _drive(git_paths, git_runs, "pause", prompter=_Prompter())
 
         assert outcome.status == RunStatus.PAUSED
-        assert outcome.sandbox_kept is True
-        assert outcome.sandbox_path.is_dir()
+        assert outcome.worktree_kept is True
+        assert outcome.worktree_path.is_dir()
 
-    def test_diff_persisted_under_session_id_not_sandbox_key(
+    def test_diff_persisted_under_session_id_not_worktree_key(
         self, git_paths: WorkspacePaths, git_runs: RunsRepository
     ) -> None:
-        """[tier-1/integration] drive_run: a sandboxed step that writes a file leaves <session_dir>/diff.patch containing that file's path."""
+        """[tier-1/integration] drive_run: a worktree-backed step that writes a file leaves <session_dir>/diff.patch containing that file's path."""
         seed_new_run(
             git_paths,
             git_runs,
             session_id="diff-run",
             steps=[_step("a", "echo change > tracked.txt")],
-            use_sandbox=True,
+            use_worktree=True,
         )
 
         outcome = _drive(git_paths, git_runs, "diff-run")
@@ -326,7 +326,7 @@ class DriveRunLifecycleTests:
             pytest.param(False, RunStatus.COMPLETED, False, id="auto-apply-off"),
         ],
     )
-    def test_auto_apply_read_from_row_conflict_marks_run_failed_and_keeps_sandbox(
+    def test_auto_apply_read_from_row_conflict_marks_run_failed_and_keeps_worktree(
         self,
         git_paths: WorkspacePaths,
         git_runs: RunsRepository,
@@ -335,44 +335,44 @@ class DriveRunLifecycleTests:
         expected_status: RunStatus,
         expected_kept: bool,
     ) -> None:
-        """[tier-1/integration] drive_run: a row with auto_apply=True whose apply conflicts returns FAILED with the apply error in errors and sandbox_kept True; with auto_apply=False the same run returns COMPLETED."""
-        conflict = SandboxApplyResult(
-            sandbox_id="test-session",
-            status=SandboxApplyStatus.CONFLICT,
-            errors=["Patch merge conflict in sandbox apply"],
+        """[tier-1/integration] drive_run: a row with auto_apply=True whose apply conflicts returns FAILED with the apply error in errors and worktree_kept True; with auto_apply=False the same run returns COMPLETED."""
+        conflict = WorktreeApplyResult(
+            worktree_id="test-session",
+            status=WorktreeApplyStatus.CONFLICT,
+            errors=["Patch merge conflict in worktree apply"],
             warnings=["Patch hunk rejected"],
         )
-        monkeypatch.setattr(Sandbox, "apply", lambda *args, **kwargs: conflict)
+        monkeypatch.setattr(Worktree, "apply", lambda *args, **kwargs: conflict)
         seed_new_run(
             git_paths,
             git_runs,
             session_id="apply",
             steps=[_step("a", "echo change")],
-            use_sandbox=True,
+            use_worktree=True,
             auto_apply=auto_apply,
         )
 
         outcome = _drive(git_paths, git_runs, "apply")
 
         assert outcome.status == expected_status
-        assert outcome.sandbox_kept is expected_kept
-        assert outcome.errors == (["Patch merge conflict in sandbox apply"] if auto_apply else [])
+        assert outcome.worktree_kept is expected_kept
+        assert outcome.errors == (["Patch merge conflict in worktree apply"] if auto_apply else [])
 
     def test_cleanup_failure_after_step_failure_still_reports_failed(
         self, git_paths: WorkspacePaths, git_runs: RunsRepository, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """[tier-1/integration] drive_run: Sandbox.cleanup raising after an aborted step still returns status FAILED."""
+        """[tier-1/integration] drive_run: Worktree.cleanup raising after an aborted step still returns status FAILED."""
 
-        def exploding_cleanup(self: Sandbox, session: object, **kwargs: object) -> list[str]:
+        def exploding_cleanup(self: Worktree, session: object, **kwargs: object) -> list[str]:
             raise RuntimeError("Cleanup filesystem removal failed")
 
-        monkeypatch.setattr(Sandbox, "cleanup", exploding_cleanup)
-        seed_new_run(git_paths, git_runs, session_id="cleanup", steps=[_step("fail", "exit 1")], use_sandbox=True)
+        monkeypatch.setattr(Worktree, "cleanup", exploding_cleanup)
+        seed_new_run(git_paths, git_runs, session_id="cleanup", steps=[_step("fail", "exit 1")], use_worktree=True)
 
         outcome = _drive(git_paths, git_runs, "cleanup")
 
         assert outcome.status == RunStatus.FAILED
-        assert outcome.sandbox_kept is False
+        assert outcome.worktree_kept is False
         assert outcome.errors == ["Step 'fail' failed: Command failed with exit code 1."]
 
     @pytest.mark.parametrize(
@@ -518,7 +518,7 @@ class DriveRunObserverContractTests:
     def test_linear_run_emits_pinned_observer_sequence(
         self, engine_paths: WorkspacePaths, runs_repo: RunsRepository
     ) -> None:
-        """[tier-1/integration] drive_run: a 3-step run [a, b, c] without a sandbox gives the ordered observer sequence sandbox_ready, run_started(["a","b","c"]), step_start/step_done at 1/3, 2/3, 3/3 with step ids and "completed", sandbox_cleanup, run_completed(COMPLETED outcome equal to the returned outcome)."""
+        """[tier-1/integration] drive_run: a 3-step run [a, b, c] without a worktree gives the ordered observer sequence worktree_ready, run_started(["a","b","c"]), step_start/step_done at 1/3, 2/3, 3/3 with step ids and "completed", worktree_cleanup, run_completed(COMPLETED outcome equal to the returned outcome)."""
         seed_new_run(
             engine_paths,
             runs_repo,
@@ -531,7 +531,7 @@ class DriveRunObserverContractTests:
 
         assert outcome.status == RunStatus.COMPLETED
         assert observer.calls == [
-            ("sandbox_ready",),
+            ("worktree_ready",),
             ("run_started", ["a", "b", "c"]),
             ("step_start", 1, 3, "a"),
             ("step_done", 1, 3, "a", "completed"),
@@ -539,7 +539,7 @@ class DriveRunObserverContractTests:
             ("step_done", 2, 3, "b", "completed"),
             ("step_start", 3, 3, "c"),
             ("step_done", 3, 3, "c", "completed"),
-            ("sandbox_cleanup",),
+            ("worktree_cleanup",),
             ("run_completed", outcome),
         ]
 
@@ -564,7 +564,7 @@ class DriveRunObserverContractTests:
             ("step_done", 2, 2, "s2", "completed"),
         ]
         assert observer.calls == [
-            ("sandbox_ready",),
+            ("worktree_ready",),
             ("run_started", ["loop"]),
             ("loop_start", 2),
             ("loop_iteration_start", 1, 2),
@@ -574,7 +574,7 @@ class DriveRunObserverContractTests:
             *iteration_steps,
             ("loop_conditions_evaluated", [True], True, None),
             ("loop_done", "completed", 2),
-            ("sandbox_cleanup",),
+            ("worktree_cleanup",),
             ("run_completed", outcome),
         ]
 
@@ -627,14 +627,14 @@ class DriveRunObserverContractTests:
     def test_setup_failure_notifies_run_completed_only(
         self, engine_paths: WorkspacePaths, runs_repo: RunsRepository
     ) -> None:
-        """[tier-1/integration] drive_run: use_sandbox=True outside a git repository returns FAILED with errors[0] starting "Git sandbox creation failed:", the observer records run_completed once with that outcome and no run_started."""
-        seed_new_run(engine_paths, runs_repo, session_id="seq-nogit", steps=[_step("a", "true")], use_sandbox=True)
+        """[tier-1/integration] drive_run: use_worktree=True outside a git repository returns FAILED with errors[0] starting "Git worktree creation failed:", the observer records run_completed once with that outcome and no run_started."""
+        seed_new_run(engine_paths, runs_repo, session_id="seq-nogit", steps=[_step("a", "true")], use_worktree=True)
         observer = _SequenceObserver()
 
         outcome = _drive(engine_paths, runs_repo, "seq-nogit", observer=observer)
 
         assert outcome.status == RunStatus.FAILED
-        assert outcome.errors[0].startswith("Git sandbox creation failed:")
+        assert outcome.errors[0].startswith("Git worktree creation failed:")
         assert [call for call in observer.calls if str(call[0]).startswith("run_")] == [("run_completed", outcome)]
 
     def test_missing_row_notifies_nothing(self, engine_paths: WorkspacePaths, runs_repo: RunsRepository) -> None:
@@ -707,9 +707,9 @@ def captured_agent_args(monkeypatch: pytest.MonkeyPatch) -> list[ResolvedAgentSe
     """Agent settings handed to build_agent_step_runner during drive_run, in call order."""
     captured: list[ResolvedAgentSettings | None] = []
 
-    def _recording_build(agent: ResolvedAgentSettings | None, sandbox_active: bool) -> AgentStepRunner:
+    def _recording_build(agent: ResolvedAgentSettings | None, worktree_active: bool) -> AgentStepRunner:
         captured.append(agent)
-        return build_agent_step_runner(agent, sandbox_active)
+        return build_agent_step_runner(agent, worktree_active)
 
     monkeypatch.setattr("dovo.engine.step_coordinator.build_agent_step_runner", _recording_build)
     return captured
@@ -735,7 +735,7 @@ class DriveRunAgentSettingsTests:
     ) -> None:
         """[tier-1/integration] drive_run: a fresh row with no override and an ollama config reaches StepExecution with the full ResolvedAgentSettings and no 'agent' key in context."""
         paths, runs = _agent_workspace(tmp_path, _OLLAMA_AGENT_CONFIG)
-        seed_new_run(paths, runs, session_id="fresh", steps=[_agent_step("a")], use_sandbox=True)
+        seed_new_run(paths, runs, session_id="fresh", steps=[_agent_step("a")], use_worktree=True)
 
         outcome = _drive(paths, runs, "fresh")
 
@@ -765,7 +765,7 @@ class DriveRunAgentSettingsTests:
             session_id="resumed",
             steps=[_agent_step("a", on_failure="prompt_user")],
             paused_step_id="a",
-            use_sandbox=True,
+            use_worktree=True,
             agent="gemini",
         )
 
@@ -790,7 +790,7 @@ class DriveRunAgentSettingsTests:
     ) -> None:
         """[tier-1/integration] drive_run: two agent steps in one drive receive the identical ResolvedAgentSettings object."""
         paths, runs = _agent_workspace(tmp_path, _OLLAMA_AGENT_CONFIG)
-        seed_new_run(paths, runs, session_id="twice", steps=[_agent_step("a"), _agent_step("b")], use_sandbox=True)
+        seed_new_run(paths, runs, session_id="twice", steps=[_agent_step("a"), _agent_step("b")], use_worktree=True)
 
         _drive(paths, runs, "twice")
 
@@ -833,7 +833,7 @@ class DriveRunAgentSettingsTests:
             runs,
             session_id="unregistered",
             steps=[_agent_step("a")],
-            use_sandbox=True,
+            use_worktree=True,
             agent="openai" if source == "row_override" else None,
         )
 
@@ -845,14 +845,14 @@ class DriveRunAgentSettingsTests:
         )
 
 
-class DriveRunAgentSandboxTests:
-    """[tier-1/integration] drive_run: agent steps are rejected outside a Dovo Git sandbox."""
+class DriveRunAgentWorktreeTests:
+    """[tier-1/integration] drive_run: agent steps are rejected outside a Dovo Git worktree."""
 
     @pytest.mark.parametrize("resumed", [pytest.param(False, id="fresh"), pytest.param(True, id="resumed")])
     def test_in_place_run_rejects_agent_step_but_runs_command_steps(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, resumed: bool
     ) -> None:
-        """[tier-1/integration] drive_run: with use_sandbox=False (fresh or resumed paused row), an agent step fails with errors containing SANDBOX_REQUIRED_MESSAGE, the factory spy records zero calls, and a command step in the same run completes in place."""
+        """[tier-1/integration] drive_run: with use_worktree=False (fresh or resumed paused row), an agent step fails with errors containing WORKTREE_REQUIRED_MESSAGE, the factory spy records zero calls, and a command step in the same run completes in place."""
         requested: list[str] = []
 
         def _spy(token: str) -> FakeAgentProvider:
@@ -879,17 +879,17 @@ class DriveRunAgentSandboxTests:
         assert statuses["before"] == "completed"
         assert statuses["agent"] == "ignored"
         assert statuses["after"] == "completed"
-        assert SANDBOX_REQUIRED_MESSAGE in prompter.diagnostics[-1]
+        assert WORKTREE_REQUIRED_MESSAGE in prompter.diagnostics[-1]
         assert requested == []
 
 
 class DriveRunAgentExecutionTests:
-    """[tier-1/integration] drive_run: agent steps execute through resolved providers inside the sandbox."""
+    """[tier-1/integration] drive_run: agent steps execute through resolved providers inside the worktree."""
 
-    def test_agent_patch_applies_only_in_sandbox_and_following_assertion_passes(
+    def test_agent_patch_applies_only_in_worktree_and_following_assertion_passes(
         self, git_paths: WorkspacePaths, git_runs: RunsRepository, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """[tier-1/integration] drive_run: a sandboxed run [failing command with on_failure continue, agent prompt interpolating previous_step.status, cat of the patched file with an output assertion] returns COMPLETED, the single request is direct with no payload and instruction 'Handle ignored', the file is absent from the source checkout, and the cat step output carries the patched content."""
+        """[tier-1/integration] drive_run: a worktree-backed run [failing command with on_failure continue, agent prompt interpolating previous_step.status, cat of the patched file with an output assertion] returns COMPLETED, the single request is direct with no payload and instruction 'Handle ignored', the file is absent from the source checkout, and the cat step output carries the patched content."""
         provider = FakeAgentProvider(
             AgentResponse(
                 status=AgentResponseStatus.PROPOSED_PATCH,
@@ -906,7 +906,7 @@ class DriveRunAgentExecutionTests:
                 {"id": "agent", "type": "agent", "prompt": "Handle ${{ previous_step.status }}"},
                 _step("check", "cat agent.txt", **{"assert": {"output_contains": "patched"}}),
             ],
-            use_sandbox=True,
+            use_worktree=True,
         )
 
         outcome = _drive(git_paths, git_runs, "agent-patch")
@@ -938,7 +938,7 @@ class DriveRunAgentExecutionTests:
             runs,
             session_id="override",
             steps=[_agent_step("a", timeout_seconds=77)],
-            use_sandbox=True,
+            use_worktree=True,
             agent="cursor",
         )
 
@@ -957,7 +957,7 @@ class DriveRunAgentExecutionTests:
         self, git_paths: WorkspacePaths, git_runs: RunsRepository, noop_agent_provider: FakeAgentProvider
     ) -> None:
         """[tier-1/integration] drive_run: a NO_OP fake with summary 'plan text' returns COMPLETED and the observer's on_step_output receives the summary JSON line for the agent step."""
-        seed_new_run(git_paths, git_runs, session_id="plan-only", steps=[_agent_step("plan")], use_sandbox=True)
+        seed_new_run(git_paths, git_runs, session_id="plan-only", steps=[_agent_step("plan")], use_worktree=True)
         observer = _LifecycleObserver()
 
         outcome = _drive(git_paths, git_runs, "plan-only", observer=observer)

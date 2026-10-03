@@ -55,7 +55,7 @@ def _catalog_blueprint(paths: WorkspacePaths, key: str, steps: list[dict[str, ob
 
 def _patch_drive_run(monkeypatch: pytest.MonkeyPatch, paths: WorkspacePaths, outcome: RunOutcome | None = None) -> None:
     """Replace drive_run so Engine persistence is observed without executing steps."""
-    result = outcome or RunOutcome(status=RunStatus.COMPLETED, sandbox_path=paths.root_dir)
+    result = outcome or RunOutcome(status=RunStatus.COMPLETED, worktree_path=paths.root_dir)
 
     def fake_drive_run(
         paths: WorkspacePaths,
@@ -98,7 +98,7 @@ class EngineRunStartFailureTests:
         if fault == "snapshot":
             blueprint = Blueprint(
                 BlueprintBuilder("uncataloged")
-                .with_use_sandbox(False)
+                .with_use_worktree(False)
                 .with_step(StepBuilder.command("touch marker").with_id("a").build())
                 .build()
             )
@@ -116,7 +116,7 @@ class EngineRunStartFailureTests:
         if fault == "initialize":
             monkeypatch.setattr(RunStateStore, "initialize", raise_boom)
 
-        outcome = _engine(engine_paths, runs_repo).run(blueprint, RunRequest(session_id="start-1", use_sandbox=False))
+        outcome = _engine(engine_paths, runs_repo).run(blueprint, RunRequest(session_id="start-1", use_worktree=False))
 
         assert outcome.status == RunStatus.FAILED
         assert outcome.errors == [expected_error]
@@ -135,7 +135,7 @@ class EngineDispatchTests:
         engine = _engine(engine_paths, runs_repo)
         fresh = engine.run(
             _catalog_blueprint(engine_paths, "fresh", [{"id": "a", "run": "true"}, {"id": "b", "run": "true"}]),
-            RunRequest(session_id="fresh", use_sandbox=False),
+            RunRequest(session_id="fresh", use_worktree=False),
         )
         seed_paused_run(
             engine_paths,
@@ -217,7 +217,7 @@ class EngineDispatchTests:
             no_tty: bool,
         ) -> RunOutcome:
             seen.append(session_id)
-            return RunOutcome(status=RunStatus.COMPLETED, sandbox_path=paths.root_dir)
+            return RunOutcome(status=RunStatus.COMPLETED, worktree_path=paths.root_dir)
 
         monkeypatch.setattr("dovo.engine.engine.drive_run", recording_drive_run)
         engine = _engine(engine_paths, runs_repo)
@@ -232,7 +232,7 @@ class EngineDispatchTests:
             outcome = engine.resume("resume-1")
         else:
             blueprint = _catalog_blueprint(engine_paths, "ids", [{"id": "a", "run": "true"}])
-            outcome = engine.run(blueprint, RunRequest(session_id=expected_session_id, use_sandbox=False))
+            outcome = engine.run(blueprint, RunRequest(session_id=expected_session_id, use_worktree=False))
 
         assert outcome.session_id == seen[0]
         assert expected_session_id is None or seen == [expected_session_id]
@@ -304,7 +304,7 @@ class EngineRunSnapshotsDefinitionsTests:
         blueprint = _catalog_blueprint(engine_paths, "snap-task", [{"id": "s1", "uses": "lint-check"}])
         _patch_drive_run(monkeypatch, engine_paths)
 
-        outcome = _engine(engine_paths, runs_repo).run(blueprint, RunRequest(session_id="snap-1", use_sandbox=False))
+        outcome = _engine(engine_paths, runs_repo).run(blueprint, RunRequest(session_id="snap-1", use_worktree=False))
 
         assert outcome.status == RunStatus.COMPLETED
         session_dir = get_session_dir(engine_paths, "snap-1")
@@ -344,11 +344,11 @@ class EngineRunSnapshotsDefinitionsTests:
                 (paths.session_dir(session_id) / "run.json").read_text(encoding="utf-8")
             ).nodes
             observed["state"] = loaded.state.nodes
-            return RunOutcome(status=RunStatus.COMPLETED, sandbox_path=paths.root_dir)
+            return RunOutcome(status=RunStatus.COMPLETED, worktree_path=paths.root_dir)
 
         monkeypatch.setattr("dovo.engine.engine.drive_run", observing_drive_run)
 
-        _engine(engine_paths, runs_repo).run(blueprint, RunRequest(session_id="init-1", use_sandbox=False))
+        _engine(engine_paths, runs_repo).run(blueprint, RunRequest(session_id="init-1", use_worktree=False))
 
         assert observed["status"] == RunStatus.RUNNING
         assert observed["revision"] == 0
@@ -362,7 +362,7 @@ class EngineRunSnapshotsDefinitionsTests:
         blueprint = _catalog_blueprint(engine_paths, "final-task", [{"id": "s1", "run": "echo one"}])
         _patch_drive_run(monkeypatch, engine_paths)
 
-        _engine(engine_paths, runs_repo).run(blueprint, RunRequest(session_id="final-1", use_sandbox=False))
+        _engine(engine_paths, runs_repo).run(blueprint, RunRequest(session_id="final-1", use_worktree=False))
 
         row = runs_repo.get("final-1")
         assert row is not None
@@ -404,7 +404,7 @@ class EngineRunConfigPersistenceTests:
     """[tier-1/unit] Engine.run: resolved run configuration lands on the run row."""
 
     def test_run_persists_resolved_configuration_on_row(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        """[tier-1/unit] Engine.run: RunRequest(use_sandbox=False, keep=True, agent='claude', auto_apply=True) with resolved inputs {'env': 'prod'} leaves a row with use_sandbox False, keep True, agent 'claude', inputs_json '{\"env\": \"prod\"}', auto_apply True, and commit_sha equal to git rev-parse HEAD."""
+        """[tier-1/unit] Engine.run: RunRequest(use_worktree=False, keep=True, agent='claude', auto_apply=True) with resolved inputs {'env': 'prod'} leaves a row with use_worktree False, keep True, agent 'claude', inputs_json '{\"env\": \"prod\"}', auto_apply True, and commit_sha equal to git rev-parse HEAD."""
         workspace = WorkspaceBuilder(tmp_path / "git-workspace").with_git().with_database().build()
         paths = resolve_workspace_paths(RepositoryPaths.from_root(workspace), resolve_global_paths(None))
         runs = RunsRepository(db_path=paths.database_file, project_id=paths.project_id)
@@ -414,12 +414,12 @@ class EngineRunConfigPersistenceTests:
 
         _engine(paths, runs).run(
             blueprint,
-            RunRequest(session_id="cfg-1", use_sandbox=False, keep=True, agent="claude", auto_apply=True),
+            RunRequest(session_id="cfg-1", use_worktree=False, keep=True, agent="claude", auto_apply=True),
         )
 
         row = runs.get("cfg-1")
         assert row is not None
-        assert row.use_sandbox is False
+        assert row.use_worktree is False
         assert row.keep is True
         assert row.agent == "claude"
         assert row.auto_apply is True
@@ -431,7 +431,7 @@ class EngineRunConfigPersistenceTests:
         """[tier-1/unit] Engine.run: resolved inputs {'env': 'prod'} leave inputs_json '{\"env\": \"prod\"}' on the row."""
         blueprint = Blueprint(
             BlueprintBuilder("inputs")
-            .with_use_sandbox(False)
+            .with_use_worktree(False)
             .with_input("env", required=True)
             .with_step(StepBuilder.command("echo hi").with_id("s1").build())
             .build()
@@ -440,7 +440,7 @@ class EngineRunConfigPersistenceTests:
         _patch_drive_run(monkeypatch, engine_paths)
 
         _engine(engine_paths, runs_repo).run(
-            blueprint, RunRequest(session_id="inputs-1", inputs={"env": "prod"}, use_sandbox=False)
+            blueprint, RunRequest(session_id="inputs-1", inputs={"env": "prod"}, use_worktree=False)
         )
 
         row = runs_repo.get("inputs-1")
@@ -454,7 +454,7 @@ class EngineRunConfigPersistenceTests:
         blueprint = _catalog_blueprint(engine_paths, "tier-task", [{"id": "s1", "run": "echo one"}])
         _patch_drive_run(monkeypatch, engine_paths)
 
-        _engine(engine_paths, runs_repo).run(blueprint, RunRequest(session_id="tier-1", use_sandbox=False))
+        _engine(engine_paths, runs_repo).run(blueprint, RunRequest(session_id="tier-1", use_worktree=False))
 
         row = runs_repo.get("tier-1")
         assert row is not None
@@ -467,7 +467,7 @@ class EngineRunConfigPersistenceTests:
         blueprint = _catalog_blueprint(engine_paths, "nogit-task", [{"id": "s1", "run": "echo one"}])
         _patch_drive_run(monkeypatch, engine_paths)
 
-        outcome = _engine(engine_paths, runs_repo).run(blueprint, RunRequest(session_id="nogit-1", use_sandbox=False))
+        outcome = _engine(engine_paths, runs_repo).run(blueprint, RunRequest(session_id="nogit-1", use_worktree=False))
 
         row = runs_repo.get("nogit-1")
         assert row is not None
@@ -475,35 +475,37 @@ class EngineRunConfigPersistenceTests:
         assert row.commit_sha is None
 
     @pytest.mark.parametrize(
-        ("outcome_status", "outcome_sandbox_id"),
+        ("outcome_status", "outcome_worktree_id"),
         [
-            pytest.param(RunStatus.COMPLETED, "sbx-1", id="completed-with-sandbox"),
-            pytest.param(RunStatus.PAUSED, "sbx-2", id="paused-with-sandbox"),
-            pytest.param(RunStatus.COMPLETED, None, id="completed-without-sandbox"),
+            pytest.param(RunStatus.COMPLETED, "dovo_1", id="completed-with-worktree"),
+            pytest.param(RunStatus.PAUSED, "dovo_2", id="paused-with-worktree"),
+            pytest.param(RunStatus.COMPLETED, None, id="completed-without-worktree"),
         ],
     )
-    def test_run_records_outcome_sandbox_id_on_row(
+    def test_run_records_outcome_worktree_id_on_row(
         self,
         engine_paths: WorkspacePaths,
         runs_repo: RunsRepository,
         monkeypatch: pytest.MonkeyPatch,
         outcome_status: RunStatus,
-        outcome_sandbox_id: str | None,
+        outcome_worktree_id: str | None,
     ) -> None:
-        """[tier-1/unit] Engine.run: row.sandbox_id equals the RunOutcome.sandbox_id drive_run reported, for completed and paused runs, and stays None when no sandbox was used."""
-        blueprint = _catalog_blueprint(engine_paths, "sbx-task", [{"id": "s1", "run": "echo one"}])
+        """[tier-1/unit] Engine.run: row.worktree_id equals the RunOutcome.worktree_id drive_run reported, for completed and paused runs, and stays None when no worktree was used."""
+        blueprint = _catalog_blueprint(engine_paths, "worktree-task", [{"id": "s1", "run": "echo one"}])
         _patch_drive_run(
             monkeypatch,
             engine_paths,
-            RunOutcome(status=outcome_status, sandbox_path=engine_paths.root_dir, sandbox_id=outcome_sandbox_id),
+            RunOutcome(status=outcome_status, worktree_path=engine_paths.root_dir, worktree_id=outcome_worktree_id),
         )
 
-        _engine(engine_paths, runs_repo).run(blueprint, RunRequest(session_id="sbx-run", use_sandbox=True, keep=True))
+        _engine(engine_paths, runs_repo).run(
+            blueprint, RunRequest(session_id="worktree-run", use_worktree=True, keep=True)
+        )
 
-        row = runs_repo.get("sbx-run")
+        row = runs_repo.get("worktree-run")
         assert row is not None
         assert row.status == outcome_status
-        assert row.sandbox_id == outcome_sandbox_id
+        assert row.worktree_id == outcome_worktree_id
 
 
 class EngineRunProjectionTests:
@@ -513,18 +515,21 @@ class EngineRunProjectionTests:
     def test_run_terminal_row_and_run_json_agree(
         self, engine_paths: WorkspacePaths, runs_repo: RunsRepository, monkeypatch: pytest.MonkeyPatch, keep: bool
     ) -> None:
-        """[tier-1/integration] Engine.run: a completed sandboxed run leaves run.json.revision == row.execution_state_revision, run.json.results == outcome.step_results, and run.json.lifecycle equal to the row's status/error_message/completed_at/sandbox_id/sandbox_kept, with sandbox_kept == keep."""
+        """[tier-1/integration] Engine.run: a completed worktree-backed run leaves run.json.revision == row.execution_state_revision, run.json.results == outcome.step_results, and run.json.lifecycle equal to the row's status/error_message/completed_at/worktree_id/worktree_kept, with worktree_kept == keep."""
         blueprint = _catalog_blueprint(engine_paths, "proj-task", [{"id": "s1", "run": "echo one"}])
         _patch_drive_run(
             monkeypatch,
             engine_paths,
             RunOutcome(
-                status=RunStatus.COMPLETED, sandbox_path=engine_paths.root_dir, sandbox_id="sbx-1", sandbox_kept=keep
+                status=RunStatus.COMPLETED,
+                worktree_path=engine_paths.root_dir,
+                worktree_id="dovo_1",
+                worktree_kept=keep,
             ),
         )
 
         outcome = _engine(engine_paths, runs_repo).run(
-            blueprint, RunRequest(session_id="proj-1", use_sandbox=True, keep=keep)
+            blueprint, RunRequest(session_id="proj-1", use_worktree=True, keep=keep)
         )
 
         row = runs_repo.get("proj-1")
@@ -538,8 +543,8 @@ class EngineRunProjectionTests:
         assert payload.lifecycle.error_message == row.error_message
         assert payload.lifecycle.completed_at == row.completed_at
         assert row.completed_at is not None
-        assert payload.lifecycle.sandbox_id == row.sandbox_id == "sbx-1"
-        assert payload.lifecycle.sandbox_kept is row.sandbox_kept is keep
+        assert payload.lifecycle.worktree_id == row.worktree_id == "dovo_1"
+        assert payload.lifecycle.worktree_kept is row.worktree_kept is keep
 
 
 class EngineFinalizeFallbackTests:
@@ -561,11 +566,13 @@ class EngineFinalizeFallbackTests:
             no_tty: bool,
         ) -> RunOutcome:
             runs.save_execution_state(session_id, "not json", expected_revision=0, next_revision=0)
-            return RunOutcome(status=RunStatus.COMPLETED, sandbox_path=paths.root_dir)
+            return RunOutcome(status=RunStatus.COMPLETED, worktree_path=paths.root_dir)
 
         monkeypatch.setattr("dovo.engine.engine.drive_run", corrupting_drive_run)
 
-        outcome = _engine(engine_paths, runs_repo).run(blueprint, RunRequest(session_id="corrupt-1", use_sandbox=False))
+        outcome = _engine(engine_paths, runs_repo).run(
+            blueprint, RunRequest(session_id="corrupt-1", use_worktree=False)
+        )
 
         row = runs_repo.get("corrupt-1")
         assert row is not None

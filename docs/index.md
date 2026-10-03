@@ -10,7 +10,7 @@ Welcome to **Dovo CLI** (`dovo`), a CLI tool providing isolated Git worktree dev
 
 Key capabilities include:
 
-- **Isolated Sandboxes**: Safely iterate on feature code without dirtying your main working tree using `dovo sandbox`.
+- **Isolated Worktrees**: Safely iterate on feature code without dirtying your main working tree using `dovo worktree`.
 - **Unified Blueprint Execution**: Execute cataloged blueprints via `dovo run`.
 - **Durable Resumption**: Seamlessly resume paused sessions from saved run state via `dovo resume`.
 - **Execution History**: Inspect and audit recorded blueprint run sessions via `dovo history`.
@@ -32,8 +32,8 @@ dovo init
 # List available catalog items
 dovo blueprint list
 
-# Create an isolated sandbox environment
-dovo sandbox create my-feature
+# Create an isolated worktree environment
+dovo worktree create my-feature
 ```
 
 ---
@@ -42,11 +42,11 @@ dovo sandbox create my-feature
 
 ### 🚀 Getting Started
 - **[Installation](getting-started/installation.md)**: Install with `pip`, `pipx`, or `uv`.
-- **[Quickstart Tutorial](getting-started/quickstart.md)**: 5-minute tutorial to run your first blueprint in a sandbox.
+- **[Quickstart Tutorial](getting-started/quickstart.md)**: 5-minute tutorial to run your first blueprint in a worktree.
 - **[Workspace Configuration](getting-started/workspace-config.md)**: Set up `.dovo/config.json` and project settings.
 
 ### 📖 How-To Guides
-- **[Core Concepts](guides/concepts.md)**: Sandboxes, blueprints, steps, and session lifecycle.
+- **[Core Concepts](guides/concepts.md)**: Worktrees, blueprints, steps, and session lifecycle.
 - **[Authoring Blueprints](guides/authoring-blueprints.md)**: Creating custom blueprint documents.
 - **[Working with Steps](guides/working-with-steps.md)**: Command, Agent, and Script steps, shorthands, and reusable catalog steps.
 - **[Parameter Inputs & Expressions](guides/passing-inputs.md)**: Declaring typed parameters, CLI flags, and `${{ inputs.* }}` interpolation.
@@ -67,7 +67,7 @@ dovo sandbox create my-feature
 
 ### 💻 CLI Reference
 - **[Workspace Init (`dovo init`)](cli/init.md)**: Provision local workspace and configuration defaults.
-- **[Status (`dovo status`)](cli/status.md)**: Inspect workspace health, catalog, sandboxes, and recorded sessions.
+- **[Status (`dovo status`)](cli/status.md)**: Inspect workspace health, catalog, worktrees, and recorded sessions.
 - **[Config (`dovo config`)](cli/config.md)**: Display, modify, and validate project configuration.
 - **[Run (`dovo run`)](cli/run.md)**: Execute a blueprint by name.
 - **[Resume (`dovo resume`)](cli/resume.md)**: Resume paused blueprint sessions from saved run state.
@@ -75,6 +75,6 @@ dovo sandbox create my-feature
 - **[Logs (`dovo logs`)](cli/logs.md)**: Show a session's run timeline or a step's captured output.
 - **[Diff (`dovo diff`)](cli/diff.md)**: View the diff captured for an execution session.
 - **[Doctor (`dovo doctor`)](cli/doctor.md)**: Run registered workspace diagnostics.
-- **[Sandbox (`dovo sandbox`)](cli/sandbox.md)**: Git worktree isolation.
+- **[Worktree (`dovo worktree`)](cli/worktree.md)**: Git worktree isolation.
 - **[Blueprint (`dovo blueprint`)](cli/blueprint.md)**: Blueprint catalog items across all tiers.
 - **[Step (`dovo step`)](cli/step.md)**: Step catalog items across all tiers.

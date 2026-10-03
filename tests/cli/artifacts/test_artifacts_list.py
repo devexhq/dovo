@@ -22,12 +22,12 @@ def _paths_for(root: Path) -> WorkspacePaths:
 
 def _publish_artifact(workspace: Path, *, session_id: str, name: str) -> None:
     """Publish a real artifact bundle under session_id/name for CLI list/download fixtures."""
-    sandbox_path = workspace / "sandbox-scratch" / session_id
-    (sandbox_path / "dist").mkdir(parents=True, exist_ok=True)
-    (sandbox_path / "dist" / "pkg.whl").write_bytes(b"package-bytes")
+    worktree_path = workspace / "worktree-scratch" / session_id
+    (worktree_path / "dist").mkdir(parents=True, exist_ok=True)
+    (worktree_path / "dist" / "pkg.whl").write_bytes(b"package-bytes")
     paths = _paths_for(workspace)
     db = DovoDb(database_file=paths.database_file, project_id=paths.project_id)
-    Artifacts(paths, db=db.artifacts).upload(session_id, name, "dist/*.whl", sandbox_path=sandbox_path)
+    Artifacts(paths, db=db.artifacts).upload(session_id, name, "dist/*.whl", worktree_path=worktree_path)
 
 
 class ArtifactsListCliIntegrationTests:

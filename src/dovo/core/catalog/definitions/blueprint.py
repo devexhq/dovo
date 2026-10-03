@@ -91,7 +91,7 @@ class BlueprintDefinition(BaseModel):
     description: str = ""
     summary: str = ""
     version: int | str = 1
-    use_sandbox: bool = True
+    use_worktree: bool = True
     timeout_seconds: int | None = Field(default=None, ge=1)
     env: dict[str, str] = Field(default_factory=dict)
     inputs: dict[str, ParameterInput] = Field(default_factory=dict)

@@ -248,7 +248,7 @@ class RunCoordinator:
         step_coordinator = StepCoordinator(
             RunSettings(
                 cwd=self._context.target_dir,
-                use_sandbox=row.use_sandbox,
+                use_worktree=row.use_worktree,
                 keep=row.keep,
                 agent=self._agent,
                 observer=self._observer,
@@ -567,13 +567,13 @@ class RunCoordinator:
         error_message: str | None = None,
     ) -> bool:
         """Save the in-memory state at revision + 1 under the workspace lock; append a boundary-naming error and return False on failure."""
-        sandbox = self._context.sandbox
+        worktree = self._context.worktree
         with WorkspaceLock(self._context.paths.lock_file):
             saved = self._state_store.save(
                 self._run.state,
                 run_status=run_status,
                 error_message=error_message,
-                sandbox_id=sandbox.session_id if sandbox is not None else None,
+                worktree_id=worktree.session_id if worktree is not None else None,
             )
         if not saved.ok or saved.state is None:
             detail = saved.errors[0] if saved.errors else "state was not saved"
@@ -592,14 +592,14 @@ class RunCoordinator:
         return {**(context or {}), "iteration_index": loop_iteration}
 
     def _outcome(self, status: RunStatus) -> RunOutcome:
-        """Build the RunOutcome for status from the flattened state, accumulated errors, warnings, and sandbox identity."""
-        sandbox = self._context.sandbox
+        """Build the RunOutcome for status from the flattened state, accumulated errors, warnings, and worktree identity."""
+        worktree = self._context.worktree
         return RunOutcome(
             status=status,
             step_results=flatten_step_results(self._loaded.state) if self._loaded is not None else [],
             errors=list(self._errors),
             warnings=list(self._warnings),
-            sandbox_path=sandbox.sandbox_path if sandbox is not None else self._context.target_dir,
+            worktree_path=worktree.worktree_path if worktree is not None else self._context.target_dir,
             session_id=self._context.session_id,
-            sandbox_id=sandbox.session_id if sandbox is not None else None,
+            worktree_id=worktree.session_id if worktree is not None else None,
         )

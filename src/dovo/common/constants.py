@@ -6,7 +6,7 @@
 DOVO_LOCAL_GITIGNORE_ENTRIES: dict[str, bool] = {
     ".meta/": True,
     ".lock": True,
-    "sandboxes/": True,
+    "worktrees/": True,
     "*.db": True,
     "*.db-journal": True,
     "*.db-wal": True,
@@ -23,7 +23,7 @@ BOOTSTRAP_SCHEMA_VERSION = 1
 
 BOOTSTRAP_META_REL = ".meta/bootstrap.json"
 
-# Wall-clock cap for internal git plumbing (sandbox lifecycle, patch apply,
+# Wall-clock cap for internal git plumbing (worktree lifecycle, patch apply,
 # mutation baseline/capture, status/diff helpers). Distinct from trigger/agent
 # timeouts; prevents a hung git child from wedging ``dovo run`` indefinitely.
 GIT_SUBPROCESS_TIMEOUT_SECONDS = 120
@@ -33,7 +33,7 @@ REQUIRED_SUBDIRS = (".meta",)
 # Maximum diff lines rendered before truncation in interactive terminals
 DEFAULT_MAX_DIFF_LINES = 500
 
-DEFAULT_MAXIMUM_SANDBOXES_ALLOWED = 3
+DEFAULT_MAXIMUM_WORKTREES_ALLOWED = 3
 
 # @TODO: Do we need a maximum?
 ON_FAILURE_MAX_RETRIES_MINIMUM = 1

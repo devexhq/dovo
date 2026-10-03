@@ -20,7 +20,7 @@ from dovo.core.status.models import (
     DatabaseStatusInfo,
     DovoStatusResult,
     GitStatusInfo,
-    SandboxStatusInfo,
+    WorktreeStatusInfo,
 )
 from tests.harness.formatter import (
     FormatterCase,
@@ -41,7 +41,7 @@ def _make_status_result(
     config: ConfigStatusInfo | None = None,
     catalog: CatalogStatusInfo | None = None,
     database: DatabaseStatusInfo | None = None,
-    sandboxes: SandboxStatusInfo | None = None,
+    worktrees: WorktreeStatusInfo | None = None,
     warnings: list[str] | None = None,
     fixes: list[str] | None = None,
     errors: list[str] | None = None,
@@ -65,7 +65,7 @@ def _make_status_result(
             is_valid=True,
             config=DovoConfig(
                 version=1,
-                project=ProjectConfig(name="worktree-cli"),
+                project=ProjectConfig(name="dovo"),
                 agent=AgentConfig(model="gemini-2.5-flash"),
             ),
         ),
@@ -87,11 +87,11 @@ def _make_status_result(
             is_accessible=True,
             total_runs=1,
         ),
-        sandboxes=sandboxes
-        or SandboxStatusInfo(
-            active_sandboxes=1,
-            total_sandboxes=1,
-            max_active_sandboxes=5,
+        worktrees=worktrees
+        or WorktreeStatusInfo(
+            active_worktrees=1,
+            total_worktrees=1,
+            max_active_worktrees=5,
         ),
         warnings=warnings or [],
         fixes=fixes or [],
@@ -104,15 +104,15 @@ def _make_status_view(**overrides: Any) -> StatusView:
     defaults: dict[str, Any] = {
         "health": StatusHealth.OK,
         "root_dir": ROOT,
-        "project_name": "worktree-cli",
+        "project_name": "dovo",
         "config_status": ConfigLoadStatus.OK,
         "config_path_relative": ".dovo/config.json",
         "git_branch": "feature/status-cmd",
         "git_is_dirty": False,
         "uncommitted_files": 0,
         "agent_model": "gemini-2.5-flash",
-        "active_sandboxes": 1,
-        "max_active_sandboxes": 5,
+        "active_worktrees": 1,
+        "max_active_worktrees": 5,
         "valid_catalog_items": 2,
         "total_catalog_items": 2,
         "total_runs": 1,
@@ -127,7 +127,7 @@ def _make_status_view(**overrides: Any) -> StatusView:
 HEALTHY = FormatterCase(
     data=_make_status_result(root_dir=ROOT),
     view=_make_status_view(),
-    render_expectations=["worktree-cli", "feature/status-cmd", "gemini-2.5-flash", "1", "5", "2", "2"],
+    render_expectations=["dovo", "feature/status-cmd", "gemini-2.5-flash", "1", "5", "2", "2"],
 )
 
 UNINITIALIZED_NON_GIT = FormatterCase(
@@ -153,8 +153,8 @@ UNINITIALIZED_NON_GIT = FormatterCase(
         config_status=ConfigLoadStatus.NOT_FOUND,
         git_branch=None,
         agent_model=None,
-        active_sandboxes=None,
-        max_active_sandboxes=None,
+        active_worktrees=None,
+        max_active_worktrees=None,
         valid_catalog_items=None,
         total_catalog_items=None,
         warnings=["Dovo workspace is not initialized. Run 'dovo init' to configure."],
@@ -188,8 +188,8 @@ DEGRADED_SCHEMA_INVALID = FormatterCase(
         project_name=None,
         config_status=ConfigLoadStatus.SCHEMA_INVALID,
         agent_model=None,
-        active_sandboxes=None,
-        max_active_sandboxes=None,
+        active_worktrees=None,
+        max_active_worktrees=None,
         valid_catalog_items=None,
         total_catalog_items=None,
         warnings=["Invalid value: expected string"],
@@ -222,8 +222,8 @@ DEGRADED_MALFORMED_JSON = FormatterCase(
         project_name=None,
         config_status=ConfigLoadStatus.MALFORMED_JSON,
         agent_model=None,
-        active_sandboxes=None,
-        max_active_sandboxes=None,
+        active_worktrees=None,
+        max_active_worktrees=None,
         valid_catalog_items=None,
         total_catalog_items=None,
         warnings=["Malformed config.json"],
@@ -254,8 +254,8 @@ DEGRADED_ROOT_NOT_OBJECT = FormatterCase(
         project_name=None,
         config_status=ConfigLoadStatus.ROOT_NOT_OBJECT,
         agent_model=None,
-        active_sandboxes=None,
-        max_active_sandboxes=None,
+        active_worktrees=None,
+        max_active_worktrees=None,
         valid_catalog_items=None,
         total_catalog_items=None,
         warnings=["Malformed config.json: root must be an object"],
@@ -286,8 +286,8 @@ DEGRADED_PATH_IS_DIRECTORY = FormatterCase(
         project_name=None,
         config_status=ConfigLoadStatus.PATH_IS_DIRECTORY,
         agent_model=None,
-        active_sandboxes=None,
-        max_active_sandboxes=None,
+        active_worktrees=None,
+        max_active_worktrees=None,
         valid_catalog_items=None,
         total_catalog_items=None,
         warnings=["Config path is a directory, not a file"],
@@ -318,8 +318,8 @@ DEGRADED_UNREADABLE = FormatterCase(
         project_name=None,
         config_status=ConfigLoadStatus.UNREADABLE,
         agent_model=None,
-        active_sandboxes=None,
-        max_active_sandboxes=None,
+        active_worktrees=None,
+        max_active_worktrees=None,
         valid_catalog_items=None,
         total_catalog_items=None,
         warnings=["Unable to read config.json: Permission denied"],
@@ -342,7 +342,7 @@ DIRTY_BRANCH = FormatterCase(
         git_is_dirty=True,
         uncommitted_files=3,
     ),
-    render_expectations=["worktree-cli", "feature/dirty-branch", "gemini-2.5-flash", "1", "5", "2", "2"],
+    render_expectations=["dovo", "feature/dirty-branch", "gemini-2.5-flash", "1", "5", "2", "2"],
 )
 
 NOT_A_GIT_REPO = FormatterCase(
@@ -357,7 +357,7 @@ NOT_A_GIT_REPO = FormatterCase(
         remediations=["Run 'git init' or navigate to a Git repository."],
     ),
     render_expectations=[
-        "worktree-cli",
+        "dovo",
         "gemini-2.5-flash",
         "1",
         "5",
@@ -396,7 +396,7 @@ AGENT_MODEL_UNSET = FormatterCase(
             is_valid=True,
             config=DovoConfig(
                 version=1,
-                project=ProjectConfig(name="worktree-cli"),
+                project=ProjectConfig(name="dovo"),
                 agent=AgentConfig(model=None),
             ),
         ),
@@ -404,7 +404,7 @@ AGENT_MODEL_UNSET = FormatterCase(
     view=_make_status_view(
         agent_model=None,
     ),
-    render_expectations=["worktree-cli", "feature/status-cmd", "1", "5", "2", "2"],
+    render_expectations=["dovo", "feature/status-cmd", "1", "5", "2", "2"],
 )
 
 EMPTY_CATALOG = FormatterCase(
@@ -425,7 +425,7 @@ EMPTY_CATALOG = FormatterCase(
         valid_catalog_items=0,
         total_catalog_items=0,
     ),
-    render_expectations=["worktree-cli", "feature/status-cmd", "gemini-2.5-flash", "1", "5", "0", "0"],
+    render_expectations=["dovo", "feature/status-cmd", "gemini-2.5-flash", "1", "5", "0", "0"],
 )
 
 INVALID_CATALOG_ITEMS = FormatterCase(
@@ -447,29 +447,29 @@ INVALID_CATALOG_ITEMS = FormatterCase(
         valid_catalog_items=3,
         total_catalog_items=5,
     ),
-    render_expectations=["worktree-cli", "feature/status-cmd", "gemini-2.5-flash", "1", "5", "3", "5"],
+    render_expectations=["dovo", "feature/status-cmd", "gemini-2.5-flash", "1", "5", "3", "5"],
 )
 
 WITH_WARNINGS_AND_FIXES = FormatterCase(
     data=_make_status_result(
         root_dir=ROOT,
-        warnings=["max_active_sandboxes (10) is unusually high."],
-        fixes=["Reduce max_active_sandboxes in .dovo/config.json."],
+        warnings=["max_active_worktrees (10) is unusually high."],
+        fixes=["Reduce max_active_worktrees in .dovo/config.json."],
     ),
     view=_make_status_view(
-        warnings=["max_active_sandboxes (10) is unusually high."],
-        remediations=["Reduce max_active_sandboxes in .dovo/config.json."],
+        warnings=["max_active_worktrees (10) is unusually high."],
+        remediations=["Reduce max_active_worktrees in .dovo/config.json."],
     ),
     render_expectations=[
-        "worktree-cli",
+        "dovo",
         "feature/status-cmd",
         "gemini-2.5-flash",
         "1",
         "5",
         "2",
         "2",
-        "max_active_sandboxes (10) is unusually high.",
-        "Reduce max_active_sandboxes in .dovo/config.json.",
+        "max_active_worktrees (10) is unusually high.",
+        "Reduce max_active_worktrees in .dovo/config.json.",
     ],
 )
 
@@ -492,8 +492,8 @@ DEGRADED_RAW_CONFIG_PROJECT = FormatterCase(
         project_name="raw-project",
         config_status=ConfigLoadStatus.SCHEMA_INVALID,
         agent_model=None,
-        active_sandboxes=None,
-        max_active_sandboxes=None,
+        active_worktrees=None,
+        max_active_worktrees=None,
         valid_catalog_items=None,
         total_catalog_items=None,
         warnings=["Invalid schema"],
@@ -526,15 +526,15 @@ STATUS_PAYLOAD_CASES = [
         {
             "health": "ok",
             "root_dir": "/workspace/my-repo",
-            "project_name": "worktree-cli",
+            "project_name": "dovo",
             "config_status": "ok",
             "config_path_relative": ".dovo/config.json",
             "git_branch": "feature/status-cmd",
             "git_is_dirty": False,
             "uncommitted_files": 0,
             "agent_model": "gemini-2.5-flash",
-            "active_sandboxes": 1,
-            "max_active_sandboxes": 5,
+            "active_worktrees": 1,
+            "max_active_worktrees": 5,
             "valid_catalog_items": 2,
             "total_catalog_items": 2,
             "total_runs": 1,
@@ -556,8 +556,8 @@ STATUS_PAYLOAD_CASES = [
             "git_is_dirty": False,
             "uncommitted_files": 0,
             "agent_model": None,
-            "active_sandboxes": None,
-            "max_active_sandboxes": None,
+            "active_worktrees": None,
+            "max_active_worktrees": None,
             "valid_catalog_items": None,
             "total_catalog_items": None,
             "total_runs": 1,

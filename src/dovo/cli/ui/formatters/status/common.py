@@ -64,11 +64,11 @@ def format_agent_model(view: StatusView) -> str:
     return "[dim]Not Configured[/dim]"
 
 
-def format_sandboxes_status(view: StatusView) -> str:
-    """Format active sandboxes count or N/A when config is unavailable."""
-    if view.active_sandboxes is None or view.max_active_sandboxes is None:
+def format_worktrees_status(view: StatusView) -> str:
+    """Format active worktrees count or N/A when config is unavailable."""
+    if view.active_worktrees is None or view.max_active_worktrees is None:
         return "[dim]N/A[/dim]"
-    return f"{view.active_sandboxes} / {view.max_active_sandboxes} max"
+    return f"{view.active_worktrees} / {view.max_active_worktrees} max"
 
 
 def format_catalog_status(view: StatusView) -> str:
@@ -88,6 +88,6 @@ def build_status_table(view: StatusView) -> Table:
     table.add_row("Config Status", format_config_status(view))
     table.add_row("Active Git Branch", format_git_branch(view))
     table.add_row("Agent Model", format_agent_model(view))
-    table.add_row("Active Sandboxes", format_sandboxes_status(view))
+    table.add_row("Active Worktrees", format_worktrees_status(view))
     table.add_row("Catalog Items", format_catalog_status(view))
     return table

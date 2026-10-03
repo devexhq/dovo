@@ -16,13 +16,13 @@ class HandleArtifactsUploadTests:
         self, tmp_path: Path, artifacts_repository: ArtifactsRepository
     ) -> None:
         """[tier-1/unit] handle_artifacts_upload: ctx.env with matching ARTIFACT_NAME/ARTIFACT_PATH maps a successful publish_artifact() call to StepDispatchOutcome(status='completed')."""
-        sandbox_path = tmp_path / "sandbox"
-        (sandbox_path / "dist").mkdir(parents=True)
-        (sandbox_path / "dist" / "pkg.whl").write_bytes(b"bytes")
+        worktree_path = tmp_path / "worktree"
+        (worktree_path / "dist").mkdir(parents=True)
+        (worktree_path / "dist" / "pkg.whl").write_bytes(b"bytes")
         artifacts_dir = tmp_path / "artifacts"
 
         ctx = InternalCommandContext(
-            sandbox_path=sandbox_path,
+            worktree_path=worktree_path,
             session_id="wf_abc123",
             env={"ARTIFACT_NAME": "dist-packages", "ARTIFACT_PATH": "dist/*.whl"},
             artifacts_dir=artifacts_dir,
@@ -38,12 +38,12 @@ class HandleArtifactsUploadTests:
         self, tmp_path: Path, artifacts_repository: ArtifactsRepository
     ) -> None:
         """[tier-1/unit] handle_artifacts_upload: publish_artifact() returning NO_MATCHING_FILES maps to StepDispatchOutcome(status='failed') carrying the same error message."""
-        sandbox_path = tmp_path / "sandbox"
-        sandbox_path.mkdir()
+        worktree_path = tmp_path / "worktree"
+        worktree_path.mkdir()
         artifacts_dir = tmp_path / "artifacts"
 
         ctx = InternalCommandContext(
-            sandbox_path=sandbox_path,
+            worktree_path=worktree_path,
             session_id="wf_abc123",
             env={"ARTIFACT_NAME": "dist-packages", "ARTIFACT_PATH": "dist/*.whl"},
             artifacts_dir=artifacts_dir,

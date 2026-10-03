@@ -1,8 +1,8 @@
 # Agent-Step Adapters
 
-An agent step (`type: agent`) sends its interpolated `prompt` to the resolved provider in `direct` mode and requires an active Dovo Git sandbox. Under `dovo run --no-sandbox`, and for resumed in-place runs, the step fails with `Agent steps require an active Dovo Git sandbox.`
+An agent step (`type: agent`) sends its interpolated `prompt` to the resolved provider in `direct` mode and requires an active Dovo Git worktree. Under `dovo run --no-worktree`, and for resumed in-place runs, the step fails with `Agent steps require an active git worktree.`
 
-A provider either returns a unified diff or edits the sandbox directly; see [`registry.py`](../../src/dovo/core/agents/registry.py) for which identifiers use which kind. A returned diff is validated, checked, and applied to the sandbox working tree unstaged. A direct edit that passed the shared patch gate is recorded as-is. Nothing is applied to the source checkout until you apply the sandbox.
+A provider either returns a unified diff or edits the worktree directly; see [`registry.py`](../../src/dovo/core/agents/registry.py) for which identifiers use which kind. A returned diff is validated, checked, and applied to the worktree working tree unstaged. A direct edit that passed the shared patch gate is recorded as-is. Nothing is applied to the source checkout until you apply the worktree.
 
 The step's stdout is one JSON object followed by a newline, shaped by [`AgentStepSummary`](../../src/dovo/engine/executors/models.py) with `status` drawn from [`AgentResponseStatus`](../../src/dovo/core/agents/models.py). A planning or review prompt that changes no files finishes as `no_op` and keeps its findings in `summary`. Any status other than `proposed_patch` or `no_op` fails the step through its `on_failure` policy.
 

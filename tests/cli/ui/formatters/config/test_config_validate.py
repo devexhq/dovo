@@ -19,8 +19,8 @@ from dovo.core.config.models import (
     HistoryConfig,
     ProjectConfig,
     PruneConfig,
-    SandboxConfig,
     TelemetryConfig,
+    WorktreeConfig,
 )
 from dovo.core.config.validate import (
     ConfigValidationResult,
@@ -40,9 +40,9 @@ def _make_config(name: str = "valid-proj") -> DovoConfig:
     return DovoConfig(
         version=1,
         project=ProjectConfig(name=name, initialized_at=None),
-        sandbox=SandboxConfig(
+        worktree=WorktreeConfig(
             base_ref="HEAD",
-            max_active_sandboxes=3,
+            max_active_worktrees=3,
             default_timeout_seconds=900,
         ),
         agent=AgentConfig(
@@ -67,7 +67,7 @@ def _make_config(name: str = "valid-proj") -> DovoConfig:
         ),
         prune=PruneConfig(
             remove_stale_worktrees=True,
-            remove_orphaned_sandboxes=True,
+            remove_orphaned_worktrees=True,
             remove_expired_artifacts=False,
             artifact_ttl_days=30,
         ),
@@ -197,9 +197,9 @@ VALIDATION_PAYLOAD_CASES = [
                     "initialized_at": None,
                 },
                 "ignore_global_root_error": False,
-                "sandbox": {
+                "worktree": {
                     "base_ref": "HEAD",
-                    "max_active_sandboxes": 3,
+                    "max_active_worktrees": 3,
                     "default_timeout_seconds": 900,
                 },
                 "agent": {
@@ -224,7 +224,7 @@ VALIDATION_PAYLOAD_CASES = [
                 },
                 "prune": {
                     "remove_stale_worktrees": True,
-                    "remove_orphaned_sandboxes": True,
+                    "remove_orphaned_worktrees": True,
                     "remove_expired_artifacts": False,
                     "artifact_ttl_days": 30,
                 },

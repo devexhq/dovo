@@ -21,9 +21,9 @@ def _settings() -> ResolvedAgentSettings:
     return ResolvedAgentSettings(provider="ollama", model=None, endpoint=None, temperature=0.2, max_tokens=4096)
 
 
-def _run_agent_step(sandbox: Path, step_builder: StepBuilder) -> StepResult:
+def _run_agent_step(worktree: Path, step_builder: StepBuilder) -> StepResult:
     context = StepExecutionContext(
-        step=step_builder.build(), sandbox_path=sandbox, agent_runner=build_agent_step_runner(_settings(), True)
+        step=step_builder.build(), worktree_path=worktree, agent_runner=build_agent_step_runner(_settings(), True)
     )
     return StepExecution(context).run()
 
@@ -94,7 +94,7 @@ class AgentStepRunnerTests:
 class StepExecutionAgentRunnerTests:
     def test_agent_step_without_agent_runner_fails_with_missing_settings_message(self, git_repo: Path) -> None:
         """[tier-1/unit] StepExecution.run: an agent step run from StepExecutionContext(agent_runner=None) returns status 'failed', exit_code 1, error_message == MISSING_SETTINGS_MESSAGE, stdout '' and stderr ''."""
-        context = StepExecutionContext(step=StepBuilder.agent("plan").build(), sandbox_path=git_repo)
+        context = StepExecutionContext(step=StepBuilder.agent("plan").build(), worktree_path=git_repo)
 
         result = StepExecution(context).run()
 

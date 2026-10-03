@@ -36,11 +36,11 @@ from dovo.cli.ui.formatters.events import (
     MessageFormatter,
     PromptFormatter,
     RunSuccessFormatter,
-    SandboxLifecycleFormatter,
     StepDoneFormatter,
     StepOutputFormatter,
     StepStartFormatter,
     WarningFormatter,
+    WorktreeLifecycleFormatter,
 )
 from dovo.cli.ui.formatters.global_cli import (
     WelcomeBannerFormatter,
@@ -57,18 +57,18 @@ from dovo.cli.ui.formatters.registry import (
     FORMATTER_REGISTRY,
     register_all_formatters,
 )
-from dovo.cli.ui.formatters.sandbox import (
-    PrunedItemFormatter,
-    SandboxApplyFormatter,
-    SandboxCreateFormatter,
-    SandboxDeleteFormatter,
-    SandboxDiffFormatter,
-    SandboxListFormatter,
-    SandboxPruneFormatter,
-    SandboxShowFormatter,
-)
 from dovo.cli.ui.formatters.status import (
     DovoStatusFormatter,
+)
+from dovo.cli.ui.formatters.worktree import (
+    PrunedItemFormatter,
+    WorktreeApplyFormatter,
+    WorktreeCreateFormatter,
+    WorktreeDeleteFormatter,
+    WorktreeDiffFormatter,
+    WorktreeListFormatter,
+    WorktreePruneFormatter,
+    WorktreeShowFormatter,
 )
 
 __all__ = [
@@ -97,20 +97,20 @@ __all__ = [
     "PromptFormatter",
     "PrunedItemFormatter",
     "RunSuccessFormatter",
-    "SandboxApplyFormatter",
-    "SandboxCreateFormatter",
-    "SandboxDeleteFormatter",
-    "SandboxDiffFormatter",
-    "SandboxLifecycleFormatter",
-    "SandboxListFormatter",
-    "SandboxPruneFormatter",
-    "SandboxShowFormatter",
     "StepDoneFormatter",
     "StepOutputFormatter",
     "StepStartFormatter",
     "WarningFormatter",
     "WelcomeBannerFormatter",
     "WorkspaceInitFormatter",
+    "WorktreeApplyFormatter",
+    "WorktreeCreateFormatter",
+    "WorktreeDeleteFormatter",
+    "WorktreeDiffFormatter",
+    "WorktreeLifecycleFormatter",
+    "WorktreeListFormatter",
+    "WorktreePruneFormatter",
+    "WorktreeShowFormatter",
     "build_error_panel",
     "register_all_formatters",
     "render_list_errors",

@@ -126,7 +126,7 @@ class StepExecutionContext(BaseModel):
     model_config = {"extra": "forbid", "strict": True, "arbitrary_types_allowed": True}
 
     step: StepDefinition
-    sandbox_path: Path
+    worktree_path: Path
     context: dict[str, Any] | None = None
     on_output: OutputCallback | None = None
     step_index: int = 1
@@ -151,7 +151,7 @@ class InternalCommandContext(BaseModel):
 
     model_config = {"extra": "forbid", "strict": True, "arbitrary_types_allowed": True}
 
-    sandbox_path: Path
+    worktree_path: Path
     session_id: str
     env: dict[str, str] = Field(default_factory=dict)
     artifacts_dir: Path | None = None

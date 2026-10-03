@@ -3,7 +3,7 @@ id: format
 description: Run ruff format and check --fix
 summary: Format files
 version: 1
-use_sandbox: false
+use_worktree: false
 on_failure: prompt
 
 inputs:

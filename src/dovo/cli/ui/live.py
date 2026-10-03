@@ -17,10 +17,10 @@ from rich.text import Text
 from dovo.cli.ui.events import (
     LoopConditionView,
     LoopLifecycleEvent,
-    SandboxLifecycleEvent,
     StepDoneEvent,
     StepOutputEvent,
     StepStartEvent,
+    WorktreeLifecycleEvent,
 )
 
 DEFAULT_OUTPUT_BUFFER_SIZE = 8
@@ -75,11 +75,11 @@ def _format_failure_detail(event: StepDoneEvent) -> str:
 def build_live_step_table(
     steps: list[LiveStepItem],
     *,
-    sandbox_info: str | None = None,
+    worktree_info: str | None = None,
     now: float | None = None,
 ) -> Table:
     """Build the Rich table displaying dynamic step execution progress."""
-    title = f"Blueprint Execution Progress ({sandbox_info})" if sandbox_info else "Blueprint Execution Progress"
+    title = f"Blueprint Execution Progress ({worktree_info})" if worktree_info else "Blueprint Execution Progress"
     table = Table(title=title, title_justify="left", show_header=True)
     table.add_column("Status", width=6, justify="center")
     table.add_column("Step")
@@ -161,11 +161,11 @@ def build_live_renderable(
     *,
     active_step_name: str | None = None,
     output_lines: Sequence[str] | None = None,
-    sandbox_info: str | None = None,
+    worktree_info: str | None = None,
     loop_panel: Panel | None = None,
 ) -> Table | Group:
     """Build the composite Rich renderable with loop status, step table, and optional output panel."""
-    table = build_live_step_table(steps, sandbox_info=sandbox_info)
+    table = build_live_step_table(steps, worktree_info=worktree_info)
     body: Table | Group = table
     if active_step_name is not None:
         panel = build_live_output_panel(active_step_name, output_lines or [])
@@ -191,7 +191,7 @@ class LiveDisplayManager:
             output_buffer_size: Maximum lines to retain in the active output panel ring buffer.
         """
         self.console = console
-        self.sandbox_info: str | None = None
+        self.worktree_info: str | None = None
         self.steps: list[LiveStepItem] = []
         self.output_buffer_size = output_buffer_size
         self._active_step_name: str | None = None
@@ -280,10 +280,10 @@ class LiveDisplayManager:
                 self._iteration_results[self._loop_iteration] = all(condition.passed for condition in event.conditions)
         self._refresh()
 
-    def handle_sandbox(self, event: SandboxLifecycleEvent, rendered: Text) -> None:
-        """Handle sandbox lifecycle event by updating title info and printing above live table."""
+    def handle_worktree(self, event: WorktreeLifecycleEvent, rendered: Text) -> None:
+        """Handle worktree lifecycle event by updating title info and printing above live table."""
         if event.action == "ready":
-            self.sandbox_info = f"Active ({event.path})" if event.active else "In-place (workspace)"
+            self.worktree_info = f"Active ({event.path})" if event.active else "In-place (workspace)"
         self.print_above(rendered)
         self._refresh()
 
@@ -295,7 +295,7 @@ class LiveDisplayManager:
             self.console.print(renderable)
 
     def _build_renderable(self) -> Table | Group:
-        """Build the combined renderable containing loop status, steps table, active output, and sandbox info."""
+        """Build the combined renderable containing loop status, steps table, active output, and worktree info."""
         loop_panel = (
             build_loop_status_panel(
                 self._loop_id,
@@ -311,7 +311,7 @@ class LiveDisplayManager:
             self.steps,
             active_step_name=self._active_step_name,
             output_lines=list(self._active_output),
-            sandbox_info=self.sandbox_info,
+            worktree_info=self.worktree_info,
             loop_panel=loop_panel,
         )
 

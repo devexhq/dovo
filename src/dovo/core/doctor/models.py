@@ -26,7 +26,7 @@ class CheckCategory(StrEnum):
     GIT = "git"
     CONFIG = "config"
     FILESYSTEM = "filesystem"
-    SANDBOX = "sandbox"
+    WORKTREE = "worktree"
     AGENT = "agent"
     ENVIRONMENT = "environment"
 

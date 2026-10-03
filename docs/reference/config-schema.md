@@ -14,9 +14,9 @@ This reference documents the complete JSON schema for `.dovo/config.json` (Versi
     "initialized_at": "2026-08-06T00:00:00Z"
   },
   "ignore_global_root_error": false,
-  "sandbox": {
+  "worktree": {
     "base_ref": "HEAD",
-    "max_active_sandboxes": 3,
+    "max_active_worktrees": 3,
     "default_timeout_seconds": 900
   },
   "agent": {
@@ -41,7 +41,7 @@ This reference documents the complete JSON schema for `.dovo/config.json` (Versi
   },
   "prune": {
     "remove_stale_worktrees": true,
-    "remove_orphaned_sandboxes": true,
+    "remove_orphaned_worktrees": true,
     "remove_expired_artifacts": false,
     "artifact_ttl_days": 30
   },
@@ -66,10 +66,10 @@ This reference documents the complete JSON schema for `.dovo/config.json` (Versi
 * `name` *(string)*: Project identifier. Defaults to directory name or `"unnamed_project"`.
 * `initialized_at` *(string \| null)*: Unrestricted creation-timestamp string or `null`; the schema does not validate ISO 8601 format.
 
-### 3. `sandbox`
+### 3. `worktree`
 * `base_ref` *(string)*: Base Git reference to branch from (default: `"HEAD"`).
-* `max_active_sandboxes` *(integer)*: Maximum allowed concurrent sandboxes (default: `3`).
-* `default_timeout_seconds` *(integer)*: Accepted sandbox timeout setting (default: `900`); the current runtime does not consume it.
+* `max_active_worktrees` *(integer)*: Maximum allowed concurrent worktrees (default: `3`).
+* `default_timeout_seconds` *(integer)*: Accepted worktree timeout setting (default: `900`); the current runtime does not consume it.
 
 ### 4. `agent`
 * `provider` *(string)*: Schema-accepted value: `local`, `ollama`, `cursor`, `gemini`, `copilot`, `openai`, `anthropic`, `azure_openai`, or `custom`. Runtime adapters are only `local`, `ollama`, `cursor`, `gemini`, and `copilot`.
@@ -93,7 +93,7 @@ This reference documents the complete JSON schema for `.dovo/config.json` (Versi
 
 ### 7. `prune`
 * `remove_stale_worktrees` *(boolean)*: Accepted prune setting (default: `true`); currently stored but not applied as an automatic runtime policy.
-* `remove_orphaned_sandboxes` *(boolean)*: Accepted prune setting (default: `true`); currently stored but not applied as an automatic runtime policy.
+* `remove_orphaned_worktrees` *(boolean)*: Accepted prune setting (default: `true`); currently stored but not applied as an automatic runtime policy.
 * `remove_expired_artifacts` *(boolean)*: Accepted prune setting (default: `false`); currently stored but not applied as an automatic runtime policy.
 * `artifact_ttl_days` *(integer)*: Accepted artifact retention setting (default: `30`); currently stored but not applied as an automatic runtime policy.
 

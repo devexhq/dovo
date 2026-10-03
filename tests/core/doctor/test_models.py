@@ -179,7 +179,7 @@ class DoctorReportModelsTests:
         check_failed = DiagnosticCheckResult(
             check_id="check.failed",
             name="Check Failed",
-            category=CheckCategory.SANDBOX,
+            category=CheckCategory.WORKTREE,
             status=CheckStatus.FAILED,
             message="failed",
             details={"error": "broken"},

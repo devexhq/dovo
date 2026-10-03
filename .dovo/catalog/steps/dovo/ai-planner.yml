@@ -3,7 +3,7 @@ name: ai-planner
 description: Produce a short structured execution plan for the current task
 type: agent
 prompt: |
-  You are a planning agent in a Dovo sandbox.
+  You are a planning agent in a git worktree.
   Inspect the repository state and produce a concise, ordered execution plan.
   Do not modify files. Prefer concrete steps over generic advice.
 timeout_seconds: 300

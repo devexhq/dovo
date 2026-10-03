@@ -39,7 +39,7 @@ class FilesystemWritableCheckTests:
         assert result.details == {
             "verified_paths": [
                 str(tmp_path / ".dovo"),
-                str(tmp_path / ".dovo/sandboxes"),
+                str(tmp_path / ".dovo/worktrees"),
                 str(paths.database_file.parent),
             ]
         }
@@ -47,10 +47,10 @@ class FilesystemWritableCheckTests:
     def test_execute_readonly_directory_returns_unwritable_failure(
         self, tmp_path: Path, workspace_paths_factory: WorkspacePathsFactory
     ) -> None:
-        """[tier-1/unit] FilesystemWritableCheck.execute: sandboxes_dir pre-created read-only -> FAILED with DOCTOR_FS_UNWRITABLE."""
-        sandboxes_dir = tmp_path / ".dovo" / "sandboxes"
-        sandboxes_dir.mkdir(parents=True, exist_ok=True)
-        sandboxes_dir.chmod(0o500)
+        """[tier-1/unit] FilesystemWritableCheck.execute: worktrees_dir pre-created read-only -> FAILED with DOCTOR_FS_UNWRITABLE."""
+        worktrees_dir = tmp_path / ".dovo" / "worktrees"
+        worktrees_dir.mkdir(parents=True, exist_ok=True)
+        worktrees_dir.chmod(0o500)
         config = DovoConfig(version=1, project=ProjectConfig(name="demo"))
         check = FilesystemWritableCheck()
         paths = workspace_paths_factory(tmp_path, None)
@@ -59,14 +59,14 @@ class FilesystemWritableCheckTests:
         try:
             result = check.execute(context)
         finally:
-            sandboxes_dir.chmod(0o700)
+            worktrees_dir.chmod(0o700)
 
         message = "1 configured path(s) are not writable."
         assert result.check_id == "filesystem.writable"
         assert result.category == CheckCategory.FILESYSTEM
         assert result.status == CheckStatus.FAILED
         assert result.error_code == "DOCTOR_FS_UNWRITABLE"
-        assert result.details == {"unwritable_paths": [str(sandboxes_dir)]}
+        assert result.details == {"unwritable_paths": [str(worktrees_dir)]}
         assert result.errors == [message]
 
     def test_execute_readonly_parent_directory_returns_unwritable_failure(
@@ -86,7 +86,7 @@ class FilesystemWritableCheckTests:
 
         unwritable_paths = [
             str(tmp_path / ".dovo"),
-            str(tmp_path / ".dovo/sandboxes"),
+            str(tmp_path / ".dovo/worktrees"),
         ]
         message = f"{len(unwritable_paths)} configured path(s) are not writable."
         assert result.check_id == "filesystem.writable"
@@ -113,7 +113,7 @@ class FilesystemWritableCheckTests:
         assert result.details == {
             "verified_paths": [
                 str(tmp_path / ".dovo"),
-                str(tmp_path / ".dovo/sandboxes"),
+                str(tmp_path / ".dovo/worktrees"),
                 str(paths.database_file.parent),
             ]
         }
@@ -138,7 +138,7 @@ class FilesystemWritableCheckTests:
                 str(tmp_path / ".dovo"),
                 str(project_storage / "sessions"),
                 str(project_storage / "artifacts"),
-                str(tmp_path / ".dovo" / "sandboxes"),
+                str(tmp_path / ".dovo" / "worktrees"),
                 str(paths.database_file.parent),
             ]
         }
@@ -160,6 +160,6 @@ class DoctorFilesystemWritableNotInitializedTests:
         result = FilesystemWritableCheck().execute(context)
 
         assert result.status == CheckStatus.OK
-        assert set(_target_paths(paths)) == {"root_dir", "sandboxes_dir", "database"}
+        assert set(_target_paths(paths)) == {"root_dir", "worktrees_dir", "database"}
         assert not (tmp_path / ".dovo" / "sessions").exists()
         assert not (tmp_path / ".dovo" / "artifacts").exists()

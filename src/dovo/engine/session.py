@@ -8,7 +8,7 @@ from dovo.core.agents.models import ResolvedAgentSettings
 from dovo.core.config import Config
 from dovo.core.db import RunRecord, RunsRepository, RunStatus
 from dovo.core.logs import RunLogEvent, RunLogEventType, append_run_log_event
-from dovo.core.sandbox import Sandbox, SandboxSession
+from dovo.core.worktree import Worktree, WorktreeSession
 from dovo.engine.coordinator import RunCoordinator
 from dovo.engine.executors.models import ExecutionIdentity
 from dovo.engine.models import (
@@ -35,19 +35,19 @@ def drive_run(
 ) -> RunOutcome:
     """Drive one run to completion and notify on_run_completed.
 
-    A config failure while resolving agent settings fails the run before any sandbox is created.
+    A config failure while resolving agent settings fails the run before any worktree is created.
     """
     row = runs.get(session_id)
     if row is None:
         return RunOutcome(
             status=RunStatus.FAILED,
             errors=[f"Run '{session_id}' not found."],
-            sandbox_path=paths.root_dir,
+            worktree_path=paths.root_dir,
         )
 
     resolution = _resolve_agent_settings(paths, row.agent)
     if resolution.settings is None:
-        outcome = RunOutcome(status=RunStatus.FAILED, errors=list(resolution.errors), sandbox_path=paths.root_dir)
+        outcome = RunOutcome(status=RunStatus.FAILED, errors=list(resolution.errors), worktree_path=paths.root_dir)
         safe_notify(observer, "on_run_completed", outcome)
         return outcome
 
@@ -77,16 +77,16 @@ def _resolve_agent_settings(paths: WorkspacePaths, override: str | None) -> Agen
 
 
 def _workspace_context(row: RunRecord, paths: WorkspacePaths, observer: RunObserver | None) -> RunSettings:
-    """Build the Workspace input from the run row's use_sandbox, keep, auto_apply, sandbox_id, and blueprint identity."""
+    """Build the Workspace input from the run row's use_worktree, keep, auto_apply, worktree_id, and blueprint identity."""
     return RunSettings(
         cwd=paths.root_dir,
-        use_sandbox=row.use_sandbox,
+        use_worktree=row.use_worktree,
         keep=row.keep,
         observer=observer,
         identity=ExecutionIdentity(blueprint_name=row.blueprint_name, blueprint_key=row.blueprint_key),
         session_id=row.session_id,
         auto_apply=row.auto_apply,
-        sandbox_id=row.sandbox_id if row.use_sandbox else None,
+        worktree_id=row.worktree_id if row.use_worktree else None,
         paths=paths,
     )
 
@@ -103,8 +103,8 @@ class RunSession:
         prompter: FailurePrompter | None,
         workspace: Workspace,
         context: RunContext,
-        manager: Sandbox | None,
-        sandbox: SandboxSession | None,
+        manager: Worktree | None,
+        worktree: WorktreeSession | None,
         setup_warnings: list[str],
         agent: ResolvedAgentSettings,
     ) -> None:
@@ -117,7 +117,7 @@ class RunSession:
         self._workspace = workspace
         self._context = context
         self._manager = manager
-        self._sandbox = sandbox
+        self._worktree = worktree
         self._setup_warnings = setup_warnings
         self._agent = agent
         self._apply_failed = False
@@ -133,15 +133,15 @@ class RunSession:
         no_tty: bool,
         agent: ResolvedAgentSettings,
     ) -> RunSession | RunOutcome:
-        """Set up the sandbox and session directories and return the session, or a FAILED outcome on setup error."""
+        """Set up the worktree and session directories and return the session, or a FAILED outcome on setup error."""
         workspace = Workspace(_workspace_context(row, paths, observer))
-        target_dir, manager, sandbox, setup_error = workspace.setup()
+        target_dir, manager, worktree, setup_error = workspace.setup()
         if setup_error is not None:
             return RunOutcome(
                 status=RunStatus.FAILED,
                 errors=[setup_error],
-                sandbox_kept=False,
-                sandbox_path=target_dir,
+                worktree_kept=False,
+                worktree_path=target_dir,
             )
 
         setup_warnings: list[str] = []
@@ -156,14 +156,14 @@ class RunSession:
             session_log_dir=session_log_dir,
             artifacts_dir=artifacts_dir,
             artifacts_db=artifacts_db,
-            sandbox=sandbox,
+            worktree=worktree,
             no_tty=no_tty,
             save_attempt_logs=Config(paths).history.save_attempt_logs,
         )
-        return cls(row, paths, runs, observer, prompter, workspace, context, manager, sandbox, setup_warnings, agent)
+        return cls(row, paths, runs, observer, prompter, workspace, context, manager, worktree, setup_warnings, agent)
 
     def run(self) -> RunOutcome:
-        """Execute the run, auto-apply sandbox changes, and close the workspace, returning the final outcome."""
+        """Execute the run, auto-apply worktree changes, and close the workspace, returning the final outcome."""
         append_run_log_event(
             self._context.session_log_dir,
             RunLogEvent(
@@ -173,9 +173,9 @@ class RunSession:
             ),
         )
         try:
-            outcome = self._apply_sandbox_changes(self._execute())
+            outcome = self._apply_worktree_changes(self._execute())
         except BaseException:
-            closed = self._close(RunOutcome(status=RunStatus.FAILED, sandbox_path=self._context.target_dir))
+            closed = self._close(RunOutcome(status=RunStatus.FAILED, worktree_path=self._context.target_dir))
             safe_notify(self._observer, "on_run_completed", closed)
             raise
 
@@ -195,15 +195,15 @@ class RunSession:
         outcome = coordinator.execute()
         return outcome.model_copy(update={"warnings": [*self._setup_warnings, *outcome.warnings]})
 
-    def _apply_sandbox_changes(self, outcome: RunOutcome) -> RunOutcome:
-        """Auto-apply sandbox changes on a completed run, returning the outcome (FAILED on conflict) and recording whether apply failed."""
+    def _apply_worktree_changes(self, outcome: RunOutcome) -> RunOutcome:
+        """Auto-apply worktree changes on a completed run, returning the outcome (FAILED on conflict) and recording whether apply failed."""
         if outcome.status != RunStatus.COMPLETED:
             return outcome
 
         errors = list(outcome.errors)
         warnings = list(outcome.warnings)
         new_status, self._apply_failed = self._workspace.handle_auto_apply(
-            self._manager, self._sandbox, errors, warnings
+            self._manager, self._worktree, errors, warnings
         )
         update: dict[str, object] = {"errors": errors, "warnings": warnings}
         if new_status is not None:
@@ -211,12 +211,12 @@ class RunSession:
         return outcome.model_copy(update=update)
 
     def _close(self, outcome: RunOutcome) -> RunOutcome:
-        """Capture the diff, clean up or keep the sandbox and scratch directory, log RUN_COMPLETED, and return the final outcome."""
+        """Capture the diff, clean up or keep the worktree and scratch directory, log RUN_COMPLETED, and return the final outcome."""
         process_registry.terminate_all(grace_seconds=0.5)
         warnings = list(outcome.warnings)
-        self._workspace.capture_and_persist_diff(self._sandbox, warnings)
-        sandbox_kept = self._workspace.finalize_cleanup(
-            self._manager, self._sandbox, self._context.target_dir, outcome.status, self._apply_failed
+        self._workspace.capture_and_persist_diff(self._worktree, warnings)
+        worktree_kept = self._workspace.finalize_cleanup(
+            self._manager, self._worktree, self._context.target_dir, outcome.status, self._apply_failed
         )
         self._workspace.cleanup_session_tmp_dir(
             self._context.session_tmp_dir, keep=self._row.keep, status=outcome.status
@@ -225,4 +225,4 @@ class RunSession:
             self._context.session_log_dir,
             RunLogEvent(event=RunLogEventType.RUN_COMPLETED, status=outcome.status.value),
         )
-        return outcome.model_copy(update={"warnings": warnings, "sandbox_kept": sandbox_kept})
+        return outcome.model_copy(update={"warnings": warnings, "worktree_kept": worktree_kept})

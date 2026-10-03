@@ -9,7 +9,7 @@ from dovo.core.db.migrations import init_database
 from dovo.core.db.repositories.artifacts import ArtifactsRepository
 from dovo.core.db.repositories.costs import CostsRepository
 from dovo.core.db.repositories.runs import RunsRepository
-from dovo.core.db.repositories.sandboxes import SandboxesRepository
+from dovo.core.db.repositories.worktrees import WorktreesRepository
 
 
 class DovoDb:
@@ -25,7 +25,7 @@ class DovoDb:
         self.database_file = database_file
         self.project_id = project_id
         self._db_engine = db_engine
-        self._sandboxes: SandboxesRepository | None = None
+        self._worktrees: WorktreesRepository | None = None
         self._runs: RunsRepository | None = None
         self._costs: CostsRepository | None = None
         self._artifacts: ArtifactsRepository | None = None
@@ -39,13 +39,13 @@ class DovoDb:
         return self._db_engine
 
     @property
-    def sandboxes(self) -> SandboxesRepository:
-        """Repository managing sandbox worktrees and metadata."""
-        if self._sandboxes is None:
-            self._sandboxes = SandboxesRepository(
+    def worktrees(self) -> WorktreesRepository:
+        """Repository managing worktrees and metadata."""
+        if self._worktrees is None:
+            self._worktrees = WorktreesRepository(
                 db_path=self.database_file, project_id=self.project_id, auto_init=True, db_engine=self.db_engine
             )
-        return self._sandboxes
+        return self._worktrees
 
     @property
     def runs(self) -> RunsRepository:
@@ -77,7 +77,7 @@ class DovoDb:
     def init_db(self) -> Path:
         """Run migrations and mark all child repositories as initialized."""
         path = init_database(self.database_file)
-        self.sandboxes._initialized = True
+        self.worktrees._initialized = True
         self.runs._initialized = True
         self.costs._initialized = True
         self.artifacts._initialized = True

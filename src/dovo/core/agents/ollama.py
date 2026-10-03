@@ -92,13 +92,13 @@ def build_ollama_messages(request: AgentRequest) -> list[dict[str, str]]:
         '- "unfixable_reason": string or null\n'
         '- "unified_diff": string or null '
         "(git-style unified diff with diff --git a/... b/... paths relative "
-        "to the sandbox; null when no file change is needed)\n"
+        "to the worktree; null when no file change is needed)\n"
         '- "summary": string or null (your findings, plan, or review text)\n'
         "Do not apply patches yourself. Do not wrap the JSON in code fences."
     )
     user_obj: dict[str, object] = {
         "mode": request.mode,
-        "sandbox_path": str(request.sandbox_path),
+        "worktree_path": str(request.worktree_path),
         "instruction": request.instruction,
     }
     if request.payload is not None:

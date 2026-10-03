@@ -90,8 +90,8 @@ class StepOutputEvent(BaseModel):
     stream: str = "stdout"
 
 
-class SandboxLifecycleEvent(BaseModel):
-    """UI event representing sandbox creation, activation, or cleanup."""
+class WorktreeLifecycleEvent(BaseModel):
+    """UI event representing worktree creation, activation, or cleanup."""
 
     model_config = {"extra": "forbid", "strict": True}
 

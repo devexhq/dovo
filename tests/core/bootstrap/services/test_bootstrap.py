@@ -25,7 +25,7 @@ class BootstrapDovoTests:
         """bootstrap_dovo: rerun on a root with a user-edited .gitignore returns gitignore_created=False and leaves its content untouched."""
         root_path = tmp_path / ".dovo"
         first_result = bootstrap_dovo(root_path)
-        custom_content = "sandboxes/\ncustom-entry\n"
+        custom_content = "worktrees/\ncustom-entry\n"
         (first_result.root_path / ".gitignore").write_text(custom_content, encoding="utf-8")
 
         result = bootstrap_dovo(root_path)

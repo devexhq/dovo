@@ -74,7 +74,7 @@ Executes a shell command with custom timeouts and environment variables:
 ```
 
 #### B. Agent Step (`type: agent`)
-Sends the interpolated `prompt` to the resolved provider in the active Git sandbox and applies any returned change there; it fails without a sandbox. `tools` is accepted metadata that is not enforced. See [Agent-Step Adapters](agent-providers.md):
+Sends the interpolated `prompt` to the resolved provider in the active Git worktree and applies any returned change there; it fails without a worktree. `tools` is accepted metadata that is not enforced. See [Agent-Step Adapters](agent-providers.md):
 
 ```yaml
 - id: fix-bug
@@ -190,7 +190,7 @@ Step fields (`run`, `command`, `prompt`, `script_path`, and `env`) can reference
   * `{{ steps[0].id }}`: First completed step ID
   * `{{ steps[-1].status }}`: Most recently finished step status (equivalent to `{{ previous_step.status }}`)
   * `{{ steps.build.exit_code }}`: Exit code of step with `id: build`
-  * `{{ steps.build.outputs.artifact_path }}` / `{{ steps['build'].outputs.artifact_path }}`: A specific output value step `build` wrote to `$DOVO_OUTPUT` (see [Step Outputs](#step-outputs-wt_output) below). An unknown step ID or output key resolves to an empty string.
+  * `{{ steps.build.outputs.artifact_path }}` / `{{ steps['build'].outputs.artifact_path }}`: A specific output value step `build` wrote to `$DOVO_OUTPUT` (see [Step Outputs](#step-outputs-dovo_output) below). An unknown step ID or output key resolves to an empty string.
   * Historical steps contain only completed/finished steps — the in-flight current step is never included in `steps`. Out-of-range indices or unknown step IDs resolve safely to an empty string.
 
 ```yaml

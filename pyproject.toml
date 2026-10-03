@@ -26,9 +26,9 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://devexhq.github.io/worktree-cli/"
-Repository = "https://github.com/devexhq/worktree-cli"
-"Bug Tracker" = "https://github.com/devexhq/worktree-cli/issues"
+Homepage = "https://devexhq.github.io/dovo/"
+Repository = "https://github.com/devexhq/dovo"
+"Bug Tracker" = "https://github.com/devexhq/dovo/issues"
 
 [project.optional-dependencies]
 dev = [
@@ -167,15 +167,15 @@ max-args = 5
 "src/dovo/cli/logs/app.py" = ["PLR0913"]
 "src/dovo/cli/logs/commands/show.py" = ["PLR0913"]
 "src/dovo/cli/run/commands/root.py" = ["PLR0913"]
-"src/dovo/cli/sandbox/app.py" = ["PLR0913"]
-"src/dovo/cli/sandbox/commands/sandbox_apply.py" = ["PLR0913"]
+"src/dovo/cli/worktree/app.py" = ["PLR0913"]
+"src/dovo/cli/worktree/commands/worktree_apply.py" = ["PLR0913"]
 "src/dovo/cli/ui/formatters/common.py" = ["PLR0913"]
 "src/dovo/common/process.py" = ["PLR0913"]
 "src/dovo/core/bootstrap/services/initialize.py" = ["PLR0913"]
 "src/dovo/core/db/repositories/*.py" = ["PLR0913"]
 "src/dovo/engine/step_coordinator.py" = ["PLR0913"]
-"src/dovo/core/sandbox/facade.py" = ["PLR0913"]
-"src/dovo/core/sandbox/services/patch.py" = ["PLR0913"]
+"src/dovo/core/worktree/facade.py" = ["PLR0913"]
+"src/dovo/core/worktree/services/patch.py" = ["PLR0913"]
 "src/dovo/engine/executors/**/*.py" = ["PLR0913"]
 "src/dovo/core/artifacts/**/*.py" = ["PLR0913"]
 "src/dovo/core/config/facade.py" = ["PLC0415"]

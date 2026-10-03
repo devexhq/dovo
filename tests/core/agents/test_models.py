@@ -36,7 +36,7 @@ class AgentRequestContractTests:
                 "mode": mode,
                 "instruction": "Do the work.",
                 "payload": payload,
-                "sandbox_path": tmp_path,
+                "worktree_path": tmp_path,
                 "timeout_seconds": 5,
             }
         )
@@ -82,7 +82,7 @@ class AgentRequestContractTests:
                     "mode": mode,
                     "instruction": instruction,
                     "payload": _PAYLOAD if with_payload else None,
-                    "sandbox_path": tmp_path,
+                    "worktree_path": tmp_path,
                     "timeout_seconds": 5,
                 }
             )

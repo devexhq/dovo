@@ -26,7 +26,7 @@ class BlueprintRunServiceExecuteTests:
         stub_drive_run(None)
 
         result = BlueprintRunService(
-            name="lint", paths=engine_paths, runs_db=runs_repo, no_sandbox=True, session_id="run-1"
+            name="lint", paths=engine_paths, runs_db=runs_repo, no_worktree=True, session_id="run-1"
         ).execute()
 
         assert result.ok
@@ -45,14 +45,14 @@ class BlueprintRunServiceExecuteTests:
         stub_drive_run(
             RunOutcome(
                 status=RunStatus.FAILED,
-                sandbox_path=engine_paths.root_dir,
+                worktree_path=engine_paths.root_dir,
                 errors=["step 'a' failed"],
                 warnings=["cleanup skipped"],
             )
         )
 
         result = BlueprintRunService(
-            name="lint", paths=engine_paths, runs_db=runs_repo, no_sandbox=True, session_id="run-2"
+            name="lint", paths=engine_paths, runs_db=runs_repo, no_worktree=True, session_id="run-2"
         ).execute()
 
         assert not result.ok
@@ -84,7 +84,7 @@ class BlueprintRunServiceExecuteTests:
         )
 
         result = BlueprintRunService(
-            name="needs-input", paths=engine_paths, runs_db=runs_repo, no_sandbox=True, cli_args=[]
+            name="needs-input", paths=engine_paths, runs_db=runs_repo, no_worktree=True, cli_args=[]
         ).execute()
 
         assert not result.ok

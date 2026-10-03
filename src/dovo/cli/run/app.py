@@ -43,15 +43,15 @@ run_app = typer.Typer(
 def run_callback(
     ctx: typer.Context,
     name: str = typer.Argument(..., help="Blueprint name to run."),
-    no_sandbox: bool = typer.Option(
+    no_worktree: bool = typer.Option(
         False,
-        "--no-sandbox",
-        help="Run execution in-place in the working tree without creating a Git sandbox.",
+        "--no-worktree",
+        help="Run execution in-place in the working tree without creating a Git worktree.",
     ),
     keep: bool = typer.Option(
         False,
         "--keep",
-        help="Retain sandbox worktree after execution.",
+        help="Retain worktree after execution.",
     ),
     agent: str | None = typer.Option(
         None,
@@ -71,7 +71,7 @@ def run_callback(
     auto_apply: bool = typer.Option(
         False,
         "--auto-apply",
-        help="Automatically apply sandbox changes to the main workspace on successful completion.",
+        help="Automatically apply worktree changes to the main workspace on successful completion.",
     ),
     format: Annotated[
         OutputFormatOptions, typer.Option(help="Output format: 'terminal' or 'json'.")
@@ -85,7 +85,7 @@ def run_callback(
     result = run_command(
         context,
         name=name,
-        no_sandbox=no_sandbox,
+        no_worktree=no_worktree,
         keep=keep,
         agent=agent,
         session_id=session_id,

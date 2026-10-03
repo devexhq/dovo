@@ -14,12 +14,12 @@ from dovo.core.db.repositories.artifacts import ArtifactsRepository
 
 def _publish(tmp_path: Path, artifacts_repository: ArtifactsRepository, *, session_id: str, name: str) -> Path:
     """Publish a real artifact bundle for download-service tests and return artifacts_dir."""
-    sandbox_path = tmp_path / "sandbox"
-    (sandbox_path / "dist").mkdir(parents=True, exist_ok=True)
-    (sandbox_path / "dist" / "pkg.whl").write_bytes(b"package-bytes")
+    worktree_path = tmp_path / "worktree"
+    (worktree_path / "dist").mkdir(parents=True, exist_ok=True)
+    (worktree_path / "dist" / "pkg.whl").write_bytes(b"package-bytes")
     artifacts_dir = tmp_path / "artifacts"
     result = publish_artifact(
-        sandbox_path,
+        worktree_path,
         artifacts_dir,
         artifacts_repository,
         session_id=session_id,

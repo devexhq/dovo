@@ -19,7 +19,7 @@ CHECK_ID_TO_DOCTOR_CONFIG_ATTR: Final[dict[str, str]] = {
     "git.repo": "check_git",
     "filesystem.writable": "check_paths_writable",
     "config.schema": "check_config_schema",
-    "sandbox.refs": "check_stale_worktrees",
+    "worktree.refs": "check_stale_worktrees",
     "env.binaries": "check_required_binaries",
 }
 

@@ -63,14 +63,14 @@ class DatabaseStatusInfo(BaseModel):
     total_runs: int = 0
 
 
-class SandboxStatusInfo(BaseModel):
-    """Sandbox inventory and concurrency metrics."""
+class WorktreeStatusInfo(BaseModel):
+    """Worktree inventory and concurrency metrics."""
 
     model_config = {"extra": "forbid", "strict": True}
 
-    active_sandboxes: int
-    total_sandboxes: int
-    max_active_sandboxes: int
+    active_worktrees: int
+    total_worktrees: int
+    max_active_worktrees: int
 
 
 class DovoStatusResult(BaseResult):
@@ -82,7 +82,7 @@ class DovoStatusResult(BaseResult):
     config: ConfigStatusInfo
     catalog: CatalogStatusInfo
     database: DatabaseStatusInfo
-    sandboxes: SandboxStatusInfo
+    worktrees: WorktreeStatusInfo
 
     @property
     def ok(self) -> bool:

@@ -7,12 +7,12 @@ from dovo.cli.ui.events import (
     LoopLifecycleEvent,
     MessageEvent,
     RunSuccessEvent,
-    SandboxLifecycleEvent,
     StepDoneEvent,
     StepOutputEvent,
     StepStartEvent,
     WarningEvent,
     WelcomeBannerEvent,
+    WorktreeLifecycleEvent,
 )
 from dovo.cli.ui.tail import CollapsingTailDisplay
 
@@ -23,12 +23,12 @@ __all__ = [
     "LoopLifecycleEvent",
     "MessageEvent",
     "RunSuccessEvent",
-    "SandboxLifecycleEvent",
     "StepDoneEvent",
     "StepOutputEvent",
     "StepStartEvent",
     "UiDispatcher",
     "WarningEvent",
     "WelcomeBannerEvent",
+    "WorktreeLifecycleEvent",
     "ui_dispatcher",
 ]

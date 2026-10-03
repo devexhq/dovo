@@ -25,11 +25,11 @@ SCHEMA_VIOLATION_PAYLOADS = [
         {
             "version": 1,
             "project": {"name": "test-project"},
-            "sandbox": {"max_active_sandboxes": "five"},
+            "worktree": {"max_active_worktrees": "five"},
         },
         (
             "Config schema validation failed (CONFIG_SCHEMA_INVALID):\n"
-            "- sandbox.max_active_sandboxes: 'five' is not of type 'integer'"
+            "- worktree.max_active_worktrees: 'five' is not of type 'integer'"
         ),
         id="invalid_types",
     ),

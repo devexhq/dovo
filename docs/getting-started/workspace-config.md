@@ -42,7 +42,7 @@ dovo init --overwrite
 
 ## Workspace Status (`dovo status`)
 
-Inspect workspace health, configuration, catalog, sandboxes, and recorded sessions:
+Inspect workspace health, configuration, catalog, worktrees, and recorded sessions:
 
 ```bash
 dovo status
@@ -51,7 +51,7 @@ dovo status
 Output includes:
 * Project configuration validation status.
 * Database path and session record counts.
-* Active Git worktree sandboxes (`worktree/sandbox-*` branches).
+* Active Git worktrees (`dovo/dovo_*` branches).
 
 ---
 
@@ -78,7 +78,7 @@ Set specific configuration keys or nested dot-paths:
 ```bash
 dovo config set agent.provider ollama
 dovo config set agent.model llama3.1
-dovo config set sandbox.base_ref main
+dovo config set worktree.base_ref main
 ```
 
 ### Validate Configuration
@@ -103,9 +103,9 @@ Below is the canonical `.dovo/config.json` structure:
     "initialized_at": "2026-08-06T00:00:00Z"
   },
   "ignore_global_root_error": false,
-  "sandbox": {
+  "worktree": {
     "base_ref": "HEAD",
-    "max_active_sandboxes": 3,
+    "max_active_worktrees": 3,
     "default_timeout_seconds": 900
   },
   "agent": {
@@ -130,7 +130,7 @@ Below is the canonical `.dovo/config.json` structure:
   },
   "prune": {
     "remove_stale_worktrees": true,
-    "remove_orphaned_sandboxes": true,
+    "remove_orphaned_worktrees": true,
     "remove_expired_artifacts": false,
     "artifact_ttl_days": 30
   },
@@ -149,7 +149,7 @@ For full details on each field and validation rule, see the [Project Config Sche
 
 ## API Keys & Environment Setup
 
-The configuration schema accepts `local`, `ollama`, `cursor`, `gemini`, `copilot`, `openai`, `anthropic`, `azure_openai`, and `custom`. Runtime adapter selection supports only `local`, `ollama`, `cursor`, `gemini`, and `copilot`; agent steps invoke the selected adapter inside a Git sandbox. Credentials can be checked by `dovo doctor`.
+The configuration schema accepts `local`, `ollama`, `cursor`, `gemini`, `copilot`, `openai`, `anthropic`, `azure_openai`, and `custom`. Runtime adapter selection supports only `local`, `ollama`, `cursor`, `gemini`, and `copilot`; agent steps invoke the selected adapter inside a Git worktree. Credentials can be checked by `dovo doctor`.
 
 ```bash
 # Gemini Provider

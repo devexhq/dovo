@@ -35,12 +35,12 @@ class Artifacts:
         name: str,
         path_glob: str,
         *,
-        sandbox_path: Path,
+        worktree_path: Path,
         retention_days: int | None = None,
     ) -> ArtifactUploadResult:
-        """Publish a named artifact bundle matching path_glob from sandbox_path into persistent storage."""
+        """Publish a named artifact bundle matching path_glob from worktree_path into persistent storage."""
         return publish_artifact(
-            sandbox_path,
+            worktree_path,
             self.paths.artifacts_dir,
             self.db,
             session_id=session_id,

@@ -66,9 +66,9 @@ class Filesystem:
         return self.repository_paths.catalog_blueprints_dir
 
     @property
-    def sandboxes_dir(self) -> Path:
-        """Path to sandboxes directory."""
-        return self.repository_paths.sandboxes_dir
+    def worktrees_dir(self) -> Path:
+        """Path to worktrees directory."""
+        return self.repository_paths.worktrees_dir
 
     @property
     def lock_file(self) -> Path:
@@ -85,9 +85,9 @@ class Filesystem:
         """Traversable resource path to bundled catalog templates."""
         return _get_catalog_templates_dir()
 
-    def sandbox_dir(self, sandbox_id: str) -> Path:
-        """Return path to a specific sandbox directory."""
-        return self.repository_paths.sandboxes_dir / sandbox_id
+    def worktree_dir(self, worktree_id: str) -> Path:
+        """Return path to a specific worktree directory."""
+        return self.repository_paths.worktrees_dir / worktree_id
 
     def rel_to_root(self, path: Path | str) -> Path:
         """Return path relative to workspace root."""

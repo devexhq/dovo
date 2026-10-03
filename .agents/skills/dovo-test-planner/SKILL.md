@@ -65,8 +65,8 @@ Record the audit before proceeding:
 ```
 Status value                      | Assigned in service? | Notes
 ----------------------------------|----------------------|------------------------------
-SandboxListStatus.OK              | ✅ list.py:40        | unconditional
-SandboxListStatus.NOT_INITIALIZED | ❌ never             | declared only — dead path
+WorktreeListStatus.OK              | ✅ list.py:40        | unconditional
+WorktreeListStatus.NOT_INITIALIZED | ❌ never             | declared only — dead path
 ```
 
 ---
@@ -139,7 +139,7 @@ Plan a separate test class per tier/scenario group with a descriptive suffix (e.
 
 Scan for sequences where collaborators must execute in a specific order:
 1. **Ordering**: Does function A produce side-effects that function B must observe? (e.g. checkpoint saved before prompter call).
-2. **Lifecycle events**: Does a function emit ordered callbacks? (`on_sandbox_ready → on_step_start → on_step_done → on_sandbox_cleanup`).
+2. **Lifecycle events**: Does a function emit ordered callbacks? (`on_worktree_ready → on_step_start → on_step_done → on_worktree_cleanup`).
 3. **Serial vs concurrent**: Does execution require strict sequential ordering?
 4. **Error propagation**: When an inner collaborator raises, does the outer function swallow, wrap, or re-raise?
 5. **Partial failure state**: When step N fails, is step N+1 attempted, and does accumulated state remain intact?
@@ -271,7 +271,7 @@ class RunStepsExecutionTests:
         raise NotImplementedError
 
     def test_observer_receives_lifecycle_callbacks_in_order(self):
-        """[tier-1/integration] run_steps: observer receives sandbox_ready → step_start → step_done → sandbox_cleanup in that order. Interaction/ordering contract across all _notify_* helpers."""
+        """[tier-1/integration] run_steps: observer receives worktree_ready → step_start → step_done → worktree_cleanup in that order. Interaction/ordering contract across all _notify_* helpers."""
         raise NotImplementedError
 ```
 ````
@@ -308,7 +308,7 @@ class RunStepsExecutionTests:
         raise NotImplementedError
 
     def test_observer_receives_lifecycle_callbacks_in_order(self):
-        """[tier-1/integration] run_steps: observer receives sandbox_ready → step_start → step_done → sandbox_cleanup in that order. Interaction/ordering contract across all _notify_* helpers."""
+        """[tier-1/integration] run_steps: observer receives worktree_ready → step_start → step_done → worktree_cleanup in that order. Interaction/ordering contract across all _notify_* helpers."""
         raise NotImplementedError
 
     @pytest.mark.parametrize(

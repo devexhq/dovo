@@ -107,7 +107,7 @@ Interpolation is evaluated at runtime in the following step fields:
 
 ## Input Validation & Error Handling
 
-If a required input is missing or fails type validation, Dovo reports a structured error before creating the sandbox:
+If a required input is missing or fails type validation, Dovo reports a structured error before creating the worktree:
 
 ```text
 Error: Missing required input 'api_token' for blueprint 'test-runner'.

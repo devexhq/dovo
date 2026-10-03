@@ -56,9 +56,9 @@ class Engine:
             return self._failed_outcome(sid, snapshot_warnings, engine_warnings)
 
         engine_warnings.extend(snapshot_warnings)
-        caller_sandbox = True if req.use_sandbox is None else req.use_sandbox
-        effective_sandbox = caller_sandbox and blueprint.use_sandbox
-        config = self._build_start_config(req, resolved.values, effective_sandbox, manifest)
+        caller_worktree = True if req.use_worktree is None else req.use_worktree
+        effective_worktree = caller_worktree and blueprint.use_worktree
+        config = self._build_start_config(req, resolved.values, effective_worktree, manifest)
         start_failure = self._start_run(blueprint, sid, config, manifest)
         if start_failure is not None:
             return self._failed_outcome(sid, [start_failure], engine_warnings)
@@ -137,7 +137,7 @@ class Engine:
             status=RunStatus.FAILED,
             errors=errors,
             warnings=warnings,
-            sandbox_path=self.path,
+            worktree_path=self.path,
             session_id=session_id,
         )
 
@@ -155,14 +155,14 @@ class Engine:
         self,
         request: RunRequest,
         resolved_values: dict[str, str | int | bool],
-        use_sandbox: bool,
+        use_worktree: bool,
         manifest: DefinitionsManifest,
     ) -> RunStartConfig:
         """Assemble the run-row configuration from the request, resolved inputs, and manifest."""
         return RunStartConfig(
             blueprint_tier=manifest.blueprint.ref.split(":", 1)[0],
             commit_sha=self._head_commit_sha(),
-            use_sandbox=use_sandbox,
+            use_worktree=use_worktree,
             keep=request.keep,
             agent=request.agent,
             inputs=dict(resolved_values),
@@ -188,8 +188,8 @@ class Engine:
                 session_id,
                 outcome.status,
                 error_message=error_message,
-                sandbox_id=outcome.sandbox_id,
-                sandbox_kept=outcome.sandbox_kept,
+                worktree_id=outcome.worktree_id,
+                worktree_kept=outcome.worktree_kept,
             )
             return
 
@@ -197,8 +197,8 @@ class Engine:
             loaded.state,
             run_status=outcome.status,
             error_message=error_message,
-            sandbox_id=outcome.sandbox_id,
-            sandbox_kept=outcome.sandbox_kept,
+            worktree_id=outcome.worktree_id,
+            worktree_kept=outcome.worktree_kept,
         )
         warnings.extend([*loaded.warnings, *saved.warnings])
         if not saved.ok:
@@ -223,7 +223,7 @@ class Engine:
             pid=os.getpid(),
             blueprint_tier=config.blueprint_tier,
             commit_sha=config.commit_sha,
-            use_sandbox=config.use_sandbox,
+            use_worktree=config.use_worktree,
             keep=config.keep,
             agent=config.agent,
             inputs_json=json.dumps(config.inputs, sort_keys=True),

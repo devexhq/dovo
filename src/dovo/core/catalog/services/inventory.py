@@ -234,7 +234,7 @@ def resolve_catalog_records(paths: WorkspacePaths) -> list[CatalogRecord]:
     return records
 
 
-def _resolve_packaged_wt_fallback(
+def _resolve_packaged_dovo_fallback(
     key_or_sha: str, item_type: CatalogItemType | None, catalog_templates_dir: Traversable
 ) -> CatalogRecord | None:
     """Resolve a `dovo/`-namespaced packaged example by name, mirroring the pre-pivot lookup path."""
@@ -272,7 +272,7 @@ def find_catalog_record_matches(
     if matches:
         return matches
 
-    fallback = _resolve_packaged_wt_fallback(key_or_sha, item_type, paths.catalog_templates_dir)
+    fallback = _resolve_packaged_dovo_fallback(key_or_sha, item_type, paths.catalog_templates_dir)
     return [fallback] if fallback is not None else []
 
 

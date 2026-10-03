@@ -16,8 +16,8 @@ class StepExecutionTempEnvVarTests:
         self, tmp_path: Path
     ) -> None:
         """[tier-1/integration] StepExecution: a command echoing $DOVO_TEMP, $DOVO_RUNNER_TEMP, $DOVO_STEP_TEMP, $DOVO_OUTPUT prints the exact session_tmp_dir, session_tmp_dir, session_tmp_dir/steps/<step_id>, and session_tmp_dir/step_<step_id>.output paths."""
-        sandbox_path = tmp_path / "sandbox"
-        sandbox_path.mkdir()
+        worktree_path = tmp_path / "worktree"
+        worktree_path.mkdir()
         session_tmp_dir = tmp_path / "session"
         step = (
             StepBuilder.command('echo "$DOVO_TEMP|$DOVO_RUNNER_TEMP|$DOVO_STEP_TEMP|$DOVO_OUTPUT"')
@@ -26,7 +26,7 @@ class StepExecutionTempEnvVarTests:
         )
 
         result = StepExecution(
-            StepExecutionContext(step=step, sandbox_path=sandbox_path, session_tmp_dir=session_tmp_dir)
+            StepExecutionContext(step=step, worktree_path=worktree_path, session_tmp_dir=session_tmp_dir)
         ).run()
 
         assert result.status == "completed"
@@ -39,7 +39,7 @@ class StepExecutionTempEnvVarTests:
         """[tier-1/integration] StepExecution: with StepExecutionContext.session_tmp_dir left as the default None, a command checking `[ -z "${DOVO_TEMP+x}" ]` (variable unset, not just empty) exits 0."""
         step = StepBuilder.command('[ -z "${DOVO_TEMP+x}" ]').with_id("s1").build()
 
-        result = StepExecution(StepExecutionContext(step=step, sandbox_path=tmp_path)).run()
+        result = StepExecution(StepExecutionContext(step=step, worktree_path=tmp_path)).run()
 
         assert result.status == "completed"
         assert result.exit_code == 0
@@ -57,7 +57,7 @@ class StepExecutionOutputParsingTests:
         )
 
         result = StepExecution(
-            StepExecutionContext(step=step, sandbox_path=tmp_path, session_tmp_dir=tmp_path / "session")
+            StepExecutionContext(step=step, worktree_path=tmp_path, session_tmp_dir=tmp_path / "session")
         ).run()
 
         assert result.status == "completed"
@@ -74,7 +74,7 @@ class StepExecutionOutputParsingTests:
         )
 
         result = StepExecution(
-            StepExecutionContext(step=step, sandbox_path=tmp_path, session_tmp_dir=tmp_path / "session")
+            StepExecutionContext(step=step, worktree_path=tmp_path, session_tmp_dir=tmp_path / "session")
         ).run()
 
         assert result.status == "completed"
@@ -88,7 +88,7 @@ class StepExecutionOutputParsingTests:
         )
 
         result = StepExecution(
-            StepExecutionContext(step=step, sandbox_path=tmp_path, session_tmp_dir=tmp_path / "session")
+            StepExecutionContext(step=step, worktree_path=tmp_path, session_tmp_dir=tmp_path / "session")
         ).run()
 
         assert result.status == "completed"
@@ -101,7 +101,7 @@ class StepExecutionOutputParsingTests:
         step = StepBuilder.command("echo hi").with_id("s1").build()
 
         result = StepExecution(
-            StepExecutionContext(step=step, sandbox_path=tmp_path, session_tmp_dir=tmp_path / "session")
+            StepExecutionContext(step=step, worktree_path=tmp_path, session_tmp_dir=tmp_path / "session")
         ).run()
 
         assert result.status == "completed"
@@ -121,7 +121,7 @@ class StepExecutionOutputParsingTests:
         )
 
         result = StepExecution(
-            StepExecutionContext(step=step, sandbox_path=tmp_path, session_tmp_dir=tmp_path / "session")
+            StepExecutionContext(step=step, worktree_path=tmp_path, session_tmp_dir=tmp_path / "session")
         ).run()
 
         assert result.status == "completed"
@@ -138,7 +138,7 @@ class StepExecutionOutputParsingTests:
         )
 
         result = StepExecution(
-            StepExecutionContext(step=step, sandbox_path=tmp_path, session_tmp_dir=tmp_path / "session")
+            StepExecutionContext(step=step, worktree_path=tmp_path, session_tmp_dir=tmp_path / "session")
         ).run()
 
         assert result.status == "completed"
@@ -156,7 +156,7 @@ class StepExecutionOutputParsingTests:
         )
 
         result = StepExecution(
-            StepExecutionContext(step=step, sandbox_path=tmp_path, session_tmp_dir=tmp_path / "session")
+            StepExecutionContext(step=step, worktree_path=tmp_path, session_tmp_dir=tmp_path / "session")
         ).run()
 
         assert result.status == "completed"
@@ -173,7 +173,7 @@ class StepExecutionOutputParsingTests:
         )
 
         result = StepExecution(
-            StepExecutionContext(step=step, sandbox_path=tmp_path, session_tmp_dir=tmp_path / "session")
+            StepExecutionContext(step=step, worktree_path=tmp_path, session_tmp_dir=tmp_path / "session")
         ).run()
 
         assert result.status == "completed"

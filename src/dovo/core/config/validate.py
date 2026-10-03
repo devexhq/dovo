@@ -138,10 +138,10 @@ def _semantic_warnings(config: DovoConfig) -> tuple[list[str], list[str]]:
         warnings.append(f"agent.endpoint is not an absolute http(s) URL: '{endpoint}' (CONFIG_WARN_AGENT_ENDPOINT).")
         fixes.append("Set agent.endpoint to an absolute http:// or https:// URL, or null")
 
-    max_active = config.sandbox.max_active_sandboxes
+    max_active = config.worktree.max_active_worktrees
     if max_active > 10:
-        warnings.append(f"sandbox.max_active_sandboxes ({max_active}) exceeds 10 (CONFIG_WARN_SANDBOX_LIMIT).")
-        fixes.append("Lower sandbox.max_active_sandboxes to 10 or fewer")
+        warnings.append(f"worktree.max_active_worktrees ({max_active}) exceeds 10 (CONFIG_WARN_WORKTREE_LIMIT).")
+        fixes.append("Lower worktree.max_active_worktrees to 10 or fewer")
 
     return warnings, fixes
 

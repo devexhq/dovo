@@ -87,7 +87,7 @@ def _run_cursor_agent_thread(
                 agent_options_cls(
                     model=request.model,
                     api_key=api_key,
-                    local=local_options_cls(cwd=str(request.sandbox_path)),
+                    local=local_options_cls(cwd=str(request.worktree_path)),
                 )
             ) as agent:
                 run = agent.send(request.prompt)
@@ -146,7 +146,7 @@ def default_cursor_run(request: CliMutationRunRequest) -> CliMutationOutcome:
 
 
 class CursorAgentAdapter(CliDirectMutationAdapter):
-    """Run the Cursor SDK coding agent directly against a sandbox checkout."""
+    """Run the Cursor SDK coding agent directly against a worktree checkout."""
 
     def _preflight(self, request: AgentRequest) -> str | None:
         """Validate cursor model configuration and API key."""

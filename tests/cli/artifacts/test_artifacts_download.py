@@ -16,15 +16,15 @@ from dovo.core.project.services.storage import resolve_workspace_paths
 
 
 def _publish_artifact(workspace: Path, *, session_id: str, name: str) -> Path:
-    """Publish a real artifact bundle under session_id/name and return its sandbox source path."""
-    sandbox_path = workspace / "sandbox-scratch" / session_id
-    (sandbox_path / "dist").mkdir(parents=True, exist_ok=True)
-    (sandbox_path / "dist" / "pkg.whl").write_bytes(b"package-bytes")
+    """Publish a real artifact bundle under session_id/name and return its worktree source path."""
+    worktree_path = workspace / "worktree-scratch" / session_id
+    (worktree_path / "dist").mkdir(parents=True, exist_ok=True)
+    (worktree_path / "dist" / "pkg.whl").write_bytes(b"package-bytes")
     paths = resolve_workspace_paths(RepositoryPaths.from_root(workspace), resolve_global_paths(None))
     db = DovoDb(database_file=paths.database_file, project_id=paths.project_id)
-    result = Artifacts(paths, db=db.artifacts).upload(session_id, name, "dist/*.whl", sandbox_path=sandbox_path)
+    result = Artifacts(paths, db=db.artifacts).upload(session_id, name, "dist/*.whl", worktree_path=worktree_path)
     assert result.ok
-    return sandbox_path
+    return worktree_path
 
 
 class ArtifactsDownloadCliIntegrationTests:

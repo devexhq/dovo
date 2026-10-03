@@ -40,7 +40,7 @@ class ResumeCliIntegrationTests:
     def test_resume_cli_from_paused_state_completes_remaining_steps_exits_zero(
         self, cli_runner: CliRunner, resume_workspace: Path
     ) -> None:
-        """dovo resume <session_id>: paused run state with use_sandbox=False resumes and completes, exit 0, run record status becomes COMPLETED."""
+        """dovo resume <session_id>: paused run state with use_worktree=False resumes and completes, exit 0, run record status becomes COMPLETED."""
         _seed_paused_session(
             resume_workspace,
             session_id="paused-session-1",

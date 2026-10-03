@@ -25,7 +25,7 @@ from dovo.engine.notify import safe_notify
 def auto_publish_step_artifacts(
     step: StepDefinition,
     *,
-    sandbox_path: Path,
+    worktree_path: Path,
     session_id: str,
     artifacts_dir: Path | None,
     artifacts_db: ArtifactsRepository | None,
@@ -38,7 +38,7 @@ def auto_publish_step_artifacts(
     for spec in step.artifacts:
         try:
             result = publish_artifact(
-                sandbox_path,
+                worktree_path,
                 artifacts_dir,
                 artifacts_db,
                 session_id=session_id,
@@ -150,7 +150,7 @@ class StepCoordinator:
         result = StepExecution(
             StepExecutionContext(
                 step=step,
-                sandbox_path=run_context.target_dir,
+                worktree_path=run_context.target_dir,
                 context=step_context,
                 on_output=on_output,
                 step_index=idx,
@@ -166,7 +166,7 @@ class StepCoordinator:
                 artifacts_dir=run_context.artifacts_dir,
                 artifacts_db=run_context.artifacts_db,
                 paths=self.context.paths,
-                agent_runner=build_agent_step_runner(self.context.agent, run_context.sandbox is not None),
+                agent_runner=build_agent_step_runner(self.context.agent, run_context.worktree is not None),
             )
         ).run()
         safe_notify(self.context.observer, "on_step_done", idx, total, step, result)
@@ -188,7 +188,7 @@ class StepCoordinator:
         if result.ok:
             publish_warnings = auto_publish_step_artifacts(
                 step,
-                sandbox_path=run_context.target_dir,
+                worktree_path=run_context.target_dir,
                 session_id=self.context.session_id or "",
                 artifacts_dir=run_context.artifacts_dir,
                 artifacts_db=run_context.artifacts_db,

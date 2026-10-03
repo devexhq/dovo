@@ -1,4 +1,4 @@
-"""Engine loader: validate a paused run's row, execution state, snapshots, and retained sandbox before dispatch."""
+"""Engine loader: validate a paused run's row, execution state, snapshots, and retained worktree before dispatch."""
 
 from __future__ import annotations
 
@@ -20,7 +20,7 @@ from dovo.engine.writer import get_session_dir, load_blueprint_from_snapshot
 
 
 class EngineLoader:
-    """Validates a paused run's row, execution state, snapshots, and retained sandbox before dispatch."""
+    """Validates a paused run's row, execution state, snapshots, and retained worktree before dispatch."""
 
     @classmethod
     def load_for_resume(
@@ -48,7 +48,7 @@ class EngineLoader:
             )
 
         cls._validate_paused_leaves(session_id, loaded.state)
-        cls._check_retained_sandbox(session_id, paths, row)
+        cls._check_retained_worktree(session_id, paths, row)
         cls._check_definitions(session_id, paths, loaded.state)
         return row, loaded.state, loaded.state.manifest
 
@@ -80,18 +80,18 @@ class EngineLoader:
                 )
 
     @classmethod
-    def _check_retained_sandbox(cls, session_id: str, paths: WorkspacePaths, row: RunRecord) -> None:
-        """Raise MISSING_SANDBOX when a sandboxed run has no recorded sandbox_id or its directory no longer exists."""
-        if not row.use_sandbox:
+    def _check_retained_worktree(cls, session_id: str, paths: WorkspacePaths, row: RunRecord) -> None:
+        """Raise MISSING_WORKTREE when a worktree-backed run has no recorded worktree_id or its directory no longer exists."""
+        if not row.use_worktree:
             return
 
-        sandbox_path = paths.sandbox_dir(row.sandbox_id) if row.sandbox_id is not None else None
-        if sandbox_path is not None and sandbox_path.exists():
+        worktree_path = paths.worktree_dir(row.worktree_id) if row.worktree_id is not None else None
+        if worktree_path is not None and worktree_path.exists():
             return
 
         raise EngineResumeError(
-            EngineResumeStatus.MISSING_SANDBOX,
-            f"Cannot resume session '{session_id}': sandbox path '{sandbox_path or '<none recorded>'}' no longer exists.",
+            EngineResumeStatus.MISSING_WORKTREE,
+            f"Cannot resume session '{session_id}': worktree path '{worktree_path or '<none recorded>'}' no longer exists.",
         )
 
     @classmethod

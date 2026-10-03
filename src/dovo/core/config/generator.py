@@ -11,7 +11,7 @@ from typing import Any
 
 from pydantic import Field
 
-from dovo.common.constants import DEFAULT_MAXIMUM_SANDBOXES_ALLOWED
+from dovo.common.constants import DEFAULT_MAXIMUM_WORKTREES_ALLOWED
 from dovo.common.filesystem import Filesystem
 from dovo.common.models import BaseResult
 from dovo.common.schema_validation import CONFIG_VALIDATOR
@@ -24,9 +24,9 @@ CANONICAL_V1_DEFAULTS: dict[str, Any] = {
         "initialized_at": None,
     },
     "ignore_global_root_error": False,
-    "sandbox": {
+    "worktree": {
         "base_ref": "HEAD",
-        "max_active_sandboxes": DEFAULT_MAXIMUM_SANDBOXES_ALLOWED,
+        "max_active_worktrees": DEFAULT_MAXIMUM_WORKTREES_ALLOWED,
         "default_timeout_seconds": 900,
     },
     "agent": {
@@ -51,7 +51,7 @@ CANONICAL_V1_DEFAULTS: dict[str, Any] = {
     },
     "prune": {
         "remove_stale_worktrees": True,
-        "remove_orphaned_sandboxes": True,
+        "remove_orphaned_worktrees": True,
         "remove_expired_artifacts": False,
         "artifact_ttl_days": 30,
     },

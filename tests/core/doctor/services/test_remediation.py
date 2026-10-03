@@ -27,11 +27,11 @@ REMEDIATION_RESOLUTION_CASES = [
     ),
     pytest.param(
         DiagnosticCheckResult(
-            check_id="sandbox.refs",
-            name="Sandbox References Check",
-            category=CheckCategory.SANDBOX,
+            check_id="worktree.refs",
+            name="Worktree References Check",
+            category=CheckCategory.WORKTREE,
             status=CheckStatus.SKIPPED,
-            message="Check 'sandbox.refs' skipped by configuration.",
+            message="Check 'worktree.refs' skipped by configuration.",
         ),
         [],
         id="skipped_status_returns_empty",
@@ -202,47 +202,47 @@ REMEDIATION_RESOLUTION_CASES = [
     ),
     pytest.param(
         DiagnosticCheckResult(
-            check_id="sandbox.refs",
-            name="Sandbox References Check",
-            category=CheckCategory.SANDBOX,
+            check_id="worktree.refs",
+            name="Worktree References Check",
+            category=CheckCategory.WORKTREE,
             status=CheckStatus.WARNING,
-            message="1 stale sandbox reference(s) detected.",
-            error_code="DOCTOR_SANDBOX_STALE",
+            message="1 stale worktree reference(s) detected.",
+            error_code="DOCTOR_WORKTREE_STALE",
         ),
         [
             Remediation(
-                code="DOCTOR_SANDBOX_STALE",
-                title="Prune stale sandboxes",
+                code="DOCTOR_WORKTREE_STALE",
+                title="Prune stale worktrees",
                 action_type=RemediationType.COMMAND,
-                command="dovo sandbox prune",
-                description="Run `dovo sandbox prune` to reconcile sandbox database records that no longer match a live Git worktree.",
-                doc_path="docs/cli/sandbox.md",
+                command="dovo worktree prune",
+                description="Run `dovo worktree prune` to reconcile worktree database records that no longer match a live Git worktree.",
+                doc_path="docs/cli/worktree.md",
                 is_automated=False,
             )
         ],
-        id="sandbox_stale",
+        id="worktree_stale",
     ),
     pytest.param(
         DiagnosticCheckResult(
-            check_id="sandbox.refs",
-            name="Sandbox References Check",
-            category=CheckCategory.SANDBOX,
+            check_id="worktree.refs",
+            name="Worktree References Check",
+            category=CheckCategory.WORKTREE,
             status=CheckStatus.WARNING,
-            message="1 orphaned sandbox directory(s) detected.",
-            error_code="DOCTOR_SANDBOX_ORPHAN",
+            message="1 orphaned worktree directory(s) detected.",
+            error_code="DOCTOR_WORKTREE_ORPHAN",
         ),
         [
             Remediation(
-                code="DOCTOR_SANDBOX_ORPHAN",
+                code="DOCTOR_WORKTREE_ORPHAN",
                 title="Prune orphan worktree directories",
                 action_type=RemediationType.COMMAND,
-                command="dovo sandbox prune",
-                description="Run `dovo sandbox prune` to remove sandbox worktree directories that have no matching database record.",
-                doc_path="docs/cli/sandbox.md",
+                command="dovo worktree prune",
+                description="Run `dovo worktree prune` to remove worktree directories that have no matching database record.",
+                doc_path="docs/cli/worktree.md",
                 is_automated=False,
             )
         ],
-        id="sandbox_orphan",
+        id="worktree_orphan",
     ),
     pytest.param(
         DiagnosticCheckResult(
@@ -359,11 +359,11 @@ REMEDIATION_RESOLUTION_CASES = [
     ),
     pytest.param(
         DiagnosticCheckResult(
-            check_id="sandbox.refs",
-            name="Sandbox References Check",
-            category=CheckCategory.SANDBOX,
+            check_id="worktree.refs",
+            name="Worktree References Check",
+            category=CheckCategory.WORKTREE,
             status=CheckStatus.WARNING,
-            message="Sandbox detection could not complete (status='git_failed').",
+            message="Worktree detection could not complete (status='git_failed').",
             details={"detection_status": "git_failed"},
         ),
         [
@@ -373,7 +373,7 @@ REMEDIATION_RESOLUTION_CASES = [
                 action_type=RemediationType.MANUAL,
                 command=None,
                 description=(
-                    "No deterministic remediation is registered for check 'sandbox.refs' "
+                    "No deterministic remediation is registered for check 'worktree.refs' "
                     "(error_code='DOCTOR_UNKNOWN'). Review the check message and details to diagnose and resolve the issue."
                 ),
                 doc_path=None,
@@ -386,7 +386,7 @@ REMEDIATION_RESOLUTION_CASES = [
         DiagnosticCheckResult(
             check_id="crashing.check",
             name="Crashing Check",
-            category=CheckCategory.SANDBOX,
+            category=CheckCategory.WORKTREE,
             status=CheckStatus.FAILED,
             message="Unhandled exception during check execution: boom",
             error_code="DOCTOR_CHECK_CRASH",

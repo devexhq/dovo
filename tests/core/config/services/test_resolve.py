@@ -34,14 +34,14 @@ class ResolveEffectiveConfigTests:
     def test_global_and_user_tier_overrides_merge_over_repo_and_packaged(
         self, workspace_paths: WorkspacePaths, write_tier_config: Callable[[ConfigTier, dict[str, Any] | str], Path]
     ) -> None:
-        """[tier-1/unit] resolve_effective_config: Global agent.temperature, User agent.model, and Repo sandbox.base_ref all present in the merged DovoConfig, with Repo overriding a User sandbox.base_ref."""
+        """[tier-1/unit] resolve_effective_config: Global agent.temperature, User agent.model, and Repo worktree.base_ref all present in the merged DovoConfig, with Repo overriding a User worktree.base_ref."""
         write_tier_config(ConfigTier.GLOBAL, {"agent": {"temperature": 0.6}})
-        write_tier_config(ConfigTier.USER, {"agent": {"model": "user-model"}, "sandbox": {"base_ref": "develop"}})
+        write_tier_config(ConfigTier.USER, {"agent": {"model": "user-model"}, "worktree": {"base_ref": "develop"}})
 
         repo_payload = {
             "version": 1,
             "project": {"name": "demo-workspace"},
-            "sandbox": {"base_ref": "main"},
+            "worktree": {"base_ref": "main"},
         }
         Filesystem.atomic_write_json(workspace_paths.config_file, repo_payload)
 
@@ -51,7 +51,7 @@ class ResolveEffectiveConfigTests:
         assert result.config is not None
         assert result.config.agent.temperature == 0.6
         assert result.config.agent.model == "user-model"
-        assert result.config.sandbox.base_ref == "main"
+        assert result.config.worktree.base_ref == "main"
 
     def test_missing_repo_config_returns_not_found_without_packaged_backfill(
         self, workspace_paths: WorkspacePaths

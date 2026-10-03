@@ -40,7 +40,7 @@ class RepositoryPaths(BaseModel):
     catalog_dir: Path
     catalog_steps_dir: Path
     catalog_blueprints_dir: Path
-    sandboxes_dir: Path
+    worktrees_dir: Path
     lock_file: Path
     gitignore_file: Path
 
@@ -58,7 +58,7 @@ class RepositoryPaths(BaseModel):
             catalog_dir=state_dir / "catalog",
             catalog_steps_dir=state_dir / "catalog" / "steps",
             catalog_blueprints_dir=state_dir / "catalog" / "blueprints",
-            sandboxes_dir=state_dir / "sandboxes",
+            worktrees_dir=state_dir / "worktrees",
             lock_file=resolve_lock_file_path(state_dir),
             gitignore_file=root_path / ".gitignore",
         )
@@ -103,7 +103,7 @@ class WorkspacePaths(BaseModel):
     catalog_dir: Path
     catalog_steps_dir: Path
     catalog_blueprints_dir: Path
-    sandboxes_dir: Path
+    worktrees_dir: Path
     lock_file: Path
     gitignore_file: Path
     catalog_templates_dir: Traversable
@@ -122,9 +122,9 @@ class WorkspacePaths(BaseModel):
         """Return path to a specific session directory."""
         return self.sessions_dir / session_id
 
-    def sandbox_dir(self, sandbox_id: str) -> Path:
-        """Return path to a specific sandbox directory."""
-        return self.sandboxes_dir / sandbox_id
+    def worktree_dir(self, worktree_id: str) -> Path:
+        """Return path to a specific worktree directory."""
+        return self.worktrees_dir / worktree_id
 
     def catalog_dir_for(self, tier: CatalogTier) -> Path:
         """Return the disk-backed catalog directory root for tier; raises ValueError for CatalogTier.PACKAGED."""

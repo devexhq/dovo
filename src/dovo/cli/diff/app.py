@@ -20,7 +20,7 @@ def register_diff_command(app: typer.Typer) -> None:
         ctx: typer.Context,
         session_id: str | None = typer.Argument(
             None,
-            help="Session identifier (e.g. sbx_a1b2c3d4). If omitted, displays the latest session diff.",
+            help="Session identifier (e.g. dovo_a1b2c3d4). If omitted, displays the latest session diff.",
         ),
         raw: bool = typer.Option(
             False,

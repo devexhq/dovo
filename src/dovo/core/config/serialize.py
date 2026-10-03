@@ -11,7 +11,7 @@ from dovo.core.config.models import DovoConfig
 _TOP_LEVEL_KEYS: tuple[str, ...] = (
     "version",
     "project",
-    "sandbox",
+    "worktree",
     "agent",
     "history",
     "doctor",

@@ -8,7 +8,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
-from dovo.common.constants import DEFAULT_MAXIMUM_SANDBOXES_ALLOWED
+from dovo.common.constants import DEFAULT_MAXIMUM_WORKTREES_ALLOWED
 from dovo.common.models import BaseResult
 
 AgentProvider = Literal[
@@ -33,13 +33,13 @@ class ProjectConfig(BaseModel):
     initialized_at: str | None = None
 
 
-class SandboxConfig(BaseModel):
-    """Background sandbox lifecycle settings."""
+class WorktreeConfig(BaseModel):
+    """Background worktree lifecycle settings."""
 
     model_config = {"extra": "forbid", "strict": True}
 
     base_ref: str = Field(default="HEAD", min_length=1)
-    max_active_sandboxes: int = Field(default=DEFAULT_MAXIMUM_SANDBOXES_ALLOWED, ge=1)
+    max_active_worktrees: int = Field(default=DEFAULT_MAXIMUM_WORKTREES_ALLOWED, ge=1)
     default_timeout_seconds: int = Field(default=900, ge=1)
 
 
@@ -84,7 +84,7 @@ class PruneConfig(BaseModel):
     model_config = {"extra": "forbid", "strict": True}
 
     remove_stale_worktrees: bool = True
-    remove_orphaned_sandboxes: bool = True
+    remove_orphaned_worktrees: bool = True
     remove_expired_artifacts: bool = False
     artifact_ttl_days: int = Field(default=30, ge=0)
 
@@ -113,7 +113,7 @@ class DovoConfig(BaseModel):
     version: int
     project: ProjectConfig
     ignore_global_root_error: bool = False
-    sandbox: SandboxConfig = Field(default_factory=SandboxConfig)
+    worktree: WorktreeConfig = Field(default_factory=WorktreeConfig)
     agent: AgentConfig = Field(default_factory=AgentConfig)
     history: HistoryConfig = Field(default_factory=HistoryConfig)
     doctor: DoctorConfig = Field(default_factory=DoctorConfig)

@@ -1,4 +1,4 @@
-"""Sandbox/session lifecycle management for the multi-step run engine."""
+"""Worktree/session lifecycle management for the multi-step run engine."""
 
 from __future__ import annotations
 
@@ -7,67 +7,67 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from dovo.core.config import ConfigLoadError
-from dovo.core.db import RunStatus, SandboxesRepository
+from dovo.core.db import RunStatus, WorktreesRepository
 from dovo.core.db.repositories.artifacts import ArtifactsRepository
 from dovo.core.diff.writer import get_session_dir, write_session_diff
 from dovo.core.git.runner import GitRunner
-from dovo.core.sandbox import Sandbox, SandboxApplyStrategy, SandboxSession
+from dovo.core.worktree import Worktree, WorktreeApplyStrategy, WorktreeSession
 from dovo.engine.models import RunSettings
 from dovo.engine.notify import safe_notify
 
 
 @dataclass(frozen=True)
 class Workspace:
-    """Sandbox/session lifecycle for one run's context: setup, cleanup, and session-scratch directories."""
+    """Worktree/session lifecycle for one run's context: setup, cleanup, and session-scratch directories."""
 
     context: RunSettings
 
-    def _setup_retained_sandbox(
+    def _setup_retained_worktree(
         self,
-        sandbox_id: str,
-    ) -> tuple[Path, Sandbox | None, SandboxSession | None, str | None]:
-        """Rebuild the retained sandbox session from paths.sandbox_dir(sandbox_id) and its sandboxes row, or return a setup error."""
-        path = self.context.paths.sandbox_dir(sandbox_id)
+        worktree_id: str,
+    ) -> tuple[Path, Worktree | None, WorktreeSession | None, str | None]:
+        """Rebuild the retained worktree session from paths.worktree_dir(worktree_id) and its worktrees row, or return a setup error."""
+        path = self.context.paths.worktree_dir(worktree_id)
         if not path.exists():
-            return self.context.cwd.resolve(), None, None, f"Git sandbox is missing: {path}"
+            return self.context.cwd.resolve(), None, None, f"Git worktree is missing: {path}"
 
-        sandboxes = SandboxesRepository(
+        worktrees = WorktreesRepository(
             db_path=self.context.paths.database_file, project_id=self.context.paths.project_id
         )
-        record = sandboxes.get(sandbox_id)
+        record = worktrees.get(worktree_id)
         if record is None:
-            return self.context.cwd.resolve(), None, None, f"Git sandbox record is missing: {sandbox_id}"
+            return self.context.cwd.resolve(), None, None, f"Git worktree record is missing: {worktree_id}"
 
-        session = SandboxSession(
-            session_id=sandbox_id,
+        session = WorktreeSession(
+            session_id=worktree_id,
             target_branch=record.branch_name,
-            sandbox_path=path,
+            worktree_path=path,
             base_commit=record.base_commit,
             name=record.name,
             created_at=record.created_at,
         )
-        manager = Sandbox(self.context.paths, db=sandboxes)
-        safe_notify(self.context.observer, "on_sandbox_ready", path, active=True)
+        manager = Worktree(self.context.paths, db=worktrees)
+        safe_notify(self.context.observer, "on_worktree_ready", path, active=True)
         return path, manager, session, None
 
-    def setup(self) -> tuple[Path, Sandbox | None, SandboxSession | None, str | None]:
-        """Create an optional sandbox and return the execution directory.
+    def setup(self) -> tuple[Path, Worktree | None, WorktreeSession | None, str | None]:
+        """Create an optional worktree and return the execution directory.
 
         Returns:
             Tuple of (target_dir, manager, session, error_message).
-            ``error_message`` is set when sandbox setup fails.
+            ``error_message`` is set when worktree setup fails.
         """
-        if not self.context.use_sandbox:
+        if not self.context.use_worktree:
             target_dir = self.context.cwd.resolve()
-            safe_notify(self.context.observer, "on_sandbox_ready", target_dir, active=False)
+            safe_notify(self.context.observer, "on_worktree_ready", target_dir, active=False)
             return target_dir, None, None, None
 
-        if self.context.sandbox_id is not None:
-            return self._setup_retained_sandbox(self.context.sandbox_id)
+        if self.context.worktree_id is not None:
+            return self._setup_retained_worktree(self.context.worktree_id)
 
-        manager = Sandbox(
+        manager = Worktree(
             self.context.paths,
-            db=SandboxesRepository(db_path=self.context.paths.database_file, project_id=self.context.paths.project_id),
+            db=WorktreesRepository(db_path=self.context.paths.database_file, project_id=self.context.paths.project_id),
         )
         session_id = None
         if self.context.identity is not None:
@@ -75,29 +75,29 @@ class Workspace:
         try:
             create_result = manager.create(session_id=session_id)
         except ConfigLoadError as exc:
-            return self.context.cwd.resolve(), None, None, f"Git sandbox creation failed: {exc}"
+            return self.context.cwd.resolve(), None, None, f"Git worktree creation failed: {exc}"
         if not create_result.ok or create_result.session is None:
-            detail = create_result.errors[0] if create_result.errors else "Sandbox creation failed."
-            return self.context.cwd.resolve(), None, None, f"Git sandbox creation failed: {detail}"
+            detail = create_result.errors[0] if create_result.errors else "Worktree creation failed."
+            return self.context.cwd.resolve(), None, None, f"Git worktree creation failed: {detail}"
 
         session = create_result.session
-        target_dir = session.sandbox_path
-        safe_notify(self.context.observer, "on_sandbox_ready", target_dir, active=True)
+        target_dir = session.worktree_path
+        safe_notify(self.context.observer, "on_worktree_ready", target_dir, active=True)
         return target_dir, manager, session, None
 
     def cleanup(
         self,
-        manager: Sandbox | None,
-        session: SandboxSession | None,
+        manager: Worktree | None,
+        session: WorktreeSession | None,
         target_dir: Path,
     ) -> bool:
-        """Clean up sandbox unless keep is requested. Returns whether it was kept."""
+        """Clean up worktree unless keep is requested. Returns whether it was kept."""
         if manager is None or session is None:
-            safe_notify(self.context.observer, "on_sandbox_cleanup", kept=False, path=target_dir)
+            safe_notify(self.context.observer, "on_worktree_cleanup", kept=False, path=target_dir)
             return False
 
         if self.context.keep:
-            safe_notify(self.context.observer, "on_sandbox_cleanup", kept=True, path=session.sandbox_path)
+            safe_notify(self.context.observer, "on_worktree_cleanup", kept=True, path=session.worktree_path)
             return True
 
         try:
@@ -105,17 +105,17 @@ class Workspace:
         except Exception:
             # Best-effort cleanup: worktree removal is independent of run outcome.
             pass
-        safe_notify(self.context.observer, "on_sandbox_cleanup", kept=False, path=session.sandbox_path)
+        safe_notify(self.context.observer, "on_worktree_cleanup", kept=False, path=session.worktree_path)
         return False
 
     def handle_auto_apply(
         self,
-        manager: Sandbox | None,
-        session: SandboxSession | None,
+        manager: Worktree | None,
+        session: WorktreeSession | None,
         errors: list[str],
         warnings: list[str],
     ) -> tuple[RunStatus | None, bool]:
-        """Apply sandbox changes on completed runs when auto_apply is enabled.
+        """Apply worktree changes on completed runs when auto_apply is enabled.
 
         Returns:
             Tuple of (new_status_or_None, apply_failed_boolean).
@@ -125,7 +125,7 @@ class Workspace:
 
         apply_result = manager.apply(
             session.session_id,
-            strategy=SandboxApplyStrategy.PATCH,
+            strategy=WorktreeApplyStrategy.PATCH,
         )
         warnings.extend(apply_result.warnings)
         if not apply_result.ok:
@@ -136,17 +136,17 @@ class Workspace:
 
     def capture_and_persist_diff(
         self,
-        session: SandboxSession | None,
+        session: WorktreeSession | None,
         warnings: list[str],
     ) -> None:
-        """Capture cumulative unified diff from sandbox and persist diff.patch."""
-        if session is None or self.context.session_id is None or not Path(session.sandbox_path).is_dir():
+        """Capture cumulative unified diff from worktree and persist diff.patch."""
+        if session is None or self.context.session_id is None or not Path(session.worktree_path).is_dir():
             return
 
         session_id = self.context.session_id
         try:
-            GitRunner.add_intent_to_add(session.sandbox_path, target=".")
-            diff_text = GitRunner.diff(session.sandbox_path, base_commit=session.base_commit, binary=True)
+            GitRunner.add_intent_to_add(session.worktree_path, target=".")
+            diff_text = GitRunner.diff(session.worktree_path, base_commit=session.base_commit, binary=True)
             session_dir = get_session_dir(self.context.paths, session_id)
             write_session_diff(session_dir, diff_text)
         except Exception as exc:
@@ -154,16 +154,16 @@ class Workspace:
 
     def finalize_cleanup(
         self,
-        manager: Sandbox | None,
-        session: SandboxSession | None,
+        manager: Worktree | None,
+        session: WorktreeSession | None,
         target_dir: Path,
         status: RunStatus,
         apply_failed: bool,
     ) -> bool:
-        """Clean up or keep the sandbox worktree based on run status."""
+        """Clean up or keep the worktree based on run status."""
         if status == RunStatus.PAUSED or apply_failed:
-            kept_path = session.sandbox_path if session is not None else target_dir
-            safe_notify(self.context.observer, "on_sandbox_cleanup", kept=True, path=kept_path)
+            kept_path = session.worktree_path if session is not None else target_dir
+            safe_notify(self.context.observer, "on_worktree_cleanup", kept=True, path=kept_path)
             return True
 
         return self.cleanup(manager, session, target_dir)

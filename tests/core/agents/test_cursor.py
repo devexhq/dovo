@@ -115,7 +115,7 @@ class CursorAdapterTests:
         )
         adapter = CursorAgentAdapter()
 
-        resp = adapter.propose_fix(AgentRequestBuilder().with_sandbox_path(tmp_path).build())
+        resp = adapter.propose_fix(AgentRequestBuilder().with_worktree_path(tmp_path).build())
 
         assert resp.status == AgentResponseStatus.PROVIDER_ERROR
         assert resp.errors == [
@@ -130,7 +130,9 @@ class CursorAdapterTests:
         monkeypatch.delenv(CURSOR_API_KEY_ENV, raising=False)
         adapter = CursorAgentAdapter()
 
-        resp = adapter.propose_fix(AgentRequestBuilder().with_sandbox_path(tmp_path).with_model("composer-2.5").build())
+        resp = adapter.propose_fix(
+            AgentRequestBuilder().with_worktree_path(tmp_path).with_model("composer-2.5").build()
+        )
 
         assert resp.status == AgentResponseStatus.PROVIDER_ERROR
         assert resp.errors == [
@@ -147,7 +149,7 @@ class DefaultCursorRunTests:
         monkeypatch.setitem(sys.modules, "cursor_sdk", None)
 
         outcome = default_cursor_run(
-            CliMutationRunRequest(model="composer-2.5", sandbox_path=tmp_path, prompt="fix it", timeout_seconds=1.0)
+            CliMutationRunRequest(model="composer-2.5", worktree_path=tmp_path, prompt="fix it", timeout_seconds=1.0)
         )
 
         assert outcome.status == "error"
@@ -161,7 +163,7 @@ class DefaultCursorRunTests:
         monkeypatch.setitem(sys.modules, "cursor_sdk", fake_sdk)
 
         outcome = default_cursor_run(
-            CliMutationRunRequest(model="composer-2.5", sandbox_path=tmp_path, prompt="fix it", timeout_seconds=1.0)
+            CliMutationRunRequest(model="composer-2.5", worktree_path=tmp_path, prompt="fix it", timeout_seconds=1.0)
         )
 
         assert outcome.status == "error"
@@ -207,7 +209,7 @@ class DefaultCursorRunTests:
         monkeypatch.setitem(sys.modules, "cursor_sdk", fake_sdk)
 
         outcome = default_cursor_run(
-            CliMutationRunRequest(model="composer-2.5", sandbox_path=tmp_path, prompt="fix it", timeout_seconds=0.01)
+            CliMutationRunRequest(model="composer-2.5", worktree_path=tmp_path, prompt="fix it", timeout_seconds=0.01)
         )
 
         assert outcome.status == "timeout"
@@ -227,7 +229,7 @@ class DefaultCursorRunTests:
         )
 
         outcome = default_cursor_run(
-            CliMutationRunRequest(model="composer-2.5", sandbox_path=tmp_path, prompt="fix it", timeout_seconds=1.0)
+            CliMutationRunRequest(model="composer-2.5", worktree_path=tmp_path, prompt="fix it", timeout_seconds=1.0)
         )
 
         assert outcome.status == "error"
@@ -243,7 +245,7 @@ class DefaultCursorRunTests:
         monkeypatch.setattr("dovo.core.agents.cursor._run_cursor_agent_thread", lambda *args, **kwargs: {})
 
         outcome = default_cursor_run(
-            CliMutationRunRequest(model="composer-2.5", sandbox_path=tmp_path, prompt="fix it", timeout_seconds=1.0)
+            CliMutationRunRequest(model="composer-2.5", worktree_path=tmp_path, prompt="fix it", timeout_seconds=1.0)
         )
 
         assert outcome.status == "error"

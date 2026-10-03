@@ -11,12 +11,12 @@ User-facing command behavior lives under [docs/cli/](../cli/). Entity shapes and
 ```
 src/dovo/cli/                    Typer CLI entrypoint and subcommand wrappers (no domain logic)
   cli.py                             Application definition, global options, top-level exception handling
-  <name>/                            Subcommand packages (blueprint, config, diff, history, init, logs, resume, run, sandbox, status, step)
+  <name>/                            Subcommand packages (blueprint, config, diff, history, init, logs, resume, run, worktree, status, step)
 
 src/dovo/core/                   Domain business logic and orchestration (no Typer imports)
   bootstrap/                         Workspace directory structure initialization and repair
   git/                               Low-level Git CLI subprocess invocation and plumbing
-  sandbox/                           Isolated git worktree sandbox lifecycle (create, delete, list, prune, apply, diff)
+  worktree/                           Isolated git worktree lifecycle (create, delete, list, prune, apply, diff)
   config/                            Workspace configuration loading, validation, generation, and mutation
   project/                           Stable project identity model, generation, and persistence services
   db/                                SQLite persistence, connection management, Alembic migrations, and repositories
@@ -54,7 +54,7 @@ src/dovo/schemas/v1/             Packaged, versioned JSON Schemas (config.json, 
 - **Inputs** (`core/inputs/`): `ParameterInput`, CLI flag resolution, `${{ inputs.* }}` placeholder interpolation. Must not import catalog or agents.
 - **Agents** (`core/agents/`): Provider base class (`BaseAgentProvider`), `ProviderSpec` registry (`PROVIDERS`), provider implementations (`local`, `ollama`, `cursor`, `gemini`, `copilot`), failure payload models, the direct-mode attempt pipeline (`run_direct_attempt` in `services/run_direct.py`). Must not import config or engine.
 - **Patch** (`core/patch/`): Unified-diff parsing and validation. Must not import agents.
-- **Engine** (`engine/`): Process-level run persistence, session ID minting (`RunRequest`), DB run records, canonical run execution state (`state_store.py`), the state-driven run coordinator (`coordinator.py`), paused-run validation (`loader.py`), the run session lifecycle (`session.py`), tree/row projector for `run.json` (`projection.py`) and its writer (`writer.py`), sandbox/session infrastructure (`context.py`, `workspace.py`), per-step execution (`step_coordinator.py`), loop policy, events, and structural state validation (`loop_policy.py`, `loop_events.py`, `state_validation.py`), observer dispatch (`notify.py`), failure-policy resolution (`failure.py`), shared run models (`models.py`, including `BlueprintRunResult`), run/resume services (`BlueprintRunService`, `BlueprintResumeService`). May import `common/` and any `core/` package. Must not import cli.
+- **Engine** (`engine/`): Process-level run persistence, session ID minting (`RunRequest`), DB run records, canonical run execution state (`state_store.py`), the state-driven run coordinator (`coordinator.py`), paused-run validation (`loader.py`), the run session lifecycle (`session.py`), tree/row projector for `run.json` (`projection.py`) and its writer (`writer.py`), worktree/session infrastructure (`context.py`, `workspace.py`), per-step execution (`step_coordinator.py`), loop policy, events, and structural state validation (`loop_policy.py`, `loop_events.py`, `state_validation.py`), observer dispatch (`notify.py`), failure-policy resolution (`failure.py`), shared run models (`models.py`, including `BlueprintRunResult`), run/resume services (`BlueprintRunService`, `BlueprintResumeService`). May import `common/` and any `core/` package. Must not import cli.
 - **Executors** (`engine/executors/`): Single-step execution (`StepExecution` in `step_executor.py`), assertions evaluation (`assertions/`), execution metadata (`metadata.py`), condition evaluation (`conditions.py`), the `type: internal` command registry and `artifacts.upload`/`artifacts.download` handlers (`internal_dispatch.py`), agent step dispatch (`agent_step.py`, including `build_agent_step_runner`), and execution models (`models.py`). Must not import engine modules outside `executors/`, or cli.
 - **Catalog** (`core/catalog/`): Disk-only, multi-tier (REPO/USER/GLOBAL/PACKAGED) template scanning and indexing via per-tier `index.json` caches, packaged seeds under `templates/`. Owns authored definitions (`core/catalog/definitions/`: `StepDefinition`, `LoopStepBlock`, `BlueprintDefinition`, condition syntax), the `Blueprint` handle (`blueprint.py`), step resolution (`services/resolve_step.py`), and definition exceptions (`exceptions.py`). Must not import agents, logs, history, engine, or cli.
 - **History** (`core/history/`): `History` entrypoint (`history.py`), result models (`HistoryListResult`, `HistoryShowResult`, `ReconciliationResult`), stale-run reconciliation (`services/reconcile.py`: `reconcile_stale_runs`, `is_run_stale`). UI formatters reside in `cli/ui/formatters/history/`. Must not import engine or cli.
@@ -63,7 +63,7 @@ src/dovo/schemas/v1/             Packaged, versioned JSON Schemas (config.json, 
 - **Status** (`core/status/`): Workspace health and runtime telemetry collection (`collect_status`), result models (`DovoStatusResult`), warning aggregation.
 - **Artifacts** (`core/artifacts/`): Session artifact publishing (`publish_artifact`), listing, checksum-verified downloading, and expiry-based pruning (`Artifacts` entrypoint, `services/upload.py`, `services/download.py`, `services/prune.py`). The `type: internal` `artifacts.upload`/`artifacts.download` step handlers live in `engine/executors/internal_dispatch.py`; `engine/step_coordinator.py` also calls `publish_artifact` for the declarative `artifacts:` block auto-publish. Must not import engine.
 - **Doctor** (`core/doctor/`): Diagnostic check registry (`CheckRegistry`), execution runner (`DiagnosticRunner`), entrypoint coordinator (`Doctor`), check protocol (`DiagnosticCheck`), and result models (`DiagnosticCheckResult`, `DoctorReport`).
-- **Sandbox** (`core/sandbox/`): Isolated git worktree checkout creation, deletion, listing, show, prune, and patch application (`Sandbox` facade, `services/lifecycle.py`). Owns sandbox lifecycle policy that `engine/` consumes.
+- **Worktree** (`core/worktree/`): Isolated git worktree checkout creation, deletion, listing, show, prune, and patch application (`Worktree` facade, `services/lifecycle.py`). Owns worktree lifecycle policy that `engine/` consumes.
 - **Project** (`core/project/`): Stable project identity model (`ProjectIdentity`) with generation and persistence services.
 - **Shared core infra**: `config/`, `db/`, `git/`, `bootstrap/`.
 
@@ -73,11 +73,11 @@ Dependencies flow one way down the stack; do not import upward:
 
 ```
 common/  ->  core/  ->  engine/  ->  cli/
-core/project/  ->  core/{db,git,sandbox,catalog,inputs,patch,diff,status,artifacts}/  ->  core/agents/  ->  core/doctor/  ->  core/logs/  ->  core/history/
+core/project/  ->  core/{db,git,worktree,catalog,inputs,patch,diff,status,artifacts}/  ->  core/agents/  ->  core/doctor/  ->  core/logs/  ->  core/history/
 ```
 
 - `common/` never depends on `core/` or `cli/`.
-- `core/project/` depends only on `common/`; `core/db/`, `core/diff/`, `engine/`, `core/sandbox/`, `core/doctor/`, `core/history/`, and `core/logs/` may resolve project identity via `core/project/services/storage`.
+- `core/project/` depends only on `common/`; `core/db/`, `core/diff/`, `engine/`, `core/worktree/`, `core/doctor/`, `core/history/`, and `core/logs/` may resolve project identity via `core/project/services/storage`.
 - `core/` and `common/` never import `cli/` or `rich`. All terminal rendering is driven through `ui_dispatcher.dispatch(result)`.
 - `core/` never imports `engine/`.
 - `core/inputs/` must not import `catalog` or `agents`.
@@ -117,7 +117,7 @@ core/project/  ->  core/{db,git,sandbox,catalog,inputs,patch,diff,status,artifac
 
 1. Add provider token to `AgentProvider` in `core/config/models.py` if not already present.
 2. Select adapter pattern:
-   - **Direct-mutation** (provider CLI/SDK directly edits files in sandbox — `cursor`, `gemini`, `copilot`): Subclass `CliDirectMutationAdapter` (`core/agents/cli_mutation.py`) and implement `_preflight`, `_provider_name`, and `_default_run`.
+   - **Direct-mutation** (provider CLI/SDK directly edits files in worktree — `cursor`, `gemini`, `copilot`): Subclass `CliDirectMutationAdapter` (`core/agents/cli_mutation.py`) and implement `_preflight`, `_provider_name`, and `_default_run`.
    - **Diff-returning** (provider returns diff text — `local`, `ollama`): Implement `BaseAgentProvider.propose_fix` directly (`core/agents/base.py`).
 3. Resolve secrets via module-level `resolve_<provider>_api_key()` from environment variables (never from `config.json`).
 4. Declare a `ProviderSpec` for it in `core/agents/registry.py` and add it to `PROVIDERS`.
@@ -138,11 +138,11 @@ Created and repaired idempotently by [core/bootstrap](../../src/dovo/core/bootst
 .dovo/
   .meta/bootstrap.json
   .lock                       # cross-process advisory lock
-  .gitignore                  # local; ignores .meta/, .lock, sandboxes/, *.db*
+  .gitignore                  # local; ignores .meta/, .lock, worktrees/, *.db*
   config.json                 # schemas/v1/config.json
   project.json                # schemas/v1/project.json; stable project identity
   catalog/                    # blueprints/, steps/ + seeded dovo/ templates; index.json is a derived cache, never hand-edited
-  sandboxes/                  # git worktree checkouts
+  worktrees/                  # git worktree checkouts
 ```
 
 `sessions/`, `artifacts/`, `tmp/`, and `logs/` are no longer created locally under `.dovo/`; that project-scoped runtime state resolves under the global `DOVO_HOME` storage root instead.
@@ -151,8 +151,8 @@ Created and repaired idempotently by [core/bootstrap](../../src/dovo/core/bootst
 
 **Relevant sources:** `src/dovo/common/filesystem/models.py`, `src/dovo/core/project/services/storage.py`
 
-- `RepositoryPaths` (`common/filesystem/models.py`) owns every repo-local path under a resolved root: `root_dir`, `dovo_dir`, `config_file`, `catalog_dir`/`catalog_steps_dir`/`catalog_blueprints_dir`, `sandboxes_dir`, `lock_file`, `gitignore_file`. Built via `RepositoryPaths.from_root(root)`.
-- `WorkspacePaths` (same module) extends `RepositoryPaths` with the project-scoped, identity-dependent locations: `catalog_templates_dir`, `global_paths`, `database_file`, `project_id`, `runtime_root`, `logs_dir`, `sessions_dir`, `artifacts_dir`, `tmp_dir`, plus `session_dir(id)`/`sandbox_dir(id)`/`catalog_dir_for(tier)` helpers. Built via `resolve_workspace_paths(repository_paths, global_paths)` in `core/project/services/storage.py`, which resolves `project_id` from `project.json` when present.
+- `RepositoryPaths` (`common/filesystem/models.py`) owns every repo-local path under a resolved root: `root_dir`, `dovo_dir`, `config_file`, `catalog_dir`/`catalog_steps_dir`/`catalog_blueprints_dir`, `worktrees_dir`, `lock_file`, `gitignore_file`. Built via `RepositoryPaths.from_root(root)`.
+- `WorkspacePaths` (same module) extends `RepositoryPaths` with the project-scoped, identity-dependent locations: `catalog_templates_dir`, `global_paths`, `database_file`, `project_id`, `runtime_root`, `logs_dir`, `sessions_dir`, `artifacts_dir`, `tmp_dir`, plus `session_dir(id)`/`worktree_dir(id)`/`catalog_dir_for(tier)` helpers. Built via `resolve_workspace_paths(repository_paths, global_paths)` in `core/project/services/storage.py`, which resolves `project_id` from `project.json` when present.
 - `CliContext.build()` (`cli/context.py`) resolves one `WorkspacePaths` snapshot per CLI invocation; CLI handlers construct their path-aware facades from that snapshot.
 
 ### Centralized SQLite database
@@ -160,16 +160,16 @@ Created and repaired idempotently by [core/bootstrap](../../src/dovo/core/bootst
 **Relevant sources:** `src/dovo/core/db/`
 
 - A single SQLite database at `<global_root>/data/dovo.db` (resolved by `resolve_db_path` in `core/db/connection.py`, under `DOVO_HOME` or `~/.dovo` by default) backs every project, migrated by `init_database`.
-- `runs`, `sandboxes`, and `costs` rows carry `project_id` and are scoped to it by every repository query, so multiple projects share the physical file without colliding. The catalog is disk-only and has no table here (see [Catalog](#layers) above).
-- Repositories: `SandboxesRepository`, `RunsRepository`, `CostsRepository` accessed via `DovoDb` facade.
+- `runs`, `worktrees`, and `costs` rows carry `project_id` and are scoped to it by every repository query, so multiple projects share the physical file without colliding. The catalog is disk-only and has no table here (see [Catalog](#layers) above).
+- Repositories: `WorktreesRepository`, `RunsRepository`, `CostsRepository` accessed via `DovoDb` facade.
 - Construct repositories/facades once per command invocation rather than per query.
 
-## Sandboxes (core)
+## Worktrees (core)
 
-**Relevant sources:** `src/dovo/core/sandbox/`, `src/dovo/core/sandbox/facade.py`
+**Relevant sources:** `src/dovo/core/worktree/`, `src/dovo/core/worktree/facade.py`
 
-- Handled by `Sandbox` facade (`core/sandbox/facade.py`) and `core/sandbox/services/lifecycle.py`.
-- On-disk location: `.dovo/sandboxes/<session_id>/`, branch `worktree/sandbox-<id>`.
+- Handled by `Worktree` facade (`core/worktree/facade.py`) and `core/worktree/services/lifecycle.py`.
+- On-disk location: `.dovo/worktrees/<session_id>/`, branch `dovo/<id>`.
 - Operations: `create`, `list`, `show`, `delete`, `prune`, `apply`, `diff`.
 
 ## Packaged resources

@@ -42,7 +42,7 @@ def handle_artifacts_upload(ctx: InternalCommandContext) -> StepDispatchOutcome:
     retention_days = int(retention_raw) if retention_raw else None
 
     result = publish_artifact(
-        ctx.sandbox_path,
+        ctx.worktree_path,
         ctx.artifacts_dir,
         ctx.artifacts_db,
         session_id=ctx.session_id,
@@ -79,7 +79,7 @@ def handle_artifacts_download(ctx: InternalCommandContext) -> StepDispatchOutcom
 
     session_id = ctx.env.get("ARTIFACT_SESSION_ID", ctx.session_id)
     dest_path = Path(dest_raw)
-    dest = dest_path if dest_path.is_absolute() else ctx.sandbox_path / dest_path
+    dest = dest_path if dest_path.is_absolute() else ctx.worktree_path / dest_path
 
     result = download_artifact(
         ctx.artifacts_dir,

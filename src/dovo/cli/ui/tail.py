@@ -10,7 +10,7 @@ from typing import IO
 from rich.console import Console
 from rich.text import Text
 
-from dovo.cli.ui.events import SandboxLifecycleEvent, StepDoneEvent, StepOutputEvent, StepStartEvent
+from dovo.cli.ui.events import StepDoneEvent, StepOutputEvent, StepStartEvent, WorktreeLifecycleEvent
 
 DEFAULT_TAIL_SIZE = 10
 _ERASE_LINE = "\033[2K\r"
@@ -88,12 +88,12 @@ class CollapsingTailDisplay:
             summary = Text.from_markup(f"[bold red]✖[/] [{event.idx}/{event.total}] {event.step_id}  {detail}")
         self.console.print(summary)
 
-    def handle_sandbox(self, event: SandboxLifecycleEvent, rendered: Text) -> None:
-        """Print a sandbox lifecycle notice above any active tail.
+    def handle_worktree(self, event: WorktreeLifecycleEvent, rendered: Text) -> None:
+        """Print a worktree lifecycle notice above any active tail.
 
         Args:
-            event: SandboxLifecycleEvent (used to update sandbox info if needed).
-            rendered: Pre-rendered Text from SandboxLifecycleFormatter.
+            event: WorktreeLifecycleEvent (used to update worktree info if needed).
+            rendered: Pre-rendered Text from WorktreeLifecycleFormatter.
         """
         del event
         self._erase_tail()

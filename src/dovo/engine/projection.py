@@ -79,8 +79,8 @@ def build_run_json_payload(state: ExecutionStateTree, row: RunRecord) -> RunJson
             error_message=row.error_message,
             started_at=row.started_at,
             completed_at=row.completed_at,
-            sandbox_id=row.sandbox_id,
-            sandbox_kept=row.sandbox_kept,
+            worktree_id=row.worktree_id,
+            worktree_kept=row.worktree_kept,
         ),
         results=flatten_step_results(state),
     )

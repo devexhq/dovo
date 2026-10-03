@@ -21,7 +21,7 @@ This reference documents the YAML specification for step-level quality gates and
 
 ## File Path Validation Rules
 
-All file assertions (`file_exists`, `file_not_exists`, `file_not_empty`) resolve against the execution root: normally the sandbox, or the working tree when `dovo run --no-sandbox` is used. They must adhere to these safety constraints:
+All file assertions (`file_exists`, `file_not_exists`, `file_not_empty`) resolve against the execution root: normally the worktree, or the working tree when `dovo run --no-worktree` is used. They must adhere to these safety constraints:
 * Must be non-empty strings.
 * Must be relative paths inside the execution root (absolute paths starting with `/` or drive letters like `C:/` are rejected).
 * Parent directory traversal (`..`) is strictly prohibited.

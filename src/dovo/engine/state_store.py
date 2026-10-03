@@ -139,10 +139,10 @@ class RunStateStore:
         state: ExecutionStateTree,
         run_status: RunStatus | None = None,
         error_message: str | None = None,
-        sandbox_id: str | None = None,
-        sandbox_kept: bool | None = None,
+        worktree_id: str | None = None,
+        worktree_kept: bool | None = None,
     ) -> RunStateWriteResult:
-        """Commit state at revision + 1 with optional lifecycle fields and sandbox id, then sync the run.json projection."""
+        """Commit state at revision + 1 with optional lifecycle fields and worktree id, then sync the run.json projection."""
         next_state = state.model_copy(update={"revision": state.revision + 1})
         row = self.runs.save_execution_state(
             self.session_id,
@@ -151,8 +151,8 @@ class RunStateStore:
             next_revision=next_state.revision,
             status=run_status,
             error_message=error_message,
-            sandbox_id=sandbox_id,
-            sandbox_kept=sandbox_kept,
+            worktree_id=worktree_id,
+            worktree_kept=worktree_kept,
         )
         if row is None:
             return self._classify_write_failure()

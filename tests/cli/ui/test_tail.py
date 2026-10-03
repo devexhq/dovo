@@ -72,7 +72,7 @@ class CollapsingTailDisplayTests:
         display.handle_step_output(StepOutputEvent(step_id="s1", line="L1"))
         display.handle_step_output(StepOutputEvent(step_id="s1", line="L2"))
 
-        display.print_above(Text("Sandbox: Active (/tmp/x)"))
+        display.print_above(Text("Worktree: Active (/tmp/x)"))
 
-        assert "Sandbox: Active (/tmp/x)" in console_buffer.getvalue()
+        assert "Worktree: Active (/tmp/x)" in console_buffer.getvalue()
         assert stream.getvalue().endswith("L1\nL2\n")

@@ -49,7 +49,7 @@ Produce an inventory with one row per file touched (exact path, exact identifier
 
 | Artifact | Kind | Path | New or changed | Requirement |
 |---|---|---|---|---|
-| `SandboxPruneResult` | DTO | `src/dovo/core/sandbox/models.py` | new | FR-2 |
+| `WorktreePruneResult` | DTO | `src/dovo/core/worktree/models.py` | new | FR-2 |
 
 Write this table to `.agentic/evidence.md` under an `## Artifact inventory` heading, together with the **"none"** list below it — `plan.md`'s own `## Artifact inventory` heading holds only a one-line pointer to that file (see the Plan document template). State **"none"** for each kind the issue does not need. Path per kind:
 
@@ -112,37 +112,37 @@ Strictly imperative verbs ("Create `...`", "Assert `...`"). State what to do, no
 **Literal contracts:** write exact code for anything that is a contract — model/enum definitions with every field and default, full signatures with type hints and docstrings, Typer flags and help text, formatter shells, literal JSON dicts, error/warning strings, fixtures, regex patterns (PLAN-010).
 
 ```python
-class SandboxPruneStatus(StrEnum):
-    """Outcome states for a sandbox prune operation."""
+class WorktreePruneStatus(StrEnum):
+    """Outcome states for a worktree prune operation."""
 
     OK = "ok"
     NOTHING_TO_PRUNE = "nothing_to_prune"
     FAILED = "failed"
 
 
-class SandboxPruneResult(BaseResult):
-    """Result of pruning stale sandboxes and orphaned directories."""
+class WorktreePruneResult(BaseResult):
+    """Result of pruning stale worktrees and orphaned directories."""
 
     model_config = {"extra": "forbid", "strict": True}
 
-    status: SandboxPruneStatus
+    status: WorktreePruneStatus
     pruned_items: list[str] = []
 ```
 
 **Production stubs:** exact signature + one-line intent docstring + `raise NotImplementedError`. No numbered steps, no body code (PLAN-011).
 
 ```python
-def prune_sandboxes(context: CliContext, dry_run: bool = False) -> SandboxPruneResult:
-    """Delete stale sandbox records, orphaned directories, and temporary branches."""
+def prune_worktrees(context: CliContext, dry_run: bool = False) -> WorktreePruneResult:
+    """Delete stale worktree records, orphaned directories, and temporary branches."""
     raise NotImplementedError
 ```
 
 **Test stubs:** signature + single-line docstring starting `[<tier>/<type>]` (per `docs/agents/testing.md#the-four-execution-tiers`), naming the public symbol exercised and the exact outcome contract, ending `raise NotImplementedError` (PLAN-018). The docstring alone is the assertion contract — no separate index table (see Tests below).
 
 ```python
-class SandboxPruneCliIntegrationTests:
-    def test_prune_empty_returns_nothing_to_prune(self, cli_runner: CliRunner, sandbox_workspace: Path) -> None:
-        """[tier-3/integration] dovo sandbox prune: empty sandboxes directory prints 'Nothing to prune'; exit 0."""
+class WorktreePruneCliIntegrationTests:
+    def test_prune_empty_returns_nothing_to_prune(self, cli_runner: CliRunner, worktree_workspace: Path) -> None:
+        """[tier-3/integration] dovo worktree prune: empty worktrees directory prints 'Nothing to prune'; exit 0."""
         raise NotImplementedError
 ```
 

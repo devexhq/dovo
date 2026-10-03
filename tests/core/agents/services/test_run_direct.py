@@ -41,9 +41,9 @@ def _use_provider(monkeypatch: pytest.MonkeyPatch, provider: BaseAgentProvider) 
     return requested
 
 
-def _attempt(sandbox: Path, provider: str = "ollama") -> AgentAttempt:
+def _attempt(worktree: Path, provider: str = "ollama") -> AgentAttempt:
     return run_direct_attempt(
-        instruction="Plan the change", settings=_settings(provider), sandbox_path=sandbox, timeout_seconds=45
+        instruction="Plan the change", settings=_settings(provider), worktree_path=worktree, timeout_seconds=45
     )
 
 
@@ -75,7 +75,7 @@ def _forbid_git_apply(monkeypatch: pytest.MonkeyPatch) -> list[str]:
 
 
 class RunDirectAttemptRequestTests:
-    def test_request_carries_instruction_settings_sandbox_and_timeout(
+    def test_request_carries_instruction_settings_worktree_and_timeout(
         self, git_repo: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """[tier-1/unit] run_direct_attempt: ollama settings and timeout_seconds 45 ask the factory for 'ollama' once and propose_fix receives the exact direct AgentRequest."""
@@ -90,7 +90,7 @@ class RunDirectAttemptRequestTests:
                 mode="direct",
                 instruction="Plan the change",
                 payload=None,
-                sandbox_path=git_repo,
+                worktree_path=git_repo,
                 timeout_seconds=45,
                 model="m",
                 endpoint="http://e",
@@ -145,11 +145,11 @@ class RunDirectAttemptDiffReturningTests:
         ("diff_kind", "message_fragment"),
         [
             pytest.param("empty", "Agent returned a proposed patch without a diff.", id="empty-diff"),
-            pytest.param("unsafe_path", "escapes the sandbox", id="unsafe-path"),
+            pytest.param("unsafe_path", "escapes the worktree", id="unsafe-path"),
             pytest.param("not_applicable", "Patch does not apply cleanly:", id="not-applicable"),
         ],
     )
-    def test_unusable_patch_returns_provider_error_without_changing_sandbox(
+    def test_unusable_patch_returns_provider_error_without_changing_worktree(
         self, git_repo: Path, monkeypatch: pytest.MonkeyPatch, diff_kind: str, message_fragment: str
     ) -> None:
         """[tier-1/unit] run_direct_attempt: an empty, '../x'-targeting, or context-mismatched PROPOSED_PATCH returns PROVIDER_ERROR with the fragment in diagnostics, touched_files == [], and an unchanged git status --porcelain."""
@@ -213,7 +213,7 @@ class RunDirectAttemptDiffReturningTests:
             pytest.param(None, "plan:\n1. do x", "plan:\n1. do x", id="raw-text-fallback"),
         ],
     )
-    def test_no_op_completes_without_touching_sandbox(
+    def test_no_op_completes_without_touching_worktree(
         self,
         git_repo: Path,
         monkeypatch: pytest.MonkeyPatch,
@@ -242,7 +242,7 @@ class _EditingAdapter(CliDirectMutationAdapter):
 
     def _default_run(self, request: CliMutationRunRequest) -> CliMutationOutcome:
         for rel, content in self._files.items():
-            (request.sandbox_path / rel).write_text(content, encoding="utf-8")
+            (request.worktree_path / rel).write_text(content, encoding="utf-8")
         return CliMutationOutcome(status="finished", result_text="done")
 
 
@@ -253,8 +253,8 @@ class RunDirectAttemptDirectMutationTests:
         """[tier-1/unit] run_direct_attempt: a 'cursor'-token fake that writes b.txt and a.txt then returns PROPOSED_PATCH returns touched_files == ['a.txt', 'b.txt'] and never calls apply or apply_check."""
 
         def _write_files(request: AgentRequest) -> None:
-            (request.sandbox_path / "b.txt").write_text("hello\n", encoding="utf-8")
-            (request.sandbox_path / "a.txt").write_text("hello\n", encoding="utf-8")
+            (request.worktree_path / "b.txt").write_text("hello\n", encoding="utf-8")
+            (request.worktree_path / "a.txt").write_text("hello\n", encoding="utf-8")
 
         diff = new_file_diff("b.txt") + new_file_diff("a.txt")
         provider = FakeAgentProvider(
@@ -296,7 +296,7 @@ class RunDirectAttemptDirectMutationTests:
         """[tier-1/unit] run_direct_attempt: a 'cursor'-token fake leaving an edit then returning TIMEOUT/UNFIXABLE/PROVIDER_ERROR returns that status with touched_files == [] and the edit still on disk."""
 
         def _leave_edit(request: AgentRequest) -> None:
-            (request.sandbox_path / "partial.txt").write_text("partial\n", encoding="utf-8")
+            (request.worktree_path / "partial.txt").write_text("partial\n", encoding="utf-8")
 
         _use_provider(monkeypatch, FakeAgentProvider(AgentResponse(status=status), on_call=_leave_edit))
 

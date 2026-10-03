@@ -1,6 +1,6 @@
 name: lint-and-format
 description: Run code linters and formatters in an isolated environment
-use_sandbox: false
+use_worktree: false
 
 steps:
   - id: check-lint

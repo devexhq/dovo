@@ -11,7 +11,7 @@ from pydantic import BaseModel, Field, model_validator
 
 OmissionReason = Literal[
     "missing",
-    "outside_sandbox",
+    "outside_worktree",
     "directory",
     "binary",
     "max_files",
@@ -29,7 +29,7 @@ class PayloadOmission(BaseModel):
 
 
 class PayloadFile(BaseModel):
-    """Sandbox-relative source file content attached to a failure payload."""
+    """Worktree-relative source file content attached to a failure payload."""
 
     model_config = {"extra": "forbid", "strict": True}
 
@@ -88,7 +88,7 @@ class AgentRequest(BaseModel):
     mode: Literal["direct", "fix_failure", "review_remediation"]
     instruction: str = Field(min_length=1)
     payload: AgentFailurePayload | None = None
-    sandbox_path: Path
+    worktree_path: Path
     timeout_seconds: int = Field(ge=1)
     model: str | None = None
     endpoint: str | None = None
@@ -134,7 +134,7 @@ class AgentResponse(BaseModel):
 
 
 class ProviderKind(StrEnum):
-    """How a provider applies its fix: by editing the sandbox directly or by returning a diff."""
+    """How a provider applies its fix: by editing the worktree directly or by returning a diff."""
 
     DIRECT_MUTATION = "direct_mutation"
     DIFF_RETURNING = "diff_returning"

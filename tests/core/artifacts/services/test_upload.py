@@ -19,12 +19,12 @@ class UploadServiceTests:
         self, tmp_path: Path, artifacts_repository: ArtifactsRepository
     ) -> None:
         """[tier-1/unit] publish_artifact: glob matching zero files returns ArtifactUploadStatus.NO_MATCHING_FILES and creates no directory or DB row."""
-        sandbox_path = tmp_path / "sandbox"
-        sandbox_path.mkdir()
+        worktree_path = tmp_path / "worktree"
+        worktree_path.mkdir()
         artifacts_dir = tmp_path / "artifacts"
 
         result = publish_artifact(
-            sandbox_path,
+            worktree_path,
             artifacts_dir,
             artifacts_repository,
             session_id="wf_abc123",
@@ -41,14 +41,14 @@ class UploadServiceTests:
     def test_publish_artifact_writes_manifest_and_db_row(
         self, tmp_path: Path, artifacts_repository: ArtifactsRepository
     ) -> None:
-        """[tier-1/unit] publish_artifact: matching files under sandbox_path are copied to artifacts_dir/<session_id>/<name>/, manifest.json lists each file's exact SHA256 and size, and an ArtifactRecord row is created."""
-        sandbox_path = tmp_path / "sandbox"
-        (sandbox_path / "dist").mkdir(parents=True)
-        (sandbox_path / "dist" / "pkg.whl").write_bytes(b"package-bytes")
+        """[tier-1/unit] publish_artifact: matching files under worktree_path are copied to artifacts_dir/<session_id>/<name>/, manifest.json lists each file's exact SHA256 and size, and an ArtifactRecord row is created."""
+        worktree_path = tmp_path / "worktree"
+        (worktree_path / "dist").mkdir(parents=True)
+        (worktree_path / "dist" / "pkg.whl").write_bytes(b"package-bytes")
         artifacts_dir = tmp_path / "artifacts"
 
         result = publish_artifact(
-            sandbox_path,
+            worktree_path,
             artifacts_dir,
             artifacts_repository,
             session_id="wf_abc123",
@@ -78,9 +78,9 @@ class UploadServiceTests:
         self, tmp_path: Path, artifacts_repository: ArtifactsRepository, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """[tier-1/unit] publish_artifact: an OSError raised while copying a matched file returns ArtifactUploadStatus.ERROR with the OSError message in errors, and creates no DB row."""
-        sandbox_path = tmp_path / "sandbox"
-        (sandbox_path / "dist").mkdir(parents=True)
-        (sandbox_path / "dist" / "pkg.whl").write_bytes(b"package-bytes")
+        worktree_path = tmp_path / "worktree"
+        (worktree_path / "dist").mkdir(parents=True)
+        (worktree_path / "dist" / "pkg.whl").write_bytes(b"package-bytes")
         artifacts_dir = tmp_path / "artifacts"
 
         def _broken_copy2(*_args: object, **_kwargs: object) -> None:
@@ -89,7 +89,7 @@ class UploadServiceTests:
         monkeypatch.setattr("dovo.core.artifacts.services.upload.shutil.copy2", _broken_copy2)
 
         result = publish_artifact(
-            sandbox_path,
+            worktree_path,
             artifacts_dir,
             artifacts_repository,
             session_id="wf_abc123",

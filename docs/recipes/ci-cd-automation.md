@@ -7,11 +7,11 @@ Dovo blueprints can be executed inside Continuous Integration (CI) pipelines to 
 ## Key CLI Flags for CI/CD
 
 When executing Dovo in automated environments:
-* `--no-sandbox`: Disables Git worktree branch creation and executes steps directly in the runner workspace.
+* `--no-worktree`: Disables Git worktree branch creation and executes steps directly in the runner workspace.
 * `--no-tty`: Ensures `prompt_user` failure directives degrade safely to `abort` rather than hanging on standard input.
 
 ```bash
-dovo run build-and-test --no-sandbox --no-tty
+dovo run build-and-test --no-worktree --no-tty
 ```
 
 ---
@@ -57,7 +57,7 @@ jobs:
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         run: |
-          dovo run lint-and-test --no-sandbox --no-tty
+          dovo run lint-and-test --no-worktree --no-tty
 ```
 
 ---

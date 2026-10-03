@@ -18,11 +18,11 @@ from dovo.cli.init.app import init_app
 from dovo.cli.logs.app import logs_app
 from dovo.cli.resume.app import resume_app
 from dovo.cli.run.app import run_app
-from dovo.cli.sandbox.app import sandbox_app
 from dovo.cli.status.app import status_app
 from dovo.cli.step.app import step_app
 from dovo.cli.ui.dispatcher import ui_dispatcher
 from dovo.cli.ui.events import ErrorPanelEvent, MessageEvent, WelcomeBannerEvent
+from dovo.cli.worktree.app import worktree_app
 from dovo.common.filesystem import Filesystem
 from dovo.common.lock import LockTimeoutError, WorkspaceLock
 from dovo.common.version import get_version
@@ -66,7 +66,7 @@ app.add_typer(init_app, name="init")
 app.add_typer(logs_app, name="logs")
 app.add_typer(resume_app, name="resume")
 app.add_typer(run_app, name="run")
-app.add_typer(sandbox_app, name="sandbox")
+app.add_typer(worktree_app, name="worktree")
 app.add_typer(status_app, name="status")
 app.add_typer(step_app, name="step")
 

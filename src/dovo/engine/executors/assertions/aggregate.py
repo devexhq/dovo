@@ -26,7 +26,7 @@ def evaluate_assertions(
     exit_code: int,
     stdout: str,
     stderr: str,
-    sandbox_path: Path,
+    worktree_path: Path,
 ) -> AssertionResult:
     """Run every configured assertion and return one structured result.
 
@@ -47,11 +47,11 @@ def evaluate_assertions(
     if assert_config.json_match is not None:
         failed_conditions.extend(evaluate_json_match(assert_config.json_match, stdout))
     if assert_config.file_exists is not None:
-        failed_conditions.extend(evaluate_file_exists(assert_config.file_exists, sandbox_path))
+        failed_conditions.extend(evaluate_file_exists(assert_config.file_exists, worktree_path))
     if assert_config.file_not_exists is not None:
-        failed_conditions.extend(evaluate_file_not_exists(assert_config.file_not_exists, sandbox_path))
+        failed_conditions.extend(evaluate_file_not_exists(assert_config.file_not_exists, worktree_path))
     if assert_config.file_not_empty is not None:
-        failed_conditions.extend(evaluate_file_not_empty(assert_config.file_not_empty, sandbox_path))
+        failed_conditions.extend(evaluate_file_not_empty(assert_config.file_not_empty, worktree_path))
 
     passed = len(failed_conditions) == 0
     return AssertionResult(

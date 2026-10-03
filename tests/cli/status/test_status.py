@@ -49,8 +49,8 @@ class StatusCliIntegrationTests:
         assert result_dto.database.exists is True
         assert result_dto.database.db_path == resolve_db_path(resolve_global_paths(None))
         assert result_dto.database.is_accessible is True
-        assert result_dto.sandboxes.active_sandboxes == 0
-        assert result_dto.sandboxes.max_active_sandboxes == 3
+        assert result_dto.worktrees.active_worktrees == 0
+        assert result_dto.worktrees.max_active_worktrees == 3
         assert result_dto.warnings == [_BRANCH_WARNING, _AGENT_MODEL_WARNING]
 
     def test_status_cli_dirty_worktree_shows_dirty_branch_exits_zero(
@@ -80,8 +80,8 @@ class StatusCliIntegrationTests:
         assert result_dto.database.exists is True
         assert result_dto.database.db_path == resolve_db_path(resolve_global_paths(None))
         assert result_dto.database.is_accessible is True
-        assert result_dto.sandboxes.active_sandboxes == 0
-        assert result_dto.sandboxes.max_active_sandboxes == 3
+        assert result_dto.worktrees.active_worktrees == 0
+        assert result_dto.worktrees.max_active_worktrees == 3
         assert result_dto.warnings == [
             _BRANCH_WARNING,
             "Working tree has 1 uncommitted change(s).",
@@ -105,8 +105,8 @@ class StatusCliIntegrationTests:
                 "git_is_dirty": False,
                 "uncommitted_files": 0,
                 "agent_model": None,
-                "active_sandboxes": 0,
-                "max_active_sandboxes": 3,
+                "active_worktrees": 0,
+                "max_active_worktrees": 3,
                 "valid_catalog_items": 0,
                 "total_catalog_items": 0,
                 "total_runs": 0,

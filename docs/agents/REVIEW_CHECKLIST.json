@@ -18,7 +18,7 @@
       "domain": "cli",
       "scope": "src/dovo/cli/",
       "evaluation_criteria": "Inspect CLI command handlers in src/dovo/cli/*/commands/. Flag direct SQL execution, domain orchestration, or business logic.",
-      "bad_pattern": "rows = context.db.connection.execute('SELECT * FROM sandboxes').fetchall()"
+      "bad_pattern": "rows = context.db.connection.execute('SELECT * FROM worktrees').fetchall()"
     },
     {
       "id": "ARCH-003",
@@ -84,7 +84,7 @@
       "domain": "cli",
       "scope": "src/dovo/cli/ui/formatters/",
       "evaluation_criteria": "When a new or changed formatter defines a table-construction helper, check whether another formatter in the same domain needs the same table shape. Flag a helper duplicated across sibling formatter modules instead of factored into that domain's common.py, and flag a domain-specific helper placed in the package-wide common.py.",
-      "bad_pattern": "# Nearly identical build_table() duplicated in both sandbox/list.py and sandbox/status.py"
+      "bad_pattern": "# Nearly identical build_table() duplicated in both worktree/list.py and worktree/status.py"
     },
     {
       "id": "MODEL-001",
@@ -105,7 +105,7 @@
       ],
       "scope": "src/dovo/core/, src/dovo/engine/",
       "evaluation_criteria": "Inspect service methods. Flag methods that raise exceptions for business/operational failures instead of returning a BaseResult.",
-      "bad_pattern": "raise SandboxNotFoundError('Sandbox does not exist')"
+      "bad_pattern": "raise WorktreeNotFoundError('Worktree does not exist')"
     },
     {
       "id": "MODEL-003",
@@ -144,7 +144,7 @@
       "domain": "all",
       "scope": "src/",
       "evaluation_criteria": "Check function bodies. Flag dense unseparated blocks or excessive random spacing.",
-      "bad_pattern": "record = SandboxRecord(...)\nself.db.sandboxes.save(record)\nreturn result"
+      "bad_pattern": "record = WorktreeRecord(...)\nself.db.worktrees.save(record)\nreturn result"
     },
     {
       "id": "CODE-003",
@@ -153,7 +153,7 @@
       "domain": "all",
       "scope": "src/",
       "evaluation_criteria": "Inspect new or modified docstrings. Flag a description that retells the body, lists what the signature already shows, or restates the title. Flag a missing description where the code has a hidden contract or a safety behavior.",
-      "bad_pattern": "\"\"\"Run the provider. First resolve the baseline, then build the prompt, then run the tool, then diff the sandbox, then validate the patch.\"\"\""
+      "bad_pattern": "\"\"\"Run the provider. First resolve the baseline, then build the prompt, then run the tool, then diff the worktree, then validate the patch.\"\"\""
     },
     {
       "id": "TYPE-001",
@@ -189,7 +189,7 @@
       "domain": "core",
       "scope": "src/dovo/core/db/models.py",
       "evaluation_criteria": "Inspect SQLModel definitions. Verify __tablename__ and table constants are annotated as ClassVar[str].",
-      "bad_pattern": "__tablename__ = 'sandboxes'"
+      "bad_pattern": "__tablename__ = 'worktrees'"
     },
     {
       "id": "TYPE-005",
@@ -312,7 +312,7 @@
       "domain": "all",
       "scope": "src/dovo/",
       "evaluation_criteria": "Check concurrent operations for advisory lock wrapping.",
-      "bad_pattern": "sandbox_service.create(...)  # mutating shared dir without acquiring lock"
+      "bad_pattern": "worktree_service.create(...)  # mutating shared dir without acquiring lock"
     },
     {
       "id": "COMPAT-001",
@@ -357,7 +357,7 @@
       "domain": "tests",
       "scope": "tests/",
       "evaluation_criteria": "Check every test file path against its source module using the fixed mappings. Flag part-numbered or grab-bag files (for example test_command_formatters_part1.py or a single test_<command>.py holding more than one command action), a CLI command test file left flat under tests/cli/ instead of nested under its own tests/cli/<command>/ subdirectory, missing __init__.py files, and source modules with no test file.",
-      "bad_pattern": "tests/cli/commands/test_sandbox_create.py  # flat under tests/cli/commands/, not nested under tests/cli/sandbox/"
+      "bad_pattern": "tests/cli/commands/test_worktree_create.py  # flat under tests/cli/commands/, not nested under tests/cli/worktree/"
     },
     {
       "id": "TEST-003",
@@ -402,7 +402,7 @@
       "domain": "tests",
       "scope": "tests/",
       "evaluation_criteria": "Flag tests that mechanically enumerate empty or default envelope fields (error_code=None, warnings=[], fixes=[]) when testing unrelated behavior. Verify that models have dedicated contract tests asserting their defaults and schema. In scenario tests, verify assertions check meaningful domain contracts rather than incidental defaults.",
-      "bad_pattern": "assert result == SandboxDiffResult(status=NOT_FOUND, diff_text='', stat_text='', files_changed=[], errors=['...'], warnings=[], fixes=[], error_code=None)  # mechanical enumeration of incidental defaults"
+      "bad_pattern": "assert result == WorktreeDiffResult(status=NOT_FOUND, diff_text='', stat_text='', files_changed=[], errors=['...'], warnings=[], fixes=[], error_code=None)  # mechanical enumeration of incidental defaults"
     },
     {
       "id": "TEST-008",
@@ -501,7 +501,7 @@
       "domain": "tests",
       "scope": "tests/core/",
       "evaluation_criteria": "Scan import statements in changed files under tests/core/. Flag any import of dovo.cli or a submodule of it.",
-      "bad_pattern": "from dovo.cli.sandbox.commands.prune import prune_command  # imported from tests/core/sandbox/test_prune.py"
+      "bad_pattern": "from dovo.cli.worktree.commands.prune import prune_command  # imported from tests/core/worktree/test_prune.py"
     },
     {
       "id": "TEST-019",
@@ -600,7 +600,7 @@
       "domain": "all",
       "scope": "Git commits & PRs",
       "evaluation_criteria": "Inspect commit message trailers and PR descriptions. Flag AI co-author trailers.",
-      "bad_pattern": "feat: prune sandboxes\n\nCo-authored-by: Cursor <cursor@cursor.sh>"
+      "bad_pattern": "feat: prune worktrees\n\nCo-authored-by: Cursor <cursor@cursor.sh>"
     },
     {
       "id": "CI-003",

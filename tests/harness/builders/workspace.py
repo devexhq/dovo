@@ -98,13 +98,13 @@ class WorkspaceBuilder:
             workspace_root = self._root.resolve()
             workspace_root.mkdir(parents=True, exist_ok=True)
         else:
-            workspace_root = Path(tempfile.mkdtemp(prefix="wt_workspace_")).resolve()
+            workspace_root = Path(tempfile.mkdtemp(prefix="dovo_workspace_")).resolve()
 
         dot_dovo = workspace_root / ".dovo"
         dot_dovo.mkdir(parents=True, exist_ok=True)
         bootstrap_dovo(dot_dovo)
 
-        (dot_dovo / "sandboxes").mkdir(parents=True, exist_ok=True)
+        (dot_dovo / "worktrees").mkdir(parents=True, exist_ok=True)
 
         if self._init_git:
             self._scaffold_git_repository(workspace_root)

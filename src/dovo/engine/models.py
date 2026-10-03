@@ -16,7 +16,7 @@ from dovo.core.agents.models import ResolvedAgentSettings
 from dovo.core.catalog.definitions import LoopStepBlock, StepDefinition
 from dovo.core.db import RunRecord, RunStatus
 from dovo.core.db.repositories.artifacts import ArtifactsRepository
-from dovo.core.sandbox import SandboxSession
+from dovo.core.worktree import WorktreeSession
 from dovo.engine.executors.models import ConditionEvaluationResult, ExecutionIdentity, StepResult
 
 
@@ -26,7 +26,7 @@ class EngineResumeStatus(StrEnum):
     OK = "ok"
     NOT_FOUND = "not_found"
     WRONG_STATUS = "wrong_status"
-    MISSING_SANDBOX = "missing_sandbox"
+    MISSING_WORKTREE = "missing_worktree"
     CORRUPT_STATE = "corrupt_state"
     MISSING_SNAPSHOT = "missing_snapshot"
     FAILED = "failed"
@@ -38,7 +38,7 @@ class RunRequest:
 
     inputs: dict[str, str | int | bool] | None = None
     cli_args: list[str] | None = None
-    use_sandbox: bool | None = None
+    use_worktree: bool | None = None
     keep: bool = False
     agent: str | None = None
     session_id: str | None = None
@@ -54,7 +54,7 @@ class RunStartConfig:
 
     blueprint_tier: str | None
     commit_sha: str | None
-    use_sandbox: bool
+    use_worktree: bool
     keep: bool
     agent: str | None
     inputs: dict[str, str | int | bool]
@@ -149,7 +149,7 @@ class RunSettings:
     """
 
     cwd: Path
-    use_sandbox: bool = True
+    use_worktree: bool = True
     keep: bool = False
     agent: ResolvedAgentSettings | None = None
     observer: RunObserver | None = None
@@ -159,7 +159,7 @@ class RunSettings:
     no_tty: bool = False
     failure_prompter: FailurePrompter | None = None
     auto_apply: bool = False
-    sandbox_id: str | None = None
+    worktree_id: str | None = None
     paths: WorkspacePaths = field(kw_only=True)
 
 
@@ -174,16 +174,16 @@ class RunContext:
     session_log_dir: Path | None
     artifacts_dir: Path | None
     artifacts_db: ArtifactsRepository | None = None
-    sandbox: SandboxSession | None = None
+    worktree: WorktreeSession | None = None
     no_tty: bool = False
     save_attempt_logs: bool = True
 
 
 @runtime_checkable
 class RunObserver(Protocol):
-    """Optional progress hooks for sandbox, step, and loop lifecycle events."""
+    """Optional progress hooks for worktree, step, and loop lifecycle events."""
 
-    def on_sandbox_ready(self, path: Path, active: bool) -> None:
+    def on_worktree_ready(self, path: Path, active: bool) -> None:
         """Called after the execution directory is chosen."""
         ...
 
@@ -228,8 +228,8 @@ class RunObserver(Protocol):
         """Called when a loop block finishes."""
         ...
 
-    def on_sandbox_cleanup(self, kept: bool, path: Path) -> None:
-        """Called after sandbox cleanup/keep decision is applied."""
+    def on_worktree_cleanup(self, kept: bool, path: Path) -> None:
+        """Called after worktree cleanup/keep decision is applied."""
         ...
 
     def on_run_started(self, steps: Sequence[StepDefinition | LoopStepBlock]) -> None:
@@ -250,10 +250,10 @@ class RunOutcome(BaseModel):
     step_results: list[StepResult] = Field(default_factory=list)
     errors: list[str] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
-    sandbox_kept: bool = False
-    sandbox_path: Path
+    worktree_kept: bool = False
+    worktree_path: Path
     session_id: str | None = None
-    sandbox_id: str | None = None
+    worktree_id: str | None = None
 
     @property
     def ok(self) -> bool:

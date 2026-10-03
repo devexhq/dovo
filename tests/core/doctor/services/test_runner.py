@@ -151,9 +151,9 @@ class DiagnosticRunnerConfigToggleTests:
             ),
             pytest.param(
                 "check_stale_worktrees",
-                "sandbox.refs",
-                CheckCategory.SANDBOX,
-                id="sandbox_refs",
+                "worktree.refs",
+                CheckCategory.WORKTREE,
+                id="worktree_refs",
             ),
             pytest.param(
                 "check_required_binaries",
@@ -224,9 +224,9 @@ class DiagnosticRunnerContainmentTests:
         check = MockCheck(
             check_id="crashing.check",
             name="Crashing Check",
-            category=CheckCategory.SANDBOX,
+            category=CheckCategory.WORKTREE,
             should_crash=True,
-            crash_message="Simulated crash in sandbox inspection",
+            crash_message="Simulated crash in worktree inspection",
         )
         context = DoctorContext(cwd=tmp_path, config=None, paths=workspace_paths_factory(tmp_path, None))
 
@@ -234,12 +234,12 @@ class DiagnosticRunnerContainmentTests:
 
         assert result.check_id == "crashing.check"
         assert result.name == "Crashing Check"
-        assert result.category == CheckCategory.SANDBOX
+        assert result.category == CheckCategory.WORKTREE
         assert result.status == CheckStatus.FAILED
         assert result.error_code == "DOCTOR_CHECK_CRASH"
-        assert "Simulated crash in sandbox inspection" in result.message
+        assert "Simulated crash in worktree inspection" in result.message
         assert result.details == {
-            "exception": "Simulated crash in sandbox inspection",
+            "exception": "Simulated crash in worktree inspection",
             "type": "RuntimeError",
         }
         assert len(result.remediations) == 1

@@ -22,15 +22,15 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
-    """Create centralized, project-scoped tables for sandboxes, runs, costs, and artifacts."""
+    """Create centralized, project-scoped tables for worktrees, runs, costs, and artifacts."""
     op.create_table(
-        "sandboxes",
+        "worktrees",
         sa.Column("id", AutoString(), nullable=False),
         sa.Column("project_id", AutoString(), nullable=False),
         sa.Column("name", AutoString(), nullable=True),
         sa.Column("branch_name", AutoString(), nullable=False),
         sa.Column("base_commit", AutoString(), nullable=False),
-        sa.Column("sandbox_path", AutoString(), nullable=False),
+        sa.Column("worktree_path", AutoString(), nullable=False),
         sa.Column("status", AutoString(), nullable=False, server_default="active"),
         sa.Column(
             "created_at",
@@ -45,14 +45,14 @@ def upgrade() -> None:
             server_default=sa.text("CURRENT_TIMESTAMP"),
         ),
         sa.PrimaryKeyConstraint("id"),
-        sa.UniqueConstraint("sandbox_path"),
+        sa.UniqueConstraint("worktree_path"),
         sa.CheckConstraint(
             "status IN ('active', 'merged', 'cleaned', 'conflict')",
-            name="ck_sandboxes_status",
+            name="ck_worktrees_status",
         ),
     )
-    op.create_index("idx_sandboxes_status", "sandboxes", ["status"], unique=False)
-    op.create_index("idx_sandboxes_project_id", "sandboxes", ["project_id"], unique=False)
+    op.create_index("idx_worktrees_status", "worktrees", ["status"], unique=False)
+    op.create_index("idx_worktrees_project_id", "worktrees", ["project_id"], unique=False)
 
     op.create_table(
         "runs",
@@ -76,13 +76,13 @@ def upgrade() -> None:
         sa.Column("execution_state_revision", sa.Integer(), nullable=True, server_default=sa.text("0")),
         sa.Column("blueprint_tier", AutoString(), nullable=True),
         sa.Column("commit_sha", AutoString(), nullable=True),
-        sa.Column("use_sandbox", sa.Boolean(), nullable=False, server_default=sa.text("1")),
+        sa.Column("use_worktree", sa.Boolean(), nullable=False, server_default=sa.text("1")),
         sa.Column("keep", sa.Boolean(), nullable=False, server_default=sa.text("0")),
         sa.Column("agent", AutoString(), nullable=True),
         sa.Column("inputs_json", AutoString(), nullable=True),
         sa.Column("auto_apply", sa.Boolean(), nullable=False, server_default=sa.text("0")),
-        sa.Column("sandbox_id", AutoString(), nullable=True),
-        sa.Column("sandbox_kept", sa.Boolean(), nullable=False, server_default=sa.text("0")),
+        sa.Column("worktree_id", AutoString(), nullable=True),
+        sa.Column("worktree_kept", sa.Boolean(), nullable=False, server_default=sa.text("0")),
         sa.PrimaryKeyConstraint("id"),
         sa.UniqueConstraint("session_id"),
         sa.CheckConstraint(
@@ -158,6 +158,6 @@ def downgrade() -> None:
     op.drop_index("idx_runs_status", table_name="runs")
     op.drop_table("runs")
 
-    op.drop_index("idx_sandboxes_project_id", table_name="sandboxes")
-    op.drop_index("idx_sandboxes_status", table_name="sandboxes")
-    op.drop_table("sandboxes")
+    op.drop_index("idx_worktrees_project_id", table_name="worktrees")
+    op.drop_index("idx_worktrees_status", table_name="worktrees")
+    op.drop_table("worktrees")

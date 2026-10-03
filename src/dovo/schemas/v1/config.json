@@ -23,12 +23,12 @@
       }
     },
     "ignore_global_root_error": { "type": "boolean" },
-    "sandbox": {
+    "worktree": {
       "type": "object",
       "additionalProperties": false,
       "properties": {
         "base_ref": { "type": "string", "minLength": 1 },
-        "max_active_sandboxes": { "type": "integer", "minimum": 1 },
+        "max_active_worktrees": { "type": "integer", "minimum": 1 },
         "default_timeout_seconds": { "type": "integer", "minimum": 1 }
       }
     },
@@ -82,7 +82,7 @@
       "additionalProperties": false,
       "properties": {
         "remove_stale_worktrees": { "type": "boolean" },
-        "remove_orphaned_sandboxes": { "type": "boolean" },
+        "remove_orphaned_worktrees": { "type": "boolean" },
         "remove_expired_artifacts": { "type": "boolean" },
         "artifact_ttl_days": { "type": "integer", "minimum": 0 }
       }

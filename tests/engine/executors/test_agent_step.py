@@ -1,4 +1,4 @@
-"""Contract tests for agent step execution through resolved providers in a Git sandbox."""
+"""Contract tests for agent step execution through resolved providers in a Git worktree."""
 
 from __future__ import annotations
 
@@ -21,7 +21,7 @@ from dovo.engine.executors.agent_step import (
     AGENT_OUTCOME_EXIT_CODES,
     BLANK_PROMPT_MESSAGE,
     MISSING_SETTINGS_MESSAGE,
-    SANDBOX_REQUIRED_MESSAGE,
+    WORKTREE_REQUIRED_MESSAGE,
     build_agent_step_runner,
     execute_agent_step,
 )
@@ -52,18 +52,18 @@ def _use_provider(monkeypatch: pytest.MonkeyPatch, provider: BaseAgentProvider) 
 
 
 def _run(
-    sandbox: Path,
+    worktree: Path,
     *,
     step: StepDefinition | None = None,
     agent: ResolvedAgentSettings | None = None,
-    sandbox_active: bool = True,
+    worktree_active: bool = True,
     on_output: Callable[[str, str], None] | None = None,
 ) -> StepDispatchOutcome:
     return execute_agent_step(
         step or _step(),
         agent=agent or _settings(),
-        sandbox_path=sandbox,
-        sandbox_active=sandbox_active,
+        worktree_path=worktree,
+        worktree_active=worktree_active,
         on_output=on_output,
     )
 
@@ -111,20 +111,20 @@ class AgentOutcomeMappingTests:
 
 
 class ExecuteAgentStepRequestTests:
-    def test_valid_step_forwards_prompt_settings_sandbox_and_timeout_to_run_direct_attempt(
+    def test_valid_step_forwards_prompt_settings_worktree_and_timeout_to_run_direct_attempt(
         self, git_repo: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """[tier-1/unit] execute_agent_step: an active-sandbox step with prompt 'Plan the change' and timeout_seconds 45 calls run_direct_attempt once with instruction='Plan the change', the given settings, sandbox_path=git_repo, timeout_seconds=45."""
+        """[tier-1/unit] execute_agent_step: an active-worktree step with prompt 'Plan the change' and timeout_seconds 45 calls run_direct_attempt once with instruction='Plan the change', the given settings, worktree_path=git_repo, timeout_seconds=45."""
         calls: list[dict[str, object]] = []
 
         def _record(
-            *, instruction: str, settings: ResolvedAgentSettings, sandbox_path: Path, timeout_seconds: int
+            *, instruction: str, settings: ResolvedAgentSettings, worktree_path: Path, timeout_seconds: int
         ) -> AgentAttempt:
             calls.append(
                 {
                     "instruction": instruction,
                     "settings": settings,
-                    "sandbox_path": sandbox_path,
+                    "worktree_path": worktree_path,
                     "timeout_seconds": timeout_seconds,
                 }
             )
@@ -138,7 +138,7 @@ class ExecuteAgentStepRequestTests:
             {
                 "instruction": "Plan the change",
                 "settings": _settings(),
-                "sandbox_path": git_repo,
+                "worktree_path": git_repo,
                 "timeout_seconds": 45,
             }
         ]
@@ -146,10 +146,10 @@ class ExecuteAgentStepRequestTests:
     def test_missing_settings_fail_before_provider_lookup(
         self, git_repo: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """[tier-1/unit] execute_agent_step: agent=None with an active sandbox fails with the missing-settings diagnostic and never asks the factory for an adapter."""
+        """[tier-1/unit] execute_agent_step: agent=None with an active worktree fails with the missing-settings diagnostic and never asks the factory for an adapter."""
         requested = _use_provider(monkeypatch, FakeAgentProvider(_no_op()))
 
-        outcome = execute_agent_step(_step(), agent=None, sandbox_path=git_repo, sandbox_active=True, on_output=None)
+        outcome = execute_agent_step(_step(), agent=None, worktree_path=git_repo, worktree_active=True, on_output=None)
 
         assert outcome.status == "failed"
         assert outcome.exit_code == 203
@@ -171,20 +171,20 @@ class ExecuteAgentStepRequestTests:
         assert requested == []
 
 
-class ExecuteAgentStepSandboxTests:
-    def test_inactive_sandbox_fails_before_provider_or_patch(
+class ExecuteAgentStepWorktreeTests:
+    def test_inactive_worktree_fails_before_provider_or_patch(
         self, git_repo: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """[tier-1/unit] execute_agent_step: sandbox_active=False fails with the exact sandbox diagnostic and records zero provider, apply_check, and apply calls."""
+        """[tier-1/unit] execute_agent_step: worktree_active=False fails with the exact worktree diagnostic and records zero provider, apply_check, and apply calls."""
         requested = _use_provider(monkeypatch, FakeAgentProvider(_patch()))
         apply_calls = _forbid_git_apply(monkeypatch)
 
-        outcome = _run(git_repo, sandbox_active=False)
+        outcome = _run(git_repo, worktree_active=False)
 
         assert outcome.status == "failed"
         assert outcome.exit_code == 203
-        assert outcome.error_message == SANDBOX_REQUIRED_MESSAGE
-        assert outcome.stderr == SANDBOX_REQUIRED_MESSAGE
+        assert outcome.error_message == WORKTREE_REQUIRED_MESSAGE
+        assert outcome.stderr == WORKTREE_REQUIRED_MESSAGE
         assert (
             outcome.stdout == '{"status":"provider_error","summary":null,"unfixable_reason":null,"touched_files":[]}\n'
         )
@@ -330,33 +330,33 @@ class ExecuteAgentStepOutputTests:
 
 
 class BuildAgentStepRunnerTests:
-    def test_runner_built_without_active_sandbox_fails_with_sandbox_required_message(
+    def test_runner_built_without_active_worktree_fails_with_worktree_required_message(
         self, git_repo: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """[tier-1/unit] build_agent_step_runner: build_agent_step_runner(settings, sandbox_active=False) returns a runner whose call yields status 'failed' with error_message containing SANDBOX_REQUIRED_MESSAGE and run_direct_attempt is called zero times."""
+        """[tier-1/unit] build_agent_step_runner: build_agent_step_runner(settings, worktree_active=False) returns a runner whose call yields status 'failed' with error_message containing WORKTREE_REQUIRED_MESSAGE and run_direct_attempt is called zero times."""
         calls: list[object] = []
         monkeypatch.setattr(
             "dovo.engine.executors.agent_step.run_direct_attempt",
             lambda **kwargs: calls.append(kwargs) or AgentAttempt(status=AgentResponseStatus.NO_OP),
         )
 
-        runner = build_agent_step_runner(_settings(), sandbox_active=False)
+        runner = build_agent_step_runner(_settings(), worktree_active=False)
         outcome = runner(_step(), git_repo, None)
 
         assert outcome.status == "failed"
-        assert SANDBOX_REQUIRED_MESSAGE in (outcome.error_message or "")
+        assert WORKTREE_REQUIRED_MESSAGE in (outcome.error_message or "")
         assert calls == []
 
-    def test_runner_passes_bound_settings_sandbox_path_and_callback_to_the_provider_attempt(
+    def test_runner_passes_bound_settings_worktree_path_and_callback_to_the_provider_attempt(
         self, git_repo: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """[tier-1/unit] build_agent_step_runner: build_agent_step_runner(settings, sandbox_active=True) runner called with (step, sandbox_path, on_output) calls run_direct_attempt once with settings=settings, sandbox_path=sandbox_path, instruction=step.prompt, and delivers exactly one ('stdout', summary_line) to on_output."""
+        """[tier-1/unit] build_agent_step_runner: build_agent_step_runner(settings, worktree_active=True) runner called with (step, worktree_path, on_output) calls run_direct_attempt once with settings=settings, worktree_path=worktree_path, instruction=step.prompt, and delivers exactly one ('stdout', summary_line) to on_output."""
         calls: list[dict[str, object]] = []
 
         def _record(
-            *, instruction: str, settings: ResolvedAgentSettings, sandbox_path: Path, timeout_seconds: int
+            *, instruction: str, settings: ResolvedAgentSettings, worktree_path: Path, timeout_seconds: int
         ) -> AgentAttempt:
-            calls.append({"instruction": instruction, "settings": settings, "sandbox_path": sandbox_path})
+            calls.append({"instruction": instruction, "settings": settings, "worktree_path": worktree_path})
             return AgentAttempt(status=AgentResponseStatus.NO_OP)
 
         monkeypatch.setattr("dovo.engine.executors.agent_step.run_direct_attempt", _record)
@@ -364,9 +364,9 @@ class BuildAgentStepRunnerTests:
         step = _step()
         emitted: list[tuple[str, str]] = []
 
-        outcome = build_agent_step_runner(settings, sandbox_active=True)(
+        outcome = build_agent_step_runner(settings, worktree_active=True)(
             step, git_repo, lambda stream, line: emitted.append((stream, line))
         )
 
-        assert calls == [{"instruction": step.prompt, "settings": settings, "sandbox_path": git_repo}]
+        assert calls == [{"instruction": step.prompt, "settings": settings, "worktree_path": git_repo}]
         assert emitted == [("stdout", outcome.stdout)]

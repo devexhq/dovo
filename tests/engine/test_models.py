@@ -44,7 +44,7 @@ class RunOutcomeTests:
         self, tmp_path: Path, status: RunStatus, errors: list[str], expected: bool
     ) -> None:
         """[tier-1/unit] RunOutcome.ok: True only for status COMPLETED with an empty errors list."""
-        outcome = RunOutcome(status=status, sandbox_path=tmp_path, errors=errors)
+        outcome = RunOutcome(status=status, worktree_path=tmp_path, errors=errors)
 
         assert outcome.ok is expected
 

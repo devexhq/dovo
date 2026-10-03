@@ -70,7 +70,7 @@ SUCCESS_INT_CASE = FormatterCase(
     data=ConfigSetResult(
         status=ConfigSetStatus.OK,
         config_path=CONFIG_PATH,
-        key="sandbox.max_active_sandboxes",
+        key="worktree.max_active_worktrees",
         value=5,
         errors=[],
         warnings=[],
@@ -79,7 +79,7 @@ SUCCESS_INT_CASE = FormatterCase(
     view=ConfigSetView(
         status=ConfigSetStatus.OK,
         config_path=CONFIG_PATH,
-        key="sandbox.max_active_sandboxes",
+        key="worktree.max_active_worktrees",
         value=5,
         value_str="5",
         value_type="int",
@@ -87,7 +87,7 @@ SUCCESS_INT_CASE = FormatterCase(
         warnings=[],
         fixes=[],
     ),
-    render_expectations=["sandbox.max_active_sandboxes", "5", "int"],
+    render_expectations=["worktree.max_active_worktrees", "5", "int"],
 )
 
 SUCCESS_DICT_CASE = FormatterCase(

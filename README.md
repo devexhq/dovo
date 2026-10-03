@@ -1,12 +1,12 @@
 # Dovo CLI (`dovo`)
 
-[![CI](https://github.com/devexhq/worktree-cli/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/devexhq/worktree-cli/actions/workflows/ci.yml)
-[![License](https://img.shields.io/github/license/devexhq/worktree-cli.svg)](https://github.com/devexhq/worktree-cli/blob/main/LICENSE)
-[![Issues](https://img.shields.io/github/issues/devexhq/worktree-cli.svg)](https://github.com/devexhq/worktree-cli/issues)
-[![Last commit](https://img.shields.io/github/last-commit/devexhq/worktree-cli.svg)](https://github.com/devexhq/worktree-cli/commits/main)
+[![CI](https://github.com/devexhq/dovo/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/devexhq/dovo/actions/workflows/ci.yml)
+[![License](https://img.shields.io/github/license/devexhq/dovo.svg)](https://github.com/devexhq/dovo/blob/main/LICENSE)
+[![Issues](https://img.shields.io/github/issues/devexhq/dovo.svg)](https://github.com/devexhq/dovo/issues)
+[![Last commit](https://img.shields.io/github/last-commit/devexhq/dovo.svg)](https://github.com/devexhq/dovo/commits/main)
 [![PyPI version](https://img.shields.io/pypi/v/devexhq-dovo.svg)](https://pypi.org/project/devexhq-dovo/)
 [![Python versions](https://img.shields.io/pypi/pyversions/devexhq-dovo.svg)](https://pypi.org/project/devexhq-dovo/)
-[![Stars](https://img.shields.io/github/stars/devexhq/worktree-cli.svg?style=social)](https://github.com/devexhq/worktree-cli/stargazers)
+[![Stars](https://img.shields.io/github/stars/devexhq/dovo.svg?style=social)](https://github.com/devexhq/dovo/stargazers)
 
 Isolated git worktree developer workflows and autonomous AI agent workspaces.
 
@@ -80,15 +80,15 @@ dovo history
 - `dovo step delete <sha-or-name>`
 - `dovo step validate <target>` — validate a step definition without executing it
 
-### Sandbox
+### Worktree
 
-- `dovo sandbox create`
-- `dovo sandbox list`
-- `dovo sandbox show <sandbox-id>`
-- `dovo sandbox prune` — safely prune stale sandboxes, orphaned directories, and temporary branches
-- `dovo sandbox delete <sandbox-id>`
-- `dovo sandbox apply <sandbox-id>` — apply sandbox changes back to workspace
-- `dovo sandbox diff <sandbox-id>` — inspect differences from base commit
+- `dovo worktree create`
+- `dovo worktree list`
+- `dovo worktree show <worktree-id>`
+- `dovo worktree prune` — safely prune stale worktrees, orphaned directories, and temporary branches
+- `dovo worktree delete <worktree-id>`
+- `dovo worktree apply <worktree-id>` — apply worktree changes back to workspace
+- `dovo worktree diff <worktree-id>` — inspect differences from base commit
 
 ### Artifacts
 
@@ -119,10 +119,10 @@ Dovo reserves these paths under the repository-local `.dovo/` directory:
 - `.dovo/project.json`
 - `.dovo/catalog/workflows/*.yml`
 - `.dovo/catalog/tasks/*.yml`
-- `.dovo/sandboxes/`
+- `.dovo/worktrees/`
 - `.dovo/dovo.lock`
 - `.dovo/sessions/`, `.dovo/artifacts/`, `.dovo/logs/`, and `.dovo/tmp/` for legacy projects without `project.json`
-- `<sandbox>/.dovo/run`, a symlink to the selected session directory for a sandbox
+- `<worktree>/.dovo/run`, a symlink to the selected session directory for a worktree
 
 Identified projects keep runtime session, artifact, log, and temporary data outside the repository at:
 
@@ -155,5 +155,5 @@ Distributed under the MIT License. See [`LICENSE`](LICENSE) for details.
 
 ## Links
 
-- Website: [devexhq.github.io/worktree-cli](https://devexhq.github.io/worktree-cli)
-- Repository: [github.com/devexhq/worktree-cli](https://github.com/devexhq/worktree-cli)
+- Website: [devexhq.github.io/dovo](https://devexhq.github.io/dovo)
+- Repository: [github.com/devexhq/dovo](https://github.com/devexhq/dovo)

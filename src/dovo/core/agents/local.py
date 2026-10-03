@@ -82,7 +82,7 @@ def _map_local_stdout(parsed: LocalAgentStdout, *, raw_text: str, duration_ms: i
     )
 
 
-def _validate_local_request(request: AgentRequest, sandbox_cwd: Path, started: float) -> AgentResponse | None:
+def _validate_local_request(request: AgentRequest, worktree_cwd: Path, started: float) -> AgentResponse | None:
     """Validate local agent request parameters and directory before spawning process."""
     if request.timeout_seconds < 1:
         duration_ms = int((time.monotonic() - started) * 1000)
@@ -91,15 +91,15 @@ def _validate_local_request(request: AgentRequest, sandbox_cwd: Path, started: f
             duration_ms=duration_ms,
             errors=["Agent provider error (AGENT_PROVIDER_ERROR): timeout_seconds must be an integer >= 1"],
         )
-    if not sandbox_cwd.is_dir():
+    if not worktree_cwd.is_dir():
         duration_ms = int((time.monotonic() - started) * 1000)
         return AgentResponse(
             status=AgentResponseStatus.PROVIDER_ERROR,
             duration_ms=duration_ms,
             errors=[
                 "Agent provider error (AGENT_PROVIDER_ERROR): "
-                f"sandbox path does not exist or is not a directory: "
-                f"'{sandbox_cwd}'"
+                f"worktree path does not exist or is not a directory: "
+                f"'{worktree_cwd}'"
             ],
         )
     return None
@@ -107,7 +107,7 @@ def _validate_local_request(request: AgentRequest, sandbox_cwd: Path, started: f
 
 def _dispatch_local_command(
     argv: list[str],
-    sandbox_cwd: Path,
+    worktree_cwd: Path,
     request: AgentRequest,
     started: float,
 ) -> tuple[subprocess.CompletedProcess[Any] | None, AgentResponse | None]:
@@ -116,7 +116,7 @@ def _dispatch_local_command(
     try:
         completed = run_isolated_process(
             argv,
-            cwd=sandbox_cwd,
+            cwd=worktree_cwd,
             input_data=stdin_bytes,
             timeout_seconds=float(request.timeout_seconds),
         )
@@ -196,17 +196,17 @@ class LocalAgentAdapter(BaseAgentProvider):
         """Run the local agent CLI; never raises for classified outcomes."""
         started = time.monotonic()
         argv = _resolve_local_argv()
-        sandbox = request.sandbox_path.expanduser()
+        worktree = request.worktree_path.expanduser()
         try:
-            sandbox_cwd = sandbox.resolve()
+            worktree_cwd = worktree.resolve()
         except OSError:
-            sandbox_cwd = sandbox
+            worktree_cwd = worktree
 
-        error_response = _validate_local_request(request, sandbox_cwd, started)
+        error_response = _validate_local_request(request, worktree_cwd, started)
         if error_response is not None:
             return error_response
 
-        completed, dispatch_error = _dispatch_local_command(argv, sandbox_cwd, request, started)
+        completed, dispatch_error = _dispatch_local_command(argv, worktree_cwd, request, started)
         if dispatch_error is not None:
             return dispatch_error
         if completed is None:

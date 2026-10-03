@@ -175,7 +175,7 @@ class BuildRunJsonPayloadTests:
     def test_build_run_json_payload_copies_revision_manifest_nodes_and_row_lifecycle_with_flattened_results(
         self,
     ) -> None:
-        """[tier-1/unit] build_run_json_payload: a state at revision 3 with one completed leaf and a COMPLETED row yields revision 3, the same manifest and nodes, lifecycle equal to the row's status/error_message/started_at/completed_at/sandbox_id/sandbox_kept, and results == flatten_step_results(state)."""
+        """[tier-1/unit] build_run_json_payload: a state at revision 3 with one completed leaf and a COMPLETED row yields revision 3, the same manifest and nodes, lifecycle equal to the row's status/error_message/started_at/completed_at/worktree_id/worktree_kept, and results == flatten_step_results(state)."""
         state = _tree(_leaf("a", NodeState.COMPLETED, [_result("a")])).model_copy(update={"revision": 3})
         row = RunRecord(
             project_id="proj",
@@ -186,8 +186,8 @@ class BuildRunJsonPayloadTests:
             started_at="2026-09-28T00:00:00+00:00",
             completed_at="2026-09-28T00:01:00+00:00",
             error_message="note",
-            sandbox_id="sbx-1",
-            sandbox_kept=True,
+            worktree_id="dovo_1",
+            worktree_kept=True,
         )
 
         payload = build_run_json_payload(state, row)
@@ -200,8 +200,8 @@ class BuildRunJsonPayloadTests:
             error_message="note",
             started_at="2026-09-28T00:00:00+00:00",
             completed_at="2026-09-28T00:01:00+00:00",
-            sandbox_id="sbx-1",
-            sandbox_kept=True,
+            worktree_id="dovo_1",
+            worktree_kept=True,
         )
         assert payload.results == flatten_step_results(state)
         assert len(payload.results) == 1

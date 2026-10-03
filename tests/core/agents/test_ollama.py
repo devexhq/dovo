@@ -37,13 +37,13 @@ def _chat_body(content: str) -> str:
 
 
 def _ollama_request(
-    sandbox_path: Path,
+    worktree_path: Path,
     *,
     model: str | None = "smollm2:1.7b",
     endpoint: str | None = "http://127.0.0.1:11434",
 ) -> AgentRequest:
     """Build an AgentRequest carrying the model/endpoint/temperature/max_tokens fields Ollama reads."""
-    builder = AgentRequestBuilder().with_sandbox_path(sandbox_path).with_temperature(0.2).with_max_tokens(1024)
+    builder = AgentRequestBuilder().with_worktree_path(worktree_path).with_temperature(0.2).with_max_tokens(1024)
     if model is not None:
         builder = builder.with_model(model)
     if endpoint is not None:
@@ -169,15 +169,15 @@ class ParseOllamaModelTextTests:
 
 class BuildOllamaMessagesTests:
     def test_direct_request_messages_omit_payload_and_use_direct_guidance(self, tmp_path: Path) -> None:
-        """[tier-1/unit] build_ollama_messages: a direct request yields [system, user] whose user JSON equals {mode, sandbox_path, instruction, guidance(direct)} with no payload key."""
-        request = AgentRequest(mode="direct", instruction="Plan the change", sandbox_path=tmp_path, timeout_seconds=10)
+        """[tier-1/unit] build_ollama_messages: a direct request yields [system, user] whose user JSON equals {mode, worktree_path, instruction, guidance(direct)} with no payload key."""
+        request = AgentRequest(mode="direct", instruction="Plan the change", worktree_path=tmp_path, timeout_seconds=10)
 
         messages = build_ollama_messages(request)
 
         assert [message["role"] for message in messages] == ["system", "user"]
         assert json.loads(messages[1]["content"]) == {
             "mode": "direct",
-            "sandbox_path": str(tmp_path),
+            "worktree_path": str(tmp_path),
             "instruction": "Plan the change",
             "guidance": (
                 "Carry out the instruction. Return a unified_diff only when file changes are required; "
@@ -187,15 +187,15 @@ class BuildOllamaMessagesTests:
         }
 
     def test_remediation_request_messages_embed_payload_and_repair_guidance(self, tmp_path: Path) -> None:
-        """[tier-1/unit] build_ollama_messages: a fix_failure request yields user JSON {mode, sandbox_path, instruction, payload, guidance(remediation)}."""
-        request = AgentRequestBuilder().with_sandbox_path(tmp_path).build()
+        """[tier-1/unit] build_ollama_messages: a fix_failure request yields user JSON {mode, worktree_path, instruction, payload, guidance(remediation)}."""
+        request = AgentRequestBuilder().with_worktree_path(tmp_path).build()
 
         messages = build_ollama_messages(request)
 
         assert [message["role"] for message in messages] == ["system", "user"]
         assert json.loads(messages[1]["content"]) == {
             "mode": "fix_failure",
-            "sandbox_path": str(tmp_path),
+            "worktree_path": str(tmp_path),
             "instruction": "Fix the failing test.",
             "payload": AgentFailurePayload(
                 command="pytest",

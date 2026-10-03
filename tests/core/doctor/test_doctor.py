@@ -19,7 +19,7 @@ from dovo.core.doctor.checks.config_schema import ConfigSchemaCheck
 from dovo.core.doctor.checks.env_binaries import EnvBinariesCheck
 from dovo.core.doctor.checks.filesystem_writable import FilesystemWritableCheck
 from dovo.core.doctor.checks.git_repo import GitRepoCheck
-from dovo.core.doctor.checks.sandbox_refs import SandboxRefsCheck
+from dovo.core.doctor.checks.worktree_refs import WorktreeRefsCheck
 from dovo.core.doctor.doctor import Doctor
 from dovo.core.doctor.models import (
     CheckCategory,
@@ -180,7 +180,7 @@ class DoctorDefaultRegistryTests:
         assert isinstance(doctor.registry.get("git.repo"), GitRepoCheck)
         assert isinstance(doctor.registry.get("config.schema"), ConfigSchemaCheck)
         assert isinstance(doctor.registry.get("filesystem.writable"), FilesystemWritableCheck)
-        assert isinstance(doctor.registry.get("sandbox.refs"), SandboxRefsCheck)
+        assert isinstance(doctor.registry.get("worktree.refs"), WorktreeRefsCheck)
         assert isinstance(doctor.registry.get("env.binaries"), EnvBinariesCheck)
         assert isinstance(doctor.registry.get("agent.setup"), AgentSetupCheck)
 

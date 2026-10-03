@@ -74,7 +74,7 @@ class ResolveStepLogPathsTests:
 class MetadataToEnvExcludesOutputsFromStepsJsonTests:
     """[tier-1/unit] metadata_to_env: DOVO_STEPS_JSON never serializes PreviousStepMetadata.outputs, regardless of its contents."""
 
-    def test_wt_steps_json_omits_outputs_key_even_when_previous_step_outputs_is_non_empty(self) -> None:
+    def test_dovo_steps_json_omits_outputs_key_even_when_previous_step_outputs_is_non_empty(self) -> None:
         """[tier-1/unit] metadata_to_env: metadata.steps containing an entry with outputs={'greeting': 'hello'} yields a DOVO_STEPS_JSON whose parsed entry dict has no 'outputs' key at all (regression guard for PreviousStepMetadata.outputs' Field(exclude=True))."""
         step = StepDefinition(id="s2", type=StepType.COMMAND, command="echo hi")
         historical = PreviousStepMetadata(
@@ -96,7 +96,7 @@ class MetadataToEnvExcludesOutputsFromStepsJsonTests:
 class MetadataSessionIdEnvTests:
     """[tier-1/unit] metadata_to_env: DOVO_SESSION_ID reflects ExecutionMetadata.session_id."""
 
-    def test_metadata_to_env_includes_wt_session_id(self) -> None:
+    def test_metadata_to_env_includes_dovo_session_id(self) -> None:
         """[tier-1/unit] metadata_to_env: ExecutionMetadata(session_id='wf_abc123') maps to env['DOVO_SESSION_ID'] == 'wf_abc123'."""
         step = StepDefinition(id="s1", type=StepType.COMMAND, command="echo hi")
 

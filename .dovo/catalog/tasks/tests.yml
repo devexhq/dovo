@@ -1,6 +1,6 @@
 name: test
-description: Run pytest suite in-place without sandbox isolation
-use_sandbox: false
+description: Run pytest suite in-place without worktree isolation
+use_worktree: false
 
 steps:
   - id: run-tests

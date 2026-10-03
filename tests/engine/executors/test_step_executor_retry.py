@@ -29,7 +29,7 @@ class StepRetryExecutionTests:
         )
         cmd = f"{sys.executable} retry_script.py"
         step = StepBuilder.command(cmd).with_id("retry-adapt").with_retry(max_retries=2, backoff_ms=0).build()
-        result = StepExecution(StepExecutionContext(step=step, sandbox_path=tmp_path)).run()
+        result = StepExecution(StepExecutionContext(step=step, worktree_path=tmp_path)).run()
 
         assert result.step_id == "retry-adapt"
         assert result.status == "completed"
@@ -66,7 +66,7 @@ class StepRunnerRobustnessTests:
         result = StepExecution(
             StepExecutionContext(
                 step=step,
-                sandbox_path=tmp_path,
+                worktree_path=tmp_path,
                 on_output=failing_observer,
             )
         ).run()

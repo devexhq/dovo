@@ -15,8 +15,8 @@ from dovo.common.filesystem import Filesystem, WorkspacePaths
 from dovo.common.filesystem.models import RepositoryPaths
 from dovo.common.filesystem.services.global_root import resolve_global_paths
 from dovo.core.config.loader import ConfigLoadStatus
-from dovo.core.config.models import AgentConfig, DovoConfig, ProjectConfig, SandboxConfig
-from dovo.core.db import RunsRepository, RunStatus, SandboxesRepository
+from dovo.core.config.models import AgentConfig, DovoConfig, ProjectConfig, WorktreeConfig
+from dovo.core.db import RunsRepository, RunStatus, WorktreesRepository
 from dovo.core.db.connection import resolve_db_path
 from dovo.core.git import GitNotFoundError, GitPlumbingTimeoutError, GitRunner
 from dovo.core.project.services.storage import resolve_workspace_paths
@@ -30,12 +30,12 @@ def _status_paths(workspace: Path) -> WorkspacePaths:
     return resolve_workspace_paths(RepositoryPaths.from_root(workspace), resolve_global_paths(None))
 
 
-def _config_payload(*, model: str | None = "gpt-4o", max_active_sandboxes: int = 5) -> dict[str, Any]:
+def _config_payload(*, model: str | None = "gpt-4o", max_active_worktrees: int = 5) -> dict[str, Any]:
     return DovoConfig(
         version=1,
         project=ProjectConfig(name="status-ws"),
         agent=AgentConfig(model=model),
-        sandbox=SandboxConfig(max_active_sandboxes=max_active_sandboxes),
+        worktree=WorktreeConfig(max_active_worktrees=max_active_worktrees),
     ).model_dump(mode="json")
 
 
@@ -85,7 +85,7 @@ class StatusCollectorGitCollectionTests:
         )
         paths = _status_paths(workspace)
         fs = Filesystem(workspace)
-        config_data = _config_payload(model="gpt-4o", max_active_sandboxes=3)
+        config_data = _config_payload(model="gpt-4o", max_active_worktrees=3)
         Filesystem.atomic_write_json(fs.config_file, config_data)
         Filesystem.atomic_write_text(fs.catalog_blueprints_dir / "deploy.yml", "name: deploy\n")
         Filesystem.atomic_write_text(fs.catalog_blueprints_dir / "lint-blueprint.yml", "name: lint-blueprint\n")
@@ -99,12 +99,12 @@ class StatusCollectorGitCollectionTests:
             status=RunStatus.COMPLETED,
         )
 
-        sandboxes_repo = SandboxesRepository(db_path=paths.database_file, project_id=paths.project_id)
-        sandboxes_repo.create(
+        worktrees_repo = WorktreesRepository(db_path=paths.database_file, project_id=paths.project_id)
+        worktrees_repo.create(
             id="sb-001",
             branch_name="dovo/sb-001",
             base_commit="HEAD",
-            sandbox_path=fs.sandboxes_dir / "sb-001",
+            worktree_path=fs.worktrees_dir / "sb-001",
         )
 
         result = collect_status(paths)
@@ -120,9 +120,9 @@ class StatusCollectorGitCollectionTests:
         assert result.database.exists is True
         assert result.database.is_accessible is True
         assert result.database.total_runs == 1
-        assert result.sandboxes.active_sandboxes == 1
-        assert result.sandboxes.total_sandboxes == 1
-        assert result.sandboxes.max_active_sandboxes == 3
+        assert result.worktrees.active_worktrees == 1
+        assert result.worktrees.total_worktrees == 1
+        assert result.worktrees.max_active_worktrees == 3
         assert result.warnings == []
         assert result.fixes == []
 
@@ -314,8 +314,8 @@ class StatusCollectorConfigAndCatalogTests:
         assert result.warnings == ["1 invalid blueprint file(s) detected in catalog."]
 
 
-class StatusCollectorDatabaseAndSandboxTests:
-    """Tests for database and sandbox status collection in collect_status."""
+class StatusCollectorDatabaseAndWorktreeTests:
+    """Tests for database and worktree status collection in collect_status."""
 
     def test_collect_status_missing_database(self, tmp_path: Path) -> None:
         workspace = (
@@ -351,34 +351,34 @@ class StatusCollectorDatabaseAndSandboxTests:
         assert result.database.is_accessible is False
         assert result.database.total_runs == 0
 
-    def test_collect_status_sandboxes_directory_fallback(self, tmp_path: Path) -> None:
+    def test_collect_status_worktrees_directory_fallback(self, tmp_path: Path) -> None:
         workspace = (
-            WorkspaceBuilder(tmp_path / "sandbox_fallback_ws")
+            WorkspaceBuilder(tmp_path / "worktree_fallback_ws")
             .with_git(branch="feature-status")
             .without_database()
             .without_catalog_templates()
             .build()
         )
         fs = Filesystem(workspace)
-        config_payload = _config_payload(model="gpt-4o", max_active_sandboxes=4)
+        config_payload = _config_payload(model="gpt-4o", max_active_worktrees=4)
         Filesystem.atomic_write_json(fs.config_file, config_payload)
-        (fs.sandboxes_dir / "sb-1").mkdir(parents=True, exist_ok=True)
-        (fs.sandboxes_dir / "sb-2").mkdir(parents=True, exist_ok=True)
+        (fs.worktrees_dir / "sb-1").mkdir(parents=True, exist_ok=True)
+        (fs.worktrees_dir / "sb-2").mkdir(parents=True, exist_ok=True)
 
         result = collect_status(_status_paths(workspace))
 
         assert result.database.exists is False
-        assert result.sandboxes.active_sandboxes == 2
-        assert result.sandboxes.total_sandboxes == 2
-        assert result.sandboxes.max_active_sandboxes == 4
+        assert result.worktrees.active_worktrees == 2
+        assert result.worktrees.total_worktrees == 2
+        assert result.worktrees.max_active_worktrees == 4
 
-    def test_collect_status_sandboxes_db_query_error(
+    def test_collect_status_worktrees_db_query_error(
         self,
         tmp_path: Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         workspace = (
-            WorkspaceBuilder(tmp_path / "sandbox_db_error_ws")
+            WorkspaceBuilder(tmp_path / "worktree_db_error_ws")
             .with_git(branch="feature-status")
             .with_database()
             .without_catalog_templates()
@@ -395,18 +395,18 @@ class StatusCollectorDatabaseAndSandboxTests:
             blueprint_key="test-bp",
             status=RunStatus.COMPLETED,
         )
-        (fs.sandboxes_dir / "sb-fallback").mkdir(parents=True, exist_ok=True)
+        (fs.worktrees_dir / "sb-fallback").mkdir(parents=True, exist_ok=True)
 
         def mock_list(*args: object, **kwargs: object) -> list[object]:
             raise RuntimeError("DB query failure")
 
-        monkeypatch.setattr(SandboxesRepository, "list", mock_list)
+        monkeypatch.setattr(WorktreesRepository, "list", mock_list)
 
         result = collect_status(paths)
 
         assert result.database.total_runs == 1
-        assert result.sandboxes.active_sandboxes == 1
-        assert result.sandboxes.total_sandboxes == 1
+        assert result.worktrees.active_worktrees == 1
+        assert result.worktrees.total_worktrees == 1
 
 
 class StatusCollectorWarningsOrderingTests:
@@ -437,7 +437,7 @@ class StatusCollectorWarningsOrderingTests:
 
         Filesystem.atomic_write_json(
             fs.config_file,
-            _config_payload(model=None, max_active_sandboxes=8),
+            _config_payload(model=None, max_active_worktrees=8),
         )
 
         result2 = collect_status(paths)
@@ -446,7 +446,7 @@ class StatusCollectorWarningsOrderingTests:
             "Active branch is 'main'. Automated workflows on primary branches are discouraged.",
             "Working tree has 1 uncommitted change(s).",
             "Agent model is not configured (agent.model is null).",
-            "max_active_sandboxes (8) is unusually high.",
+            "max_active_worktrees (8) is unusually high.",
             "1 invalid blueprint file(s) detected in catalog.",
         ]
 

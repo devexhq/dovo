@@ -100,7 +100,7 @@ class SnapshotDefinitionsTests:
         catalog = Catalog(_paths_for(workspace))
         blueprint = Blueprint(
             BlueprintBuilder("no-catalog-task")
-            .with_use_sandbox(False)
+            .with_use_worktree(False)
             .with_step(StepBuilder.command("echo hi"))
             .build()
         )

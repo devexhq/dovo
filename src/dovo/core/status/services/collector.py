@@ -8,8 +8,8 @@ from dovo.common.filesystem import Filesystem, WorkspacePaths
 from dovo.core.config import Config, ConfigLoadStatus
 from dovo.core.db import (
     RunsRepository,
-    SandboxesRepository,
-    SandboxStatus,
+    WorktreesRepository,
+    WorktreeStatus,
 )
 from dovo.core.git import (
     GitCommandError,
@@ -23,7 +23,7 @@ from dovo.core.status.models import (
     DatabaseStatusInfo,
     DovoStatusResult,
     GitStatusInfo,
-    SandboxStatusInfo,
+    WorktreeStatusInfo,
 )
 
 
@@ -155,47 +155,47 @@ def _collect_database_status(paths: WorkspacePaths) -> DatabaseStatusInfo:
         )
 
 
-def _collect_sandbox_status(
+def _collect_worktree_status(
     paths: WorkspacePaths,
     config_status: ConfigStatusInfo,
     database_status: DatabaseStatusInfo,
-) -> SandboxStatusInfo:
-    """Collect active and total sandboxes with configured concurrency limits."""
-    max_active_sandboxes = (
-        config_status.config.sandbox.max_active_sandboxes
+) -> WorktreeStatusInfo:
+    """Collect active and total worktrees with configured concurrency limits."""
+    max_active_worktrees = (
+        config_status.config.worktree.max_active_worktrees
         if (config_status.is_valid and config_status.config is not None)
         else 5
     )
 
-    sandboxes_dir = paths.sandboxes_dir
+    worktrees_dir = paths.worktrees_dir
 
     if database_status.is_accessible:
         try:
-            sandboxes_repo = SandboxesRepository(
+            worktrees_repo = WorktreesRepository(
                 db_path=paths.database_file, project_id=paths.project_id, auto_init=False
             )
-            active_sandboxes = len(sandboxes_repo.list(status=SandboxStatus.ACTIVE))
-            total_sandboxes = len(sandboxes_repo.list())
-            return SandboxStatusInfo(
-                active_sandboxes=active_sandboxes,
-                total_sandboxes=total_sandboxes,
-                max_active_sandboxes=max_active_sandboxes,
+            active_worktrees = len(worktrees_repo.list(status=WorktreeStatus.ACTIVE))
+            total_worktrees = len(worktrees_repo.list())
+            return WorktreeStatusInfo(
+                active_worktrees=active_worktrees,
+                total_worktrees=total_worktrees,
+                max_active_worktrees=max_active_worktrees,
             )
         except Exception:
             pass
 
-    if sandboxes_dir.is_dir():
-        dir_count = len([path for path in sandboxes_dir.iterdir() if path.is_dir()])
-        return SandboxStatusInfo(
-            active_sandboxes=dir_count,
-            total_sandboxes=dir_count,
-            max_active_sandboxes=max_active_sandboxes,
+    if worktrees_dir.is_dir():
+        dir_count = len([path for path in worktrees_dir.iterdir() if path.is_dir()])
+        return WorktreeStatusInfo(
+            active_worktrees=dir_count,
+            total_worktrees=dir_count,
+            max_active_worktrees=max_active_worktrees,
         )
 
-    return SandboxStatusInfo(
-        active_sandboxes=0,
-        total_sandboxes=0,
-        max_active_sandboxes=max_active_sandboxes,
+    return WorktreeStatusInfo(
+        active_worktrees=0,
+        total_worktrees=0,
+        max_active_worktrees=max_active_worktrees,
     )
 
 
@@ -241,7 +241,7 @@ def _collect_warnings(
     git: GitStatusInfo,
     config: ConfigStatusInfo,
     catalog: CatalogStatusInfo,
-    sandboxes: SandboxStatusInfo,
+    worktrees: WorktreeStatusInfo,
 ) -> list[str]:
     """Aggregate actionable developer warnings in deterministic order."""
     warnings: list[str] = []
@@ -258,8 +258,8 @@ def _collect_warnings(
     if config.config is not None and not config.config.agent.model:
         warnings.append("Agent model is not configured (agent.model is null).")
 
-    if sandboxes.max_active_sandboxes > 5:
-        warnings.append(f"max_active_sandboxes ({sandboxes.max_active_sandboxes}) is unusually high.")
+    if worktrees.max_active_worktrees > 5:
+        warnings.append(f"max_active_worktrees ({worktrees.max_active_worktrees}) is unusually high.")
 
     if catalog.invalid_items > 0:
         warnings.append(f"{catalog.invalid_items} invalid blueprint file(s) detected in catalog.")
@@ -309,12 +309,12 @@ def collect_status(paths: WorkspacePaths) -> DovoStatusResult:
     config_status = _collect_config_status(paths)
     catalog_status = _collect_catalog_status(paths.catalog_dir)
     database_status = _collect_database_status(paths)
-    sandbox_status = _collect_sandbox_status(paths, config_status, database_status)
+    worktree_status = _collect_worktree_status(paths, config_status, database_status)
     warnings = _collect_warnings(
         git=git_status,
         config=config_status,
         catalog=catalog_status,
-        sandboxes=sandbox_status,
+        worktrees=worktree_status,
     )
     fixes = _collect_fixes(
         git=git_status,
@@ -330,7 +330,7 @@ def collect_status(paths: WorkspacePaths) -> DovoStatusResult:
         config=config_status,
         catalog=catalog_status,
         database=database_status,
-        sandboxes=sandbox_status,
+        worktrees=worktree_status,
         warnings=warnings,
         fixes=fixes,
     )

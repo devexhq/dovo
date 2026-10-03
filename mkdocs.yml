@@ -56,7 +56,7 @@ nav:
       - Resume (dovo resume): cli/resume.md
       - History (dovo history): cli/history.md
       - Logs (dovo logs): cli/logs.md
-      - Sandbox (dovo sandbox): cli/sandbox.md
+      - Worktree (dovo worktree): cli/worktree.md
 exclude_docs: |
   agents/*
   agents/**/*

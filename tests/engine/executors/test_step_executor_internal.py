@@ -19,7 +19,7 @@ class InternalCommandDispatchTests:
         """[tier-1/unit] _execute_internal: command='artifacts.nonexistent' returns a failed StepDispatchOutcome naming the unknown command, without raising."""
         step = StepDefinition(id="s1", type=StepType.INTERNAL, command="artifacts.nonexistent")
 
-        result = StepExecution(StepExecutionContext(step=step, sandbox_path=tmp_path)).run()
+        result = StepExecution(StepExecutionContext(step=step, worktree_path=tmp_path)).run()
 
         assert result.status == "failed"
         assert result.error_message is not None
@@ -36,7 +36,7 @@ class InternalCommandDispatchTests:
         monkeypatch.setitem(step_executor.INTERNAL_COMMAND_HANDLERS, "artifacts.upload", _broken_handler)
         step = StepDefinition(id="s1", type=StepType.INTERNAL, command="artifacts.upload")
 
-        result = StepExecution(StepExecutionContext(step=step, sandbox_path=tmp_path)).run()
+        result = StepExecution(StepExecutionContext(step=step, worktree_path=tmp_path)).run()
 
         assert result.status == "failed"
         assert result.error_message is not None
@@ -46,7 +46,7 @@ class InternalCommandDispatchTests:
         """[tier-1/unit] _execute_internal: artifacts_dir/artifacts_db both None (no session_id) dispatches artifacts.upload to a failed StepDispatchOutcome naming the missing session, not an unhandled AttributeError."""
         step = StepDefinition(id="s1", type=StepType.INTERNAL, command="artifacts.upload")
 
-        result = StepExecution(StepExecutionContext(step=step, sandbox_path=tmp_path)).run()
+        result = StepExecution(StepExecutionContext(step=step, worktree_path=tmp_path)).run()
 
         assert result.status == "failed"
         assert result.error_message is not None

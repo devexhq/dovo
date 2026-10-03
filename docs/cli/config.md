@@ -26,7 +26,7 @@ dovo config set <key> <value>
 
 #### Arguments
 
-- `key`: Key or nested dot-path (e.g. `agent.provider`, `agent.model`, `sandbox.base_ref`).
+- `key`: Key or nested dot-path (e.g. `agent.provider`, `agent.model`, `worktree.base_ref`).
 - `value`: New value to store.
 
 #### Examples
@@ -38,8 +38,8 @@ dovo config set agent.provider ollama
 # Set model name
 dovo config set agent.model llama3.1
 
-# Configure the sandbox base ref
-dovo config set sandbox.base_ref main
+# Configure the worktree base ref
+dovo config set worktree.base_ref main
 ```
 
 ### `dovo config unset`

@@ -59,21 +59,21 @@ class ConfigMutationTests:
         assert json.loads(config_path.read_text())["telemetry"]["enabled"] is True
 
         schema_error_result = set_config_value_result(
-            "sandbox.max_active_sandboxes", "not_an_int", config_path=config_path
+            "worktree.max_active_worktrees", "not_an_int", config_path=config_path
         )
         assert schema_error_result.status == ConfigSetStatus.SCHEMA_INVALID
         assert schema_error_result.config_path == config_path
-        assert schema_error_result.key == "sandbox.max_active_sandboxes"
+        assert schema_error_result.key == "worktree.max_active_worktrees"
         assert schema_error_result.value == "not_an_int"
         assert schema_error_result.errors == [
-            "Config schema validation failed (CONFIG_SCHEMA_INVALID):\n- sandbox.max_active_sandboxes: 'not_an_int' is not of type 'integer'"
+            "Config schema validation failed (CONFIG_SCHEMA_INVALID):\n- worktree.max_active_worktrees: 'not_an_int' is not of type 'integer'"
         ]
         assert schema_error_result.fixes == [
             "Run `dovo config validate` for details",
             "Or `dovo init --repair` to insert missing keys without overwriting values",
         ]
         assert schema_error_result.warnings == []
-        assert json.loads(config_path.read_text())["sandbox"]["max_active_sandboxes"] == 3
+        assert json.loads(config_path.read_text())["worktree"]["max_active_worktrees"] == 3
 
         disk_data = json.loads(config_path.read_text())
         disk_data["agent"] = "scalar"
@@ -103,12 +103,12 @@ class ConfigUnsetNestedValueTests:
 
     def test_removes_entire_top_level_section_returns_true(self) -> None:
         """[tier-1/domain] unset_nested_value: removing a single-segment top-level key returns True and deletes the whole section."""
-        config_dict: dict[str, Any] = {"agent": {"model": "x"}, "sandbox": {"max_active_sandboxes": 3}}
+        config_dict: dict[str, Any] = {"agent": {"model": "x"}, "worktree": {"max_active_worktrees": 3}}
 
         result = unset_nested_value(config_dict, "agent")
 
         assert result is True
-        assert config_dict == {"sandbox": {"max_active_sandboxes": 3}}
+        assert config_dict == {"worktree": {"max_active_worktrees": 3}}
 
     @pytest.mark.parametrize(
         "config_dict, dot_path",

@@ -17,8 +17,8 @@ from dovo.core.config.models import (
     HistoryConfig,
     ProjectConfig,
     PruneConfig,
-    SandboxConfig,
     TelemetryConfig,
+    WorktreeConfig,
 )
 from dovo.core.config.mutate import (
     ConfigSetResult,
@@ -125,9 +125,9 @@ class Config:
         return self._loaded_config.agent
 
     @property
-    def sandbox(self) -> SandboxConfig:
-        """Return the sandbox lifecycle section of the loaded config."""
-        return self._loaded_config.sandbox
+    def worktree(self) -> WorktreeConfig:
+        """Return the worktree lifecycle section of the loaded config."""
+        return self._loaded_config.worktree
 
     @property
     def history(self) -> HistoryConfig:

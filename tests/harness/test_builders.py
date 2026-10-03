@@ -437,9 +437,9 @@ class BlueprintBuilderTests:
         blueprint = BlueprintBuilder().with_defaults(defaults).build()
         assert blueprint == BlueprintDefinition(name="test-blueprint", defaults=defaults)
 
-    def test_with_use_sandbox_and_timeout_sets_execution_options(self) -> None:
-        blueprint = BlueprintBuilder().with_use_sandbox(False).with_timeout(300).build()
-        assert blueprint == BlueprintDefinition(name="test-blueprint", use_sandbox=False, timeout_seconds=300)
+    def test_with_use_worktree_and_timeout_sets_execution_options(self) -> None:
+        blueprint = BlueprintBuilder().with_use_worktree(False).with_timeout(300).build()
+        assert blueprint == BlueprintDefinition(name="test-blueprint", use_worktree=False, timeout_seconds=300)
 
     def test_with_metadata_sets_description_summary_and_version(self) -> None:
         blueprint = BlueprintBuilder().with_description("desc").with_summary("summary").with_version(2).build()

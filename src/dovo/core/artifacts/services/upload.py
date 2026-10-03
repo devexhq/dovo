@@ -1,4 +1,4 @@
-"""Publishing service: assemble matched sandbox files into a persisted, checksummed artifact bundle."""
+"""Publishing service: assemble matched worktree files into a persisted, checksummed artifact bundle."""
 
 from __future__ import annotations
 
@@ -13,14 +13,14 @@ from dovo.core.db.repositories.artifacts import ArtifactsRepository
 
 
 def _copy_matching_files_to_temp_dir(
-    sandbox_path: Path,
+    worktree_path: Path,
     path_glob: str,
     temp_dir: Path,
 ) -> list[ArtifactManifestFile]:
-    """Copy every regular file matching path_glob under sandbox_path into temp_dir; return their manifest entries."""
+    """Copy every regular file matching path_glob under worktree_path into temp_dir; return their manifest entries."""
     entries: list[ArtifactManifestFile] = []
-    for match in sorted(p for p in sandbox_path.glob(path_glob) if p.is_file()):
-        rel_path = match.relative_to(sandbox_path)
+    for match in sorted(p for p in worktree_path.glob(path_glob) if p.is_file()):
+        rel_path = match.relative_to(worktree_path)
         dest = temp_dir / rel_path
         dest.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(match, dest)
@@ -39,7 +39,7 @@ def _publish_temp_dir_atomically(temp_dir: Path, artifact_dir: Path) -> None:
 
 
 def publish_artifact(
-    sandbox_path: Path,
+    worktree_path: Path,
     artifacts_dir: Path,
     db: ArtifactsRepository,
     *,
@@ -48,13 +48,13 @@ def publish_artifact(
     path_glob: str,
     retention_days: int | None,
 ) -> ArtifactUploadResult:
-    """Assemble matching sandbox files via _copy_matching_files_to_temp_dir, checksum them, and publish via _publish_temp_dir_atomically."""
+    """Assemble matching worktree files via _copy_matching_files_to_temp_dir, checksum them, and publish via _publish_temp_dir_atomically."""
     artifact_dir = artifacts_dir / session_id / name
     temp_dir = artifacts_dir / session_id / f".tmp-{name}-{uuid4().hex}"
 
     try:
         temp_dir.mkdir(parents=True, exist_ok=True)
-        files = _copy_matching_files_to_temp_dir(sandbox_path, path_glob, temp_dir)
+        files = _copy_matching_files_to_temp_dir(worktree_path, path_glob, temp_dir)
         if not files:
             shutil.rmtree(temp_dir, ignore_errors=True)
             return ArtifactUploadResult(

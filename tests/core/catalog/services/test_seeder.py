@@ -13,7 +13,7 @@ WorkspacePathsFactory = Callable[[Path, Path | None], WorkspacePaths]
 
 
 class SeedCatalogTemplatesTests:
-    def test_fresh_repository_creates_every_packaged_wt_step_file(
+    def test_fresh_repository_creates_every_packaged_dovo_step_file(
         self, tmp_path: Path, workspace_paths_factory: WorkspacePathsFactory
     ) -> None:
         """[tier-1/integration] seed_catalog_templates: no existing files -> every packaged steps/dovo/*.yml is copied and listed in created_files, none skipped or overwritten."""

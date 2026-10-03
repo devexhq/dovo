@@ -1,6 +1,6 @@
 id: download-artifact
 name: download-artifact
-description: Download a named artifact bundle from persistent storage into the sandbox
+description: Download a named artifact bundle from persistent storage into the worktree
 type: internal
 command: artifacts.download
 timeout_seconds: 120

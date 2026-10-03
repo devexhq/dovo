@@ -1,6 +1,6 @@
 # Quickstart Tutorial
 
-Get up and running with Dovo (`dovo`) in 5 minutes. In this tutorial, you will initialize a workspace, inspect the default blueprint catalog, create an isolated sandbox, and run your first blueprint.
+Get up and running with Dovo (`dovo`) in 5 minutes. In this tutorial, you will initialize a workspace, inspect the default blueprint catalog, create an isolated worktree, and run your first blueprint.
 
 ---
 
@@ -16,7 +16,7 @@ This provisions the `.dovo/` state directory:
 
 ```text
 .dovo/
-├── .gitignore          # Ignores local catalog metadata, locks, and sandboxes
+├── .gitignore          # Ignores local catalog metadata, locks, and worktrees
 ├── .meta/              # Local catalog metadata
 ├── config.json         # Project settings
 ├── project.json        # Project identity
@@ -62,7 +62,7 @@ Open `.dovo/catalog/blueprints/lint-and-format.yml` in your editor and configure
 ```yaml
 name: lint-and-format
 description: Run code linters and formatters in an isolated environment
-use_sandbox: true
+use_worktree: true
 
 steps:
   - id: check-lint
@@ -78,7 +78,7 @@ steps:
 
 ---
 
-## 4. Run the Blueprint in an Isolated Sandbox
+## 4. Run the Blueprint in an Isolated Worktree
 
 Execute your newly created blueprint:
 
@@ -87,9 +87,9 @@ dovo run lint-and-format
 ```
 
 ### What Happens Behind the Scenes:
-1. `dovo` creates an ephemeral Git worktree sandbox on a temporary `worktree/sandbox-*` branch.
-2. Each step executes sequentially inside the isolated sandbox directory.
-3. If all steps succeed, the sandbox is cleanly removed.
+1. `dovo` creates an ephemeral Git worktree on a temporary `dovo/dovo_*` branch.
+2. Each step executes sequentially inside the isolated worktree directory.
+3. If all steps succeed, the worktree is cleanly removed.
 4. The execution result, step output, and duration are recorded for the session.
 
 ---
@@ -112,6 +112,6 @@ dovo history show <session-id>
 
 ## Next Steps
 
-- Explore [Core Concepts](../guides/concepts.md) to learn how Dovo manages sandboxes and multi-step blueprints.
+- Explore [Core Concepts](../guides/concepts.md) to learn how Dovo manages worktrees and multi-step blueprints.
 - Learn how to [Author Blueprints](../guides/authoring-blueprints.md) with typed parameter inputs and assertions.
 - Review [AI Agent Providers](../guides/agent-providers.md) for the current adapter set and agent-step limitation.

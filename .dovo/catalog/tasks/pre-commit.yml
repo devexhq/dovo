@@ -1,6 +1,6 @@
 name: pre-commit
 description: Run the pre-commit process, lint, format, tests
-use_sandbox: false
+use_worktree: false
 
 steps:
   - id: check-lint

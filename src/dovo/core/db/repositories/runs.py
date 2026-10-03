@@ -38,7 +38,7 @@ class RunsRepository(BaseRepository):
         *,
         blueprint_tier: str | None = None,
         commit_sha: str | None = None,
-        use_sandbox: bool = True,
+        use_worktree: bool = True,
         keep: bool = False,
         agent: str | None = None,
         inputs_json: str | None = None,
@@ -57,7 +57,7 @@ class RunsRepository(BaseRepository):
             pid=pid,
             blueprint_tier=blueprint_tier,
             commit_sha=commit_sha,
-            use_sandbox=use_sandbox,
+            use_worktree=use_worktree,
             keep=keep,
             agent=agent,
             inputs_json=inputs_json,
@@ -86,10 +86,10 @@ class RunsRepository(BaseRepository):
         error_message: str | None = None,
         completed_at: str | None = None,
         pid: int | None = None,
-        sandbox_id: str | None = None,
-        sandbox_kept: bool | None = None,
+        worktree_id: str | None = None,
+        worktree_kept: bool | None = None,
     ) -> RunRecord | None:
-        """Update status, optional timestamps, error message, PID, sandbox id, and sandbox-kept outcome."""
+        """Update status, optional timestamps, error message, PID, worktree id, and worktree-kept outcome."""
         status_enum = _coerce_status(status)
         if not isinstance(status_enum, RunStatus):
             raise ValueError(f"Invalid status constraint: {status}")
@@ -109,10 +109,10 @@ class RunsRepository(BaseRepository):
             record.error_message = error_message
             if pid is not None:
                 record.pid = pid
-            if sandbox_id is not None:
-                record.sandbox_id = sandbox_id
-            if sandbox_kept is not None:
-                record.sandbox_kept = sandbox_kept
+            if worktree_id is not None:
+                record.worktree_id = worktree_id
+            if worktree_kept is not None:
+                record.worktree_kept = worktree_kept
 
             return self._commit(
                 session,
@@ -129,10 +129,10 @@ class RunsRepository(BaseRepository):
         next_revision: int,
         status: RunStatus | str | None = None,
         error_message: str | None = None,
-        sandbox_id: str | None = None,
-        sandbox_kept: bool | None = None,
+        worktree_id: str | None = None,
+        worktree_kept: bool | None = None,
     ) -> RunRecord | None:
-        """Compare-and-swap the execution-state document at expected_revision, optionally updating lifecycle fields, sandbox id, and sandbox-kept outcome in the same commit; None when no row matches."""
+        """Compare-and-swap the execution-state document at expected_revision, optionally updating lifecycle fields, worktree id, and worktree-kept outcome in the same commit; None when no row matches."""
         status_enum = _coerce_status(status)
         if status_enum is not None and not isinstance(status_enum, RunStatus):
             raise ValueError(f"Invalid status constraint: {status}")
@@ -153,10 +153,10 @@ class RunsRepository(BaseRepository):
                 record.status = status_enum
                 record.completed_at = _completed_at_for(status_enum, None)
                 record.error_message = error_message
-            if sandbox_id is not None:
-                record.sandbox_id = sandbox_id
-            if sandbox_kept is not None:
-                record.sandbox_kept = sandbox_kept
+            if worktree_id is not None:
+                record.worktree_id = worktree_id
+            if worktree_kept is not None:
+                record.worktree_kept = worktree_kept
 
             return self._commit(
                 session,

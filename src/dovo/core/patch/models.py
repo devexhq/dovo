@@ -20,7 +20,7 @@ class PatchApplyStatus(StrEnum):
     INVALID_DIFF = "invalid_diff"
     CONFLICT = "conflict"
     GIT_TIMEOUT = "git_timeout"
-    SANDBOX_MISSING = "sandbox_missing"
+    WORKTREE_MISSING = "worktree_missing"
 
 
 class PatchApplyResult(BaseResult):

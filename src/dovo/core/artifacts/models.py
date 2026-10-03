@@ -43,7 +43,7 @@ class ArtifactUploadStatus(StrEnum):
 
 
 class ArtifactUploadResult(BaseResult):
-    """Result of publishing an artifact bundle from a sandbox into persistent storage."""
+    """Result of publishing an artifact bundle from a worktree into persistent storage."""
 
     status: ArtifactUploadStatus
     name: str = ""

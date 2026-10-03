@@ -46,39 +46,41 @@ def _force_interactive(monkeypatch: pytest.MonkeyPatch) -> None:
 class RunCliIntegrationTests:
     """Typer runner integration tests for dovo run."""
 
-    def test_run_cli_no_sandbox_completes_in_place_exits_zero(self, cli_runner: CliRunner, run_workspace: Path) -> None:
-        """dovo run --no-sandbox: single-step blueprint completes in place, exit 0, 'Sandbox: In-place (workspace)' in stdout."""
+    def test_run_cli_no_worktree_completes_in_place_exits_zero(
+        self, cli_runner: CliRunner, run_workspace: Path
+    ) -> None:
+        """dovo run --no-worktree: single-step blueprint completes in place, exit 0, 'Worktree: In-place (workspace)' in stdout."""
         write_runnable_blueprint(run_workspace, key="noop-task", steps=[{"id": "s1", "run": "true"}])
 
-        result = cli_runner.invoke(app, ["-p", str(run_workspace), "run", "noop-task", "--no-sandbox"])
+        result = cli_runner.invoke(app, ["-p", str(run_workspace), "run", "noop-task", "--no-worktree"])
 
         assert result.exit_code == 0
         assert "Blueprint Run Completed:" in result.stdout
-        assert "Sandbox: In-place (workspace)" in result.stdout
+        assert "Worktree: In-place (workspace)" in result.stdout
 
-    def test_run_cli_sandbox_enabled_completes_in_active_worktree_exits_zero(
+    def test_run_cli_worktree_enabled_completes_in_active_worktree_exits_zero(
         self, cli_runner: CliRunner, run_workspace: Path
     ) -> None:
-        """dovo run (sandbox default on): single-step blueprint completes, exit 0, 'Sandbox: Active (' in stdout."""
-        write_runnable_blueprint(run_workspace, key="sandboxed-task", steps=[{"id": "s1", "run": "true"}])
+        """dovo run (worktree default on): single-step blueprint completes, exit 0, 'Worktree: Active (' in stdout."""
+        write_runnable_blueprint(run_workspace, key="worktree-task", steps=[{"id": "s1", "run": "true"}])
 
-        result = cli_runner.invoke(app, ["-p", str(run_workspace), "run", "sandboxed-task"])
+        result = cli_runner.invoke(app, ["-p", str(run_workspace), "run", "worktree-task"])
 
         assert result.exit_code == 0
-        assert "Sandbox: Active (" in result.stdout
+        assert "Worktree: Active (" in result.stdout
 
-    def test_run_cli_no_sandbox_agent_step_exits_one_with_sandbox_diagnostic(
+    def test_run_cli_no_worktree_agent_step_exits_one_with_worktree_diagnostic(
         self, cli_runner: CliRunner, run_workspace: Path
     ) -> None:
-        """[tier-3/integration] dovo run --no-sandbox: a blueprint with one type: agent step exits 1 and stdout contains 'Agent steps require an active Dovo Git sandbox.'."""
+        """[tier-3/integration] dovo run --no-worktree: a blueprint with one type: agent step exits 1 and stdout contains 'Agent steps require an active git worktree.'."""
         write_runnable_blueprint(
             run_workspace, key="agent-task", steps=[{"id": "plan", "type": "agent", "prompt": "Plan the change"}]
         )
 
-        result = cli_runner.invoke(app, ["-p", str(run_workspace), "run", "agent-task", "--no-sandbox"])
+        result = cli_runner.invoke(app, ["-p", str(run_workspace), "run", "agent-task", "--no-worktree"])
 
         assert result.exit_code == 1
-        assert "Agent steps require an active Dovo Git sandbox." in result.stdout
+        assert "Agent steps require an active git worktree." in result.stdout
 
     def test_run_cli_prompt_user_retry_then_succeeds_exits_zero(
         self, monkeypatch: pytest.MonkeyPatch, cli_runner: CliRunner, run_workspace: Path
@@ -97,7 +99,7 @@ class RunCliIntegrationTests:
             ],
         )
 
-        result = cli_runner.invoke(app, ["-p", str(run_workspace), "run", "retry-task", "--no-sandbox"], input="r\n")
+        result = cli_runner.invoke(app, ["-p", str(run_workspace), "run", "retry-task", "--no-worktree"], input="r\n")
 
         assert result.exit_code == 0
         assert "Blueprint Run Completed:" in result.stdout
@@ -113,7 +115,7 @@ class RunCliIntegrationTests:
             steps=[{"id": "s1", "run": "exit 1", "on_failure": "prompt_user"}],
         )
 
-        result = cli_runner.invoke(app, ["-p", str(run_workspace), "run", "abort-task", "--no-sandbox"], input="a\n")
+        result = cli_runner.invoke(app, ["-p", str(run_workspace), "run", "abort-task", "--no-worktree"], input="a\n")
 
         assert result.exit_code == 1
         assert "Run Failed" in result.stdout
@@ -132,7 +134,9 @@ class RunCliIntegrationTests:
             ],
         )
 
-        result = cli_runner.invoke(app, ["-p", str(run_workspace), "run", "continue-task", "--no-sandbox"], input="c\n")
+        result = cli_runner.invoke(
+            app, ["-p", str(run_workspace), "run", "continue-task", "--no-worktree"], input="c\n"
+        )
 
         assert result.exit_code == 0
         assert "Blueprint Run Completed:" in result.stdout
@@ -156,7 +160,7 @@ class RunCliIntegrationTests:
 
         result = cli_runner.invoke(
             app,
-            ["-p", str(run_workspace), "run", "pause-task", "--no-sandbox", "--session-id", "paused-session-1"],
+            ["-p", str(run_workspace), "run", "pause-task", "--no-worktree", "--session-id", "paused-session-1"],
         )
 
         assert result.exit_code == 1
@@ -172,7 +176,7 @@ class RunCliIntegrationTests:
         write_runnable_blueprint(run_workspace, key="json-task", steps=[{"id": "s1", "run": "true"}])
 
         result = cli_runner.invoke(
-            app, ["-p", str(run_workspace), "run", "json-task", "--no-sandbox", "--format", "json"]
+            app, ["-p", str(run_workspace), "run", "json-task", "--no-worktree", "--format", "json"]
         )
 
         assert result.exit_code == 0
@@ -185,7 +189,7 @@ class RunCliIntegrationTests:
         self, cli_runner: CliRunner, git_repo: Path
     ) -> None:
         """dovo run: git repo with no .dovo/ auto-initializes (project.json + config.json written) instead of raising ConfigLoadError."""
-        result = cli_runner.invoke(app, ["-p", str(git_repo), "run", "missing-workflow", "--no-sandbox"])
+        result = cli_runner.invoke(app, ["-p", str(git_repo), "run", "missing-workflow", "--no-worktree"])
 
         assert "CONFIG_NOT_FOUND" not in result.stdout
         assert (git_repo / ".dovo" / "project.json").exists()
@@ -206,7 +210,7 @@ class RunCliIntegrationTests:
         ui_dispatcher.set_output_format("terminal")
         write_tier_config(ConfigTier.USER, "{not valid json")
 
-        result = cli_runner.invoke(app, ["-p", str(run_workspace), "run", "unresolved-task", "--no-sandbox"])
+        result = cli_runner.invoke(app, ["-p", str(run_workspace), "run", "unresolved-task", "--no-worktree"])
 
         assert result.exit_code == 1
         assert "Config Error" in result.stdout
@@ -223,7 +227,7 @@ class RunCliIntegrationTests:
         write_tier_config(ConfigTier.USER, {"history": {"save_attempt_logs": False}})
         Filesystem.atomic_write_json(
             run_workspace / ".dovo" / "config.json",
-            {"version": 1, "project": {"name": "identical-config"}, "sandbox": {"base_ref": "main"}},
+            {"version": 1, "project": {"name": "identical-config"}, "worktree": {"base_ref": "main"}},
         )
 
         show_result = cli_runner.invoke(app, ["-p", str(run_workspace), "config", "show", "--format", "json"])
@@ -232,7 +236,7 @@ class RunCliIntegrationTests:
 
         run_result = cli_runner.invoke(
             app,
-            ["-p", str(run_workspace), "run", "identical-config-task", "--no-sandbox", "--session-id", "cfg-1"],
+            ["-p", str(run_workspace), "run", "identical-config-task", "--no-worktree", "--session-id", "cfg-1"],
         )
 
         assert run_result.exit_code == 0
@@ -242,12 +246,12 @@ class RunCliIntegrationTests:
     def test_run_cli_writes_definitions_snapshot_for_uses_step(
         self, cli_runner: CliRunner, run_workspace: Path
     ) -> None:
-        """dovo run --no-sandbox --session-id snap-1: a blueprint with one uses: step writes .../sessions/snap-1/definitions/{key}.yml and .../definitions/steps/{step_key}.yml, and RunStateStore.load().state.manifest.steps has one entry."""
+        """dovo run --no-worktree --session-id snap-1: a blueprint with one uses: step writes .../sessions/snap-1/definitions/{key}.yml and .../definitions/steps/{step_key}.yml, and RunStateStore.load().state.manifest.steps has one entry."""
         write_runnable_step(run_workspace, key="lint-check", definition={"id": "lint-check", "run": "true"})
         write_runnable_blueprint(run_workspace, key="snapshot-task", steps=[{"id": "s1", "uses": "lint-check"}])
 
         result = cli_runner.invoke(
-            app, ["-p", str(run_workspace), "run", "snapshot-task", "--no-sandbox", "--session-id", "snap-1"]
+            app, ["-p", str(run_workspace), "run", "snapshot-task", "--no-worktree", "--session-id", "snap-1"]
         )
 
         assert result.exit_code == 0

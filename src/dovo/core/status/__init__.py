@@ -7,7 +7,7 @@ from dovo.core.status.models import (
     DatabaseStatusInfo,
     DovoStatusResult,
     GitStatusInfo,
-    SandboxStatusInfo,
+    WorktreeStatusInfo,
 )
 
 __all__ = [
@@ -16,6 +16,6 @@ __all__ = [
     "DatabaseStatusInfo",
     "DovoStatusResult",
     "GitStatusInfo",
-    "SandboxStatusInfo",
     "Status",
+    "WorktreeStatusInfo",
 ]

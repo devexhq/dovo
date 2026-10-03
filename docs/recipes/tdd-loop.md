@@ -1,6 +1,6 @@
 # Recipe: Test-Driven Development (TDD) Loop
 
-This recipe demonstrates a generic blueprint loop that asks an agent step to fix failing tests and reruns them until they pass. The agent step runs in the sandbox, so the loop needs a Git sandbox.
+This recipe demonstrates a generic blueprint loop that asks an agent step to fix failing tests and reruns them until they pass. The agent step runs in the worktree, so the loop needs a Git worktree.
 
 ---
 
@@ -13,7 +13,7 @@ name: tdd-cycle
 description: Iterative test-driven development cycle
 summary: Agent-step fixes while rerunning tests
 version: 1
-use_sandbox: true
+use_worktree: true
 
 inputs:
   test_file:
@@ -67,7 +67,7 @@ dovo run tdd-cycle --test tests/test_calculator.py
 ```
 
 ### Execution Flow:
-1. Dovo spins up an isolated sandbox worktree.
-2. The agent step sends its prompt to the configured provider and applies any change inside the sandbox.
+1. Dovo spins up an isolated worktree.
+2. The agent step sends its prompt to the configured provider and applies any change inside the worktree.
 3. The test suite runs after each attempt.
 4. As soon as all assertions pass (`steps.run-test-suite.exit_code == 0`), the loop terminates with success.

@@ -80,7 +80,7 @@ An agent step records one outcome per attempt. The canonical mapping is `AGENT_O
 | `timeout` | `failed` | `202` |
 | `provider_error` | `failed` | `203` |
 
-Preflight failures (inactive sandbox, missing agent settings, blank prompt), provider exceptions, patches that fail to apply, and an output callback that raises all record `provider_error` with `203`.
+Preflight failures (inactive worktree, missing agent settings, blank prompt), provider exceptions, patches that fail to apply, and an output callback that raises all record `provider_error` with `203`.
 
 Stdout is always one JSON object followed by a newline, so `steps.<id>.outputs.status` can branch on it:
 
@@ -88,7 +88,7 @@ Stdout is always one JSON object followed by a newline, so `steps.<id>.outputs.s
 {"status":"no_op","summary":"Reviewed the changes; no edits were needed.","unfixable_reason":null,"touched_files":[]}
 ```
 
-`summary` and `unfixable_reason` are `string | null`; `touched_files` is a sorted list of sandbox-relative paths.
+`summary` and `unfixable_reason` are `string | null`; `touched_files` is a sorted list of worktree-relative paths.
 
 ```text
 steps.agent.outputs.status == "no_op"

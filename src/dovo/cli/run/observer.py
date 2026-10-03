@@ -10,10 +10,10 @@ from dovo.cli.ui.dispatcher import UiDispatcher
 from dovo.cli.ui.events import (
     LoopConditionView,
     LoopLifecycleEvent,
-    SandboxLifecycleEvent,
     StepDoneEvent,
     StepOutputEvent,
     StepStartEvent,
+    WorktreeLifecycleEvent,
 )
 from dovo.common.models import DisplayFormatOptions, OutputFormatOptions
 from dovo.core.catalog.definitions import LoopStepBlock, StepDefinition
@@ -53,9 +53,9 @@ class DispatcherRunObserver(RunObserver):
         if self._live:
             self._dispatcher.stop_live()
 
-    def on_sandbox_ready(self, path: Path, active: bool) -> None:
-        """Dispatch sandbox readiness event."""
-        self._dispatcher.dispatch(SandboxLifecycleEvent(action="ready", path=str(path), active=active))
+    def on_worktree_ready(self, path: Path, active: bool) -> None:
+        """Dispatch worktree readiness event."""
+        self._dispatcher.dispatch(WorktreeLifecycleEvent(action="ready", path=str(path), active=active))
 
     def on_step_start(self, idx: int, total: int, step: StepDefinition) -> None:
         """Dispatch step start progress event."""
@@ -151,9 +151,9 @@ class DispatcherRunObserver(RunObserver):
             )
         )
 
-    def on_sandbox_cleanup(self, kept: bool, path: Path) -> None:
-        """Dispatch sandbox cleanup event."""
-        self._dispatcher.dispatch(SandboxLifecycleEvent(action="cleanup", path=str(path), kept=kept))
+    def on_worktree_cleanup(self, kept: bool, path: Path) -> None:
+        """Dispatch worktree cleanup event."""
+        self._dispatcher.dispatch(WorktreeLifecycleEvent(action="cleanup", path=str(path), kept=kept))
 
     def on_run_started(self, steps: Sequence[StepDefinition | LoopStepBlock]) -> None:
         """Ignore run start; the CLI renders step and loop events as they happen."""

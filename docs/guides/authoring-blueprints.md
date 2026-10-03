@@ -13,7 +13,7 @@ name: build-and-test
 description: Build package artifacts and run the full test suite
 summary: Full build & verification pipeline
 version: 1
-use_sandbox: true
+use_worktree: true
 timeout_seconds: 300
 
 env:
@@ -61,7 +61,7 @@ A blueprint may contain sequential steps, assertions, failure policies, and loop
 * `version` *(integer | string, default `1`)*: Format schema version.
 
 ### 2. Execution Controls
-* `use_sandbox` *(boolean, default `true`)*: Whether to create an isolated Git worktree sandbox for execution.
+* `use_worktree` *(boolean, default `true`)*: Whether to create an isolated Git worktree for execution.
 * `timeout_seconds` *(integer, optional)*: Accepted blueprint metadata; the current runtime does not apply it as an overall timeout.
 * `env` *(map[string, string], optional)*: Accepted blueprint metadata; the current runtime does not inject it into child steps.
 

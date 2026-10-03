@@ -4,7 +4,7 @@
 > **Notice for Agents:** Code violating `BLOCKER` rules will fail verification.
 
 - **[ARCH-001] Strict Layered Import Flow (BLOCKER):**
-  Dependencies flow strictly one way: common/ -> core/ -> engine/ -> cli/. Within core/: project/ -> {db,git,sandbox,catalog,inputs,patch,diff,status,artifacts}/ -> agents/ -> doctor/ -> logs/ -> history/. Upward imports are strictly prohibited.
+  Dependencies flow strictly one way: common/ -> core/ -> engine/ -> cli/. Within core/: project/ -> {db,git,worktree,catalog,inputs,patch,diff,status,artifacts}/ -> agents/ -> doctor/ -> logs/ -> history/. Upward imports are strictly prohibited.
 
 ```python
 # ✅ DO: from dovo.core.logs import append_run_log_event  # in engine/
@@ -49,8 +49,8 @@ model_config = {'extra': 'ignore'}
   Operations that can fail must return a Pydantic result object subclassing BaseResult instead of raising exceptions. Callers check .ok and render .errors/.warnings rather than catching exceptions.
 
 ```python
-# ✅ DO: return SandboxDeleteResult(status=SandboxDeleteStatus.NOT_FOUND, errors=['not found'])
-# ❌ DO NOT: raise SandboxNotFoundError('Sandbox does not exist')
+# ✅ DO: return WorktreeDeleteResult(status=WorktreeDeleteStatus.NOT_FOUND, errors=['not found'])
+# ❌ DO NOT: raise WorktreeNotFoundError('Worktree does not exist')
 ```
 
 - **[MODEL-003] Reachable and Tested Status Enums (BLOCKER):**
@@ -82,14 +82,14 @@ model_config = {'extra': 'ignore'}
 
 ```python
 # ✅ DO:
-record = SandboxRecord(...)
+record = WorktreeRecord(...)
 
-self.db.sandboxes.save(record)
+self.db.worktrees.save(record)
 
 return result
 # ❌ DO NOT:
-record = SandboxRecord(...)
-self.db.sandboxes.save(record)
+record = WorktreeRecord(...)
+self.db.worktrees.save(record)
 return result
 ```
 
@@ -98,10 +98,10 @@ return result
 
 ```python
 # ✅ DO:
-"""Base for providers that edit the sandbox directly instead of returning a diff.
+"""Base for providers that edit the worktree directly instead of returning a diff.
 
-Edits that fail patch validation are discarded from the sandbox; a failed discard is reported in the response errors."""
-# ❌ DO NOT: """Run the provider. First resolve the baseline, then build the prompt, then run the tool, then diff the sandbox, then validate the patch."""
+Edits that fail patch validation are discarded from the worktree; a failed discard is reported in the response errors."""
+# ❌ DO NOT: """Run the provider. First resolve the baseline, then build the prompt, then run the tool, then diff the worktree, then validate the patch."""
 ```
 
 - **[TYPE-001] Ban on -> Any Return Annotations (BLOCKER):**
@@ -134,8 +134,8 @@ def _val(cls, v: Any) -> Any: ...
   Typing table names or string constants as Any or bare string instead of explicit ClassVar[str] causes type checker ambiguity. Declare class-level SQL constants explicitly.
 
 ```python
-# ✅ DO: __tablename__: ClassVar[str] = 'sandboxes'
-# ❌ DO NOT: __tablename__ = 'sandboxes'
+# ✅ DO: __tablename__: ClassVar[str] = 'worktrees'
+# ❌ DO NOT: __tablename__ = 'worktrees'
 ```
 
 - **[TYPE-005] Precise Parameterization for Generator Types (NIT):**
@@ -218,7 +218,7 @@ for item in items: repo.create(item)
   Repetitive database transaction boilerplate (_commit, _delete_one_where, rollback handling, session lifecycle) should be consolidated into BaseRepository rather than duplicated across individual repository classes.
 
 ```python
-# ✅ DO: self._delete_one_where(SandboxRecord.session_id == session_id)
+# ✅ DO: self._delete_one_where(WorktreeRecord.session_id == session_id)
 # ❌ DO NOT: with self.session() as s: s.query(...).delete(); s.commit()  # duplicated across repos
 ```
 
@@ -239,11 +239,11 @@ for item in items: repo.create(item)
 ```
 
 - **[FS-002] Advisory Cross-Process Locking (BLOCKER):**
-  Multi-process sandbox, catalog, or state mutations must acquire the .dovo/.lock advisory lock using common/lock.py and handle LockTimeoutError.
+  Multi-process worktree, catalog, or state mutations must acquire the .dovo/.lock advisory lock using common/lock.py and handle LockTimeoutError.
 
 ```python
-# ✅ DO: with file_lock(lock_path, timeout=10.0): sandbox_service.create(...)
-# ❌ DO NOT: sandbox_service.create(...)  # mutating shared dir without acquiring lock
+# ✅ DO: with file_lock(lock_path, timeout=10.0): worktree_service.create(...)
+# ❌ DO NOT: worktree_service.create(...)  # mutating shared dir without acquiring lock
 ```
 
 - **[COMPAT-001] Strict Public-Only Backwards Compatibility (BLOCKER):**
@@ -284,7 +284,7 @@ _unlock = _unlock_fd  # internal shim alias
   Update docs/agents/schemas.md whenever .dovo/config.json keys, blueprint YAML fields, domain DTOs, or database record shapes change.
 
 ```python
-# ✅ DO: # Adding SandboxPruneResult to section 2 of schemas.md
+# ✅ DO: # Adding WorktreePruneResult to section 2 of schemas.md
 # ❌ DO NOT: # Adding new Result model in core/models.py without updating schemas.md
 ```
 
@@ -292,7 +292,7 @@ _unlock = _unlock_fd  # internal shim alias
   Docs must not hand-copy Pydantic model signatures, field tables, or enum lists that a Read of the source already gives unambiguously. Link to the model file and document only unexpressed behavior (validators, resolution order).
 
 ```python
-# ✅ DO: See [`SandboxSession`](src/dovo/core/sandbox/models.py). Sandboxes live under .dovo/sandboxes/.
+# ✅ DO: See [`WorktreeSession`](src/dovo/core/worktree/models.py). Worktrees live under .dovo/worktrees/.
 # ❌ DO NOT:
 | Field | Type | Default |
 | session_id | str | required |
@@ -307,7 +307,7 @@ _unlock = _unlock_fd  # internal shim alias
 ```
 
 - **[DOC-007] Canonical Terminology Invariant (SUGGESTION):**
-  Adhere strictly to definitions in docs/agents/glossary.md. Do not conflate Task (linear steps only) vs Workflow (allows loop steps), Blueprint (unified document), Step, Run, Session, Sandbox, Checkpoint.
+  Adhere strictly to definitions in docs/agents/glossary.md. Do not conflate Task (linear steps only) vs Workflow (allows loop steps), Blueprint (unified document), Step, Run, Session, Worktree, Checkpoint.
 
 ```python
 # ✅ DO: 'Task blueprint containing only linear step definitions.'
@@ -334,9 +334,9 @@ _unlock = _unlock_fd  # internal shim alias
   Commit messages must be semantic, imperative, and contain NO AI trailers (Co-authored-by: Cursor, Co-authored-by: ...). PRs must have single responsibility and contain concise Why, Approach, and Linkage sections.
 
 ```python
-# ✅ DO: feat(sandbox): add prune subcommand for stale sandboxes
+# ✅ DO: feat(worktree): add prune subcommand for stale worktrees
 # ❌ DO NOT:
-feat: prune sandboxes
+feat: prune worktrees
 
 Co-authored-by: Cursor <cursor@cursor.sh>
 ```
@@ -347,7 +347,7 @@ Co-authored-by: Cursor <cursor@cursor.sh>
 ```python
 # ✅ DO:
 Governing directive: docs/agents/testing.md
-Target scope: tests/core/sandbox/test_lifecycle.py
+Target scope: tests/core/worktree/test_lifecycle.py
 # ❌ DO NOT: Running write_to_file without stating governing directive or target scope
 ```
 

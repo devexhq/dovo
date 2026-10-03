@@ -40,7 +40,7 @@ class GeminiAuthTests:
         monkeypatch.delenv(GEMINI_API_KEY_ENV, raising=False)
         adapter = GeminiAgentAdapter()
 
-        resp = adapter.propose_fix(AgentRequestBuilder().with_sandbox_path(tmp_path).build())
+        resp = adapter.propose_fix(AgentRequestBuilder().with_worktree_path(tmp_path).build())
 
         assert resp.status == AgentResponseStatus.PROVIDER_ERROR
         assert resp.errors == [
@@ -56,7 +56,7 @@ class GeminiRunTests:
 
         outcome = default_gemini_run(
             CliMutationRunRequest(
-                sandbox_path=tmp_path,
+                worktree_path=tmp_path,
                 prompt="hi",
                 model="gemini-2.5-flash",
                 timeout_seconds=3,
@@ -80,7 +80,7 @@ class GeminiRunTests:
         monkeypatch.setattr("dovo.core.agents.gemini.run_isolated_process", runner)
 
         outcome = default_gemini_run(
-            CliMutationRunRequest(sandbox_path=tmp_path, prompt="hi", model=None, timeout_seconds=3)
+            CliMutationRunRequest(worktree_path=tmp_path, prompt="hi", model=None, timeout_seconds=3)
         )
 
         assert outcome.status == "error"
@@ -93,7 +93,7 @@ class GeminiRunTests:
         monkeypatch.setattr("dovo.core.agents.gemini.run_isolated_process", runner)
 
         outcome = default_gemini_run(
-            CliMutationRunRequest(sandbox_path=tmp_path, prompt="hi", model=None, timeout_seconds=3)
+            CliMutationRunRequest(worktree_path=tmp_path, prompt="hi", model=None, timeout_seconds=3)
         )
 
         assert outcome.status == "timeout"

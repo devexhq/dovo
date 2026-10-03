@@ -16,7 +16,7 @@ class StepExecutionResolutionTests:
         """[tier-1/unit] StepExecution.run: a uses: step with no workspace paths returns status == "failed" and error_message == "Could not resolve step 's1'."."""
         step = StepDefinition(id="s1", uses="base-step")
 
-        result = StepExecution(StepExecutionContext(step=step, sandbox_path=tmp_path)).run()
+        result = StepExecution(StepExecutionContext(step=step, worktree_path=tmp_path)).run()
 
         assert result.status == "failed"
         assert result.error_message == "Could not resolve step 's1'."
@@ -25,7 +25,7 @@ class StepExecutionResolutionTests:
         """[tier-1/integration] StepExecution.run: StepDefinition(id="s1", run="echo ok") returns status == "completed" with "ok" in stdout."""
         step = StepDefinition(id="s1", run="echo ok")
 
-        result = StepExecution(StepExecutionContext(step=step, sandbox_path=tmp_path)).run()
+        result = StepExecution(StepExecutionContext(step=step, worktree_path=tmp_path)).run()
 
         assert result.status == "completed"
         assert "ok" in result.stdout

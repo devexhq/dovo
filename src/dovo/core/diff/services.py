@@ -45,7 +45,7 @@ class DiffService:
                         status=DiffStatus.SESSION_NOT_FOUND,
                         session_id=self.session_id,
                         errors=[f"Session '{self.session_id}' not found under .dovo/sessions/."],
-                        fixes=["Run `dovo sandbox list` or check .dovo/sessions/ for valid session IDs"],
+                        fixes=["Run `dovo worktree list` or check .dovo/sessions/ for valid session IDs"],
                     ),
                 )
             return target_dir, self.session_id, None
@@ -58,7 +58,7 @@ class DiffService:
                 DiffResult(
                     status=DiffStatus.SESSION_NOT_FOUND,
                     errors=["No loop run sessions found."],
-                    fixes=["Run `dovo sandbox list` or check .dovo/sessions/ for valid session IDs"],
+                    fixes=["Run `dovo worktree list` or check .dovo/sessions/ for valid session IDs"],
                 ),
             )
 

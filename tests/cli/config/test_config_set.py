@@ -54,14 +54,14 @@ class ConfigSetRootTests:
 
         paths = _paths_for(isolated_workspace)
         context = CliContext(paths=paths, db=DovoDb(database_file=paths.database_file, project_id=paths.project_id))
-        result = config_set_command(context, "sandboxes.max_active_sandboxes", "3")
+        result = config_set_command(context, "worktrees.max_active_worktrees", "3")
 
         assert result.status == ConfigSetStatus.SCHEMA_INVALID
         assert result.config_path == config_path
-        assert result.key == "sandboxes.max_active_sandboxes"
+        assert result.key == "worktrees.max_active_worktrees"
         assert result.value == 3
         assert result.errors == [
-            "Config schema validation failed (CONFIG_SCHEMA_INVALID):\n- (root): Additional properties are not allowed ('sandboxes' was unexpected)"
+            "Config schema validation failed (CONFIG_SCHEMA_INVALID):\n- (root): Additional properties are not allowed ('worktrees' was unexpected)"
         ]
         assert result.fixes == [
             "Run `dovo config validate` for details",
@@ -120,7 +120,7 @@ class ConfigSetCliIntegrationTests:
                 "config",
                 "set",
                 "--",
-                "sandbox.max_active_sandboxes",
+                "worktree.max_active_worktrees",
                 "-1",
             ],
         )

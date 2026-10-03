@@ -22,7 +22,7 @@ def resolve_workspace_paths(repository_paths: RepositoryPaths, global_paths: Glo
         catalog_dir=repository_paths.catalog_dir,
         catalog_steps_dir=repository_paths.catalog_steps_dir,
         catalog_blueprints_dir=repository_paths.catalog_blueprints_dir,
-        sandboxes_dir=repository_paths.sandboxes_dir,
+        worktrees_dir=repository_paths.worktrees_dir,
         lock_file=repository_paths.lock_file,
         gitignore_file=repository_paths.gitignore_file,
         catalog_templates_dir=get_catalog_templates_dir(),

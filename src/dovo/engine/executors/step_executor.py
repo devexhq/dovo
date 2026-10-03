@@ -123,11 +123,11 @@ def _process_step_output_line(lines: list[str], i: int, outputs: dict[str, str],
 
 
 class StepExecution:
-    """Synchronous executor for a single StepDefinition within a sandbox directory."""
+    """Synchronous executor for a single StepDefinition within a worktree directory."""
 
     def __init__(self, metadata: StepExecutionContext) -> None:
         self.step: StepDefinition = metadata.step
-        self.sandbox_path = metadata.sandbox_path.resolve()
+        self.worktree_path = metadata.worktree_path.resolve()
         self.context = metadata.context or {}
         self.on_output = metadata.on_output
         self.step_index = _int_from_context_or_default(self.context, "step_index", metadata.step_index)
@@ -155,9 +155,9 @@ class StepExecution:
         self._uninterpolated_step: StepDefinition = metadata.step
 
     def run(self) -> StepResult:
-        """Execute the step definition within sandbox_path and return its StepResult."""
-        if not self.sandbox_path.exists() or not self.sandbox_path.is_dir():
-            outcome = _failed_dispatch(f"Sandbox path '{self.sandbox_path}' does not exist or is not a directory.")
+        """Execute the step definition within worktree_path and return its StepResult."""
+        if not self.worktree_path.exists() or not self.worktree_path.is_dir():
+            outcome = _failed_dispatch(f"Worktree path '{self.worktree_path}' does not exist or is not a directory.")
             return _step_result(self.step.id, outcome, 0.0)
 
         if not self._prepare():
@@ -263,7 +263,7 @@ class StepExecution:
             return _failed_dispatch(f"Unknown internal command '{command}'.")
 
         context = InternalCommandContext(
-            sandbox_path=self.sandbox_path,
+            worktree_path=self.worktree_path,
             session_id=self.session_id,
             env=self.step.env,
             artifacts_dir=self.artifacts_dir,
@@ -275,7 +275,7 @@ class StepExecution:
             return _failed_dispatch(f"Internal command '{command}' error: {exc}")
 
     def _execute_command(self, metadata: ExecutionMetadata) -> StepDispatchOutcome:
-        """Execute a COMMAND step inside sandbox_path."""
+        """Execute a COMMAND step inside worktree_path."""
         if not self.step.command:
             return _failed_dispatch("Command step has no command string defined.")
         return self._run_process(
@@ -288,11 +288,11 @@ class StepExecution:
         )
 
     def _execute_script(self, metadata: ExecutionMetadata) -> StepDispatchOutcome:
-        """Execute a SCRIPT step inside sandbox_path."""
+        """Execute a SCRIPT step inside worktree_path."""
         if not self.step.script_path:
             return _failed_dispatch("Script step has no script_path defined.")
 
-        script_file = self.sandbox_path / self.step.script_path
+        script_file = self.worktree_path / self.step.script_path
         if not script_file.exists() or not script_file.is_file():
             return _failed_dispatch(f"Script file not found at '{self.step.script_path}'.")
 
@@ -310,7 +310,7 @@ class StepExecution:
         """Execute an AGENT step through the injected agent runner, failing with MISSING_SETTINGS_MESSAGE when none is set."""
         if self.agent_runner is None:
             return _failed_dispatch(MISSING_SETTINGS_MESSAGE)
-        return self.agent_runner(self.step, self.sandbox_path, self.on_output)
+        return self.agent_runner(self.step, self.worktree_path, self.on_output)
 
     def _build_process_env(self, metadata: ExecutionMetadata) -> dict[str, str]:
         """Merge environment variables: explicit step env > DOVO_* metadata > ambient env."""
@@ -442,7 +442,7 @@ class StepExecution:
             proc = subprocess.Popen(
                 cmd,
                 shell=shell,
-                cwd=self.sandbox_path,
+                cwd=self.worktree_path,
                 stdin=subprocess.DEVNULL,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
@@ -538,7 +538,7 @@ class StepExecution:
             exit_code=outcome.exit_code,
             stdout=outcome.stdout,
             stderr=outcome.stderr,
-            sandbox_path=self.sandbox_path,
+            worktree_path=self.worktree_path,
         )
         if result.passed:
             return outcome

@@ -114,16 +114,16 @@ class ConfigAccessorPropertyTests:
         assert config.project == loaded.project
         assert config.agent == loaded.agent
 
-    def test_sandbox_history_doctor_prune_telemetry_concurrency_properties_expose_loaded_config_sections(
+    def test_worktree_history_doctor_prune_telemetry_concurrency_properties_expose_loaded_config_sections(
         self, isolated_workspace: Path, workspace_paths_factory: WorkspacePathsFactory
     ) -> None:
-        """[tier-1/unit] Config.sandbox/.history/.doctor/.prune/.telemetry/.concurrency: each returns the matching section of the loaded DovoConfig."""
+        """[tier-1/unit] Config.worktree/.history/.doctor/.prune/.telemetry/.concurrency: each returns the matching section of the loaded DovoConfig."""
         paths = workspace_paths_factory(isolated_workspace, None)
         Filesystem.atomic_write_json(paths.config_file, build_default_config("prop-project"))
         config = Config(paths)
         loaded = config._loaded_config
 
-        assert config.sandbox == loaded.sandbox
+        assert config.worktree == loaded.worktree
         assert config.history == loaded.history
         assert config.doctor == loaded.doctor
         assert config.prune == loaded.prune

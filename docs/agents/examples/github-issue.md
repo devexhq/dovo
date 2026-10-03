@@ -106,7 +106,7 @@ When the root is an object that fails config schema v1 or Pydantic mapping:
 
 ### FR-8: Typed mapping
 On successful schema validation, map into `DovoConfig` covering the full V1 surface:
-`version`, `project`, `paths`, `sandbox`, `workflow`, `agent`, `patch`, `approval`, `history`, `doctor`, `prune`, `telemetry`.
+`version`, `project`, `paths`, `worktree`, `workflow`, `agent`, `patch`, `approval`, `history`, `doctor`, `prune`, `telemetry`.
 
 Normalization:
 - `project.name` of `null` maps to `"unnamed_project"`
@@ -273,7 +273,7 @@ Fix:
 5. Empty file / truncated JSON → `malformed_json`
 6. JSON root array or scalar → `root_not_object`
 7. Object missing required V1 keys → `schema_invalid` with per-error list
-8. Wrong field types (e.g. `sandbox.max_active_sandboxes` as string) → `schema_invalid`
+8. Wrong field types (e.g. `worktree.max_active_worktrees` as string) → `schema_invalid`
 9. `version` ≠ 1 → `schema_invalid`
 
 ---

@@ -41,7 +41,7 @@ class CopilotAuthTests:
         monkeypatch.delenv("GITHUB_TOKEN", raising=False)
         adapter = CopilotAgentAdapter()
 
-        resp = adapter.propose_fix(AgentRequestBuilder().with_sandbox_path(tmp_path).build())
+        resp = adapter.propose_fix(AgentRequestBuilder().with_worktree_path(tmp_path).build())
 
         assert resp.status == AgentResponseStatus.PROVIDER_ERROR
         assert resp.errors == [
@@ -60,7 +60,7 @@ class CopilotRunTests:
         monkeypatch.setattr("dovo.core.agents.copilot.run_isolated_process", runner)
 
         outcome = default_copilot_run(
-            CliMutationRunRequest(sandbox_path=tmp_path, prompt="hi", model=None, timeout_seconds=3)
+            CliMutationRunRequest(worktree_path=tmp_path, prompt="hi", model=None, timeout_seconds=3)
         )
 
         assert outcome.status == "finished"
@@ -92,7 +92,7 @@ class CopilotRunTests:
         monkeypatch.setattr("dovo.core.agents.copilot.run_isolated_process", runner)
 
         outcome = default_copilot_run(
-            CliMutationRunRequest(sandbox_path=tmp_path, prompt="hi", model=None, timeout_seconds=3)
+            CliMutationRunRequest(worktree_path=tmp_path, prompt="hi", model=None, timeout_seconds=3)
         )
 
         assert outcome.status == "error"
@@ -107,7 +107,7 @@ class CopilotRunTests:
         monkeypatch.setattr("dovo.core.agents.copilot.run_isolated_process", runner)
 
         outcome = default_copilot_run(
-            CliMutationRunRequest(sandbox_path=tmp_path, prompt="hi", model=None, timeout_seconds=3)
+            CliMutationRunRequest(worktree_path=tmp_path, prompt="hi", model=None, timeout_seconds=3)
         )
 
         assert outcome.status == "timeout"

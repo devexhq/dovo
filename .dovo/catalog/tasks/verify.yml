@@ -1,9 +1,9 @@
 name: verify
 id: verify
-description: Run the full pre-commit gate (format, lint, types, tests) in an isolated sandbox
+description: Run the full pre-commit gate (format, lint, types, tests) in an isolated worktree
 summary: Full pre-commit gate
 version: 1
-use_sandbox: false
+use_worktree: false
 on_failure: prompt
 
 inputs:

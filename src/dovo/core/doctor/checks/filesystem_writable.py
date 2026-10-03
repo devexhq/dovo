@@ -19,7 +19,7 @@ class FilesystemWritableCheck:
     category: CheckCategory = CheckCategory.FILESYSTEM
 
     def execute(self, context: DoctorContext) -> DiagnosticCheckResult:
-        """Probe-write every resolved workspace directory (plus sandboxes) under context.paths."""
+        """Probe-write every resolved workspace directory (plus worktrees) under context.paths."""
         targets = _target_paths(context.paths)
         not_initialized_warnings = [NOT_INITIALIZED_WARNING] if context.paths.project_id is None else []
 
@@ -72,7 +72,7 @@ def _target_paths(paths: WorkspacePaths) -> dict[str, Path]:
     if paths.project_id is not None:
         targets["sessions_dir"] = paths.sessions_dir
         targets["artifacts_dir"] = paths.artifacts_dir
-    targets["sandboxes_dir"] = paths.sandboxes_dir
+    targets["worktrees_dir"] = paths.worktrees_dir
     targets["database"] = paths.database_file.parent
     return targets
 

@@ -1,6 +1,6 @@
 # `dovo doctor`
 
-The `dovo doctor` command runs the registered diagnostic checks and prints a scannable workspace health report covering Git, configuration, filesystem permissions, sandbox references, environment binaries, and agent setup.
+The `dovo doctor` command runs the registered diagnostic checks and prints a scannable workspace health report covering Git, configuration, filesystem permissions, worktree references, environment binaries, and agent setup.
 
 ## Usage
 
@@ -12,7 +12,7 @@ dovo doctor [--category <name>] [--format terminal|json]
 
 | Flag | Description |
 | --- | --- |
-| `--category <git\|config\|filesystem\|sandbox\|agent\|environment>` | Restrict execution to a single check category. Defaults to running every registered check. |
+| `--category <git\|config\|filesystem\|worktree\|agent\|environment>` | Restrict execution to a single check category. Defaults to running every registered check. |
 | `--format <terminal\|json>` | Presentation format (`terminal` or `json`). Defaults to `terminal`. |
 
 ## Description
@@ -37,7 +37,7 @@ Dovo Doctor Report
 │ git.repo     │ git         │ OK     │ Git repository detected at '/repo' on branch 'main'.       │
 │ config.schema│ config      │ OK     │ `.dovo/config.json` is present and passes schema V1... │
 │ filesystem.writable │ filesystem │ OK │ All configured workspace paths are writable.               │
-│ sandbox.refs │ sandbox     │ OK     │ 2 sandbox(es) verified against database and Git worktree... │
+│ worktree.refs │ worktree     │ OK     │ 2 worktree(es) verified against database and Git worktree... │
 │ env.binaries │ environment │ OK     │ 2 required binary(s) verified on PATH.                     │
 │ agent.setup  │ agent       │ OK     │ Agent provider 'gemini' is configured with model '...'.    │
 └──────────────┴─────────────┴────────┴──────────────────────────────────────────────────────────┘

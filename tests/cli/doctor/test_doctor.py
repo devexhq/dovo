@@ -32,7 +32,7 @@ class DoctorCliIntegrationTests:
             "git.repo",
             "config.schema",
             "filesystem.writable",
-            "sandbox.refs",
+            "worktree.refs",
             "env.binaries",
             "agent.setup",
         ]

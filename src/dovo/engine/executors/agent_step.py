@@ -1,4 +1,4 @@
-"""Agent step execution: resolved provider invocation, sandbox application, and the stdout summary."""
+"""Agent step execution: resolved provider invocation, worktree application, and the stdout summary."""
 
 from __future__ import annotations
 
@@ -11,8 +11,8 @@ from dovo.core.agents import AgentAttempt, AgentResponseStatus, ResolvedAgentSet
 from dovo.core.catalog.definitions import StepDefinition
 from dovo.engine.executors.models import AgentStepRunner, AgentStepSummary, OutputCallback, StepDispatchOutcome
 
-SANDBOX_REQUIRED_MESSAGE = (
-    "Agent steps require an active Dovo Git sandbox.\nFix: remove --no-sandbox and run the blueprint with a sandbox."
+WORKTREE_REQUIRED_MESSAGE = (
+    "Agent steps require an active git worktree.\nFix: remove --no-worktree and run the blueprint with a worktree."
 )
 MISSING_SETTINGS_MESSAGE = (
     "Agent step has no resolved agent settings "
@@ -36,13 +36,13 @@ def execute_agent_step(
     step: StepDefinition,
     *,
     agent: ResolvedAgentSettings | None,
-    sandbox_path: Path,
-    sandbox_active: bool,
+    worktree_path: Path,
+    worktree_active: bool,
     on_output: OutputCallback | None,
 ) -> StepDispatchOutcome:
     """Run one agent attempt through its resolved provider and return the classified dispatch outcome."""
-    if not sandbox_active:
-        return _to_outcome(_provider_error(SANDBOX_REQUIRED_MESSAGE), on_output)
+    if not worktree_active:
+        return _to_outcome(_provider_error(WORKTREE_REQUIRED_MESSAGE), on_output)
 
     if agent is None:
         return _to_outcome(_provider_error(MISSING_SETTINGS_MESSAGE), on_output)
@@ -53,19 +53,19 @@ def execute_agent_step(
     attempt = run_direct_attempt(
         instruction=step.prompt or "",
         settings=agent,
-        sandbox_path=sandbox_path,
+        worktree_path=worktree_path,
         timeout_seconds=step.timeout_seconds,
     )
 
     return _to_outcome(attempt, on_output)
 
 
-def build_agent_step_runner(agent: ResolvedAgentSettings | None, sandbox_active: bool) -> AgentStepRunner:
-    """Return a runner closing over the run's resolved agent settings and sandbox state, delegating to execute_agent_step."""
+def build_agent_step_runner(agent: ResolvedAgentSettings | None, worktree_active: bool) -> AgentStepRunner:
+    """Return a runner closing over the run's resolved agent settings and worktree state, delegating to execute_agent_step."""
 
-    def _run(step: StepDefinition, sandbox_path: Path, on_output: OutputCallback | None) -> StepDispatchOutcome:
+    def _run(step: StepDefinition, worktree_path: Path, on_output: OutputCallback | None) -> StepDispatchOutcome:
         return execute_agent_step(
-            step, agent=agent, sandbox_path=sandbox_path, sandbox_active=sandbox_active, on_output=on_output
+            step, agent=agent, worktree_path=worktree_path, worktree_active=worktree_active, on_output=on_output
         )
 
     return _run

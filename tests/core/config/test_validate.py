@@ -55,9 +55,9 @@ class ConfigSemanticValidationTests:
         ]
         assert result.fixes == ["Set agent.endpoint to an absolute http:// or https:// URL, or null"]
 
-    def test_validate_config_warns_when_sandbox_limit_exceeds_threshold(self, tmp_path: Path) -> None:
+    def test_validate_config_warns_when_worktree_limit_exceeds_threshold(self, tmp_path: Path) -> None:
         payload = build_default_config("demo")
-        payload["sandbox"]["max_active_sandboxes"] = 11
+        payload["worktree"]["max_active_worktrees"] = 11
         config_path = tmp_path / "config.json"
         Filesystem.atomic_write_json(config_path, payload)
 
@@ -68,8 +68,8 @@ class ConfigSemanticValidationTests:
         assert result.raw == payload
         assert result.config == DovoConfig.model_validate(payload)
         assert result.errors == []
-        assert result.warnings == ["sandbox.max_active_sandboxes (11) exceeds 10 (CONFIG_WARN_SANDBOX_LIMIT)."]
-        assert result.fixes == ["Lower sandbox.max_active_sandboxes to 10 or fewer"]
+        assert result.warnings == ["worktree.max_active_worktrees (11) exceeds 10 (CONFIG_WARN_WORKTREE_LIMIT)."]
+        assert result.fixes == ["Lower worktree.max_active_worktrees to 10 or fewer"]
 
 
 class ConfigProviderRegistryValidationTests:

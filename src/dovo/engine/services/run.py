@@ -24,7 +24,7 @@ class BlueprintRunService:
     name: str
     paths: WorkspacePaths
     runs_db: RunsRepository
-    no_sandbox: bool = False
+    no_worktree: bool = False
     keep: bool = False
     agent: str | None = None
     session_id: str | None = None
@@ -51,7 +51,7 @@ class BlueprintRunService:
                 blueprint,
                 RunRequest(
                     cli_args=self.cli_args,
-                    use_sandbox=not self.no_sandbox,
+                    use_worktree=not self.no_worktree,
                     keep=self.keep,
                     agent=self.agent,
                     session_id=self.session_id,
