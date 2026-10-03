@@ -48,11 +48,12 @@ class ConfigValidateRootTests:
         assert result.errors == []
         assert result.fixes == []
 
-    def test_config_validate_with_warnings_returns_valid_status(self, isolated_workspace: Path) -> None:
-        """Handler returns VALID status with warnings for non-local provider missing model."""
+    def test_config_validate_with_warnings_returns_valid_status(
+        self, isolated_workspace: Path, model_required_provider: None
+    ) -> None:
+        """Handler returns VALID status with warnings for a provider that requires a model and has none."""
         config_path = isolated_workspace / ".dovo" / "config.json"
         payload = build_default_config("demo-workspace")
-        payload["agent"]["provider"] = "gemini"
         payload["agent"]["model"] = None
         Filesystem.atomic_write_json(config_path, payload)
 
@@ -65,10 +66,10 @@ class ConfigValidateRootTests:
         assert result.config == DovoConfig.model_validate(payload)
         assert result.raw == payload
         assert result.warnings == [
-            "agent.provider is not 'local' but agent.model is missing (CONFIG_WARN_AGENT_MODEL_MISSING)."
+            "agent.provider 'copilot' requires agent.model but it is missing (CONFIG_WARN_AGENT_MODEL_MISSING)."
         ]
         assert result.errors == []
-        assert result.fixes == ["Set agent.model or use provider=local"]
+        assert result.fixes == ["Set agent.model"]
 
     def test_config_validate_error_returns_invalid_status(self, isolated_workspace: Path) -> None:
         """Handler returns INVALID status for schema-invalid config."""
@@ -109,11 +110,12 @@ class ConfigValidateCliIntegrationTests:
         assert "Status: valid" in res.stdout
         assert "Config is valid." in res.stdout
 
-    def test_config_validate_cli_warnings_exits_zero(self, cli_runner: CliRunner, isolated_workspace: Path) -> None:
+    def test_config_validate_cli_warnings_exits_zero(
+        self, cli_runner: CliRunner, isolated_workspace: Path, model_required_provider: None
+    ) -> None:
         """dovo config validate prints warnings for non-blocking issues."""
         config_path = isolated_workspace / ".dovo" / "config.json"
         payload = build_default_config("demo-workspace")
-        payload["agent"]["provider"] = "gemini"
         payload["agent"]["model"] = None
         Filesystem.atomic_write_json(config_path, payload)
 

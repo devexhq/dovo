@@ -6,19 +6,29 @@ import json
 from pathlib import Path
 from typing import Any
 
+import pytest
 from typer.testing import CliRunner
 
 from dovo.cli import app
 from dovo.core.doctor import CheckStatus, DoctorReport
+from dovo.core.doctor.checks.agent_setup import PROVIDER_CREDENTIAL_RESOLVERS
 
 
 class DoctorCliIntegrationTests:
     """Typer runner integration tests for dovo doctor."""
 
     def test_doctor_cli_healthy_workspace_exits_zero_and_dispatches_report(
-        self, cli_runner: CliRunner, doctor_workspace: Path, dispatch_spy: list[Any]
+        self,
+        cli_runner: CliRunner,
+        doctor_workspace: Path,
+        dispatch_spy: list[Any],
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """dovo doctor: healthy git+config workspace exits 0, dispatches the exact DoctorReport, and renders the checks table."""
+        """dovo doctor: healthy git+config workspace with the default copilot provider's `gh` and token present exits 0, dispatches the exact DoctorReport, and renders the checks table."""
+        monkeypatch.setattr("dovo.core.doctor.checks.env_binaries.shutil.which", lambda _name: "/usr/bin/tool")
+        monkeypatch.setitem(
+            PROVIDER_CREDENTIAL_RESOLVERS, "copilot", (lambda: "fake-token", "GH_TOKEN or GITHUB_TOKEN")
+        )
         result = cli_runner.invoke(app, ["-p", str(doctor_workspace), "doctor"])
 
         assert result.exit_code == 0

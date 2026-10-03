@@ -44,12 +44,12 @@ WARNING_CHECK = DiagnosticCheckResult(
     name="Agent Setup Check",
     category=CheckCategory.AGENT,
     status=CheckStatus.WARNING,
-    message="Agent provider 'local' has no model configured.",
-    details={"provider": "local"},
+    message="Agent provider 'copilot' has no model configured.",
+    details={"provider": "copilot"},
     duration_ms=0.5,
     error_code="DOCTOR_AGENT_NO_MODEL",
     errors=[],
-    warnings=["Agent provider 'local' has no model configured."],
+    warnings=["Agent provider 'copilot' has no model configured."],
     remediations=[
         Remediation(
             code="DOCTOR_AGENT_NO_MODEL",
@@ -190,12 +190,12 @@ DOCTOR_REPORT_PAYLOAD_CASES = [
                     "name": "Agent Setup Check",
                     "category": "agent",
                     "status": "warning",
-                    "message": "Agent provider 'local' has no model configured.",
-                    "details": {"provider": "local"},
+                    "message": "Agent provider 'copilot' has no model configured.",
+                    "details": {"provider": "copilot"},
                     "duration_ms": 0.5,
                     "error_code": "DOCTOR_AGENT_NO_MODEL",
                     "errors": [],
-                    "warnings": ["Agent provider 'local' has no model configured."],
+                    "warnings": ["Agent provider 'copilot' has no model configured."],
                     "remediations": [
                         {
                             "code": "DOCTOR_AGENT_NO_MODEL",

@@ -28,7 +28,7 @@ src/dovo/core/                   Domain business logic and orchestration (no Typ
   doctor/                            Diagnostic check registry, execution runner, and health validation engine
   history/                           Execution run queries and history presentation
   logs/                              Persisted session logs (run.log timeline events and appender, per-attempt step captures)
-  agents/                            AI agent provider base class, descriptor registry, provider integrations (local, ollama, cursor, gemini, copilot), and the direct-mode attempt pipeline
+  agents/                            AI agent provider base class, descriptor registry, provider integrations (copilot), and the direct-mode attempt pipeline
   patch/                             Unified-diff parsing and validation
 
 src/dovo/engine/                 Execution engine: Engine facade, state-driven run coordinator, session lifecycle, run/resume services, and the executors/ package
@@ -52,7 +52,7 @@ src/dovo/schemas/v1/             Packaged, versioned JSON Schemas (config.json, 
 **Relevant sources:** `src/dovo/core/`, `src/dovo/engine/`
 
 - **Inputs** (`core/inputs/`): `ParameterInput`, CLI flag resolution, `${{ inputs.* }}` placeholder interpolation. Must not import catalog or agents.
-- **Agents** (`core/agents/`): Provider base class (`BaseAgentProvider`), `ProviderSpec` registry (`PROVIDERS`), provider implementations (`local`, `ollama`, `cursor`, `gemini`, `copilot`), failure payload models, the direct-mode attempt pipeline (`run_direct_attempt` in `services/run_direct.py`). Must not import config or engine.
+- **Agents** (`core/agents/`): Provider base class (`BaseAgentProvider`), `ProviderSpec` registry (`PROVIDERS`), provider implementations (`copilot`), failure payload models, the direct-mode attempt pipeline (`run_direct_attempt` in `services/run_direct.py`). Must not import config or engine.
 - **Patch** (`core/patch/`): Unified-diff parsing and validation. Must not import agents.
 - **Engine** (`engine/`): Process-level run persistence, session ID minting (`RunRequest`), DB run records, canonical run execution state (`state_store.py`), the state-driven run coordinator (`coordinator.py`), paused-run validation (`loader.py`), the run session lifecycle (`session.py`), tree/row projector for `run.json` (`projection.py`) and its writer (`writer.py`), worktree/session infrastructure (`context.py`, `workspace.py`), per-step execution (`step_coordinator.py`), loop policy, events, and structural state validation (`loop_policy.py`, `loop_events.py`, `state_validation.py`), observer dispatch (`notify.py`), failure-policy resolution (`failure.py`), shared run models (`models.py`, including `BlueprintRunResult`), run/resume services (`BlueprintRunService`, `BlueprintResumeService`). May import `common/` and any `core/` package. Must not import cli.
 - **Executors** (`engine/executors/`): Single-step execution (`StepExecution` in `step_executor.py`), assertions evaluation (`assertions/`), execution metadata (`metadata.py`), condition evaluation (`conditions.py`), the `type: internal` command registry and `artifacts.upload`/`artifacts.download` handlers (`internal_dispatch.py`), agent step dispatch (`agent_step.py`, including `build_agent_step_runner`), and execution models (`models.py`). Must not import engine modules outside `executors/`, or cli.
@@ -116,18 +116,16 @@ core/project/  ->  core/{db,git,worktree,catalog,inputs,patch,diff,status,artifa
 **Relevant sources:** `src/dovo/core/agents/`, `src/dovo/core/config/models.py`
 
 1. Add provider token to `AgentProvider` in `core/config/models.py` if not already present.
-2. Select adapter pattern:
-   - **Direct-mutation** (provider CLI/SDK directly edits files in worktree — `cursor`, `gemini`, `copilot`): Subclass `CliDirectMutationAdapter` (`core/agents/cli_mutation.py`) and implement `_preflight`, `_provider_name`, and `_default_run`.
-   - **Diff-returning** (provider returns diff text — `local`, `ollama`): Implement `BaseAgentProvider.propose_fix` directly (`core/agents/base.py`).
+2. Use the direct-mutation pattern (provider CLI/SDK directly edits files in the worktree — `copilot`): subclass `CliDirectMutationAdapter` (`core/agents/cli_mutation.py`) and implement `_preflight`, `_provider_name`, and `_default_run`.
 3. Resolve secrets via module-level `resolve_<provider>_api_key()` from environment variables (never from `config.json`).
-4. Declare a `ProviderSpec` for it in `core/agents/registry.py` and add it to `PROVIDERS`.
+4. Declare a `ProviderSpec` for it in `core/agents/registry.py` and add it to `PROVIDERS`; also add the token to the `agent.provider` enum in `schemas/v1/config.json`.
 5. Add tests under `tests/core/agents/test_<provider>.py` with fake execution functions or transports.
 
 ## Secrets handling
 
 **Relevant sources:** `src/dovo/core/agents/`
 
-- API keys (`CURSOR_API_KEY`, `GEMINI_API_KEY`, `GH_TOKEN`, `GITHUB_TOKEN`) are resolved from the environment at call time.
+- API keys (`GH_TOKEN`, `GITHUB_TOKEN`) are resolved from the environment at call time.
 - Secrets are never accepted as `config.json` fields, never persisted to the centralized database, and never passed into prompt builders.
 
 ## The `.dovo/` directory

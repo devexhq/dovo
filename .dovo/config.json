@@ -10,8 +10,8 @@
     "default_timeout_seconds": 900
   },
   "agent": {
-    "provider": "anthropic",
-    "model": "qwen2.5-coder",
+    "provider": "copilot",
+    "model": "gpt-4.1",
     "endpoint": null,
     "temperature": 0.2,
     "max_tokens": 4096

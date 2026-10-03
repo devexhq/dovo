@@ -32,7 +32,7 @@ from tests.harness.builders import StepBuilder
 _NO_OP_SUMMARY = "Inspected the repository; no edits were required."
 
 
-def _settings(provider: str = "ollama") -> ResolvedAgentSettings:
+def _settings(provider: str = "copilot") -> ResolvedAgentSettings:
     return ResolvedAgentSettings(provider=provider, model="m", endpoint="http://e", temperature=0.7, max_tokens=512)
 
 
@@ -226,8 +226,8 @@ class ExecuteAgentStepOutputTests:
                 AgentResponseStatus.TIMEOUT,
                 202,
                 None,
-                ["Agent timed out after 45s (provider=ollama)."],
-                "Agent timed out after 45s (provider=ollama).",
+                ["Agent timed out after 45s (provider=copilot)."],
+                "Agent timed out after 45s (provider=copilot).",
                 id="timeout",
             ),
             pytest.param(
@@ -277,20 +277,6 @@ class ExecuteAgentStepOutputTests:
         summary = _summary(outcome)
         assert summary["status"] == "proposed_patch"
         assert summary["touched_files"] == ["a.txt"]
-
-    def test_unappliable_patch_fails_as_provider_error_203(
-        self, git_repo: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        """[tier-1/unit] execute_agent_step: PROPOSED_PATCH whose new-file diff targets an existing a.txt fails with exit 203, stdout status 'provider_error', and error_message starting 'Patch does not apply cleanly'."""
-        (git_repo / "a.txt").write_text("existing\n")
-        _use_provider(monkeypatch, FakeAgentProvider(_patch("a.txt")))
-
-        outcome = _run(git_repo)
-
-        assert outcome.status == "failed"
-        assert outcome.exit_code == 203
-        assert (outcome.error_message or "").startswith("Patch does not apply cleanly")
-        assert _summary(outcome)["status"] == "provider_error"
 
     def test_missing_summary_falls_back_to_raw_text_and_escapes_newlines(
         self, git_repo: Path, monkeypatch: pytest.MonkeyPatch

@@ -331,8 +331,7 @@ def validate_patch_text(
     """Validate diff text against size/count/binary/path limits, no git apply.
 
     Returns ``PatchApplyResult(status=CHECKED_OK, touched_files=...)`` when all
-    checks pass; otherwise a result carrying the failing status. Reused both as
-    the pre-``git apply`` gate for diff-returning providers and as the
+    checks pass; otherwise a result carrying the failing status. Used as the
     post-hoc gate for direct-mutation providers, whose changes are already
     reflected on disk.
 

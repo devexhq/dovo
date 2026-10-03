@@ -20,7 +20,7 @@ This reference documents the complete JSON schema for `.dovo/config.json` (Versi
     "default_timeout_seconds": 900
   },
   "agent": {
-    "provider": "local",
+    "provider": "copilot",
     "model": null,
     "endpoint": null,
     "temperature": 0.2,
@@ -72,9 +72,9 @@ This reference documents the complete JSON schema for `.dovo/config.json` (Versi
 * `default_timeout_seconds` *(integer)*: Accepted worktree timeout setting (default: `900`); the current runtime does not consume it.
 
 ### 4. `agent`
-* `provider` *(string)*: Schema-accepted value: `local`, `ollama`, `cursor`, `gemini`, `copilot`, `openai`, `anthropic`, `azure_openai`, or `custom`. Runtime adapters are only `local`, `ollama`, `cursor`, `gemini`, and `copilot`.
+* `provider` *(string)*: Agent provider. Only `copilot` is accepted (default: `"copilot"`); other providers are delayed beyond v1.
 * `model` *(string \| null)*: Agent model metadata (default: `null`).
-* `endpoint` *(string \| null)*: Custom API endpoint URL (e.g. for Ollama).
+* `endpoint` *(string \| null)*: Custom API endpoint URL.
 * `temperature` *(number)*: Sampling temperature (default: `0.2`).
 * `max_tokens` *(integer)*: Maximum generation tokens (default: `4096`).
 

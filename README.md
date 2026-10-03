@@ -18,19 +18,11 @@ Dovo helps humans and agents build, test, and remediate in parallel without dist
 pip install devexhq-dovo
 ```
 
-Optional provider extras:
-
-```bash
-pip install "devexhq-dovo[cursor]"
-```
-
 ## Requirements
 
 - Python 3.13+
 - Git
-- For provider-specific workflow runs:
-  - Cursor: `CURSOR_API_KEY` (+ `devexhq-dovo[cursor]`)
-  - Gemini: Gemini CLI on `PATH` + `GEMINI_API_KEY`
+- For agent steps (default provider `copilot`):
   - Copilot: GitHub CLI (`gh`) on `PATH` + `GH_TOKEN` or `GITHUB_TOKEN`
 
 ## Quick start
@@ -98,18 +90,11 @@ dovo history
 
 ## Agent providers for workflow runs
 
-Workflow definitions support these providers:
+Workflow definitions support one provider:
 
-- `local`
-- `ollama`
-- `cursor`
-- `gemini`
 - `copilot`
 
-Provider behavior:
-
-- `local` and `ollama` return unified diffs
-- `cursor`, `gemini`, and `copilot` run as direct-mutation providers with shared safety gates before patches are accepted
+`copilot` runs as a direct-mutation provider with shared safety gates before patches are accepted. Other providers are delayed beyond v1.
 
 ## Reserved `.dovo` paths
 

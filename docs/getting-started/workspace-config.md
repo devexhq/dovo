@@ -76,8 +76,8 @@ dovo config show
 Set specific configuration keys or nested dot-paths:
 
 ```bash
-dovo config set agent.provider ollama
-dovo config set agent.model llama3.1
+dovo config set agent.provider copilot
+dovo config set agent.model gpt-4.1
 dovo config set worktree.base_ref main
 ```
 
@@ -109,7 +109,7 @@ Below is the canonical `.dovo/config.json` structure:
     "default_timeout_seconds": 900
   },
   "agent": {
-    "provider": "local",
+    "provider": "copilot",
     "model": null,
     "endpoint": null,
     "temperature": 0.2,
@@ -149,20 +149,11 @@ For full details on each field and validation rule, see the [Project Config Sche
 
 ## API Keys & Environment Setup
 
-The configuration schema accepts `local`, `ollama`, `cursor`, `gemini`, `copilot`, `openai`, `anthropic`, `azure_openai`, and `custom`. Runtime adapter selection supports only `local`, `ollama`, `cursor`, `gemini`, and `copilot`; agent steps invoke the selected adapter inside a Git worktree. Credentials can be checked by `dovo doctor`.
+The configuration schema accepts only `copilot`; agent steps invoke it inside a Git worktree. Credentials can be checked by `dovo doctor`. The default provider requires the GitHub CLI (`gh`) on `PATH`, so `dovo doctor` reports `DOCTOR_BINARY_MISSING` or `DOCTOR_AGENT_KEY_MISSING` until both are available.
 
 ```bash
-# Gemini Provider
-export GEMINI_API_KEY="AIzaSy..."
-
 # GitHub Copilot Provider
 export GITHUB_TOKEN="ghp_..."
-
-# Cursor Provider
-export CURSOR_API_KEY="cur_..."
-
-# Ollama Endpoint (Local LLM)
-export OLLAMA_HOST="http://localhost:11434"
 ```
 
 For persistent environment setup, save provider credentials to your local shell profile (`.bashrc` / `.zshrc`) or local `.env` file (ensure `.env` is listed in `.gitignore`).

@@ -32,11 +32,11 @@ dovo config set <key> <value>
 #### Examples
 
 ```bash
-# Change LLM provider to Ollama
-dovo config set agent.provider ollama
+# Select the agent provider
+dovo config set agent.provider copilot
 
 # Set model name
-dovo config set agent.model llama3.1
+dovo config set agent.model gpt-4.1
 
 # Configure the worktree base ref
 dovo config set worktree.base_ref main
@@ -74,4 +74,4 @@ Validates `.dovo/config.json` against the Dovo V1 JSON Schema and semantic rules
 dovo config validate
 ```
 
-If validation fails, `dovo config validate` prints detailed error descriptions highlighting missing required fields or invalid property types. An `agent.provider` that the schema accepts but no adapter implements (`openai`, `anthropic`, `azure_openai`, `custom`) is reported as an error carrying `AGENT_PROVIDER_UNSUPPORTED`.
+If validation fails, `dovo config validate` prints detailed error descriptions highlighting missing required fields or invalid property types. An `agent.provider` outside the supported set (only `copilot`) is reported as a structural schema error (`CONFIG_SCHEMA_INVALID`), and the config file is not modified; choose an installed, registered provider. The `AGENT_PROVIDER_UNSUPPORTED` error cannot occur while the schema and the provider registry agree.

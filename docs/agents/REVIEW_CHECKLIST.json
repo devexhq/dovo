@@ -48,7 +48,7 @@
       "domain": "core",
       "scope": "src/dovo/core/agents/, src/dovo/core/config/",
       "evaluation_criteria": "Search for API key field additions in DovoConfig or SQLite models. Ensure environment resolution helpers are used.",
-      "bad_pattern": "api_key = config.agent.cursor_api_key  # serializing secrets in static config"
+      "bad_pattern": "api_key = config.agent.copilot_token  # serializing secrets in static config"
     },
     {
       "id": "RENDER-001",

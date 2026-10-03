@@ -250,8 +250,8 @@ REMEDIATION_RESOLUTION_CASES = [
             name="Environment Binaries Check",
             category=CheckCategory.ENVIRONMENT,
             status=CheckStatus.WARNING,
-            message="1 required binary(s) not found on PATH: gemini.",
-            details={"missing_binaries": ["gemini"]},
+            message="1 required binary(s) not found on PATH: gh.",
+            details={"missing_binaries": ["gh"]},
             error_code="DOCTOR_BINARY_MISSING",
         ),
         [
@@ -260,7 +260,7 @@ REMEDIATION_RESOLUTION_CASES = [
                 title="Install required binary",
                 action_type=RemediationType.MANUAL,
                 command=None,
-                description="Install 'gemini' via your package manager and ensure it is available on PATH.",
+                description="Install 'gh' via your package manager and ensure it is available on PATH.",
                 doc_path=None,
                 is_automated=False,
             )
@@ -295,8 +295,8 @@ REMEDIATION_RESOLUTION_CASES = [
             name="Agent Setup Check",
             category=CheckCategory.AGENT,
             status=CheckStatus.FAILED,
-            message="Agent provider 'gemini' is missing required credential 'GEMINI_API_KEY'.",
-            details={"provider": "gemini", "missing_env_var": "GEMINI_API_KEY"},
+            message="Agent provider 'copilot' is missing required credential 'GH_TOKEN'.",
+            details={"provider": "copilot", "missing_env_var": "GH_TOKEN"},
             error_code="DOCTOR_AGENT_KEY_MISSING",
         ),
         [
@@ -304,8 +304,8 @@ REMEDIATION_RESOLUTION_CASES = [
                 code="DOCTOR_AGENT_KEY_MISSING",
                 title="Export agent API key",
                 action_type=RemediationType.COMMAND,
-                command='export GEMINI_API_KEY="<your-api-key>"',
-                description="Set the GEMINI_API_KEY environment variable in your active shell or `.env` file so the configured agent provider can authenticate.",
+                command='export GH_TOKEN="<your-api-key>"',
+                description="Set the GH_TOKEN environment variable in your active shell or `.env` file so the configured agent provider can authenticate.",
                 doc_path="docs/guides/agent-providers.md",
                 is_automated=False,
             )
@@ -340,8 +340,8 @@ REMEDIATION_RESOLUTION_CASES = [
             name="Agent Setup Check",
             category=CheckCategory.AGENT,
             status=CheckStatus.WARNING,
-            message="Agent provider 'local' has no model configured.",
-            details={"provider": "local"},
+            message="Agent provider 'copilot' has no model configured.",
+            details={"provider": "copilot"},
             error_code="DOCTOR_AGENT_NO_MODEL",
         ),
         [

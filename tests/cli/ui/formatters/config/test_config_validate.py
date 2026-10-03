@@ -46,7 +46,7 @@ def _make_config(name: str = "valid-proj") -> DovoConfig:
             default_timeout_seconds=900,
         ),
         agent=AgentConfig(
-            provider="local",
+            provider="copilot",
             model=None,
             endpoint=None,
             temperature=0.2,
@@ -105,7 +105,7 @@ VALID_WITH_WARNINGS_CASE = FormatterCase(
         status=ConfigValidationStatus.VALID,
         config_path=CONFIG_PATH,
         config=VALID_CONFIG,
-        warnings=["agent.provider is not 'local' but agent.model is missing (CONFIG_WARN_AGENT_MODEL_MISSING)."],
+        warnings=["agent.provider 'copilot' requires agent.model but it is missing (CONFIG_WARN_AGENT_MODEL_MISSING)."],
         errors=[],
         fixes=["Set agent.model in .dovo/config.json"],
     ),
@@ -116,13 +116,13 @@ VALID_WITH_WARNINGS_CASE = FormatterCase(
         raw=None,
         config=VALID_CONFIG,
         errors=[],
-        warnings=["agent.provider is not 'local' but agent.model is missing (CONFIG_WARN_AGENT_MODEL_MISSING)."],
+        warnings=["agent.provider 'copilot' requires agent.model but it is missing (CONFIG_WARN_AGENT_MODEL_MISSING)."],
         fixes=["Set agent.model in .dovo/config.json"],
     ),
     render_expectations=[
         CONFIG_PATH.as_posix(),
         "valid with warnings",
-        "agent.provider is not 'local' but agent.model is missing (CONFIG_WARN_AGENT_MODEL_MISSING).",
+        "agent.provider 'copilot' requires agent.model but it is missing (CONFIG_WARN_AGENT_MODEL_MISSING).",
         "Set agent.model in .dovo/config.json",
     ],
 )
@@ -203,7 +203,7 @@ VALIDATION_PAYLOAD_CASES = [
                     "default_timeout_seconds": 900,
                 },
                 "agent": {
-                    "provider": "local",
+                    "provider": "copilot",
                     "model": None,
                     "endpoint": None,
                     "temperature": 0.2,

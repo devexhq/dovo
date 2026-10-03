@@ -28,7 +28,7 @@
 ```
 
 - **[MODEL-001] Scoped Model Exceptions with Justifying Comment (BLOCKER):**
-  Scoped exceptions allowing extra='ignore' are restricted to hand-authored YAML models (BlueprintDefinition, LoopStepBlock) and LLM JSON output (OllamaModelStdout), and MUST carry a justifying comment.
+  Scoped exceptions allowing extra='ignore' are restricted to hand-authored YAML models (BlueprintDefinition, LoopStepBlock) and MUST carry a justifying comment.
 
 ```python
 # ✅ DO:

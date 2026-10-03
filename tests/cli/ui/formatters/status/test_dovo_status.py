@@ -66,7 +66,7 @@ def _make_status_result(
             config=DovoConfig(
                 version=1,
                 project=ProjectConfig(name="dovo"),
-                agent=AgentConfig(model="gemini-2.5-flash"),
+                agent=AgentConfig(model="test-model"),
             ),
         ),
         catalog=catalog
@@ -110,7 +110,7 @@ def _make_status_view(**overrides: Any) -> StatusView:
         "git_branch": "feature/status-cmd",
         "git_is_dirty": False,
         "uncommitted_files": 0,
-        "agent_model": "gemini-2.5-flash",
+        "agent_model": "test-model",
         "active_worktrees": 1,
         "max_active_worktrees": 5,
         "valid_catalog_items": 2,
@@ -127,7 +127,7 @@ def _make_status_view(**overrides: Any) -> StatusView:
 HEALTHY = FormatterCase(
     data=_make_status_result(root_dir=ROOT),
     view=_make_status_view(),
-    render_expectations=["dovo", "feature/status-cmd", "gemini-2.5-flash", "1", "5", "2", "2"],
+    render_expectations=["dovo", "feature/status-cmd", "test-model", "1", "5", "2", "2"],
 )
 
 UNINITIALIZED_NON_GIT = FormatterCase(
@@ -342,7 +342,7 @@ DIRTY_BRANCH = FormatterCase(
         git_is_dirty=True,
         uncommitted_files=3,
     ),
-    render_expectations=["dovo", "feature/dirty-branch", "gemini-2.5-flash", "1", "5", "2", "2"],
+    render_expectations=["dovo", "feature/dirty-branch", "test-model", "1", "5", "2", "2"],
 )
 
 NOT_A_GIT_REPO = FormatterCase(
@@ -358,7 +358,7 @@ NOT_A_GIT_REPO = FormatterCase(
     ),
     render_expectations=[
         "dovo",
-        "gemini-2.5-flash",
+        "test-model",
         "1",
         "5",
         "2",
@@ -377,14 +377,14 @@ UNNAMED_PROJECT = FormatterCase(
             config=DovoConfig(
                 version=1,
                 project=ProjectConfig(name=""),
-                agent=AgentConfig(model="gemini-2.5-flash"),
+                agent=AgentConfig(model="test-model"),
             ),
         ),
     ),
     view=_make_status_view(
         project_name=None,
     ),
-    render_expectations=["feature/status-cmd", "gemini-2.5-flash", "1", "5", "2", "2"],
+    render_expectations=["feature/status-cmd", "test-model", "1", "5", "2", "2"],
 )
 
 AGENT_MODEL_UNSET = FormatterCase(
@@ -425,7 +425,7 @@ EMPTY_CATALOG = FormatterCase(
         valid_catalog_items=0,
         total_catalog_items=0,
     ),
-    render_expectations=["dovo", "feature/status-cmd", "gemini-2.5-flash", "1", "5", "0", "0"],
+    render_expectations=["dovo", "feature/status-cmd", "test-model", "1", "5", "0", "0"],
 )
 
 INVALID_CATALOG_ITEMS = FormatterCase(
@@ -447,7 +447,7 @@ INVALID_CATALOG_ITEMS = FormatterCase(
         valid_catalog_items=3,
         total_catalog_items=5,
     ),
-    render_expectations=["dovo", "feature/status-cmd", "gemini-2.5-flash", "1", "5", "3", "5"],
+    render_expectations=["dovo", "feature/status-cmd", "test-model", "1", "5", "3", "5"],
 )
 
 WITH_WARNINGS_AND_FIXES = FormatterCase(
@@ -463,7 +463,7 @@ WITH_WARNINGS_AND_FIXES = FormatterCase(
     render_expectations=[
         "dovo",
         "feature/status-cmd",
-        "gemini-2.5-flash",
+        "test-model",
         "1",
         "5",
         "2",
@@ -532,7 +532,7 @@ STATUS_PAYLOAD_CASES = [
             "git_branch": "feature/status-cmd",
             "git_is_dirty": False,
             "uncommitted_files": 0,
-            "agent_model": "gemini-2.5-flash",
+            "agent_model": "test-model",
             "active_worktrees": 1,
             "max_active_worktrees": 5,
             "valid_catalog_items": 2,

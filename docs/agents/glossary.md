@@ -30,4 +30,4 @@ Precise definitions for core concepts and terms in the Dovo CLI codebase.
 - **Input (`ParameterInput`)**: A declared, typed parameter in a blueprint referenced via `${{ inputs.<name> }}` placeholders.
   - *Model:* `ParameterInput` in [`core/inputs/models.py`](../../src/dovo/core/inputs/models.py).
 - **Engine**: The process-level facade (`Engine` in [`engine/engine.py`](../../src/dovo/engine/engine.py)) managing run persistence and delegating to `drive_run` in [`engine/session.py`](../../src/dovo/engine/session.py), which executes the run through `RunCoordinator` in [`engine/coordinator.py`](../../src/dovo/engine/coordinator.py).
-- **Adapter**: Provider-specific implementation of `BaseAgentProvider` (`local`, `ollama`, `cursor`, `gemini`, `copilot`) in [`core/agents/`](../../src/dovo/core/agents/).
+- **Adapter**: Provider-specific implementation of `BaseAgentProvider` (`copilot`) in [`core/agents/`](../../src/dovo/core/agents/).

@@ -13,10 +13,7 @@ from dovo.core.agents.cli_mutation import (
     validate_request_patch,
 )
 from dovo.core.agents.copilot import CopilotAgentAdapter
-from dovo.core.agents.cursor import CursorAgentAdapter
 from dovo.core.agents.factory import get_agent_adapter
-from dovo.core.agents.gemini import GeminiAgentAdapter
-from dovo.core.agents.local import LocalAgentAdapter, LocalAgentStdout
 from dovo.core.agents.models import (
     AgentAttempt,
     AgentFailurePayload,
@@ -25,10 +22,8 @@ from dovo.core.agents.models import (
     AgentResponseStatus,
     PayloadFile,
     PayloadOmission,
-    ProviderKind,
     ResolvedAgentSettings,
 )
-from dovo.core.agents.ollama import OllamaAgentAdapter
 from dovo.core.agents.registry import PROVIDERS
 from dovo.core.agents.services.run_direct import run_direct_attempt
 
@@ -48,14 +43,8 @@ __all__ = [
     "CliMutationRunFn",
     "CliMutationRunRequest",
     "CopilotAgentAdapter",
-    "CursorAgentAdapter",
-    "GeminiAgentAdapter",
-    "LocalAgentAdapter",
-    "LocalAgentStdout",
-    "OllamaAgentAdapter",
     "PayloadFile",
     "PayloadOmission",
-    "ProviderKind",
     "ProviderSpec",
     "ResolvedAgentSettings",
     "build_mutation_prompt",

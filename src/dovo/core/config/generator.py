@@ -30,7 +30,7 @@ CANONICAL_V1_DEFAULTS: dict[str, Any] = {
         "default_timeout_seconds": 900,
     },
     "agent": {
-        "provider": "local",
+        "provider": "copilot",
         "model": None,
         "endpoint": None,
         "temperature": 0.2,
