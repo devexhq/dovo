@@ -1,22 +1,21 @@
-"""Blueprint domain facade."""
+"""Blueprint handle over a catalog-loaded blueprint document."""
 
 from __future__ import annotations
 
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, ClassVar
 
-from worktree.core.blueprint.exceptions import BlueprintLoadError, BlueprintNotFoundError
-from worktree.core.blueprint.models import BlueprintDefinition
+from worktree.core.catalog.definitions import BlueprintDefinition, LoopStepBlock, StepDefinition
+from worktree.core.catalog.exceptions import BlueprintLoadError, BlueprintNotFoundError
 from worktree.core.catalog.models import CatalogItemType
 from worktree.core.inputs import (
     InputResolveResult,
     Inputs,
     ParameterInput,
 )
-from worktree.core.step import LoopStepBlock, StepDefinition
 
 if TYPE_CHECKING:
-    from worktree.core.catalog import Catalog
+    from worktree.core.catalog.catalog import Catalog
 
 
 class Blueprint:

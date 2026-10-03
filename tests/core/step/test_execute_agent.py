@@ -17,8 +17,9 @@ from worktree.core.agents import (
     BaseAgentProvider,
     ResolvedAgentSettings,
 )
+from worktree.core.catalog.definitions import StepDefinition
 from worktree.core.git import GitRunner
-from worktree.core.step.models import StepDefinition, StepDispatchOutcome
+from worktree.core.step.models import StepDispatchOutcome
 from worktree.core.step.services.execute_agent import (
     BLANK_PROMPT_MESSAGE,
     MISSING_SETTINGS_MESSAGE,

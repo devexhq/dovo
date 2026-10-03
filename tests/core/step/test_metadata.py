@@ -7,7 +7,8 @@ from pathlib import Path
 
 import pytest
 
-from worktree.core.step.models import PreviousStepMetadata, StepDefinition, StepType
+from worktree.core.catalog.definitions import StepDefinition, StepType
+from worktree.core.step.models import PreviousStepMetadata
 from worktree.core.step.services.metadata import (
     build_execution_metadata,
     metadata_to_env,

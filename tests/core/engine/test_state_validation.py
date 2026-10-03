@@ -6,7 +6,8 @@ import pytest
 
 from tests.harness.builders import BlueprintBuilder, StepBuilder
 from worktree.common.models import FailurePolicy
-from worktree.core.blueprint import Blueprint
+from worktree.core.catalog.blueprint import Blueprint
+from worktree.core.catalog.definitions import LoopStepBlock
 from worktree.core.engine.models import DefinitionRef, DefinitionsManifest
 from worktree.core.engine.state_models import (
     ExecutionIterationRecord,
@@ -15,7 +16,6 @@ from worktree.core.engine.state_models import (
     ExecutionStateTree,
 )
 from worktree.core.engine.state_validation import validate_loop_structure
-from worktree.core.step.models import LoopStepBlock
 
 _MANIFEST = DefinitionsManifest(blueprint=DefinitionRef(ref="repo:blueprint:bp", sha="a", resolved_at="now"))
 _BODY_IDS = ["edit", "verify"]

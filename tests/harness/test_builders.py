@@ -16,10 +16,15 @@ from tests.harness import (
 )
 from worktree.common.filesystem.services.global_root import resolve_global_paths
 from worktree.common.models import FailurePolicy, OnFailureSpec
-from worktree.core.blueprint.models import BlueprintDefaults, BlueprintDefinition
+from worktree.core.catalog.definitions import (
+    BlueprintDefaults,
+    BlueprintDefinition,
+    StepAssert,
+    StepDefinition,
+    StepType,
+)
 from worktree.core.db.connection import resolve_db_path
 from worktree.core.inputs.models import InputType, ParameterInput
-from worktree.core.step.models import StepAssert, StepDefinition, StepType
 
 
 class StepBuilderTests:

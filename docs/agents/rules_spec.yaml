@@ -5,11 +5,12 @@ rules:
   category: Architecture
   domain: all
   scope: src/worktree/
-  guideline: 'Dependencies flow strictly one way: common/ -> core/{db,git,sandbox,catalog,inputs,patch,diff,status}/ ->
-    core/agents/ -> core/step/ -> {core/logs/, core/blueprint/} -> core/history/ -> core/engine/ -> cli/. Upward imports
+  guideline: 'Dependencies flow strictly one way: common/ -> core/{db,git,sandbox,inputs,patch,diff,status}/ ->
+    core/catalog/ -> core/agents/ -> core/step/ -> {core/logs/, core/blueprint/} -> core/history/ -> core/engine/ -> cli/. Upward imports
     are strictly prohibited.'
   evaluation_criteria: Scan imports. Verify common/ imports no core/ or cli/; core/ and common/ import no cli/ or rich; inputs/
-    and patch/ import no step or agents; agents/ imports no step; step/ imports no engine; logs/ imports no blueprint, engine,
+    imports no catalog, step, or agents; patch/ imports no step or agents; catalog/ imports no agents, step, engine, blueprint,
+    logs, history, cli; agents/ imports no step; step/ imports no engine; logs/ imports no blueprint, engine,
     history, cli; blueprint/ imports no engine, cli; history/ imports no engine, cli; engine/ imports no cli.
   positive_example: 'from worktree.core.logs import append_run_log_event  # in core/engine/'
   negative_example: 'from worktree.core.engine.engine import Engine  # upward import in core/logs/'
@@ -129,7 +130,7 @@ rules:
   category: Models
   domain: all
   scope: src/worktree/
-  guideline: Scoped exceptions allowing extra='ignore' are restricted to hand-authored YAML models (BlueprintDefinition, BlueprintDefaults,
+  guideline: Scoped exceptions allowing extra='ignore' are restricted to hand-authored YAML models (BlueprintDefinition,
     LoopStepBlock) and LLM JSON output (OllamaModelStdout), and MUST carry a justifying comment.
   evaluation_criteria: Flag any model using extra='ignore' or omitting strict=True outside the approved list or without a
     justifying comment.

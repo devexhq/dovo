@@ -6,7 +6,8 @@ from collections.abc import Callable
 from pathlib import Path
 
 from worktree.core.agents import AgentAttempt, AgentResponseStatus, ResolvedAgentSettings, run_direct_attempt
-from worktree.core.step.models import AgentStepSummary, StepDefinition, StepDispatchOutcome
+from worktree.core.catalog.definitions import StepDefinition
+from worktree.core.step.models import AgentStepSummary, StepDispatchOutcome
 
 SANDBOX_REQUIRED_MESSAGE = "Agent steps require an active Worktree Git sandbox.\nFix: remove --no-sandbox and run the blueprint with a sandbox."
 MISSING_SETTINGS_MESSAGE = (

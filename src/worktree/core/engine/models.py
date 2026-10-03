@@ -13,16 +13,11 @@ from pydantic import BaseModel, Field
 from worktree.common.filesystem import WorkspacePaths
 from worktree.common.models import BaseResult
 from worktree.core.agents.models import ResolvedAgentSettings
+from worktree.core.catalog.definitions import LoopStepBlock, StepDefinition
 from worktree.core.db import RunStatus
 from worktree.core.db.repositories.artifacts import ArtifactsRepository
 from worktree.core.sandbox import SandboxSession
-from worktree.core.step import (
-    ConditionEvaluationResult,
-    ExecutionIdentity,
-    LoopStepBlock,
-    StepDefinition,
-    StepResult,
-)
+from worktree.core.step import ConditionEvaluationResult, ExecutionIdentity, StepResult
 
 
 class EngineResumeStatus(StrEnum):

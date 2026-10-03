@@ -10,7 +10,8 @@ import pytest
 from tests.harness import AGENT_ADAPTER_FACTORY, FakeAgentProvider
 from tests.harness.builders import StepBuilder
 from worktree.core.agents import AgentResponse, AgentResponseStatus, ResolvedAgentSettings
-from worktree.core.step.models import StepAssert, StepExecutionContext, StepResult
+from worktree.core.catalog.definitions import StepAssert
+from worktree.core.step.models import StepExecutionContext, StepResult
 from worktree.core.step.runner import StepExecution
 
 

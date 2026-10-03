@@ -6,13 +6,13 @@ import json
 from collections.abc import Sequence
 from pathlib import Path
 
+from worktree.core.catalog.definitions import StepDefinition
 from worktree.core.step.models import (
     BlueprintMetadata,
     ExecutionIdentity,
     ExecutionMetadata,
     IterationMetadata,
     PreviousStepMetadata,
-    StepDefinition,
     StepMetadata,
     StepResult,
     TempMetadata,

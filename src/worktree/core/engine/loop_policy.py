@@ -7,12 +7,13 @@ from dataclasses import dataclass
 from enum import StrEnum
 
 from worktree.common.models import FailurePolicy
+from worktree.core.catalog.definitions import StepDefinition
 from worktree.core.engine.state_models import (
     TERMINAL_NODE_STATES,
     ExecutionIterationRecord,
     ExecutionLoopNode,
 )
-from worktree.core.step.models import ConditionEvaluationResult, StepDefinition, StepResult
+from worktree.core.step.models import ConditionEvaluationResult, StepResult
 from worktree.core.step.services.conditions import evaluate_condition
 
 

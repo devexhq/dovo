@@ -10,8 +10,9 @@ from rich.console import Console
 
 from worktree.cli.run.prompter import DispatcherFailurePrompter
 from worktree.cli.ui.dispatcher import UiDispatcher
+from worktree.core.catalog.definitions import LoopStepBlock, StepDefinition
 from worktree.core.engine import FailurePromptDecision, LoopPromptDecision
-from worktree.core.step import LoopStepBlock, StepDefinition, StepResult
+from worktree.core.step import StepResult
 
 
 def _buffered_dispatcher(*, force_terminal: bool, output_format: str = "terminal") -> tuple[UiDispatcher, io.StringIO]:

@@ -6,9 +6,10 @@ from collections.abc import Sequence
 from pathlib import Path
 
 from tests.harness.builders import StepBuilder
+from worktree.core.catalog.definitions import LoopStepBlock, StepDefinition
 from worktree.core.engine.models import RunObserver, RunOutcome
 from worktree.core.engine.notify import safe_notify
-from worktree.core.step.models import ConditionEvaluationResult, LoopStepBlock, StepDefinition, StepResult
+from worktree.core.step.models import ConditionEvaluationResult, StepResult
 
 
 class _NoOpRunObserver(RunObserver):

@@ -4,10 +4,9 @@ from __future__ import annotations
 
 from worktree.cli.context import CliContext
 from worktree.cli.ui.dispatcher import ui_dispatcher
-from worktree.core.blueprint.models import BlueprintDefinition
 from worktree.core.catalog import Catalog
+from worktree.core.catalog.definitions import BlueprintDefinition, StepDefinition
 from worktree.core.catalog.models import CatalogItemType, CatalogValidateResult
-from worktree.core.step.models import StepDefinition
 
 
 def blueprint_validate_command(

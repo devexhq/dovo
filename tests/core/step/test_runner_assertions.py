@@ -3,12 +3,8 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-from worktree.core.step.models import (
-    StepAssert,
-    StepDefinition,
-    StepExecutionContext,
-    StepType,
-)
+from worktree.core.catalog.definitions import StepAssert, StepDefinition, StepType
+from worktree.core.step.models import StepExecutionContext
 from worktree.core.step.runner import StepExecution
 
 

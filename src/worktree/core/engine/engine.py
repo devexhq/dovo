@@ -8,8 +8,8 @@ import uuid
 
 from worktree.common.filesystem import WorkspacePaths
 from worktree.common.lock import WorkspaceLock
-from worktree.core.blueprint import Blueprint
 from worktree.core.catalog import Catalog
+from worktree.core.catalog.blueprint import Blueprint
 from worktree.core.db import RunsRepository, RunStatus
 from worktree.core.engine.exceptions import EngineInputError
 from worktree.core.engine.loader import EngineLoader

@@ -10,22 +10,16 @@ import yaml
 from pydantic import ValidationError
 
 from worktree.common.filesystem import Filesystem
-from worktree.core.blueprint import Blueprint
-from worktree.core.blueprint.exceptions import BlueprintLoadError, BlueprintValidationError
-from worktree.core.blueprint.models import BlueprintDefinition
 from worktree.core.catalog import Catalog
+from worktree.core.catalog.blueprint import Blueprint
+from worktree.core.catalog.definitions import BlueprintDefinition, LoopStepBlock, StepDefinition
+from worktree.core.catalog.exceptions import BlueprintLoadError, BlueprintValidationError, StepValidationError
 from worktree.core.catalog.models import CatalogItemType, CatalogRecord
+from worktree.core.catalog.services.resolve_step import merge_uses_step, resolve_step_definition
 from worktree.core.diff.writer import get_session_dir, write_session_diff
 from worktree.core.engine.exceptions import EngineSnapshotMissingError
 from worktree.core.engine.models import DefinitionRef, DefinitionsManifest
 from worktree.core.engine.state_models import RunJsonPayload
-from worktree.core.step import (
-    LoopStepBlock,
-    StepDefinition,
-    StepValidationError,
-    merge_uses_step,
-    resolve_step_definition,
-)
 
 
 def _collect_uses_refs(steps: list[StepDefinition | LoopStepBlock]) -> list[str]:

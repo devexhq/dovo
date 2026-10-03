@@ -11,6 +11,7 @@ import pytest
 
 from tests.harness.runs import SEEDED_FAILURE, NoOpRunObserver, seed_new_run, seed_paused_run
 from worktree.common.filesystem.models import WorkspacePaths
+from worktree.core.catalog.definitions import LoopStepBlock, StepDefinition
 from worktree.core.db import RunsRepository, RunStatus
 from worktree.core.db.repositories.artifacts import ArtifactsRepository
 from worktree.core.engine import RunCoordinator, RunStateStore
@@ -35,7 +36,7 @@ from worktree.core.logs import RunLogEvent, RunLogEventType
 from worktree.core.logs.services.read import read_run_log_events
 from worktree.core.sandbox.models import SandboxSession
 from worktree.core.step import StepExecution
-from worktree.core.step.models import ConditionEvaluationResult, LoopStepBlock, StepDefinition, StepResult
+from worktree.core.step.models import ConditionEvaluationResult, StepResult
 
 _FAIL_DETAIL = "Command failed with exit code 1."
 

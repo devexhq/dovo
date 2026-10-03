@@ -3,11 +3,7 @@
 from __future__ import annotations
 
 from worktree.common.filesystem import WorkspacePaths
-from worktree.core.blueprint.exceptions import (
-    BlueprintLoadError,
-    BlueprintNotFoundError,
-    BlueprintValidationError,
-)
+from worktree.core.catalog.exceptions import BlueprintLoadError, BlueprintNotFoundError, BlueprintValidationError
 from worktree.core.db import RunRecord, RunsRepository, RunStatus
 from worktree.core.engine.exceptions import EngineResumeError, EngineSnapshotMissingError
 from worktree.core.engine.models import DefinitionsManifest, EngineResumeStatus

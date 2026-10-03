@@ -4,7 +4,7 @@
 > **Notice for Agents:** Code violating `BLOCKER` rules will fail verification.
 
 - **[ARCH-001] Strict Layered Import Flow (BLOCKER):**
-  Dependencies flow strictly one way: common/ -> core/{db,git,sandbox,catalog,inputs,patch,diff,status}/ -> core/agents/ -> core/step/ -> {core/logs/, core/blueprint/} -> core/history/ -> core/engine/ -> cli/. Upward imports are strictly prohibited.
+  Dependencies flow strictly one way: common/ -> core/{db,git,sandbox,inputs,patch,diff,status}/ -> core/catalog/ -> core/agents/ -> core/step/ -> {core/logs/, core/blueprint/} -> core/history/ -> core/engine/ -> cli/. Upward imports are strictly prohibited.
 
 ```python
 # ✅ DO: from worktree.core.logs import append_run_log_event  # in core/engine/
@@ -36,7 +36,7 @@
 ```
 
 - **[MODEL-001] Scoped Model Exceptions with Justifying Comment (BLOCKER):**
-  Scoped exceptions allowing extra='ignore' are restricted to hand-authored YAML models (BlueprintDefinition, BlueprintDefaults, LoopStepBlock) and LLM JSON output (OllamaModelStdout), and MUST carry a justifying comment.
+  Scoped exceptions allowing extra='ignore' are restricted to hand-authored YAML models (BlueprintDefinition, LoopStepBlock) and LLM JSON output (OllamaModelStdout), and MUST carry a justifying comment.
 
 ```python
 # ✅ DO:

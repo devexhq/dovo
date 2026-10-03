@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from worktree.core.artifacts.services.upload import publish_artifact
+from worktree.core.catalog.definitions import StepDefinition
 from worktree.core.db.repositories.artifacts import ArtifactsRepository
 from worktree.core.engine.failure import (
     failed_step_message,
@@ -16,13 +17,7 @@ from worktree.core.engine.failure import (
 from worktree.core.engine.models import FailurePromptDecision, RunContext, RunSettings, StepAction
 from worktree.core.engine.notify import safe_notify
 from worktree.core.logs import RunLogEvent, RunLogEventType, append_run_log_event
-from worktree.core.step import (
-    PreviousStepMetadata,
-    StepDefinition,
-    StepExecution,
-    StepExecutionContext,
-    StepResult,
-)
+from worktree.core.step import PreviousStepMetadata, StepExecution, StepExecutionContext, StepResult
 
 
 def auto_publish_step_artifacts(

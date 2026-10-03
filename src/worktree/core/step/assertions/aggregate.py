@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from worktree.core.catalog.definitions import StepAssert
 from worktree.core.step.assertions.filesystem import (
     evaluate_file_exists,
     evaluate_file_not_empty,
@@ -16,7 +17,7 @@ from worktree.core.step.assertions.process import (
     evaluate_output_not_contains,
     evaluate_regex_match,
 )
-from worktree.core.step.models import AssertionResult, StepAssert
+from worktree.core.step.models import AssertionResult
 
 
 def evaluate_assertions(

@@ -5,14 +5,10 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from worktree.common.filesystem import WorkspacePaths
-from worktree.core.blueprint import (
-    Blueprint,
-    BlueprintLoadError,
-    BlueprintNotFoundError,
-    BlueprintRunResult,
-    BlueprintValidationError,
-)
+from worktree.core.blueprint import BlueprintRunResult
 from worktree.core.catalog import Catalog
+from worktree.core.catalog.blueprint import Blueprint
+from worktree.core.catalog.exceptions import BlueprintLoadError, BlueprintNotFoundError, BlueprintValidationError
 from worktree.core.db import RunsRepository
 from worktree.core.engine.engine import Engine
 from worktree.core.engine.exceptions import EngineInputError, EngineRuntimeError
