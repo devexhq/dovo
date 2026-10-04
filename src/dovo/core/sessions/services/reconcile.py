@@ -9,7 +9,7 @@ from pathlib import Path
 from dovo.common.filesystem.models import RepositoryPaths
 from dovo.common.lock import WorkspaceLock
 from dovo.core.db import RunRecord, RunsRepository, RunStatus
-from dovo.core.sessions.history.models import ReconciliationResult
+from dovo.core.sessions.models import ReconciliationResult
 
 STALE_RUN_ERROR_MESSAGE = "Session interrupted by abnormal process termination"
 

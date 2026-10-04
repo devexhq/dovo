@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dovo.cli.context import CliContext
 from dovo.cli.ui.dispatcher import ui_dispatcher
-from dovo.core.sessions.diff import Diff, DiffResult
+from dovo.core.sessions import DiffResult, SessionCollection
 
 
 def diff_command(
@@ -29,7 +29,13 @@ def diff_command(
     Returns:
         Structured DiffResult with status, errors, and warnings.
     """
-    result = Diff(context.paths, raw=raw, full=full, max_lines=max_lines).inspect(session_id=session_id)
+    sessions = SessionCollection(context.paths, db=context.db.runs)
+    result = sessions.latest_diff() if session_id is None else sessions.get(session_id).diff()
+    if result.ok:
+        result.raw = raw
+        result.full = full
+        result.max_lines = max_lines
+
     if output_format == "raw" or (raw and output_format == "terminal"):
         ui_dispatcher.dispatch(result, output_format="raw")
     else:

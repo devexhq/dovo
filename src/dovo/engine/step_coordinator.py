@@ -9,7 +9,7 @@ from pathlib import Path
 from dovo.core.artifacts.services.upload import publish_artifact
 from dovo.core.catalog.definitions import StepDefinition
 from dovo.core.db.repositories.artifacts import ArtifactsRepository
-from dovo.core.sessions.logs import RunLogEvent, RunLogEventType
+from dovo.core.sessions import RunLogEvent, RunLogEventType
 from dovo.engine.executors import StepExecution
 from dovo.engine.executors.agent_step import build_agent_step_runner
 from dovo.engine.executors.models import PreviousStepMetadata, StepExecutionContext, StepResult

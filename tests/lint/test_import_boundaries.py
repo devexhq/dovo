@@ -23,17 +23,29 @@ CATALOG_ROOT: Final[Path] = CORE_ROOT / "catalog"
 INPUTS_ROOT: Final[Path] = CORE_ROOT / "inputs"
 GIT_ROOT: Final[Path] = CORE_ROOT / "git"
 SESSIONS_ROOT: Final[Path] = CORE_ROOT / "sessions"
-SESSIONS_DIFF_ROOT: Final[Path] = SESSIONS_ROOT / "diff"
-SESSIONS_HISTORY_ROOT: Final[Path] = SESSIONS_ROOT / "history"
-SESSIONS_LOGS_ROOT: Final[Path] = SESSIONS_ROOT / "logs"
-RETIRED_CORE_PACKAGES: Final[tuple[str, ...]] = ("patch", "diff", "history", "logs", "doctor")
-CATALOG_BANNED_PREFIXES: Final[tuple[str, ...]] = (
+SESSIONS_ALLOWED_ENTRIES: Final[frozenset[str]] = frozenset({"__init__.py", "models.py", "sessions.py", "services"})
+SESSIONS_SERVICES_ALLOWED_ENTRIES: Final[frozenset[str]] = frozenset(
+    {"__init__.py", "read_diff.py", "read_logs.py", "reconcile.py"}
+)
+SESSIONS_BANNED_PREFIXES: Final[tuple[str, ...]] = (
     "dovo.core.agents",
-    "dovo.core.sessions.logs",
-    "dovo.core.sessions.history",
+    "dovo.core.worktree",
+    "dovo.core.catalog",
     "dovo.engine",
     "dovo.cli",
 )
+RETIRED_CORE_PACKAGES: Final[tuple[str, ...]] = ("patch", "diff", "history", "logs", "doctor")
+CATALOG_BANNED_PREFIXES: Final[tuple[str, ...]] = (
+    "dovo.core.agents",
+    "dovo.core.sessions",
+    "dovo.engine",
+    "dovo.cli",
+)
+
+
+def _unexpected_entries(root: Path, allowed: frozenset[str]) -> list[str]:
+    """Return the sorted names under root that are not in allowed, ignoring __pycache__."""
+    return sorted(entry.name for entry in root.iterdir() if entry.name != "__pycache__" and entry.name not in allowed)
 
 
 def _scan_file_for_banned_imports(file_path: Path, banned_prefix: str) -> list[str]:
@@ -127,7 +139,7 @@ class ImportBoundariesTests:
         assert not violations, "Found prohibited dovo.cli imports in tests/core:\n" + "\n".join(violations)
 
     def test_catalog_never_imports_higher_layers(self) -> None:
-        """[tier-4/unit] src/dovo/core/catalog: no module imports dovo.core.agents, .sessions.logs, .sessions.history, dovo.engine, or dovo.cli; violations list is empty."""
+        """[tier-4/unit] src/dovo/core/catalog: no module imports dovo.core.agents, dovo.core.sessions, dovo.engine, or dovo.cli; violations list is empty."""
         assert collect_python_files(CATALOG_ROOT)
 
         violations: list[str] = []
@@ -173,71 +185,37 @@ class ImportBoundariesTests:
             violations
         )
 
-    def test_sessions_package_exports_nothing(self) -> None:
-        """[tier-4/unit] src/dovo/core/sessions/__init__.py: module body is exactly one docstring expression (no imports, no __all__, no assignments)."""
-        init_path = SESSIONS_ROOT / "__init__.py"
-        assert init_path.is_file()
+    def test_sessions_package_layout_is_flat(self) -> None:
+        """[tier-4/unit] src/dovo/core/sessions: direct entries are exactly __init__.py, models.py, sessions.py, services; services/ holds exactly __init__.py, read_diff.py, read_logs.py, reconcile.py; unexpected-entry list is empty."""
+        assert collect_python_files(SESSIONS_ROOT)
 
-        body = ast.parse(init_path.read_text(encoding="utf-8")).body
+        unexpected = _unexpected_entries(SESSIONS_ROOT, SESSIONS_ALLOWED_ENTRIES)
+        unexpected_services = _unexpected_entries(SESSIONS_ROOT / "services", SESSIONS_SERVICES_ALLOWED_ENTRIES)
 
-        assert len(body) == 1
-        statement = body[0]
-        assert isinstance(statement, ast.Expr)
-        assert isinstance(statement.value, ast.Constant)
-        assert isinstance(statement.value.value, str)
-
-    def test_sessions_logs_never_imports_history_or_diff(self) -> None:
-        """[tier-4/unit] src/dovo/core/sessions/logs: no module imports dovo.core.sessions.history or dovo.core.sessions.diff; violation list is empty."""
-        assert collect_python_files(SESSIONS_LOGS_ROOT)
-
-        violations: list[str] = []
-        for banned_prefix in ("dovo.core.sessions.history", "dovo.core.sessions.diff"):
-            violations.extend(_violations_under(SESSIONS_LOGS_ROOT, banned_prefix))
-
-        assert not violations, "Found prohibited imports in src/dovo/core/sessions/logs:\n" + "\n".join(violations)
-
-    def test_sessions_diff_never_imports_history_or_logs(self) -> None:
-        """[tier-4/unit] src/dovo/core/sessions/diff: no module imports dovo.core.sessions.history or dovo.core.sessions.logs; violation list is empty."""
-        assert collect_python_files(SESSIONS_DIFF_ROOT)
-
-        violations: list[str] = []
-        for banned_prefix in ("dovo.core.sessions.history", "dovo.core.sessions.logs"):
-            violations.extend(_violations_under(SESSIONS_DIFF_ROOT, banned_prefix))
-
-        assert not violations, "Found prohibited imports in src/dovo/core/sessions/diff:\n" + "\n".join(violations)
-
-    def test_sessions_history_never_imports_diff(self) -> None:
-        """[tier-4/unit] src/dovo/core/sessions/history: no module imports dovo.core.sessions.diff; violation list is empty."""
-        assert collect_python_files(SESSIONS_HISTORY_ROOT)
-
-        violations = _violations_under(SESSIONS_HISTORY_ROOT, "dovo.core.sessions.diff")
-
-        assert not violations, (
-            "Found prohibited dovo.core.sessions.diff imports in src/dovo/core/sessions/history:\n"
-            + "\n".join(violations)
+        assert not unexpected, f"Unexpected entries under src/dovo/core/sessions: {unexpected}"
+        assert not unexpected_services, (
+            f"Unexpected entries under src/dovo/core/sessions/services: {unexpected_services}"
         )
 
-    def test_sessions_history_imports_logs_only_through_public_exports(self) -> None:
-        """[tier-4/unit] src/dovo/core/sessions/history: every import of dovo.core.sessions.logs names the bare package; any 'dovo.core.sessions.logs.<submodule>' import is a violation; history.py has at least one bare import."""
-        logs_package = "dovo.core.sessions.logs"
-        history_files = collect_python_files(SESSIONS_HISTORY_ROOT)
-        assert history_files
+    def test_unexpected_entries_flags_subpackage_and_ignores_pycache(self, tmp_path: Path) -> None:
+        """[tier-4/unit] _unexpected_entries: a tmp tree containing diff/, facade.py, and __pycache__/ beside allowed names -> returns exactly ['diff', 'facade.py']."""
+        for name in ("diff", "__pycache__", "services"):
+            (tmp_path / name).mkdir()
+        for name in ("facade.py", "models.py"):
+            (tmp_path / name).write_text("", encoding="utf-8")
 
-        imports = [
-            (file_path, module, line)
-            for file_path in history_files
-            for module, line in _imported_modules(file_path)
-            if module == logs_package or module.startswith(f"{logs_package}.")
-        ]
-        violations = [
-            f"{file_path.relative_to(REPO_ROOT)}:{line}: imports '{module}'"
-            for file_path, module, line in imports
-            if module != logs_package
-        ]
+        assert _unexpected_entries(tmp_path, SESSIONS_ALLOWED_ENTRIES) == ["diff", "facade.py"]
 
-        assert any(file_path.name == "history.py" and module == logs_package for file_path, module, _ in imports)
-        assert not violations, (
-            "Found deep dovo.core.sessions.logs imports in src/dovo/core/sessions/history:\n" + "\n".join(violations)
+    def test_sessions_never_imports_higher_layers(self) -> None:
+        """[tier-4/unit] src/dovo/core/sessions: no module imports dovo.core.agents, dovo.core.worktree, dovo.core.catalog, dovo.engine, or dovo.cli; violation list is empty."""
+        assert collect_python_files(SESSIONS_ROOT)
+
+        violations: list[str] = []
+        for banned_prefix in SESSIONS_BANNED_PREFIXES:
+            violations.extend(_violations_under(SESSIONS_ROOT, banned_prefix))
+
+        assert not violations, "Found prohibited higher-layer imports in src/dovo/core/sessions:\n" + "\n".join(
+            violations
         )
 
     def test_retired_core_packages_are_gone(self) -> None:

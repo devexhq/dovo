@@ -4,8 +4,7 @@ from __future__ import annotations
 
 from dovo.cli.context import CliContext
 from dovo.cli.ui.dispatcher import ui_dispatcher
-from dovo.core.sessions.history import History
-from dovo.core.sessions.history.models import HistoryListResult
+from dovo.core.sessions import HistoryListResult, SessionCollection
 
 
 def history_root_command(
@@ -26,7 +25,7 @@ def history_root_command(
     Returns:
         HistoryListResult containing listed runs and errors.
     """
-    result = History(context.paths, db=context.db.runs).list(
+    result = SessionCollection(context.paths, db=context.db.runs).list(
         limit=limit,
         status=status,
     )

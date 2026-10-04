@@ -14,7 +14,7 @@ from dovo.cli.ui.formatters.diff.common import format_truncation_notice, resolve
 from dovo.cli.ui.formatters.diff.diff_view import DiffResultView
 from dovo.common.constants import DEFAULT_MAX_DIFF_LINES
 from dovo.common.types import ComponentFormatter
-from dovo.core.sessions.diff.models import DiffResult, DiffStatus
+from dovo.core.sessions import DiffResult, DiffStatus
 
 
 def _format_session_not_found_panel(data: DiffResult | DiffResultView, *, raw: bool = False) -> Panel | str:

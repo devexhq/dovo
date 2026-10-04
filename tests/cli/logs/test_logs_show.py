@@ -13,7 +13,7 @@ from dovo.common.filesystem.models import RepositoryPaths
 from dovo.common.filesystem.services.global_root import resolve_global_paths
 from dovo.core.db import DovoDb, RunStatus
 from dovo.core.project.services.storage import resolve_workspace_paths
-from dovo.core.sessions.logs import LogsShowResult, LogsShowStatus, RunLogEvent, RunLogEventType
+from dovo.core.sessions import LogsShowResult, LogsShowStatus, RunLogEvent, RunLogEventType
 
 _EVENTS = [
     RunLogEvent(ts="2026-09-26T10:00:00+00:00", event=RunLogEventType.RUN_STARTED, session_id="sess-logs"),

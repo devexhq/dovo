@@ -4,8 +4,7 @@ from __future__ import annotations
 
 from dovo.cli.context import CliContext
 from dovo.cli.ui.dispatcher import ui_dispatcher
-from dovo.core.sessions.history import History
-from dovo.core.sessions.history.models import HistoryShowResult
+from dovo.core.sessions import HistoryShowResult, Session
 
 
 def history_show_command(
@@ -25,6 +24,6 @@ def history_show_command(
     Returns:
         HistoryShowResult containing session details and errors.
     """
-    result = History(context.paths, db=context.db.runs).show(session_id, include_logs=logs)
+    result = Session(context.paths, session_id, db=context.db.runs).details(include_logs=logs)
     ui_dispatcher.dispatch(result, output_format=output_format)
     return result

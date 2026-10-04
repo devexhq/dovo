@@ -15,7 +15,7 @@ from dovo.cli.ui.formatters.history.common import (
 )
 from dovo.cli.ui.formatters.history.history_views import HistoryShowView
 from dovo.common.types import ComponentFormatter
-from dovo.core.sessions.history.models import HistoryShowResult, HistoryShowStatus
+from dovo.core.sessions import HistoryShowResult, HistoryShowStatus
 
 
 def _render_show_not_found(session_id: str | None, fixes: list[str] | None = None) -> Panel:

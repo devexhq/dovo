@@ -9,7 +9,7 @@ from typing import NamedTuple
 from pydantic import ValidationError
 
 from dovo.common.constants import RUN_LOG_FILENAME
-from dovo.core.sessions.logs.models import LogStreamFilter, RunLogEvent
+from dovo.core.sessions.models import LogStreamFilter, RunLogEvent
 
 _STEP_LOG_NAME_RE = re.compile(
     r"^(?P<index>\d+)_(?P<step_id>.+?)(?:_iter_(?P<iteration>\d+))?_attempt_(?P<attempt>\d+)\.(?P<stream>stdout|stderr)\.log$"

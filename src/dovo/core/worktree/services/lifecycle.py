@@ -4,13 +4,13 @@ from __future__ import annotations
 
 import platform
 import shutil
-import uuid
 from datetime import UTC, datetime
 from pathlib import Path
 
 from dovo.common.constants import DEFAULT_MAXIMUM_WORKTREES_ALLOWED
 from dovo.common.filesystem import WorkspacePaths
 from dovo.common.lock import WorkspaceLock
+from dovo.common.session_id import new_session_id
 from dovo.core.config import Config
 from dovo.core.config.models import WorktreeConfig
 from dovo.core.db import WorktreeRecord, WorktreesRepository, WorktreeStatus
@@ -320,7 +320,7 @@ class WorktreeLifecycle:
         """Create the worktree, resolve its base commit, overlay WIP, and bridge storage for a new worktree session."""
         resolved_name = _clean_opt_str(name)
         override_base_ref = _clean_opt_str(base_ref)
-        sid = session_id or f"dovo_{uuid.uuid4().hex[:8]}"
+        sid = session_id or new_session_id("dovo")
         worktree_path = (self.worktree_base_dir / sid).resolve()
         temp_branch = f"dovo/{sid}"
         resolved_base = self._resolve_base_ref(override_base_ref, worktree_cfg.base_ref)

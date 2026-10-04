@@ -6,8 +6,8 @@ from pathlib import Path
 
 import pytest
 
-from dovo.core.sessions.logs import LogStreamFilter
-from dovo.core.sessions.logs.services.read import read_step_logs
+from dovo.core.sessions import LogStreamFilter
+from dovo.core.sessions.services.read_logs import read_step_logs
 from dovo.engine.executors.metadata import resolve_step_log_paths
 
 # (iteration, attempt, stdout text, stderr text) per capture pair written for step "build" at index 1.

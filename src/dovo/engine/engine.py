@@ -4,10 +4,10 @@ from __future__ import annotations
 
 import json
 import os
-import uuid
 
 from dovo.common.filesystem import WorkspacePaths
 from dovo.common.lock import WorkspaceLock
+from dovo.common.session_id import new_session_id
 from dovo.core.catalog import Catalog
 from dovo.core.catalog.blueprint import Blueprint
 from dovo.core.db import RunsRepository, RunStatus
@@ -48,7 +48,7 @@ class Engine:
         """Persist the run row and initial state for ``blueprint``, then execute it through ``drive_run``."""
         req = request or RunRequest()
         resolved = self._resolve_run_inputs(blueprint, req)
-        sid = req.session_id or f"blueprint_{uuid.uuid4().hex[:8]}"
+        sid = req.session_id or new_session_id("blueprint")
         engine_warnings: list[str] = list(resolved.warnings)
         snapshot_warnings: list[str] = []
         manifest = self._snapshot_definitions(blueprint, sid, snapshot_warnings)

@@ -25,11 +25,11 @@ dovo diff [session_id] [OPTIONS]
 ## Behavior
 
 1. **Session Resolution**:
-   - For a workspace with `.dovo/project.json`, sessions resolve below `DOVO_HOME/storage/projects/<project-id>/sessions/` (or `~/.dovo/storage/projects/<project-id>/sessions/` when `DOVO_HOME` is unset).
-   - A workspace without a project identity retains the legacy `.dovo/sessions/` location.
+   - Sessions resolve below `DOVO_HOME/storage/projects/<project-id>/sessions/` (or `~/.dovo/storage/projects/<project-id>/sessions/` when `DOVO_HOME` is unset).
+   - A session exists only when its run record exists; a session directory without a run record is not found.
    - When `session_id` is supplied: resolves that session's `diff.patch`.
-   - When `session_id` is omitted: discovers the most recently modified session directory in the selected session store.
-   - If no session exists: displays a **Session Not Found** error panel and exits with code `1`.
+   - When `session_id` is omitted: selects the session with the latest `started_at`, ties broken by the latest run id.
+   - If no run record matches: displays a **Session Not Found** error panel and exits with code `1`.
 2. **Artifact Loading**:
    - If `diff.patch` is missing: displays a **Diff Not Found** error panel and exits with code `1`.
    - If `diff.patch` is empty (0 bytes or whitespace-only): prints `No changes recorded for session <session_id>.` and exits with code `0`.

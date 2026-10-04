@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
-from dovo.core.sessions.logs import RunLogEvent, RunLogEventType
+from dovo.core.sessions import RunLogEvent, RunLogEventType
 from dovo.engine.executors.models import ConditionEvaluationResult
 from dovo.engine.models import RunObserver
 from dovo.engine.notify import safe_notify
