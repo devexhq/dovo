@@ -76,13 +76,14 @@ core/<domain>/
 
 **Relevant sources:** `src/dovo/common/models.py`, `src/dovo/core/*/models.py`
 
-Operations that can fail return a Pydantic result object subclassing `BaseResult` instead of raising:
+Operations that can fail never raise for business or operational failures. When the outcome reaches a facade, command handler, formatter, or the wire format, return a Pydantic result object subclassing `BaseResult`:
 - `status: StrEnum`: Outcome state.
 - `warnings: list[str]`: Non-fatal issues (inherited from `BaseResult`).
 - `errors: list[str]`: Fatal issues (inherited from `BaseResult`).
 - `fixes: list[str]`: Suggested fixes or remediations (inherited from `BaseResult`).
 - `ok: bool`: Property returning `not bool(self.errors)` or `status == OK`.
 - Callers check `.ok` and render `.errors` / `.warnings` rather than catching exceptions.
+- An internal helper with a single in-layer caller that only branches on success may return a plain value or an error message (`str | None`) instead; add a result model only when the outcome is rendered, serialised, or a caller switches on its kind.
 
 ---
 
