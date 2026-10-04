@@ -7,7 +7,7 @@ from typing import Annotated
 import typer
 
 from dovo.cli.context import CliContext
-from dovo.core.logs import LogStreamFilter
+from dovo.core.sessions.logs import LogStreamFilter
 
 from .commands.show import logs_show_command
 

@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from pydantic import BaseModel, Field
 
-from dovo.core.logs import RunLogEvent
-from dovo.core.logs.models import LogsShowStatus
+from dovo.core.sessions.logs import RunLogEvent
+from dovo.core.sessions.logs.models import LogsShowStatus
 
 
 class LogsShowView(BaseModel):

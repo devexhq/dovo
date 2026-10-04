@@ -4,11 +4,11 @@
 > **Notice for Agents:** Code violating `BLOCKER` rules will fail verification.
 
 - **[ARCH-001] Strict Layered Import Flow (BLOCKER):**
-  Dependencies flow strictly one way: common/ -> core/ -> engine/ -> cli/. Within core/: project/ -> {db,git,worktree,catalog,inputs,patch,diff,status,artifacts}/ -> agents/ -> doctor/ -> logs/ -> history/. Upward imports are strictly prohibited.
+  Dependencies flow strictly one way: common/ -> core/ -> engine/ -> cli/. Within core/: project/ -> {db,git,worktree,catalog,inputs,sessions/diff,status,artifacts}/ -> agents/ -> diagnostics/ -> sessions/logs/ -> sessions/history/. Upward imports are strictly prohibited.
 
 ```python
-# ✅ DO: from dovo.core.logs import append_run_log_event  # in engine/
-# ❌ DO NOT: from dovo.engine.engine import Engine  # upward import in core/logs/
+# ✅ DO: from dovo.core.sessions.logs import RunLogEvent  # in engine/
+# ❌ DO NOT: from dovo.engine.engine import Engine  # upward import in core/sessions/logs/
 ```
 
 - **[RENDER-003] Inline Error and Warning String Construction (SUGGESTION):**

@@ -11,8 +11,8 @@ from rich.text import Text
 from dovo.cli.ui.formatters.common import build_error_panel
 from dovo.cli.ui.formatters.logs.logs_views import LogsShowView
 from dovo.common.types import ComponentFormatter
-from dovo.core.logs import RunLogEvent
-from dovo.core.logs.models import LogsShowResult, LogsShowStatus
+from dovo.core.sessions.logs import RunLogEvent
+from dovo.core.sessions.logs.models import LogsShowResult, LogsShowStatus
 
 
 def _event_details(event: RunLogEvent) -> str:

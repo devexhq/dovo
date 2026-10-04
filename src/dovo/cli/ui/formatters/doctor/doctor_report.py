@@ -1,4 +1,4 @@
-"""ComponentFormatter for DoctorReport."""
+"""ComponentFormatter for DiagnosticsReport."""
 
 from __future__ import annotations
 
@@ -10,8 +10,8 @@ from rich.text import Text
 
 from dovo.cli.ui.formatters.doctor.doctor_views import DoctorCheckView, DoctorReportView
 from dovo.common.types import ComponentFormatter
-from dovo.core.doctor import CheckStatus, DoctorReport, Remediation
-from dovo.core.doctor.services.remediation import format_remediation_summary
+from dovo.core.diagnostics import CheckStatus, DiagnosticsReport, Remediation
+from dovo.core.diagnostics.services.remediation import format_remediation_summary
 
 _STATUS_STYLE: Final[dict[CheckStatus, str]] = {
     CheckStatus.OK: "green",
@@ -56,11 +56,11 @@ def _all_remediations(view: DoctorReportView) -> list[Remediation]:
     return [remediation for check in view.checks for remediation in check.remediations]
 
 
-class DoctorReportFormatter(ComponentFormatter[DoctorReport, DoctorReportView]):
+class DoctorReportFormatter(ComponentFormatter[DiagnosticsReport, DoctorReportView]):
     """Formatter for aggregated diagnostic doctor reports."""
 
-    def transform(self, data: DoctorReport) -> DoctorReportView:
-        """Reshape DoctorReport and its DiagnosticCheckResult entries into DoctorReportView/DoctorCheckView, field for field."""
+    def transform(self, data: DiagnosticsReport) -> DoctorReportView:
+        """Reshape DiagnosticsReport and its DiagnosticCheckResult entries into DoctorReportView/DoctorCheckView, field for field."""
         return DoctorReportView(
             ok=data.ok,
             has_warnings=data.has_warnings,
@@ -84,7 +84,7 @@ class DoctorReportFormatter(ComponentFormatter[DoctorReport, DoctorReportView]):
             ],
         )
 
-    def to_rich(self, data: DoctorReport) -> Any:
+    def to_rich(self, data: DiagnosticsReport) -> Any:
         """Render the checks table, summary line, and (when any check has remediations) a Fix: summary from transform(data)."""
         view = self.transform(data)
         renderables: list[Any] = [_build_checks_table(view), Text(_summary_line(view))]

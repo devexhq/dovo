@@ -7,7 +7,7 @@ from typing import Annotated
 import typer
 
 from dovo.cli.context import CliContext
-from dovo.core.doctor import CheckCategory
+from dovo.core.diagnostics import CheckCategory
 
 from .commands.root import doctor_command
 

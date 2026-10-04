@@ -10,7 +10,7 @@ from dovo.cli.ui.formatters.history.common import format_run_duration
 from dovo.cli.ui.formatters.history.history_list import HistoryListFormatter
 from dovo.cli.ui.formatters.history.history_views import HistoryListView, RunSummaryView
 from dovo.core.db import RunRecord, RunStatus
-from dovo.core.history.models import HistoryListResult, HistoryListStatus
+from dovo.core.sessions.history.models import HistoryListResult, HistoryListStatus
 from tests.harness.formatter import (
     FormatterCase,
     assert_json_payload_matches_published_shape,

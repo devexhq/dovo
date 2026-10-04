@@ -18,7 +18,7 @@ from dovo.core.agents.mutation_git import (
     discard_since,
     resolve_pre_agent_baseline,
 )
-from dovo.core.patch import PatchApplyResult, PatchApplyStatus, validate_patch_text
+from dovo.core.git import PatchApplyResult, PatchApplyStatus, validate_patch_text
 
 CliMutationRunStatus = Literal["finished", "timeout", "error"]
 

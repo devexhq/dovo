@@ -9,11 +9,11 @@ from pathlib import Path
 from dovo.core.config import ConfigLoadError
 from dovo.core.db import RunStatus, WorktreesRepository
 from dovo.core.db.repositories.artifacts import ArtifactsRepository
-from dovo.core.diff.writer import get_session_dir, write_session_diff
 from dovo.core.git.runner import GitRunner
 from dovo.core.worktree import Worktree, WorktreeApplyStrategy, WorktreeSession
 from dovo.engine.models import RunSettings
 from dovo.engine.notify import safe_notify
+from dovo.engine.writer import get_session_dir, write_session_diff
 
 
 @dataclass(frozen=True)

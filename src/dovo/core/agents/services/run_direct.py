@@ -12,7 +12,7 @@ from dovo.core.agents.models import (
     AgentResponseStatus,
     ResolvedAgentSettings,
 )
-from dovo.core.patch import GitDiffParser
+from dovo.core.git import GitDiffParser
 
 
 def run_direct_attempt(

@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
+from datetime import UTC, datetime
 from pathlib import Path
+
+import pytest
 
 from dovo.common.filesystem import Filesystem
 from dovo.common.filesystem.models import RepositoryPaths, WorkspacePaths
@@ -11,16 +15,22 @@ from dovo.core.catalog import Catalog
 from dovo.core.catalog.blueprint import Blueprint
 from dovo.core.catalog.definitions import StepDefinition, StepType
 from dovo.core.db import RunStatus
+from dovo.core.project.models import ProjectIdentity
+from dovo.core.project.services.identity import save_project_identity
 from dovo.core.project.services.storage import resolve_workspace_paths
 from dovo.engine.models import DefinitionRef, DefinitionsManifest
 from dovo.engine.state_models import RunJsonPayload, RunLifecycle
 from dovo.engine.writer import (
+    get_session_dir,
     load_blueprint_from_snapshot,
     snapshot_definitions,
+    write_session_diff,
     write_session_run_projection,
 )
 from tests.harness.builders import BlueprintBuilder, StepBuilder
 from tests.harness.catalog import write_runnable_blueprint, write_runnable_step
+
+WorkspacePathsFactory = Callable[[Path, Path | None], WorkspacePaths]
 
 
 def _paths_for(root: Path) -> WorkspacePaths:
@@ -167,3 +177,34 @@ class WriteSessionRunProjectionTests:
         assert path == tmp_path / "session" / "run.json"
         assert path.read_text(encoding="utf-8") == payload.model_dump_json(indent=2)
         assert RunJsonPayload.model_validate_json(path.read_text(encoding="utf-8")) == payload
+
+
+class SessionArtifactWriterTests:
+    """Integration tests for creating project-aware session directories and persisting diff artifacts."""
+
+    def test_get_session_dir_with_project_identity_creates_global_session_directory(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path, workspace_paths_factory: WorkspacePathsFactory
+    ) -> None:
+        """An identified project creates its session directory in global storage."""
+        global_root = tmp_path / "global"
+        repository = tmp_path / "repository"
+        identity = ProjectIdentity(id="project-626", created_at=datetime(2026, 1, 1, tzinfo=UTC))
+        monkeypatch.setenv("DOVO_HOME", str(global_root))
+        save_project_identity(repository / ".dovo" / "project.json", identity)
+
+        session_dir = get_session_dir(workspace_paths_factory(repository, None), "session-626")
+
+        expected_session_dir = global_root / "storage" / "projects" / "project-626" / "sessions" / "session-626"
+        assert session_dir == expected_session_dir
+        assert session_dir.is_dir()
+        assert not (repository / ".dovo" / "sessions" / "session-626").exists()
+
+    def test_write_session_diff_persists_diff_text_and_returns_the_patch_file_path(self, tmp_path: Path) -> None:
+        """write_session_diff: writes diff.patch under the given session directory and returns its path."""
+        session_dir = tmp_path / "session-dir"
+        session_dir.mkdir()
+
+        target = write_session_diff(session_dir, "diff content")
+
+        assert target == session_dir / "diff.patch"
+        assert target.read_text(encoding="utf-8") == "diff content"

@@ -8,8 +8,8 @@ import pytest
 
 from dovo.cli.ui.formatters.logs.logs_show import LogsShowFormatter
 from dovo.cli.ui.formatters.logs.logs_views import LogsShowView
-from dovo.core.logs import RunLogEvent, RunLogEventType
-from dovo.core.logs.models import LogsShowResult, LogsShowStatus
+from dovo.core.sessions.logs import RunLogEvent, RunLogEventType
+from dovo.core.sessions.logs.models import LogsShowResult, LogsShowStatus
 from tests.harness.formatter import (
     FormatterCase,
     assert_json_payload_matches_published_shape,

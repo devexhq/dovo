@@ -21,10 +21,16 @@ ENGINE_ROOT: Final[Path] = SRC_ROOT / "engine"
 ARTIFACTS_ROOT: Final[Path] = CORE_ROOT / "artifacts"
 CATALOG_ROOT: Final[Path] = CORE_ROOT / "catalog"
 INPUTS_ROOT: Final[Path] = CORE_ROOT / "inputs"
+GIT_ROOT: Final[Path] = CORE_ROOT / "git"
+SESSIONS_ROOT: Final[Path] = CORE_ROOT / "sessions"
+SESSIONS_DIFF_ROOT: Final[Path] = SESSIONS_ROOT / "diff"
+SESSIONS_HISTORY_ROOT: Final[Path] = SESSIONS_ROOT / "history"
+SESSIONS_LOGS_ROOT: Final[Path] = SESSIONS_ROOT / "logs"
+RETIRED_CORE_PACKAGES: Final[tuple[str, ...]] = ("patch", "diff", "history", "logs", "doctor")
 CATALOG_BANNED_PREFIXES: Final[tuple[str, ...]] = (
     "dovo.core.agents",
-    "dovo.core.logs",
-    "dovo.core.history",
+    "dovo.core.sessions.logs",
+    "dovo.core.sessions.history",
     "dovo.engine",
     "dovo.cli",
 )
@@ -59,6 +65,18 @@ def _violations_under(root: Path, banned_prefix: str) -> list[str]:
     for file_path in collect_python_files(root):
         violations.extend(_scan_file_for_banned_imports(file_path, banned_prefix))
     return violations
+
+
+def _imported_modules(file_path: Path) -> list[tuple[str, int]]:
+    """Return (dotted module, line) for every absolute import statement in file_path."""
+    tree = ast.parse(file_path.read_text(encoding="utf-8"), filename=str(file_path))
+    imported: list[tuple[str, int]] = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            imported.extend((alias.name, node.lineno) for alias in node.names)
+        elif isinstance(node, ast.ImportFrom) and node.module:
+            imported.append((node.module, node.lineno))
+    return imported
 
 
 class ImportBoundariesTests:
@@ -109,7 +127,7 @@ class ImportBoundariesTests:
         assert not violations, "Found prohibited dovo.cli imports in tests/core:\n" + "\n".join(violations)
 
     def test_catalog_never_imports_higher_layers(self) -> None:
-        """[tier-4/unit] src/dovo/core/catalog: no module imports dovo.core.agents, .logs, .history, dovo.engine, or dovo.cli; violations list is empty."""
+        """[tier-4/unit] src/dovo/core/catalog: no module imports dovo.core.agents, .sessions.logs, .sessions.history, dovo.engine, or dovo.cli; violations list is empty."""
         assert collect_python_files(CATALOG_ROOT)
 
         violations: list[str] = []
@@ -139,3 +157,109 @@ class ImportBoundariesTests:
 
         assert check_import_from_node(banned, "dovo.engine", Path("x.py"))
         assert not check_import_from_node(sibling, "dovo.engine", Path("x.py"))
+
+    def test_git_never_imports_other_core_packages(self) -> None:
+        """[tier-4/unit] src/dovo/core/git: no module imports a dovo.core.<pkg> other than dovo.core.git; violation list is empty."""
+        assert collect_python_files(GIT_ROOT)
+
+        violations = [
+            f"{file_path.relative_to(REPO_ROOT)}:{line}: imports '{module}'"
+            for file_path in collect_python_files(GIT_ROOT)
+            for module, line in _imported_modules(file_path)
+            if module.startswith("dovo.core.") and module != "dovo.core.git" and not module.startswith("dovo.core.git.")
+        ]
+
+        assert not violations, "Found prohibited imports of other core packages in src/dovo/core/git:\n" + "\n".join(
+            violations
+        )
+
+    def test_sessions_package_exports_nothing(self) -> None:
+        """[tier-4/unit] src/dovo/core/sessions/__init__.py: module body is exactly one docstring expression (no imports, no __all__, no assignments)."""
+        init_path = SESSIONS_ROOT / "__init__.py"
+        assert init_path.is_file()
+
+        body = ast.parse(init_path.read_text(encoding="utf-8")).body
+
+        assert len(body) == 1
+        statement = body[0]
+        assert isinstance(statement, ast.Expr)
+        assert isinstance(statement.value, ast.Constant)
+        assert isinstance(statement.value.value, str)
+
+    def test_sessions_logs_never_imports_history_or_diff(self) -> None:
+        """[tier-4/unit] src/dovo/core/sessions/logs: no module imports dovo.core.sessions.history or dovo.core.sessions.diff; violation list is empty."""
+        assert collect_python_files(SESSIONS_LOGS_ROOT)
+
+        violations: list[str] = []
+        for banned_prefix in ("dovo.core.sessions.history", "dovo.core.sessions.diff"):
+            violations.extend(_violations_under(SESSIONS_LOGS_ROOT, banned_prefix))
+
+        assert not violations, "Found prohibited imports in src/dovo/core/sessions/logs:\n" + "\n".join(violations)
+
+    def test_sessions_diff_never_imports_history_or_logs(self) -> None:
+        """[tier-4/unit] src/dovo/core/sessions/diff: no module imports dovo.core.sessions.history or dovo.core.sessions.logs; violation list is empty."""
+        assert collect_python_files(SESSIONS_DIFF_ROOT)
+
+        violations: list[str] = []
+        for banned_prefix in ("dovo.core.sessions.history", "dovo.core.sessions.logs"):
+            violations.extend(_violations_under(SESSIONS_DIFF_ROOT, banned_prefix))
+
+        assert not violations, "Found prohibited imports in src/dovo/core/sessions/diff:\n" + "\n".join(violations)
+
+    def test_sessions_history_never_imports_diff(self) -> None:
+        """[tier-4/unit] src/dovo/core/sessions/history: no module imports dovo.core.sessions.diff; violation list is empty."""
+        assert collect_python_files(SESSIONS_HISTORY_ROOT)
+
+        violations = _violations_under(SESSIONS_HISTORY_ROOT, "dovo.core.sessions.diff")
+
+        assert not violations, (
+            "Found prohibited dovo.core.sessions.diff imports in src/dovo/core/sessions/history:\n"
+            + "\n".join(violations)
+        )
+
+    def test_sessions_history_imports_logs_only_through_public_exports(self) -> None:
+        """[tier-4/unit] src/dovo/core/sessions/history: every import of dovo.core.sessions.logs names the bare package; any 'dovo.core.sessions.logs.<submodule>' import is a violation; history.py has at least one bare import."""
+        logs_package = "dovo.core.sessions.logs"
+        history_files = collect_python_files(SESSIONS_HISTORY_ROOT)
+        assert history_files
+
+        imports = [
+            (file_path, module, line)
+            for file_path in history_files
+            for module, line in _imported_modules(file_path)
+            if module == logs_package or module.startswith(f"{logs_package}.")
+        ]
+        violations = [
+            f"{file_path.relative_to(REPO_ROOT)}:{line}: imports '{module}'"
+            for file_path, module, line in imports
+            if module != logs_package
+        ]
+
+        assert any(file_path.name == "history.py" and module == logs_package for file_path, module, _ in imports)
+        assert not violations, (
+            "Found deep dovo.core.sessions.logs imports in src/dovo/core/sessions/history:\n" + "\n".join(violations)
+        )
+
+    def test_retired_core_packages_are_gone(self) -> None:
+        """[tier-4/unit] src/dovo/core and tests/core: no directory named patch, diff, history, logs, or doctor exists; and no import under src/ or tests/ targets dovo.core.{patch,diff,history,logs,doctor}."""
+        assert CORE_ROOT.is_dir()
+        assert CORE_TESTS_ROOT.is_dir()
+        source_files = collect_python_files(SRC_ROOT) + collect_python_files(TESTS_ROOT)
+        assert source_files
+
+        lingering_dirs = [
+            str((root / name).relative_to(REPO_ROOT))
+            for root in (CORE_ROOT, CORE_TESTS_ROOT)
+            for name in RETIRED_CORE_PACKAGES
+            if (root / name).exists()
+        ]
+        retired_imports = [
+            f"{file_path.relative_to(REPO_ROOT)}:{line}: imports '{module}'"
+            for file_path in source_files
+            for module, line in _imported_modules(file_path)
+            for name in RETIRED_CORE_PACKAGES
+            if module == f"dovo.core.{name}" or module.startswith(f"dovo.core.{name}.")
+        ]
+
+        assert not lingering_dirs, "Retired core package directories still exist:\n" + "\n".join(lingering_dirs)
+        assert not retired_imports, "Found imports of retired core packages:\n" + "\n".join(retired_imports)

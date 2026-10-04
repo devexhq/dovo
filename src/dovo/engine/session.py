@@ -7,7 +7,7 @@ from dovo.common.process import process_registry
 from dovo.core.agents.models import ResolvedAgentSettings
 from dovo.core.config import Config
 from dovo.core.db import RunRecord, RunsRepository, RunStatus
-from dovo.core.logs import RunLogEvent, RunLogEventType, append_run_log_event
+from dovo.core.sessions.logs import RunLogEvent, RunLogEventType
 from dovo.core.worktree import Worktree, WorktreeSession
 from dovo.engine.coordinator import RunCoordinator
 from dovo.engine.executors.models import ExecutionIdentity
@@ -20,6 +20,7 @@ from dovo.engine.models import (
     RunSettings,
 )
 from dovo.engine.notify import safe_notify
+from dovo.engine.run_log import append_run_log_event
 from dovo.engine.state_store import RunStateStore
 from dovo.engine.workspace import Workspace
 

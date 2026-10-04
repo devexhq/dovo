@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pydantic import BaseModel, Field
 
-from dovo.core.history.models import HistoryListStatus, HistoryShowStatus
+from dovo.core.sessions.history.models import HistoryListStatus, HistoryShowStatus
 
 
 class RunSummaryView(BaseModel):

@@ -1,4 +1,4 @@
-"""Presentation view models for DoctorReport."""
+"""Presentation view models for DiagnosticsReport."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ from typing import Any
 
 from pydantic import BaseModel
 
-from dovo.core.doctor import CheckCategory, CheckStatus, Remediation
+from dovo.core.diagnostics import CheckCategory, CheckStatus, Remediation
 
 
 class DoctorCheckView(BaseModel):

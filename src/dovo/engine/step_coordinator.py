@@ -9,7 +9,7 @@ from pathlib import Path
 from dovo.core.artifacts.services.upload import publish_artifact
 from dovo.core.catalog.definitions import StepDefinition
 from dovo.core.db.repositories.artifacts import ArtifactsRepository
-from dovo.core.logs import RunLogEvent, RunLogEventType, append_run_log_event
+from dovo.core.sessions.logs import RunLogEvent, RunLogEventType
 from dovo.engine.executors import StepExecution
 from dovo.engine.executors.agent_step import build_agent_step_runner
 from dovo.engine.executors.models import PreviousStepMetadata, StepExecutionContext, StepResult
@@ -20,6 +20,7 @@ from dovo.engine.failure import (
 )
 from dovo.engine.models import FailurePromptDecision, RunContext, RunSettings, StepAction
 from dovo.engine.notify import safe_notify
+from dovo.engine.run_log import append_run_log_event
 
 
 def auto_publish_step_artifacts(

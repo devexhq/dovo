@@ -8,7 +8,7 @@ import pytest
 
 from dovo.common.filesystem.models import WorkspacePaths
 from dovo.core.db import RunsRepository, RunStatus
-from dovo.core.history.models import ReconciliationResult
+from dovo.core.sessions.history.models import ReconciliationResult
 from dovo.engine.models import RunOutcome
 from dovo.engine.services.run import BlueprintRunService
 from tests.harness.catalog import write_runnable_blueprint
