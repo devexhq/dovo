@@ -46,10 +46,10 @@ def _build_request(
 
 
 def _run_provider(request: AgentRequest, provider: str) -> AgentAttempt:
-    """Resolve the adapter, call propose_fix once, and settle the response; any exception becomes provider_error."""
+    """Resolve the adapter, call invoke once, and settle the response; any exception becomes provider_error."""
     try:
         adapter = get_agent_adapter(provider)
-        response = adapter.propose_fix(request)
+        response = adapter.invoke(request)
 
         return _settle(response)
     except Exception as exc:

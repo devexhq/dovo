@@ -8,24 +8,20 @@ import subprocess
 from typing import Any
 
 from dovo.common.process import run_isolated_process
+from dovo.core.agents.base import ProviderSpec
 from dovo.core.agents.cli_mutation import (
     CliDirectMutationAdapter,
     CliMutationOutcome,
     CliMutationRunRequest,
 )
-from dovo.core.agents.models import AgentRequest
+from dovo.core.agents.credentials import missing_credential_error, resolve_credential
 
 COPILOT_TOKEN_ENVS = ("GH_TOKEN", "GITHUB_TOKEN")
 
 
-def resolve_copilot_token(env: dict[str, str] | None = None) -> str | None:
-    """Resolve the Copilot auth token from the environment."""
-    environ = env if env is not None else os.environ
-    for name in COPILOT_TOKEN_ENVS:
-        key = environ.get(name)
-        if key is not None and key.strip():
-            return key.strip()
-    return None
+def resolve_copilot_token() -> str | None:
+    """Resolve the Copilot auth token from the environment at call time."""
+    return resolve_credential(COPILOT_TOKEN_ENVS)
 
 
 def _extract_text(value: object) -> str | None:
@@ -114,10 +110,7 @@ def default_copilot_run(request: CliMutationRunRequest) -> CliMutationOutcome:
     """Invoke `gh copilot` and map its JSONL stream into an outcome."""
     token = resolve_copilot_token()
     if token is None:
-        return CliMutationOutcome(
-            status="error",
-            error_detail="missing GH_TOKEN or GITHUB_TOKEN",
-        )
+        return CliMutationOutcome(status="error", error_detail=missing_credential_error(COPILOT_PROVIDER_SPEC))
 
     # Keep prompt off argv to avoid OS argument length limits on large payloads.
     cmd = [
@@ -167,11 +160,9 @@ def default_copilot_run(request: CliMutationRunRequest) -> CliMutationOutcome:
 class CopilotAgentAdapter(CliDirectMutationAdapter):
     """Run GitHub Copilot through the shared direct-mutation base."""
 
-    def _preflight(self, request: AgentRequest) -> str | None:
-        """Ensure GitHub authentication token is present in environment."""
-        if resolve_copilot_token() is None:
-            return "missing GH_TOKEN or GITHUB_TOKEN. Fix: export GH_TOKEN=..."
-        return None
+    def _provider_spec(self) -> ProviderSpec:
+        """Return the Copilot descriptor."""
+        return COPILOT_PROVIDER_SPEC
 
     def _provider_name(self) -> str:
         """Return the provider identifier string."""
@@ -180,3 +171,14 @@ class CopilotAgentAdapter(CliDirectMutationAdapter):
     def _default_run(self, request: CliMutationRunRequest) -> CliMutationOutcome:
         """Execute Copilot CLI against mutation request."""
         return default_copilot_run(request)
+
+
+COPILOT_PROVIDER_SPEC = ProviderSpec(
+    token="copilot",
+    credential_envs=COPILOT_TOKEN_ENVS,
+    requires_model=False,
+    supports_tool_policy=False,
+    supports_os_sandbox=False,
+    build=CopilotAgentAdapter,
+    binary="gh",
+)

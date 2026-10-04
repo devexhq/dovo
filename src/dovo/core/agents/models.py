@@ -81,7 +81,7 @@ class AgentResponseStatus(StrEnum):
 
 
 class AgentRequest(BaseModel):
-    """Input package for ``BaseAgentProvider.propose_fix``."""
+    """Input package for ``BaseAgentProvider.invoke``."""
 
     model_config = {"extra": "forbid", "strict": True}
 

@@ -9,6 +9,7 @@ from typing import Literal
 import pytest
 
 from dovo.core.agents import AgentRequest, AgentResponseStatus
+from dovo.core.agents.base import ProviderSpec
 from dovo.core.agents.cli_mutation import (
     CliDirectMutationAdapter,
     CliMutationOutcome,
@@ -42,7 +43,7 @@ def _fake_run(
 
 
 class UnitTestAdapter(CliDirectMutationAdapter):
-    """Minimal concrete adapter exercising only the shared base's propose_fix flow."""
+    """Minimal concrete adapter exercising only the shared base's invoke flow."""
 
     def __init__(self, run_fn: CliMutationRunFn) -> None:
         self._run_fn = run_fn
@@ -59,6 +60,23 @@ class PreflightAdapter(UnitTestAdapter):
 
     def _preflight(self, request: AgentRequest) -> str | None:
         return "preflight failed"
+
+
+class CredentialedAdapter(UnitTestAdapter):
+    """Adapter double declaring credential_envs ("UT_A","UT_B") with an additive provider-specific preflight."""
+
+    def _provider_spec(self) -> ProviderSpec:
+        return ProviderSpec(
+            token="unit-test",
+            credential_envs=("UT_A", "UT_B"),
+            requires_model=False,
+            supports_tool_policy=False,
+            supports_os_sandbox=False,
+            build=lambda: self,
+        )
+
+    def _preflight(self, request: AgentRequest) -> str | None:
+        return "extra"
 
 
 class BuildMutationPromptTests:
@@ -138,7 +156,7 @@ class SharedMutationAdapterTests:
         """A finished run whose diff clears the patch gate returns PROPOSED_PATCH."""
         adapter = UnitTestAdapter(run_fn=_fake_run(edits={"a.txt": "fixed\n"}))
 
-        resp = adapter.propose_fix(AgentRequestBuilder().with_worktree_path(git_repo).build())
+        resp = adapter.invoke(AgentRequestBuilder().with_worktree_path(git_repo).build())
 
         assert resp.status == AgentResponseStatus.PROPOSED_PATCH
         assert resp.unified_diff is not None and "fixed" in resp.unified_diff
@@ -150,7 +168,7 @@ class SharedMutationAdapterTests:
         """A finished run with an empty diff (no edits) returns NO_OP."""
         adapter = UnitTestAdapter(run_fn=_fake_run())
 
-        resp = adapter.propose_fix(AgentRequestBuilder().with_worktree_path(git_repo).build())
+        resp = adapter.invoke(AgentRequestBuilder().with_worktree_path(git_repo).build())
 
         assert resp.status == AgentResponseStatus.NO_OP
         assert resp.raw_text == "done"
@@ -161,7 +179,7 @@ class SharedMutationAdapterTests:
         """A timed-out run returns TIMEOUT with the concrete provider name in the fix hint."""
         adapter = UnitTestAdapter(run_fn=_fake_run(status="timeout"))
 
-        resp = adapter.propose_fix(AgentRequestBuilder().with_worktree_path(git_repo).build())
+        resp = adapter.invoke(AgentRequestBuilder().with_worktree_path(git_repo).build())
 
         assert resp.status == AgentResponseStatus.TIMEOUT
         assert resp.raw_text == "done"
@@ -174,7 +192,7 @@ class SharedMutationAdapterTests:
         """A run that errors returns PROVIDER_ERROR carrying the runner's error detail."""
         adapter = UnitTestAdapter(run_fn=_fake_run(status="error", error_detail="boom"))
 
-        resp = adapter.propose_fix(AgentRequestBuilder().with_worktree_path(git_repo).build())
+        resp = adapter.invoke(AgentRequestBuilder().with_worktree_path(git_repo).build())
 
         assert resp.status == AgentResponseStatus.PROVIDER_ERROR
         assert resp.raw_text == "done"
@@ -185,7 +203,7 @@ class SharedMutationAdapterTests:
         """Edits touching more files than max_files are discarded back to baseline."""
         adapter = UnitTestAdapter(run_fn=_fake_run(edits={"README.md": "edit one\n", "b.txt": "edit two\n"}))
 
-        resp = adapter.propose_fix(AgentRequestBuilder().with_worktree_path(git_repo).with_max_files(1).build())
+        resp = adapter.invoke(AgentRequestBuilder().with_worktree_path(git_repo).with_max_files(1).build())
 
         assert resp.status == AgentResponseStatus.PROVIDER_ERROR
         assert resp.raw_text == "done"
@@ -205,7 +223,7 @@ class SharedMutationAdapterTests:
 
         monkeypatch.setattr("dovo.core.agents.cli_mutation.discard_since", _fail_discard)
 
-        resp = adapter.propose_fix(AgentRequestBuilder().with_worktree_path(git_repo).with_max_files(1).build())
+        resp = adapter.invoke(AgentRequestBuilder().with_worktree_path(git_repo).with_max_files(1).build())
 
         assert resp.status == AgentResponseStatus.PROVIDER_ERROR
         assert resp.raw_text == "done"
@@ -221,7 +239,7 @@ class SharedMutationAdapterTests:
         (git_repo / "a.txt").write_text("wip content\n", encoding="utf-8")
         adapter = UnitTestAdapter(run_fn=_fake_run(edits={"a.txt": "edit 1\n", "b.txt": "edit 2\n"}))
 
-        resp = adapter.propose_fix(AgentRequestBuilder().with_worktree_path(git_repo).with_max_files(1).build())
+        resp = adapter.invoke(AgentRequestBuilder().with_worktree_path(git_repo).with_max_files(1).build())
 
         assert resp.status == AgentResponseStatus.PROVIDER_ERROR
         assert resp.raw_text == "done"
@@ -241,8 +259,66 @@ class SharedMutationAdapterTests:
 
         adapter = PreflightAdapter(run_fn=run_fn)
 
-        resp = adapter.propose_fix(AgentRequestBuilder().with_worktree_path(git_repo).build())
+        resp = adapter.invoke(AgentRequestBuilder().with_worktree_path(git_repo).build())
 
         assert resp.status == AgentResponseStatus.PROVIDER_ERROR
         assert resp.errors == ["Agent provider error (AGENT_PROVIDER_ERROR): preflight failed"]
         assert not run_function_called
+
+
+class PreflightOrderingTests:
+    @pytest.mark.parametrize(
+        ("credential_set", "expected_errors"),
+        [
+            pytest.param(
+                False,
+                [
+                    "Agent provider error (AGENT_PROVIDER_ERROR): missing UT_A or UT_B. "
+                    "Fix: export UT_A=... or export UT_B=..."
+                ],
+                id="credential-check-wins-over-override",
+            ),
+            pytest.param(
+                True, ["Agent provider error (AGENT_PROVIDER_ERROR): extra"], id="override-runs-after-credential-passes"
+            ),
+        ],
+    )
+    def test_preflight_override_is_additive_to_credential_check(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, credential_set: bool, expected_errors: list[str]
+    ) -> None:
+        """[tier-1/unit] CliDirectMutationAdapter.invoke: a declared-credential double whose _preflight returns "extra" never replaces the credential error, and surfaces only when a credential is usable; the run function is never called in either case."""
+        for name in ("UT_A", "UT_B"):
+            monkeypatch.delenv(name, raising=False)
+        if credential_set:
+            monkeypatch.setenv("UT_A", "k")
+        run_calls: list[CliMutationRunRequest] = []
+
+        def run_fn(request: CliMutationRunRequest) -> CliMutationOutcome:
+            run_calls.append(request)
+            return CliMutationOutcome(status="finished", result_text="nope")
+
+        adapter = CredentialedAdapter(run_fn=run_fn)
+
+        resp = adapter.invoke(AgentRequestBuilder().with_worktree_path(tmp_path).build())
+
+        assert resp.status == AgentResponseStatus.PROVIDER_ERROR
+        assert resp.errors == expected_errors
+        assert run_calls == []
+
+    def test_missing_credential_skips_baseline_resolution(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """[tier-1/unit] CliDirectMutationAdapter.invoke: with credentials missing and resolve_pre_agent_baseline patched, the baseline function is never called."""
+        for name in ("UT_A", "UT_B"):
+            monkeypatch.delenv(name, raising=False)
+        baseline_calls: list[Path] = []
+        monkeypatch.setattr(
+            "dovo.core.agents.cli_mutation.resolve_pre_agent_baseline",
+            lambda worktree_path: baseline_calls.append(worktree_path) or "ref",
+        )
+        adapter = CredentialedAdapter(run_fn=_fake_run())
+
+        resp = adapter.invoke(AgentRequestBuilder().with_worktree_path(tmp_path).build())
+
+        assert resp.status == AgentResponseStatus.PROVIDER_ERROR
+        assert baseline_calls == []

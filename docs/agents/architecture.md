@@ -52,7 +52,7 @@ src/dovo/schemas/v1/             Packaged, versioned JSON Schemas (config.json, 
 **Relevant sources:** `src/dovo/core/`, `src/dovo/engine/`
 
 - **Inputs** (`core/inputs/`): `ParameterInput`, CLI flag resolution, `${{ inputs.* }}` placeholder interpolation. Must not import catalog or agents.
-- **Agents** (`core/agents/`): Provider base class (`BaseAgentProvider`), `ProviderSpec` registry (`PROVIDERS`), provider implementations (`copilot`), failure payload models, the direct-mode attempt pipeline (`run_direct_attempt` in `services/run_direct.py`). Must not import config or engine.
+- **Agents** (`core/agents/`): Provider base class (`BaseAgentProvider`), `ProviderSpec` registry (`PROVIDERS`), provider implementations (`copilot`), shared credential lookup (`credentials.py`), failure payload models, the direct-mode attempt pipeline (`run_direct_attempt` in `services/run_direct.py`). Must not import config or engine. Import order inside the package: leaves (`credentials.py`, `models.py`, `mutation_git.py`) → `base.py` → `cli_mutation.py` → provider modules (`copilot.py`) → `registry.py`/`factory.py`; no module imports one to its right (a cycle fails `basedpyright`, `typeCheckingMode = "recommended"` in `pyproject.toml`).
 - **Patch** (`core/patch/`): Unified-diff parsing and validation. Must not import agents.
 - **Engine** (`engine/`): Process-level run persistence, session ID minting (`RunRequest`), DB run records, canonical run execution state (`state_store.py`), the state-driven run coordinator (`coordinator.py`), paused-run validation (`loader.py`), the run session lifecycle (`session.py`), tree/row projector for `run.json` (`projection.py`) and its writer (`writer.py`), worktree/session infrastructure (`context.py`, `workspace.py`), per-step execution (`step_coordinator.py`), loop policy, events, and structural state validation (`loop_policy.py`, `loop_events.py`, `state_validation.py`), observer dispatch (`notify.py`), failure-policy resolution (`failure.py`), shared run models (`models.py`, including `BlueprintRunResult`), run/resume services (`BlueprintRunService`, `BlueprintResumeService`). May import `common/` and any `core/` package. Must not import cli.
 - **Executors** (`engine/executors/`): Single-step execution (`StepExecution` in `step_executor.py`), assertions evaluation (`assertions/`), execution metadata (`metadata.py`), condition evaluation (`conditions.py`), the `type: internal` command registry and `artifacts.upload`/`artifacts.download` handlers (`internal_dispatch.py`), agent step dispatch (`agent_step.py`, including `build_agent_step_runner`), and execution models (`models.py`). Must not import engine modules outside `executors/`, or cli.
@@ -116,16 +116,16 @@ core/project/  ->  core/{db,git,worktree,catalog,inputs,patch,diff,status,artifa
 **Relevant sources:** `src/dovo/core/agents/`, `src/dovo/core/config/models.py`
 
 1. Add provider token to `AgentProvider` in `core/config/models.py` if not already present.
-2. Use the direct-mutation pattern (provider CLI/SDK directly edits files in the worktree — `copilot`): subclass `CliDirectMutationAdapter` (`core/agents/cli_mutation.py`) and implement `_preflight`, `_provider_name`, and `_default_run`.
+2. Use the direct-mutation pattern (provider CLI/SDK directly edits files in the worktree — `copilot`): subclass `CliDirectMutationAdapter` (`core/agents/cli_mutation.py`) and implement `_provider_name`, `_default_run`, and `_provider_spec`; `_preflight` is optional for provider-specific checks that run after the descriptor-driven credential check. A non-direct provider subclasses `BaseAgentProvider` and implements `_invoke` and `_provider_spec`; it never overrides `invoke`, which runs the credential check before delegating to `_invoke`.
 3. Resolve secrets via module-level `resolve_<provider>_api_key()` from environment variables (never from `config.json`).
-4. Declare a `ProviderSpec` for it in `core/agents/registry.py` and add it to `PROVIDERS`; also add the token to the `agent.provider` enum in `schemas/v1/config.json`.
+4. Declare the `ProviderSpec` in the provider module (as `copilot.py` does for `COPILOT_PROVIDER_SPEC`), import it in `core/agents/registry.py`, and add it to `PROVIDERS`; also add the token to the `agent.provider` enum in `schemas/v1/config.json`.
 5. Add tests under `tests/core/agents/test_<provider>.py` with fake execution functions or transports.
 
 ## Secrets handling
 
 **Relevant sources:** `src/dovo/core/agents/`
 
-- API keys (`GH_TOKEN`, `GITHUB_TOKEN`) are resolved from the environment at call time.
+- API keys are resolved from the environment at call time from the descriptor's `credential_envs` via `resolve_credential`.
 - Secrets are never accepted as `config.json` fields, never persisted to the centralized database, and never passed into prompt builders.
 
 ## The `.dovo/` directory
