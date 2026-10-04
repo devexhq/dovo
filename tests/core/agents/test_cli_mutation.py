@@ -63,12 +63,12 @@ class PreflightAdapter(UnitTestAdapter):
 
 
 class CredentialedAdapter(UnitTestAdapter):
-    """Adapter double declaring credential_envs ("UT_A","UT_B") with an additive provider-specific preflight."""
+    """Adapter double declaring credential_envs ("TEST_CREDENTIAL_PRIMARY","TEST_CREDENTIAL_FALLBACK") with an additive provider-specific preflight."""
 
     def _provider_spec(self) -> ProviderSpec:
         return ProviderSpec(
             token="unit-test",
-            credential_envs=("UT_A", "UT_B"),
+            credential_envs=("TEST_CREDENTIAL_PRIMARY", "TEST_CREDENTIAL_FALLBACK"),
             requires_model=False,
             supports_tool_policy=False,
             supports_os_sandbox=False,
@@ -273,8 +273,9 @@ class PreflightOrderingTests:
             pytest.param(
                 False,
                 [
-                    "Agent provider error (AGENT_PROVIDER_ERROR): missing UT_A or UT_B. "
-                    "Fix: export UT_A=... or export UT_B=..."
+                    "Agent provider error (AGENT_PROVIDER_ERROR): "
+                    "missing TEST_CREDENTIAL_PRIMARY or TEST_CREDENTIAL_FALLBACK. "
+                    "Fix: export TEST_CREDENTIAL_PRIMARY=... or export TEST_CREDENTIAL_FALLBACK=..."
                 ],
                 id="credential-check-wins-over-override",
             ),
@@ -287,10 +288,10 @@ class PreflightOrderingTests:
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, credential_set: bool, expected_errors: list[str]
     ) -> None:
         """[tier-1/unit] CliDirectMutationAdapter.invoke: a declared-credential double whose _preflight returns "extra" never replaces the credential error, and surfaces only when a credential is usable; the run function is never called in either case."""
-        for name in ("UT_A", "UT_B"):
+        for name in ("TEST_CREDENTIAL_PRIMARY", "TEST_CREDENTIAL_FALLBACK"):
             monkeypatch.delenv(name, raising=False)
         if credential_set:
-            monkeypatch.setenv("UT_A", "k")
+            monkeypatch.setenv("TEST_CREDENTIAL_PRIMARY", "k")
         run_calls: list[CliMutationRunRequest] = []
 
         def run_fn(request: CliMutationRunRequest) -> CliMutationOutcome:
@@ -309,7 +310,7 @@ class PreflightOrderingTests:
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """[tier-1/unit] CliDirectMutationAdapter.invoke: with credentials missing and resolve_pre_agent_baseline patched, the baseline function is never called."""
-        for name in ("UT_A", "UT_B"):
+        for name in ("TEST_CREDENTIAL_PRIMARY", "TEST_CREDENTIAL_FALLBACK"):
             monkeypatch.delenv(name, raising=False)
         baseline_calls: list[Path] = []
         monkeypatch.setattr(

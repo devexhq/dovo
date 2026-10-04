@@ -16,8 +16,10 @@ from dovo.core.agents.credentials import missing_credential_error
 from dovo.core.agents.registry import PROVIDERS
 from tests.harness import AgentRequestBuilder
 
-_CANONICAL_UT_ERROR = (
-    "Agent provider error (AGENT_PROVIDER_ERROR): missing UT_A or UT_B. Fix: export UT_A=... or export UT_B=..."
+_CANONICAL_MISSING_CREDENTIAL_ERROR = (
+    "Agent provider error (AGENT_PROVIDER_ERROR): "
+    "missing TEST_CREDENTIAL_PRIMARY or TEST_CREDENTIAL_FALLBACK. "
+    "Fix: export TEST_CREDENTIAL_PRIMARY=... or export TEST_CREDENTIAL_FALLBACK=..."
 )
 _PROVIDER_RESPONSE = AgentResponse(status=AgentResponseStatus.NO_OP, duration_ms=7)
 
@@ -48,8 +50,8 @@ class _DirectSubclassProvider(BaseAgentProvider):
         return _PROVIDER_RESPONSE
 
 
-def _clear_ut_credentials(monkeypatch: pytest.MonkeyPatch) -> None:
-    for name in ("UT_A", "UT_B"):
+def _clear_test_credentials(monkeypatch: pytest.MonkeyPatch) -> None:
+    for name in ("TEST_CREDENTIAL_PRIMARY", "TEST_CREDENTIAL_FALLBACK"):
         monkeypatch.delenv(name, raising=False)
 
 
@@ -86,24 +88,24 @@ class CredentialPreflightTests:
     def test_missing_credential_returns_canonical_error_without_calling_provider(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """[tier-1/unit] BaseAgentProvider.invoke: a double declaring credential_envs ("UT_A","UT_B") with both unset returns PROVIDER_ERROR, errors == ["Agent provider error (AGENT_PROVIDER_ERROR): missing UT_A or UT_B. Fix: export UT_A=... or export UT_B=..."], and _invoke is never called."""
-        _clear_ut_credentials(monkeypatch)
-        provider = _DirectSubclassProvider(("UT_A", "UT_B"))
+        """[tier-1/unit] BaseAgentProvider.invoke: a double declaring credential_envs ("TEST_CREDENTIAL_PRIMARY","TEST_CREDENTIAL_FALLBACK") with both unset returns PROVIDER_ERROR, errors == ["Agent provider error (AGENT_PROVIDER_ERROR): missing TEST_CREDENTIAL_PRIMARY or TEST_CREDENTIAL_FALLBACK. Fix: export TEST_CREDENTIAL_PRIMARY=... or export TEST_CREDENTIAL_FALLBACK=..."], and _invoke is never called."""
+        _clear_test_credentials(monkeypatch)
+        provider = _DirectSubclassProvider(("TEST_CREDENTIAL_PRIMARY", "TEST_CREDENTIAL_FALLBACK"))
 
         response = provider.invoke(AgentRequestBuilder().with_worktree_path(tmp_path).build())
 
         assert response.status == AgentResponseStatus.PROVIDER_ERROR
-        assert response.errors == [_CANONICAL_UT_ERROR]
+        assert response.errors == [_CANONICAL_MISSING_CREDENTIAL_ERROR]
         assert response.duration_ms >= 0
         assert provider.invoke_calls == []
 
     def test_blank_first_credential_with_usable_second_delegates_to_provider(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """[tier-1/unit] BaseAgentProvider.invoke: UT_A="  " and UT_B="k" returns exactly the response _invoke produced."""
-        monkeypatch.setenv("UT_A", "  ")
-        monkeypatch.setenv("UT_B", "k")
-        provider = _DirectSubclassProvider(("UT_A", "UT_B"))
+        """[tier-1/unit] BaseAgentProvider.invoke: TEST_CREDENTIAL_PRIMARY="  " and TEST_CREDENTIAL_FALLBACK="k" returns exactly the response _invoke produced."""
+        monkeypatch.setenv("TEST_CREDENTIAL_PRIMARY", "  ")
+        monkeypatch.setenv("TEST_CREDENTIAL_FALLBACK", "k")
+        provider = _DirectSubclassProvider(("TEST_CREDENTIAL_PRIMARY", "TEST_CREDENTIAL_FALLBACK"))
 
         response = provider.invoke(AgentRequestBuilder().with_worktree_path(tmp_path).build())
 
@@ -118,7 +120,7 @@ class CredentialPreflightTests:
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, envs: tuple[str, ...] | None
     ) -> None:
         """[tier-1/unit] BaseAgentProvider.invoke: credential_envs=() or no spec with an empty environment calls _invoke and returns its response."""
-        _clear_ut_credentials(monkeypatch)
+        _clear_test_credentials(monkeypatch)
         provider = _DirectSubclassProvider(envs)
 
         response = provider.invoke(AgentRequestBuilder().with_worktree_path(tmp_path).build())
