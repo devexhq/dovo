@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dovo.cli.context import CliContext
 from dovo.cli.ui.dispatcher import ui_dispatcher
-from dovo.core.logs import Logs, LogsShowResult, LogStreamFilter
+from dovo.core.sessions.logs import Logs, LogsShowResult, LogStreamFilter
 
 
 def logs_show_command(

@@ -1,4 +1,4 @@
-"""Exceptions for low-level Git execution."""
+"""Exceptions for low-level Git execution and unified-diff parsing."""
 
 from __future__ import annotations
 
@@ -31,3 +31,7 @@ class GitCommandError(GitError):
         self.stderr = stderr
         message = stderr.strip() or stdout.strip() or f"git command failed with exit code {returncode}"
         super().__init__(f"Git execution failed ('git {' '.join(cmd)}'): {message}")
+
+
+class MalformedDiffHeader(Exception):
+    """Raised when a ``diff --git`` header cannot be parsed."""

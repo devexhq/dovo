@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dovo.cli.context import CliContext
 from dovo.cli.ui.dispatcher import ui_dispatcher
-from dovo.core.history import reconcile_stale_runs
+from dovo.core.sessions.history import reconcile_stale_runs
 from dovo.core.status import Status
 from dovo.core.status.models import DovoStatusResult
 

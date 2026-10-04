@@ -10,8 +10,8 @@ import pytest
 from typer.testing import CliRunner
 
 from dovo.cli import app
-from dovo.core.doctor import CheckStatus, DoctorReport
-from dovo.core.doctor.checks.agent_setup import PROVIDER_CREDENTIAL_RESOLVERS
+from dovo.core.diagnostics import CheckStatus, DiagnosticsReport
+from dovo.core.diagnostics.checks.agent_setup import PROVIDER_CREDENTIAL_RESOLVERS
 
 
 class DoctorCliIntegrationTests:
@@ -24,8 +24,8 @@ class DoctorCliIntegrationTests:
         dispatch_spy: list[Any],
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """dovo doctor: healthy git+config workspace with the default copilot provider's `gh` and token present exits 0, dispatches the exact DoctorReport, and renders the checks table."""
-        monkeypatch.setattr("dovo.core.doctor.checks.env_binaries.shutil.which", lambda _name: "/usr/bin/tool")
+        """dovo doctor: healthy git+config workspace with the default copilot provider's `gh` and token present exits 0, dispatches the exact DiagnosticsReport, and renders the checks table."""
+        monkeypatch.setattr("dovo.core.diagnostics.checks.env_binaries.shutil.which", lambda _name: "/usr/bin/tool")
         monkeypatch.setitem(
             PROVIDER_CREDENTIAL_RESOLVERS, "copilot", (lambda: "fake-token", "GH_TOKEN or GITHUB_TOKEN")
         )
@@ -36,7 +36,7 @@ class DoctorCliIntegrationTests:
         assert "git.repo" in result.stdout
         assert len(dispatch_spy) == 1
         report = dispatch_spy[0]
-        assert isinstance(report, DoctorReport)
+        assert isinstance(report, DiagnosticsReport)
         assert report.workspace_root == doctor_workspace
         assert [c.check_id for c in report.checks] == [
             "git.repo",
@@ -59,13 +59,13 @@ class DoctorCliIntegrationTests:
     def test_doctor_cli_category_filter_runs_only_matching_check(
         self, cli_runner: CliRunner, doctor_workspace: Path, dispatch_spy: list[Any]
     ) -> None:
-        """dovo doctor --category git: dispatched DoctorReport.checks has exactly the git.repo OK check."""
+        """dovo doctor --category git: dispatched DiagnosticsReport.checks has exactly the git.repo OK check."""
         result = cli_runner.invoke(app, ["-p", str(doctor_workspace), "doctor", "--category", "git"])
 
         assert result.exit_code == 0
         assert len(dispatch_spy) == 1
         report = dispatch_spy[0]
-        assert isinstance(report, DoctorReport)
+        assert isinstance(report, DiagnosticsReport)
         assert report.workspace_root == doctor_workspace
         assert len(report.checks) == 1
         assert report.checks[0].check_id == "git.repo"
@@ -83,7 +83,7 @@ class DoctorCliIntegrationTests:
     def test_doctor_cli_non_git_workspace_with_category_git_exits_one(
         self, cli_runner: CliRunner, tmp_path: Path, dispatch_spy: list[Any]
     ) -> None:
-        """dovo doctor --category git on a non-git directory: exit 1; dispatches the exact FAILED DoctorReport naming the 'git init' fix."""
+        """dovo doctor --category git on a non-git directory: exit 1; dispatches the exact FAILED DiagnosticsReport naming the 'git init' fix."""
         result = cli_runner.invoke(app, ["-p", str(tmp_path), "doctor", "--category", "git"])
 
         assert result.exit_code == 1
@@ -92,7 +92,7 @@ class DoctorCliIntegrationTests:
         assert "git init" in result.stdout
         assert len(dispatch_spy) == 1
         report = dispatch_spy[0]
-        assert isinstance(report, DoctorReport)
+        assert isinstance(report, DiagnosticsReport)
         assert report.workspace_root == tmp_path
         assert len(report.checks) == 1
         check = report.checks[0]
@@ -105,14 +105,14 @@ class DoctorCliIntegrationTests:
     def test_doctor_cli_renders_json_wire_payload_for_category_git(
         self, cli_runner: CliRunner, doctor_workspace: Path
     ) -> None:
-        """dovo doctor --category git --format json: envelope event_type == 'DoctorReport'; payload matches the literal FR-5 shape for the single git.repo check, excluding duration_ms/total_duration_ms which are asserted as non-negative floats."""
+        """dovo doctor --category git --format json: envelope event_type == 'DiagnosticsReport'; payload matches the literal FR-5 shape for the single git.repo check, excluding duration_ms/total_duration_ms which are asserted as non-negative floats."""
         result = cli_runner.invoke(
             app, ["-p", str(doctor_workspace), "doctor", "--category", "git", "--format", "json"]
         )
 
         assert result.exit_code == 0
         envelope = json.loads(result.stdout)
-        assert envelope["event_type"] == "DoctorReport"
+        assert envelope["event_type"] == "DiagnosticsReport"
 
         payload = envelope["payload"]
         total_duration_ms = payload.pop("total_duration_ms")

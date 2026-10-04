@@ -20,7 +20,7 @@ from dovo.core.agents.cli_mutation import (
     validate_request_patch,
 )
 from dovo.core.agents.mutation_git import MutationGitError
-from dovo.core.patch import PatchApplyStatus
+from dovo.core.git import PatchApplyStatus
 from tests.harness import AgentRequestBuilder, new_file_diff
 
 

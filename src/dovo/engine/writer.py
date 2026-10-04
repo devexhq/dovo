@@ -1,4 +1,4 @@
-"""Run-definitions snapshotting and snapshot-blueprint loading."""
+"""Run-definitions snapshotting, snapshot-blueprint loading, and session artifact writing."""
 
 from __future__ import annotations
 
@@ -9,14 +9,13 @@ from typing import Any
 import yaml
 from pydantic import ValidationError
 
-from dovo.common.filesystem import Filesystem
+from dovo.common.filesystem import Filesystem, WorkspacePaths
 from dovo.core.catalog import Catalog
 from dovo.core.catalog.blueprint import Blueprint
 from dovo.core.catalog.definitions import BlueprintDefinition, LoopStepBlock, StepDefinition
 from dovo.core.catalog.exceptions import BlueprintLoadError, BlueprintValidationError, StepValidationError
 from dovo.core.catalog.models import CatalogItemType, CatalogRecord
 from dovo.core.catalog.services.resolve_step import merge_uses_step, resolve_step_definition
-from dovo.core.diff.writer import get_session_dir, write_session_diff
 from dovo.engine.exceptions import EngineSnapshotMissingError
 from dovo.engine.models import DefinitionRef, DefinitionsManifest
 from dovo.engine.state_models import RunJsonPayload
@@ -222,6 +221,20 @@ def load_blueprint_from_snapshot(session_dir: Path, manifest: DefinitionsManifes
 
     resolved_steps = _resolve_snapshot_steps(definition.steps, step_snapshots)
     return Blueprint(definition.model_copy(update={"steps": resolved_steps}), key=key)
+
+
+def get_session_dir(paths: WorkspacePaths, session_id: str) -> Path:
+    """Resolve and create the project-aware session artifact directory on demand."""
+    target = paths.session_dir(session_id)
+    target.mkdir(parents=True, exist_ok=True)
+    return target
+
+
+def write_session_diff(session_dir: Path, diff_text: str) -> Path:
+    """Atomically write unified diff to diff.patch in the session directory."""
+    target_file = session_dir / "diff.patch"
+    Filesystem.atomic_write_text(target_file, diff_text)
+    return target_file
 
 
 def write_session_run_projection(session_dir: Path, payload: RunJsonPayload) -> Path:

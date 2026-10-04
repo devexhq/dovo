@@ -8,11 +8,11 @@ from typing import Any
 import pytest
 
 from dovo.cli.ui.formatters.doctor import DoctorCheckView, DoctorReportFormatter, DoctorReportView
-from dovo.core.doctor import (
+from dovo.core.diagnostics import (
     CheckCategory,
     CheckStatus,
     DiagnosticCheckResult,
-    DoctorReport,
+    DiagnosticsReport,
     Remediation,
     RemediationType,
 )
@@ -123,7 +123,7 @@ def _check_view(check: DiagnosticCheckResult) -> DoctorCheckView:
 
 
 MIXED_STATUS = FormatterCase(
-    data=DoctorReport(
+    data=DiagnosticsReport(
         workspace_root=ROOT,
         checks=[OK_CHECK, WARNING_CHECK, FAILED_CHECK, SKIPPED_CHECK],
         total_duration_ms=12.4,
@@ -153,7 +153,7 @@ MIXED_STATUS = FormatterCase(
 )
 
 EMPTY_CHECKS = FormatterCase(
-    data=DoctorReport(workspace_root=ROOT, checks=[], total_duration_ms=0.0),
+    data=DiagnosticsReport(workspace_root=ROOT, checks=[], total_duration_ms=0.0),
     view=DoctorReportView(ok=True, has_warnings=False, workspace_root=ROOT, total_duration_ms=0.0, checks=[]),
     render_expectations=["0 checks: 0 ok, 0 warning, 0 failed (0.0ms)"],
 )
@@ -272,18 +272,18 @@ class DoctorReportFormatterTests:
     """Presentation contract tests for DoctorReportFormatter."""
 
     @pytest.mark.parametrize("case", DOCTOR_REPORT_CASES)
-    def test_transform_derives_expected_view(self, case: FormatterCase[DoctorReport, DoctorReportView]) -> None:
-        """[tier-2/unit] DoctorReportFormatter.transform: derives the exact DoctorReportView for each pinned DoctorReport case (mixed-status and empty-checks)."""
+    def test_transform_derives_expected_view(self, case: FormatterCase[DiagnosticsReport, DoctorReportView]) -> None:
+        """[tier-2/unit] DoctorReportFormatter.transform: derives the exact DoctorReportView for each pinned DiagnosticsReport case (mixed-status and empty-checks)."""
         assert_transform_derives_expected_view(DoctorReportFormatter, case.data, case.view)
 
     @pytest.mark.parametrize(("case", "expected_payload"), DOCTOR_REPORT_PAYLOAD_CASES)
     def test_json_payload_matches_published_shape(
-        self, case: FormatterCase[DoctorReport, DoctorReportView], expected_payload: dict[str, Any]
+        self, case: FormatterCase[DiagnosticsReport, DoctorReportView], expected_payload: dict[str, Any]
     ) -> None:
         """[tier-2/unit] DoctorReportFormatter.to_json_serializable: matches the exact published wire-format literal dict for each pinned case."""
         assert_json_payload_matches_published_shape(DoctorReportFormatter, case.data, expected_payload)
 
     @pytest.mark.parametrize("case", DOCTOR_REPORT_CASES)
-    def test_rich_render_shows_every_view_value(self, case: FormatterCase[DoctorReport, DoctorReportView]) -> None:
+    def test_rich_render_shows_every_view_value(self, case: FormatterCase[DiagnosticsReport, DoctorReportView]) -> None:
         """[tier-2/unit] DoctorReportFormatter.to_rich: every non-null semantic view value (check ids, upper-cased statuses, summary counts, fix bullets) reaches the rendered output."""
         assert_rich_render_shows_every_view_value(DoctorReportFormatter, case.data, case.render_expectations)

@@ -12,10 +12,10 @@ from typer.testing import CliRunner
 from dovo.cli import app
 from dovo.common.filesystem.models import RepositoryPaths, WorkspacePaths
 from dovo.common.filesystem.services.global_root import resolve_global_paths
-from dovo.core.diff.writer import get_session_dir, write_session_diff
 from dovo.core.project.models import ProjectIdentity
 from dovo.core.project.services.identity import save_project_identity
 from dovo.core.project.services.storage import resolve_workspace_paths
+from dovo.engine.writer import get_session_dir, write_session_diff
 
 
 def _paths_for(root: Path) -> WorkspacePaths:

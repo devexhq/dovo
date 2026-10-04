@@ -6,14 +6,16 @@ rules:
   domain: all
   scope: src/dovo/
   guideline: 'Dependencies flow strictly one way: common/ -> core/ -> engine/ -> cli/. Within core/: project/ ->
-    {db,git,worktree,catalog,inputs,patch,diff,status,artifacts}/ -> agents/ -> doctor/ -> logs/ -> history/. Upward
-    imports are strictly prohibited.'
+    {db,git,worktree,catalog,inputs,sessions/diff,status,artifacts}/ -> agents/ -> diagnostics/ -> sessions/logs/ ->
+    sessions/history/. Upward imports are strictly prohibited.'
   evaluation_criteria: Scan imports. Verify common/ imports no core/, engine/, or cli/; core/ imports no engine/, cli/,
-    or rich; engine/ imports no cli/; inputs/ imports no catalog or agents; patch/ imports no agents; catalog/ imports
-    no agents, logs, history, engine, cli; artifacts/ imports no engine; agents/ imports no engine; logs/ imports no
-    engine, history, cli; history/ imports no engine, cli.
-  positive_example: 'from dovo.core.logs import append_run_log_event  # in engine/'
-  negative_example: 'from dovo.engine.engine import Engine  # upward import in core/logs/'
+    or rich; engine/ imports no cli/; git/ imports no other core/ package; inputs/ imports no catalog or agents;
+    catalog/ imports no agents, sessions/logs, sessions/history, engine, cli; artifacts/ imports no engine; agents/ imports
+    no engine; sessions/logs/ imports no engine, sessions/history, sessions/diff, cli; sessions/diff/ imports no sessions/history,
+    sessions/logs, engine, cli; sessions/history/ imports no engine, cli, sessions/diff, and reaches sessions/logs only through its
+    public exports; sessions/ exports nothing from its package root.
+  positive_example: 'from dovo.core.sessions.logs import RunLogEvent  # in engine/'
+  negative_example: 'from dovo.engine.engine import Engine  # upward import in core/sessions/logs/'
   citation: docs/agents/architecture.md#package-boundaries-import-direction
 - id: ARCH-002
   title: CLI Logic Purity

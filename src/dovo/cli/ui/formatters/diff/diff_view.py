@@ -4,7 +4,7 @@ from pathlib import Path
 
 from pydantic import BaseModel, Field
 
-from dovo.core.diff.models import DiffStatus
+from dovo.core.sessions.diff.models import DiffStatus
 
 
 class DiffResultView(BaseModel):

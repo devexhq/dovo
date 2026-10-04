@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from dovo.cli.context import CliContext
 from dovo.cli.ui.dispatcher import ui_dispatcher
-from dovo.core.history import History
-from dovo.core.history.models import HistoryListResult
+from dovo.core.sessions.history import History
+from dovo.core.sessions.history.models import HistoryListResult
 
 
 def history_root_command(
