@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 
 from dovo.core.agents import AgentResponseStatus
-from dovo.core.agents.cli_mutation import CliMutationRunRequest
+from dovo.core.agents.cli_mutation import CliMutationOutcome, CliMutationRunRequest
 from dovo.core.agents.copilot import (
     CopilotAgentAdapter,
     default_copilot_run,
@@ -26,30 +26,59 @@ class CopilotAuthTests:
     @pytest.mark.parametrize(
         ("env", "expected"),
         [
-            pytest.param({"GH_TOKEN": "abc"}, "abc", id="gh_token"),
-            pytest.param({"GITHUB_TOKEN": "xyz"}, "xyz", id="github_token_fallback"),
+            pytest.param({"GH_TOKEN": "abc"}, "abc", id="gh-token"),
+            pytest.param({"GITHUB_TOKEN": "xyz"}, "xyz", id="github-token-fallback"),
+            pytest.param({"GH_TOKEN": "  ", "GITHUB_TOKEN": "xyz"}, "xyz", id="blank-gh-token-falls-through"),
+            pytest.param({"GH_TOKEN": "abc", "GITHUB_TOKEN": "xyz"}, "abc", id="gh-token-precedes-github-token"),
             pytest.param({}, None, id="unset"),
         ],
     )
-    def test_resolve_checks_gh_token_before_github_token(self, env: dict[str, str], expected: str | None) -> None:
-        """GH_TOKEN takes priority over GITHUB_TOKEN; an empty environment resolves to None."""
-        assert resolve_copilot_token(env) == expected
+    def test_resolve_checks_gh_token_before_github_token(
+        self, monkeypatch: pytest.MonkeyPatch, env: dict[str, str], expected: str | None
+    ) -> None:
+        """[tier-1/unit] resolve_copilot_token: with both variables cleared then env applied, returns the first non-blank stripped value, else None."""
+        for name in ("GH_TOKEN", "GITHUB_TOKEN"):
+            monkeypatch.delenv(name, raising=False)
+        for name, value in env.items():
+            monkeypatch.setenv(name, value)
+
+        assert resolve_copilot_token() == expected
 
     def test_preflight_requires_token(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        """Missing both GH_TOKEN and GITHUB_TOKEN fails preflight before any run."""
+        """[tier-1/unit] CopilotAgentAdapter.invoke: GH_TOKEN and GITHUB_TOKEN unset returns PROVIDER_ERROR with the canonical missing-credential error."""
         monkeypatch.delenv("GH_TOKEN", raising=False)
         monkeypatch.delenv("GITHUB_TOKEN", raising=False)
         adapter = CopilotAgentAdapter()
 
-        resp = adapter.propose_fix(AgentRequestBuilder().with_worktree_path(tmp_path).build())
+        resp = adapter.invoke(AgentRequestBuilder().with_worktree_path(tmp_path).build())
 
         assert resp.status == AgentResponseStatus.PROVIDER_ERROR
         assert resp.errors == [
-            "Agent provider error (AGENT_PROVIDER_ERROR): missing GH_TOKEN or GITHUB_TOKEN. Fix: export GH_TOKEN=..."
+            "Agent provider error (AGENT_PROVIDER_ERROR): missing GH_TOKEN or GITHUB_TOKEN. "
+            "Fix: export GH_TOKEN=... or export GITHUB_TOKEN=..."
         ]
 
 
 class CopilotRunTests:
+    def test_missing_token_returns_canonical_error_without_running_gh(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """[tier-1/unit] default_copilot_run: GH_TOKEN and GITHUB_TOKEN unset returns the canonical error outcome, and the patched run_isolated_process is never called."""
+        monkeypatch.delenv("GH_TOKEN", raising=False)
+        monkeypatch.delenv("GITHUB_TOKEN", raising=False)
+        runner = FakeAgentRunner()
+        monkeypatch.setattr("dovo.core.agents.copilot.run_isolated_process", runner)
+
+        outcome = default_copilot_run(
+            CliMutationRunRequest(worktree_path=tmp_path, prompt="hi", model=None, timeout_seconds=3)
+        )
+
+        assert outcome == CliMutationOutcome(
+            status="error",
+            error_detail="missing GH_TOKEN or GITHUB_TOKEN. Fix: export GH_TOKEN=... or export GITHUB_TOKEN=...",
+        )
+        assert runner.calls == []
+
     def test_default_run_parses_jsonl(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """gh copilot is invoked with the fixed argv and its JSONL stream is parsed to text."""
         runner = FakeAgentRunner().returning(

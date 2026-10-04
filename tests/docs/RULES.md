@@ -241,7 +241,7 @@ class TestConfig:
   Test doubles must be types production actually passes or implement a Protocol production is typed against. Never build a stub whose interface is the union of every branch in a hasattr chain.
 
 ```python
-# ✅ DO: class FakeBaseAgentProvider(BaseAgentProvider): def propose_fix(self, req: AgentRequest) -> AgentResponse: ...
+# ✅ DO: class FakeBaseAgentProvider(BaseAgentProvider): def _invoke(self, req: AgentRequest) -> AgentResponse: ...
 # ❌ DO NOT: class MockAdapter: def __getattr__(self, name): return MagicMock()
 ```
 

@@ -74,7 +74,7 @@ class RunDirectAttemptRequestTests:
     def test_request_carries_instruction_settings_worktree_and_timeout(
         self, git_repo: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """[tier-1/unit] run_direct_attempt: copilot settings and timeout_seconds 45 ask the factory for 'copilot' once and propose_fix receives the exact direct AgentRequest."""
+        """[tier-1/unit] run_direct_attempt: copilot settings and timeout_seconds 45 ask the factory for 'copilot' once and invoke receives the exact direct AgentRequest."""
         provider = FakeAgentProvider(_no_op())
         requested = _use_provider(monkeypatch, provider)
 
@@ -108,10 +108,10 @@ class RunDirectAttemptRequestTests:
     def test_provider_exception_returns_provider_error_attempt(
         self, git_repo: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """[tier-1/unit] run_direct_attempt: propose_fix raising RuntimeError('boom') returns PROVIDER_ERROR with diagnostics == ['Agent provider error: boom']."""
+        """[tier-1/unit] run_direct_attempt: invoke raising RuntimeError('boom') returns PROVIDER_ERROR with diagnostics == ['Agent provider error: boom']."""
 
         class _Exploding(BaseAgentProvider):
-            def propose_fix(self, request: AgentRequest) -> AgentResponse:
+            def _invoke(self, request: AgentRequest) -> AgentResponse:
                 raise RuntimeError("boom")
 
         _use_provider(monkeypatch, _Exploding())

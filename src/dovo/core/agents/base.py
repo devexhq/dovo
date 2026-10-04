@@ -3,19 +3,59 @@
 from __future__ import annotations
 
 import abc
+import time
 from collections.abc import Callable
 from dataclasses import dataclass
 
-from dovo.core.agents.models import AgentRequest, AgentResponse
+from dovo.core.agents.credentials import missing_credential_error, resolve_credential
+from dovo.core.agents.models import AgentRequest, AgentResponse, AgentResponseStatus
+
+
+def elapsed_ms(started: float) -> int:
+    """Return elapsed milliseconds since the start timestamp."""
+    return int((time.monotonic() - started) * 1000)
 
 
 class BaseAgentProvider(abc.ABC):
-    """Provider-agnostic contract for requesting a fix from an agent."""
+    """Provider-agnostic contract for invoking an agent.
+
+    ``invoke`` checks the descriptor's credentials before delegating to ``_invoke``; subclasses implement ``_invoke`` and
+    never override ``invoke``.
+    """
+
+    def invoke(self, request: AgentRequest) -> AgentResponse:
+        """Return PROVIDER_ERROR with the canonical diagnostic when no credential is usable, else run ``_invoke``."""
+        started = time.monotonic()
+
+        missing = self._credential_preflight()
+        if missing is not None:
+            return AgentResponse(
+                status=AgentResponseStatus.PROVIDER_ERROR,
+                duration_ms=elapsed_ms(started),
+                errors=[f"Agent provider error (AGENT_PROVIDER_ERROR): {missing}"],
+            )
+
+        return self._invoke(request)
 
     @abc.abstractmethod
-    def propose_fix(self, request: AgentRequest) -> AgentResponse:
-        """Propose a fix for the failure described in ``request``."""
+    def _invoke(self, request: AgentRequest) -> AgentResponse:
+        """Invoke the agent for ``request`` and return its response."""
         raise NotImplementedError
+
+    def _provider_spec(self) -> ProviderSpec | None:
+        """Return this provider's registered descriptor, or None when it declares none."""
+        return None
+
+    def _credential_preflight(self) -> str | None:
+        """Return the canonical missing-credential diagnostic when no declared alternative is usable, else None."""
+        spec = self._provider_spec()
+        if spec is None or not spec.credential_envs:
+            return None
+
+        if resolve_credential(spec.credential_envs) is None:
+            return missing_credential_error(spec)
+
+        return None
 
 
 @dataclass(frozen=True)

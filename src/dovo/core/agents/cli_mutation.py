@@ -10,7 +10,7 @@ from typing import Literal
 
 from pydantic import BaseModel
 
-from dovo.core.agents.base import BaseAgentProvider
+from dovo.core.agents.base import BaseAgentProvider, elapsed_ms
 from dovo.core.agents.models import AgentRequest, AgentResponse, AgentResponseStatus
 from dovo.core.agents.mutation_git import (
     MutationGitError,
@@ -114,14 +114,14 @@ class CliDirectMutationAdapter(BaseAgentProvider):
         raise NotImplementedError
 
     def _preflight(self, request: AgentRequest) -> str | None:
-        """Perform provider-specific preflight checks before running."""
+        """Perform provider-specific preflight checks before running; they run after the base credential check."""
         return None
 
     def _provider_name(self) -> str:
         """Return the display name of the mutation adapter provider."""
         return "direct-mutation"
 
-    def propose_fix(self, request: AgentRequest) -> AgentResponse:
+    def _invoke(self, request: AgentRequest) -> AgentResponse:
         """Run the provider in the worktree; never raises for classified outcomes."""
         started = time.monotonic()
 
@@ -129,7 +129,7 @@ class CliDirectMutationAdapter(BaseAgentProvider):
         if preflight_error is not None:
             return AgentResponse(
                 status=AgentResponseStatus.PROVIDER_ERROR,
-                duration_ms=_elapsed_ms(started),
+                duration_ms=elapsed_ms(started),
                 errors=[f"Agent provider error (AGENT_PROVIDER_ERROR): {preflight_error}"],
             )
 
@@ -138,7 +138,7 @@ class CliDirectMutationAdapter(BaseAgentProvider):
         except MutationGitError as exc:
             return AgentResponse(
                 status=AgentResponseStatus.PROVIDER_ERROR,
-                duration_ms=_elapsed_ms(started),
+                duration_ms=elapsed_ms(started),
                 errors=[f"Agent provider error (AGENT_PROVIDER_ERROR): failed to resolve worktree baseline: {exc}"],
             )
 
@@ -151,7 +151,7 @@ class CliDirectMutationAdapter(BaseAgentProvider):
                 timeout_seconds=float(request.timeout_seconds),
             )
         )
-        duration_ms = _elapsed_ms(started)
+        duration_ms = elapsed_ms(started)
 
         if outcome.status == "timeout":
             return AgentResponse(
@@ -219,8 +219,3 @@ class CliDirectMutationAdapter(BaseAgentProvider):
             mutation_baseline_ref=baseline,
             raw_text=outcome.result_text,
         )
-
-
-def _elapsed_ms(started: float) -> int:
-    """Return elapsed milliseconds since the start timestamp."""
-    return int((time.monotonic() - started) * 1000)

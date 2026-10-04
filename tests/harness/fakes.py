@@ -100,7 +100,7 @@ class FakeAgentProvider(BaseAgentProvider):
         """Return the requests received, in call order."""
         return self._requests
 
-    def propose_fix(self, request: AgentRequest) -> AgentResponse:
+    def _invoke(self, request: AgentRequest) -> AgentResponse:
         """Record the request, run on_call, and return the next queued response (the last repeats)."""
         self._requests.append(request)
         if self._on_call is not None:
