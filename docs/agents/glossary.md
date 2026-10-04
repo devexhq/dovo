@@ -24,7 +24,7 @@ Precise definitions for core concepts and terms in the Dovo CLI codebase.
   - *Model:* `RunOutcome` in [`engine/models.py`](../../src/dovo/engine/models.py).
 - **Session**: Unique execution identifier (`{kind}_{8-hex}`) linking a run to its DB record in the centralized database and session artifacts in `.dovo/sessions/<id>/`. A session exists if and only if its run record exists.
   - *Model:* `Session` / `SessionCollection` in [`core/sessions/sessions.py`](../../src/dovo/core/sessions/sessions.py).
-- **Worktree**: An isolated git worktree checkout (`.dovo/worktrees/<session_id>/`, branch `dovo/<id>`).
+- **Worktree**: An isolated git worktree checkout (`.dovo/worktrees/<id>/`, branch `dovo/<id>`). A worktree created by `dovo run` takes the run's session id as `<id>`; `dovo worktree create` generates `dovo_<8 hex>`.
   - *Facade/Services:* `Worktree` in [`core/worktree/facade.py`](../../src/dovo/core/worktree/facade.py) and [`core/worktree/services/lifecycle.py`](../../src/dovo/core/worktree/services/lifecycle.py).
 - **Checkpoint**: A paused leaf step (top-level or a loop body step) plus its last failed attempt in the run's `ExecutionStateTree`, allowing a paused run (`prompt_user`) to resume by re-entering the failure prompt without re-running the step.
   - *Model:* `ExecutionStateTree` in [`engine/state_models.py`](../../src/dovo/engine/state_models.py).

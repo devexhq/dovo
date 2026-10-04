@@ -17,7 +17,9 @@ from dovo.common.filesystem.models import RepositoryPaths, WorkspacePaths
 from dovo.common.filesystem.services.global_root import resolve_global_paths
 from dovo.core.config.models import ConfigTier
 from dovo.core.db import DovoDb, RunStatus
+from dovo.core.git.runner import GitRunner
 from dovo.core.project.services.storage import resolve_workspace_paths
+from dovo.core.worktree import Worktree
 from dovo.engine import RunStateStore
 from dovo.engine.writer import get_session_dir
 from tests.harness.catalog import write_runnable_blueprint, write_runnable_step
@@ -68,6 +70,37 @@ class RunCliIntegrationTests:
 
         assert result.exit_code == 0
         assert "Worktree: Active (" in result.stdout
+
+    @pytest.mark.parametrize(
+        "earlier_worktree",
+        [
+            pytest.param("kept_run", id="kept_run"),
+            pytest.param("legacy_blueprint_key_worktree", id="legacy_blueprint_key_worktree"),
+        ],
+    )
+    def test_run_cli_keep_with_existing_worktree_creates_separate_worktree_exits_zero(
+        self, cli_runner: CliRunner, run_workspace: Path, earlier_worktree: str
+    ) -> None:
+        """[tier-3/integration] dovo run keep-task --keep: with an earlier worktree present (a prior --keep run, or one created under session id 'keep-task'), the run exits 0, its run row has worktree_id == session_id, .dovo/worktrees/<session_id> exists, branch dovo/<session_id> exists, and the earlier worktree directory is still present and distinct."""
+        write_runnable_blueprint(run_workspace, key="keep-task", steps=[{"id": "s1", "run": "true"}])
+        paths = _paths_for(run_workspace)
+        db = DovoDb(database_file=paths.database_file, project_id=paths.project_id)
+        if earlier_worktree == "kept_run":
+            first = cli_runner.invoke(app, ["-p", str(run_workspace), "run", "keep-task", "--keep"])
+            assert first.exit_code == 0
+        else:
+            Worktree(paths, db=db.worktrees).create(session_id="keep-task")
+        earlier_ids = {row.id for row in db.worktrees.list()}
+
+        result = cli_runner.invoke(app, ["-p", str(run_workspace), "run", "keep-task", "--keep"])
+
+        assert result.exit_code == 0
+        latest = db.runs.list(limit=1)[0]
+        assert latest.worktree_id == latest.session_id
+        assert latest.session_id not in earlier_ids
+        assert paths.worktree_dir(latest.session_id).is_dir()
+        assert f"dovo/{latest.session_id}" in GitRunner.list_branches(run_workspace)
+        assert all(paths.worktree_dir(earlier_id).is_dir() for earlier_id in earlier_ids)
 
     def test_run_cli_no_worktree_agent_step_exits_one_with_worktree_diagnostic(
         self, cli_runner: CliRunner, run_workspace: Path

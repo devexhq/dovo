@@ -10,7 +10,6 @@ from dovo.core.db import RunRecord, RunsRepository, RunStatus
 from dovo.core.sessions import RunLogEvent, RunLogEventType
 from dovo.core.worktree import Worktree, WorktreeSession
 from dovo.engine.coordinator import RunCoordinator
-from dovo.engine.executors.models import ExecutionIdentity
 from dovo.engine.models import (
     AgentSettingsResolution,
     FailurePrompter,
@@ -78,13 +77,12 @@ def _resolve_agent_settings(paths: WorkspacePaths, override: str | None) -> Agen
 
 
 def _workspace_context(row: RunRecord, paths: WorkspacePaths, observer: RunObserver | None) -> RunSettings:
-    """Build the Workspace input from the run row's use_worktree, keep, auto_apply, worktree_id, and blueprint identity."""
+    """Build the Workspace input from the run row's use_worktree, keep, auto_apply, and worktree_id."""
     return RunSettings(
         cwd=paths.root_dir,
         use_worktree=row.use_worktree,
         keep=row.keep,
         observer=observer,
-        identity=ExecutionIdentity(blueprint_name=row.blueprint_name, blueprint_key=row.blueprint_key),
         session_id=row.session_id,
         auto_apply=row.auto_apply,
         worktree_id=row.worktree_id if row.use_worktree else None,
