@@ -13,9 +13,9 @@ from dovo.common.filesystem.models import RepositoryPaths
 from dovo.common.filesystem.services.global_root import resolve_global_paths
 from dovo.core.db import RunsRepository, RunStatus
 from dovo.core.project.services.storage import resolve_workspace_paths
-from dovo.core.sessions.history import (
+from dovo.core.sessions import ReconciliationResult
+from dovo.core.sessions.services.reconcile import (
     STALE_RUN_ERROR_MESSAGE,
-    ReconciliationResult,
     format_reconciliation_warning,
     get_process_start_time,
     is_pid_alive,
@@ -38,7 +38,7 @@ def _kill_reports_no_such_process(monkeypatch: pytest.MonkeyPatch) -> None:
     def _kill(_pid: int, _signal: int) -> None:
         raise ProcessLookupError
 
-    monkeypatch.setattr("dovo.core.sessions.history.services.reconcile.os.kill", _kill)
+    monkeypatch.setattr("dovo.core.sessions.services.reconcile.os.kill", _kill)
 
 
 class IsPidAliveTests:
@@ -64,7 +64,7 @@ class IsPidAliveTests:
             if kill_error is not None:
                 raise kill_error
 
-        monkeypatch.setattr("dovo.core.sessions.history.services.reconcile.os.kill", _kill)
+        monkeypatch.setattr("dovo.core.sessions.services.reconcile.os.kill", _kill)
 
         assert is_pid_alive(pid) is expected
         assert kill_calls == ([] if pid <= 0 else [pid])

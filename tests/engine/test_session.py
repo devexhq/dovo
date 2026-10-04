@@ -14,7 +14,7 @@ from dovo.core.agents.models import AgentRequest, AgentResponse, AgentResponseSt
 from dovo.core.catalog.definitions import LoopStepBlock, StepDefinition
 from dovo.core.db import RunsRepository, RunStatus, WorktreesRepository
 from dovo.core.project.services.storage import resolve_workspace_paths
-from dovo.core.sessions.logs import read_run_log_events
+from dovo.core.sessions.services.read_logs import read_run_log_events
 from dovo.core.worktree import Worktree, WorktreeApplyResult, WorktreeApplyStatus
 from dovo.engine.executors.agent_step import WORKTREE_REQUIRED_MESSAGE, build_agent_step_runner
 from dovo.engine.executors.models import (

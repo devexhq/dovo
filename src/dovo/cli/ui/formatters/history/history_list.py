@@ -14,7 +14,7 @@ from dovo.cli.ui.formatters.history.common import (
 )
 from dovo.cli.ui.formatters.history.history_views import HistoryListView
 from dovo.common.types import ComponentFormatter
-from dovo.core.sessions.history.models import HistoryListResult
+from dovo.core.sessions import HistoryListResult
 
 
 def _render_list_runs(view: HistoryListView) -> Any:

@@ -187,7 +187,7 @@ Write `.agentic/review.json` alongside the markdown and print the same object as
   "plan": ".agentic/plan.md",
   "counts": { "blocking": 2, "warnings": 1, "suggestions": 3, "nits": 1 },
   "findings": [
-    { "severity": "BLOCKER", "path": "src/dovo/core/sessions/diff/diff.py", "line": 42, "rule": "ARCH-001", "summary": "Core service imports CliContext directly." }
+    { "severity": "BLOCKER", "path": "src/dovo/core/sessions/sessions.py", "line": 42, "rule": "ARCH-001", "summary": "Core service imports CliContext directly." }
   ],
   "unenforced_gates": ["coverage fail_under=0 in pyproject.toml"],
   "residual": []

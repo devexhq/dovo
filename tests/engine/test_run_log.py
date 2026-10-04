@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from dovo.core.sessions.logs import RunLogEvent, RunLogEventType
+from dovo.core.sessions import RunLogEvent, RunLogEventType
 from dovo.engine.run_log import append_run_log_event
 
 

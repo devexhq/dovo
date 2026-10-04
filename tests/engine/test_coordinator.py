@@ -13,7 +13,8 @@ from dovo.common.filesystem.models import WorkspacePaths
 from dovo.core.catalog.definitions import LoopStepBlock, StepDefinition
 from dovo.core.db import RunsRepository, RunStatus
 from dovo.core.db.repositories.artifacts import ArtifactsRepository
-from dovo.core.sessions.logs import RunLogEvent, RunLogEventType, read_run_log_events
+from dovo.core.sessions import RunLogEvent, RunLogEventType
+from dovo.core.sessions.services.read_logs import read_run_log_events
 from dovo.core.worktree.models import WorktreeSession
 from dovo.engine import RunCoordinator, RunStateStore
 from dovo.engine.executors import StepExecution

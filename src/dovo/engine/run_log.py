@@ -6,7 +6,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from dovo.common.constants import RUN_LOG_FILENAME
-from dovo.core.sessions.logs import RunLogEvent
+from dovo.core.sessions import RunLogEvent
 
 
 def append_run_log_event(session_log_dir: Path | None, event: RunLogEvent) -> None:

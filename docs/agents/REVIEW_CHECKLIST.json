@@ -8,8 +8,8 @@
       "severity": "BLOCKER",
       "domain": "all",
       "scope": "src/dovo/",
-      "evaluation_criteria": "Scan imports. Verify common/ imports no core/, engine/, or cli/; core/ imports no engine/, cli/, or rich; engine/ imports no cli/; git/ imports no other core/ package; inputs/ imports no catalog or agents; catalog/ imports no agents, sessions/logs, sessions/history, engine, cli; artifacts/ imports no engine; agents/ imports no engine; sessions/logs/ imports no engine, sessions/history, sessions/diff, cli; sessions/diff/ imports no sessions/history, sessions/logs, engine, cli; sessions/history/ imports no engine, cli, sessions/diff, and reaches sessions/logs only through its public exports; sessions/ exports nothing from its package root.",
-      "bad_pattern": "from dovo.engine.engine import Engine  # upward import in core/sessions/logs/"
+      "evaluation_criteria": "Scan imports. Verify common/ imports no core/, engine/, or cli/; core/ imports no engine/, cli/, or rich; engine/ imports no cli/; git/ imports no other core/ package; inputs/ imports no catalog or agents; catalog/ imports no agents, sessions, engine, cli; artifacts/ imports no engine; agents/ imports no engine; sessions/ imports no agents, worktree, catalog, engine, cli.",
+      "bad_pattern": "from dovo.engine.engine import Engine  # upward import in core/sessions/"
     },
     {
       "id": "ARCH-002",

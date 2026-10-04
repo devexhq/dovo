@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dovo.cli.context import CliContext
 from dovo.cli.ui.dispatcher import ui_dispatcher
-from dovo.core.sessions.logs import Logs, LogsShowResult, LogStreamFilter
+from dovo.core.sessions import LogsShowResult, LogStreamFilter, Session
 
 
 def logs_show_command(
@@ -31,8 +31,8 @@ def logs_show_command(
     Returns:
         LogsShowResult containing run.log events or step log lines.
     """
-    result = Logs(context.paths, db=context.db.runs).show(
-        session_id, step=step, attempt=attempt, stream=LogStreamFilter(stream), tail=tail
+    result = Session(context.paths, session_id, db=context.db.runs).logs(
+        step=step, attempt=attempt, stream=LogStreamFilter(stream), tail=tail
     )
     ui_dispatcher.dispatch(result, output_format=output_format)
     return result

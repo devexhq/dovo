@@ -8,7 +8,7 @@ from typing import Any
 from rich.text import Text
 
 from dovo.common.utils import display_path
-from dovo.core.sessions.diff.models import DiffResult
+from dovo.core.sessions import DiffResult
 
 
 def resolve_diff_rel_path(data: DiffResult, cwd: Path | None = None) -> str:

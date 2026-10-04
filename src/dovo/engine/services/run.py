@@ -10,7 +10,7 @@ from dovo.core.catalog.blueprint import Blueprint
 from dovo.core.catalog.exceptions import BlueprintLoadError, BlueprintNotFoundError, BlueprintValidationError
 from dovo.core.db import RunsRepository
 from dovo.core.inputs.services.resolve import format_input_error_message
-from dovo.core.sessions.history import reconcile_stale_runs
+from dovo.core.sessions import reconcile_stale_runs
 from dovo.engine.engine import Engine
 from dovo.engine.exceptions import EngineInputError, EngineRuntimeError
 from dovo.engine.models import BlueprintRunResult, FailurePrompter, RunObserver, RunRequest

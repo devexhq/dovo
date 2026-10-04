@@ -115,7 +115,7 @@ All operations that can fail return a Pydantic result object subclassing `BaseRe
 - `AssertionResult`: Assertion evaluation outcome (`passed`, `failed_conditions`, `message`).
 
 ### Run Engine Models
-**Relevant sources:** `src/dovo/engine/models.py`, `src/dovo/core/sessions/logs/models.py`.
+**Relevant sources:** `src/dovo/engine/models.py`, `src/dovo/core/sessions/models.py`.
 - [`RunSettings`](../../src/dovo/engine/models.py): Settings and collaborators resolved from the run row for worktree/session setup and step coordination (`use_worktree`, `keep`, `agent` as `ResolvedAgentSettings | None`, `observer`, `inputs`, `no_tty`, `failure_prompter`, `auto_apply`, `worktree_id`, `paths`).
 - [`RunContext`](../../src/dovo/engine/models.py): Infrastructure resources for one run's execution; durable progress lives only in `ExecutionStateTree`.
 - [`RunOutcome`](../../src/dovo/engine/models.py): Terminal run result, including the worktree and session identifiers.
@@ -133,7 +133,7 @@ All operations that can fail return a Pydantic result object subclassing `BaseRe
 - [`RunStartConfig`](../../src/dovo/engine/models.py): Resolved run options written to the run row when a run starts.
 - `DefinitionRef`: One snapshotted catalog item's resolved reference, content SHA, and resolution timestamp (`ref`, `sha`, `resolved_at`); `ref` is `"<tier>:<item_type>:<key>"`.
 - `DefinitionsManifest`: The blueprint's `DefinitionRef` plus a `DefinitionRef` per transitively-resolved `uses:` step (`blueprint`, `steps`), snapshotted by `Engine.run` into `<session_dir>/definitions/` and consumed by `RunCoordinator`/`load_blueprint_from_snapshot` to execute and resume without a live catalog read.
-- [`RunLogEvent`](../../src/dovo/core/sessions/logs/models.py) / `RunLogEventType`: One `run.log` timeline record. `drive_run`, `RunCoordinator`, `StepCoordinator`, and `LoopEventEmitter` append one JSON line per lifecycle event to `logs_dir/<session_id>/run.log` via `append_run_log_event` ([`engine/run_log.py`](../../src/dovo/engine/run_log.py)), which stamps `ts` at write time and drops write failures silently. `event` decides which optional fields are populated. `step_start`/`step_done` events carry `step_name` (`null` when the step has none) and, for loop body steps, `loop_id` and the 1-based `iteration`; `step_done` also carries `duration_seconds`. Loop events use `iteration` and `next_iteration`, and `loop_done` carries the loop's total iteration count in `iteration`. `core/sessions/logs` reads these events back.
+- [`RunLogEvent`](../../src/dovo/core/sessions/models.py) / `RunLogEventType`: One `run.log` timeline record. `drive_run`, `RunCoordinator`, `StepCoordinator`, and `LoopEventEmitter` append one JSON line per lifecycle event to `logs_dir/<session_id>/run.log` via `append_run_log_event` ([`engine/run_log.py`](../../src/dovo/engine/run_log.py)), which stamps `ts` at write time and drops write failures silently. `event` decides which optional fields are populated. `step_start`/`step_done` events carry `step_name` (`null` when the step has none) and, for loop body steps, `loop_id` and the 1-based `iteration`; `step_done` also carries `duration_seconds`. Loop events use `iteration` and `next_iteration`, and `loop_done` carries the loop's total iteration count in `iteration`. [`core/sessions/services/read_logs.py`](../../src/dovo/core/sessions/services/read_logs.py) reads these events back.
 - [`StepCoordinator`](../../src/dovo/engine/step_coordinator.py), [`Workspace`](../../src/dovo/engine/workspace.py): Per-step attempt and failure-prompt primitives and worktree/session lifecycle used by the coordinator.
 - [`LoopPolicy`](../../src/dovo/engine/loop_policy.py) / `LoopDecision` / `LoopTransitionKind`: Pure loop decisions (advance a body step, complete an iteration, repeat, terminate, or apply the `max_iterations` ceiling) that `RunCoordinator` applies durably. [`LoopEventEmitter`](../../src/dovo/engine/loop_events.py) emits the loop `run.log` events and observer callbacks; `validate_loop_structure` in [`state_validation.py`](../../src/dovo/engine/state_validation.py) rejects persisted loop state whose ids or body order differ from the run snapshot.
 
@@ -190,9 +190,9 @@ All four tables live in one centralized SQLite database shared across projects (
 - `ArtifactRecord`: Persisted artifact metadata rows in `artifacts` table (`id`, `project_id`, `session_id`, `name`, `path`, `size_bytes`, `file_count`, `created_at`, `expires_at`); unique on `(project_id, session_id, name)`, upserted by `ArtifactsRepository.create`.
 
 ### History, Diff, and Status Models
-**Relevant sources:** `src/dovo/core/sessions/history/models.py`, `src/dovo/core/sessions/diff/models.py`, `src/dovo/core/status/models.py`.
-- `HistoryListResult`, `HistoryShowResult`: History query results. `HistoryShowResult.log_files`/`log_snippet` are populated only by `History.show(include_logs=True)`; the snippet holds the last 10 `run.log` events as plain text lines.
-- `LogsShowResult` / `LogsShowStatus` / `LogStreamFilter` ([`core/sessions/logs/models.py`](../../src/dovo/core/sessions/logs/models.py)): `dovo logs` outcome. Only one of `events` (parsed `run.log`, no `step` filter) or `lines` (raw step capture, `step` filter) is populated per call. `available_steps`/`available_attempts` are filled on `STEP_NOT_FOUND`/`ATTEMPT_NOT_FOUND`. Step identity is parsed from the capture filename `<NN>_<step_id>[_iter_<n>]_attempt_<n>.<stream>.log`; there is no sidecar index.
+**Relevant sources:** `src/dovo/core/sessions/models.py`, `src/dovo/core/status/models.py`.
+- `HistoryListResult`, `HistoryShowResult`: History query results. `HistoryShowResult.log_files`/`log_snippet` are populated only by `Session.details(include_logs=True)`; the snippet holds the last 10 `run.log` events as plain text lines.
+- `LogsShowResult` / `LogsShowStatus` / `LogStreamFilter` ([`core/sessions/models.py`](../../src/dovo/core/sessions/models.py)): `dovo logs` outcome. Only one of `events` (parsed `run.log`, no `step` filter) or `lines` (raw step capture, `step` filter) is populated per call. `available_steps`/`available_attempts` are filled on `STEP_NOT_FOUND`/`ATTEMPT_NOT_FOUND`. Step identity is parsed from the capture filename `<NN>_<step_id>[_iter_<n>]_attempt_<n>.<stream>.log`; there is no sidecar index.
 - `DiffResult`: Session unified-diff and artifact outcome (`status`, `diff_text`, `files_changed`, `errors`, `ok`).
 - `DovoStatusResult`: Workspace health, repository status, and collected developer warnings.
 
@@ -252,10 +252,9 @@ Each core domain exposes a cohesive facade class that encapsulates domain servic
 | `Inputs` | `core/inputs/facade.py` | Input flag parsing, default resolution, and placeholder interpolation (`parse_args`, `resolve`, `interpolate`). |
 | `Catalog` | `core/catalog/catalog.py` | Disk-only, multi-tier template scanning, indexing, retrieval, and seeding (`list`, `show`, `get`, `create`, `delete`, `sync`, `validate`, `seed`). |
 | `Blueprint` | `core/catalog/blueprint.py` | Loading a catalog blueprint document (`load`, `steps`, `inputs`, `use_worktree`, `dump`, `resolve_inputs`). |
-| `Diff` | `core/sessions/diff/diff.py` | Session diff resolution and artifact loading (`inspect`). |
 | `Status` | `core/status/facade.py` | Workspace health and telemetry aggregation (`collect`). |
-| `History` | `core/sessions/history/history.py` | Execution history query and display (`list`, `show`). |
-| `Logs` | `core/sessions/logs/logs.py` | Persisted session log inspection (`show`); session existence is checked against `RunsRepository`, then the global `logs_dir/<session_id>/`. |
+| `Session` | `core/sessions/sessions.py` | One session addressed by id (`diff`, `logs`, `details`); a session exists when its run record exists. |
+| `SessionCollection` | `core/sessions/sessions.py` | The project's sessions (`get`, `list`, `latest_diff`); `list` reconciles stale runs, `latest_diff` selects the greatest `started_at`. |
 | `Engine` | `engine/engine.py` | Process-level run persistence, session minting, execution, and resume (`run`, `resume`). |
 | `Filesystem` | `common/filesystem/facade.py` | Atomic writes, safe path operations, and YAML parsing (`atomic_write_json`, `atomic_write_text`, `read_yaml`). |
 

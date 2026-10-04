@@ -9,7 +9,7 @@ import pytest
 from rich.console import Console
 
 from dovo.cli.ui.formatters.diff import DiffResultFormatter, DiffResultView
-from dovo.core.sessions.diff.models import DiffResult, DiffStatus
+from dovo.core.sessions import DiffResult, DiffStatus
 from tests.harness.formatter import (
     FormatterCase,
     assert_json_payload_matches_published_shape,

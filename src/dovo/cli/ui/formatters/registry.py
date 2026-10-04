@@ -24,9 +24,7 @@ import dovo.core.bootstrap as bootstrap_models
 import dovo.core.catalog as catalog_models
 import dovo.core.config as config_models
 import dovo.core.diagnostics as diagnostics_models
-import dovo.core.sessions.diff as diff_models
-import dovo.core.sessions.history as history_models
-import dovo.core.sessions.logs as logs_models
+import dovo.core.sessions as sessions_models
 import dovo.core.status as status_models
 import dovo.core.worktree as worktree_models
 from dovo.cli.ui.formatters.common import DispatcherProtocol
@@ -64,14 +62,14 @@ FORMATTER_REGISTRY: Final[dict[type[BaseModel], type[ComponentFormatter[Any, Any
     config_models.ConfigSetResult: config_formatters.ConfigSetFormatter,
     config_models.ConfigUnsetResult: config_formatters.ConfigUnsetFormatter,
     # Diff
-    diff_models.DiffResult: diff_formatters.DiffResultFormatter,
+    sessions_models.DiffResult: diff_formatters.DiffResultFormatter,
     # Diagnostics
     diagnostics_models.DiagnosticsReport: doctor_formatters.DoctorReportFormatter,
     # History
-    history_models.HistoryListResult: history_formatters.HistoryListFormatter,
-    history_models.HistoryShowResult: history_formatters.HistoryShowFormatter,
+    sessions_models.HistoryListResult: history_formatters.HistoryListFormatter,
+    sessions_models.HistoryShowResult: history_formatters.HistoryShowFormatter,
     # Logs
-    logs_models.LogsShowResult: logs_formatters.LogsShowFormatter,
+    sessions_models.LogsShowResult: logs_formatters.LogsShowFormatter,
     # Init
     bootstrap_models.WorkspaceInitResult: init_formatters.WorkspaceInitFormatter,
     # Worktree
