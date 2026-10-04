@@ -40,4 +40,7 @@ def missing_credential_error(spec: _CredentialDescriptor) -> str:
     if not names:
         raise ValueError(f"provider '{spec.token}' declares no credential_envs")
 
-    return f"missing {' or '.join(names)}. Fix: {' or '.join(f'export {name}=...' for name in names)}"
+    missing_names = " or ".join(names)
+    export_commands = " or ".join(f"export {name}=..." for name in names)
+
+    return f"missing {missing_names}. Fix: {export_commands}"
