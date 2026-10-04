@@ -13,7 +13,7 @@ dovo run <name> [OPTIONS] [-- <input-overrides>]
 | Flag | Description |
 | --- | --- |
 | `--no-worktree` | Run execution in-place in the working tree without creating a Git worktree. Agent steps are rejected under it, because they require a worktree. |
-| `--keep` | Retain the worktree after execution. |
+| `--keep` | Retain the worktree after execution. Each run gets its own worktree at `.dovo/worktrees/<session_id>/` on branch `dovo/<session_id>`, so repeated `--keep` runs of one blueprint do not collide. |
 | `--auto-apply` | Automatically apply worktree changes to the main workspace on successful completion. |
 | `--agent <name>` | Override the agent provider for this run (model, endpoint, temperature, and max tokens still come from config); an unregistered name fails an agent step with `AGENT_PROVIDER_UNSUPPORTED` and has no effect on command/script steps. |
 | `--session-id <id>` | Explicit session identifier. |

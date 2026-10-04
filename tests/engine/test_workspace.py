@@ -11,11 +11,12 @@ from dovo.common.filesystem.models import RepositoryPaths, WorkspacePaths
 from dovo.common.filesystem.services.global_root import resolve_global_paths
 from dovo.core.config import ConfigLoadError
 from dovo.core.config.loader import ConfigLoadResult, ConfigLoadStatus
-from dovo.core.db import RunStatus
+from dovo.core.db import RunStatus, WorktreesRepository
 from dovo.core.git.runner import GitRunner
 from dovo.core.project.services.storage import resolve_workspace_paths
 from dovo.core.worktree import Worktree, WorktreeApplyResult, WorktreeApplyStatus, WorktreeSession
 from dovo.core.worktree.models import WorktreeCreateResult, WorktreeCreateStatus
+from dovo.engine.executors.models import ExecutionIdentity
 from dovo.engine.models import RunObserver, RunSettings
 from dovo.engine.workspace import Workspace
 from tests.harness.builders import WorkspaceBuilder
@@ -99,6 +100,30 @@ class WorkspaceSetupTests:
         assert target_dir == session.worktree_path
         assert target_dir.exists()
         assert observer.events == [("worktree_ready", target_dir, True)]
+
+    def test_fresh_run_worktree_identity_is_session_id_not_blueprint_key(self, tmp_path: Path) -> None:
+        """[tier-1/integration] Workspace.setup: RunSettings(session_id='blueprint_367e1e88', identity.blueprint_key='lint') returns a session with session_id 'blueprint_367e1e88', worktree_path == paths.worktree_dir('blueprint_367e1e88').resolve(), target_branch 'dovo/blueprint_367e1e88', a worktrees row with id 'blueprint_367e1e88', and no worktrees_dir/'lint' directory."""
+        workspace_root = _worktree_workspace(tmp_path)
+        paths = _paths_for(workspace_root)
+        context = RunSettings(
+            cwd=workspace_root,
+            use_worktree=True,
+            session_id="blueprint_367e1e88",
+            identity=ExecutionIdentity(blueprint_name="Lint", blueprint_key="lint"),
+            paths=paths,
+        )
+
+        _, _, session, error = Workspace(context).setup()
+
+        assert error is None
+        assert session is not None
+        assert session.session_id == "blueprint_367e1e88"
+        assert session.worktree_path == paths.worktree_dir("blueprint_367e1e88").resolve()
+        assert session.target_branch == "dovo/blueprint_367e1e88"
+        row = WorktreesRepository(db_path=paths.database_file, project_id=paths.project_id).get("blueprint_367e1e88")
+        assert row is not None
+        assert row.branch_name == "dovo/blueprint_367e1e88"
+        assert not paths.worktree_dir("lint").exists()
 
     def test_worktree_creation_failure_returns_error_message(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch

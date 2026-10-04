@@ -69,11 +69,8 @@ class Workspace:
             self.context.paths,
             db=WorktreesRepository(db_path=self.context.paths.database_file, project_id=self.context.paths.project_id),
         )
-        session_id = None
-        if self.context.identity is not None:
-            session_id = self.context.identity.blueprint_key or None
         try:
-            create_result = manager.create(session_id=session_id)
+            create_result = manager.create(session_id=self.context.session_id)
         except ConfigLoadError as exc:
             return self.context.cwd.resolve(), None, None, f"Git worktree creation failed: {exc}"
         if not create_result.ok or create_result.session is None:
