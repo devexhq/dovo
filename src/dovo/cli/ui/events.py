@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pydantic import BaseModel
 
-from dovo.core.db import RunStatus
+from dovo.core.db import SessionStatus
 
 
 class ErrorPanelEvent(BaseModel):
@@ -51,7 +51,7 @@ class RunSuccessEvent(BaseModel):
 
     session_id: str
     blueprint_name: str
-    status: RunStatus
+    status: SessionStatus
 
 
 class StepStartEvent(BaseModel):

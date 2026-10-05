@@ -11,7 +11,7 @@ from dovo.common.filesystem.models import RepositoryPaths, WorkspacePaths
 from dovo.common.filesystem.services.global_root import resolve_global_paths
 from dovo.core.config import ConfigLoadError
 from dovo.core.config.loader import ConfigLoadResult, ConfigLoadStatus
-from dovo.core.db import RunStatus, WorktreesRepository, WorktreeStatus
+from dovo.core.db import SessionStatus, WorktreesRepository, WorktreeStatus
 from dovo.core.git.runner import GitRunner
 from dovo.core.project.services.storage import resolve_workspace_paths
 from dovo.core.worktree import Worktree, WorktreeApplyResult, WorktreeApplyStatus, WorktreeSession
@@ -392,7 +392,7 @@ class WorkspaceLinkSessionDirTests:
         source_sentinel.write_text("do not delete", encoding="utf-8")
         _commit_source_path(workspace_root, ".dovo/run/sentinel.txt", "Add storage bridge collision")
         paths = _paths_for(workspace_root)
-        session_file = paths.session_dir("link-collision") / "run.json"
+        session_file = paths.session_dir("link-collision") / "session.json"
         session_file.parent.mkdir(parents=True)
         session_file.write_text("preserve me too", encoding="utf-8")
         observer = _RecordingRunObserver()
@@ -517,7 +517,7 @@ class WorkspaceHandleAutoApplyTests:
     def test_auto_apply_conflict_returns_failed_status_and_appends_errors_and_warnings(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """[tier-1/integration] handle_auto_apply: a conflicting apply returns (RunStatus.FAILED, True) and extends errors/warnings from the apply result."""
+        """[tier-1/integration] handle_auto_apply: a conflicting apply returns (SessionStatus.FAILED, True) and extends errors/warnings from the apply result."""
         workspace_root = _worktree_workspace(tmp_path)
         context = RunSettings(cwd=workspace_root, use_worktree=True, auto_apply=True, paths=_paths_for(workspace_root))
         _, manager, session, _ = Workspace(context).setup()
@@ -534,7 +534,7 @@ class WorkspaceHandleAutoApplyTests:
 
         new_status, apply_failed = Workspace(context).handle_auto_apply(manager, session, errors, warnings)
 
-        assert (new_status, apply_failed) == (RunStatus.FAILED, True)
+        assert (new_status, apply_failed) == (SessionStatus.FAILED, True)
         assert errors == ["merge conflict"]
         assert warnings == ["hunk rejected"]
 
@@ -610,7 +610,7 @@ class WorkspaceFinalizeCleanupTests:
     """[tier-1/integration] Workspace.finalize_cleanup: keep-on-pause/apply-failure vs delegate-to-cleanup."""
 
     def test_paused_status_keeps_worktree_and_notifies(self, tmp_path: Path) -> None:
-        """[tier-1/integration] finalize_cleanup: RunStatus.PAUSED keeps the worktree regardless of context.keep."""
+        """[tier-1/integration] finalize_cleanup: SessionStatus.PAUSED keeps the worktree regardless of context.keep."""
         observer = _RecordingRunObserver()
         workspace_root = _worktree_workspace(tmp_path)
         context = RunSettings(
@@ -626,7 +626,7 @@ class WorkspaceFinalizeCleanupTests:
         warnings: list[str] = []
 
         kept = Workspace(context).finalize_cleanup(
-            manager, session, target_dir, RunStatus.PAUSED, apply_failed=False, warnings=warnings
+            manager, session, target_dir, SessionStatus.PAUSED, apply_failed=False, warnings=warnings
         )
 
         assert kept is True
@@ -634,7 +634,7 @@ class WorkspaceFinalizeCleanupTests:
         assert observer.events[-1] == ("worktree_cleanup", True, session.worktree_path)
 
     def test_apply_failed_keeps_worktree_even_when_completed(self, tmp_path: Path) -> None:
-        """[tier-1/integration] finalize_cleanup: apply_failed=True keeps the worktree even for RunStatus.COMPLETED."""
+        """[tier-1/integration] finalize_cleanup: apply_failed=True keeps the worktree even for SessionStatus.COMPLETED."""
         workspace_root = _worktree_workspace(tmp_path)
         context = RunSettings(cwd=workspace_root, use_worktree=True, keep=False, paths=_paths_for(workspace_root))
         target_dir, manager, session, _ = Workspace(context).setup()
@@ -643,14 +643,14 @@ class WorkspaceFinalizeCleanupTests:
         warnings: list[str] = []
 
         kept = Workspace(context).finalize_cleanup(
-            manager, session, target_dir, RunStatus.COMPLETED, apply_failed=True, warnings=warnings
+            manager, session, target_dir, SessionStatus.COMPLETED, apply_failed=True, warnings=warnings
         )
 
         assert kept is True
         assert target_dir.exists()
 
     def test_completed_status_without_apply_failure_delegates_to_cleanup(self, tmp_path: Path) -> None:
-        """[tier-1/integration] finalize_cleanup: RunStatus.COMPLETED with apply_failed=False removes the worktree per Workspace.cleanup."""
+        """[tier-1/integration] finalize_cleanup: SessionStatus.COMPLETED with apply_failed=False removes the worktree per Workspace.cleanup."""
         workspace_root = _worktree_workspace(tmp_path)
         context = RunSettings(cwd=workspace_root, use_worktree=True, keep=False, paths=_paths_for(workspace_root))
         target_dir, manager, session, _ = Workspace(context).setup()
@@ -659,7 +659,7 @@ class WorkspaceFinalizeCleanupTests:
         warnings: list[str] = []
 
         kept = Workspace(context).finalize_cleanup(
-            manager, session, target_dir, RunStatus.COMPLETED, apply_failed=False, warnings=warnings
+            manager, session, target_dir, SessionStatus.COMPLETED, apply_failed=False, warnings=warnings
         )
 
         assert kept is False
@@ -819,13 +819,13 @@ class WorkspaceCleanupSessionTmpDirTests:
     @pytest.mark.parametrize(
         ("session_tmp_dir_present", "keep", "status"),
         [
-            pytest.param(False, False, RunStatus.COMPLETED, id="no_directory"),
-            pytest.param(True, True, RunStatus.COMPLETED, id="keep_true"),
-            pytest.param(True, False, RunStatus.FAILED, id="not_completed"),
+            pytest.param(False, False, SessionStatus.COMPLETED, id="no_directory"),
+            pytest.param(True, True, SessionStatus.COMPLETED, id="keep_true"),
+            pytest.param(True, False, SessionStatus.FAILED, id="not_completed"),
         ],
     )
     def test_noop_branches_leave_directory_untouched(
-        self, tmp_path: Path, session_tmp_dir_present: bool, keep: bool, status: RunStatus
+        self, tmp_path: Path, session_tmp_dir_present: bool, keep: bool, status: SessionStatus
     ) -> None:
         """[tier-1/unit] cleanup_session_tmp_dir: session_tmp_dir=None, keep=True, or a non-COMPLETED status all skip removal."""
         context = RunSettings(cwd=tmp_path, use_worktree=False, paths=_paths_for(tmp_path))
@@ -840,12 +840,12 @@ class WorkspaceCleanupSessionTmpDirTests:
             assert session_tmp_dir.exists()
 
     def test_completed_and_not_kept_removes_directory(self, tmp_path: Path) -> None:
-        """[tier-1/unit] cleanup_session_tmp_dir: RunStatus.COMPLETED with keep=False deletes the scratch directory tree."""
+        """[tier-1/unit] cleanup_session_tmp_dir: SessionStatus.COMPLETED with keep=False deletes the scratch directory tree."""
         context = RunSettings(cwd=tmp_path, use_worktree=False, paths=_paths_for(tmp_path))
         session_tmp_dir = tmp_path / "scratch"
         session_tmp_dir.mkdir()
 
-        Workspace(context).cleanup_session_tmp_dir(session_tmp_dir, keep=False, status=RunStatus.COMPLETED)
+        Workspace(context).cleanup_session_tmp_dir(session_tmp_dir, keep=False, status=SessionStatus.COMPLETED)
 
         assert not session_tmp_dir.exists()
 
@@ -860,6 +860,6 @@ class WorkspaceCleanupSessionTmpDirTests:
 
         monkeypatch.setattr(shutil, "rmtree", _raise)
 
-        Workspace(context).cleanup_session_tmp_dir(session_tmp_dir, keep=False, status=RunStatus.COMPLETED)
+        Workspace(context).cleanup_session_tmp_dir(session_tmp_dir, keep=False, status=SessionStatus.COMPLETED)
 
         assert session_tmp_dir.exists()

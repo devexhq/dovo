@@ -18,12 +18,12 @@ def history_show_command(
     Args:
         context: CLI context instance.
         session_id: Session identifier to inspect.
-        logs: Whether to include log file paths and a recent run.log snippet.
+        logs: Whether to include log file paths and a recent session.log snippet.
         output_format: Presentation format ("terminal" or "json").
 
     Returns:
         HistoryShowResult containing session details and errors.
     """
-    result = Session(context.paths, session_id, db=context.db.runs).details(include_logs=logs)
+    result = Session(context.paths, session_id, db=context.db.sessions).details(include_logs=logs)
     ui_dispatcher.dispatch(result, output_format=output_format)
     return result

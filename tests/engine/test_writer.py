@@ -14,18 +14,18 @@ from dovo.common.filesystem.services.global_root import resolve_global_paths
 from dovo.core.catalog import Catalog
 from dovo.core.catalog.blueprint import Blueprint
 from dovo.core.catalog.definitions import StepDefinition, StepType
-from dovo.core.db import RunStatus
+from dovo.core.db import SessionStatus
 from dovo.core.project.models import ProjectIdentity
 from dovo.core.project.services.identity import save_project_identity
 from dovo.core.project.services.storage import resolve_workspace_paths
 from dovo.engine.models import DefinitionRef, DefinitionsManifest
-from dovo.engine.state_models import RunJsonPayload, RunLifecycle
+from dovo.engine.state_models import SessionJsonPayload, SessionLifecycle
 from dovo.engine.writer import (
     get_session_dir,
     load_blueprint_from_snapshot,
     snapshot_definitions,
     write_session_diff,
-    write_session_run_projection,
+    write_session_projection,
 )
 from tests.harness.builders import BlueprintBuilder, StepBuilder
 from tests.harness.catalog import write_runnable_blueprint, write_runnable_step
@@ -160,23 +160,23 @@ class LoadBlueprintFromSnapshotTests:
 
 
 class WriteSessionRunProjectionTests:
-    """Contract tests for write_session_run_projection writing run.json."""
+    """Contract tests for write_session_projection writing session.json."""
 
-    def test_write_session_run_projection_writes_indented_payload_json_and_returns_path(self, tmp_path: Path) -> None:
-        """[tier-1/integration] write_session_run_projection: returns <session_dir>/run.json whose text equals payload.model_dump_json(indent=2) and that parses back to an equal RunJsonPayload."""
-        payload = RunJsonPayload(
+    def test_write_session_projection_writes_indented_payload_json_and_returns_path(self, tmp_path: Path) -> None:
+        """[tier-1/integration] write_session_projection: returns <session_dir>/session.json whose text equals payload.model_dump_json(indent=2) and that parses back to an equal SessionJsonPayload."""
+        payload = SessionJsonPayload(
             revision=2,
             manifest=DefinitionsManifest(
                 blueprint=DefinitionRef(ref="repo:blueprint:bp", sha="a", resolved_at="2026-09-28T00:00:00+00:00")
             ),
-            lifecycle=RunLifecycle(status=RunStatus.RUNNING, started_at="2026-09-28T00:00:00+00:00"),
+            lifecycle=SessionLifecycle(status=SessionStatus.RUNNING, started_at="2026-09-28T00:00:00+00:00"),
         )
 
-        path = write_session_run_projection(tmp_path / "session", payload)
+        path = write_session_projection(tmp_path / "session", payload)
 
-        assert path == tmp_path / "session" / "run.json"
+        assert path == tmp_path / "session" / "session.json"
         assert path.read_text(encoding="utf-8") == payload.model_dump_json(indent=2)
-        assert RunJsonPayload.model_validate_json(path.read_text(encoding="utf-8")) == payload
+        assert SessionJsonPayload.model_validate_json(path.read_text(encoding="utf-8")) == payload
 
 
 class SessionArtifactWriterTests:

@@ -29,7 +29,7 @@ def diff_command(
     Returns:
         Structured DiffResult with status, errors, and warnings.
     """
-    sessions = SessionCollection(context.paths, db=context.db.runs)
+    sessions = SessionCollection(context.paths, db=context.db.sessions)
     result = sessions.latest_diff() if session_id is None else sessions.get(session_id).diff()
     if result.ok:
         result.raw = raw

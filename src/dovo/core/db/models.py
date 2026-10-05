@@ -18,8 +18,8 @@ class WorktreeStatus(StrEnum):
     CONFLICT = "conflict"
 
 
-class RunStatus(StrEnum):
-    """Lifecycle status for blueprint execution sessions."""
+class SessionStatus(StrEnum):
+    """Lifecycle status of a session record."""
 
     RUNNING = "running"
     COMPLETED = "completed"
@@ -89,23 +89,23 @@ class WorktreeStatusType(TypeDecorator[WorktreeStatus]):
         return WorktreeStatus(value)
 
 
-class RunStatusType(TypeDecorator[RunStatus]):
-    """SQLAlchemy type for coercing RunStatus enums to strings and back."""
+class SessionStatusType(TypeDecorator[SessionStatus]):
+    """SQLAlchemy type for coercing SessionStatus enums to strings and back."""
 
     impl = String
     cache_ok = True
 
-    def process_bind_param(self, value: RunStatus | str | None, dialect: Any) -> str | None:
-        """Coerce incoming RunStatus or str to string for SQLite storage."""
+    def process_bind_param(self, value: SessionStatus | str | None, dialect: Any) -> str | None:
+        """Coerce incoming SessionStatus or str to string for SQLite storage."""
         if value is None:
             return None
-        return value.value if isinstance(value, RunStatus) else str(value)
+        return value.value if isinstance(value, SessionStatus) else str(value)
 
-    def process_result_value(self, value: str | None, dialect: Any) -> RunStatus | None:
-        """Coerce retrieved database string value back into a RunStatus instance."""
+    def process_result_value(self, value: str | None, dialect: Any) -> SessionStatus | None:
+        """Coerce retrieved database string value back into a SessionStatus instance."""
         if value is None:
             return None
-        return RunStatus(value)
+        return SessionStatus(value)
 
 
 class WorktreeRecord(SQLModel, table=True):
@@ -131,10 +131,10 @@ class WorktreeRecord(SQLModel, table=True):
         super().__init__(**data)
 
 
-class RunRecord(SQLModel, table=True):
-    """Row shape for the centralized `runs` table."""
+class SessionRecord(SQLModel, table=True):
+    """Row shape for the centralized `sessions` table."""
 
-    __tablename__: ClassVar[str] = "runs"  # pyright: ignore[reportIncompatibleVariableOverride]
+    __tablename__: ClassVar[str] = "sessions"  # pyright: ignore[reportIncompatibleVariableOverride]
     model_config = {"extra": "forbid"}
 
     id: int | None = Field(default=None, primary_key=True)
@@ -143,7 +143,7 @@ class RunRecord(SQLModel, table=True):
     blueprint_key: str
     blueprint_name: str
     branch_name: str = Field(default="")
-    status: RunStatus = Field(default=RunStatus.RUNNING, sa_type=RunStatusType, index=True)
+    status: SessionStatus = Field(default=SessionStatus.RUNNING, sa_type=SessionStatusType, index=True)
     pid: int | None = Field(default=None)
     started_at: str = Field(default_factory=_now_utc_str, index=True)
     completed_at: str | None = Field(default=None)
@@ -162,9 +162,9 @@ class RunRecord(SQLModel, table=True):
     worktree_kept: bool = Field(default=False)
 
     def __init__(self, **data: Any) -> None:
-        """Initialize RunRecord, coercing string enums to Enum instances."""
+        """Initialize SessionRecord, coercing string enums to Enum instances."""
         if "status" in data and isinstance(data["status"], str):
-            data["status"] = RunStatus(data["status"])
+            data["status"] = SessionStatus(data["status"])
         super().__init__(**data)
 
     @property

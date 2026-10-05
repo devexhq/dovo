@@ -11,10 +11,10 @@ from dovo.common.filesystem.services.global_root import resolve_global_paths
 from dovo.core.catalog import Catalog
 from dovo.core.catalog.blueprint import Blueprint
 from dovo.core.catalog.definitions import LoopStepBlock, StepDefinition
-from dovo.core.db import RunsRepository, RunStatus
+from dovo.core.db import SessionsRepository, SessionStatus
 from dovo.core.git.runner import GitRunner
 from dovo.core.project.services.storage import resolve_workspace_paths
-from dovo.engine import Engine, EngineResumeError, EngineResumeStatus, RunRequest, RunStateStore
+from dovo.engine import Engine, EngineResumeError, EngineResumeStatus, RunRequest, SessionStateStore
 from dovo.engine.executors.models import StepResult
 from dovo.engine.models import (
     FailurePromptDecision,
@@ -23,11 +23,11 @@ from dovo.engine.models import (
     RunObserver,
     RunOutcome,
 )
-from dovo.engine.state_models import RunJsonPayload
+from dovo.engine.state_models import SessionJsonPayload
 from dovo.engine.writer import get_session_dir
 from tests.harness.builders import BlueprintBuilder, StepBuilder, WorkspaceBuilder
 from tests.harness.catalog import write_runnable_blueprint, write_runnable_step
-from tests.harness.runs import seed_paused_run
+from tests.harness.sessions import seed_paused_session
 
 
 class _ContinuePrompter(FailurePrompter):
@@ -44,8 +44,8 @@ class _ContinuePrompter(FailurePrompter):
         raise AssertionError("prompt_loop_max_iterations should not be called")
 
 
-def _engine(paths: WorkspacePaths, runs: RunsRepository) -> Engine:
-    return Engine(paths, db=runs, catalog=Catalog(paths))
+def _engine(paths: WorkspacePaths, sessions: SessionsRepository) -> Engine:
+    return Engine(paths, db=sessions, catalog=Catalog(paths))
 
 
 def _catalog_blueprint(paths: WorkspacePaths, key: str, steps: list[dict[str, object]]) -> Blueprint:
@@ -55,11 +55,11 @@ def _catalog_blueprint(paths: WorkspacePaths, key: str, steps: list[dict[str, ob
 
 def _patch_drive_run(monkeypatch: pytest.MonkeyPatch, paths: WorkspacePaths, outcome: RunOutcome | None = None) -> None:
     """Replace drive_run so Engine persistence is observed without executing steps."""
-    result = outcome or RunOutcome(status=RunStatus.COMPLETED, worktree_path=paths.root_dir)
+    result = outcome or RunOutcome(status=SessionStatus.COMPLETED, worktree_path=paths.root_dir)
 
     def fake_drive_run(
         paths: WorkspacePaths,
-        runs: RunsRepository,
+        sessions: SessionsRepository,
         session_id: str,
         *,
         observer: RunObserver | None,
@@ -89,7 +89,7 @@ class EngineRunStartFailureTests:
     def test_run_start_failure_returns_failed_outcome_without_executing_steps(
         self,
         engine_paths: WorkspacePaths,
-        runs_repo: RunsRepository,
+        sessions_repo: SessionsRepository,
         monkeypatch: pytest.MonkeyPatch,
         fault: str,
         expected_error: str,
@@ -112,55 +112,57 @@ class EngineRunStartFailureTests:
             raise RuntimeError("boom")
 
         if fault == "insert":
-            monkeypatch.setattr(RunsRepository, "create", raise_db_down)
+            monkeypatch.setattr(SessionsRepository, "create", raise_db_down)
         if fault == "initialize":
-            monkeypatch.setattr(RunStateStore, "initialize", raise_boom)
+            monkeypatch.setattr(SessionStateStore, "initialize", raise_boom)
 
-        outcome = _engine(engine_paths, runs_repo).run(blueprint, RunRequest(session_id="start-1", use_worktree=False))
+        outcome = _engine(engine_paths, sessions_repo).run(
+            blueprint, RunRequest(session_id="start-1", use_worktree=False)
+        )
 
-        assert outcome.status == RunStatus.FAILED
+        assert outcome.status == SessionStatus.FAILED
         assert outcome.errors == [expected_error]
         assert not (engine_paths.root_dir / "marker").exists()
-        row = runs_repo.get("start-1")
-        assert (row.status if row is not None else None) == (RunStatus.FAILED if fault == "initialize" else None)
+        row = sessions_repo.get("start-1")
+        assert (row.status if row is not None else None) == (SessionStatus.FAILED if fault == "initialize" else None)
 
 
 class EngineDispatchTests:
     """[tier-1/integration] Engine.run and Engine.resume: one dispatch path through drive_run and RunCoordinator."""
 
     def test_run_and_resume_both_complete_through_coordinator_and_finalize_row(
-        self, engine_paths: WorkspacePaths, runs_repo: RunsRepository
+        self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository
     ) -> None:
         """[tier-1/integration] Engine.run and Engine.resume: a fresh two-step run and a resumed paused run both return COMPLETED, and each row ends status COMPLETED with execution_state_revision > 0 and the original manifest."""
-        engine = _engine(engine_paths, runs_repo)
+        engine = _engine(engine_paths, sessions_repo)
         fresh = engine.run(
             _catalog_blueprint(engine_paths, "fresh", [{"id": "a", "run": "true"}, {"id": "b", "run": "true"}]),
             RunRequest(session_id="fresh", use_worktree=False),
         )
-        seed_paused_run(
+        seed_paused_session(
             engine_paths,
-            runs_repo,
+            sessions_repo,
             session_id="paused",
             steps=[{"id": "a", "run": "true"}, {"id": "b", "run": "exit 1", "on_failure": "prompt_user"}],
             paused_step_id="b",
         )
-        manifest = RunStateStore(runs_repo, engine_paths, "paused").load().state
+        manifest = SessionStateStore(sessions_repo, engine_paths, "paused").load().state
         assert manifest is not None
 
         resumed = engine.resume("paused", failure_prompter=_ContinuePrompter())
 
-        assert (fresh.status, resumed.status) == (RunStatus.COMPLETED, RunStatus.COMPLETED)
+        assert (fresh.status, resumed.status) == (SessionStatus.COMPLETED, SessionStatus.COMPLETED)
         assert [result.step_id for result in fresh.step_results] == ["a", "b"]
         assert [(result.step_id, result.status) for result in resumed.step_results] == [
             ("a", "completed"),
             ("b", "ignored"),
         ]
         for session_id in ("fresh", "paused"):
-            row = runs_repo.get(session_id)
+            row = sessions_repo.get(session_id)
             assert row is not None
-            assert row.status == RunStatus.COMPLETED
+            assert row.status == SessionStatus.COMPLETED
             assert (row.execution_state_revision or 0) > 0
-        final = RunStateStore(runs_repo, engine_paths, "paused").load().state
+        final = SessionStateStore(sessions_repo, engine_paths, "paused").load().state
         assert final is not None
         assert final.manifest == manifest.manifest
 
@@ -168,21 +170,21 @@ class EngineDispatchTests:
         "fault", [pytest.param("not-found", id="not-found"), pytest.param("wrong-status", id="wrong-status")]
     )
     def test_resume_of_invalid_run_raises_before_any_step_executes(
-        self, engine_paths: WorkspacePaths, runs_repo: RunsRepository, fault: str
+        self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository, fault: str
     ) -> None:
         """[tier-1/integration] Engine.resume: an unknown session or a non-paused row raises EngineResumeError (NOT_FOUND / WRONG_STATUS) and the step marker file is never written."""
         if fault == "wrong-status":
-            seed_paused_run(
+            seed_paused_session(
                 engine_paths,
-                runs_repo,
+                sessions_repo,
                 session_id="invalid",
                 steps=[{"id": "a", "run": "touch marker", "on_failure": "prompt_user"}],
                 paused_step_id="a",
             )
-            runs_repo.update_status("invalid", RunStatus.COMPLETED)
+            sessions_repo.update_status("invalid", SessionStatus.COMPLETED)
 
         with pytest.raises(EngineResumeError) as exc_info:
-            _engine(engine_paths, runs_repo).resume("invalid")
+            _engine(engine_paths, sessions_repo).resume("invalid")
 
         expected = EngineResumeStatus.NOT_FOUND if fault == "not-found" else EngineResumeStatus.WRONG_STATUS
         assert exc_info.value.status is expected
@@ -199,7 +201,7 @@ class EngineDispatchTests:
     def test_run_and_resume_pass_their_session_id_to_drive_run(
         self,
         engine_paths: WorkspacePaths,
-        runs_repo: RunsRepository,
+        sessions_repo: SessionsRepository,
         monkeypatch: pytest.MonkeyPatch,
         entry: str,
         expected_session_id: str | None,
@@ -209,7 +211,7 @@ class EngineDispatchTests:
 
         def recording_drive_run(
             paths: WorkspacePaths,
-            runs: RunsRepository,
+            sessions: SessionsRepository,
             session_id: str,
             *,
             observer: RunObserver | None,
@@ -217,14 +219,14 @@ class EngineDispatchTests:
             no_tty: bool,
         ) -> RunOutcome:
             seen.append(session_id)
-            return RunOutcome(status=RunStatus.COMPLETED, worktree_path=paths.root_dir)
+            return RunOutcome(status=SessionStatus.COMPLETED, worktree_path=paths.root_dir)
 
         monkeypatch.setattr("dovo.engine.engine.drive_run", recording_drive_run)
-        engine = _engine(engine_paths, runs_repo)
+        engine = _engine(engine_paths, sessions_repo)
         if entry == "resume":
-            seed_paused_run(
+            seed_paused_session(
                 engine_paths,
-                runs_repo,
+                sessions_repo,
                 session_id="resume-1",
                 steps=[{"id": "a", "run": "true", "on_failure": "prompt_user"}],
                 paused_step_id="a",
@@ -243,59 +245,59 @@ class EngineResumeFinalizationTests:
     """[tier-1/integration] Engine.resume: row status flips and finalization record persistence failures as warnings."""
 
     @staticmethod
-    def _seed(paths: WorkspacePaths, runs: RunsRepository, session_id: str) -> None:
-        seed_paused_run(
+    def _seed(paths: WorkspacePaths, sessions: SessionsRepository, session_id: str) -> None:
+        seed_paused_session(
             paths,
-            runs,
+            sessions,
             session_id=session_id,
             steps=[{"id": "a", "run": "true", "on_failure": "prompt_user"}],
             paused_step_id="a",
         )
 
     def test_resume_mark_running_failure_appends_warning_but_still_runs(
-        self, engine_paths: WorkspacePaths, runs_repo: RunsRepository, monkeypatch: pytest.MonkeyPatch
+        self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """[tier-1/integration] Engine.resume: a failing paused-to-running status update appends one warning, still dispatches, and the row is finalized COMPLETED."""
-        self._seed(engine_paths, runs_repo, "mark-running")
+        self._seed(engine_paths, sessions_repo, "mark-running")
         _patch_drive_run(monkeypatch, engine_paths)
 
         def locked(*args: object, **kwargs: object) -> None:
             raise RuntimeError("locked")
 
-        monkeypatch.setattr(RunsRepository, "update_status", locked)
+        monkeypatch.setattr(SessionsRepository, "update_status", locked)
 
-        outcome = _engine(engine_paths, runs_repo).resume("mark-running")
+        outcome = _engine(engine_paths, sessions_repo).resume("mark-running")
 
         assert outcome.warnings == ["Failed to update run status in database: locked"]
-        row = runs_repo.get("mark-running")
+        row = sessions_repo.get("mark-running")
         assert row is not None
-        assert row.status == RunStatus.COMPLETED
+        assert row.status == SessionStatus.COMPLETED
 
     def test_resume_finalize_failure_appends_warning_and_leaves_row_running(
-        self, engine_paths: WorkspacePaths, runs_repo: RunsRepository, monkeypatch: pytest.MonkeyPatch
+        self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """[tier-1/integration] Engine.resume: a failing final state save appends a warning and leaves the row running with no completed_at."""
-        self._seed(engine_paths, runs_repo, "finalize")
+        self._seed(engine_paths, sessions_repo, "finalize")
         _patch_drive_run(monkeypatch, engine_paths)
 
         def locked(*args: object, **kwargs: object) -> None:
             raise RuntimeError("locked")
 
-        monkeypatch.setattr(RunsRepository, "save_execution_state", locked)
+        monkeypatch.setattr(SessionsRepository, "save_execution_state", locked)
 
-        outcome = _engine(engine_paths, runs_repo).resume("finalize")
+        outcome = _engine(engine_paths, sessions_repo).resume("finalize")
 
         assert outcome.warnings == ["Failed to update run status in database: locked"]
-        row = runs_repo.get("finalize")
+        row = sessions_repo.get("finalize")
         assert row is not None
-        assert (row.status, row.completed_at) == (RunStatus.RUNNING, None)
+        assert (row.status, row.completed_at) == (SessionStatus.RUNNING, None)
 
 
 class EngineRunSnapshotsDefinitionsTests:
     """[tier-1/unit] Engine.run: definitions snapshotting on run start."""
 
     def test_run_writes_snapshot_files_and_records_manifest_in_state(
-        self, engine_paths: WorkspacePaths, runs_repo: RunsRepository, monkeypatch: pytest.MonkeyPatch
+        self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """[tier-1/unit] Engine.run: a catalog-backed blueprint with one uses: step produces session_dir/definitions/<key>.yml, session_dir/definitions/steps/<step_key>.yml, and an execution state whose manifest references both."""
         write_runnable_step(
@@ -304,21 +306,23 @@ class EngineRunSnapshotsDefinitionsTests:
         blueprint = _catalog_blueprint(engine_paths, "snap-task", [{"id": "s1", "uses": "lint-check"}])
         _patch_drive_run(monkeypatch, engine_paths)
 
-        outcome = _engine(engine_paths, runs_repo).run(blueprint, RunRequest(session_id="snap-1", use_worktree=False))
+        outcome = _engine(engine_paths, sessions_repo).run(
+            blueprint, RunRequest(session_id="snap-1", use_worktree=False)
+        )
 
-        assert outcome.status == RunStatus.COMPLETED
+        assert outcome.status == SessionStatus.COMPLETED
         session_dir = get_session_dir(engine_paths, "snap-1")
         assert (session_dir / "definitions" / "snap-task.yml").is_file()
         assert (session_dir / "definitions" / "steps" / "lint-check.yml").is_file()
-        loaded = RunStateStore(runs_repo, engine_paths, "snap-1").load()
+        loaded = SessionStateStore(sessions_repo, engine_paths, "snap-1").load()
         assert loaded.state is not None
         assert loaded.state.manifest.blueprint.ref == "repo:blueprint:snap-task"
         assert [ref.ref for ref in loaded.state.manifest.steps] == ["repo:step:lint-check"]
 
     def test_run_persists_initial_state_and_projection_before_first_step(
-        self, engine_paths: WorkspacePaths, runs_repo: RunsRepository, monkeypatch: pytest.MonkeyPatch
+        self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """[tier-1/unit] Engine.run: when drive_run is entered, the row is RUNNING with execution_state_revision 0, RunStateStore.load() returns a tree whose nodes are the blueprint's steps in order, and run.json parses to a RunJsonPayload whose nodes equal that tree's nodes."""
+        """[tier-1/unit] Engine.run: when drive_run is entered, the row is RUNNING with execution_state_revision 0, SessionStateStore.load() returns a tree whose nodes are the blueprint's steps in order, and session.json parses to a SessionJsonPayload whose nodes equal that tree's nodes."""
         blueprint = _catalog_blueprint(
             engine_paths, "init-task", [{"id": "s1", "run": "echo one"}, {"id": "s2", "run": "echo two"}]
         )
@@ -326,47 +330,47 @@ class EngineRunSnapshotsDefinitionsTests:
 
         def observing_drive_run(
             paths: WorkspacePaths,
-            runs: RunsRepository,
+            sessions: SessionsRepository,
             session_id: str,
             *,
             observer: RunObserver | None,
             prompter: FailurePrompter | None,
             no_tty: bool,
         ) -> RunOutcome:
-            row = runs.get(session_id)
+            row = sessions.get(session_id)
             assert row is not None
-            loaded = RunStateStore(runs, paths, session_id).load()
+            loaded = SessionStateStore(sessions, paths, session_id).load()
             assert loaded.state is not None
             observed["status"] = row.status
             observed["revision"] = row.execution_state_revision
             observed["nodes"] = [node.id for node in loaded.state.nodes]
-            observed["projection"] = RunJsonPayload.model_validate_json(
-                (paths.session_dir(session_id) / "run.json").read_text(encoding="utf-8")
+            observed["projection"] = SessionJsonPayload.model_validate_json(
+                (paths.session_dir(session_id) / "session.json").read_text(encoding="utf-8")
             ).nodes
             observed["state"] = loaded.state.nodes
-            return RunOutcome(status=RunStatus.COMPLETED, worktree_path=paths.root_dir)
+            return RunOutcome(status=SessionStatus.COMPLETED, worktree_path=paths.root_dir)
 
         monkeypatch.setattr("dovo.engine.engine.drive_run", observing_drive_run)
 
-        _engine(engine_paths, runs_repo).run(blueprint, RunRequest(session_id="init-1", use_worktree=False))
+        _engine(engine_paths, sessions_repo).run(blueprint, RunRequest(session_id="init-1", use_worktree=False))
 
-        assert observed["status"] == RunStatus.RUNNING
+        assert observed["status"] == SessionStatus.RUNNING
         assert observed["revision"] == 0
         assert observed["nodes"] == ["s1", "s2"]
         assert observed["projection"] == observed["state"]
 
     def test_run_finalizes_row_with_revision_one_and_completed_status(
-        self, engine_paths: WorkspacePaths, runs_repo: RunsRepository, monkeypatch: pytest.MonkeyPatch
+        self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """[tier-1/unit] Engine.run: after a COMPLETED outcome the row is COMPLETED with completed_at set and execution_state_revision 1."""
         blueprint = _catalog_blueprint(engine_paths, "final-task", [{"id": "s1", "run": "echo one"}])
         _patch_drive_run(monkeypatch, engine_paths)
 
-        _engine(engine_paths, runs_repo).run(blueprint, RunRequest(session_id="final-1", use_worktree=False))
+        _engine(engine_paths, sessions_repo).run(blueprint, RunRequest(session_id="final-1", use_worktree=False))
 
-        row = runs_repo.get("final-1")
+        row = sessions_repo.get("final-1")
         assert row is not None
-        assert row.status == RunStatus.COMPLETED
+        assert row.status == SessionStatus.COMPLETED
         assert row.completed_at is not None
         assert row.execution_state_revision == 1
 
@@ -375,12 +379,12 @@ class EngineResumePreservesDefinitionsTests:
     """[tier-1/unit] Engine.resume: the execution state keeps the manifest captured by the original Engine.run."""
 
     def test_resume_finalization_keeps_original_manifest_and_bumps_revision(
-        self, engine_paths: WorkspacePaths, runs_repo: RunsRepository, monkeypatch: pytest.MonkeyPatch
+        self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """[tier-1/unit] Engine.resume: finalizing a resumed run keeps the seeded manifest and advances the state revision by one."""
-        seed_paused_run(
+        seed_paused_session(
             engine_paths,
-            runs_repo,
+            sessions_repo,
             session_id="task_defs",
             steps=[
                 {"id": "setup", "run": "echo setup"},
@@ -388,36 +392,36 @@ class EngineResumePreservesDefinitionsTests:
             ],
             paused_step_id="publish",
         )
-        before = RunStateStore(runs_repo, engine_paths, "task_defs").load().state
+        before = SessionStateStore(sessions_repo, engine_paths, "task_defs").load().state
         assert before is not None
         _patch_drive_run(monkeypatch, engine_paths)
 
-        _engine(engine_paths, runs_repo).resume("task_defs")
+        _engine(engine_paths, sessions_repo).resume("task_defs")
 
-        after = RunStateStore(runs_repo, engine_paths, "task_defs").load().state
+        after = SessionStateStore(sessions_repo, engine_paths, "task_defs").load().state
         assert after is not None
         assert after.manifest == before.manifest
         assert after.revision == before.revision + 1
 
 
 class EngineRunConfigPersistenceTests:
-    """[tier-1/unit] Engine.run: resolved run configuration lands on the run row."""
+    """[tier-1/unit] Engine.run: resolved run configuration lands on the session row."""
 
     def test_run_persists_resolved_configuration_on_row(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """[tier-1/unit] Engine.run: RunRequest(use_worktree=False, keep=True, agent='claude', auto_apply=True) with resolved inputs {'env': 'prod'} leaves a row with use_worktree False, keep True, agent 'claude', inputs_json '{\"env\": \"prod\"}', auto_apply True, and commit_sha equal to git rev-parse HEAD."""
         workspace = WorkspaceBuilder(tmp_path / "git-workspace").with_git().with_database().build()
         paths = resolve_workspace_paths(RepositoryPaths.from_root(workspace), resolve_global_paths(None))
-        runs = RunsRepository(db_path=paths.database_file, project_id=paths.project_id)
+        sessions = SessionsRepository(db_path=paths.database_file, project_id=paths.project_id)
         write_runnable_blueprint(workspace, key="cfg", steps=[{"id": "s1", "run": "echo hi"}])
         blueprint = Blueprint.load("cfg", catalog=Catalog(paths))
         _patch_drive_run(monkeypatch, paths)
 
-        _engine(paths, runs).run(
+        _engine(paths, sessions).run(
             blueprint,
             RunRequest(session_id="cfg-1", use_worktree=False, keep=True, agent="claude", auto_apply=True),
         )
 
-        row = runs.get("cfg-1")
+        row = sessions.get("cfg-1")
         assert row is not None
         assert row.use_worktree is False
         assert row.keep is True
@@ -426,7 +430,7 @@ class EngineRunConfigPersistenceTests:
         assert row.commit_sha == GitRunner.rev_parse(workspace)
 
     def test_run_persists_resolved_inputs_json_on_row(
-        self, engine_paths: WorkspacePaths, runs_repo: RunsRepository, monkeypatch: pytest.MonkeyPatch
+        self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """[tier-1/unit] Engine.run: resolved inputs {'env': 'prod'} leave inputs_json '{\"env\": \"prod\"}' on the row."""
         blueprint = Blueprint(
@@ -439,55 +443,57 @@ class EngineRunConfigPersistenceTests:
         write_runnable_blueprint(engine_paths.root_dir, key="inputs", steps=[{"id": "s1", "run": "echo hi"}])
         _patch_drive_run(monkeypatch, engine_paths)
 
-        _engine(engine_paths, runs_repo).run(
+        _engine(engine_paths, sessions_repo).run(
             blueprint, RunRequest(session_id="inputs-1", inputs={"env": "prod"}, use_worktree=False)
         )
 
-        row = runs_repo.get("inputs-1")
+        row = sessions_repo.get("inputs-1")
         assert row is not None
         assert row.inputs_json == '{"env": "prod"}'
 
     def test_run_catalog_blueprint_records_manifest_tier_on_row(
-        self, engine_paths: WorkspacePaths, runs_repo: RunsRepository, monkeypatch: pytest.MonkeyPatch
+        self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """[tier-1/unit] Engine.run: a catalog-backed blueprint leaves blueprint_tier equal to the manifest blueprint ref's tier."""
         blueprint = _catalog_blueprint(engine_paths, "tier-task", [{"id": "s1", "run": "echo one"}])
         _patch_drive_run(monkeypatch, engine_paths)
 
-        _engine(engine_paths, runs_repo).run(blueprint, RunRequest(session_id="tier-1", use_worktree=False))
+        _engine(engine_paths, sessions_repo).run(blueprint, RunRequest(session_id="tier-1", use_worktree=False))
 
-        row = runs_repo.get("tier-1")
+        row = sessions_repo.get("tier-1")
         assert row is not None
         assert row.blueprint_tier == "repo"
 
     def test_run_outside_git_repository_stores_null_commit_sha(
-        self, engine_paths: WorkspacePaths, runs_repo: RunsRepository, monkeypatch: pytest.MonkeyPatch
+        self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """[tier-1/unit] Engine.run: a workspace that is not a git repository completes with commit_sha None on the row."""
         blueprint = _catalog_blueprint(engine_paths, "nogit-task", [{"id": "s1", "run": "echo one"}])
         _patch_drive_run(monkeypatch, engine_paths)
 
-        outcome = _engine(engine_paths, runs_repo).run(blueprint, RunRequest(session_id="nogit-1", use_worktree=False))
+        outcome = _engine(engine_paths, sessions_repo).run(
+            blueprint, RunRequest(session_id="nogit-1", use_worktree=False)
+        )
 
-        row = runs_repo.get("nogit-1")
+        row = sessions_repo.get("nogit-1")
         assert row is not None
-        assert outcome.status == RunStatus.COMPLETED
+        assert outcome.status == SessionStatus.COMPLETED
         assert row.commit_sha is None
 
     @pytest.mark.parametrize(
         ("outcome_status", "outcome_worktree_id"),
         [
-            pytest.param(RunStatus.COMPLETED, "dovo_1", id="completed-with-worktree"),
-            pytest.param(RunStatus.PAUSED, "dovo_2", id="paused-with-worktree"),
-            pytest.param(RunStatus.COMPLETED, None, id="completed-without-worktree"),
+            pytest.param(SessionStatus.COMPLETED, "dovo_1", id="completed-with-worktree"),
+            pytest.param(SessionStatus.PAUSED, "dovo_2", id="paused-with-worktree"),
+            pytest.param(SessionStatus.COMPLETED, None, id="completed-without-worktree"),
         ],
     )
     def test_run_records_outcome_worktree_id_on_row(
         self,
         engine_paths: WorkspacePaths,
-        runs_repo: RunsRepository,
+        sessions_repo: SessionsRepository,
         monkeypatch: pytest.MonkeyPatch,
-        outcome_status: RunStatus,
+        outcome_status: SessionStatus,
         outcome_worktree_id: str | None,
     ) -> None:
         """[tier-1/unit] Engine.run: row.worktree_id equals the RunOutcome.worktree_id drive_run reported, for completed and paused runs, and stays None when no worktree was used."""
@@ -498,48 +504,52 @@ class EngineRunConfigPersistenceTests:
             RunOutcome(status=outcome_status, worktree_path=engine_paths.root_dir, worktree_id=outcome_worktree_id),
         )
 
-        _engine(engine_paths, runs_repo).run(
+        _engine(engine_paths, sessions_repo).run(
             blueprint, RunRequest(session_id="worktree-run", use_worktree=True, keep=True)
         )
 
-        row = runs_repo.get("worktree-run")
+        row = sessions_repo.get("worktree-run")
         assert row is not None
         assert row.status == outcome_status
         assert row.worktree_id == outcome_worktree_id
 
 
 class EngineRunProjectionTests:
-    """[tier-1/integration] Engine.run: the terminal row and run.json agree."""
+    """[tier-1/integration] Engine.run: the terminal row and session.json agree."""
 
     @pytest.mark.parametrize("keep", [False, True])
-    def test_run_terminal_row_and_run_json_agree(
-        self, engine_paths: WorkspacePaths, runs_repo: RunsRepository, monkeypatch: pytest.MonkeyPatch, keep: bool
+    def test_run_terminal_row_and_session_json_agree(
+        self,
+        engine_paths: WorkspacePaths,
+        sessions_repo: SessionsRepository,
+        monkeypatch: pytest.MonkeyPatch,
+        keep: bool,
     ) -> None:
-        """[tier-1/integration] Engine.run: a completed worktree-backed run leaves run.json.revision == row.execution_state_revision, run.json.results == outcome.step_results, and run.json.lifecycle equal to the row's status/error_message/completed_at/worktree_id/worktree_kept, with worktree_kept == keep."""
+        """[tier-1/integration] Engine.run: a completed worktree-backed run leaves session.json.revision == row.execution_state_revision, session.json.results == outcome.step_results, and session.json.lifecycle equal to the row's status/error_message/completed_at/worktree_id/worktree_kept, with worktree_kept == keep."""
         blueprint = _catalog_blueprint(engine_paths, "proj-task", [{"id": "s1", "run": "echo one"}])
         _patch_drive_run(
             monkeypatch,
             engine_paths,
             RunOutcome(
-                status=RunStatus.COMPLETED,
+                status=SessionStatus.COMPLETED,
                 worktree_path=engine_paths.root_dir,
                 worktree_id="dovo_1",
                 worktree_kept=keep,
             ),
         )
 
-        outcome = _engine(engine_paths, runs_repo).run(
+        outcome = _engine(engine_paths, sessions_repo).run(
             blueprint, RunRequest(session_id="proj-1", use_worktree=True, keep=keep)
         )
 
-        row = runs_repo.get("proj-1")
+        row = sessions_repo.get("proj-1")
         assert row is not None
-        payload = RunJsonPayload.model_validate_json(
-            (get_session_dir(engine_paths, "proj-1") / "run.json").read_text(encoding="utf-8")
+        payload = SessionJsonPayload.model_validate_json(
+            (get_session_dir(engine_paths, "proj-1") / "session.json").read_text(encoding="utf-8")
         )
         assert payload.revision == row.execution_state_revision
         assert payload.results == outcome.step_results
-        assert payload.lifecycle.status == row.status == RunStatus.COMPLETED
+        assert payload.lifecycle.status == row.status == SessionStatus.COMPLETED
         assert payload.lifecycle.error_message == row.error_message
         assert payload.lifecycle.completed_at == row.completed_at
         assert row.completed_at is not None
@@ -551,30 +561,30 @@ class EngineFinalizeFallbackTests:
     """[tier-1/unit] Engine.run: finalization falls back to a plain status update when the state cannot be reloaded."""
 
     def test_finalize_falls_back_to_row_update_when_state_is_corrupt(
-        self, engine_paths: WorkspacePaths, runs_repo: RunsRepository, monkeypatch: pytest.MonkeyPatch
+        self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """[tier-1/unit] Engine.run: a state document corrupted during the run leaves the row COMPLETED via update_status and one warning naming the corrupt state."""
         blueprint = _catalog_blueprint(engine_paths, "corrupt-task", [{"id": "s1", "run": "echo one"}])
 
         def corrupting_drive_run(
             paths: WorkspacePaths,
-            runs: RunsRepository,
+            sessions: SessionsRepository,
             session_id: str,
             *,
             observer: RunObserver | None,
             prompter: FailurePrompter | None,
             no_tty: bool,
         ) -> RunOutcome:
-            runs.save_execution_state(session_id, "not json", expected_revision=0, next_revision=0)
-            return RunOutcome(status=RunStatus.COMPLETED, worktree_path=paths.root_dir)
+            sessions.save_execution_state(session_id, "not json", expected_revision=0, next_revision=0)
+            return RunOutcome(status=SessionStatus.COMPLETED, worktree_path=paths.root_dir)
 
         monkeypatch.setattr("dovo.engine.engine.drive_run", corrupting_drive_run)
 
-        outcome = _engine(engine_paths, runs_repo).run(
+        outcome = _engine(engine_paths, sessions_repo).run(
             blueprint, RunRequest(session_id="corrupt-1", use_worktree=False)
         )
 
-        row = runs_repo.get("corrupt-1")
+        row = sessions_repo.get("corrupt-1")
         assert row is not None
-        assert outcome.warnings == ["Execution state for run 'corrupt-1' is corrupt."]
-        assert row.status == RunStatus.COMPLETED
+        assert outcome.warnings == ["Execution state for session 'corrupt-1' is corrupt."]
+        assert row.status == SessionStatus.COMPLETED

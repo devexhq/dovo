@@ -11,10 +11,10 @@ from rich.text import Text
 from dovo.cli.ui.formatters.common import build_error_panel
 from dovo.cli.ui.formatters.logs.logs_views import LogsShowView
 from dovo.common.types import ComponentFormatter
-from dovo.core.sessions import LogsShowResult, LogsShowStatus, RunLogEvent
+from dovo.core.sessions import LogsShowResult, LogsShowStatus, SessionLogEvent
 
 
-def _event_details(event: RunLogEvent) -> str:
+def _event_details(event: SessionLogEvent) -> str:
     """Join whichever optional fields an event populates into one plain-text cell."""
     return " ".join(f"{name}={value}" for name, value in event.details().items())
 
@@ -44,8 +44,8 @@ def _render_error_panel(view: LogsShowView) -> Panel | None:
     return None
 
 
-def _build_events_table(events: list[RunLogEvent]) -> Table:
-    """Lay out run.log events as one table row per event."""
+def _build_events_table(events: list[SessionLogEvent]) -> Table:
+    """Lay out session.log events as one table row per event."""
     table = Table(show_header=True, header_style="bold cyan")
     table.add_column("Time", no_wrap=True)
     table.add_column("Event", no_wrap=True)
@@ -73,7 +73,7 @@ class LogsShowFormatter(ComponentFormatter[LogsShowResult, LogsShowView]):
         )
 
     def to_rich(self, data: LogsShowResult) -> Any:
-        """Render run.log events as a table, or step log lines verbatim."""
+        """Render session.log events as a table, or step log lines verbatim."""
         view = self.transform(data)
         error_panel = _render_error_panel(view)
         if error_panel is not None:

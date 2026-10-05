@@ -16,11 +16,11 @@ from dovo.common.filesystem import Filesystem
 from dovo.common.filesystem.models import RepositoryPaths, WorkspacePaths
 from dovo.common.filesystem.services.global_root import resolve_global_paths
 from dovo.core.config.models import ConfigTier
-from dovo.core.db import DovoDb, RunStatus
+from dovo.core.db import DovoDb, SessionStatus
 from dovo.core.git.runner import GitRunner
 from dovo.core.project.services.storage import resolve_workspace_paths
 from dovo.core.worktree import Worktree
-from dovo.engine import RunStateStore
+from dovo.engine import SessionStateStore
 from dovo.engine.writer import get_session_dir
 from tests.harness.catalog import write_runnable_blueprint, write_runnable_step
 
@@ -81,7 +81,7 @@ class RunCliIntegrationTests:
     def test_run_cli_keep_with_existing_worktree_creates_separate_worktree_exits_zero(
         self, cli_runner: CliRunner, run_workspace: Path, earlier_worktree: str
     ) -> None:
-        """[tier-3/integration] dovo run keep-task --keep: with an earlier worktree present (a prior --keep run, or one created under session id 'keep-task'), the run exits 0, its run row has worktree_id == session_id, .dovo/worktrees/<session_id> exists, branch dovo/<session_id> exists, and the earlier worktree directory is still present and distinct."""
+        """[tier-3/integration] dovo run keep-task --keep: with an earlier worktree present (a prior --keep run, or one created under session id 'keep-task'), the run exits 0, its session row has worktree_id == session_id, .dovo/worktrees/<session_id> exists, branch dovo/<session_id> exists, and the earlier worktree directory is still present and distinct."""
         write_runnable_blueprint(run_workspace, key="keep-task", steps=[{"id": "s1", "run": "true"}])
         paths = _paths_for(run_workspace)
         db = DovoDb(database_file=paths.database_file, project_id=paths.project_id)
@@ -95,7 +95,7 @@ class RunCliIntegrationTests:
         result = cli_runner.invoke(app, ["-p", str(run_workspace), "run", "keep-task", "--keep"])
 
         assert result.exit_code == 0
-        latest = db.runs.list(limit=1)[0]
+        latest = db.sessions.list(limit=1)[0]
         assert latest.worktree_id == latest.session_id
         assert latest.session_id not in earlier_ids
         assert paths.worktree_dir(latest.session_id).is_dir()
@@ -105,7 +105,7 @@ class RunCliIntegrationTests:
     def test_run_cli_keep_links_worktree_run_symlink_to_session_directory_exits_zero(
         self, cli_runner: CliRunner, run_workspace: Path
     ) -> None:
-        """[tier-3/integration] dovo run keep-task --keep: exits 0, and <paths.worktree_dir(session_id)>/.dovo/run is a symlink whose resolve() equals paths.session_dir(session_id).resolve() and contains run.json."""
+        """[tier-3/integration] dovo run keep-task --keep: exits 0, and <paths.worktree_dir(session_id)>/.dovo/run is a symlink whose resolve() equals paths.session_dir(session_id).resolve() and contains session.json."""
         write_runnable_blueprint(run_workspace, key="keep-task", steps=[{"id": "s1", "run": "true"}])
         paths = _paths_for(run_workspace)
 
@@ -113,11 +113,11 @@ class RunCliIntegrationTests:
 
         assert result.exit_code == 0
         db = DovoDb(database_file=paths.database_file, project_id=paths.project_id)
-        session_id = db.runs.list(limit=1)[0].session_id
+        session_id = db.sessions.list(limit=1)[0].session_id
         link_path = paths.worktree_dir(session_id) / ".dovo" / "run"
         assert link_path.is_symlink()
         assert link_path.resolve() == paths.session_dir(session_id).resolve()
-        assert (link_path / "run.json").is_file()
+        assert (link_path / "session.json").is_file()
 
     def test_run_cli_no_worktree_agent_step_exits_one_with_worktree_diagnostic(
         self, cli_runner: CliRunner, run_workspace: Path
@@ -194,7 +194,7 @@ class RunCliIntegrationTests:
     def test_run_cli_prompt_user_keyboard_interrupt_persists_paused_state(
         self, monkeypatch: pytest.MonkeyPatch, cli_runner: CliRunner, run_workspace: Path
     ) -> None:
-        """dovo run: a KeyboardInterrupt raised from the interactive prompter after the paused state is saved sets the run record's status to PAUSED.
+        """dovo run: a KeyboardInterrupt raised from the interactive prompter after the paused state is saved sets the session record's status to PAUSED.
 
         `--no-tty` short-circuits to ABORT before the prompter is ever called, so PAUSED
         is only reachable via a KeyboardInterrupt from inside an interactive prompter
@@ -215,11 +215,11 @@ class RunCliIntegrationTests:
 
         assert result.exit_code == 1
         run_paths = _paths_for(run_workspace)
-        record = DovoDb(database_file=run_paths.database_file, project_id=run_paths.project_id).runs.get(
+        record = DovoDb(database_file=run_paths.database_file, project_id=run_paths.project_id).sessions.get(
             "paused-session-1"
         )
         assert record is not None
-        assert record.status == RunStatus.PAUSED
+        assert record.status == SessionStatus.PAUSED
 
     def test_run_cli_json_format_emits_run_success_event(self, cli_runner: CliRunner, run_workspace: Path) -> None:
         """dovo run --format json: NDJSON stream includes a RunSuccessEvent with payload.status == 'completed'."""
@@ -255,7 +255,7 @@ class RunCliIntegrationTests:
 
         The top-level callback resolves config before the run handler ever runs, so a
         tier failure here renders a "Config Error" panel, not "Run Failed" — the blueprint
-        is never resolved and no run row is ever inserted.
+        is never resolved and no session row is ever inserted.
         """
         ui_dispatcher.set_output_format("terminal")
         write_tier_config(ConfigTier.USER, "{not valid json")
@@ -296,7 +296,7 @@ class RunCliIntegrationTests:
     def test_run_cli_writes_definitions_snapshot_for_uses_step(
         self, cli_runner: CliRunner, run_workspace: Path
     ) -> None:
-        """dovo run --no-worktree --session-id snap-1: a blueprint with one uses: step writes .../sessions/snap-1/definitions/{key}.yml and .../definitions/steps/{step_key}.yml, and RunStateStore.load().state.manifest.steps has one entry."""
+        """dovo run --no-worktree --session-id snap-1: a blueprint with one uses: step writes .../sessions/snap-1/definitions/{key}.yml and .../definitions/steps/{step_key}.yml, and SessionStateStore.load().state.manifest.steps has one entry."""
         write_runnable_step(run_workspace, key="lint-check", definition={"id": "lint-check", "run": "true"})
         write_runnable_blueprint(run_workspace, key="snapshot-task", steps=[{"id": "s1", "uses": "lint-check"}])
 
@@ -310,6 +310,6 @@ class RunCliIntegrationTests:
         assert (session_dir / "definitions" / "snapshot-task.yml").is_file()
         assert (session_dir / "definitions" / "steps" / "lint-check.yml").is_file()
         db = DovoDb(database_file=run_paths.database_file, project_id=run_paths.project_id)
-        loaded = RunStateStore(db.runs, run_paths, "snap-1").load()
+        loaded = SessionStateStore(db.sessions, run_paths, "snap-1").load()
         assert loaded.state is not None
         assert len(loaded.state.manifest.steps) == 1

@@ -1,6 +1,6 @@
 """Execution engine: persist a run and drive sequential steps."""
 
-from dovo.core.db import RunStatus
+from dovo.core.db import SessionStatus
 from dovo.engine.coordinator import RunCoordinator
 from dovo.engine.engine import Engine
 from dovo.engine.exceptions import (
@@ -26,7 +26,7 @@ from dovo.engine.models import (
 )
 from dovo.engine.services import BlueprintResumeService, BlueprintRunService
 from dovo.engine.state_models import ExecutionStateTree
-from dovo.engine.state_store import RunStateStore
+from dovo.engine.state_store import SessionStateStore
 from dovo.engine.writer import (
     get_session_dir,
     load_blueprint_from_snapshot,
@@ -56,8 +56,8 @@ __all__ = [
     "RunOutcome",
     "RunRequest",
     "RunStartConfig",
-    "RunStateStore",
-    "RunStatus",
+    "SessionStateStore",
+    "SessionStatus",
     "StepAction",
     "get_session_dir",
     "load_blueprint_from_snapshot",

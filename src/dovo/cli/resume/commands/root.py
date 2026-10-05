@@ -14,7 +14,7 @@ from dovo.cli.ui import (
     ui_dispatcher,
 )
 from dovo.common.models import DisplayFormatOptions, OutputFormatOptions
-from dovo.core.db import RunRecord, RunStatus
+from dovo.core.db import SessionRecord, SessionStatus
 from dovo.engine import BlueprintResumeService
 from dovo.engine.models import BlueprintRunResult
 
@@ -24,7 +24,7 @@ def _emit_resume_start_notice(context: CliContext, session_id: str | None) -> No
     if session_id:
         ui_dispatcher.dispatch(MessageEvent(message=f"Resuming session '{session_id}'..."))
         return
-    latest = context.db.runs.get_latest_paused()
+    latest = context.db.sessions.get_latest_paused()
     if latest is not None:
         ui_dispatcher.dispatch(
             MessageEvent(message=f"Resuming latest paused session '{latest.session_id}' ({latest.blueprint_name})...")
@@ -40,7 +40,7 @@ def _resume_failure_msg(result: BlueprintRunResult, session_id: str | None) -> s
 
 def _dispatch_resume_outcome(
     result: BlueprintRunResult,
-    record: RunRecord | None,
+    record: SessionRecord | None,
     session_id: str | None,
 ) -> None:
     """Dispatch the appropriate UI event for a completed resume operation."""
@@ -52,9 +52,9 @@ def _dispatch_resume_outcome(
                 status=record.status,
             )
         )
-    elif record is not None and record.status == RunStatus.PAUSED:
+    elif record is not None and record.status == SessionStatus.PAUSED:
         ui_dispatcher.dispatch(MessageEvent(message=_first_error(result, "Blueprint paused; checkpoint saved.")))
-    elif record is not None and record.status == RunStatus.CANCELLED:
+    elif record is not None and record.status == SessionStatus.CANCELLED:
         ui_dispatcher.dispatch(
             ErrorPanelEvent(title="Resume Cancelled", message=_first_error(result, "Cancelled by user."))
         )
@@ -80,7 +80,7 @@ def resume_command(
     with observer:
         result = BlueprintResumeService(
             paths=context.paths,
-            db=context.db.runs,
+            db=context.db.sessions,
             session_id=session_id,
             no_tty=no_tty,
             observer=observer,
@@ -90,6 +90,6 @@ def resume_command(
     for warning in result.warnings:
         ui_dispatcher.dispatch(WarningEvent(message=warning))
 
-    record = result.run_record
+    record = result.session_record
     _dispatch_resume_outcome(result, record, session_id)
     return result

@@ -14,7 +14,7 @@ from typer.testing import CliRunner
 from dovo.cli import app
 from dovo.common.filesystem.models import RepositoryPaths, WorkspacePaths
 from dovo.common.filesystem.services.global_root import resolve_global_paths
-from dovo.core.db import DovoDb, RunRecord, RunStatus
+from dovo.core.db import DovoDb, SessionRecord, SessionStatus
 from dovo.core.project.models import ProjectIdentity
 from dovo.core.project.services.identity import save_project_identity
 from dovo.core.project.services.storage import resolve_workspace_paths
@@ -38,28 +38,28 @@ _PATCH_TEXT = (
 
 
 def _seed_run(paths: WorkspacePaths, session_id: str, started_at: str | None = None) -> None:
-    """Persist a COMPLETED run record for session_id, pinning started_at when given."""
-    runs = DovoDb(database_file=paths.database_file, project_id=paths.project_id).runs
-    runs.create(session_id=session_id, blueprint_name="bp", blueprint_key="bp", status=RunStatus.COMPLETED)
+    """Persist a COMPLETED session record for session_id, pinning started_at when given."""
+    sessions = DovoDb(database_file=paths.database_file, project_id=paths.project_id).sessions
+    sessions.create(session_id=session_id, blueprint_name="bp", blueprint_key="bp", status=SessionStatus.COMPLETED)
     if started_at is None:
         return
 
-    with runs.session() as sql_session:
-        record = sql_session.exec(select(RunRecord).where(RunRecord.session_id == session_id)).one()
+    with sessions.session() as sql_session:
+        record = sql_session.exec(select(SessionRecord).where(SessionRecord.session_id == session_id)).one()
         record.started_at = started_at
         sql_session.add(record)
         sql_session.commit()
 
 
 def _write_session_diff(diff_workspace: Path, session_id: str, started_at: str | None = None) -> Path:
-    """Persist a run record and a real unified-diff patch for session_id in the workspace's session storage."""
+    """Persist a session record and a real unified-diff patch for session_id in the workspace's session storage."""
     paths = _paths_for(diff_workspace)
     _seed_run(paths, session_id, started_at)
     return write_session_diff(get_session_dir(paths, session_id), _PATCH_TEXT)
 
 
 def _write_global_session_diff(diff_workspace: Path, session_id: str) -> Path:
-    """Persist an identified project's run record and patch in selected global session storage."""
+    """Persist an identified project's session record and patch in selected global session storage."""
     identity = ProjectIdentity(id="project-626", created_at=datetime(2026, 1, 1, tzinfo=UTC))
     save_project_identity(diff_workspace / ".dovo" / "project.json", identity)
     paths = _paths_for(diff_workspace)
@@ -163,7 +163,7 @@ class DiffCliIntegrationTests:
     def test_diff_cli_without_session_id_renders_latest_started_session(
         self, cli_runner: CliRunner, diff_workspace: Path
     ) -> None:
-        """[tier-3/integration] dovo diff (no id): two seeded run records where the earlier started_at has the newer directory mtime -> exit 0 and stdout contains the later started_at session's patch lines."""
+        """[tier-3/integration] dovo diff (no id): two seeded session records where the earlier started_at has the newer directory mtime -> exit 0 and stdout contains the later started_at session's patch lines."""
         later_patch = _write_session_diff(diff_workspace, "later-run", started_at="2026-01-02 00:00:00")
         later_patch.write_text("diff --git a/later.txt b/later.txt\n-before\n+later-session-line\n", encoding="utf-8")
         earlier_patch = _write_session_diff(diff_workspace, "earlier-run", started_at="2026-01-01 00:00:00")

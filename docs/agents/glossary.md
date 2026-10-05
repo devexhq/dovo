@@ -16,14 +16,14 @@ Precise definitions for core concepts and terms in the Dovo CLI codebase.
   - *Model/Facade:* `BlueprintDefinition` in [`core/catalog/definitions/blueprint.py`](../../src/dovo/core/catalog/definitions/blueprint.py) and `Blueprint` in [`core/catalog/blueprint.py`](../../src/dovo/core/catalog/blueprint.py).
 - **Catalog**: The disk-only, multi-tier (REPO/USER/GLOBAL/PACKAGED) index of named blueprints and steps, each disk-backed tier rooted under its own `catalog/` directory with a derived `index.json` cache, plus packaged seeds.
   - *Facade:* `Catalog` in [`core/catalog/catalog.py`](../../src/dovo/core/catalog/catalog.py).
-- **Run**: A single execution of a blueprint from start to terminal outcome.
+- **Run**: The act of executing a blueprint, from start to terminal outcome. A run produces a session; it is not the record that outlives it.
   - *Models:* `RunContext` in [`engine/models.py`](../../src/dovo/engine/models.py), `RunOutcome` in [`engine/models.py`](../../src/dovo/engine/models.py).
 - **Run Context**: The infrastructure bundle for one run's execution (session id, paths, target directory, session scratch/log/artifact locations, worktree); durable progress lives in the execution state, not the context.
   - *Model:* `RunContext` in [`engine/models.py`](../../src/dovo/engine/models.py).
 - **Run Outcome**: The terminal execution result containing status, step results, warnings, and errors.
   - *Model:* `RunOutcome` in [`engine/models.py`](../../src/dovo/engine/models.py).
-- **Session**: Unique execution identifier (`{kind}_{8-hex}`) linking a run to its DB record in the centralized database and session artifacts in `.dovo/sessions/<id>/`. A session exists if and only if its run record exists.
-  - *Model:* `Session` / `SessionCollection` in [`core/sessions/sessions.py`](../../src/dovo/core/sessions/sessions.py).
+- **Session**: The unit a run produces and leaves behind: a unique id (`{kind}_{8-hex}`) tying together its DB record, status, log events, diff artifact, and history in `.dovo/sessions/<id>/`. A session exists if and only if its session record exists.
+  - *Model:* `SessionRecord` and `SessionStatus` in [`core/db/models.py`](../../src/dovo/core/db/models.py); `Session` / `SessionCollection` in [`core/sessions/sessions.py`](../../src/dovo/core/sessions/sessions.py).
 - **Worktree**: An isolated git worktree checkout (`.dovo/worktrees/<id>/`, branch `dovo/<id>`). A worktree created by `dovo run` takes the run's session id as `<id>`; `dovo worktree create` generates `dovo_<8 hex>`.
   - *Facade/Services:* `Worktree` in [`core/worktree/facade.py`](../../src/dovo/core/worktree/facade.py) and [`core/worktree/services/lifecycle.py`](../../src/dovo/core/worktree/services/lifecycle.py).
 - **Checkpoint**: A paused leaf step (top-level or a loop body step) plus its last failed attempt in the run's `ExecutionStateTree`, allowing a paused run (`prompt_user`) to resume by re-entering the failure prompt without re-running the step.

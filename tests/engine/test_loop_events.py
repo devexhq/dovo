@@ -1,4 +1,4 @@
-"""Contract tests for LoopEventEmitter: loop run.log lines and observer notifications."""
+"""Contract tests for LoopEventEmitter: loop session.log lines and observer notifications."""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ import pytest
 
 from dovo.engine.executors.models import ConditionEvaluationResult
 from dovo.engine.loop_events import LoopEventEmitter
-from tests.harness.runs import NoOpRunObserver
+from tests.harness.sessions import NoOpRunObserver
 
 _CONDITION = ConditionEvaluationResult(expression="iteration.index >= 3", passed=False)
 
@@ -43,7 +43,7 @@ class _LoopObserver(NoOpRunObserver):
 
 
 class LoopEventEmitterTests:
-    """[tier-1/integration] LoopEventEmitter: each lifecycle point logs one run.log line and notifies the observer."""
+    """[tier-1/integration] LoopEventEmitter: each lifecycle point logs one session.log line and notifies the observer."""
 
     @pytest.mark.parametrize(
         ("emit", "log_fields", "observer_call"),
@@ -87,12 +87,12 @@ class LoopEventEmitterTests:
         log_fields: dict[str, object],
         observer_call: tuple[str, tuple[object, ...], dict[str, object]],
     ) -> None:
-        """[tier-1/integration] LoopEventEmitter: start(5), iteration_start(2, 5), conditions_evaluated([r], False, 3), done("completed", 2) each append one run.log line with event LOOP_START / LOOP_ITERATION_START / LOOP_CONDITIONS_EVALUATED / LOOP_DONE and loop_id, plus max_iterations / iteration / all_passed+next_iteration+conditions / status+iteration, and call the matching on_loop_* hook with the same arguments."""
+        """[tier-1/integration] LoopEventEmitter: start(5), iteration_start(2, 5), conditions_evaluated([r], False, 3), done("completed", 2) each append one session.log line with event LOOP_START / LOOP_ITERATION_START / LOOP_CONDITIONS_EVALUATED / LOOP_DONE and loop_id, plus max_iterations / iteration / all_passed+next_iteration+conditions / status+iteration, and call the matching on_loop_* hook with the same arguments."""
         observer = _LoopObserver()
 
         emit(LoopEventEmitter("l", tmp_path, observer))
 
-        lines = (tmp_path / "run.log").read_text(encoding="utf-8").splitlines()
+        lines = (tmp_path / "session.log").read_text(encoding="utf-8").splitlines()
         assert len(lines) == 1
         logged = json.loads(lines[0])
         assert {key: logged[key] for key in log_fields} == log_fields

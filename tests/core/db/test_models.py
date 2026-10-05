@@ -15,11 +15,11 @@ from dovo.core.db.migrations import init_database
 from dovo.core.db.models import (
     ArtifactRecord,
     CostRecord,
-    RunRecord,
+    SessionRecord,
     WorktreeRecord,
 )
 
-RecordClass = type[RunRecord] | type[WorktreeRecord] | type[CostRecord] | type[ArtifactRecord]
+RecordClass = type[SessionRecord] | type[WorktreeRecord] | type[CostRecord] | type[ArtifactRecord]
 
 
 @pytest.fixture
@@ -36,7 +36,7 @@ class DbRecordModelTests:
     @pytest.mark.parametrize(
         ("record_cls", "expected_tablename"),
         [
-            pytest.param(RunRecord, "runs", id="run_record"),
+            pytest.param(SessionRecord, "sessions", id="session_record"),
             pytest.param(WorktreeRecord, "worktrees", id="worktree_record"),
             pytest.param(CostRecord, "costs", id="cost_record"),
             pytest.param(ArtifactRecord, "artifacts", id="artifact_record"),
@@ -53,8 +53,8 @@ class DbRecordModelTests:
         "record_factory",
         [
             pytest.param(
-                lambda: RunRecord(session_id="wf_abc123", blueprint_name="deploy", blueprint_key="deploy"),
-                id="run_record",
+                lambda: SessionRecord(session_id="wf_abc123", blueprint_name="deploy", blueprint_key="deploy"),
+                id="session_record",
             ),
             pytest.param(
                 lambda: WorktreeRecord(
@@ -84,7 +84,7 @@ class DbRecordModelTests:
         migrated_engine: Engine,
         record_factory: Callable[[], SQLModel],
     ) -> None:
-        """[tier-1/integration] RunRecord/WorktreeRecord/CostRecord/ArtifactRecord: omitting project_id raises IntegrityError on commit."""
+        """[tier-1/integration] SessionRecord/WorktreeRecord/CostRecord/ArtifactRecord: omitting project_id raises IntegrityError on commit."""
         record = record_factory()
         with Session(migrated_engine) as session:
             session.add(record)
@@ -92,17 +92,17 @@ class DbRecordModelTests:
                 session.commit()
 
 
-class RunRecordDefaultsTests:
-    """Contract tests for RunRecord column defaults."""
+class SessionRecordDefaultsTests:
+    """Contract tests for SessionRecord column defaults."""
 
-    def test_run_record_without_auto_apply_defaults_false(self, migrated_engine: Engine) -> None:
-        """[tier-1/integration] RunRecord: a record committed without auto_apply reads back auto_apply False."""
+    def test_session_record_without_auto_apply_defaults_false(self, migrated_engine: Engine) -> None:
+        """[tier-1/integration] SessionRecord: a record committed without auto_apply reads back auto_apply False."""
         with Session(migrated_engine) as session:
             session.add(
-                RunRecord(project_id="proj-a", session_id="wf_a", blueprint_name="deploy", blueprint_key="deploy")
+                SessionRecord(project_id="proj-a", session_id="wf_a", blueprint_name="deploy", blueprint_key="deploy")
             )
             session.commit()
 
         with Session(migrated_engine) as session:
-            record = session.exec(select(RunRecord)).one()
+            record = session.exec(select(SessionRecord)).one()
             assert record.auto_apply is False

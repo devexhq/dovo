@@ -41,5 +41,6 @@ ON_FAILURE_MAX_RETRIES_DEFAULT = 3
 ON_FAILURE_BACKOFF_MS_MINIMUM = 0
 ON_FAILURE_BACKOFF_MS_DEFAULT = 0
 
-# Per-session JSON Lines timeline: written by engine/run_log.py, read by core/sessions/services/read_logs.py.
-RUN_LOG_FILENAME = "run.log"
+# Per-session JSON Lines timeline: written by engine/session_log.py, read by core/sessions/services/read_logs.py.
+SESSION_LOG_FILENAME = "session.log"
+SESSION_JSON_FILENAME = "session.json"

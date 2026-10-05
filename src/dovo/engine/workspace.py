@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from dovo.core.config import ConfigLoadError
-from dovo.core.db import RunStatus, WorktreesRepository
+from dovo.core.db import SessionStatus, WorktreesRepository
 from dovo.core.db.repositories.artifacts import ArtifactsRepository
 from dovo.core.git.runner import GitRunner
 from dovo.core.worktree import Worktree, WorktreeApplyStrategy, WorktreeSession
@@ -144,7 +144,7 @@ class Workspace:
         session: WorktreeSession | None,
         errors: list[str],
         warnings: list[str],
-    ) -> tuple[RunStatus | None, bool]:
+    ) -> tuple[SessionStatus | None, bool]:
         """Apply worktree changes on completed runs when auto_apply is enabled.
 
         Returns:
@@ -160,7 +160,7 @@ class Workspace:
         warnings.extend(apply_result.warnings)
         if not apply_result.ok:
             errors.extend(apply_result.errors)
-            return RunStatus.FAILED, True
+            return SessionStatus.FAILED, True
 
         return None, False
 
@@ -187,12 +187,12 @@ class Workspace:
         manager: Worktree | None,
         session: WorktreeSession | None,
         target_dir: Path,
-        status: RunStatus,
+        status: SessionStatus,
         apply_failed: bool,
         warnings: list[str],
     ) -> bool:
         """Clean up or keep the worktree based on run status."""
-        if status == RunStatus.PAUSED or apply_failed:
+        if status == SessionStatus.PAUSED or apply_failed:
             kept_path = session.worktree_path if session is not None else target_dir
             safe_notify(self.context.observer, "on_worktree_cleanup", kept=True, path=kept_path)
             return True
@@ -234,9 +234,9 @@ class Workspace:
             return None
         return session_log_dir
 
-    def cleanup_session_tmp_dir(self, session_tmp_dir: Path | None, *, keep: bool, status: RunStatus) -> None:
+    def cleanup_session_tmp_dir(self, session_tmp_dir: Path | None, *, keep: bool, status: SessionStatus) -> None:
         """Best-effort delete of the session scratch directory on completed, unkept runs."""
-        if session_tmp_dir is None or keep or status != RunStatus.COMPLETED:
+        if session_tmp_dir is None or keep or status != SessionStatus.COMPLETED:
             return
         try:
             shutil.rmtree(session_tmp_dir)

@@ -7,7 +7,7 @@ from pathlib import Path
 from dovo.common.filesystem import Filesystem, WorkspacePaths
 from dovo.core.config import Config, ConfigLoadStatus
 from dovo.core.db import (
-    RunsRepository,
+    SessionsRepository,
     WorktreesRepository,
     WorktreeStatus,
 )
@@ -127,31 +127,31 @@ def _collect_catalog_status(catalog_dir: Path) -> CatalogStatusInfo:
 
 
 def _collect_database_status(paths: WorkspacePaths) -> DatabaseStatusInfo:
-    """Collect centralized SQLite database accessibility and total recorded runs."""
+    """Collect centralized SQLite database accessibility and total recorded sessions."""
     db_path = paths.database_file
     if not db_path.is_file():
         return DatabaseStatusInfo(
             exists=False,
             db_path=db_path,
             is_accessible=False,
-            total_runs=0,
+            total_sessions=0,
         )
 
     try:
-        runs_repo = RunsRepository(db_path=db_path, project_id=paths.project_id, auto_init=False)
-        total_runs = len(runs_repo.list())
+        sessions_repo = SessionsRepository(db_path=db_path, project_id=paths.project_id, auto_init=False)
+        total_sessions = len(sessions_repo.list())
         return DatabaseStatusInfo(
             exists=True,
             db_path=db_path,
             is_accessible=True,
-            total_runs=total_runs,
+            total_sessions=total_sessions,
         )
     except Exception:
         return DatabaseStatusInfo(
             exists=True,
             db_path=db_path,
             is_accessible=False,
-            total_runs=0,
+            total_sessions=0,
         )
 
 

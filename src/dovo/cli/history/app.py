@@ -7,7 +7,7 @@ from typing import Annotated
 import typer
 
 from dovo.cli.context import CliContext
-from dovo.core.db import RunStatus
+from dovo.core.db import SessionStatus
 
 from .commands.root import history_list_command, history_root_command
 from .commands.show import history_show_command
@@ -26,14 +26,14 @@ def history_callback(
         20,
         "--limit",
         "-l",
-        help="Maximum number of execution runs to display (defaults to 20).",
+        help="Maximum number of sessions to display (defaults to 20).",
     ),
     status: Annotated[
-        RunStatus | None,
+        SessionStatus | None,
         typer.Option(
             "--status",
             "-s",
-            help="Filter by run status (running, completed, failed, cancelled, paused).",
+            help="Filter by session status (running, completed, failed, cancelled, paused).",
             case_sensitive=False,
         ),
     ] = None,
@@ -63,14 +63,14 @@ def history_list(
         20,
         "--limit",
         "-l",
-        help="Maximum number of execution runs to display (defaults to 20).",
+        help="Maximum number of sessions to display (defaults to 20).",
     ),
     status: Annotated[
-        RunStatus | None,
+        SessionStatus | None,
         typer.Option(
             "--status",
             "-s",
-            help="Filter by run status (running, completed, failed, cancelled, paused).",
+            help="Filter by session status (running, completed, failed, cancelled, paused).",
             case_sensitive=False,
         ),
     ] = None,

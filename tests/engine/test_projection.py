@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-from dovo.core.db import RunRecord, RunStatus
+from dovo.core.db import SessionRecord, SessionStatus
 from dovo.engine.executors.models import StepResult
 from dovo.engine.models import DefinitionRef, DefinitionsManifest
 from dovo.engine.projection import (
-    build_run_json_payload,
+    build_session_json_payload,
     flatten_step_results,
     iter_leaves,
     iteration_results,
@@ -18,7 +18,7 @@ from dovo.engine.state_models import (
     ExecutionLoopNode,
     ExecutionStateTree,
     NodeState,
-    RunLifecycle,
+    SessionLifecycle,
     StepAttemptRecord,
 )
 
@@ -169,20 +169,20 @@ class IterationResultsTests:
         assert list(results.items()) == [("a", result_a), ("b", result_b)]
 
 
-class BuildRunJsonPayloadTests:
-    """[tier-1/unit] build_run_json_payload: the run.json projection of a state and its row."""
+class BuildSessionJsonPayloadTests:
+    """[tier-1/unit] build_session_json_payload: the session.json projection of a state and its row."""
 
-    def test_build_run_json_payload_copies_revision_manifest_nodes_and_row_lifecycle_with_flattened_results(
+    def test_build_session_json_payload_copies_revision_manifest_nodes_and_row_lifecycle_with_flattened_results(
         self,
     ) -> None:
-        """[tier-1/unit] build_run_json_payload: a state at revision 3 with one completed leaf and a COMPLETED row yields revision 3, the same manifest and nodes, lifecycle equal to the row's status/error_message/started_at/completed_at/worktree_id/worktree_kept, and results == flatten_step_results(state)."""
+        """[tier-1/unit] build_session_json_payload: a state at revision 3 with one completed leaf and a COMPLETED row yields revision 3, the same manifest and nodes, lifecycle equal to the row's status/error_message/started_at/completed_at/worktree_id/worktree_kept, and results == flatten_step_results(state)."""
         state = _tree(_leaf("a", NodeState.COMPLETED, [_result("a")])).model_copy(update={"revision": 3})
-        row = RunRecord(
+        row = SessionRecord(
             project_id="proj",
             session_id="s",
             blueprint_key="bp",
             blueprint_name="bp",
-            status=RunStatus.COMPLETED,
+            status=SessionStatus.COMPLETED,
             started_at="2026-09-28T00:00:00+00:00",
             completed_at="2026-09-28T00:01:00+00:00",
             error_message="note",
@@ -190,13 +190,13 @@ class BuildRunJsonPayloadTests:
             worktree_kept=True,
         )
 
-        payload = build_run_json_payload(state, row)
+        payload = build_session_json_payload(state, row)
 
         assert payload.revision == 3
         assert payload.manifest == state.manifest
         assert payload.nodes == state.nodes
-        assert payload.lifecycle == RunLifecycle(
-            status=RunStatus.COMPLETED,
+        assert payload.lifecycle == SessionLifecycle(
+            status=SessionStatus.COMPLETED,
             error_message="note",
             started_at="2026-09-28T00:00:00+00:00",
             completed_at="2026-09-28T00:01:00+00:00",

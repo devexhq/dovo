@@ -14,7 +14,7 @@ from dovo.core.agents.models import ResolvedAgentSettings
 from dovo.core.catalog.blueprint import Blueprint
 from dovo.core.catalog.definitions import LoopStepBlock, StepDefinition
 from dovo.core.catalog.exceptions import BlueprintLoadError, BlueprintNotFoundError, BlueprintValidationError
-from dovo.core.db import RunStatus
+from dovo.core.db import SessionStatus
 from dovo.engine.exceptions import EngineSnapshotMissingError
 from dovo.engine.executors.models import ExecutionIdentity, PreviousStepMetadata, StepResult
 from dovo.engine.failure import (
@@ -48,7 +48,7 @@ from dovo.engine.state_models import (
     NodeState,
     StepAttemptRecord,
 )
-from dovo.engine.state_store import RunStateStore, new_iteration
+from dovo.engine.state_store import SessionStateStore, new_iteration
 from dovo.engine.state_validation import validate_loop_structure
 from dovo.engine.step_coordinator import StepCoordinator
 from dovo.engine.writer import load_blueprint_from_snapshot
@@ -86,7 +86,7 @@ class RunCoordinator:
 
     def __init__(
         self,
-        state_store: RunStateStore,
+        state_store: SessionStateStore,
         context: RunContext,
         observer: RunObserver | None = None,
         prompter: FailurePrompter | None = None,
@@ -125,11 +125,11 @@ class RunCoordinator:
     def execute(self) -> RunOutcome:
         """Run the execution state machine to completion, pause, or terminal failure."""
         if not self.load():
-            return self._outcome(RunStatus.FAILED)
+            return self._outcome(SessionStatus.FAILED)
 
         try:
             if not self._recover_interrupted():
-                return self._outcome(RunStatus.FAILED)
+                return self._outcome(SessionStatus.FAILED)
             return self._drive()
         except KeyboardInterrupt:
             return self._cancel()
@@ -196,15 +196,15 @@ class RunCoordinator:
         while True:
             upcoming = self._next_node()
             if upcoming is None:
-                return self._outcome(RunStatus.COMPLETED)
+                return self._outcome(SessionStatus.COMPLETED)
 
             position, node = upcoming
             self._in_flight = node
             transition = self._dispatch(position, node)
             if transition is NodeTransitionKind.PAUSED:
-                return self._outcome(RunStatus.PAUSED)
+                return self._outcome(SessionStatus.PAUSED)
             if transition is NodeTransitionKind.FAILED:
-                return self._outcome(RunStatus.FAILED)
+                return self._outcome(SessionStatus.FAILED)
 
     def _cancel(self) -> RunOutcome:
         """Terminate child processes, persist the in-flight node as cancelled, and return the CANCELLED outcome."""
@@ -213,19 +213,21 @@ class RunCoordinator:
             self._in_flight.state = NodeState.CANCELLED
             self._commit("while cancelling the run")
         self._errors = ["Execution cancelled by user."]
-        return self._outcome(RunStatus.CANCELLED)
+        return self._outcome(SessionStatus.CANCELLED)
 
     def _start(self) -> bool:
-        """Load state, run row, and snapshot definitions and build the step coordinator; append the failure to _errors and return False when unavailable."""
+        """Load state, session row, and snapshot definitions and build the step coordinator; append the failure to _errors and return False when unavailable."""
         session_id = self._context.session_id
         loaded = self._state_store.load()
         if not loaded.ok or loaded.state is None:
-            self._errors.append(loaded.errors[0] if loaded.errors else f"Run '{session_id}' has no execution state.")
+            self._errors.append(
+                loaded.errors[0] if loaded.errors else f"Session '{session_id}' has no execution state."
+            )
             return False
 
-        row = self._state_store.runs.get(session_id)
+        row = self._state_store.sessions.get(session_id)
         if row is None:
-            self._errors.append(f"Run '{session_id}' not found.")
+            self._errors.append(f"Session '{session_id}' not found.")
             return False
 
         try:
@@ -241,7 +243,7 @@ class RunCoordinator:
 
         structure_errors = validate_loop_structure(loaded.state, blueprint)
         if structure_errors:
-            self._errors.append(f"Execution state for run '{session_id}' is corrupt: {structure_errors[0]}")
+            self._errors.append(f"Execution state for session '{session_id}' is corrupt: {structure_errors[0]}")
             return False
 
         self._warnings.extend(loaded.warnings)
@@ -441,7 +443,7 @@ class RunCoordinator:
         diagnostic = f"Loop '{loop.id}' aborted by user after max_iterations."
         return self._finish_loop(loop, iteration, events, failed=True, diagnostic=diagnostic)
 
-    def _begin_attempt(self, node: ExecutionLeafNode, number: int, run_status: RunStatus | None = None) -> bool:
+    def _begin_attempt(self, node: ExecutionLeafNode, number: int, run_status: SessionStatus | None = None) -> bool:
         """Append an unfinished attempt, mark the node RUNNING, and commit before the attempt executes."""
         node.attempts.append(StepAttemptRecord(number=number, started_at=_now()))
         node.state = NodeState.RUNNING
@@ -501,23 +503,23 @@ class RunCoordinator:
         if warning is not None:
             self._warnings.append(warning)
         action, recorded, _ = step_coordinator.apply_prompt_decision(decision, result)
-        return self._apply_action(node, action, recorded or result, RunStatus.RUNNING if interactive else None)
+        return self._apply_action(node, action, recorded or result, SessionStatus.RUNNING if interactive else None)
 
     def _persist_paused(self, node: ExecutionLeafNode, result: StepResult) -> bool:
         """Commit the leaf as PAUSED and the run as paused before the prompter is consulted."""
         node.state = NodeState.PAUSED
-        return self._commit(f"before prompting for step '{node.id}'", RunStatus.PAUSED, failed_step_message(result))
+        return self._commit(f"before prompting for step '{node.id}'", SessionStatus.PAUSED, failed_step_message(result))
 
     def _apply_action(
         self,
         node: ExecutionLeafNode,
         action: StepAction,
         result: StepResult,
-        run_status: RunStatus | None,
+        run_status: SessionStatus | None,
     ) -> NodeTransitionKind:
         """Apply a StepAction: retry begins the next attempt, continue ignores the leaf, abort fails it."""
         if action is StepAction.RETRY:
-            if not self._begin_attempt(node, node.attempts[-1].number + 1, run_status=RunStatus.RUNNING):
+            if not self._begin_attempt(node, node.attempts[-1].number + 1, run_status=SessionStatus.RUNNING):
                 return NodeTransitionKind.FAILED
             return NodeTransitionKind.RETRY
         if action is StepAction.CONTINUE:
@@ -528,7 +530,7 @@ class RunCoordinator:
         self,
         node: ExecutionLeafNode,
         result: StepResult,
-        run_status: RunStatus | None,
+        run_status: SessionStatus | None,
     ) -> NodeTransitionKind:
         """Persist the leaf as IGNORED with its non-fatal result."""
         if not self._finish_leaf(node, NodeState.IGNORED, result, f"after step '{node.id}' continued", run_status):
@@ -539,7 +541,7 @@ class RunCoordinator:
         self,
         node: ExecutionLeafNode,
         result: StepResult,
-        run_status: RunStatus | None,
+        run_status: SessionStatus | None,
     ) -> NodeTransitionKind:
         """Persist the leaf as FAILED and record the step failure as the run error."""
         self._errors.append(failed_step_message(result))
@@ -552,7 +554,7 @@ class RunCoordinator:
         state: NodeState,
         result: StepResult | None,
         boundary: str,
-        run_status: RunStatus | None = None,
+        run_status: SessionStatus | None = None,
     ) -> bool:
         """Set the leaf's terminal state (and replace its last result when given) and commit."""
         node.state = state
@@ -563,7 +565,7 @@ class RunCoordinator:
     def _commit(
         self,
         boundary: str,
-        run_status: RunStatus | None = None,
+        run_status: SessionStatus | None = None,
         error_message: str | None = None,
     ) -> bool:
         """Save the in-memory state at revision + 1 under the workspace lock; append a boundary-naming error and return False on failure."""
@@ -591,7 +593,7 @@ class RunCoordinator:
             return context
         return {**(context or {}), "iteration_index": loop_iteration}
 
-    def _outcome(self, status: RunStatus) -> RunOutcome:
+    def _outcome(self, status: SessionStatus) -> RunOutcome:
         """Build the RunOutcome for status from the flattened state, accumulated errors, warnings, and worktree identity."""
         worktree = self._context.worktree
         return RunOutcome(

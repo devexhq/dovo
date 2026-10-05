@@ -1,4 +1,4 @@
-"""Shared test harness for seeding persisted run rows and execution state."""
+"""Shared test harness for seeding persisted session rows and execution state."""
 
 from __future__ import annotations
 
@@ -10,11 +10,11 @@ from dovo.common.filesystem.models import WorkspacePaths
 from dovo.core.catalog import Catalog
 from dovo.core.catalog.blueprint import Blueprint
 from dovo.core.catalog.definitions import LoopStepBlock, StepDefinition
-from dovo.core.db import RunRecord, RunsRepository, RunStatus
+from dovo.core.db import SessionRecord, SessionsRepository, SessionStatus
 from dovo.engine import RunObserver, RunOutcome
 from dovo.engine.executors.models import ConditionEvaluationResult, StepResult
 from dovo.engine.state_models import ExecutionLeafNode, NodeState, StepAttemptRecord
-from dovo.engine.state_store import RunStateStore
+from dovo.engine.state_store import SessionStateStore
 from dovo.engine.writer import snapshot_definitions
 from tests.harness.catalog import write_runnable_blueprint
 
@@ -71,9 +71,9 @@ class NoOpRunObserver(RunObserver):
         pass
 
 
-def seed_new_run(
+def seed_new_session(
     paths: WorkspacePaths,
-    runs: RunsRepository,
+    sessions: SessionsRepository,
     *,
     session_id: str,
     steps: list[dict[str, object]],
@@ -81,7 +81,7 @@ def seed_new_run(
     keep: bool = False,
     auto_apply: bool = False,
     agent: str | None = None,
-) -> RunRecord:
+) -> SessionRecord:
     """Write and snapshot a catalog blueprint, insert a RUNNING row, and initialize its all-pending state tree."""
     write_runnable_blueprint(paths.root_dir, key=session_id, steps=steps)
     catalog = Catalog(paths)
@@ -89,26 +89,26 @@ def seed_new_run(
     manifest = snapshot_definitions(catalog, blueprint, paths.session_dir(session_id), [])
     assert manifest is not None
 
-    runs.create(
+    sessions.create(
         session_id,
         blueprint_name=session_id,
         blueprint_key=session_id,
-        status=RunStatus.RUNNING,
+        status=SessionStatus.RUNNING,
         use_worktree=use_worktree,
         keep=keep,
         inputs_json="{}",
         auto_apply=auto_apply,
         agent=agent,
     )
-    assert RunStateStore(runs, paths, session_id).initialize(blueprint, manifest).ok
-    row = runs.get(session_id)
+    assert SessionStateStore(sessions, paths, session_id).initialize(blueprint, manifest).ok
+    row = sessions.get(session_id)
     assert row is not None
     return row
 
 
-def seed_paused_run(
+def seed_paused_session(
     paths: WorkspacePaths,
-    runs: RunsRepository,
+    sessions: SessionsRepository,
     *,
     session_id: str,
     steps: list[dict[str, object]],
@@ -117,18 +117,18 @@ def seed_paused_run(
     worktree_id: str | None = None,
     auto_apply: bool = False,
     agent: str | None = None,
-) -> RunRecord:
+) -> SessionRecord:
     """Write and snapshot a catalog blueprint, initialize its state, complete steps before paused_step_id, and PAUSE that leaf on a failed attempt."""
-    seed_new_run(
+    seed_new_session(
         paths,
-        runs,
+        sessions,
         session_id=session_id,
         steps=steps,
         use_worktree=use_worktree,
         auto_apply=auto_apply,
         agent=agent,
     )
-    store = RunStateStore(runs, paths, session_id)
+    store = SessionStateStore(sessions, paths, session_id)
     state = store.load().state
     assert state is not None
 
@@ -152,11 +152,11 @@ def seed_paused_run(
 
     saved = store.save(
         state,
-        run_status=RunStatus.PAUSED,
+        run_status=SessionStatus.PAUSED,
         error_message=f"Step '{paused_step_id}' failed: {SEEDED_FAILURE}",
         worktree_id=worktree_id,
     )
     assert saved.ok
-    row = runs.get(session_id)
+    row = sessions.get(session_id)
     assert row is not None
     return row

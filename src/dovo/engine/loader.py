@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dovo.common.filesystem import WorkspacePaths
 from dovo.core.catalog.exceptions import BlueprintLoadError, BlueprintNotFoundError, BlueprintValidationError
-from dovo.core.db import RunRecord, RunsRepository, RunStatus
+from dovo.core.db import SessionRecord, SessionsRepository, SessionStatus
 from dovo.engine.exceptions import EngineResumeError, EngineSnapshotMissingError
 from dovo.engine.models import DefinitionsManifest, EngineResumeStatus
 from dovo.engine.projection import iter_leaves
@@ -12,9 +12,9 @@ from dovo.engine.state_models import (
     TERMINAL_NODE_STATES,
     ExecutionStateTree,
     NodeState,
-    RunStateLoadStatus,
+    SessionStateLoadStatus,
 )
-from dovo.engine.state_store import RunStateStore
+from dovo.engine.state_store import SessionStateStore
 from dovo.engine.state_validation import validate_loop_structure
 from dovo.engine.writer import get_session_dir, load_blueprint_from_snapshot
 
@@ -25,22 +25,22 @@ class EngineLoader:
     @classmethod
     def load_for_resume(
         cls,
-        runs: RunsRepository,
+        sessions: SessionsRepository,
         paths: WorkspacePaths,
         session_id: str,
-    ) -> tuple[RunRecord, ExecutionStateTree, DefinitionsManifest]:
+    ) -> tuple[SessionRecord, ExecutionStateTree, DefinitionsManifest]:
         """Return the paused run's row, state tree, and manifest, or raise EngineResumeError with the classified status."""
-        row = runs.get(session_id)
+        row = sessions.get(session_id)
         if row is None:
             raise EngineResumeError(EngineResumeStatus.NOT_FOUND, f"Session '{session_id}' not found.")
 
-        if row.status != RunStatus.PAUSED:
+        if row.status != SessionStatus.PAUSED:
             raise EngineResumeError(
                 EngineResumeStatus.WRONG_STATUS,
                 f"Cannot resume session '{session_id}': status is '{row.status.value}' (expected paused).",
             )
 
-        loaded = RunStateStore(runs, paths, session_id).load()
+        loaded = SessionStateStore(sessions, paths, session_id).load()
         if not loaded.ok or loaded.state is None:
             raise EngineResumeError(
                 cls._state_failure_status(loaded.status),
@@ -53,13 +53,13 @@ class EngineLoader:
         return row, loaded.state, loaded.state.manifest
 
     @classmethod
-    def _state_failure_status(cls, load_status: RunStateLoadStatus) -> EngineResumeStatus:
+    def _state_failure_status(cls, load_status: SessionStateLoadStatus) -> EngineResumeStatus:
         """Map a state-load failure to NOT_FOUND, CORRUPT_STATE (missing state), MISSING_SNAPSHOT, or FAILED."""
-        if load_status is RunStateLoadStatus.NOT_FOUND:
+        if load_status is SessionStateLoadStatus.NOT_FOUND:
             return EngineResumeStatus.NOT_FOUND
-        if load_status is RunStateLoadStatus.MISSING_STATE:
+        if load_status is SessionStateLoadStatus.MISSING_STATE:
             return EngineResumeStatus.CORRUPT_STATE
-        if load_status is RunStateLoadStatus.MISSING_SNAPSHOT:
+        if load_status is SessionStateLoadStatus.MISSING_SNAPSHOT:
             return EngineResumeStatus.MISSING_SNAPSHOT
         return EngineResumeStatus.FAILED
 
@@ -80,7 +80,7 @@ class EngineLoader:
                 )
 
     @classmethod
-    def _check_retained_worktree(cls, session_id: str, paths: WorkspacePaths, row: RunRecord) -> None:
+    def _check_retained_worktree(cls, session_id: str, paths: WorkspacePaths, row: SessionRecord) -> None:
         """Raise MISSING_WORKTREE when a worktree-backed run has no recorded worktree_id or its directory no longer exists."""
         if not row.use_worktree:
             return

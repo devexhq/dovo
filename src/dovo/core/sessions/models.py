@@ -1,4 +1,4 @@
-"""Outcome models and the run.log event model for session operations."""
+"""Outcome models and the session.log event model for session operations."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ from pathlib import Path
 from pydantic import BaseModel, Field
 
 from dovo.common.models import BaseResult
-from dovo.core.db import RunRecord
+from dovo.core.db import SessionRecord
 
 
 class DiffStatus(StrEnum):
@@ -38,11 +38,11 @@ class DiffResult(BaseResult):
         return self.status in (DiffStatus.OK, DiffStatus.EMPTY_DIFF) and not self.errors
 
 
-class RunLogEventType(StrEnum):
-    """Discriminates which optional fields a RunLogEvent populates."""
+class SessionLogEventType(StrEnum):
+    """Discriminates which optional fields a SessionLogEvent populates."""
 
-    RUN_STARTED = "run_started"
-    RUN_COMPLETED = "run_completed"
+    SESSION_STARTED = "session_started"
+    SESSION_COMPLETED = "session_completed"
     STEP_START = "step_start"
     STEP_DONE = "step_done"
     LOOP_START = "loop_start"
@@ -51,8 +51,8 @@ class RunLogEventType(StrEnum):
     LOOP_DONE = "loop_done"
 
 
-class RunLogEvent(BaseModel):
-    """One structured, ISO-timestamped run.log timeline record.
+class SessionLogEvent(BaseModel):
+    """One structured, ISO-timestamped session.log timeline record.
 
     The engine appends one JSON line per event and drops write failures, so a crash can leave a truncated trailing line;
     readers must skip lines that fail validation.
@@ -61,7 +61,7 @@ class RunLogEvent(BaseModel):
     model_config = {"extra": "forbid", "strict": True}
 
     ts: str = ""
-    event: RunLogEventType
+    event: SessionLogEventType
     session_id: str | None = None
     blueprint_key: str | None = None
     step_index: int | None = None
@@ -106,7 +106,7 @@ class LogsShowResult(BaseResult):
     status: LogsShowStatus
     session_id: str | None = None
     lines: list[str] = Field(default_factory=list)
-    events: list[RunLogEvent] = Field(default_factory=list)
+    events: list[SessionLogEvent] = Field(default_factory=list)
     available_steps: list[str] = Field(default_factory=list)
     available_attempts: list[int] = Field(default_factory=list)
 
@@ -126,7 +126,7 @@ class HistoryListResult(BaseResult):
     """Structured result for history list before rendering."""
 
     status: HistoryListStatus = HistoryListStatus.OK
-    runs: list[RunRecord] = Field(default_factory=list)
+    sessions: list[SessionRecord] = Field(default_factory=list)
 
     @property
     def ok(self) -> bool:
@@ -146,18 +146,18 @@ class HistoryShowResult(BaseResult):
 
     status: HistoryShowStatus
     session_id: str | None = None
-    run: RunRecord | None = None
+    session: SessionRecord | None = None
     log_files: list[str] = Field(default_factory=list)
     log_snippet: list[str] = Field(default_factory=list)
 
     @property
     def ok(self) -> bool:
-        """True when a run record is available to render."""
-        return self.status == HistoryShowStatus.OK and self.run is not None and not self.errors
+        """True when a session record is available to render."""
+        return self.status == HistoryShowStatus.OK and self.session is not None and not self.errors
 
 
 class ReconciliationResult(BaseResult):
     """Result of reconciling stale running sessions."""
 
-    reconciled: list[RunRecord] = Field(default_factory=list)
+    reconciled: list[SessionRecord] = Field(default_factory=list)
     warning: str | None = None

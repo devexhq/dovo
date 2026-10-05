@@ -11,25 +11,25 @@ from typer.testing import CliRunner
 from dovo.cli import app
 from dovo.common.filesystem.models import RepositoryPaths
 from dovo.common.filesystem.services.global_root import resolve_global_paths
-from dovo.core.db import DovoDb, RunStatus
+from dovo.core.db import DovoDb, SessionStatus
 from dovo.core.project.services.storage import resolve_workspace_paths
-from dovo.core.sessions import LogsShowResult, LogsShowStatus, RunLogEvent, RunLogEventType
+from dovo.core.sessions import LogsShowResult, LogsShowStatus, SessionLogEvent, SessionLogEventType
 
 _EVENTS = [
-    RunLogEvent(ts="2026-09-26T10:00:00+00:00", event=RunLogEventType.RUN_STARTED, session_id="sess-logs"),
-    RunLogEvent(ts="2026-09-26T10:00:01+00:00", event=RunLogEventType.RUN_COMPLETED, status="completed"),
+    SessionLogEvent(ts="2026-09-26T10:00:00+00:00", event=SessionLogEventType.SESSION_STARTED, session_id="sess-logs"),
+    SessionLogEvent(ts="2026-09-26T10:00:01+00:00", event=SessionLogEventType.SESSION_COMPLETED, status="completed"),
 ]
 
 
 def _seed_session(workspace: Path) -> Path:
-    """Persist a run record plus a run.log and build step captures for session 'sess-logs'."""
+    """Persist a session record plus a session.log and build step captures for session 'sess-logs'."""
     paths = resolve_workspace_paths(RepositoryPaths.from_root(workspace), resolve_global_paths(None))
-    DovoDb(database_file=paths.database_file, project_id=paths.project_id).runs.create(
-        session_id="sess-logs", blueprint_name="bp", blueprint_key="bp", status=RunStatus.COMPLETED
+    DovoDb(database_file=paths.database_file, project_id=paths.project_id).sessions.create(
+        session_id="sess-logs", blueprint_name="bp", blueprint_key="bp", status=SessionStatus.COMPLETED
     )
     session_log_dir = paths.logs_dir / "sess-logs"
     session_log_dir.mkdir(parents=True)
-    (session_log_dir / "run.log").write_text("".join(e.model_dump_json() + "\n" for e in _EVENTS), encoding="utf-8")
+    (session_log_dir / "session.log").write_text("".join(e.model_dump_json() + "\n" for e in _EVENTS), encoding="utf-8")
     (session_log_dir / "01_build_attempt_1.stderr.log").write_text("first-attempt\n", encoding="utf-8")
     (session_log_dir / "01_build_attempt_2.stdout.log").write_text("stdout-line\n", encoding="utf-8")
     (session_log_dir / "01_build_attempt_2.stderr.log").write_text(
@@ -44,7 +44,7 @@ class LogsCliIntegrationTests:
     def test_logs_command_exit_0_prints_run_log_events_for_valid_session(
         self, cli_runner: CliRunner, logs_workspace: Path
     ) -> None:
-        """dovo logs <session_id>: exit 0 and stdout renders every run.log event."""
+        """dovo logs <session_id>: exit 0 and stdout renders every session.log event."""
         _seed_session(logs_workspace)
 
         result = cli_runner.invoke(app, ["-p", str(logs_workspace), "logs", "sess-logs"])
@@ -110,7 +110,7 @@ class LogsCliIntegrationTests:
                 "events": [
                     {
                         "ts": "2026-09-26T10:00:00+00:00",
-                        "event": "run_started",
+                        "event": "session_started",
                         "session_id": "sess-logs",
                         "blueprint_key": None,
                         "step_index": None,
@@ -129,7 +129,7 @@ class LogsCliIntegrationTests:
                     },
                     {
                         "ts": "2026-09-26T10:00:01+00:00",
-                        "event": "run_completed",
+                        "event": "session_completed",
                         "session_id": None,
                         "blueprint_key": None,
                         "step_index": None,

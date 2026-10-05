@@ -8,9 +8,9 @@ from dovo.common.filesystem import WorkspacePaths
 from dovo.core.catalog import Catalog
 from dovo.core.catalog.blueprint import Blueprint
 from dovo.core.catalog.exceptions import BlueprintLoadError, BlueprintNotFoundError, BlueprintValidationError
-from dovo.core.db import RunsRepository
+from dovo.core.db import SessionsRepository
 from dovo.core.inputs.services.resolve import format_input_error_message
-from dovo.core.sessions import reconcile_stale_runs
+from dovo.core.sessions import reconcile_stale_sessions
 from dovo.engine.engine import Engine
 from dovo.engine.exceptions import EngineInputError, EngineRuntimeError
 from dovo.engine.models import BlueprintRunResult, FailurePrompter, RunObserver, RunRequest
@@ -23,7 +23,7 @@ class BlueprintRunService:
 
     name: str
     paths: WorkspacePaths
-    runs_db: RunsRepository
+    sessions_db: SessionsRepository
     no_worktree: bool = False
     keep: bool = False
     agent: str | None = None
@@ -37,7 +37,7 @@ class BlueprintRunService:
 
     def execute(self) -> BlueprintRunResult:
         """Run the full execution pipeline and return the outcome."""
-        reconciliation_result = reconcile_stale_runs(self.runs_db, path=self.paths.root_dir)
+        reconciliation_result = reconcile_stale_sessions(self.sessions_db, path=self.paths.root_dir)
         if reconciliation_result.warning:
             self.warnings.append(reconciliation_result.warning)
 
@@ -47,7 +47,7 @@ class BlueprintRunService:
             return fail_outcome or fail(self.warnings, f"Failed to load Blueprint '{self.name}'.")
 
         try:
-            run_outcome = Engine(self.paths, db=self.runs_db, catalog=catalog).run(
+            run_outcome = Engine(self.paths, db=self.sessions_db, catalog=catalog).run(
                 blueprint,
                 RunRequest(
                     cli_args=self.cli_args,
@@ -73,7 +73,7 @@ class BlueprintRunService:
         except EngineRuntimeError as exc:
             return fail(self.warnings, str(exc))
 
-        return finalize(self.runs_db, self.warnings, run_outcome, run_outcome.session_id or "")
+        return finalize(self.sessions_db, self.warnings, run_outcome, run_outcome.session_id or "")
 
     def _load_blueprint(self, catalog: Catalog) -> tuple[Blueprint | None, BlueprintRunResult | None]:
         """Load and validate blueprint definition from catalog, returning error result on failure."""

@@ -14,10 +14,10 @@ from dovo.cli.ui.dispatcher import ui_dispatcher
 from dovo.common.filesystem.models import RepositoryPaths, WorkspacePaths
 from dovo.common.filesystem.services.global_root import resolve_global_paths
 from dovo.core.config.models import ConfigTier
-from dovo.core.db import DovoDb, RunStatus
+from dovo.core.db import DovoDb, SessionStatus
 from dovo.core.project.services.storage import resolve_workspace_paths
 from tests.harness.catalog import write_runnable_step
-from tests.harness.runs import seed_paused_run
+from tests.harness.sessions import seed_paused_session
 
 
 def _paths_for(root: Path) -> WorkspacePaths:
@@ -31,7 +31,7 @@ def _seed_paused_session(
     """Snapshot a blueprint with steps under session_id and pause it at paused_step_id after a failed attempt."""
     paths = _paths_for(resume_workspace)
     db = DovoDb(database_file=paths.database_file, project_id=paths.project_id)
-    seed_paused_run(paths, db.runs, session_id=session_id, steps=steps, paused_step_id=paused_step_id)
+    seed_paused_session(paths, db.sessions, session_id=session_id, steps=steps, paused_step_id=paused_step_id)
 
 
 class ResumeCliIntegrationTests:
@@ -40,7 +40,7 @@ class ResumeCliIntegrationTests:
     def test_resume_cli_from_paused_state_completes_remaining_steps_exits_zero(
         self, cli_runner: CliRunner, resume_workspace: Path
     ) -> None:
-        """dovo resume <session_id>: paused run state with use_worktree=False resumes and completes, exit 0, run record status becomes COMPLETED."""
+        """dovo resume <session_id>: paused run state with use_worktree=False resumes and completes, exit 0, session record status becomes COMPLETED."""
         _seed_paused_session(
             resume_workspace,
             session_id="paused-session-1",
@@ -57,9 +57,9 @@ class ResumeCliIntegrationTests:
         assert result.exit_code == 0
         record = DovoDb(
             database_file=_paths_for(resume_workspace).database_file, project_id=_paths_for(resume_workspace).project_id
-        ).runs.get("paused-session-1")
+        ).sessions.get("paused-session-1")
         assert record is not None
-        assert record.status == RunStatus.COMPLETED
+        assert record.status == SessionStatus.COMPLETED
         assert (resume_workspace / "resumed.marker").exists()
 
     def test_resume_cli_unknown_session_exits_one(self, cli_runner: CliRunner, resume_workspace: Path) -> None:
@@ -137,7 +137,7 @@ class ResumeCliIntegrationTests:
         assert result.exit_code == 0
         record = DovoDb(
             database_file=_paths_for(resume_workspace).database_file, project_id=_paths_for(resume_workspace).project_id
-        ).runs.get("snap-resume-1")
+        ).sessions.get("snap-resume-1")
         assert record is not None
-        assert record.status == RunStatus.COMPLETED
+        assert record.status == SessionStatus.COMPLETED
         assert (resume_workspace / "resumed.marker").exists()

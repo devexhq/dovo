@@ -34,7 +34,7 @@ class StatusView(BaseModel):
     max_active_worktrees: int | None
     valid_catalog_items: int | None
     total_catalog_items: int | None
-    total_runs: int
+    total_sessions: int
     errors: list[str] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
     remediations: list[str] = Field(default_factory=list)

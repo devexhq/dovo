@@ -6,7 +6,7 @@ from pathlib import Path
 
 from dovo.common.filesystem import WorkspacePaths
 from dovo.common.lock import WorkspaceLock
-from dovo.core.db import RunsRepository, WorktreeRecord, WorktreesRepository, WorktreeStatus
+from dovo.core.db import SessionsRepository, WorktreeRecord, WorktreesRepository, WorktreeStatus
 from dovo.core.worktree.models import (
     WorktreeApplyResult,
     WorktreeApplyStrategy,
@@ -35,7 +35,7 @@ class Worktree:
         self,
         paths: WorkspacePaths,
         db: WorktreesRepository | None = None,
-        runs_db: RunsRepository | None = None,
+        sessions_db: SessionsRepository | None = None,
     ) -> None:
         self.paths = paths
         self.path = paths.root_dir
@@ -43,7 +43,7 @@ class Worktree:
         self.db = (
             db if db is not None else WorktreesRepository(db_path=paths.database_file, project_id=paths.project_id)
         )
-        self.runs_db = runs_db
+        self.sessions_db = sessions_db
         self.lifecycle = WorktreeLifecycle(self.paths, self.db)
         self.patch = WorktreePatch(self.paths, self.db, lifecycle=self.lifecycle)
 
@@ -98,7 +98,7 @@ class Worktree:
         force: bool = False,
     ) -> WorktreePruneResult:
         """Safely prune stale worktrees, orphaned directories, and temporary branches."""
-        pruner = WorktreePruner(self.path, self.db, runs_db=self.runs_db)
+        pruner = WorktreePruner(self.path, self.db, sessions_db=self.sessions_db)
         return pruner.prune(dry_run=dry_run, force=force)
 
     def prune_git_worktrees(self) -> None:
@@ -142,5 +142,5 @@ class Worktree:
 
     def detect(self) -> WorktreeDetectionResult:
         """Scan repository for stale worktrees, orphaned directories, and dead refs."""
-        detector = WorktreeDetector(self.path, self.db, runs_db=self.runs_db)
+        detector = WorktreeDetector(self.path, self.db, sessions_db=self.sessions_db)
         return detector.detect()

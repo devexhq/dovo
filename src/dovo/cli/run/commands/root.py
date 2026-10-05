@@ -13,7 +13,7 @@ from dovo.cli.ui import (
     ui_dispatcher,
 )
 from dovo.common.models import DisplayFormatOptions, OutputFormatOptions
-from dovo.core.db import RunRecord, RunStatus
+from dovo.core.db import SessionRecord, SessionStatus
 from dovo.engine import BlueprintRunService
 from dovo.engine.models import BlueprintRunResult
 
@@ -25,7 +25,7 @@ def _first_error(result: BlueprintRunResult, fallback: str) -> str:
 
 def _dispatch_run_outcome(
     result: BlueprintRunResult,
-    record: RunRecord | None,
+    record: SessionRecord | None,
 ) -> None:
     """Dispatch the appropriate UI event for a completed blueprint run."""
     if result.ok and record is not None:
@@ -36,9 +36,9 @@ def _dispatch_run_outcome(
                 status=record.status,
             )
         )
-    elif record is not None and record.status == RunStatus.PAUSED:
+    elif record is not None and record.status == SessionStatus.PAUSED:
         ui_dispatcher.dispatch(MessageEvent(message=_first_error(result, "Blueprint paused; checkpoint saved.")))
-    elif record is not None and record.status == RunStatus.CANCELLED:
+    elif record is not None and record.status == SessionStatus.CANCELLED:
         ui_dispatcher.dispatch(
             ErrorPanelEvent(
                 title="Blueprint Run Cancelled",
@@ -78,7 +78,7 @@ def run_command(
         result = BlueprintRunService(
             name=name,
             paths=context.paths,
-            runs_db=context.db.runs,
+            sessions_db=context.db.sessions,
             no_worktree=no_worktree,
             keep=keep,
             agent=agent,
@@ -93,6 +93,6 @@ def run_command(
     for warning in result.warnings:
         ui_dispatcher.dispatch(WarningEvent(message=warning))
 
-    record = result.run_record
+    record = result.session_record
     _dispatch_run_outcome(result, record)
     return result

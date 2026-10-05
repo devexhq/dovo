@@ -8,7 +8,7 @@ import pytest
 from pydantic import ValidationError
 
 from dovo.core.agents.models import ResolvedAgentSettings
-from dovo.core.db import RunRecord, RunStatus
+from dovo.core.db import SessionRecord, SessionStatus
 from dovo.engine.models import AgentSettingsResolution, BlueprintRunResult, DefinitionRef, RunOutcome
 
 
@@ -22,10 +22,10 @@ class BlueprintRunResultTests:
         ],
     )
     def test_ok_requires_a_run_record_and_no_errors(self, has_record: bool, errors: list[str], expected: bool) -> None:
-        """[tier-1/unit] BlueprintRunResult.ok: True only when run_record is set and errors is empty."""
-        record = RunRecord(session_id="s", blueprint_name="lint", blueprint_key="lint") if has_record else None
+        """[tier-1/unit] BlueprintRunResult.ok: True only when session_record is set and errors is empty."""
+        record = SessionRecord(session_id="s", blueprint_name="lint", blueprint_key="lint") if has_record else None
 
-        result = BlueprintRunResult(run_record=record, errors=errors)
+        result = BlueprintRunResult(session_record=record, errors=errors)
 
         assert result.ok is expected
 
@@ -34,14 +34,14 @@ class RunOutcomeTests:
     @pytest.mark.parametrize(
         ("status", "errors", "expected"),
         [
-            pytest.param(RunStatus.COMPLETED, [], True, id="completed"),
-            pytest.param(RunStatus.COMPLETED, ["late error"], False, id="completed-with-errors"),
-            pytest.param(RunStatus.FAILED, [], False, id="failed"),
-            pytest.param(RunStatus.PAUSED, [], False, id="paused"),
+            pytest.param(SessionStatus.COMPLETED, [], True, id="completed"),
+            pytest.param(SessionStatus.COMPLETED, ["late error"], False, id="completed-with-errors"),
+            pytest.param(SessionStatus.FAILED, [], False, id="failed"),
+            pytest.param(SessionStatus.PAUSED, [], False, id="paused"),
         ],
     )
     def test_ok_requires_completed_status_and_no_errors(
-        self, tmp_path: Path, status: RunStatus, errors: list[str], expected: bool
+        self, tmp_path: Path, status: SessionStatus, errors: list[str], expected: bool
     ) -> None:
         """[tier-1/unit] RunOutcome.ok: True only for status COMPLETED with an empty errors list."""
         outcome = RunOutcome(status=status, worktree_path=tmp_path, errors=errors)

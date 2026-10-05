@@ -17,15 +17,15 @@ def history_root_command(
 
     Args:
         context: CLI context instance.
-        limit: Maximum number of execution runs to display.
-        status: Filter by run status.
+        limit: Maximum number of sessions to display.
+        status: Filter by session status.
         kind: Filter by blueprint kind.
         output_format: Presentation format ("terminal" or "json").
 
     Returns:
-        HistoryListResult containing listed runs and errors.
+        HistoryListResult containing listed sessions and errors.
     """
-    result = SessionCollection(context.paths, db=context.db.runs).list(
+    result = SessionCollection(context.paths, db=context.db.sessions).list(
         limit=limit,
         status=status,
     )

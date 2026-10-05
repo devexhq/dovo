@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from dovo.core.db.repositories.runs import RunsRepository
+from dovo.core.db.repositories.sessions import SessionsRepository
 from dovo.core.db.repositories.worktrees import WorktreesRepository
 
 
@@ -15,20 +15,20 @@ class BaseRepositoryTests:
 
     def test_project_id_missing_raises_value_error(self) -> None:
         """[tier-1/unit] BaseRepository.project_id: no explicit project_id supplied at construction raises ValueError('project_id must be provided')."""
-        repo = RunsRepository()
+        repo = SessionsRepository()
 
         with pytest.raises(ValueError, match="project_id must be provided"):
             _ = repo.project_id
 
     def test_project_id_returns_explicitly_provided_value(self) -> None:
         """[tier-1/unit] BaseRepository.project_id: returns the exact value supplied at construction."""
-        repo = RunsRepository(project_id="explicit")
+        repo = SessionsRepository(project_id="explicit")
 
         assert repo.project_id == "explicit"
 
     def test_db_path_missing_raises_value_error(self) -> None:
         """[tier-1/unit] BaseRepository.db_path: no explicit db_path supplied at construction raises ValueError('db_path must be provided')."""
-        repo = RunsRepository()
+        repo = SessionsRepository()
 
         with pytest.raises(ValueError, match="db_path must be provided"):
             _ = repo.db_path
@@ -36,7 +36,7 @@ class BaseRepositoryTests:
     def test_db_path_returns_explicitly_provided_value(self, tmp_path: Path) -> None:
         """[tier-1/unit] BaseRepository.db_path: returns the exact value supplied at construction."""
         database_file = tmp_path / "dovo.db"
-        repo = RunsRepository(db_path=database_file)
+        repo = SessionsRepository(db_path=database_file)
 
         assert repo.db_path == database_file
 

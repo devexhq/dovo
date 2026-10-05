@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
-from dovo.core.db import RunRecord, RunStatus
+from dovo.core.db import SessionRecord, SessionStatus
 from dovo.core.sessions import (
     HistoryListResult,
     HistoryListStatus,
@@ -13,8 +13,8 @@ from dovo.core.sessions import (
     HistoryShowStatus,
     LogsShowResult,
     LogsShowStatus,
-    RunLogEvent,
-    RunLogEventType,
+    SessionLogEvent,
+    SessionLogEventType,
 )
 
 
@@ -37,25 +37,25 @@ class LogsShowResultOkTests:
 
 
 class RunLogEventTests:
-    """[tier-1/unit] RunLogEvent: optional field defaults and strict field set."""
+    """[tier-1/unit] SessionLogEvent: optional field defaults and strict field set."""
 
     def test_new_fields_default_to_none_and_unknown_field_is_rejected(self) -> None:
-        """[tier-1/unit] RunLogEvent: RunLogEvent(event=RunLogEventType.STEP_START) has step_name None and duration_seconds None; an unknown field raises ValidationError."""
-        event = RunLogEvent(event=RunLogEventType.STEP_START)
+        """[tier-1/unit] SessionLogEvent: SessionLogEvent(event=SessionLogEventType.STEP_START) has step_name None and duration_seconds None; an unknown field raises ValidationError."""
+        event = SessionLogEvent(event=SessionLogEventType.STEP_START)
 
         assert (event.step_name, event.duration_seconds) == (None, None)
         with pytest.raises(ValidationError):
-            RunLogEvent.model_validate({"event": RunLogEventType.STEP_START, "unknown_field": 1})
+            SessionLogEvent.model_validate({"event": SessionLogEventType.STEP_START, "unknown_field": 1})
 
 
 class HistoryListResultTests:
     """[tier-1/unit] HistoryListResult: envelope defaults and ok semantics."""
 
     def test_defaults_describe_an_empty_ok_listing(self) -> None:
-        """[tier-1/unit] HistoryListResult(): status OK, no runs, empty errors/warnings/fixes, error_code None, ok True."""
+        """[tier-1/unit] HistoryListResult(): status OK, no sessions, empty errors/warnings/fixes, error_code None, ok True."""
         result = HistoryListResult()
 
-        assert (result.status, result.runs, result.errors, result.warnings, result.fixes, result.error_code) == (
+        assert (result.status, result.sessions, result.errors, result.warnings, result.fixes, result.error_code) == (
             HistoryListStatus.OK,
             [],
             [],
@@ -74,12 +74,12 @@ class HistoryShowResultTests:
     """[tier-1/unit] HistoryShowResult: envelope defaults and ok semantics."""
 
     def test_defaults_leave_run_and_log_fields_empty(self) -> None:
-        """[tier-1/unit] HistoryShowResult(status=NOT_FOUND): session_id None, run None, empty log_files/log_snippet/errors/warnings/fixes, error_code None, ok False."""
+        """[tier-1/unit] HistoryShowResult(status=NOT_FOUND): session_id None, session None, empty log_files/log_snippet/errors/warnings/fixes, error_code None, ok False."""
         result = HistoryShowResult(status=HistoryShowStatus.NOT_FOUND)
 
         assert (
             result.session_id,
-            result.run,
+            result.session,
             result.log_files,
             result.log_snippet,
             result.errors,
@@ -98,9 +98,13 @@ class HistoryShowResultTests:
         ],
     )
     def test_ok_requires_run_record_and_no_errors(self, has_run: bool, errors: list[str], expected_ok: bool) -> None:
-        """[tier-1/unit] HistoryShowResult.ok: True only for status OK with a run record and an empty errors list."""
-        run = RunRecord(session_id="s", blueprint_name="bp", blueprint_key="bp", status=RunStatus.COMPLETED)
+        """[tier-1/unit] HistoryShowResult.ok: True only for status OK with a session record and an empty errors list."""
+        session_record = SessionRecord(
+            session_id="s", blueprint_name="bp", blueprint_key="bp", status=SessionStatus.COMPLETED
+        )
 
-        result = HistoryShowResult(status=HistoryShowStatus.OK, run=run if has_run else None, errors=errors)
+        result = HistoryShowResult(
+            status=HistoryShowStatus.OK, session=session_record if has_run else None, errors=errors
+        )
 
         assert result.ok is expected_ok

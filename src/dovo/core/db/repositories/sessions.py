@@ -1,4 +1,4 @@
-"""Repository managing unified blueprint execution tracking CRUD operations using SQLModel."""
+"""Repository managing session record CRUD operations using SQLModel."""
 
 from __future__ import annotations
 
@@ -6,26 +6,26 @@ from datetime import UTC, datetime
 
 from sqlmodel import col, select
 
-from dovo.core.db.models import RunRecord, RunStatus
+from dovo.core.db.models import SessionRecord, SessionStatus
 from dovo.core.db.repositories.base import BaseRepository
 
 
-def _coerce_status(status: RunStatus | str | None) -> RunStatus | str | None:
-    """Coerce status string to RunStatus enum if valid member, else return as-is."""
+def _coerce_status(status: SessionStatus | str | None) -> SessionStatus | str | None:
+    """Coerce status string to SessionStatus enum if valid member, else return as-is."""
     if status is None:
         return None
-    return RunStatus(status) if isinstance(status, str) and status in RunStatus._value2member_map_ else status
+    return SessionStatus(status) if isinstance(status, str) and status in SessionStatus._value2member_map_ else status
 
 
-def _completed_at_for(status: RunStatus, completed_at: str | None) -> str | None:
+def _completed_at_for(status: SessionStatus, completed_at: str | None) -> str | None:
     """Return completed_at, defaulting to now for terminal statuses."""
-    if completed_at is None and status in (RunStatus.COMPLETED, RunStatus.FAILED, RunStatus.CANCELLED):
+    if completed_at is None and status in (SessionStatus.COMPLETED, SessionStatus.FAILED, SessionStatus.CANCELLED):
         return datetime.now(UTC).strftime("%Y-%m-%d %H:%M:%S")
     return completed_at
 
 
-class RunsRepository(BaseRepository):
-    """Repository managing unified blueprint execution tracking CRUD operations using SQLModel."""
+class SessionsRepository(BaseRepository):
+    """Repository managing session record CRUD operations using SQLModel."""
 
     def create(
         self,
@@ -33,7 +33,7 @@ class RunsRepository(BaseRepository):
         blueprint_name: str,
         blueprint_key: str,
         branch_name: str = "",
-        status: RunStatus | str = RunStatus.RUNNING,
+        status: SessionStatus | str = SessionStatus.RUNNING,
         pid: int | None = None,
         *,
         blueprint_tier: str | None = None,
@@ -43,11 +43,11 @@ class RunsRepository(BaseRepository):
         agent: str | None = None,
         inputs_json: str | None = None,
         auto_apply: bool = False,
-    ) -> RunRecord:
-        """Insert a new run record with its resolved run configuration and return the committed instance."""
-        status_enum = RunStatus(status) if isinstance(status, str) else status
+    ) -> SessionRecord:
+        """Insert a new session record with its resolved run configuration and return the committed instance."""
+        status_enum = SessionStatus(status) if isinstance(status, str) else status
 
-        record = RunRecord(
+        record = SessionRecord(
             project_id=self.project_id,
             session_id=session_id,
             blueprint_name=blueprint_name,
@@ -68,37 +68,37 @@ class RunsRepository(BaseRepository):
             return self._commit(
                 session,
                 record,
-                f"Run with session_id '{session_id}' already exists or failed constraints",
+                f"Session with session_id '{session_id}' already exists or failed constraints",
             )
 
-    def get(self, session_id: str) -> RunRecord | None:
-        """Return the run record matching session_id, or None."""
+    def get(self, session_id: str) -> SessionRecord | None:
+        """Return the session record matching session_id, or None."""
         with self.session() as session:
-            statement = select(RunRecord).where(
-                RunRecord.session_id == session_id, RunRecord.project_id == self.project_id
+            statement = select(SessionRecord).where(
+                SessionRecord.session_id == session_id, SessionRecord.project_id == self.project_id
             )
             return session.exec(statement).first()
 
     def update_status(
         self,
         session_id: str,
-        status: RunStatus | str,
+        status: SessionStatus | str,
         error_message: str | None = None,
         completed_at: str | None = None,
         pid: int | None = None,
         worktree_id: str | None = None,
         worktree_kept: bool | None = None,
-    ) -> RunRecord | None:
+    ) -> SessionRecord | None:
         """Update status, optional timestamps, error message, PID, worktree id, and worktree-kept outcome."""
         status_enum = _coerce_status(status)
-        if not isinstance(status_enum, RunStatus):
+        if not isinstance(status_enum, SessionStatus):
             raise ValueError(f"Invalid status constraint: {status}")
 
         completed_at = _completed_at_for(status_enum, completed_at)
 
         with self.session() as session:
-            statement = select(RunRecord).where(
-                RunRecord.session_id == session_id, RunRecord.project_id == self.project_id
+            statement = select(SessionRecord).where(
+                SessionRecord.session_id == session_id, SessionRecord.project_id == self.project_id
             )
             record = session.exec(statement).first()
             if record is None:
@@ -127,21 +127,21 @@ class RunsRepository(BaseRepository):
         *,
         expected_revision: int,
         next_revision: int,
-        status: RunStatus | str | None = None,
+        status: SessionStatus | str | None = None,
         error_message: str | None = None,
         worktree_id: str | None = None,
         worktree_kept: bool | None = None,
-    ) -> RunRecord | None:
+    ) -> SessionRecord | None:
         """Compare-and-swap the execution-state document at expected_revision, optionally updating lifecycle fields, worktree id, and worktree-kept outcome in the same commit; None when no row matches."""
         status_enum = _coerce_status(status)
-        if status_enum is not None and not isinstance(status_enum, RunStatus):
+        if status_enum is not None and not isinstance(status_enum, SessionStatus):
             raise ValueError(f"Invalid status constraint: {status}")
 
         with self.session() as session:
-            statement = select(RunRecord).where(
-                RunRecord.session_id == session_id,
-                RunRecord.project_id == self.project_id,
-                RunRecord.execution_state_revision == expected_revision,
+            statement = select(SessionRecord).where(
+                SessionRecord.session_id == session_id,
+                SessionRecord.project_id == self.project_id,
+                SessionRecord.execution_state_revision == expected_revision,
             )
             record = session.exec(statement).first()
             if record is None:
@@ -167,30 +167,30 @@ class RunsRepository(BaseRepository):
     def list(
         self,
         limit: int | None = None,
-        status: RunStatus | str | None = None,
-    ) -> list[RunRecord]:
-        """List run records ordered by started_at DESC, id DESC with optional filters."""
+        status: SessionStatus | str | None = None,
+    ) -> list[SessionRecord]:
+        """List session records ordered by started_at DESC, id DESC with optional filters."""
         with self.session() as session:
-            statement = select(RunRecord).where(RunRecord.project_id == self.project_id)
+            statement = select(SessionRecord).where(SessionRecord.project_id == self.project_id)
 
             status_enum = _coerce_status(status)
             if status_enum is not None:
-                statement = statement.where(RunRecord.status == status_enum)
+                statement = statement.where(SessionRecord.status == status_enum)
 
-            statement = statement.order_by(col(RunRecord.started_at).desc(), col(RunRecord.id).desc())
+            statement = statement.order_by(col(SessionRecord.started_at).desc(), col(SessionRecord.id).desc())
 
             if limit is not None:
                 statement = statement.limit(limit)
 
             return list(session.exec(statement).all())
 
-    def get_latest_paused(self) -> RunRecord | None:
-        """Return the most recent run where status == RunStatus.PAUSED, or None."""
+    def get_latest_paused(self) -> SessionRecord | None:
+        """Return the most recent session where status == SessionStatus.PAUSED, or None."""
         with self.session() as session:
             statement = (
-                select(RunRecord)
-                .where(RunRecord.status == RunStatus.PAUSED, RunRecord.project_id == self.project_id)
-                .order_by(col(RunRecord.started_at).desc(), col(RunRecord.id).desc())
+                select(SessionRecord)
+                .where(SessionRecord.status == SessionStatus.PAUSED, SessionRecord.project_id == self.project_id)
+                .order_by(col(SessionRecord.started_at).desc(), col(SessionRecord.id).desc())
                 .limit(1)
             )
             return session.exec(statement).first()

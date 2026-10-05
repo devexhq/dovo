@@ -46,8 +46,8 @@ dovo history
 - `dovo doctor` — run diagnostic checks and print a workspace health report
 - `dovo run <blueprint>` — execute a task or workflow blueprint
 - `dovo resume <session-id>` — resume a paused run
-- `dovo history [show <session-id> [--logs]]` — list or inspect past runs
-- `dovo logs <session-id>` — show a session's run timeline or a step's captured output (`--step`, `--attempt`, `--stream`, `--tail`)
+- `dovo history [show <session-id> [--logs]]` — list or inspect past sessions
+- `dovo logs <session-id>` — show a session's timeline or a step's captured output (`--step`, `--attempt`, `--stream`, `--tail`)
 
 ### Config
 
