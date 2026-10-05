@@ -104,7 +104,7 @@
         "engine"
       ],
       "scope": "src/dovo/core/, src/dovo/engine/",
-      "evaluation_criteria": "Inspect service methods. Flag methods that raise exceptions for business/operational failures instead of returning a BaseResult.",
+      "evaluation_criteria": "Inspect service methods. Flag methods that raise exceptions for business/operational failures, and facade or command-level operations that return a plain value instead of a BaseResult. Do not flag an internal helper that returns str | None to a single in-layer caller.",
       "bad_pattern": "raise WorktreeNotFoundError('Worktree does not exist')"
     },
     {

@@ -145,10 +145,13 @@ rules:
   category: Models
   domain: [core, engine]
   scope: src/dovo/core/, src/dovo/engine/
-  guideline: Operations that can fail must return a Pydantic result object subclassing BaseResult instead of raising exceptions.
-    Callers check .ok and render .errors/.warnings rather than catching exceptions.
-  evaluation_criteria: Inspect service methods. Flag methods that raise exceptions for business/operational failures instead
-    of returning a BaseResult.
+  guideline: Operations that can fail must not raise for business or operational failures. When the outcome reaches a facade,
+    a command handler, a formatter, or the wire format, return a Pydantic result object subclassing BaseResult; callers check
+    .ok and render .errors/.warnings rather than catching exceptions. An internal helper with a single in-layer caller that only
+    branches on success may instead return a plain value or an error message (str | None).
+  evaluation_criteria: Inspect service methods. Flag methods that raise exceptions for business/operational failures, and
+    facade or command-level operations that return a plain value instead of a BaseResult. Do not flag an internal helper that
+    returns str | None to a single in-layer caller.
   positive_example: return WorktreeDeleteResult(status=WorktreeDeleteStatus.NOT_FOUND, errors=['not found'])
   negative_example: raise WorktreeNotFoundError('Worktree does not exist')
   citation: docs/agents/code-conventions.md#resultoutcome-pattern
