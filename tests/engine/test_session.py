@@ -13,6 +13,7 @@ from dovo.common.filesystem.services.global_root import resolve_global_paths
 from dovo.core.agents.models import AgentRequest, AgentResponse, AgentResponseStatus, ResolvedAgentSettings
 from dovo.core.catalog.definitions import LoopStepBlock, StepDefinition
 from dovo.core.db import RunsRepository, RunStatus, WorktreesRepository
+from dovo.core.git.runner import GitRunner
 from dovo.core.project.services.storage import resolve_workspace_paths
 from dovo.core.sessions.services.read_logs import read_run_log_events
 from dovo.core.worktree import Worktree, WorktreeApplyResult, WorktreeApplyStatus
@@ -254,6 +255,52 @@ class DriveRunWorktreeTests:
         assert outcome.status == RunStatus.FAILED
         assert outcome.errors[0].startswith("Git worktree creation failed:")
         assert not (engine_workspace / "a.ran").exists()
+
+
+class DriveRunStorageBridgeTests:
+    """[tier-1/integration] drive_run: linking the run worktree to its session directory."""
+
+    def test_bridge_collision_fails_run_without_running_steps_or_deleting_content(
+        self, git_paths: WorkspacePaths, git_runs: RunsRepository
+    ) -> None:
+        """[tier-1/integration] drive_run: a worktree-backed run whose repository commits a regular directory at .dovo/run returns status FAILED, errors == ["Worktree storage bridge failed: Worktree storage bridge path '<worktree>/.dovo/run' is not a symlink."], worktree_kept False, no step marker file, and the committed sentinel.txt unchanged."""
+        source_sentinel = git_paths.root_dir / ".dovo" / "run" / "sentinel.txt"
+        source_sentinel.parent.mkdir(parents=True)
+        source_sentinel.write_text("do not delete", encoding="utf-8")
+        GitRunner.run(["add", "-f", ".dovo/run/sentinel.txt"], path=git_paths.root_dir)
+        GitRunner.run(["commit", "-m", "Add storage bridge collision"], path=git_paths.root_dir)
+        step_marker = git_paths.root_dir / "a.ran"
+        seed_new_run(
+            git_paths,
+            git_runs,
+            session_id="bridge-collision",
+            steps=[_step("a", f"touch '{step_marker}'")],
+            use_worktree=True,
+        )
+        bridge_path = git_paths.worktree_dir("bridge-collision").resolve() / ".dovo" / "run"
+
+        outcome = _drive(git_paths, git_runs, "bridge-collision")
+
+        assert outcome.status == RunStatus.FAILED
+        assert outcome.errors == [
+            f"Worktree storage bridge failed: Worktree storage bridge path '{bridge_path}' is not a symlink."
+        ]
+        assert outcome.worktree_kept is False
+        assert not step_marker.exists()
+        assert source_sentinel.read_text(encoding="utf-8") == "do not delete"
+
+    def test_cleanup_unlink_failure_surfaces_in_outcome_warnings(
+        self, git_paths: WorkspacePaths, git_runs: RunsRepository, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """[tier-1/integration] drive_run: a completed unkept worktree-backed run whose remove_storage_bridge returns "unlink busy" returns status COMPLETED with "unlink busy" in outcome.warnings and the worktree directory removed."""
+        seed_new_run(git_paths, git_runs, session_id="unlink-busy", steps=[_step("a", "echo hi")], use_worktree=True)
+        monkeypatch.setattr("dovo.engine.workspace.remove_storage_bridge", lambda worktree_path: "unlink busy")
+
+        outcome = _drive(git_paths, git_runs, "unlink-busy")
+
+        assert outcome.status == RunStatus.COMPLETED
+        assert "unlink busy" in outcome.warnings
+        assert not outcome.worktree_path.exists()
 
 
 class DriveRunMissingRowTests:

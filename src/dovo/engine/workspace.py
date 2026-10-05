@@ -13,6 +13,7 @@ from dovo.core.git.runner import GitRunner
 from dovo.core.worktree import Worktree, WorktreeApplyStrategy, WorktreeSession
 from dovo.engine.models import RunSettings
 from dovo.engine.notify import safe_notify
+from dovo.engine.storage_bridge import create_storage_bridge, remove_storage_bridge
 from dovo.engine.writer import get_session_dir, write_session_diff
 
 
@@ -82,11 +83,43 @@ class Workspace:
         safe_notify(self.context.observer, "on_worktree_ready", target_dir, active=True)
         return target_dir, manager, session, None
 
+    def link_session_dir(
+        self,
+        manager: Worktree | None,
+        session: WorktreeSession | None,
+        warnings: list[str],
+    ) -> str | None:
+        """Link a freshly created run worktree to its session directory; on failure discard the worktree and return the prefixed error.
+
+        A retained worktree (context.worktree_id set) is never linked.
+        """
+        if manager is None or session is None or self.context.worktree_id is not None:
+            return None
+        if self.context.session_id is None:
+            return None
+
+        link_error = create_storage_bridge(self.context.paths, self.context.session_id, session.worktree_path, warnings)
+        if link_error is None:
+            return None
+
+        self._discard_worktree(manager, session)
+        safe_notify(self.context.observer, "on_worktree_cleanup", kept=False, path=session.worktree_path)
+        return f"Worktree storage bridge failed: {link_error}"
+
+    def _discard_worktree(self, manager: Worktree, session: WorktreeSession) -> None:
+        """Best-effort Worktree.cleanup that never raises."""
+        try:
+            manager.cleanup(session)
+        except Exception:
+            # Best-effort cleanup: worktree removal is independent of run outcome.
+            pass
+
     def cleanup(
         self,
         manager: Worktree | None,
         session: WorktreeSession | None,
         target_dir: Path,
+        warnings: list[str],
     ) -> bool:
         """Clean up worktree unless keep is requested. Returns whether it was kept."""
         if manager is None or session is None:
@@ -97,11 +130,11 @@ class Workspace:
             safe_notify(self.context.observer, "on_worktree_cleanup", kept=True, path=session.worktree_path)
             return True
 
-        try:
-            manager.cleanup(session)
-        except Exception:
-            # Best-effort cleanup: worktree removal is independent of run outcome.
-            pass
+        unlink_warning = remove_storage_bridge(session.worktree_path)
+        if unlink_warning is not None:
+            warnings.append(unlink_warning)
+
+        self._discard_worktree(manager, session)
         safe_notify(self.context.observer, "on_worktree_cleanup", kept=False, path=session.worktree_path)
         return False
 
@@ -156,6 +189,7 @@ class Workspace:
         target_dir: Path,
         status: RunStatus,
         apply_failed: bool,
+        warnings: list[str],
     ) -> bool:
         """Clean up or keep the worktree based on run status."""
         if status == RunStatus.PAUSED or apply_failed:
@@ -163,7 +197,7 @@ class Workspace:
             safe_notify(self.context.observer, "on_worktree_cleanup", kept=True, path=kept_path)
             return True
 
-        return self.cleanup(manager, session, target_dir)
+        return self.cleanup(manager, session, target_dir, warnings)
 
     def prepare_session_tmp_dir(self, warnings: list[str]) -> Path | None:
         """Resolve and create the session scratch directory tree, or warn and return None."""

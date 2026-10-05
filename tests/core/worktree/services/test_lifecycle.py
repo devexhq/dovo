@@ -1,22 +1,18 @@
-"""Integration tests for worktree storage bridge lifecycle behavior."""
+"""Integration tests for worktree lifecycle behavior."""
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
 
-from dovo.common.filesystem import Filesystem, WorkspacePaths
+from dovo.common.filesystem import WorkspacePaths
 from dovo.common.filesystem.models import RepositoryPaths
 from dovo.common.filesystem.services.global_root import resolve_global_paths
 from dovo.core.db import WorktreesRepository
 from dovo.core.git.runner import GitRunner
-from dovo.core.project.models import ProjectIdentity
-from dovo.core.project.services.identity import save_project_identity
 from dovo.core.project.services.storage import resolve_workspace_paths
 from dovo.core.worktree.models import WorktreeCreateStatus
-from dovo.core.worktree.services import lifecycle as lifecycle_module
 from dovo.core.worktree.services.lifecycle import WorktreeLifecycle
 from tests.harness import WorkspaceBuilder
 
@@ -32,159 +28,48 @@ def _paths(workspace: Path) -> WorkspacePaths:
     return resolve_workspace_paths(RepositoryPaths.from_root(workspace), resolve_global_paths(None))
 
 
-def _save_project_identity(workspace: Path) -> None:
-    """Persist the fixed project identity used by storage bridge tests."""
-    identity = ProjectIdentity(id="project-626", created_at=datetime(2026, 1, 1, tzinfo=UTC))
-    save_project_identity(workspace / ".dovo" / "project.json", identity)
+class WorktreeLifecycleStorageIndependenceTests:
+    """[tier-1/integration] WorktreeLifecycle: worktree create and cleanup never manage session storage."""
 
-
-class WorktreeLifecycleStorageBridgeTests:
-    """Integration tests for worktree session storage bridges."""
-
-    def test_create_with_project_identity_creates_run_symlink_to_global_session_directory(
-        self, monkeypatch: pytest.MonkeyPatch, worktree_workspace: Path, tmp_path: Path
-    ) -> None:
-        """An identified worktree links its runtime bridge to global session storage."""
-        global_root = tmp_path / "global"
-        monkeypatch.setenv("DOVO_HOME", str(global_root))
-        _save_project_identity(worktree_workspace)
+    def test_create_makes_no_run_symlink_and_no_session_directory(self, worktree_workspace: Path) -> None:
+        """[tier-1/integration] WorktreeLifecycle.create: session_id 'dovo_independent' returns OK, <worktree>/.dovo/run does not exist, and paths.session_dir('dovo_independent') does not exist."""
         paths = _paths(worktree_workspace)
         lifecycle = WorktreeLifecycle(
             paths, WorktreesRepository(db_path=paths.database_file, project_id=paths.project_id)
         )
 
-        result = lifecycle.create(session_id="dovo_bridge_626")
+        result = lifecycle.create(session_id="dovo_independent")
 
-        bridge_path = worktree_workspace / ".dovo" / "worktrees" / "dovo_bridge_626" / ".dovo" / "run"
-        session_dir = global_root / "storage" / "projects" / "project-626" / "sessions" / "dovo_bridge_626"
         assert result.status == WorktreeCreateStatus.OK
-        assert bridge_path.is_symlink()
-        assert bridge_path.resolve() == session_dir
-        assert session_dir.is_dir()
-        assert not (worktree_workspace / ".dovo" / "sessions" / "dovo_bridge_626").exists()
+        assert result.session is not None
+        assert not (result.session.worktree_path / ".dovo" / "run").exists()
+        assert not (result.session.worktree_path / ".dovo" / "run").is_symlink()
+        assert not paths.session_dir("dovo_independent").exists()
 
-    def test_cleanup_unlinks_run_symlink_and_preserves_global_session_contents(
-        self, monkeypatch: pytest.MonkeyPatch, worktree_workspace: Path, tmp_path: Path
+    def test_cleanup_of_worktree_containing_run_symlink_leaves_link_target_contents_intact(
+        self, worktree_workspace: Path, tmp_path: Path
     ) -> None:
-        """Cleanup removes only the bridge and leaves global session contents intact."""
-        global_root = tmp_path / "global"
-        monkeypatch.setenv("DOVO_HOME", str(global_root))
-        _save_project_identity(worktree_workspace)
+        """[tier-1/integration] WorktreeLifecycle.cleanup: a worktree whose .dovo/run symlink points at an external directory holding sentinel.txt returns warnings == [], the worktree directory is removed, and sentinel.txt still reads its original content."""
         paths = _paths(worktree_workspace)
         lifecycle = WorktreeLifecycle(
             paths, WorktreesRepository(db_path=paths.database_file, project_id=paths.project_id)
         )
-        result = lifecycle.create(session_id="dovo_bridge_626")
-        assert result.session is not None
-        bridge_path = result.session.worktree_path / ".dovo" / "run"
-        sentinel_path = bridge_path.resolve() / "sentinel.txt"
-        Filesystem.atomic_write_text(sentinel_path, "preserve me")
+        create_result = lifecycle.create(session_id="dovo_linked_cleanup")
+        assert create_result.session is not None
+        session = create_result.session
+        external_dir = tmp_path / "external-session"
+        external_dir.mkdir()
+        sentinel_path = external_dir / "sentinel.txt"
+        sentinel_path.write_text("preserve me", encoding="utf-8")
+        link_path = session.worktree_path / ".dovo" / "run"
+        link_path.parent.mkdir(parents=True, exist_ok=True)
+        link_path.symlink_to(external_dir, target_is_directory=True)
 
-        warnings = lifecycle.cleanup(result.session)
+        warnings = lifecycle.cleanup(session)
 
         assert warnings == []
-        assert not bridge_path.is_symlink()
+        assert not session.worktree_path.exists()
         assert sentinel_path.read_text(encoding="utf-8") == "preserve me"
-
-    def test_create_with_stale_broken_run_symlink_replaces_it_with_session_target(
-        self, monkeypatch: pytest.MonkeyPatch, worktree_workspace: Path, tmp_path: Path
-    ) -> None:
-        """A tracked broken bridge is replaced with the selected session target."""
-        global_root = tmp_path / "global"
-        source_bridge = worktree_workspace / ".dovo" / "run"
-        monkeypatch.setenv("DOVO_HOME", str(global_root))
-        _save_project_identity(worktree_workspace)
-        source_bridge.symlink_to(tmp_path / "missing-session")
-        GitRunner.run(["add", "-f", ".dovo/run"], path=worktree_workspace)
-        GitRunner.run(["commit", "-m", "Add stale storage bridge"], path=worktree_workspace)
-        paths = _paths(worktree_workspace)
-        lifecycle = WorktreeLifecycle(
-            paths, WorktreesRepository(db_path=paths.database_file, project_id=paths.project_id)
-        )
-
-        result = lifecycle.create(session_id="dovo_bridge_626")
-
-        bridge_path = worktree_workspace / ".dovo" / "worktrees" / "dovo_bridge_626" / ".dovo" / "run"
-        session_dir = global_root / "storage" / "projects" / "project-626" / "sessions" / "dovo_bridge_626"
-        assert result.status == WorktreeCreateStatus.OK
-        assert bridge_path.is_symlink()
-        assert bridge_path.resolve() == session_dir
-
-    def test_create_when_symlink_creation_is_unsupported_returns_ok_with_bridge_warning(
-        self, monkeypatch: pytest.MonkeyPatch, worktree_workspace: Path
-    ) -> None:
-        """A Windows privilege limitation returns a successful worktree with a warning."""
-
-        def raise_symlink_error(self: Path, target: Path, target_is_directory: bool = False) -> None:
-            raise OSError(1314, "symlink privilege unavailable")
-
-        monkeypatch.setattr(lifecycle_module.platform, "system", lambda: "Windows")
-        monkeypatch.setattr(Path, "symlink_to", raise_symlink_error)
-        paths = _paths(worktree_workspace)
-        lifecycle = WorktreeLifecycle(
-            paths, WorktreesRepository(db_path=paths.database_file, project_id=paths.project_id)
-        )
-
-        result = lifecycle.create(session_id="dovo_bridge_626")
-
-        bridge_path = worktree_workspace / ".dovo" / "worktrees" / "dovo_bridge_626" / ".dovo" / "run"
-        assert result.status == WorktreeCreateStatus.OK
-        assert len(result.warnings) == 1
-        assert "symlink privilege unavailable" in result.warnings[0]
-        assert (worktree_workspace / ".dovo" / "worktrees" / "dovo_bridge_626").is_dir()
-        assert not bridge_path.exists()
-
-    def test_create_when_symlink_creation_fails_returns_storage_bridge_failed_and_discards_partial_worktree(
-        self, monkeypatch: pytest.MonkeyPatch, worktree_workspace: Path
-    ) -> None:
-        """An operational symlink failure removes the newly created worktree and branch."""
-
-        def raise_symlink_error(self: Path, target: Path, target_is_directory: bool = False) -> None:
-            raise OSError("storage device I/O failure")
-
-        monkeypatch.setattr(Path, "symlink_to", raise_symlink_error)
-        paths = _paths(worktree_workspace)
-        lifecycle = WorktreeLifecycle(
-            paths, WorktreesRepository(db_path=paths.database_file, project_id=paths.project_id)
-        )
-
-        result = lifecycle.create(session_id="dovo_bridge_626")
-
-        worktree_path = worktree_workspace / ".dovo" / "worktrees" / "dovo_bridge_626"
-        assert result.status == WorktreeCreateStatus.STORAGE_BRIDGE_FAILED
-        assert not worktree_path.exists()
-        assert "dovo/dovo_bridge_626" not in GitRunner.list_branches(worktree_workspace)
-        assert (
-            WorktreesRepository(db_path=paths.database_file, project_id=paths.project_id).get("dovo_bridge_626") is None
-        )
-
-    def test_create_with_regular_run_directory_returns_storage_bridge_failed_without_target_deletion(
-        self, worktree_workspace: Path
-    ) -> None:
-        """A worktree-side bridge collision discards only the partial worktree, never the source branch's committed content or already-persisted session storage."""
-        source_sentinel = worktree_workspace / ".dovo" / "run" / "sentinel.txt"
-        Filesystem.atomic_write_text(source_sentinel, "do not delete")
-        GitRunner.run(["add", "-f", ".dovo/run/sentinel.txt"], path=worktree_workspace)
-        GitRunner.run(["commit", "-m", "Add storage bridge collision"], path=worktree_workspace)
-        session_dir = worktree_workspace / ".dovo" / "sessions" / "dovo_bridge_626"
-        preexisting_session_file = session_dir / "run.json"
-        Filesystem.atomic_write_text(preexisting_session_file, "preserve me too")
-        paths = _paths(worktree_workspace)
-        lifecycle = WorktreeLifecycle(
-            paths, WorktreesRepository(db_path=paths.database_file, project_id=paths.project_id)
-        )
-
-        result = lifecycle.create(session_id="dovo_bridge_626")
-
-        worktree_path = worktree_workspace / ".dovo" / "worktrees" / "dovo_bridge_626"
-        assert result.status == WorktreeCreateStatus.STORAGE_BRIDGE_FAILED
-        assert source_sentinel.read_text(encoding="utf-8") == "do not delete"
-        assert preexisting_session_file.read_text(encoding="utf-8") == "preserve me too"
-        assert not worktree_path.exists()
-        assert "dovo/dovo_bridge_626" not in GitRunner.list_branches(worktree_workspace)
-        assert (
-            WorktreesRepository(db_path=paths.database_file, project_id=paths.project_id).get("dovo_bridge_626") is None
-        )
 
 
 class WorktreeLifecycleCapacityTests:

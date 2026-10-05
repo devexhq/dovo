@@ -102,6 +102,23 @@ class RunCliIntegrationTests:
         assert f"dovo/{latest.session_id}" in GitRunner.list_branches(run_workspace)
         assert all(paths.worktree_dir(earlier_id).is_dir() for earlier_id in earlier_ids)
 
+    def test_run_cli_keep_links_worktree_run_symlink_to_session_directory_exits_zero(
+        self, cli_runner: CliRunner, run_workspace: Path
+    ) -> None:
+        """[tier-3/integration] dovo run keep-task --keep: exits 0, and <paths.worktree_dir(session_id)>/.dovo/run is a symlink whose resolve() equals paths.session_dir(session_id).resolve() and contains run.json."""
+        write_runnable_blueprint(run_workspace, key="keep-task", steps=[{"id": "s1", "run": "true"}])
+        paths = _paths_for(run_workspace)
+
+        result = cli_runner.invoke(app, ["-p", str(run_workspace), "run", "keep-task", "--keep"])
+
+        assert result.exit_code == 0
+        db = DovoDb(database_file=paths.database_file, project_id=paths.project_id)
+        session_id = db.runs.list(limit=1)[0].session_id
+        link_path = paths.worktree_dir(session_id) / ".dovo" / "run"
+        assert link_path.is_symlink()
+        assert link_path.resolve() == paths.session_dir(session_id).resolve()
+        assert (link_path / "run.json").is_file()
+
     def test_run_cli_no_worktree_agent_step_exits_one_with_worktree_diagnostic(
         self, cli_runner: CliRunner, run_workspace: Path
     ) -> None:
