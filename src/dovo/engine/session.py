@@ -144,6 +144,15 @@ class RunSession:
             )
 
         setup_warnings: list[str] = []
+        link_error = workspace.link_session_dir(manager, worktree, setup_warnings)
+        if link_error is not None:
+            return RunOutcome(
+                status=RunStatus.FAILED,
+                errors=[link_error],
+                worktree_kept=False,
+                worktree_path=paths.root_dir,
+            )
+
         session_tmp_dir = workspace.prepare_session_tmp_dir(setup_warnings)
         session_log_dir = workspace.prepare_session_log_dir(setup_warnings)
         artifacts_dir, artifacts_db = workspace.prepare_session_artifacts()
@@ -215,7 +224,7 @@ class RunSession:
         warnings = list(outcome.warnings)
         self._workspace.capture_and_persist_diff(self._worktree, warnings)
         worktree_kept = self._workspace.finalize_cleanup(
-            self._manager, self._worktree, self._context.target_dir, outcome.status, self._apply_failed
+            self._manager, self._worktree, self._context.target_dir, outcome.status, self._apply_failed, warnings
         )
         self._workspace.cleanup_session_tmp_dir(
             self._context.session_tmp_dir, keep=self._row.keep, status=outcome.status

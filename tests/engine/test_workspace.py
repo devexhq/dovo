@@ -11,7 +11,7 @@ from dovo.common.filesystem.models import RepositoryPaths, WorkspacePaths
 from dovo.common.filesystem.services.global_root import resolve_global_paths
 from dovo.core.config import ConfigLoadError
 from dovo.core.config.loader import ConfigLoadResult, ConfigLoadStatus
-from dovo.core.db import RunStatus, WorktreesRepository
+from dovo.core.db import RunStatus, WorktreesRepository, WorktreeStatus
 from dovo.core.git.runner import GitRunner
 from dovo.core.project.services.storage import resolve_workspace_paths
 from dovo.core.worktree import Worktree, WorktreeApplyResult, WorktreeApplyStatus, WorktreeSession
@@ -229,7 +229,9 @@ class WorkspaceCleanupTests:
         observer = _RecordingRunObserver()
         context = RunSettings(cwd=tmp_path, use_worktree=False, observer=observer, paths=_paths_for(tmp_path))
 
-        kept = Workspace(context).cleanup(None, None, tmp_path)
+        warnings: list[str] = []
+
+        kept = Workspace(context).cleanup(None, None, tmp_path, warnings)
 
         assert kept is False
         assert observer.events == [("worktree_cleanup", False, tmp_path)]
@@ -248,7 +250,9 @@ class WorkspaceCleanupTests:
         target_dir, manager, session, _ = Workspace(context).setup()
         assert session is not None
 
-        kept = Workspace(context).cleanup(manager, session, target_dir)
+        warnings: list[str] = []
+
+        kept = Workspace(context).cleanup(manager, session, target_dir, warnings)
 
         assert kept is True
         assert target_dir.exists()
@@ -268,7 +272,9 @@ class WorkspaceCleanupTests:
         target_dir, manager, session, _ = Workspace(context).setup()
         assert session is not None
 
-        kept = Workspace(context).cleanup(manager, session, target_dir)
+        warnings: list[str] = []
+
+        kept = Workspace(context).cleanup(manager, session, target_dir, warnings)
 
         assert kept is False
         assert not target_dir.exists()
@@ -288,9 +294,194 @@ class WorkspaceCleanupTests:
 
         monkeypatch.setattr(Worktree, "cleanup", _raise)
 
-        kept = Workspace(context).cleanup(manager, session, target_dir)
+        warnings: list[str] = []
+
+        kept = Workspace(context).cleanup(manager, session, target_dir, warnings)
 
         assert kept is False
+
+    def test_cleanup_of_linked_worktree_preserves_session_contents(self, tmp_path: Path) -> None:
+        """[tier-1/integration] Workspace.cleanup: keep=False on a linked worktree with sentinel.txt written into paths.session_dir(id) returns False, removes the worktree, appends no warnings, and sentinel.txt still reads its original content."""
+        workspace_root = _worktree_workspace(tmp_path)
+        paths = _paths_for(workspace_root)
+        context = RunSettings(cwd=workspace_root, use_worktree=True, session_id="cleanup-link", paths=paths)
+        workspace = Workspace(context)
+        target_dir, manager, session, _ = workspace.setup()
+        assert session is not None
+        setup_warnings: list[str] = []
+        assert workspace.link_session_dir(manager, session, setup_warnings) is None
+        sentinel_path = paths.session_dir("cleanup-link") / "sentinel.txt"
+        sentinel_path.write_text("preserve me", encoding="utf-8")
+        warnings: list[str] = []
+
+        kept = workspace.cleanup(manager, session, target_dir, warnings)
+
+        assert kept is False
+        assert warnings == []
+        assert not target_dir.exists()
+        assert sentinel_path.read_text(encoding="utf-8") == "preserve me"
+
+    def test_cleanup_unlink_failure_appends_warning_and_still_removes_worktree(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """[tier-1/integration] Workspace.cleanup: remove_storage_bridge returning "Failed to unlink worktree storage bridge at '<p>': busy" appends exactly that message to warnings, the worktree directory is still removed, and cleanup returns False."""
+        workspace_root = _worktree_workspace(tmp_path)
+        context = RunSettings(
+            cwd=workspace_root, use_worktree=True, session_id="cleanup-busy", paths=_paths_for(workspace_root)
+        )
+        workspace = Workspace(context)
+        target_dir, manager, session, _ = workspace.setup()
+        assert session is not None
+        message = f"Failed to unlink worktree storage bridge at '{target_dir / '.dovo' / 'run'}': busy"
+        monkeypatch.setattr("dovo.engine.workspace.remove_storage_bridge", lambda worktree_path: message)
+        warnings: list[str] = []
+
+        kept = workspace.cleanup(manager, session, target_dir, warnings)
+
+        assert kept is False
+        assert warnings == [message]
+        assert not target_dir.exists()
+
+
+def _commit_source_path(workspace_root: Path, rel_path: str, message: str) -> None:
+    """Force-add and commit rel_path in the source repository so new worktrees check it out."""
+    GitRunner.run(["add", "-f", rel_path], path=workspace_root)
+    GitRunner.run(["commit", "-m", message], path=workspace_root)
+
+
+class WorkspaceLinkSessionDirTests:
+    """[tier-1/integration] Workspace.link_session_dir: linking a fresh run worktree to its session directory."""
+
+    def test_link_after_setup_links_run_to_session_directory(self, tmp_path: Path) -> None:
+        """[tier-1/integration] Workspace.link_session_dir: after setup() creates a worktree for session_id 'link-1', it returns None with warnings == [] and <worktree>/.dovo/run resolves to paths.session_dir('link-1'), which exists."""
+        workspace_root = _worktree_workspace(tmp_path)
+        paths = _paths_for(workspace_root)
+        workspace = Workspace(RunSettings(cwd=workspace_root, use_worktree=True, session_id="link-1", paths=paths))
+        target_dir, manager, session, _ = workspace.setup()
+        warnings: list[str] = []
+
+        error = workspace.link_session_dir(manager, session, warnings)
+
+        assert error is None
+        assert warnings == []
+        assert (target_dir / ".dovo" / "run").resolve() == paths.session_dir("link-1").resolve()
+        assert paths.session_dir("link-1").is_dir()
+
+    def test_link_replaces_committed_broken_symlink(self, tmp_path: Path) -> None:
+        """[tier-1/integration] Workspace.link_session_dir: a broken symlink committed at .dovo/run in the repository is replaced in the new worktree, returns None, and <worktree>/.dovo/run resolves to paths.session_dir(session_id)."""
+        workspace_root = _worktree_workspace(tmp_path)
+        (workspace_root / ".dovo" / "run").symlink_to(tmp_path / "missing-session")
+        _commit_source_path(workspace_root, ".dovo/run", "Add stale storage bridge")
+        paths = _paths_for(workspace_root)
+        workspace = Workspace(RunSettings(cwd=workspace_root, use_worktree=True, session_id="link-stale", paths=paths))
+        target_dir, manager, session, _ = workspace.setup()
+
+        error = workspace.link_session_dir(manager, session, [])
+
+        assert error is None
+        assert (target_dir / ".dovo" / "run").is_symlink()
+        assert (target_dir / ".dovo" / "run").resolve() == paths.session_dir("link-stale").resolve()
+
+    def test_link_with_committed_directory_returns_not_a_symlink_error_and_preserves_content(
+        self, tmp_path: Path
+    ) -> None:
+        """[tier-1/integration] Workspace.link_session_dir: a regular directory with sentinel.txt committed at .dovo/run returns "Worktree storage bridge failed: Worktree storage bridge path '<worktree>/.dovo/run' is not a symlink.", removes the worktree directory and the dovo/<id> branch, sets the worktrees row status to WorktreeStatus.CLEANED, notifies the observer of worktree_ready then worktree_cleanup with kept False, and leaves the repository's sentinel.txt and a pre-existing file in the session directory unchanged."""
+        workspace_root = _worktree_workspace(tmp_path)
+        source_sentinel = workspace_root / ".dovo" / "run" / "sentinel.txt"
+        source_sentinel.parent.mkdir(parents=True)
+        source_sentinel.write_text("do not delete", encoding="utf-8")
+        _commit_source_path(workspace_root, ".dovo/run/sentinel.txt", "Add storage bridge collision")
+        paths = _paths_for(workspace_root)
+        session_file = paths.session_dir("link-collision") / "run.json"
+        session_file.parent.mkdir(parents=True)
+        session_file.write_text("preserve me too", encoding="utf-8")
+        observer = _RecordingRunObserver()
+        workspace = Workspace(
+            RunSettings(
+                cwd=workspace_root, use_worktree=True, session_id="link-collision", observer=observer, paths=paths
+            )
+        )
+        target_dir, manager, session, _ = workspace.setup()
+
+        error = workspace.link_session_dir(manager, session, [])
+
+        record = WorktreesRepository(db_path=paths.database_file, project_id=paths.project_id).get("link-collision")
+        assert error == (
+            f"Worktree storage bridge failed: Worktree storage bridge path '{target_dir / '.dovo' / 'run'}' "
+            "is not a symlink."
+        )
+        assert not target_dir.exists()
+        assert observer.events == [("worktree_ready", target_dir, True), ("worktree_cleanup", False, target_dir)]
+        assert "dovo/link-collision" not in GitRunner.list_branches(workspace_root)
+        assert record is not None
+        assert record.status == WorktreeStatus.CLEANED
+        assert source_sentinel.read_text(encoding="utf-8") == "do not delete"
+        assert session_file.read_text(encoding="utf-8") == "preserve me too"
+
+    def test_link_symlink_failure_returns_prefixed_error_and_discards_worktree(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """[tier-1/integration] Workspace.link_session_dir: Path.symlink_to raising OSError("storage device I/O failure") returns a message starting "Worktree storage bridge failed: Unable to create worktree storage bridge at '", removes the worktree directory and the dovo/<id> branch, and sets the worktrees row status to WorktreeStatus.CLEANED."""
+        workspace_root = _worktree_workspace(tmp_path)
+        paths = _paths_for(workspace_root)
+        workspace = Workspace(RunSettings(cwd=workspace_root, use_worktree=True, session_id="link-fail", paths=paths))
+        target_dir, manager, session, _ = workspace.setup()
+
+        def _symlink_fails(self: Path, target: Path, target_is_directory: bool = False) -> None:
+            raise OSError("storage device I/O failure")
+
+        monkeypatch.setattr(Path, "symlink_to", _symlink_fails)
+
+        error = workspace.link_session_dir(manager, session, [])
+
+        record = WorktreesRepository(db_path=paths.database_file, project_id=paths.project_id).get("link-fail")
+        assert error is not None
+        assert error.startswith("Worktree storage bridge failed: Unable to create worktree storage bridge at '")
+        assert not target_dir.exists()
+        assert "dovo/link-fail" not in GitRunner.list_branches(workspace_root)
+        assert record is not None
+        assert record.status == WorktreeStatus.CLEANED
+
+    @pytest.mark.parametrize(
+        "scenario",
+        [
+            pytest.param("no-worktree", id="no-worktree"),
+            pytest.param("retained-worktree", id="retained-worktree"),
+            pytest.param("no-session-id", id="no-session-id"),
+        ],
+    )
+    def test_link_without_fresh_run_worktree_returns_none_and_creates_no_link(
+        self, tmp_path: Path, scenario: str
+    ) -> None:
+        """[tier-1/integration] Workspace.link_session_dir: use_worktree=False, a retained worktree_id, or session_id=None returns None, appends no warnings, and no <worktree>/.dovo/run exists."""
+        workspace_root = _worktree_workspace(tmp_path)
+        paths = _paths_for(workspace_root)
+        if scenario == "no-worktree":
+            context = RunSettings(cwd=workspace_root, use_worktree=False, session_id="link-skip", paths=paths)
+        elif scenario == "retained-worktree":
+            created = Worktree(
+                paths, db=WorktreesRepository(db_path=paths.database_file, project_id=paths.project_id)
+            ).create(session_id="retained")
+            assert created.session is not None
+            context = RunSettings(
+                cwd=workspace_root,
+                use_worktree=True,
+                session_id="link-skip",
+                worktree_id=created.session.session_id,
+                paths=paths,
+            )
+        else:
+            context = RunSettings(cwd=workspace_root, use_worktree=True, session_id=None, paths=paths)
+        workspace = Workspace(context)
+        target_dir, manager, session, _ = workspace.setup()
+        warnings: list[str] = []
+
+        error = workspace.link_session_dir(manager, session, warnings)
+
+        assert error is None
+        assert warnings == []
+        assert not (target_dir / ".dovo" / "run").is_symlink()
+        assert not (target_dir / ".dovo" / "run").exists()
 
 
 class WorkspaceHandleAutoApplyTests:
@@ -432,7 +623,11 @@ class WorkspaceFinalizeCleanupTests:
         target_dir, manager, session, _ = Workspace(context).setup()
         assert session is not None
 
-        kept = Workspace(context).finalize_cleanup(manager, session, target_dir, RunStatus.PAUSED, apply_failed=False)
+        warnings: list[str] = []
+
+        kept = Workspace(context).finalize_cleanup(
+            manager, session, target_dir, RunStatus.PAUSED, apply_failed=False, warnings=warnings
+        )
 
         assert kept is True
         assert target_dir.exists()
@@ -445,7 +640,11 @@ class WorkspaceFinalizeCleanupTests:
         target_dir, manager, session, _ = Workspace(context).setup()
         assert session is not None
 
-        kept = Workspace(context).finalize_cleanup(manager, session, target_dir, RunStatus.COMPLETED, apply_failed=True)
+        warnings: list[str] = []
+
+        kept = Workspace(context).finalize_cleanup(
+            manager, session, target_dir, RunStatus.COMPLETED, apply_failed=True, warnings=warnings
+        )
 
         assert kept is True
         assert target_dir.exists()
@@ -457,8 +656,10 @@ class WorkspaceFinalizeCleanupTests:
         target_dir, manager, session, _ = Workspace(context).setup()
         assert session is not None
 
+        warnings: list[str] = []
+
         kept = Workspace(context).finalize_cleanup(
-            manager, session, target_dir, RunStatus.COMPLETED, apply_failed=False
+            manager, session, target_dir, RunStatus.COMPLETED, apply_failed=False, warnings=warnings
         )
 
         assert kept is False

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import platform
 import shutil
 from datetime import UTC, datetime
 from pathlib import Path
@@ -41,13 +40,6 @@ def _extract_target_metadata(target: WorktreeSession | WorktreeRecord) -> tuple[
     if isinstance(target, WorktreeRecord):
         return Path(target.worktree_path), target.id, target.branch_name
     return target.worktree_path, target.session_id, target.target_branch
-
-
-def _is_windows_symlink_fallback(exc: OSError) -> bool:
-    """Return whether an error is a documented Windows symlink limitation."""
-    winerror = getattr(exc, "winerror", None)
-    error_code = winerror if isinstance(winerror, int) else exc.errno
-    return platform.system() == "Windows" and error_code in (50, 1314)
 
 
 class WorktreeLifecycle:
@@ -214,63 +206,6 @@ class WorktreeLifecycle:
         except Exception as exc:
             return [f"Failed to persist worktree metadata to the local database: {exc}"]
 
-    def _create_storage_bridge(self, worktree_path: Path, session_id: str) -> WorktreeCreateResult | None:
-        """Create the worktree run bridge or classify an unsafe bridge collision."""
-        session_dir = self.paths.session_dir(session_id)
-        bridge_dir = worktree_path / ".dovo"
-        bridge_path = bridge_dir / "run"
-
-        try:
-            session_dir.mkdir(parents=True, exist_ok=True)
-            bridge_dir.mkdir(parents=True, exist_ok=True)
-        except OSError as exc:
-            return WorktreeCreateResult(
-                status=WorktreeCreateStatus.STORAGE_BRIDGE_FAILED,
-                errors=[f"Unable to prepare worktree storage bridge at '{bridge_path}': {exc}"],
-            )
-
-        if bridge_path.is_symlink():
-            try:
-                bridge_path.unlink()
-            except OSError as exc:
-                return WorktreeCreateResult(
-                    status=WorktreeCreateStatus.STORAGE_BRIDGE_FAILED,
-                    errors=[f"Unable to replace worktree storage bridge at '{bridge_path}': {exc}"],
-                )
-        elif bridge_path.exists():
-            return WorktreeCreateResult(
-                status=WorktreeCreateStatus.STORAGE_BRIDGE_FAILED,
-                errors=[f"Worktree storage bridge path '{bridge_path}' is not a symlink."],
-            )
-
-        try:
-            bridge_path.symlink_to(session_dir, target_is_directory=True)
-        except OSError as exc:
-            if not _is_windows_symlink_fallback(exc):
-                return WorktreeCreateResult(
-                    status=WorktreeCreateStatus.STORAGE_BRIDGE_FAILED,
-                    errors=[f"Unable to create worktree storage bridge at '{bridge_path}': {exc}"],
-                )
-            return WorktreeCreateResult(
-                status=WorktreeCreateStatus.OK,
-                warnings=[f"Unable to create worktree storage bridge at '{bridge_path}': {exc}"],
-            )
-
-        return None
-
-    def _unlink_storage_bridge(self, worktree_path: Path) -> str | None:
-        """Unlink the worktree run bridge without traversing its target."""
-        bridge_path = worktree_path / ".dovo" / "run"
-        if not bridge_path.is_symlink():
-            return None
-
-        try:
-            bridge_path.unlink()
-        except OSError as exc:
-            return f"Failed to unlink worktree storage bridge at '{bridge_path}': {exc}"
-
-        return None
-
     def create(
         self,
         session_id: str | None = None,
@@ -317,7 +252,7 @@ class WorktreeLifecycle:
         base_ref: str | None,
         worktree_cfg: WorktreeConfig,
     ) -> WorktreeCreateResult:
-        """Create the worktree, resolve its base commit, overlay WIP, and bridge storage for a new worktree session."""
+        """Create the worktree, resolve its base commit, and overlay WIP for a new worktree session."""
         resolved_name = _clean_opt_str(name)
         override_base_ref = _clean_opt_str(base_ref)
         sid = session_id or new_session_id("dovo")
@@ -339,11 +274,6 @@ class WorktreeLifecycle:
             if wip_err is not None:
                 return wip_err
 
-        bridge_result = self._create_storage_bridge(worktree_path, sid)
-        if bridge_result is not None and bridge_result.status != WorktreeCreateStatus.OK:
-            self.discard_partial(worktree_path, temp_branch)
-            return bridge_result
-
         session = WorktreeSession(
             session_id=sid,
             target_branch=temp_branch,
@@ -355,8 +285,7 @@ class WorktreeLifecycle:
             wip_paths=wip_paths,
         )
 
-        bridge_warnings = bridge_result.warnings if bridge_result is not None else []
-        warnings = [*bridge_warnings, *self._persist_session(session)]
+        warnings = self._persist_session(session)
         return WorktreeCreateResult(
             status=WorktreeCreateStatus.OK,
             session=session,
@@ -406,10 +335,6 @@ class WorktreeLifecycle:
         with WorkspaceLock(self.paths.lock_file):
             worktree_path, session_id, branch_name = _extract_target_metadata(target)
             warnings: list[str] = []
-
-            bridge_warning = self._unlink_storage_bridge(worktree_path)
-            if bridge_warning:
-                warnings.append(bridge_warning)
 
             dir_warning = self._remove_worktree_dir(worktree_path, force=force)
             if dir_warning:

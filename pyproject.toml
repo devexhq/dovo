@@ -158,6 +158,7 @@ max-args = 5
 "src/dovo/core/db/db.py" = ["SLF001"]
 "src/dovo/engine/engine.py" = ["PLR0913"]
 "src/dovo/engine/session.py" = ["PLR0913"]
+"src/dovo/engine/workspace.py" = ["PLR0913"]
 "src/dovo/cli/diff/commands/root.py" = ["PLR0913"]
 "src/dovo/cli/init/app.py" = ["PLR0913"]
 "src/dovo/cli/init/commands/root.py" = ["PLR0913"]

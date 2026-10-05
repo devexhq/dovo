@@ -107,7 +107,7 @@ Dovo reserves these paths under the repository-local `.dovo/` directory:
 - `.dovo/worktrees/`
 - `.dovo/dovo.lock`
 - `.dovo/sessions/`, `.dovo/artifacts/`, `.dovo/logs/`, and `.dovo/tmp/` for legacy projects without `project.json`
-- `<worktree>/.dovo/run`, a symlink to the selected session directory for a worktree
+- `<worktree>/.dovo/run`, a symlink to the run's session directory that `dovo run` creates in each new run worktree
 
 Identified projects keep runtime session, artifact, log, and temporary data outside the repository at:
 
