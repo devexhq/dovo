@@ -125,6 +125,7 @@ class AgentResponse(BaseModel):
     raw_text: str | None = None
     duration_ms: int = 0
     errors: list[str] = Field(default_factory=list)
+    fixes: list[str] = Field(default_factory=list)
     mutation_baseline_ref: str | None = None
 
     @property

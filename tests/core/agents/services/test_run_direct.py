@@ -150,6 +150,18 @@ class RunDirectAttemptSettleTests:
         assert _porcelain(git_repo) == before
         assert apply_calls == []
 
+    def test_response_fixes_render_as_trailing_fix_diagnostic(
+        self, git_repo: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """[tier-1/unit] run_direct_attempt: a TIMEOUT response with errors ["e"] and fixes ["f1", "f2"] returns TIMEOUT with diagnostics == ["e", "Fix:\n- f1\n- f2"]."""
+        response = AgentResponse(status=AgentResponseStatus.TIMEOUT, errors=["e"], fixes=["f1", "f2"])
+        _use_provider(monkeypatch, FakeAgentProvider(response))
+
+        attempt = _attempt(git_repo)
+
+        assert attempt.status == AgentResponseStatus.TIMEOUT
+        assert attempt.diagnostics == ["e", "Fix:\n- f1\n- f2"]
+
 
 class _EditingAdapter(CliDirectMutationAdapter):
     """Real direct-mutation adapter that writes the given files instead of invoking a tool."""

@@ -142,3 +142,49 @@ class CopilotRunTests:
         assert outcome.status == "timeout"
         assert outcome.result_text is None
         assert outcome.error_detail is None
+
+
+class CopilotInvokeOutcomeTests:
+    def test_invoke_maps_elapsed_subprocess_timeout_to_timeout_status(
+        self, git_repo: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """[tier-1/integration] CopilotAgentAdapter.invoke: run_isolated_process raising subprocess.TimeoutExpired returns status TIMEOUT with errors[0].splitlines()[0] == "Agent timed out after 10s (provider=copilot)." and no other status."""
+        runner = FakeAgentRunner().raising(subprocess.TimeoutExpired(cmd="gh", timeout=10))
+        monkeypatch.setattr("dovo.core.agents.copilot.run_isolated_process", runner)
+
+        resp = CopilotAgentAdapter().invoke(AgentRequestBuilder().with_worktree_path(git_repo).build())
+
+        assert resp.status == AgentResponseStatus.TIMEOUT
+        assert resp.errors[0].splitlines()[0] == "Agent timed out after 10s (provider=copilot)."
+
+    @pytest.mark.parametrize(
+        ("runner", "expected_error"),
+        [
+            pytest.param(
+                FakeAgentRunner().raising(FileNotFoundError("gh")),
+                "Agent provider error (AGENT_PROVIDER_ERROR): gh is not installed or not on PATH: gh. "
+                "Fix: install the GitHub CLI (https://cli.github.com)",
+                id="gh-missing",
+            ),
+            pytest.param(
+                FakeAgentRunner().raising(OSError("exec failed")),
+                "Agent provider error (AGENT_PROVIDER_ERROR): exec failed",
+                id="os-error",
+            ),
+            pytest.param(
+                FakeAgentRunner().returning(returncode=1, stderr=b"gh failed"),
+                "Agent provider error (AGENT_PROVIDER_ERROR): gh failed",
+                id="non-zero-exit",
+            ),
+        ],
+    )
+    def test_invoke_maps_non_timeout_subprocess_failure_to_provider_error(
+        self, git_repo: Path, monkeypatch: pytest.MonkeyPatch, runner: FakeAgentRunner, expected_error: str
+    ) -> None:
+        """[tier-1/integration] CopilotAgentAdapter.invoke: gh missing, an OSError, or a non-zero exit returns status PROVIDER_ERROR (never TIMEOUT) with errors == [expected_error]."""
+        monkeypatch.setattr("dovo.core.agents.copilot.run_isolated_process", runner)
+
+        resp = CopilotAgentAdapter().invoke(AgentRequestBuilder().with_worktree_path(git_repo).build())
+
+        assert resp.status == AgentResponseStatus.PROVIDER_ERROR
+        assert resp.errors == [expected_error]

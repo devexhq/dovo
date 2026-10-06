@@ -18,6 +18,7 @@ from dovo.core.agents.mutation_git import (
     discard_since,
     resolve_pre_agent_baseline,
 )
+from dovo.core.agents.responses import no_op_response, provider_error_response, timeout_response
 from dovo.core.git import PatchApplyResult, PatchApplyStatus, validate_patch_text
 
 CliMutationRunStatus = Literal["finished", "timeout", "error"]
@@ -127,19 +128,13 @@ class CliDirectMutationAdapter(BaseAgentProvider):
 
         preflight_error = self._preflight(request)
         if preflight_error is not None:
-            return AgentResponse(
-                status=AgentResponseStatus.PROVIDER_ERROR,
-                duration_ms=elapsed_ms(started),
-                errors=[f"Agent provider error (AGENT_PROVIDER_ERROR): {preflight_error}"],
-            )
+            return provider_error_response(duration_ms=elapsed_ms(started), detail=preflight_error)
 
         try:
             baseline = resolve_pre_agent_baseline(request.worktree_path)
         except MutationGitError as exc:
-            return AgentResponse(
-                status=AgentResponseStatus.PROVIDER_ERROR,
-                duration_ms=elapsed_ms(started),
-                errors=[f"Agent provider error (AGENT_PROVIDER_ERROR): failed to resolve worktree baseline: {exc}"],
+            return provider_error_response(
+                duration_ms=elapsed_ms(started), detail=f"Failed to resolve worktree baseline: {exc}"
             )
 
         prompt = build_mutation_prompt(request)
@@ -153,64 +148,49 @@ class CliDirectMutationAdapter(BaseAgentProvider):
         )
         duration_ms = elapsed_ms(started)
 
+        return self._respond_to_outcome(request, outcome, baseline, duration_ms)
+
+    def _respond_to_outcome(
+        self,
+        request: AgentRequest,
+        outcome: CliMutationOutcome,
+        baseline: str,
+        duration_ms: int,
+    ) -> AgentResponse:
+        """Classify a finished runner outcome into the timeout, provider-error, no-op, or proposal response."""
         if outcome.status == "timeout":
-            return AgentResponse(
-                status=AgentResponseStatus.TIMEOUT,
+            return timeout_response(
+                provider=self._provider_name(),
+                timeout_seconds=request.timeout_seconds,
                 duration_ms=duration_ms,
-                mutation_baseline_ref=baseline,
                 raw_text=outcome.result_text,
-                errors=[
-                    f"Agent timed out after {request.timeout_seconds}s "
-                    f"(provider={self._provider_name()}).\n"
-                    "Fix:\n"
-                    "- raise agent.timeout_seconds on the blueprint"
-                ],
+                mutation_baseline_ref=baseline,
             )
 
         if outcome.status == "error":
-            detail = outcome.error_detail or "direct-mutation runner returned error"
-            return AgentResponse(
-                status=AgentResponseStatus.PROVIDER_ERROR,
+            return provider_error_response(
                 duration_ms=duration_ms,
-                mutation_baseline_ref=baseline,
+                detail=outcome.error_detail or "Direct-mutation runner returned error",
                 raw_text=outcome.result_text,
-                errors=[f"Agent provider error (AGENT_PROVIDER_ERROR): {detail}"],
+                mutation_baseline_ref=baseline,
             )
 
         try:
             diff, _ = capture_diff_since(request.worktree_path, baseline)
         except MutationGitError as exc:
-            return AgentResponse(
-                status=AgentResponseStatus.PROVIDER_ERROR,
+            return provider_error_response(
                 duration_ms=duration_ms,
-                mutation_baseline_ref=baseline,
+                detail=f"Failed to capture worktree diff: {exc}",
                 raw_text=outcome.result_text,
-                errors=[f"Agent provider error (AGENT_PROVIDER_ERROR): failed to capture worktree diff: {exc}"],
+                mutation_baseline_ref=baseline,
             )
 
         if not diff.strip():
-            return AgentResponse(
-                status=AgentResponseStatus.NO_OP,
-                duration_ms=duration_ms,
-                mutation_baseline_ref=baseline,
-                raw_text=outcome.result_text,
-            )
+            return no_op_response(duration_ms=duration_ms, raw_text=outcome.result_text, mutation_baseline_ref=baseline)
 
         gate = validate_request_patch(request, diff)
         if gate.status != PatchApplyStatus.CHECKED_OK:
-            try:
-                discard_since(request.worktree_path, baseline)
-            except MutationGitError as exc:
-                gate.errors.append(
-                    f"Agent provider error (AGENT_PROVIDER_ERROR): failed to discard rejected worktree edit: {exc}"
-                )
-            return AgentResponse(
-                status=AgentResponseStatus.PROVIDER_ERROR,
-                duration_ms=duration_ms,
-                mutation_baseline_ref=baseline,
-                raw_text=outcome.result_text,
-                errors=list(gate.errors),
-            )
+            return self._reject_gated_edit(request, gate, outcome, baseline, duration_ms)
 
         return AgentResponse(
             status=AgentResponseStatus.PROPOSED_PATCH,
@@ -218,4 +198,27 @@ class CliDirectMutationAdapter(BaseAgentProvider):
             duration_ms=duration_ms,
             mutation_baseline_ref=baseline,
             raw_text=outcome.result_text,
+        )
+
+    def _reject_gated_edit(
+        self,
+        request: AgentRequest,
+        gate: PatchApplyResult,
+        outcome: CliMutationOutcome,
+        baseline: str,
+        duration_ms: int,
+    ) -> AgentResponse:
+        """Discard the rejected edit and return PROVIDER_ERROR carrying the gate's errors, led by any discard failure."""
+        discard_detail: str | None = None
+        try:
+            discard_since(request.worktree_path, baseline)
+        except MutationGitError as exc:
+            discard_detail = f"Failed to discard rejected worktree edit: {exc}"
+
+        return provider_error_response(
+            duration_ms=duration_ms,
+            detail=discard_detail,
+            errors=gate.errors,
+            raw_text=outcome.result_text,
+            mutation_baseline_ref=baseline,
         )
