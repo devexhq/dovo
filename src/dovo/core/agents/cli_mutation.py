@@ -134,7 +134,7 @@ class CliDirectMutationAdapter(BaseAgentProvider):
             baseline = resolve_pre_agent_baseline(request.worktree_path)
         except MutationGitError as exc:
             return provider_error_response(
-                duration_ms=elapsed_ms(started), detail=f"failed to resolve worktree baseline: {exc}"
+                duration_ms=elapsed_ms(started), detail=f"Failed to resolve worktree baseline: {exc}"
             )
 
         prompt = build_mutation_prompt(request)
@@ -170,7 +170,7 @@ class CliDirectMutationAdapter(BaseAgentProvider):
         if outcome.status == "error":
             return provider_error_response(
                 duration_ms=duration_ms,
-                detail=outcome.error_detail or "direct-mutation runner returned error",
+                detail=outcome.error_detail or "Direct-mutation runner returned error",
                 raw_text=outcome.result_text,
                 mutation_baseline_ref=baseline,
             )
@@ -180,7 +180,7 @@ class CliDirectMutationAdapter(BaseAgentProvider):
         except MutationGitError as exc:
             return provider_error_response(
                 duration_ms=duration_ms,
-                detail=f"failed to capture worktree diff: {exc}",
+                detail=f"Failed to capture worktree diff: {exc}",
                 raw_text=outcome.result_text,
                 mutation_baseline_ref=baseline,
             )
@@ -213,7 +213,7 @@ class CliDirectMutationAdapter(BaseAgentProvider):
         try:
             discard_since(request.worktree_path, baseline)
         except MutationGitError as exc:
-            discard_detail = f"failed to discard rejected worktree edit: {exc}"
+            discard_detail = f"Failed to discard rejected worktree edit: {exc}"
 
         return provider_error_response(
             duration_ms=duration_ms,

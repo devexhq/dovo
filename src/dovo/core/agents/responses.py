@@ -15,17 +15,14 @@ def timeout_response(
     raw_text: str | None = None,
     mutation_baseline_ref: str | None = None,
 ) -> AgentResponse:
-    """Build the TIMEOUT response carrying the canonical timeout diagnostic."""
+    """Build the TIMEOUT response carrying the canonical timeout error and fix."""
     return AgentResponse(
         status=AgentResponseStatus.TIMEOUT,
         duration_ms=duration_ms,
         raw_text=raw_text,
         mutation_baseline_ref=mutation_baseline_ref,
-        errors=[
-            f"Agent timed out after {timeout_seconds}s (provider={provider}).\n"
-            "Fix:\n"
-            "- raise timeout_seconds on the agent step"
-        ],
+        errors=[f"Agent timed out after {timeout_seconds}s (provider={provider})."],
+        fixes=["Raise timeout_seconds on the agent step"],
     )
 
 

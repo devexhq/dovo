@@ -12,7 +12,7 @@ from dovo.core.agents.responses import no_op_response, provider_error_response, 
 
 class TimeoutResponseTests:
     def test_timeout_response_builds_canonical_diagnostic_and_preserves_metadata(self) -> None:
-        """[tier-1/unit] timeout_response: provider="copilot", timeout_seconds=10, duration_ms=250, raw_text="partial", mutation_baseline_ref="abc" returns AgentResponse(status=TIMEOUT, duration_ms=250, raw_text="partial", mutation_baseline_ref="abc", errors=["Agent timed out after 10s (provider=copilot).\nFix:\n- raise timeout_seconds on the agent step"])."""
+        """[tier-1/unit] timeout_response: provider="copilot", timeout_seconds=10, duration_ms=250, raw_text="partial", mutation_baseline_ref="abc" returns AgentResponse(status=TIMEOUT, duration_ms=250, raw_text="partial", mutation_baseline_ref="abc", errors=["Agent timed out after 10s (provider=copilot)."], fixes=["Raise timeout_seconds on the agent step"])."""
         response = timeout_response(
             provider="copilot",
             timeout_seconds=10,
@@ -26,7 +26,8 @@ class TimeoutResponseTests:
             duration_ms=250,
             raw_text="partial",
             mutation_baseline_ref="abc",
-            errors=["Agent timed out after 10s (provider=copilot).\nFix:\n- raise timeout_seconds on the agent step"],
+            errors=["Agent timed out after 10s (provider=copilot)."],
+            fixes=["Raise timeout_seconds on the agent step"],
         )
 
     def test_timeout_response_without_metadata_leaves_it_none(self) -> None:

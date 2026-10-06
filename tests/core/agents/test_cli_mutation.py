@@ -185,9 +185,8 @@ class SharedMutationAdapterTests:
         assert resp.status == AgentResponseStatus.TIMEOUT
         assert resp.raw_text == "done"
         assert resp.mutation_baseline_ref is not None
-        assert resp.errors == [
-            "Agent timed out after 10s (provider=unit-test).\nFix:\n- raise timeout_seconds on the agent step"
-        ]
+        assert resp.errors == ["Agent timed out after 10s (provider=unit-test)."]
+        assert resp.fixes == ["Raise timeout_seconds on the agent step"]
 
     def test_provider_error(self, git_repo: Path) -> None:
         """A run that errors returns PROVIDER_ERROR carrying the runner's error detail."""
@@ -231,7 +230,7 @@ class SharedMutationAdapterTests:
         assert resp.mutation_baseline_ref is not None
         assert resp.errors == [
             "Agent provider error (AGENT_PROVIDER_ERROR): "
-            "failed to discard rejected worktree edit: git reset failed: index locked",
+            "Failed to discard rejected worktree edit: git reset failed: index locked",
             "Patch touches 2 files; max_files is 1.",
         ]
 
@@ -240,12 +239,12 @@ class SharedMutationAdapterTests:
         [
             pytest.param(
                 "resolve_pre_agent_baseline",
-                "Agent provider error (AGENT_PROVIDER_ERROR): failed to resolve worktree baseline: git broke",
+                "Agent provider error (AGENT_PROVIDER_ERROR): Failed to resolve worktree baseline: git broke",
                 id="baseline",
             ),
             pytest.param(
                 "capture_diff_since",
-                "Agent provider error (AGENT_PROVIDER_ERROR): failed to capture worktree diff: git broke",
+                "Agent provider error (AGENT_PROVIDER_ERROR): Failed to capture worktree diff: git broke",
                 id="capture-diff",
             ),
         ],
