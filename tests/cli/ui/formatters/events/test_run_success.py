@@ -8,7 +8,7 @@ import pytest
 
 from dovo.cli.ui.events import RunSuccessEvent
 from dovo.cli.ui.formatters.events.run_success import RunSuccessFormatter
-from dovo.core.db import RunStatus
+from dovo.core.db import SessionStatus
 from tests.harness.formatter import (
     FormatterCase,
     assert_json_payload_matches_published_shape,
@@ -16,14 +16,14 @@ from tests.harness.formatter import (
 )
 
 FIRST_COMPLETED = FormatterCase(
-    data=RunSuccessEvent(session_id="sess_123", blueprint_name="my_blueprint", status=RunStatus.COMPLETED),
-    view=RunSuccessEvent(session_id="sess_123", blueprint_name="my_blueprint", status=RunStatus.COMPLETED),
+    data=RunSuccessEvent(session_id="sess_123", blueprint_name="my_blueprint", status=SessionStatus.COMPLETED),
+    view=RunSuccessEvent(session_id="sess_123", blueprint_name="my_blueprint", status=SessionStatus.COMPLETED),
     render_expectations=["my_blueprint", "sess_123", "completed"],
 )
 
 SECOND_COMPLETED = FormatterCase(
-    data=RunSuccessEvent(session_id="sess_456", blueprint_name="deploy-flow", status=RunStatus.COMPLETED),
-    view=RunSuccessEvent(session_id="sess_456", blueprint_name="deploy-flow", status=RunStatus.COMPLETED),
+    data=RunSuccessEvent(session_id="sess_456", blueprint_name="deploy-flow", status=SessionStatus.COMPLETED),
+    view=RunSuccessEvent(session_id="sess_456", blueprint_name="deploy-flow", status=SessionStatus.COMPLETED),
     render_expectations=["deploy-flow", "sess_456", "completed"],
 )
 

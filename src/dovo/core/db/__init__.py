@@ -1,7 +1,7 @@
 """src/dovo/core/db package.
 
 Handles SQLite connection management, database migrations, financial token
-usage tracking, catalog indexing, and unified run execution tracking.
+usage tracking, catalog indexing, and unified session tracking.
 """
 
 from dovo.core.db.connection import (
@@ -21,8 +21,8 @@ from dovo.core.db.migrations import (
 from dovo.core.db.models import (
     ArtifactRecord,
     CostRecord,
-    RunRecord,
-    RunStatus,
+    SessionRecord,
+    SessionStatus,
     WorktreeRecord,
     WorktreeStatus,
     parse_timestamp,
@@ -31,7 +31,7 @@ from dovo.core.db.repositories import (
     ArtifactsRepository,
     BaseRepository,
     CostsRepository,
-    RunsRepository,
+    SessionsRepository,
     WorktreesRepository,
 )
 
@@ -45,9 +45,9 @@ __all__ = [
     "CostRecord",
     "CostsRepository",
     "DovoDb",
-    "RunRecord",
-    "RunStatus",
-    "RunsRepository",
+    "SessionRecord",
+    "SessionStatus",
+    "SessionsRepository",
     "WorktreeRecord",
     "WorktreeStatus",
     "WorktreesRepository",

@@ -12,10 +12,10 @@ from dovo.common.filesystem.models import RepositoryPaths, WorkspacePaths
 from dovo.common.filesystem.services.global_root import resolve_global_paths
 from dovo.core.agents.models import AgentRequest, AgentResponse, AgentResponseStatus, ResolvedAgentSettings
 from dovo.core.catalog.definitions import LoopStepBlock, StepDefinition
-from dovo.core.db import RunsRepository, RunStatus, WorktreesRepository
+from dovo.core.db import SessionsRepository, SessionStatus, WorktreesRepository
 from dovo.core.git.runner import GitRunner
 from dovo.core.project.services.storage import resolve_workspace_paths
-from dovo.core.sessions.services.read_logs import read_run_log_events
+from dovo.core.sessions.services.read_logs import read_session_log_events
 from dovo.core.worktree import Worktree, WorktreeApplyResult, WorktreeApplyStatus
 from dovo.engine.executors.agent_step import WORKTREE_REQUIRED_MESSAGE, build_agent_step_runner
 from dovo.engine.executors.models import (
@@ -36,7 +36,7 @@ from dovo.engine.session import drive_run
 from dovo.engine.writer import snapshot_blueprint_path
 from tests.harness import AGENT_ADAPTER_FACTORY, FakeAgentProvider, new_file_diff
 from tests.harness.builders import WorkspaceBuilder
-from tests.harness.runs import NoOpRunObserver, seed_new_run, seed_paused_run
+from tests.harness.sessions import NoOpRunObserver, seed_new_session, seed_paused_session
 
 
 class _Prompter(FailurePrompter):
@@ -163,13 +163,13 @@ def _loop(loop_id: str, do: list[dict[str, object]], *, max_iterations: int = 2)
 
 def _drive(
     paths: WorkspacePaths,
-    runs: RunsRepository,
+    sessions: SessionsRepository,
     session_id: str,
     *,
     prompter: FailurePrompter | None = None,
     observer: RunObserver | None = None,
 ) -> RunOutcome:
-    return drive_run(paths, runs, session_id, observer=observer, prompter=prompter, no_tty=False)
+    return drive_run(paths, sessions, session_id, observer=observer, prompter=prompter, no_tty=False)
 
 
 def _paths_for(root: Path) -> WorkspacePaths:
@@ -183,16 +183,16 @@ def git_paths(tmp_path: Path) -> WorkspacePaths:
 
 
 @pytest.fixture
-def git_runs(git_paths: WorkspacePaths) -> RunsRepository:
-    """RunsRepository bound to the git-backed workspace database."""
-    return RunsRepository(db_path=git_paths.database_file, project_id=git_paths.project_id)
+def git_runs(git_paths: WorkspacePaths) -> SessionsRepository:
+    """SessionsRepository bound to the git-backed workspace database."""
+    return SessionsRepository(db_path=git_paths.database_file, project_id=git_paths.project_id)
 
 
 class DriveRunWorktreeTests:
     """[tier-1/integration] drive_run: worktree reuse, identity, and setup failure."""
 
     def test_resumed_run_reuses_retained_worktree_and_keeps_worktree_id(
-        self, git_paths: WorkspacePaths, git_runs: RunsRepository
+        self, git_paths: WorkspacePaths, git_runs: SessionsRepository
     ) -> None:
         """[tier-1/integration] drive_run: a paused worktree-backed row with an existing worktree directory runs its steps with cwd equal to paths.worktree_dir(worktree_id), and the finished row's worktree_id is unchanged."""
         created = Worktree(
@@ -201,7 +201,7 @@ class DriveRunWorktreeTests:
         assert created.session is not None
         worktree_id = created.session.session_id
         expected_cwd = git_paths.worktree_dir(worktree_id).resolve()
-        seed_paused_run(
+        seed_paused_session(
             git_paths,
             git_runs,
             session_id="resume-worktree",
@@ -213,46 +213,50 @@ class DriveRunWorktreeTests:
 
         outcome = _drive(git_paths, git_runs, "resume-worktree", prompter=_Prompter([FailurePromptDecision.RETRY]))
 
-        assert outcome.status == RunStatus.COMPLETED
+        assert outcome.status == SessionStatus.COMPLETED
         assert outcome.worktree_id == worktree_id
         row = git_runs.get("resume-worktree")
         assert row is not None
         assert row.worktree_id == worktree_id
 
     def test_worktree_run_reports_session_id_and_removes_worktree(
-        self, git_paths: WorkspacePaths, git_runs: RunsRepository
+        self, git_paths: WorkspacePaths, git_runs: SessionsRepository
     ) -> None:
         """[tier-1/integration] drive_run: a completed unkept worktree-backed run returns RunOutcome.worktree_id equal to the created session id, worktree_kept False, and the worktree directory removed."""
-        seed_new_run(git_paths, git_runs, session_id="worktree-done", steps=[_step("a", "echo hi")], use_worktree=True)
+        seed_new_session(
+            git_paths, git_runs, session_id="worktree-done", steps=[_step("a", "echo hi")], use_worktree=True
+        )
 
         outcome = _drive(git_paths, git_runs, "worktree-done")
 
         worktrees = WorktreesRepository(db_path=git_paths.database_file, project_id=git_paths.project_id).list()
-        assert outcome.status == RunStatus.COMPLETED
+        assert outcome.status == SessionStatus.COMPLETED
         assert [record.id for record in worktrees] == [outcome.worktree_id]
         assert outcome.worktree_kept is False
         assert not outcome.worktree_path.exists()
 
     def test_no_worktree_run_reports_none_worktree_id(
-        self, engine_paths: WorkspacePaths, runs_repo: RunsRepository
+        self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository
     ) -> None:
         """[tier-1/integration] drive_run: use_worktree=False returns RunOutcome.worktree_id None and worktree_path equal to the resolved cwd."""
-        seed_new_run(engine_paths, runs_repo, session_id="no-worktree", steps=[_step("a", "echo hi")])
+        seed_new_session(engine_paths, sessions_repo, session_id="no-worktree", steps=[_step("a", "echo hi")])
 
-        outcome = _drive(engine_paths, runs_repo, "no-worktree")
+        outcome = _drive(engine_paths, sessions_repo, "no-worktree")
 
         assert outcome.worktree_id is None
         assert outcome.worktree_path == engine_paths.root_dir.resolve()
 
     def test_worktree_creation_failure_returns_failed_outcome_without_running_steps(
-        self, engine_paths: WorkspacePaths, runs_repo: RunsRepository, engine_workspace: Path
+        self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository, engine_workspace: Path
     ) -> None:
         """[tier-1/integration] drive_run: use_worktree=True in a directory that is not a git repository returns FAILED with errors[0] starting "Git worktree creation failed:" and no step marker file."""
-        seed_new_run(engine_paths, runs_repo, session_id="no-git", steps=[_step("a", "touch a.ran")], use_worktree=True)
+        seed_new_session(
+            engine_paths, sessions_repo, session_id="no-git", steps=[_step("a", "touch a.ran")], use_worktree=True
+        )
 
-        outcome = _drive(engine_paths, runs_repo, "no-git")
+        outcome = _drive(engine_paths, sessions_repo, "no-git")
 
-        assert outcome.status == RunStatus.FAILED
+        assert outcome.status == SessionStatus.FAILED
         assert outcome.errors[0].startswith("Git worktree creation failed:")
         assert not (engine_workspace / "a.ran").exists()
 
@@ -261,7 +265,7 @@ class DriveRunStorageBridgeTests:
     """[tier-1/integration] drive_run: linking the run worktree to its session directory."""
 
     def test_bridge_collision_fails_run_without_running_steps_or_deleting_content(
-        self, git_paths: WorkspacePaths, git_runs: RunsRepository
+        self, git_paths: WorkspacePaths, git_runs: SessionsRepository
     ) -> None:
         """[tier-1/integration] drive_run: a worktree-backed run whose repository commits a regular directory at .dovo/run returns status FAILED, errors == ["Worktree storage bridge failed: Worktree storage bridge path '<worktree>/.dovo/run' is not a symlink."], worktree_kept False, no step marker file, and the committed sentinel.txt unchanged."""
         source_sentinel = git_paths.root_dir / ".dovo" / "run" / "sentinel.txt"
@@ -270,7 +274,7 @@ class DriveRunStorageBridgeTests:
         GitRunner.run(["add", "-f", ".dovo/run/sentinel.txt"], path=git_paths.root_dir)
         GitRunner.run(["commit", "-m", "Add storage bridge collision"], path=git_paths.root_dir)
         step_marker = git_paths.root_dir / "a.ran"
-        seed_new_run(
+        seed_new_session(
             git_paths,
             git_runs,
             session_id="bridge-collision",
@@ -281,7 +285,7 @@ class DriveRunStorageBridgeTests:
 
         outcome = _drive(git_paths, git_runs, "bridge-collision")
 
-        assert outcome.status == RunStatus.FAILED
+        assert outcome.status == SessionStatus.FAILED
         assert outcome.errors == [
             f"Worktree storage bridge failed: Worktree storage bridge path '{bridge_path}' is not a symlink."
         ]
@@ -290,51 +294,53 @@ class DriveRunStorageBridgeTests:
         assert source_sentinel.read_text(encoding="utf-8") == "do not delete"
 
     def test_cleanup_unlink_failure_surfaces_in_outcome_warnings(
-        self, git_paths: WorkspacePaths, git_runs: RunsRepository, monkeypatch: pytest.MonkeyPatch
+        self, git_paths: WorkspacePaths, git_runs: SessionsRepository, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """[tier-1/integration] drive_run: a completed unkept worktree-backed run whose remove_storage_bridge returns "unlink busy" returns status COMPLETED with "unlink busy" in outcome.warnings and the worktree directory removed."""
-        seed_new_run(git_paths, git_runs, session_id="unlink-busy", steps=[_step("a", "echo hi")], use_worktree=True)
+        seed_new_session(
+            git_paths, git_runs, session_id="unlink-busy", steps=[_step("a", "echo hi")], use_worktree=True
+        )
         monkeypatch.setattr("dovo.engine.workspace.remove_storage_bridge", lambda worktree_path: "unlink busy")
 
         outcome = _drive(git_paths, git_runs, "unlink-busy")
 
-        assert outcome.status == RunStatus.COMPLETED
+        assert outcome.status == SessionStatus.COMPLETED
         assert "unlink busy" in outcome.warnings
         assert not outcome.worktree_path.exists()
 
 
 class DriveRunMissingRowTests:
     def test_unknown_session_returns_failed_outcome_without_running_steps(
-        self, engine_paths: WorkspacePaths, runs_repo: RunsRepository
+        self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository
     ) -> None:
-        """[tier-1/integration] drive_run: a session id with no run row returns FAILED with errors == ["Run 'missing' not found."] and worktree_path equal to the workspace root."""
-        outcome = _drive(engine_paths, runs_repo, "missing")
+        """[tier-1/integration] drive_run: a session id with no session row returns FAILED with errors == ["Session 'missing' not found."] and worktree_path equal to the workspace root."""
+        outcome = _drive(engine_paths, sessions_repo, "missing")
 
-        assert outcome.status == RunStatus.FAILED
-        assert outcome.errors == ["Run 'missing' not found."]
+        assert outcome.status == SessionStatus.FAILED
+        assert outcome.errors == ["Session 'missing' not found."]
         assert outcome.worktree_path == engine_paths.root_dir
 
 
-class DriveRunLifecycleTests:
+class DriveRunCleanupTests:
     """[tier-1/integration] drive_run: cleanup, scratch directories, logs, auto-apply, and config plumbing."""
 
     def test_keep_true_preserves_worktree_after_completed_run(
-        self, git_paths: WorkspacePaths, git_runs: RunsRepository
+        self, git_paths: WorkspacePaths, git_runs: SessionsRepository
     ) -> None:
         """[tier-1/integration] drive_run: row keep=True with a completed worktree-backed run returns worktree_kept True and the worktree directory still present."""
-        seed_new_run(
+        seed_new_session(
             git_paths, git_runs, session_id="keep", steps=[_step("a", "echo keep")], use_worktree=True, keep=True
         )
 
         outcome = _drive(git_paths, git_runs, "keep")
 
-        assert outcome.status == RunStatus.COMPLETED
+        assert outcome.status == SessionStatus.COMPLETED
         assert outcome.worktree_kept is True
         assert outcome.worktree_path.is_dir()
 
-    def test_paused_outcome_keeps_worktree(self, git_paths: WorkspacePaths, git_runs: RunsRepository) -> None:
+    def test_paused_outcome_keeps_worktree(self, git_paths: WorkspacePaths, git_runs: SessionsRepository) -> None:
         """[tier-1/integration] drive_run: a run that pauses at a prompt returns status PAUSED, worktree_kept True, and the worktree directory present."""
-        seed_new_run(
+        seed_new_session(
             git_paths,
             git_runs,
             session_id="pause",
@@ -344,15 +350,15 @@ class DriveRunLifecycleTests:
 
         outcome = _drive(git_paths, git_runs, "pause", prompter=_Prompter())
 
-        assert outcome.status == RunStatus.PAUSED
+        assert outcome.status == SessionStatus.PAUSED
         assert outcome.worktree_kept is True
         assert outcome.worktree_path.is_dir()
 
     def test_diff_persisted_under_session_id_not_worktree_key(
-        self, git_paths: WorkspacePaths, git_runs: RunsRepository
+        self, git_paths: WorkspacePaths, git_runs: SessionsRepository
     ) -> None:
         """[tier-1/integration] drive_run: a worktree-backed step that writes a file leaves <session_dir>/diff.patch containing that file's path."""
-        seed_new_run(
+        seed_new_session(
             git_paths,
             git_runs,
             session_id="diff-run",
@@ -362,24 +368,24 @@ class DriveRunLifecycleTests:
 
         outcome = _drive(git_paths, git_runs, "diff-run")
 
-        assert outcome.status == RunStatus.COMPLETED
+        assert outcome.status == SessionStatus.COMPLETED
         diff_file = git_paths.session_dir("diff-run") / "diff.patch"
         assert "tracked.txt" in diff_file.read_text(encoding="utf-8")
 
     @pytest.mark.parametrize(
         ("auto_apply", "expected_status", "expected_kept"),
         [
-            pytest.param(True, RunStatus.FAILED, True, id="auto-apply-conflict"),
-            pytest.param(False, RunStatus.COMPLETED, False, id="auto-apply-off"),
+            pytest.param(True, SessionStatus.FAILED, True, id="auto-apply-conflict"),
+            pytest.param(False, SessionStatus.COMPLETED, False, id="auto-apply-off"),
         ],
     )
     def test_auto_apply_read_from_row_conflict_marks_run_failed_and_keeps_worktree(
         self,
         git_paths: WorkspacePaths,
-        git_runs: RunsRepository,
+        git_runs: SessionsRepository,
         monkeypatch: pytest.MonkeyPatch,
         auto_apply: bool,
-        expected_status: RunStatus,
+        expected_status: SessionStatus,
         expected_kept: bool,
     ) -> None:
         """[tier-1/integration] drive_run: a row with auto_apply=True whose apply conflicts returns FAILED with the apply error in errors and worktree_kept True; with auto_apply=False the same run returns COMPLETED."""
@@ -390,7 +396,7 @@ class DriveRunLifecycleTests:
             warnings=["Patch hunk rejected"],
         )
         monkeypatch.setattr(Worktree, "apply", lambda *args, **kwargs: conflict)
-        seed_new_run(
+        seed_new_session(
             git_paths,
             git_runs,
             session_id="apply",
@@ -406,7 +412,7 @@ class DriveRunLifecycleTests:
         assert outcome.errors == (["Patch merge conflict in worktree apply"] if auto_apply else [])
 
     def test_cleanup_failure_after_step_failure_still_reports_failed(
-        self, git_paths: WorkspacePaths, git_runs: RunsRepository, monkeypatch: pytest.MonkeyPatch
+        self, git_paths: WorkspacePaths, git_runs: SessionsRepository, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """[tier-1/integration] drive_run: Worktree.cleanup raising after an aborted step still returns status FAILED."""
 
@@ -414,11 +420,11 @@ class DriveRunLifecycleTests:
             raise RuntimeError("Cleanup filesystem removal failed")
 
         monkeypatch.setattr(Worktree, "cleanup", exploding_cleanup)
-        seed_new_run(git_paths, git_runs, session_id="cleanup", steps=[_step("fail", "exit 1")], use_worktree=True)
+        seed_new_session(git_paths, git_runs, session_id="cleanup", steps=[_step("fail", "exit 1")], use_worktree=True)
 
         outcome = _drive(git_paths, git_runs, "cleanup")
 
-        assert outcome.status == RunStatus.FAILED
+        assert outcome.status == SessionStatus.FAILED
         assert outcome.worktree_kept is False
         assert outcome.errors == ["Step 'fail' failed: Command failed with exit code 1."]
 
@@ -433,26 +439,26 @@ class DriveRunLifecycleTests:
     def test_session_scratch_dir_created_before_first_step_and_removed_when_completed_unkept(
         self,
         engine_paths: WorkspacePaths,
-        runs_repo: RunsRepository,
+        sessions_repo: SessionsRepository,
         keep: bool,
         command: str,
         expect_preserved: bool,
     ) -> None:
         """[tier-1/integration] drive_run: a step asserting [ -d "$DOVO_TEMP/steps" ] passes; after a completed unkept run the session tmp directory no longer exists, and after a failed or kept run it remains."""
-        seed_new_run(engine_paths, runs_repo, session_id="scratch", steps=[_step("s1", command)], keep=keep)
+        seed_new_session(engine_paths, sessions_repo, session_id="scratch", steps=[_step("s1", command)], keep=keep)
 
-        outcome = _drive(engine_paths, runs_repo, "scratch")
+        outcome = _drive(engine_paths, sessions_repo, "scratch")
 
         assert outcome.step_results[0].exit_code == (1 if command.endswith("exit 1") else 0)
         assert (engine_paths.tmp_dir / "scratch").exists() is expect_preserved
 
     def test_resume_reuses_same_session_tmp_dir_and_truncates_stale_output(
-        self, engine_paths: WorkspacePaths, runs_repo: RunsRepository
+        self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository
     ) -> None:
         """[tier-1/integration] drive_run: a resumed run sees step_a's earlier scratch file under the same DOVO_TEMP, and a re-run step's StepResult.outputs equals {"fresh": "yes"} with no stale key."""
-        seed_paused_run(
+        seed_paused_session(
             engine_paths,
-            runs_repo,
+            sessions_repo,
             session_id="resume-tmp",
             steps=[
                 _step("step_a", 'echo "marker=yes" >> "$DOVO_OUTPUT"'),
@@ -469,28 +475,28 @@ class DriveRunLifecycleTests:
         (session_tmp_dir / "step_step_a.output").write_text("marker=yes\n", encoding="utf-8")
         (session_tmp_dir / "step_step_b.output").write_text("stale=yes\n", encoding="utf-8")
 
-        outcome = _drive(engine_paths, runs_repo, "resume-tmp", prompter=_Prompter([FailurePromptDecision.RETRY]))
+        outcome = _drive(engine_paths, sessions_repo, "resume-tmp", prompter=_Prompter([FailurePromptDecision.RETRY]))
 
-        assert outcome.status == RunStatus.COMPLETED
+        assert outcome.status == SessionStatus.COMPLETED
         assert outcome.step_results[-1].outputs == {"fresh": "yes"}
 
-    def test_run_log_round_trips_through_reader_for_three_step_run(
-        self, engine_paths: WorkspacePaths, runs_repo: RunsRepository
+    def test_session_log_round_trips_through_reader_for_three_step_run(
+        self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository
     ) -> None:
-        """[tier-1/integration] read_run_log_events: a drive_run 3-step run.log returns 8 events run_started, 3 step_start/step_done pairs (step_index 1..3, attempt 1, completed, exit_code 0), run_completed status "completed", none skipped, ts non-decreasing."""
-        seed_new_run(
+        """[tier-1/integration] read_session_log_events: a drive_run 3-step session.log returns 8 events session_started, 3 step_start/step_done pairs (step_index 1..3, attempt 1, completed, exit_code 0), session_completed status "completed", none skipped, ts non-decreasing."""
+        seed_new_session(
             engine_paths,
-            runs_repo,
+            sessions_repo,
             session_id="timeline3",
             steps=[_step("a", "echo a"), _step("b", "echo b"), _step("c", "echo c")],
         )
 
-        _drive(engine_paths, runs_repo, "timeline3")
+        _drive(engine_paths, sessions_repo, "timeline3")
         log_dir = engine_paths.logs_dir / "timeline3"
 
-        events = read_run_log_events(log_dir, tail=None)
+        events = read_session_log_events(log_dir, tail=None)
 
-        assert len(events) == len((log_dir / "run.log").read_text(encoding="utf-8").splitlines())
+        assert len(events) == len((log_dir / "session.log").read_text(encoding="utf-8").splitlines())
         durations = [e.duration_seconds for e in events if e.event.value == "step_done"]
         assert len(durations) == 3
         assert all(isinstance(duration, float) for duration in durations)
@@ -506,9 +512,9 @@ class DriveRunLifecycleTests:
             )
         ]
         assert [(e.event.value, {k: v for k, v in e.details().items() if k != "duration_seconds"}) for e in events] == [
-            ("run_started", {"session_id": "timeline3", "blueprint_key": "timeline3"}),
+            ("session_started", {"session_id": "timeline3", "blueprint_key": "timeline3"}),
             *step_events,
-            ("run_completed", {"status": "completed"}),
+            ("session_completed", {"status": "completed"}),
         ]
         timestamps = [datetime.fromisoformat(e.ts) for e in events]
         assert timestamps == sorted(timestamps)
@@ -530,27 +536,27 @@ class DriveRunLifecycleTests:
             .build()
         )
         paths = _paths_for(workspace)
-        runs = RunsRepository(db_path=paths.database_file, project_id=paths.project_id)
-        seed_new_run(paths, runs, session_id="attempt-logs", steps=[_step("a", "echo a")])
+        sessions = SessionsRepository(db_path=paths.database_file, project_id=paths.project_id)
+        seed_new_session(paths, sessions, session_id="attempt-logs", steps=[_step("a", "echo a")])
 
-        _drive(paths, runs, "attempt-logs")
+        _drive(paths, sessions, "attempt-logs")
 
         attempt_logs = list((paths.logs_dir / "attempt-logs").glob("*attempt*"))
         assert bool(attempt_logs) is expect_log
 
     def test_step_output_streams_to_observer_by_line_and_stream(
-        self, engine_paths: WorkspacePaths, runs_repo: RunsRepository
+        self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository
     ) -> None:
         """[tier-1/integration] drive_run: streamed step output reaches the observer line by line tagged with its stream."""
-        seed_new_run(
+        seed_new_session(
             engine_paths,
-            runs_repo,
+            sessions_repo,
             session_id="streamed",
             steps=[_step("s1", "echo out; echo err >&2")],
         )
         observer = _LifecycleObserver()
 
-        _drive(engine_paths, runs_repo, "streamed", observer=observer)
+        _drive(engine_paths, sessions_repo, "streamed", observer=observer)
 
         output_events = [event for event in observer.events if event[0] == "step_output"]
         assert sorted(output_events) == [
@@ -563,20 +569,20 @@ class DriveRunObserverContractTests:
     """[tier-1/integration] drive_run: run-level and step-level observer callbacks and their order."""
 
     def test_linear_run_emits_pinned_observer_sequence(
-        self, engine_paths: WorkspacePaths, runs_repo: RunsRepository
+        self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository
     ) -> None:
         """[tier-1/integration] drive_run: a 3-step run [a, b, c] without a worktree gives the ordered observer sequence worktree_ready, run_started(["a","b","c"]), step_start/step_done at 1/3, 2/3, 3/3 with step ids and "completed", worktree_cleanup, run_completed(COMPLETED outcome equal to the returned outcome)."""
-        seed_new_run(
+        seed_new_session(
             engine_paths,
-            runs_repo,
+            sessions_repo,
             session_id="seq-linear",
             steps=[_step("a", "true"), _step("b", "true"), _step("c", "true")],
         )
         observer = _SequenceObserver()
 
-        outcome = _drive(engine_paths, runs_repo, "seq-linear", observer=observer)
+        outcome = _drive(engine_paths, sessions_repo, "seq-linear", observer=observer)
 
-        assert outcome.status == RunStatus.COMPLETED
+        assert outcome.status == SessionStatus.COMPLETED
         assert observer.calls == [
             ("worktree_ready",),
             ("run_started", ["a", "b", "c"]),
@@ -591,18 +597,18 @@ class DriveRunObserverContractTests:
         ]
 
     def test_loop_run_emits_pinned_observer_sequence(
-        self, engine_paths: WorkspacePaths, runs_repo: RunsRepository
+        self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository
     ) -> None:
         """[tier-1/integration] drive_run: a 2-iteration loop "loop" of [s1, s2] gives run_started(["loop"]), loop_start(2), loop_iteration_start(1, 2), s1 (1/2), s2 (2/2), loop_conditions_evaluated([False], False, 2), loop_iteration_start(2, 2), s1 (1/2), s2 (2/2), loop_conditions_evaluated([True], True, None), loop_done("completed", 2), run_completed."""
-        seed_new_run(
+        seed_new_session(
             engine_paths,
-            runs_repo,
+            sessions_repo,
             session_id="seq-loop",
             steps=[_loop("loop", [_step("s1", "true"), _step("s2", "true")])],
         )
         observer = _SequenceObserver()
 
-        outcome = _drive(engine_paths, runs_repo, "seq-loop", observer=observer)
+        outcome = _drive(engine_paths, sessions_repo, "seq-loop", observer=observer)
 
         iteration_steps = [
             ("step_start", 1, 2, "s1"),
@@ -626,30 +632,30 @@ class DriveRunObserverContractTests:
         ]
 
     def test_run_completed_receives_paused_outcome_and_resume_gets_its_own_pair(
-        self, engine_paths: WorkspacePaths, runs_repo: RunsRepository, engine_workspace: Path
+        self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository, engine_workspace: Path
     ) -> None:
         """[tier-1/integration] drive_run: a run pausing at a prompt_user failure gives run_started once and run_completed once with status PAUSED equal to the returned outcome; resuming it gives a second run_started and a run_completed with status COMPLETED."""
         marker = engine_workspace / "retry.marker"
-        seed_new_run(
+        seed_new_session(
             engine_paths,
-            runs_repo,
+            sessions_repo,
             session_id="seq-pause",
             steps=[_step("a", f"test -e {marker}", on_failure="prompt_user")],
         )
         observer = _SequenceObserver()
 
-        paused = _drive(engine_paths, runs_repo, "seq-pause", prompter=_Prompter(), observer=observer)
+        paused = _drive(engine_paths, sessions_repo, "seq-pause", prompter=_Prompter(), observer=observer)
         marker.touch()
         resumed = _drive(
             engine_paths,
-            runs_repo,
+            sessions_repo,
             "seq-pause",
             prompter=_Prompter([FailurePromptDecision.RETRY]),
             observer=observer,
         )
 
-        assert paused.status == RunStatus.PAUSED
-        assert resumed.status == RunStatus.COMPLETED
+        assert paused.status == SessionStatus.PAUSED
+        assert resumed.status == SessionStatus.COMPLETED
         run_level = [call for call in observer.calls if call[0] in {"run_started", "run_completed"}]
         assert run_level == [
             ("run_started", ["a"]),
@@ -659,52 +665,56 @@ class DriveRunObserverContractTests:
         ]
 
     def test_missing_snapshot_skips_run_started_and_completes_failed(
-        self, engine_paths: WorkspacePaths, runs_repo: RunsRepository
+        self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository
     ) -> None:
         """[tier-1/integration] drive_run: a seeded run whose definitions snapshot file is deleted returns FAILED, the observer records no run_started, and run_completed once with the returned FAILED outcome."""
-        seed_new_run(engine_paths, runs_repo, session_id="seq-nosnap", steps=[_step("a", "true")])
+        seed_new_session(engine_paths, sessions_repo, session_id="seq-nosnap", steps=[_step("a", "true")])
         snapshot_blueprint_path(engine_paths.session_dir("seq-nosnap"), "seq-nosnap").unlink()
         observer = _SequenceObserver()
 
-        outcome = _drive(engine_paths, runs_repo, "seq-nosnap", observer=observer)
+        outcome = _drive(engine_paths, sessions_repo, "seq-nosnap", observer=observer)
 
-        assert outcome.status == RunStatus.FAILED
+        assert outcome.status == SessionStatus.FAILED
         assert [call for call in observer.calls if str(call[0]).startswith("run_")] == [("run_completed", outcome)]
 
     def test_setup_failure_notifies_run_completed_only(
-        self, engine_paths: WorkspacePaths, runs_repo: RunsRepository
+        self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository
     ) -> None:
         """[tier-1/integration] drive_run: use_worktree=True outside a git repository returns FAILED with errors[0] starting "Git worktree creation failed:", the observer records run_completed once with that outcome and no run_started."""
-        seed_new_run(engine_paths, runs_repo, session_id="seq-nogit", steps=[_step("a", "true")], use_worktree=True)
+        seed_new_session(
+            engine_paths, sessions_repo, session_id="seq-nogit", steps=[_step("a", "true")], use_worktree=True
+        )
         observer = _SequenceObserver()
 
-        outcome = _drive(engine_paths, runs_repo, "seq-nogit", observer=observer)
+        outcome = _drive(engine_paths, sessions_repo, "seq-nogit", observer=observer)
 
-        assert outcome.status == RunStatus.FAILED
+        assert outcome.status == SessionStatus.FAILED
         assert outcome.errors[0].startswith("Git worktree creation failed:")
         assert [call for call in observer.calls if str(call[0]).startswith("run_")] == [("run_completed", outcome)]
 
-    def test_missing_row_notifies_nothing(self, engine_paths: WorkspacePaths, runs_repo: RunsRepository) -> None:
-        """[tier-1/integration] drive_run: a session id with no run row returns FAILED with errors == ["Run 'missing' not found."] and the observer records no callback."""
+    def test_missing_row_notifies_nothing(
+        self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository
+    ) -> None:
+        """[tier-1/integration] drive_run: a session id with no session row returns FAILED with errors == ["Session 'missing' not found."] and the observer records no callback."""
         observer = _SequenceObserver()
 
-        outcome = _drive(engine_paths, runs_repo, "missing", observer=observer)
+        outcome = _drive(engine_paths, sessions_repo, "missing", observer=observer)
 
-        assert outcome.status == RunStatus.FAILED
-        assert outcome.errors == ["Run 'missing' not found."]
+        assert outcome.status == SessionStatus.FAILED
+        assert outcome.errors == ["Session 'missing' not found."]
         assert observer.calls == []
 
     def test_raising_run_level_observer_leaves_outcome_unchanged(
-        self, engine_paths: WorkspacePaths, runs_repo: RunsRepository
+        self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository
     ) -> None:
         """[tier-1/integration] drive_run: an observer raising from on_run_started and on_run_completed on a completed 1-step run returns a RunOutcome whose status, step_results statuses, errors, and warnings equal those from a no-op observer on an identical seeded run."""
         for session_id in ("raise-plain", "raise-observed"):
-            seed_new_run(engine_paths, runs_repo, session_id=session_id, steps=[_step("a", "true")])
+            seed_new_session(engine_paths, sessions_repo, session_id=session_id, steps=[_step("a", "true")])
 
-        plain = _drive(engine_paths, runs_repo, "raise-plain", observer=NoOpRunObserver())
-        observed = _drive(engine_paths, runs_repo, "raise-observed", observer=_RaisingRunLevelObserver())
+        plain = _drive(engine_paths, sessions_repo, "raise-plain", observer=NoOpRunObserver())
+        observed = _drive(engine_paths, sessions_repo, "raise-observed", observer=_RaisingRunLevelObserver())
 
-        assert observed.status == plain.status == RunStatus.COMPLETED
+        assert observed.status == plain.status == SessionStatus.COMPLETED
         assert [r.status for r in observed.step_results] == [r.status for r in plain.step_results]
         assert observed.errors == plain.errors
         assert observed.warnings == plain.warnings
@@ -723,7 +733,7 @@ def _agent_step(step_id: str, **extra: object) -> dict[str, object]:
     return {"id": step_id, "type": "agent", "prompt": "fix it", **extra}
 
 
-def _agent_workspace(tmp_path: Path, agent: dict[str, object]) -> tuple[WorkspacePaths, RunsRepository]:
+def _agent_workspace(tmp_path: Path, agent: dict[str, object]) -> tuple[WorkspacePaths, SessionsRepository]:
     workspace = (
         WorkspaceBuilder(tmp_path / "agent-workspace")
         .with_git()
@@ -732,7 +742,7 @@ def _agent_workspace(tmp_path: Path, agent: dict[str, object]) -> tuple[Workspac
         .build()
     )
     paths = _paths_for(workspace)
-    return paths, RunsRepository(db_path=paths.database_file, project_id=paths.project_id)
+    return paths, SessionsRepository(db_path=paths.database_file, project_id=paths.project_id)
 
 
 @pytest.fixture
@@ -781,12 +791,12 @@ class DriveRunAgentSettingsTests:
         noop_agent_provider: FakeAgentProvider,
     ) -> None:
         """[tier-1/integration] drive_run: a fresh row with no override and a copilot config reaches StepExecution with the full ResolvedAgentSettings and no 'agent' key in context."""
-        paths, runs = _agent_workspace(tmp_path, _AGENT_CONFIG)
-        seed_new_run(paths, runs, session_id="fresh", steps=[_agent_step("a")], use_worktree=True)
+        paths, sessions = _agent_workspace(tmp_path, _AGENT_CONFIG)
+        seed_new_session(paths, sessions, session_id="fresh", steps=[_agent_step("a")], use_worktree=True)
 
-        outcome = _drive(paths, runs, "fresh")
+        outcome = _drive(paths, sessions, "fresh")
 
-        assert outcome.status == RunStatus.COMPLETED
+        assert outcome.status == SessionStatus.COMPLETED
         assert captured_agent_args == [
             ResolvedAgentSettings(
                 provider="copilot",
@@ -805,10 +815,10 @@ class DriveRunAgentSettingsTests:
         noop_agent_provider: FakeAgentProvider,
     ) -> None:
         """[tier-1/integration] drive_run: a paused agent-step row with agent='fake-provider' resumed with RETRY reaches StepExecution with provider 'fake-provider' and the config's model, endpoint, temperature, max_tokens."""
-        paths, runs = _agent_workspace(tmp_path, _AGENT_CONFIG)
-        seed_paused_run(
+        paths, sessions = _agent_workspace(tmp_path, _AGENT_CONFIG)
+        seed_paused_session(
             paths,
-            runs,
+            sessions,
             session_id="resumed",
             steps=[_agent_step("a", on_failure="prompt_user")],
             paused_step_id="a",
@@ -816,9 +826,9 @@ class DriveRunAgentSettingsTests:
             agent="fake-provider",
         )
 
-        outcome = _drive(paths, runs, "resumed", prompter=_Prompter([FailurePromptDecision.RETRY]))
+        outcome = _drive(paths, sessions, "resumed", prompter=_Prompter([FailurePromptDecision.RETRY]))
 
-        assert outcome.status == RunStatus.COMPLETED
+        assert outcome.status == SessionStatus.COMPLETED
         assert captured_agent_args == [
             ResolvedAgentSettings(
                 provider="fake-provider",
@@ -836,45 +846,47 @@ class DriveRunAgentSettingsTests:
         noop_agent_provider: FakeAgentProvider,
     ) -> None:
         """[tier-1/integration] drive_run: two agent steps in one drive receive the identical ResolvedAgentSettings object."""
-        paths, runs = _agent_workspace(tmp_path, _AGENT_CONFIG)
-        seed_new_run(paths, runs, session_id="twice", steps=[_agent_step("a"), _agent_step("b")], use_worktree=True)
+        paths, sessions = _agent_workspace(tmp_path, _AGENT_CONFIG)
+        seed_new_session(
+            paths, sessions, session_id="twice", steps=[_agent_step("a"), _agent_step("b")], use_worktree=True
+        )
 
-        _drive(paths, runs, "twice")
+        _drive(paths, sessions, "twice")
 
         assert len(captured_agent_args) == 2
         assert captured_agent_args[0] is not None
         assert captured_agent_args[0] is captured_agent_args[1]
 
     def test_config_resolution_failure_fails_run_without_running_steps(
-        self, engine_paths: WorkspacePaths, runs_repo: RunsRepository
+        self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository
     ) -> None:
         """[tier-1/integration] drive_run: a malformed repo config.json returns FAILED with errors[0] containing 'CONFIG_MALFORMED_JSON', no step results, and on_run_completed notified exactly once."""
         engine_paths.config_file.write_text("{not json", encoding="utf-8")
-        seed_new_run(engine_paths, runs_repo, session_id="bad-config", steps=[_step("a", "echo hi")])
+        seed_new_session(engine_paths, sessions_repo, session_id="bad-config", steps=[_step("a", "echo hi")])
         observer = _SequenceObserver()
 
-        outcome = _drive(engine_paths, runs_repo, "bad-config", observer=observer)
+        outcome = _drive(engine_paths, sessions_repo, "bad-config", observer=observer)
 
-        assert outcome.status == RunStatus.FAILED
+        assert outcome.status == SessionStatus.FAILED
         assert "CONFIG_MALFORMED_JSON" in outcome.errors[0]
         assert outcome.step_results == []
         assert [call[0] for call in observer.calls] == ["run_completed"]
 
     def test_agent_step_with_unregistered_effective_provider_fails(self, tmp_path: Path) -> None:
-        """[tier-1/integration] drive_run: an agent step whose run row sets agent 'unregistered' returns FAILED with the step's error_message containing "Unsupported agent provider 'unregistered' (AGENT_PROVIDER_UNSUPPORTED)"."""
-        paths, runs = _agent_workspace(tmp_path, {})
-        seed_new_run(
+        """[tier-1/integration] drive_run: an agent step whose session row sets agent 'unregistered' returns FAILED with the step's error_message containing "Unsupported agent provider 'unregistered' (AGENT_PROVIDER_UNSUPPORTED)"."""
+        paths, sessions = _agent_workspace(tmp_path, {})
+        seed_new_session(
             paths,
-            runs,
+            sessions,
             session_id="unregistered",
             steps=[_agent_step("a")],
             use_worktree=True,
             agent="unregistered",
         )
 
-        outcome = _drive(paths, runs, "unregistered")
+        outcome = _drive(paths, sessions, "unregistered")
 
-        assert outcome.status == RunStatus.FAILED
+        assert outcome.status == SessionStatus.FAILED
         assert "Unsupported agent provider 'unregistered' (AGENT_PROVIDER_UNSUPPORTED)" in (
             outcome.step_results[-1].error_message or ""
         )
@@ -895,7 +907,7 @@ class DriveRunAgentWorktreeTests:
             return FakeAgentProvider(AgentResponse(status=AgentResponseStatus.NO_OP))
 
         monkeypatch.setattr(AGENT_ADAPTER_FACTORY, _spy)
-        paths, runs = _agent_workspace(tmp_path, _AGENT_CONFIG)
+        paths, sessions = _agent_workspace(tmp_path, _AGENT_CONFIG)
         steps = [
             _step("before", "true"),
             _agent_step("agent", on_failure="prompt_user"),
@@ -903,12 +915,12 @@ class DriveRunAgentWorktreeTests:
         ]
         prompter = _DiagnosticPrompter([FailurePromptDecision.CONTINUE])
         if resumed:
-            seed_paused_run(paths, runs, session_id="in-place", steps=steps, paused_step_id="agent")
+            seed_paused_session(paths, sessions, session_id="in-place", steps=steps, paused_step_id="agent")
             prompter.decisions.insert(0, FailurePromptDecision.RETRY)
         else:
-            seed_new_run(paths, runs, session_id="in-place", steps=steps)
+            seed_new_session(paths, sessions, session_id="in-place", steps=steps)
 
-        outcome = _drive(paths, runs, "in-place", prompter=prompter)
+        outcome = _drive(paths, sessions, "in-place", prompter=prompter)
 
         statuses = {result.step_id: result.status for result in outcome.step_results}
         assert statuses["before"] == "completed"
@@ -922,7 +934,7 @@ class DriveRunAgentExecutionTests:
     """[tier-1/integration] drive_run: agent steps execute through resolved providers inside the worktree."""
 
     def test_agent_patch_applies_only_in_worktree_and_following_assertion_passes(
-        self, git_paths: WorkspacePaths, git_runs: RunsRepository, monkeypatch: pytest.MonkeyPatch
+        self, git_paths: WorkspacePaths, git_runs: SessionsRepository, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """[tier-1/integration] drive_run: a worktree-backed run [failing command with on_failure continue, agent prompt interpolating previous_step.status, cat of the patched file with an output assertion] returns COMPLETED, the single request is direct with no payload and instruction 'Handle ignored', the file is absent from the source checkout, and the cat step output carries the patched content."""
 
@@ -937,7 +949,7 @@ class DriveRunAgentExecutionTests:
             on_call=_write_file,
         )
         monkeypatch.setattr(AGENT_ADAPTER_FACTORY, lambda token: provider)
-        seed_new_run(
+        seed_new_session(
             git_paths,
             git_runs,
             session_id="agent-patch",
@@ -951,7 +963,7 @@ class DriveRunAgentExecutionTests:
 
         outcome = _drive(git_paths, git_runs, "agent-patch")
 
-        assert outcome.status == RunStatus.COMPLETED
+        assert outcome.status == SessionStatus.COMPLETED
         assert len(provider.requests) == 1
         assert provider.requests[0].mode == "direct"
         assert provider.requests[0].payload is None
@@ -964,7 +976,7 @@ class DriveRunAgentExecutionTests:
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """[tier-1/integration] drive_run: config agent settings with row.agent 'fake-provider' asks the factory for 'fake-provider' and delivers an AgentRequest with the configured model, endpoint, temperature, max_tokens, and the step's timeout_seconds."""
-        paths, runs = _agent_workspace(tmp_path, _AGENT_CONFIG)
+        paths, sessions = _agent_workspace(tmp_path, _AGENT_CONFIG)
         provider = FakeAgentProvider(AgentResponse(status=AgentResponseStatus.NO_OP))
         requested: list[str] = []
 
@@ -973,18 +985,18 @@ class DriveRunAgentExecutionTests:
             return provider
 
         monkeypatch.setattr(AGENT_ADAPTER_FACTORY, _factory)
-        seed_new_run(
+        seed_new_session(
             paths,
-            runs,
+            sessions,
             session_id="override",
             steps=[_agent_step("a", timeout_seconds=77)],
             use_worktree=True,
             agent="fake-provider",
         )
 
-        outcome = _drive(paths, runs, "override")
+        outcome = _drive(paths, sessions, "override")
 
-        assert outcome.status == RunStatus.COMPLETED
+        assert outcome.status == SessionStatus.COMPLETED
         assert requested == ["fake-provider"]
         request = provider.requests[0]
         assert request.model == "test-model"
@@ -994,15 +1006,15 @@ class DriveRunAgentExecutionTests:
         assert request.timeout_seconds == 77
 
     def test_no_op_planning_step_reports_summary_to_observer(
-        self, git_paths: WorkspacePaths, git_runs: RunsRepository, noop_agent_provider: FakeAgentProvider
+        self, git_paths: WorkspacePaths, git_runs: SessionsRepository, noop_agent_provider: FakeAgentProvider
     ) -> None:
         """[tier-1/integration] drive_run: a NO_OP fake with summary 'plan text' returns COMPLETED and the observer's on_step_output receives the summary JSON line for the agent step."""
-        seed_new_run(git_paths, git_runs, session_id="plan-only", steps=[_agent_step("plan")], use_worktree=True)
+        seed_new_session(git_paths, git_runs, session_id="plan-only", steps=[_agent_step("plan")], use_worktree=True)
         observer = _LifecycleObserver()
 
         outcome = _drive(git_paths, git_runs, "plan-only", observer=observer)
 
-        assert outcome.status == RunStatus.COMPLETED
+        assert outcome.status == SessionStatus.COMPLETED
         outputs = [event for event in observer.events if event[0] == "step_output" and event[3] == "plan"]
         assert [event[4] for event in outputs] == [
             '{"status":"no_op","summary":"plan text","unfixable_reason":null,"touched_files":[]}\n'

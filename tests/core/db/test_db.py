@@ -10,7 +10,7 @@ from dovo.core.db.db import DovoDb
 from dovo.core.db.migrations import init_database
 from dovo.core.db.repositories.artifacts import ArtifactsRepository
 from dovo.core.db.repositories.costs import CostsRepository
-from dovo.core.db.repositories.runs import RunsRepository
+from dovo.core.db.repositories.sessions import SessionsRepository
 from dovo.core.db.repositories.worktrees import WorktreesRepository
 
 
@@ -41,7 +41,7 @@ class DovoDbTests:
         ("attribute", "repo_type"),
         [
             pytest.param("worktrees", WorktreesRepository, id="worktrees"),
-            pytest.param("runs", RunsRepository, id="runs"),
+            pytest.param("sessions", SessionsRepository, id="sessions"),
             pytest.param("costs", CostsRepository, id="costs"),
             pytest.param("artifacts", ArtifactsRepository, id="artifacts"),
         ],
@@ -89,7 +89,7 @@ class DovoDbTests:
         db.init_db()
         assert call_count == 1
 
-        record = db.runs.create(session_id="wf_abc123", blueprint_name="deploy", blueprint_key="deploy")
+        record = db.sessions.create(session_id="wf_abc123", blueprint_name="deploy", blueprint_key="deploy")
 
         assert record.session_id == "wf_abc123"
         assert call_count == 1

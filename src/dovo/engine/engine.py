@@ -1,4 +1,4 @@
-"""Process handle: persist a run row and execute a Blueprint through RunCoordinator."""
+"""Process handle: persist a session row and execute a Blueprint through RunCoordinator."""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ from dovo.common.lock import WorkspaceLock
 from dovo.common.session_id import new_session_id
 from dovo.core.catalog import Catalog
 from dovo.core.catalog.blueprint import Blueprint
-from dovo.core.db import RunsRepository, RunStatus
+from dovo.core.db import SessionsRepository, SessionStatus
 from dovo.core.git.exceptions import GitError
 from dovo.core.git.runner import GitRunner
 from dovo.core.inputs import InputResolveResult
@@ -25,8 +25,8 @@ from dovo.engine.models import (
     RunStartConfig,
 )
 from dovo.engine.session import drive_run
-from dovo.engine.state_models import RunStateLoadStatus
-from dovo.engine.state_store import RunStateStore
+from dovo.engine.state_models import SessionStateLoadStatus
+from dovo.engine.state_store import SessionStateStore
 from dovo.engine.writer import get_session_dir, snapshot_definitions
 
 
@@ -36,7 +36,7 @@ class Engine:
     def __init__(
         self,
         paths: WorkspacePaths,
-        db: RunsRepository,
+        db: SessionsRepository,
         catalog: Catalog,
     ) -> None:
         self.paths = paths
@@ -45,7 +45,7 @@ class Engine:
         self.catalog = catalog
 
     def run(self, blueprint: Blueprint, request: RunRequest | None = None) -> RunOutcome:
-        """Persist the run row and initial state for ``blueprint``, then execute it through ``drive_run``."""
+        """Persist the session row and initial state for ``blueprint``, then execute it through ``drive_run``."""
         req = request or RunRequest()
         resolved = self._resolve_run_inputs(blueprint, req)
         sid = req.session_id or new_session_id("blueprint")
@@ -116,7 +116,7 @@ class Engine:
                 return f"Failed to record run start in database: {exc}"
 
             try:
-                initialized = RunStateStore(self.db, self.paths, session_id).initialize(blueprint, manifest)
+                initialized = SessionStateStore(self.db, self.paths, session_id).initialize(blueprint, manifest)
             except Exception as exc:
                 message = f"Failed to initialize run state: {exc}"
             else:
@@ -125,7 +125,7 @@ class Engine:
                 message = initialized.errors[0] if initialized.errors else "Failed to initialize run state."
 
             try:
-                self.db.update_status(session_id, RunStatus.FAILED, error_message=message)
+                self.db.update_status(session_id, SessionStatus.FAILED, error_message=message)
             except Exception:
                 # Best-effort: the start failure is already reported to the caller.
                 pass
@@ -134,7 +134,7 @@ class Engine:
     def _failed_outcome(self, session_id: str, errors: list[str], warnings: list[str]) -> RunOutcome:
         """Build the FAILED RunOutcome for a run that could not start."""
         return RunOutcome(
-            status=RunStatus.FAILED,
+            status=SessionStatus.FAILED,
             errors=errors,
             warnings=warnings,
             worktree_path=self.path,
@@ -179,10 +179,10 @@ class Engine:
     def _finalize_row(self, session_id: str, outcome: RunOutcome, warnings: list[str]) -> None:
         """Persist the outcome through the state store, or straight onto the row when it has no readable state."""
         error_message = outcome.errors[0] if outcome.errors else None
-        store = RunStateStore(self.db, self.paths, session_id)
+        store = SessionStateStore(self.db, self.paths, session_id)
         loaded = store.load()
         if not loaded.ok or loaded.state is None:
-            if loaded.status != RunStateLoadStatus.MISSING_STATE and loaded.errors:
+            if loaded.status != SessionStateLoadStatus.MISSING_STATE and loaded.errors:
                 warnings.append(loaded.errors[0])
             self.db.update_status(
                 session_id,
@@ -219,7 +219,7 @@ class Engine:
             blueprint_name=blueprint.name,
             blueprint_key=blueprint.key,
             branch_name="",
-            status=RunStatus.RUNNING,
+            status=SessionStatus.RUNNING,
             pid=os.getpid(),
             blueprint_tier=config.blueprint_tier,
             commit_sha=config.commit_sha,
@@ -231,7 +231,7 @@ class Engine:
         )
 
     def _resolve_run_inputs(self, blueprint: Blueprint, request: RunRequest) -> InputResolveResult:
-        """Apply defaults and required checks; raise before a run row is inserted."""
+        """Apply defaults and required checks; raise before a session row is inserted."""
         result = blueprint.resolve_inputs(request.cli_args, overrides=request.inputs)
         if not result.ok:
             raise EngineInputError(result)
@@ -247,6 +247,6 @@ class Engine:
     def _mark_running(self, session_id: str, warnings: list[str]) -> None:
         """Set the paused row back to running, or record a persistence warning; the caller holds the workspace lock."""
         try:
-            self.db.update_status(session_id, RunStatus.RUNNING, pid=os.getpid())
+            self.db.update_status(session_id, SessionStatus.RUNNING, pid=os.getpid())
         except Exception as exc:
             warnings.append(f"Failed to update run status in database: {exc}")

@@ -29,9 +29,9 @@ def logs_show_command(
         output_format: Presentation format ("terminal" or "json").
 
     Returns:
-        LogsShowResult containing run.log events or step log lines.
+        LogsShowResult containing session.log events or step log lines.
     """
-    result = Session(context.paths, session_id, db=context.db.runs).logs(
+    result = Session(context.paths, session_id, db=context.db.sessions).logs(
         step=step, attempt=attempt, stream=LogStreamFilter(stream), tail=tail
     )
     ui_dispatcher.dispatch(result, output_format=output_format)

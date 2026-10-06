@@ -29,7 +29,7 @@ def worktree_prune_command(
     result = Worktree(
         context.paths,
         db=context.db.worktrees,
-        runs_db=context.db.runs,
+        sessions_db=context.db.sessions,
     ).prune(
         dry_run=dry_run,
         force=force,

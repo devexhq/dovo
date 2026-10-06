@@ -11,10 +11,10 @@ from dovo.core.sessions.models import (
     LogsShowStatus,
     LogStreamFilter,
     ReconciliationResult,
-    RunLogEvent,
-    RunLogEventType,
+    SessionLogEvent,
+    SessionLogEventType,
 )
-from dovo.core.sessions.services.reconcile import reconcile_stale_runs
+from dovo.core.sessions.services.reconcile import reconcile_stale_sessions
 from dovo.core.sessions.sessions import Session, SessionCollection
 
 __all__ = [
@@ -28,9 +28,9 @@ __all__ = [
     "LogsShowResult",
     "LogsShowStatus",
     "ReconciliationResult",
-    "RunLogEvent",
-    "RunLogEventType",
     "Session",
     "SessionCollection",
-    "reconcile_stale_runs",
+    "SessionLogEvent",
+    "SessionLogEventType",
+    "reconcile_stale_sessions",
 ]

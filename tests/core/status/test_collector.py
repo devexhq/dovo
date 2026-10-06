@@ -16,7 +16,7 @@ from dovo.common.filesystem.models import RepositoryPaths
 from dovo.common.filesystem.services.global_root import resolve_global_paths
 from dovo.core.config.loader import ConfigLoadStatus
 from dovo.core.config.models import AgentConfig, DovoConfig, ProjectConfig, WorktreeConfig
-from dovo.core.db import RunsRepository, RunStatus, WorktreesRepository
+from dovo.core.db import SessionsRepository, SessionStatus, WorktreesRepository
 from dovo.core.db.connection import resolve_db_path
 from dovo.core.git import GitNotFoundError, GitPlumbingTimeoutError, GitRunner
 from dovo.core.project.services.storage import resolve_workspace_paths
@@ -91,12 +91,12 @@ class StatusCollectorGitCollectionTests:
         Filesystem.atomic_write_text(fs.catalog_blueprints_dir / "lint-blueprint.yml", "name: lint-blueprint\n")
         Filesystem.atomic_write_text(fs.catalog_steps_dir / "test-step.yml", "name: test-step\n")
 
-        runs_repo = RunsRepository(db_path=paths.database_file, project_id=paths.project_id)
-        runs_repo.create(
+        sessions_repo = SessionsRepository(db_path=paths.database_file, project_id=paths.project_id)
+        sessions_repo.create(
             session_id="sess-001",
             blueprint_name="deploy",
             blueprint_key="deploy",
-            status=RunStatus.COMPLETED,
+            status=SessionStatus.COMPLETED,
         )
 
         worktrees_repo = WorktreesRepository(db_path=paths.database_file, project_id=paths.project_id)
@@ -119,7 +119,7 @@ class StatusCollectorGitCollectionTests:
         assert result.catalog.item_names == ["deploy", "lint-blueprint", "test-step"]
         assert result.database.exists is True
         assert result.database.is_accessible is True
-        assert result.database.total_runs == 1
+        assert result.database.total_sessions == 1
         assert result.worktrees.active_worktrees == 1
         assert result.worktrees.total_worktrees == 1
         assert result.worktrees.max_active_worktrees == 3
@@ -349,7 +349,7 @@ class StatusCollectorDatabaseAndWorktreeTests:
 
         assert result.database.exists is True
         assert result.database.is_accessible is False
-        assert result.database.total_runs == 0
+        assert result.database.total_sessions == 0
 
     def test_collect_status_worktrees_directory_fallback(self, tmp_path: Path) -> None:
         workspace = (
@@ -388,12 +388,12 @@ class StatusCollectorDatabaseAndWorktreeTests:
         fs = Filesystem(workspace)
         Filesystem.atomic_write_json(fs.config_file, _config_payload(model="gpt-4o"))
 
-        runs_repo = RunsRepository(db_path=paths.database_file, project_id=paths.project_id)
-        runs_repo.create(
+        sessions_repo = SessionsRepository(db_path=paths.database_file, project_id=paths.project_id)
+        sessions_repo.create(
             session_id="sess-test",
             blueprint_name="test-bp",
             blueprint_key="test-bp",
-            status=RunStatus.COMPLETED,
+            status=SessionStatus.COMPLETED,
         )
         (fs.worktrees_dir / "sb-fallback").mkdir(parents=True, exist_ok=True)
 
@@ -404,7 +404,7 @@ class StatusCollectorDatabaseAndWorktreeTests:
 
         result = collect_status(paths)
 
-        assert result.database.total_runs == 1
+        assert result.database.total_sessions == 1
         assert result.worktrees.active_worktrees == 1
         assert result.worktrees.total_worktrees == 1
 

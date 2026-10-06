@@ -18,7 +18,7 @@ from dovo.core.catalog.models import CatalogItemType, CatalogRecord
 from dovo.core.catalog.services.resolve_step import merge_uses_step, resolve_step_definition
 from dovo.engine.exceptions import EngineSnapshotMissingError
 from dovo.engine.models import DefinitionRef, DefinitionsManifest
-from dovo.engine.state_models import RunJsonPayload
+from dovo.engine.state_models import SessionJsonPayload
 
 
 def _collect_uses_refs(steps: list[StepDefinition | LoopStepBlock]) -> list[str]:
@@ -237,9 +237,9 @@ def write_session_diff(session_dir: Path, diff_text: str) -> Path:
     return target_file
 
 
-def write_session_run_projection(session_dir: Path, payload: RunJsonPayload) -> Path:
-    """Atomically write payload to <session_dir>/run.json and return that path."""
-    target_file = session_dir / "run.json"
+def write_session_projection(session_dir: Path, payload: SessionJsonPayload) -> Path:
+    """Atomically write payload to <session_dir>/session.json and return that path."""
+    target_file = session_dir / "session.json"
     Filesystem.atomic_write_text(target_file, payload.model_dump_json(indent=2))
     return target_file
 
@@ -252,5 +252,5 @@ __all__ = [
     "load_blueprint_from_snapshot",
     "snapshot_definitions",
     "write_session_diff",
-    "write_session_run_projection",
+    "write_session_projection",
 ]

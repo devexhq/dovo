@@ -60,7 +60,7 @@ class DatabaseStatusInfo(BaseModel):
     exists: bool
     db_path: Path
     is_accessible: bool
-    total_runs: int = 0
+    total_sessions: int = 0
 
 
 class WorktreeStatusInfo(BaseModel):

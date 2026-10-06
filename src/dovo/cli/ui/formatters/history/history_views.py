@@ -5,8 +5,8 @@ from pydantic import BaseModel, Field
 from dovo.core.sessions import HistoryListStatus, HistoryShowStatus
 
 
-class RunSummaryView(BaseModel):
-    """Semantic view of an execution history run record."""
+class SessionSummaryView(BaseModel):
+    """Semantic view of an execution history session record."""
 
     model_config = {"extra": "forbid", "strict": True}
 
@@ -26,8 +26,8 @@ class HistoryListView(BaseModel):
     model_config = {"extra": "forbid", "strict": True}
 
     status: HistoryListStatus
-    runs: list[RunSummaryView] = Field(default_factory=list)
-    total_runs: int = 0
+    sessions: list[SessionSummaryView] = Field(default_factory=list)
+    total_sessions: int = 0
     errors: list[str] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
     fixes: list[str] = Field(default_factory=list)
@@ -40,7 +40,7 @@ class HistoryShowView(BaseModel):
 
     status: HistoryShowStatus
     session_id: str | None = None
-    run: RunSummaryView | None = None
+    session: SessionSummaryView | None = None
     log_files: list[str] = Field(default_factory=list)
     log_snippet: list[str] = Field(default_factory=list)
     errors: list[str] = Field(default_factory=list)

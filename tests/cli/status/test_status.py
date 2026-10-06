@@ -109,7 +109,7 @@ class StatusCliIntegrationTests:
                 "max_active_worktrees": 3,
                 "valid_catalog_items": 0,
                 "total_catalog_items": 0,
-                "total_runs": 0,
+                "total_sessions": 0,
                 "errors": [],
                 "warnings": [
                     "Active branch is 'main'. Automated workflows on primary branches are discouraged.",

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from dovo.core.db import RunsRepository, WorktreeRecord, WorktreesRepository, WorktreeStatus
+from dovo.core.db import SessionsRepository, WorktreeRecord, WorktreesRepository, WorktreeStatus
 from dovo.core.git.exceptions import GitError
 from dovo.core.git.models import GitWorktreeEntry
 from dovo.core.git.runner import GitRunner
@@ -35,19 +35,19 @@ class WorktreeDetector:
         self,
         path: Path,
         db: WorktreesRepository,
-        runs_db: RunsRepository | None = None,
+        sessions_db: SessionsRepository | None = None,
     ) -> None:
         """Initialize detector bound to repository root and database.
 
         Args:
             path: Repository root directory.
             db: WorktreesRepository instance.
-            runs_db: Optional RunsRepository instance for run liveness checks.
+            sessions_db: Optional SessionsRepository instance for run liveness checks.
         """
         self.path = path.expanduser().resolve()
         self.worktree_base_dir = self.path / ".dovo" / "worktrees"
         self.db = db
-        self.runs_db = runs_db
+        self.sessions_db = sessions_db
 
     def _detect_stale_worktree_refs(self, worktree_entries: list[GitWorktreeEntry]) -> list[StaleWorktreeItem]:
         """Identify registered git worktree refs pointing to missing paths or prunable."""
@@ -253,8 +253,8 @@ class WorktreeDetector:
 def detect_stale_worktrees(
     path: Path,
     db: WorktreesRepository,
-    runs_db: RunsRepository | None = None,
+    sessions_db: SessionsRepository | None = None,
 ) -> WorktreeDetectionResult:
     """Non-raising helper to scan and detect stale worktree resources."""
-    detector = WorktreeDetector(path, db, runs_db=runs_db)
+    detector = WorktreeDetector(path, db, sessions_db=sessions_db)
     return detector.detect()

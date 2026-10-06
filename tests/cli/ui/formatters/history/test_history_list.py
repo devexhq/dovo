@@ -6,10 +6,10 @@ from typing import Any
 
 import pytest
 
-from dovo.cli.ui.formatters.history.common import format_run_duration
+from dovo.cli.ui.formatters.history.common import format_session_duration
 from dovo.cli.ui.formatters.history.history_list import HistoryListFormatter
-from dovo.cli.ui.formatters.history.history_views import HistoryListView, RunSummaryView
-from dovo.core.db import RunRecord, RunStatus
+from dovo.cli.ui.formatters.history.history_views import HistoryListView, SessionSummaryView
+from dovo.core.db import SessionRecord, SessionStatus
 from dovo.core.sessions import HistoryListResult, HistoryListStatus
 from tests.harness.formatter import (
     FormatterCase,
@@ -19,17 +19,17 @@ from tests.harness.formatter import (
 )
 
 
-def _sample_run_record(
+def _sample_session_record(
     *,
     session_id: str = "sess-12345678",
     blueprint_name: str = "deploy-blueprint",
-    status: RunStatus = RunStatus.COMPLETED,
+    status: SessionStatus = SessionStatus.COMPLETED,
     branch_name: str | None = "feature/test",
     started_at: str | None = "2026-08-19 01:00:00",
     completed_at: str | None = "2026-08-19 01:00:10",
     error_message: str | None = None,
-) -> RunRecord:
-    return RunRecord(
+) -> SessionRecord:
+    return SessionRecord(
         id=1,
         session_id=session_id,
         blueprint_key=blueprint_name,
@@ -42,7 +42,7 @@ def _sample_run_record(
     )
 
 
-def _make_run_summary_view(**overrides: Any) -> RunSummaryView:
+def _make_session_summary_view(**overrides: Any) -> SessionSummaryView:
     defaults: dict[str, Any] = {
         "session_id": "sess-12345678",
         "blueprint_name": "deploy-blueprint",
@@ -54,14 +54,14 @@ def _make_run_summary_view(**overrides: Any) -> RunSummaryView:
         "error_message": None,
     }
     defaults.update(overrides)
-    return RunSummaryView(**defaults)
+    return SessionSummaryView(**defaults)
 
 
 def _make_history_list_view(**overrides: Any) -> HistoryListView:
     defaults: dict[str, Any] = {
         "status": HistoryListStatus.OK,
-        "runs": [_make_run_summary_view()],
-        "total_runs": 1,
+        "sessions": [_make_session_summary_view()],
+        "total_sessions": 1,
         "errors": [],
         "warnings": [],
         "fixes": [],
@@ -71,35 +71,35 @@ def _make_history_list_view(**overrides: Any) -> HistoryListView:
 
 
 POPULATED_RUNS = FormatterCase(
-    data=HistoryListResult(status=HistoryListStatus.OK, runs=[_sample_run_record()]),
+    data=HistoryListResult(status=HistoryListStatus.OK, sessions=[_sample_session_record()]),
     view=_make_history_list_view(),
-    render_expectations=["sess-12345678", "deploy-blueprint", format_run_duration(10.0)],
+    render_expectations=["sess-12345678", "deploy-blueprint", format_session_duration(10.0)],
 )
 
 EMPTY_RUNS = FormatterCase(
-    data=HistoryListResult(status=HistoryListStatus.OK, runs=[]),
-    view=_make_history_list_view(runs=[], total_runs=0),
+    data=HistoryListResult(status=HistoryListStatus.OK, sessions=[]),
+    view=_make_history_list_view(sessions=[], total_sessions=0),
     render_expectations=[],
 )
 
 WARNINGS_RUNS = FormatterCase(
     data=HistoryListResult(
         status=HistoryListStatus.OK,
-        runs=[_sample_run_record()],
+        sessions=[_sample_session_record()],
         warnings=["Reconciled 1 interrupted session (session_id: sess-stale)."],
     ),
     view=_make_history_list_view(warnings=["Reconciled 1 interrupted session (session_id: sess-stale)."]),
     render_expectations=[
         "sess-12345678",
         "deploy-blueprint",
-        format_run_duration(10.0),
+        format_session_duration(10.0),
         "Reconciled 1 interrupted session (session_id: sess-stale).",
     ],
 )
 
 ERRORS_RUNS = FormatterCase(
     data=HistoryListResult(status=HistoryListStatus.OK, errors=["Database query failed."]),
-    view=_make_history_list_view(runs=[], total_runs=0, errors=["Database query failed."]),
+    view=_make_history_list_view(sessions=[], total_sessions=0, errors=["Database query failed."]),
     render_expectations=["Database query failed."],
 )
 
@@ -115,7 +115,7 @@ HISTORY_LIST_PAYLOAD_CASES = [
         POPULATED_RUNS,
         {
             "status": "ok",
-            "runs": [
+            "sessions": [
                 {
                     "session_id": "sess-12345678",
                     "blueprint_name": "deploy-blueprint",
@@ -127,7 +127,7 @@ HISTORY_LIST_PAYLOAD_CASES = [
                     "error_message": None,
                 }
             ],
-            "total_runs": 1,
+            "total_sessions": 1,
             "errors": [],
             "warnings": [],
             "fixes": [],
@@ -138,8 +138,8 @@ HISTORY_LIST_PAYLOAD_CASES = [
         EMPTY_RUNS,
         {
             "status": "ok",
-            "runs": [],
-            "total_runs": 0,
+            "sessions": [],
+            "total_sessions": 0,
             "errors": [],
             "warnings": [],
             "fixes": [],
@@ -150,7 +150,7 @@ HISTORY_LIST_PAYLOAD_CASES = [
         WARNINGS_RUNS,
         {
             "status": "ok",
-            "runs": [
+            "sessions": [
                 {
                     "session_id": "sess-12345678",
                     "blueprint_name": "deploy-blueprint",
@@ -162,7 +162,7 @@ HISTORY_LIST_PAYLOAD_CASES = [
                     "error_message": None,
                 }
             ],
-            "total_runs": 1,
+            "total_sessions": 1,
             "errors": [],
             "warnings": ["Reconciled 1 interrupted session (session_id: sess-stale)."],
             "fixes": [],
@@ -173,8 +173,8 @@ HISTORY_LIST_PAYLOAD_CASES = [
         ERRORS_RUNS,
         {
             "status": "ok",
-            "runs": [],
-            "total_runs": 0,
+            "sessions": [],
+            "total_sessions": 0,
             "errors": ["Database query failed."],
             "warnings": [],
             "fixes": [],

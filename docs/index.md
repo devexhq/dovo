@@ -71,8 +71,8 @@ dovo worktree create my-feature
 - **[Config (`dovo config`)](cli/config.md)**: Display, modify, and validate project configuration.
 - **[Run (`dovo run`)](cli/run.md)**: Execute a blueprint by name.
 - **[Resume (`dovo resume`)](cli/resume.md)**: Resume paused blueprint sessions from saved run state.
-- **[History (`dovo history`)](cli/history.md)**: List and inspect recorded blueprint runs.
-- **[Logs (`dovo logs`)](cli/logs.md)**: Show a session's run timeline or a step's captured output.
+- **[History (`dovo history`)](cli/history.md)**: List and inspect recorded sessions.
+- **[Logs (`dovo logs`)](cli/logs.md)**: Show a session's session timeline or a step's captured output.
 - **[Diff (`dovo diff`)](cli/diff.md)**: View the diff captured for an execution session.
 - **[Doctor (`dovo doctor`)](cli/doctor.md)**: Run registered workspace diagnostics.
 - **[Worktree (`dovo worktree`)](cli/worktree.md)**: Git worktree isolation.

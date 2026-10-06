@@ -10,7 +10,7 @@ from typer.testing import CliRunner
 from dovo.cli import app
 from dovo.common.filesystem.models import RepositoryPaths, WorkspacePaths
 from dovo.common.filesystem.services.global_root import resolve_global_paths
-from dovo.core.db import DovoDb, RunStatus
+from dovo.core.db import DovoDb, SessionStatus
 from dovo.core.project.services.storage import resolve_workspace_paths
 
 
@@ -28,8 +28,8 @@ class HistoryShowCliIntegrationTests:
             database_file=_paths_for(history_workspace).database_file,
             project_id=_paths_for(history_workspace).project_id,
         )
-        db.runs.create(
-            session_id="session-known", blueprint_name="task-a", blueprint_key="task-a", status=RunStatus.COMPLETED
+        db.sessions.create(
+            session_id="session-known", blueprint_name="task-a", blueprint_key="task-a", status=SessionStatus.COMPLETED
         )
 
         result = cli_runner.invoke(app, ["-p", str(history_workspace), "history", "show", "session-known"])
@@ -53,8 +53,8 @@ class HistoryShowCliIntegrationTests:
             database_file=_paths_for(history_workspace).database_file,
             project_id=_paths_for(history_workspace).project_id,
         )
-        db.runs.create(
-            session_id="session-known", blueprint_name="task-a", blueprint_key="task-a", status=RunStatus.COMPLETED
+        db.sessions.create(
+            session_id="session-known", blueprint_name="task-a", blueprint_key="task-a", status=SessionStatus.COMPLETED
         )
 
         result = cli_runner.invoke(
@@ -65,13 +65,13 @@ class HistoryShowCliIntegrationTests:
         data = json.loads(result.stdout)
         assert data["event_type"] == "HistoryShowResult"
         payload = data["payload"]
-        assert payload["run"] is not None
-        assert isinstance(payload["run"]["started_at"], str)
-        payload["run"]["started_at"] = "<timestamp>"
+        assert payload["session"] is not None
+        assert isinstance(payload["session"]["started_at"], str)
+        payload["session"]["started_at"] = "<timestamp>"
         assert payload == {
             "status": "ok",
             "session_id": "session-known",
-            "run": {
+            "session": {
                 "session_id": "session-known",
                 "blueprint_name": "task-a",
                 "status": "completed",
@@ -99,15 +99,15 @@ class HistoryShowLogsCliIntegrationTests:
         DovoDb(
             database_file=_paths_for(history_workspace).database_file,
             project_id=_paths_for(history_workspace).project_id,
-        ).runs.create(
-            session_id="session-logs", blueprint_name="task-a", blueprint_key="task-a", status=RunStatus.COMPLETED
+        ).sessions.create(
+            session_id="session-logs", blueprint_name="task-a", blueprint_key="task-a", status=SessionStatus.COMPLETED
         )
         session_log_dir = (
             resolve_workspace_paths(RepositoryPaths.from_root(history_workspace), resolve_global_paths(None)).logs_dir
             / "session-logs"
         )
         session_log_dir.mkdir(parents=True)
-        (session_log_dir / "run.log").write_text("", encoding="utf-8")
+        (session_log_dir / "session.log").write_text("", encoding="utf-8")
         (session_log_dir / "01_build_attempt_1.stdout.log").write_text("out\n", encoding="utf-8")
 
         result = cli_runner.invoke(
@@ -117,5 +117,5 @@ class HistoryShowLogsCliIntegrationTests:
         assert result.exit_code == 0
         assert json.loads(result.stdout)["payload"]["log_files"] == [
             str(session_log_dir / "01_build_attempt_1.stdout.log"),
-            str(session_log_dir / "run.log"),
+            str(session_log_dir / "session.log"),
         ]

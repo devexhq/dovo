@@ -11,7 +11,7 @@ import pytest
 
 from dovo.common.filesystem.models import RepositoryPaths
 from dovo.common.filesystem.services.global_root import resolve_global_paths
-from dovo.core.db import RunsRepository, RunStatus
+from dovo.core.db import SessionsRepository, SessionStatus
 from dovo.core.project.services.storage import resolve_workspace_paths
 from dovo.core.sessions import ReconciliationResult
 from dovo.core.sessions.services.reconcile import (
@@ -20,16 +20,16 @@ from dovo.core.sessions.services.reconcile import (
     get_process_start_time,
     is_pid_alive,
     is_run_stale,
-    reconcile_stale_runs,
+    reconcile_stale_sessions,
 )
 
 DEAD_PID = 4242
 
 
-def _runs_for(root: Path) -> RunsRepository:
-    """Build the RunsRepository for the workspace rooted at root."""
+def _sessions_for(root: Path) -> SessionsRepository:
+    """Build the SessionsRepository for the workspace rooted at root."""
     paths = resolve_workspace_paths(RepositoryPaths.from_root(root), resolve_global_paths(None))
-    return RunsRepository(db_path=paths.database_file, project_id=paths.project_id)
+    return SessionsRepository(db_path=paths.database_file, project_id=paths.project_id)
 
 
 def _kill_reports_no_such_process(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -88,31 +88,33 @@ class GetProcessStartTimeTests:
 
 
 class IsRunStaleTests:
-    @pytest.mark.parametrize("status", [RunStatus.COMPLETED, RunStatus.FAILED])
+    @pytest.mark.parametrize("status", [SessionStatus.COMPLETED, SessionStatus.FAILED])
     def test_non_running_status_is_not_stale(
-        self, isolated_workspace: Path, monkeypatch: pytest.MonkeyPatch, status: RunStatus
+        self, isolated_workspace: Path, monkeypatch: pytest.MonkeyPatch, status: SessionStatus
     ) -> None:
         """[tier-1/integration] is_run_stale: a non-RUNNING row returns False even with a dead pid."""
         _kill_reports_no_such_process(monkeypatch)
-        run = _runs_for(isolated_workspace).create("session-1", "blueprint", "blueprint", status=status, pid=DEAD_PID)
+        run = _sessions_for(isolated_workspace).create(
+            "session-1", "blueprint", "blueprint", status=status, pid=DEAD_PID
+        )
 
         assert is_run_stale(run) is False
 
     def test_running_row_without_pid_is_stale(self, isolated_workspace: Path) -> None:
         """[tier-1/integration] is_run_stale: RUNNING row with pid None returns True."""
-        run = _runs_for(isolated_workspace).create("session-1", "blueprint", "blueprint", pid=None)
+        run = _sessions_for(isolated_workspace).create("session-1", "blueprint", "blueprint", pid=None)
 
         assert is_run_stale(run) is True
 
     def test_live_current_pid_started_now_is_not_stale(self, isolated_workspace: Path) -> None:
         """[tier-1/integration] is_run_stale: RUNNING row owned by os.getpid() with started_at now returns False."""
-        run = _runs_for(isolated_workspace).create("session-1", "blueprint", "blueprint", pid=os.getpid())
+        run = _sessions_for(isolated_workspace).create("session-1", "blueprint", "blueprint", pid=os.getpid())
 
         assert is_run_stale(run) is False
 
     def test_live_pid_started_before_process_start_is_stale_as_reused(self, isolated_workspace: Path) -> None:
         """[tier-1/integration] is_run_stale: RUNNING row owned by os.getpid() with started_at '2000-01-01 00:00:00' returns True (pid reused)."""
-        run = _runs_for(isolated_workspace).create("session-1", "blueprint", "blueprint", pid=os.getpid())
+        run = _sessions_for(isolated_workspace).create("session-1", "blueprint", "blueprint", pid=os.getpid())
         run = run.model_copy(update={"started_at": "2000-01-01 00:00:00"})
 
         assert is_run_stale(run) is True
@@ -132,8 +134,8 @@ class FormatReconciliationWarningTests:
     )
     def test_records_name_their_sessions(self, isolated_workspace: Path, session_ids: list[str], expected: str) -> None:
         """[tier-1/integration] format_reconciliation_warning: one record 'a' returns 'Reconciled 1 interrupted session (session_id: a).'; records 'a','b' return 'Reconciled 2 interrupted sessions (a, b).'."""
-        runs = _runs_for(isolated_workspace)
-        records = [runs.create(session_id, "blueprint", "blueprint") for session_id in session_ids]
+        sessions = _sessions_for(isolated_workspace)
+        records = [sessions.create(session_id, "blueprint", "blueprint") for session_id in session_ids]
 
         assert format_reconciliation_warning(records) == expected
 
@@ -142,49 +144,49 @@ class ReconcileStaleRunsTests:
     def test_dead_pid_row_is_marked_failed_with_stale_message(
         self, isolated_workspace: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """[tier-1/integration] reconcile_stale_runs: dead-pid RUNNING row becomes FAILED with error_message == STALE_RUN_ERROR_MESSAGE; result.reconciled == [that row] and result.warning == 'Reconciled 1 interrupted session (session_id: <id>).'."""
+        """[tier-1/integration] reconcile_stale_sessions: dead-pid RUNNING row becomes FAILED with error_message == STALE_RUN_ERROR_MESSAGE; result.reconciled == [that row] and result.warning == 'Reconciled 1 interrupted session (session_id: <id>).'."""
         _kill_reports_no_such_process(monkeypatch)
-        runs = _runs_for(isolated_workspace)
-        runs.create("session-dead", "blueprint", "blueprint", pid=DEAD_PID)
+        sessions = _sessions_for(isolated_workspace)
+        sessions.create("session-dead", "blueprint", "blueprint", pid=DEAD_PID)
 
-        result = reconcile_stale_runs(runs, path=isolated_workspace)
+        result = reconcile_stale_sessions(sessions, path=isolated_workspace)
 
-        stored = runs.get("session-dead")
+        stored = sessions.get("session-dead")
         assert stored is not None
-        assert stored.status == RunStatus.FAILED
+        assert stored.status == SessionStatus.FAILED
         assert stored.error_message == STALE_RUN_ERROR_MESSAGE
         assert result.reconciled == [stored]
         assert result.warning == "Reconciled 1 interrupted session (session_id: session-dead)."
 
     def test_live_run_is_left_running(self, isolated_workspace: Path) -> None:
-        """[tier-1/integration] reconcile_stale_runs: RUNNING row owned by os.getpid() stays RUNNING; result == ReconciliationResult(reconciled=[], warning=None)."""
-        runs = _runs_for(isolated_workspace)
-        runs.create("session-live", "blueprint", "blueprint", pid=os.getpid())
+        """[tier-1/integration] reconcile_stale_sessions: RUNNING row owned by os.getpid() stays RUNNING; result == ReconciliationResult(reconciled=[], warning=None)."""
+        sessions = _sessions_for(isolated_workspace)
+        sessions.create("session-live", "blueprint", "blueprint", pid=os.getpid())
 
-        result = reconcile_stale_runs(runs, path=isolated_workspace)
+        result = reconcile_stale_sessions(sessions, path=isolated_workspace)
 
-        stored = runs.get("session-live")
+        stored = sessions.get("session-live")
         assert stored is not None
-        assert stored.status == RunStatus.RUNNING
+        assert stored.status == SessionStatus.RUNNING
         assert result == ReconciliationResult(reconciled=[], warning=None)
 
     def test_repository_failure_returns_empty_result(
         self, isolated_workspace: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """[tier-1/integration] reconcile_stale_runs: RunsRepository.list raising returns ReconciliationResult(reconciled=[], warning=None) and does not raise."""
-        runs = _runs_for(isolated_workspace)
+        """[tier-1/integration] reconcile_stale_sessions: SessionsRepository.list raising returns ReconciliationResult(reconciled=[], warning=None) and does not raise."""
+        sessions = _sessions_for(isolated_workspace)
 
         def _boom(*_args: object, **_kwargs: object) -> None:
             raise RuntimeError("db unavailable")
 
-        monkeypatch.setattr(RunsRepository, "list", _boom)
+        monkeypatch.setattr(SessionsRepository, "list", _boom)
 
-        result = reconcile_stale_runs(runs, path=isolated_workspace)
+        result = reconcile_stale_sessions(sessions, path=isolated_workspace)
 
         assert result == ReconciliationResult(reconciled=[], warning=None)
 
     def test_detached_repository_without_path_returns_empty_result(self) -> None:
-        """[tier-1/unit] reconcile_stale_runs: path=None with a repository whose path is None returns ReconciliationResult(reconciled=[], warning=None)."""
-        detached = RunsRepository(path=None, auto_init=False)
+        """[tier-1/unit] reconcile_stale_sessions: path=None with a repository whose path is None returns ReconciliationResult(reconciled=[], warning=None)."""
+        detached = SessionsRepository(path=None, auto_init=False)
 
-        assert reconcile_stale_runs(detached) == ReconciliationResult(reconciled=[], warning=None)
+        assert reconcile_stale_sessions(detached) == ReconciliationResult(reconciled=[], warning=None)

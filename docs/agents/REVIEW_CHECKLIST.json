@@ -234,7 +234,7 @@
       "domain": "all",
       "scope": "All source and test files",
       "evaluation_criteria": "Detect repository or DovoDb instantiations inside for/while loops or inside reusable helper functions.",
-      "bad_pattern": "for item in items: repo = RunsRepository(path); repo.create(item)"
+      "bad_pattern": "for item in items: repo = SessionsRepository(path); repo.create(item)"
     },
     {
       "id": "PERF-002",
@@ -483,7 +483,7 @@
       "domain": "tests",
       "scope": "tests/",
       "evaluation_criteria": "For each public function or method in a changed production module, verify its corresponding test file (per TEST-002) contains at least one test exercising a success path and at least one test exercising a failure or boundary path. Flag any public function with only happy-path tests, any dedicated test method targeting a private (underscore-prefixed) function, and any public function with zero covering tests. Trivial properties (single field return, no branch) require only a happy-path read.",
-      "bad_pattern": "class RunStateStoreTests:\n    def test__validate_schema_version(self): ...  # dedicated test for private method\n    def test_save_persists_state(self): ...  # happy path only, no unhappy path for save()"
+      "bad_pattern": "class SessionStateStoreTests:\n    def test__validate_schema_version(self): ...  # dedicated test for private method\n    def test_save_persists_state(self): ...  # happy path only, no unhappy path for save()"
     },
     {
       "id": "TEST-017",

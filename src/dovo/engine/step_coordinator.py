@@ -9,7 +9,7 @@ from pathlib import Path
 from dovo.core.artifacts.services.upload import publish_artifact
 from dovo.core.catalog.definitions import StepDefinition
 from dovo.core.db.repositories.artifacts import ArtifactsRepository
-from dovo.core.sessions import RunLogEvent, RunLogEventType
+from dovo.core.sessions import SessionLogEvent, SessionLogEventType
 from dovo.engine.executors import StepExecution
 from dovo.engine.executors.agent_step import build_agent_step_runner
 from dovo.engine.executors.models import PreviousStepMetadata, StepExecutionContext, StepResult
@@ -20,7 +20,7 @@ from dovo.engine.failure import (
 )
 from dovo.engine.models import FailurePromptDecision, RunContext, RunSettings, StepAction
 from dovo.engine.notify import safe_notify
-from dovo.engine.run_log import append_run_log_event
+from dovo.engine.session_log import append_session_log_event
 
 
 def auto_publish_step_artifacts(
@@ -127,10 +127,10 @@ class StepCoordinator:
     ) -> StepResult:
         """Notify, log, run one StepExecution, and auto-publish artifacts when it succeeds."""
         safe_notify(self.context.observer, "on_step_start", idx, total, step)
-        append_run_log_event(
+        append_session_log_event(
             run_context.session_log_dir,
-            RunLogEvent(
-                event=RunLogEventType.STEP_START,
+            SessionLogEvent(
+                event=SessionLogEventType.STEP_START,
                 step_index=idx,
                 step_id=step.id,
                 step_name=step.name,
@@ -171,10 +171,10 @@ class StepCoordinator:
             )
         ).run()
         safe_notify(self.context.observer, "on_step_done", idx, total, step, result)
-        append_run_log_event(
+        append_session_log_event(
             run_context.session_log_dir,
-            RunLogEvent(
-                event=RunLogEventType.STEP_DONE,
+            SessionLogEvent(
+                event=SessionLogEventType.STEP_DONE,
                 step_index=idx,
                 step_id=step.id,
                 step_name=step.name,

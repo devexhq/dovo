@@ -12,7 +12,7 @@ rules:
     or rich; engine/ imports no cli/; git/ imports no other core/ package; inputs/ imports no catalog or agents;
     catalog/ imports no agents, sessions, engine, cli; artifacts/ imports no engine; agents/ imports no engine;
     sessions/ imports no agents, worktree, catalog, engine, cli.
-  positive_example: 'from dovo.core.sessions import RunLogEvent  # in engine/'
+  positive_example: 'from dovo.core.sessions import SessionLogEvent  # in engine/'
   negative_example: 'from dovo.engine.engine import Engine  # upward import in core/sessions/'
   citation: docs/agents/architecture.md#package-boundaries-import-direction
 - id: ARCH-002
@@ -356,10 +356,10 @@ rules:
   guideline: Never instantiate a repository or DovoDb inside loops or test helpers. Inject pre-initialized instances to
     prevent N+1 SQLite connection/migration checks.
   evaluation_criteria: Detect repository or DovoDb instantiations inside for/while loops or inside reusable helper functions.
-  positive_example: 'repo = RunsRepository(path)
+  positive_example: 'repo = SessionsRepository(path)
 
     for item in items: repo.create(item)'
-  negative_example: 'for item in items: repo = RunsRepository(path); repo.create(item)'
+  negative_example: 'for item in items: repo = SessionsRepository(path); repo.create(item)'
   citation: docs/agents/architecture.md#local-sqlite-datadb
 - id: PERF-002
   title: Database Migration Hygiene and Consumer Call Sites
@@ -746,7 +746,7 @@ rules:
     parameters against what production passes. No MagicMock in helper signatures.
   evaluation_criteria: Inspect type annotations in tests/helpers/ and fixture functions. Flag missing types or MagicMock in
     signatures.
-  positive_example: 'def create_test_session(db: DovoDb, session_id: str) -> RunRecord: ...'
+  positive_example: 'def create_test_session(db: DovoDb, session_id: str) -> SessionRecord: ...'
   negative_example: 'def create_test_session(db: Any, mock_obj: MagicMock) -> Any: ...'
   citation: docs/agents/testing.md#core-testing-rules
 - id: TEST-015
@@ -793,13 +793,13 @@ rules:
     with zero covering tests. Trivial properties (single field return, no branch)
     require only a happy-path read.
   positive_example: |-
-    class RunStateStoreTests:
+    class SessionStateStoreTests:
         def test_save_persists_state_and_increments_revision(self): ...
         def test_save_with_stale_revision_returns_conflict_error(self): ...
         def test_load_returns_persisted_state(self): ...
         def test_load_with_corrupt_json_returns_classified_failure(self): ...
   negative_example: |-
-    class RunStateStoreTests:
+    class SessionStateStoreTests:
         def test__validate_schema_version(self): ...  # dedicated test for private method
         def test_save_persists_state(self): ...  # happy path only, no unhappy path for save()
   citation: docs/agents/testing.md#core-testing-rules

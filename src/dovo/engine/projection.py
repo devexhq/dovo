@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Iterator
 
-from dovo.core.db import RunRecord
+from dovo.core.db import SessionRecord
 from dovo.engine.executors.metadata import previous_step_metadata_from_result
 from dovo.engine.executors.models import PreviousStepMetadata, StepResult
 from dovo.engine.state_models import (
@@ -13,8 +13,8 @@ from dovo.engine.state_models import (
     ExecutionLeafNode,
     ExecutionStateTree,
     NodeState,
-    RunJsonPayload,
-    RunLifecycle,
+    SessionJsonPayload,
+    SessionLifecycle,
 )
 
 _TERMINAL_LEAF_STATES = TERMINAL_NODE_STATES - {NodeState.CANCELLED}
@@ -68,13 +68,13 @@ def terminal_step_metadata(state: ExecutionStateTree) -> list[PreviousStepMetada
     ]
 
 
-def build_run_json_payload(state: ExecutionStateTree, row: RunRecord) -> RunJsonPayload:
-    """Project the execution tree and its run row into the run.json payload, with results flattened from the tree."""
-    return RunJsonPayload(
+def build_session_json_payload(state: ExecutionStateTree, row: SessionRecord) -> SessionJsonPayload:
+    """Project the execution tree and its session row into the session.json payload, with results flattened from the tree."""
+    return SessionJsonPayload(
         revision=state.revision,
         manifest=state.manifest,
         nodes=state.nodes,
-        lifecycle=RunLifecycle(
+        lifecycle=SessionLifecycle(
             status=row.status,
             error_message=row.error_message,
             started_at=row.started_at,

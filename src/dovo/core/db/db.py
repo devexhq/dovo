@@ -8,7 +8,7 @@ from dovo.core.db.connection import get_engine
 from dovo.core.db.migrations import init_database
 from dovo.core.db.repositories.artifacts import ArtifactsRepository
 from dovo.core.db.repositories.costs import CostsRepository
-from dovo.core.db.repositories.runs import RunsRepository
+from dovo.core.db.repositories.sessions import SessionsRepository
 from dovo.core.db.repositories.worktrees import WorktreesRepository
 
 
@@ -26,7 +26,7 @@ class DovoDb:
         self.project_id = project_id
         self._db_engine = db_engine
         self._worktrees: WorktreesRepository | None = None
-        self._runs: RunsRepository | None = None
+        self._sessions: SessionsRepository | None = None
         self._costs: CostsRepository | None = None
         self._artifacts: ArtifactsRepository | None = None
 
@@ -48,13 +48,13 @@ class DovoDb:
         return self._worktrees
 
     @property
-    def runs(self) -> RunsRepository:
-        """Repository managing blueprint execution runs."""
-        if self._runs is None:
-            self._runs = RunsRepository(
+    def sessions(self) -> SessionsRepository:
+        """Repository managing session records."""
+        if self._sessions is None:
+            self._sessions = SessionsRepository(
                 db_path=self.database_file, project_id=self.project_id, auto_init=True, db_engine=self.db_engine
             )
-        return self._runs
+        return self._sessions
 
     @property
     def costs(self) -> CostsRepository:
@@ -78,7 +78,7 @@ class DovoDb:
         """Run migrations and mark all child repositories as initialized."""
         path = init_database(self.database_file)
         self.worktrees._initialized = True
-        self.runs._initialized = True
+        self.sessions._initialized = True
         self.costs._initialized = True
         self.artifacts._initialized = True
         return path

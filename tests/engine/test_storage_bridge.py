@@ -63,7 +63,7 @@ class CreateStorageBridgeTests:
         bridge_path.mkdir(parents=True)
         sentinel_path = bridge_path / "sentinel.txt"
         sentinel_path.write_text("do not delete", encoding="utf-8")
-        session_file = engine_paths.session_dir(SESSION_ID) / "run.json"
+        session_file = engine_paths.session_dir(SESSION_ID) / "session.json"
         session_file.parent.mkdir(parents=True)
         session_file.write_text("preserve me too", encoding="utf-8")
         warnings: list[str] = []

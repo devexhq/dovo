@@ -11,7 +11,7 @@ from rich.text import Text
 from dovo.cli.ui.formatters.common import build_error_panel
 from dovo.cli.ui.formatters.history.common import (
     build_metadata_table,
-    build_run_summary,
+    build_session_summary,
 )
 from dovo.cli.ui.formatters.history.history_views import HistoryShowView
 from dovo.common.types import ComponentFormatter
@@ -36,7 +36,7 @@ def _render_show_error(errors: list[str], fixes: list[str] | None = None) -> Pan
 
 def _render_show_error_panel(view: HistoryShowView) -> Panel | None:
     """Check and render error panels for session show operation."""
-    if view.status == HistoryShowStatus.NOT_FOUND or (view.run is None and not view.errors):
+    if view.status == HistoryShowStatus.NOT_FOUND or (view.session is None and not view.errors):
         return _render_show_not_found(view.session_id, view.fixes)
 
     if view.errors:
@@ -47,19 +47,19 @@ def _render_show_error_panel(view: HistoryShowView) -> Panel | None:
 
 def _render_show_run(view: HistoryShowView) -> Any:
     """Render detailed session metadata panel, error panel, and step timeline."""
-    if view.run is None:
+    if view.session is None:
         return Text("")
 
     renderables: list[Any] = [
         Panel(
-            build_metadata_table(view.run),
-            title=f"Session Metadata: {view.run.session_id}",
+            build_metadata_table(view.session),
+            title=f"Session Metadata: {view.session.session_id}",
             border_style="blue",
         )
     ]
 
-    if view.run.error_message:
-        renderables.append(Panel(view.run.error_message, title="Error Details", border_style="red"))
+    if view.session.error_message:
+        renderables.append(Panel(view.session.error_message, title="Error Details", border_style="red"))
 
     if view.log_files:
         renderables.append(
@@ -79,13 +79,13 @@ class HistoryShowFormatter(ComponentFormatter[HistoryShowResult, HistoryShowView
             data: Domain HistoryShowResult instance.
 
         Returns:
-            HistoryShowView containing the mapped run summary and session log details.
+            HistoryShowView containing the mapped session summary and session log details.
         """
-        run_summary = build_run_summary(data.run) if data.run is not None else None
+        session_summary = build_session_summary(data.session) if data.session is not None else None
         return HistoryShowView(
             status=data.status,
             session_id=data.session_id,
-            run=run_summary,
+            session=session_summary,
             log_files=list(data.log_files),
             log_snippet=list(data.log_snippet),
             errors=list(data.errors),
@@ -100,7 +100,7 @@ class HistoryShowFormatter(ComponentFormatter[HistoryShowResult, HistoryShowView
         if error_panel is not None:
             return error_panel
 
-        if view.run is not None:
+        if view.session is not None:
             return _render_show_run(view)
 
         return Text("")

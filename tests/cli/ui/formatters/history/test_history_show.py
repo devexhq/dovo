@@ -6,10 +6,10 @@ from typing import Any
 
 import pytest
 
-from dovo.cli.ui.formatters.history.common import format_run_duration
+from dovo.cli.ui.formatters.history.common import format_session_duration
 from dovo.cli.ui.formatters.history.history_show import HistoryShowFormatter
-from dovo.cli.ui.formatters.history.history_views import HistoryShowView, RunSummaryView
-from dovo.core.db import RunRecord, RunStatus
+from dovo.cli.ui.formatters.history.history_views import HistoryShowView, SessionSummaryView
+from dovo.core.db import SessionRecord, SessionStatus
 from dovo.core.sessions import HistoryShowResult, HistoryShowStatus
 from tests.harness.formatter import (
     FormatterCase,
@@ -19,17 +19,17 @@ from tests.harness.formatter import (
 )
 
 
-def _sample_run_record(
+def _sample_session_record(
     *,
     session_id: str = "sess-12345678",
     blueprint_name: str = "deploy-blueprint",
-    status: RunStatus = RunStatus.COMPLETED,
+    status: SessionStatus = SessionStatus.COMPLETED,
     branch_name: str | None = "feature/test",
     started_at: str | None = "2026-08-19 01:00:00",
     completed_at: str | None = "2026-08-19 01:00:10",
     error_message: str | None = None,
-) -> RunRecord:
-    return RunRecord(
+) -> SessionRecord:
+    return SessionRecord(
         id=1,
         session_id=session_id,
         blueprint_key=blueprint_name,
@@ -42,7 +42,7 @@ def _sample_run_record(
     )
 
 
-def _make_run_summary_view(**overrides: Any) -> RunSummaryView:
+def _make_session_summary_view(**overrides: Any) -> SessionSummaryView:
     defaults: dict[str, Any] = {
         "session_id": "sess-12345678",
         "blueprint_name": "deploy-blueprint",
@@ -54,14 +54,14 @@ def _make_run_summary_view(**overrides: Any) -> RunSummaryView:
         "error_message": None,
     }
     defaults.update(overrides)
-    return RunSummaryView(**defaults)
+    return SessionSummaryView(**defaults)
 
 
 def _make_history_show_view(**overrides: Any) -> HistoryShowView:
     defaults: dict[str, Any] = {
         "status": HistoryShowStatus.OK,
         "session_id": "sess-12345678",
-        "run": _make_run_summary_view(),
+        "session": _make_session_summary_view(),
         "log_files": [],
         "log_snippet": [],
         "errors": [],
@@ -73,25 +73,27 @@ def _make_history_show_view(**overrides: Any) -> HistoryShowView:
 
 
 COMPLETED_RUN = FormatterCase(
-    data=HistoryShowResult(status=HistoryShowStatus.OK, session_id="sess-12345678", run=_sample_run_record()),
+    data=HistoryShowResult(status=HistoryShowStatus.OK, session_id="sess-12345678", session=_sample_session_record()),
     view=_make_history_show_view(),
-    render_expectations=["sess-12345678", "deploy-blueprint", "feature/test", format_run_duration(10.0)],
+    render_expectations=["sess-12345678", "deploy-blueprint", "feature/test", format_session_duration(10.0)],
 )
 
 FAILED_RUN_WITH_ERROR = FormatterCase(
     data=HistoryShowResult(
         status=HistoryShowStatus.OK,
         session_id="sess-12345678",
-        run=_sample_run_record(status=RunStatus.FAILED, error_message="Step 'checkout' failed with exit code 1."),
+        session=_sample_session_record(
+            status=SessionStatus.FAILED, error_message="Step 'checkout' failed with exit code 1."
+        ),
     ),
     view=_make_history_show_view(
-        run=_make_run_summary_view(status="failed", error_message="Step 'checkout' failed with exit code 1.")
+        session=_make_session_summary_view(status="failed", error_message="Step 'checkout' failed with exit code 1.")
     ),
     render_expectations=[
         "sess-12345678",
         "deploy-blueprint",
         "feature/test",
-        format_run_duration(10.0),
+        format_session_duration(10.0),
         "Step 'checkout' failed with exit code 1.",
     ],
 )
@@ -100,14 +102,14 @@ PAUSED_RUN_WITH_ERROR = FormatterCase(
     data=HistoryShowResult(
         status=HistoryShowStatus.OK,
         session_id="sess-12345678",
-        run=_sample_run_record(
-            status=RunStatus.PAUSED,
+        session=_sample_session_record(
+            status=SessionStatus.PAUSED,
             completed_at=None,
             error_message="Step 'step-2' failed: Waiting for approval",
         ),
     ),
     view=_make_history_show_view(
-        run=_make_run_summary_view(
+        session=_make_session_summary_view(
             status="paused",
             completed_at=None,
             duration_seconds=None,
@@ -122,13 +124,13 @@ PAUSED_RUN_WITH_ERROR = FormatterCase(
     ],
 )
 
-_LOG_FILES = ["/logs/sess-12345678/01_build_attempt_1.stdout.log", "/logs/sess-12345678/run.log"]
+_LOG_FILES = ["/logs/sess-12345678/01_build_attempt_1.stdout.log", "/logs/sess-12345678/session.log"]
 _LOG_SNIPPET = ["[2026-08-19T01:00:01+00:00] step_start step_id=build"]
 RUN_WITH_LOGS = FormatterCase(
     data=HistoryShowResult(
         status=HistoryShowStatus.OK,
         session_id="sess-12345678",
-        run=_sample_run_record(),
+        session=_sample_session_record(),
         log_files=_LOG_FILES,
         log_snippet=_LOG_SNIPPET,
     ),
@@ -138,13 +140,13 @@ RUN_WITH_LOGS = FormatterCase(
 
 NOT_FOUND = FormatterCase(
     data=HistoryShowResult(status=HistoryShowStatus.NOT_FOUND, session_id="nonexistent-sess"),
-    view=_make_history_show_view(status=HistoryShowStatus.NOT_FOUND, session_id="nonexistent-sess", run=None),
+    view=_make_history_show_view(status=HistoryShowStatus.NOT_FOUND, session_id="nonexistent-sess", session=None),
     render_expectations=["nonexistent-sess"],
 )
 
 SHOW_ERROR = FormatterCase(
     data=HistoryShowResult(status=HistoryShowStatus.OK, session_id="sess-1", errors=["Database locked"]),
-    view=_make_history_show_view(session_id="sess-1", run=None, errors=["Database locked"]),
+    view=_make_history_show_view(session_id="sess-1", session=None, errors=["Database locked"]),
     render_expectations=["Database locked"],
 )
 
@@ -163,7 +165,7 @@ HISTORY_SHOW_PAYLOAD_CASES = [
         {
             "status": "ok",
             "session_id": "sess-12345678",
-            "run": {
+            "session": {
                 "session_id": "sess-12345678",
                 "blueprint_name": "deploy-blueprint",
                 "status": "completed",
@@ -186,7 +188,7 @@ HISTORY_SHOW_PAYLOAD_CASES = [
         {
             "status": "ok",
             "session_id": "sess-12345678",
-            "run": {
+            "session": {
                 "session_id": "sess-12345678",
                 "blueprint_name": "deploy-blueprint",
                 "status": "failed",
@@ -209,7 +211,7 @@ HISTORY_SHOW_PAYLOAD_CASES = [
         {
             "status": "ok",
             "session_id": "sess-12345678",
-            "run": {
+            "session": {
                 "session_id": "sess-12345678",
                 "blueprint_name": "deploy-blueprint",
                 "status": "paused",
@@ -232,7 +234,7 @@ HISTORY_SHOW_PAYLOAD_CASES = [
         {
             "status": "ok",
             "session_id": "sess-12345678",
-            "run": {
+            "session": {
                 "session_id": "sess-12345678",
                 "blueprint_name": "deploy-blueprint",
                 "status": "completed",
@@ -244,7 +246,7 @@ HISTORY_SHOW_PAYLOAD_CASES = [
             },
             "log_files": [
                 "/logs/sess-12345678/01_build_attempt_1.stdout.log",
-                "/logs/sess-12345678/run.log",
+                "/logs/sess-12345678/session.log",
             ],
             "log_snippet": ["[2026-08-19T01:00:01+00:00] step_start step_id=build"],
             "errors": [],
@@ -258,7 +260,7 @@ HISTORY_SHOW_PAYLOAD_CASES = [
         {
             "status": "not_found",
             "session_id": "nonexistent-sess",
-            "run": None,
+            "session": None,
             "log_files": [],
             "log_snippet": [],
             "errors": [],
@@ -272,7 +274,7 @@ HISTORY_SHOW_PAYLOAD_CASES = [
         {
             "status": "ok",
             "session_id": "sess-1",
-            "run": None,
+            "session": None,
             "log_files": [],
             "log_snippet": [],
             "errors": ["Database locked"],

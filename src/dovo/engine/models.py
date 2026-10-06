@@ -14,7 +14,7 @@ from dovo.common.filesystem import WorkspacePaths
 from dovo.common.models import BaseResult
 from dovo.core.agents.models import ResolvedAgentSettings
 from dovo.core.catalog.definitions import LoopStepBlock, StepDefinition
-from dovo.core.db import RunRecord, RunStatus
+from dovo.core.db import SessionRecord, SessionStatus
 from dovo.core.db.repositories.artifacts import ArtifactsRepository
 from dovo.core.worktree import WorktreeSession
 from dovo.engine.executors.models import ConditionEvaluationResult, ExecutionIdentity, StepResult
@@ -50,7 +50,7 @@ class RunRequest:
 
 @dataclass(frozen=True)
 class RunStartConfig:
-    """Resolved run options persisted on the run row at start."""
+    """Resolved run options persisted on the session row at start."""
 
     blueprint_tier: str | None
     commit_sha: str | None
@@ -143,7 +143,7 @@ class AgentSettingsResolution(BaseResult):
 
 @dataclass(frozen=True)
 class RunSettings:
-    """Settings and collaborators resolved from the run row, consumed by Workspace and StepCoordinator.
+    """Settings and collaborators resolved from the session row, consumed by Workspace and StepCoordinator.
 
     ``agent`` comes from effective config, not the row: the row only overrides its provider.
     """
@@ -246,7 +246,7 @@ class RunOutcome(BaseModel):
 
     model_config = {"extra": "forbid", "strict": True}
 
-    status: RunStatus
+    status: SessionStatus
     step_results: list[StepResult] = Field(default_factory=list)
     errors: list[str] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
@@ -258,15 +258,15 @@ class RunOutcome(BaseModel):
     @property
     def ok(self) -> bool:
         """Return True when the run completed successfully."""
-        return self.status == RunStatus.COMPLETED and not self.errors
+        return self.status == SessionStatus.COMPLETED and not self.errors
 
 
 class BlueprintRunResult(BaseResult):
     """Unified result for task and blueprint execution."""
 
-    run_record: RunRecord | None = None
+    session_record: SessionRecord | None = None
 
     @property
     def ok(self) -> bool:
         """Return True if run completed without fatal errors."""
-        return self.run_record is not None and len(self.errors) == 0
+        return self.session_record is not None and len(self.errors) == 0

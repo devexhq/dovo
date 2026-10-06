@@ -7,7 +7,7 @@ from pathlib import Path
 
 from dovo.common.filesystem.models import RepositoryPaths
 from dovo.common.lock import LockTimeoutError, WorkspaceLock
-from dovo.core.db import RunsRepository, WorktreesRepository, WorktreeStatus
+from dovo.core.db import SessionsRepository, WorktreesRepository, WorktreeStatus
 from dovo.core.git.runner import GitRunner
 from dovo.core.worktree.models import (
     PruneAction,
@@ -28,19 +28,19 @@ class WorktreePruner:
         self,
         path: Path,
         db: WorktreesRepository,
-        runs_db: RunsRepository | None = None,
+        sessions_db: SessionsRepository | None = None,
     ) -> None:
         """Initialize pruner bound to repository root and database.
 
         Args:
             path: Repository root directory.
             db: WorktreesRepository instance.
-            runs_db: Optional RunsRepository instance for run liveness checks.
+            sessions_db: Optional SessionsRepository instance for run liveness checks.
         """
         self.path = path.expanduser().resolve()
         self.db = db
-        self.runs_db = runs_db
-        self.detector = WorktreeDetector(self.path, self.db, runs_db=self.runs_db)
+        self.sessions_db = sessions_db
+        self.detector = WorktreeDetector(self.path, self.db, sessions_db=self.sessions_db)
 
     def _prune_stale_worktree_ref(self, item: StaleWorktreeItem, *, dry_run: bool) -> PrunedItem:
         """Prune administrative worktree registrations."""
@@ -330,7 +330,7 @@ def prune_stale_worktrees(
     *,
     dry_run: bool = False,
     force: bool = False,
-    runs_db: RunsRepository | None = None,
+    sessions_db: SessionsRepository | None = None,
 ) -> WorktreePruneResult:
     """Non-raising helper to execute safe worktree pruning.
 
@@ -339,10 +339,10 @@ def prune_stale_worktrees(
         db: WorktreesRepository instance.
         dry_run: When True, simulate without mutations.
         force: When True, delete dirty orphaned directories.
-        runs_db: Optional RunsRepository instance for run liveness checks.
+        sessions_db: Optional SessionsRepository instance for run liveness checks.
 
     Returns:
         Structured WorktreePruneResult.
     """
-    pruner = WorktreePruner(path, db, runs_db=runs_db)
+    pruner = WorktreePruner(path, db, sessions_db=sessions_db)
     return pruner.prune(dry_run=dry_run, force=force)

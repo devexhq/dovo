@@ -8,7 +8,7 @@ import pytest
 
 from dovo.common.filesystem.models import RepositoryPaths, WorkspacePaths
 from dovo.common.filesystem.services.global_root import resolve_global_paths
-from dovo.core.db import RunsRepository
+from dovo.core.db import SessionsRepository
 from dovo.core.db.repositories.artifacts import ArtifactsRepository
 from dovo.core.project.services.storage import resolve_workspace_paths
 from tests.harness.builders import WorkspaceBuilder
@@ -32,9 +32,9 @@ def engine_paths(engine_workspace: Path) -> WorkspacePaths:
 
 
 @pytest.fixture
-def runs_repo(engine_paths: WorkspacePaths) -> RunsRepository:
-    """RunsRepository bound to engine_paths' project database."""
-    return RunsRepository(db_path=engine_paths.database_file, project_id=engine_paths.project_id)
+def sessions_repo(engine_paths: WorkspacePaths) -> SessionsRepository:
+    """SessionsRepository bound to engine_paths' project database."""
+    return SessionsRepository(db_path=engine_paths.database_file, project_id=engine_paths.project_id)
 
 
 @pytest.fixture

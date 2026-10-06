@@ -7,7 +7,7 @@ from collections.abc import Callable
 import pytest
 
 from dovo.common.filesystem.models import WorkspacePaths
-from dovo.core.db import RunsRepository, RunStatus
+from dovo.core.db import SessionsRepository, SessionStatus
 from dovo.engine.models import FailurePrompter, RunObserver, RunOutcome
 
 
@@ -18,11 +18,11 @@ def stub_drive_run(
     """Replace drive_run so Engine persistence runs without executing steps; the callable sets the returned outcome."""
 
     def _install(outcome: RunOutcome | None = None) -> None:
-        result = outcome or RunOutcome(status=RunStatus.COMPLETED, worktree_path=engine_paths.root_dir)
+        result = outcome or RunOutcome(status=SessionStatus.COMPLETED, worktree_path=engine_paths.root_dir)
 
         def fake_drive_run(
             paths: WorkspacePaths,
-            runs: RunsRepository,
+            sessions: SessionsRepository,
             session_id: str,
             *,
             observer: RunObserver | None,

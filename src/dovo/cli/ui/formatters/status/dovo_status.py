@@ -78,7 +78,7 @@ class DovoStatusFormatter(ComponentFormatter[DovoStatusResult, StatusView]):
             max_active_worktrees=max_worktrees,
             valid_catalog_items=valid_items,
             total_catalog_items=total_items,
-            total_runs=data.database.total_runs,
+            total_sessions=data.database.total_sessions,
             errors=list(data.errors),
             warnings=list(data.warnings),
             remediations=list(data.fixes),

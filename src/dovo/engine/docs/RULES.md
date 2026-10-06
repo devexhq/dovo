@@ -7,7 +7,7 @@
   Dependencies flow strictly one way: common/ -> core/ -> engine/ -> cli/. Within core/: project/ -> {db,git,worktree,catalog,inputs,sessions,status,artifacts}/ -> agents/ -> diagnostics/. Upward imports are strictly prohibited.
 
 ```python
-# ✅ DO: from dovo.core.sessions import RunLogEvent  # in engine/
+# ✅ DO: from dovo.core.sessions import SessionLogEvent  # in engine/
 # ❌ DO NOT: from dovo.engine.engine import Engine  # upward import in core/sessions/
 ```
 
@@ -153,9 +153,9 @@ def is_running(self) -> bool: return self._proc is not None and self._proc.poll(
 
 ```python
 # ✅ DO:
-repo = RunsRepository(path)
+repo = SessionsRepository(path)
 for item in items: repo.create(item)
-# ❌ DO NOT: for item in items: repo = RunsRepository(path); repo.create(item)
+# ❌ DO NOT: for item in items: repo = SessionsRepository(path); repo.create(item)
 ```
 
 - **[PERF-003] Indexed Column Queries vs O(n) In-Memory Lookups (WARNING):**

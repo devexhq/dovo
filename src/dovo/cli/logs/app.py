@@ -13,7 +13,7 @@ from .commands.show import logs_show_command
 
 logs_app = typer.Typer(
     name="logs",
-    help="Show a session's run timeline or per-step output logs.",
+    help="Show a session's session timeline or per-step output logs.",
     invoke_without_command=True,
     # Group callbacks stop option parsing at the first positional; allow options after <session_id>.
     context_settings={"allow_interspersed_args": True},
@@ -39,7 +39,7 @@ def logs_callback(
         help="Presentation format ('terminal' or 'json').",
     ),
 ) -> None:
-    """Show a session's run timeline, or one step's raw stdout/stderr with --step."""
+    """Show a session's session timeline, or one step's raw stdout/stderr with --step."""
     context: CliContext = ctx.obj["context"]
     result = logs_show_command(
         context,

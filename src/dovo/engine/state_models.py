@@ -1,4 +1,4 @@
-"""Versioned execution-state tree persisted on a run row, and its load/save result types."""
+"""Versioned execution-state tree persisted on a session row, and its load/save result types."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ from typing import Annotated, Literal
 from pydantic import BaseModel, Field
 
 from dovo.common.models import BaseResult, FailurePolicy
-from dovo.core.db import RunStatus
+from dovo.core.db import SessionStatus
 from dovo.engine.executors.models import StepResult
 from dovo.engine.models import DefinitionsManifest
 
@@ -96,12 +96,12 @@ class ExecutionStateTree(BaseModel):
     nodes: list[ExecutionPlanNode] = Field(default_factory=list)
 
 
-class RunLifecycle(BaseModel):
-    """Row-derived lifecycle outcome embedded in run.json."""
+class SessionLifecycle(BaseModel):
+    """Row-derived lifecycle outcome embedded in session.json."""
 
     model_config = {"extra": "forbid", "strict": True}
 
-    status: RunStatus
+    status: SessionStatus
     error_message: str | None = None
     started_at: str
     completed_at: str | None = None
@@ -109,8 +109,8 @@ class RunLifecycle(BaseModel):
     worktree_kept: bool = False
 
 
-class RunJsonPayload(BaseModel):
-    """Database-derived run.json projection: frozen manifest, execution tree, lifecycle, and flattened results."""
+class SessionJsonPayload(BaseModel):
+    """Database-derived session.json projection: frozen manifest, execution tree, lifecycle, and flattened results."""
 
     model_config = {"extra": "forbid", "strict": True}
 
@@ -118,32 +118,32 @@ class RunJsonPayload(BaseModel):
     revision: int
     manifest: DefinitionsManifest
     nodes: list[ExecutionPlanNode] = Field(default_factory=list)
-    lifecycle: RunLifecycle
+    lifecycle: SessionLifecycle
     results: list[StepResult] = Field(default_factory=list)
 
 
-class RunStateWriteStatus(StrEnum):
-    """Classified outcomes for RunStateStore.initialize and RunStateStore.save."""
+class SessionStateWriteStatus(StrEnum):
+    """Classified outcomes for SessionStateStore.initialize and SessionStateStore.save."""
 
     OK = "ok"
     NOT_FOUND = "not_found"
     REVISION_CONFLICT = "revision_conflict"
 
 
-class RunStateWriteResult(BaseResult):
-    """Result of committing an execution-state revision to a run row."""
+class SessionStateWriteResult(BaseResult):
+    """Result of committing an execution-state revision to a session row."""
 
-    status: RunStateWriteStatus
+    status: SessionStateWriteStatus
     state: ExecutionStateTree | None = None
 
     @property
     def ok(self) -> bool:
         """Return True when the revision was committed."""
-        return self.status == RunStateWriteStatus.OK
+        return self.status == SessionStateWriteStatus.OK
 
 
-class RunStateLoadStatus(StrEnum):
-    """Classified outcomes for RunStateStore.load."""
+class SessionStateLoadStatus(StrEnum):
+    """Classified outcomes for SessionStateStore.load."""
 
     OK = "ok"
     NOT_FOUND = "not_found"
@@ -153,13 +153,13 @@ class RunStateLoadStatus(StrEnum):
     MISSING_SNAPSHOT = "missing_snapshot"
 
 
-class RunStateLoadResult(BaseResult):
+class SessionStateLoadResult(BaseResult):
     """Result of loading and validating a run's execution state."""
 
-    status: RunStateLoadStatus
+    status: SessionStateLoadStatus
     state: ExecutionStateTree | None = None
 
     @property
     def ok(self) -> bool:
         """Return True when a validated state is available."""
-        return self.status == RunStateLoadStatus.OK
+        return self.status == SessionStateLoadStatus.OK

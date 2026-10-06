@@ -1,4 +1,4 @@
-"""Read persisted run.log timelines and per-attempt step capture files."""
+"""Read persisted session.log timelines and per-attempt step capture files."""
 
 from __future__ import annotations
 
@@ -8,8 +8,8 @@ from typing import NamedTuple
 
 from pydantic import ValidationError
 
-from dovo.common.constants import RUN_LOG_FILENAME
-from dovo.core.sessions.models import LogStreamFilter, RunLogEvent
+from dovo.common.constants import SESSION_LOG_FILENAME
+from dovo.core.sessions.models import LogStreamFilter, SessionLogEvent
 
 _STEP_LOG_NAME_RE = re.compile(
     r"^(?P<index>\d+)_(?P<step_id>.+?)(?:_iter_(?P<iteration>\d+))?_attempt_(?P<attempt>\d+)\.(?P<stream>stdout|stderr)\.log$"
@@ -56,17 +56,17 @@ def list_session_log_files(session_log_dir: Path) -> list[Path]:
     return sorted(p for p in session_log_dir.iterdir() if p.is_file())
 
 
-def read_run_log_events(session_log_dir: Path, *, tail: int | None) -> list[RunLogEvent]:
-    """Parse run.log's JSON lines into RunLogEvents, skipping any unparseable line, then apply tail."""
-    run_log = session_log_dir / RUN_LOG_FILENAME
-    if not run_log.is_file():
+def read_session_log_events(session_log_dir: Path, *, tail: int | None) -> list[SessionLogEvent]:
+    """Parse session.log's JSON lines into RunLogEvents, skipping any unparseable line, then apply tail."""
+    session_log = session_log_dir / SESSION_LOG_FILENAME
+    if not session_log.is_file():
         return []
 
-    events: list[RunLogEvent] = []
+    events: list[SessionLogEvent] = []
     # errors="replace": a write cut short mid-character (disk full, SIGKILL) must not make the file unreadable.
-    for line in run_log.read_text(encoding="utf-8", errors="replace").splitlines():
+    for line in session_log.read_text(encoding="utf-8", errors="replace").splitlines():
         try:
-            events.append(RunLogEvent.model_validate_json(line))
+            events.append(SessionLogEvent.model_validate_json(line))
         except ValidationError:
             # A SIGKILL mid-flush can leave a truncated trailing line.
             continue

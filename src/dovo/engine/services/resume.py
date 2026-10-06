@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 
 from dovo.common.filesystem import WorkspacePaths
 from dovo.core.catalog import Catalog
-from dovo.core.db import RunsRepository
+from dovo.core.db import SessionsRepository
 from dovo.engine.engine import Engine
 from dovo.engine.exceptions import EngineResumeError, EngineRuntimeError
 from dovo.engine.models import BlueprintRunResult, FailurePrompter, RunObserver
@@ -18,7 +18,7 @@ class BlueprintResumeService:
     """Service encapsulating the paused session resume lifecycle."""
 
     paths: WorkspacePaths
-    db: RunsRepository
+    db: SessionsRepository
     session_id: str | None = None
     no_tty: bool = False
     observer: RunObserver | None = None

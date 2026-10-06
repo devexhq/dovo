@@ -30,7 +30,7 @@ from dovo.engine.models import (
 )
 from dovo.engine.step_coordinator import StepCoordinator, auto_publish_step_artifacts
 from tests.harness.builders import StepBuilder
-from tests.harness.runs import NoOpRunObserver
+from tests.harness.sessions import NoOpRunObserver
 
 
 def _paths_for(root: Path) -> WorkspacePaths:

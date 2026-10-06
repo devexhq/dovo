@@ -10,7 +10,7 @@ from rich.text import Text
 from dovo.cli.ui.formatters.common import build_error_panel
 from dovo.cli.ui.formatters.history.common import (
     build_history_table,
-    build_run_summary,
+    build_session_summary,
 )
 from dovo.cli.ui.formatters.history.history_views import HistoryListView
 from dovo.common.types import ComponentFormatter
@@ -18,8 +18,8 @@ from dovo.core.sessions import HistoryListResult
 
 
 def _render_list_runs(view: HistoryListView) -> Any:
-    """Render execution history runs table or empty text alongside optional warnings."""
-    content: Any = build_history_table(view.runs) if view.runs else Text("No execution history found.")
+    """Render execution history sessions table or empty text alongside optional warnings."""
+    content: Any = build_history_table(view.sessions) if view.sessions else Text("No execution history found.")
     if not view.warnings:
         return content
 
@@ -40,13 +40,13 @@ class HistoryListFormatter(ComponentFormatter[HistoryListResult, HistoryListView
             data: Domain HistoryListResult instance.
 
         Returns:
-            HistoryListView containing mapped run summaries with elapsed durations.
+            HistoryListView containing mapped session summaries with elapsed durations.
         """
-        runs = [build_run_summary(run) for run in data.runs]
+        sessions = [build_session_summary(session) for session in data.sessions]
         return HistoryListView(
             status=data.status,
-            runs=runs,
-            total_runs=len(runs),
+            sessions=sessions,
+            total_sessions=len(sessions),
             errors=list(data.errors),
             warnings=list(data.warnings),
             fixes=list(data.fixes),

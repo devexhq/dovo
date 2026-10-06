@@ -8,7 +8,7 @@ from pathlib import Path
 
 from dovo.common.filesystem.models import RepositoryPaths
 from dovo.common.lock import WorkspaceLock
-from dovo.core.db import RunRecord, RunsRepository, RunStatus
+from dovo.core.db import SessionRecord, SessionsRepository, SessionStatus
 from dovo.core.sessions.models import ReconciliationResult
 
 STALE_RUN_ERROR_MESSAGE = "Session interrupted by abnormal process termination"
@@ -81,9 +81,9 @@ def _is_pid_reused(pid: int, session_start: datetime | None, current_pid: int) -
     return bool(proc_start and proc_start > session_start + timedelta(seconds=1))
 
 
-def is_run_stale(run: RunRecord, current_pid: int | None = None) -> bool:
-    """Determine whether a RUNNING run record represents an interrupted or dead session."""
-    if run.status != RunStatus.RUNNING:
+def is_run_stale(run: SessionRecord, current_pid: int | None = None) -> bool:
+    """Determine whether a RUNNING session record represents an interrupted or dead session."""
+    if run.status != SessionStatus.RUNNING:
         return False
 
     if run.pid is None or not is_pid_alive(run.pid):
@@ -94,25 +94,25 @@ def is_run_stale(run: RunRecord, current_pid: int | None = None) -> bool:
     return _is_pid_reused(run.pid, session_start, eff_current_pid)
 
 
-def _resolve_runs_repo_and_root(
-    runs_repo: RunsRepository,
+def _resolve_sessions_repo_and_root(
+    sessions_repo: SessionsRepository,
     path: Path | None,
-) -> tuple[RunsRepository, Path]:
-    """Resolve RunsRepository and root path from input repository target."""
-    root = path or runs_repo.path
+) -> tuple[SessionsRepository, Path]:
+    """Resolve SessionsRepository and root path from input repository target."""
+    root = path or sessions_repo.path
     if root is None:
-        raise ValueError("A workspace path must be provided when passing a detached RunsRepository.")
-    return runs_repo, root
+        raise ValueError("A workspace path must be provided when passing a detached SessionsRepository.")
+    return sessions_repo, root
 
 
-def _reconcile_stale_records(runs_repo: RunsRepository) -> list[RunRecord]:
-    """Inspect running run records and mark stale ones as failed."""
-    reconciled: list[RunRecord] = []
-    for run in runs_repo.list(status=RunStatus.RUNNING):
+def _reconcile_stale_records(sessions_repo: SessionsRepository) -> list[SessionRecord]:
+    """Inspect running session records and mark stale ones as failed."""
+    reconciled: list[SessionRecord] = []
+    for run in sessions_repo.list(status=SessionStatus.RUNNING):
         if is_run_stale(run):
-            updated = runs_repo.update_status(
+            updated = sessions_repo.update_status(
                 run.session_id,
-                status=RunStatus.FAILED,
+                status=SessionStatus.FAILED,
                 error_message=STALE_RUN_ERROR_MESSAGE,
             )
             if updated is not None:
@@ -120,12 +120,12 @@ def _reconcile_stale_records(runs_repo: RunsRepository) -> list[RunRecord]:
     return reconciled
 
 
-def reconcile_stale_runs(db: RunsRepository, path: Path | None = None) -> ReconciliationResult:
-    """Inspect and reconcile stale RUNNING run records into FAILED status."""
+def reconcile_stale_sessions(db: SessionsRepository, path: Path | None = None) -> ReconciliationResult:
+    """Inspect and reconcile stale RUNNING session records into FAILED status."""
     try:
-        runs_repo, root_dir = _resolve_runs_repo_and_root(db, path)
+        sessions_repo, root_dir = _resolve_sessions_repo_and_root(db, path)
         with WorkspaceLock(RepositoryPaths.from_root(root_dir).lock_file):
-            reconciled = _reconcile_stale_records(runs_repo)
+            reconciled = _reconcile_stale_records(sessions_repo)
 
         warning = format_reconciliation_warning(reconciled)
         return ReconciliationResult(reconciled=reconciled, warning=warning)
@@ -134,8 +134,8 @@ def reconcile_stale_runs(db: RunsRepository, path: Path | None = None) -> Reconc
         return ReconciliationResult()
 
 
-def format_reconciliation_warning(reconciled: list[RunRecord]) -> str | None:
-    """Format non-intrusive warning message for reconciled stale runs."""
+def format_reconciliation_warning(reconciled: list[SessionRecord]) -> str | None:
+    """Format non-intrusive warning message for reconciled stale sessions."""
     if not reconciled:
         return None
 

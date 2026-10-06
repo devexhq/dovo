@@ -7,7 +7,7 @@
   Dependencies flow strictly one way: common/ -> core/ -> engine/ -> cli/. Within core/: project/ -> {db,git,worktree,catalog,inputs,sessions,status,artifacts}/ -> agents/ -> diagnostics/. Upward imports are strictly prohibited.
 
 ```python
-# ✅ DO: from dovo.core.sessions import RunLogEvent  # in engine/
+# ✅ DO: from dovo.core.sessions import SessionLogEvent  # in engine/
 # ❌ DO NOT: from dovo.engine.engine import Engine  # upward import in core/sessions/
 ```
 
@@ -129,9 +129,9 @@ def is_running(self) -> bool: return self._proc is not None and self._proc.poll(
 
 ```python
 # ✅ DO:
-repo = RunsRepository(path)
+repo = SessionsRepository(path)
 for item in items: repo.create(item)
-# ❌ DO NOT: for item in items: repo = RunsRepository(path); repo.create(item)
+# ❌ DO NOT: for item in items: repo = SessionsRepository(path); repo.create(item)
 ```
 
 - **[FS-001] Atomic File Writes via Temporary Sibling (BLOCKER):**
@@ -293,7 +293,7 @@ assert 'wf_abcdef12' in rendered  # view value, not a caption
   Annotate test helpers and fixtures as tightly as production code. Give fixtures real return types and type helper parameters against what production passes. No MagicMock in helper signatures.
 
 ```python
-# ✅ DO: def create_test_session(db: DovoDb, session_id: str) -> RunRecord: ...
+# ✅ DO: def create_test_session(db: DovoDb, session_id: str) -> SessionRecord: ...
 # ❌ DO NOT: def create_test_session(db: Any, mock_obj: MagicMock) -> Any: ...
 ```
 
@@ -310,13 +310,13 @@ assert 'wf_abcdef12' in rendered  # view value, not a caption
 
 ```python
 # ✅ DO:
-class RunStateStoreTests:
+class SessionStateStoreTests:
     def test_save_persists_state_and_increments_revision(self): ...
     def test_save_with_stale_revision_returns_conflict_error(self): ...
     def test_load_returns_persisted_state(self): ...
     def test_load_with_corrupt_json_returns_classified_failure(self): ...
 # ❌ DO NOT:
-class RunStateStoreTests:
+class SessionStateStoreTests:
     def test__validate_schema_version(self): ...  # dedicated test for private method
     def test_save_persists_state(self): ...  # happy path only, no unhappy path for save()
 ```

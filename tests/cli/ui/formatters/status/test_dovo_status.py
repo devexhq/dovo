@@ -85,7 +85,7 @@ def _make_status_result(
             exists=True,
             db_path=base / ".dovo" / "data.db",
             is_accessible=True,
-            total_runs=1,
+            total_sessions=1,
         ),
         worktrees=worktrees
         or WorktreeStatusInfo(
@@ -115,7 +115,7 @@ def _make_status_view(**overrides: Any) -> StatusView:
         "max_active_worktrees": 5,
         "valid_catalog_items": 2,
         "total_catalog_items": 2,
-        "total_runs": 1,
+        "total_sessions": 1,
         "errors": [],
         "warnings": [],
         "remediations": [],
@@ -537,7 +537,7 @@ STATUS_PAYLOAD_CASES = [
             "max_active_worktrees": 5,
             "valid_catalog_items": 2,
             "total_catalog_items": 2,
-            "total_runs": 1,
+            "total_sessions": 1,
             "errors": [],
             "warnings": [],
             "remediations": [],
@@ -560,7 +560,7 @@ STATUS_PAYLOAD_CASES = [
             "max_active_worktrees": None,
             "valid_catalog_items": None,
             "total_catalog_items": None,
-            "total_runs": 1,
+            "total_sessions": 1,
             "errors": [],
             "warnings": ["Dovo workspace is not initialized. Run 'dovo init' to configure."],
             "remediations": [

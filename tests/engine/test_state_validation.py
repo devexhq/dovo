@@ -45,7 +45,7 @@ class ValidateLoopStructureTests:
     """[tier-1/unit] validate_loop_structure: report every loop id or iteration body that differs from the snapshot."""
 
     def test_matching_tree_reports_no_errors(self) -> None:
-        """[tier-1/unit] validate_loop_structure: a tree built by RunStateStore.initialize plus one iteration matching loop.do returns []."""
+        """[tier-1/unit] validate_loop_structure: a tree built by SessionStateStore.initialize plus one iteration matching loop.do returns []."""
         assert validate_loop_structure(_tree(), _blueprint()) == []
 
     def test_loop_node_without_loop_definition_reports_id_mismatch(self) -> None:
