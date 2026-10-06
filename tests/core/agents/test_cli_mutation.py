@@ -171,6 +171,7 @@ class SharedMutationAdapterTests:
         resp = adapter.invoke(AgentRequestBuilder().with_worktree_path(git_repo).build())
 
         assert resp.status == AgentResponseStatus.NO_OP
+        assert resp.unified_diff is None
         assert resp.raw_text == "done"
         assert resp.mutation_baseline_ref is not None
         assert resp.errors == []
@@ -185,7 +186,7 @@ class SharedMutationAdapterTests:
         assert resp.raw_text == "done"
         assert resp.mutation_baseline_ref is not None
         assert resp.errors == [
-            "Agent timed out after 10s (provider=unit-test).\nFix:\n- raise agent.timeout_seconds on the blueprint"
+            "Agent timed out after 10s (provider=unit-test).\nFix:\n- raise timeout_seconds on the agent step"
         ]
 
     def test_provider_error(self, git_repo: Path) -> None:
@@ -212,10 +213,10 @@ class SharedMutationAdapterTests:
         assert (git_repo / "README.md").read_text(encoding="utf-8") == "# Test Repo\n"
         assert not (git_repo / "b.txt").exists()
 
-    def test_gate_violation_discard_git_error_appends_to_errors(
+    def test_gate_violation_discard_git_error_precedes_gate_errors(
         self, git_repo: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """A discard() failure after a gate violation appends its detail onto gate errors."""
+        """A discard() failure after a gate violation leads the errors, followed by the gate errors."""
         adapter = UnitTestAdapter(run_fn=_fake_run(edits={"a.txt": "1\n", "b.txt": "2\n"}))
 
         def _fail_discard(*a: object, **k: object) -> None:
@@ -229,10 +230,41 @@ class SharedMutationAdapterTests:
         assert resp.raw_text == "done"
         assert resp.mutation_baseline_ref is not None
         assert resp.errors == [
-            "Patch touches 2 files; max_files is 1.",
             "Agent provider error (AGENT_PROVIDER_ERROR): "
             "failed to discard rejected worktree edit: git reset failed: index locked",
+            "Patch touches 2 files; max_files is 1.",
         ]
+
+    @pytest.mark.parametrize(
+        ("patched_name", "expected_error"),
+        [
+            pytest.param(
+                "resolve_pre_agent_baseline",
+                "Agent provider error (AGENT_PROVIDER_ERROR): failed to resolve worktree baseline: git broke",
+                id="baseline",
+            ),
+            pytest.param(
+                "capture_diff_since",
+                "Agent provider error (AGENT_PROVIDER_ERROR): failed to capture worktree diff: git broke",
+                id="capture-diff",
+            ),
+        ],
+    )
+    def test_git_failure_before_proposal_returns_provider_error(
+        self, git_repo: Path, monkeypatch: pytest.MonkeyPatch, patched_name: str, expected_error: str
+    ) -> None:
+        """[tier-1/integration] CliDirectMutationAdapter.invoke: MutationGitError("git broke") raised by the patched dovo.core.agents.cli_mutation function returns PROVIDER_ERROR with errors == [expected_error]."""
+
+        def _fail_git(*a: object, **k: object) -> None:
+            raise MutationGitError("git broke")
+
+        monkeypatch.setattr(f"dovo.core.agents.cli_mutation.{patched_name}", _fail_git)
+        adapter = UnitTestAdapter(run_fn=_fake_run())
+
+        resp = adapter.invoke(AgentRequestBuilder().with_worktree_path(git_repo).build())
+
+        assert resp.status == AgentResponseStatus.PROVIDER_ERROR
+        assert resp.errors == [expected_error]
 
     def test_gate_violation_preserves_wip(self, git_repo: Path) -> None:
         """Discard restores pre-existing uncommitted WIP, not the last committed tip."""

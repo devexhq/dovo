@@ -8,7 +8,8 @@ from collections.abc import Callable
 from dataclasses import dataclass
 
 from dovo.core.agents.credentials import missing_credential_error, resolve_credential
-from dovo.core.agents.models import AgentRequest, AgentResponse, AgentResponseStatus
+from dovo.core.agents.models import AgentRequest, AgentResponse
+from dovo.core.agents.responses import provider_error_response
 
 
 def elapsed_ms(started: float) -> int:
@@ -29,11 +30,7 @@ class BaseAgentProvider(abc.ABC):
 
         missing = self._credential_preflight()
         if missing is not None:
-            return AgentResponse(
-                status=AgentResponseStatus.PROVIDER_ERROR,
-                duration_ms=elapsed_ms(started),
-                errors=[f"Agent provider error (AGENT_PROVIDER_ERROR): {missing}"],
-            )
+            return provider_error_response(duration_ms=elapsed_ms(started), detail=missing)
 
         return self._invoke(request)
 
