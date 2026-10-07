@@ -5,9 +5,11 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
 from typer.testing import CliRunner
 
 from dovo.cli import app
+from dovo.common.filesystem import Filesystem
 from dovo.common.filesystem.models import RepositoryPaths, WorkspacePaths
 from dovo.common.filesystem.services.global_root import resolve_global_paths
 from dovo.core.db import DovoDb, SessionStatus
@@ -104,3 +106,36 @@ class HistoryListCliIntegrationTests:
             "warnings": [],
             "fixes": [],
         }
+
+    @pytest.mark.parametrize(
+        ("names", "expected_text"),
+        [
+            pytest.param(["DB_PIN"], "[REDACTED:DB_PIN]", id="listed"),
+            pytest.param([], "1234", id="unlisted"),
+        ],
+    )
+    def test_history_list_masks_name_listed_in_config(
+        self,
+        cli_runner: CliRunner,
+        history_workspace: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        names: list[str],
+        expected_text: str,
+    ) -> None:
+        """[tier-3/integration] dovo history list: config environment.sensitive_variables ["DB_PIN"], DB_PIN="1234", row error_message "1234" prints "[REDACTED:DB_PIN]", exit 0; with the name removed from config it prints "1234"."""
+        monkeypatch.setenv("DB_PIN", "1234")
+        paths = _paths_for(history_workspace)
+        db = DovoDb(database_file=paths.database_file, project_id=paths.project_id)
+        db.sessions.create(
+            session_id="session-pin", blueprint_name="task-a", blueprint_key="task-a", status=SessionStatus.COMPLETED
+        )
+        db.sessions.update_status("session-pin", SessionStatus.FAILED, error_message="1234")
+        config = json.loads(paths.config_file.read_text(encoding="utf-8"))
+        config["environment"] = {"sensitive_variables": names}
+        Filesystem.atomic_write_json(paths.config_file, config)
+
+        result = cli_runner.invoke(app, ["-p", str(history_workspace), "history", "list", "--format", "json"])
+
+        assert result.exit_code == 0
+        sessions = json.loads(result.stdout)["payload"]["sessions"]
+        assert [row["error_message"] for row in sessions] == [expected_text]

@@ -171,6 +171,37 @@ class HierarchicalConfigMergeTests:
         assert result.config.agent.temperature == 0.5
         assert result.config.agent.model == "local-llm"
 
+    def test_sensitive_variables_are_unioned_across_tiers_in_precedence_order(
+        self, isolated_workspace: Path, tmp_path: Path, workspace_paths_factory: WorkspacePathsFactory
+    ) -> None:
+        global_root = tmp_path / "global_home"
+        global_paths = resolve_global_paths(global_root)
+        _write_tier_config(
+            global_paths.global_dir / "config.json", {"environment": {"sensitive_variables": ["A", "B"]}}
+        )
+        _write_tier_config(global_paths.user_dir / "config.json", {"environment": {"sensitive_variables": ["B", "C"]}})
+        _write_tier_config(
+            isolated_workspace / ".dovo" / "config.json", {"environment": {"sensitive_variables": ["D"]}}
+        )
+
+        result = load_hierarchical_config(workspace_paths_factory(isolated_workspace, global_root))
+
+        assert result.config is not None
+        assert result.config.environment.sensitive_variables == ["A", "B", "C", "D"]
+
+    def test_tier_without_environment_section_contributes_no_names(
+        self, isolated_workspace: Path, tmp_path: Path, workspace_paths_factory: WorkspacePathsFactory
+    ) -> None:
+        global_root = tmp_path / "global_home"
+        global_paths = resolve_global_paths(global_root)
+        _write_tier_config(global_paths.user_dir / "config.json", {"environment": {"sensitive_variables": ["A"]}})
+        _write_tier_config(isolated_workspace / ".dovo" / "config.json", {"worktree": {"base_ref": "main"}})
+
+        result = load_hierarchical_config(workspace_paths_factory(isolated_workspace, global_root))
+
+        assert result.config is not None
+        assert result.config.environment.sensitive_variables == ["A"]
+
     def test_global_root_none_resolves_via_dovo_home_env(
         self,
         isolated_workspace: Path,
@@ -232,6 +263,22 @@ class HierarchicalConfigErrorTests:
         assert result.tier == tier
         assert result.path == tier_config_path
         assert "max_active_worktrees" in result.errors[0]
+
+    def test_tier_with_bad_sensitive_variable_fails_without_echoing_entry(
+        self, isolated_workspace: Path, tmp_path: Path, workspace_paths_factory: WorkspacePathsFactory
+    ) -> None:
+        global_root = tmp_path / "global_home"
+        global_paths = resolve_global_paths(global_root)
+        _write_tier_config(
+            global_paths.global_dir / "config.json", {"environment": {"sensitive_variables": ["API-KEY=x"]}}
+        )
+
+        result = load_hierarchical_config(workspace_paths_factory(isolated_workspace, global_root))
+
+        assert result.status == HierarchicalConfigLoadStatus.VALIDATION_FAILED
+        assert result.tier == ConfigTier.GLOBAL
+        assert "environment.sensitive_variables[0]" in result.errors[0]
+        assert "API-KEY=x" not in result.errors[0]
 
     @pytest.mark.parametrize("tier", FILE_BASED_TIERS)
     def test_unreadable_tier_file_returns_unreadable_status(

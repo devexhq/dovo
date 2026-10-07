@@ -4,9 +4,9 @@ from __future__ import annotations
 
 from enum import StrEnum
 from pathlib import Path
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, StringConstraints
 
 from dovo.common.constants import DEFAULT_MAXIMUM_WORKTREES_ALLOWED
 from dovo.common.models import BaseResult
@@ -95,6 +95,17 @@ class ConcurrencyConfig(BaseModel):
     lock_timeout_seconds: float = Field(default=30.0, ge=0.1)
 
 
+SensitiveVariableName = Annotated[str, StringConstraints(pattern=r"^[A-Za-z_][A-Za-z0-9_]*$")]
+
+
+class EnvironmentConfig(BaseModel):
+    """`environment` section of `.dovo/config.json`."""
+
+    model_config = {"extra": "forbid", "strict": True}
+
+    sensitive_variables: list[SensitiveVariableName] = Field(default_factory=list)
+
+
 class DovoConfig(BaseModel):
     """Parsed `.dovo/config.json` V1 payload."""
 
@@ -110,6 +121,7 @@ class DovoConfig(BaseModel):
     prune: PruneConfig = Field(default_factory=PruneConfig)
     telemetry: TelemetryConfig = Field(default_factory=TelemetryConfig)
     concurrency: ConcurrencyConfig = Field(default_factory=ConcurrencyConfig)
+    environment: EnvironmentConfig = Field(default_factory=EnvironmentConfig)
 
     @property
     def project_name(self) -> str:

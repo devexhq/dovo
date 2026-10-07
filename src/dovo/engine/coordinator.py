@@ -260,6 +260,7 @@ class RunCoordinator:
                 no_tty=self._context.no_tty,
                 failure_prompter=self._prompter,
                 auto_apply=row.auto_apply,
+                sensitive_variables=self._context.sensitive_variables,
                 paths=self._context.paths,
             )
         )

@@ -4,12 +4,14 @@ from __future__ import annotations
 
 import copy
 import json
+from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
 from pydantic import ValidationError
 
 from dovo.common.filesystem import WorkspacePaths
+from dovo.common.schema_validation import format_validation_error
 from dovo.core.config.exceptions import ConfigTierValidationError
 from dovo.core.config.generator import CANONICAL_V1_DEFAULTS
 from dovo.core.config.models import (
@@ -64,12 +66,21 @@ def _deep_merge(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any
     return result
 
 
+def _union_sensitive_variables(layers: Sequence[ConfigLayer]) -> list[str]:
+    """Return environment.sensitive_variables from every layer in precedence order, first occurrence kept."""
+    names: dict[str, None] = {}
+    for layer in layers:
+        for name in layer.data.get("environment", {}).get("sensitive_variables", []):
+            names.setdefault(name)
+    return list(names)
+
+
 def _validate_merged_layer(tier: ConfigTier, path: Path, merged: dict[str, Any]) -> None:
     """Validate the running merged dict against DovoConfig, attributing failure to tier."""
     try:
         DovoConfig.model_validate(merged)
     except ValidationError as exc:
-        raise ConfigTierValidationError(tier, path, str(exc)) from exc
+        raise ConfigTierValidationError(tier, path, format_validation_error(exc)) from exc
 
 
 def resolve_config_layers(paths: WorkspacePaths) -> list[ConfigLayer]:
@@ -112,6 +123,7 @@ def load_hierarchical_config(paths: WorkspacePaths) -> HierarchicalConfigLoadRes
                 continue
             _validate_merged_layer(layer.tier, layer.path, merged)
 
+        merged["environment"]["sensitive_variables"] = _union_sensitive_variables(layers)
         config = DovoConfig.model_validate(merged)
     except ConfigTierValidationError as exc:
         return HierarchicalConfigLoadResult(

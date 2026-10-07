@@ -148,3 +148,21 @@ class EnvFileSecretsTests:
 
         assert load_env_file_secrets(tmp_path) == []
         assert load_env_file_secrets(binary_dir) == []
+
+    def test_load_env_file_secrets_keeps_listed_names_below_the_floor_without_a_secret_suffix(
+        self, tmp_path: Path
+    ) -> None:
+        """[tier-1/unit] load_env_file_secrets: .env with "DB_PIN=1234", "OTHER_PIN=5678", "BLANK_PIN=" and credential_names=("DB_PIN","BLANK_PIN") returns [("DB_PIN","1234")]."""
+        (tmp_path / ".env").write_text("DB_PIN=1234\nOTHER_PIN=5678\nBLANK_PIN=\n", encoding="utf-8")
+
+        assert load_env_file_secrets(tmp_path, ("DB_PIN", "BLANK_PIN")) == [("DB_PIN", "1234")]
+
+    def test_redact_text_masks_listed_name_set_only_in_env_file(self, tmp_path: Path) -> None:
+        """[tier-1/unit] SecretRedactor.from_environment: credential_envs=("DB_PIN",), env={}, .env with DB_PIN=1234 turns "pin 1234" into "pin [REDACTED:DB_PIN]"; without the listed name it is unchanged."""
+        (tmp_path / ".env").write_text("DB_PIN=1234\n", encoding="utf-8")
+
+        listed = SecretRedactor.from_environment(env={}, credential_envs=("DB_PIN",), env_file_dir=tmp_path)
+        unlisted = SecretRedactor.from_environment(env={}, env_file_dir=tmp_path)
+
+        assert listed.redact_text("pin 1234") == "pin [REDACTED:DB_PIN]"
+        assert unlisted.redact_text("pin 1234") == "pin 1234"

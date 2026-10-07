@@ -107,6 +107,9 @@ CONFIG_LOAD_PAYLOAD_CASES = [
                 "concurrency": {
                     "lock_timeout_seconds": 30.0,
                 },
+                "environment": {
+                    "sensitive_variables": [],
+                },
             },
             "warnings": [],
             "errors": [],

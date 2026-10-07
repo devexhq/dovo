@@ -808,6 +808,41 @@ class DriveRunAgentSettingsTests:
         ]
         assert "agent" not in (captured_contexts[0].context or {})
 
+    def test_open_resolves_sensitive_variables_into_run_context_and_workspace_settings(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        captured_contexts: list[StepExecutionContext],
+    ) -> None:
+        """[tier-1/integration] SessionRunner.open: config environment.sensitive_variables ["PIN","DB_URL"] reaches StepExecutionContext.sensitive_variables as ("PIN","DB_URL") and masks the value in the persisted diff.patch."""
+        monkeypatch.setenv("PIN", "1234")
+        workspace = (
+            WorkspaceBuilder(tmp_path / "env-workspace")
+            .with_git()
+            .with_database()
+            .with_config(
+                data={
+                    "version": 1,
+                    "project": {"name": "session"},
+                    "environment": {"sensitive_variables": ["PIN", "DB_URL"]},
+                }
+            )
+            .build()
+        )
+        paths = _paths_for(workspace)
+        sessions = SessionsRepository(db_path=paths.database_file, project_id=paths.project_id)
+        seed_new_session(
+            paths, sessions, session_id="env-run", steps=[_step("write", "echo pin=1234 > pin.txt")], use_worktree=True
+        )
+
+        outcome = _drive(paths, sessions, "env-run")
+
+        diff_text = (paths.session_dir("env-run") / "diff.patch").read_text(encoding="utf-8")
+        assert outcome.status == SessionStatus.COMPLETED
+        assert captured_contexts[0].sensitive_variables == ("PIN", "DB_URL")
+        assert "+pin=[REDACTED:PIN]" in diff_text
+        assert "1234" not in diff_text
+
     def test_resumed_run_override_changes_only_the_provider(
         self,
         tmp_path: Path,

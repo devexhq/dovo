@@ -17,6 +17,8 @@ dovo history list [OPTIONS]
 | `--status, -s <status>` | Filter sessions by lifecycle status (`running`, `completed`, `failed`, `cancelled`, `paused`). |
 | `--format [terminal\|json]` | Presentation format (`terminal` or `json`). |
 
+Error messages shown by `dovo history list` and `dovo history show` are masked on read, including names listed under `environment.sensitive_variables` in `.dovo/config.json`, so rows stored before a name was listed are still hidden. Masked values print as `[REDACTED:<NAME>]` or `[REDACTED]`.
+
 ## Subcommands
 
 ### `dovo history` / `dovo history list` (Default)

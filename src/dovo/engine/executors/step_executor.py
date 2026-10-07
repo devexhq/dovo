@@ -132,7 +132,10 @@ class StepExecution:
         self.worktree_path = metadata.worktree_path.resolve()
         self.context = metadata.context or {}
         self._env_file_dir = metadata.paths.root_dir if metadata.paths is not None else None
-        self.redactor = SecretRedactor.from_environment(env_file_dir=self._env_file_dir)
+        self._sensitive_variables = metadata.sensitive_variables
+        self.redactor = SecretRedactor.from_environment(
+            credential_envs=self._sensitive_variables, env_file_dir=self._env_file_dir
+        )
         self.on_output = self._masked_output_callback(metadata.on_output)
         self.step_index = _int_from_context_or_default(self.context, "step_index", metadata.step_index)
         self.initial_attempt = _int_from_context_or_default(self.context, "initial_attempt", metadata.initial_attempt)
@@ -328,8 +331,10 @@ class StepExecution:
         return _masked
 
     def _refresh_redactor(self, process_env: Mapping[str, str]) -> None:
-        """Rebuild the redactor from this attempt's merged process environment and the repository .env."""
-        self.redactor = SecretRedactor.from_environment(env=process_env, env_file_dir=self._env_file_dir)
+        """Rebuild the redactor from this attempt's merged process environment, the listed sensitive variables, and the repository .env."""
+        self.redactor = SecretRedactor.from_environment(
+            env=process_env, credential_envs=self._sensitive_variables, env_file_dir=self._env_file_dir
+        )
 
     def _build_process_env(self, metadata: ExecutionMetadata) -> dict[str, str]:
         """Merge environment variables: explicit step env > DOVO_* metadata > ambient env."""

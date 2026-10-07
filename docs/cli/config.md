@@ -14,7 +14,7 @@ dovo config show
 
 #### Configuration Precedence
 
-The displayed configuration is the merge of four tiers, in increasing precedence: Packaged defaults, Global (`$DOVO_HOME/global/config.json`), User (`$DOVO_HOME/user/config.json`), and Repo (`.dovo/config.json`). `DOVO_HOME` defaults to `~/.dovo` when unset. A field set by a higher-precedence tier overrides the same field from a lower one; fields left unset by every tier fall back to the packaged default. A missing Repo tier is not backfilled — `dovo config show` still fails with `CONFIG_NOT_FOUND`, directing you to `dovo init`. A malformed or schema-invalid Global or User tier file produces a "Config Error" panel naming the offending tier and file path rather than a silent fallback. In `--format json`, the envelope's `raw` field now carries this fully-merged effective payload (every `DovoConfig` field, defaults included) rather than the literal contents of `.dovo/config.json` alone.
+The displayed configuration is the merge of four tiers, in increasing precedence: Packaged defaults, Global (`$DOVO_HOME/global/config.json`), User (`$DOVO_HOME/user/config.json`), and Repo (`.dovo/config.json`). `DOVO_HOME` defaults to `~/.dovo` when unset. A field set by a higher-precedence tier overrides the same field from a lower one; fields left unset by every tier fall back to the packaged default. A missing Repo tier is not backfilled — `dovo config show` still fails with `CONFIG_NOT_FOUND`, directing you to `dovo init`. The one exception is `environment.sensitive_variables`: names from the Global, User and Repo tiers are unioned in precedence order (duplicates dropped) instead of the higher tier replacing the list. A malformed or schema-invalid Global or User tier file produces a "Config Error" panel naming the offending tier and file path rather than a silent fallback. In `--format json`, the envelope's `raw` field now carries this fully-merged effective payload (every `DovoConfig` field, defaults included) rather than the literal contents of `.dovo/config.json` alone.
 
 ### `dovo config set`
 
@@ -41,6 +41,16 @@ dovo config set agent.model gpt-4.1
 # Configure the worktree base ref
 dovo config set worktree.base_ref main
 ```
+
+#### `environment.sensitive_variables`
+
+Lists environment variable names whose values Dovo masks, with no minimum length, as `[REDACTED:<NAME>]` in step output, `diff.patch`, `dovo logs` and `dovo history`. The config stores names only; values are read from the process environment, from a step's own `env:`, or from the repository `.env` at masking time. A listed name that is unset or blank is skipped silently.
+
+```bash
+dovo config set environment.sensitive_variables '["AWS_ACCESS_KEY_ID","DATABASE_URL"]'
+```
+
+Each entry must match `^[A-Za-z_][A-Za-z0-9_]*$`; any other entry (for example `API-KEY` or `TOKEN=abc`) fails validation with an error naming `environment.sensitive_variables[<index>]`, and the error never echoes the entry. Unknown keys under `environment` are rejected.
 
 ### `dovo config unset`
 

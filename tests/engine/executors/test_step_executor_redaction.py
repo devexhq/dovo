@@ -88,3 +88,74 @@ class StepExecutionRedactionTests:
 
         assert result.status == "completed"
         assert result.stdout == "[REDACTED:X_SECRET]\n"
+
+    def test_run_masks_listed_short_value_in_result_stream_and_attempt_log(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """[tier-1/integration] StepExecution.run: sensitive_variables=("PIN",), PIN="1234", command 'echo $PIN' returns stdout == "[REDACTED:PIN]\\n", streams ("stdout","[REDACTED:PIN]\\n"), writes the same to 01_<step>_attempt_1.stdout.log, and redactor.redact_text(result.stdout) == result.stdout; without the name in sensitive_variables stdout == "1234\\n"."""
+        monkeypatch.setenv("PIN", "1234")
+        log_dir = tmp_path / "logs"
+        log_dir.mkdir()
+        streamed: list[tuple[str, str]] = []
+        step = StepBuilder.command("echo $PIN").with_id("show").build()
+        execution = StepExecution(
+            StepExecutionContext(
+                step=step,
+                worktree_path=tmp_path,
+                session_log_dir=log_dir,
+                on_output=lambda stream, line: streamed.append((stream, line)),
+                sensitive_variables=("PIN",),
+            )
+        )
+
+        result = execution.run()
+
+        unlisted = StepExecution(StepExecutionContext(step=step, worktree_path=tmp_path)).run()
+        assert result.stdout == "[REDACTED:PIN]\n"
+        assert streamed == [("stdout", "[REDACTED:PIN]\n")]
+        assert (log_dir / "01_show_attempt_1.stdout.log").read_text(encoding="utf-8") == "[REDACTED:PIN]\n"
+        assert execution.redactor.redact_text(result.stdout) == result.stdout
+        assert unlisted.stdout == "1234\n"
+
+    def test_run_masks_listed_name_set_only_in_step_env_on_stderr(self, tmp_path: Path) -> None:
+        """[tier-1/integration] StepExecution.run: sensitive_variables=("DB_PIN",), step env {"DB_PIN": "99"}, command 'echo $DB_PIN >&2' returns stderr == "[REDACTED:DB_PIN]\\n"."""
+        step = StepBuilder.command("echo $DB_PIN >&2").with_env("DB_PIN", "99").build()
+
+        result = StepExecution(
+            StepExecutionContext(step=step, worktree_path=tmp_path, sensitive_variables=("DB_PIN",))
+        ).run()
+
+        assert result.stderr == "[REDACTED:DB_PIN]\n"
+
+    def test_run_masks_listed_value_in_error_message_and_skips_unset_name_silently(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """[tier-1/integration] StepExecution.run: sensitive_variables=("PIN","UNSET_NAME") with PIN="1234" and a failing assertion quoting 1234 returns error_message containing "[REDACTED:PIN]" and not "1234", and log_warnings == []."""
+        monkeypatch.setenv("PIN", "1234")
+        monkeypatch.delenv("UNSET_NAME", raising=False)
+        step = StepBuilder.command("echo $PIN").assert_output_not_contains("1234").build()
+        execution = StepExecution(
+            StepExecutionContext(step=step, worktree_path=tmp_path, sensitive_variables=("PIN", "UNSET_NAME"))
+        )
+
+        result = execution.run()
+
+        assert result.status == "failed"
+        assert result.error_message is not None
+        assert "[REDACTED:PIN]" in result.error_message
+        assert "1234" not in result.error_message
+        assert execution.log_warnings == []
+
+    def test_run_evaluates_assertion_against_unmasked_output_for_listed_name(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """[tier-1/integration] StepExecution.run: sensitive_variables=("PIN",), PIN="1234", assertion matching "1234" on 'echo $PIN' returns status "completed" with stdout "[REDACTED:PIN]\\n"."""
+        monkeypatch.setenv("PIN", "1234")
+        step = StepBuilder.command("echo $PIN").assert_output_contains("1234").build()
+
+        result = StepExecution(
+            StepExecutionContext(step=step, worktree_path=tmp_path, sensitive_variables=("PIN",))
+        ).run()
+
+        assert result.status == "completed"
+        assert result.stdout == "[REDACTED:PIN]\n"

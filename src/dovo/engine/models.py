@@ -160,6 +160,7 @@ class RunSettings:
     failure_prompter: FailurePrompter | None = None
     auto_apply: bool = False
     worktree_id: str | None = None
+    sensitive_variables: tuple[str, ...] = ()
     paths: WorkspacePaths = field(kw_only=True)
 
 
@@ -177,6 +178,7 @@ class RunContext:
     worktree: WorktreeSession | None = None
     no_tty: bool = False
     save_attempt_logs: bool = True
+    sensitive_variables: tuple[str, ...] = ()
 
 
 @runtime_checkable

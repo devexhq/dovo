@@ -61,6 +61,9 @@ CANONICAL_V1_DEFAULTS: dict[str, Any] = {
     "concurrency": {
         "lock_timeout_seconds": 30.0,
     },
+    "environment": {
+        "sensitive_variables": [],
+    },
 }
 
 

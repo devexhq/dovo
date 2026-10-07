@@ -25,7 +25,9 @@ def history_root_command(
     Returns:
         HistoryListResult containing listed sessions and errors.
     """
-    result = SessionCollection(context.paths, db=context.db.sessions).list(
+    result = SessionCollection(
+        context.paths, db=context.db.sessions, sensitive_variables=context.sensitive_variables
+    ).list(
         limit=limit,
         status=status,
     )

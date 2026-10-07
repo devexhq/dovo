@@ -18,6 +18,7 @@ _TOP_LEVEL_KEYS: tuple[str, ...] = (
     "prune",
     "telemetry",
     "concurrency",
+    "environment",
 )
 
 

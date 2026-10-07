@@ -147,6 +147,96 @@ class ConfigLoaderTests:
         assert result.fixes == ["Repair JSON syntax, or restore from backup"]
 
 
+class ConfigEnvironmentSectionTests:
+    """[tier-1/integration] Contracts for the `environment` section of config.json."""
+
+    @staticmethod
+    def _write_payload(workspace_paths: WorkspacePaths, environment: object | None) -> None:
+        payload = build_default_config("demo-workspace")
+        payload.pop("environment")
+        if environment is not None:
+            payload["environment"] = environment
+        Filesystem.atomic_write_json(workspace_paths.config_file, payload)
+
+    def test_load_defaults_sensitive_variables_to_empty_list_when_section_absent(
+        self, workspace_paths: WorkspacePaths
+    ) -> None:
+        self._write_payload(workspace_paths, None)
+
+        result = load_config(workspace_paths)
+
+        assert result.status == ConfigLoadStatus.OK
+        assert result.config is not None
+        assert result.config.environment.sensitive_variables == []
+
+    def test_load_returns_listed_names_and_accepts_duplicates(self, workspace_paths: WorkspacePaths) -> None:
+        names = ["AWS_ACCESS_KEY_ID", "AWS_ACCESS_KEY_ID", "DATABASE_URL"]
+        self._write_payload(workspace_paths, {"sensitive_variables": names})
+
+        result = load_config(workspace_paths)
+
+        assert result.status == ConfigLoadStatus.OK
+        assert result.config is not None
+        assert result.config.environment.sensitive_variables == names
+
+    @pytest.mark.parametrize(
+        "value",
+        [
+            pytest.param("A", id="not_a_list"),
+            pytest.param(["A", 5], id="non_string_entry"),
+            pytest.param({"a": 1}, id="object"),
+        ],
+    )
+    def test_load_rejects_non_list_or_non_string_entry(self, workspace_paths: WorkspacePaths, value: object) -> None:
+        self._write_payload(workspace_paths, {"sensitive_variables": value})
+
+        result = load_config(workspace_paths)
+
+        assert result.status == ConfigLoadStatus.SCHEMA_INVALID
+        assert "environment.sensitive_variables" in result.errors[0]
+
+    @pytest.mark.parametrize(
+        "entry",
+        [
+            pytest.param("API-KEY", id="dash"),
+            pytest.param("TOKEN=abc", id="assignment"),
+            pytest.param("has space", id="whitespace"),
+            pytest.param("1ABC", id="leading_digit"),
+            pytest.param("", id="empty"),
+        ],
+    )
+    def test_load_rejects_bad_pattern_entry_by_index_without_echo(
+        self, workspace_paths: WorkspacePaths, entry: str
+    ) -> None:
+        self._write_payload(workspace_paths, {"sensitive_variables": ["GOOD", entry]})
+
+        result = load_config(workspace_paths)
+
+        assert result.status == ConfigLoadStatus.SCHEMA_INVALID
+        assert "environment.sensitive_variables[1]" in result.errors[0]
+        assert f"'{entry}'" not in result.errors[0]
+
+    def test_load_does_not_echo_trailing_newline_entry_that_passes_the_json_schema(
+        self, workspace_paths: WorkspacePaths
+    ) -> None:
+        """[tier-1/integration] load_config: ["GOOD", "SOMEVALUE\\n"] passes the JSON schema, fails the model, and returns schema_invalid with "environment.sensitive_variables[1]" and without "SOMEVALUE"."""
+        self._write_payload(workspace_paths, {"sensitive_variables": ["GOOD", "SOMEVALUE\n"]})
+
+        result = load_config(workspace_paths)
+
+        assert result.status == ConfigLoadStatus.SCHEMA_INVALID
+        assert "environment.sensitive_variables[1]" in result.errors[0]
+        assert "SOMEVALUE" not in result.errors[0]
+
+    def test_load_rejects_unknown_key_under_environment(self, workspace_paths: WorkspacePaths) -> None:
+        self._write_payload(workspace_paths, {"other": []})
+
+        result = load_config(workspace_paths)
+
+        assert result.status == ConfigLoadStatus.SCHEMA_INVALID
+        assert "environment: Additional properties are not allowed" in result.errors[0]
+
+
 class ClearConfigCacheTests:
     """[tier-1/unit] clear_config_cache: in-memory load_config cache invalidation."""
 

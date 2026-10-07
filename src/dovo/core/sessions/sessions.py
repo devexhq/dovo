@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from pathlib import Path
 
 from dovo.common.filesystem import WorkspacePaths
@@ -30,9 +31,9 @@ def _render_run_log_line(event: SessionLogEvent) -> str:
     return f"[{event.ts}] {event.event.value}{suffix}"
 
 
-def _history_redactor(paths: WorkspacePaths) -> SecretRedactor:
-    """Build the read-time redactor from the live environment and the repository .env."""
-    return SecretRedactor.from_environment(env_file_dir=paths.root_dir)
+def _history_redactor(paths: WorkspacePaths, sensitive_variables: Sequence[str]) -> SecretRedactor:
+    """Build the read-time redactor from the live environment, the listed sensitive variables, and the repository .env."""
+    return SecretRedactor.from_environment(credential_envs=sensitive_variables, env_file_dir=paths.root_dir)
 
 
 def _mask_record(row: SessionRecord, redactor: SecretRedactor) -> SessionRecord:
@@ -45,8 +46,16 @@ def _mask_record(row: SessionRecord, redactor: SecretRedactor) -> SessionRecord:
 class Session:
     """One session addressed by id: its diff artifact, logs, and run details."""
 
-    def __init__(self, paths: WorkspacePaths, session_id: str, db: SessionsRepository | None = None) -> None:
+    def __init__(
+        self,
+        paths: WorkspacePaths,
+        session_id: str,
+        db: SessionsRepository | None = None,
+        *,
+        sensitive_variables: Sequence[str] = (),
+    ) -> None:
         self.paths = paths
+        self.sensitive_variables = tuple(sensitive_variables)
         self._session_id = session_id
         self.db = db if db is not None else SessionsRepository(db_path=paths.database_file, project_id=paths.project_id)
 
@@ -106,7 +115,7 @@ class Session:
         if row is None:
             return HistoryShowResult(status=HistoryShowStatus.NOT_FOUND, session_id=self.session_id)
 
-        row = _mask_record(row, _history_redactor(self.paths))
+        row = _mask_record(row, _history_redactor(self.paths, self.sensitive_variables))
         if not include_logs:
             return HistoryShowResult(status=HistoryShowStatus.OK, session_id=self.session_id, session=row)
 
@@ -162,7 +171,7 @@ class Session:
                 available_attempts=available_attempts,
             )
 
-        redactor = _history_redactor(self.paths)
+        redactor = _history_redactor(self.paths, self.sensitive_variables)
         return LogsShowResult(
             status=LogsShowStatus.OK, session_id=self.session_id, lines=[redactor.redact_text(line) for line in lines]
         )
@@ -171,13 +180,16 @@ class Session:
 class SessionCollection:
     """The project's sessions as a collection."""
 
-    def __init__(self, paths: WorkspacePaths, db: SessionsRepository | None = None) -> None:
+    def __init__(
+        self, paths: WorkspacePaths, db: SessionsRepository | None = None, *, sensitive_variables: Sequence[str] = ()
+    ) -> None:
         self.paths = paths
+        self.sensitive_variables = tuple(sensitive_variables)
         self.db = db if db is not None else SessionsRepository(db_path=paths.database_file, project_id=paths.project_id)
 
     def get(self, session_id: str) -> Session:
         """Return a Session handle sharing this collection's paths and run repository."""
-        return Session(self.paths, session_id, db=self.db)
+        return Session(self.paths, session_id, db=self.db, sensitive_variables=self.sensitive_variables)
 
     def list(self, *, limit: int | None = 20, status: str | None = None) -> HistoryListResult:
         """Reconcile stale sessions, then list this project's session records, newest first."""
@@ -193,7 +205,7 @@ class SessionCollection:
             except ValueError:
                 status_filter = status
 
-        redactor = _history_redactor(self.paths)
+        redactor = _history_redactor(self.paths, self.sensitive_variables)
         sessions = [_mask_record(row, redactor) for row in self.db.list(limit=limit, status=status_filter)]
         return HistoryListResult(status=HistoryListStatus.OK, sessions=sessions, warnings=warnings)
 

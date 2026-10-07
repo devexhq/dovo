@@ -583,6 +583,41 @@ class WorkspaceCaptureAndPersistDiffTests:
         assert (session_dir / "diff.patch").exists()
         assert warnings == []
 
+    @pytest.mark.parametrize(
+        ("names", "expected_line", "value_visible"),
+        [
+            pytest.param(("DB_PIN",), "+pin=[REDACTED:DB_PIN]", False, id="listed_name_masked"),
+            pytest.param((), "+pin=1234", True, id="unlisted_name_kept"),
+        ],
+    )
+    def test_capture_and_persist_diff_masks_listed_name_in_patch_file(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        names: tuple[str, ...],
+        expected_line: str,
+        value_visible: bool,
+    ) -> None:
+        """[tier-1/integration] capture_and_persist_diff: RunSettings(sensitive_variables=("DB_PIN",)), DB_PIN="1234", worktree file adding "pin=1234" yields diff.patch containing "+pin=[REDACTED:DB_PIN]" and not "1234"; with sensitive_variables=() it contains "+pin=1234"."""
+        monkeypatch.setenv("DB_PIN", "1234")
+        workspace_root = _worktree_workspace(tmp_path)
+        context = RunSettings(
+            cwd=workspace_root,
+            use_worktree=True,
+            session_id="sess-1",
+            sensitive_variables=names,
+            paths=_paths_for(workspace_root),
+        )
+        _, _, session, _ = Workspace(context).setup()
+        assert session is not None
+        (session.worktree_path / "new_file.txt").write_text("pin=1234\n", encoding="utf-8")
+
+        Workspace(context).capture_and_persist_diff(session, [])
+
+        patch_text = (_paths_for(workspace_root).session_dir("sess-1") / "diff.patch").read_text(encoding="utf-8")
+        assert expected_line in patch_text
+        assert ("1234" in patch_text) is value_visible
+
     def test_capture_and_persist_diff_masks_worktree_secret_in_patch_file(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:

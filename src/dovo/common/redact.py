@@ -49,8 +49,11 @@ def credential_secrets(env: Mapping[str, str], names: Sequence[str]) -> list[tup
     return secrets
 
 
-def load_env_file_secrets(directory: Path) -> list[tuple[str, str]]:
-    """Return (key, value) pairs from ``directory``/.env whose key ends with a SECRET_ENV_SUFFIXES entry and whose value has at least MIN_SECRET_LENGTH characters, or [] when the file is absent or unreadable."""
+def load_env_file_secrets(directory: Path, credential_names: Sequence[str] = ()) -> list[tuple[str, str]]:
+    """Return (key, value) pairs from ``directory``/.env, or [] when the file is absent or unreadable.
+
+    A pair is kept when its key is listed in ``credential_names`` and its value is nonblank (no length floor), or when its key ends with a SECRET_ENV_SUFFIXES entry and its value has at least MIN_SECRET_LENGTH characters.
+    """
     try:
         content = (directory / ENV_FILE_NAME).read_text(encoding="utf-8")
     except (OSError, UnicodeDecodeError):
@@ -59,10 +62,18 @@ def load_env_file_secrets(directory: Path) -> list[tuple[str, str]]:
     secrets: list[tuple[str, str]] = []
     for line in content.splitlines():
         parsed = _parse_env_line(line)
-        if parsed is not None and _is_secret_name(parsed[0]) and len(parsed[1]) >= MIN_SECRET_LENGTH:
+        if parsed is not None and _is_env_file_secret(*parsed, credential_names):
             secrets.append(parsed)
 
     return secrets
+
+
+def _is_env_file_secret(key: str, value: str, credential_names: Sequence[str]) -> bool:
+    """Return whether a .env entry is a listed credential or a suffix-named value over the length floor."""
+    if key in credential_names:
+        return bool(value)
+
+    return _is_secret_name(key) and len(value) >= MIN_SECRET_LENGTH
 
 
 def _parse_env_line(line: str) -> tuple[str, str] | None:
@@ -113,7 +124,7 @@ class SecretRedactor:
         source = os.environ if env is None else env
         secrets = credential_secrets(source, credential_envs) + suffix_secrets(source)
         if env_file_dir is not None:
-            secrets += load_env_file_secrets(env_file_dir)
+            secrets += load_env_file_secrets(env_file_dir, credential_envs)
 
         return cls(secrets)
 

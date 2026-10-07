@@ -144,6 +144,7 @@ class StepExecutionContext(BaseModel):
     artifacts_db: ArtifactsRepository | None = None
     paths: WorkspacePaths | None = None
     agent_runner: AgentStepRunner | None = None
+    sensitive_variables: tuple[str, ...] = ()
 
 
 class InternalCommandContext(BaseModel):
