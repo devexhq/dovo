@@ -14,14 +14,6 @@ from dovo.core.worktree.models import WorktreeDeleteResult, WorktreeDeleteStatus
 
 def _format_delete_error_panel(data: WorktreeDeleteResult) -> Panel:
     """Format error panel for non-ok worktree delete results."""
-    if data.status == WorktreeDeleteStatus.NOT_INITIALIZED:
-        fixes = data.fixes or ["Run `dovo init` to create `.dovo/config.json`"]
-        return build_error_panel(
-            "Dovo Not Initialized",
-            data.errors,
-            "Dovo workspace is not initialized.",
-            fixes,
-        )
     if data.status == WorktreeDeleteStatus.NOT_FOUND:
         fixes = data.fixes or ["Run `dovo worktree list` to see known worktrees"]
         return build_error_panel(

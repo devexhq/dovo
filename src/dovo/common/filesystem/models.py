@@ -111,7 +111,7 @@ class WorkspacePaths(BaseModel):
     global_paths: GlobalPaths
     database_file: Path
 
-    project_id: str | None
+    project_id: str
     runtime_root: Path
     logs_dir: Path
     sessions_dir: Path

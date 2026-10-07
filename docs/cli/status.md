@@ -52,7 +52,7 @@ Dovo Workspace Status
 
 ### Uninitialized workspace output
 
-When `.dovo/config.json` is missing or the workspace is uninitialized:
+`dovo status` requires `dovo init` first: without a valid `.dovo/project.json` it exits `1` with `Workspace is not initialized` and a `dovo init` prompt. When the identity exists but `.dovo/config.json` is missing, the report is:
 
 ```text
 Dovo Workspace Status (Uninitialized)

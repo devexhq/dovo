@@ -8,11 +8,9 @@ from pathlib import Path
 from typer.testing import CliRunner
 
 from dovo.cli import app
-from dovo.common.filesystem.models import RepositoryPaths
-from dovo.common.filesystem.services.global_root import resolve_global_paths
 from dovo.core.artifacts import Artifacts
 from dovo.core.db import DovoDb
-from dovo.core.project.services.storage import resolve_workspace_paths
+from tests.harness.workspace_paths import initialized_workspace_paths
 
 
 def _publish_artifact(workspace: Path, *, session_id: str, name: str) -> Path:
@@ -20,7 +18,7 @@ def _publish_artifact(workspace: Path, *, session_id: str, name: str) -> Path:
     worktree_path = workspace / "worktree-scratch" / session_id
     (worktree_path / "dist").mkdir(parents=True, exist_ok=True)
     (worktree_path / "dist" / "pkg.whl").write_bytes(b"package-bytes")
-    paths = resolve_workspace_paths(RepositoryPaths.from_root(workspace), resolve_global_paths(None))
+    paths = initialized_workspace_paths(workspace)
     db = DovoDb(database_file=paths.database_file, project_id=paths.project_id)
     result = Artifacts(paths, db=db.artifacts).upload(session_id, name, "dist/*.whl", worktree_path=worktree_path)
     assert result.ok
@@ -64,9 +62,7 @@ class ArtifactsDownloadCliIntegrationTests:
     ) -> None:
         """dovo artifacts download: a corrupted on-disk file vs. manifest.json exits 1 with status CHECKSUM_MISMATCH and leaves --dest empty."""
         _publish_artifact(artifacts_workspace, session_id="wf_one", name="dist-packages")
-        artifacts_dir = resolve_workspace_paths(
-            RepositoryPaths.from_root(artifacts_workspace), resolve_global_paths(None)
-        ).artifacts_dir
+        artifacts_dir = initialized_workspace_paths(artifacts_workspace).artifacts_dir
         artifact_dir = artifacts_dir / "wf_one" / "dist-packages"
         (artifact_dir / "dist" / "pkg.whl").write_bytes(b"corrupted-bytes")
         dest = tmp_path / "out"

@@ -12,22 +12,21 @@ from typing import Any
 import pytest
 
 from dovo.common.filesystem import Filesystem, WorkspacePaths
-from dovo.common.filesystem.models import RepositoryPaths
 from dovo.common.filesystem.services.global_root import resolve_global_paths
 from dovo.core.config.loader import ConfigLoadStatus
 from dovo.core.config.models import AgentConfig, DovoConfig, ProjectConfig, WorktreeConfig
 from dovo.core.db import SessionsRepository, SessionStatus, WorktreesRepository
 from dovo.core.db.connection import resolve_db_path
 from dovo.core.git import GitNotFoundError, GitPlumbingTimeoutError, GitRunner
-from dovo.core.project.services.storage import resolve_workspace_paths
 from dovo.core.status import DovoStatusResult, Status
 from dovo.core.status.services.collector import collect_status
 from tests.harness import WorkspaceBuilder
+from tests.harness.workspace_paths import initialized_workspace_paths
 
 
 def _status_paths(workspace: Path) -> WorkspacePaths:
     """Resolve the WorkspacePaths snapshot for a WorkspaceBuilder-scaffolded workspace root."""
-    return resolve_workspace_paths(RepositoryPaths.from_root(workspace), resolve_global_paths(None))
+    return initialized_workspace_paths(workspace)
 
 
 def _config_payload(*, model: str | None = "gpt-4o", max_active_worktrees: int = 5) -> dict[str, Any]:

@@ -8,13 +8,11 @@ from typing import Any
 
 import pytest
 
-from dovo.common.filesystem.models import RepositoryPaths, WorkspacePaths
-from dovo.common.filesystem.services.global_root import resolve_global_paths
+from dovo.common.filesystem.models import WorkspacePaths
 from dovo.common.models import FailurePolicy
 from dovo.core.agents.models import ResolvedAgentSettings
 from dovo.core.catalog.definitions import ArtifactPublishSpec, StepDefinition, StepType
 from dovo.core.db.repositories.artifacts import ArtifactsRepository
-from dovo.core.project.services.storage import resolve_workspace_paths
 from dovo.core.worktree import WorktreeSession
 from dovo.engine.executors.agent_step import build_agent_step_runner
 from dovo.engine.executors.models import StepExecutionContext, StepResult
@@ -31,11 +29,12 @@ from dovo.engine.models import (
 from dovo.engine.step_coordinator import StepCoordinator, auto_publish_step_artifacts
 from tests.harness.builders import StepBuilder
 from tests.harness.sessions import NoOpRunObserver
+from tests.harness.workspace_paths import initialized_workspace_paths
 
 
 def _paths_for(root: Path) -> WorkspacePaths:
     """Resolve the WorkspacePaths snapshot for root, reflecting its current project.json."""
-    return resolve_workspace_paths(RepositoryPaths.from_root(root), resolve_global_paths(None))
+    return initialized_workspace_paths(root)
 
 
 _AGENT_SETTINGS = ResolvedAgentSettings(

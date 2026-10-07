@@ -8,16 +8,15 @@ from pathlib import Path
 from typer.testing import CliRunner
 
 from dovo.cli import app
-from dovo.common.filesystem.models import RepositoryPaths, WorkspacePaths
-from dovo.common.filesystem.services.global_root import resolve_global_paths
+from dovo.common.filesystem.models import WorkspacePaths
 from dovo.core.artifacts import Artifacts
 from dovo.core.db import DovoDb
-from dovo.core.project.services.storage import resolve_workspace_paths
+from tests.harness.workspace_paths import initialized_workspace_paths
 
 
 def _paths_for(root: Path) -> WorkspacePaths:
     """Resolve the WorkspacePaths snapshot for root, reflecting its current project.json."""
-    return resolve_workspace_paths(RepositoryPaths.from_root(root), resolve_global_paths(None))
+    return initialized_workspace_paths(root)
 
 
 def _publish_artifact(workspace: Path, *, session_id: str, name: str) -> None:

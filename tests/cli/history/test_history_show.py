@@ -10,15 +10,14 @@ from typer.testing import CliRunner
 
 from dovo.cli import app
 from dovo.common.filesystem import Filesystem
-from dovo.common.filesystem.models import RepositoryPaths, WorkspacePaths
-from dovo.common.filesystem.services.global_root import resolve_global_paths
+from dovo.common.filesystem.models import WorkspacePaths
 from dovo.core.db import DovoDb, SessionStatus
-from dovo.core.project.services.storage import resolve_workspace_paths
+from tests.harness.workspace_paths import initialized_workspace_paths
 
 
 def _paths_for(root: Path) -> WorkspacePaths:
     """Resolve the WorkspacePaths snapshot for root, reflecting its current project.json."""
-    return resolve_workspace_paths(RepositoryPaths.from_root(root), resolve_global_paths(None))
+    return initialized_workspace_paths(root)
 
 
 class HistoryShowCliIntegrationTests:
@@ -104,10 +103,7 @@ class HistoryShowLogsCliIntegrationTests:
         ).sessions.create(
             session_id="session-logs", blueprint_name="task-a", blueprint_key="task-a", status=SessionStatus.COMPLETED
         )
-        session_log_dir = (
-            resolve_workspace_paths(RepositoryPaths.from_root(history_workspace), resolve_global_paths(None)).logs_dir
-            / "session-logs"
-        )
+        session_log_dir = initialized_workspace_paths(history_workspace).logs_dir / "session-logs"
         session_log_dir.mkdir(parents=True)
         (session_log_dir / "session.log").write_text("", encoding="utf-8")
         (session_log_dir / "01_build_attempt_1.stdout.log").write_text("out\n", encoding="utf-8")

@@ -12,6 +12,7 @@ from typer.testing import CliRunner
 from dovo.cli import app
 from dovo.core.diagnostics import CheckStatus, DiagnosticsReport
 from dovo.core.diagnostics.checks.agent_setup import PROVIDER_CREDENTIAL_RESOLVERS
+from tests.harness.workspace_paths import initialized_workspace_paths
 
 
 class DoctorCliIntegrationTests:
@@ -84,6 +85,8 @@ class DoctorCliIntegrationTests:
         self, cli_runner: CliRunner, tmp_path: Path, dispatch_spy: list[Any]
     ) -> None:
         """dovo doctor --category git on a non-git directory: exit 1; dispatches the exact FAILED DiagnosticsReport naming the 'git init' fix."""
+        initialized_workspace_paths(tmp_path)
+
         result = cli_runner.invoke(app, ["-p", str(tmp_path), "doctor", "--category", "git"])
 
         assert result.exit_code == 1

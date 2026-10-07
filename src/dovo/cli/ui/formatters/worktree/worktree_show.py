@@ -16,15 +16,6 @@ from dovo.core.worktree.models import WorktreeShowResult, WorktreeShowStatus
 
 def _format_show_error_panel(data: WorktreeShowResult) -> Panel:
     """Format error panel for non-ok worktree show results."""
-    if data.status == WorktreeShowStatus.NOT_INITIALIZED:
-        fixes = data.fixes or ["Run `dovo init` to create `.dovo/config.json`"]
-        return build_error_panel(
-            "Dovo Not Initialized",
-            data.errors,
-            "Dovo workspace is not initialized.",
-            fixes,
-        )
-
     if data.status == WorktreeShowStatus.NOT_FOUND:
         fixes = data.fixes or ["Run `dovo worktree list` to see known worktrees"]
         return build_error_panel(

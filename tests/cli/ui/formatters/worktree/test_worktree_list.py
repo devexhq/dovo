@@ -41,26 +41,9 @@ EMPTY_WORKTREES = FormatterCase(
     render_expectations=[],
 )
 
-NOT_INITIALIZED = FormatterCase(
-    data=WorktreeListResult(
-        status=WorktreeListStatus.NOT_INITIALIZED,
-        worktrees=[],
-        errors=["Dovo workspace is not initialized."],
-        fixes=["Run `dovo init` to create `.dovo/config.json`"],
-    ),
-    view=WorktreeListResult(
-        status=WorktreeListStatus.NOT_INITIALIZED,
-        worktrees=[],
-        errors=["Dovo workspace is not initialized."],
-        fixes=["Run `dovo init` to create `.dovo/config.json`"],
-    ),
-    render_expectations=["Dovo workspace is not initialized.", "Run `dovo init` to create `.dovo/config.json`"],
-)
-
 WORKTREE_LIST_CASES = [
     pytest.param(WITH_WORKTREES, id="with_worktrees"),
     pytest.param(EMPTY_WORKTREES, id="empty_worktrees"),
-    pytest.param(NOT_INITIALIZED, id="not_initialized"),
 ]
 
 WORKTREE_LIST_PAYLOAD_CASES = [
@@ -98,18 +81,6 @@ WORKTREE_LIST_PAYLOAD_CASES = [
             "fixes": [],
         },
         id="empty_worktrees",
-    ),
-    pytest.param(
-        NOT_INITIALIZED,
-        {
-            "status": "not_initialized",
-            "worktrees": [],
-            "warnings": [],
-            "errors": ["Dovo workspace is not initialized."],
-            "error_code": None,
-            "fixes": ["Run `dovo init` to create `.dovo/config.json`"],
-        },
-        id="not_initialized",
     ),
 ]
 

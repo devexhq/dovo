@@ -15,6 +15,7 @@ from dovo.core.db.connection import resolve_db_path
 from dovo.core.status.models import (
     DovoStatusResult,
 )
+from tests.harness.builders import WorkspaceBuilder
 
 _BRANCH_WARNING = "Active branch is 'main'. Automated workflows on primary branches are discouraged."
 _AGENT_MODEL_WARNING = "Agent model is not configured (agent.model is null)."
@@ -119,16 +120,16 @@ class StatusCliIntegrationTests:
             },
         }
 
-    def test_status_cli_uninitialized_git_repo_reports_not_initialized_unchanged(
-        self, cli_runner: CliRunner, git_repo: Path, dispatch_spy: list[Any]
+    def test_status_cli_identity_without_config_reports_not_initialized(
+        self, cli_runner: CliRunner, tmp_path: Path, dispatch_spy: list[Any]
     ) -> None:
-        """dovo status: git repo with no .dovo/ still reports is_initialized=False and writes no project.json/config.json — lazy init does not extend to status."""
-        result = cli_runner.invoke(app, ["-p", str(git_repo), "status"])
+        """dovo status: a workspace with a valid identity and no config.json exits 0 and dispatches DovoStatusResult with is_initialized False."""
+        workspace = WorkspaceBuilder(tmp_path / "workspace").with_git().without_config().build()
+
+        result = cli_runner.invoke(app, ["-p", str(workspace), "status"])
 
         assert result.exit_code == 0
         assert len(dispatch_spy) == 1
         result_dto = dispatch_spy[0]
         assert isinstance(result_dto, DovoStatusResult)
         assert result_dto.is_initialized is False
-        assert not (git_repo / ".dovo" / "project.json").exists()
-        assert not (git_repo / ".dovo" / "config.json").exists()

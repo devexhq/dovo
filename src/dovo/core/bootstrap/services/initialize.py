@@ -15,7 +15,7 @@ from dovo.core.catalog.services.seeder import seed_all_catalog_templates
 from dovo.core.config.generator import generate_default_config
 from dovo.core.db import init_database
 from dovo.core.project.services.identity import provision_project_identity
-from dovo.core.project.services.storage import resolve_workspace_paths
+from dovo.core.project.services.storage import build_workspace_paths
 
 
 def initialize_workspace(
@@ -58,7 +58,7 @@ def initialize_workspace(
         display_name=display_name,
         force=force,
     )
-    if not identity_result.ok:
+    if not identity_result.ok or identity_result.identity is None:
         return WorkspaceInitResult(
             bootstrap_result=result,
             identity_result=identity_result,
@@ -80,7 +80,7 @@ def initialize_workspace(
             failure_mode=InitFailureMode.CONFIG_GENERATION,
         )
 
-    paths = resolve_workspace_paths(fs.repository_paths, resolve_global_paths())
+    paths = build_workspace_paths(fs.repository_paths, resolve_global_paths(), identity_result.identity.id)
     init_database(paths.database_file)
 
     seed_result = seed_all_catalog_templates(paths)

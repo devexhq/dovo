@@ -6,18 +6,16 @@ from pathlib import Path
 
 import pytest
 
-from dovo.common.filesystem.models import RepositoryPaths
-from dovo.common.filesystem.services.global_root import resolve_global_paths
 from dovo.core.db import SessionsRepository, SessionStatus
-from dovo.core.project.services.storage import resolve_workspace_paths
 from dovo.engine.models import BlueprintRunResult, RunOutcome
 from dovo.engine.services._shared import fail, finalize, load_record
 from tests.harness.builders import WorkspaceBuilder
+from tests.harness.workspace_paths import initialized_workspace_paths
 
 
 def _repo(tmp_path: Path) -> SessionsRepository:
     workspace = WorkspaceBuilder(tmp_path / "workspace").with_database().build()
-    paths = resolve_workspace_paths(RepositoryPaths.from_root(workspace), resolve_global_paths(None))
+    paths = initialized_workspace_paths(workspace)
     return SessionsRepository(db_path=paths.database_file, project_id=paths.project_id)
 
 

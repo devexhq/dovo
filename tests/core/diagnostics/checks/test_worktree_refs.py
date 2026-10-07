@@ -215,4 +215,3 @@ class WorktreeRefsCheckRepositoryConstructionTests:
         result = check.execute(context)
 
         assert result.status == CheckStatus.OK
-        assert worktree_refs_workspace_paths.project_id is not None

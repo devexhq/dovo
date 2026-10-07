@@ -225,13 +225,6 @@ class WorktreeLifecycle:
         Returns:
             Structured WorktreeCreateResult containing session on success.
         """
-        if self.paths.project_id is None:
-            return WorktreeCreateResult(
-                status=WorktreeCreateStatus.NOT_INITIALIZED,
-                errors=["Workspace is not initialized."],
-                fixes=["Run `dovo init` to initialize this workspace."],
-            )
-
         with WorkspaceLock(self.paths.lock_file):
             worktree_cfg = self._get_worktree_config()
             self._ensure_worktree_dir()

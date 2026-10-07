@@ -2,6 +2,8 @@
 
 The `dovo doctor` command runs the registered diagnostic checks and prints a scannable workspace health report covering Git, configuration, filesystem permissions, worktree references, environment binaries, and agent setup.
 
+`dovo doctor` requires `dovo init` first: without a valid `.dovo/project.json` it exits `1` with `Workspace is not initialized` and a `dovo init` prompt. Once initialized, it still runs and reports when `config.json` is missing or broken.
+
 ## Usage
 
 ```bash

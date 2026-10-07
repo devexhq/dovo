@@ -2,7 +2,7 @@ from typing import Annotated
 
 import typer
 
-from dovo.cli.context import CliContext
+from dovo.common.filesystem import Filesystem
 from dovo.common.version import get_version
 from dovo.core.bootstrap import InitFailureMode
 
@@ -43,9 +43,9 @@ def init_callback(
     ] = False,
 ):
     """Provision a secure local hidden folder path and tracking schemas."""
-    context: CliContext = ctx.obj["context"]
+    root_dir = Filesystem(ctx.obj["path"]).root_dir
     result = init_command(
-        context,
+        root_dir,
         tool_version=get_version(),
         overwrite=overwrite,
         repair=repair,

@@ -8,10 +8,8 @@ from pathlib import Path
 import pytest
 from sqlmodel import select
 
-from dovo.common.filesystem.models import RepositoryPaths, WorkspacePaths
-from dovo.common.filesystem.services.global_root import resolve_global_paths
+from dovo.common.filesystem.models import WorkspacePaths
 from dovo.core.db import SessionRecord, SessionsRepository, SessionStatus
-from dovo.core.project.services.storage import resolve_workspace_paths
 from dovo.core.sessions import (
     DiffStatus,
     HistoryListStatus,
@@ -24,11 +22,12 @@ from dovo.core.sessions import (
     SessionLogEvent,
     SessionLogEventType,
 )
+from tests.harness.workspace_paths import initialized_workspace_paths
 
 
 def _paths_for(root: Path) -> WorkspacePaths:
     """Resolve the WorkspacePaths snapshot for root, reflecting its current project.json."""
-    return resolve_workspace_paths(RepositoryPaths.from_root(root), resolve_global_paths(None))
+    return initialized_workspace_paths(root)
 
 
 def _write_patch(paths: WorkspacePaths, session_id: str, diff_text: str) -> Path:
@@ -45,10 +44,7 @@ def _seed_session(session: Session, workspace: Path) -> Path:
     session.db.create(
         session_id=session.session_id, blueprint_name="bp", blueprint_key="bp", status=SessionStatus.COMPLETED
     )
-    session_log_dir = (
-        resolve_workspace_paths(RepositoryPaths.from_root(workspace), resolve_global_paths(None)).logs_dir
-        / session.session_id
-    )
+    session_log_dir = initialized_workspace_paths(workspace).logs_dir / session.session_id
     session_log_dir.mkdir(parents=True)
     return session_log_dir
 
@@ -496,9 +492,7 @@ class SessionDetailsIncludeLogsTests:
     def _seed_logged_session(self, session: Session, workspace: Path) -> Path:
         """Persist a session record and a log directory with twelve session.log events and one stdout capture."""
         session.db.create(session_id="sess", blueprint_name="bp", blueprint_key="bp", status=SessionStatus.COMPLETED)
-        session_log_dir = (
-            resolve_workspace_paths(RepositoryPaths.from_root(workspace), resolve_global_paths(None)).logs_dir / "sess"
-        )
+        session_log_dir = initialized_workspace_paths(workspace).logs_dir / "sess"
         session_log_dir.mkdir(parents=True)
         events = [
             SessionLogEvent(ts=f"2026-09-26T10:00:{i:02d}+00:00", event=SessionLogEventType.STEP_START, step_id=f"s{i}")

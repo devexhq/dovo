@@ -5,8 +5,12 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+
+from dovo.common.filesystem.services.global_root import resolve_global_paths
 from dovo.core.bootstrap.models import BootstrapOutcome, InitFailureMode
 from dovo.core.bootstrap.services.initialize import initialize_workspace
+from dovo.core.db.connection import resolve_db_path
 from dovo.core.project.models import ProjectIdentityProvisionStatus
 from tests.harness.builders import WorkspaceBuilder
 
@@ -110,3 +114,18 @@ class InitializeWorkspaceTests:
         initialize_workspace(git_repo)
 
         assert legacy_file.read_text(encoding="utf-8") == '{"a": 1}'
+
+    def test_initialize_workspace_builds_paths_from_provisioned_identity_without_rereading_it(
+        self, git_repo: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """initialize_workspace: with the identity loader patched to raise after provisioning, a fresh repository still initializes and the database file is created under the global data dir."""
+
+        def _unexpected_load(*args: object, **kwargs: object) -> None:
+            raise AssertionError("identity must not be re-read")
+
+        monkeypatch.setattr("dovo.core.project.services.storage.load_project_identity", _unexpected_load)
+
+        result = initialize_workspace(git_repo)
+
+        assert result.ok is True
+        assert resolve_db_path(resolve_global_paths(None)).is_file()

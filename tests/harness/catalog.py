@@ -7,15 +7,14 @@ from pathlib import Path
 
 import yaml
 
-from dovo.common.filesystem.models import RepositoryPaths, WorkspacePaths
-from dovo.common.filesystem.services.global_root import resolve_global_paths
+from dovo.common.filesystem.models import WorkspacePaths
 from dovo.core.catalog.models import CatalogTier
 from dovo.core.catalog.services.inventory import ensure_tier_catalog_dirs, scan_and_index_catalog
-from dovo.core.project.services.storage import resolve_workspace_paths
+from tests.harness.workspace_paths import initialized_workspace_paths
 
 
 def _workspace_paths(workspace: Path) -> WorkspacePaths:
-    return resolve_workspace_paths(RepositoryPaths.from_root(workspace), resolve_global_paths(None))
+    return initialized_workspace_paths(workspace)
 
 
 def write_runnable_blueprint(

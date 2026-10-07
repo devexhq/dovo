@@ -6,6 +6,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
+from pydantic import ValidationError
 
 from dovo.common.filesystem.models import GlobalPaths, RepositoryPaths, WorkspacePaths
 from dovo.common.filesystem.services.paths import get_catalog_templates_dir
@@ -64,10 +65,10 @@ class RepositoryPathsTests:
         assert paths.dovo_dir == dovo_dir
 
 
-def _build_workspace_paths(root: Path, global_root: Path, *, project_id: str | None = None) -> WorkspacePaths:
+def _build_workspace_paths(root: Path, global_root: Path, *, project_id: str = "test-project") -> WorkspacePaths:
     repository_paths = RepositoryPaths.from_root(root)
     global_paths = GlobalPaths.from_root(global_root)
-    runtime_root = global_paths.storage_dir / "projects" / project_id if project_id else repository_paths.dovo_dir
+    runtime_root = global_paths.storage_dir / "projects" / project_id
     return WorkspacePaths(
         root_dir=repository_paths.root_dir,
         dovo_dir=repository_paths.dovo_dir,
@@ -93,14 +94,6 @@ def _build_workspace_paths(root: Path, global_root: Path, *, project_id: str | N
 @pytest.fixture
 def sample_workspace_paths(tmp_path: Path) -> WorkspacePaths:
     return _build_workspace_paths(tmp_path / "repository", tmp_path / "global")
-
-
-@pytest.fixture
-def fixture_repo_no_identity(tmp_path: Path) -> Path:
-    """Create a repository root representing the legacy local-runtime branch."""
-    repository = tmp_path / "fixture-repository-no-identity"
-    repository.mkdir()
-    return repository
 
 
 @pytest.fixture
@@ -158,32 +151,6 @@ class WorkspacePathsContractTests:
 
 
 class WorkspacePathsParityTests:
-    def test_workspace_paths_matches_legacy_resolution_without_project_identity(
-        self, fixture_repo_no_identity: Path
-    ) -> None:
-        """[tier-2/unit] WorkspacePaths keeps the legacy local-runtime layout except for the lock filename."""
-        paths = _resolve_fixture_workspace_paths(fixture_repo_no_identity)
-        legacy_dovo_dir = fixture_repo_no_identity / ".dovo"
-        legacy_layout = {
-            "root_dir": fixture_repo_no_identity,
-            "dovo_dir": legacy_dovo_dir,
-            "config_file": legacy_dovo_dir / "config.json",
-            "catalog_dir": legacy_dovo_dir / "catalog",
-            "catalog_steps_dir": legacy_dovo_dir / "catalog" / "steps",
-            "catalog_blueprints_dir": legacy_dovo_dir / "catalog" / "blueprints",
-            "worktrees_dir": legacy_dovo_dir / "worktrees",
-            "gitignore_file": fixture_repo_no_identity / ".gitignore",
-            "logs_dir": legacy_dovo_dir / "logs",
-            "sessions_dir": legacy_dovo_dir / "sessions",
-            "artifacts_dir": legacy_dovo_dir / "artifacts",
-            "tmp_dir": legacy_dovo_dir / "tmp",
-        }
-
-        for field, expected_path in legacy_layout.items():
-            assert getattr(paths, field) == expected_path
-        assert paths.lock_file == legacy_dovo_dir / ".lock"
-        assert paths.lock_file != legacy_dovo_dir / "dovo.lock"
-
     def test_workspace_paths_matches_legacy_resolution_with_project_identity(
         self, fixture_repo_with_identity: Path
     ) -> None:
@@ -211,3 +178,21 @@ class WorkspacePathsParityTests:
             assert getattr(paths, field) == expected_path
         assert paths.lock_file == legacy_dovo_dir / ".lock"
         assert paths.lock_file != legacy_dovo_dir / "dovo.lock"
+
+
+class WorkspacePathsModelTests:
+    def test_project_id_none_raises_validation_error(self, sample_workspace_paths: WorkspacePaths) -> None:
+        """[tier-1/unit] WorkspacePaths: constructing it with project_id None raises ValidationError."""
+        fields = dict(sample_workspace_paths)
+        fields["project_id"] = None
+
+        with pytest.raises(ValidationError):
+            WorkspacePaths(**fields)
+
+    def test_project_id_omitted_raises_validation_error(self, sample_workspace_paths: WorkspacePaths) -> None:
+        """[tier-1/unit] WorkspacePaths: constructing it without project_id raises ValidationError."""
+        fields = dict(sample_workspace_paths)
+        del fields["project_id"]
+
+        with pytest.raises(ValidationError):
+            WorkspacePaths(**fields)

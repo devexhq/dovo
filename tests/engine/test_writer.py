@@ -9,8 +9,7 @@ from pathlib import Path
 import pytest
 
 from dovo.common.filesystem import Filesystem
-from dovo.common.filesystem.models import RepositoryPaths, WorkspacePaths
-from dovo.common.filesystem.services.global_root import resolve_global_paths
+from dovo.common.filesystem.models import WorkspacePaths
 from dovo.common.redact import SecretRedactor
 from dovo.core.catalog import Catalog
 from dovo.core.catalog.blueprint import Blueprint
@@ -18,7 +17,6 @@ from dovo.core.catalog.definitions import StepDefinition, StepType
 from dovo.core.db import SessionStatus
 from dovo.core.project.models import ProjectIdentity
 from dovo.core.project.services.identity import save_project_identity
-from dovo.core.project.services.storage import resolve_workspace_paths
 from dovo.engine.models import DefinitionRef, DefinitionsManifest
 from dovo.engine.state_models import SessionJsonPayload, SessionLifecycle
 from dovo.engine.writer import (
@@ -30,13 +28,14 @@ from dovo.engine.writer import (
 )
 from tests.harness.builders import BlueprintBuilder, StepBuilder
 from tests.harness.catalog import write_runnable_blueprint, write_runnable_step
+from tests.harness.workspace_paths import initialized_workspace_paths
 
 WorkspacePathsFactory = Callable[[Path, Path | None], WorkspacePaths]
 
 
 def _paths_for(root: Path) -> WorkspacePaths:
     """Resolve the WorkspacePaths snapshot for root, reflecting its current project.json."""
-    return resolve_workspace_paths(RepositoryPaths.from_root(root), resolve_global_paths(None))
+    return initialized_workspace_paths(root)
 
 
 class SnapshotDefinitionsTests:

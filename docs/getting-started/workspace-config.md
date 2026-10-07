@@ -25,6 +25,8 @@ This provisions the local `.dovo/` directory structure:
     └── steps/
 ```
 
+Every command except `dovo init` requires this step first: without a valid `.dovo/project.json` it exits `1` with `Workspace is not initialized` and a `dovo init` prompt. `dovo run` initializes the workspace automatically.
+
 ### Flags & Repair Options
 
 * `--repair`: Non-destructively inserts missing required keys into `.dovo/config.json` while preserving your custom project settings and timestamps.
