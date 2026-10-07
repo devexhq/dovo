@@ -43,6 +43,22 @@ def docs(context, serve=True):
 
 
 @task
+def e2e(context, path="e2e", fast_fail=False, markers="not llm"):
+    """Run end-to-end tests against the installed dovo CLI."""
+    cmd = [sys.executable, "-m", "pytest", "-c", "e2e/pytest.ini", path, "-n", "0"]
+    if markers:
+        cmd.extend(["-m", markers])
+    if fast_fail:
+        cmd.append("-x")
+    cmd.append("-q")
+
+    env = os.environ.copy()
+    env["COLUMNS"] = "160"
+    env["PYTHONIOENCODING"] = "utf-8"
+    context.run(" ".join(shlex.quote(part) for part in cmd), env=env, pty=False)
+
+
+@task
 def complexity(
     context, paths="src/dovo", plain=False, max_complexity=10, suggest_refactors=False, local=False, failed=False
 ):
