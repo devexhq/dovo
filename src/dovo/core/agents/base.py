@@ -7,8 +7,10 @@ import time
 from collections.abc import Callable
 from dataclasses import dataclass
 
+from dovo.common.redact import SecretRedactor
 from dovo.core.agents.credentials import missing_credential_error, resolve_credential
 from dovo.core.agents.models import AgentRequest, AgentResponse
+from dovo.core.agents.redaction import build_response_redactor, redact_agent_response
 from dovo.core.agents.responses import provider_error_response
 
 
@@ -20,19 +22,28 @@ def elapsed_ms(started: float) -> int:
 class BaseAgentProvider(abc.ABC):
     """Provider-agnostic contract for invoking an agent.
 
-    ``invoke`` checks the descriptor's credentials before delegating to ``_invoke``; subclasses implement ``_invoke`` and
-    never override ``invoke``.
+    ``invoke`` checks the descriptor's credentials before delegating to ``_invoke`` and masks secrets in the response's
+    errors, raw_text, and summary; subclasses implement ``_invoke`` and never override ``invoke``.
     """
 
     def invoke(self, request: AgentRequest) -> AgentResponse:
-        """Return PROVIDER_ERROR with the canonical diagnostic when no credential is usable, else run ``_invoke``."""
+        """Return the masked PROVIDER_ERROR when no credential is usable, else the masked ``_invoke`` response."""
         started = time.monotonic()
+        redactor = self._response_redactor(request)
 
         missing = self._credential_preflight()
         if missing is not None:
-            return provider_error_response(duration_ms=elapsed_ms(started), detail=missing)
+            response = provider_error_response(duration_ms=elapsed_ms(started), detail=missing)
+        else:
+            response = self._invoke(request)
 
-        return self._invoke(request)
+        return redact_agent_response(response, redactor)
+
+    def _response_redactor(self, request: AgentRequest) -> SecretRedactor:
+        """Build the invocation-time redactor for this provider's descriptor and the request's worktree."""
+        spec = self._provider_spec()
+
+        return build_response_redactor(() if spec is None else spec.credential_envs, request.worktree_path)
 
     @abc.abstractmethod
     def _invoke(self, request: AgentRequest) -> AgentResponse:

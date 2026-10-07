@@ -5,7 +5,8 @@ from __future__ import annotations
 from pathlib import Path
 
 from dovo.common.filesystem import WorkspacePaths
-from dovo.core.db import SessionsRepository, SessionStatus
+from dovo.common.redact import SecretRedactor
+from dovo.core.db import SessionRecord, SessionsRepository, SessionStatus
 from dovo.core.sessions.models import (
     DiffResult,
     DiffStatus,
@@ -27,6 +28,18 @@ def _render_run_log_line(event: SessionLogEvent) -> str:
     """Render one session.log event as a short text line of its timestamp, kind, and populated scalar fields."""
     suffix = "".join(f" {name}={value}" for name, value in event.details().items())
     return f"[{event.ts}] {event.event.value}{suffix}"
+
+
+def _history_redactor(paths: WorkspacePaths) -> SecretRedactor:
+    """Build the read-time redactor from the live environment and the repository .env."""
+    return SecretRedactor.from_environment(env_file_dir=paths.root_dir)
+
+
+def _mask_record(row: SessionRecord, redactor: SecretRedactor) -> SessionRecord:
+    """Return ``row`` itself without an error_message, else a detached copy whose error_message is masked."""
+    if row.error_message is None:
+        return row
+    return SessionRecord.model_validate({**row.model_dump(), "error_message": redactor.redact_text(row.error_message)})
 
 
 class Session:
@@ -93,6 +106,7 @@ class Session:
         if row is None:
             return HistoryShowResult(status=HistoryShowStatus.NOT_FOUND, session_id=self.session_id)
 
+        row = _mask_record(row, _history_redactor(self.paths))
         if not include_logs:
             return HistoryShowResult(status=HistoryShowStatus.OK, session_id=self.session_id, session=row)
 
@@ -148,7 +162,10 @@ class Session:
                 available_attempts=available_attempts,
             )
 
-        return LogsShowResult(status=LogsShowStatus.OK, session_id=self.session_id, lines=lines)
+        redactor = _history_redactor(self.paths)
+        return LogsShowResult(
+            status=LogsShowStatus.OK, session_id=self.session_id, lines=[redactor.redact_text(line) for line in lines]
+        )
 
 
 class SessionCollection:
@@ -176,7 +193,8 @@ class SessionCollection:
             except ValueError:
                 status_filter = status
 
-        sessions = self.db.list(limit=limit, status=status_filter)
+        redactor = _history_redactor(self.paths)
+        sessions = [_mask_record(row, redactor) for row in self.db.list(limit=limit, status=status_filter)]
         return HistoryListResult(status=HistoryListStatus.OK, sessions=sessions, warnings=warnings)
 
     def latest_diff(self) -> DiffResult:

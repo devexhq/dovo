@@ -14,6 +14,7 @@ from typer.testing import CliRunner
 from dovo.cli import app
 from dovo.common.filesystem.models import RepositoryPaths, WorkspacePaths
 from dovo.common.filesystem.services.global_root import resolve_global_paths
+from dovo.common.redact import SecretRedactor
 from dovo.core.db import DovoDb, SessionRecord, SessionStatus
 from dovo.core.project.models import ProjectIdentity
 from dovo.core.project.services.identity import save_project_identity
@@ -55,7 +56,7 @@ def _write_session_diff(diff_workspace: Path, session_id: str, started_at: str |
     """Persist a session record and a real unified-diff patch for session_id in the workspace's session storage."""
     paths = _paths_for(diff_workspace)
     _seed_run(paths, session_id, started_at)
-    return write_session_diff(get_session_dir(paths, session_id), _PATCH_TEXT)
+    return write_session_diff(get_session_dir(paths, session_id), _PATCH_TEXT, SecretRedactor([]))
 
 
 def _write_global_session_diff(diff_workspace: Path, session_id: str) -> Path:
@@ -64,7 +65,7 @@ def _write_global_session_diff(diff_workspace: Path, session_id: str) -> Path:
     save_project_identity(diff_workspace / ".dovo" / "project.json", identity)
     paths = _paths_for(diff_workspace)
     _seed_run(paths, session_id)
-    return write_session_diff(get_session_dir(paths, session_id), _PATCH_TEXT)
+    return write_session_diff(get_session_dir(paths, session_id), _PATCH_TEXT, SecretRedactor([]))
 
 
 class DiffCliIntegrationTests:

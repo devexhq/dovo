@@ -6,6 +6,7 @@ from datetime import UTC, datetime
 
 from sqlmodel import col, select
 
+from dovo.common.redact import SecretRedactor
 from dovo.core.db.models import SessionRecord, SessionStatus
 from dovo.core.db.repositories.base import BaseRepository
 
@@ -22,6 +23,13 @@ def _completed_at_for(status: SessionStatus, completed_at: str | None) -> str | 
     if completed_at is None and status in (SessionStatus.COMPLETED, SessionStatus.FAILED, SessionStatus.CANCELLED):
         return datetime.now(UTC).strftime("%Y-%m-%d %H:%M:%S")
     return completed_at
+
+
+def _redacted_error_message(error_message: str | None) -> str | None:
+    """Mask secrets in ``error_message`` using the live environment; None stays None."""
+    if error_message is None:
+        return None
+    return SecretRedactor.from_environment().redact_text(error_message)
 
 
 class SessionsRepository(BaseRepository):
@@ -106,7 +114,7 @@ class SessionsRepository(BaseRepository):
 
             record.status = status_enum
             record.completed_at = completed_at
-            record.error_message = error_message
+            record.error_message = _redacted_error_message(error_message)
             if pid is not None:
                 record.pid = pid
             if worktree_id is not None:
@@ -152,7 +160,7 @@ class SessionsRepository(BaseRepository):
             if status_enum is not None:
                 record.status = status_enum
                 record.completed_at = _completed_at_for(status_enum, None)
-                record.error_message = error_message
+                record.error_message = _redacted_error_message(error_message)
             if worktree_id is not None:
                 record.worktree_id = worktree_id
             if worktree_kept is not None:

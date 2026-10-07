@@ -11,6 +11,7 @@ import pytest
 from dovo.common.filesystem import Filesystem
 from dovo.common.filesystem.models import RepositoryPaths, WorkspacePaths
 from dovo.common.filesystem.services.global_root import resolve_global_paths
+from dovo.common.redact import SecretRedactor
 from dovo.core.catalog import Catalog
 from dovo.core.catalog.blueprint import Blueprint
 from dovo.core.catalog.definitions import StepDefinition, StepType
@@ -204,7 +205,20 @@ class SessionArtifactWriterTests:
         session_dir = tmp_path / "session-dir"
         session_dir.mkdir()
 
-        target = write_session_diff(session_dir, "diff content")
+        target = write_session_diff(session_dir, "diff content", SecretRedactor([]))
 
         assert target == session_dir / "diff.patch"
         assert target.read_text(encoding="utf-8") == "diff content"
+
+    def test_write_session_diff_persists_masked_copy_and_leaves_input_unchanged(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """[tier-1/unit] write_session_diff: with ANTHROPIC_API_KEY="sk-ant-secret-value-123", diff_text "+key=sk-ant-secret-value-123\\n" writes "+key=[REDACTED:ANTHROPIC_API_KEY]\\n" to <session_dir>/diff.patch and returns that path."""
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-secret-value-123")
+        session_dir = tmp_path / "session-dir"
+        session_dir.mkdir()
+
+        target = write_session_diff(session_dir, "+key=sk-ant-secret-value-123\n", SecretRedactor.from_environment())
+
+        assert target == session_dir / "diff.patch"
+        assert target.read_text(encoding="utf-8") == "+key=[REDACTED:ANTHROPIC_API_KEY]\n"

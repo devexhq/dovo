@@ -545,3 +545,49 @@ class SessionDetailsIncludeLogsTests:
         assert (result.log_files, result.log_snippet) == ([], [])
         assert len(result.errors) == 1
         assert "Permission denied" in result.errors[0]
+
+
+class SessionHistoryRedactionTests:
+    def test_details_and_list_return_masked_error_message(
+        self, isolated_workspace: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """[tier-1/integration] Session.details / SessionCollection.list: a row stored with error_message "s3cr3t-value" while SVC_TOKEN="s3cr3t-value" returns "[REDACTED:SVC_TOKEN]" from both."""
+        collection = SessionCollection(_paths_for(isolated_workspace))
+        collection.db.create(session_id="old", blueprint_name="bp", blueprint_key="bp", status=SessionStatus.COMPLETED)
+        collection.db.update_status("old", SessionStatus.FAILED, error_message="s3cr3t-value")
+        monkeypatch.setenv("SVC_TOKEN", "s3cr3t-value")
+
+        details = collection.get("old").details()
+        listed = collection.list()
+
+        assert details.session is not None
+        assert details.session.error_message == "[REDACTED:SVC_TOKEN]"
+        assert [row.error_message for row in listed.sessions] == ["[REDACTED:SVC_TOKEN]"]
+        stored = collection.db.get("old")
+        assert stored is not None
+        assert stored.error_message == "s3cr3t-value"
+
+    def test_logs_return_masked_step_lines(self, isolated_workspace: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """[tier-1/integration] Session.logs: a step stdout log file holding "s3cr3t-value" with SVC_TOKEN="s3cr3t-value" returns lines == ["[REDACTED:SVC_TOKEN]"]."""
+        monkeypatch.setenv("SVC_TOKEN", "s3cr3t-value")
+        session = Session(_paths_for(isolated_workspace), "sess")
+        session_log_dir = _seed_session(session, isolated_workspace)
+        (session_log_dir / "01_build_attempt_1.stdout.log").write_text("s3cr3t-value\n", encoding="utf-8")
+
+        result = session.logs(step="build")
+
+        assert result.status == LogsShowStatus.OK
+        assert result.lines == ["[REDACTED:SVC_TOKEN]"]
+
+    def test_already_masked_log_line_is_returned_unchanged(
+        self, isolated_workspace: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """[tier-1/integration] Session.logs: a step log line "[REDACTED:SVC_TOKEN]" is returned equal to itself."""
+        monkeypatch.setenv("SVC_TOKEN", "s3cr3t-value")
+        session = Session(_paths_for(isolated_workspace), "sess")
+        session_log_dir = _seed_session(session, isolated_workspace)
+        (session_log_dir / "01_build_attempt_1.stdout.log").write_text("[REDACTED:SVC_TOKEN]\n", encoding="utf-8")
+
+        result = session.logs(step="build")
+
+        assert result.lines == ["[REDACTED:SVC_TOKEN]"]

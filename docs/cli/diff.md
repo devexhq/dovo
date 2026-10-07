@@ -39,7 +39,8 @@ dovo diff [session_id] [OPTIONS]
    - Passing `--full` renders all formatted lines without truncation.
    - Non-TTY stdout (e.g. piped to `cat` or redirected to a file) and `--raw` mode automatically bypass truncation limits.
    - When `--raw` is passed, outputs the exact patch content directly to stdout for redirection or piping into `git apply` / `patch`.
-4. **Exit Codes**:
+4. **Secret masking**: `diff.patch` is written with secret values replaced by `[REDACTED:<NAME>]` or `[REDACTED]`, so a masked line will not reproduce the original value when applied with `git apply` or `patch`.
+5. **Exit Codes**:
    - `0`: Diff successfully displayed, or empty diff.
    - `1`: Session not found, diff artifact not found, or read failure.
 

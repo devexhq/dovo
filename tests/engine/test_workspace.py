@@ -583,6 +583,27 @@ class WorkspaceCaptureAndPersistDiffTests:
         assert (session_dir / "diff.patch").exists()
         assert warnings == []
 
+    def test_capture_and_persist_diff_masks_worktree_secret_in_patch_file(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """[tier-1/integration] capture_and_persist_diff: a worktree file adding "token=s3cr3t-value" with SVC_TOKEN="s3cr3t-value" yields a diff.patch containing "[REDACTED:SVC_TOKEN]" and not "s3cr3t-value"."""
+        monkeypatch.setenv("SVC_TOKEN", "s3cr3t-value")
+        workspace_root = _worktree_workspace(tmp_path)
+        context = RunSettings(
+            cwd=workspace_root, use_worktree=True, session_id="sess-1", paths=_paths_for(workspace_root)
+        )
+        _, _, session, _ = Workspace(context).setup()
+        assert session is not None
+        (session.worktree_path / "new_file.txt").write_text("token=s3cr3t-value\n", encoding="utf-8")
+        warnings: list[str] = []
+
+        Workspace(context).capture_and_persist_diff(session, warnings)
+
+        patch_text = (_paths_for(workspace_root).session_dir("sess-1") / "diff.patch").read_text(encoding="utf-8")
+        assert "+token=[REDACTED:SVC_TOKEN]" in patch_text
+        assert "s3cr3t-value" not in patch_text
+        assert warnings == []
+
     def test_git_failure_appends_warning_instead_of_raising(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
