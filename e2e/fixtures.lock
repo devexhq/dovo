@@ -1,0 +1,3 @@
+# Pinned checkout of the external fixture repository for Dovo CLI E2E tests
+repository = "git@github.com:devexhq/dovo-e2e-fixtures.git"
+commit = "51185b8e5cc065d641074dc827b3cca83882662d"

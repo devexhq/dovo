@@ -10,6 +10,7 @@ import shutil
 import subprocess
 import sys
 import time
+import tomllib
 from collections.abc import Generator
 from dataclasses import dataclass
 from pathlib import Path
@@ -21,6 +22,8 @@ DOVO_HOME = Path("/tmp/dovo-home")
 E2E_FIXTURES = Path("/tmp/dovo-e2e-fixtures")
 E2E_CACHES = Path("/tmp/dovo-e2e-caches")
 LOCK_FILE = Path("/tmp/dovo-e2e.lock")
+FIXTURES_LOCK_PATH = Path(__file__).parent / "fixtures.lock"
+LOCAL_FIXTURES_CANDIDATE = Path("/home/luckner/workspace/devexhq/dovo-e2e-fixtures")
 
 
 @dataclass(frozen=True)
@@ -325,3 +328,119 @@ def run_dovo_pty(dovo_binary_path: str, default_subprocess_env: dict[str, str]) 
         default_cwd=E2E_ROOT,
         default_env=default_subprocess_env,
     )
+
+
+def load_fixtures_lock(lock_path: Path) -> tuple[str, str]:
+    """Read repository URL and commit SHA from fixtures.lock."""
+    if not lock_path.is_file():
+        pytest.fail(f"Fixtures lockfile missing at {lock_path}")
+
+    with open(lock_path, "rb") as f:
+        data = tomllib.load(f)
+
+    repo_url = str(data.get("repository", ""))
+    commit_sha = str(data.get("commit", ""))
+    if not repo_url or not commit_sha:
+        pytest.fail(f"Invalid fixtures lockfile at {lock_path}: must declare repository and commit")
+
+    return repo_url, commit_sha
+
+
+def clone_and_checkout_fixtures(target_dir: Path, repo_url: str, commit_sha: str) -> None:
+    """Clone the fixture repository once and pin it to the locked commit SHA."""
+    source_url = os.environ.get("DOVO_E2E_FIXTURES_DIR")
+    if not source_url and LOCAL_FIXTURES_CANDIDATE.is_dir():
+        source_url = str(LOCAL_FIXTURES_CANDIDATE)
+    if not source_url:
+        source_url = repo_url
+
+    shutil.rmtree(target_dir, ignore_errors=True)
+    subprocess.run(["git", "clone", source_url, str(target_dir)], check=True, capture_output=True)
+    subprocess.run(["git", "-C", str(target_dir), "checkout", commit_sha], check=True, capture_output=True)
+
+
+@pytest.fixture(scope="session")
+def fixture_cache() -> Path:
+    """Provide the cloned and pinned external fixture repository cache directory."""
+    if not (E2E_FIXTURES / ".git").is_dir():
+        repo_url, commit_sha = load_fixtures_lock(FIXTURES_LOCK_PATH)
+        clone_and_checkout_fixtures(E2E_FIXTURES, repo_url, commit_sha)
+    return E2E_FIXTURES
+
+
+def init_git_baseline(target_dir: Path) -> None:
+    """Initialize a git repository with standard test committer identity and commit baseline files."""
+    subprocess.run(["git", "init", "-b", "main"], cwd=target_dir, check=True, capture_output=True)
+    subprocess.run(["git", "config", "user.name", "Dovo E2E Test"], cwd=target_dir, check=True, capture_output=True)
+    subprocess.run(
+        ["git", "config", "user.email", "dovo-e2e@devexhq.com"], cwd=target_dir, check=True, capture_output=True
+    )
+    subprocess.run(["git", "config", "commit.gpgSign", "false"], cwd=target_dir, check=True, capture_output=True)
+    subprocess.run(["git", "add", "-A"], cwd=target_dir, check=True, capture_output=True)
+    subprocess.run(
+        ["git", "commit", "-m", "chore: initial fixture baseline"], cwd=target_dir, check=True, capture_output=True
+    )
+
+
+def execute_fixture_bootstrap(target_dir: Path) -> bool:
+    """Execute optional bootstrap commands declared in fixture.toml. Returns git_baseline setting."""
+    manifest_path = target_dir / "fixture.toml"
+    if not manifest_path.is_file():
+        return True
+
+    with open(manifest_path, "rb") as f:
+        data = tomllib.load(f)
+
+    raw_bootstrap = data.get("bootstrap", [])
+    commands: list[list[str]] = []
+    if raw_bootstrap and isinstance(raw_bootstrap[0], list):
+        commands = raw_bootstrap
+    elif raw_bootstrap and isinstance(raw_bootstrap[0], str):
+        commands = [raw_bootstrap]
+
+    for cmd in commands:
+        subprocess.run(cmd, cwd=target_dir, check=True, capture_output=True)
+
+    return bool(data.get("git_baseline", True))
+
+
+def materialize_fixture(
+    fixture_cache: Path,
+    fixture_id: str,
+    target_dir: Path,
+) -> Path:
+    """Copy a fixture from the cache, run bootstrap commands, and initialize git baseline."""
+    source_dir = fixture_cache / "fixtures" / fixture_id
+    if not source_dir.is_dir():
+        source_dir = fixture_cache / fixture_id
+    if not source_dir.is_dir():
+        raise FileNotFoundError(f"Fixture '{fixture_id}' not found in {fixture_cache}")
+
+    shutil.copytree(source_dir, target_dir)
+    should_init_git = execute_fixture_bootstrap(target_dir)
+    if should_init_git:
+        init_git_baseline(target_dir)
+
+    return target_dir
+
+
+@pytest.fixture
+def git_project(
+    fixture_cache: Path,
+    clean_e2e_env: Path,
+    request: pytest.FixtureRequest,
+) -> Path:
+    """Materialize a clean Git repository from a fixture without dovo initialization."""
+    fixture_id = getattr(request, "param", "minimal-git-project")
+    safe_test_name = request.node.name.replace("[", "_").replace("]", "_")
+    target_dir = clean_e2e_env / f"proj_{fixture_id}_{safe_test_name}"
+    return materialize_fixture(fixture_cache, fixture_id, target_dir)
+
+
+@pytest.fixture
+def initialized_project(git_project: Path, run_dovo: DovoRunner) -> Path:
+    """Materialize a Git repository and run dovo init, returning the initialized project path."""
+    result = run_dovo(["init"], cwd=git_project)
+    if result.exit_code != 0:
+        raise RuntimeError(f"dovo init failed during setup: {result.stderr or result.stdout}")
+    return git_project
