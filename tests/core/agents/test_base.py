@@ -27,8 +27,9 @@ _PROVIDER_RESPONSE = AgentResponse(status=AgentResponseStatus.NO_OP, duration_ms
 class _DirectSubclassProvider(BaseAgentProvider):
     """Non-direct provider double: subclasses the base itself and optionally declares a descriptor."""
 
-    def __init__(self, envs: tuple[str, ...] | None) -> None:
+    def __init__(self, envs: tuple[str, ...] | None, response: AgentResponse = _PROVIDER_RESPONSE) -> None:
         self.invoke_calls: list[AgentRequest] = []
+        self._response = response
         self._spec = (
             None
             if envs is None
@@ -47,7 +48,7 @@ class _DirectSubclassProvider(BaseAgentProvider):
 
     def _invoke(self, request: AgentRequest) -> AgentResponse:
         self.invoke_calls.append(request)
-        return _PROVIDER_RESPONSE
+        return self._response
 
 
 def _clear_test_credentials(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -159,3 +160,101 @@ class RegisteredAdapterCredentialContractTests:
         assert response.status == AgentResponseStatus.PROVIDER_ERROR
         assert response.errors == [f"Agent provider error (AGENT_PROVIDER_ERROR): {missing_credential_error(spec)}"]
         assert backend_calls == []
+
+
+def _reflecting_response(status: AgentResponseStatus, secret: str) -> AgentResponse:
+    return AgentResponse(
+        status=status,
+        errors=[f"first {secret}", "second"],
+        raw_text=f"raw {secret}",
+        summary=f"summary {secret}",
+        unified_diff=f"+{secret}\n",
+        duration_ms=7,
+    )
+
+
+class InvokeRedactionTests:
+    @pytest.mark.parametrize(
+        "status",
+        [
+            AgentResponseStatus.TIMEOUT,
+            AgentResponseStatus.PROVIDER_ERROR,
+            AgentResponseStatus.NO_OP,
+            AgentResponseStatus.PROPOSED_PATCH,
+        ],
+    )
+    def test_invoke_masks_reflected_credential_in_every_response_branch(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, status: AgentResponseStatus
+    ) -> None:
+        """[tier-1/unit] BaseAgentProvider.invoke: a credentialed double returning a response with errors, raw_text, and summary holding TEST_CREDENTIAL_PRIMARY's value returns those fields with the literal absent for each status."""
+        _clear_test_credentials(monkeypatch)
+        monkeypatch.setenv("TEST_CREDENTIAL_PRIMARY", "xq7")
+        provider = _DirectSubclassProvider(
+            ("TEST_CREDENTIAL_PRIMARY", "TEST_CREDENTIAL_FALLBACK"), _reflecting_response(status, "xq7")
+        )
+
+        response = provider.invoke(AgentRequestBuilder().with_worktree_path(tmp_path).build())
+
+        assert response.status == status
+        assert response.errors == ["first [REDACTED:TEST_CREDENTIAL_PRIMARY]", "second"]
+        assert response.raw_text == "raw [REDACTED:TEST_CREDENTIAL_PRIMARY]"
+        assert response.summary == "summary [REDACTED:TEST_CREDENTIAL_PRIMARY]"
+        assert response.unified_diff == "+xq7\n"
+
+    def test_invoke_masks_suffix_secret_for_a_credential_free_descriptor(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """[tier-1/unit] BaseAgentProvider.invoke: a double with credential_envs=() reflecting SVC_SECRET's value returns it as "[REDACTED:SVC_SECRET]"."""
+        monkeypatch.setenv("SVC_SECRET", "s3cr3t-value")
+        provider = _DirectSubclassProvider((), _reflecting_response(AgentResponseStatus.NO_OP, "s3cr3t-value"))
+
+        response = provider.invoke(AgentRequestBuilder().with_worktree_path(tmp_path).build())
+
+        assert response.errors == ["first [REDACTED:SVC_SECRET]", "second"]
+
+    def test_invoke_masks_the_alternative_credential_that_was_not_used(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """[tier-1/unit] BaseAgentProvider.invoke: with TEST_CREDENTIAL_PRIMARY and TEST_CREDENTIAL_FALLBACK both set, a response reflecting the FALLBACK value returns it masked."""
+        monkeypatch.setenv("TEST_CREDENTIAL_PRIMARY", "xq7")
+        monkeypatch.setenv("TEST_CREDENTIAL_FALLBACK", "zk9")
+        provider = _DirectSubclassProvider(
+            ("TEST_CREDENTIAL_PRIMARY", "TEST_CREDENTIAL_FALLBACK"),
+            _reflecting_response(AgentResponseStatus.PROVIDER_ERROR, "zk9"),
+        )
+
+        response = provider.invoke(AgentRequestBuilder().with_worktree_path(tmp_path).build())
+
+        assert response.raw_text == "raw [REDACTED:TEST_CREDENTIAL_FALLBACK]"
+
+    def test_invoke_masks_the_rotated_credential_on_the_next_call(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """[tier-1/unit] BaseAgentProvider.invoke: TEST_CREDENTIAL_PRIMARY changed between two calls on one provider masks the second call's new value in errors."""
+        monkeypatch.setenv("TEST_CREDENTIAL_PRIMARY", "xq7")
+        provider = _DirectSubclassProvider(
+            ("TEST_CREDENTIAL_PRIMARY", "TEST_CREDENTIAL_FALLBACK"),
+            _reflecting_response(AgentResponseStatus.PROVIDER_ERROR, "rot8"),
+        )
+        request = AgentRequestBuilder().with_worktree_path(tmp_path).build()
+
+        first = provider.invoke(request)
+        monkeypatch.setenv("TEST_CREDENTIAL_PRIMARY", "rot8")
+        second = provider.invoke(request)
+
+        assert first.errors == ["first rot8", "second"]
+        assert second.errors == ["first [REDACTED:TEST_CREDENTIAL_PRIMARY]", "second"]
+
+    def test_invoke_leaves_response_without_secrets_equal_to_the_double_output(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """[tier-1/unit] BaseAgentProvider.invoke: a response with no sensitive text is returned equal to the double's AgentResponse."""
+        monkeypatch.setenv("TEST_CREDENTIAL_PRIMARY", "xq7")
+        expected = AgentResponse(
+            status=AgentResponseStatus.NO_OP, errors=["plain"], raw_text="raw", summary="done", duration_ms=3
+        )
+        provider = _DirectSubclassProvider(("TEST_CREDENTIAL_PRIMARY", "TEST_CREDENTIAL_FALLBACK"), expected)
+
+        response = provider.invoke(AgentRequestBuilder().with_worktree_path(tmp_path).build())
+
+        assert response == expected

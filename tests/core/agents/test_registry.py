@@ -2,16 +2,19 @@
 
 from __future__ import annotations
 
+import json
 import os
 import subprocess
 import urllib.request
 from collections.abc import Iterator, MutableMapping
+from pathlib import Path
 
 import pytest
 from pydantic import ValidationError
 
 from dovo.core.agents import CopilotAgentAdapter, ResolvedAgentSettings, get_agent_adapter
 from dovo.core.agents.registry import PROVIDERS
+from tests.harness import AgentRequestBuilder, FakeAgentRunner
 
 
 class _UnreadableEnvironment(MutableMapping[str, str]):
@@ -99,3 +102,33 @@ class ResolvedAgentSettingsTests:
         settings = ResolvedAgentSettings.model_validate(valid)
         with pytest.raises(ValidationError):
             settings.provider = "copilot"
+
+
+class RegisteredProviderRedactionTests:
+    @pytest.mark.parametrize(
+        "token",
+        [pytest.param(token, id=token) for token, spec in PROVIDERS.items() if spec.credential_envs],
+    )
+    def test_registered_credentialed_provider_masks_reflected_credential_on_invoke(
+        self, token: str, git_repo: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """[tier-1/integration] PROVIDERS[token].build().invoke: with every credential_envs name set, a spied external backend that reflects each value returns a response whose errors and raw_text hold none of the values."""
+        spec = PROVIDERS[token]
+        values = [f"cr{index}x" for index, _ in enumerate(spec.credential_envs)]
+        for name, value in zip(spec.credential_envs, values, strict=True):
+            monkeypatch.setenv(name, value)
+        adapter = spec.build()
+        runner = FakeAgentRunner()
+        monkeypatch.setattr(f"{type(adapter).__module__}.run_isolated_process", runner)
+        request = AgentRequestBuilder().with_worktree_path(git_repo).build()
+        reflected = " ".join(values)
+
+        runner.returning(returncode=1, stderr=reflected.encode())
+        failed = adapter.invoke(request)
+        stream = json.dumps({"type": "assistant.message", "data": {"content": reflected}})
+        runner.returning(stdout=f'{stream}\n{{"type":"result","data":{{"exitCode":0}}}}\n'.encode())
+        finished = adapter.invoke(request)
+
+        reflecting_text = "\n".join([*failed.errors, finished.raw_text or ""])
+        assert reflecting_text.count("[REDACTED:") >= len(values)
+        assert not any(value in reflecting_text for value in values)

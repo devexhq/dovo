@@ -198,3 +198,37 @@ class SessionsRepositoryExecutionStateTests:
 
         assert record is None
         assert repo.get("wf_a") == before
+
+
+class SessionsRepositoryRedactionTests:
+    @pytest.mark.parametrize("writer", ["update_status", "save_execution_state"])
+    def test_error_message_is_stored_masked_by_both_writers(
+        self, db_path: Path, db_engine: Engine, monkeypatch: pytest.MonkeyPatch, writer: str
+    ) -> None:
+        """[tier-1/integration] SessionsRepository.update_status / save_execution_state: error_message "failed with s3cr3t-value" with SVC_TOKEN="s3cr3t-value" is stored as "failed with [REDACTED:SVC_TOKEN]"."""
+        monkeypatch.setenv("SVC_TOKEN", "s3cr3t-value")
+        repo = SessionsRepository(db_path=db_path, db_engine=db_engine, project_id="proj-a")
+        repo.create(session_id="wf_a", blueprint_name="deploy", blueprint_key="deploy")
+        message = "failed with s3cr3t-value"
+
+        if writer == "update_status":
+            repo.update_status("wf_a", SessionStatus.FAILED, error_message=message)
+        else:
+            repo.save_execution_state(
+                "wf_a", "{}", expected_revision=0, next_revision=1, status=SessionStatus.FAILED, error_message=message
+            )
+
+        stored = repo.get("wf_a")
+        assert stored is not None
+        assert stored.error_message == "failed with [REDACTED:SVC_TOKEN]"
+
+    def test_error_message_none_is_stored_as_none(self, db_path: Path, db_engine: Engine) -> None:
+        """[tier-1/integration] SessionsRepository.update_status: error_message=None stores None."""
+        repo = SessionsRepository(db_path=db_path, db_engine=db_engine, project_id="proj-a")
+        repo.create(session_id="wf_a", blueprint_name="deploy", blueprint_key="deploy")
+
+        repo.update_status("wf_a", SessionStatus.COMPLETED, error_message=None)
+
+        stored = repo.get("wf_a")
+        assert stored is not None
+        assert stored.error_message is None

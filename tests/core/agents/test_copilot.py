@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import subprocess
 from pathlib import Path
 
@@ -188,3 +189,71 @@ class CopilotInvokeOutcomeTests:
 
         assert resp.status == AgentResponseStatus.PROVIDER_ERROR
         assert resp.errors == [expected_error]
+
+
+class _FileWritingRunner(FakeAgentRunner):
+    """Runner double that adds a file to the worktree before returning, as an editing agent would."""
+
+    def __call__(
+        self,
+        cmd: list[str],
+        *,
+        cwd: Path,
+        env: dict[str, str],
+        input_data: bytes,
+        timeout_seconds: float,
+        **kwargs: object,
+    ) -> subprocess.CompletedProcess[bytes]:
+        (cwd / "edited.txt").write_text("edited\n", encoding="utf-8")
+        return super().__call__(cmd, cwd=cwd, env=env, input_data=input_data, timeout_seconds=timeout_seconds, **kwargs)
+
+
+def _assistant_stream(text: str) -> bytes:
+    return (
+        json.dumps({"type": "assistant.message", "data": {"content": text}}).encode()
+        + b'\n{"type":"result","data":{"exitCode":0}}\n'
+    )
+
+
+class CopilotRedactionTests:
+    def test_invoke_masks_token_reflected_by_gh_stderr(self, git_repo: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """[tier-1/integration] CopilotAgentAdapter.invoke: GH_TOKEN="gho_"+36 chars with FakeAgentRunner returning returncode=1 and stderr containing that token yields PROVIDER_ERROR whose errors, joined, do not contain the token."""
+        token = "gho_" + "a" * 36
+        monkeypatch.setenv("GH_TOKEN", token)
+        runner = FakeAgentRunner().returning(returncode=1, stderr=f"auth failed for {token}".encode())
+        monkeypatch.setattr("dovo.core.agents.copilot.run_isolated_process", runner)
+
+        resp = CopilotAgentAdapter().invoke(AgentRequestBuilder().with_worktree_path(git_repo).build())
+
+        assert resp.status == AgentResponseStatus.PROVIDER_ERROR
+        assert token not in "\n".join(resp.errors)
+        assert "[REDACTED:GH_TOKEN]" in "\n".join(resp.errors)
+
+    def test_invoke_masks_both_copilot_credential_alternatives(
+        self, git_repo: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """[tier-1/integration] CopilotAgentAdapter.invoke: GH_TOKEN="short1" and GITHUB_TOKEN="short2" with the runner reflecting both in result text yield a response whose raw_text has neither."""
+        monkeypatch.setenv("GH_TOKEN", "sh1")
+        monkeypatch.setenv("GITHUB_TOKEN", "sh2")
+        runner = FakeAgentRunner().returning(stdout=_assistant_stream("saw sh1 and sh2"))
+        monkeypatch.setattr("dovo.core.agents.copilot.run_isolated_process", runner)
+
+        resp = CopilotAgentAdapter().invoke(AgentRequestBuilder().with_worktree_path(git_repo).build())
+
+        assert resp.raw_text == "saw [REDACTED:GH_TOKEN] and [REDACTED:GITHUB_TOKEN]"
+
+    def test_invoke_masks_reflected_token_in_a_proposed_patch_response(
+        self, git_repo: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """[tier-1/integration] CopilotAgentAdapter.invoke: a runner that writes a file and reflects GH_TOKEN in the final message yields PROPOSED_PATCH whose raw_text is masked and whose unified_diff is unchanged."""
+        token = "gho_" + "b" * 36
+        monkeypatch.setenv("GH_TOKEN", token)
+        runner = _FileWritingRunner().returning(stdout=_assistant_stream(f"done with {token}"))
+        monkeypatch.setattr("dovo.core.agents.copilot.run_isolated_process", runner)
+
+        resp = CopilotAgentAdapter().invoke(AgentRequestBuilder().with_worktree_path(git_repo).build())
+
+        assert resp.status == AgentResponseStatus.PROPOSED_PATCH
+        assert resp.raw_text == "done with [REDACTED:GH_TOKEN]"
+        assert resp.unified_diff is not None
+        assert "+edited" in resp.unified_diff

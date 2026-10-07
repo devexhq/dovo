@@ -28,7 +28,8 @@ Trailing CLI arguments (after options) are forwarded to declared blueprint input
 1. **Resolution**: Resolves `<name>` from `.dovo/catalog/` via `Blueprint.load`.
 2. **Execution**: Runs the blueprint through the unified runtime engine (`BlueprintRunService`).
 3. **Agent steps**: An agent step sends its interpolated `prompt` to the resolved provider in `direct` mode and applies any returned patch inside the worktree only. It fails with `Agent steps require an active git worktree.` under `--no-worktree` or a resumed in-place run. Its stdout is one JSON object (`status`, `summary`, `unfixable_reason`, `touched_files`); see [Agent-Step Adapters](../guides/agent-providers.md).
-4. **Exit Codes**:
+4. **Secret masking**: Streamed step output, the per-step capture, and failure messages mask secret values: environment variables whose names end in `_KEY`, `_TOKEN`, `_SECRET`, `_PASSWORD`, or `_AUTH` (values of 6+ characters), matching keys in the repository `.env`, the step's own `env:` entries under those same name suffixes and 6+ character rule, and common credential formats (GitHub tokens, Anthropic keys, AWS access key IDs). A masked value prints as `[REDACTED:<NAME>]` or `[REDACTED]`. Assertions still evaluate the raw output.
+5. **Exit Codes**:
    - `0`: Successful run or paused run (with run state saved).
    - `1`: Failed or cancelled run.
 

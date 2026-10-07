@@ -6,6 +6,7 @@ import shutil
 from dataclasses import dataclass
 from pathlib import Path
 
+from dovo.common.redact import SecretRedactor
 from dovo.core.config import ConfigLoadError
 from dovo.core.db import SessionStatus, WorktreesRepository
 from dovo.core.db.repositories.artifacts import ArtifactsRepository
@@ -178,7 +179,8 @@ class Workspace:
             GitRunner.add_intent_to_add(session.worktree_path, target=".")
             diff_text = GitRunner.diff(session.worktree_path, base_commit=session.base_commit, binary=True)
             session_dir = get_session_dir(self.context.paths, session_id)
-            write_session_diff(session_dir, diff_text)
+            redactor = SecretRedactor.from_environment(env_file_dir=self.context.paths.root_dir)
+            write_session_diff(session_dir, diff_text, redactor)
         except Exception as exc:
             warnings.append(f"Failed to persist session diff artifact: {exc}")
 

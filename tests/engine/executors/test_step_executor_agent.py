@@ -103,3 +103,47 @@ class StepExecutionAgentRunnerTests:
         assert result.error_message == MISSING_SETTINGS_MESSAGE
         assert result.stdout == ""
         assert result.stderr == ""
+
+
+class AgentStepRedactionTests:
+    def test_agent_step_masks_reflected_credential_in_result_and_stream(
+        self, git_repo: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """[tier-1/integration] StepExecution.run: an agent step whose FakeAgentProvider returns summary "token SVC_SECRET-value" with SVC_SECRET set yields StepResult.stdout and the on_output line holding "[REDACTED:SVC_SECRET]" and not the literal."""
+        monkeypatch.setenv("SVC_SECRET", "s3cr3t-value")
+        _use_provider(
+            monkeypatch,
+            FakeAgentProvider(AgentResponse(status=AgentResponseStatus.NO_OP, summary="token s3cr3t-value")),
+        )
+        streamed: list[str] = []
+        context = StepExecutionContext(
+            step=StepBuilder.agent("plan").build(),
+            worktree_path=git_repo,
+            agent_runner=build_agent_step_runner(_settings(), True),
+            on_output=lambda _stream, line: streamed.append(line),
+        )
+
+        result = StepExecution(context).run()
+
+        assert "[REDACTED:SVC_SECRET]" in result.stdout
+        assert "s3cr3t-value" not in result.stdout
+        assert len(streamed) == 1
+        assert "[REDACTED:SVC_SECRET]" in streamed[0]
+        assert "s3cr3t-value" not in streamed[0]
+
+    def test_agent_step_failure_diagnostic_is_masked_in_stderr_and_error_message(
+        self, git_repo: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """[tier-1/integration] StepExecution.run: a PROVIDER_ERROR fake response whose errors hold a SVC_SECRET value yields StepResult.stderr and error_message with the literal absent."""
+        monkeypatch.setenv("SVC_SECRET", "s3cr3t-value")
+        _use_provider(
+            monkeypatch,
+            FakeAgentProvider(AgentResponse(status=AgentResponseStatus.PROVIDER_ERROR, errors=["denied s3cr3t-value"])),
+        )
+
+        result = _run_agent_step(git_repo, StepBuilder.agent("plan"))
+
+        assert result.status == "failed"
+        assert "[REDACTED:SVC_SECRET]" in result.stderr + (result.error_message or "")
+        assert "s3cr3t-value" not in result.stderr
+        assert "s3cr3t-value" not in (result.error_message or "")

@@ -8,7 +8,7 @@ import subprocess
 import sys
 import threading
 import time
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import IO, Any
 
@@ -18,6 +18,7 @@ from dovo.common.process import (
     process_registry,
     terminate_process_tree,
 )
+from dovo.common.redact import SecretRedactor
 from dovo.core.catalog.definitions import StepDefinition, StepType
 from dovo.core.catalog.exceptions import StepValidationError
 from dovo.core.catalog.services.resolve_step import resolve_step_definition
@@ -34,6 +35,7 @@ from dovo.engine.executors.metadata import (
 from dovo.engine.executors.models import (
     ExecutionMetadata,
     InternalCommandContext,
+    OutputCallback,
     PreviousStepMetadata,
     StepDispatchOutcome,
     StepExecutionContext,
@@ -129,7 +131,9 @@ class StepExecution:
         self.step: StepDefinition = metadata.step
         self.worktree_path = metadata.worktree_path.resolve()
         self.context = metadata.context or {}
-        self.on_output = metadata.on_output
+        self._env_file_dir = metadata.paths.root_dir if metadata.paths is not None else None
+        self.redactor = SecretRedactor.from_environment(env_file_dir=self._env_file_dir)
+        self.on_output = self._masked_output_callback(metadata.on_output)
         self.step_index = _int_from_context_or_default(self.context, "step_index", metadata.step_index)
         self.initial_attempt = _int_from_context_or_default(self.context, "initial_attempt", metadata.initial_attempt)
         self.iteration_index = _int_from_context_or_default(self.context, "iteration_index", metadata.iteration_index)
@@ -158,11 +162,11 @@ class StepExecution:
         """Execute the step definition within worktree_path and return its StepResult."""
         if not self.worktree_path.exists() or not self.worktree_path.is_dir():
             outcome = _failed_dispatch(f"Worktree path '{self.worktree_path}' does not exist or is not a directory.")
-            return _step_result(self.step.id, outcome, 0.0)
+            return _step_result(self.redactor, self.step.id, outcome, 0.0)
 
         if not self._prepare():
             outcome = _failed_dispatch(f"Could not resolve step '{self.step.id}'.")
-            return _step_result(self.step.id, outcome, 0.0)
+            return _step_result(self.redactor, self.step.id, outcome, 0.0)
 
         start_time = time.monotonic()
         outcome = self._run_attempts()
@@ -172,6 +176,7 @@ class StepExecution:
 
         if outcome.status == "completed":
             return _step_result(
+                self.redactor,
                 self.step.id,
                 outcome,
                 duration,
@@ -312,6 +317,20 @@ class StepExecution:
             return _failed_dispatch(MISSING_SETTINGS_MESSAGE)
         return self.agent_runner(self.step, self.worktree_path, self.on_output)
 
+    def _masked_output_callback(self, callback: OutputCallback | None) -> OutputCallback | None:
+        """Wrap ``callback`` so every streamed line is masked with the current redactor; None stays None."""
+        if callback is None:
+            return None
+
+        def _masked(stream_name: str, line: str) -> None:
+            callback(stream_name, self.redactor.redact_text(line))
+
+        return _masked
+
+    def _refresh_redactor(self, process_env: Mapping[str, str]) -> None:
+        """Rebuild the redactor from this attempt's merged process environment and the repository .env."""
+        self.redactor = SecretRedactor.from_environment(env=process_env, env_file_dir=self._env_file_dir)
+
     def _build_process_env(self, metadata: ExecutionMetadata) -> dict[str, str]:
         """Merge environment variables: explicit step env > DOVO_* metadata > ambient env."""
         process_env = os.environ.copy()
@@ -339,7 +358,7 @@ class StepExecution:
         if log_file is None:
             return None
         try:
-            log_file.write(line)
+            log_file.write(self.redactor.redact_text(line))
             log_file.flush()
         except OSError as exc:
             self.log_warnings.append(f"Failed writing attempt log '{log_file.name}': {exc}")
@@ -436,6 +455,7 @@ class StepExecution:
     ) -> StepDispatchOutcome:
         """Spawn subprocess, stream standard output/error, and collect dispatch outcome."""
         env = self._build_process_env(metadata)
+        self._refresh_redactor(env)
         isolation_kwargs = get_isolated_process_kwargs()
         stdout_log, stderr_log = self._open_attempt_logs(metadata)
         try:
@@ -583,6 +603,7 @@ class StepExecution:
 
         if escalation == FailurePolicy.CONTINUE:
             return _step_result(
+                self.redactor,
                 self.step.id,
                 outcome,
                 duration,
@@ -591,7 +612,9 @@ class StepExecution:
                 outputs=outputs,
                 warnings=warnings,
             )
-        return _step_result(self.step.id, outcome, duration, status="failed", outputs=outputs, warnings=warnings)
+        return _step_result(
+            self.redactor, self.step.id, outcome, duration, status="failed", outputs=outputs, warnings=warnings
+        )
 
 
 def _resolve_script_invocation(script_file: Path) -> tuple[str | list[str], bool]:
@@ -606,6 +629,7 @@ def _resolve_script_invocation(script_file: Path) -> tuple[str | list[str], bool
 
 
 def _step_result(
+    redactor: SecretRedactor,
     step_id: str,
     outcome: StepDispatchOutcome,
     duration: float,
@@ -615,16 +639,16 @@ def _step_result(
     outputs: dict[str, str] | None = None,
     warnings: list[str] | None = None,
 ) -> StepResult:
-    """Convert a StepDispatchOutcome into a finalized StepResult model."""
+    """Convert a StepDispatchOutcome into a StepResult whose stdout, stderr, and error_message are masked."""
     return StepResult(
         step_id=step_id,
         status=status if status is not None else outcome.status,
         exit_code=exit_code if exit_code is not None else outcome.exit_code,
-        stdout=outcome.stdout,
-        stderr=outcome.stderr,
+        stdout=redactor.redact_text(outcome.stdout),
+        stderr=redactor.redact_text(outcome.stderr),
         duration_seconds=duration,
         attempts=outcome.attempts,
-        error_message=outcome.error_message,
+        error_message=None if outcome.error_message is None else redactor.redact_text(outcome.error_message),
         outputs=outputs or {},
         warnings=warnings or [],
     )

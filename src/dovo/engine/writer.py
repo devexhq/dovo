@@ -10,6 +10,7 @@ import yaml
 from pydantic import ValidationError
 
 from dovo.common.filesystem import Filesystem, WorkspacePaths
+from dovo.common.redact import SecretRedactor
 from dovo.core.catalog import Catalog
 from dovo.core.catalog.blueprint import Blueprint
 from dovo.core.catalog.definitions import BlueprintDefinition, LoopStepBlock, StepDefinition
@@ -230,10 +231,10 @@ def get_session_dir(paths: WorkspacePaths, session_id: str) -> Path:
     return target
 
 
-def write_session_diff(session_dir: Path, diff_text: str) -> Path:
-    """Atomically write unified diff to diff.patch in the session directory."""
+def write_session_diff(session_dir: Path, diff_text: str, redactor: SecretRedactor) -> Path:
+    """Atomically write a redacted copy of the unified diff to diff.patch in the session directory."""
     target_file = session_dir / "diff.patch"
-    Filesystem.atomic_write_text(target_file, diff_text)
+    Filesystem.atomic_write_text(target_file, redactor.redact_text(diff_text))
     return target_file
 
 

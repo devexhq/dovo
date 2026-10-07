@@ -14,6 +14,8 @@ logs/<session_id>/
 
 Per-attempt stdout/stderr capture is controlled by `history.save_attempt_logs` in `.dovo/config.json` (default `true`). `session.log` is always written when the run has a session ID. Loop sub-steps appear in `session.log` as their own `STEP_START`/`STEP_DONE` events, interleaved with the loop's `LOOP_*` events, exactly like top-level steps; loop body events carry `loop_id` and `iteration`, and every step event carries `step_name` (`STEP_DONE` also `duration_seconds`).
 
+Persisted step logs and error messages are masked when written and again when read, so a secret still present in the environment is hidden even in logs written before masking existed. Masked values print as `[REDACTED:<NAME>]` or `[REDACTED]`.
+
 ## Usage
 
 ```bash
