@@ -141,14 +141,14 @@ Created and repaired idempotently by [core/bootstrap](../../src/dovo/core/bootst
   worktrees/                  # git worktree checkouts
 ```
 
-`sessions/`, `artifacts/`, `tmp/`, and `logs/` are no longer created locally under `.dovo/`; that project-scoped runtime state resolves under the global `DOVO_HOME` storage root instead.
+`sessions/`, `artifacts/`, `tmp/`, and `logs/` are never created under `.dovo/`; that project-scoped runtime state lives only under the global `DOVO_HOME` storage root and requires a project identity.
 
 ### Path ownership: `RepositoryPaths` / `WorkspacePaths`
 
 **Relevant sources:** `src/dovo/common/filesystem/models.py`, `src/dovo/core/project/services/storage.py`
 
 - `RepositoryPaths` (`common/filesystem/models.py`) owns every repo-local path under a resolved root: `root_dir`, `dovo_dir`, `config_file`, `catalog_dir`/`catalog_steps_dir`/`catalog_blueprints_dir`, `worktrees_dir`, `lock_file`, `gitignore_file`. Built via `RepositoryPaths.from_root(root)`.
-- `WorkspacePaths` (same module) extends `RepositoryPaths` with the project-scoped, identity-dependent locations: `catalog_templates_dir`, `global_paths`, `database_file`, `project_id`, `runtime_root`, `logs_dir`, `sessions_dir`, `artifacts_dir`, `tmp_dir`, plus `session_dir(id)`/`worktree_dir(id)`/`catalog_dir_for(tier)` helpers. Built via `resolve_workspace_paths(repository_paths, global_paths)` in `core/project/services/storage.py`, which resolves `project_id` from `project.json` when present.
+- `WorkspacePaths` (same module) extends `RepositoryPaths` with the project-scoped, identity-dependent locations: `catalog_templates_dir`, `global_paths`, `database_file`, `project_id`, `runtime_root`, `logs_dir`, `sessions_dir`, `artifacts_dir`, `tmp_dir`, plus `session_dir(id)`/`worktree_dir(id)`/`catalog_dir_for(tier)` helpers. Built via `resolve_workspace_paths(repository_paths, global_paths)` in `core/project/services/storage.py`, which loads `project_id` from `project.json` and raises `WorkspaceNotInitializedError` when it is missing or unusable (`build_workspace_paths` is the pure variant `init` uses after provisioning an identity).
 - `CliContext.build()` (`cli/context.py`) resolves one `WorkspacePaths` snapshot per CLI invocation; CLI handlers construct their path-aware facades from that snapshot.
 
 ### Centralized SQLite database

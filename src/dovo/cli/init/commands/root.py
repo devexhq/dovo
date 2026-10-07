@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
-from dovo.cli.context import CliContext
+from pathlib import Path
+
 from dovo.cli.ui.dispatcher import ui_dispatcher
 from dovo.core.bootstrap import WorkspaceInitResult, initialize_workspace
 
 
 def init_command(
-    context: CliContext,
+    root_dir: Path,
     tool_version: str | None = None,
     overwrite: bool = False,
     repair: bool = False,
@@ -20,7 +21,7 @@ def init_command(
     """Initialize a local project workspace for Dovo CLI and desktop sync.
 
     Args:
-        context: CLI context instance.
+        root_dir: Repository root to initialize.
         tool_version: Optional version stamp for bootstrap metadata.
         overwrite: When True, replace existing config with V1 defaults.
         repair: When True, non-destructively add missing required keys.
@@ -30,7 +31,7 @@ def init_command(
         force: When True with project_id, overwrite an existing project identity.
     """
     result = initialize_workspace(
-        context.paths.root_dir,
+        root_dir,
         tool_version=tool_version,
         overwrite=overwrite,
         repair=repair,

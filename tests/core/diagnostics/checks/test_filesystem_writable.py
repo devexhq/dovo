@@ -10,7 +10,7 @@ import pytest
 
 from dovo.common.filesystem import WorkspacePaths
 from dovo.core.config.models import DovoConfig, ProjectConfig
-from dovo.core.diagnostics.checks.filesystem_writable import FilesystemWritableCheck, _target_paths
+from dovo.core.diagnostics.checks.filesystem_writable import FilesystemWritableCheck
 from dovo.core.diagnostics.models import CheckCategory, CheckStatus, DiagnosticsContext
 from dovo.core.project.models import ProjectIdentity
 from dovo.core.project.services.identity import save_project_identity
@@ -36,9 +36,12 @@ class FilesystemWritableCheckTests:
         assert result.category == CheckCategory.FILESYSTEM
         assert result.status == CheckStatus.OK
         assert result.error_code is None
+        assert result.warnings == []
         assert result.details == {
             "verified_paths": [
                 str(tmp_path / ".dovo"),
+                str(paths.sessions_dir),
+                str(paths.artifacts_dir),
                 str(tmp_path / ".dovo/worktrees"),
                 str(paths.database_file.parent),
             ]
@@ -72,17 +75,18 @@ class FilesystemWritableCheckTests:
     def test_execute_readonly_parent_directory_returns_unwritable_failure(
         self, tmp_path: Path, workspace_paths_factory: WorkspacePathsFactory
     ) -> None:
-        """[tier-1/unit] FilesystemWritableCheck.execute: cwd read-only, target dirs not yet created -> mkdir raises OSError -> FAILED with DOCTOR_FS_UNWRITABLE."""
+        """[tier-1/unit] FilesystemWritableCheck.execute: .dovo read-only, worktrees dir not yet created -> probe write and mkdir raise OSError -> FAILED with DOCTOR_FS_UNWRITABLE."""
         config = DovoConfig(version=1, project=ProjectConfig(name="demo"))
         check = FilesystemWritableCheck()
         paths = workspace_paths_factory(tmp_path, None)
-        tmp_path.chmod(0o500)
+        dovo_dir = tmp_path / ".dovo"
+        dovo_dir.chmod(0o500)
         context = DiagnosticsContext(cwd=tmp_path, config=config, paths=paths)
 
         try:
             result = check.execute(context)
         finally:
-            tmp_path.chmod(0o700)
+            dovo_dir.chmod(0o700)
 
         unwritable_paths = [
             str(tmp_path / ".dovo"),
@@ -113,6 +117,8 @@ class FilesystemWritableCheckTests:
         assert result.details == {
             "verified_paths": [
                 str(tmp_path / ".dovo"),
+                str(paths.sessions_dir),
+                str(paths.artifacts_dir),
                 str(tmp_path / ".dovo/worktrees"),
                 str(paths.database_file.parent),
             ]
@@ -142,24 +148,5 @@ class FilesystemWritableCheckTests:
                 str(paths.database_file.parent),
             ]
         }
-        assert not (tmp_path / ".dovo" / "sessions").exists()
-        assert not (tmp_path / ".dovo" / "artifacts").exists()
-
-
-class DiagnosticsFilesystemWritableNotInitializedTests:
-    """[tier-1/unit] FilesystemWritableCheck._target_paths: paths.project_id is None -> NFR-5 write-side gate."""
-
-    def test_sessions_and_artifacts_probes_skipped_when_no_project_identity(
-        self, tmp_path: Path, workspace_paths_factory: WorkspacePathsFactory
-    ) -> None:
-        """[tier-1/unit] FilesystemWritableCheck._target_paths: paths.project_id is None -> "sessions_dir" and "artifacts_dir" are absent from the returned dict; no directory is created under .dovo/sessions or .dovo/artifacts by execute()."""
-        paths = workspace_paths_factory(tmp_path, None)
-        assert paths.project_id is None
-        context = DiagnosticsContext(cwd=tmp_path, config=None, paths=paths)
-
-        result = FilesystemWritableCheck().execute(context)
-
-        assert result.status == CheckStatus.OK
-        assert set(_target_paths(paths)) == {"root_dir", "worktrees_dir", "database"}
         assert not (tmp_path / ".dovo" / "sessions").exists()
         assert not (tmp_path / ".dovo" / "artifacts").exists()

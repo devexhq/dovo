@@ -13,12 +13,12 @@ import pytest
 from typer.testing import CliRunner
 
 from dovo.common.constants import REQUIRED_SUBDIRS
-from dovo.common.filesystem.models import RepositoryPaths, WorkspacePaths
+from dovo.common.filesystem.models import WorkspacePaths
 from dovo.common.filesystem.services.global_root import resolve_global_paths
 from dovo.core.agents.registry import PROVIDERS
 from dovo.core.config.models import ConfigTier
 from dovo.core.project.services.identity import generate_project_identity, save_project_identity
-from dovo.core.project.services.storage import resolve_workspace_paths
+from tests.harness import initialized_workspace_paths
 
 
 @pytest.fixture(autouse=True)
@@ -43,7 +43,7 @@ def workspace_paths_factory() -> Callable[[Path, Path | None], WorkspacePaths]:
     """Return a builder that resolves a WorkspacePaths snapshot for an arbitrary repository/global root pair."""
 
     def _build(root: Path, global_root: Path | None = None) -> WorkspacePaths:
-        return resolve_workspace_paths(RepositoryPaths.from_root(root), resolve_global_paths(global_root))
+        return initialized_workspace_paths(root, global_root)
 
     return _build
 

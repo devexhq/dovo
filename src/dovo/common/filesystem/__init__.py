@@ -1,4 +1,4 @@
-from .exceptions import InvalidGlobalRootError
+from .exceptions import InvalidGlobalRootError, WorkspaceNotInitializedError
 from .facade import Filesystem
 from .models import GlobalPaths, RepositoryPaths, WorkspacePaths, YamlFile
 
@@ -7,6 +7,7 @@ __all__ = [
     "GlobalPaths",
     "InvalidGlobalRootError",
     "RepositoryPaths",
+    "WorkspaceNotInitializedError",
     "WorkspacePaths",
     "YamlFile",
 ]

@@ -2,18 +2,17 @@
 
 from __future__ import annotations
 
+from dovo.common.filesystem.exceptions import WorkspaceNotInitializedError
 from dovo.common.filesystem.models import GlobalPaths, RepositoryPaths, WorkspacePaths
 from dovo.common.filesystem.services.paths import get_catalog_templates_dir
 from dovo.core.project.services.identity import load_project_identity
 
 
-def resolve_workspace_paths(repository_paths: RepositoryPaths, global_paths: GlobalPaths) -> WorkspacePaths:
-    """Load project identity once and construct the invocation's final paths."""
-    identity_result = load_project_identity(repository_paths.dovo_dir / "project.json")
-    project_id = identity_result.identity.id if identity_result.ok and identity_result.identity is not None else None
-    runtime_root = (
-        global_paths.storage_dir / "projects" / project_id if project_id is not None else repository_paths.dovo_dir
-    )
+def build_workspace_paths(
+    repository_paths: RepositoryPaths, global_paths: GlobalPaths, project_id: str
+) -> WorkspacePaths:
+    """Construct the invocation's paths for an initialized project; performs no I/O."""
+    runtime_root = global_paths.storage_dir / "projects" / project_id
 
     return WorkspacePaths(
         root_dir=repository_paths.root_dir,
@@ -35,3 +34,13 @@ def resolve_workspace_paths(repository_paths: RepositoryPaths, global_paths: Glo
         artifacts_dir=runtime_root / "artifacts",
         tmp_dir=runtime_root / "tmp",
     )
+
+
+def resolve_workspace_paths(repository_paths: RepositoryPaths, global_paths: GlobalPaths) -> WorkspacePaths:
+    """Load the project identity once and build the invocation's paths; raises WorkspaceNotInitializedError when it is missing or unusable."""
+    identity_path = repository_paths.dovo_dir / "project.json"
+    identity_result = load_project_identity(identity_path)
+    if not identity_result.ok or identity_result.identity is None:
+        raise WorkspaceNotInitializedError(identity_path, identity_present=identity_path.is_file())
+
+    return build_workspace_paths(repository_paths, global_paths, identity_result.identity.id)

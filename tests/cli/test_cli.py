@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import dataclasses
 from pathlib import Path
+from typing import Any
 
 import pytest
 from typer.testing import CliRunner
@@ -13,7 +14,12 @@ from dovo.cli import app
 from dovo.cli.context import CliContext
 from dovo.common.lock import LockTimeoutError
 from dovo.core.config.generator import build_default_config
+from dovo.core.config.loader import ConfigLoadResult
 from dovo.core.config.models import DovoConfig
+from dovo.core.config.mutate import ConfigSetResult, ConfigSetStatus
+from dovo.core.config.validate import ConfigValidationResult
+from dovo.core.diagnostics.models import DiagnosticsReport
+from dovo.core.status.models import DovoStatusResult
 from tests.harness.builders import WorkspaceBuilder
 
 
@@ -84,7 +90,7 @@ class CliContextBuildTests:
 class CliNonStrictConfigCommandsCliIntegrationTests:
     """[tier-3/integration] Callback paths all receive the shared context shape."""
 
-    def test_config_doctor_status_init_build_identical_paths_shape(
+    def test_config_doctor_status_build_identical_paths_shape(
         self, cli_runner: CliRunner, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """All non-strict commands use CliContext.build rather than app-local reconstruction."""
@@ -99,11 +105,11 @@ class CliNonStrictConfigCommandsCliIntegrationTests:
             return context
 
         monkeypatch.setattr(CliContext, "build", classmethod(_capture))
-        commands = (["config", "show"], ["doctor"], ["status"], ["init"])
+        commands = (["config", "show"], ["doctor"], ["status"])
         for command in commands:
             cli_runner.invoke(app, ["--path", str(workspace), *command])
 
-        assert len(captured) == 4
+        assert len(captured) == 3
         assert all(context.config is None for context in captured)
         assert all(set(type(context.paths).model_fields) == expected_fields for context in captured)
 
@@ -142,3 +148,162 @@ class RunCliCrashProtectionTests:
 
         assert exc_info.value.code == 1
         assert "Fatal Error" in capsys.readouterr().out
+
+
+GUARD_MESSAGE_HEAD = "Workspace is not initialized: no valid project identity at"
+GUARD_FIX = "Run `dovo init` to initialize this workspace."
+
+
+class IdentityGuardCliTests:
+    """[tier-3/integration] Every command except init requires a project identity."""
+
+    @pytest.mark.parametrize(
+        "argv",
+        [
+            pytest.param(["worktree", "list"], id="worktree-list"),
+            pytest.param(["history", "list"], id="history-list"),
+            pytest.param(["blueprint", "list"], id="blueprint-list"),
+            pytest.param(["step", "list"], id="step-list"),
+            pytest.param(["artifacts", "list"], id="artifacts-list"),
+            pytest.param(["status"], id="status"),
+            pytest.param(["doctor"], id="doctor"),
+            pytest.param(["config", "show"], id="config-show"),
+        ],
+    )
+    def test_command_in_uninitialized_repo_prints_prompt_exits_one_and_creates_nothing(
+        self, cli_runner: CliRunner, git_repo: Path, argv: list[str]
+    ) -> None:
+        """dovo <command>: git repo with no .dovo/ exits 1, prints the guard message and fix, and creates no .dovo/."""
+        result = cli_runner.invoke(app, ["-p", str(git_repo), *argv])
+
+        assert result.exit_code == 1
+        assert GUARD_MESSAGE_HEAD in result.stdout
+        assert GUARD_FIX in result.stdout
+        assert not (git_repo / ".dovo").exists()
+
+    def test_legacy_repo_with_config_but_no_identity_fails_with_the_guard_message(
+        self, cli_runner: CliRunner, tmp_path: Path
+    ) -> None:
+        """dovo worktree list: a workspace with config.json and no project.json exits 1 with the guard message and creates no runtime directories under .dovo/."""
+        workspace = WorkspaceBuilder(tmp_path / "workspace").without_identity().build()
+
+        result = cli_runner.invoke(app, ["-p", str(workspace), "worktree", "list"])
+
+        assert result.exit_code == 1
+        assert GUARD_MESSAGE_HEAD in result.stdout
+        assert "CONFIG_NOT_FOUND" not in result.stdout
+        for runtime_dir in ("tmp", "logs", "sessions", "artifacts"):
+            assert not (workspace / ".dovo" / runtime_dir).exists()
+
+    def test_unusable_identity_adds_force_hint(self, cli_runner: CliRunner, tmp_path: Path) -> None:
+        """dovo status: a workspace with an invalid project.json exits 1 and mentions 'dovo init --id <project-id> --force'."""
+        workspace = WorkspaceBuilder(tmp_path / "workspace").build()
+        (workspace / ".dovo" / "project.json").write_text("not json", encoding="utf-8")
+
+        result = cli_runner.invoke(app, ["-p", str(workspace), "status"])
+
+        assert result.exit_code == 1
+        assert "dovo init --id <project-id> --force" in result.stdout
+
+    def test_help_does_not_trip_the_guard_in_an_uninitialized_repo(self, cli_runner: CliRunner, git_repo: Path) -> None:
+        """dovo worktree list --help: git repo with no .dovo/ exits 0 and prints no guard message."""
+        result = cli_runner.invoke(app, ["-p", str(git_repo), "worktree", "list", "--help"])
+
+        assert result.exit_code == 0
+        assert GUARD_MESSAGE_HEAD not in result.stdout
+
+    @pytest.mark.parametrize("subdirectory", [pytest.param(False, id="root"), pytest.param(True, id="subdirectory")])
+    def test_init_works_from_root_and_subdirectory_without_a_context(
+        self, cli_runner: CliRunner, git_repo: Path, monkeypatch: pytest.MonkeyPatch, subdirectory: bool
+    ) -> None:
+        """dovo init: from the repo root or a subdirectory of an uninitialized repo writes project.json and config.json and never calls CliContext.build."""
+        start = git_repo / "nested" if subdirectory else git_repo
+        start.mkdir(exist_ok=True)
+
+        def _forbidden_build(cls: type[CliContext], **kwargs: object) -> CliContext:
+            raise AssertionError("init must not build a CliContext")
+
+        monkeypatch.setattr(CliContext, "build", classmethod(_forbidden_build))
+
+        result = cli_runner.invoke(app, ["-p", str(start), "init"])
+
+        assert result.exit_code == 0
+        assert (git_repo / ".dovo" / "project.json").exists()
+        assert (git_repo / ".dovo" / "config.json").exists()
+
+    def test_init_then_next_command_succeeds(self, cli_runner: CliRunner, git_repo: Path) -> None:
+        """dovo init followed by dovo worktree list: the second command exits 0 and prints no guard message."""
+        init_result = cli_runner.invoke(app, ["-p", str(git_repo), "init"])
+
+        result = cli_runner.invoke(app, ["-p", str(git_repo), "worktree", "list"])
+
+        assert init_result.exit_code == 0
+        assert result.exit_code == 0
+        assert GUARD_MESSAGE_HEAD not in result.stdout
+
+
+class ConfigTolerantCommandsPostInitTests:
+    """[tier-3/integration] NON_STRICT_CONFIG_COMMANDS keep reporting once an identity exists."""
+
+    @pytest.mark.parametrize(
+        "config_text",
+        [
+            pytest.param(None, id="missing"),
+            pytest.param("{not valid json", id="malformed-json"),
+            pytest.param('{"version": 999}', id="schema-invalid"),
+        ],
+    )
+    @pytest.mark.parametrize(
+        ("argv", "dispatched_type"),
+        [
+            pytest.param(["status"], DovoStatusResult, id="status"),
+            pytest.param(["doctor"], DiagnosticsReport, id="doctor"),
+            pytest.param(["config", "show"], ConfigLoadResult, id="config-show"),
+            pytest.param(["config", "validate"], ConfigValidationResult, id="config-validate"),
+        ],
+    )
+    def test_tolerant_command_still_reports_with_a_valid_identity_and_broken_config(
+        self,
+        cli_runner: CliRunner,
+        tmp_path: Path,
+        dispatch_spy: list[Any],
+        argv: list[str],
+        dispatched_type: type[object],
+        config_text: str | None,
+    ) -> None:
+        """dovo status|doctor|config show|config validate: valid identity plus missing, malformed, or schema-invalid config.json dispatches the command's normal result and never prints the guard message."""
+        workspace = WorkspaceBuilder(tmp_path / "workspace").with_git().without_config().build()
+        if config_text is not None:
+            (workspace / ".dovo" / "config.json").write_text(config_text, encoding="utf-8")
+
+        result = cli_runner.invoke(app, ["-p", str(workspace), *argv])
+
+        assert "WORKSPACE_NOT_INITIALIZED" not in result.stdout
+        assert "Fatal Error" not in result.stdout
+        assert any(isinstance(item, dispatched_type) for item in dispatch_spy)
+
+    def test_config_set_with_a_valid_identity_and_a_missing_config_dispatches_its_result(
+        self, cli_runner: CliRunner, tmp_path: Path, dispatch_spy: list[Any]
+    ) -> None:
+        """dovo config set: valid identity and no config.json dispatches the normal ConfigSetResult and never prints the guard message."""
+        workspace = WorkspaceBuilder(tmp_path / "workspace").without_config().build()
+
+        result = cli_runner.invoke(app, ["-p", str(workspace), "config", "set", "agent.model", "qwen2.5-coder"])
+
+        set_results = [item for item in dispatch_spy if isinstance(item, ConfigSetResult)]
+        assert "WORKSPACE_NOT_INITIALIZED" not in result.stdout
+        assert GUARD_MESSAGE_HEAD not in result.stdout
+        assert [item.status for item in set_results] == [ConfigSetStatus.NOT_FOUND]
+
+    def test_strict_command_with_broken_config_still_fails_with_the_config_panel(
+        self, cli_runner: CliRunner, tmp_path: Path
+    ) -> None:
+        """dovo worktree list: valid identity and malformed config.json exits 1 with a config error and not the guard message."""
+        workspace = WorkspaceBuilder(tmp_path / "workspace").without_config().build()
+        (workspace / ".dovo" / "config.json").write_text("{not valid json", encoding="utf-8")
+
+        result = cli_runner.invoke(app, ["-p", str(workspace), "worktree", "list"])
+
+        assert result.exit_code == 1
+        assert "Config Error" in result.stdout
+        assert GUARD_MESSAGE_HEAD not in result.stdout

@@ -7,19 +7,18 @@ from pathlib import Path
 
 import pytest
 
-from dovo.common.filesystem.models import RepositoryPaths, WorkspacePaths
-from dovo.common.filesystem.services.global_root import resolve_global_paths
+from dovo.common.filesystem.models import WorkspacePaths
 from dovo.core.config import ConfigLoadError
 from dovo.core.config.loader import ConfigLoadResult, ConfigLoadStatus
 from dovo.core.db import SessionStatus, WorktreesRepository, WorktreeStatus
 from dovo.core.git.runner import GitRunner
-from dovo.core.project.services.storage import resolve_workspace_paths
 from dovo.core.worktree import Worktree, WorktreeApplyResult, WorktreeApplyStatus, WorktreeSession
 from dovo.core.worktree.models import WorktreeCreateResult, WorktreeCreateStatus
 from dovo.engine.executors.models import ExecutionIdentity
 from dovo.engine.models import RunObserver, RunSettings
 from dovo.engine.workspace import Workspace
 from tests.harness.builders import WorkspaceBuilder
+from tests.harness.workspace_paths import initialized_workspace_paths
 
 
 class _RecordingRunObserver(RunObserver):
@@ -68,7 +67,7 @@ def _worktree_workspace(tmp_path: Path) -> Path:
 
 def _paths_for(root: Path) -> WorkspacePaths:
     """Resolve the WorkspacePaths snapshot for root, reflecting its current project.json."""
-    return resolve_workspace_paths(RepositoryPaths.from_root(root), resolve_global_paths(None))
+    return initialized_workspace_paths(root)
 
 
 class WorkspaceSetupTests:

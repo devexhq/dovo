@@ -9,10 +9,7 @@ from pathlib import Path
 
 import pytest
 
-from dovo.common.filesystem.models import RepositoryPaths
-from dovo.common.filesystem.services.global_root import resolve_global_paths
 from dovo.core.db import SessionsRepository, SessionStatus
-from dovo.core.project.services.storage import resolve_workspace_paths
 from dovo.core.sessions import ReconciliationResult
 from dovo.core.sessions.services.reconcile import (
     STALE_RUN_ERROR_MESSAGE,
@@ -22,13 +19,14 @@ from dovo.core.sessions.services.reconcile import (
     is_run_stale,
     reconcile_stale_sessions,
 )
+from tests.harness.workspace_paths import initialized_workspace_paths
 
 DEAD_PID = 4242
 
 
 def _sessions_for(root: Path) -> SessionsRepository:
     """Build the SessionsRepository for the workspace rooted at root."""
-    paths = resolve_workspace_paths(RepositoryPaths.from_root(root), resolve_global_paths(None))
+    paths = initialized_workspace_paths(root)
     return SessionsRepository(db_path=paths.database_file, project_id=paths.project_id)
 
 

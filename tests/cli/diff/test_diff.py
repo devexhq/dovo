@@ -12,19 +12,18 @@ from sqlmodel import select
 from typer.testing import CliRunner
 
 from dovo.cli import app
-from dovo.common.filesystem.models import RepositoryPaths, WorkspacePaths
-from dovo.common.filesystem.services.global_root import resolve_global_paths
+from dovo.common.filesystem.models import WorkspacePaths
 from dovo.common.redact import SecretRedactor
 from dovo.core.db import DovoDb, SessionRecord, SessionStatus
 from dovo.core.project.models import ProjectIdentity
 from dovo.core.project.services.identity import save_project_identity
-from dovo.core.project.services.storage import resolve_workspace_paths
 from dovo.engine.writer import get_session_dir, write_session_diff
+from tests.harness.workspace_paths import initialized_workspace_paths
 
 
 def _paths_for(root: Path) -> WorkspacePaths:
     """Resolve the WorkspacePaths snapshot for root, reflecting its current project.json."""
-    return resolve_workspace_paths(RepositoryPaths.from_root(root), resolve_global_paths(None))
+    return initialized_workspace_paths(root)
 
 
 _PATCH_TEXT = (

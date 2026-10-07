@@ -2,6 +2,8 @@
 
 The `dovo config` command inspects, updates, and validates the local `.dovo/config.json` configuration file.
 
+Every `dovo config` subcommand requires `dovo init` first: without a valid `.dovo/project.json` it exits `1` with `Workspace is not initialized` and a `dovo init` prompt. Once initialized, the subcommands still run when `config.json` is missing or broken so they can report on it.
+
 ## Subcommands
 
 ### `dovo config show`

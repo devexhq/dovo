@@ -9,12 +9,9 @@ from unittest.mock import patch
 import pytest
 
 from dovo.common.filesystem import WorkspacePaths
-from dovo.common.filesystem.models import RepositoryPaths
-from dovo.common.filesystem.services.global_root import resolve_global_paths
 from dovo.core.db import WorktreesRepository, WorktreeStatus
 from dovo.core.git.exceptions import GitCommandError
 from dovo.core.git.runner import GitRunner
-from dovo.core.project.services.storage import resolve_workspace_paths
 from dovo.core.worktree import Worktree
 from dovo.core.worktree.models import (
     StaleWorktreeCategory,
@@ -22,6 +19,7 @@ from dovo.core.worktree.models import (
 )
 from dovo.core.worktree.services.detector import WorktreeDetector, detect_stale_worktrees
 from tests.harness import WorkspaceBuilder
+from tests.harness.workspace_paths import initialized_workspace_paths
 
 
 @pytest.fixture
@@ -33,7 +31,7 @@ def detector_workspace(tmp_path: Path) -> Path:
 @pytest.fixture
 def detector_workspace_paths(detector_workspace: Path) -> WorkspacePaths:
     """Resolve the WorkspacePaths snapshot for detector_workspace."""
-    return resolve_workspace_paths(RepositoryPaths.from_root(detector_workspace), resolve_global_paths(None))
+    return initialized_workspace_paths(detector_workspace)
 
 
 def _repo(paths: WorkspacePaths) -> WorktreesRepository:

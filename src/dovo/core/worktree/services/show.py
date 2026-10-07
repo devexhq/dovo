@@ -30,13 +30,6 @@ def collect_worktree_show(
     Returns:
         Structured show result. Does not print or exit.
     """
-    if paths.project_id is None:
-        return WorktreeShowResult(
-            status=WorktreeShowStatus.NOT_INITIALIZED,
-            errors=["Workspace is not initialized."],
-            fixes=["Run `dovo init` to initialize this workspace."],
-        )
-
     row = db.get(worktree_id)
     if row is None:
         return WorktreeShowResult(

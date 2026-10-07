@@ -11,11 +11,9 @@ from typer.testing import CliRunner
 
 from dovo.cli import app
 from dovo.common.filesystem import Filesystem
-from dovo.common.filesystem.models import RepositoryPaths
-from dovo.common.filesystem.services.global_root import resolve_global_paths
 from dovo.core.db import DovoDb, SessionStatus
-from dovo.core.project.services.storage import resolve_workspace_paths
 from dovo.core.sessions import LogsShowResult, LogsShowStatus, SessionLogEvent, SessionLogEventType
+from tests.harness.workspace_paths import initialized_workspace_paths
 
 _EVENTS = [
     SessionLogEvent(ts="2026-09-26T10:00:00+00:00", event=SessionLogEventType.SESSION_STARTED, session_id="sess-logs"),
@@ -25,7 +23,7 @@ _EVENTS = [
 
 def _seed_session(workspace: Path) -> Path:
     """Persist a session record plus a session.log and build step captures for session 'sess-logs'."""
-    paths = resolve_workspace_paths(RepositoryPaths.from_root(workspace), resolve_global_paths(None))
+    paths = initialized_workspace_paths(workspace)
     DovoDb(database_file=paths.database_file, project_id=paths.project_id).sessions.create(
         session_id="sess-logs", blueprint_name="bp", blueprint_key="bp", status=SessionStatus.COMPLETED
     )
@@ -176,9 +174,7 @@ class LogsCliIntegrationTests:
         monkeypatch.setenv("DB_PIN", "1234")
         session_log_dir = _seed_session(logs_workspace)
         (session_log_dir / "02_pin_attempt_1.stdout.log").write_text("pin 1234\n", encoding="utf-8")
-        config_path = resolve_workspace_paths(
-            RepositoryPaths.from_root(logs_workspace), resolve_global_paths(None)
-        ).config_file
+        config_path = initialized_workspace_paths(logs_workspace).config_file
         config = json.loads(config_path.read_text(encoding="utf-8"))
         config["environment"] = {"sensitive_variables": names}
         Filesystem.atomic_write_json(config_path, config)

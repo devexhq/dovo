@@ -7,14 +7,12 @@ from pathlib import Path
 import pytest
 
 from dovo.common.filesystem import WorkspacePaths
-from dovo.common.filesystem.models import RepositoryPaths
-from dovo.common.filesystem.services.global_root import resolve_global_paths
 from dovo.core.db import WorktreesRepository
 from dovo.core.git.runner import GitRunner
-from dovo.core.project.services.storage import resolve_workspace_paths
 from dovo.core.worktree.models import WorktreeCreateStatus
 from dovo.core.worktree.services.lifecycle import WorktreeLifecycle
 from tests.harness import WorkspaceBuilder
+from tests.harness.workspace_paths import initialized_workspace_paths
 
 
 @pytest.fixture
@@ -25,7 +23,7 @@ def worktree_workspace(tmp_path: Path) -> Path:
 
 def _paths(workspace: Path) -> WorkspacePaths:
     """Resolve the WorkspacePaths snapshot for workspace, reflecting its current project.json."""
-    return resolve_workspace_paths(RepositoryPaths.from_root(workspace), resolve_global_paths(None))
+    return initialized_workspace_paths(workspace)
 
 
 class WorktreeLifecycleStorageIndependenceTests:

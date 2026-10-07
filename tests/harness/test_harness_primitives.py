@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import subprocess
 from pathlib import Path
@@ -11,7 +12,7 @@ import typer
 from typer.testing import CliRunner
 
 from dovo.common.constants import REQUIRED_SUBDIRS
-from tests.harness import FakeAgentRunner, FakeAgentRunnerCall
+from tests.harness import FakeAgentRunner, FakeAgentRunnerCall, initialized_workspace_paths
 
 
 class IsolatedWorkspaceFixtureTests:
@@ -143,3 +144,24 @@ class FakeAgentRunnerTests:
         result = runner(["gh"], cwd=tmp_path, env={}, input_data=b"hi", timeout_seconds=3)
 
         assert result.returncode == 1
+
+
+class InitializedWorkspacePathsTests:
+    """Verification tests for the initialized_workspace_paths helper."""
+
+    def test_helper_writes_deterministic_identity_when_absent(self, tmp_path: Path) -> None:
+        paths = initialized_workspace_paths(tmp_path)
+
+        assert paths.project_id == "test-project"
+        assert json.loads((tmp_path / ".dovo" / "project.json").read_text(encoding="utf-8"))["id"] == "test-project"
+
+    def test_helper_preserves_an_existing_identity(self, tmp_path: Path) -> None:
+        identity_file = tmp_path / ".dovo" / "project.json"
+        identity_file.parent.mkdir()
+        identity_file.write_text(
+            json.dumps({"id": "other-project", "created_at": "2026-01-01T00:00:00Z"}), encoding="utf-8"
+        )
+
+        paths = initialized_workspace_paths(tmp_path)
+
+        assert paths.project_id == "other-project"

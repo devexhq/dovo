@@ -10,12 +10,9 @@ from unittest.mock import patch
 import pytest
 
 from dovo.common.filesystem import WorkspacePaths
-from dovo.common.filesystem.models import RepositoryPaths
-from dovo.common.filesystem.services.global_root import resolve_global_paths
 from dovo.common.lock import LockTimeoutError
 from dovo.core.db import WorktreesRepository, WorktreeStatus
 from dovo.core.git.runner import GitRunner
-from dovo.core.project.services.storage import resolve_workspace_paths
 from dovo.core.worktree import Worktree
 from dovo.core.worktree.models import (
     PruneAction,
@@ -26,6 +23,7 @@ from dovo.core.worktree.models import (
 )
 from dovo.core.worktree.services.pruner import WorktreePruner, prune_stale_worktrees
 from tests.harness import WorkspaceBuilder
+from tests.harness.workspace_paths import initialized_workspace_paths
 
 
 @pytest.fixture
@@ -37,7 +35,7 @@ def pruner_workspace(tmp_path: Path) -> Path:
 @pytest.fixture
 def pruner_workspace_paths(pruner_workspace: Path) -> WorkspacePaths:
     """Resolve the WorkspacePaths snapshot for pruner_workspace."""
-    return resolve_workspace_paths(RepositoryPaths.from_root(pruner_workspace), resolve_global_paths(None))
+    return initialized_workspace_paths(pruner_workspace)
 
 
 def _repo(paths: WorkspacePaths) -> WorktreesRepository:

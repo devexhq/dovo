@@ -15,7 +15,6 @@ class WorktreeListStatus(StrEnum):
     """Classified outcome for ``dovo worktree list``."""
 
     OK = "ok"
-    NOT_INITIALIZED = "not_initialized"
 
 
 class WorktreeListResult(BaseResult):
@@ -34,7 +33,6 @@ class WorktreeShowStatus(StrEnum):
     """Classified outcome for ``dovo worktree show``."""
 
     OK = "ok"
-    NOT_INITIALIZED = "not_initialized"
     NOT_FOUND = "not_found"
 
 
@@ -75,7 +73,6 @@ class WorktreeCreateStatus(StrEnum):
     CAPACITY_EXCEEDED = "capacity_exceeded"
     GIT_FAILED = "git_failed"
     GIT_TIMEOUT = "git_timeout"
-    NOT_INITIALIZED = "not_initialized"
     UNREADABLE_CONFIG = "unreadable_config"
     WIP_FAILED = "wip_failed"
 
@@ -317,7 +314,6 @@ class WorktreeDeleteStatus(StrEnum):
     DELETED = "deleted"
     ALREADY_CLEANED = "already_cleaned"
     ABORTED = "aborted"
-    NOT_INITIALIZED = "not_initialized"
     NOT_FOUND = "not_found"
 
 

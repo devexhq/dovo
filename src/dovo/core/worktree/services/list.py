@@ -29,9 +29,6 @@ def collect_worktree_list(
     Returns:
         Structured list result. Does not print or exit.
     """
-    if paths.project_id is None:
-        return WorktreeListResult(status=WorktreeListStatus.NOT_INITIALIZED, worktrees=[])
-
     db.reconcile_stale_active()
 
     status_filter: WorktreeStatus | None = None

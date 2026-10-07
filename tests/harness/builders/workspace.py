@@ -15,7 +15,7 @@ from dovo.core.catalog.services.seeder import seed_all_catalog_templates
 from dovo.core.config.generator import generate_default_config
 from dovo.core.db.migrations import init_database
 from dovo.core.project.services.identity import generate_project_identity, save_project_identity
-from dovo.core.project.services.storage import resolve_workspace_paths
+from dovo.core.project.services.storage import build_workspace_paths
 
 
 class WorkspaceBuilder:
@@ -27,6 +27,7 @@ class WorkspaceBuilder:
         self._scaffold_config: bool = True
         self._config_overwrite: bool = True
         self._scaffold_database: bool = True
+        self._scaffold_identity: bool = True
         self._scaffold_catalog: bool = True
         self._catalog_force: bool = True
         self._init_git: bool = False
@@ -65,6 +66,11 @@ class WorkspaceBuilder:
     def without_database(self) -> WorkspaceBuilder:
         """Disable SQLite database creation."""
         self._scaffold_database = False
+        return self
+
+    def without_identity(self) -> WorkspaceBuilder:
+        """Skip writing project.json so the built workspace is uninitialized."""
+        self._scaffold_identity = False
         return self
 
     def with_catalog_templates(self, *, force: bool = True) -> WorkspaceBuilder:
@@ -112,14 +118,17 @@ class WorkspaceBuilder:
         if self._scaffold_config:
             self._scaffold_workspace_config(workspace_root, dot_dovo)
 
-        if self._scaffold_database:
-            identity = generate_project_identity()
+        identity = generate_project_identity()
+        if self._scaffold_identity:
             save_project_identity(dot_dovo / "project.json", identity)
-            paths = resolve_workspace_paths(RepositoryPaths.from_root(workspace_root), resolve_global_paths(None))
+
+        paths = build_workspace_paths(
+            RepositoryPaths.from_root(workspace_root), resolve_global_paths(None), identity.id
+        )
+        if self._scaffold_database:
             init_database(paths.database_file)
 
         if self._scaffold_catalog:
-            paths = resolve_workspace_paths(RepositoryPaths.from_root(workspace_root), resolve_global_paths(None))
             seed_all_catalog_templates(paths, force=self._catalog_force)
 
         return workspace_root

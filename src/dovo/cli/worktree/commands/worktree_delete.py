@@ -62,9 +62,6 @@ def worktree_delete_command(
     worktree = Worktree(context.paths, db=context.db.worktrees)
     result = worktree.delete(worktree_id)
 
-    if result.status is WorktreeDeleteStatus.NOT_INITIALIZED:
-        ui_dispatcher.dispatch(result, output_format=output_format)
-        return result
     if result.status is WorktreeDeleteStatus.NOT_FOUND or result.worktree is None:
         not_found_result = result.model_copy(update={"errors": [f"Worktree '{worktree_id}' not found."]})
         ui_dispatcher.dispatch(not_found_result, output_format=output_format)

@@ -11,14 +11,8 @@ from dovo.core.db import WorktreesRepository, WorktreeStatus
 from dovo.core.git.runner import GitRunner
 from dovo.core.worktree.models import (
     WorktreeCreateStatus,
-    WorktreeDeleteStatus,
-    WorktreeListStatus,
-    WorktreeShowStatus,
 )
-from dovo.core.worktree.services.delete import collect_worktree_delete
 from dovo.core.worktree.services.lifecycle import WorktreeLifecycle
-from dovo.core.worktree.services.list import collect_worktree_list
-from dovo.core.worktree.services.show import collect_worktree_show
 from tests.harness.builders import WorkspaceBuilder
 
 
@@ -34,14 +28,6 @@ def worktree_workspace_paths(
 ) -> WorkspacePaths:
     """Resolve the command-scoped paths for this module's worktree workspace."""
     return workspace_paths_factory(worktree_workspace, None)
-
-
-@pytest.fixture
-def workspace_paths_no_identity(
-    tmp_path: Path, workspace_paths_factory: Callable[[Path, Path | None], WorkspacePaths]
-) -> WorkspacePaths:
-    """Resolve a workspace snapshot without project identity for guard-path tests."""
-    return workspace_paths_factory(tmp_path / "uninitialized", None)
 
 
 class WorktreeCreationTests:
@@ -127,63 +113,3 @@ class WorktreeCapacityTests:
         assert not (worktree_workspace / ".dovo" / "worktrees" / overflow_id).exists()
         assert f"dovo/{overflow_id}" not in GitRunner.list_branches(worktree_workspace)
         assert db.get(overflow_id) is None
-
-
-class WorktreeNotInitializedGateTests:
-    """[tier-1/unit] Defensive status gates avoid database and filesystem access."""
-
-    def test_worktree_create_returns_not_initialized_without_touching_disk_or_db(
-        self, workspace_paths_no_identity: WorkspacePaths, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        """create: absent project identity returns NOT_INITIALIZED before repository creation."""
-
-        def _unexpected_create(self: WorktreesRepository, *args: object, **kwargs: object) -> None:
-            raise AssertionError("database must not be used")
-
-        monkeypatch.setattr(WorktreesRepository, "create", _unexpected_create)
-        db = WorktreesRepository(
-            db_path=workspace_paths_no_identity.database_file, project_id=workspace_paths_no_identity.project_id
-        )
-
-        result = WorktreeLifecycle(workspace_paths_no_identity, db).create("dovo_no_identity")
-
-        assert result.status == WorktreeCreateStatus.NOT_INITIALIZED
-        assert not workspace_paths_no_identity.worktrees_dir.exists()
-
-    def test_worktree_list_returns_not_initialized_without_querying_db(
-        self, workspace_paths_no_identity: WorkspacePaths, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        """list: absent project identity skips both reconciliation and row lookup."""
-
-        def _unexpected_query(self: WorktreesRepository, *args: object, **kwargs: object) -> None:
-            raise AssertionError("database must not be queried")
-
-        monkeypatch.setattr(WorktreesRepository, "reconcile_stale_active", _unexpected_query)
-        monkeypatch.setattr(WorktreesRepository, "list", _unexpected_query)
-        db = WorktreesRepository(
-            db_path=workspace_paths_no_identity.database_file, project_id=workspace_paths_no_identity.project_id
-        )
-
-        result = collect_worktree_list(workspace_paths_no_identity, db)
-
-        assert result.status == WorktreeListStatus.NOT_INITIALIZED
-        assert result.worktrees == []
-
-    def test_worktree_show_and_delete_return_not_initialized_without_querying_db(
-        self, workspace_paths_no_identity: WorkspacePaths, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        """show/delete: absent project identity skips the repository lookup for both status variants."""
-
-        def _unexpected_get(self: WorktreesRepository, *args: object, **kwargs: object) -> None:
-            raise AssertionError("database must not be queried")
-
-        monkeypatch.setattr(WorktreesRepository, "get", _unexpected_get)
-        db = WorktreesRepository(
-            db_path=workspace_paths_no_identity.database_file, project_id=workspace_paths_no_identity.project_id
-        )
-
-        show_result = collect_worktree_show(workspace_paths_no_identity, db, "dovo_no_identity")
-        delete_result = collect_worktree_delete(workspace_paths_no_identity, db, worktree_id="dovo_no_identity")
-
-        assert show_result.status == WorktreeShowStatus.NOT_INITIALIZED
-        assert delete_result.status == WorktreeDeleteStatus.NOT_INITIALIZED

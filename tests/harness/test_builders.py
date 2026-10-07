@@ -481,6 +481,13 @@ class WorkspaceBuilderTests:
         WorkspaceBuilder(tmp_path / "no_db").without_database().build()
         assert not resolve_db_path(resolve_global_paths(None)).is_file()
 
+    def test_without_database_still_writes_identity_and_without_identity_omits_it(self, tmp_path: Path) -> None:
+        with_identity = WorkspaceBuilder(tmp_path / "with_identity").without_database().build()
+        without_identity = WorkspaceBuilder(tmp_path / "without_identity").without_identity().build()
+
+        assert (with_identity / ".dovo/project.json").is_file()
+        assert not (without_identity / ".dovo/project.json").exists()
+
     def test_without_catalog_templates_skips_seeding(self, tmp_path: Path) -> None:
         workspace = WorkspaceBuilder(tmp_path / "no_catalog").without_catalog_templates().build()
         yaml_files = list((workspace / ".dovo/catalog").rglob("*.yml"))

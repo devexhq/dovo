@@ -23,7 +23,7 @@ from dovo.cli.step.app import step_app
 from dovo.cli.ui.dispatcher import ui_dispatcher
 from dovo.cli.ui.events import ErrorPanelEvent, MessageEvent, WelcomeBannerEvent
 from dovo.cli.worktree.app import worktree_app
-from dovo.common.filesystem import Filesystem
+from dovo.common.filesystem import Filesystem, WorkspaceNotInitializedError
 from dovo.common.lock import LockTimeoutError, WorkspaceLock
 from dovo.common.version import get_version
 from dovo.core.config import ConfigLoadError
@@ -31,7 +31,7 @@ from dovo.core.config import ConfigLoadError
 # Package Metadata matching our PyPI footprint
 __version__ = get_version()
 
-# Commands that must operate without a valid config (see CliContext.build's load_config param)
+# Commands that tolerate a missing or broken config (see CliContext.build's load_config param); a project identity is still required
 NON_STRICT_CONFIG_COMMANDS = {"config", "doctor", "init", "status"}
 
 
@@ -132,7 +132,7 @@ def main(
         )
 
     # 2. Build the shared CLI context for every real subcommand invocation
-    if not ctx.obj.get("is_help", False):
+    if not ctx.obj.get("is_help", False) and ctx.invoked_subcommand != "init":
         try:
             if ctx.invoked_subcommand == "run":
                 ensure_lazy_project_init(Filesystem(path))
@@ -141,6 +141,11 @@ def main(
             )
         except ConfigLoadError as exc:
             ui_dispatcher.dispatch(exc.result)
+            raise typer.Exit(code=1) from exc
+        except WorkspaceNotInitializedError as exc:
+            ui_dispatcher.dispatch(
+                ErrorPanelEvent(title="Workspace Not Initialized", message=str(exc), border_style="red")
+            )
             raise typer.Exit(code=1) from exc
 
 

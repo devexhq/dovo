@@ -8,13 +8,11 @@ from pathlib import Path
 
 import pytest
 
-from dovo.common.filesystem.models import RepositoryPaths, WorkspacePaths
-from dovo.common.filesystem.services.global_root import resolve_global_paths
+from dovo.common.filesystem.models import WorkspacePaths
 from dovo.core.agents.models import AgentRequest, AgentResponse, AgentResponseStatus, ResolvedAgentSettings
 from dovo.core.catalog.definitions import LoopStepBlock, StepDefinition
 from dovo.core.db import SessionsRepository, SessionStatus, WorktreesRepository
 from dovo.core.git.runner import GitRunner
-from dovo.core.project.services.storage import resolve_workspace_paths
 from dovo.core.sessions.services.read_logs import read_session_log_events
 from dovo.core.worktree import Worktree, WorktreeApplyResult, WorktreeApplyStatus
 from dovo.engine.executors.agent_step import WORKTREE_REQUIRED_MESSAGE, build_agent_step_runner
@@ -37,6 +35,7 @@ from dovo.engine.writer import snapshot_blueprint_path
 from tests.harness import AGENT_ADAPTER_FACTORY, FakeAgentProvider, new_file_diff
 from tests.harness.builders import WorkspaceBuilder
 from tests.harness.sessions import NoOpRunObserver, seed_new_session, seed_paused_session
+from tests.harness.workspace_paths import initialized_workspace_paths
 
 
 class _Prompter(FailurePrompter):
@@ -173,7 +172,7 @@ def _drive(
 
 
 def _paths_for(root: Path) -> WorkspacePaths:
-    return resolve_workspace_paths(RepositoryPaths.from_root(root), resolve_global_paths(None))
+    return initialized_workspace_paths(root)
 
 
 @pytest.fixture

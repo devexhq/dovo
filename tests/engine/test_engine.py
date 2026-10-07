@@ -6,14 +6,12 @@ from pathlib import Path
 
 import pytest
 
-from dovo.common.filesystem.models import RepositoryPaths, WorkspacePaths
-from dovo.common.filesystem.services.global_root import resolve_global_paths
+from dovo.common.filesystem.models import WorkspacePaths
 from dovo.core.catalog import Catalog
 from dovo.core.catalog.blueprint import Blueprint
 from dovo.core.catalog.definitions import LoopStepBlock, StepDefinition
 from dovo.core.db import SessionsRepository, SessionStatus
 from dovo.core.git.runner import GitRunner
-from dovo.core.project.services.storage import resolve_workspace_paths
 from dovo.engine import Engine, EngineResumeError, EngineResumeStatus, RunRequest, SessionStateStore
 from dovo.engine.executors.models import StepResult
 from dovo.engine.models import (
@@ -28,6 +26,7 @@ from dovo.engine.writer import get_session_dir
 from tests.harness.builders import BlueprintBuilder, StepBuilder, WorkspaceBuilder
 from tests.harness.catalog import write_runnable_blueprint, write_runnable_step
 from tests.harness.sessions import seed_paused_session
+from tests.harness.workspace_paths import initialized_workspace_paths
 
 
 class _ContinuePrompter(FailurePrompter):
@@ -410,7 +409,7 @@ class EngineRunConfigPersistenceTests:
     def test_run_persists_resolved_configuration_on_row(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """[tier-1/unit] Engine.run: RunRequest(use_worktree=False, keep=True, agent='claude', auto_apply=True) with resolved inputs {'env': 'prod'} leaves a row with use_worktree False, keep True, agent 'claude', inputs_json '{\"env\": \"prod\"}', auto_apply True, and commit_sha equal to git rev-parse HEAD."""
         workspace = WorkspaceBuilder(tmp_path / "git-workspace").with_git().with_database().build()
-        paths = resolve_workspace_paths(RepositoryPaths.from_root(workspace), resolve_global_paths(None))
+        paths = initialized_workspace_paths(workspace)
         sessions = SessionsRepository(db_path=paths.database_file, project_id=paths.project_id)
         write_runnable_blueprint(workspace, key="cfg", steps=[{"id": "s1", "run": "echo hi"}])
         blueprint = Blueprint.load("cfg", catalog=Catalog(paths))

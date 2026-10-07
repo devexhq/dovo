@@ -14,14 +14,6 @@ def collect_worktree_delete(
     worktree_id: str,
 ) -> WorktreeDeleteResult:
     """Look up one worktree for delete (no mutation)."""
-    if paths.project_id is None:
-        return WorktreeDeleteResult(
-            status=WorktreeDeleteStatus.NOT_INITIALIZED,
-            worktree_id=worktree_id,
-            errors=["Workspace is not initialized."],
-            fixes=["Run `dovo init` to initialize this workspace."],
-        )
-
     row = db.get(worktree_id)
     if row is None:
         return WorktreeDeleteResult(

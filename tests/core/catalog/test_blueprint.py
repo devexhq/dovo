@@ -2,13 +2,11 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from dovo.common.filesystem.models import RepositoryPaths
-from dovo.common.filesystem.services.global_root import resolve_global_paths
 from dovo.core.catalog import Catalog
 from dovo.core.catalog.blueprint import Blueprint
 from dovo.core.catalog.definitions import BlueprintDefinition, StepDefinition
 from dovo.core.project.services.identity import generate_project_identity, save_project_identity
-from dovo.core.project.services.storage import resolve_workspace_paths
+from tests.harness.workspace_paths import initialized_workspace_paths
 
 
 class BlueprintDocumentNormalizationTests:
@@ -22,7 +20,7 @@ class BlueprintDocumentNormalizationTests:
         raw_yaml = "steps:\n  - id: ruff\n    run: ruff check .\n"
         (blueprints_dir / "lint-task.yml").write_text(raw_yaml, encoding="utf-8")
 
-        paths = resolve_workspace_paths(RepositoryPaths.from_root(tmp_path), resolve_global_paths(None))
+        paths = initialized_workspace_paths(tmp_path)
         blueprint = Blueprint.load("lint-task", catalog=Catalog(paths))
 
         assert blueprint.definition.name == "lint-task"

@@ -8,14 +8,12 @@ import pytest
 from pydantic import ValidationError
 
 from dovo.common.filesystem import Filesystem
-from dovo.common.filesystem.models import RepositoryPaths, WorkspacePaths
-from dovo.common.filesystem.services.global_root import resolve_global_paths
+from dovo.common.filesystem.models import WorkspacePaths
 from dovo.common.models import FailurePolicy
 from dovo.core.agents import AgentResponseStatus
 from dovo.core.catalog.blueprint import Blueprint
 from dovo.core.catalog.definitions import LoopStepBlock
 from dovo.core.db import SessionRecord, SessionsRepository, SessionStatus
-from dovo.core.project.services.storage import resolve_workspace_paths
 from dovo.engine import SessionStateStore
 from dovo.engine.executors.agent_step import AGENT_OUTCOME_EXIT_CODES
 from dovo.engine.executors.models import StepResult
@@ -34,13 +32,14 @@ from dovo.engine.state_models import (
 )
 from dovo.engine.state_store import new_iteration
 from tests.harness.builders import BlueprintBuilder, StepBuilder, WorkspaceBuilder
+from tests.harness.workspace_paths import initialized_workspace_paths
 
 SESSION_ID = "state-1"
 
 
 def _paths_for(root: Path) -> WorkspacePaths:
     """Resolve the WorkspacePaths snapshot for root, reflecting its current project.json."""
-    return resolve_workspace_paths(RepositoryPaths.from_root(root), resolve_global_paths(None))
+    return initialized_workspace_paths(root)
 
 
 def _blueprint() -> Blueprint:
