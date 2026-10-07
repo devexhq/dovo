@@ -14,6 +14,7 @@ from dovo.core.config.models import (
     ConcurrencyConfig,
     DoctorConfig,
     DovoConfig,
+    EnvironmentConfig,
     HistoryConfig,
     ProjectConfig,
     PruneConfig,
@@ -153,6 +154,11 @@ class Config:
     def concurrency(self) -> ConcurrencyConfig:
         """Return the concurrency and locking section of the loaded config."""
         return self._loaded_config.concurrency
+
+    @property
+    def environment(self) -> EnvironmentConfig:
+        """Return the environment section of the loaded config."""
+        return self._loaded_config.environment
 
     # ------------------------------------------------------------------ #
     # Static and class-method helpers                                     #

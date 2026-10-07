@@ -179,7 +179,9 @@ class Workspace:
             GitRunner.add_intent_to_add(session.worktree_path, target=".")
             diff_text = GitRunner.diff(session.worktree_path, base_commit=session.base_commit, binary=True)
             session_dir = get_session_dir(self.context.paths, session_id)
-            redactor = SecretRedactor.from_environment(env_file_dir=self.context.paths.root_dir)
+            redactor = SecretRedactor.from_environment(
+                credential_envs=self.context.sensitive_variables, env_file_dir=self.context.paths.root_dir
+            )
             write_session_diff(session_dir, diff_text, redactor)
         except Exception as exc:
             warnings.append(f"Failed to persist session diff artifact: {exc}")

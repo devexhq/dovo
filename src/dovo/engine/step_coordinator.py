@@ -168,6 +168,7 @@ class StepCoordinator:
                 artifacts_db=run_context.artifacts_db,
                 paths=self.context.paths,
                 agent_runner=build_agent_step_runner(self.context.agent, run_context.worktree is not None),
+                sensitive_variables=self.context.sensitive_variables,
             )
         ).run()
         safe_notify(self.context.observer, "on_step_done", idx, total, step, result)

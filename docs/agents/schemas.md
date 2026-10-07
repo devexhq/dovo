@@ -80,7 +80,7 @@ All operations that can fail return a Pydantic result object subclassing `BaseRe
 ### Configuration Models
 **Relevant sources:** `src/dovo/core/config/models.py`, `loader.py`, `validate.py`, `mutate.py`, `generator.py`.
 - `DovoConfig`: Root configuration object, including `ignore_global_root_error`, defined in [`core/config/models.py`](../../src/dovo/core/config/models.py).
-- Section configs: `ProjectConfig`, `WorktreeConfig`, `AgentConfig`, `HistoryConfig`, `DoctorConfig`, `PruneConfig`, `TelemetryConfig`, `ConcurrencyConfig`.
+- Section configs: `ProjectConfig`, `WorktreeConfig`, `AgentConfig`, `HistoryConfig`, `DoctorConfig`, `PruneConfig`, `TelemetryConfig`, `ConcurrencyConfig`, `EnvironmentConfig`. `EnvironmentConfig.sensitive_variables` lists variable names only (pattern `^[A-Za-z_][A-Za-z0-9_]*$`, never values); `Config.environment` exposes the section, and the hierarchical loader unions the list across the Global, User and Repo tiers instead of replacing it.
 - `ConfigLoadResult`: Result of loading and validating `.dovo/config.json` (`status`, `config_path`, `raw`, `config`, `errors`, `ok`). `ConfigLoadStatus.TIER_INVALID` classifies a Global or User tier failure surfaced by `resolve_effective_config` ([`core/config/services/resolve.py`](../../src/dovo/core/config/services/resolve.py)), which `Config.load()`/`Config._loaded_config` — and therefore every `Config.<section>` accessor, `dovo config show`, and blueprint execution (`dovo run`/`dovo resume`) — route through.
 - `ConfigValidationResult`: Result of semantic config validation (`status`, `config_path`, `raw`, `config`, `errors`, `warnings`, `ok`).
 - `ConfigSetResult`: Result of mutating a dot-path key in config (`status`, `config_path`, `key`, `value`, `errors`, `ok`).
@@ -116,8 +116,8 @@ All operations that can fail return a Pydantic result object subclassing `BaseRe
 
 ### Run Engine Models
 **Relevant sources:** `src/dovo/engine/models.py`, `src/dovo/core/sessions/models.py`.
-- [`RunSettings`](../../src/dovo/engine/models.py): Settings and collaborators resolved from the session row for worktree/session setup and step coordination (`use_worktree`, `keep`, `agent` as `ResolvedAgentSettings | None`, `observer`, `inputs`, `no_tty`, `failure_prompter`, `auto_apply`, `worktree_id`, `paths`).
-- [`RunContext`](../../src/dovo/engine/models.py): Infrastructure resources for one run's execution; durable progress lives only in `ExecutionStateTree`.
+- [`RunSettings`](../../src/dovo/engine/models.py): Settings and collaborators resolved from the session row for worktree/session setup and step coordination (`use_worktree`, `keep`, `agent` as `ResolvedAgentSettings | None`, `observer`, `inputs`, `no_tty`, `failure_prompter`, `auto_apply`, `worktree_id`, `sensitive_variables`, `paths`).
+- [`RunContext`](../../src/dovo/engine/models.py): Infrastructure resources for one run's execution, including `sensitive_variables` resolved once in `SessionRunner.open` and carried to `RunSettings.sensitive_variables` and `StepExecutionContext.sensitive_variables` for secret masking; durable progress lives only in `ExecutionStateTree`.
 - [`RunOutcome`](../../src/dovo/engine/models.py): Terminal run result, including the worktree and session identifiers.
 - [`RunObserver`](../../src/dovo/engine/models.py), [`FailurePrompter`](../../src/dovo/engine/models.py), [`FailurePromptDecision`](../../src/dovo/engine/models.py), [`LoopPromptDecision`](../../src/dovo/engine/models.py): Caller-supplied progress hooks and failure/loop decision entrypoints. `RunObserver` callbacks: `on_run_started(steps)` and `on_run_completed(outcome)` (once per `drive_run` invocation; `on_run_started` is skipped when definitions fail to load, `on_run_completed` receives the returned outcome), `on_step_start`, `on_step_output`, `on_step_done(idx, total, step, result)`, `on_loop_start`, `on_loop_iteration_start`, `on_loop_conditions_evaluated`, `on_loop_done`, and the worktree hooks.
 - [`StepAction`](../../src/dovo/engine/models.py): Orchestration action (retry, continue, abort) `RunCoordinator` applies after a terminal step failure; distinct from the user-input `FailurePromptDecision` and the persisted `NodeTransitionKind`.
@@ -254,7 +254,7 @@ Each core domain exposes a cohesive facade class that encapsulates domain servic
 | `Blueprint` | `core/catalog/blueprint.py` | Loading a catalog blueprint document (`load`, `steps`, `inputs`, `use_worktree`, `dump`, `resolve_inputs`). |
 | `Status` | `core/status/facade.py` | Workspace health and telemetry aggregation (`collect`). |
 | `Session` | `core/sessions/sessions.py` | One session addressed by id (`diff`, `logs`, `details`); a session exists when its session record exists. |
-| `SessionCollection` | `core/sessions/sessions.py` | The project's sessions (`get`, `list`, `latest_diff`); `list` reconciles stale sessions, `latest_diff` selects the greatest `started_at`. |
+| `SessionCollection` | `core/sessions/sessions.py` | The project's sessions (`get`, `list`, `latest_diff`); `list` reconciles stale sessions, `latest_diff` selects the greatest `started_at`. `Session` and `SessionCollection` take a keyword-only `sensitive_variables` that `logs`, `details` and `list` pass to the read-time redactor. |
 | `Engine` | `engine/engine.py` | Process-level run persistence, session minting, execution, and resume (`run`, `resume`). |
 | `Filesystem` | `common/filesystem/facade.py` | Atomic writes, safe path operations, and YAML parsing (`atomic_write_json`, `atomic_write_text`, `read_yaml`). |
 
@@ -309,7 +309,7 @@ Each CLI command package under `src/dovo/cli/<name>/` contains:
 - **Config V1 (`v1/config.json`)**:
   - Validates `.dovo/config.json`.
   - Enforces `additionalProperties: false` across all objects.
-  - Required top-level keys: `version`, `project`, `worktree`, `agent`, `history`, `doctor`, `prune`, `telemetry`, `concurrency`.
+  - Required top-level keys: `version`, `project`. Optional sections: `worktree`, `agent`, `history`, `doctor`, `prune`, `telemetry`, `concurrency`, `environment`.
   - Supported agent provider tokens: `copilot`.
 - **Workflow V1 (`v1/workflow.json`)**:
   - Validates workflow and task YAML definitions.

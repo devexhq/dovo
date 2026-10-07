@@ -567,6 +567,49 @@ class SessionHistoryRedactionTests:
         assert stored is not None
         assert stored.error_message == "s3cr3t-value"
 
+    @pytest.mark.parametrize(
+        ("names", "expected_line", "expected_error"),
+        [
+            pytest.param(("DB_PIN",), "pin [REDACTED:DB_PIN]", "[REDACTED:DB_PIN]", id="listed"),
+            pytest.param((), "pin 1234", "1234", id="unlisted"),
+        ],
+    )
+    def test_logs_details_and_list_mask_listed_name_for_pre_existing_data(
+        self,
+        isolated_workspace: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        names: tuple[str, ...],
+        expected_line: str,
+        expected_error: str,
+    ) -> None:
+        """[tier-1/integration] Session.logs / Session.details / SessionCollection.list: sensitive_variables=("DB_PIN",), DB_PIN="1234", a step log line "pin 1234" and a stored error_message "1234" return "pin [REDACTED:DB_PIN]" and "[REDACTED:DB_PIN]", while the stored row still holds "1234"; with sensitive_variables=() both return the raw value."""
+        monkeypatch.setenv("DB_PIN", "1234")
+        collection = SessionCollection(_paths_for(isolated_workspace), sensitive_variables=names)
+        session = collection.get("old")
+        session_log_dir = _seed_session(session, isolated_workspace)
+        (session_log_dir / "01_build_attempt_1.stdout.log").write_text("pin 1234\n", encoding="utf-8")
+        collection.db.update_status("old", SessionStatus.FAILED, error_message="1234")
+
+        logs = session.logs(step="build")
+        details = session.details()
+        listed = collection.list()
+
+        assert logs.lines == [expected_line]
+        assert details.session is not None
+        assert details.session.error_message == expected_error
+        assert [row.error_message for row in listed.sessions] == [expected_error]
+        stored = collection.db.get("old")
+        assert stored is not None
+        assert stored.error_message == "1234"
+
+    def test_collection_get_passes_sensitive_variables_to_session(self, isolated_workspace: Path) -> None:
+        """[tier-1/unit] SessionCollection.get: SessionCollection(sensitive_variables=("A","B")).get("s").sensitive_variables == ("A","B")."""
+        collection = SessionCollection(_paths_for(isolated_workspace), sensitive_variables=("A", "B"))
+
+        session = collection.get("s")
+
+        assert session.sensitive_variables == ("A", "B")
+
     def test_logs_return_masked_step_lines(self, isolated_workspace: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """[tier-1/integration] Session.logs: a step stdout log file holding "s3cr3t-value" with SVC_TOKEN="s3cr3t-value" returns lines == ["[REDACTED:SVC_TOKEN]"]."""
         monkeypatch.setenv("SVC_TOKEN", "s3cr3t-value")

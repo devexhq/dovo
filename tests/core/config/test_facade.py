@@ -130,6 +130,21 @@ class ConfigAccessorPropertyTests:
         assert config.telemetry == loaded.telemetry
         assert config.concurrency == loaded.concurrency
 
+    def test_environment_property_exposes_loaded_config_section(
+        self, isolated_workspace: Path, workspace_paths_factory: WorkspacePathsFactory
+    ) -> None:
+        """[tier-1/unit] Config.environment: returns the loaded DovoConfig.environment and raises ConfigLoadError when config.json is missing."""
+        paths = workspace_paths_factory(isolated_workspace, None)
+        with pytest.raises(ConfigLoadError):
+            _ = Config(paths).environment
+        payload = build_default_config("prop-project")
+        payload["environment"] = {"sensitive_variables": ["DB_PIN"]}
+        Filesystem.atomic_write_json(paths.config_file, payload)
+
+        environment = Config(paths).environment
+
+        assert environment.sensitive_variables == ["DB_PIN"]
+
     def test_accessor_property_raises_config_load_error_when_config_missing(
         self, isolated_workspace: Path, workspace_paths_factory: WorkspacePathsFactory
     ) -> None:

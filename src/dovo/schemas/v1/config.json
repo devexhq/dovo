@@ -87,6 +87,16 @@
       "properties": {
         "lock_timeout_seconds": { "type": "number", "minimum": 0.1 }
       }
+    },
+    "environment": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "sensitive_variables": {
+          "type": "array",
+          "items": { "type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]*$" }
+        }
+      }
     }
   }
 }

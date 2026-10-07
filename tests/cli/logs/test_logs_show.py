@@ -6,9 +6,11 @@ import json
 from pathlib import Path
 from typing import Any
 
+import pytest
 from typer.testing import CliRunner
 
 from dovo.cli import app
+from dovo.common.filesystem import Filesystem
 from dovo.common.filesystem.models import RepositoryPaths
 from dovo.common.filesystem.services.global_root import resolve_global_paths
 from dovo.core.db import DovoDb, SessionStatus
@@ -154,3 +156,34 @@ class LogsCliIntegrationTests:
                 "fixes": [],
             },
         }
+
+    @pytest.mark.parametrize(
+        ("names", "expected_line"),
+        [
+            pytest.param(["DB_PIN"], "[REDACTED:DB_PIN]", id="listed"),
+            pytest.param([], "1234", id="unlisted"),
+        ],
+    )
+    def test_logs_command_masks_name_listed_in_config(
+        self,
+        cli_runner: CliRunner,
+        logs_workspace: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        names: list[str],
+        expected_line: str,
+    ) -> None:
+        """[tier-3/integration] dovo logs --step build: config environment.sensitive_variables ["DB_PIN"], DB_PIN="1234", log line "pin 1234" prints "[REDACTED:DB_PIN]", exit 0; with the name removed from config it prints "1234"."""
+        monkeypatch.setenv("DB_PIN", "1234")
+        session_log_dir = _seed_session(logs_workspace)
+        (session_log_dir / "02_pin_attempt_1.stdout.log").write_text("pin 1234\n", encoding="utf-8")
+        config_path = resolve_workspace_paths(
+            RepositoryPaths.from_root(logs_workspace), resolve_global_paths(None)
+        ).config_file
+        config = json.loads(config_path.read_text(encoding="utf-8"))
+        config["environment"] = {"sensitive_variables": names}
+        Filesystem.atomic_write_json(config_path, config)
+
+        result = cli_runner.invoke(app, ["-p", str(logs_workspace), "logs", "sess-logs", "--step", "pin"])
+
+        assert result.exit_code == 0
+        assert f"pin {expected_line}" in result.stdout

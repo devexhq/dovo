@@ -76,8 +76,10 @@ def _resolve_agent_settings(paths: WorkspacePaths, override: str | None) -> Agen
     )
 
 
-def _workspace_context(row: SessionRecord, paths: WorkspacePaths, observer: RunObserver | None) -> RunSettings:
-    """Build the Workspace input from the session row's use_worktree, keep, auto_apply, and worktree_id."""
+def _workspace_context(
+    row: SessionRecord, paths: WorkspacePaths, observer: RunObserver | None, sensitive_variables: tuple[str, ...]
+) -> RunSettings:
+    """Build the Workspace input from the session row and the configured sensitive variable names."""
     return RunSettings(
         cwd=paths.root_dir,
         use_worktree=row.use_worktree,
@@ -86,6 +88,7 @@ def _workspace_context(row: SessionRecord, paths: WorkspacePaths, observer: RunO
         session_id=row.session_id,
         auto_apply=row.auto_apply,
         worktree_id=row.worktree_id if row.use_worktree else None,
+        sensitive_variables=sensitive_variables,
         paths=paths,
     )
 
@@ -133,7 +136,9 @@ class SessionRunner:
         agent: ResolvedAgentSettings,
     ) -> SessionRunner | RunOutcome:
         """Set up the worktree and session directories and return the session, or a FAILED outcome on setup error."""
-        workspace = Workspace(_workspace_context(row, paths, observer))
+        config = Config(paths)
+        sensitive_variables = tuple(config.environment.sensitive_variables)
+        workspace = Workspace(_workspace_context(row, paths, observer, sensitive_variables))
         target_dir, manager, worktree, setup_error = workspace.setup()
         if setup_error is not None:
             return RunOutcome(
@@ -166,7 +171,8 @@ class SessionRunner:
             artifacts_db=artifacts_db,
             worktree=worktree,
             no_tty=no_tty,
-            save_attempt_logs=Config(paths).history.save_attempt_logs,
+            save_attempt_logs=config.history.save_attempt_logs,
+            sensitive_variables=sensitive_variables,
         )
         return cls(
             row, paths, sessions, observer, prompter, workspace, context, manager, worktree, setup_warnings, agent

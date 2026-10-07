@@ -31,8 +31,8 @@ def logs_show_command(
     Returns:
         LogsShowResult containing session.log events or step log lines.
     """
-    result = Session(context.paths, session_id, db=context.db.sessions).logs(
-        step=step, attempt=attempt, stream=LogStreamFilter(stream), tail=tail
-    )
+    result = Session(
+        context.paths, session_id, db=context.db.sessions, sensitive_variables=context.sensitive_variables
+    ).logs(step=step, attempt=attempt, stream=LogStreamFilter(stream), tail=tail)
     ui_dispatcher.dispatch(result, output_format=output_format)
     return result

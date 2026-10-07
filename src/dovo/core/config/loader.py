@@ -8,9 +8,11 @@ from enum import StrEnum
 from pathlib import Path
 from typing import Any
 
+from pydantic import ValidationError
+
 from dovo.common.filesystem import WorkspacePaths
 from dovo.common.models import BaseResult
-from dovo.common.schema_validation import CONFIG_VALIDATOR
+from dovo.common.schema_validation import CONFIG_VALIDATOR, format_validation_error
 from dovo.core.config.models import DovoConfig
 
 
@@ -261,7 +263,10 @@ def _map_dovo_config(raw: dict[str, Any]) -> DovoConfig:
             "name": str(project_name),
         },
     }
-    return DovoConfig.model_validate(normalized)
+    try:
+        return DovoConfig.model_validate(normalized)
+    except ValidationError as exc:
+        raise ValueError(format_validation_error(exc)) from exc
 
 
 def parse_and_validate_config(raw: dict[str, Any]) -> DovoConfig:

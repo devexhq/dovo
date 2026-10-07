@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import dataclasses
 from pathlib import Path
 
 import pytest
@@ -11,6 +12,8 @@ import dovo.cli.cli as cli_module
 from dovo.cli import app
 from dovo.cli.context import CliContext
 from dovo.common.lock import LockTimeoutError
+from dovo.core.config.generator import build_default_config
+from dovo.core.config.models import DovoConfig
 from tests.harness.builders import WorkspaceBuilder
 
 
@@ -37,6 +40,26 @@ class CliContextBuildTests:
 
         assert context.paths.root_dir == workspace.resolve()
         assert context.config is None
+
+    @pytest.mark.parametrize(
+        ("names", "expected"),
+        [
+            pytest.param(["A", "B"], ("A", "B"), id="configured"),
+            pytest.param(None, (), id="no_config"),
+        ],
+    )
+    def test_sensitive_variables_returns_configured_names_or_empty_without_config(
+        self, tmp_path: Path, names: list[str] | None, expected: tuple[str, ...]
+    ) -> None:
+        """[tier-1/unit] CliContext.sensitive_variables: config.environment.sensitive_variables ["A","B"] returns ("A","B"); config=None returns ()."""
+        workspace = WorkspaceBuilder(tmp_path / "workspace").without_config().build()
+        context = CliContext.build(path=workspace, load_config=False)
+        if names is not None:
+            payload = build_default_config("demo")
+            payload["environment"] = {"sensitive_variables": names}
+            context = dataclasses.replace(context, config=DovoConfig.model_validate(payload))
+
+        assert context.sensitive_variables == expected
 
     def test_build_two_sequential_calls_do_not_share_state(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch

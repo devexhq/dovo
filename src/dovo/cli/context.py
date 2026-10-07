@@ -42,6 +42,13 @@ class CliContext:
     db: DovoDb
     config: DovoConfig | None = None
 
+    @property
+    def sensitive_variables(self) -> tuple[str, ...]:
+        """Return the configured sensitive variable names, or () when no config was loaded."""
+        if self.config is None:
+            return ()
+        return tuple(self.config.environment.sensitive_variables)
+
     @classmethod
     def build(cls, *, path: Path | None = None, load_config: bool = True) -> Self:
         """Factory to build the global CLI state."""

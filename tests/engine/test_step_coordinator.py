@@ -238,6 +238,27 @@ class StepCoordinatorPrimitiveTests:
         assert result.status == "failed"
         assert prompter.calls == 0
 
+    def test_run_step_forwards_sensitive_variables_to_step_execution_context(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """[tier-1/unit] StepCoordinator step run: RunSettings(sensitive_variables=("PIN",)) builds StepExecutionContext with sensitive_variables == ("PIN",)."""
+        captured: list[StepExecutionContext] = []
+
+        class _CapturingStepExecution(StepExecution):
+            def __init__(self, metadata: StepExecutionContext) -> None:
+                captured.append(metadata)
+                super().__init__(metadata)
+
+        monkeypatch.setattr("dovo.engine.step_coordinator.StepExecution", _CapturingStepExecution)
+        context = RunSettings(
+            cwd=tmp_path, use_worktree=False, sensitive_variables=("PIN",), paths=_paths_for(tmp_path)
+        )
+        step = StepBuilder.command("echo ok").with_id("ok").build()
+
+        StepCoordinator(context).run_attempt(_run_context(tmp_path), [], step, idx=1, total=1, step_context=None)
+
+        assert [metadata.sensitive_variables for metadata in captured] == [("PIN",)]
+
     @pytest.mark.parametrize(
         ("ctx_kwargs", "prompter", "warning_substr"),
         [
