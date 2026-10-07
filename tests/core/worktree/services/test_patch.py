@@ -130,6 +130,33 @@ class WorktreePatchDiffTests:
         assert "new_file.txt" in result.files_changed
         assert result.diff_text.strip() != ""
 
+    @pytest.mark.parametrize(
+        ("stat", "expect_stat_text"),
+        [
+            pytest.param(False, False, id="default_omits_diffstat"),
+            pytest.param(True, True, id="stat_includes_diffstat"),
+        ],
+    )
+    def test_stat_flag_controls_whether_diffstat_is_returned(
+        self,
+        worktree_workspace: Path,
+        worktree_workspace_paths: WorkspacePaths,
+        stat: bool,
+        expect_stat_text: bool,
+    ) -> None:
+        """[tier-1/integration] WorktreePatch.diff: stat_text is populated only when stat=True; the unified diff is always present."""
+        db = _repo(worktree_workspace_paths)
+        _create_worktree_with_change(worktree_workspace_paths, "dovo_stat")
+        patch = WorktreePatch(worktree_workspace_paths, db)
+
+        result = patch.diff("dovo_stat", stat=stat)
+
+        assert result.status == WorktreeDiffStatus.OK
+        assert "diff --git" in result.diff_text
+        assert bool(result.stat_text) is expect_stat_text
+        if expect_stat_text:
+            assert "new_file.txt" in result.stat_text
+
 
 class WorktreePatchApplyTests:
     def test_unknown_worktree_id_returns_not_found(

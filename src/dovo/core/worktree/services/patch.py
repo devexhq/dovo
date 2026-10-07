@@ -332,7 +332,7 @@ class WorktreePatch:
             status=WorktreeDiffStatus.OK,
             worktree_id=worktree_id,
             diff_text=diff_text,
-            stat_text=stat_text,
+            stat_text=stat_text if stat else "",
             files_changed=touched_files,
         )
 

@@ -35,15 +35,14 @@ def _create_worktree_with_committed_change(worktree_workspace: Path) -> Worktree
     return session
 
 
-def _assert_dispatches_ok_diff(dispatch_spy: list[Any], session_id: str) -> None:
-    """Assert the spy captured exactly one OK WorktreeDiffResult for target.py."""
+def _assert_dispatches_ok_diff(dispatch_spy: list[Any], session_id: str, *, stat: bool) -> None:
+    """Assert the spy captured exactly one OK WorktreeDiffResult for target.py, with a diffstat only when stat."""
     assert len(dispatch_spy) == 1
     captured = dispatch_spy[0]
-    assert "target.py" in captured.stat_text
     assert captured.status == WorktreeDiffStatus.OK
     assert captured.worktree_id == session_id
-    assert isinstance(captured.diff_text, str) and len(captured.diff_text) > 0
-    assert isinstance(captured.stat_text, str) and len(captured.stat_text) > 0
+    assert "diff --git" in captured.diff_text
+    assert ("target.py" in captured.stat_text) is stat
     assert captured.files_changed == ["target.py"]
     assert len(captured.errors) == 0
 
@@ -54,19 +53,20 @@ class WorktreeDiffCliIntegrationTests:
     def test_worktree_diff_cli_renders_unified_diff_exits_zero(
         self, cli_runner: CliRunner, worktree_workspace: Path, dispatch_spy: list[Any]
     ) -> None:
-        """dovo worktree diff <id> renders the changed filename for a committed change, exits 0, and dispatches the exact OK DTO."""
+        """dovo worktree diff <id> renders the unified diff hunk for a committed change, exits 0, and dispatches the exact OK DTO."""
         session = _create_worktree_with_committed_change(worktree_workspace)
 
         result = cli_runner.invoke(app, ["-p", str(worktree_workspace), "worktree", "diff", session.session_id])
 
         assert result.exit_code == 0
-        assert "target.py" in result.stdout
-        _assert_dispatches_ok_diff(dispatch_spy, session.session_id)
+        assert "diff --git" in result.stdout
+        assert "+changed" in result.stdout
+        _assert_dispatches_ok_diff(dispatch_spy, session.session_id, stat=False)
 
     def test_worktree_diff_cli_stat_flag_renders_diffstat(
         self, cli_runner: CliRunner, worktree_workspace: Path, dispatch_spy: list[Any]
     ) -> None:
-        """dovo worktree diff <id> --stat renders a diffstat summary, same as the default (stat_text is always populated and preferred by the formatter regardless of --stat; see 🚨 in the implementation report)."""
+        """dovo worktree diff <id> --stat renders the diffstat summary instead of the unified diff."""
         session = _create_worktree_with_committed_change(worktree_workspace)
 
         result = cli_runner.invoke(
@@ -76,7 +76,7 @@ class WorktreeDiffCliIntegrationTests:
         assert result.exit_code == 0
         assert "target.py" in result.stdout
         assert "diff --git" not in result.stdout
-        _assert_dispatches_ok_diff(dispatch_spy, session.session_id)
+        _assert_dispatches_ok_diff(dispatch_spy, session.session_id, stat=True)
 
     def test_worktree_diff_cli_missing_worktree_exits_one(
         self, cli_runner: CliRunner, worktree_workspace: Path, dispatch_spy: list[Any]
@@ -107,9 +107,7 @@ class WorktreeDiffCliIntegrationTests:
         actual_json = json.loads(result.stdout)
         payload = actual_json["payload"]
         assert "target.py" in payload["diff_text"]
-        assert "target.py" in payload["stat_text"]
         payload["diff_text"] = "placeholder"
-        payload["stat_text"] = "placeholder"
 
         assert actual_json == {
             "event_type": "WorktreeDiffResult",
@@ -117,7 +115,7 @@ class WorktreeDiffCliIntegrationTests:
                 "status": "ok",
                 "worktree_id": session.session_id,
                 "diff_text": "placeholder",
-                "stat_text": "placeholder",
+                "stat_text": "",
                 "files_changed": ["target.py"],
                 "error_code": None,
                 "errors": [],
