@@ -370,7 +370,7 @@ class ExecuteAgentStepScratchTests:
     def test_allocation_failure_returns_203_with_diagnostic_and_never_looks_up_the_provider(
         self, git_repo: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """[tier-1/integration] execute_agent_step: session_tmp_dir None returns StepDispatchOutcome(status='failed', exit_code=203) whose error_message equals scratch_unavailable_message(step.id, detail) and get_agent_adapter is never called."""
+        """[tier-1/integration] execute_agent_step: session_tmp_dir None returns StepDispatchOutcome(status='failed', exit_code=203) whose error_message equals scratch_unavailable_message(step.id, detail) followed by a 'Fix:' block, and get_agent_adapter is never called."""
         requested = _use_provider(monkeypatch, FakeAgentProvider(_no_op()))
         step = _step()
 
@@ -386,8 +386,9 @@ class ExecuteAgentStepScratchTests:
 
         assert outcome.status == "failed"
         assert outcome.exit_code == 203
-        assert outcome.error_message == scratch_unavailable_message(
-            step.id, "the session temp directory is unavailable"
+        assert outcome.error_message == (
+            scratch_unavailable_message(step.id, "the session temp directory is unavailable")
+            + "\nFix:\n- restore access to the session temp directory or correct its storage path."
         )
         assert requested == []
 

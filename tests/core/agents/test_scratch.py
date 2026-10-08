@@ -13,7 +13,7 @@ from dovo.core.agents import AgentScratchResult, allocate_invocation_paths, new_
 from dovo.core.agents.scratch import scratch_unavailable_message
 
 _INVOCATION_ID = "0123456789abcdef0123456789abcdef"
-_FIX_LINE = "Fix: restore access to the session temp directory or correct its storage path."
+_FIX = "restore access to the session temp directory or correct its storage path."
 
 
 def _layout(tmp_path: Path) -> tuple[Path, Path, Path]:
@@ -106,8 +106,8 @@ class AllocateInvocationPathsTests:
         assert result.invocation_id == "../escape"
         assert list(session_tmp.iterdir()) == []
 
-    def test_missing_session_tmp_dir_fails_with_exact_two_line_diagnostic(self, tmp_path: Path) -> None:
-        """[tier-1/unit] allocate_invocation_paths: session_tmp_dir None returns ok=False, error_code 'AGENT_SCRATCH_UNAVAILABLE', and errors == [scratch_unavailable_message(step_id, detail)] whose second line is 'Fix: restore access to the session temp directory or correct its storage path.'."""
+    def test_missing_session_tmp_dir_fails_with_exact_diagnostic_and_separate_fix(self, tmp_path: Path) -> None:
+        """[tier-1/unit] allocate_invocation_paths: session_tmp_dir None returns ok=False, error_code 'AGENT_SCRATCH_UNAVAILABLE', and errors == [scratch_unavailable_message(step_id, detail)] and fixes == ['restore access to the session temp directory or correct its storage path.']."""
         _, worktree, main_checkout = _layout(tmp_path)
 
         result = allocate_invocation_paths(
@@ -121,11 +121,11 @@ class AllocateInvocationPathsTests:
         assert not result.ok
         assert result.error_code == "AGENT_SCRATCH_UNAVAILABLE"
         assert result.errors == [scratch_unavailable_message("build", "the session temp directory is unavailable")]
-        assert result.errors[0].splitlines() == [
+        assert result.errors == [
             "Cannot prepare private scratch for agent step 'build' (AGENT_SCRATCH_UNAVAILABLE): "
-            "the session temp directory is unavailable",
-            _FIX_LINE,
+            "the session temp directory is unavailable"
         ]
+        assert result.fixes == [_FIX]
 
     def test_nonexistent_session_tmp_dir_is_not_created(self, tmp_path: Path) -> None:
         """[tier-1/unit] allocate_invocation_paths: a session_tmp_dir that does not exist returns ok=False and is not created."""

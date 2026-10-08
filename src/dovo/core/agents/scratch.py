@@ -9,7 +9,7 @@ from pathlib import Path
 from dovo.core.agents.models import AgentInvocationContext, AgentScratchResult
 
 _INVOCATION_ID_PATTERN = re.compile(r"^[0-9a-f]{32}$")
-_FIX_LINE = "Fix: restore access to the session temp directory or correct its storage path."
+_FIX = "restore access to the session temp directory or correct its storage path."
 
 
 def new_invocation_id() -> str:
@@ -18,10 +18,8 @@ def new_invocation_id() -> str:
 
 
 def scratch_unavailable_message(step_id: str, detail: str) -> str:
-    """Return the two-line AGENT_SCRATCH_UNAVAILABLE diagnostic with its Fix line."""
-    return (
-        f"Cannot prepare private scratch for agent step '{step_id}' (AGENT_SCRATCH_UNAVAILABLE): {detail}\n{_FIX_LINE}"
-    )
+    """Return the AGENT_SCRATCH_UNAVAILABLE diagnostic for the step."""
+    return f"Cannot prepare private scratch for agent step '{step_id}' (AGENT_SCRATCH_UNAVAILABLE): {detail}"
 
 
 def allocate_invocation_paths(
@@ -58,6 +56,7 @@ def _unavailable(invocation_id: str, step_id: str, detail: str) -> AgentScratchR
     return AgentScratchResult(
         invocation_id=invocation_id,
         errors=[scratch_unavailable_message(step_id, detail)],
+        fixes=[_FIX],
         error_code="AGENT_SCRATCH_UNAVAILABLE",
     )
 

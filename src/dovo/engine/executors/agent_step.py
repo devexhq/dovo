@@ -15,6 +15,7 @@ from dovo.core.agents import (
     new_invocation_id,
     run_direct_attempt,
 )
+from dovo.core.agents.responses import diagnostics_with_fixes
 from dovo.core.catalog.definitions import StepDefinition
 from dovo.engine.executors.models import AgentStepRunner, AgentStepSummary, OutputCallback, StepDispatchOutcome
 
@@ -67,7 +68,7 @@ def execute_agent_step(
         main_checkout=main_checkout,
     )
     if not scratch.ok:
-        return _to_outcome(_provider_error(*scratch.errors), on_output)
+        return _to_outcome(_provider_error(*diagnostics_with_fixes(scratch.errors, scratch.fixes)), on_output)
 
     attempt = run_direct_attempt(
         instruction=step.prompt or "",

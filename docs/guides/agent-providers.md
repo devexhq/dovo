@@ -73,7 +73,8 @@ Each agent attempt gets its own private temporary directories under the run's se
 
 ```text
 Cannot prepare private scratch for agent step '<step_id>' (AGENT_SCRATCH_UNAVAILABLE): <detail>
-Fix: restore access to the session temp directory or correct its storage path.
+Fix:
+- restore access to the session temp directory or correct its storage path.
 ```
 
 - Completed runs remove the session temp directory, including every scratch directory; failed, paused, cancelled, and `--keep` runs retain it for inspection.

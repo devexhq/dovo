@@ -13,6 +13,7 @@ from dovo.core.agents.models import (
     AgentResponseStatus,
     ResolvedAgentSettings,
 )
+from dovo.core.agents.responses import diagnostics_with_fixes
 from dovo.core.git import GitDiffParser
 
 
@@ -74,10 +75,7 @@ def _settle(response: AgentResponse) -> AgentAttempt:
     if response.status == AgentResponseStatus.PROPOSED_PATCH:
         return _accept_direct_mutation(response)
 
-    diagnostics = list(response.errors)
-    if response.fixes:
-        diagnostics.append("Fix:\n" + "\n".join(f"- {fix}" for fix in response.fixes))
-
+    diagnostics = diagnostics_with_fixes(response.errors, response.fixes)
     return AgentAttempt(
         status=response.status,
         summary=_response_text(response),

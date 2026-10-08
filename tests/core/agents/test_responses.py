@@ -7,7 +7,7 @@ from collections.abc import Sequence
 import pytest
 
 from dovo.core.agents.models import AgentResponse, AgentResponseStatus
-from dovo.core.agents.responses import no_op_response, provider_error_response, timeout_response
+from dovo.core.agents.responses import diagnostics_with_fixes, no_op_response, provider_error_response, timeout_response
 
 
 class TimeoutResponseTests:
@@ -97,3 +97,17 @@ class NoOpResponseTests:
         assert response.raw_text == "r"
         assert response.mutation_baseline_ref == "abc"
         assert response.duration_ms == 9
+
+
+class DiagnosticsWithFixesTests:
+    @pytest.mark.parametrize(
+        ("errors", "fixes", "expected"),
+        [
+            pytest.param(["e"], ["f1", "f2"], ["e", "Fix:\n- f1\n- f2"], id="errors-and-fixes"),
+            pytest.param(["e1", "e2"], [], ["e1", "e2"], id="no-fixes"),
+            pytest.param([], ["f"], ["Fix:\n- f"], id="fixes-only"),
+        ],
+    )
+    def test_fixes_form_one_trailing_block(self, errors: list[str], fixes: list[str], expected: list[str]) -> None:
+        """[tier-1/unit] diagnostics_with_fixes: errors followed by one 'Fix:' bullet block, and no block when fixes is empty."""
+        assert diagnostics_with_fixes(errors, fixes) == expected
