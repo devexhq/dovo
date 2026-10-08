@@ -7,6 +7,7 @@ from pathlib import Path
 from dovo.core.agents.factory import get_agent_adapter
 from dovo.core.agents.models import (
     AgentAttempt,
+    AgentInvocationContext,
     AgentRequest,
     AgentResponse,
     AgentResponseStatus,
@@ -21,17 +22,22 @@ def run_direct_attempt(
     settings: ResolvedAgentSettings,
     worktree_path: Path,
     timeout_seconds: int,
+    invocation: AgentInvocationContext | None = None,
 ) -> AgentAttempt:
-    """Run one direct-mode agent attempt through the resolved provider and return the classified attempt."""
-    request = _build_request(instruction, settings, worktree_path, timeout_seconds)
+    """Run one direct-mode agent attempt through the resolved provider, carrying the step boundary's invocation context to the request."""
+    request = _build_request(instruction, settings, worktree_path, timeout_seconds, invocation)
 
     return _run_provider(request, settings.provider)
 
 
 def _build_request(
-    instruction: str, settings: ResolvedAgentSettings, worktree_path: Path, timeout_seconds: int
+    instruction: str,
+    settings: ResolvedAgentSettings,
+    worktree_path: Path,
+    timeout_seconds: int,
+    invocation: AgentInvocationContext | None,
 ) -> AgentRequest:
-    """Build the direct-mode AgentRequest from the instruction and the resolved settings."""
+    """Build the direct-mode AgentRequest from the instruction, the resolved settings, and the invocation's scratch root."""
     return AgentRequest(
         mode="direct",
         instruction=instruction,
@@ -42,6 +48,8 @@ def _build_request(
         endpoint=settings.endpoint,
         temperature=settings.temperature,
         max_tokens=settings.max_tokens,
+        agent_scratch_path=invocation.scratch_path if invocation is not None else None,
+        invocation=invocation,
     )
 
 

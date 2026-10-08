@@ -17,14 +17,17 @@ from dovo.core.agents.factory import get_agent_adapter
 from dovo.core.agents.models import (
     AgentAttempt,
     AgentFailurePayload,
+    AgentInvocationContext,
     AgentRequest,
     AgentResponse,
     AgentResponseStatus,
+    AgentScratchResult,
     PayloadFile,
     PayloadOmission,
     ResolvedAgentSettings,
 )
 from dovo.core.agents.registry import PROVIDERS
+from dovo.core.agents.scratch import allocate_invocation_paths, new_invocation_id
 from dovo.core.agents.services.run_direct import run_direct_attempt
 
 __all__ = [
@@ -34,9 +37,11 @@ __all__ = [
     "PROVIDERS",
     "AgentAttempt",
     "AgentFailurePayload",
+    "AgentInvocationContext",
     "AgentRequest",
     "AgentResponse",
     "AgentResponseStatus",
+    "AgentScratchResult",
     "BaseAgentProvider",
     "CliDirectMutationAdapter",
     "CliMutationOutcome",
@@ -47,8 +52,10 @@ __all__ = [
     "PayloadOmission",
     "ProviderSpec",
     "ResolvedAgentSettings",
+    "allocate_invocation_paths",
     "build_mutation_prompt",
     "get_agent_adapter",
+    "new_invocation_id",
     "run_direct_attempt",
     "validate_request_patch",
 ]

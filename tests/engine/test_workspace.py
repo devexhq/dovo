@@ -8,6 +8,7 @@ from pathlib import Path
 import pytest
 
 from dovo.common.filesystem.models import WorkspacePaths
+from dovo.core.agents import AgentInvocationContext, allocate_invocation_paths, new_invocation_id
 from dovo.core.config import ConfigLoadError
 from dovo.core.config.loader import ConfigLoadResult, ConfigLoadStatus
 from dovo.core.db import SessionStatus, WorktreesRepository, WorktreeStatus
@@ -918,3 +919,63 @@ class WorkspaceCleanupSessionTmpDirTests:
         Workspace(context).cleanup_session_tmp_dir(session_tmp_dir, keep=False, status=SessionStatus.COMPLETED)
 
         assert session_tmp_dir.exists()
+
+
+class ScratchLifecycleCleanupTests:
+    """[tier-1/unit] Workspace.cleanup_session_tmp_dir: allocated agent invocation directories follow the session lifecycle."""
+
+    @staticmethod
+    def _allocate(tmp_path: Path, session_name: str) -> tuple[Path, AgentInvocationContext]:
+        session_tmp_dir = tmp_path / session_name
+        session_tmp_dir.mkdir()
+        result = allocate_invocation_paths(
+            invocation_id=new_invocation_id(),
+            session_tmp_dir=session_tmp_dir,
+            step_id="build",
+            worktree_path=tmp_path / "worktree",
+            main_checkout=tmp_path / "main",
+        )
+        assert result.context is not None
+
+        return session_tmp_dir, result.context
+
+    def test_completed_unkept_run_removes_session_tree_including_invocation_directories(self, tmp_path: Path) -> None:
+        """[tier-1/unit] Workspace.cleanup_session_tmp_dir: with allocated steps/<id>/agent/<inv>/{scratch,control}, keep=False and COMPLETED removes session_tmp_dir entirely."""
+        session_tmp_dir, _ = self._allocate(tmp_path, "session-a")
+        context = RunSettings(cwd=tmp_path, use_worktree=False, paths=_paths_for(tmp_path))
+
+        Workspace(context).cleanup_session_tmp_dir(session_tmp_dir, keep=False, status=SessionStatus.COMPLETED)
+
+        assert not session_tmp_dir.exists()
+
+    @pytest.mark.parametrize(
+        ("keep", "status"),
+        [
+            pytest.param(False, SessionStatus.FAILED, id="failed"),
+            pytest.param(False, SessionStatus.PAUSED, id="paused"),
+            pytest.param(False, SessionStatus.CANCELLED, id="cancelled"),
+            pytest.param(True, SessionStatus.COMPLETED, id="keep-completed"),
+        ],
+    )
+    def test_retained_runs_keep_invocation_directories(self, tmp_path: Path, keep: bool, status: SessionStatus) -> None:
+        """[tier-1/unit] Workspace.cleanup_session_tmp_dir: each non-COMPLETED status, and keep=True on a COMPLETED run, leaves every allocated scratch and control directory in place."""
+        session_tmp_dir, invocation = self._allocate(tmp_path, "session-a")
+        context = RunSettings(cwd=tmp_path, use_worktree=False, paths=_paths_for(tmp_path))
+
+        Workspace(context).cleanup_session_tmp_dir(session_tmp_dir, keep=keep, status=status)
+
+        assert invocation.scratch_path.is_dir()
+        assert invocation.control_path.is_dir()
+
+    def test_cleanup_does_not_touch_another_sessions_directories(self, tmp_path: Path) -> None:
+        """[tier-1/unit] Workspace.cleanup_session_tmp_dir: cleaning session A leaves session B's allocated invocation directories and files intact."""
+        session_a, _ = self._allocate(tmp_path, "session-a")
+        _, invocation_b = self._allocate(tmp_path, "session-b")
+        (invocation_b.scratch_path / "notes.txt").write_text("keep", encoding="utf-8")
+        context = RunSettings(cwd=tmp_path, use_worktree=False, paths=_paths_for(tmp_path))
+
+        Workspace(context).cleanup_session_tmp_dir(session_a, keep=False, status=SessionStatus.COMPLETED)
+
+        assert not session_a.exists()
+        assert (invocation_b.scratch_path / "notes.txt").read_text(encoding="utf-8") == "keep"
+        assert invocation_b.control_path.is_dir()

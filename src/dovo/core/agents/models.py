@@ -9,6 +9,8 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, model_validator
 
+from dovo.common.models import BaseResult
+
 OmissionReason = Literal[
     "missing",
     "outside_worktree",
@@ -80,6 +82,28 @@ class AgentResponseStatus(StrEnum):
     PROVIDER_ERROR = "provider_error"
 
 
+class AgentInvocationContext(BaseModel):
+    """Private per-attempt paths allocated at the step boundary; control_path is host-owned and never reaches prompts, environments, or grants."""
+
+    model_config = {"extra": "forbid", "strict": True, "frozen": True}
+
+    invocation_id: str = Field(pattern=r"^[0-9a-f]{32}$")
+    scratch_path: Path
+    control_path: Path
+
+
+class AgentScratchResult(BaseResult):
+    """Outcome of allocating one attempt's scratch and control directories; the id is retained on failure."""
+
+    invocation_id: str
+    context: AgentInvocationContext | None = None
+
+    @property
+    def ok(self) -> bool:
+        """Return True when both directories were created and verified."""
+        return self.context is not None
+
+
 class AgentRequest(BaseModel):
     """Input package for ``BaseAgentProvider.invoke``."""
 
@@ -97,10 +121,12 @@ class AgentRequest(BaseModel):
     max_files: int | None = None
     max_patch_kb: int | None = None
     reject_binary_changes: bool | None = None
+    agent_scratch_path: Path | None = None
+    invocation: AgentInvocationContext | None = Field(default=None, exclude=True)
 
     @model_validator(mode="after")
     def validate_mode_contract(self) -> AgentRequest:
-        """Reject a blank instruction, a direct request with a payload, and a remediation request without one."""
+        """Reject a blank instruction, a direct request with a payload, a remediation request without one, and a scratch path that differs from the invocation's."""
         if not self.instruction.strip():
             raise ValueError("AgentRequest.instruction must not be blank.")
 
@@ -109,6 +135,13 @@ class AgentRequest(BaseModel):
 
         if self.mode != "direct" and self.payload is None:
             raise ValueError(f"AgentRequest mode '{self.mode}' requires a failure payload.")
+
+        if (
+            self.agent_scratch_path is not None
+            and self.invocation is not None
+            and self.agent_scratch_path != self.invocation.scratch_path
+        ):
+            raise ValueError("AgentRequest.agent_scratch_path must equal invocation.scratch_path.")
 
         return self
 

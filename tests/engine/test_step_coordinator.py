@@ -112,9 +112,17 @@ class StepCoordinatorAgentRunnerTests:
         builds: list[tuple[ResolvedAgentSettings | None, bool]] = []
         runners: list[Any] = []
 
-        def _recording_build(agent: ResolvedAgentSettings | None, worktree_active: bool) -> Any:
+        def _recording_build(
+            agent: ResolvedAgentSettings | None,
+            worktree_active: bool,
+            *,
+            session_tmp_dir: Path | None,
+            main_checkout: Path,
+        ) -> Any:
             builds.append((agent, worktree_active))
-            return build_agent_step_runner(agent, worktree_active)
+            return build_agent_step_runner(
+                agent, worktree_active, session_tmp_dir=session_tmp_dir, main_checkout=main_checkout
+            )
 
         class _CapturingStepExecution(StepExecution):
             """StepExecution subclass recording the agent_runner of the StepExecutionContext it is constructed with."""
@@ -165,6 +173,37 @@ class StepCoordinatorAgentRunnerTests:
         StepCoordinator(context).run_attempt(run_context, [], step, idx=1, total=1, step_context=None)
 
         assert [worktree_active for _, worktree_active in builds] == [expected]
+
+
+class StepCoordinatorRunnerWiringTests:
+    def test_runner_is_built_with_run_context_session_tmp_dir_and_main_checkout(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """[tier-1/unit] StepCoordinator.run_attempt: build_agent_step_runner is called with session_tmp_dir == run_context.session_tmp_dir and main_checkout == paths.root_dir."""
+        scratch_roots: list[tuple[Path | None, Path]] = []
+
+        def _recording_build(
+            agent: ResolvedAgentSettings | None,
+            worktree_active: bool,
+            *,
+            session_tmp_dir: Path | None,
+            main_checkout: Path,
+        ) -> Any:
+            scratch_roots.append((session_tmp_dir, main_checkout))
+            return build_agent_step_runner(
+                agent, worktree_active, session_tmp_dir=session_tmp_dir, main_checkout=main_checkout
+            )
+
+        monkeypatch.setattr("dovo.engine.step_coordinator.build_agent_step_runner", _recording_build)
+        paths = _paths_for(tmp_path)
+        session_tmp = tmp_path / "session-tmp"
+        run_context = dataclasses.replace(_run_context(tmp_path), session_tmp_dir=session_tmp)
+        context = RunSettings(cwd=tmp_path, use_worktree=False, paths=paths)
+        step = StepBuilder.command("echo ok").with_id("ok").build()
+
+        StepCoordinator(context).run_attempt(run_context, [], step, idx=1, total=1, step_context=None)
+
+        assert scratch_roots == [(session_tmp, paths.root_dir)]
 
 
 class StepCoordinatorLoopIterationForwardingTests:

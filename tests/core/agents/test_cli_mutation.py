@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 import json
+import subprocess
 from pathlib import Path
 from typing import Literal
 
 import pytest
 
-from dovo.core.agents import AgentRequest, AgentResponseStatus
+from dovo.core.agents import AgentInvocationContext, AgentRequest, AgentResponseStatus
 from dovo.core.agents.base import ProviderSpec
 from dovo.core.agents.cli_mutation import (
     CliDirectMutationAdapter,
@@ -19,7 +20,12 @@ from dovo.core.agents.cli_mutation import (
     build_mutation_prompt,
     validate_request_patch,
 )
-from dovo.core.agents.mutation_git import MutationGitError
+from dovo.core.agents.mutation_git import (
+    MutationGitError,
+    capture_diff_since,
+    discard_since,
+    resolve_pre_agent_baseline,
+)
 from dovo.core.git import PatchApplyStatus
 from tests.harness import AgentRequestBuilder, new_file_diff
 
@@ -40,6 +46,31 @@ def _fake_run(
         return CliMutationOutcome(status=status, result_text=result_text, error_detail=error_detail)
 
     return _run
+
+
+def _invocation(tmp_path: Path) -> AgentInvocationContext:
+    """Create real scratch and control directories outside the repository."""
+    root = tmp_path / "invocation"
+    scratch, control = root / "scratch", root / "control"
+    scratch.mkdir(parents=True)
+    control.mkdir()
+
+    return AgentInvocationContext(invocation_id="a" * 32, scratch_path=scratch, control_path=control)
+
+
+def _request_with_invocation(git_repo: Path, invocation: AgentInvocationContext) -> AgentRequest:
+    return AgentRequest(
+        mode="direct",
+        instruction="Plan the change",
+        worktree_path=git_repo,
+        timeout_seconds=10,
+        agent_scratch_path=invocation.scratch_path,
+        invocation=invocation,
+    )
+
+
+def _porcelain(repo: Path) -> str:
+    return subprocess.run(["git", "status", "--porcelain"], cwd=repo, check=True, capture_output=True, text=True).stdout
 
 
 class UnitTestAdapter(CliDirectMutationAdapter):
@@ -129,6 +160,107 @@ class BuildMutationPromptTests:
 
         assert prompt == expected
         assert "Fix the failure" not in prompt
+
+
+class ScratchPromptTests:
+    def test_prompt_with_scratch_adds_lines_and_exact_path_field(self, git_repo: Path, tmp_path: Path) -> None:
+        """[tier-1/unit] build_mutation_prompt: a direct request with agent_scratch_path P returns the direct header + the scratch lines + a JSON body with keys mode, worktree_path, agent_scratch_path (str(P)), instruction, in that order."""
+        invocation = _invocation(tmp_path)
+        expected_body = {
+            "mode": "direct",
+            "worktree_path": str(git_repo),
+            "agent_scratch_path": str(invocation.scratch_path),
+            "instruction": "Plan the change",
+        }
+        expected = (
+            "You are a coding agent running directly in this worktree checkout.\n"
+            "- Carry out the instruction below.\n"
+            "- If it asks for planning or review, report your findings in your final message and leave the working tree unchanged.\n"
+            "- Stay inside this working directory; do not push, open a PR, or touch remotes.\n"
+            "- Do not modify files under .dovo/.\n\n"
+            "- Put temporary files only in the directory named by agent_scratch_path; make source edits in this checkout.\n"
+            "- Do not read or write logs, artifacts, or session directories.\n\n"
+        ) + json.dumps(expected_body, indent=2, ensure_ascii=False)
+
+        prompt = build_mutation_prompt(_request_with_invocation(git_repo, invocation))
+
+        assert prompt == expected
+        assert list(json.loads(prompt[prompt.index("{") :])) == list(expected_body)
+
+    def test_prompt_never_contains_control_path_or_invocation_id(self, git_repo: Path, tmp_path: Path) -> None:
+        """[tier-1/unit] build_mutation_prompt: with a full AgentInvocationContext on the request, the prompt text contains neither str(control_path) nor invocation_id."""
+        invocation = _invocation(tmp_path)
+
+        prompt = build_mutation_prompt(_request_with_invocation(git_repo, invocation))
+
+        assert str(invocation.control_path) not in prompt
+        assert invocation.invocation_id not in prompt
+
+
+class CliMutationInvocationPropagationTests:
+    def test_invoke_forwards_invocation_to_the_runner_request(self, git_repo: Path, tmp_path: Path) -> None:
+        """[tier-1/unit] CliDirectMutationAdapter._invoke: the CliMutationRunRequest passed to _default_run has invocation == the AgentRequest's invocation."""
+        invocation = _invocation(tmp_path)
+        received: list[CliMutationRunRequest] = []
+
+        def _record(request: CliMutationRunRequest) -> CliMutationOutcome:
+            received.append(request)
+            return CliMutationOutcome(status="finished")
+
+        UnitTestAdapter(run_fn=_record).invoke(_request_with_invocation(git_repo, invocation))
+
+        assert [request.invocation for request in received] == [invocation]
+
+
+class ScratchDiffIsolationTests:
+    def test_scratch_file_never_appears_in_the_captured_diff(self, git_repo: Path, tmp_path: Path) -> None:
+        """[tier-1/integration] CliDirectMutationAdapter.invoke: a real git_repo adapter writing 'notes.py' into scratch_path and 'src/a.py' into the worktree returns a PROPOSED_PATCH whose unified_diff names only src/a.py and whose capture_diff_since(baseline) paths == ['src/a.py']."""
+        invocation = _invocation(tmp_path)
+        baseline = resolve_pre_agent_baseline(git_repo)
+
+        def _write(request: CliMutationRunRequest) -> CliMutationOutcome:
+            assert request.invocation is not None
+            (request.invocation.scratch_path / "notes.py").write_text("tmp\n", encoding="utf-8")
+            (request.worktree_path / "src").mkdir()
+            (request.worktree_path / "src" / "a.py").write_text("x = 1\n", encoding="utf-8")
+            return CliMutationOutcome(status="finished")
+
+        response = UnitTestAdapter(run_fn=_write).invoke(_request_with_invocation(git_repo, invocation))
+
+        assert response.status == AgentResponseStatus.PROPOSED_PATCH
+        assert response.unified_diff is not None
+        assert "src/a.py" in response.unified_diff
+        assert "notes.py" not in response.unified_diff
+        assert capture_diff_since(git_repo, baseline)[1] == ["src/a.py"]
+
+    def test_control_directory_content_never_appears_in_worktree_status(self, git_repo: Path, tmp_path: Path) -> None:
+        """[tier-1/integration] CliDirectMutationAdapter.invoke: a file written under control_path leaves 'git status --porcelain' in the worktree empty."""
+        invocation = _invocation(tmp_path)
+
+        def _write(request: CliMutationRunRequest) -> CliMutationOutcome:
+            assert request.invocation is not None
+            (request.invocation.control_path / "settings.json").write_text("{}\n", encoding="utf-8")
+            return CliMutationOutcome(status="finished")
+
+        response = UnitTestAdapter(run_fn=_write).invoke(_request_with_invocation(git_repo, invocation))
+
+        assert response.status == AgentResponseStatus.NO_OP
+        assert (invocation.control_path / "settings.json").is_file()
+        assert _porcelain(git_repo) == ""
+
+    def test_scratch_survives_discard_since(self, git_repo: Path, tmp_path: Path) -> None:
+        """[tier-1/integration] discard_since: after discarding worktree edits to the baseline, files under scratch_path and control_path still exist with unchanged contents."""
+        invocation = _invocation(tmp_path)
+        baseline = resolve_pre_agent_baseline(git_repo)
+        (invocation.scratch_path / "notes.txt").write_text("scratch", encoding="utf-8")
+        (invocation.control_path / "settings.json").write_text("control", encoding="utf-8")
+        (git_repo / "edit.txt").write_text("edit\n", encoding="utf-8")
+
+        discard_since(git_repo, baseline)
+
+        assert not (git_repo / "edit.txt").exists()
+        assert (invocation.scratch_path / "notes.txt").read_text(encoding="utf-8") == "scratch"
+        assert (invocation.control_path / "settings.json").read_text(encoding="utf-8") == "control"
 
 
 class ValidateRequestPatchTests:

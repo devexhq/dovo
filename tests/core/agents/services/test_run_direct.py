@@ -10,6 +10,7 @@ import pytest
 
 from dovo.core.agents import (
     AgentAttempt,
+    AgentInvocationContext,
     AgentRequest,
     AgentResponse,
     AgentResponseStatus,
@@ -234,3 +235,30 @@ class RunDirectAttemptDirectMutationTests:
         assert attempt.status == status
         assert attempt.touched_files == []
         assert (git_repo / "partial.txt").read_text(encoding="utf-8") == "partial\n"
+
+
+class RunDirectAttemptInvocationTests:
+    @pytest.mark.parametrize(
+        "with_invocation", [pytest.param(True, id="with-invocation"), pytest.param(False, id="none")]
+    )
+    def test_request_carries_invocation_and_scratch_path_only_when_supplied(
+        self, git_repo: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, with_invocation: bool
+    ) -> None:
+        """[tier-1/unit] run_direct_attempt: the adapter receives AgentRequest.invocation == the passed context and agent_scratch_path == context.scratch_path; invocation None yields both fields None."""
+        provider = FakeAgentProvider(AgentResponse(status=AgentResponseStatus.NO_OP))
+        _use_provider(monkeypatch, provider)
+        context = AgentInvocationContext(
+            invocation_id="a" * 32, scratch_path=tmp_path / "scratch", control_path=tmp_path / "control"
+        )
+
+        run_direct_attempt(
+            instruction="Plan the change",
+            settings=_settings(),
+            worktree_path=git_repo,
+            timeout_seconds=45,
+            invocation=context if with_invocation else None,
+        )
+
+        request = provider.requests[0]
+        assert request.invocation == (context if with_invocation else None)
+        assert request.agent_scratch_path == (context.scratch_path if with_invocation else None)

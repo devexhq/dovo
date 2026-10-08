@@ -763,9 +763,13 @@ def captured_agent_args(monkeypatch: pytest.MonkeyPatch) -> list[ResolvedAgentSe
     """Agent settings handed to build_agent_step_runner during drive_run, in call order."""
     captured: list[ResolvedAgentSettings | None] = []
 
-    def _recording_build(agent: ResolvedAgentSettings | None, worktree_active: bool) -> AgentStepRunner:
+    def _recording_build(
+        agent: ResolvedAgentSettings | None, worktree_active: bool, *, session_tmp_dir: Path | None, main_checkout: Path
+    ) -> AgentStepRunner:
         captured.append(agent)
-        return build_agent_step_runner(agent, worktree_active)
+        return build_agent_step_runner(
+            agent, worktree_active, session_tmp_dir=session_tmp_dir, main_checkout=main_checkout
+        )
 
     monkeypatch.setattr("dovo.engine.step_coordinator.build_agent_step_runner", _recording_build)
     return captured

@@ -167,7 +167,12 @@ class StepCoordinator:
                 artifacts_dir=run_context.artifacts_dir,
                 artifacts_db=run_context.artifacts_db,
                 paths=self.context.paths,
-                agent_runner=build_agent_step_runner(self.context.agent, run_context.worktree is not None),
+                agent_runner=build_agent_step_runner(
+                    self.context.agent,
+                    run_context.worktree is not None,
+                    session_tmp_dir=run_context.session_tmp_dir,
+                    main_checkout=self.context.paths.root_dir,
+                ),
                 sensitive_variables=self.context.sensitive_variables,
             )
         ).run()

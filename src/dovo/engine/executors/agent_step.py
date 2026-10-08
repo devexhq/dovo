@@ -7,7 +7,14 @@ from pathlib import Path
 from types import MappingProxyType
 from typing import Final
 
-from dovo.core.agents import AgentAttempt, AgentResponseStatus, ResolvedAgentSettings, run_direct_attempt
+from dovo.core.agents import (
+    AgentAttempt,
+    AgentResponseStatus,
+    ResolvedAgentSettings,
+    allocate_invocation_paths,
+    new_invocation_id,
+    run_direct_attempt,
+)
 from dovo.core.catalog.definitions import StepDefinition
 from dovo.engine.executors.models import AgentStepRunner, AgentStepSummary, OutputCallback, StepDispatchOutcome
 
@@ -38,6 +45,8 @@ def execute_agent_step(
     agent: ResolvedAgentSettings | None,
     worktree_path: Path,
     worktree_active: bool,
+    session_tmp_dir: Path | None,
+    main_checkout: Path,
     on_output: OutputCallback | None,
 ) -> StepDispatchOutcome:
     """Run one agent attempt through its resolved provider and return the classified dispatch outcome."""
@@ -50,22 +59,41 @@ def execute_agent_step(
     if not (step.prompt or "").strip():
         return _to_outcome(_provider_error(BLANK_PROMPT_MESSAGE), on_output)
 
+    scratch = allocate_invocation_paths(
+        invocation_id=new_invocation_id(),
+        session_tmp_dir=session_tmp_dir,
+        step_id=step.id,
+        worktree_path=worktree_path,
+        main_checkout=main_checkout,
+    )
+    if not scratch.ok:
+        return _to_outcome(_provider_error(*scratch.errors), on_output)
+
     attempt = run_direct_attempt(
         instruction=step.prompt or "",
         settings=agent,
         worktree_path=worktree_path,
         timeout_seconds=step.timeout_seconds,
+        invocation=scratch.context,
     )
 
     return _to_outcome(attempt, on_output)
 
 
-def build_agent_step_runner(agent: ResolvedAgentSettings | None, worktree_active: bool) -> AgentStepRunner:
-    """Return a runner closing over the run's resolved agent settings and worktree state, delegating to execute_agent_step."""
+def build_agent_step_runner(
+    agent: ResolvedAgentSettings | None, worktree_active: bool, *, session_tmp_dir: Path | None, main_checkout: Path
+) -> AgentStepRunner:
+    """Return a runner closing over the run's agent settings, worktree state, and scratch roots, delegating to execute_agent_step."""
 
     def _run(step: StepDefinition, worktree_path: Path, on_output: OutputCallback | None) -> StepDispatchOutcome:
         return execute_agent_step(
-            step, agent=agent, worktree_path=worktree_path, worktree_active=worktree_active, on_output=on_output
+            step,
+            agent=agent,
+            worktree_path=worktree_path,
+            worktree_active=worktree_active,
+            session_tmp_dir=session_tmp_dir,
+            main_checkout=main_checkout,
+            on_output=on_output,
         )
 
     return _run

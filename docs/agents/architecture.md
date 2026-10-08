@@ -27,7 +27,7 @@ src/dovo/core/                   Domain business logic and orchestration (no Typ
   diagnostics/                       Diagnostic check registry, execution runner, and health validation engine
   sessions/                          Session and SessionCollection entrypoints (diff, logs, run details, history), result models, session.log event model, session.log reading, and stale-run reconciliation
     services/                          Diff artifact reading, session.log and step-capture reading, stale-run reconciliation
-  agents/                            AI agent provider base class, descriptor registry, provider integrations (copilot), and the direct-mode attempt pipeline
+  agents/                            AI agent provider base class, descriptor registry, provider integrations (copilot), per-attempt scratch allocation (`scratch.py`), and the direct-mode attempt pipeline
 
 src/dovo/engine/                 Execution engine: Engine facade, state-driven run coordinator, session lifecycle, run/resume services, and the executors/ package
   executors/                         Step execution (StepExecution), assertions, metadata, condition evaluation, internal command dispatch, agent step dispatch, and execution models
@@ -51,7 +51,7 @@ src/dovo/schemas/v1/             Packaged, versioned JSON Schemas (config.json, 
 **Relevant sources:** `src/dovo/core/`, `src/dovo/engine/`
 
 - **Inputs** (`core/inputs/`): `ParameterInput`, CLI flag resolution, `${{ inputs.* }}` placeholder interpolation. Must not import catalog or agents.
-- **Agents** (`core/agents/`): Provider base class (`BaseAgentProvider`), `ProviderSpec` registry (`PROVIDERS`), provider implementations (`copilot`), shared credential lookup (`credentials.py`), failure payload models, the direct-mode attempt pipeline (`run_direct_attempt` in `services/run_direct.py`). Must not import config or engine. Import order inside the package: leaves (`credentials.py`, `models.py`, `mutation_git.py`, `redaction.py`, `responses.py`) → `base.py` → `cli_mutation.py` → provider modules (`copilot.py`) → `registry.py`/`factory.py`; no module imports one to its right (a cycle fails `basedpyright`, `typeCheckingMode = "recommended"` in `pyproject.toml`).
+- **Agents** (`core/agents/`): Provider base class (`BaseAgentProvider`), `ProviderSpec` registry (`PROVIDERS`), provider implementations (`copilot`), shared credential lookup (`credentials.py`), failure payload models, per-attempt scratch/control directory allocation (`scratch.py`), the direct-mode attempt pipeline (`run_direct_attempt` in `services/run_direct.py`). Must not import config or engine. Import order inside the package: leaves (`credentials.py`, `models.py`, `mutation_git.py`, `redaction.py`, `responses.py`, `scratch.py`) → `base.py` → `cli_mutation.py` → provider modules (`copilot.py`) → `registry.py`/`factory.py`; no module imports one to its right (a cycle fails `basedpyright`, `typeCheckingMode = "recommended"` in `pyproject.toml`).
 - **Git** (`core/git/`): `GitRunner`, `parse_worktree_porcelain`, `GitDiffParser`/`validate_patch_text` (`patch.py`), `PatchApplyResult`. Must not import any other `core/` package.
 - **Engine** (`engine/`): Process-level run persistence, session ID minting (`RunRequest`), DB session records, canonical run execution state (`state_store.py`), the state-driven run coordinator (`coordinator.py`), paused-run validation (`loader.py`), the run session lifecycle (`session.py`), tree/row projector for `session.json` (`projection.py`) and its writer (`writer.py`), worktree/session infrastructure (`workspace.py`, and `storage_bridge.py` for the worktree's `.dovo/run` link), per-step execution (`step_coordinator.py`), loop policy, events, and structural state validation (`loop_policy.py`, `loop_events.py`, `state_validation.py`), the `session.log` timeline appender (`session_log.py`), observer dispatch (`notify.py`), failure-policy resolution (`failure.py`), shared run models (`models.py`, including `BlueprintRunResult`), run/resume services (`BlueprintRunService`, `BlueprintResumeService`). May import `common/` and any `core/` package. Must not import cli.
 - **Executors** (`engine/executors/`): Single-step execution (`StepExecution` in `step_executor.py`), assertions evaluation (`assertions/`), execution metadata (`metadata.py`), condition evaluation (`conditions.py`), the `type: internal` command registry and `artifacts.upload`/`artifacts.download` handlers (`internal_dispatch.py`), agent step dispatch (`agent_step.py`, including `build_agent_step_runner`), and execution models (`models.py`). Must not import engine modules outside `executors/`, or cli.
@@ -142,6 +142,8 @@ Created and repaired idempotently by [core/bootstrap](../../src/dovo/core/bootst
 ```
 
 `sessions/`, `artifacts/`, `tmp/`, and `logs/` are never created under `.dovo/`; that project-scoped runtime state lives only under the global `DOVO_HOME` storage root and requires a project identity.
+
+Agent steps allocate `steps/<step-id>/agent/<invocation-id>/{scratch,control}` beneath the session temp directory under `tmp/`; it follows the session temp lifecycle and is never created in a checkout.
 
 ### Path ownership: `RepositoryPaths` / `WorkspacePaths`
 

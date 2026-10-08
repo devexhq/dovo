@@ -11,7 +11,7 @@ from dovo.common.models import FailurePolicy
 from dovo.core.agents import AgentResponse, AgentResponseStatus, ResolvedAgentSettings
 from dovo.core.catalog.definitions import StepAssert
 from dovo.engine.executors.agent_step import MISSING_SETTINGS_MESSAGE, build_agent_step_runner
-from dovo.engine.executors.models import StepExecutionContext, StepResult
+from dovo.engine.executors.models import AgentStepRunner, StepExecutionContext, StepResult
 from dovo.engine.executors.step_executor import StepExecution
 from tests.harness import AGENT_ADAPTER_FACTORY, FakeAgentProvider
 from tests.harness.builders import StepBuilder
@@ -21,10 +21,15 @@ def _settings() -> ResolvedAgentSettings:
     return ResolvedAgentSettings(provider="copilot", model=None, endpoint=None, temperature=0.2, max_tokens=4096)
 
 
+def _runner(worktree: Path) -> AgentStepRunner:
+    session_tmp = worktree.parent / "session-tmp"
+    session_tmp.mkdir(exist_ok=True)
+
+    return build_agent_step_runner(_settings(), True, session_tmp_dir=session_tmp, main_checkout=worktree)
+
+
 def _run_agent_step(worktree: Path, step_builder: StepBuilder) -> StepResult:
-    context = StepExecutionContext(
-        step=step_builder.build(), worktree_path=worktree, agent_runner=build_agent_step_runner(_settings(), True)
-    )
+    context = StepExecutionContext(step=step_builder.build(), worktree_path=worktree, agent_runner=_runner(worktree))
     return StepExecution(context).run()
 
 
@@ -105,6 +110,30 @@ class StepExecutionAgentRunnerTests:
         assert result.stderr == ""
 
 
+class AgentRunnerAttemptIdentityTests:
+    def test_retries_and_resumed_attempts_get_distinct_ids_and_paths(
+        self, git_repo: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """[tier-1/integration] StepExecution.run: three retry attempts, then a second StepExecution with the same step id and initial_attempt, pass four distinct invocation_ids and four distinct scratch_paths to the provider."""
+        provider = FakeAgentProvider(AgentResponse(status=AgentResponseStatus.TIMEOUT))
+        _use_provider(monkeypatch, provider)
+        retried = StepBuilder.agent("plan").with_id("plan-step").with_retry(max_retries=3, backoff_ms=0).build()
+        resumed = StepBuilder.agent("plan").with_id("plan-step").build()
+        runner = _runner(git_repo)
+
+        StepExecution(StepExecutionContext(step=retried, worktree_path=git_repo, agent_runner=runner)).run()
+        StepExecution(
+            StepExecutionContext(step=resumed, worktree_path=git_repo, agent_runner=runner, initial_attempt=1)
+        ).run()
+
+        invocations = [request.invocation for request in provider.requests]
+        assert len(invocations) == 4
+        assert all(invocation is not None for invocation in invocations)
+        assert len({i.invocation_id for i in invocations if i is not None}) == 4
+        assert len({i.scratch_path for i in invocations if i is not None}) == 4
+        assert all(i.scratch_path.is_dir() for i in invocations if i is not None)
+
+
 class AgentStepRedactionTests:
     def test_agent_step_masks_reflected_credential_in_result_and_stream(
         self, git_repo: Path, monkeypatch: pytest.MonkeyPatch
@@ -119,7 +148,7 @@ class AgentStepRedactionTests:
         context = StepExecutionContext(
             step=StepBuilder.agent("plan").build(),
             worktree_path=git_repo,
-            agent_runner=build_agent_step_runner(_settings(), True),
+            agent_runner=_runner(git_repo),
             on_output=lambda _stream, line: streamed.append(line),
         )
 
