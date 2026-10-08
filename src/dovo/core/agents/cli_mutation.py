@@ -8,10 +8,10 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from dovo.core.agents.base import BaseAgentProvider, elapsed_ms
-from dovo.core.agents.models import AgentRequest, AgentResponse, AgentResponseStatus
+from dovo.core.agents.models import AgentInvocationContext, AgentRequest, AgentResponse, AgentResponseStatus
 from dovo.core.agents.mutation_git import (
     MutationGitError,
     capture_diff_since,
@@ -37,6 +37,7 @@ class CliMutationRunRequest(BaseModel):
     prompt: str
     model: str | None = None
     timeout_seconds: float
+    invocation: AgentInvocationContext | None = Field(default=None, exclude=True)
 
 
 class CliMutationOutcome(BaseModel):
@@ -69,21 +70,28 @@ _REMEDIATION_PROMPT_HEADER = (
     "- Do not modify files under .dovo/.\n"
     "- When finished, leave the working tree containing only the fix.\n\n"
 )
+_SCRATCH_PROMPT_LINES = (
+    "- Put temporary files only in the directory named by agent_scratch_path; make source edits in this checkout.\n"
+    "- Do not read or write logs, artifacts, or session directories.\n"
+)
 
 
 def build_mutation_prompt(request: AgentRequest) -> str:
-    """Build the agent prompt: direct mode carries the authored instruction only; remediation modes add the failure payload."""
+    """Build the agent prompt: direct mode carries the authored instruction only; remediation modes add the failure payload; a scratch path adds the scratch lines."""
     header = _DIRECT_PROMPT_HEADER if request.mode == "direct" else _REMEDIATION_PROMPT_HEADER
+    if request.agent_scratch_path is not None:
+        header += _SCRATCH_PROMPT_LINES + "\n"
+
     return header + json.dumps(_prompt_body(request), indent=2, ensure_ascii=False)
 
 
 def _prompt_body(request: AgentRequest) -> dict[str, object]:
-    """Return the JSON body: mode, worktree_path, instruction, plus payload only when the request carries one."""
-    body: dict[str, object] = {
-        "mode": request.mode,
-        "worktree_path": str(request.worktree_path),
-        "instruction": request.instruction,
-    }
+    """Return the JSON body: mode, worktree_path, instruction, plus agent_scratch_path and payload only when the request carries them."""
+    body: dict[str, object] = {"mode": request.mode, "worktree_path": str(request.worktree_path)}
+    if request.agent_scratch_path is not None:
+        body["agent_scratch_path"] = str(request.agent_scratch_path)
+
+    body["instruction"] = request.instruction
     if request.payload is not None:
         body["payload"] = request.payload.model_dump(mode="json")
     return body
@@ -144,6 +152,7 @@ class CliDirectMutationAdapter(BaseAgentProvider):
                 prompt=prompt,
                 model=request.model,
                 timeout_seconds=float(request.timeout_seconds),
+                invocation=request.invocation,
             )
         )
         duration_ms = elapsed_ms(started)

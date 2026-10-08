@@ -56,6 +56,31 @@ Some adapter identifiers have associated environment-variable checks in `dovo do
 
 ---
 
+## Private Scratch
+
+Each agent attempt gets its own private temporary directories under the run's session temp directory, outside the Git checkout:
+
+```text
+<session temp dir>/steps/<step-id>/agent/<invocation-id>/
+  scratch/
+  control/
+```
+
+- The invocation id is a fresh 32-character hex id for every attempt, so retries, loop iterations, and resumed runs never reuse a directory.
+- Only `scratch/` is named to the agent (as `agent_scratch_path` in the prompt). `control/` is host-owned, is never shown to the agent, and grants it no access.
+- This routes the agent's temporary files away from the checkout, so they are not part of the proposed diff. It is not OS containment or a permission grant: an unrestricted agent can still create files in the checkout.
+- If the session temp directory is missing, unwritable, or overlaps the checkout, the step fails with exit code `203` before the provider runs:
+
+```text
+Cannot prepare private scratch for agent step '<step_id>' (AGENT_SCRATCH_UNAVAILABLE): <detail>
+Fix:
+- restore access to the session temp directory or correct its storage path.
+```
+
+- Completed runs remove the session temp directory, including every scratch directory; failed, paused, cancelled, and `--keep` runs retain it for inspection.
+
+---
+
 ## Next Steps
 
 - Explore the [Blueprint Schema Reference](../reference/blueprint-schema.md).

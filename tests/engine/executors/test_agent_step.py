@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import os
+import subprocess
 from collections.abc import Callable
 from pathlib import Path
 
@@ -10,11 +12,13 @@ import pytest
 
 from dovo.core.agents import (
     AgentAttempt,
+    AgentInvocationContext,
     AgentResponse,
     AgentResponseStatus,
     BaseAgentProvider,
     ResolvedAgentSettings,
 )
+from dovo.core.agents.scratch import scratch_unavailable_message
 from dovo.core.catalog.definitions import StepDefinition
 from dovo.core.git import GitRunner
 from dovo.engine.executors.agent_step import (
@@ -34,6 +38,12 @@ _NO_OP_SUMMARY = "Inspected the repository; no edits were required."
 
 def _settings(provider: str = "copilot") -> ResolvedAgentSettings:
     return ResolvedAgentSettings(provider=provider, model="m", endpoint="http://e", temperature=0.7, max_tokens=512)
+
+
+def _session_tmp_dir(worktree: Path) -> Path:
+    session_tmp = worktree.parent / "session-tmp"
+    session_tmp.mkdir(exist_ok=True)
+    return session_tmp
 
 
 def _step(prompt: str = "Plan the change", timeout_seconds: int = 45) -> StepDefinition:
@@ -57,6 +67,7 @@ def _run(
     step: StepDefinition | None = None,
     agent: ResolvedAgentSettings | None = None,
     worktree_active: bool = True,
+    session_tmp_dir: Path | None = None,
     on_output: Callable[[str, str], None] | None = None,
 ) -> StepDispatchOutcome:
     return execute_agent_step(
@@ -64,8 +75,14 @@ def _run(
         agent=agent or _settings(),
         worktree_path=worktree,
         worktree_active=worktree_active,
+        session_tmp_dir=session_tmp_dir or _session_tmp_dir(worktree),
+        main_checkout=worktree,
         on_output=on_output,
     )
+
+
+def _porcelain(repo: Path) -> str:
+    return subprocess.run(["git", "status", "--porcelain"], cwd=repo, check=True, capture_output=True, text=True).stdout
 
 
 def _summary(outcome: StepDispatchOutcome) -> dict[str, object]:
@@ -118,7 +135,12 @@ class ExecuteAgentStepRequestTests:
         calls: list[dict[str, object]] = []
 
         def _record(
-            *, instruction: str, settings: ResolvedAgentSettings, worktree_path: Path, timeout_seconds: int
+            *,
+            instruction: str,
+            settings: ResolvedAgentSettings,
+            worktree_path: Path,
+            timeout_seconds: int,
+            invocation: AgentInvocationContext | None,
         ) -> AgentAttempt:
             calls.append(
                 {
@@ -149,7 +171,15 @@ class ExecuteAgentStepRequestTests:
         """[tier-1/unit] execute_agent_step: agent=None with an active worktree fails with the missing-settings diagnostic and never asks the factory for an adapter."""
         requested = _use_provider(monkeypatch, FakeAgentProvider(_no_op()))
 
-        outcome = execute_agent_step(_step(), agent=None, worktree_path=git_repo, worktree_active=True, on_output=None)
+        outcome = execute_agent_step(
+            _step(),
+            agent=None,
+            worktree_path=git_repo,
+            worktree_active=True,
+            session_tmp_dir=_session_tmp_dir(git_repo),
+            main_checkout=git_repo,
+            on_output=None,
+        )
 
         assert outcome.status == "failed"
         assert outcome.exit_code == 203
@@ -315,6 +345,123 @@ class ExecuteAgentStepOutputTests:
         assert _summary(outcome)["touched_files"] == ["a.txt"]
 
 
+class ExecuteAgentStepScratchTests:
+    def test_dispatch_allocates_once_and_passes_context_to_the_attempt(
+        self, git_repo: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """[tier-1/integration] execute_agent_step: with a real session_tmp_dir, run_direct_attempt receives invocation whose scratch_path and control_path exist and lie under session_tmp_dir/steps/<step.id>/agent/."""
+        provider = FakeAgentProvider(_no_op())
+        _use_provider(monkeypatch, provider)
+        step = _step()
+        session_tmp = _session_tmp_dir(git_repo)
+
+        outcome = _run(git_repo, step=step, session_tmp_dir=session_tmp)
+
+        invocation = provider.requests[0].invocation
+        agent_root = session_tmp.resolve() / "steps" / step.id / "agent"
+        assert outcome.status == "completed"
+        assert len(provider.requests) == 1
+        assert invocation is not None
+        assert invocation.scratch_path == agent_root / invocation.invocation_id / "scratch"
+        assert invocation.control_path == agent_root / invocation.invocation_id / "control"
+        assert invocation.scratch_path.is_dir()
+        assert invocation.control_path.is_dir()
+
+    def test_allocation_failure_returns_203_with_diagnostic_and_never_looks_up_the_provider(
+        self, git_repo: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """[tier-1/integration] execute_agent_step: session_tmp_dir None returns StepDispatchOutcome(status='failed', exit_code=203) whose error_message equals scratch_unavailable_message(step.id, detail) followed by a 'Fix:' block, and get_agent_adapter is never called."""
+        requested = _use_provider(monkeypatch, FakeAgentProvider(_no_op()))
+        step = _step()
+
+        outcome = execute_agent_step(
+            step,
+            agent=_settings(),
+            worktree_path=git_repo,
+            worktree_active=True,
+            session_tmp_dir=None,
+            main_checkout=git_repo,
+            on_output=None,
+        )
+
+        assert outcome.status == "failed"
+        assert outcome.exit_code == 203
+        assert outcome.error_message == (
+            scratch_unavailable_message(step.id, "the session temp directory is unavailable")
+            + "\nFix:\n- restore access to the session temp directory or correct its storage path."
+        )
+        assert requested == []
+
+    @pytest.mark.skipif(os.geteuid() == 0, reason="root ignores directory permission bits")
+    def test_directory_creation_failure_leaves_worktree_files_unchanged(
+        self, git_repo: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """[tier-1/integration] execute_agent_step: an unwritable session_tmp_dir returns exit_code 203 and the worktree's file contents and git status are byte-identical before and after."""
+        requested = _use_provider(monkeypatch, FakeAgentProvider(_patch("a.txt")))
+        session_tmp = _session_tmp_dir(git_repo)
+        session_tmp.chmod(0o500)
+        readme_before = (git_repo / "README.md").read_bytes()
+
+        try:
+            outcome = _run(git_repo, session_tmp_dir=session_tmp)
+        finally:
+            session_tmp.chmod(0o700)
+
+        assert outcome.exit_code == 203
+        assert "AGENT_SCRATCH_UNAVAILABLE" in (outcome.error_message or "")
+        assert requested == []
+        assert (git_repo / "README.md").read_bytes() == readme_before
+        assert not (git_repo / "a.txt").exists()
+        assert _porcelain(git_repo) == ""
+
+    @pytest.mark.parametrize(
+        ("guard", "expected_message"),
+        [
+            pytest.param("worktree", WORKTREE_REQUIRED_MESSAGE, id="worktree-inactive"),
+            pytest.param("settings", MISSING_SETTINGS_MESSAGE, id="no-settings"),
+            pytest.param("prompt", BLANK_PROMPT_MESSAGE, id="blank-prompt"),
+        ],
+    )
+    def test_guards_run_before_allocation(self, git_repo: Path, guard: str, expected_message: str) -> None:
+        """[tier-1/unit] execute_agent_step: worktree_active False, agent None, and a blank prompt each return their existing diagnostic and create no directory under session_tmp_dir."""
+        session_tmp = _session_tmp_dir(git_repo)
+
+        outcome = execute_agent_step(
+            _step(prompt="   " if guard == "prompt" else "Plan the change"),
+            agent=None if guard == "settings" else _settings(),
+            worktree_path=git_repo,
+            worktree_active=guard != "worktree",
+            session_tmp_dir=session_tmp,
+            main_checkout=git_repo,
+            on_output=None,
+        )
+
+        assert outcome.error_message == expected_message
+        assert list(session_tmp.iterdir()) == []
+
+    @pytest.mark.parametrize(
+        ("response_status", "exit_code"),
+        [
+            pytest.param(AgentResponseStatus.TIMEOUT, 202, id="timeout"),
+            pytest.param(AgentResponseStatus.PROVIDER_ERROR, 203, id="provider-error"),
+        ],
+    )
+    def test_provider_failures_leave_directories_in_place(
+        self, git_repo: Path, monkeypatch: pytest.MonkeyPatch, response_status: AgentResponseStatus, exit_code: int
+    ) -> None:
+        """[tier-1/integration] execute_agent_step: provider timeout and provider-error attempts each return their mapped exit code (202, 203) and the allocated scratch and control directories still exist afterward."""
+        provider = FakeAgentProvider(AgentResponse(status=response_status, errors=["down"]))
+        _use_provider(monkeypatch, provider)
+
+        outcome = _run(git_repo)
+
+        invocation = provider.requests[0].invocation
+        assert outcome.exit_code == exit_code
+        assert invocation is not None
+        assert invocation.scratch_path.is_dir()
+        assert invocation.control_path.is_dir()
+
+
 class BuildAgentStepRunnerTests:
     def test_runner_built_without_active_worktree_fails_with_worktree_required_message(
         self, git_repo: Path, monkeypatch: pytest.MonkeyPatch
@@ -326,7 +473,9 @@ class BuildAgentStepRunnerTests:
             lambda **kwargs: calls.append(kwargs) or AgentAttempt(status=AgentResponseStatus.NO_OP),
         )
 
-        runner = build_agent_step_runner(_settings(), worktree_active=False)
+        runner = build_agent_step_runner(
+            _settings(), worktree_active=False, session_tmp_dir=_session_tmp_dir(git_repo), main_checkout=git_repo
+        )
         outcome = runner(_step(), git_repo, None)
 
         assert outcome.status == "failed"
@@ -340,7 +489,12 @@ class BuildAgentStepRunnerTests:
         calls: list[dict[str, object]] = []
 
         def _record(
-            *, instruction: str, settings: ResolvedAgentSettings, worktree_path: Path, timeout_seconds: int
+            *,
+            instruction: str,
+            settings: ResolvedAgentSettings,
+            worktree_path: Path,
+            timeout_seconds: int,
+            invocation: AgentInvocationContext | None,
         ) -> AgentAttempt:
             calls.append({"instruction": instruction, "settings": settings, "worktree_path": worktree_path})
             return AgentAttempt(status=AgentResponseStatus.NO_OP)
@@ -350,9 +504,10 @@ class BuildAgentStepRunnerTests:
         step = _step()
         emitted: list[tuple[str, str]] = []
 
-        outcome = build_agent_step_runner(settings, worktree_active=True)(
-            step, git_repo, lambda stream, line: emitted.append((stream, line))
+        runner = build_agent_step_runner(
+            settings, worktree_active=True, session_tmp_dir=_session_tmp_dir(git_repo), main_checkout=git_repo
         )
+        outcome = runner(step, git_repo, lambda stream, line: emitted.append((stream, line)))
 
         assert calls == [{"instruction": step.prompt, "settings": settings, "worktree_path": git_repo}]
         assert emitted == [("stdout", outcome.stdout)]

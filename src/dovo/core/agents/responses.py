@@ -64,3 +64,12 @@ def no_op_response(
         raw_text=raw_text,
         mutation_baseline_ref=mutation_baseline_ref,
     )
+
+
+def diagnostics_with_fixes(errors: Sequence[str], fixes: Sequence[str]) -> list[str]:
+    """Return the errors followed by one trailing ``Fix:`` block when fixes are present."""
+    diagnostics = list(errors)
+    if fixes:
+        diagnostics.append("Fix:\n" + "\n".join(f"- {fix}" for fix in fixes))
+
+    return diagnostics

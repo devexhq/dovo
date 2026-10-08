@@ -98,6 +98,12 @@ If a step defines its own `on_failure`, the step-specific configuration takes pr
 
 ---
 
+## Agent Steps
+
+An agent step receives a private scratch directory outside the checkout for its temporary files, so those files are not part of the proposed diff. The agent can still create other files inside the checkout, and those do appear in the diff. See [Agent-Step Adapters](agent-providers.md#private-scratch).
+
+---
+
 ## Creating Blueprints via CLI
 
 You can generate blueprint template scaffolds using `dovo blueprint create`:

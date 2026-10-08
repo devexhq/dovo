@@ -7,11 +7,13 @@ from pathlib import Path
 from dovo.core.agents.factory import get_agent_adapter
 from dovo.core.agents.models import (
     AgentAttempt,
+    AgentInvocationContext,
     AgentRequest,
     AgentResponse,
     AgentResponseStatus,
     ResolvedAgentSettings,
 )
+from dovo.core.agents.responses import diagnostics_with_fixes
 from dovo.core.git import GitDiffParser
 
 
@@ -21,17 +23,22 @@ def run_direct_attempt(
     settings: ResolvedAgentSettings,
     worktree_path: Path,
     timeout_seconds: int,
+    invocation: AgentInvocationContext | None = None,
 ) -> AgentAttempt:
-    """Run one direct-mode agent attempt through the resolved provider and return the classified attempt."""
-    request = _build_request(instruction, settings, worktree_path, timeout_seconds)
+    """Run one direct-mode agent attempt through the resolved provider, carrying the step boundary's invocation context to the request."""
+    request = _build_request(instruction, settings, worktree_path, timeout_seconds, invocation)
 
     return _run_provider(request, settings.provider)
 
 
 def _build_request(
-    instruction: str, settings: ResolvedAgentSettings, worktree_path: Path, timeout_seconds: int
+    instruction: str,
+    settings: ResolvedAgentSettings,
+    worktree_path: Path,
+    timeout_seconds: int,
+    invocation: AgentInvocationContext | None,
 ) -> AgentRequest:
-    """Build the direct-mode AgentRequest from the instruction and the resolved settings."""
+    """Build the direct-mode AgentRequest from the instruction, the resolved settings, and the invocation's scratch root."""
     return AgentRequest(
         mode="direct",
         instruction=instruction,
@@ -42,6 +49,8 @@ def _build_request(
         endpoint=settings.endpoint,
         temperature=settings.temperature,
         max_tokens=settings.max_tokens,
+        agent_scratch_path=invocation.scratch_path if invocation is not None else None,
+        invocation=invocation,
     )
 
 
@@ -66,10 +75,7 @@ def _settle(response: AgentResponse) -> AgentAttempt:
     if response.status == AgentResponseStatus.PROPOSED_PATCH:
         return _accept_direct_mutation(response)
 
-    diagnostics = list(response.errors)
-    if response.fixes:
-        diagnostics.append("Fix:\n" + "\n".join(f"- {fix}" for fix in response.fixes))
-
+    diagnostics = diagnostics_with_fixes(response.errors, response.fixes)
     return AgentAttempt(
         status=response.status,
         summary=_response_text(response),
