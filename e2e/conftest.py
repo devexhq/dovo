@@ -443,4 +443,6 @@ def initialized_project(git_project: Path, run_dovo: DovoRunner) -> Path:
     result = run_dovo(["init"], cwd=git_project)
     if result.exit_code != 0:
         raise RuntimeError(f"dovo init failed during setup: {result.stderr or result.stdout}")
+    subprocess.run(["git", "add", "-A"], cwd=git_project, check=True, capture_output=True)
+    subprocess.run(["git", "commit", "-m", "chore: initialize dovo"], cwd=git_project, check=True, capture_output=True)
     return git_project
