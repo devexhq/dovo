@@ -5,7 +5,13 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Self
 
-from dovo.core.agents import AgentEnvMode, AgentFailurePayload, AgentInvocationContext, AgentRequest
+from dovo.core.agents import (
+    AgentEnvMode,
+    AgentFailurePayload,
+    AgentInvocationContext,
+    AgentRequest,
+    default_tool_policy,
+)
 
 
 class AgentRequestBuilder:
@@ -111,4 +117,5 @@ class AgentRequestBuilder:
             metadata_env=self._metadata_env,
             env_passthrough=self._env_passthrough,
             env_mode=self._env_mode,
+            tools=default_tool_policy(),
         )

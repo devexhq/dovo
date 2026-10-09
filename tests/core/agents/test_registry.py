@@ -12,7 +12,7 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
-from dovo.core.agents import CopilotAgentAdapter, ResolvedAgentSettings, get_agent_adapter
+from dovo.core.agents import CopilotAgentAdapter, ResolvedAgentSettings, default_tool_policy, get_agent_adapter
 from dovo.core.agents.registry import PROVIDERS
 from tests.harness import AgentRequestBuilder, FakeAgentRunner
 
@@ -94,7 +94,14 @@ class ResolvedAgentSettingsTests:
     )
     def test_out_of_range_values_are_rejected_and_instance_is_frozen(self, overrides: dict[str, float | int]) -> None:
         """[tier-1/unit] ResolvedAgentSettings: temperature outside [0, 2] or max_tokens below 1 raises ValidationError, and assigning a field on a valid instance raises ValidationError."""
-        valid = {"provider": "copilot", "model": None, "endpoint": None, "temperature": 0.2, "max_tokens": 4096}
+        valid = {
+            "provider": "copilot",
+            "model": None,
+            "endpoint": None,
+            "temperature": 0.2,
+            "max_tokens": 4096,
+            "tools": default_tool_policy(),
+        }
 
         with pytest.raises(ValidationError):
             ResolvedAgentSettings.model_validate({**valid, **overrides})

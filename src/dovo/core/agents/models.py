@@ -10,6 +10,7 @@ from typing import Annotated, Literal
 from pydantic import BaseModel, Field, StringConstraints, model_validator
 
 from dovo.common.models import BaseResult
+from dovo.common.tool_policy import ToolPolicy
 
 OmissionReason = Literal[
     "missing",
@@ -85,6 +86,7 @@ class ResolvedAgentSettings(BaseModel):
     max_tokens: int = Field(ge=1)
     env_passthrough: list[EnvPassthroughEntry] = Field(default_factory=list)
     env_mode: AgentEnvMode = "allowlist"
+    tools: ToolPolicy
 
 
 class AgentResponseStatus(StrEnum):
@@ -150,6 +152,7 @@ class AgentRequest(BaseModel):
     invocation: AgentInvocationContext | None = Field(default=None, exclude=True)
     env_passthrough: list[EnvPassthroughEntry] = Field(default_factory=list)
     env_mode: AgentEnvMode = "allowlist"
+    tools: ToolPolicy
     env: dict[str, str] = Field(default_factory=dict, exclude=True)
     metadata_env: dict[str, str] = Field(default_factory=dict, exclude=True)
 

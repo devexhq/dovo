@@ -10,6 +10,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
+from dovo.common.tool_policy import ToolPolicy
 from dovo.core.agents.base import BaseAgentProvider, elapsed_ms
 from dovo.core.agents.environment import ENV_FILTERED_PROMPT_LINE, build_agent_env, withheld_env_names
 from dovo.core.agents.models import AgentInvocationContext, AgentRequest, AgentResponse, AgentResponseStatus
@@ -38,6 +39,7 @@ class CliMutationRunRequest(BaseModel):
     prompt: str
     model: str | None = None
     timeout_seconds: float
+    tools: ToolPolicy
     invocation: AgentInvocationContext | None = Field(default=None, exclude=True)
     env: dict[str, str] = Field(default_factory=dict, exclude=True)
 
@@ -158,6 +160,7 @@ class CliDirectMutationAdapter(BaseAgentProvider):
                 prompt=prompt,
                 model=request.model,
                 timeout_seconds=float(request.timeout_seconds),
+                tools=request.tools,
                 invocation=request.invocation,
                 env=env,
             )

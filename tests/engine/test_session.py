@@ -9,6 +9,8 @@ from pathlib import Path
 import pytest
 
 from dovo.common.filesystem.models import WorkspacePaths
+from dovo.common.tool_policy import ToolCapability, ToolPolicy, ToolRule
+from dovo.core.agents import default_tool_policy
 from dovo.core.agents.models import (
     AgentEnvOverrides,
     AgentRequest,
@@ -842,6 +844,43 @@ class ResolveAgentSettingsEnvTests:
         assert paths.config_file.read_bytes() == before
 
 
+class ResolveAgentSettingsToolsTests:
+    """[tier-2/integration] drive_run: config agent.tools resolved into ResolvedAgentSettings.tools."""
+
+    @pytest.mark.parametrize(
+        ("config_tools", "expected"),
+        [
+            pytest.param(None, default_tool_policy(), id="absent-resolves-to-default"),
+            pytest.param(
+                {"allow": [{"capability": "shell", "pattern": "git status"}], "deny": [{"capability": "network"}]},
+                ToolPolicy(
+                    allow=[ToolRule(capability=ToolCapability.SHELL, pattern="git status")],
+                    deny=[ToolRule(capability=ToolCapability.NETWORK)],
+                ),
+                id="configured-passes-through",
+            ),
+            pytest.param({}, ToolPolicy(), id="configured-empty-grants-nothing"),
+        ],
+    )
+    def test_absent_config_tools_resolves_to_default_and_configured_tools_pass_through(
+        self,
+        tmp_path: Path,
+        captured_agent_args: list[ResolvedAgentSettings | None],
+        noop_agent_provider: FakeAgentProvider,
+        config_tools: dict[str, object] | None,
+        expected: ToolPolicy,
+    ) -> None:
+        """[tier-2/integration] _resolve_agent_settings: config without agent.tools yields default_tool_policy(); config with a policy yields that exact policy (parametrized)."""
+        agent_config = _AGENT_CONFIG if config_tools is None else {**_AGENT_CONFIG, "tools": config_tools}
+        paths, sessions = _agent_workspace(tmp_path, agent_config)
+        seed_new_session(paths, sessions, session_id="tools", steps=[_agent_step("a")], use_worktree=True)
+
+        _drive(paths, sessions, "tools")
+
+        assert captured_agent_args[0] is not None
+        assert captured_agent_args[0].tools == expected
+
+
 class DriveRunAgentSettingsTests:
     """[tier-1/integration] drive_run: effective agent settings resolved once per drive and propagated to StepExecution."""
 
@@ -866,6 +905,7 @@ class DriveRunAgentSettingsTests:
                 endpoint="http://127.0.0.1:9999",
                 temperature=0.7,
                 max_tokens=512,
+                tools=default_tool_policy(),
             )
         ]
         assert "agent" not in (captured_contexts[0].context or {})
@@ -933,6 +973,7 @@ class DriveRunAgentSettingsTests:
                 endpoint="http://127.0.0.1:9999",
                 temperature=0.7,
                 max_tokens=512,
+                tools=default_tool_policy(),
             )
         ]
 

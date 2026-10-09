@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
+from dovo.core.agents import default_tool_policy
 from dovo.core.agents.models import ResolvedAgentSettings
 from dovo.core.db import SessionRecord, SessionStatus
 from dovo.engine.models import AgentSettingsResolution, BlueprintRunResult, DefinitionRef, RunOutcome
@@ -53,7 +54,12 @@ class AgentSettingsResolutionTests:
     def test_ok_is_false_without_settings_and_true_with_them(self) -> None:
         """[tier-1/unit] AgentSettingsResolution.ok: False when settings is None, True when resolved settings are present."""
         settings = ResolvedAgentSettings(
-            provider="copilot", model="m", endpoint="http://localhost", temperature=0.0, max_tokens=1
+            provider="copilot",
+            model="m",
+            endpoint="http://localhost",
+            temperature=0.0,
+            max_tokens=1,
+            tools=default_tool_policy(),
         )
 
         assert AgentSettingsResolution().ok is False

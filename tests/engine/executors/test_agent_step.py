@@ -10,6 +10,7 @@ from pathlib import Path
 
 import pytest
 
+from dovo.common.tool_policy import ToolCapability, ToolPolicy, ToolRule
 from dovo.core.agents import (
     AgentAttempt,
     AgentAttemptContext,
@@ -17,6 +18,7 @@ from dovo.core.agents import (
     AgentResponseStatus,
     BaseAgentProvider,
     ResolvedAgentSettings,
+    default_tool_policy,
 )
 from dovo.core.agents.scratch import scratch_unavailable_message
 from dovo.core.catalog.definitions import StepDefinition
@@ -40,7 +42,14 @@ _METADATA = ExecutionMetadata(step=StepMetadata(id="plan", name="plan", index=1)
 
 
 def _settings(provider: str = "copilot") -> ResolvedAgentSettings:
-    return ResolvedAgentSettings(provider=provider, model="m", endpoint="http://e", temperature=0.7, max_tokens=512)
+    return ResolvedAgentSettings(
+        provider=provider,
+        model="m",
+        endpoint="http://e",
+        temperature=0.7,
+        max_tokens=512,
+        tools=default_tool_policy(),
+    )
 
 
 def _session_tmp_dir(worktree: Path) -> Path:
@@ -146,6 +155,7 @@ class ExecuteAgentStepRequestTests:
             settings: ResolvedAgentSettings,
             worktree_path: Path,
             timeout_seconds: int,
+            tools: ToolPolicy,
             context: AgentAttemptContext | None,
         ) -> AgentAttempt:
             calls.append(
@@ -492,6 +502,33 @@ _FILTERED_LINE = (
 )
 
 
+class ExecuteAgentStepToolsTests:
+    @pytest.mark.parametrize(
+        ("step_policy", "expected"),
+        [
+            pytest.param(None, "configured", id="omitted-uses-settings-policy"),
+            pytest.param(ToolPolicy(), "step", id="explicit-empty-replaces-settings-policy"),
+            pytest.param(
+                ToolPolicy(allow=[ToolRule(capability=ToolCapability.SHELL, pattern="git status")]),
+                "step",
+                id="explicit-policy-replaces-settings-policy",
+            ),
+        ],
+    )
+    def test_step_policy_or_configured_policy_reaches_run_direct_attempt(
+        self, git_repo: Path, monkeypatch: pytest.MonkeyPatch, step_policy: ToolPolicy | None, expected: str
+    ) -> None:
+        """[tier-2/integration] execute_agent_step: run_direct_attempt receives tools == step.tools when set, else agent.tools (parametrized)."""
+        calls = _stub_attempt(monkeypatch, AgentAttempt(status=AgentResponseStatus.NO_OP))
+        configured = ToolPolicy(allow=[ToolRule(capability=ToolCapability.NETWORK, pattern="example.com")])
+        settings = _settings().model_copy(update={"tools": configured})
+        step = _step().model_copy(update={"tools": step_policy})
+
+        _run(git_repo, step=step, agent=settings)
+
+        assert calls[0]["tools"] == (configured if expected == "configured" else step_policy)
+
+
 class ExecuteAgentStepEnvTests:
     def test_step_env_and_generated_metadata_are_forwarded_to_run_direct_attempt(
         self, git_repo: Path, monkeypatch: pytest.MonkeyPatch
@@ -607,6 +644,7 @@ class BuildAgentStepRunnerTests:
             settings: ResolvedAgentSettings,
             worktree_path: Path,
             timeout_seconds: int,
+            tools: ToolPolicy,
             context: AgentAttemptContext | None,
         ) -> AgentAttempt:
             calls.append({"instruction": instruction, "settings": settings, "worktree_path": worktree_path})

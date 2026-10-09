@@ -33,6 +33,7 @@ from dovo.core.agents.models import (
 from dovo.core.agents.registry import PROVIDERS
 from dovo.core.agents.scratch import allocate_invocation_paths, new_invocation_id
 from dovo.core.agents.services.run_direct import run_direct_attempt
+from dovo.core.agents.tools import default_tool_policy, resolve_tool_policy
 
 __all__ = [
     "DEFAULT_MAX_FILES",
@@ -62,8 +63,10 @@ __all__ = [
     "ResolvedAgentSettings",
     "allocate_invocation_paths",
     "build_mutation_prompt",
+    "default_tool_policy",
     "get_agent_adapter",
     "new_invocation_id",
+    "resolve_tool_policy",
     "run_direct_attempt",
     "validate_request_patch",
 ]

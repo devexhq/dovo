@@ -14,6 +14,7 @@ from dovo.core.agents import (
     ResolvedAgentSettings,
     allocate_invocation_paths,
     new_invocation_id,
+    resolve_tool_policy,
     run_direct_attempt,
 )
 from dovo.core.agents.responses import diagnostics_with_fixes
@@ -72,6 +73,7 @@ def execute_agent_step(
     if not (step.prompt or "").strip():
         return _to_outcome(_provider_error(BLANK_PROMPT_MESSAGE), on_output)
 
+    tools = resolve_tool_policy(step.tools, agent.tools)
     scratch = allocate_invocation_paths(
         invocation_id=new_invocation_id(),
         session_tmp_dir=session_tmp_dir,
@@ -87,6 +89,7 @@ def execute_agent_step(
         settings=agent,
         worktree_path=worktree_path,
         timeout_seconds=step.timeout_seconds,
+        tools=tools,
         context=AgentAttemptContext(invocation=scratch.context, env=step.env, metadata_env=metadata_to_env(metadata)),
     )
     _report_withheld(attempt, metadata, session_log_dir, on_output)
