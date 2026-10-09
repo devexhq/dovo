@@ -7,7 +7,7 @@ from pathlib import Path
 from dovo.core.agents.factory import get_agent_adapter
 from dovo.core.agents.models import (
     AgentAttempt,
-    AgentInvocationContext,
+    AgentAttemptContext,
     AgentRequest,
     AgentResponse,
     AgentResponseStatus,
@@ -23,10 +23,10 @@ def run_direct_attempt(
     settings: ResolvedAgentSettings,
     worktree_path: Path,
     timeout_seconds: int,
-    invocation: AgentInvocationContext | None = None,
+    context: AgentAttemptContext | None = None,
 ) -> AgentAttempt:
-    """Run one direct-mode agent attempt through the resolved provider, carrying the step boundary's invocation context to the request."""
-    request = _build_request(instruction, settings, worktree_path, timeout_seconds, invocation)
+    """Run one direct-mode agent attempt through the resolved provider, carrying the step boundary's invocation paths and environment layers to the request."""
+    request = _build_request(instruction, settings, worktree_path, timeout_seconds, context or AgentAttemptContext())
 
     return _run_provider(request, settings.provider)
 
@@ -36,9 +36,10 @@ def _build_request(
     settings: ResolvedAgentSettings,
     worktree_path: Path,
     timeout_seconds: int,
-    invocation: AgentInvocationContext | None,
+    context: AgentAttemptContext,
 ) -> AgentRequest:
-    """Build the direct-mode AgentRequest from the instruction, the resolved settings, and the invocation's scratch root."""
+    """Build the direct-mode AgentRequest from the instruction, the resolved settings, and the attempt context."""
+    invocation = context.invocation
     return AgentRequest(
         mode="direct",
         instruction=instruction,
@@ -51,6 +52,10 @@ def _build_request(
         max_tokens=settings.max_tokens,
         agent_scratch_path=invocation.scratch_path if invocation is not None else None,
         invocation=invocation,
+        env_passthrough=settings.env_passthrough,
+        env_mode=settings.env_mode,
+        env=dict(context.env),
+        metadata_env=dict(context.metadata_env),
     )
 
 
@@ -81,6 +86,7 @@ def _settle(response: AgentResponse) -> AgentAttempt:
         summary=_response_text(response),
         unfixable_reason=response.unfixable_reason,
         diagnostics=diagnostics,
+        env_withheld=response.env_withheld,
     )
 
 
@@ -92,4 +98,5 @@ def _accept_direct_mutation(response: AgentResponse) -> AgentAttempt:
         status=AgentResponseStatus.PROPOSED_PATCH,
         summary=_response_text(response),
         touched_files=sorted(set(paths)),
+        env_withheld=response.env_withheld,
     )

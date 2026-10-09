@@ -68,3 +68,13 @@ class ResponseRedactorTests:
         redactor = build_response_redactor((), tmp_path)
 
         assert redactor.redact_text("hunter2-long") == "[REDACTED:DB_PASSWORD]"
+
+    def test_build_response_redactor_masks_extra_secrets_alongside_environment_secrets(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """[tier-1/unit] build_response_redactor: extra_secrets [('PROXY','s3cret')] masks 's3cret' as '[REDACTED:PROXY]' while an environment credential is still masked."""
+        monkeypatch.setenv("GH_TOKEN", "abc")
+
+        redactor = build_response_redactor(("GH_TOKEN",), tmp_path, [("PROXY", "s3cret")])
+
+        assert redactor.redact_text("abc s3cret") == "[REDACTED:GH_TOKEN] [REDACTED:PROXY]"

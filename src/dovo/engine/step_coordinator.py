@@ -172,6 +172,7 @@ class StepCoordinator:
                     run_context.worktree is not None,
                     session_tmp_dir=run_context.session_tmp_dir,
                     main_checkout=self.context.paths.root_dir,
+                    session_log_dir=run_context.session_log_dir,
                 ),
                 sensitive_variables=self.context.sensitive_variables,
             )

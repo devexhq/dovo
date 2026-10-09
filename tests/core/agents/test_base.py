@@ -10,7 +10,7 @@ from pathlib import Path
 
 import pytest
 
-from dovo.core.agents import AgentRequest, AgentResponse, AgentResponseStatus, BaseAgentProvider
+from dovo.core.agents import AgentEnvMode, AgentRequest, AgentResponse, AgentResponseStatus, BaseAgentProvider
 from dovo.core.agents.base import ProviderSpec, elapsed_ms
 from dovo.core.agents.credentials import missing_credential_error
 from dovo.core.agents.registry import PROVIDERS
@@ -27,7 +27,12 @@ _PROVIDER_RESPONSE = AgentResponse(status=AgentResponseStatus.NO_OP, duration_ms
 class _DirectSubclassProvider(BaseAgentProvider):
     """Non-direct provider double: subclasses the base itself and optionally declares a descriptor."""
 
-    def __init__(self, envs: tuple[str, ...] | None, response: AgentResponse = _PROVIDER_RESPONSE) -> None:
+    def __init__(
+        self,
+        envs: tuple[str, ...] | None,
+        response: AgentResponse = _PROVIDER_RESPONSE,
+        control_envs: tuple[str, ...] = (),
+    ) -> None:
         self.invoke_calls: list[AgentRequest] = []
         self._response = response
         self._spec = (
@@ -40,6 +45,7 @@ class _DirectSubclassProvider(BaseAgentProvider):
                 supports_tool_policy=False,
                 supports_os_sandbox=False,
                 build=lambda: self,
+                control_envs=control_envs,
             )
         )
 
@@ -258,3 +264,88 @@ class InvokeRedactionTests:
         response = provider.invoke(AgentRequestBuilder().with_worktree_path(tmp_path).build())
 
         assert response == expected
+
+
+_OVERRIDE_MESSAGE = (
+    "Agent environment override '{name}' conflicts with provider or Dovo controls (AGENT_ENV_OVERRIDE_INVALID). "
+    "Fix: remove it from agent.env_passthrough or the agent step's env."
+)
+
+
+class EnvPreflightConformanceTests:
+    @pytest.mark.parametrize("mode", [pytest.param("allowlist", id="allowlist"), pytest.param("inherit", id="inherit")])
+    def test_reserved_override_returns_provider_error_without_calling_the_provider(
+        self, mode: AgentEnvMode, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """[tier-1/integration] BaseAgentProvider.invoke: a reserved step env name returns PROVIDER_ERROR with errors == [the fixed AGENT_ENV_OVERRIDE_INVALID message] and _invoke is never called, in both env modes."""
+        monkeypatch.setenv("TEST_CREDENTIAL_PRIMARY", "xq7")
+        provider = _DirectSubclassProvider(
+            ("TEST_CREDENTIAL_PRIMARY", "TEST_CREDENTIAL_FALLBACK"), control_envs=("TEST_CONTROL",)
+        )
+        request = AgentRequestBuilder().with_worktree_path(tmp_path).with_env({"TEST_CONTROL": "x"}).with_env_mode(mode)
+
+        response = provider.invoke(request.build())
+
+        assert response.status == AgentResponseStatus.PROVIDER_ERROR
+        assert response.errors == [_OVERRIDE_MESSAGE.format(name="TEST_CONTROL")]
+        assert provider.invoke_calls == []
+
+    def test_provider_without_descriptor_skips_the_env_preflight(self, tmp_path: Path) -> None:
+        """[tier-1/unit] BaseAgentProvider.invoke: a subclass whose _provider_spec returns None delegates to _invoke even when step env names a control-looking key."""
+        provider = _DirectSubclassProvider(None)
+        request = AgentRequestBuilder().with_worktree_path(tmp_path).with_env({"COPILOT_MODEL": "x"}).build()
+
+        response = provider.invoke(request)
+
+        assert response == _PROVIDER_RESPONSE
+        assert len(provider.invoke_calls) == 1
+
+    @pytest.mark.parametrize(
+        "token",
+        [pytest.param(token, id=token) for token, spec in PROVIDERS.items() if spec.control_envs],
+    )
+    def test_registered_adapter_rejects_each_of_its_control_names_before_any_backend_activity(
+        self, token: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """[tier-1/integration] PROVIDERS[token].build().invoke: step env naming each control_envs entry returns PROVIDER_ERROR with the fixed message and subprocess.Popen and resolve_pre_agent_baseline are never called."""
+        spec = PROVIDERS[token]
+        monkeypatch.setenv(spec.credential_envs[0], "tok-123")
+        backend_calls: list[str] = []
+
+        def _spy(*args: object, **kwargs: object) -> None:
+            backend_calls.append("called")
+            raise AssertionError("backend must not run for a rejected override")
+
+        monkeypatch.setattr(subprocess, "Popen", _spy)
+        monkeypatch.setattr("dovo.core.agents.cli_mutation.resolve_pre_agent_baseline", _spy)
+
+        responses = [
+            spec.build().invoke(AgentRequestBuilder().with_worktree_path(tmp_path).with_env({name: "x"}).build())
+            for name in spec.control_envs
+        ]
+
+        assert [response.errors for response in responses] == [
+            [_OVERRIDE_MESSAGE.format(name=name)] for name in spec.control_envs
+        ]
+        assert backend_calls == []
+
+
+class InvokeEnvRedactionTests:
+    def test_explicit_step_env_secret_and_proxy_password_are_masked_in_every_response_field(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """[tier-1/integration] BaseAgentProvider.invoke: a step env value under MY_API_KEY and the password of HTTPS_PROXY reflected in errors, raw_text, and summary appear as '[REDACTED:MY_API_KEY]' and '[REDACTED:HTTPS_PROXY]'."""
+        monkeypatch.setenv("HTTPS_PROXY", "http://user:p4ssw0rd@proxy:8080")
+        reflected = "key abcdef123 proxy p4ssw0rd"
+        provider = _DirectSubclassProvider(
+            (),
+            AgentResponse(
+                status=AgentResponseStatus.PROVIDER_ERROR, errors=[reflected], raw_text=reflected, summary=reflected
+            ),
+        )
+        request = AgentRequestBuilder().with_worktree_path(tmp_path).with_env({"MY_API_KEY": "abcdef123"}).build()
+
+        response = provider.invoke(request)
+
+        masked = "key [REDACTED:MY_API_KEY] proxy [REDACTED:HTTPS_PROXY]"
+        assert (response.errors, response.raw_text, response.summary) == ([masked], masked, masked)

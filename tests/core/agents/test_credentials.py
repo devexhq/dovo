@@ -6,7 +6,7 @@ import pytest
 
 from dovo.core.agents.base import ProviderSpec
 from dovo.core.agents.copilot import CopilotAgentAdapter
-from dovo.core.agents.credentials import missing_credential_error, resolve_credential
+from dovo.core.agents.credentials import missing_credential_error, resolve_credential, resolve_credential_entry
 
 
 def _spec(envs: tuple[str, ...], token: str = "x") -> ProviderSpec:
@@ -56,6 +56,24 @@ class CredentialResolutionTests:
         after = resolve_credential(("A",))
 
         assert (before, during, after) == (None, "a", None)
+
+
+class ResolveCredentialEntryTests:
+    def test_first_non_blank_alternative_returns_its_name_and_stripped_value(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """[tier-1/unit] resolve_credential_entry: GH_TOKEN blank and GITHUB_TOKEN ' b ' returns ('GITHUB_TOKEN', 'b')."""
+        monkeypatch.setenv("GH_TOKEN", "  ")
+        monkeypatch.setenv("GITHUB_TOKEN", " b ")
+
+        assert resolve_credential_entry(("GH_TOKEN", "GITHUB_TOKEN")) == ("GITHUB_TOKEN", "b")
+
+    def test_no_usable_alternative_returns_none(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """[tier-1/unit] resolve_credential_entry: all alternatives unset or blank returns None."""
+        monkeypatch.delenv("GH_TOKEN", raising=False)
+        monkeypatch.setenv("GITHUB_TOKEN", " ")
+
+        assert resolve_credential_entry(("GH_TOKEN", "GITHUB_TOKEN")) is None
 
 
 class MissingCredentialErrorTests:

@@ -18,6 +18,8 @@ dovo run <name> [OPTIONS] [-- <input-overrides>]
 | `--agent <name>` | Override the agent provider for this run (model, endpoint, temperature, and max tokens still come from config); an unregistered name fails an agent step with `AGENT_PROVIDER_UNSUPPORTED` and has no effect on command/script steps. |
 | `--session-id <id>` | Explicit session identifier. |
 | `--no-tty` | Disable interactive prompts; prompt_user failures abort the run instead of blocking for input. |
+| `--env-mode <allowlist\|inherit>` | Override `agent.env_mode` for this invocation. |
+| `--env-passthrough <name-or-prefix*>` | Forward a host variable name or a prefix ending in a single `*` to agent steps for this invocation; repeatable and appended to `agent.env_passthrough`. |
 | `--format <terminal\|json>` | Presentation format (`terminal` or `json`). Defaults to `terminal`. |
 | `--display <ansi\|live>` | Display format (`ansi` or `live`). Defaults to `ansi`. |
 
@@ -29,7 +31,8 @@ Trailing CLI arguments (after options) are forwarded to declared blueprint input
 2. **Execution**: Runs the blueprint through the unified runtime engine (`BlueprintRunService`).
 3. **Agent steps**: An agent step sends its interpolated `prompt` to the resolved provider in `direct` mode and applies any returned patch inside the worktree only. It fails with `Agent steps require an active git worktree.` under `--no-worktree` or a resumed in-place run. Its stdout is one JSON object (`status`, `summary`, `unfixable_reason`, `touched_files`); see [Agent-Step Adapters](../guides/agent-providers.md).
 4. **Secret masking**: Streamed step output, the per-step capture, and failure messages mask secret values: environment variables whose names end in `_KEY`, `_TOKEN`, `_SECRET`, `_PASSWORD`, or `_AUTH` (values of 6+ characters), matching keys in the repository `.env`, the step's own `env:` entries under those same name suffixes and 6+ character rule, and common credential formats (GitHub tokens, Anthropic keys, AWS access key IDs). Names listed under `environment.sensitive_variables` in `.dovo/config.json` are also masked with no length floor, including when set only in a step's `env:`; see [`dovo config`](config.md). A masked value prints as `[REDACTED:<NAME>]` or `[REDACTED]`. Assertions still evaluate the raw output.
-5. **Exit Codes**:
+5. **Environment flags**: `--env-mode` and `--env-passthrough` apply only to this invocation, are never written to config or run state, and are validated before any step starts; an invalid value exits `1`. See [Agent Providers](../guides/agent-providers.md#subprocess-environment).
+6. **Exit Codes**:
    - `0`: Successful run or paused run (with run state saved).
    - `1`: Failed or cancelled run.
 

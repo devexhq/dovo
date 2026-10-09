@@ -8,7 +8,7 @@ import typer
 from typer.core import TyperGroup
 
 from dovo.cli.context import CliContext
-from dovo.common.models import DisplayFormatOptions, OutputFormatOptions
+from dovo.common.models import AgentEnvModeOptions, DisplayFormatOptions, OutputFormatOptions
 
 from .commands.root import run_command
 
@@ -73,6 +73,17 @@ def run_callback(
         "--auto-apply",
         help="Automatically apply worktree changes to the main workspace on successful completion.",
     ),
+    env_mode: Annotated[
+        AgentEnvModeOptions | None,
+        typer.Option("--env-mode", help="Override agent.env_mode for this invocation: 'allowlist' or 'inherit'."),
+    ] = None,
+    env_passthrough: Annotated[
+        list[str] | None,
+        typer.Option(
+            "--env-passthrough",
+            help="Forward a host variable name or trailing-'*' prefix to the agent for this invocation; repeatable.",
+        ),
+    ] = None,
     format: Annotated[
         OutputFormatOptions, typer.Option(help="Output format: 'terminal' or 'json'.")
     ] = OutputFormatOptions.TERMINAL,
@@ -92,6 +103,8 @@ def run_callback(
         no_tty=no_tty,
         auto_apply=auto_apply,
         cli_args=list(ctx.args),
+        env_mode=env_mode,
+        env_passthrough=env_passthrough,
         output_format=format,
         display_format=display,
     )

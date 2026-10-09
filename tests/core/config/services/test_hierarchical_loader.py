@@ -221,6 +221,39 @@ class HierarchicalConfigMergeTests:
         assert result.config.agent.model == "dovo-home-model"
 
 
+class AgentConfigEnvTests:
+    """[tier-1/integration] agent.env_passthrough and agent.env_mode loading contracts for load_hierarchical_config."""
+
+    def test_config_without_env_keys_loads_with_defaults(
+        self, isolated_workspace: Path, tmp_path: Path, workspace_paths_factory: WorkspacePathsFactory
+    ) -> None:
+        """[tier-1/integration] load_hierarchical_config: a repo config.json lacking both keys yields agent.env_passthrough == [] and agent.env_mode == 'allowlist'."""
+        _write_tier_config(isolated_workspace / ".dovo" / "config.json", {"agent": {"provider": "copilot"}})
+
+        result = load_hierarchical_config(workspace_paths_factory(isolated_workspace, tmp_path / "global_home"))
+
+        assert result.config is not None
+        assert (result.config.agent.env_passthrough, result.config.agent.env_mode) == ([], "allowlist")
+
+    def test_repo_tier_passthrough_replaces_global_tier_passthrough(
+        self, isolated_workspace: Path, tmp_path: Path, workspace_paths_factory: WorkspacePathsFactory
+    ) -> None:
+        """[tier-1/integration] load_hierarchical_config: global ['A'] and repo ['B'] resolve to agent.env_passthrough == ['B']."""
+        global_root = tmp_path / "global_home"
+        _write_tier_config(
+            resolve_global_paths(global_root).global_dir / "config.json", {"agent": {"env_passthrough": ["A"]}}
+        )
+        _write_tier_config(
+            isolated_workspace / ".dovo" / "config.json",
+            {"agent": {"env_passthrough": ["B"], "env_mode": "inherit"}},
+        )
+
+        result = load_hierarchical_config(workspace_paths_factory(isolated_workspace, global_root))
+
+        assert result.config is not None
+        assert (result.config.agent.env_passthrough, result.config.agent.env_mode) == (["B"], "inherit")
+
+
 class HierarchicalConfigErrorTests:
     """[tier-1/unit] Tier-attributed error contracts for load_hierarchical_config."""
 

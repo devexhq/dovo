@@ -5,9 +5,9 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from enum import StrEnum
 from pathlib import Path
-from typing import Literal
+from typing import Annotated, Literal
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, StringConstraints, model_validator
 
 from dovo.common.models import BaseResult
 
@@ -19,6 +19,10 @@ OmissionReason = Literal[
     "max_files",
     "max_file_bytes",
 ]
+
+ENV_PASSTHROUGH_PATTERN = r"^[^=\x00*\s]+\*?$"
+EnvPassthroughEntry = Annotated[str, StringConstraints(pattern=ENV_PASSTHROUGH_PATTERN)]
+AgentEnvMode = Literal["allowlist", "inherit"]
 
 
 class PayloadOmission(BaseModel):
@@ -60,6 +64,15 @@ class AgentFailurePayload(BaseModel):
     omissions: list[PayloadOmission] = Field(default_factory=list)
 
 
+class AgentEnvOverrides(BaseModel):
+    """Per-invocation environment overrides from CLI flags; never persisted to config or run state."""
+
+    model_config = {"extra": "forbid", "strict": True, "frozen": True}
+
+    env_mode: AgentEnvMode | None = None
+    env_passthrough: list[EnvPassthroughEntry] = Field(default_factory=list)
+
+
 class ResolvedAgentSettings(BaseModel):
     """Effective agent settings for one run drive; carries no credential values."""
 
@@ -70,6 +83,8 @@ class ResolvedAgentSettings(BaseModel):
     endpoint: str | None
     temperature: float = Field(ge=0, le=2)
     max_tokens: int = Field(ge=1)
+    env_passthrough: list[EnvPassthroughEntry] = Field(default_factory=list)
+    env_mode: AgentEnvMode = "allowlist"
 
 
 class AgentResponseStatus(StrEnum):
@@ -90,6 +105,16 @@ class AgentInvocationContext(BaseModel):
     invocation_id: str = Field(pattern=r"^[0-9a-f]{32}$")
     scratch_path: Path
     control_path: Path
+
+
+class AgentAttemptContext(BaseModel):
+    """Step-boundary inputs for one direct attempt: the private invocation paths and the process-environment layers."""
+
+    model_config = {"extra": "forbid", "strict": True, "frozen": True}
+
+    invocation: AgentInvocationContext | None = None
+    env: dict[str, str] = Field(default_factory=dict)
+    metadata_env: dict[str, str] = Field(default_factory=dict)
 
 
 class AgentScratchResult(BaseResult):
@@ -123,6 +148,10 @@ class AgentRequest(BaseModel):
     reject_binary_changes: bool | None = None
     agent_scratch_path: Path | None = None
     invocation: AgentInvocationContext | None = Field(default=None, exclude=True)
+    env_passthrough: list[EnvPassthroughEntry] = Field(default_factory=list)
+    env_mode: AgentEnvMode = "allowlist"
+    env: dict[str, str] = Field(default_factory=dict, exclude=True)
+    metadata_env: dict[str, str] = Field(default_factory=dict, exclude=True)
 
     @model_validator(mode="after")
     def validate_mode_contract(self) -> AgentRequest:
@@ -160,6 +189,7 @@ class AgentResponse(BaseModel):
     errors: list[str] = Field(default_factory=list)
     fixes: list[str] = Field(default_factory=list)
     mutation_baseline_ref: str | None = None
+    env_withheld: list[str] = Field(default_factory=list)
 
     @property
     def ok(self) -> bool:
@@ -176,6 +206,7 @@ class AgentAttempt:
     unfixable_reason: str | None = None
     touched_files: list[str] = field(default_factory=list)
     diagnostics: list[str] = field(default_factory=list)
+    env_withheld: list[str] = field(default_factory=list)
 
     @property
     def completed(self) -> bool:

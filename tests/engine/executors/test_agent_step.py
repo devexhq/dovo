@@ -12,7 +12,7 @@ import pytest
 
 from dovo.core.agents import (
     AgentAttempt,
-    AgentInvocationContext,
+    AgentAttemptContext,
     AgentResponse,
     AgentResponseStatus,
     BaseAgentProvider,
@@ -21,6 +21,7 @@ from dovo.core.agents import (
 from dovo.core.agents.scratch import scratch_unavailable_message
 from dovo.core.catalog.definitions import StepDefinition
 from dovo.core.git import GitRunner
+from dovo.core.sessions import SessionLogEvent, SessionLogEventType
 from dovo.engine.executors.agent_step import (
     AGENT_OUTCOME_EXIT_CODES,
     BLANK_PROMPT_MESSAGE,
@@ -29,11 +30,13 @@ from dovo.engine.executors.agent_step import (
     build_agent_step_runner,
     execute_agent_step,
 )
-from dovo.engine.executors.models import StepDispatchOutcome
+from dovo.engine.executors.metadata import metadata_to_env
+from dovo.engine.executors.models import ExecutionMetadata, StepDispatchOutcome, StepMetadata
 from tests.harness import AGENT_ADAPTER_FACTORY, FakeAgentProvider, new_file_diff
 from tests.harness.builders import StepBuilder
 
 _NO_OP_SUMMARY = "Inspected the repository; no edits were required."
+_METADATA = ExecutionMetadata(step=StepMetadata(id="plan", name="plan", index=1))
 
 
 def _settings(provider: str = "copilot") -> ResolvedAgentSettings:
@@ -68,6 +71,7 @@ def _run(
     agent: ResolvedAgentSettings | None = None,
     worktree_active: bool = True,
     session_tmp_dir: Path | None = None,
+    session_log_dir: Path | None = None,
     on_output: Callable[[str, str], None] | None = None,
 ) -> StepDispatchOutcome:
     return execute_agent_step(
@@ -77,6 +81,8 @@ def _run(
         worktree_active=worktree_active,
         session_tmp_dir=session_tmp_dir or _session_tmp_dir(worktree),
         main_checkout=worktree,
+        session_log_dir=session_log_dir,
+        metadata=_METADATA,
         on_output=on_output,
     )
 
@@ -140,7 +146,7 @@ class ExecuteAgentStepRequestTests:
             settings: ResolvedAgentSettings,
             worktree_path: Path,
             timeout_seconds: int,
-            invocation: AgentInvocationContext | None,
+            context: AgentAttemptContext | None,
         ) -> AgentAttempt:
             calls.append(
                 {
@@ -178,6 +184,8 @@ class ExecuteAgentStepRequestTests:
             worktree_active=True,
             session_tmp_dir=_session_tmp_dir(git_repo),
             main_checkout=git_repo,
+            session_log_dir=None,
+            metadata=_METADATA,
             on_output=None,
         )
 
@@ -381,6 +389,8 @@ class ExecuteAgentStepScratchTests:
             worktree_active=True,
             session_tmp_dir=None,
             main_checkout=git_repo,
+            session_log_dir=None,
+            metadata=_METADATA,
             on_output=None,
         )
 
@@ -433,6 +443,8 @@ class ExecuteAgentStepScratchTests:
             worktree_active=guard != "worktree",
             session_tmp_dir=session_tmp,
             main_checkout=git_repo,
+            session_log_dir=None,
+            metadata=_METADATA,
             on_output=None,
         )
 
@@ -462,6 +474,103 @@ class ExecuteAgentStepScratchTests:
         assert invocation.control_path.is_dir()
 
 
+def _stub_attempt(monkeypatch: pytest.MonkeyPatch, attempt: AgentAttempt) -> list[dict[str, object]]:
+    """Replace run_direct_attempt with a recorder returning ``attempt`` and return the captured keyword arguments."""
+    calls: list[dict[str, object]] = []
+
+    def _record(**kwargs: object) -> AgentAttempt:
+        calls.append(kwargs)
+        return attempt
+
+    monkeypatch.setattr("dovo.engine.executors.agent_step.run_direct_attempt", _record)
+    return calls
+
+
+_FILTERED_LINE = (
+    "Agent environment filtered: 3 variables withheld. "
+    "Fix: add names to agent.env_passthrough or pass --env-passthrough NAME.\n"
+)
+
+
+class ExecuteAgentStepEnvTests:
+    def test_step_env_and_generated_metadata_are_forwarded_to_run_direct_attempt(
+        self, git_repo: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """[tier-1/integration] execute_agent_step: run_direct_attempt receives env == step.env and metadata_env == metadata_to_env(metadata)."""
+        calls = _stub_attempt(monkeypatch, AgentAttempt(status=AgentResponseStatus.NO_OP))
+        step = StepBuilder.agent("Plan the change").with_env("MY_VAR", "x").build()
+
+        _run(git_repo, step=step)
+
+        context = calls[0]["context"]
+        assert isinstance(context, AgentAttemptContext)
+        assert context.env == {"MY_VAR": "x"}
+        assert context.metadata_env == metadata_to_env(_METADATA)
+
+    def test_withheld_names_emit_operator_stderr_line_and_one_session_log_event(
+        self, git_repo: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """[tier-1/integration] execute_agent_step: env_withheld ['AWS_KEY_X','FOO','ZED'] sends 'Agent environment filtered: 3 variables withheld. Fix: add names to agent.env_passthrough or pass --env-passthrough NAME.\\n' on stream 'stderr' and appends one agent_env_filtered event with env_withheld == 'AWS_KEY_X,FOO,ZED'."""
+        _stub_attempt(
+            monkeypatch, AgentAttempt(status=AgentResponseStatus.NO_OP, env_withheld=["AWS_KEY_X", "FOO", "ZED"])
+        )
+        log_dir = tmp_path / "logs"
+        log_dir.mkdir()
+        emitted: list[tuple[str, str]] = []
+
+        _run(git_repo, session_log_dir=log_dir, on_output=lambda stream, line: emitted.append((stream, line)))
+
+        events = [
+            SessionLogEvent.model_validate_json(line)
+            for line in (log_dir / "session.log").read_text(encoding="utf-8").splitlines()
+        ]
+        assert ("stderr", _FILTERED_LINE) in emitted
+        assert [(event.event, event.step_id, event.env_withheld) for event in events] == [
+            (SessionLogEventType.AGENT_ENV_FILTERED, "plan", "AWS_KEY_X,FOO,ZED")
+        ]
+        assert "AWS_KEY_X" not in "".join(line for _, line in emitted)
+
+    def test_empty_withheld_list_emits_no_line_and_no_event(
+        self, git_repo: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """[tier-1/integration] execute_agent_step: env_withheld [] sends no stderr callback and writes no session.log line."""
+        _stub_attempt(monkeypatch, AgentAttempt(status=AgentResponseStatus.NO_OP))
+        log_dir = tmp_path / "logs"
+        log_dir.mkdir()
+        emitted: list[tuple[str, str]] = []
+
+        _run(git_repo, session_log_dir=log_dir, on_output=lambda stream, line: emitted.append((stream, line)))
+
+        assert [stream for stream, _ in emitted] == ["stdout"]
+        assert not (log_dir / "session.log").exists()
+
+    def test_withheld_report_is_emitted_for_a_timed_out_attempt(
+        self, git_repo: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """[tier-1/integration] execute_agent_step: a TIMEOUT attempt with env_withheld still emits the stderr line and the event."""
+        _stub_attempt(monkeypatch, AgentAttempt(status=AgentResponseStatus.TIMEOUT, env_withheld=["A", "B", "C"]))
+        log_dir = tmp_path / "logs"
+        log_dir.mkdir()
+        emitted: list[tuple[str, str]] = []
+
+        outcome = _run(git_repo, session_log_dir=log_dir, on_output=lambda stream, line: emitted.append((stream, line)))
+
+        assert outcome.exit_code == 202
+        assert ("stderr", _FILTERED_LINE) in emitted
+        assert len((log_dir / "session.log").read_text(encoding="utf-8").splitlines()) == 1
+
+    def test_withheld_report_without_a_session_log_dir_still_prints_the_console_line(
+        self, git_repo: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """[tier-1/integration] execute_agent_step: env_withheld set and session_log_dir None sends the stderr line and raises nothing."""
+        _stub_attempt(monkeypatch, AgentAttempt(status=AgentResponseStatus.NO_OP, env_withheld=["A", "B", "C"]))
+        emitted: list[tuple[str, str]] = []
+
+        _run(git_repo, on_output=lambda stream, line: emitted.append((stream, line)))
+
+        assert ("stderr", _FILTERED_LINE) in emitted
+
+
 class BuildAgentStepRunnerTests:
     def test_runner_built_without_active_worktree_fails_with_worktree_required_message(
         self, git_repo: Path, monkeypatch: pytest.MonkeyPatch
@@ -474,9 +583,13 @@ class BuildAgentStepRunnerTests:
         )
 
         runner = build_agent_step_runner(
-            _settings(), worktree_active=False, session_tmp_dir=_session_tmp_dir(git_repo), main_checkout=git_repo
+            _settings(),
+            worktree_active=False,
+            session_tmp_dir=_session_tmp_dir(git_repo),
+            main_checkout=git_repo,
+            session_log_dir=None,
         )
-        outcome = runner(_step(), git_repo, None)
+        outcome = runner(_step(), git_repo, None, _METADATA)
 
         assert outcome.status == "failed"
         assert WORKTREE_REQUIRED_MESSAGE in (outcome.error_message or "")
@@ -494,7 +607,7 @@ class BuildAgentStepRunnerTests:
             settings: ResolvedAgentSettings,
             worktree_path: Path,
             timeout_seconds: int,
-            invocation: AgentInvocationContext | None,
+            context: AgentAttemptContext | None,
         ) -> AgentAttempt:
             calls.append({"instruction": instruction, "settings": settings, "worktree_path": worktree_path})
             return AgentAttempt(status=AgentResponseStatus.NO_OP)
@@ -505,9 +618,13 @@ class BuildAgentStepRunnerTests:
         emitted: list[tuple[str, str]] = []
 
         runner = build_agent_step_runner(
-            settings, worktree_active=True, session_tmp_dir=_session_tmp_dir(git_repo), main_checkout=git_repo
+            settings,
+            worktree_active=True,
+            session_tmp_dir=_session_tmp_dir(git_repo),
+            main_checkout=git_repo,
+            session_log_dir=None,
         )
-        outcome = runner(step, git_repo, lambda stream, line: emitted.append((stream, line)))
+        outcome = runner(step, git_repo, lambda stream, line: emitted.append((stream, line)), _METADATA)
 
         assert calls == [{"instruction": step.prompt, "settings": settings, "worktree_path": git_repo}]
         assert emitted == [("stdout", outcome.stdout)]

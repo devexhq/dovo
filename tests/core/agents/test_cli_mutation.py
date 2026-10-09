@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 from pathlib import Path
 from typing import Literal
@@ -20,6 +21,7 @@ from dovo.core.agents.cli_mutation import (
     build_mutation_prompt,
     validate_request_patch,
 )
+from dovo.core.agents.environment import ENV_FILTERED_PROMPT_LINE
 from dovo.core.agents.mutation_git import (
     MutationGitError,
     capture_diff_since,
@@ -108,6 +110,20 @@ class CredentialedAdapter(UnitTestAdapter):
 
     def _preflight(self, request: AgentRequest) -> str | None:
         return "extra"
+
+
+class EnvironmentAdapter(UnitTestAdapter):
+    """Adapter double declaring a credential-free descriptor so the shared base builds its subprocess environment."""
+
+    def _provider_spec(self) -> ProviderSpec:
+        return ProviderSpec(
+            token="unit-test",
+            credential_envs=(),
+            requires_model=False,
+            supports_tool_policy=False,
+            supports_os_sandbox=False,
+            build=lambda: self,
+        )
 
 
 class BuildMutationPromptTests:
@@ -486,3 +502,56 @@ class PreflightOrderingTests:
 
         assert resp.status == AgentResponseStatus.PROVIDER_ERROR
         assert baseline_calls == []
+
+
+class MutationEnvReportTests:
+    def test_withheld_names_prefix_the_prompt_and_return_on_the_response(
+        self, git_repo: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """[tier-1/integration] CliDirectMutationAdapter.invoke: host-only names make the runner prompt start with ENV_FILTERED_PROMPT_LINE + '\\n' and response.env_withheld equal the sorted names."""
+        monkeypatch.setattr(os, "environ", {"PATH": os.environ["PATH"], "ZED_HOST": "1", "FOO_HOST": "2"})
+        received: list[CliMutationRunRequest] = []
+
+        def _record(request: CliMutationRunRequest) -> CliMutationOutcome:
+            received.append(request)
+            return CliMutationOutcome(status="finished")
+
+        response = EnvironmentAdapter(run_fn=_record).invoke(AgentRequestBuilder().with_worktree_path(git_repo).build())
+
+        assert response.env_withheld == ["FOO_HOST", "ZED_HOST"]
+        assert received[0].prompt.startswith(ENV_FILTERED_PROMPT_LINE + "\n")
+        assert received[0].env["DOVO_ENV_WITHHELD"] == "FOO_HOST,ZED_HOST"
+
+    def test_nothing_withheld_leaves_prompt_and_response_unchanged(self, git_repo: Path) -> None:
+        """[tier-1/integration] CliDirectMutationAdapter.invoke: an env with no withheld names yields a prompt starting with the normal header and response.env_withheld == []."""
+        received: list[CliMutationRunRequest] = []
+
+        def _record(request: CliMutationRunRequest) -> CliMutationOutcome:
+            received.append(request)
+            return CliMutationOutcome(status="finished")
+
+        request = AgentRequestBuilder().with_worktree_path(git_repo).with_env_mode("inherit").build()
+        response = EnvironmentAdapter(run_fn=_record).invoke(request)
+
+        assert response.env_withheld == []
+        assert received[0].prompt.startswith("You are a coding agent")
+
+    def test_adapter_without_descriptor_receives_an_empty_env_and_reports_nothing_withheld(
+        self, git_repo: Path
+    ) -> None:
+        """[tier-1/integration] CliDirectMutationAdapter.invoke: a double with no descriptor gets env == {} and env_withheld == []."""
+        received: list[CliMutationRunRequest] = []
+
+        def _record(request: CliMutationRunRequest) -> CliMutationOutcome:
+            received.append(request)
+            return CliMutationOutcome(status="finished")
+
+        response = UnitTestAdapter(run_fn=_record).invoke(AgentRequestBuilder().with_worktree_path(git_repo).build())
+
+        assert (received[0].env, response.env_withheld) == ({}, [])
+
+    def test_run_request_dump_excludes_env(self, tmp_path: Path) -> None:
+        """[tier-1/unit] CliMutationRunRequest.model_dump: key 'env' is absent."""
+        request = CliMutationRunRequest(worktree_path=tmp_path, prompt="p", timeout_seconds=1, env={"A_KEY": "secret1"})
+
+        assert "env" not in request.model_dump()

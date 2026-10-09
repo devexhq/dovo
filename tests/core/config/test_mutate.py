@@ -187,7 +187,7 @@ class ConfigUnsetMutationTests:
         payload = build_default_config("demo-workspace")
         Filesystem.atomic_write_json(config_path, payload)
 
-        for child_key in ("provider", "model", "endpoint", "temperature", "max_tokens"):
+        for child_key in ("provider", "model", "endpoint", "temperature", "max_tokens", "env_passthrough", "env_mode"):
             result = unset_config_value_result(f"agent.{child_key}", config_path=config_path)
             assert result.ok
 

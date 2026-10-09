@@ -7,6 +7,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
+import pytest
 from typer.testing import CliRunner
 
 from dovo.cli import app
@@ -14,6 +15,8 @@ from dovo.cli.ui.dispatcher import ui_dispatcher
 from dovo.common.filesystem.models import WorkspacePaths
 from dovo.core.config.models import ConfigTier
 from dovo.core.db import DovoDb, SessionStatus
+from dovo.core.worktree import Worktree
+from tests.harness import FakeAgentRunner
 from tests.harness.catalog import write_runnable_step
 from tests.harness.sessions import seed_paused_session
 from tests.harness.workspace_paths import initialized_workspace_paths
@@ -31,6 +34,37 @@ def _seed_paused_session(
     paths = _paths_for(resume_workspace)
     db = DovoDb(database_file=paths.database_file, project_id=paths.project_id)
     seed_paused_session(paths, db.sessions, session_id=session_id, steps=steps, paused_step_id=paused_step_id)
+
+
+_AGENT_STDOUT = b'{"type":"assistant.message","data":{"content":"ok"}}\n{"type":"result","data":{"exitCode":0}}\n'
+_AGENT_STEPS: list[dict[str, object]] = [
+    {"id": "gate", "run": "true", "on_failure": "continue"},
+    {"id": "plan", "type": "agent", "prompt": "Plan the change"},
+]
+
+
+def _fake_copilot(monkeypatch: pytest.MonkeyPatch) -> FakeAgentRunner:
+    """Install a FakeAgentRunner at the Copilot process boundary with a usable GH_TOKEN."""
+    monkeypatch.setenv("GH_TOKEN", "test-token")
+    runner = FakeAgentRunner().returning(stdout=_AGENT_STDOUT)
+    monkeypatch.setattr("dovo.core.agents.copilot.run_isolated_process", runner)
+
+    return runner
+
+
+def _seed_paused_agent_session(workspace: Path, session_id: str) -> None:
+    paths = _paths_for(workspace)
+    db = DovoDb(database_file=paths.database_file, project_id=paths.project_id)
+    Worktree(paths, db=db.worktrees).create(session_id=session_id)
+    seed_paused_session(
+        paths,
+        db.sessions,
+        session_id=session_id,
+        steps=_AGENT_STEPS,
+        paused_step_id="gate",
+        use_worktree=True,
+        worktree_id=session_id,
+    )
 
 
 class ResumeCliIntegrationTests:
@@ -140,3 +174,67 @@ class ResumeCliIntegrationTests:
         assert record is not None
         assert record.status == SessionStatus.COMPLETED
         assert (resume_workspace / "resumed.marker").exists()
+
+
+class ResumeEnvFlagsCliIntegrationTests:
+    """Typer runner integration tests for the dovo resume --env-mode and --env-passthrough flags."""
+
+    def test_resume_cli_env_flags_reach_the_resumed_agent_subprocess_env(
+        self, cli_runner: CliRunner, resume_workspace: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """[tier-3/integration] dovo resume: '--env-mode inherit --env-passthrough NAME' on a paused session exits 0 and the FakeAgentRunner env reflects both for the resumed agent step."""
+        runner = _fake_copilot(monkeypatch)
+        monkeypatch.setenv("DOVO_TEST_UNRELATED_SECRET", "host-value")
+        monkeypatch.setenv("NAME_HOST", "named")
+        _seed_paused_agent_session(resume_workspace, "paused-env")
+
+        result = cli_runner.invoke(
+            app,
+            [
+                "-p", str(resume_workspace), "resume", "paused-env",
+                "--env-mode", "inherit", "--env-passthrough", "NAME_HOST",
+            ],
+        )  # fmt: skip
+
+        assert result.exit_code == 0
+        assert runner.last_call.env["DOVO_TEST_UNRELATED_SECRET"] == "host-value"
+        assert runner.last_call.env["NAME_HOST"] == "named"
+
+    def test_resume_cli_flags_do_not_persist_to_a_later_resume(
+        self, cli_runner: CliRunner, resume_workspace: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """[tier-3/integration] dovo resume: a second resume without flags records an allowlist env lacking the earlier passthrough name."""
+        runner = _fake_copilot(monkeypatch)
+        monkeypatch.setenv("NAME_HOST", "named")
+        _seed_paused_agent_session(resume_workspace, "paused-first")
+        _seed_paused_agent_session(resume_workspace, "paused-second")
+        config_path = resume_workspace / ".dovo" / "config.json"
+        before = config_path.read_bytes()
+
+        first = cli_runner.invoke(
+            app, ["-p", str(resume_workspace), "resume", "paused-first", "--env-passthrough", "NAME_HOST"]
+        )
+        second = cli_runner.invoke(app, ["-p", str(resume_workspace), "resume", "paused-second"])
+
+        assert (first.exit_code, second.exit_code) == (0, 0)
+        assert ["NAME_HOST" in call.env for call in runner.calls] == [True, False]
+        assert config_path.read_bytes() == before
+
+    def test_resume_cli_invalid_passthrough_exits_one_and_leaves_session_paused(
+        self, cli_runner: CliRunner, resume_workspace: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """[tier-3/integration] dovo resume: '--env-passthrough =X' exits 1 with the fixed invalid-value message and the session status stays 'paused'."""
+        runner = _fake_copilot(monkeypatch)
+        _seed_paused_agent_session(resume_workspace, "paused-bad")
+
+        result = cli_runner.invoke(
+            app, ["-p", str(resume_workspace), "resume", "paused-bad", "--env-passthrough", "=X"]
+        )
+
+        paths = _paths_for(resume_workspace)
+        record = DovoDb(database_file=paths.database_file, project_id=paths.project_id).sessions.get("paused-bad")
+        assert result.exit_code == 1
+        assert "Invalid --env-passthrough value '=X':" in result.stdout
+        assert record is not None
+        assert record.status == SessionStatus.PAUSED
+        assert runner.calls == []

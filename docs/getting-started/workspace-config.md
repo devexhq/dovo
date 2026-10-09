@@ -115,7 +115,9 @@ Below is the canonical `.dovo/config.json` structure:
     "model": null,
     "endpoint": null,
     "temperature": 0.2,
-    "max_tokens": 4096
+    "max_tokens": 4096,
+    "env_passthrough": [],
+    "env_mode": "allowlist"
   },
   "history": {
     "save_attempt_logs": true,

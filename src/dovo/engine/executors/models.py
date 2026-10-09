@@ -117,7 +117,7 @@ class StepDispatchOutcome(BaseModel):
 
 
 OutputCallback = Callable[[str, str], None]
-AgentStepRunner = Callable[[StepDefinition, Path, OutputCallback | None], StepDispatchOutcome]
+AgentStepRunner = Callable[[StepDefinition, Path, OutputCallback | None, ExecutionMetadata], StepDispatchOutcome]
 
 
 class StepExecutionContext(BaseModel):

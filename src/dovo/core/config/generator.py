@@ -35,6 +35,8 @@ CANONICAL_V1_DEFAULTS: dict[str, Any] = {
         "endpoint": None,
         "temperature": 0.2,
         "max_tokens": 4096,
+        "env_passthrough": [],
+        "env_mode": "allowlist",
     },
     "history": {
         "save_attempt_logs": True,

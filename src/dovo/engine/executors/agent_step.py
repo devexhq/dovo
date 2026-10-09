@@ -9,6 +9,7 @@ from typing import Final
 
 from dovo.core.agents import (
     AgentAttempt,
+    AgentAttemptContext,
     AgentResponseStatus,
     ResolvedAgentSettings,
     allocate_invocation_paths,
@@ -17,7 +18,16 @@ from dovo.core.agents import (
 )
 from dovo.core.agents.responses import diagnostics_with_fixes
 from dovo.core.catalog.definitions import StepDefinition
-from dovo.engine.executors.models import AgentStepRunner, AgentStepSummary, OutputCallback, StepDispatchOutcome
+from dovo.core.sessions import SessionLogEvent, SessionLogEventType
+from dovo.engine.executors.metadata import metadata_to_env
+from dovo.engine.executors.models import (
+    AgentStepRunner,
+    AgentStepSummary,
+    ExecutionMetadata,
+    OutputCallback,
+    StepDispatchOutcome,
+)
+from dovo.engine.session_log import append_session_log_event
 
 WORKTREE_REQUIRED_MESSAGE = (
     "Agent steps require an active git worktree.\nFix: remove --no-worktree and run the blueprint with a worktree."
@@ -48,6 +58,8 @@ def execute_agent_step(
     worktree_active: bool,
     session_tmp_dir: Path | None,
     main_checkout: Path,
+    session_log_dir: Path | None,
+    metadata: ExecutionMetadata,
     on_output: OutputCallback | None,
 ) -> StepDispatchOutcome:
     """Run one agent attempt through its resolved provider and return the classified dispatch outcome."""
@@ -75,18 +87,26 @@ def execute_agent_step(
         settings=agent,
         worktree_path=worktree_path,
         timeout_seconds=step.timeout_seconds,
-        invocation=scratch.context,
+        context=AgentAttemptContext(invocation=scratch.context, env=step.env, metadata_env=metadata_to_env(metadata)),
     )
+    _report_withheld(attempt, metadata, session_log_dir, on_output)
 
     return _to_outcome(attempt, on_output)
 
 
 def build_agent_step_runner(
-    agent: ResolvedAgentSettings | None, worktree_active: bool, *, session_tmp_dir: Path | None, main_checkout: Path
+    agent: ResolvedAgentSettings | None,
+    worktree_active: bool,
+    *,
+    session_tmp_dir: Path | None,
+    main_checkout: Path,
+    session_log_dir: Path | None,
 ) -> AgentStepRunner:
-    """Return a runner closing over the run's agent settings, worktree state, and scratch roots, delegating to execute_agent_step."""
+    """Return a runner closing over the run's agent settings, worktree state, scratch roots, and session log directory."""
 
-    def _run(step: StepDefinition, worktree_path: Path, on_output: OutputCallback | None) -> StepDispatchOutcome:
+    def _run(
+        step: StepDefinition, worktree_path: Path, on_output: OutputCallback | None, metadata: ExecutionMetadata
+    ) -> StepDispatchOutcome:
         return execute_agent_step(
             step,
             agent=agent,
@@ -94,10 +114,37 @@ def build_agent_step_runner(
             worktree_active=worktree_active,
             session_tmp_dir=session_tmp_dir,
             main_checkout=main_checkout,
+            session_log_dir=session_log_dir,
+            metadata=metadata,
             on_output=on_output,
         )
 
     return _run
+
+
+def _report_withheld(
+    attempt: AgentAttempt, metadata: ExecutionMetadata, session_log_dir: Path | None, on_output: OutputCallback | None
+) -> None:
+    """Emit the operator stderr line and append one agent_env_filtered session-log event when names were withheld."""
+    if not attempt.env_withheld:
+        return
+
+    _emit_output(
+        on_output,
+        "stderr",
+        f"Agent environment filtered: {len(attempt.env_withheld)} variables withheld. "
+        "Fix: add names to agent.env_passthrough or pass --env-passthrough NAME.\n",
+    )
+    append_session_log_event(
+        session_log_dir,
+        SessionLogEvent(
+            event=SessionLogEventType.AGENT_ENV_FILTERED,
+            step_index=metadata.step.index,
+            step_id=metadata.step.id,
+            attempt=metadata.step.attempt,
+            env_withheld=",".join(attempt.env_withheld),
+        ),
+    )
 
 
 def _provider_error(*diagnostics: str) -> AgentAttempt:
@@ -127,13 +174,13 @@ def _failure_text(attempt: AgentAttempt) -> str:
     return f"Agent step ended with status '{attempt.status.value}'."
 
 
-def _emit_summary(on_output: OutputCallback | None, line: str) -> str | None:
-    """Send the summary line through the output callback and return its error text, or None."""
+def _emit_output(on_output: OutputCallback | None, stream_name: str, line: str) -> str | None:
+    """Send one line on ``stream_name`` through the output callback and return its error text, or None."""
     if on_output is None:
         return None
 
     try:
-        on_output("stdout", line)
+        on_output(stream_name, line)
     except Exception as exc:
         return str(exc)
 
@@ -143,7 +190,7 @@ def _emit_summary(on_output: OutputCallback | None, line: str) -> str | None:
 def _to_outcome(attempt: AgentAttempt, on_output: OutputCallback | None) -> StepDispatchOutcome:
     """Convert an attempt into the completed or failed dispatch outcome, downgrading success when the callback fails."""
     line = _summary_line(attempt)
-    callback_error = _emit_summary(on_output, line)
+    callback_error = _emit_output(on_output, "stdout", line)
 
     if not attempt.completed:
         return _failed_outcome(attempt.status, line, _failure_text(attempt))

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from dovo.core.agents.environment import env_passthrough_flag_error
+from dovo.core.agents.models import AgentEnvMode, AgentEnvOverrides
 from dovo.core.db import SessionRecord, SessionsRepository
 from dovo.engine.models import BlueprintRunResult, RunOutcome
 
@@ -43,3 +45,17 @@ def finalize(
         errors=list(run_outcome.errors),
         warnings=warnings,
     )
+
+
+def resolve_env_overrides(
+    env_mode: AgentEnvMode | None, env_passthrough: list[str]
+) -> tuple[AgentEnvOverrides | None, str | None]:
+    """Validate the --env-passthrough entries and build the per-invocation overrides, or return the fixed invalid-value message."""
+    message = env_passthrough_flag_error(env_passthrough)
+    if message is not None:
+        return None, message
+
+    if env_mode is None and not env_passthrough:
+        return None, None
+
+    return AgentEnvOverrides(env_mode=env_mode, env_passthrough=env_passthrough), None

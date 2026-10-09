@@ -12,7 +12,7 @@ from dovo.cli.ui import (
     WarningEvent,
     ui_dispatcher,
 )
-from dovo.common.models import DisplayFormatOptions, OutputFormatOptions
+from dovo.common.models import AgentEnvModeOptions, DisplayFormatOptions, OutputFormatOptions
 from dovo.core.db import SessionRecord, SessionStatus
 from dovo.engine import BlueprintRunService
 from dovo.engine.models import BlueprintRunResult
@@ -61,6 +61,8 @@ def run_command(
     no_tty: bool = False,
     auto_apply: bool = False,
     cli_args: list[str] | None = None,
+    env_mode: AgentEnvModeOptions | None = None,
+    env_passthrough: list[str] | None = None,
     output_format: OutputFormatOptions = OutputFormatOptions.TERMINAL,
     display_format: DisplayFormatOptions = DisplayFormatOptions.ANSI,
 ) -> BlueprintRunResult:
@@ -86,6 +88,8 @@ def run_command(
             cli_args=cli_args,
             no_tty=no_tty,
             auto_apply=auto_apply,
+            env_mode=None if env_mode is None else env_mode.value,
+            env_passthrough=list(env_passthrough or []),
             observer=observer,
             failure_prompter=DispatcherFailurePrompter(ui_dispatcher),
         ).execute()

@@ -48,6 +48,17 @@ class RunLogEventTests:
             SessionLogEvent.model_validate({"event": SessionLogEventType.STEP_START, "unknown_field": 1})
 
 
+class SessionLogEventContractTests:
+    def test_agent_env_filtered_event_round_trips_and_details_lists_env_withheld(self) -> None:
+        """[tier-1/unit] SessionLogEvent: event 'agent_env_filtered' with env_withheld 'A,B' round-trips JSON and details() == {'step_id': 's', 'env_withheld': 'A,B'} for step_id 's'."""
+        event = SessionLogEvent(event=SessionLogEventType.AGENT_ENV_FILTERED, step_id="s", env_withheld="A,B")
+
+        restored = SessionLogEvent.model_validate_json(event.model_dump_json())
+
+        assert restored == event
+        assert restored.details() == {"step_id": "s", "env_withheld": "A,B"}
+
+
 class HistoryListResultTests:
     """[tier-1/unit] HistoryListResult: envelope defaults and ok semantics."""
 

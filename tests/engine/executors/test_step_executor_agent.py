@@ -9,9 +9,16 @@ import pytest
 
 from dovo.common.models import FailurePolicy
 from dovo.core.agents import AgentResponse, AgentResponseStatus, ResolvedAgentSettings
-from dovo.core.catalog.definitions import StepAssert
+from dovo.core.catalog.definitions import StepAssert, StepDefinition
 from dovo.engine.executors.agent_step import MISSING_SETTINGS_MESSAGE, build_agent_step_runner
-from dovo.engine.executors.models import AgentStepRunner, StepExecutionContext, StepResult
+from dovo.engine.executors.models import (
+    AgentStepRunner,
+    ExecutionMetadata,
+    OutputCallback,
+    StepDispatchOutcome,
+    StepExecutionContext,
+    StepResult,
+)
 from dovo.engine.executors.step_executor import StepExecution
 from tests.harness import AGENT_ADAPTER_FACTORY, FakeAgentProvider
 from tests.harness.builders import StepBuilder
@@ -25,7 +32,9 @@ def _runner(worktree: Path) -> AgentStepRunner:
     session_tmp = worktree.parent / "session-tmp"
     session_tmp.mkdir(exist_ok=True)
 
-    return build_agent_step_runner(_settings(), True, session_tmp_dir=session_tmp, main_checkout=worktree)
+    return build_agent_step_runner(
+        _settings(), True, session_tmp_dir=session_tmp, main_checkout=worktree, session_log_dir=None
+    )
 
 
 def _run_agent_step(worktree: Path, step_builder: StepBuilder) -> StepResult:
@@ -35,6 +44,24 @@ def _run_agent_step(worktree: Path, step_builder: StepBuilder) -> StepResult:
 
 def _use_provider(monkeypatch: pytest.MonkeyPatch, provider: FakeAgentProvider) -> None:
     monkeypatch.setattr(AGENT_ADAPTER_FACTORY, lambda token: provider)
+
+
+class AgentRunnerDispatchTests:
+    def test_agent_step_dispatch_passes_execution_metadata_to_the_runner(self, git_repo: Path) -> None:
+        """[tier-1/integration] StepExecution.run: an AGENT step calls agent_runner with a fourth argument whose step.id and step.attempt match the executing step."""
+        received: list[ExecutionMetadata] = []
+
+        def _runner(
+            step: StepDefinition, worktree: Path, on_output: OutputCallback | None, metadata: ExecutionMetadata
+        ) -> StepDispatchOutcome:
+            received.append(metadata)
+            return StepDispatchOutcome(status="completed", exit_code=0, stdout="", stderr="")
+
+        step = StepBuilder.agent("plan").with_id("plan-step").build()
+
+        StepExecution(StepExecutionContext(step=step, worktree_path=git_repo, agent_runner=_runner)).run()
+
+        assert [(metadata.step.id, metadata.step.attempt) for metadata in received] == [("plan-step", 1)]
 
 
 class AgentStepRunnerTests:

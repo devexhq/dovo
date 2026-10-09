@@ -7,8 +7,10 @@ from pathlib import Path
 from typing import get_args
 
 import pytest
+from pydantic import ValidationError
 
 from dovo.common.filesystem import Filesystem
+from dovo.common.schema_validation import CONFIG_VALIDATOR
 from dovo.core.agents.registry import PROVIDERS
 from dovo.core.config.generator import build_default_config
 from dovo.core.config.models import AgentProvider, DovoConfig
@@ -125,3 +127,22 @@ class ProviderVocabularyAgreementTests:
 
         assert set(PROVIDERS) == set(get_args(AgentProvider)) == set(provider_schema["enum"]) == {"copilot"}
         assert provider_schema["default"] == "copilot"
+
+
+class AgentConfigEnvTests:
+    @pytest.mark.parametrize(
+        "payload",
+        [
+            pytest.param({"env_mode": "bogus"}, id="bad-mode"),
+            pytest.param({"env_passthrough": ["A*B"]}, id="bad-entry"),
+            pytest.param({"env_passthrough": "DOCKER_*"}, id="not-a-list"),
+        ],
+    )
+    def test_invalid_env_keys_fail_schema_and_model_validation(self, payload: dict[str, object]) -> None:
+        """[tier-1/unit] CONFIG_VALIDATOR and DovoConfig: each invalid agent env payload is rejected by both."""
+        document = build_default_config("demo")
+        document["agent"].update(payload)
+
+        assert not CONFIG_VALIDATOR.validate(document).ok
+        with pytest.raises(ValidationError):
+            DovoConfig.model_validate(document)
