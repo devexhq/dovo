@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from dovo.core.agents import AgentResponseStatus
+from dovo.core.agents import AgentEnvMode, AgentInvocationContext, AgentResponseStatus
 from dovo.core.agents.cli_mutation import CliMutationOutcome, CliMutationRunRequest
 from dovo.core.agents.copilot import (
     CopilotAgentAdapter,
@@ -90,7 +90,13 @@ class CopilotRunTests:
         monkeypatch.setattr("dovo.core.agents.copilot.run_isolated_process", runner)
 
         outcome = default_copilot_run(
-            CliMutationRunRequest(worktree_path=tmp_path, prompt="hi", model=None, timeout_seconds=3)
+            CliMutationRunRequest(
+                worktree_path=tmp_path,
+                prompt="hi",
+                model=None,
+                timeout_seconds=3,
+                env={"GH_TOKEN": "test-token"},
+            )
         )
 
         assert outcome.status == "finished"
@@ -257,3 +263,82 @@ class CopilotRedactionTests:
         assert resp.raw_text == "done with [REDACTED:GH_TOKEN]"
         assert resp.unified_diff is not None
         assert "+edited" in resp.unified_diff
+
+
+def _invocation(root: Path) -> AgentInvocationContext:
+    return AgentInvocationContext(invocation_id="a" * 32, scratch_path=root / "scratch", control_path=root / "control")
+
+
+class CopilotEnvBoundaryTests:
+    def test_allowlist_spawn_env_lacks_unrelated_secrets_and_carries_resolved_token(
+        self, git_repo: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """[tier-1/integration] CopilotAgentAdapter.invoke: FakeAgentRunner at dovo.core.agents.copilot.run_isolated_process records an env without AWS_SECRET_ACCESS_KEY, SSH_AUTH_SOCK, ANTHROPIC_API_KEY, DOVO_TEST_UNRELATED_SECRET and with GH_TOKEN equal to the resolved token."""
+        for name in ("AWS_SECRET_ACCESS_KEY", "SSH_AUTH_SOCK", "ANTHROPIC_API_KEY", "DOVO_TEST_UNRELATED_SECRET"):
+            monkeypatch.setenv(name, "host-value")
+        runner = FakeAgentRunner().returning(stdout=_assistant_stream("ok"))
+        monkeypatch.setattr("dovo.core.agents.copilot.run_isolated_process", runner)
+
+        CopilotAgentAdapter().invoke(AgentRequestBuilder().with_worktree_path(git_repo).build())
+
+        env = runner.last_call.env
+        assert env["GH_TOKEN"] == "test-token"
+        assert "PATH" in env
+        assert not {"AWS_SECRET_ACCESS_KEY", "SSH_AUTH_SOCK", "ANTHROPIC_API_KEY", "DOVO_TEST_UNRELATED_SECRET"} & set(
+            env
+        )
+
+    def test_inherit_spawn_env_keeps_unrelated_secrets(self, git_repo: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """[tier-1/integration] CopilotAgentAdapter.invoke: with env_mode 'inherit' the recorded env contains DOVO_TEST_UNRELATED_SECRET."""
+        monkeypatch.setenv("DOVO_TEST_UNRELATED_SECRET", "host-value")
+        runner = FakeAgentRunner().returning(stdout=_assistant_stream("ok"))
+        monkeypatch.setattr("dovo.core.agents.copilot.run_isolated_process", runner)
+
+        CopilotAgentAdapter().invoke(
+            AgentRequestBuilder().with_worktree_path(git_repo).with_env_mode("inherit").build()
+        )
+
+        assert runner.last_call.env["DOVO_TEST_UNRELATED_SECRET"] == "host-value"
+
+    @pytest.mark.parametrize("mode", [pytest.param("allowlist", id="allowlist"), pytest.param("inherit", id="inherit")])
+    def test_competing_copilot_controls_never_reach_the_subprocess(
+        self, mode: AgentEnvMode, git_repo: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """[tier-1/integration] CopilotAgentAdapter.invoke: ambient COPILOT_GITHUB_TOKEN, COPILOT_ALLOW_ALL, and the non-winning GITHUB_TOKEN are absent from the recorded env while COPILOT_MODEL equals request.model."""
+        monkeypatch.setenv("COPILOT_GITHUB_TOKEN", "competing")
+        monkeypatch.setenv("COPILOT_ALLOW_ALL", "1")
+        monkeypatch.setenv("COPILOT_MODEL", "ambient-model")
+        monkeypatch.setenv("GITHUB_TOKEN", "non-winning")
+        runner = FakeAgentRunner().returning(stdout=_assistant_stream("ok"))
+        monkeypatch.setattr("dovo.core.agents.copilot.run_isolated_process", runner)
+
+        CopilotAgentAdapter().invoke(
+            AgentRequestBuilder().with_worktree_path(git_repo).with_model("gpt-x").with_env_mode(mode).build()
+        )
+
+        env = runner.last_call.env
+        assert env["COPILOT_MODEL"] == "gpt-x"
+        assert env["GH_TOKEN"] == "test-token"
+        assert not {"COPILOT_GITHUB_TOKEN", "COPILOT_ALLOW_ALL", "GITHUB_TOKEN"} & set(env)
+
+    def test_scratch_keys_follow_each_invocation_across_repeated_calls(
+        self, git_repo: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """[tier-1/integration] CopilotAgentAdapter.invoke: two calls with different invocation contexts record DOVO_AGENT_SCRATCH, TMPDIR, TMP, TEMP equal to each call's own scratch_path, never control_path or its parent."""
+        runner = FakeAgentRunner().returning(stdout=_assistant_stream("ok"))
+        monkeypatch.setattr("dovo.core.agents.copilot.run_isolated_process", runner)
+        adapter = CopilotAgentAdapter()
+        invocations = [_invocation(tmp_path / "first"), _invocation(tmp_path / "second")]
+
+        for invocation in invocations:
+            adapter.invoke(AgentRequestBuilder().with_worktree_path(git_repo).with_invocation(invocation).build())
+
+        keys = ("DOVO_AGENT_SCRATCH", "TMPDIR", "TMP", "TEMP")
+        recorded = [[call.env[key] for key in keys] for call in runner.calls]
+        assert recorded == [[str(invocation.scratch_path)] * 4 for invocation in invocations]
+        forbidden = {
+            str(path)
+            for invocation in invocations
+            for path in (invocation.control_path, invocation.control_path.parent)
+        }
+        assert not forbidden & {value for call in runner.calls for value in call.env.values()}

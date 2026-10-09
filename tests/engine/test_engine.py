@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 
 from dovo.common.filesystem.models import WorkspacePaths
+from dovo.core.agents.models import AgentEnvOverrides
 from dovo.core.catalog import Catalog
 from dovo.core.catalog.blueprint import Blueprint
 from dovo.core.catalog.definitions import LoopStepBlock, StepDefinition
@@ -64,6 +65,7 @@ def _patch_drive_run(monkeypatch: pytest.MonkeyPatch, paths: WorkspacePaths, out
         observer: RunObserver | None,
         prompter: FailurePrompter | None,
         no_tty: bool,
+        env_overrides: AgentEnvOverrides | None = None,
     ) -> RunOutcome:
         return result
 
@@ -216,6 +218,7 @@ class EngineDispatchTests:
             observer: RunObserver | None,
             prompter: FailurePrompter | None,
             no_tty: bool,
+            env_overrides: AgentEnvOverrides | None = None,
         ) -> RunOutcome:
             seen.append(session_id)
             return RunOutcome(status=SessionStatus.COMPLETED, worktree_path=paths.root_dir)
@@ -335,6 +338,7 @@ class EngineRunSnapshotsDefinitionsTests:
             observer: RunObserver | None,
             prompter: FailurePrompter | None,
             no_tty: bool,
+            env_overrides: AgentEnvOverrides | None = None,
         ) -> RunOutcome:
             row = sessions.get(session_id)
             assert row is not None
@@ -573,6 +577,7 @@ class EngineFinalizeFallbackTests:
             observer: RunObserver | None,
             prompter: FailurePrompter | None,
             no_tty: bool,
+            env_overrides: AgentEnvOverrides | None = None,
         ) -> RunOutcome:
             sessions.save_execution_state(session_id, "not json", expected_revision=0, next_revision=0)
             return RunOutcome(status=SessionStatus.COMPLETED, worktree_path=paths.root_dir)

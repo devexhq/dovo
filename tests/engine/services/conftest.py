@@ -7,6 +7,7 @@ from collections.abc import Callable
 import pytest
 
 from dovo.common.filesystem.models import WorkspacePaths
+from dovo.core.agents.models import AgentEnvOverrides
 from dovo.core.db import SessionsRepository, SessionStatus
 from dovo.engine.models import FailurePrompter, RunObserver, RunOutcome
 
@@ -28,6 +29,7 @@ def stub_drive_run(
             observer: RunObserver | None,
             prompter: FailurePrompter | None,
             no_tty: bool,
+            env_overrides: AgentEnvOverrides | None = None,
         ) -> RunOutcome:
             return result.model_copy(update={"session_id": session_id})
 

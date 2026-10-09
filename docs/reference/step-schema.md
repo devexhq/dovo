@@ -20,7 +20,7 @@ Every standard step accepts the following fields:
 | `prompt` | `string` | Conditional | `null` | Instruction sent to the agent provider after interpolation; it must not be blank. Required when `type: agent`. |
 | `script_path` | `string` | Conditional | `null` | Relative path to local script. Required when `type: script`. |
 | `tools` | `list[string]` | No | `[]` | Accepted agent-step metadata; it is not enforced and does not restrict what the provider can do. |
-| `env` | `map[string, string]` | No | `{}` | Step-specific environment variables. Supports `${{ inputs.* }}` interpolation. |
+| `env` | `map[string, string]` | No | `{}` | Step-specific environment variables, forwarded to command, script, and agent steps. Supports `${{ inputs.* }}` interpolation. |
 | `timeout_seconds`| `integer` | No | `120` | Maximum execution duration (seconds, $> 0$). |
 | `assert` | `StepAssert` | No | `null` | Verification criteria. See [Assertions Schema](assertions-schema.md). |
 | `on_failure` | `string \| FailureSpec` | No | `abort` | Failure handling policy or detailed retry object. |
@@ -166,3 +166,5 @@ Everything between the opening `key<<DELIM` line and the matching `DELIM` termin
 1. Explicit step `env` key
 2. `DOVO_*` metadata env
 3. Ambient process env
+
+Command and script steps inherit the ambient environment. Agent steps start from the filtered environment described in [Agent Providers](../guides/agent-providers.md#subprocess-environment): explicit `env` overrides passthrough and base values, but cannot override generated `DOVO_*` metadata, the adapter's controls, its credential names, or, for authored invocations, `DOVO_AGENT_SCRATCH`, `TMPDIR`, `TMP`, and `TEMP`.

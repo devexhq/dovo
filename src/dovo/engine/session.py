@@ -4,8 +4,9 @@ from __future__ import annotations
 
 from dovo.common.filesystem import WorkspacePaths
 from dovo.common.process import process_registry
-from dovo.core.agents.models import ResolvedAgentSettings
+from dovo.core.agents.models import AgentEnvMode, AgentEnvOverrides, ResolvedAgentSettings
 from dovo.core.config import Config
+from dovo.core.config.models import AgentConfig
 from dovo.core.db import SessionRecord, SessionsRepository, SessionStatus
 from dovo.core.sessions import SessionLogEvent, SessionLogEventType
 from dovo.core.worktree import Worktree, WorktreeSession
@@ -32,6 +33,7 @@ def drive_run(
     observer: RunObserver | None,
     prompter: FailurePrompter | None,
     no_tty: bool,
+    env_overrides: AgentEnvOverrides | None = None,
 ) -> RunOutcome:
     """Drive one run to completion and notify on_run_completed.
 
@@ -45,7 +47,7 @@ def drive_run(
             worktree_path=paths.root_dir,
         )
 
-    resolution = _resolve_agent_settings(paths, row.agent)
+    resolution = _resolve_agent_settings(paths, row.agent, env_overrides)
     if resolution.settings is None:
         outcome = RunOutcome(status=SessionStatus.FAILED, errors=list(resolution.errors), worktree_path=paths.root_dir)
         safe_notify(observer, "on_run_completed", outcome)
@@ -58,13 +60,16 @@ def drive_run(
     return outcome
 
 
-def _resolve_agent_settings(paths: WorkspacePaths, override: str | None) -> AgentSettingsResolution:
-    """Resolve agent settings from effective config; a non-empty run-row override replaces only the provider."""
+def _resolve_agent_settings(
+    paths: WorkspacePaths, override: str | None, env_overrides: AgentEnvOverrides | None
+) -> AgentSettingsResolution:
+    """Resolve agent settings; the run-row override replaces only the provider and env_overrides layer over config."""
     result = Config(paths).load()
     if not result.ok or result.config is None:
         return AgentSettingsResolution(errors=list(result.errors) or ["Failed to resolve agent settings."])
 
     agent = result.config.agent
+    env_passthrough, env_mode = _merge_env_settings(agent, env_overrides)
     return AgentSettingsResolution(
         settings=ResolvedAgentSettings(
             provider=override or agent.provider,
@@ -72,8 +77,19 @@ def _resolve_agent_settings(paths: WorkspacePaths, override: str | None) -> Agen
             endpoint=agent.endpoint,
             temperature=agent.temperature,
             max_tokens=agent.max_tokens,
+            env_passthrough=env_passthrough,
+            env_mode=env_mode,
         )
     )
+
+
+def _merge_env_settings(agent: AgentConfig, env_overrides: AgentEnvOverrides | None) -> tuple[list[str], AgentEnvMode]:
+    """Return config passthrough followed by flag entries, de-duplicated in order, and the flag mode or the config mode."""
+    if env_overrides is None:
+        return list(agent.env_passthrough), agent.env_mode
+
+    merged = list(dict.fromkeys([*agent.env_passthrough, *env_overrides.env_passthrough]))
+    return merged, env_overrides.env_mode or agent.env_mode
 
 
 def _workspace_context(

@@ -9,7 +9,13 @@ from pathlib import Path
 import pytest
 
 from dovo.common.filesystem.models import WorkspacePaths
-from dovo.core.agents.models import AgentRequest, AgentResponse, AgentResponseStatus, ResolvedAgentSettings
+from dovo.core.agents.models import (
+    AgentEnvOverrides,
+    AgentRequest,
+    AgentResponse,
+    AgentResponseStatus,
+    ResolvedAgentSettings,
+)
 from dovo.core.catalog.definitions import LoopStepBlock, StepDefinition
 from dovo.core.db import SessionsRepository, SessionStatus, WorktreesRepository
 from dovo.core.git.runner import GitRunner
@@ -167,8 +173,11 @@ def _drive(
     *,
     prompter: FailurePrompter | None = None,
     observer: RunObserver | None = None,
+    env_overrides: AgentEnvOverrides | None = None,
 ) -> RunOutcome:
-    return drive_run(paths, sessions, session_id, observer=observer, prompter=prompter, no_tty=False)
+    return drive_run(
+        paths, sessions, session_id, observer=observer, prompter=prompter, no_tty=False, env_overrides=env_overrides
+    )
 
 
 def _paths_for(root: Path) -> WorkspacePaths:
@@ -764,11 +773,20 @@ def captured_agent_args(monkeypatch: pytest.MonkeyPatch) -> list[ResolvedAgentSe
     captured: list[ResolvedAgentSettings | None] = []
 
     def _recording_build(
-        agent: ResolvedAgentSettings | None, worktree_active: bool, *, session_tmp_dir: Path | None, main_checkout: Path
+        agent: ResolvedAgentSettings | None,
+        worktree_active: bool,
+        *,
+        session_tmp_dir: Path | None,
+        main_checkout: Path,
+        session_log_dir: Path | None,
     ) -> AgentStepRunner:
         captured.append(agent)
         return build_agent_step_runner(
-            agent, worktree_active, session_tmp_dir=session_tmp_dir, main_checkout=main_checkout
+            agent,
+            worktree_active,
+            session_tmp_dir=session_tmp_dir,
+            main_checkout=main_checkout,
+            session_log_dir=session_log_dir,
         )
 
     monkeypatch.setattr("dovo.engine.step_coordinator.build_agent_step_runner", _recording_build)
@@ -781,6 +799,47 @@ def noop_agent_provider(monkeypatch: pytest.MonkeyPatch) -> FakeAgentProvider:
     provider = FakeAgentProvider(AgentResponse(status=AgentResponseStatus.NO_OP, summary="plan text"))
     monkeypatch.setattr(AGENT_ADAPTER_FACTORY, lambda token: provider)
     return provider
+
+
+class ResolveAgentSettingsEnvTests:
+    """[tier-1/integration] drive_run: config env settings layered with per-invocation overrides."""
+
+    def test_flag_entries_append_to_config_entries_without_duplicates(
+        self,
+        tmp_path: Path,
+        captured_agent_args: list[ResolvedAgentSettings | None],
+        noop_agent_provider: FakeAgentProvider,
+    ) -> None:
+        """[tier-1/integration] drive_run: config ['A','B'] plus flags ['B','C'] resolves env_passthrough == ['A','B','C']."""
+        paths, sessions = _agent_workspace(tmp_path, {**_AGENT_CONFIG, "env_passthrough": ["A", "B"]})
+        seed_new_session(paths, sessions, session_id="flags", steps=[_agent_step("a")], use_worktree=True)
+
+        _drive(paths, sessions, "flags", env_overrides=AgentEnvOverrides(env_passthrough=["B", "C"]))
+
+        assert captured_agent_args[0] is not None
+        assert captured_agent_args[0].env_passthrough == ["A", "B", "C"]
+        assert captured_agent_args[0].env_mode == "allowlist"
+
+    def test_flag_mode_overrides_config_mode_for_that_drive_only(
+        self,
+        tmp_path: Path,
+        captured_agent_args: list[ResolvedAgentSettings | None],
+        noop_agent_provider: FakeAgentProvider,
+    ) -> None:
+        """[tier-1/integration] drive_run: env_overrides.env_mode == 'inherit' resolves settings.env_mode == 'inherit' and the stored config.json bytes are unchanged."""
+        paths, sessions = _agent_workspace(tmp_path, _AGENT_CONFIG)
+        before = paths.config_file.read_bytes()
+        seed_new_session(paths, sessions, session_id="mode", steps=[_agent_step("a")], use_worktree=True)
+        seed_new_session(paths, sessions, session_id="plain", steps=[_agent_step("a")], use_worktree=True)
+
+        _drive(paths, sessions, "mode", env_overrides=AgentEnvOverrides(env_mode="inherit"))
+        _drive(paths, sessions, "plain")
+
+        assert [settings.env_mode for settings in captured_agent_args if settings is not None] == [
+            "inherit",
+            "allowlist",
+        ]
+        assert paths.config_file.read_bytes() == before
 
 
 class DriveRunAgentSettingsTests:

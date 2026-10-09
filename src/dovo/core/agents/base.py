@@ -9,6 +9,7 @@ from dataclasses import dataclass
 
 from dovo.common.redact import SecretRedactor
 from dovo.core.agents.credentials import missing_credential_error, resolve_credential
+from dovo.core.agents.environment import forwarded_env_secrets, validate_agent_env_request
 from dovo.core.agents.models import AgentRequest, AgentResponse
 from dovo.core.agents.redaction import build_response_redactor, redact_agent_response
 from dovo.core.agents.responses import provider_error_response
@@ -27,23 +28,40 @@ class BaseAgentProvider(abc.ABC):
     """
 
     def invoke(self, request: AgentRequest) -> AgentResponse:
-        """Return the masked PROVIDER_ERROR when no credential is usable, else the masked ``_invoke`` response."""
+        """Return the masked PROVIDER_ERROR when no credential is usable or an environment override is reserved, else the masked ``_invoke`` response."""
         started = time.monotonic()
         redactor = self._response_redactor(request)
 
-        missing = self._credential_preflight()
-        if missing is not None:
-            response = provider_error_response(duration_ms=elapsed_ms(started), detail=missing)
-        else:
-            response = self._invoke(request)
+        failure = self._preflight_failure(request, started)
+        response = self._invoke(request) if failure is None else failure
 
         return redact_agent_response(response, redactor)
 
-    def _response_redactor(self, request: AgentRequest) -> SecretRedactor:
-        """Build the invocation-time redactor for this provider's descriptor and the request's worktree."""
+    def _preflight_failure(self, request: AgentRequest, started: float) -> AgentResponse | None:
+        """Return the PROVIDER_ERROR for a missing credential or a reserved environment override, else None."""
+        missing = self._credential_preflight()
+        if missing is not None:
+            return provider_error_response(duration_ms=elapsed_ms(started), detail=missing)
+
+        override_error = self._env_preflight(request)
+        if override_error is not None:
+            return provider_error_response(duration_ms=elapsed_ms(started), errors=[override_error])
+
+        return None
+
+    def _env_preflight(self, request: AgentRequest) -> str | None:
+        """Return the fixed AGENT_ENV_OVERRIDE_INVALID message when a literal passthrough or step env entry is reserved, else None."""
         spec = self._provider_spec()
 
-        return build_response_redactor(() if spec is None else spec.credential_envs, request.worktree_path)
+        return None if spec is None else validate_agent_env_request(spec, request)
+
+    def _response_redactor(self, request: AgentRequest) -> SecretRedactor:
+        """Build the invocation-time redactor for this provider's descriptor, the request's worktree, and its forwarded env secrets."""
+        spec = self._provider_spec()
+
+        return build_response_redactor(
+            () if spec is None else spec.credential_envs, request.worktree_path, forwarded_env_secrets(request)
+        )
 
     @abc.abstractmethod
     def _invoke(self, request: AgentRequest) -> AgentResponse:
@@ -71,7 +89,7 @@ class ProviderSpec:
     """Static descriptor of one agent provider and its implemented capabilities.
 
     ``credential_envs`` are alternatives (any one suffices; empty means none required), ``binary`` is set only for a fixed
-    executable, and the capability flags describe current behavior, not planned features.
+    executable, ``control_envs`` are adapter-owned variables no environment layer may forward or override, and the capability flags describe current behavior, not planned features.
     """
 
     token: str
@@ -81,3 +99,4 @@ class ProviderSpec:
     supports_os_sandbox: bool
     build: Callable[[], BaseAgentProvider]
     binary: str | None = None
+    control_envs: tuple[str, ...] = ()

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import os
 import subprocess
 from typing import Any
 
@@ -17,6 +16,7 @@ from dovo.core.agents.cli_mutation import (
 from dovo.core.agents.credentials import missing_credential_error, resolve_credential
 
 COPILOT_TOKEN_ENVS = ("GH_TOKEN", "GITHUB_TOKEN")
+COPILOT_CONTROL_ENVS = ("COPILOT_MODEL", "COPILOT_ALLOW_ALL", "COPILOT_GITHUB_TOKEN")
 
 
 def resolve_copilot_token() -> str | None:
@@ -107,7 +107,7 @@ def _classify_copilot_output(completed_code: int, stdout_text: str, stderr_text:
 
 
 def default_copilot_run(request: CliMutationRunRequest) -> CliMutationOutcome:
-    """Invoke `gh copilot` and map its JSONL stream into an outcome."""
+    """Invoke `gh copilot` with request.env plus the adapter-owned COPILOT_MODEL and map its JSONL stream into an outcome."""
     token = resolve_copilot_token()
     if token is None:
         return CliMutationOutcome(status="error", error_detail=missing_credential_error(COPILOT_PROVIDER_SPEC))
@@ -126,9 +126,7 @@ def default_copilot_run(request: CliMutationRunRequest) -> CliMutationOutcome:
         "--allow-all-paths",
         "--allow-all-urls",
     ]
-    env = os.environ.copy()
-    env.setdefault("GH_TOKEN", token)
-    env.setdefault("GITHUB_TOKEN", token)
+    env = dict(request.env)
     if request.model:
         env["COPILOT_MODEL"] = request.model
 
@@ -181,4 +179,5 @@ COPILOT_PROVIDER_SPEC = ProviderSpec(
     supports_os_sandbox=False,
     build=CopilotAgentAdapter,
     binary="gh",
+    control_envs=COPILOT_CONTROL_ENVS,
 )

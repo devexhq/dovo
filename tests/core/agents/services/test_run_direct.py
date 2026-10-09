@@ -10,6 +10,7 @@ import pytest
 
 from dovo.core.agents import (
     AgentAttempt,
+    AgentAttemptContext,
     AgentInvocationContext,
     AgentRequest,
     AgentResponse,
@@ -247,7 +248,7 @@ class RunDirectAttemptInvocationTests:
         """[tier-1/unit] run_direct_attempt: the adapter receives AgentRequest.invocation == the passed context and agent_scratch_path == context.scratch_path; invocation None yields both fields None."""
         provider = FakeAgentProvider(AgentResponse(status=AgentResponseStatus.NO_OP))
         _use_provider(monkeypatch, provider)
-        context = AgentInvocationContext(
+        invocation = AgentInvocationContext(
             invocation_id="a" * 32, scratch_path=tmp_path / "scratch", control_path=tmp_path / "control"
         )
 
@@ -256,9 +257,57 @@ class RunDirectAttemptInvocationTests:
             settings=_settings(),
             worktree_path=git_repo,
             timeout_seconds=45,
-            invocation=context if with_invocation else None,
+            context=AgentAttemptContext(invocation=invocation if with_invocation else None),
         )
 
         request = provider.requests[0]
-        assert request.invocation == (context if with_invocation else None)
-        assert request.agent_scratch_path == (context.scratch_path if with_invocation else None)
+        assert request.invocation == (invocation if with_invocation else None)
+        assert request.agent_scratch_path == (invocation.scratch_path if with_invocation else None)
+
+
+class RunDirectAttemptEnvTests:
+    def test_settings_env_fields_and_step_env_reach_the_agent_request(
+        self, git_repo: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """[tier-1/integration] run_direct_attempt: the AgentRequest given to the adapter has env_passthrough, env_mode from settings and env, metadata_env from the arguments."""
+        provider = FakeAgentProvider(_no_op())
+        _use_provider(monkeypatch, provider)
+        settings = _settings().model_copy(update={"env_passthrough": ["DOCKER_*"], "env_mode": "inherit"})
+
+        run_direct_attempt(
+            instruction="Plan the change",
+            settings=settings,
+            worktree_path=git_repo,
+            timeout_seconds=45,
+            context=AgentAttemptContext(env={"MY_VAR": "x"}, metadata_env={"DOVO_STEP_ID": "s"}),
+        )
+
+        request = provider.requests[0]
+        assert (request.env_passthrough, request.env_mode) == (["DOCKER_*"], "inherit")
+        assert (request.env, request.metadata_env) == ({"MY_VAR": "x"}, {"DOVO_STEP_ID": "s"})
+
+    @pytest.mark.parametrize(
+        "status",
+        [
+            pytest.param(AgentResponseStatus.NO_OP, id="settled"),
+            pytest.param(AgentResponseStatus.TIMEOUT, id="timeout"),
+        ],
+    )
+    def test_response_env_withheld_is_copied_onto_the_attempt(
+        self, status: AgentResponseStatus, git_repo: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """[tier-1/integration] run_direct_attempt: a NO_OP and a TIMEOUT response with env_withheld ['A'] both return an AgentAttempt with env_withheld == ['A']."""
+        _use_provider(monkeypatch, FakeAgentProvider(AgentResponse(status=status, env_withheld=["A"])))
+
+        assert _attempt(git_repo).env_withheld == ["A"]
+
+    def test_proposed_patch_response_env_withheld_is_copied_onto_the_attempt(
+        self, git_repo: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """[tier-1/integration] run_direct_attempt: a PROPOSED_PATCH response with env_withheld ['A'] returns an AgentAttempt with env_withheld == ['A']."""
+        response = AgentResponse(
+            status=AgentResponseStatus.PROPOSED_PATCH, unified_diff=new_file_diff("a.txt", "x\n"), env_withheld=["A"]
+        )
+        _use_provider(monkeypatch, FakeAgentProvider(response))
+
+        assert _attempt(git_repo).env_withheld == ["A"]

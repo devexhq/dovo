@@ -77,6 +77,8 @@ This reference documents the complete JSON schema for `.dovo/config.json` (Versi
 * `endpoint` *(string \| null)*: Custom API endpoint URL.
 * `temperature` *(number)*: Sampling temperature (default: `0.2`).
 * `max_tokens` *(integer)*: Maximum generation tokens (default: `4096`).
+* `env_passthrough` *(array of string)*: Host environment names (or `PREFIX*` patterns) forwarded to the agent subprocess (default: `[]`). A repo-tier list replaces a global-tier list rather than merging with it. See [Agent Providers](../guides/agent-providers.md#subprocess-environment).
+* `env_mode` *(string)*: `allowlist` (default) forwards only the allowlisted base plus passthrough; `inherit` forwards the full host environment.
 
 ### 5. `history`
 * `save_attempt_logs` *(boolean)*: Accepted history setting (default: `true`); currently stored but not applied as a runtime switch.

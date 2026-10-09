@@ -20,6 +20,7 @@ from dovo.core.git.runner import GitRunner
 from dovo.core.worktree import Worktree
 from dovo.engine import SessionStateStore
 from dovo.engine.writer import get_session_dir
+from tests.harness import FakeAgentRunner
 from tests.harness.catalog import write_runnable_blueprint, write_runnable_step
 from tests.harness.workspace_paths import initialized_workspace_paths
 
@@ -312,3 +313,164 @@ class RunCliIntegrationTests:
         loaded = SessionStateStore(db.sessions, run_paths, "snap-1").load()
         assert loaded.state is not None
         assert len(loaded.state.manifest.steps) == 1
+
+
+_AGENT_STDOUT = b'{"type":"assistant.message","data":{"content":"ok"}}\n{"type":"result","data":{"exitCode":0}}\n'
+_UNRELATED = "DOVO_TEST_UNRELATED_SECRET"
+
+
+def _fake_copilot(monkeypatch: pytest.MonkeyPatch) -> FakeAgentRunner:
+    """Install a FakeAgentRunner at the Copilot process boundary with a usable GH_TOKEN."""
+    monkeypatch.setenv("GH_TOKEN", "test-token")
+    runner = FakeAgentRunner().returning(stdout=_AGENT_STDOUT)
+    monkeypatch.setattr("dovo.core.agents.copilot.run_isolated_process", runner)
+
+    return runner
+
+
+def _write_agent_blueprint(workspace: Path, **step_extra: object) -> None:
+    write_runnable_blueprint(
+        workspace,
+        key="agent-task",
+        steps=[{"id": "plan", "type": "agent", "prompt": "Plan the change", **step_extra}],
+    )
+
+
+def _set_agent_config(workspace: Path, **agent: object) -> None:
+    config_path = workspace / ".dovo" / "config.json"
+    data = json.loads(config_path.read_text(encoding="utf-8"))
+    data.setdefault("agent", {}).update(agent)
+    config_path.write_text(json.dumps(data), encoding="utf-8")
+
+
+class RunEnvFlagsCliIntegrationTests:
+    """Typer runner integration tests for the dovo run --env-mode and --env-passthrough flags."""
+
+    def test_run_cli_env_flags_reach_the_agent_subprocess_env_and_leave_config_untouched(
+        self, cli_runner: CliRunner, run_workspace: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """[tier-3/integration] dovo run: '--env-mode inherit --env-passthrough DOCKER_CONFIG' exits 0, the FakeAgentRunner env contains DOVO_TEST_UNRELATED_SECRET and DOCKER_CONFIG, and .dovo/config.json bytes are unchanged."""
+        runner = _fake_copilot(monkeypatch)
+        monkeypatch.setenv(_UNRELATED, "host-value")
+        monkeypatch.setenv("DOCKER_CONFIG", "/docker")
+        _write_agent_blueprint(run_workspace)
+        config_path = run_workspace / ".dovo" / "config.json"
+        before = config_path.read_bytes()
+
+        result = cli_runner.invoke(
+            app,
+            [
+                "-p",
+                str(run_workspace),
+                "run",
+                "agent-task",
+                "--env-mode",
+                "inherit",
+                "--env-passthrough",
+                "DOCKER_CONFIG",
+            ],
+        )
+
+        paths = _paths_for(run_workspace)
+        row = DovoDb(database_file=paths.database_file, project_id=paths.project_id).sessions.list(limit=1)[0]
+        assert result.exit_code == 0
+        assert runner.last_call.env[_UNRELATED] == "host-value"
+        assert runner.last_call.env["DOCKER_CONFIG"] == "/docker"
+        assert config_path.read_bytes() == before
+        assert "inherit" not in row.model_dump_json()
+        assert "DOCKER_CONFIG" not in row.model_dump_json()
+
+    def test_run_cli_repeated_passthrough_flags_append_to_config_entries(
+        self, cli_runner: CliRunner, run_workspace: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """[tier-3/integration] dovo run: config env_passthrough ['A_HOST'] plus '--env-passthrough B_HOST --env-passthrough C_*' forwards A_HOST, B_HOST, and every C_-prefixed host name."""
+        runner = _fake_copilot(monkeypatch)
+        for name in ("A_HOST", "B_HOST", "C_ONE", "C_TWO", "D_HOST"):
+            monkeypatch.setenv(name, "host-value")
+        _write_agent_blueprint(run_workspace)
+        _set_agent_config(run_workspace, env_passthrough=["A_HOST"])
+
+        result = cli_runner.invoke(
+            app,
+            [
+                "-p", str(run_workspace), "run", "agent-task",
+                "--env-passthrough", "B_HOST", "--env-passthrough", "C_*",
+            ],
+        )  # fmt: skip
+
+        forwarded = {name for name in ("A_HOST", "B_HOST", "C_ONE", "C_TWO", "D_HOST") if name in runner.last_call.env}
+        assert result.exit_code == 0
+        assert forwarded == {"A_HOST", "B_HOST", "C_ONE", "C_TWO"}
+
+    def test_run_cli_config_env_mode_inherit_reaches_the_subprocess_without_flags(
+        self, cli_runner: CliRunner, run_workspace: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """[tier-3/integration] dovo run: config agent.env_mode 'inherit' makes the recorded env contain DOVO_TEST_UNRELATED_SECRET."""
+        runner = _fake_copilot(monkeypatch)
+        monkeypatch.setenv(_UNRELATED, "host-value")
+        _write_agent_blueprint(run_workspace)
+        _set_agent_config(run_workspace, env_mode="inherit")
+
+        result = cli_runner.invoke(app, ["-p", str(run_workspace), "run", "agent-task"])
+
+        assert result.exit_code == 0
+        assert runner.last_call.env[_UNRELATED] == "host-value"
+
+    @pytest.mark.parametrize(
+        "flags",
+        [
+            pytest.param(["--env-passthrough", "A*B"], id="invalid-passthrough"),
+            pytest.param(["--env-mode", "bogus"], id="invalid-mode"),
+        ],
+    )
+    def test_run_cli_invalid_flag_value_exits_non_zero_before_any_step_starts(
+        self, flags: list[str], cli_runner: CliRunner, run_workspace: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """[tier-3/integration] dovo run: '--env-passthrough A*B' exits 1 with the fixed message and '--env-mode bogus' exits non-zero, each with no session row and no agent subprocess."""
+        runner = _fake_copilot(monkeypatch)
+        _write_agent_blueprint(run_workspace)
+
+        result = cli_runner.invoke(app, ["-p", str(run_workspace), "run", "agent-task", *flags])
+
+        paths = _paths_for(run_workspace)
+        assert result.exit_code != 0
+        if "A*B" in flags:
+            assert result.exit_code == 1
+            assert "Invalid --env-passthrough value 'A*B':" in result.stdout
+        assert DovoDb(database_file=paths.database_file, project_id=paths.project_id).sessions.list() == []
+        assert runner.calls == []
+
+    def test_run_cli_override_conflict_fails_the_agent_step_with_the_fixed_message(
+        self, cli_runner: CliRunner, run_workspace: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """[tier-3/integration] dovo run: an agent step env of COPILOT_MODEL exits 1 with the AGENT_ENV_OVERRIDE_INVALID message and the FakeAgentRunner records zero calls."""
+        runner = _fake_copilot(monkeypatch)
+        _write_agent_blueprint(run_workspace, env={"COPILOT_MODEL": "x"})
+
+        result = cli_runner.invoke(app, ["-p", str(run_workspace), "run", "agent-task"])
+
+        assert result.exit_code == 1
+        assert "Agent environment override 'COPILOT_MODEL' conflicts" in result.stdout
+        assert "AGENT_ENV_OVERRIDE_INVALID" in result.stdout
+        assert runner.calls == []
+
+    def test_run_cli_withheld_names_emit_the_operator_line_and_session_log_event(
+        self, cli_runner: CliRunner, run_workspace: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """[tier-3/integration] dovo run: an allowlist agent step prints 'Agent environment filtered: <N> variables withheld.' with N equal to the count of withheld host names and session.log holds one agent_env_filtered line."""
+        runner = _fake_copilot(monkeypatch)
+        monkeypatch.setenv(_UNRELATED, "host-value")
+        _write_agent_blueprint(run_workspace)
+
+        result = cli_runner.invoke(app, ["-p", str(run_workspace), "run", "agent-task"])
+
+        paths = _paths_for(run_workspace)
+        row = DovoDb(database_file=paths.database_file, project_id=paths.project_id).sessions.list(limit=1)[0]
+        log_lines = (paths.logs_dir / row.session_id / "session.log").read_text(encoding="utf-8").splitlines()
+        events = [json.loads(line) for line in log_lines if '"agent_env_filtered"' in line]
+        withheld = runner.last_call.env["DOVO_ENV_WITHHELD"].split(",")
+        assert result.exit_code == 0
+        assert _UNRELATED in withheld
+        assert len(events) == 1
+        assert events[0]["env_withheld"].split(",") == withheld
+        assert f"Agent environment filtered: {len(withheld)} variables withheld." in result.output

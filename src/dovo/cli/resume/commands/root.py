@@ -13,7 +13,7 @@ from dovo.cli.ui import (
     WarningEvent,
     ui_dispatcher,
 )
-from dovo.common.models import DisplayFormatOptions, OutputFormatOptions
+from dovo.common.models import AgentEnvModeOptions, DisplayFormatOptions, OutputFormatOptions
 from dovo.core.db import SessionRecord, SessionStatus
 from dovo.engine import BlueprintResumeService
 from dovo.engine.models import BlueprintRunResult
@@ -67,6 +67,8 @@ def resume_command(
     session_id: str | None = None,
     *,
     no_tty: bool = False,
+    env_mode: AgentEnvModeOptions | None = None,
+    env_passthrough: list[str] | None = None,
     output_format: OutputFormatOptions = OutputFormatOptions.TERMINAL,
     display_format: DisplayFormatOptions = DisplayFormatOptions.ANSI,
 ) -> BlueprintRunResult:
@@ -83,6 +85,8 @@ def resume_command(
             db=context.db.sessions,
             session_id=session_id,
             no_tty=no_tty,
+            env_mode=None if env_mode is None else env_mode.value,
+            env_passthrough=list(env_passthrough or []),
             observer=observer,
             failure_prompter=DispatcherFailurePrompter(ui_dispatcher),
         ).execute()

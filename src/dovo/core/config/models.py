@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field, StringConstraints
 
 from dovo.common.constants import DEFAULT_MAXIMUM_WORKTREES_ALLOWED
 from dovo.common.models import BaseResult
+from dovo.core.agents.models import AgentEnvMode, EnvPassthroughEntry
 
 AgentProvider = Literal["copilot"]  # "claude" is added by the Claude adapter change
 
@@ -43,6 +44,8 @@ class AgentConfig(BaseModel):
     endpoint: str | None = Field(default=None, min_length=1)
     temperature: float = Field(default=0.2, ge=0, le=2)
     max_tokens: int = Field(default=4096, ge=1)
+    env_passthrough: list[EnvPassthroughEntry] = Field(default_factory=list)
+    env_mode: AgentEnvMode = "allowlist"
 
 
 class HistoryConfig(BaseModel):

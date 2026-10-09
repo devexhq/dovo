@@ -21,6 +21,13 @@ class OutputFormatOptions(StrEnum):
     TERMINAL = "terminal"
 
 
+class AgentEnvModeOptions(StrEnum):
+    """Allowed values for the --env-mode flag."""
+
+    ALLOWLIST = "allowlist"
+    INHERIT = "inherit"
+
+
 class DefinitionResolutionStatus(StrEnum):
     """Classified outcomes for resolving a domain definition by name."""
 

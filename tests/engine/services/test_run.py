@@ -7,6 +7,7 @@ from collections.abc import Callable
 import pytest
 
 from dovo.common.filesystem.models import WorkspacePaths
+from dovo.core.agents.models import AgentEnvMode, AgentEnvOverrides
 from dovo.core.db import SessionsRepository, SessionStatus
 from dovo.core.sessions import ReconciliationResult
 from dovo.engine.models import RunOutcome
@@ -107,3 +108,64 @@ class BlueprintRunServiceExecuteTests:
         result = BlueprintRunService(name="nope", paths=engine_paths, sessions_db=sessions_repo).execute()
 
         assert result.warnings == ["reconciled 1 stale run"]
+
+
+class BlueprintRunServiceEnvTests:
+    def test_invalid_passthrough_returns_fail_result_without_constructing_the_engine(
+        self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """[tier-1/integration] BlueprintRunService.execute: env_passthrough ['A*B'] returns a non-ok BlueprintRunResult whose errors[0] is the fixed message and Engine is never instantiated."""
+        constructed: list[object] = []
+        monkeypatch.setattr("dovo.engine.services.run.Engine", lambda *args, **kwargs: constructed.append(args))
+        write_runnable_blueprint(engine_paths.root_dir, key="lint", steps=[{"id": "a", "run": "true"}])
+
+        result = BlueprintRunService(
+            name="lint", paths=engine_paths, sessions_db=sessions_repo, env_passthrough=["A*B"]
+        ).execute()
+
+        assert not result.ok
+        assert result.errors[0] == (
+            "Invalid --env-passthrough value 'A*B': use a variable name or a prefix ending in a single '*'. "
+            "Fix: for example --env-passthrough DOCKER_HOST or --env-passthrough 'DOCKER_*'."
+        )
+        assert constructed == []
+        assert sessions_repo.list() == []
+
+    @pytest.mark.parametrize(
+        ("env_mode", "env_passthrough", "expected"),
+        [
+            pytest.param(
+                "inherit", ["DOCKER_*"], AgentEnvOverrides(env_mode="inherit", env_passthrough=["DOCKER_*"]), id="both"
+            ),
+            pytest.param(None, [], None, id="neither"),
+        ],
+    )
+    def test_valid_flags_reach_drive_run_as_overrides(
+        self,
+        env_mode: AgentEnvMode | None,
+        env_passthrough: list[str],
+        expected: AgentEnvOverrides | None,
+        engine_paths: WorkspacePaths,
+        sessions_repo: SessionsRepository,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """[tier-1/integration] BlueprintRunService.execute: set flags reach drive_run as AgentEnvOverrides and unset flags as None."""
+        seen: list[AgentEnvOverrides | None] = []
+
+        def _drive(*args: object, env_overrides: AgentEnvOverrides | None = None, **kwargs: object) -> RunOutcome:
+            seen.append(env_overrides)
+            return RunOutcome(status=SessionStatus.COMPLETED, worktree_path=engine_paths.root_dir)
+
+        monkeypatch.setattr("dovo.engine.engine.drive_run", _drive)
+        write_runnable_blueprint(engine_paths.root_dir, key="lint", steps=[{"id": "a", "run": "true"}])
+
+        BlueprintRunService(
+            name="lint",
+            paths=engine_paths,
+            sessions_db=sessions_repo,
+            no_worktree=True,
+            env_mode=env_mode,
+            env_passthrough=env_passthrough,
+        ).execute()
+
+        assert seen == [expected]

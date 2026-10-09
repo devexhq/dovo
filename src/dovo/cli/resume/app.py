@@ -7,7 +7,7 @@ from typing import Annotated
 import typer
 
 from dovo.cli.context import CliContext
-from dovo.common.models import DisplayFormatOptions, OutputFormatOptions
+from dovo.common.models import AgentEnvModeOptions, DisplayFormatOptions, OutputFormatOptions
 
 from .commands.root import resume_command
 
@@ -31,6 +31,17 @@ def resume_callback(
         "--no-tty",
         help="Disable interactive prompts; prompt_user failures abort the run.",
     ),
+    env_mode: Annotated[
+        AgentEnvModeOptions | None,
+        typer.Option("--env-mode", help="Override agent.env_mode for this invocation: 'allowlist' or 'inherit'."),
+    ] = None,
+    env_passthrough: Annotated[
+        list[str] | None,
+        typer.Option(
+            "--env-passthrough",
+            help="Forward a host variable name or trailing-'*' prefix to the agent for this invocation; repeatable.",
+        ),
+    ] = None,
     format: Annotated[
         OutputFormatOptions, typer.Option(help="Output format: 'terminal' or 'json'.")
     ] = OutputFormatOptions.TERMINAL,
@@ -40,6 +51,14 @@ def resume_callback(
 ) -> None:
     """Resume a paused blueprint execution session."""
     context: CliContext = ctx.obj["context"]
-    result = resume_command(context, session_id=session_id, no_tty=no_tty, output_format=format, display_format=display)
+    result = resume_command(
+        context,
+        session_id=session_id,
+        no_tty=no_tty,
+        env_mode=env_mode,
+        env_passthrough=env_passthrough,
+        output_format=format,
+        display_format=display,
+    )
     if not result.ok:
         raise typer.Exit(code=1)

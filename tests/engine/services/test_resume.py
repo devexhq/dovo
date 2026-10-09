@@ -4,8 +4,11 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
+import pytest
+
 from dovo.common.filesystem.models import WorkspacePaths
-from dovo.core.db import SessionsRepository
+from dovo.core.agents.models import AgentEnvOverrides
+from dovo.core.db import SessionsRepository, SessionStatus
 from dovo.engine.models import RunOutcome
 from dovo.engine.services.resume import BlueprintResumeService
 from tests.harness.sessions import seed_paused_session
@@ -76,3 +79,50 @@ class BlueprintResumeServiceExecuteTests:
         assert result.session_record is None
         assert len(result.errors) == 1
         assert "ghost" in result.errors[0]
+
+
+class BlueprintResumeServiceEnvTests:
+    def test_invalid_passthrough_returns_fail_result_without_resuming(
+        self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """[tier-1/integration] BlueprintResumeService.execute: env_passthrough ['*'] returns a non-ok BlueprintRunResult whose errors[0] is the fixed message and Engine.resume is never called."""
+        resumed: list[object] = []
+        monkeypatch.setattr("dovo.engine.services.resume.Engine", lambda *args, **kwargs: resumed.append(args))
+        _seed(engine_paths, sessions_repo, "paused-1")
+
+        result = BlueprintResumeService(
+            paths=engine_paths, db=sessions_repo, session_id="paused-1", env_passthrough=["*"]
+        ).execute()
+
+        assert not result.ok
+        assert result.errors[0] == (
+            "Invalid --env-passthrough value '*': use a variable name or a prefix ending in a single '*'. "
+            "Fix: for example --env-passthrough DOCKER_HOST or --env-passthrough 'DOCKER_*'."
+        )
+        assert resumed == []
+        paused = sessions_repo.get("paused-1")
+        assert paused is not None
+        assert paused.status == SessionStatus.PAUSED
+
+    def test_valid_flags_reach_drive_run_as_overrides(
+        self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """[tier-1/integration] BlueprintResumeService.execute: --env-mode and --env-passthrough values reach drive_run as AgentEnvOverrides."""
+        seen: list[AgentEnvOverrides | None] = []
+
+        def _drive(*args: object, env_overrides: AgentEnvOverrides | None = None, **kwargs: object) -> RunOutcome:
+            seen.append(env_overrides)
+            return RunOutcome(status=SessionStatus.COMPLETED, worktree_path=engine_paths.root_dir)
+
+        monkeypatch.setattr("dovo.engine.engine.drive_run", _drive)
+        _seed(engine_paths, sessions_repo, "paused-1")
+
+        BlueprintResumeService(
+            paths=engine_paths,
+            db=sessions_repo,
+            session_id="paused-1",
+            env_mode="allowlist",
+            env_passthrough=["NAME"],
+        ).execute()
+
+        assert seen == [AgentEnvOverrides(env_mode="allowlist", env_passthrough=["NAME"])]

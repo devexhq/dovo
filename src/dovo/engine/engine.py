@@ -8,6 +8,7 @@ import os
 from dovo.common.filesystem import WorkspacePaths
 from dovo.common.lock import WorkspaceLock
 from dovo.common.session_id import new_session_id
+from dovo.core.agents.models import AgentEnvOverrides
 from dovo.core.catalog import Catalog
 from dovo.core.catalog.blueprint import Blueprint
 from dovo.core.db import SessionsRepository, SessionStatus
@@ -70,6 +71,7 @@ class Engine:
             observer=req.observer,
             prompter=req.failure_prompter,
             no_tty=req.no_tty,
+            env_overrides=req.env_overrides,
         )
         self._finish_run(sid, outcome, engine_warnings)
 
@@ -82,6 +84,7 @@ class Engine:
         observer: RunObserver | None = None,
         failure_prompter: FailurePrompter | None = None,
         no_tty: bool = False,
+        env_overrides: AgentEnvOverrides | None = None,
     ) -> RunOutcome:
         """Load a paused run's durable state and execute it through the same RunCoordinator entry point as run()."""
         engine_warnings: list[str] = []
@@ -96,6 +99,7 @@ class Engine:
             observer=observer,
             prompter=failure_prompter,
             no_tty=no_tty,
+            env_overrides=env_overrides,
         )
         self._finish_run(session_id, outcome, engine_warnings)
 

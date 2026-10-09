@@ -125,6 +125,7 @@ class LogsCliIntegrationTests:
                         "max_iterations": None,
                         "all_passed": None,
                         "next_iteration": None,
+                        "env_withheld": None,
                         "conditions": None,
                     },
                     {
@@ -144,6 +145,7 @@ class LogsCliIntegrationTests:
                         "max_iterations": None,
                         "all_passed": None,
                         "next_iteration": None,
+                        "env_withheld": None,
                         "conditions": None,
                     },
                 ],

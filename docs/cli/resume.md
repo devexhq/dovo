@@ -19,6 +19,8 @@ dovo resume [session_id] [OPTIONS]
 | Flag | Description |
 | --- | --- |
 | `--no-tty` | Disable interactive prompts; prompt_user failures abort the run instead of prompting. |
+| `--env-mode <allowlist\|inherit>` | Override `agent.env_mode` for this invocation. |
+| `--env-passthrough <name-or-prefix*>` | Forward a host variable name or a prefix ending in a single `*` to agent steps for this invocation; repeatable and appended to `agent.env_passthrough`. |
 | `--format <terminal\|json>` | Presentation format (`terminal` or `json`). Defaults to `terminal`. |
 | `--display <ansi\|live>` | Display format (`ansi` or `live`). Defaults to `ansi`. |
 
@@ -30,7 +32,8 @@ dovo resume [session_id] [OPTIONS]
 
 2. **Readiness Classification**: Validates that the session exists, is in `paused` status, and has intact execution state and an accessible worktree (if worktree-backed).
 3. **Execution**: Re-enters step execution via `Engine.resume`.
-4. **Exit Codes**:
+4. **Environment flags**: `--env-mode` and `--env-passthrough` apply only to this invocation, are never written to config or run state, and are validated before any step starts; an invalid value exits `1` and leaves the session paused.
+5. **Exit Codes**:
    - `0`: Successful completion or paused run (run state updated).
    - `1`: Resume validation error, failed step, cancelled run, or no paused session found.
 

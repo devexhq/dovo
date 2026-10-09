@@ -11,6 +11,7 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 from dovo.core.agents.base import BaseAgentProvider, elapsed_ms
+from dovo.core.agents.environment import ENV_FILTERED_PROMPT_LINE, build_agent_env, withheld_env_names
 from dovo.core.agents.models import AgentInvocationContext, AgentRequest, AgentResponse, AgentResponseStatus
 from dovo.core.agents.mutation_git import (
     MutationGitError,
@@ -38,6 +39,7 @@ class CliMutationRunRequest(BaseModel):
     model: str | None = None
     timeout_seconds: float
     invocation: AgentInvocationContext | None = Field(default=None, exclude=True)
+    env: dict[str, str] = Field(default_factory=dict, exclude=True)
 
 
 class CliMutationOutcome(BaseModel):
@@ -145,7 +147,11 @@ class CliDirectMutationAdapter(BaseAgentProvider):
                 duration_ms=elapsed_ms(started), detail=f"Failed to resolve worktree baseline: {exc}"
             )
 
+        env, withheld = self._build_run_env(request)
         prompt = build_mutation_prompt(request)
+        if withheld:
+            prompt = f"{ENV_FILTERED_PROMPT_LINE}\n{prompt}"
+
         outcome = self._default_run(
             CliMutationRunRequest(
                 worktree_path=request.worktree_path,
@@ -153,11 +159,23 @@ class CliDirectMutationAdapter(BaseAgentProvider):
                 model=request.model,
                 timeout_seconds=float(request.timeout_seconds),
                 invocation=request.invocation,
+                env=env,
             )
         )
         duration_ms = elapsed_ms(started)
+        response = self._respond_to_outcome(request, outcome, baseline, duration_ms)
 
-        return self._respond_to_outcome(request, outcome, baseline, duration_ms)
+        return response.model_copy(update={"env_withheld": withheld})
+
+    def _build_run_env(self, request: AgentRequest) -> tuple[dict[str, str], list[str]]:
+        """Return the subprocess environment and the withheld host names; a provider without a descriptor gets neither."""
+        spec = self._provider_spec()
+        if spec is None:
+            return {}, []
+
+        env = build_agent_env(spec, request)
+
+        return env, withheld_env_names(request, env)
 
     def _respond_to_outcome(
         self,

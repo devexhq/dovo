@@ -17,6 +17,7 @@ from dovo.core.agents import (
     AgentScratchResult,
     CliMutationRunRequest,
 )
+from dovo.core.agents.models import AgentEnvOverrides, ResolvedAgentSettings
 
 _PAYLOAD = AgentFailurePayload(
     command="pytest",
@@ -95,6 +96,49 @@ class AgentRequestContractTests:
                     "timeout_seconds": 5,
                 }
             )
+
+
+class AgentEnvSettingsContractTests:
+    def test_resolved_settings_default_to_empty_passthrough_and_allowlist_mode(self) -> None:
+        """[tier-1/unit] ResolvedAgentSettings: omitting env fields yields env_passthrough == [] and env_mode == 'allowlist'."""
+        settings = ResolvedAgentSettings(provider="copilot", model=None, endpoint=None, temperature=0.2, max_tokens=10)
+
+        assert (settings.env_passthrough, settings.env_mode) == ([], "allowlist")
+
+    @pytest.mark.parametrize(
+        "entry",
+        [
+            pytest.param("*", id="bare-star"),
+            pytest.param("A*B", id="inner-star"),
+            pytest.param("A=B", id="equals"),
+            pytest.param("", id="empty"),
+            pytest.param("A\x00", id="nul"),
+            pytest.param(" ", id="blank"),
+        ],
+    )
+    def test_invalid_passthrough_entry_raises_validation_error(self, entry: str) -> None:
+        """[tier-1/unit] AgentEnvOverrides: each invalid entry raises pydantic.ValidationError on env_passthrough."""
+        with pytest.raises(ValidationError, match="env_passthrough"):
+            AgentEnvOverrides(env_passthrough=[entry])
+
+    def test_request_dump_excludes_env_and_metadata_env(self, tmp_path: Path) -> None:
+        """[tier-1/unit] AgentRequest.model_dump: keys 'env' and 'metadata_env' are absent while env_passthrough and env_mode are present."""
+        request = AgentRequest(
+            mode="direct",
+            instruction="Do it.",
+            worktree_path=tmp_path,
+            timeout_seconds=5,
+            env={"SECRET_TOKEN": "x"},
+            metadata_env={"DOVO_STEP_ID": "s"},
+            env_passthrough=["DOCKER_*"],
+            env_mode="inherit",
+        )
+
+        dumped = request.model_dump()
+
+        assert "env" not in dumped
+        assert "metadata_env" not in dumped
+        assert (dumped["env_passthrough"], dumped["env_mode"]) == (["DOCKER_*"], "inherit")
 
 
 class AgentAttemptContractTests:

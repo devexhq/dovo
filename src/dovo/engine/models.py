@@ -12,7 +12,7 @@ from pydantic import BaseModel, Field
 
 from dovo.common.filesystem import WorkspacePaths
 from dovo.common.models import BaseResult
-from dovo.core.agents.models import ResolvedAgentSettings
+from dovo.core.agents.models import AgentEnvOverrides, ResolvedAgentSettings
 from dovo.core.catalog.definitions import LoopStepBlock, StepDefinition
 from dovo.core.db import SessionRecord, SessionStatus
 from dovo.core.db.repositories.artifacts import ArtifactsRepository
@@ -46,6 +46,7 @@ class RunRequest:
     failure_prompter: FailurePrompter | None = None
     no_tty: bool = False
     auto_apply: bool = False
+    env_overrides: AgentEnvOverrides | None = None
 
 
 @dataclass(frozen=True)

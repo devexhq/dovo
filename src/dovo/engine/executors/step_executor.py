@@ -255,7 +255,7 @@ class StepExecution:
         if self.step.type == StepType.SCRIPT:
             return self._execute_script(metadata)
         if self.step.type == StepType.AGENT:
-            return self._execute_agent()
+            return self._execute_agent(metadata)
         if self.step.type == StepType.INTERNAL:
             return self._execute_internal()
         return _failed_dispatch(f"Unsupported step primitive type '{self.step.type}'.")
@@ -314,11 +314,11 @@ class StepExecution:
             metadata=metadata,
         )
 
-    def _execute_agent(self) -> StepDispatchOutcome:
+    def _execute_agent(self, metadata: ExecutionMetadata) -> StepDispatchOutcome:
         """Execute an AGENT step through the injected agent runner, failing with MISSING_SETTINGS_MESSAGE when none is set."""
         if self.agent_runner is None:
             return _failed_dispatch(MISSING_SETTINGS_MESSAGE)
-        return self.agent_runner(self.step, self.worktree_path, self.on_output)
+        return self.agent_runner(self.step, self.worktree_path, self.on_output, metadata)
 
     def _masked_output_callback(self, callback: OutputCallback | None) -> OutputCallback | None:
         """Wrap ``callback`` so every streamed line is masked with the current redactor; None stays None."""
@@ -338,6 +338,9 @@ class StepExecution:
 
     def _build_process_env(self, metadata: ExecutionMetadata) -> dict[str, str]:
         """Merge environment variables: explicit step env > DOVO_* metadata > ambient env."""
+        # Authored command/script steps keep ambient inheritance on purpose: their environment is the author's
+        # contract (explicit step env > DOVO_* metadata > ambient). Only Dovo-owned agent provider subprocesses use
+        # the allowlist policy in dovo.core.agents.environment.
         process_env = os.environ.copy()
         process_env.update(metadata_to_env(metadata))
         process_env.update(self.step.env)

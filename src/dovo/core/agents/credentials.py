@@ -24,14 +24,21 @@ class _CredentialDescriptor(Protocol):
         ...
 
 
-def resolve_credential(envs: Sequence[str]) -> str | None:
-    """Return the first non-blank value among ``envs``, stripped, or None; reads ``os.environ`` at call time."""
+def resolve_credential_entry(envs: Sequence[str]) -> tuple[str, str] | None:
+    """Return (name, stripped value) of the first non-blank alternative in ``envs``, or None; reads ``os.environ`` at call time."""
     for name in envs:
         value = os.environ.get(name)
         if value is not None and value.strip():
-            return value.strip()
+            return name, value.strip()
 
     return None
+
+
+def resolve_credential(envs: Sequence[str]) -> str | None:
+    """Return the first non-blank value among ``envs``, stripped, or None; reads ``os.environ`` at call time."""
+    entry = resolve_credential_entry(envs)
+
+    return None if entry is None else entry[1]
 
 
 def missing_credential_error(spec: _CredentialDescriptor) -> str:
