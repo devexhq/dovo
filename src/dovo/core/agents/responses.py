@@ -1,10 +1,10 @@
-"""Shared constructors for the timeout, provider-error, and no-op agent responses."""
+"""Shared constructors for the timeout, provider-error, blocked, and no-op agent responses."""
 
 from __future__ import annotations
 
 from collections.abc import Sequence
 
-from dovo.core.agents.models import AgentResponse, AgentResponseStatus
+from dovo.core.agents.models import AgentDenial, AgentResponse, AgentResponseStatus
 
 
 def timeout_response(
@@ -63,6 +63,47 @@ def no_op_response(
         duration_ms=duration_ms,
         raw_text=raw_text,
         mutation_baseline_ref=mutation_baseline_ref,
+    )
+
+
+def blocked_response(
+    *,
+    duration_ms: int,
+    denials: Sequence[AgentDenial],
+    raw_text: str | None = None,
+    mutation_baseline_ref: str | None = None,
+) -> AgentResponse:
+    """Build the BLOCKED response carrying the permission denials and the grant-or-remove-deny fix.
+
+    ``denials`` must be non-empty; the caller checks before building the response.
+    """
+    first, *rest = denials
+    errors = [
+        f"Agent run was blocked by tool permissions (AGENT_PERMISSION_BLOCKED): {first.tool}: {first.message}",
+        *(f"{denial.tool}: {denial.message}" for denial in rest),
+    ]
+    fixes: list[str] = []
+    for denial in denials:
+        if denial.by_rule:
+            fix = f"Remove or narrow the deny rule that blocked '{denial.tool}': {denial.message}"
+        elif denial.capability is not None:
+            fix = (
+                f"Grant it in the step's tools policy, e.g. tools: {{allow: [{{capability: {denial.capability.value}}}]}}, "
+                "or set it once under agent.tools in .dovo/config.json"
+            )
+        else:
+            continue
+
+        if fix not in fixes:
+            fixes.append(fix)
+
+    return AgentResponse(
+        status=AgentResponseStatus.BLOCKED,
+        duration_ms=duration_ms,
+        raw_text=raw_text,
+        mutation_baseline_ref=mutation_baseline_ref,
+        errors=errors,
+        fixes=fixes,
     )
 
 

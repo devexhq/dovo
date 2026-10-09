@@ -39,7 +39,7 @@ MISSING_SETTINGS_MESSAGE = (
 )
 BLANK_PROMPT_MESSAGE = "Agent step prompt is blank after interpolation."
 
-# Step outcome code per agent status; 200 is unused and 204 is reserved for a future blocked status.
+# Step outcome code per agent status; 200 is unused.
 AGENT_OUTCOME_EXIT_CODES: Final[Mapping[AgentResponseStatus, int]] = MappingProxyType(
     {
         AgentResponseStatus.PROPOSED_PATCH: 0,
@@ -47,6 +47,7 @@ AGENT_OUTCOME_EXIT_CODES: Final[Mapping[AgentResponseStatus, int]] = MappingProx
         AgentResponseStatus.UNFIXABLE: 201,
         AgentResponseStatus.TIMEOUT: 202,
         AgentResponseStatus.PROVIDER_ERROR: 203,
+        AgentResponseStatus.BLOCKED: 204,
     }
 )
 

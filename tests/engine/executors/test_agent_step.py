@@ -20,6 +20,8 @@ from dovo.core.agents import (
     ResolvedAgentSettings,
     default_tool_policy,
 )
+from dovo.core.agents.models import AgentDenial
+from dovo.core.agents.responses import blocked_response
 from dovo.core.agents.scratch import scratch_unavailable_message
 from dovo.core.catalog.definitions import StepDefinition
 from dovo.core.git import GitRunner
@@ -131,15 +133,35 @@ def _forbid_git_apply(monkeypatch: pytest.MonkeyPatch) -> list[str]:
 
 class AgentOutcomeMappingTests:
     def test_mapping_covers_every_status_with_issue_codes(self) -> None:
-        """[tier-1/unit] AGENT_OUTCOME_EXIT_CODES: equals {PROPOSED_PATCH: 0, NO_OP: 0, UNFIXABLE: 201, TIMEOUT: 202, PROVIDER_ERROR: 203} and its keys equal set(AgentResponseStatus)."""
+        """[tier-1/unit] AGENT_OUTCOME_EXIT_CODES: equals {PROPOSED_PATCH: 0, NO_OP: 0, UNFIXABLE: 201, TIMEOUT: 202, PROVIDER_ERROR: 203, BLOCKED: 204} and its keys equal set(AgentResponseStatus)."""
         assert dict(AGENT_OUTCOME_EXIT_CODES) == {
             AgentResponseStatus.PROPOSED_PATCH: 0,
             AgentResponseStatus.NO_OP: 0,
             AgentResponseStatus.UNFIXABLE: 201,
             AgentResponseStatus.TIMEOUT: 202,
             AgentResponseStatus.PROVIDER_ERROR: 203,
+            AgentResponseStatus.BLOCKED: 204,
         }
         assert set(AGENT_OUTCOME_EXIT_CODES) == set(AgentResponseStatus)
+
+
+class ExecuteAgentStepBlockedTests:
+    def test_blocked_attempt_fails_step_with_exit_204_and_blocked_summary(
+        self, git_repo: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """[tier-2/integration] execute_agent_step: provider returns BLOCKED with one denial -> StepDispatchOutcome(status='failed', exit_code=204), stdout summary line status 'blocked', stderr contains 'AGENT_PERMISSION_BLOCKED'."""
+        response = blocked_response(
+            duration_ms=1, denials=[AgentDenial(tool="bash", message="denied", capability=ToolCapability.SHELL)]
+        )
+        _use_provider(monkeypatch, FakeAgentProvider(response))
+
+        outcome = _run(git_repo)
+
+        assert outcome.status == "failed"
+        assert outcome.exit_code == 204
+        assert _summary(outcome)["status"] == "blocked"
+        assert "AGENT_PERMISSION_BLOCKED" in outcome.stderr
+        assert "tools: {allow: [{capability: shell}]}" in outcome.stderr
 
 
 class ExecuteAgentStepRequestTests:

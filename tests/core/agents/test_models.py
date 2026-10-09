@@ -19,7 +19,7 @@ from dovo.core.agents import (
     CliMutationRunRequest,
     default_tool_policy,
 )
-from dovo.core.agents.models import AgentEnvOverrides, ResolvedAgentSettings
+from dovo.core.agents.models import AgentDenial, AgentEnvOverrides, ResolvedAgentSettings
 
 _PAYLOAD = AgentFailurePayload(
     command="pytest",
@@ -100,6 +100,27 @@ class AgentRequestContractTests:
                     "tools": default_tool_policy(),
                 }
             )
+
+
+class AgentDenialContractTests:
+    def test_defaults_when_only_required_fields_given(self) -> None:
+        """[tier-1/unit] AgentDenial: capability defaults to None and by_rule to False."""
+        denial = AgentDenial(tool="bash", message="denied")
+
+        assert (denial.capability, denial.by_rule) == (None, False)
+
+    @pytest.mark.parametrize(
+        "kwargs",
+        [
+            pytest.param({"tool": "bash", "message": "m", "extra": 1}, id="extra-field"),
+            pytest.param({"tool": 1, "message": "m"}, id="non-string-tool"),
+            pytest.param({"tool": "bash", "message": "m", "by_rule": "yes"}, id="non-bool-by-rule"),
+        ],
+    )
+    def test_invalid_input_is_rejected(self, kwargs: dict[str, object]) -> None:
+        """[tier-1/unit] AgentDenial: unknown fields and wrongly typed values raise ValidationError."""
+        with pytest.raises(ValidationError):
+            AgentDenial.model_validate(kwargs)
 
 
 class AgentEnvSettingsContractTests:

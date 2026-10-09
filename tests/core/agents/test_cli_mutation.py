@@ -22,6 +22,7 @@ from dovo.core.agents.cli_mutation import (
     validate_request_patch,
 )
 from dovo.core.agents.environment import ENV_FILTERED_PROMPT_LINE
+from dovo.core.agents.models import AgentDenial
 from dovo.core.agents.mutation_git import (
     MutationGitError,
     capture_diff_since,
@@ -38,6 +39,7 @@ def _fake_run(
     status: CliMutationRunStatus = "finished",
     error_detail: str | None = None,
     result_text: str | None = "done",
+    denials: list[AgentDenial] | None = None,
 ) -> CliMutationRunFn:
     def _run(request: CliMutationRunRequest) -> CliMutationOutcome:
         if edits:
@@ -45,7 +47,9 @@ def _fake_run(
                 path = request.worktree_path / rel
                 path.parent.mkdir(parents=True, exist_ok=True)
                 path.write_text(content, encoding="utf-8")
-        return CliMutationOutcome(status=status, result_text=result_text, error_detail=error_detail)
+        return CliMutationOutcome(
+            status=status, result_text=result_text, error_detail=error_detail, denials=denials or []
+        )
 
     return _run
 
@@ -459,6 +463,46 @@ class SharedMutationAdapterTests:
         assert resp.status == AgentResponseStatus.PROVIDER_ERROR
         assert resp.errors == ["Agent provider error (AGENT_PROVIDER_ERROR): preflight failed"]
         assert not run_function_called
+
+
+class BlockedClassificationTests:
+    @pytest.mark.parametrize(
+        ("denials", "writes_file", "expected", "expected_errors"),
+        [
+            pytest.param(
+                [AgentDenial(tool="bash", message="denied")],
+                False,
+                AgentResponseStatus.BLOCKED,
+                ["Agent run was blocked by tool permissions (AGENT_PERMISSION_BLOCKED): bash: denied"],
+                id="denial-and-empty-diff",
+            ),
+            pytest.param(
+                [AgentDenial(tool="bash", message="denied")],
+                True,
+                AgentResponseStatus.PROPOSED_PATCH,
+                [],
+                id="denial-with-diff",
+            ),
+            pytest.param([], False, AgentResponseStatus.NO_OP, [], id="no-denial-empty-diff"),
+        ],
+    )
+    def test_denials_block_only_when_the_worktree_diff_is_empty(
+        self,
+        git_repo: Path,
+        denials: list[AgentDenial],
+        writes_file: bool,
+        expected: AgentResponseStatus,
+        expected_errors: list[str],
+    ) -> None:
+        """[tier-1/unit] CliDirectMutationAdapter.invoke: a runner outcome with denials yields BLOCKED only for an empty diff; otherwise PROPOSED_PATCH or NO_OP as before."""
+        adapter = UnitTestAdapter(
+            run_fn=_fake_run(edits={"a.txt": "fixed\n"} if writes_file else None, denials=denials)
+        )
+
+        resp = adapter.invoke(AgentRequestBuilder().with_worktree_path(git_repo).build())
+
+        assert resp.status == expected
+        assert resp.errors == expected_errors
 
 
 class PreflightOrderingTests:

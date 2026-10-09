@@ -13,14 +13,20 @@ from pydantic import BaseModel, Field
 from dovo.common.tool_policy import ToolPolicy
 from dovo.core.agents.base import BaseAgentProvider, elapsed_ms
 from dovo.core.agents.environment import ENV_FILTERED_PROMPT_LINE, build_agent_env, withheld_env_names
-from dovo.core.agents.models import AgentInvocationContext, AgentRequest, AgentResponse, AgentResponseStatus
+from dovo.core.agents.models import (
+    AgentDenial,
+    AgentInvocationContext,
+    AgentRequest,
+    AgentResponse,
+    AgentResponseStatus,
+)
 from dovo.core.agents.mutation_git import (
     MutationGitError,
     capture_diff_since,
     discard_since,
     resolve_pre_agent_baseline,
 )
-from dovo.core.agents.responses import no_op_response, provider_error_response, timeout_response
+from dovo.core.agents.responses import blocked_response, no_op_response, provider_error_response, timeout_response
 from dovo.core.git import PatchApplyResult, PatchApplyStatus, validate_patch_text
 
 CliMutationRunStatus = Literal["finished", "timeout", "error"]
@@ -52,6 +58,7 @@ class CliMutationOutcome(BaseModel):
     status: CliMutationRunStatus
     result_text: str | None = None
     error_detail: str | None = None
+    denials: list[AgentDenial] = Field(default_factory=list)
 
 
 CliMutationRunFn = Callable[[CliMutationRunRequest], CliMutationOutcome]
@@ -187,7 +194,7 @@ class CliDirectMutationAdapter(BaseAgentProvider):
         baseline: str,
         duration_ms: int,
     ) -> AgentResponse:
-        """Classify a finished runner outcome into the timeout, provider-error, no-op, or proposal response."""
+        """Classify a finished runner outcome into the timeout, provider-error, blocked, no-op, or proposal response; denials block only when the worktree diff is empty."""
         if outcome.status == "timeout":
             return timeout_response(
                 provider=self._provider_name(),
@@ -211,6 +218,14 @@ class CliDirectMutationAdapter(BaseAgentProvider):
             return provider_error_response(
                 duration_ms=duration_ms,
                 detail=f"Failed to capture worktree diff: {exc}",
+                raw_text=outcome.result_text,
+                mutation_baseline_ref=baseline,
+            )
+
+        if not diff.strip() and outcome.denials:
+            return blocked_response(
+                duration_ms=duration_ms,
+                denials=outcome.denials,
                 raw_text=outcome.result_text,
                 mutation_baseline_ref=baseline,
             )
