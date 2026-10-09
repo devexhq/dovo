@@ -1,3 +1,4 @@
+id: my-step
 name: my-step
 description: Custom step blueprint
-action: run
+run: echo "Hello from my-step"

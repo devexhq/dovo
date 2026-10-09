@@ -158,13 +158,28 @@ def _check_lock_timeout(
         )
 
 
+def _resolve_timeout_seconds(timeout_seconds: float) -> float:
+    """Resolve lock timeout seconds, allowing DOVO_LOCK_TIMEOUT_SECONDS env var override."""
+    raw_override = os.environ.get("DOVO_LOCK_TIMEOUT_SECONDS")
+    if raw_override is not None:
+        try:
+            return max(0.1, float(raw_override))
+        except ValueError:
+            pass
+    return max(0.1, float(timeout_seconds))
+
+
 def resolve_lock_file_path(root_dir: Path) -> Path:
     """Determine the canonical .dovo/.lock path for root_dir."""
     canonical_root = root_dir.expanduser().resolve()
-    if canonical_root.name == ".lock":
+    if canonical_root.name in (".lock", "workspace.lock"):
         return canonical_root
     if canonical_root.name == ".dovo":
+        if (canonical_root / "workspace.lock").exists():
+            return canonical_root / "workspace.lock"
         return canonical_root / ".lock"
+    if (canonical_root / ".dovo" / "workspace.lock").exists():
+        return canonical_root / ".dovo" / "workspace.lock"
     return canonical_root / ".dovo" / ".lock"
 
 
@@ -205,7 +220,7 @@ class WorkspaceLock:
             on_wait: Optional callback invoked if lock is currently held.
         """
         self.lock_path = lock_path
-        self.timeout_seconds = max(0.1, float(timeout_seconds))
+        self.timeout_seconds = _resolve_timeout_seconds(timeout_seconds)
         self.on_wait = on_wait if on_wait is not None else _default_on_wait
         self._file_descriptor: int | None = None
         self._is_nested: bool = False

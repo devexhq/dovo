@@ -304,7 +304,7 @@ def _get_initial_template_content(type_enum: CatalogItemType, stem: str, catalog
         # Defensive fallback if the packaged resource is unreadable
         if type_enum == CatalogItemType.BLUEPRINT:
             return f'version: "1.0"\nname: {stem}\ndescription: Custom blueprint\nsteps: []\n'
-        return f"name: {stem}\ndescription: Custom step blueprint\naction: run\n"
+        return f"id: {stem}\nname: {stem}\ndescription: Custom step blueprint\nrun: echo 'Hello from {stem}'\n"
 
 
 def coerce_catalog_item_type(item_type: CatalogItemType | str) -> CatalogItemType:
