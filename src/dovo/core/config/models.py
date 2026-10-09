@@ -6,10 +6,18 @@ from enum import StrEnum
 from pathlib import Path
 from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, Field, StringConstraints
+from pydantic import (
+    BaseModel,
+    Field,
+    SerializerFunctionWrapHandler,
+    StringConstraints,
+    field_validator,
+    model_serializer,
+)
 
 from dovo.common.constants import DEFAULT_MAXIMUM_WORKTREES_ALLOWED
 from dovo.common.models import BaseResult
+from dovo.common.tool_policy import ToolPolicy, coerce_tool_policy
 from dovo.core.agents.models import AgentEnvMode, EnvPassthroughEntry
 
 AgentProvider = Literal["copilot"]  # "claude" is added by the Claude adapter change
@@ -46,6 +54,21 @@ class AgentConfig(BaseModel):
     max_tokens: int = Field(default=4096, ge=1)
     env_passthrough: list[EnvPassthroughEntry] = Field(default_factory=list)
     env_mode: AgentEnvMode = "allowlist"
+    tools: ToolPolicy | None = None
+
+    @field_validator("tools", mode="before")
+    @classmethod
+    def reject_legacy_tools(cls, val: Any) -> Any:
+        """Reject the legacy string list with migration guidance."""
+        return coerce_tool_policy(val)
+
+    @model_serializer(mode="wrap")
+    def omit_unset_tools(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
+        """Drop a null tools key: the config schema accepts an object or an absent key, not null."""
+        data: dict[str, Any] = handler(self)
+        if data.get("tools") is None:
+            data.pop("tools", None)
+        return data
 
 
 class HistoryConfig(BaseModel):

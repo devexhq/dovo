@@ -12,6 +12,7 @@ import pytest
 
 from dovo.common.filesystem import WorkspacePaths
 from dovo.common.filesystem.services.global_root import resolve_global_paths
+from dovo.common.tool_policy import ToolPolicy
 from dovo.core.config.generator import CANONICAL_V1_DEFAULTS
 from dovo.core.config.models import ConfigTier, DovoConfig, HierarchicalConfigLoadStatus
 from dovo.core.config.services.hierarchical_loader import (
@@ -252,6 +253,26 @@ class AgentConfigEnvTests:
 
         assert result.config is not None
         assert (result.config.agent.env_passthrough, result.config.agent.env_mode) == (["B"], "inherit")
+
+
+class AgentToolsTierMergeTests:
+    def test_higher_tier_tools_object_replaces_lower_tier_whole(
+        self, isolated_workspace: Path, tmp_path: Path, workspace_paths_factory: WorkspacePathsFactory
+    ) -> None:
+        """[tier-1/unit] load/merge: user tier {allow:[r], allow_all:true} + repo tier {deny:[d]} -> merged agent.tools == {deny:[d]} with allow == [] and allow_all False."""
+        global_root = tmp_path / "global_home"
+        read_rule = {"capability": "read", "pattern": "src/**"}
+        deny_rule = {"capability": "write", "pattern": ".dovo/**"}
+        _write_tier_config(
+            resolve_global_paths(global_root).user_dir / "config.json",
+            {"agent": {"tools": {"allow": [read_rule], "allow_all": True}}},
+        )
+        _write_tier_config(isolated_workspace / ".dovo" / "config.json", {"agent": {"tools": {"deny": [deny_rule]}}})
+
+        result = load_hierarchical_config(workspace_paths_factory(isolated_workspace, global_root))
+
+        assert result.config is not None
+        assert result.config.agent.tools == ToolPolicy.model_validate({"deny": [deny_rule]})
 
 
 class HierarchicalConfigErrorTests:

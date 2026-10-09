@@ -19,7 +19,7 @@ Every standard step accepts the following fields:
 | `command` | `string` | Conditional | `null` | Shell command string. Required when `type: command`. |
 | `prompt` | `string` | Conditional | `null` | Instruction sent to the agent provider after interpolation; it must not be blank. Required when `type: agent`. |
 | `script_path` | `string` | Conditional | `null` | Relative path to local script. Required when `type: script`. |
-| `tools` | `list[string]` | No | `[]` | Accepted agent-step metadata; it is not enforced and does not restrict what the provider can do. |
+| `tools` | `object` | No | omitted | Tool policy with `allow`, `deny` (lists of `{capability, root, pattern}` rules) and `allow_all`. Validated but not yet enforced by any provider. An explicit object replaces any inherited policy whole, `tools: {}` included; a legacy string list is rejected. Capabilities are `shell` (exact command or `cmd *` prefix), `read`/`write` (root-relative glob, optional `root: worktree\|scratch`), `network` (host or `*.host`) and `mcp` (`server/tool` or `server/*`). Exact rules: [`tool_policy.py`](../../src/dovo/common/tool_policy.py). |
 | `env` | `map[string, string]` | No | `{}` | Step-specific environment variables, forwarded to command, script, and agent steps. Supports `${{ inputs.* }}` interpolation. |
 | `timeout_seconds`| `integer` | No | `120` | Maximum execution duration (seconds, $> 0$). |
 | `assert` | `StepAssert` | No | `null` | Verification criteria. See [Assertions Schema](assertions-schema.md). |
