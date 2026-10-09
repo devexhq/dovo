@@ -7,6 +7,7 @@ import os
 import pty
 import select
 import shutil
+import signal
 import subprocess
 import sys
 import time
@@ -174,6 +175,7 @@ class DovoPtyRunner:
 
     def _check_and_send_reply(
         self,
+        process: subprocess.Popen[bytes],
         master_fd: int,
         accumulated: str,
         prompt_replies: list[tuple[str, str]],
@@ -182,11 +184,15 @@ class DovoPtyRunner:
             return
         expected_prompt, reply = prompt_replies[0]
         if expected_prompt in accumulated:
-            os.write(master_fd, reply.encode("utf-8"))
+            if reply in ("\x03", "<ctrl-c>"):
+                process.send_signal(signal.SIGINT)
+            else:
+                os.write(master_fd, reply.encode("utf-8"))
             prompt_replies.pop(0)
 
     def _handle_pty_read(
         self,
+        process: subprocess.Popen[bytes],
         master_fd: int,
         accumulated: str,
         prompt_replies: list[tuple[str, str]],
@@ -201,7 +207,7 @@ class DovoPtyRunner:
 
         text = data.decode("utf-8", errors="replace")
         new_accumulated = accumulated + text
-        self._check_and_send_reply(master_fd, new_accumulated, prompt_replies)
+        self._check_and_send_reply(process, master_fd, new_accumulated, prompt_replies)
         return text, new_accumulated
 
     def _verify_prompts_satisfied(self, prompt_replies: list[tuple[str, str]], accumulated: str) -> None:
@@ -226,7 +232,7 @@ class DovoPtyRunner:
                 process.wait()
                 raise TimeoutError(f"PTY execution timed out after {timeout}s.\nTranscript:\n{accumulated}")
 
-            text, accumulated = self._handle_pty_read(master_fd, accumulated, prompt_replies)
+            text, accumulated = self._handle_pty_read(process, master_fd, accumulated, prompt_replies)
             if text:
                 chunks.append(text)
 
