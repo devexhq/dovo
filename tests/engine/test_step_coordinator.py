@@ -10,6 +10,7 @@ import pytest
 
 from dovo.common.filesystem.models import WorkspacePaths
 from dovo.common.models import FailurePolicy
+from dovo.core.agents import default_tool_policy
 from dovo.core.agents.models import ResolvedAgentSettings
 from dovo.core.catalog.definitions import ArtifactPublishSpec, StepDefinition, StepType
 from dovo.core.db.repositories.artifacts import ArtifactsRepository
@@ -38,7 +39,12 @@ def _paths_for(root: Path) -> WorkspacePaths:
 
 
 _AGENT_SETTINGS = ResolvedAgentSettings(
-    provider="copilot", model="test-model", endpoint="http://127.0.0.1:9999", temperature=0.7, max_tokens=512
+    provider="copilot",
+    model="test-model",
+    endpoint="http://127.0.0.1:9999",
+    temperature=0.7,
+    max_tokens=512,
+    tools=default_tool_policy(),
 )
 
 

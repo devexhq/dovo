@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 
 from dovo.common.models import FailurePolicy
-from dovo.core.agents import AgentResponse, AgentResponseStatus, ResolvedAgentSettings
+from dovo.core.agents import AgentResponse, AgentResponseStatus, ResolvedAgentSettings, default_tool_policy
 from dovo.core.catalog.definitions import StepAssert, StepDefinition
 from dovo.engine.executors.agent_step import MISSING_SETTINGS_MESSAGE, build_agent_step_runner
 from dovo.engine.executors.models import (
@@ -25,7 +25,14 @@ from tests.harness.builders import StepBuilder
 
 
 def _settings() -> ResolvedAgentSettings:
-    return ResolvedAgentSettings(provider="copilot", model=None, endpoint=None, temperature=0.2, max_tokens=4096)
+    return ResolvedAgentSettings(
+        provider="copilot",
+        model=None,
+        endpoint=None,
+        temperature=0.2,
+        max_tokens=4096,
+        tools=default_tool_policy(),
+    )
 
 
 def _runner(worktree: Path) -> AgentStepRunner:

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dovo.common.filesystem import WorkspacePaths
 from dovo.common.process import process_registry
+from dovo.core.agents import default_tool_policy
 from dovo.core.agents.models import AgentEnvMode, AgentEnvOverrides, ResolvedAgentSettings
 from dovo.core.config import Config
 from dovo.core.config.models import AgentConfig
@@ -79,6 +80,7 @@ def _resolve_agent_settings(
             max_tokens=agent.max_tokens,
             env_passthrough=env_passthrough,
             env_mode=env_mode,
+            tools=agent.tools if agent.tools is not None else default_tool_policy(),
         )
     )
 

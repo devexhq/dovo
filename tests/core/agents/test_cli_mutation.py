@@ -10,7 +10,7 @@ from typing import Literal
 
 import pytest
 
-from dovo.core.agents import AgentInvocationContext, AgentRequest, AgentResponseStatus
+from dovo.core.agents import AgentInvocationContext, AgentRequest, AgentResponseStatus, default_tool_policy
 from dovo.core.agents.base import ProviderSpec
 from dovo.core.agents.cli_mutation import (
     CliDirectMutationAdapter,
@@ -66,6 +66,7 @@ def _request_with_invocation(git_repo: Path, invocation: AgentInvocationContext)
         instruction="Plan the change",
         worktree_path=git_repo,
         timeout_seconds=10,
+        tools=default_tool_policy(),
         agent_scratch_path=invocation.scratch_path,
         invocation=invocation,
     )
@@ -162,7 +163,13 @@ class BuildMutationPromptTests:
 
     def test_direct_mode_prompt_carries_instruction_without_repair_directive_or_payload(self, git_repo: Path) -> None:
         """[tier-1/unit] build_mutation_prompt: a direct request returns the direct header plus a JSON body with exactly mode, worktree_path, instruction; no 'Fix the failure' text and no payload key."""
-        request = AgentRequest(mode="direct", instruction="Plan the change", worktree_path=git_repo, timeout_seconds=10)
+        request = AgentRequest(
+            mode="direct",
+            instruction="Plan the change",
+            worktree_path=git_repo,
+            timeout_seconds=10,
+            tools=default_tool_policy(),
+        )
         expected_body = {"mode": "direct", "worktree_path": str(git_repo), "instruction": "Plan the change"}
         expected = (
             "You are a coding agent running directly in this worktree checkout.\n"
@@ -282,7 +289,9 @@ class ScratchDiffIsolationTests:
 class ValidateRequestPatchTests:
     def test_absent_bounds_use_defaults_and_accept_single_file_diff(self, git_repo: Path) -> None:
         """[tier-1/unit] validate_request_patch: a request with max_files/max_patch_kb/reject_binary_changes all None and a one-file diff returns PatchApplyStatus.CHECKED_OK with that file in touched_files."""
-        request = AgentRequest(mode="direct", instruction="go", worktree_path=git_repo, timeout_seconds=10)
+        request = AgentRequest(
+            mode="direct", instruction="go", worktree_path=git_repo, timeout_seconds=10, tools=default_tool_policy()
+        )
 
         result = validate_request_patch(request, new_file_diff("a.txt"))
 
@@ -291,7 +300,14 @@ class ValidateRequestPatchTests:
 
     def test_explicit_bound_rejects_diff_over_limit(self, git_repo: Path) -> None:
         """[tier-1/unit] validate_request_patch: max_files=1 and a two-file diff returns PatchApplyStatus.TOO_MANY_FILES."""
-        request = AgentRequest(mode="direct", instruction="go", worktree_path=git_repo, timeout_seconds=10, max_files=1)
+        request = AgentRequest(
+            mode="direct",
+            instruction="go",
+            worktree_path=git_repo,
+            timeout_seconds=10,
+            max_files=1,
+            tools=default_tool_policy(),
+        )
         diff = new_file_diff("a.txt") + new_file_diff("b.txt")
 
         result = validate_request_patch(request, diff)
@@ -552,6 +568,12 @@ class MutationEnvReportTests:
 
     def test_run_request_dump_excludes_env(self, tmp_path: Path) -> None:
         """[tier-1/unit] CliMutationRunRequest.model_dump: key 'env' is absent."""
-        request = CliMutationRunRequest(worktree_path=tmp_path, prompt="p", timeout_seconds=1, env={"A_KEY": "secret1"})
+        request = CliMutationRunRequest(
+            worktree_path=tmp_path,
+            prompt="p",
+            timeout_seconds=1,
+            tools=default_tool_policy(),
+            env={"A_KEY": "secret1"},
+        )
 
         assert "env" not in request.model_dump()

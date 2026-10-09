@@ -8,6 +8,7 @@ from pathlib import Path
 
 import pytest
 
+from dovo.common.tool_policy import ToolCapability, ToolPolicy, ToolRule
 from dovo.core.agents import (
     AgentAttempt,
     AgentAttemptContext,
@@ -20,6 +21,7 @@ from dovo.core.agents import (
     CliMutationOutcome,
     CliMutationRunRequest,
     ResolvedAgentSettings,
+    default_tool_policy,
     run_direct_attempt,
 )
 from dovo.core.git import GitRunner
@@ -29,7 +31,14 @@ _NO_OP_SUMMARY = "Inspected the repository; no edits were required."
 
 
 def _settings(provider: str = "copilot") -> ResolvedAgentSettings:
-    return ResolvedAgentSettings(provider=provider, model="m", endpoint="http://e", temperature=0.7, max_tokens=512)
+    return ResolvedAgentSettings(
+        provider=provider,
+        model="m",
+        endpoint="http://e",
+        temperature=0.7,
+        max_tokens=512,
+        tools=default_tool_policy(),
+    )
 
 
 def _use_provider(monkeypatch: pytest.MonkeyPatch, provider: BaseAgentProvider) -> list[str]:
@@ -43,9 +52,13 @@ def _use_provider(monkeypatch: pytest.MonkeyPatch, provider: BaseAgentProvider) 
     return requested
 
 
-def _attempt(worktree: Path, provider: str = "copilot") -> AgentAttempt:
+def _attempt(worktree: Path, provider: str = "copilot", tools: ToolPolicy | None = None) -> AgentAttempt:
     return run_direct_attempt(
-        instruction="Plan the change", settings=_settings(provider), worktree_path=worktree, timeout_seconds=45
+        instruction="Plan the change",
+        settings=_settings(provider),
+        worktree_path=worktree,
+        timeout_seconds=45,
+        tools=tools or default_tool_policy(),
     )
 
 
@@ -97,6 +110,7 @@ class RunDirectAttemptRequestTests:
                 max_files=None,
                 max_patch_kb=None,
                 reject_binary_changes=None,
+                tools=default_tool_policy(),
             )
         ]
 
@@ -122,6 +136,18 @@ class RunDirectAttemptRequestTests:
 
         assert attempt.status == AgentResponseStatus.PROVIDER_ERROR
         assert attempt.diagnostics == ["Agent provider error: boom"]
+
+
+class RunDirectToolsTests:
+    def test_tools_argument_lands_on_agent_request(self, git_repo: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """[tier-2/integration] run_direct_attempt: the adapter's invoke receives AgentRequest.tools == the tools argument."""
+        provider = FakeAgentProvider(_no_op())
+        _use_provider(monkeypatch, provider)
+        policy = ToolPolicy(allow=[ToolRule(capability=ToolCapability.SHELL, pattern="git status")])
+
+        _attempt(git_repo, tools=policy)
+
+        assert provider.requests[0].tools == policy
 
 
 class RunDirectAttemptSettleTests:
@@ -257,6 +283,7 @@ class RunDirectAttemptInvocationTests:
             settings=_settings(),
             worktree_path=git_repo,
             timeout_seconds=45,
+            tools=default_tool_policy(),
             context=AgentAttemptContext(invocation=invocation if with_invocation else None),
         )
 
@@ -279,6 +306,7 @@ class RunDirectAttemptEnvTests:
             settings=settings,
             worktree_path=git_repo,
             timeout_seconds=45,
+            tools=default_tool_policy(),
             context=AgentAttemptContext(env={"MY_VAR": "x"}, metadata_env={"DOVO_STEP_ID": "s"}),
         )
 

@@ -8,6 +8,7 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
+from dovo.common.tool_policy import ToolCapability, ToolPolicy, ToolRule
 from dovo.core.agents import (
     AgentAttempt,
     AgentFailurePayload,
@@ -16,6 +17,7 @@ from dovo.core.agents import (
     AgentResponseStatus,
     AgentScratchResult,
     CliMutationRunRequest,
+    default_tool_policy,
 )
 from dovo.core.agents.models import AgentEnvOverrides, ResolvedAgentSettings
 
@@ -48,6 +50,7 @@ class AgentRequestContractTests:
                 "payload": payload,
                 "worktree_path": tmp_path,
                 "timeout_seconds": 5,
+                "tools": default_tool_policy(),
             }
         )
 
@@ -94,6 +97,7 @@ class AgentRequestContractTests:
                     "payload": _PAYLOAD if with_payload else None,
                     "worktree_path": tmp_path,
                     "timeout_seconds": 5,
+                    "tools": default_tool_policy(),
                 }
             )
 
@@ -101,7 +105,14 @@ class AgentRequestContractTests:
 class AgentEnvSettingsContractTests:
     def test_resolved_settings_default_to_empty_passthrough_and_allowlist_mode(self) -> None:
         """[tier-1/unit] ResolvedAgentSettings: omitting env fields yields env_passthrough == [] and env_mode == 'allowlist'."""
-        settings = ResolvedAgentSettings(provider="copilot", model=None, endpoint=None, temperature=0.2, max_tokens=10)
+        settings = ResolvedAgentSettings(
+            provider="copilot",
+            model=None,
+            endpoint=None,
+            temperature=0.2,
+            max_tokens=10,
+            tools=default_tool_policy(),
+        )
 
         assert (settings.env_passthrough, settings.env_mode) == ([], "allowlist")
 
@@ -128,6 +139,7 @@ class AgentEnvSettingsContractTests:
             instruction="Do it.",
             worktree_path=tmp_path,
             timeout_seconds=5,
+            tools=default_tool_policy(),
             env={"SECRET_TOKEN": "x"},
             metadata_env={"DOVO_STEP_ID": "s"},
             env_passthrough=["DOCKER_*"],
@@ -191,11 +203,20 @@ class InvocationContextModelTests:
         request: AgentRequest | CliMutationRunRequest
         if request_kind == "agent":
             request = AgentRequest(
-                mode="direct", instruction="go", worktree_path=tmp_path, timeout_seconds=5, invocation=context
+                mode="direct",
+                instruction="go",
+                worktree_path=tmp_path,
+                timeout_seconds=5,
+                tools=default_tool_policy(),
+                invocation=context,
             )
         else:
             request = CliMutationRunRequest(
-                worktree_path=tmp_path, prompt="go", timeout_seconds=5.0, invocation=context
+                worktree_path=tmp_path,
+                prompt="go",
+                timeout_seconds=5.0,
+                tools=default_tool_policy(),
+                invocation=context,
             )
 
         assert "invocation" not in request.model_dump()
@@ -205,7 +226,13 @@ class InvocationContextModelTests:
     def test_agent_scratch_path_must_match_the_invocation_scratch_path(self, tmp_path: Path) -> None:
         """[tier-1/unit] AgentRequest: agent_scratch_path equal to invocation.scratch_path or None constructs; a different path raises ValidationError."""
         context = _context(tmp_path)
-        base = {"mode": "direct", "instruction": "go", "worktree_path": tmp_path, "timeout_seconds": 5}
+        base = {
+            "mode": "direct",
+            "instruction": "go",
+            "worktree_path": tmp_path,
+            "timeout_seconds": 5,
+            "tools": default_tool_policy(),
+        }
 
         matching = AgentRequest.model_validate(
             {**base, "invocation": context, "agent_scratch_path": context.scratch_path}
@@ -227,3 +254,36 @@ class AgentScratchResultTests:
         assert success.ok
         assert not failure.ok
         assert failure.invocation_id == "a" * 32
+
+
+class AgentRequestToolsContractTests:
+    def test_request_requires_tools_and_resolved_settings_require_tools(self, tmp_path: Path) -> None:
+        """[tier-1/unit] AgentRequest / ResolvedAgentSettings: omitting tools raises ValidationError; a ToolPolicy round-trips through model_dump."""
+        policy = ToolPolicy(allow=[ToolRule(capability=ToolCapability.SHELL, pattern="git status")])
+        settings_fields: dict[str, object] = {
+            "provider": "copilot",
+            "model": None,
+            "endpoint": None,
+            "temperature": 0.2,
+            "max_tokens": 10,
+        }
+        request_fields: dict[str, object] = {
+            "mode": "direct",
+            "instruction": "go",
+            "worktree_path": tmp_path,
+            "timeout_seconds": 5,
+        }
+
+        with pytest.raises(ValidationError, match="tools"):
+            ResolvedAgentSettings.model_validate(settings_fields)
+        with pytest.raises(ValidationError, match="tools"):
+            AgentRequest.model_validate(request_fields)
+
+        request = AgentRequest.model_validate({**request_fields, "tools": policy})
+
+        assert request.model_dump()["tools"] == {
+            "allow": [{"capability": "shell", "root": None, "pattern": "git status"}],
+            "deny": [],
+            "allow_all": False,
+        }
+        assert ToolPolicy.model_validate(request.model_dump()["tools"]) == policy

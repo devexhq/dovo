@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 
 from dovo.common.filesystem import WorkspacePaths
+from dovo.common.tool_policy import ToolCapability, ToolPolicy, ToolRule
 from dovo.core.catalog.definitions import StepDefinition, StepType
 from dovo.core.catalog.exceptions import StepValidationError
 from dovo.core.catalog.services.resolve_step import (
@@ -179,3 +180,41 @@ class MergeUsesStepTests:
         assert merged.command == "echo base"
         assert merged.timeout_seconds == 60
         assert merged.env == {"BASE_VAR": "base", "SHARED_VAR": "overridden", "OVERRIDE_VAR": "derived"}
+
+
+_CATALOG_POLICY = ToolPolicy(allow=[ToolRule(capability=ToolCapability.READ, pattern="src/**")])
+_STEP_POLICY = ToolPolicy(allow=[ToolRule(capability=ToolCapability.SHELL, pattern="git status")])
+_TOOLS_BY_KEY: dict[str | None, ToolPolicy | None] = {
+    None: None,
+    "catalog": _CATALOG_POLICY,
+    "step": _STEP_POLICY,
+    "empty": ToolPolicy(),
+}
+
+
+class UsesToolsMergeTests:
+    @pytest.mark.parametrize(
+        ("using_tools", "base_tools", "expected"),
+        [
+            pytest.param(None, "catalog", "catalog", id="omitted-inherits-catalog"),
+            pytest.param("step", "catalog", "step", id="explicit-replaces-catalog"),
+            pytest.param("empty", "catalog", "empty", id="explicit-empty-replaces-catalog"),
+            pytest.param(None, None, None, id="neither-stays-omitted"),
+        ],
+    )
+    def test_merge_uses_step_preserves_omission_and_replacement(
+        self, using_tools: str | None, base_tools: str | None, expected: str | None
+    ) -> None:
+        """[tier-1/unit] merge_uses_step: merged.tools equals the expected policy and is None (not ToolPolicy()) when neither declares one."""
+        base = StepDefinition(id="base-step", type=StepType.COMMAND, command="echo base")
+        if base_tools is not None:
+            base = StepDefinition(id="base-step", type=StepType.AGENT, prompt="go", tools=_TOOLS_BY_KEY[base_tools])
+        using_fields: dict[str, object] = {"id": "derived-step", "uses": "base-step"}
+        if using_tools is not None:
+            using_fields["tools"] = _TOOLS_BY_KEY[using_tools]
+        using = StepDefinition.model_validate(using_fields)
+
+        merged = merge_uses_step(using, base)
+
+        assert merged is not None
+        assert merged.tools == _TOOLS_BY_KEY[expected]

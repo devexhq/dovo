@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from dovo.core.agents import AgentEnvMode, AgentInvocationContext, AgentResponseStatus
+from dovo.core.agents import AgentEnvMode, AgentInvocationContext, AgentResponseStatus, default_tool_policy
 from dovo.core.agents.cli_mutation import CliMutationOutcome, CliMutationRunRequest
 from dovo.core.agents.copilot import (
     CopilotAgentAdapter,
@@ -71,7 +71,9 @@ class CopilotRunTests:
         monkeypatch.setattr("dovo.core.agents.copilot.run_isolated_process", runner)
 
         outcome = default_copilot_run(
-            CliMutationRunRequest(worktree_path=tmp_path, prompt="hi", model=None, timeout_seconds=3)
+            CliMutationRunRequest(
+                worktree_path=tmp_path, prompt="hi", model=None, timeout_seconds=3, tools=default_tool_policy()
+            )
         )
 
         assert outcome == CliMutationOutcome(
@@ -95,6 +97,7 @@ class CopilotRunTests:
                 prompt="hi",
                 model=None,
                 timeout_seconds=3,
+                tools=default_tool_policy(),
                 env={"GH_TOKEN": "test-token"},
             )
         )
@@ -128,7 +131,9 @@ class CopilotRunTests:
         monkeypatch.setattr("dovo.core.agents.copilot.run_isolated_process", runner)
 
         outcome = default_copilot_run(
-            CliMutationRunRequest(worktree_path=tmp_path, prompt="hi", model=None, timeout_seconds=3)
+            CliMutationRunRequest(
+                worktree_path=tmp_path, prompt="hi", model=None, timeout_seconds=3, tools=default_tool_policy()
+            )
         )
 
         assert outcome.status == "error"
@@ -143,7 +148,9 @@ class CopilotRunTests:
         monkeypatch.setattr("dovo.core.agents.copilot.run_isolated_process", runner)
 
         outcome = default_copilot_run(
-            CliMutationRunRequest(worktree_path=tmp_path, prompt="hi", model=None, timeout_seconds=3)
+            CliMutationRunRequest(
+                worktree_path=tmp_path, prompt="hi", model=None, timeout_seconds=3, tools=default_tool_policy()
+            )
         )
 
         assert outcome.status == "timeout"

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from dovo.common.tool_policy import ToolPolicy
 from dovo.core.agents.factory import get_agent_adapter
 from dovo.core.agents.models import (
     AgentAttempt,
@@ -23,10 +24,13 @@ def run_direct_attempt(
     settings: ResolvedAgentSettings,
     worktree_path: Path,
     timeout_seconds: int,
+    tools: ToolPolicy,
     context: AgentAttemptContext | None = None,
 ) -> AgentAttempt:
-    """Run one direct-mode agent attempt through the resolved provider, carrying the step boundary's invocation paths and environment layers to the request."""
-    request = _build_request(instruction, settings, worktree_path, timeout_seconds, context or AgentAttemptContext())
+    """Run one direct-mode agent attempt through the resolved provider, carrying the step's final tool policy, invocation paths, and environment layers to the request."""
+    request = _build_request(
+        instruction, settings, worktree_path, timeout_seconds, tools, context or AgentAttemptContext()
+    )
 
     return _run_provider(request, settings.provider)
 
@@ -36,9 +40,10 @@ def _build_request(
     settings: ResolvedAgentSettings,
     worktree_path: Path,
     timeout_seconds: int,
+    tools: ToolPolicy,
     context: AgentAttemptContext,
 ) -> AgentRequest:
-    """Build the direct-mode AgentRequest from the instruction, the resolved settings, and the attempt context."""
+    """Build the direct-mode AgentRequest from the instruction, the resolved settings, the final tool policy, and the attempt context."""
     invocation = context.invocation
     return AgentRequest(
         mode="direct",
@@ -54,6 +59,7 @@ def _build_request(
         invocation=invocation,
         env_passthrough=settings.env_passthrough,
         env_mode=settings.env_mode,
+        tools=tools,
         env=dict(context.env),
         metadata_env=dict(context.metadata_env),
     )
