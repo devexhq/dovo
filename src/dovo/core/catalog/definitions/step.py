@@ -7,6 +7,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 from dovo.common.models import FailurePolicy, OnFailureSpec
+from dovo.common.tool_policy import ToolPolicy, coerce_tool_policy
 
 _DRIVE_PATH_RE = re.compile(r"^[A-Za-z]:/")
 DEFAULT_STEP_TIMEOUT_SECONDS = 120
@@ -64,8 +65,10 @@ class StepAssert(BaseModel):
 
 def _validate_run_shape(step: "StepDefinition") -> None:
     """Reject 'run' combined with any uses/inline-type-mode-only fields."""
-    run_incompatible = ("uses", "command", "type", "prompt", "script_path", "tools")
+    run_incompatible = ("uses", "command", "type", "prompt", "script_path")
     conflicting = [f for f in run_incompatible if getattr(step, f)]
+    if step.tools is not None:
+        conflicting.append("tools")
     if conflicting:
         raise ValueError(f"Step '{step.id}': 'run' cannot be combined with {', '.join(conflicting)}.")
 
@@ -106,7 +109,7 @@ class StepDefinition(BaseModel):
     command: str | None = None
     prompt: str | None = None
     script_path: str | None = None
-    tools: list[str] = Field(default_factory=list)
+    tools: ToolPolicy | None = None
     env: dict[str, str] = Field(default_factory=dict)
     timeout_seconds: int = Field(default=DEFAULT_STEP_TIMEOUT_SECONDS, gt=0)
     assert_: StepAssert | None = Field(default=None, validation_alias="assert", serialization_alias="assert")
@@ -123,6 +126,12 @@ class StepDefinition(BaseModel):
             except ValueError:
                 pass
         return val
+
+    @field_validator("tools", mode="before")
+    @classmethod
+    def reject_legacy_tools(cls, val: Any) -> Any:
+        """Reject the legacy string list with migration guidance."""
+        return coerce_tool_policy(val)
 
     @field_validator("on_failure", mode="before")
     @classmethod

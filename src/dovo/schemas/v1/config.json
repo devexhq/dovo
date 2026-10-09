@@ -46,7 +46,8 @@
           "items": { "type": "string", "pattern": "^[^=\\u0000*\\s]+\\*?$" },
           "default": []
         },
-        "env_mode": { "type": "string", "enum": ["allowlist", "inherit"], "default": "allowlist" }
+        "env_mode": { "type": "string", "enum": ["allowlist", "inherit"], "default": "allowlist" },
+        "tools": { "$ref": "#/$defs/toolPolicy" }
       }
     },
     "history": {
@@ -102,6 +103,27 @@
           "type": "array",
           "items": { "type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]*$" }
         }
+      }
+    }
+  },
+  "$defs": {
+    "toolPolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "allow": { "type": "array", "items": { "$ref": "#/$defs/toolRule" }, "default": [] },
+        "deny": { "type": "array", "items": { "$ref": "#/$defs/toolRule" }, "default": [] },
+        "allow_all": { "type": "boolean", "default": false }
+      }
+    },
+    "toolRule": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["capability"],
+      "properties": {
+        "capability": { "type": "string", "enum": ["shell", "read", "write", "network", "mcp"] },
+        "root": { "type": ["string", "null"], "enum": ["worktree", "scratch", null] },
+        "pattern": { "type": ["string", "null"], "minLength": 1 }
       }
     }
   }

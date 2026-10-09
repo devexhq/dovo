@@ -74,7 +74,7 @@ Executes a shell command with custom timeouts and environment variables:
 ```
 
 #### B. Agent Step (`type: agent`)
-Sends the interpolated `prompt` to the resolved provider in the active Git worktree and applies any returned change there; it fails without a worktree. `tools` is accepted metadata that is not enforced. See [Agent-Step Adapters](agent-providers.md):
+Sends the interpolated `prompt` to the resolved provider in the active Git worktree and applies any returned change there; it fails without a worktree. `tools` is a structured policy object that is validated but not yet enforced by any provider; omit it to keep the default. A legacy string list is rejected. See [Agent-Step Adapters](agent-providers.md):
 
 ```yaml
 - id: fix-bug
@@ -82,9 +82,16 @@ Sends the interpolated `prompt` to the resolved provider in the active Git workt
   type: agent
   prompt: "Refactor the authentication middleware in src/auth.py to fix issue #${{ inputs.issue_id }}"
   tools:
-    - file_reader
-    - file_writer
-    - bash
+    allow:
+      - capability: read
+        pattern: "src/**"
+      - capability: write
+        pattern: "src/auth.py"
+      - capability: shell
+        pattern: "git status"
+    deny:
+      - capability: write
+        pattern: ".dovo/**"
   timeout_seconds: 300
 ```
 

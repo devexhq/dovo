@@ -17,3 +17,13 @@ class SerializeConfigTests:
 
         assert list(result)[-2:] == ["concurrency", "environment"]
         assert result["environment"] == {"sensitive_variables": ["A"]}
+
+    def test_serialize_config_emits_agent_tools_only_when_set(self) -> None:
+        """[tier-1/unit] serialize_config: agent.tools is absent from the payload when unset and a policy object when set."""
+        payload = build_default_config("demo")
+        unset = serialize_config(DovoConfig.model_validate(payload))
+        payload["agent"] = {**payload["agent"], "tools": {"allow_all": True}}
+        configured = serialize_config(DovoConfig.model_validate(payload))
+
+        assert "tools" not in unset["agent"]
+        assert configured["agent"]["tools"] == {"allow": [], "deny": [], "allow_all": True}

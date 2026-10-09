@@ -76,6 +76,25 @@
     }
   },
   "$defs": {
+    "toolPolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "allow": { "type": "array", "items": { "$ref": "#/$defs/toolRule" }, "default": [] },
+        "deny": { "type": "array", "items": { "$ref": "#/$defs/toolRule" }, "default": [] },
+        "allow_all": { "type": "boolean", "default": false }
+      }
+    },
+    "toolRule": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["capability"],
+      "properties": {
+        "capability": { "type": "string", "enum": ["shell", "read", "write", "network", "mcp"] },
+        "root": { "type": ["string", "null"], "enum": ["worktree", "scratch", null] },
+        "pattern": { "type": ["string", "null"], "minLength": 1 }
+      }
+    },
     "blueprint_defaults": {
       "type": "object",
       "additionalProperties": false,
@@ -114,10 +133,7 @@
         "uses": { "type": "string", "minLength": 1 },
         "run": { "type": "string", "minLength": 1 },
         "prompt": { "type": "string" },
-        "tools": {
-          "type": "array",
-          "items": { "type": "string" }
-        },
+        "tools": { "$ref": "#/$defs/toolPolicy" },
         "env": {
           "type": "object",
           "additionalProperties": { "type": "string" }

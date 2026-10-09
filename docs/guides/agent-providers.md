@@ -18,7 +18,7 @@ The runtime-supported adapter identifiers are:
 
 Choose an installed, registered provider. Other providers are delayed beyond v1; a config that selects one fails `dovo config validate` with a schema error on `agent.provider`.
 
-`tools` in an agent step is accepted metadata. It is not enforced.
+`tools` is a structured policy that is validated but not yet enforced; see [Step Schema](../reference/step-schema.md).
 
 ---
 
