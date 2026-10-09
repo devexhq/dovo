@@ -1,4 +1,4 @@
-"""Tests for the shared timeout, provider-error, and no-op agent response constructors."""
+"""Tests for the shared timeout, provider-error, blocked, and no-op agent response constructors."""
 
 from __future__ import annotations
 
@@ -6,8 +6,15 @@ from collections.abc import Sequence
 
 import pytest
 
-from dovo.core.agents.models import AgentResponse, AgentResponseStatus
-from dovo.core.agents.responses import diagnostics_with_fixes, no_op_response, provider_error_response, timeout_response
+from dovo.common.tool_policy import ToolCapability
+from dovo.core.agents.models import AgentDenial, AgentResponse, AgentResponseStatus
+from dovo.core.agents.responses import (
+    blocked_response,
+    diagnostics_with_fixes,
+    no_op_response,
+    provider_error_response,
+    timeout_response,
+)
 
 
 class TimeoutResponseTests:
@@ -37,6 +44,66 @@ class TimeoutResponseTests:
         assert response.raw_text is None
         assert response.mutation_baseline_ref is None
         assert len(response.errors) == 1
+
+
+class BlockedResponseContractTests:
+    def test_blocked_response_carries_denials_then_fix(self) -> None:
+        """[tier-1/unit] blocked_response: status BLOCKED, errors lead with the AGENT_PERMISSION_BLOCKED line for the first denial then one '<tool>: <message>' per further denial, fixes hold the shell grant snippet for an ungranted bash denial and the remove-or-narrow text for a by_rule denial, duration_ms, raw_text and mutation_baseline_ref preserved."""
+        response = blocked_response(
+            duration_ms=7,
+            denials=[
+                AgentDenial(tool="bash", message="no interactive user response", capability=ToolCapability.SHELL),
+                AgentDenial(
+                    tool="edit",
+                    message="denied due to the following rules",
+                    capability=ToolCapability.WRITE,
+                    by_rule=True,
+                ),
+            ],
+            raw_text="partial",
+            mutation_baseline_ref="abc",
+        )
+
+        assert response == AgentResponse(
+            status=AgentResponseStatus.BLOCKED,
+            duration_ms=7,
+            raw_text="partial",
+            mutation_baseline_ref="abc",
+            errors=[
+                "Agent run was blocked by tool permissions (AGENT_PERMISSION_BLOCKED): bash: no interactive user response",
+                "edit: denied due to the following rules",
+            ],
+            fixes=[
+                "Grant it in the step's tools policy, e.g. tools: {allow: [{capability: shell}]}, "
+                "or set it once under agent.tools in .dovo/config.json",
+                "Remove or narrow the deny rule that blocked 'edit': denied due to the following rules",
+            ],
+        )
+
+    @pytest.mark.parametrize(
+        ("denials", "expected_fix_count"),
+        [
+            pytest.param(
+                [AgentDenial(tool="bash", message="m", capability=ToolCapability.SHELL)] * 2,
+                1,
+                id="same-cause-listed-once",
+            ),
+            pytest.param([AgentDenial(tool="mystery", message="m")], 0, id="unknown-capability-has-no-fix"),
+        ],
+    )
+    def test_blocked_response_lists_one_fix_per_distinct_known_cause(
+        self, denials: list[AgentDenial], expected_fix_count: int
+    ) -> None:
+        """[tier-1/unit] blocked_response: repeated identical denials yield one fix and a denial with no capability and no rule yields none, while every denial still appears in errors."""
+        response = blocked_response(duration_ms=1, denials=denials)
+
+        assert len(response.fixes) == expected_fix_count
+        assert len(response.errors) == len(denials)
+
+    def test_blocked_response_requires_at_least_one_denial(self) -> None:
+        """[tier-1/unit] blocked_response: an empty denials sequence raises ValueError because the first denial leads the error text."""
+        with pytest.raises(ValueError):
+            blocked_response(duration_ms=1, denials=[])
 
 
 class ProviderErrorResponseTests:

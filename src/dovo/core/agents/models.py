@@ -10,7 +10,7 @@ from typing import Annotated, Literal
 from pydantic import BaseModel, Field, StringConstraints, model_validator
 
 from dovo.common.models import BaseResult
-from dovo.common.tool_policy import ToolPolicy
+from dovo.common.tool_policy import ToolCapability, ToolPolicy
 
 OmissionReason = Literal[
     "missing",
@@ -97,6 +97,18 @@ class AgentResponseStatus(StrEnum):
     UNFIXABLE = "unfixable"
     TIMEOUT = "timeout"
     PROVIDER_ERROR = "provider_error"
+    BLOCKED = "blocked"
+
+
+class AgentDenial(BaseModel):
+    """One tool call the provider refused, with the capability it maps to when known."""
+
+    model_config = {"extra": "forbid", "strict": True}
+
+    tool: str
+    message: str
+    capability: ToolCapability | None = None
+    by_rule: bool = False
 
 
 class AgentInvocationContext(BaseModel):

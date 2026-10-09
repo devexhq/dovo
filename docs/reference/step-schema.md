@@ -79,6 +79,9 @@ An agent step records one outcome per attempt. The canonical mapping is `AGENT_O
 | `unfixable` | `failed` | `201` |
 | `timeout` | `failed` | `202` |
 | `provider_error` | `failed` | `203` |
+| `blocked` | `failed` | `204` |
+
+`blocked` means the provider refused a tool call under the step's tool permissions and the worktree diff is empty; the error names the refused tool and when the tool maps to a known capability or a deny rule matched, the fix says whether to grant the capability in the step's `tools` policy or to remove or narrow the deny rule. A refusal that still left edits proceeds through the normal patch gate instead.
 
 Preflight failures (inactive worktree, missing agent settings, blank prompt), provider exceptions, patches that fail to apply, and an output callback that raises all record `provider_error` with `203`.
 

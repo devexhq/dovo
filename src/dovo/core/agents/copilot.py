@@ -7,6 +7,7 @@ import subprocess
 from typing import Any
 
 from dovo.common.process import run_isolated_process
+from dovo.common.tool_policy import ToolCapability
 from dovo.core.agents.base import ProviderSpec
 from dovo.core.agents.cli_mutation import (
     CliDirectMutationAdapter,
@@ -14,6 +15,7 @@ from dovo.core.agents.cli_mutation import (
     CliMutationRunRequest,
 )
 from dovo.core.agents.credentials import missing_credential_error, resolve_credential
+from dovo.core.agents.models import AgentDenial
 
 COPILOT_TOKEN_ENVS = ("GH_TOKEN", "GITHUB_TOKEN")
 COPILOT_CONTROL_ENVS = ("COPILOT_MODEL", "COPILOT_ALLOW_ALL", "COPILOT_GITHUB_TOKEN")
@@ -67,10 +69,81 @@ def _process_copilot_event(data: dict[str, Any], current_text: str | None) -> tu
     return current_text, None
 
 
-def _parse_jsonl(stdout_text: str) -> tuple[str | None, int | None, str | None]:
-    """Parse JSONL output lines from Copilot CLI stream."""
+_TOOL_CAPABILITIES: dict[str, ToolCapability] = {
+    "bash": ToolCapability.SHELL,
+    "read_bash": ToolCapability.SHELL,
+    "stop_bash": ToolCapability.SHELL,
+    "list_bash": ToolCapability.SHELL,
+    "view": ToolCapability.READ,
+    "grep": ToolCapability.READ,
+    "glob": ToolCapability.READ,
+    "create": ToolCapability.WRITE,
+    "edit": ToolCapability.WRITE,
+    "web_fetch": ToolCapability.NETWORK,
+}
+
+
+def _denial_capability(tool_name: str) -> ToolCapability | None:
+    """Map a Copilot tool name to the Dovo capability that grants it, or None when unknown."""
+    return _TOOL_CAPABILITIES.get(tool_name)
+
+
+def _record_tool_name(payload: dict[str, Any], tool_names: dict[str, str]) -> None:
+    """Remember the tool name of a tool.execution_start payload under its toolCallId."""
+    call_id, tool_name = payload.get("toolCallId"), payload.get("toolName")
+    if isinstance(call_id, str) and isinstance(tool_name, str):
+        tool_names[call_id] = tool_name
+
+
+def _denial_from_complete(payload: dict[str, Any], tool_names: dict[str, str]) -> AgentDenial | None:
+    """Return the denial a failed tool.execution_complete payload describes, or None when it failed for another reason."""
+    error = payload.get("error")
+    if payload.get("success") is not False or not isinstance(error, dict):
+        return None
+
+    message = error.get("message")
+    code = error.get("code")
+    if not isinstance(message, str) or (code != "denied" and "Permission denied" not in message):
+        return None
+
+    call_id = payload.get("toolCallId")
+    tool = tool_names.get(call_id, "unknown") if isinstance(call_id, str) else "unknown"
+
+    return AgentDenial(
+        tool=tool,
+        message=message,
+        capability=_denial_capability(tool),
+        by_rule=code == "denied" and "following rules" in message,
+    )
+
+
+def _collect_denials(events: list[dict[str, Any]]) -> list[AgentDenial]:
+    """Return one AgentDenial per denied tool.execution_complete event.
+
+    The tool name is only on the matching tool.execution_start event, so the two are joined on toolCallId.
+    """
+    tool_names: dict[str, str] = {}
+    denials: list[AgentDenial] = []
+    for event in events:
+        payload = event.get("data")
+        if not isinstance(payload, dict):
+            continue
+
+        if event.get("type") == "tool.execution_start":
+            _record_tool_name(payload, tool_names)
+        elif event.get("type") == "tool.execution_complete":
+            denial = _denial_from_complete(payload, tool_names)
+            if denial is not None:
+                denials.append(denial)
+
+    return denials
+
+
+def _parse_jsonl(stdout_text: str) -> tuple[str | None, int | None, str | None, list[AgentDenial]]:
+    """Parse JSONL output lines from the Copilot CLI stream."""
     assistant_text: str | None = None
     result_exit_code: int | None = None
+    events: list[dict[str, Any]] = []
     for raw_line in stdout_text.splitlines():
         line = raw_line.strip()
         if not line:
@@ -78,12 +151,13 @@ def _parse_jsonl(stdout_text: str) -> tuple[str | None, int | None, str | None]:
         try:
             data = json.loads(line)
         except json.JSONDecodeError as exc:
-            return None, None, f"invalid JSONL from Copilot CLI: {exc}"
+            return None, None, f"invalid JSONL from Copilot CLI: {exc}", []
         if isinstance(data, dict):
+            events.append(data)
             assistant_text, code = _process_copilot_event(data, assistant_text)
             if code is not None:
                 result_exit_code = code
-    return assistant_text, result_exit_code, None
+    return assistant_text, result_exit_code, None, _collect_denials(events)
 
 
 def _classify_copilot_output(completed_code: int, stdout_text: str, stderr_text: str) -> CliMutationOutcome:
@@ -92,7 +166,7 @@ def _classify_copilot_output(completed_code: int, stdout_text: str, stderr_text:
         detail = stderr_text.strip() or stdout_text.strip() or f"exit {completed_code}"
         return CliMutationOutcome(status="error", error_detail=detail)
 
-    assistant_text, exit_code, parse_error = _parse_jsonl(stdout_text)
+    assistant_text, exit_code, parse_error, denials = _parse_jsonl(stdout_text)
     if parse_error is not None:
         return CliMutationOutcome(status="error", error_detail=parse_error)
     if exit_code is not None and exit_code != 0:
@@ -103,7 +177,9 @@ def _classify_copilot_output(completed_code: int, stdout_text: str, stderr_text:
         )
     if assistant_text is None and not stdout_text.strip():
         return CliMutationOutcome(status="error", error_detail="empty Copilot CLI output")
-    return CliMutationOutcome(status="finished", result_text=assistant_text or stdout_text.strip() or None)
+    return CliMutationOutcome(
+        status="finished", result_text=assistant_text or stdout_text.strip() or None, denials=denials
+    )
 
 
 def default_copilot_run(request: CliMutationRunRequest) -> CliMutationOutcome:

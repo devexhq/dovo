@@ -8,6 +8,7 @@ from pathlib import Path
 
 import pytest
 
+from dovo.common.tool_policy import ToolCapability
 from dovo.core.agents import AgentEnvMode, AgentInvocationContext, AgentResponseStatus, default_tool_policy
 from dovo.core.agents.cli_mutation import CliMutationOutcome, CliMutationRunRequest
 from dovo.core.agents.copilot import (
@@ -15,6 +16,7 @@ from dovo.core.agents.copilot import (
     default_copilot_run,
     resolve_copilot_token,
 )
+from dovo.core.agents.models import AgentDenial
 from tests.harness import AgentRequestBuilder, FakeAgentRunner
 
 
@@ -349,3 +351,189 @@ class CopilotEnvBoundaryTests:
             for path in (invocation.control_path, invocation.control_path.parent)
         }
         assert not forbidden & {value for call in runner.calls for value in call.env.values()}
+
+
+# Trimmed from events recorded with `gh copilot -- -p ... --output-format json --silent` (copilot 1.0.92, 2026-10-09); `result` lines are hand-written.
+# The tool name lives only on tool.execution_start; tool.execution_complete carries toolCallId.
+_DENY_RULE_STREAM = (
+    b'{"type":"tool.execution_start","data":{"toolCallId":"toolu_01Hn1pVSWvaFS56NSN83qahb","toolName":"bash",'
+    b'"arguments":{"command":"echo hi","description":"Run echo hi"},"turnId":"0","model":"claude-sonnet-5.5",'
+    b'"toolTitle":"Running command","shellToolInfo":{"possiblePaths":[],"hasWriteFileRedirection":false}},'
+    b'"id":"2926c830-c1d5-412b-aa7d-b260aaaa3ca4","timestamp":"2026-10-09T18:43:43.392Z",'
+    b'"parentId":"3195c9ad-0ee7-4b6c-9a57-1c63c9578d3c"}\n'
+    b'{"type":"tool.execution_complete","data":{"toolCallId":"toolu_01Hn1pVSWvaFS56NSN83qahb",'
+    b'"model":"claude-sonnet-5.5","interactionId":"ae061869-f957-4c33-862a-5d9dbebe8e6f","turnId":"0","rte":true,'
+    b'"success":false,"error":{"message":"Permission to run this tool was denied due to the following rules: `shell`",'
+    b'"code":"denied"},"toolTelemetry":{"properties":{"shell_error_category":"permission_denied"}}},'
+    b'"id":"627afeaf-f8b5-4260-a0b2-760e1655d975","timestamp":"2026-10-09T18:43:43.498Z",'
+    b'"parentId":"2926c830-c1d5-412b-aa7d-b260aaaa3ca4"}\n'
+    b'{"type":"result","timestamp":"2026-10-09T18:43:45.405Z","sessionId":"6b55cb24-7fcc-4016-84e3-fe5f27faf9e0",'
+    b'"exitCode":0,"usage":{"premiumRequests":1,"totalApiDurationMs":3350,"sessionDurationMs":6182,'
+    b'"codeChanges":{"linesAdded":0,"linesRemoved":0,"filesModified":[]}}}\n'
+)
+_TOOL_SUCCESS_STREAM = (
+    b'{"type":"tool.execution_start","data":{"toolCallId":"toolu_01V1HBoYdXQCFJHrweaTYCZM","toolName":"bash",'
+    b'"arguments":{"command":"echo hi","description":"Run echo hi"},"turnId":"0","model":"claude-sonnet-5.5",'
+    b'"toolTitle":"Running command","shellToolInfo":{"possiblePaths":[],"hasWriteFileRedirection":false}},'
+    b'"id":"8592b5cd-0b03-48b2-9d15-65dd9ac92d0a","timestamp":"2026-10-09T18:44:00.581Z",'
+    b'"parentId":"1c974296-bdf2-47de-b70e-d8162b546b42"}\n'
+    b'{"type":"tool.execution_complete","data":{"toolCallId":"toolu_01V1HBoYdXQCFJHrweaTYCZM",'
+    b'"model":"claude-sonnet-5.5","interactionId":"b5373959-d265-4e77-b99b-f82f60e1a10e","turnId":"0","rte":true,'
+    b'"shellExecution":{"exitCode":0},"success":true,"result":{"content":"hi\\n<shellId: 0 completed with exit code 0>",'
+    b'"detailedContent":"hi\\n<shellId: 0 completed with exit code 0>"}},'
+    b'"id":"647512b5-15e1-46d8-bdc4-0a2753404f30","timestamp":"2026-10-09T18:44:00.667Z",'
+    b'"parentId":"8592b5cd-0b03-48b2-9d15-65dd9ac92d0a"}\n'
+    b'{"type":"result","timestamp":"2026-10-09T18:44:01.471Z","sessionId":"49f9af7b-0cf2-4ae5-91ef-cc07442009c4",'
+    b'"exitCode":0,"usage":{"premiumRequests":1}}\n'
+)
+
+
+_NO_INTERACTIVE_MESSAGE = "Permission denied because no interactive user response was available. Retry in an interactive session so the user can approve it, or try an alternative that does not require this permission."
+_NO_INTERACTIVE_STREAM = (
+    b'{"type":"tool.execution_start","data":{"toolCallId":"toolu_01KBgTcL9noQsoEREAJuivys","toolName":"bash",'
+    b'"arguments":{"command":"touch x.txt && ls -l x.txt","description":"Create x.txt"},"turnId":"0",'
+    b'"model":"claude-sonnet-5.5","toolTitle":"Running command",'
+    b'"shellToolInfo":{"possiblePaths":["x.txt"],"hasWriteFileRedirection":false}},'
+    b'"id":"5916ac8a-b69a-4d54-9789-6a8a56a603a0","timestamp":"2026-10-09T18:47:23.845Z",'
+    b'"parentId":"756447ef-5088-4659-85cd-c02cffa9e95d"}\n'
+    b'{"type":"tool.execution_complete","data":{"toolCallId":"toolu_01KBgTcL9noQsoEREAJuivys",'
+    b'"model":"claude-sonnet-5.5","interactionId":"1c16f980-16a8-4667-8784-fdb5183c9d40","turnId":"0","rte":true,'
+    b'"success":false,"error":{"message":"Permission denied because no interactive user response was available. Retry in an interactive session so the user can approve it, or try an alternative that does not require this permission.","code":"denied"},'
+    b'"toolTelemetry":{"properties":{"shell_error_category":"permission_denied"}}},'
+    b'"id":"e0f94c8f-a03d-4b1a-a4df-85e14476f665","timestamp":"2026-10-09T18:47:23.903Z",'
+    b'"parentId":"c7ab090e-4c1a-428e-80f1-a523b270180c"}\n'
+    b'{"type":"tool.execution_start","data":{"toolCallId":"toolu_01TT9THqrXqhmQGwdHq9j8wW","toolName":"create",'
+    b'"arguments":{"path":"/tmp/tmp.sLAA8pnvAx/x.txt","file_text":""},"turnId":"1","model":"claude-sonnet-5.5",'
+    b'"toolTitle":"Creating file"},"id":"b8b7ee8f-b2ff-4511-add4-bde2a67a21b8",'
+    b'"timestamp":"2026-10-09T18:47:25.998Z","parentId":"a571fd88-8b51-4905-bd88-7bbad7ff3fcc"}\n'
+    b'{"type":"tool.execution_complete","data":{"toolCallId":"toolu_01TT9THqrXqhmQGwdHq9j8wW",'
+    b'"model":"claude-sonnet-5.5","interactionId":"1c16f980-16a8-4667-8784-fdb5183c9d40","turnId":"1","rte":true,'
+    b'"success":false,"error":{"message":"Permission denied because no interactive user response was available. Retry in an interactive session so the user can approve it, or try an alternative that does not require this permission.","code":"denied"},'
+    b'"toolTelemetry":{"properties":{"command":"create","fileExtension":"[\\".txt\\"]"}}},'
+    b'"id":"45fe525d-106e-4f2f-b3ce-e398ba6b01d8","timestamp":"2026-10-09T18:47:26.007Z",'
+    b'"parentId":"0bd32f71-af50-4063-9f9c-8eb6ca879866"}\n'
+    b'{"type":"result","timestamp":"2026-10-09T18:47:30.000Z","sessionId":"00000000-0000-0000-0000-000000000000",'
+    b'"exitCode":0}\n'
+)
+
+
+def _run_recorded(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, stdout: bytes) -> CliMutationOutcome:
+    monkeypatch.setattr("dovo.core.agents.copilot.run_isolated_process", FakeAgentRunner().returning(stdout=stdout))
+
+    return default_copilot_run(
+        CliMutationRunRequest(
+            worktree_path=tmp_path, prompt="hi", model=None, timeout_seconds=3, tools=default_tool_policy()
+        )
+    )
+
+
+class CopilotDenialClassificationTests:
+    @pytest.mark.parametrize(
+        ("stream", "expected"),
+        [
+            pytest.param(
+                _DENY_RULE_STREAM,
+                [
+                    AgentDenial(
+                        tool="bash",
+                        message="Permission to run this tool was denied due to the following rules: `shell`",
+                        capability=ToolCapability.SHELL,
+                        by_rule=True,
+                    )
+                ],
+                id="code-denied",
+            ),
+            pytest.param(
+                _NO_INTERACTIVE_STREAM,
+                [
+                    AgentDenial(tool="bash", message=_NO_INTERACTIVE_MESSAGE, capability=ToolCapability.SHELL),
+                    AgentDenial(tool="create", message=_NO_INTERACTIVE_MESSAGE, capability=ToolCapability.WRITE),
+                ],
+                id="ungranted-tool",
+            ),
+        ],
+    )
+    def test_denied_tool_event_is_collected_as_a_denial(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, stream: bytes, expected: list[AgentDenial]
+    ) -> None:
+        """[tier-1/unit] default_copilot_run: recorded JSONL with a denied tool.execution_complete and exit 0 -> CliMutationOutcome(status='finished', denials == [AgentDenial(tool, message, capability, by_rule)]) with by_rule True only for the 'following rules' form."""
+        outcome = _run_recorded(tmp_path, monkeypatch, stream)
+
+        assert outcome.status == "finished"
+        assert outcome.denials == expected
+
+    def test_successful_tool_events_yield_no_denials(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """[tier-1/unit] default_copilot_run: recorded JSONL with only successful tool events -> denials == []."""
+        outcome = _run_recorded(tmp_path, monkeypatch, _TOOL_SUCCESS_STREAM)
+
+        assert outcome.status == "finished"
+        assert outcome.denials == []
+
+    @pytest.mark.parametrize(
+        ("tool_name", "capability"),
+        [
+            pytest.param("read_bash", ToolCapability.SHELL, id="shell-family"),
+            pytest.param("grep", ToolCapability.READ, id="read"),
+            pytest.param("edit", ToolCapability.WRITE, id="write"),
+            pytest.param("web_fetch", ToolCapability.NETWORK, id="network"),
+            pytest.param("mystery_tool", None, id="unknown-tool"),
+        ],
+    )
+    def test_denied_tool_maps_to_its_capability(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, tool_name: str, capability: ToolCapability | None
+    ) -> None:
+        """[tier-1/unit] default_copilot_run: a denied call to read_bash/grep/edit/web_fetch maps to shell/read/write/network and an unlisted tool maps to None."""
+        stream = _DENY_RULE_STREAM.replace(b'"toolName":"bash"', f'"toolName":"{tool_name}"'.encode())
+
+        outcome = _run_recorded(tmp_path, monkeypatch, stream)
+
+        assert [denial.capability for denial in outcome.denials] == [capability]
+
+    @pytest.mark.parametrize(
+        ("stream", "expected"),
+        [
+            pytest.param(
+                b'{"type":"tool.execution_complete","data":{"toolCallId":"orphan","success":false,'
+                b'"error":{"code":"denied","message":"Permission to run this tool was denied due to the following rules: `shell`"}}}\n',
+                [
+                    AgentDenial(
+                        tool="unknown",
+                        message="Permission to run this tool was denied due to the following rules: `shell`",
+                        by_rule=True,
+                    )
+                ],
+                id="complete-without-start",
+            ),
+            pytest.param(
+                b'{"type":"tool.execution_complete","data":{"toolCallId":7,"success":false,'
+                b'"error":{"code":"denied","message":"Permission denied"}}}\n',
+                [AgentDenial(tool="unknown", message="Permission denied")],
+                id="non-string-call-id",
+            ),
+            pytest.param(
+                b'{"type":"tool.execution_complete","data":{"toolCallId":"a","success":false,'
+                b'"error":{"code":"timeout","message":"timed out"}}}\n',
+                [],
+                id="non-denial-failure",
+            ),
+            pytest.param(
+                b'{"type":"tool.execution_complete","data":{"toolCallId":"a","success":false,"error":"denied"}}\n',
+                [],
+                id="non-dict-error",
+            ),
+            pytest.param(
+                b'{"type":"tool.execution_complete","data":{"toolCallId":"a","success":false,'
+                b'"error":{"code":"denied","message":5}}}\n',
+                [],
+                id="non-string-message",
+            ),
+        ],
+    )
+    def test_unmatched_or_malformed_complete_events(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, stream: bytes, expected: list[AgentDenial]
+    ) -> None:
+        """[tier-1/unit] default_copilot_run: a failed tool.execution_complete with no matching start falls back to tool 'unknown'; non-denial failures and malformed error payloads yield no denial."""
+        outcome = _run_recorded(tmp_path, monkeypatch, stream)
+
+        assert outcome.status == "finished"
+        assert outcome.denials == expected
