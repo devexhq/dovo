@@ -3,6 +3,7 @@
 import pytest
 
 from dovo.core.diagnostics.checks.agent_setup import AgentSetupCheck
+from dovo.core.diagnostics.checks.artifacts_integrity import ArtifactsIntegrityCheck
 from dovo.core.diagnostics.checks.config_schema import ConfigSchemaCheck
 from dovo.core.diagnostics.checks.env_binaries import EnvBinariesCheck
 from dovo.core.diagnostics.checks.filesystem_writable import FilesystemWritableCheck
@@ -116,14 +117,15 @@ class CheckRegistryTests:
 class DefaultRegistryTests:
     """Unit tests for get_default_registry factory wiring."""
 
-    def test_get_default_registry_registers_all_six_builtin_checks(self) -> None:
-        """[tier-1/unit] get_default_registry: returns a registry with exactly the 6 built-in checks by check_id."""
+    def test_get_default_registry_registers_all_seven_builtin_checks(self) -> None:
+        """[tier-1/unit] get_default_registry: returns a registry with exactly the 7 built-in checks by check_id."""
         registry = get_default_registry()
 
-        assert len(registry.all()) == 6
+        assert len(registry.all()) == 7
         assert isinstance(registry.get("git.repo"), GitRepoCheck)
         assert isinstance(registry.get("config.schema"), ConfigSchemaCheck)
         assert isinstance(registry.get("filesystem.writable"), FilesystemWritableCheck)
         assert isinstance(registry.get("worktree.refs"), WorktreeRefsCheck)
         assert isinstance(registry.get("env.binaries"), EnvBinariesCheck)
         assert isinstance(registry.get("agent.setup"), AgentSetupCheck)
+        assert isinstance(registry.get("artifacts.integrity"), ArtifactsIntegrityCheck)

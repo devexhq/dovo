@@ -7,6 +7,7 @@ from pathlib import Path
 from dovo.common.filesystem import WorkspacePaths
 from dovo.core.artifacts.models import (
     ArtifactDownloadResult,
+    ArtifactProvenance,
     ArtifactsListResult,
     ArtifactsListStatus,
     ArtifactsPruneResult,
@@ -37,6 +38,7 @@ class Artifacts:
         *,
         worktree_path: Path,
         retention_days: int | None = None,
+        provenance: ArtifactProvenance,
     ) -> ArtifactUploadResult:
         """Publish a named artifact bundle matching path_glob from worktree_path into persistent storage."""
         return publish_artifact(
@@ -47,6 +49,7 @@ class Artifacts:
             name=name,
             path_glob=path_glob,
             retention_days=retention_days,
+            provenance=provenance,
         )
 
     def list(self, session_id: str | None = None) -> ArtifactsListResult:
@@ -59,9 +62,12 @@ class Artifacts:
         name: str,
         *,
         dest: Path,
+        revision: int | None = None,
     ) -> ArtifactDownloadResult:
-        """Download and checksum-verify a named artifact bundle into dest."""
-        return download_artifact(self.paths.artifacts_dir, self.db, session_id=session_id, name=name, dest=dest)
+        """Download and checksum-verify a named artifact revision (latest by default) into dest."""
+        return download_artifact(
+            self.paths.artifacts_dir, self.db, session_id=session_id, name=name, dest=dest, revision=revision
+        )
 
     def prune(
         self,

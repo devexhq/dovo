@@ -30,12 +30,22 @@ def _db_for(workspace: Path) -> DovoDb:
 def _seed_expired_artifact(workspace: Path) -> None:
     """Persist an already-expired artifact row and its on-disk directory."""
     artifacts_dir = _paths_for(workspace).artifacts_dir
-    artifact_dir = artifacts_dir / "wf_one" / "dist-packages"
+    artifact_dir = artifacts_dir / "wf_one" / "dist-packages" / "1"
     artifact_dir.mkdir(parents=True)
     (artifact_dir / "manifest.json").write_text("{}", encoding="utf-8")
     expired_at = (datetime.now(UTC) - timedelta(days=1)).strftime("%Y-%m-%d %H:%M:%S")
     _db_for(workspace).artifacts.create(
-        "wf_one", "dist-packages", artifact_dir, size_bytes=1, file_count=1, expires_at=expired_at
+        "wf_one",
+        "dist-packages",
+        artifact_dir,
+        revision=1,
+        size_bytes=1,
+        file_count=1,
+        expires_at=expired_at,
+        digest="digest",
+        step_id=None,
+        attempt=None,
+        loop_iteration=None,
     )
 
 

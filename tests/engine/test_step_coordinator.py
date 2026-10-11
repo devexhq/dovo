@@ -12,8 +12,7 @@ from dovo.common.filesystem.models import WorkspacePaths
 from dovo.common.models import FailurePolicy
 from dovo.core.agents import default_tool_policy
 from dovo.core.agents.models import ResolvedAgentSettings
-from dovo.core.catalog.definitions import ArtifactPublishSpec, StepDefinition, StepType
-from dovo.core.db.repositories.artifacts import ArtifactsRepository
+from dovo.core.catalog.definitions import StepDefinition
 from dovo.core.worktree import WorktreeSession
 from dovo.engine.executors.agent_step import build_agent_step_runner
 from dovo.engine.executors.models import StepExecutionContext, StepResult
@@ -27,7 +26,7 @@ from dovo.engine.models import (
     RunSettings,
     StepAction,
 )
-from dovo.engine.step_coordinator import StepCoordinator, auto_publish_step_artifacts
+from dovo.engine.step_coordinator import StepCoordinator
 from tests.harness.builders import StepBuilder
 from tests.harness.sessions import NoOpRunObserver
 from tests.harness.workspace_paths import initialized_workspace_paths
@@ -316,6 +315,32 @@ class StepCoordinatorPrimitiveTests:
 
         assert [metadata.sensitive_variables for metadata in captured] == [("PIN",)]
 
+    def test_run_attempt_forwards_result_warnings_to_run_warnings(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """[tier-1/unit] StepCoordinator.run_attempt: a StepResult carrying warnings ['w1'] -> the caller's warnings list contains 'w1'."""
+
+        class _WarningStepExecution(StepExecution):
+            def run(self) -> StepResult:
+                return StepResult(
+                    step_id="ok",
+                    status="completed",
+                    exit_code=0,
+                    stdout="",
+                    stderr="",
+                    duration_seconds=0.0,
+                    warnings=["w1"],
+                )
+
+        monkeypatch.setattr("dovo.engine.step_coordinator.StepExecution", _WarningStepExecution)
+        context = RunSettings(cwd=tmp_path, use_worktree=False, paths=_paths_for(tmp_path))
+        step = StepBuilder.command("echo ok").with_id("ok").build()
+        warnings: list[str] = []
+
+        StepCoordinator(context).run_attempt(_run_context(tmp_path), warnings, step, idx=1, total=1, step_context=None)
+
+        assert warnings == ["w1"]
+
     @pytest.mark.parametrize(
         ("ctx_kwargs", "prompter", "warning_substr"),
         [
@@ -398,48 +423,3 @@ class StepCoordinatorPrimitiveTests:
             assert recorded is not None
             assert recorded.error_message is not None
             assert recorded.error_message.endswith(f"({USER_CONTINUED_MARKER})")
-
-
-class AutoPublishStepArtifactsTests:
-    """[tier-1/unit] auto_publish_step_artifacts: no-session short-circuit and non-fatal publish failures."""
-
-    def test_auto_publish_step_artifacts_no_session_returns_no_warnings(self, tmp_path: Path) -> None:
-        """[tier-1/unit] auto_publish_step_artifacts: artifacts_dir=None and artifacts_db=None -> returns [] without invoking publish_artifact."""
-        step = StepDefinition(
-            id="s1",
-            type=StepType.COMMAND,
-            command="echo hi",
-            artifacts=[ArtifactPublishSpec(name="coverage", path="htmlcov/**")],
-        )
-
-        warnings = auto_publish_step_artifacts(
-            step,
-            worktree_path=tmp_path,
-            session_id="wf_abc123",
-            artifacts_dir=None,
-            artifacts_db=None,
-        )
-
-        assert warnings == []
-
-    def test_auto_publish_step_artifacts_publish_failure_returns_warning_not_raise(
-        self, tmp_path: Path, artifacts_repository: ArtifactsRepository
-    ) -> None:
-        """[tier-1/unit] auto_publish_step_artifacts: a step declaring artifacts: [{name, path}] whose glob matches nothing returns one warning string naming the artifact, and raises nothing."""
-        step = StepDefinition(
-            id="s1",
-            type=StepType.COMMAND,
-            command="echo hi",
-            artifacts=[ArtifactPublishSpec(name="coverage", path="htmlcov/**")],
-        )
-
-        warnings = auto_publish_step_artifacts(
-            step,
-            worktree_path=tmp_path,
-            session_id="wf_abc123",
-            artifacts_dir=tmp_path / "artifacts",
-            artifacts_db=artifacts_repository,
-        )
-
-        assert len(warnings) == 1
-        assert "coverage" in warnings[0]

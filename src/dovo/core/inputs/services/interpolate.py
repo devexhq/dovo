@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import re
-from typing import Any
+from collections.abc import Mapping
+from typing import Any, Final
 
+ARTIFACT_FIELDS: Final[tuple[str, ...]] = ("revision", "digest", "dir", "content")
 _PLACEHOLDER_RE = re.compile(r"\$?\{\{\s*([^}]+?)\s*\}\}")
 _INTERPOLATED_FIELDS = ("command", "prompt", "script_path", "run")
 _STEP_ENTRY_FIELDS = {"id", "name", "index", "status", "exit_code"}
@@ -157,16 +159,61 @@ def _resolve_input_placeholder(key: str, inputs: dict[str, Any]) -> tuple[bool, 
     return False, ""
 
 
+def _parse_artifact_key(key: str) -> tuple[str, str] | None:
+    """Parse `artifacts.<name>.<field>` into (name, field); the last segment is the field so names may contain dots."""
+    if not key.startswith("artifacts."):
+        return None
+    parts = key.split(".")
+    if len(parts) < 3:
+        return None
+    return ".".join(parts[1:-1]), parts[-1]
+
+
+def _resolve_artifact_placeholder(key: str, artifacts: Mapping[str, Mapping[str, str]] | None) -> tuple[bool, str]:
+    """Resolve artifacts.<name>.<field> to its value; unknown artifact or field resolves to an empty string."""
+    parsed = _parse_artifact_key(key)
+    if parsed is None:
+        return False, ""
+    name, field_name = parsed
+    return True, (artifacts or {}).get(name, {}).get(field_name, "")
+
+
+def _step_templates(step: object) -> list[str]:
+    """Return every string the step interpolates: its templated fields and its env values."""
+    templates = [
+        value for field_name in _INTERPOLATED_FIELDS if isinstance(value := getattr(step, field_name, None), str)
+    ]
+    env = getattr(step, "env", None)
+    if isinstance(env, dict):
+        templates.extend(value for value in env.values() if isinstance(value, str))
+    return templates
+
+
+def referenced_artifact_fields(step: object) -> dict[str, set[str]]:
+    """Return {artifact name: requested fields} for every artifacts.<name>.<field> placeholder in the step's interpolated fields and env values."""
+    referenced: dict[str, set[str]] = {}
+    for template in _step_templates(step):
+        for match in _PLACEHOLDER_RE.finditer(template):
+            parsed = _parse_artifact_key(match.group(1))
+            if parsed is not None and parsed[1] in ARTIFACT_FIELDS:
+                referenced.setdefault(parsed[0], set()).add(parsed[1])
+    return referenced
+
+
 def _resolve_placeholder(
     key: str,
     inputs: dict[str, Any] | None,
     metadata: Any | None,
+    artifacts: Mapping[str, Mapping[str, str]] | None = None,
 ) -> tuple[bool, str]:
-    """Resolve placeholder expression by querying metadata first, then inputs."""
+    """Resolve placeholder expression by querying metadata first, then artifacts, then inputs."""
     if metadata is not None:
         found, val = _resolve_metadata_placeholder(key, metadata)
         if found:
             return True, val
+    found, val = _resolve_artifact_placeholder(key, artifacts)
+    if found:
+        return True, val
     if inputs is not None:
         found, val = _resolve_input_placeholder(key, inputs)
         if found:
@@ -178,14 +225,15 @@ def interpolate_string(
     template: str,
     inputs: dict[str, Any] | None = None,
     metadata: Any | None = None,
+    artifacts: Mapping[str, Mapping[str, str]] | None = None,
 ) -> str:
     """Replace ``${{ ... }}`` and ``{{ ... }}`` placeholders with resolved string values."""
-    if not inputs and metadata is None:
+    if not inputs and metadata is None and artifacts is None:
         return template
 
     def _replace(match: re.Match[str]) -> str:
         key = match.group(1)
-        found, value = _resolve_placeholder(key, inputs, metadata)
+        found, value = _resolve_placeholder(key, inputs, metadata, artifacts)
         if not found:
             return match.group(0)
         return value
@@ -197,13 +245,14 @@ def _interpolated_field_updates(
     step: Any,
     inputs: dict[str, Any] | None = None,
     metadata: Any | None = None,
+    artifacts: Mapping[str, Mapping[str, str]] | None = None,
 ) -> dict[str, Any]:
     """Compute string field replacements for an executable step model."""
     updates: dict[str, Any] = {}
     for field_name in _INTERPOLATED_FIELDS:
         value = getattr(step, field_name, None)
         if isinstance(value, str) and value:
-            interpolated = interpolate_string(value, inputs=inputs, metadata=metadata)
+            interpolated = interpolate_string(value, inputs=inputs, metadata=metadata, artifacts=artifacts)
             if interpolated != value:
                 updates[field_name] = interpolated
     return updates
@@ -213,13 +262,16 @@ def _interpolated_env(
     step: Any,
     inputs: dict[str, Any] | None = None,
     metadata: Any | None = None,
+    artifacts: Mapping[str, Mapping[str, str]] | None = None,
 ) -> dict[str, str] | None:
     """Compute environment dictionary replacements for an executable step model."""
     env = getattr(step, "env", None)
     if not isinstance(env, dict) or not env:
         return None
     new_env = {
-        key: interpolate_string(value, inputs=inputs, metadata=metadata) if isinstance(value, str) else value
+        key: interpolate_string(value, inputs=inputs, metadata=metadata, artifacts=artifacts)
+        if isinstance(value, str)
+        else value
         for key, value in env.items()
     }
     return new_env if new_env != env else None
@@ -229,17 +281,18 @@ def interpolate_step_fields(
     step: Any,
     inputs: dict[str, Any] | None = None,
     metadata: Any | None = None,
+    artifacts: Mapping[str, Mapping[str, str]] | None = None,
 ) -> Any:
     """Return a copy of ``step`` with interpolatable string fields substituted.
 
     Supports ``command``, ``prompt``, ``script_path``, ``run``, and string values
     inside ``env``. Unknown attributes are left untouched.
     """
-    if not inputs and metadata is None:
+    if not inputs and metadata is None and artifacts is None:
         return step
 
-    updates = _interpolated_field_updates(step, inputs=inputs, metadata=metadata)
-    new_env = _interpolated_env(step, inputs=inputs, metadata=metadata)
+    updates = _interpolated_field_updates(step, inputs=inputs, metadata=metadata, artifacts=artifacts)
+    new_env = _interpolated_env(step, inputs=inputs, metadata=metadata, artifacts=artifacts)
     if new_env is not None:
         updates["env"] = new_env
     if not updates:

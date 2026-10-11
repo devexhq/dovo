@@ -185,13 +185,22 @@ class ArtifactRecord(SQLModel, table=True):
 
     __tablename__: ClassVar[str] = "artifacts"  # pyright: ignore[reportIncompatibleVariableOverride]
     model_config = {"extra": "forbid"}
-    __table_args__ = (UniqueConstraint("project_id", "session_id", "name", name="uq_artifacts_project_session_name"),)
+    __table_args__ = (
+        UniqueConstraint(
+            "project_id", "session_id", "name", "revision", name="uq_artifacts_project_session_name_revision"
+        ),
+    )
 
     id: int | None = Field(default=None, primary_key=True)
     project_id: str = Field(index=True, nullable=False)
     session_id: str = Field(index=True, nullable=False)
     name: str
     path: Path = Field(sa_type=PathType)
+    revision: int = Field(default=1)
+    digest: str | None = Field(default=None)
+    step_id: str | None = Field(default=None)
+    attempt: int | None = Field(default=None)
+    loop_iteration: int | None = Field(default=None)
     size_bytes: int = Field(default=0)
     file_count: int = Field(default=0)
     created_at: str = Field(default_factory=_now_utc_str)

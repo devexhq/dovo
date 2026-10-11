@@ -93,6 +93,7 @@ class ArtifactPublishSpec(BaseModel):
     name: str = Field(min_length=1)
     path: str = Field(min_length=1)
     retention_days: int | None = Field(default=None, ge=0)
+    required: bool = True
 
 
 class StepDefinition(BaseModel):

@@ -8,12 +8,20 @@ from dovo.core.artifacts.models import ArtifactsPruneStatus, PrunedArtifact
 
 
 class ArtifactRowView(BaseModel):
-    """Presentation view of one artifact row for `dovo artifacts list`."""
+    """Presentation view of one artifact revision row for `dovo artifacts list`."""
 
     model_config = {"extra": "forbid", "strict": True}
 
     name: str
     session_id: str
+    revision: int
+    digest: str | None = None
+    digest_display: str
+    step_id: str | None = None
+    step_display: str
+    attempt: int | None = None
+    loop_iteration: int | None = None
+    iteration_display: str
     file_count: int
     size_bytes: int
     size_display: str

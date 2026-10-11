@@ -1,6 +1,7 @@
 """Registry managing diagnostic check definitions."""
 
 from dovo.core.diagnostics.checks.agent_setup import AgentSetupCheck
+from dovo.core.diagnostics.checks.artifacts_integrity import ArtifactsIntegrityCheck
 from dovo.core.diagnostics.checks.config_schema import ConfigSchemaCheck
 from dovo.core.diagnostics.checks.env_binaries import EnvBinariesCheck
 from dovo.core.diagnostics.checks.filesystem_writable import FilesystemWritableCheck
@@ -44,4 +45,5 @@ def get_default_registry() -> CheckRegistry:
     registry.register(WorktreeRefsCheck())
     registry.register(EnvBinariesCheck())
     registry.register(AgentSetupCheck())
+    registry.register(ArtifactsIntegrityCheck())
     return registry

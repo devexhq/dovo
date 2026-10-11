@@ -17,7 +17,10 @@ class ArtifactDownloadFormatter(ComponentFormatter[ArtifactDownloadResult]):
     def to_rich(self, data: ArtifactDownloadResult) -> Any:
         """Render download success or an error panel keyed by status."""
         if data.status == ArtifactDownloadStatus.OK:
-            return Text(f"Downloaded artifact '{data.name}' ({data.file_count} files) to '{data.dest}'.", style="green")
+            return Text(
+                f"Downloaded artifact '{data.name}' revision {data.revision} ({data.file_count} files) to '{data.dest}'.",
+                style="green",
+            )
         return build_error_panel(
             "Artifact Download Failed",
             data.errors,

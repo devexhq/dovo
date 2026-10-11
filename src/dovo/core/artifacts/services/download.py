@@ -35,15 +35,18 @@ def download_artifact(
     session_id: str,
     name: str,
     dest: Path,
+    revision: int | None = None,
 ) -> ArtifactDownloadResult:
-    """Look up the artifact, verify every file's checksum via _verify_manifest_checksums, then extract via _extract_verified_files."""
-    record = db.get(session_id, name)
+    """Look up the named revision (latest by default), verify every file's checksum, then extract."""
+    record = db.get(session_id, name, revision)
     if record is None:
+        missing = (
+            f"Artifact '{name}' not found for session '{session_id}'"
+            if revision is None
+            else f"Artifact '{name}' revision {revision} not found for session '{session_id}'"
+        )
         return ArtifactDownloadResult(
-            status=ArtifactDownloadStatus.NOT_FOUND,
-            session_id=session_id,
-            name=name,
-            errors=[f"Artifact '{name}' not found for session '{session_id}'"],
+            status=ArtifactDownloadStatus.NOT_FOUND, session_id=session_id, name=name, errors=[missing]
         )
 
     artifact_dir = Path(record.path)
@@ -75,5 +78,6 @@ def download_artifact(
         session_id=session_id,
         name=name,
         dest=str(dest),
+        revision=record.revision,
         file_count=manifest.file_count,
     )

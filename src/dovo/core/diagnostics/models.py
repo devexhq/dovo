@@ -29,6 +29,7 @@ class CheckCategory(StrEnum):
     WORKTREE = "worktree"
     AGENT = "agent"
     ENVIRONMENT = "environment"
+    ARTIFACTS = "artifacts"
 
 
 class DiagnosticsContext(BaseModel):

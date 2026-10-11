@@ -19,11 +19,14 @@ from dovo.common.process import (
     terminate_process_tree,
 )
 from dovo.common.redact import SecretRedactor
+from dovo.core.artifacts.models import ArtifactReferencesResult
 from dovo.core.catalog.definitions import StepDefinition, StepType
 from dovo.core.catalog.exceptions import StepValidationError
 from dovo.core.catalog.services.resolve_step import resolve_step_definition
-from dovo.core.inputs.services.interpolate import interpolate_step_fields
+from dovo.core.inputs.services.interpolate import interpolate_step_fields, referenced_artifact_fields
 from dovo.engine.executors.agent_step import MISSING_SETTINGS_MESSAGE
+from dovo.engine.executors.artifact_publish import publish_declared_artifacts
+from dovo.engine.executors.artifact_store import ArtifactStore
 from dovo.engine.executors.assertions import evaluate_assertions
 from dovo.engine.executors.internal_dispatch import INTERNAL_COMMAND_HANDLERS
 from dovo.engine.executors.metadata import (
@@ -153,6 +156,7 @@ class StepExecution:
         self.session_id = metadata.session_id or ""
         self.artifacts_dir = metadata.artifacts_dir
         self.artifacts_db = metadata.artifacts_db
+        self.artifact_store = ArtifactStore.from_context(metadata.artifacts_dir, metadata.artifacts_db, self.session_id)
         self.paths = metadata.paths
         self.agent_runner = metadata.agent_runner
         self.log_warnings: list[str] = []
@@ -213,40 +217,55 @@ class StepExecution:
             return None
 
     def _run_attempts(self) -> StepDispatchOutcome:
-        """Dispatch primitive up to max_attempts times, sleeping backoff_ms between failures."""
+        """Run attempts up to max_attempts times, sleeping backoff_ms between failures."""
         backoff_ms = self._uninterpolated_step.on_failure.backoff_ms
         outcome = _failed_dispatch("Step did not run.")
         for attempt_offset in range(self.max_attempts):
-            attempt = self.initial_attempt + attempt_offset
-            metadata = build_execution_metadata(
-                self._uninterpolated_step,
-                step_index=self.step_index,
-                attempt=attempt,
-                iteration_index=self.iteration_index,
-                identity=self.identity,
-                previous_step=self.previous_step,
-                steps=self.steps,
-                session_tmp_dir=self.session_tmp_dir,
-                session_id=self.session_id,
-            )
-            inputs = self.context.get("inputs")
-            inputs_dict = inputs if isinstance(inputs, dict) else None
-            interpolated_step_definition = interpolate_step_fields(
-                self._uninterpolated_step,
-                inputs=inputs_dict,
-                metadata=metadata,
-            )
-            # Replace the step
-            self.step = interpolated_step_definition
-            self._reset_step_output_file()
-            outcome = self._dispatch_primitive(metadata)
-            outcome = outcome.model_copy(update={"attempts": attempt})
-            outcome = self._apply_assertions(outcome)
+            outcome = self._run_attempt(self.initial_attempt + attempt_offset)
             if outcome.status == "completed":
                 return outcome
             if attempt_offset < self.max_attempts - 1 and backoff_ms > 0:
                 time.sleep(backoff_ms / 1000)
         return outcome
+
+    def _run_attempt(self, attempt: int) -> StepDispatchOutcome:
+        """Render, dispatch, assert and publish for one attempt."""
+        metadata = build_execution_metadata(
+            self._uninterpolated_step,
+            step_index=self.step_index,
+            attempt=attempt,
+            iteration_index=self.iteration_index,
+            identity=self.identity,
+            previous_step=self.previous_step,
+            steps=self.steps,
+            session_tmp_dir=self.session_tmp_dir,
+            session_id=self.session_id,
+        )
+        references = self._resolve_artifact_references()
+        if not references.ok:
+            return _failed_dispatch(references.errors[0]).model_copy(update={"attempts": attempt})
+
+        inputs = self.context.get("inputs")
+        inputs_dict = inputs if isinstance(inputs, dict) else None
+        # Replace the step
+        self.step = interpolate_step_fields(
+            self._uninterpolated_step,
+            inputs=inputs_dict,
+            metadata=metadata,
+            artifacts=references.references,
+        )
+        self._reset_step_output_file()
+        outcome = self._dispatch_primitive(metadata)
+        outcome = outcome.model_copy(update={"attempts": attempt})
+        outcome = self._apply_assertions(outcome)
+        return self._apply_artifacts(outcome, attempt)
+
+    def _resolve_artifact_references(self) -> ArtifactReferencesResult:
+        """Resolve artifacts.* placeholders in the unrendered step against the session's latest revisions."""
+        requested = referenced_artifact_fields(self._uninterpolated_step)
+        if self.artifact_store is None or not requested:
+            return ArtifactReferencesResult()
+        return self.artifact_store.resolve_references(requested)
 
     def _dispatch_primitive(self, metadata: ExecutionMetadata) -> StepDispatchOutcome:
         """Run the step's primitive type once and return its dispatch outcome."""
@@ -257,11 +276,11 @@ class StepExecution:
         if self.step.type == StepType.AGENT:
             return self._execute_agent(metadata)
         if self.step.type == StepType.INTERNAL:
-            return self._execute_internal()
+            return self._execute_internal(metadata)
         return _failed_dispatch(f"Unsupported step primitive type '{self.step.type}'.")
 
-    def _execute_internal(self) -> StepDispatchOutcome:
-        """Look up self.step.command in INTERNAL_COMMAND_HANDLERS and dispatch in-process, catching all exceptions into a failed outcome."""
+    def _execute_internal(self, metadata: ExecutionMetadata) -> StepDispatchOutcome:
+        """Dispatch the internal command in-process with step id, attempt and loop iteration in its context."""
         command = self.step.command
         if not command:
             return _failed_dispatch("Internal step has no command string defined.")
@@ -276,6 +295,9 @@ class StepExecution:
             env=self.step.env,
             artifacts_dir=self.artifacts_dir,
             artifacts_db=self.artifacts_db,
+            step_id=self.step.id,
+            attempt=metadata.step.attempt,
+            loop_iteration=self.loop_iteration,
         )
         try:
             return handler(context)
@@ -577,6 +599,23 @@ class StepExecution:
                 "error_message": _format_assertion_failure(self.step, result.failed_conditions),
             }
         )
+
+    def _apply_artifacts(self, outcome: StepDispatchOutcome, attempt: int) -> StepDispatchOutcome:
+        """Downgrade a completed attempt to failed when a required declared artifact is not published."""
+        if outcome.status != "completed":
+            return outcome
+
+        published = publish_declared_artifacts(
+            self.step,
+            worktree_path=self.worktree_path,
+            store=self.artifact_store,
+            attempt=attempt,
+            loop_iteration=self.loop_iteration,
+        )
+        self.log_warnings.extend(published.warnings)
+        if published.error_message is None:
+            return outcome
+        return outcome.model_copy(update={"status": "failed", "error_message": published.error_message})
 
     def _reset_step_output_file(self) -> None:
         """Create the step scratch directory and truncate the step output file before dispatch."""

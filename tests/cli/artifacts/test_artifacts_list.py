@@ -10,6 +10,7 @@ from typer.testing import CliRunner
 from dovo.cli import app
 from dovo.common.filesystem.models import WorkspacePaths
 from dovo.core.artifacts import Artifacts
+from dovo.core.artifacts.models import ArtifactProvenance
 from dovo.core.db import DovoDb
 from tests.harness.workspace_paths import initialized_workspace_paths
 
@@ -19,14 +20,22 @@ def _paths_for(root: Path) -> WorkspacePaths:
     return initialized_workspace_paths(root)
 
 
-def _publish_artifact(workspace: Path, *, session_id: str, name: str) -> None:
+def _publish_artifact(
+    workspace: Path, *, session_id: str, name: str, provenance: ArtifactProvenance | None = None
+) -> None:
     """Publish a real artifact bundle under session_id/name for CLI list/download fixtures."""
     worktree_path = workspace / "worktree-scratch" / session_id
     (worktree_path / "dist").mkdir(parents=True, exist_ok=True)
     (worktree_path / "dist" / "pkg.whl").write_bytes(b"package-bytes")
     paths = _paths_for(workspace)
     db = DovoDb(database_file=paths.database_file, project_id=paths.project_id)
-    Artifacts(paths, db=db.artifacts).upload(session_id, name, "dist/*.whl", worktree_path=worktree_path)
+    Artifacts(paths, db=db.artifacts).upload(
+        session_id,
+        name,
+        "dist/*.whl",
+        worktree_path=worktree_path,
+        provenance=provenance if provenance is not None else ArtifactProvenance(),
+    )
 
 
 class ArtifactsListCliIntegrationTests:
@@ -65,3 +74,25 @@ class ArtifactsListCliIntegrationTests:
             "event_type": "ArtifactsListResult",
             "payload": {"status": "ok", "artifacts": [], "errors": [], "warnings": [], "fixes": []},
         }
+
+    def test_artifacts_list_cli_format_json_emits_one_row_per_revision_with_provenance(
+        self, cli_runner: CliRunner, artifacts_workspace: Path
+    ) -> None:
+        """[tier-3/integration] dovo artifacts list --format json: revisions 1 and 2 of 'plan' -> two rows (newest first) each with a 64-char digest, step_id, attempt and loop_iteration."""
+        for iteration in (1, 2):
+            _publish_artifact(
+                artifacts_workspace,
+                session_id="wf_one",
+                name="plan",
+                provenance=ArtifactProvenance(step_id="plan", attempt=1, loop_iteration=iteration),
+            )
+
+        result = cli_runner.invoke(app, ["-p", str(artifacts_workspace), "artifacts", "list", "--format", "json"])
+
+        rows = json.loads(result.stdout)["payload"]["artifacts"]
+        assert result.exit_code == 0
+        assert [(row["revision"], row["step_id"], row["attempt"], row["loop_iteration"]) for row in rows] == [
+            (2, "plan", 1, 2),
+            (1, "plan", 1, 1),
+        ]
+        assert [len(row["digest"]) for row in rows] == [64, 64]

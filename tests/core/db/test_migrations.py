@@ -11,7 +11,12 @@ from alembic.config import Config
 
 import dovo.core.db.migrations as migrations
 from dovo.core.db.connection import sqlite_url
-from dovo.core.db.migrations import INITIAL_SCHEMA_REVISION, LATEST_SCHEMA_REVISION, init_database
+from dovo.core.db.migrations import (
+    INITIAL_SCHEMA_REVISION,
+    LATEST_SCHEMA_REVISION,
+    SESSIONS_RENAME_REVISION,
+    init_database,
+)
 from dovo.core.db.repositories.sessions import SessionsRepository
 
 
@@ -193,3 +198,99 @@ class SessionsMigrationTests:
         init_database(database_file)
 
         assert snapshot() == before
+
+
+def _insert_artifact_row(connection: sqlite3.Connection, session_id: str, name: str, *, size_bytes: int = 7) -> None:
+    """Insert one artifacts row into a database at the 0002 schema."""
+    connection.execute(
+        "INSERT INTO artifacts (project_id, session_id, name, path, size_bytes, file_count, expires_at) "
+        "VALUES ('proj', ?, ?, ?, ?, 1, '2030-01-01 00:00:00')",
+        (session_id, name, f"/artifacts/{session_id}/{name}", size_bytes),
+    )
+
+
+class ArtifactRevisionsMigrationTests:
+    """[tier-1/integration] 0003_artifact_revisions: revision, digest and provenance columns."""
+
+    def test_upgrade_from_sessions_rename_backfills_revision_one_and_preserves_rows(self, tmp_path: Path) -> None:
+        """[tier-1/integration] init_database: a 0002 database with two artifacts rows upgrades so revision, digest, step_id, attempt, loop_iteration are (1, None, None, None, None) for both and every pre-existing column value is unchanged."""
+        database_file = tmp_path / "dovo.db"
+        command.upgrade(_alembic_config(database_file), SESSIONS_RENAME_REVISION)
+        connection = sqlite3.connect(database_file)
+        try:
+            _insert_artifact_row(connection, "wf_a", "plan")
+            _insert_artifact_row(connection, "wf_b", "dist", size_bytes=9)
+            connection.commit()
+            rows_before = connection.execute(
+                "SELECT id, project_id, session_id, name, path, size_bytes, file_count, created_at, expires_at "
+                "FROM artifacts ORDER BY id"
+            ).fetchall()
+        finally:
+            connection.close()
+
+        init_database(database_file)
+
+        connection = sqlite3.connect(database_file)
+        try:
+            rows_after = connection.execute(
+                "SELECT id, project_id, session_id, name, path, size_bytes, file_count, created_at, expires_at "
+                "FROM artifacts ORDER BY id"
+            ).fetchall()
+            new_columns = connection.execute(
+                "SELECT revision, digest, step_id, attempt, loop_iteration FROM artifacts ORDER BY id"
+            ).fetchall()
+        finally:
+            connection.close()
+        assert rows_after == rows_before
+        assert new_columns == [(1, None, None, None, None), (1, None, None, None, None)]
+
+    def test_upgraded_unique_constraint_allows_second_revision_and_rejects_duplicate(self, tmp_path: Path) -> None:
+        """[tier-1/integration] init_database: after upgrade, inserting revision=2 of an existing name succeeds and inserting revision=1 again raises sqlite3.IntegrityError."""
+        database_file = init_database(tmp_path / "dovo.db")
+        connection = sqlite3.connect(database_file)
+        try:
+            _insert_artifact_row(connection, "wf_a", "plan")
+            connection.execute(
+                "INSERT INTO artifacts (project_id, session_id, name, path, revision) "
+                "VALUES ('proj', 'wf_a', 'plan', '/artifacts/wf_a/plan/2', 2)"
+            )
+            with pytest.raises(sqlite3.IntegrityError):
+                connection.execute(
+                    "INSERT INTO artifacts (project_id, session_id, name, path, revision) "
+                    "VALUES ('proj', 'wf_a', 'plan', '/artifacts/wf_a/plan/dup', 1)"
+                )
+        finally:
+            connection.close()
+
+    def test_downgrade_keeps_highest_revision_per_name_and_restores_old_constraint(self, tmp_path: Path) -> None:
+        """[tier-1/integration] alembic downgrade to 0002: revisions 1 and 2 of 'plan' collapse to the revision-2 row, other names keep their row, and a second row for the same (project, session, name) raises sqlite3.IntegrityError."""
+        database_file = init_database(tmp_path / "dovo.db")
+        connection = sqlite3.connect(database_file)
+        try:
+            for revision in (1, 2):
+                connection.execute(
+                    "INSERT INTO artifacts (project_id, session_id, name, path, revision) "
+                    "VALUES ('proj', 'wf_a', 'plan', ?, ?)",
+                    (f"/artifacts/wf_a/plan/{revision}", revision),
+                )
+            connection.execute(
+                "INSERT INTO artifacts (project_id, session_id, name, path, revision) "
+                "VALUES ('proj', 'wf_a', 'dist', '/artifacts/wf_a/dist/1', 1)"
+            )
+            connection.commit()
+        finally:
+            connection.close()
+
+        command.downgrade(_alembic_config(database_file), SESSIONS_RENAME_REVISION)
+
+        connection = sqlite3.connect(database_file)
+        try:
+            kept = connection.execute("SELECT name, path FROM artifacts ORDER BY name").fetchall()
+            with pytest.raises(sqlite3.IntegrityError):
+                connection.execute(
+                    "INSERT INTO artifacts (project_id, session_id, name, path) "
+                    "VALUES ('proj', 'wf_a', 'plan', '/artifacts/wf_a/plan/again')"
+                )
+        finally:
+            connection.close()
+        assert kept == [("dist", "/artifacts/wf_a/dist/1"), ("plan", "/artifacts/wf_a/plan/2")]

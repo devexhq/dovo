@@ -6,7 +6,7 @@ import pytest
 from pydantic import ValidationError
 
 from dovo.common.tool_policy import LEGACY_TOOLS_MESSAGE, ToolPolicy
-from dovo.core.catalog.definitions import StepDefinition, StepType
+from dovo.core.catalog.definitions import ArtifactPublishSpec, StepDefinition, StepType
 
 
 class StepDefinitionArtifactsFieldTests:
@@ -39,6 +39,28 @@ class StepDefinitionArtifactsFieldTests:
         """[tier-1/unit] StepDefinition: type=internal with no command string raises a pydantic ValidationError."""
         with pytest.raises(ValidationError):
             StepDefinition(id="s1", type=StepType.INTERNAL)
+
+
+class ArtifactPublishSpecTests:
+    """[tier-1/unit] ArtifactPublishSpec: the required flag."""
+
+    @pytest.mark.parametrize(
+        ("payload", "expected"),
+        [
+            pytest.param({}, True, id="defaults_to_true"),
+            pytest.param({"required": False}, False, id="accepts_false"),
+        ],
+    )
+    def test_required_flag_value(self, payload: dict[str, bool], expected: bool) -> None:
+        """[tier-1/unit] ArtifactPublishSpec: required defaults to True and accepts False."""
+        spec = ArtifactPublishSpec.model_validate({"name": "plan", "path": "PLAN.md", **payload})
+
+        assert spec.required is expected
+
+    def test_required_rejects_non_boolean_in_strict_mode(self) -> None:
+        """[tier-1/unit] ArtifactPublishSpec: required='no' raises ValidationError (strict)."""
+        with pytest.raises(ValidationError):
+            ArtifactPublishSpec.model_validate({"name": "plan", "path": "PLAN.md", "required": "no"})
 
 
 class StepToolsContractTests:

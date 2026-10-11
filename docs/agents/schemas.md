@@ -107,6 +107,7 @@ Hierarchical resolution merges four tiers, lowest to highest precedence: **Packa
 ## 10. Artifacts
 
 - `publish_artifact` is reached only through the `type: internal` `artifacts.upload` handler or a step's `artifacts:` block; there is no publish CLI command.
+- Each publish adds an immutable revision of `(session_id, name)`; nothing rewrites a published revision, and `ArtifactRecord.path` is authoritative for a revision's directory.
 - Download verifies checksums to completion before copying any file into `--dest`.
 - Pruning is gated by `prune.remove_expired_artifacts` unless `--force` is passed.
 
