@@ -10,13 +10,11 @@ import dovo.cli.ui.events as event_models
 import dovo.cli.ui.formatters.artifacts as artifacts_formatters
 import dovo.cli.ui.formatters.catalog as catalog_formatters
 import dovo.cli.ui.formatters.config as config_formatters
-import dovo.cli.ui.formatters.diff as diff_formatters
 import dovo.cli.ui.formatters.doctor as doctor_formatters
 import dovo.cli.ui.formatters.events as event_formatters
 import dovo.cli.ui.formatters.global_cli as global_formatters
-import dovo.cli.ui.formatters.history as history_formatters
 import dovo.cli.ui.formatters.init as init_formatters
-import dovo.cli.ui.formatters.logs as logs_formatters
+import dovo.cli.ui.formatters.session as session_formatters
 import dovo.cli.ui.formatters.status as status_formatters
 import dovo.cli.ui.formatters.worktree as worktree_formatters
 import dovo.core.artifacts as artifacts_models
@@ -61,15 +59,13 @@ FORMATTER_REGISTRY: Final[dict[type[BaseModel], type[ComponentFormatter[Any, Any
     config_models.ConfigValidationResult: config_formatters.ConfigValidateFormatter,
     config_models.ConfigSetResult: config_formatters.ConfigSetFormatter,
     config_models.ConfigUnsetResult: config_formatters.ConfigUnsetFormatter,
-    # Diff
-    sessions_models.DiffResult: diff_formatters.DiffResultFormatter,
     # Diagnostics
     diagnostics_models.DiagnosticsReport: doctor_formatters.DoctorReportFormatter,
-    # History
-    sessions_models.HistoryListResult: history_formatters.HistoryListFormatter,
-    sessions_models.HistoryShowResult: history_formatters.HistoryShowFormatter,
-    # Logs
-    sessions_models.LogsShowResult: logs_formatters.LogsShowFormatter,
+    # Session
+    sessions_models.DiffResult: session_formatters.SessionDiffFormatter,
+    sessions_models.HistoryListResult: session_formatters.SessionListFormatter,
+    sessions_models.HistoryShowResult: session_formatters.SessionShowFormatter,
+    sessions_models.LogsShowResult: session_formatters.SessionLogsFormatter,
     # Init
     bootstrap_models.WorkspaceInitResult: init_formatters.WorkspaceInitFormatter,
     # Worktree
@@ -98,7 +94,7 @@ def _instantiate_formatter(
         formatter_cls: Concrete ComponentFormatter subclass.
         console: Optional Rich Console instance.
     """
-    if formatter_cls is diff_formatters.DiffResultFormatter:
+    if formatter_cls is session_formatters.SessionDiffFormatter:
         return formatter_cls(console=console)
     return formatter_cls()
 

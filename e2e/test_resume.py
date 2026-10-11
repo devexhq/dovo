@@ -84,7 +84,7 @@ steps:
         assert "Step 'step-two' failed" in pty_result.transcript
         assert "Select option [r/c/a]:" in pty_result.transcript
 
-        history_result = run_dovo(["history", "show", session_id, "--format", "json"], cwd=initialized_project)
+        history_result = run_dovo(["session", "show", session_id, "--format", "json"], cwd=initialized_project)
         assert history_result.exit_code == 0
         history_data = _parse_json(history_result.stdout)
         session_payload = history_data.get("payload", {})
@@ -143,7 +143,7 @@ steps:
         )
         assert run_result.exit_code == 130
 
-        before_resume = run_dovo(["history", "show", session_id, "--format", "json"], cwd=initialized_project)
+        before_resume = run_dovo(["session", "show", session_id, "--format", "json"], cwd=initialized_project)
         before_data = _parse_json(before_resume.stdout)
         session_info = before_data.get("payload", {}).get("session", {})  # pyright: ignore[reportAttributeAccessIssue]
         assert session_info.get("status") == "paused"
@@ -163,7 +163,7 @@ steps:
         assert "final step completed" in resume_result.transcript
         assert "Blueprint Run Completed: resumable-default-bp" in resume_result.transcript
 
-        after_resume = run_dovo(["history", "show", session_id, "--format", "json"], cwd=initialized_project)
+        after_resume = run_dovo(["session", "show", session_id, "--format", "json"], cwd=initialized_project)
         assert after_resume.exit_code == 0
         after_data = _parse_json(after_resume.stdout)
         after_session = after_data.get("payload", {}).get("session", {})  # pyright: ignore[reportAttributeAccessIssue]
@@ -218,7 +218,7 @@ steps:
         assert "step-targeted-check COMPLETED" in resume_result.transcript
         assert "Blueprint Run Completed: resumable-targeted-bp" in resume_result.transcript
 
-        show_result = run_dovo(["history", "show", session_id, "--format", "json"], cwd=initialized_project)
+        show_result = run_dovo(["session", "show", session_id, "--format", "json"], cwd=initialized_project)
         assert show_result.exit_code == 0
         show_data = _parse_json(show_result.stdout)
         session_info = show_data.get("payload", {}).get("session", {})  # pyright: ignore[reportAttributeAccessIssue]

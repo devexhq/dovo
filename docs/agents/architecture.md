@@ -14,7 +14,7 @@ Every package directory under these four layers must appear below, enforced by [
 
 ```
 src/dovo/cli/                    Typer entrypoint and subcommand wrappers (no domain logic)
-  artifacts/ blueprint/ config/ diff/ doctor/ history/ init/ logs/ resume/ run/ status/ step/ worktree/
+  artifacts/ blueprint/ config/ doctor/ init/ run/ session/ status/ step/ worktree/
   ui/                                Dispatcher, events, and formatters; presentation only
 
 src/dovo/core/                   Domain logic (no Typer, no engine)

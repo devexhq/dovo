@@ -70,6 +70,48 @@ class SessionsRepositoryTests:
             repo.create(session_id="wf_a", blueprint_name="deploy", blueprint_key="deploy")
 
 
+class SessionsRepositoryLatestTests:
+    """Contract tests for SessionsRepository.get_latest."""
+
+    def test_get_latest_orders_by_started_at_then_id_across_all_statuses(
+        self, db_path: Path, db_engine: Engine
+    ) -> None:
+        """[tier-1/integration] SessionsRepository.get_latest: three sessions, two sharing the greatest started_at with different statuses -> returns the one with the greatest id."""
+        repo = SessionsRepository(db_path=db_path, db_engine=db_engine, project_id="proj-a")
+        repo.create(session_id="wf_old", blueprint_name="deploy", blueprint_key="deploy")
+        repo.create(
+            session_id="wf_tied_first", blueprint_name="deploy", blueprint_key="deploy", status=SessionStatus.COMPLETED
+        )
+        repo.create(
+            session_id="wf_tied_last", blueprint_name="deploy", blueprint_key="deploy", status=SessionStatus.FAILED
+        )
+        connection = sqlite3.connect(db_path)
+        try:
+            connection.execute(
+                "UPDATE sessions SET started_at = ? WHERE session_id = ?", ("2026-01-01 00:00:00", "wf_old")
+            )
+            connection.execute(
+                "UPDATE sessions SET started_at = ? WHERE session_id IN (?, ?)",
+                ("2026-01-02 00:00:00", "wf_tied_first", "wf_tied_last"),
+            )
+            connection.commit()
+        finally:
+            connection.close()
+
+        latest = repo.get_latest()
+
+        assert latest is not None
+        assert latest.session_id == "wf_tied_last"
+
+    def test_get_latest_returns_none_when_project_has_no_sessions(self, db_path: Path, db_engine: Engine) -> None:
+        """[tier-1/integration] SessionsRepository.get_latest: a session under project_id='proj-a' -> None from a project_id='proj-b' repository."""
+        repo_a = SessionsRepository(db_path=db_path, db_engine=db_engine, project_id="proj-a")
+        repo_b = SessionsRepository(db_path=db_path, db_engine=db_engine, project_id="proj-b")
+        repo_a.create(session_id="wf_a", blueprint_name="deploy", blueprint_key="deploy")
+
+        assert repo_b.get_latest() is None
+
+
 class WorktreeSessionIndependenceTests:
     """[tier-1/integration] Cross-repository contract: worktree deletion never mutates a referencing SessionRecord."""
 

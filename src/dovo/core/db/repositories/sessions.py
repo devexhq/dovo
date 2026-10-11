@@ -192,6 +192,17 @@ class SessionsRepository(BaseRepository):
 
             return list(session.exec(statement).all())
 
+    def get_latest(self) -> SessionRecord | None:
+        """Return the session with the greatest started_at (ties: greatest id), any status, or None."""
+        with self.session() as session:
+            statement = (
+                select(SessionRecord)
+                .where(SessionRecord.project_id == self.project_id)
+                .order_by(col(SessionRecord.started_at).desc(), col(SessionRecord.id).desc())
+                .limit(1)
+            )
+            return session.exec(statement).first()
+
     def get_latest_paused(self) -> SessionRecord | None:
         """Return the most recent session where status == SessionStatus.PAUSED, or None."""
         with self.session() as session:

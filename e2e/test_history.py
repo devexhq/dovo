@@ -49,10 +49,10 @@ class SessionsAndHistoryCliTests:
         run_dovo: DovoRunner,
         initialized_project: Path,
     ) -> None:
-        """Scenario: dovo history list displays recorded sessions and supports filtering by status and limit.
+        """Scenario: dovo session list displays recorded sessions and supports filtering by status and limit.
 
         Given an initialized workspace with multiple executed sessions across different statuses
-        When dovo history list is executed with --status completed and --limit 1
+        When dovo session list is executed with --status completed and --limit 1
         Then only completed sessions are returned up to the specified limit
         """
         _write_blueprint(
@@ -85,7 +85,7 @@ steps:
         run_dovo(["run", "success-bp", "--session-id", "sess-succ-2"], cwd=initialized_project)
 
         result = run_dovo(
-            ["history", "list", "--status", "completed", "--limit", "1", "--format", "json"],
+            ["session", "list", "--status", "completed", "--limit", "1", "--format", "json"],
             cwd=initialized_project,
         )
         assert result.exit_code == 0
@@ -98,7 +98,7 @@ steps:
         assert sessions[0].get("status") == "completed"
         assert sessions[0].get("session_id") == "sess-succ-2"
 
-        terminal_result = run_dovo(["history", "list"], cwd=initialized_project)
+        terminal_result = run_dovo(["session", "list"], cwd=initialized_project)
         assert terminal_result.exit_code == 0
         assert "sess-succ-2" in terminal_result.stdout
         assert "sess-fail-1" in terminal_result.stdout
@@ -108,10 +108,10 @@ steps:
         run_dovo: DovoRunner,
         initialized_project: Path,
     ) -> None:
-        """Scenario: dovo history show presents session execution metadata and step results.
+        """Scenario: dovo session show presents session execution metadata and step results.
 
         Given an executed session with recorded steps
-        When dovo history show is executed for the session identifier
+        When dovo session show is executed for the session identifier
         Then session metadata including status, duration, and step execution details are presented
         """
         _write_blueprint(
@@ -133,7 +133,7 @@ steps:
         run_res = run_dovo(["run", "metadata-bp", "--session-id", session_id], cwd=initialized_project)
         assert run_res.exit_code == 0
 
-        show_json = run_dovo(["history", "show", session_id, "--format", "json"], cwd=initialized_project)
+        show_json = run_dovo(["session", "show", session_id, "--format", "json"], cwd=initialized_project)
         assert show_json.exit_code == 0
         data = _parse_json(show_json.stdout)
         payload = data.get("payload", {})
@@ -145,7 +145,7 @@ steps:
         assert session.get("status") == "completed"
         assert session.get("completed_at") is not None
 
-        show_term = run_dovo(["history", "show", session_id], cwd=initialized_project)
+        show_term = run_dovo(["session", "show", session_id], cwd=initialized_project)
         assert show_term.exit_code == 0
         assert f"Session Metadata: {session_id}" in show_term.stdout
         assert "completed" in show_term.stdout
@@ -186,6 +186,10 @@ steps:
         assert diff_raw.exit_code == 0
         assert "diff --git a/sample_output.txt b/sample_output.txt" in diff_raw.stdout
         assert "+diff payload line" in diff_raw.stdout
+
+        diff_grouped = run_dovo(["session", "diff", session_id, "--raw"], cwd=initialized_project)
+        assert diff_grouped.exit_code == 0
+        assert diff_grouped.stdout == diff_raw.stdout
 
     def test_logs_displays_structured_event_timeline(
         self,
@@ -273,7 +277,7 @@ steps:
         """Scenario: Secrets and configured sensitive variables are masked as [REDACTED:<name>] across history, logs, and diff.
 
         Given a workspace configured with environment.sensitive_variables and a session operating on secret values
-        When dovo logs, dovo diff, and dovo history show are inspected
+        When dovo logs, dovo diff, and dovo session show are inspected
         Then secret values are masked with [REDACTED:<name>] and never appear in plain text
         """
         secret_name = "MY_SPECIAL_API_TOKEN"
@@ -328,7 +332,7 @@ steps:
         assert secret_value not in diff_res.stdout
 
         show_res = run_dovo(
-            ["history", "show", session_id, "--logs"],
+            ["session", "show", session_id, "--logs"],
             cwd=initialized_project,
             env=env_with_secret,
         )

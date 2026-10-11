@@ -24,6 +24,8 @@ from dovo.core.sessions.services.read_diff import read_session_diff
 from dovo.core.sessions.services.read_logs import list_session_log_files, read_session_log_events, read_step_logs
 from dovo.core.sessions.services.reconcile import reconcile_stale_sessions
 
+_NO_SESSIONS_FIX = "Run `dovo run <blueprint>` to create a session"
+
 
 def _render_run_log_line(event: SessionLogEvent) -> str:
     """Render one session.log event as a short text line of its timestamp, kind, and populated scalar fields."""
@@ -71,7 +73,7 @@ class Session:
                 status=DiffStatus.SESSION_NOT_FOUND,
                 session_id=self.session_id,
                 errors=[f"Session '{self.session_id}' not found."],
-                fixes=["Run `dovo history` to list valid session IDs"],
+                fixes=["Run `dovo session list` to list valid session IDs"],
             )
 
         return read_session_diff(self.paths, self.session_id)
@@ -209,14 +211,39 @@ class SessionCollection:
         sessions = [_mask_record(row, redactor) for row in self.db.list(limit=limit, status=status_filter)]
         return HistoryListResult(status=HistoryListStatus.OK, sessions=sessions, warnings=warnings)
 
-    def latest_diff(self) -> DiffResult:
-        """Return the diff of the run with the greatest started_at (ties: greatest id), or SESSION_NOT_FOUND."""
-        sessions = self.db.list(limit=1)
-        if not sessions:
-            return DiffResult(
-                status=DiffStatus.SESSION_NOT_FOUND,
-                errors=["No sessions found."],
-                fixes=["Run `dovo history` to list valid session IDs"],
+    def latest_details(self, *, include_logs: bool = False) -> HistoryShowResult:
+        """Return the latest session's details, or NOT_FOUND when the project has no sessions."""
+        record = self.db.get_latest()
+        if record is None:
+            return HistoryShowResult(
+                status=HistoryShowStatus.NOT_FOUND, errors=["No sessions found."], fixes=[_NO_SESSIONS_FIX]
             )
 
-        return read_session_diff(self.paths, sessions[0].session_id)
+        return self.get(record.session_id).details(include_logs=include_logs)
+
+    def latest_logs(
+        self,
+        *,
+        step: str | None = None,
+        attempt: int | None = None,
+        stream: LogStreamFilter = LogStreamFilter.BOTH,
+        tail: int | None = None,
+    ) -> LogsShowResult:
+        """Return the latest session's logs, or SESSION_NOT_FOUND when the project has no sessions."""
+        record = self.db.get_latest()
+        if record is None:
+            return LogsShowResult(
+                status=LogsShowStatus.SESSION_NOT_FOUND, errors=["No sessions found."], fixes=[_NO_SESSIONS_FIX]
+            )
+
+        return self.get(record.session_id).logs(step=step, attempt=attempt, stream=stream, tail=tail)
+
+    def latest_diff(self) -> DiffResult:
+        """Return the diff of the session with the greatest started_at (ties: greatest session id), or SESSION_NOT_FOUND."""
+        record = self.db.get_latest()
+        if record is None:
+            return DiffResult(
+                status=DiffStatus.SESSION_NOT_FOUND, errors=["No sessions found."], fixes=[_NO_SESSIONS_FIX]
+            )
+
+        return read_session_diff(self.paths, record.session_id)

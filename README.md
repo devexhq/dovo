@@ -33,7 +33,7 @@ dovo status
 dovo config validate
 dovo blueprint list
 dovo run fix-tests
-dovo history
+dovo session list
 ```
 
 ## Current command surface
@@ -42,13 +42,17 @@ dovo history
 
 - `dovo init`
 - `dovo status`
-- `dovo diff [session-id]` — view syntax-highlighted session diff
 - `dovo doctor` — run diagnostic checks and print a workspace health report
 - `dovo run <blueprint>` — execute a task or workflow blueprint
-- `dovo resume <session-id>` — resume a paused run
-- `dovo history` / `dovo history list` — list past sessions
-- `dovo history show <session-id> [--logs]` — inspect a past session
-- `dovo logs <session-id>` — show a session's timeline or a step's captured output (`--step`, `--attempt`, `--stream`, `--tail`)
+
+### Sessions
+
+- `dovo session [list]` — list past sessions
+- `dovo session show [session-id] [--logs]` — inspect a session (the latest when the id is omitted)
+- `dovo session logs [session-id]` — show a session's timeline or a step's captured output (`--step`, `--attempt`, `--stream`, `--tail`)
+- `dovo session diff [session-id]` — view the syntax-highlighted session diff
+- `dovo session resume [session-id]` — resume a paused run
+- Shortcuts for the three above: `dovo logs`, `dovo diff`, `dovo resume`
 
 ### Config
 

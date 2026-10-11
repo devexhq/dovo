@@ -13,7 +13,7 @@ Key capabilities include:
 - **Isolated Worktrees**: Work without touching your main working tree, using `dovo worktree`.
 - **Unified Blueprint Execution**: Execute cataloged blueprints via `dovo run`.
 - **Durable Resumption**: Resume paused sessions from saved run state via `dovo resume`.
-- **Execution History**: Inspect and audit recorded blueprint run sessions via `dovo history`.
+- **Execution History**: Inspect and audit recorded blueprint run sessions via `dovo session`.
 - **Catalog System**: Discover and manage project blueprints and steps with `dovo blueprint` and `dovo step`.
 
 ---
@@ -68,10 +68,7 @@ dovo worktree create my-feature
 - **[Status (`dovo status`)](cli/status.md)**: Inspect workspace health, catalog, worktrees, and recorded sessions.
 - **[Config (`dovo config`)](cli/config.md)**: Display, modify, and validate project configuration.
 - **[Run (`dovo run`)](cli/run.md)**: Execute a blueprint by name.
-- **[Resume (`dovo resume`)](cli/resume.md)**: Resume paused blueprint sessions from saved run state.
-- **[History (`dovo history`)](cli/history.md)**: List and inspect recorded sessions.
-- **[Logs (`dovo logs`)](cli/logs.md)**: Show a session's session timeline or a step's captured output.
-- **[Diff (`dovo diff`)](cli/diff.md)**: View the diff captured for an execution session.
+- **[Session (`dovo session`)](cli/session.md)**: List, inspect, diff, read the logs of and resume recorded sessions.
 - **[Doctor (`dovo doctor`)](cli/doctor.md)**: Run registered workspace diagnostics.
 - **[Worktree (`dovo worktree`)](cli/worktree.md)**: Git worktree isolation.
 - **[Blueprint (`dovo blueprint`)](cli/blueprint.md)**: Blueprint catalog items across all tiers.

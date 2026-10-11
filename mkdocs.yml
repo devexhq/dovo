@@ -50,12 +50,9 @@ nav:
   - CLI Reference:
       - Workspace Init (dovo init): cli/init.md
       - Status (dovo status): cli/status.md
-      - Diff (dovo diff): cli/diff.md
       - Config (dovo config): cli/config.md
       - Run (dovo run): cli/run.md
-      - Resume (dovo resume): cli/resume.md
-      - History (dovo history): cli/history.md
-      - Logs (dovo logs): cli/logs.md
+      - Session (dovo session): cli/session.md
       - Worktree (dovo worktree): cli/worktree.md
       - Blueprint (dovo blueprint): cli/blueprint.md
       - Step (dovo step): cli/step.md

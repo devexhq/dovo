@@ -82,7 +82,7 @@ Schema for `.dovo/config.json` (version 1).
 * `tools` *(object, optional)*: Default agent tool policy with the same shape as a step's `tools` (`allow`, `deny`, `allow_all`; see [Step Schema](step-schema.md)). Absent means read and write on the worktree and scratch only (see [Tool Policy](../guides/agent-providers.md#tool-policy)). A higher tier's object replaces a lower tier's instead of merging. A plain string list is rejected.
 
 ### 5. `history`
-* `save_attempt_logs` *(boolean)*: Save per-attempt stdout/stderr logs (default: `true`). See [`dovo logs`](../cli/logs.md).
+* `save_attempt_logs` *(boolean)*: Save per-attempt stdout/stderr logs (default: `true`). See [`dovo session logs`](../cli/session.md#dovo-session-logs).
 * `save_agent_payloads` *(boolean)*: Currently has no effect (default: `true`).
 * `save_final_diff` *(boolean)*: Currently has no effect (default: `true`).
 * `max_sessions` *(integer)*: Currently has no effect (default: `1000`).

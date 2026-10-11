@@ -22,7 +22,10 @@ class DiffStatus(StrEnum):
 
 
 class DiffResult(BaseResult):
-    """Structured result of diff collection before rendering."""
+    """Structured result of diff collection before rendering.
+
+    ``raw``, ``full``, ``max_lines`` and ``latest`` are transient presentation flags set by the CLI, not domain facts.
+    """
 
     status: DiffStatus
     session_id: str | None = None
@@ -31,6 +34,7 @@ class DiffResult(BaseResult):
     raw: bool = False
     full: bool = False
     max_lines: int | None = None
+    latest: bool = False
 
     @property
     def ok(self) -> bool:
@@ -125,7 +129,7 @@ class HistoryListStatus(StrEnum):
 
 
 class HistoryListResult(BaseResult):
-    """Structured result for history list before rendering."""
+    """Structured result for session list before rendering."""
 
     status: HistoryListStatus = HistoryListStatus.OK
     sessions: list[SessionRecord] = Field(default_factory=list)
@@ -144,7 +148,7 @@ class HistoryShowStatus(StrEnum):
 
 
 class HistoryShowResult(BaseResult):
-    """Structured result for history show before rendering."""
+    """Structured result for session show before rendering."""
 
     status: HistoryShowStatus
     session_id: str | None = None

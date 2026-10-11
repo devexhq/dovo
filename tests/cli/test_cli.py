@@ -12,6 +12,7 @@ from typer.testing import CliRunner
 import dovo.cli.cli as cli_module
 from dovo.cli import app
 from dovo.cli.context import CliContext
+from dovo.cli.session.app import session_app
 from dovo.common.lock import LockTimeoutError
 from dovo.core.config.generator import build_default_config
 from dovo.core.config.loader import ConfigLoadResult
@@ -161,7 +162,7 @@ class IdentityGuardCliTests:
         "argv",
         [
             pytest.param(["worktree", "list"], id="worktree-list"),
-            pytest.param(["history", "list"], id="history-list"),
+            pytest.param(["session", "list"], id="session-list"),
             pytest.param(["blueprint", "list"], id="blueprint-list"),
             pytest.param(["step", "list"], id="step-list"),
             pytest.param(["artifacts", "list"], id="artifacts-list"),
@@ -307,3 +308,44 @@ class ConfigTolerantCommandsPostInitTests:
         assert result.exit_code == 1
         assert "Config Error" in result.stdout
         assert GUARD_MESSAGE_HEAD not in result.stdout
+
+
+class SessionCliTests:
+    """Root wiring of the session group and its shortcuts."""
+
+    def test_root_help_lists_session_and_shortcuts(self, cli_runner: CliRunner) -> None:
+        """[tier-3/integration] dovo --help: exit 0; output lists "session", "logs", "diff", "resume"."""
+        result = cli_runner.invoke(app, ["--help"])
+
+        assert result.exit_code == 0
+        for name in ("session", "logs", "diff", "resume"):
+            assert name in result.output
+
+    @pytest.mark.parametrize(
+        ("shortcut", "grouped"),
+        [
+            pytest.param(["logs", "sess-a"], ["session", "logs", "sess-a"], id="logs"),
+            pytest.param(["diff", "sess-a"], ["session", "diff", "sess-a"], id="diff"),
+            pytest.param(["resume", "ghost"], ["session", "resume", "ghost"], id="resume"),
+        ],
+    )
+    def test_shortcut_and_session_form_produce_identical_output_and_exit_code(
+        self, cli_runner: CliRunner, tmp_path: Path, shortcut: list[str], grouped: list[str]
+    ) -> None:
+        """[tier-3/integration] dovo logs|diff|resume vs dovo session logs|diff|resume: same arguments yield equal stdout and equal exit_code."""
+        workspace = WorkspaceBuilder(tmp_path / "workspace").with_git().with_database().build()
+
+        shortcut_result = cli_runner.invoke(app, ["-p", str(workspace), *shortcut])
+        grouped_result = cli_runner.invoke(app, ["-p", str(workspace), *grouped])
+
+        assert shortcut_result.exit_code == 1
+        assert grouped_result.exit_code == shortcut_result.exit_code
+        assert grouped_result.stdout == shortcut_result.stdout
+
+    def test_shortcut_commands_bind_the_same_handler_function(self) -> None:
+        """[tier-3/integration] register_session_shortcuts: the callback of root `logs`, `diff`, `resume` is the identical function object as the `session` subcommand callback."""
+        root_callbacks = {command.name: command.callback for command in app.registered_commands}
+        session_callbacks = {command.name: command.callback for command in session_app.registered_commands}
+
+        for name in ("logs", "diff", "resume"):
+            assert root_callbacks[name] is session_callbacks[name]
