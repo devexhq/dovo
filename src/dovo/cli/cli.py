@@ -11,13 +11,10 @@ from dovo.cli.artifacts.app import artifacts_app
 from dovo.cli.blueprint.app import blueprint_app
 from dovo.cli.config.app import config_app
 from dovo.cli.context import CliContext, default_lock_wait_notifier, ensure_lazy_project_init
-from dovo.cli.diff.app import register_diff_command
 from dovo.cli.doctor.app import doctor_app
-from dovo.cli.history.app import history_app
 from dovo.cli.init.app import init_app
-from dovo.cli.logs.app import logs_app
-from dovo.cli.resume.app import resume_app
 from dovo.cli.run.app import run_app
+from dovo.cli.session.app import register_session_shortcuts, session_app
 from dovo.cli.status.app import status_app
 from dovo.cli.step.app import step_app
 from dovo.cli.ui.dispatcher import ui_dispatcher
@@ -59,13 +56,11 @@ app = typer.Typer(
 app.add_typer(artifacts_app, name="artifacts")
 app.add_typer(blueprint_app, name="blueprint")
 app.add_typer(config_app, name="config")
-register_diff_command(app)
 app.add_typer(doctor_app, name="doctor")
-app.add_typer(history_app, name="history")
 app.add_typer(init_app, name="init")
-app.add_typer(logs_app, name="logs")
-app.add_typer(resume_app, name="resume")
 app.add_typer(run_app, name="run")
+app.add_typer(session_app, name="session")
+register_session_shortcuts(app)
 app.add_typer(worktree_app, name="worktree")
 app.add_typer(status_app, name="status")
 app.add_typer(step_app, name="step")

@@ -100,13 +100,13 @@ dovo run lint-and-format
 List past runs:
 
 ```bash
-dovo history list
+dovo session list
 ```
 
 Show one run's details:
 
 ```bash
-dovo history show <session-id>
+dovo session show <session-id>
 ```
 
 ---

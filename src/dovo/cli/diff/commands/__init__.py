@@ -1,1 +1,0 @@
-"""Diff CLI command implementations."""

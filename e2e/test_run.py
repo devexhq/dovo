@@ -125,7 +125,7 @@ steps:
         session_id = str(payload.get("session_id", ""))
         assert session_id
 
-        hist_res = run_dovo(["history", "--format", "json"], cwd=initialized_project)
+        hist_res = run_dovo(["session", "list", "--format", "json"], cwd=initialized_project)
         assert hist_res.exit_code == 0
         hist_payload = json.loads(hist_res.stdout).get("payload", {})
         sessions = hist_payload.get("sessions", [])
@@ -315,7 +315,7 @@ steps:
         assert isinstance(payload, dict)
         assert payload.get("session_id") == explicit_id
 
-        hist_res = run_dovo(["history", "--format", "json"], cwd=initialized_project)
+        hist_res = run_dovo(["session", "list", "--format", "json"], cwd=initialized_project)
         assert hist_res.exit_code == 0
         hist_payload = json.loads(hist_res.stdout).get("payload", {})
         sessions = hist_payload.get("sessions", [])
@@ -401,7 +401,7 @@ steps:
         combined_output = f"{result.stdout}\n{result.stderr}"
         assert "Missing required input 'required_param'" in combined_output
 
-        hist_res = run_dovo(["history", "--format", "json"], cwd=initialized_project)
+        hist_res = run_dovo(["session", "list", "--format", "json"], cwd=initialized_project)
         assert hist_res.exit_code == 0
         hist_payload = json.loads(hist_res.stdout).get("payload", {})
         assert hist_payload.get("total_sessions") == 0

@@ -97,7 +97,7 @@ Every execution via `dovo run` is tracked as a **Session**:
    - On error, `on_failure` policies determine whether to `abort`, `continue`, `retry`, or `prompt_user`.
    - If an interactive prompt is interrupted or paused, the run state is saved.
    - The session can be resumed at any time using `dovo resume blueprint_<id>`.
-6. **Audit History**: All runs, durations, and outputs are recorded and accessible via `dovo history`.
+6. **Audit History**: All runs, durations, and outputs are recorded and accessible via `dovo session`.
 
 ---
 

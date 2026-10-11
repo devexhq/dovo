@@ -1,0 +1,234 @@
+# `dovo session`
+
+`dovo session` lists past blueprint sessions and inspects, diffs, reads the logs of, or resumes one of them.
+
+## Usage
+
+```bash
+dovo session [OPTIONS]
+dovo session list [OPTIONS]
+dovo session show [session_id] [OPTIONS]
+dovo session logs [session_id] [OPTIONS]
+dovo session diff [session_id] [OPTIONS]
+dovo session resume [session_id] [OPTIONS]
+```
+
+`dovo session` with no subcommand behaves as `dovo session list`, including `--limit`, `--status` and `--format`. `dovo session ls` is a hidden alias of `dovo session list`.
+
+## Shortcuts
+
+`dovo logs`, `dovo diff` and `dovo resume` stay available as top-level commands. Each is registered with the same handler as its `dovo session` form, so options, output and exit codes are identical:
+
+| Shortcut | Same as |
+| --- | --- |
+| `dovo logs [session_id]` | `dovo session logs [session_id]` |
+| `dovo diff [session_id]` | `dovo session diff [session_id]` |
+| `dovo resume [session_id]` | `dovo session resume [session_id]` |
+
+## Latest session default
+
+When `session_id` is omitted, `show`, `logs` and `diff` act on the project's latest session: the greatest `started_at`, ties broken by the greatest session id, whatever its status. In terminal format, `show` and `logs` then start with `Session: <session_id> (latest)`, and `diff` uses that text as its header instead of the artifact path. The line is not printed with `--raw` or `--format json`; the resolved id is already in the JSON payload. With an explicit `session_id` the line is never printed.
+
+If the project has no sessions, these commands print a **Session Not Found** panel (``Run `dovo run <blueprint>` to create a session``) and exit `1`. An explicit `session_id` that does not exist exits `1` with the not-found panel for that command.
+
+`resume` keeps its own rule: with no `session_id` it resumes the latest paused session.
+
+Error messages shown by `list` and `show` are masked on read, including names listed under `environment.sensitive_variables` in `.dovo/config.json`, so rows stored before a name was listed are still hidden. Masked values print as `[REDACTED:<NAME>]` or `[REDACTED]`.
+
+## `dovo session list`
+
+Lists recorded sessions, newest first.
+
+### Options
+
+| Flag | Description |
+| --- | --- |
+| `--limit, -l <int>` | Maximum number of sessions to display (default: 20). |
+| `--status, -s <status>` | Filter sessions by lifecycle status (`running`, `completed`, `failed`, `cancelled`, `paused`). |
+| `--format [terminal\|json]` | Presentation format (`terminal` or `json`). |
+
+## `dovo session show`
+
+Shows the metadata and errors for one session.
+
+### Arguments
+
+| Argument | Description |
+| --- | --- |
+| `session_id` | Optional session identifier to inspect. If omitted, the latest session is used. |
+
+### Options
+
+| Flag | Description |
+| --- | --- |
+| `--logs` | Also list the session's log files and the last 10 `session.log` events. See [`dovo session logs`](#dovo-session-logs) for full log output. The command exits `1` if the session's logs cannot be read. |
+| `--format [terminal\|json]` | Presentation format (`terminal` or `json`). |
+
+## `dovo session logs`
+
+Shows the logs of a past session: the timeline (`session.log`) by default, or one step's stdout/stderr with `--step`.
+
+Logs live under the global storage root: `~/.dovo/storage/projects/<project_id>/logs/<session_id>/` (the root honors `DOVO_HOME`). They are kept after the run finishes.
+
+```
+logs/<session_id>/
+├── session.log                          # JSON Lines timeline, one event per line
+├── 01_setup_attempt_1.stdout.log    # raw per-attempt captures
+├── 01_setup_attempt_1.stderr.log
+└── 02_check_iter_1_attempt_1.stdout.log   # loop sub-steps carry an _iter_<n> segment
+```
+
+Per-attempt stdout/stderr capture is controlled by `history.save_attempt_logs` in `.dovo/config.json` (default `true`). `session.log` is always written when the run has a session ID. Loop sub-steps appear in `session.log` as their own `STEP_START`/`STEP_DONE` events, interleaved with the loop's `LOOP_*` events, exactly like top-level steps; loop body events carry `loop_id` and `iteration`, and every step event carries `step_name` (`STEP_DONE` also `duration_seconds`).
+
+Persisted step logs and error messages are masked when written and again when read, so a secret still present in the environment is hidden even in logs written before masking existed. Masked values print as `[REDACTED:<NAME>]` or `[REDACTED]`. Names listed under `environment.sensitive_variables` in `.dovo/config.json` are masked here too, including in logs written before the name was listed.
+
+### Arguments
+
+| Argument | Description |
+| --- | --- |
+| `session_id` | Optional session identifier whose logs to show. If omitted, the latest session is used. |
+
+### Options
+
+| Flag | Description |
+| --- | --- |
+| `--step <step_id>` | Show the raw output captured for this step instead of the session timeline. |
+| `--attempt <int>` | Attempt number to show with `--step` (default: the latest attempt). |
+| `--stream [stdout\|stderr\|both]` | Output stream to show with `--step` (default: `both`, stdout lines first). |
+| `--tail <int>` | Show only the last N lines (with `--step`) or events (without). |
+| `--format [terminal\|json]` | Presentation format (`terminal` or `json`). |
+
+`--attempt` and `--stream` only apply together with `--step`; without it they are ignored.
+
+For a loop sub-step, `--step` matches the captures of every loop iteration: the selected attempt's output from each iteration is shown concatenated in iteration order, and the default attempt is the highest attempt number reached in any iteration. Captures from any steps that share the same step ID, such as a top-level step and a loop sub-step, are grouped under that ID. Capture file names do not include the loop's ID, so two loops that have a sub-step with the same ID at the same position write to the same files, and the later loop overwrites the earlier one's captures. Give loop sub-steps distinct IDs to keep both.
+
+### Errors
+
+`dovo session logs` exits `1` when:
+
+- no session record or log directory exists for the session (`No logs found for session '<session_id>'`),
+- `--step` names a step with no captured logs (the available step IDs are listed),
+- `--attempt` names an attempt that was not captured (the available attempts are listed),
+- a log file cannot be read, for example because of its permissions.
+
+A truncated final `session.log` line, for example after the process was killed mid-write, is skipped rather than reported as an error. Bytes that are not valid UTF-8 are shown as `�`.
+
+## `dovo session diff`
+
+Shows the syntax-highlighted diff recorded for a session.
+
+### Arguments
+
+| Argument | Description |
+| --- | --- |
+| `session_id` | Optional session identifier (e.g. `blueprint_a1b2c3d4`). If omitted, displays the latest session diff. |
+
+### Options
+
+| Flag | Description |
+| --- | --- |
+| `--raw` | Print the plain patch to stdout, with no headers or colors and no truncation. |
+| `--full` / `--no-full` | Show the whole formatted diff instead of truncating it in a terminal. |
+| `--format <terminal\|json>` | Presentation format (`terminal` or `json`). Defaults to `terminal`. |
+
+### Behavior
+
+1. **Session Resolution**:
+   - Sessions resolve below `DOVO_HOME/storage/projects/<project-id>/sessions/` (or `~/.dovo/storage/projects/<project-id>/sessions/` when `DOVO_HOME` is unset).
+   - A session exists only when its session record exists; a session directory without a session record is not found.
+   - When `session_id` is supplied: resolves that session's `diff.patch`.
+   - When `session_id` is omitted: selects the latest session as described in [Latest session default](#latest-session-default).
+   - If no session record matches: displays a **Session Not Found** error panel and exits with code `1`.
+2. **Artifact Loading**:
+   - If `diff.patch` is missing: displays a **Diff Not Found** error panel and exits with code `1`.
+   - If `diff.patch` is empty (0 bytes or whitespace-only): prints `No changes recorded for session <session_id>.` and exits with code `0`.
+3. **Rendering & Truncation**:
+   - Interactive formatted output renders a header with the session ID and artifact path (or `(latest)` when the id was omitted), followed by syntax-highlighted diff text.
+   - In an interactive terminal (TTY), if formatted diff output exceeds 500 lines (and `--full` is not provided), output is truncated at line 500 followed by a dim notice banner with hints to view the complete diff, page with `less -R`, or view raw/artifact contents.
+   - Passing `--full` renders all formatted lines without truncation.
+   - Non-TTY stdout (e.g. piped to `cat` or redirected to a file) and `--raw` mode automatically bypass truncation limits.
+   - When `--raw` is passed, outputs the exact patch content directly to stdout for redirection or piping into `git apply` / `patch`.
+4. **Secret masking**: `diff.patch` is written with secret values replaced by `[REDACTED:<NAME>]` or `[REDACTED]`, so a masked line will not reproduce the original value when applied with `git apply` or `patch`. Names listed under `environment.sensitive_variables` in `.dovo/config.json` are masked at write time; a diff written before a name was listed is not re-masked.
+5. **Exit Codes**:
+   - `0`: Diff successfully displayed, or empty diff.
+   - `1`: Session not found, diff artifact not found, or read failure.
+
+## `dovo session resume`
+
+Continues a paused session, by ID or the latest paused one.
+
+### Arguments
+
+| Argument | Description |
+| --- | --- |
+| `session_id` | Optional session identifier to resume. If omitted, the latest paused session is automatically resumed. |
+
+### Options
+
+| Flag | Description |
+| --- | --- |
+| `--no-tty` | Disable interactive prompts; prompt_user failures abort the run instead of prompting. |
+| `--env-mode <allowlist\|inherit>` | Override `agent.env_mode` for this invocation. |
+| `--env-passthrough <name-or-prefix*>` | Forward a host variable name or a prefix ending in a single `*` to agent steps for this invocation; repeatable and appended to `agent.env_passthrough`. |
+| `--format <terminal\|json>` | Presentation format (`terminal` or `json`). Defaults to `terminal`. |
+| `--display <ansi\|live>` | Display format (`ansi` or `live`). Defaults to `ansi`. |
+
+### Behavior
+
+1. **Session Resolution**:
+   - If `session_id` is provided, resumes that specific session.
+   - If `session_id` is omitted, the most recent paused session is used. If there is none, an error is shown and the command exits `1`.
+2. **Readiness Classification**: Checks that the session exists, is paused, and has intact saved state and an accessible worktree (if it used one).
+3. **Execution**: Continues running from the paused step.
+4. **Environment flags**: `--env-mode` and `--env-passthrough` apply only to this invocation, are never written to config or run state, and are validated before any step starts; an invalid value exits `1` and leaves the session paused.
+5. **Exit Codes**:
+   - `0`: Successful completion or paused run (run state updated).
+   - `1`: Resume validation error, failed step, cancelled run, or no paused session found.
+
+## Examples
+
+List recent sessions:
+
+```bash
+dovo session
+```
+
+List failed sessions limited to the 5 most recent:
+
+```bash
+dovo session list --status failed --limit 5
+```
+
+Output the session list as structured JSON envelopes:
+
+```bash
+dovo session list --format json
+```
+
+Inspect the latest session, or a specific one:
+
+```bash
+dovo session show
+dovo session show blueprint_a1b2c3d4 --format json
+```
+
+Show the latest session's timeline, or one step's output from a specific session:
+
+```bash
+dovo session logs
+dovo session logs blueprint_a1b2c3d4 --step test --attempt 2 --stream stderr --tail 20
+```
+
+View the latest session's diff, or write a specific session's raw patch to a file:
+
+```bash
+dovo session diff
+dovo diff blueprint_a1b2c3d4 --raw > latest_fix.patch
+```
+
+Resume the latest paused session, or a specific one non-interactively:
+
+```bash
+dovo session resume
+dovo resume blueprint_a1b2c3d4 --no-tty
+```

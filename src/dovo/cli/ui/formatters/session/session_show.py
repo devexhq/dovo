@@ -1,0 +1,102 @@
+"""ComponentFormatter for HistoryShowResult."""
+
+from __future__ import annotations
+
+from typing import Any
+
+from rich.console import Group
+from rich.panel import Panel
+from rich.text import Text
+
+from dovo.cli.ui.formatters.common import build_error_panel
+from dovo.cli.ui.formatters.session.common import (
+    build_metadata_table,
+    build_session_summary,
+)
+from dovo.cli.ui.formatters.session.session_views import SessionShowView
+from dovo.common.types import ComponentFormatter
+from dovo.core.sessions import HistoryShowResult, HistoryShowStatus
+
+
+def _render_show_not_found(session_id: str | None, fixes: list[str] | None = None) -> Panel:
+    """Render error panel when requested session record is not found."""
+    default = f"Session '{session_id}' not found." if session_id else "No sessions found."
+    fix_list = fixes or ["Run `dovo session list` to view past sessions"]
+    return build_error_panel("Session Not Found", default=default, fixes=fix_list)
+
+
+def _render_show_error(errors: list[str], fixes: list[str] | None = None) -> Panel:
+    """Render error panel when session show encounters errors."""
+    return build_error_panel("Session Show Failed", errors=errors, fixes=fixes)
+
+
+def _render_show_error_panel(view: SessionShowView) -> Panel | None:
+    """Check and render error panels for session show operation."""
+    if view.status == HistoryShowStatus.NOT_FOUND or (view.session is None and not view.errors):
+        return _render_show_not_found(view.session_id, view.fixes)
+
+    if view.errors:
+        return _render_show_error(view.errors, view.fixes)
+
+    return None
+
+
+def _render_show_run(view: SessionShowView) -> Any:
+    """Render detailed session metadata panel, error panel, and step timeline."""
+    if view.session is None:
+        return Text("")
+
+    renderables: list[Any] = [
+        Panel(
+            build_metadata_table(view.session),
+            title=f"Session Metadata: {view.session.session_id}",
+            border_style="blue",
+        )
+    ]
+
+    if view.session.error_message:
+        renderables.append(Panel(view.session.error_message, title="Error Details", border_style="red"))
+
+    if view.log_files:
+        renderables.append(
+            Panel(Text("\n".join([*view.log_files, "", *view.log_snippet])), title="Session Logs", border_style="cyan")
+        )
+
+    return Group(*renderables) if len(renderables) > 1 else renderables[0]
+
+
+class SessionShowFormatter(ComponentFormatter[HistoryShowResult, SessionShowView]):
+    """Formatter for session show command results."""
+
+    def transform(self, data: HistoryShowResult) -> SessionShowView:
+        """Derive the presentation-ready view from HistoryShowResult.
+
+        Args:
+            data: Domain HistoryShowResult instance.
+
+        Returns:
+            SessionShowView containing the mapped session summary and session log details.
+        """
+        session_summary = build_session_summary(data.session) if data.session is not None else None
+        return SessionShowView(
+            status=data.status,
+            session_id=data.session_id,
+            session=session_summary,
+            log_files=list(data.log_files),
+            log_snippet=list(data.log_snippet),
+            errors=list(data.errors),
+            warnings=list(data.warnings),
+            fixes=list(data.fixes),
+        )
+
+    def to_rich(self, data: HistoryShowResult) -> Any:
+        """Render detailed session metadata panel, error panel, and step timeline."""
+        view = self.transform(data)
+        error_panel = _render_show_error_panel(view)
+        if error_panel is not None:
+            return error_panel
+
+        if view.session is not None:
+            return _render_show_run(view)
+
+        return Text("")

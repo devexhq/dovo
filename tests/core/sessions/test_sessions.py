@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+from collections.abc import Callable
 from pathlib import Path
 
 import pytest
@@ -13,7 +14,9 @@ from dovo.core.db import SessionRecord, SessionsRepository, SessionStatus
 from dovo.core.sessions import (
     DiffStatus,
     HistoryListStatus,
+    HistoryShowResult,
     HistoryShowStatus,
+    LogsShowResult,
     LogsShowStatus,
     LogStreamFilter,
     ReconciliationResult,
@@ -118,6 +121,7 @@ class SessionDiffTests:
 
         assert result.status == DiffStatus.SESSION_NOT_FOUND
         assert result.errors == ["Session 'orphan' not found."]
+        assert result.fixes == ["Run `dovo session list` to list valid session IDs"]
         assert result.artifact_path is None
 
     def test_diff_with_run_record_but_no_patch_returns_diff_not_found(self, isolated_workspace: Path) -> None:
@@ -167,12 +171,52 @@ class SessionCollectionLatestDiffTests:
     def test_latest_diff_with_no_run_records_returns_session_not_found_without_session_id(
         self, isolated_workspace: Path
     ) -> None:
-        """[tier-1/integration] SessionCollection.latest_diff: empty sessions table -> SESSION_NOT_FOUND, session_id None, errors == ["No sessions found."]."""
+        """[tier-1/integration] SessionCollection.latest_diff: empty sessions table -> SESSION_NOT_FOUND, session_id None, errors == ["No sessions found."], fixes == ["Run `dovo run <blueprint>` to create a session"]."""
         result = SessionCollection(_paths_for(isolated_workspace)).latest_diff()
 
         assert result.status == DiffStatus.SESSION_NOT_FOUND
         assert result.session_id is None
         assert result.errors == ["No sessions found."]
+        assert result.fixes == ["Run `dovo run <blueprint>` to create a session"]
+
+
+class SessionCollectionLatestTests:
+    def test_latest_details_and_logs_resolve_latest_session(self, isolated_workspace: Path) -> None:
+        """[tier-1/integration] SessionCollection.latest_details / latest_logs: two sessions -> results carry session_id of the greatest started_at."""
+        paths = _paths_for(isolated_workspace)
+        sessions = SessionCollection(paths)
+        _seed_run(sessions.db, "later-run", "2026-01-02 00:00:00")
+        _seed_run(sessions.db, "earlier-run", "2026-01-01 00:00:00")
+        (paths.logs_dir / "later-run").mkdir(parents=True)
+
+        details = sessions.latest_details()
+        logs = sessions.latest_logs()
+
+        assert details.status == HistoryShowStatus.OK
+        assert details.session_id == "later-run"
+        assert logs.status == LogsShowStatus.OK
+        assert logs.session_id == "later-run"
+
+    @pytest.mark.parametrize(
+        ("resolve", "expected_status"),
+        [
+            pytest.param(lambda sessions: sessions.latest_details(), HistoryShowStatus.NOT_FOUND, id="details"),
+            pytest.param(lambda sessions: sessions.latest_logs(), LogsShowStatus.SESSION_NOT_FOUND, id="logs"),
+        ],
+    )
+    def test_latest_methods_without_sessions_return_not_found_with_create_session_fix(
+        self,
+        isolated_workspace: Path,
+        resolve: Callable[[SessionCollection], HistoryShowResult | LogsShowResult],
+        expected_status: HistoryShowStatus | LogsShowStatus,
+    ) -> None:
+        """[tier-1/integration] SessionCollection.latest_details / latest_logs: empty table -> NOT_FOUND statuses, session_id None, errors == ["No sessions found."], fixes == ["Run `dovo run <blueprint>` to create a session"]."""
+        result = resolve(SessionCollection(_paths_for(isolated_workspace)))
+
+        assert result.status == expected_status
+        assert result.session_id is None
+        assert result.errors == ["No sessions found."]
+        assert result.fixes == ["Run `dovo run <blueprint>` to create a session"]
 
 
 class SessionCollectionGetTests:

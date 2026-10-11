@@ -51,7 +51,7 @@ dovo config set worktree.base_ref main
 
 #### `environment.sensitive_variables`
 
-Names of environment variables whose values Dovo masks as `[REDACTED:<NAME>]` in step output, `diff.patch`, `dovo logs` and `dovo history`, with no minimum length. The config stores names only; values are read at masking time from the process environment, a step's `env:` or the repository `.env`. A listed name that is unset or blank is ignored.
+Names of environment variables whose values Dovo masks as `[REDACTED:<NAME>]` in step output, `diff.patch`, `dovo session` commands, with no minimum length. The config stores names only; values are read at masking time from the process environment, a step's `env:` or the repository `.env`. A listed name that is unset or blank is ignored.
 
 ```bash
 dovo config set environment.sensitive_variables '["AWS_ACCESS_KEY_ID","DATABASE_URL"]'

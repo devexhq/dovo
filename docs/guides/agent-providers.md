@@ -139,7 +139,7 @@ In `allowlist` mode, when host variables were not forwarded:
 
 - the agent sees their names (never values) in `DOVO_ENV_WITHHELD`, and its prompt starts with a line telling it to ask for `agent.env_passthrough`;
 - the console prints `Agent environment filtered: <N> variables withheld.`;
-- `session.log` records an `agent_env_filtered` event with the full list (see [`dovo logs`](../cli/logs.md)).
+- `session.log` records an `agent_env_filtered` event with the full list (see [`dovo session logs`](../cli/session.md#dovo-session-logs)).
 
 `inherit` mode reports nothing.
 

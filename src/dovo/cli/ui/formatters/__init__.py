@@ -26,9 +26,6 @@ from dovo.cli.ui.formatters.config import (
     ConfigUnsetFormatter,
     ConfigValidateFormatter,
 )
-from dovo.cli.ui.formatters.diff import (
-    DiffResultFormatter,
-)
 from dovo.cli.ui.formatters.events import (
     ErrorPanelFormatter,
     LockWaitFormatter,
@@ -45,10 +42,6 @@ from dovo.cli.ui.formatters.events import (
 from dovo.cli.ui.formatters.global_cli import (
     WelcomeBannerFormatter,
 )
-from dovo.cli.ui.formatters.history import (
-    HistoryListFormatter,
-    HistoryShowFormatter,
-)
 from dovo.cli.ui.formatters.init import (
     InitOutcomeFormatter,
     WorkspaceInitFormatter,
@@ -56,6 +49,12 @@ from dovo.cli.ui.formatters.init import (
 from dovo.cli.ui.formatters.registry import (
     FORMATTER_REGISTRY,
     register_all_formatters,
+)
+from dovo.cli.ui.formatters.session import (
+    SessionDiffFormatter,
+    SessionListFormatter,
+    SessionLogsFormatter,
+    SessionShowFormatter,
 )
 from dovo.cli.ui.formatters.status import (
     DovoStatusFormatter,
@@ -85,11 +84,8 @@ __all__ = [
     "ConfigSetFormatter",
     "ConfigUnsetFormatter",
     "ConfigValidateFormatter",
-    "DiffResultFormatter",
     "DovoStatusFormatter",
     "ErrorPanelFormatter",
-    "HistoryListFormatter",
-    "HistoryShowFormatter",
     "InitOutcomeFormatter",
     "LockWaitFormatter",
     "LoopLifecycleFormatter",
@@ -97,6 +93,10 @@ __all__ = [
     "PromptFormatter",
     "PrunedItemFormatter",
     "RunSuccessFormatter",
+    "SessionDiffFormatter",
+    "SessionListFormatter",
+    "SessionLogsFormatter",
+    "SessionShowFormatter",
     "StepDoneFormatter",
     "StepOutputFormatter",
     "StepStartFormatter",
