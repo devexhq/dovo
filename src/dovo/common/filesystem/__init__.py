@@ -1,5 +1,5 @@
 from .exceptions import InvalidGlobalRootError, WorkspaceNotInitializedError
-from .facade import Filesystem
+from .filesystem import Filesystem
 from .models import GlobalPaths, RepositoryPaths, WorkspacePaths, YamlFile
 
 __all__ = [

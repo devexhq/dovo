@@ -11,8 +11,8 @@ from typer.testing import CliRunner
 from dovo.cli import app
 from dovo.common.filesystem.models import WorkspacePaths
 from dovo.core.db import WorktreeStatus
-from dovo.core.worktree.facade import Worktree
 from dovo.core.worktree.models import WorktreeListStatus
+from dovo.core.worktree.worktree import Worktree
 from tests.harness.workspace_paths import initialized_workspace_paths
 
 
@@ -40,7 +40,7 @@ class WorktreeListCliIntegrationTests:
     def test_worktree_list_cli_renders_created_worktree_in_table(
         self, cli_runner: CliRunner, worktree_workspace: Path, dispatch_spy: list[Any]
     ) -> None:
-        """dovo worktree list renders a facade-created worktree's session_id in the terminal table and dispatches its exact record."""
+        """dovo worktree list renders a entrypoint-created worktree's session_id in the terminal table and dispatches its exact record."""
         create_result = Worktree(paths=_paths_for(worktree_workspace)).create(name="listed")
         assert create_result.session is not None
         session = create_result.session

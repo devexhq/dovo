@@ -6,7 +6,7 @@ from pathlib import Path
 
 from pydantic import ValidationError
 
-from dovo.common.filesystem.facade import Filesystem
+from dovo.common.filesystem.filesystem import Filesystem
 from dovo.common.lock import LockTimeoutError, WorkspaceLock, resolve_lock_file_path
 from dovo.core.project.models import (
     PROJECT_ID_REGEX,

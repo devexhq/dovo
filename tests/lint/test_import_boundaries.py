@@ -100,13 +100,13 @@ class ImportBoundariesTests:
         )
 
     def test_unexpected_entries_flags_subpackage_and_ignores_pycache(self, tmp_path: Path) -> None:
-        """[tier-4/unit] _unexpected_entries: a tmp tree containing diff/, facade.py, and __pycache__/ beside allowed names -> returns exactly ['diff', 'facade.py']."""
+        """[tier-4/unit] _unexpected_entries: a tmp tree containing diff/, entrypoint.py, and __pycache__/ beside allowed names -> returns exactly ['diff', 'entrypoint.py']."""
         for name in ("diff", "__pycache__", "services"):
             (tmp_path / name).mkdir()
-        for name in ("facade.py", "models.py"):
+        for name in ("entrypoint.py", "models.py"):
             (tmp_path / name).write_text("", encoding="utf-8")
 
-        assert _unexpected_entries(tmp_path, SESSIONS_ALLOWED_ENTRIES) == ["diff", "facade.py"]
+        assert _unexpected_entries(tmp_path, SESSIONS_ALLOWED_ENTRIES) == ["diff", "entrypoint.py"]
 
     def test_retired_core_packages_are_gone(self) -> None:
         """[tier-4/unit] src/dovo/core and tests/core: no directory named patch, diff, history, logs, or doctor exists; and no import under src/ or tests/ targets dovo.core.{patch,diff,history,logs,doctor}."""

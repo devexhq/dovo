@@ -11,8 +11,8 @@ from typer.testing import CliRunner
 
 from dovo.cli import app
 from dovo.common.filesystem.models import WorkspacePaths
-from dovo.core.worktree.facade import Worktree
 from dovo.core.worktree.models import WorktreeDeleteStatus, WorktreeSession
+from dovo.core.worktree.worktree import Worktree
 from tests.harness.workspace_paths import initialized_workspace_paths
 
 
@@ -22,7 +22,7 @@ def _paths_for(root: Path) -> WorkspacePaths:
 
 
 def _create_worktree(worktree_workspace: Path) -> WorktreeSession:
-    """Create a fresh worktree via the facade for one delete test."""
+    """Create a fresh worktree via the entrypoint for one delete test."""
     create_result = Worktree(paths=_paths_for(worktree_workspace)).create(name="delete-me")
     assert create_result.session is not None
     return create_result.session
