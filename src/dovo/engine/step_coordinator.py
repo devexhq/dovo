@@ -4,11 +4,8 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass
-from pathlib import Path
 
-from dovo.core.artifacts.services.upload import publish_artifact
 from dovo.core.catalog.definitions import StepDefinition
-from dovo.core.db.repositories.artifacts import ArtifactsRepository
 from dovo.core.sessions import SessionLogEvent, SessionLogEventType
 from dovo.engine.executors import StepExecution
 from dovo.engine.executors.agent_step import build_agent_step_runner
@@ -21,40 +18,6 @@ from dovo.engine.failure import (
 from dovo.engine.models import FailurePromptDecision, RunContext, RunSettings, StepAction
 from dovo.engine.notify import safe_notify
 from dovo.engine.session_log import append_session_log_event
-
-
-def auto_publish_step_artifacts(
-    step: StepDefinition,
-    *,
-    worktree_path: Path,
-    session_id: str,
-    artifacts_dir: Path | None,
-    artifacts_db: ArtifactsRepository | None,
-) -> list[str]:
-    """Publish every artifacts: entry declared on step via the shared publish_artifact service; return warnings, never raise."""
-    if not step.artifacts or artifacts_dir is None or artifacts_db is None:
-        return []
-
-    warnings: list[str] = []
-    for spec in step.artifacts:
-        try:
-            result = publish_artifact(
-                worktree_path,
-                artifacts_dir,
-                artifacts_db,
-                session_id=session_id,
-                name=spec.name,
-                path_glob=spec.path,
-                retention_days=spec.retention_days,
-            )
-        except Exception as exc:
-            warnings.append(f"Failed to publish artifact '{spec.name}': {exc}")
-            continue
-        if not result.ok:
-            detail = "; ".join(result.errors) or "publish failed"
-            warnings.append(f"Failed to publish artifact '{spec.name}': {detail}")
-
-    return warnings
 
 
 @dataclass(frozen=True)
@@ -125,7 +88,7 @@ class StepCoordinator:
         loop_iteration: int | None = None,
         loop_id: str | None = None,
     ) -> StepResult:
-        """Notify, log, run one StepExecution, and auto-publish artifacts when it succeeds."""
+        """Notify, log, run one StepExecution, and forward the result's warnings to the caller's run warnings."""
         safe_notify(self.context.observer, "on_step_start", idx, total, step)
         append_session_log_event(
             run_context.session_log_dir,
@@ -193,13 +156,5 @@ class StepCoordinator:
                 iteration=loop_iteration,
             ),
         )
-        if result.ok:
-            publish_warnings = auto_publish_step_artifacts(
-                step,
-                worktree_path=run_context.target_dir,
-                session_id=self.context.session_id or "",
-                artifacts_dir=run_context.artifacts_dir,
-                artifacts_db=run_context.artifacts_db,
-            )
-            warnings.extend(publish_warnings)
+        warnings.extend(result.warnings)
         return result

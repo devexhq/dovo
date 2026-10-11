@@ -39,15 +39,18 @@ def artifacts_download(
     session_id: str = typer.Argument(..., help="Session ID the artifact was published under."),
     name: str = typer.Argument(..., help="Artifact name to download."),
     dest: str = typer.Option(..., "--dest", help="Host destination directory to extract files into."),
+    revision: int | None = typer.Option(
+        None, "--revision", min=1, help="Revision number to download (default: latest)."
+    ),
     format: str = typer.Option(
         "terminal",
         "--format",
         help="Presentation format ('terminal' or 'json').",
     ),
 ) -> None:
-    """Download and checksum-verify a published artifact bundle."""
+    """Download and checksum-verify a published artifact revision (latest by default)."""
     context: CliContext = ctx.obj["context"]
-    result = artifacts_download_command(context, session_id, name, dest=dest, output_format=format)
+    result = artifacts_download_command(context, session_id, name, dest=dest, revision=revision, output_format=format)
     if not result.ok:
         raise typer.Exit(code=1)
 

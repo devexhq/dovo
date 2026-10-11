@@ -7,7 +7,7 @@ import pytest
 
 from dovo.common.filesystem import WorkspacePaths
 from dovo.common.tool_policy import ToolCapability, ToolPolicy, ToolRule
-from dovo.core.catalog.definitions import StepDefinition, StepType
+from dovo.core.catalog.definitions import ArtifactPublishSpec, StepDefinition, StepType
 from dovo.core.catalog.exceptions import StepValidationError
 from dovo.core.catalog.services.resolve_step import (
     load_step,
@@ -35,6 +35,14 @@ class StepResolutionTests:
         assert step.type == StepType.COMMAND
         assert step.command == "npm test"
         assert step.env == {"CI": "1"}
+
+    def test_step_loader_expands_run_shorthand_preserving_artifacts(self) -> None:
+        """Shorthand 'run' step keeps its declared artifacts so the executor can publish them."""
+        raw = {"id": "test", "run": "make plan", "artifacts": [{"name": "plan", "path": "PLAN.md"}]}
+
+        step = resolve_step_definition(raw)
+
+        assert [(spec.name, spec.path) for spec in step.artifacts] == [("plan", "PLAN.md")]
 
     def test_resolve_step_uses_inherits_and_overlays_explicit_fields_only(
         self, tmp_path: Path, workspace_paths_factory: Callable[[Path, Path | None], WorkspacePaths]
@@ -180,6 +188,34 @@ class MergeUsesStepTests:
         assert merged.command == "echo base"
         assert merged.timeout_seconds == 60
         assert merged.env == {"BASE_VAR": "base", "SHARED_VAR": "overridden", "OVERRIDE_VAR": "derived"}
+
+    @pytest.mark.parametrize(
+        ("using_artifacts", "expected_path"),
+        [
+            pytest.param([ArtifactPublishSpec(name="plan", path="PLAN.md")], "PLAN.md", id="using_step_artifacts_win"),
+            pytest.param(None, "BASE.md", id="omitted_inherits_base_artifacts"),
+        ],
+    )
+    def test_artifacts_on_using_step_survive_the_merge(
+        self, using_artifacts: list[ArtifactPublishSpec] | None, expected_path: str
+    ) -> None:
+        """[tier-1/unit] merge_uses_step: using-step artifacts replace the base's; omitted artifacts inherit the base's."""
+        base = StepDefinition(
+            id="base-step",
+            type=StepType.COMMAND,
+            command="echo base",
+            artifacts=[ArtifactPublishSpec(name="base", path="BASE.md")],
+        )
+        using = (
+            StepDefinition(id="derived", uses="base-step", artifacts=using_artifacts)
+            if using_artifacts is not None
+            else StepDefinition(id="derived", uses="base-step")
+        )
+
+        merged = merge_uses_step(using, base)
+
+        assert merged is not None
+        assert [spec.path for spec in merged.artifacts] == [expected_path]
 
 
 _CATALOG_POLICY = ToolPolicy(allow=[ToolRule(capability=ToolCapability.READ, pattern="src/**")])

@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from pathlib import Path
 
-from dovo.core.artifacts.models import ArtifactDownloadStatus, ArtifactUploadStatus
+from dovo.core.artifacts.models import ArtifactDownloadStatus, ArtifactProvenance, ArtifactUploadStatus
 from dovo.core.artifacts.services.download import download_artifact
 from dovo.core.artifacts.services.upload import publish_artifact
 from dovo.engine.executors.models import InternalCommandContext, StepDispatchOutcome
@@ -49,6 +49,7 @@ def handle_artifacts_upload(ctx: InternalCommandContext) -> StepDispatchOutcome:
         name=name,
         path_glob=path_glob,
         retention_days=retention_days,
+        provenance=ArtifactProvenance(step_id=ctx.step_id, attempt=ctx.attempt, loop_iteration=ctx.loop_iteration),
     )
     if result.status == ArtifactUploadStatus.OK:
         return StepDispatchOutcome(status="completed", exit_code=0, stdout="", stderr="")
@@ -61,8 +62,22 @@ def handle_artifacts_upload(ctx: InternalCommandContext) -> StepDispatchOutcome:
     )
 
 
+def _revision_from_env(env: Mapping[str, str]) -> tuple[int | None, str | None]:
+    """Parse optional ARTIFACT_REVISION into (revision, error); (None, None) when unset."""
+    raw = env.get("ARTIFACT_REVISION")
+    if not raw:
+        return None, None
+    try:
+        revision = int(raw)
+    except ValueError:
+        revision = 0
+    if revision < 1:
+        return None, "Internal command 'artifacts.download' requires ARTIFACT_REVISION to be a positive integer."
+    return revision, None
+
+
 def handle_artifacts_download(ctx: InternalCommandContext) -> StepDispatchOutcome:
-    """Read ARTIFACT_NAME/ARTIFACT_DEST/optional ARTIFACT_SESSION_ID from ctx.env and call download_artifact."""
+    """Read ARTIFACT_NAME/ARTIFACT_DEST/optional ARTIFACT_SESSION_ID and ARTIFACT_REVISION from ctx.env and call download_artifact."""
     if ctx.artifacts_dir is None or ctx.artifacts_db is None:
         return _no_active_session_outcome("artifacts.download")
 
@@ -77,6 +92,10 @@ def handle_artifacts_download(ctx: InternalCommandContext) -> StepDispatchOutcom
             error_message="Internal command 'artifacts.download' requires ARTIFACT_NAME and ARTIFACT_DEST.",
         )
 
+    revision, revision_error = _revision_from_env(ctx.env)
+    if revision_error is not None:
+        return StepDispatchOutcome(status="failed", exit_code=1, stdout="", stderr="", error_message=revision_error)
+
     session_id = ctx.env.get("ARTIFACT_SESSION_ID", ctx.session_id)
     dest_path = Path(dest_raw)
     dest = dest_path if dest_path.is_absolute() else ctx.worktree_path / dest_path
@@ -87,6 +106,7 @@ def handle_artifacts_download(ctx: InternalCommandContext) -> StepDispatchOutcom
         session_id=session_id,
         name=name,
         dest=dest,
+        revision=revision,
     )
     if result.status == ArtifactDownloadStatus.OK:
         return StepDispatchOutcome(status="completed", exit_code=0, stdout="", stderr="")

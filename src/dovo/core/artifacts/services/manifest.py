@@ -6,7 +6,7 @@ import hashlib
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
-from dovo.core.artifacts.models import ArtifactManifest, ArtifactManifestFile
+from dovo.core.artifacts.models import ArtifactManifest, ArtifactManifestFile, ArtifactProvenance
 
 _CHECKSUM_CHUNK_SIZE = 65536
 
@@ -27,19 +27,34 @@ def _resolve_expires_at(created_at: datetime, retention_days: int | None) -> str
     return (created_at + timedelta(days=retention_days)).strftime("%Y-%m-%d %H:%M:%S")
 
 
+def compute_bundle_digest(files: list[ArtifactManifestFile]) -> str:
+    """Return the sha256 hex of a "path NUL sha256 newline" line per file, sorted by relative path."""
+    digest = hashlib.sha256()
+    for entry in sorted(files, key=lambda file: file.path):
+        digest.update(f"{entry.path}\0{entry.sha256}\n".encode())
+    return digest.hexdigest()
+
+
 def build_manifest(
     name: str,
     session_id: str,
     files: list[ArtifactManifestFile],
     *,
+    revision: int,
     retention_days: int | None,
+    provenance: ArtifactProvenance,
 ) -> ArtifactManifest:
-    """Assemble an ArtifactManifest from checksummed files and a retention window in days."""
+    """Assemble an ArtifactManifest, including its bundle digest and provenance, from checksummed files."""
     created_at = datetime.now(UTC)
 
     return ArtifactManifest(
         name=name,
         session_id=session_id,
+        revision=revision,
+        digest=compute_bundle_digest(files),
+        step_id=provenance.step_id,
+        attempt=provenance.attempt,
+        loop_iteration=provenance.loop_iteration,
         created_at=created_at.strftime("%Y-%m-%d %H:%M:%S"),
         expires_at=_resolve_expires_at(created_at, retention_days),
         size_bytes=sum(f.size_bytes for f in files),

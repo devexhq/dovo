@@ -46,6 +46,7 @@ class DoctorCliIntegrationTests:
             "worktree.refs",
             "env.binaries",
             "agent.setup",
+            "artifacts.integrity",
         ]
         assert [c.status for c in report.checks] == [
             CheckStatus.OK,
@@ -54,6 +55,7 @@ class DoctorCliIntegrationTests:
             CheckStatus.OK,
             CheckStatus.OK,
             CheckStatus.WARNING,
+            CheckStatus.OK,
         ]
         assert report.total_duration_ms >= 0.0
 

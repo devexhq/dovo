@@ -2,7 +2,14 @@
 
 from __future__ import annotations
 
-from dovo.core.inputs.services.interpolate import interpolate_string
+import pytest
+
+from dovo.core.catalog.definitions import StepDefinition, StepType
+from dovo.core.inputs.services.interpolate import (
+    interpolate_step_fields,
+    interpolate_string,
+    referenced_artifact_fields,
+)
 from dovo.engine.executors.models import ExecutionMetadata, PreviousStepMetadata, StepMetadata
 
 
@@ -65,3 +72,85 @@ class InterpolateStepOutputsPlaceholderTests:
         result = interpolate_string("${{ steps[0].status }}", metadata=metadata)
 
         assert result == "completed"
+
+
+class InterpolateArtifactsTests:
+    """[tier-1/unit] interpolate_string / interpolate_step_fields: the artifacts.<name>.<field> namespace."""
+
+    @pytest.mark.parametrize("template", ["{{ artifacts.plan.revision }}", "${{ artifacts.plan.revision }}"])
+    def test_artifact_revision_resolves_in_both_syntaxes(self, template: str) -> None:
+        """[tier-1/unit] interpolate_string: artifacts={'plan': {'revision': '2'}} renders both syntaxes as '2'."""
+        assert interpolate_string(template, artifacts={"plan": {"revision": "2"}}) == "2"
+
+    @pytest.mark.parametrize("template", ["{{ artifacts.ghost.digest }}", "{{ artifacts.plan.bogus }}"])
+    def test_unknown_artifact_or_field_renders_empty_string(self, template: str) -> None:
+        """[tier-1/unit] interpolate_string: unknown artifact name or unknown field renders ''; an unknown steps.* placeholder stays literal."""
+        metadata = _metadata_with_step_a_outputs({})
+
+        rendered = interpolate_string(
+            f"{template}|{{{{ steps.nope }}}}", metadata=metadata, artifacts={"plan": {"revision": "2"}}
+        )
+
+        assert rendered == "|{{ steps.nope }}"
+
+    def test_dotted_artifact_name_uses_last_segment_as_field(self) -> None:
+        """[tier-1/unit] interpolate_string: 'artifacts.team.plan.digest' resolves name 'team.plan' and field 'digest'."""
+        rendered = interpolate_string("{{ artifacts.team.plan.digest }}", artifacts={"team.plan": {"digest": "abc"}})
+
+        assert rendered == "abc"
+
+    @pytest.mark.parametrize(
+        ("step_kwargs", "field_name", "expected"),
+        [
+            pytest.param(
+                {"type": StepType.COMMAND, "command": "cat {{ artifacts.plan.dir }}"},
+                "command",
+                "cat /a/plan/2",
+                id="command",
+            ),
+            pytest.param(
+                {"type": StepType.AGENT, "prompt": "read {{ artifacts.plan.dir }}"},
+                "prompt",
+                "read /a/plan/2",
+                id="prompt",
+            ),
+            pytest.param(
+                {"type": StepType.SCRIPT, "script_path": "{{ artifacts.plan.dir }}/run.sh"},
+                "script_path",
+                "/a/plan/2/run.sh",
+                id="script_path",
+            ),
+            pytest.param({"run": "ls {{ artifacts.plan.dir }}"}, "run", "ls /a/plan/2", id="run"),
+        ],
+    )
+    def test_artifacts_resolve_in_interpolated_step_fields(
+        self, step_kwargs: dict[str, object], field_name: str, expected: str
+    ) -> None:
+        """[tier-1/unit] interpolate_step_fields: {{ artifacts.plan.dir }} renders in command, prompt, script_path and run."""
+        step = StepDefinition.model_validate({"id": "s1", **step_kwargs})
+
+        rendered = interpolate_step_fields(step, artifacts={"plan": {"dir": "/a/plan/2"}})
+
+        assert getattr(rendered, field_name) == expected
+
+    def test_artifacts_resolve_in_env_values(self) -> None:
+        """[tier-1/unit] interpolate_step_fields: {{ artifacts.plan.dir }} renders inside an env value."""
+        step = StepDefinition(
+            id="s1", type=StepType.COMMAND, command="true", env={"PLAN_DIR": "{{ artifacts.plan.dir }}"}
+        )
+
+        rendered = interpolate_step_fields(step, artifacts={"plan": {"dir": "/a/plan/2"}})
+
+        assert rendered.env == {"PLAN_DIR": "/a/plan/2"}
+
+    def test_referenced_artifact_fields_collects_names_and_fields_from_all_fields(self) -> None:
+        """[tier-1/unit] referenced_artifact_fields: prompt content, env revision and command dir placeholders -> {'plan': {'content', 'revision'}, 'b': {'dir'}}; unknown fields are ignored."""
+        step = StepDefinition(
+            id="s1",
+            type=StepType.AGENT,
+            prompt="{{ artifacts.plan.content }} {{ artifacts.plan.bogus }}",
+            command="cat {{ artifacts.b.dir }}",
+            env={"REV": "${{ artifacts.plan.revision }}"},
+        )
+
+        assert referenced_artifact_fields(step) == {"plan": {"content", "revision"}, "b": {"dir"}}

@@ -20,6 +20,16 @@ class ArtifactManifestFile(BaseModel):
     size_bytes: int
 
 
+class ArtifactProvenance(BaseModel):
+    """Which step attempt published an artifact revision; every field is None when not applicable."""
+
+    model_config = {"extra": "forbid", "strict": True}
+
+    step_id: str | None = None
+    attempt: int | None = None
+    loop_iteration: int | None = None
+
+
 class ArtifactManifest(BaseModel):
     """Metadata written as manifest.json alongside a published artifact's files."""
 
@@ -27,6 +37,11 @@ class ArtifactManifest(BaseModel):
 
     name: str
     session_id: str
+    revision: int = 1
+    digest: str | None = None
+    step_id: str | None = None
+    attempt: int | None = None
+    loop_iteration: int | None = None
     created_at: str
     expires_at: str | None = None
     size_bytes: int
@@ -48,6 +63,8 @@ class ArtifactUploadResult(BaseResult):
     status: ArtifactUploadStatus
     name: str = ""
     session_id: str = ""
+    revision: int = 0
+    digest: str | None = None
     size_bytes: int = 0
     file_count: int = 0
     expires_at: str | None = None
@@ -74,12 +91,32 @@ class ArtifactDownloadResult(BaseResult):
     session_id: str = ""
     name: str = ""
     dest: str = ""
+    revision: int = 0
     file_count: int = 0
 
     @property
     def ok(self) -> bool:
         """True when the artifact bundle was extracted and checksum-verified."""
         return self.status == ArtifactDownloadStatus.OK
+
+
+class ArtifactReferencesStatus(StrEnum):
+    """Classified outcome for resolving artifact placeholder values."""
+
+    OK = "ok"
+    CONTENT_UNAVAILABLE = "content_unavailable"
+
+
+class ArtifactReferencesResult(BaseResult):
+    """Resolved {artifact name: {field: value}} values for the latest revision of each requested artifact."""
+
+    status: ArtifactReferencesStatus = ArtifactReferencesStatus.OK
+    references: dict[str, dict[str, str]] = Field(default_factory=dict)
+
+    @property
+    def ok(self) -> bool:
+        """True when every requested field was resolved (unknown artifacts are simply absent)."""
+        return self.status == ArtifactReferencesStatus.OK and not self.errors
 
 
 class ArtifactsListStatus(StrEnum):
@@ -109,12 +146,13 @@ class ArtifactsPruneStatus(StrEnum):
 
 
 class PrunedArtifact(BaseModel):
-    """One artifact processed during a prune pass."""
+    """One artifact revision processed during a prune pass."""
 
     model_config = {"extra": "forbid", "strict": True}
 
     session_id: str
     name: str
+    revision: int
     pruned: bool
     error: str | None = None
 

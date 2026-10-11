@@ -24,16 +24,24 @@ def format_size_bytes(size_bytes: int) -> str:
 def build_artifacts_table(artifacts: list[ArtifactRowView]) -> Table:
     """Build the Dovo Artifacts table for list output."""
     table = Table(title="Dovo Artifacts", title_justify="left", show_header=True)
-    table.add_column("Name", style="cyan")
     table.add_column("Session")
+    table.add_column("Artifact", style="cyan")
+    table.add_column("Rev")
+    table.add_column("Digest")
+    table.add_column("Step")
+    table.add_column("Iter")
     table.add_column("Files")
     table.add_column("Size")
     table.add_column("Expires")
 
     for row in artifacts:
         table.add_row(
-            row.name,
             row.session_id,
+            row.name,
+            str(row.revision),
+            row.digest_display,
+            row.step_display,
+            row.iteration_display,
             str(row.file_count),
             row.size_display,
             row.expires_at or "[dim]never[/dim]",

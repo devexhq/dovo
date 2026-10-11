@@ -26,7 +26,7 @@ def doctor_callback(
         typer.Option(
             "--category",
             help="Restrict execution to a single check category "
-            "(git, config, filesystem, worktree, agent, environment).",
+            "(git, config, filesystem, worktree, agent, environment, artifacts).",
             case_sensitive=False,
         ),
     ] = None,

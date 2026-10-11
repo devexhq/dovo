@@ -10,6 +10,7 @@ from typing import ClassVar
 import pytest
 
 from dovo.common.filesystem.models import WorkspacePaths
+from dovo.core.artifacts.services.download import download_artifact
 from dovo.core.catalog.definitions import LoopStepBlock, StepDefinition
 from dovo.core.db import SessionsRepository, SessionStatus
 from dovo.core.db.repositories.artifacts import ArtifactsRepository
@@ -576,6 +577,51 @@ class CoordinatorExecuteTests:
         )
 
         assert [record.name for record in artifacts_repository.list(session_id="arts")] == expected_artifacts
+
+
+class CoordinatorArtifactRevisionsTests:
+    """[tier-1/integration] RunCoordinator loop republishing: every iteration adds an immutable artifact revision."""
+
+    def test_loop_republishing_plan_creates_revisions_one_to_n_all_downloadable(
+        self,
+        engine_paths: WorkspacePaths,
+        sessions_repo: SessionsRepository,
+        artifacts_repository: ArtifactsRepository,
+        tmp_path: Path,
+    ) -> None:
+        """[tier-1/integration] RunCoordinator.execute: a loop (max_iterations=3) whose do: step writes PLAN.md per iteration and declares artifacts -> rows revision 1..3 with loop_iteration 1..3, and download_artifact(revision=n) returns iteration n's text."""
+        steps = [
+            _loop(
+                "loop",
+                [
+                    _step(
+                        "write-plan",
+                        "echo plan-{{ iteration.index }} > PLAN.md",
+                        artifacts=[{"name": "plan", "path": "PLAN.md"}],
+                    )
+                ],
+                max_iterations=3,
+            )
+        ]
+
+        _run_new(engine_paths, sessions_repo, "loop-revisions", steps, artifacts_db=artifacts_repository)
+
+        records = sorted(artifacts_repository.list(session_id="loop-revisions"), key=lambda record: record.revision)
+        assert [(record.revision, record.loop_iteration) for record in records] == [(1, 1), (2, 2), (3, 3)]
+        downloaded: list[str] = []
+        for revision in (1, 2, 3):
+            dest = tmp_path / f"download-{revision}"
+            result = download_artifact(
+                engine_paths.artifacts_dir,
+                artifacts_repository,
+                session_id="loop-revisions",
+                name="plan",
+                dest=dest,
+                revision=revision,
+            )
+            assert result.ok
+            downloaded.append((dest / "PLAN.md").read_text(encoding="utf-8"))
+        assert downloaded == ["plan-1\n", "plan-2\n", "plan-3\n"]
 
 
 class CoordinatorObserverContractTests:

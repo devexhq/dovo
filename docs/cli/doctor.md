@@ -1,6 +1,6 @@
 # `dovo doctor`
 
-The `dovo doctor` command runs the registered diagnostic checks and prints a scannable workspace health report covering Git, configuration, filesystem permissions, worktree references, environment binaries, and agent setup.
+The `dovo doctor` command runs the registered diagnostic checks and prints a scannable workspace health report covering Git, configuration, filesystem permissions, worktree references, environment binaries, agent setup, and artifact revision integrity.
 
 `dovo doctor` requires `dovo init` first: without a valid `.dovo/project.json` it exits `1` with `Workspace is not initialized` and a `dovo init` prompt. Once initialized, it still runs and reports when `config.json` is missing or broken.
 
@@ -14,7 +14,7 @@ dovo doctor [--category <name>] [--format terminal|json]
 
 | Flag | Description |
 | --- | --- |
-| `--category <git\|config\|filesystem\|worktree\|agent\|environment>` | Restrict execution to a single check category. Defaults to running every registered check. |
+| `--category <git\|config\|filesystem\|worktree\|agent\|environment\|artifacts>` | Restrict execution to a single check category. Defaults to running every registered check. |
 | `--format <terminal\|json>` | Presentation format (`terminal` or `json`). Defaults to `terminal`. |
 
 ## Description
@@ -42,9 +42,12 @@ Dovo Doctor Report
 │ worktree.refs │ worktree     │ OK     │ 2 worktree(es) verified against database and Git worktree... │
 │ env.binaries │ environment │ OK     │ 2 required binary(s) verified on PATH.                     │
 │ agent.setup  │ agent       │ OK     │ Agent provider 'copilot' is configured with model '...'.   │
+│ artifacts.integrity │ artifacts │ OK │ 3 artifact revision(s) verified against the database.      │
 └──────────────┴─────────────┴────────┴──────────────────────────────────────────────────────────┘
-6 checks: 6 ok, 0 warning, 0 failed (8.4ms)
+7 checks: 7 ok, 0 warning, 0 failed (8.4ms)
 ```
+
+`artifacts.integrity` warns when an artifact revision directory has no database row (`DOCTOR_ARTIFACT_ORPHAN_DIR`) or a row's directory is missing (`DOCTOR_ARTIFACT_MISSING_DIR`); it never repairs either.
 
 The default provider (`copilot`) requires `gh` on `PATH` and a `GH_TOKEN` or `GITHUB_TOKEN` credential; without them `env.binaries` warns and `agent.setup` fails.
 

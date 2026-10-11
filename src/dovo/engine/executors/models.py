@@ -157,6 +157,9 @@ class InternalCommandContext(BaseModel):
     env: dict[str, str] = Field(default_factory=dict)
     artifacts_dir: Path | None = None
     artifacts_db: ArtifactsRepository | None = None
+    step_id: str | None = None
+    attempt: int | None = None
+    loop_iteration: int | None = None
 
 
 class AgentStepSummary(BaseModel):

@@ -6,7 +6,9 @@ from pathlib import Path
 
 import pytest
 
+from dovo.common.filesystem.models import WorkspacePaths
 from dovo.core.catalog.definitions import StepDefinition, StepType
+from dovo.core.db.repositories.artifacts import ArtifactsRepository
 from dovo.engine.executors import step_executor
 from dovo.engine.executors.models import StepExecutionContext
 from dovo.engine.executors.step_executor import StepExecution
@@ -51,3 +53,31 @@ class InternalCommandDispatchTests:
         assert result.status == "failed"
         assert result.error_message is not None
         assert "session" in result.error_message.lower()
+
+    def test_loop_iteration_and_attempt_reach_upload_handler(
+        self, tmp_path: Path, engine_paths: WorkspacePaths, artifacts_repository: ArtifactsRepository
+    ) -> None:
+        """[tier-1/integration] StepExecution.run: artifacts.upload step with loop_iteration=2 on attempt 1 -> stored row loop_iteration 2, attempt 1, step_id == step.id."""
+        (tmp_path / "PLAN.md").write_text("plan", encoding="utf-8")
+        step = StepDefinition(
+            id="upload-plan",
+            type=StepType.INTERNAL,
+            command="artifacts.upload",
+            env={"ARTIFACT_NAME": "plan", "ARTIFACT_PATH": "PLAN.md"},
+        )
+
+        result = StepExecution(
+            StepExecutionContext(
+                step=step,
+                worktree_path=tmp_path,
+                session_id="wf_1",
+                artifacts_dir=engine_paths.artifacts_dir,
+                artifacts_db=artifacts_repository,
+                loop_iteration=2,
+            )
+        ).run()
+
+        record = artifacts_repository.get("wf_1", "plan")
+        assert result.status == "completed"
+        assert record is not None
+        assert (record.step_id, record.attempt, record.loop_iteration) == ("upload-plan", 1, 2)

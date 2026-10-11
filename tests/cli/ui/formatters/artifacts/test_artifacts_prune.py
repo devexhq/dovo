@@ -21,17 +21,17 @@ WITH_PRUNED_ITEM = FormatterCase(
         status=ArtifactsPruneStatus.OK,
         dry_run=False,
         force=False,
-        items=[PrunedArtifact(session_id="wf_abc123", name="dist-packages", pruned=True)],
+        items=[PrunedArtifact(session_id="wf_abc123", name="dist-packages", revision=2, pruned=True)],
     ),
     view=ArtifactsPruneView(
         status=ArtifactsPruneStatus.OK,
         dry_run=False,
         force=False,
-        items=[PrunedArtifact(session_id="wf_abc123", name="dist-packages", pruned=True)],
+        items=[PrunedArtifact(session_id="wf_abc123", name="dist-packages", revision=2, pruned=True)],
         pruned_count=1,
         failed_count=0,
     ),
-    render_expectations=["wf_abc123", "dist-packages"],
+    render_expectations=["wf_abc123", "dist-packages", "@2"],
 )
 
 DISABLED = FormatterCase(
@@ -49,7 +49,9 @@ ARTIFACTS_PRUNE_PAYLOAD_CASES = [
             "status": "ok",
             "dry_run": False,
             "force": False,
-            "items": [{"session_id": "wf_abc123", "name": "dist-packages", "pruned": True, "error": None}],
+            "items": [
+                {"session_id": "wf_abc123", "name": "dist-packages", "revision": 2, "pruned": True, "error": None}
+            ],
             "pruned_count": 1,
             "failed_count": 0,
         },
@@ -82,7 +84,7 @@ class ArtifactsPruneFormatterTests:
         assert_rich_render_shows_every_view_value(ArtifactsPruneFormatter, DISABLED.data, DISABLED.render_expectations)
 
     def test_to_rich_renders_pinned_session_id_and_name(self) -> None:
-        """[tier-2/unit] ArtifactsPruneFormatter.to_rich: render_rich output contains the pruned item's session_id and name."""
+        """[tier-2/unit] ArtifactsPruneFormatter.to_rich: render_rich output contains the pruned item's session_id, name and revision."""
         assert_rich_render_shows_every_view_value(
             ArtifactsPruneFormatter, WITH_PRUNED_ITEM.data, WITH_PRUNED_ITEM.render_expectations
         )

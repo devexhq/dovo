@@ -83,6 +83,7 @@ def merge_uses_step(using: StepDefinition, base_definition: StepDefinition) -> S
                 "timeout_seconds": _pick("timeout_seconds"),
                 "assert": _pick("assert_"),
                 "on_failure": _pick("on_failure"),
+                "artifacts": _pick("artifacts"),
             }
         )
     except (ValidationError, ValueError):
@@ -147,6 +148,7 @@ def _resolve_run(step: StepDefinition) -> StepDefinition:
             "timeout_seconds": step.timeout_seconds,
             "assert": step.assert_,
             "on_failure": step.on_failure,
+            "artifacts": step.artifacts,
         }
     )
 

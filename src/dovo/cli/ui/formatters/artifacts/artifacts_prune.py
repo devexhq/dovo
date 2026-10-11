@@ -15,8 +15,8 @@ from dovo.core.artifacts.models import ArtifactsPruneResult, ArtifactsPruneStatu
 def _render_item(item: PrunedArtifact) -> Text:
     """Render one PrunedArtifact as a single line."""
     if item.pruned:
-        return Text(f"Pruned: {item.session_id}/{item.name}", style="green")
-    return Text(f"Failed: {item.session_id}/{item.name} ({item.error})", style="red")
+        return Text(f"Pruned: {item.session_id}/{item.name}@{item.revision}", style="green")
+    return Text(f"Failed: {item.session_id}/{item.name}@{item.revision} ({item.error})", style="red")
 
 
 class ArtifactsPruneFormatter(ComponentFormatter[ArtifactsPruneResult, ArtifactsPruneView]):
