@@ -19,7 +19,7 @@ Plan when the issue adds or changes a command, DTO/`*Result` model, status enum,
 
 ## Hard boundaries
 
-- **Never run tooling that mutates or validates.** No `inv test`, no `pytest`, no `ruff`, no `basedpyright`, no `inv complexity`, no `uv sync`, no `dovo` command. Read-only git (`git log`, `git diff`, `git show`, `git rev-parse`) and read-only `gh` (`gh issue view`, `gh repo view`) are the only commands you need.
+- **Never run tooling that mutates or validates.** No `dovo run tests`, no `dovo run quality`, no `pytest`, no `ruff`, no `basedpyright`, no `uv sync`, no `dovo` command. Read-only git (`git log`, `git diff`, `git show`, `git rev-parse`) and read-only `gh` (`gh issue view`, `gh repo view`) are the only commands you need.
 - **Never edit `src/` or `tests/`.** The plan document (`.agentic/plan.md`) is the entire deliverable. No commits, no pushes, no PR state.
 - **Never plan from memory of the codebase.** Every path, symbol, and signature in the plan comes from a file read this session.
 - **Never plan a test whose contract is already pinned elsewhere** (`TEST-004`). A plan that grows the suite without naming what each new test uniquely pins is a failed plan.

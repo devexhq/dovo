@@ -1,0 +1,42 @@
+version: 1
+name: tests
+id: tests
+description: Run the test suite, or a scoped part of it, against the working tree
+summary: Scoped test run for quick feedback; the full gate is `quality`
+use_worktree: false
+
+inputs:
+  path:
+    type: string
+    description: Test file, directory or node id to run
+    default: tests/
+    aliases: ["-p", "--path"]
+  fast_fail:
+    type: boolean
+    description: Stop at the first failure
+    default: false
+    aliases: ["-x", "--fast-fail"]
+  coverage:
+    type: boolean
+    description: Print a coverage report (report only; the coverage floor is enforced by `quality`)
+    default: false
+    aliases: ["-c", "--coverage"]
+
+steps:
+  - id: tests
+    name: Run tests
+    env:
+      TEST_PATH: "${{ inputs.path }}"
+      FAST_FAIL: "${{ inputs.fast_fail }}"
+      COVERAGE: "${{ inputs.coverage }}"
+      COLUMNS: "160"
+      PYTHONIOENCODING: utf-8
+    run: |
+      # Dovo's per-step variables leak into the test process and break tests that
+      # assert they are unset; clear them so the suite sees a plain environment.
+      unset_args=$(env | sed -n 's/^\(DOVO_\(STEP\|STEPS\|ITERATION\|BLUEPRINT\|PREVIOUS\|TEMP\|RUNNER\|OUTPUT\)[A-Z_]*\)=.*/-u \1/p' | tr '\n' ' ')
+      set -- "$TEST_PATH"
+      case "$FAST_FAIL" in [Tt]rue) set -- "$@" -x ;; esac
+      case "$COVERAGE" in [Tt]rue) set -- "$@" --cov=dovo --cov-report=term-missing --cov-fail-under=0 ;; esac
+      env $unset_args uv run python -m pytest "$@"
+    timeout_seconds: 900

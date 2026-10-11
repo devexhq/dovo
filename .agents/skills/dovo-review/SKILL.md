@@ -23,7 +23,7 @@ Output goes to `.agentic/review.md`, which `/dovo-code review` consumes, paired 
 
 ## Hard boundaries
 
-- **Never run tests or tooling.** No `inv test`, no `pytest`, no `ruff`, no `basedpyright`, no `inv complexity`. `/dovo-code` owns the gate; a review that leans on tool output stops reading the code. Read-only `git`, read-only `gh`, `rg`, and file reads are what you need.
+- **Never run tests or tooling.** No `dovo run tests`, no `dovo run quality`, no `pytest`, no `ruff`, no `basedpyright`. `/dovo-code` owns the gate; a review that leans on tool output stops reading the code. Read-only `git`, read-only `gh`, `rg`, and file reads are what you need.
 - **Never edit, stage, commit, or push.** Report findings and hand off. `/dovo-code review` applies the fixes.
 - **Never approve on absence of evidence.** A rule you did not check is not a rule that passed.
 - **Never treat a passing suite as a verified invariant.** The checks most likely to be broken are the ones reporting success, because a scanner that inspects nothing is indistinguishable from a clean tree.

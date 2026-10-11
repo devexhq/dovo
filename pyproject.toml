@@ -232,6 +232,7 @@ exclude = [
 pythonVersion = "3.13"
 pythonPlatform = "Linux"
 typeCheckingMode = "recommended"
+failOnWarnings = false  # The gate is zero errors; warnings stay visible but do not fail (also under GITHUB_ACTIONS)
 venvPath = "."
 venv = ".venv"
 

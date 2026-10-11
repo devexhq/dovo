@@ -117,9 +117,8 @@ Runtime session, artifact, log, and temporary data live outside the repository a
 
 ```bash
 uv sync --all-extras
-inv test
-ruff format .
-ruff check .
+uv run dovo run tests    # scoped: --path tests/core/, --fast-fail, --coverage
+uv run dovo run quality  # full quality gate (format check, lint, typecheck, docs, complexity, tests)
 ```
 
 ## Documentation

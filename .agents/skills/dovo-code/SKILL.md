@@ -58,7 +58,8 @@ Work one FR (or one testable clause) at a time, in the plan's order. For each:
 
    ```bash
    python -m pytest tests/<mirrored-path> -q          # one file or directory
-   uv run inv test --no-parallel --fast-fail          # only when a whole-suite signal is genuinely needed
+   uv run dovo run tests --path tests/<mirrored-path> --fast-fail   # same, via the tests blueprint
+   uv run dovo run tests --fast-fail                  # only when a whole-suite signal is genuinely needed
    ```
 
 5. Fix what fails before moving to the next FR. Do not accumulate red tests across FRs.
@@ -85,14 +86,12 @@ If the plan's ledger asks for a test whose contract you find already pinned else
 
 ## Completion gate (`CI-001`)
 
-Run this once, after implementation is complete, **strictly sequentially, in this order**: one command per tool call, wait for it to finish, and never issue two gate commands in the same message, chain them in the background, or launch them concurrently. A failure stops the sequence: fix it, then resume from the failed gate and re-run the later ones, since a fix can invalidate earlier results (re-run from `ruff format` if formatting-affecting code changed). Each command's fix belongs in the code, never in a suppression or a lowered threshold — [docs/agents/ci-and-tooling.md](../../../docs/agents/ci-and-tooling.md) has what each gate actually checks, and [code-conventions.md](../../../docs/agents/code-conventions.md#type-checker-suppressions) has the only permitted suppressions:
+Run this once, after implementation is complete. Apply formatting first (the gate only checks it), then run the blueprint, which runs every gate in order and stops at the first failure. Fix the failure in the code, never in a suppression or a lowered threshold, and re-run it from the start, since a fix can invalidate earlier results. Never run it concurrently with another gate or test command. [docs/agents/ci-and-tooling.md](../../../docs/agents/ci-and-tooling.md) has what each gate actually checks, and [code-conventions.md](../../../docs/agents/code-conventions.md#type-checker-suppressions) has the only permitted suppressions:
 
 ```bash
-ruff format .
-ruff check .                                                          # ruff check --fix . for safe fixes
-basedpyright src tests --level error                                  # must be 0 errors, tests included
-uv run inv complexity --paths <changed-py-files> --plain --failed     # no touched function over 10
-uv run inv test -c                                                    # full suite with coverage
+uv run ruff format .                                                  # apply formatting; the gate only checks it
+uv run ruff check --fix .                                             # safe fixes; the gate only reports
+uv run dovo run quality                                               # format check, lint, basedpyright (0 errors, tests included), docs build, complexity on changed files (none over 10), full suite with coverage
 ```
 
 Then read what the gates actually enforce, rather than what the docs claim:
