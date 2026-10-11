@@ -33,7 +33,7 @@ def _render_run_log_line(event: SessionLogEvent) -> str:
     return f"[{event.ts}] {event.event.value}{suffix}"
 
 
-def _history_redactor(paths: WorkspacePaths, sensitive_variables: Sequence[str]) -> SecretRedactor:
+def history_redactor(paths: WorkspacePaths, sensitive_variables: Sequence[str]) -> SecretRedactor:
     """Build the read-time redactor from the live environment, the listed sensitive variables, and the repository .env."""
     return SecretRedactor.from_environment(credential_envs=sensitive_variables, env_file_dir=paths.root_dir)
 
@@ -117,7 +117,7 @@ class Session:
         if row is None:
             return HistoryShowResult(status=HistoryShowStatus.NOT_FOUND, session_id=self.session_id)
 
-        row = _mask_record(row, _history_redactor(self.paths, self.sensitive_variables))
+        row = _mask_record(row, history_redactor(self.paths, self.sensitive_variables))
         if not include_logs:
             return HistoryShowResult(status=HistoryShowStatus.OK, session_id=self.session_id, session=row)
 
@@ -173,7 +173,7 @@ class Session:
                 available_attempts=available_attempts,
             )
 
-        redactor = _history_redactor(self.paths, self.sensitive_variables)
+        redactor = history_redactor(self.paths, self.sensitive_variables)
         return LogsShowResult(
             status=LogsShowStatus.OK, session_id=self.session_id, lines=[redactor.redact_text(line) for line in lines]
         )
@@ -207,7 +207,7 @@ class SessionCollection:
             except ValueError:
                 status_filter = status
 
-        redactor = _history_redactor(self.paths, self.sensitive_variables)
+        redactor = history_redactor(self.paths, self.sensitive_variables)
         sessions = [_mask_record(row, redactor) for row in self.db.list(limit=limit, status=status_filter)]
         return HistoryListResult(status=HistoryListStatus.OK, sessions=sessions, warnings=warnings)
 

@@ -160,3 +160,46 @@ def seed_paused_session(
     row = sessions.get(session_id)
     assert row is not None
     return row
+
+
+def seed_failed_session(
+    paths: WorkspacePaths,
+    sessions: SessionsRepository,
+    *,
+    session_id: str,
+    steps: list[dict[str, object]],
+    failed_step_id: str,
+) -> SessionRecord:
+    """Seed a session whose steps before failed_step_id completed and whose failed_step_id attempt failed (exit 1, error_message SEEDED_FAILURE), saved with run_status=FAILED."""
+    seed_new_session(paths, sessions, session_id=session_id, steps=steps)
+    store = SessionStateStore(sessions, paths, session_id)
+    state = store.load().state
+    assert state is not None
+
+    now = datetime.now(UTC).isoformat()
+    for node in state.nodes:
+        assert isinstance(node, ExecutionLeafNode)
+        completed = node.id != failed_step_id
+        result = StepResult(
+            step_id=node.id,
+            status="completed" if completed else "failed",
+            exit_code=0 if completed else 1,
+            stdout="",
+            stderr="",
+            duration_seconds=0.5,
+            error_message=None if completed else SEEDED_FAILURE,
+        )
+        node.attempts = [StepAttemptRecord(number=1, started_at=now, completed_at=now, result=result)]
+        node.state = NodeState.COMPLETED if completed else NodeState.FAILED
+        if not completed:
+            break
+
+    saved = store.save(
+        state,
+        run_status=SessionStatus.FAILED,
+        error_message=f"Step '{failed_step_id}' failed: {SEEDED_FAILURE}",
+    )
+    assert saved.ok
+    row = sessions.get(session_id)
+    assert row is not None
+    return row

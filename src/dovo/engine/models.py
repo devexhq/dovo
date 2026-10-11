@@ -16,6 +16,7 @@ from dovo.core.agents.models import AgentEnvOverrides, ResolvedAgentSettings
 from dovo.core.catalog.definitions import LoopStepBlock, StepDefinition
 from dovo.core.db import SessionRecord, SessionStatus
 from dovo.core.db.repositories.artifacts import ArtifactsRepository
+from dovo.core.sessions import StepRunSummary
 from dovo.core.worktree import WorktreeSession
 from dovo.engine.executors.models import ConditionEvaluationResult, ExecutionIdentity, StepResult
 
@@ -273,3 +274,9 @@ class BlueprintRunResult(BaseResult):
     def ok(self) -> bool:
         """Return True if run completed without fatal errors."""
         return self.session_record is not None and len(self.errors) == 0
+
+
+class SessionStepsResult(BaseResult):
+    """Step summaries derived from a session's persisted execution state."""
+
+    steps: list[StepRunSummary] = Field(default_factory=list)

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 import pytest
@@ -12,6 +13,7 @@ from dovo.cli import app
 from dovo.common.filesystem import Filesystem
 from dovo.common.filesystem.models import WorkspacePaths
 from dovo.core.db import DovoDb, SessionStatus
+from tests.harness.sessions import seed_failed_session
 from tests.harness.workspace_paths import initialized_workspace_paths
 
 
@@ -24,6 +26,19 @@ def _db_for(workspace: Path) -> DovoDb:
     """Construct a DovoDb bound to workspace's resolved database file and project id."""
     paths = _paths_for(workspace)
     return DovoDb(database_file=paths.database_file, project_id=paths.project_id)
+
+
+def _seed_failed_session(workspace: Path) -> None:
+    """Seed session-failed: format completed, tests failed with exit 1."""
+    paths = _paths_for(workspace)
+    db = DovoDb(database_file=paths.database_file, project_id=paths.project_id)
+    seed_failed_session(
+        paths,
+        db.sessions,
+        session_id="session-failed",
+        steps=[{"id": "format", "run": "true"}, {"id": "tests", "run": "false"}],
+        failed_step_id="tests",
+    )
 
 
 class SessionShowCliIntegrationTests:
@@ -91,10 +106,88 @@ class SessionShowCliIntegrationTests:
             },
             "log_files": [],
             "log_snippet": [],
+            "steps": [],
             "errors": [],
-            "warnings": [],
+            "warnings": ["No step data recorded for this session."],
             "fixes": [],
         }
+
+    def test_session_show_cli_failed_session_prints_steps_table(
+        self, cli_runner: CliRunner, session_workspace: Path
+    ) -> None:
+        """[tier-3/integration] dovo session show <id>: seeded FAILED session (format completed, tests failed exit 1 'seeded failure') -> exit 0; stdout has the Steps header, rows for format and tests with states completed/failed, '• tests: seeded failure', and "Use 'dovo logs <id> --step <step_id>' for step output."."""
+        _seed_failed_session(session_workspace)
+
+        result = cli_runner.invoke(app, ["-p", str(session_workspace), "session", "show", "session-failed"])
+
+        assert result.exit_code == 0
+        assert "Steps" in result.stdout
+        assert re.search(r"1[\s│]+format[\s│]+completed[\s│]+1[\s│]+0[\s│]+0\.5s", result.stdout)
+        assert re.search(r"2[\s│]+tests[\s│]+failed[\s│]+1[\s│]+1[\s│]+0\.5s", result.stdout)
+        assert "• tests: seeded failure" in result.stdout
+        assert "Use 'dovo logs session-failed --step <step_id>' for step output." in result.stdout
+
+    def test_session_show_cli_json_includes_steps(self, cli_runner: CliRunner, session_workspace: Path) -> None:
+        """[tier-3/integration] dovo session show <id> --format json: seeded FAILED session -> payload['steps'] equals the literal list of StepRunSummary dicts and every previous payload key is unchanged."""
+        _seed_failed_session(session_workspace)
+
+        result = cli_runner.invoke(
+            app, ["-p", str(session_workspace), "session", "show", "session-failed", "--format", "json"]
+        )
+
+        assert result.exit_code == 0
+        payload = json.loads(result.stdout)["payload"]
+        assert payload["steps"] == [
+            {
+                "kind": "step",
+                "step_id": "format",
+                "name": None,
+                "state": "completed",
+                "attempts": 1,
+                "exit_code": 0,
+                "duration_seconds": 0.5,
+                "error_message": None,
+                "loop_id": None,
+                "iteration": None,
+                "iterations": None,
+            },
+            {
+                "kind": "step",
+                "step_id": "tests",
+                "name": None,
+                "state": "failed",
+                "attempts": 1,
+                "exit_code": 1,
+                "duration_seconds": 0.5,
+                "error_message": "seeded failure",
+                "loop_id": None,
+                "iteration": None,
+                "iterations": None,
+            },
+        ]
+        assert set(payload) == {
+            "status",
+            "session_id",
+            "session",
+            "log_files",
+            "log_snippet",
+            "steps",
+            "errors",
+            "warnings",
+            "fixes",
+        }
+
+    def test_session_show_cli_session_without_state_warns(self, cli_runner: CliRunner, session_workspace: Path) -> None:
+        """[tier-3/integration] dovo session show <id>: row created without execution state -> exit 0; stdout contains 'No step data recorded for this session.'; no Steps table."""
+        _db_for(session_workspace).sessions.create(
+            session_id="session-bare", blueprint_name="task-a", blueprint_key="task-a", status=SessionStatus.COMPLETED
+        )
+
+        result = cli_runner.invoke(app, ["-p", str(session_workspace), "session", "show", "session-bare"])
+
+        assert result.exit_code == 0
+        assert "No step data recorded for this session." in result.stdout
+        assert "Steps" not in result.stdout
 
 
 class SessionShowLatestCliIntegrationTests:
