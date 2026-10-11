@@ -297,6 +297,15 @@
       "bad_pattern": "session_id: str = Field(unique=True, index=True)"
     },
     {
+      "id": "DB-002",
+      "name": "Released Migrations Are Immutable and Reversible",
+      "severity": "BLOCKER",
+      "domain": "core",
+      "scope": "src/dovo/core/db/alembic/versions/",
+      "evaluation_criteria": "Check the diff for changes to revision files that exist in the latest v* tag. Verify every new revision defines downgrade(), avoids PRAGMA and sqlite_master, and has upgrade and downgrade tests in tests/core/db/test_migrations.py.",
+      "bad_pattern": "# Editing 0001_initial_schema.py after v0.6.0, or a revision whose downgrade() is `pass`"
+    },
+    {
       "id": "FS-001",
       "name": "Atomic File Writes via Temporary Sibling",
       "severity": "BLOCKER",

@@ -439,6 +439,21 @@ rules:
   positive_example: 'session_id: str = Field(unique=True)'
   negative_example: 'session_id: str = Field(unique=True, index=True)'
   citation: docs/agents/ci-and-tooling.md#database-migration-hygiene
+- id: DB-002
+  title: Released Migrations Are Immutable and Reversible
+  severity: BLOCKER
+  category: Database
+  domain: core
+  scope: src/dovo/core/db/alembic/versions/
+  guideline: A migration revision that exists in a release tag must not be edited, renamed or deleted; fix it with a new
+    revision. Every revision must implement both upgrade() and downgrade() using dialect-neutral Alembic operations
+    (op.batch_alter_table for column and constraint changes, no SQLite-only SQL).
+  evaluation_criteria: Check the diff for changes to revision files that exist in the latest v* tag. Verify every new
+    revision defines downgrade(), avoids PRAGMA and sqlite_master, and has upgrade and downgrade tests in
+    tests/core/db/test_migrations.py.
+  positive_example: '# New revision 0003 with upgrade(), downgrade() and a row-preserving upgrade/downgrade test'
+  negative_example: '# Editing 0001_initial_schema.py after v0.6.0, or a revision whose downgrade() is `pass`'
+  citation: docs/agents/ci-and-tooling.md#migration-lifecycle
 - id: FS-001
   title: Atomic File Writes via Temporary Sibling
   severity: BLOCKER
