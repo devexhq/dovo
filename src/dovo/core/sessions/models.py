@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from enum import StrEnum
 from pathlib import Path
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
@@ -147,6 +148,24 @@ class HistoryShowStatus(StrEnum):
     NOT_FOUND = "not_found"
 
 
+class StepRunSummary(BaseModel):
+    """One step or loop row summarising a session's persisted execution state."""
+
+    model_config = {"extra": "forbid", "strict": True}
+
+    kind: Literal["step", "loop"]
+    step_id: str
+    name: str | None = None
+    state: str
+    attempts: int | None = None
+    exit_code: int | None = None
+    duration_seconds: float | None = None
+    error_message: str | None = None
+    loop_id: str | None = None
+    iteration: int | None = None
+    iterations: int | None = None
+
+
 class HistoryShowResult(BaseResult):
     """Structured result for session show before rendering."""
 
@@ -155,6 +174,7 @@ class HistoryShowResult(BaseResult):
     session: SessionRecord | None = None
     log_files: list[str] = Field(default_factory=list)
     log_snippet: list[str] = Field(default_factory=list)
+    steps: list[StepRunSummary] = Field(default_factory=list)
 
     @property
     def ok(self) -> bool:

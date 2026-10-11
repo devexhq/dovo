@@ -12,7 +12,7 @@ from rich.text import Text
 from dovo.cli.ui.formatters.session.session_views import SessionSummaryView
 from dovo.common.utils import display_path, enum_value
 from dovo.core.db import SessionRecord, SessionStatus
-from dovo.core.sessions import DiffResult
+from dovo.core.sessions import DiffResult, StepRunSummary
 
 _SESSION_SHOW_FIELDS = (
     "Session ID",
@@ -51,6 +51,16 @@ def format_session_duration(duration_seconds: float | None) -> str:
     minutes = int(duration_seconds // 60)
     seconds = duration_seconds % 60
     return f"{minutes}m {seconds:04.1f}s"
+
+
+def format_step_duration(duration_seconds: float | None) -> str:
+    """Format a step duration with one decimal and an 's' suffix; '<0.1s' under 0.1 seconds; '-' when missing."""
+    if duration_seconds is None or duration_seconds < 0:
+        return "-"
+    if duration_seconds < 0.1:
+        return "<0.1s"
+
+    return f"{duration_seconds:.1f}s"
 
 
 def build_session_summary(session: SessionRecord) -> SessionSummaryView:
@@ -142,3 +152,40 @@ def format_truncation_notice(
         Text(f"- run `{session_command} --raw` to output unformatted patch text", style="dim"),
         Text(f"- inspect artifact at {relative_path}", style="dim"),
     ]
+
+
+def build_steps_table(steps: Sequence[StepRunSummary]) -> Table:
+    """Build the Steps table: columns #, Step, State, Attempts, Exit, Duration; body rows indented under their loop row."""
+    table = Table(title="Steps", title_justify="left", show_header=True)
+    table.add_column("#", justify="right")
+    table.add_column("Step", no_wrap=True)
+    table.add_column("State")
+    table.add_column("Attempts", justify="right")
+    table.add_column("Exit", justify="right")
+    table.add_column("Duration", justify="right")
+
+    position = 0
+    for row in steps:
+        if row.loop_id is None:
+            position += 1
+
+        table.add_row(*_step_cells(row, position))
+    return table
+
+
+def _step_cells(row: StepRunSummary, position: int) -> tuple[str, ...]:
+    """Return the table cells for one step row; body rows of a loop get no position and an indented label."""
+    is_body_row = row.loop_id is not None
+    return (
+        "" if is_body_row else str(position),
+        f"  {row.step_id} (iter {row.iteration})" if is_body_row else row.step_id,
+        row.state,
+        "-" if row.attempts is None else str(row.attempts),
+        "-" if row.exit_code is None else str(row.exit_code),
+        format_step_duration(row.duration_seconds),
+    )
+
+
+def build_step_error_lines(steps: Sequence[StepRunSummary]) -> list[Text]:
+    """Return one '• <step id>: <message>' line per row that has an error_message."""
+    return [Text(f"• {row.step_id}: {row.error_message}") for row in steps if row.error_message]

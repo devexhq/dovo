@@ -13,9 +13,10 @@ from dovo.core.sessions.models import (
     ReconciliationResult,
     SessionLogEvent,
     SessionLogEventType,
+    StepRunSummary,
 )
 from dovo.core.sessions.services.reconcile import reconcile_stale_sessions
-from dovo.core.sessions.sessions import Session, SessionCollection
+from dovo.core.sessions.sessions import Session, SessionCollection, history_redactor
 
 __all__ = [
     "DiffResult",
@@ -32,5 +33,7 @@ __all__ = [
     "SessionCollection",
     "SessionLogEvent",
     "SessionLogEventType",
+    "StepRunSummary",
+    "history_redactor",
     "reconcile_stale_sessions",
 ]

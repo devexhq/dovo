@@ -12,6 +12,8 @@ from dovo.cli.ui.formatters.common import build_error_panel
 from dovo.cli.ui.formatters.session.common import (
     build_metadata_table,
     build_session_summary,
+    build_step_error_lines,
+    build_steps_table,
 )
 from dovo.cli.ui.formatters.session.session_views import SessionShowView
 from dovo.common.types import ComponentFormatter
@@ -41,6 +43,21 @@ def _render_show_error_panel(view: SessionShowView) -> Panel | None:
     return None
 
 
+STEP_LOGS_HINT = "Use 'dovo logs {session_id} --step <step_id>' for step output."
+
+
+def _render_show_steps(view: SessionShowView) -> list[Any]:
+    """Render the Steps table, its error lines and the logs hint, or the warnings when no steps exist."""
+    if not view.steps:
+        return [Text(warning, style="dim") for warning in view.warnings]
+
+    return [
+        build_steps_table(view.steps),
+        *build_step_error_lines(view.steps),
+        Text(STEP_LOGS_HINT.format(session_id=view.session_id), style="dim"),
+    ]
+
+
 def _render_show_run(view: SessionShowView) -> Any:
     """Render detailed session metadata panel, error panel, and step timeline."""
     if view.session is None:
@@ -56,6 +73,8 @@ def _render_show_run(view: SessionShowView) -> Any:
 
     if view.session.error_message:
         renderables.append(Panel(view.session.error_message, title="Error Details", border_style="red"))
+
+    renderables.extend(_render_show_steps(view))
 
     if view.log_files:
         renderables.append(
@@ -84,6 +103,7 @@ class SessionShowFormatter(ComponentFormatter[HistoryShowResult, SessionShowView
             session=session_summary,
             log_files=list(data.log_files),
             log_snippet=list(data.log_snippet),
+            steps=list(data.steps),
             errors=list(data.errors),
             warnings=list(data.warnings),
             fixes=list(data.fixes),

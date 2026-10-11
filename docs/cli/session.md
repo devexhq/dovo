@@ -49,7 +49,23 @@ Lists recorded sessions, newest first.
 
 ## `dovo session show`
 
-Shows the metadata and errors for one session.
+Shows the metadata, errors and per-step results for one session.
+
+Below the metadata, a `Steps` table lists every step in plan order with its state, attempt count, exit code and duration. A loop appears as its own row followed by its body steps, labeled `<step id> (iter <n>)` for each iteration. Missing values show `-`, and durations under 0.1 seconds show `<0.1s`. Failed steps list their error message under the table, with secrets redacted. Step stdout, stderr and outputs are never shown here; use [`dovo session logs`](#dovo-session-logs) with `--step`.
+
+```
+Steps
+┏━━━┳━━━━━━━━┳━━━━━━━━━━━┳━━━━━━━━━━┳━━━━━━┳━━━━━━━━━━┓
+┃ # ┃ Step   ┃ State     ┃ Attempts ┃ Exit ┃ Duration ┃
+┡━━━╇━━━━━━━━╇━━━━━━━━━━━╇━━━━━━━━━━╇━━━━━━╇━━━━━━━━━━┩
+│ 1 │ format │ completed │        1 │    0 │     0.1s │
+│ 2 │ tests  │ failed    │        1 │    1 │    31.9s │
+└───┴────────┴───────────┴──────────┴──────┴──────────┘
+• tests: Command failed with exit code 1.
+Use 'dovo logs <session_id> --step <step_id>' for step output.
+```
+
+When a session has no recorded execution state, the command prints `No step data recorded for this session.` instead of the table; when the state cannot be parsed, it prints `Step data could not be read: <reason>`. Neither changes the exit code. With `--format json`, the payload carries a `steps` list of `StepRunSummary` objects (kind, step_id, name, state, attempts, exit_code, duration_seconds, error_message, loop_id, iteration, iterations) (`[]` in both cases) and the reason is added to `warnings`.
 
 ### Arguments
 
