@@ -251,11 +251,11 @@ _unlock = _unlock_fd  # internal shim alias
 ```
 
 - **[DOC-007] Canonical Terminology Invariant (SUGGESTION):**
-  Adhere strictly to definitions in docs/agents/glossary.md. Do not conflate Task (linear steps only) vs Workflow (allows loop steps), Blueprint (unified document), Step, Run, Session, Worktree, Checkpoint.
+  Adhere strictly to the Terminology table in docs/agents/architecture.md. Do not conflate Task (convention - linear steps only) vs Workflow (convention - also uses loop steps), Blueprint (unified document), Step, Run, Session, Worktree, Checkpoint.
 
 ```python
 # ✅ DO: 'Task blueprint containing only linear step definitions.'
-# ❌ DO NOT: 'Task blueprint containing a loop block.'  # tasks are strictly linear
+# ❌ DO NOT: 'Task blueprint containing a loop block.'  # by convention a task has only linear steps
 ```
 
 - **[DOC-008] Verifiable Doc and Rule Claims (BLOCKER):**

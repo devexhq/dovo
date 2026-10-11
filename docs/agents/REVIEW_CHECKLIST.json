@@ -573,7 +573,7 @@
       "domain": "all",
       "scope": "docs/, src/",
       "evaluation_criteria": "Check doc prose and code comments for misuse of terms (e.g. calling a workflow with loops a 'task').",
-      "bad_pattern": "'Task blueprint containing a loop block.'  # tasks are strictly linear"
+      "bad_pattern": "'Task blueprint containing a loop block.'  # by convention a task has only linear steps"
     },
     {
       "id": "DOC-008",
