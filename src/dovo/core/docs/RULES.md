@@ -46,7 +46,7 @@ model_config = {'extra': 'ignore'}
 ```
 
 - **[MODEL-002] Result/Outcome Pattern over Exceptions (BLOCKER):**
-  Operations that can fail must not raise for business or operational failures. When the outcome reaches a facade, a command handler, a formatter, or the wire format, return a Pydantic result object subclassing BaseResult; callers check .ok and render .errors/.warnings rather than catching exceptions. An internal helper with a single in-layer caller that only branches on success may instead return a plain value or an error message (str | None).
+  Operations that can fail must not raise for business or operational failures. When the outcome reaches a domain entrypoint, a command handler, a formatter, or the wire format, return a Pydantic result object subclassing BaseResult; callers check .ok and render .errors/.warnings rather than catching exceptions. An internal helper with a single in-layer caller that only branches on success may instead return a plain value or an error message (str | None).
 
 ```python
 # ✅ DO: return WorktreeDeleteResult(status=WorktreeDeleteStatus.NOT_FOUND, errors=['not found'])

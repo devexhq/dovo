@@ -12,7 +12,7 @@
 ```
 
 - **[ARCH-002] CLI Logic Purity (BLOCKER):**
-  CLI command handlers take CliContext, invoke underlying domain services or facades, and return a BaseResult model. CLI packages must remain completely free of business logic, direct SQLite queries, or direct filesystem scans.
+  CLI command handlers take CliContext, invoke underlying domain services or domain entrypoints, and return a BaseResult model. CLI packages must remain completely free of business logic, direct SQLite queries, or direct filesystem scans.
 
 ```python
 # ✅ DO: result = context.facade.status.collect(context.root_dir); ui_dispatcher.dispatch(result)

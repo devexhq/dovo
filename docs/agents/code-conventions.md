@@ -59,13 +59,14 @@ core/<domain>/
   __init__.py       # Re-export public API only
   models.py         # BaseModel, StrEnum, dataclasses, Protocols
   exceptions.py     # Domain exceptions
-  facade.py         # Domain facade class (if applicable)
+  <domain>.py       # Domain entrypoint (named after the domain, e.g. prune.py)
   services/         # Imperative operations
     <verb>.py       # loader, runner, renderer, resolver, etc.
 ```
 
+- **Domain entrypoint:** the one class or module callers use to reach a domain (e.g. `Catalog`, `Worktree`, `Engine`); it coordinates `services/<verb>.py` and holds no logic of its own. Name its module after the domain (`prune.py`), not `facade.py`.
 - **Must:** Put new domain types in `models.py` and imperative operations in `services/<verb>.py`.
-- **Must not:** Add logic directly under package roots (except documented entrypoints), define public models in `services/`, or extend legacy flat layouts.
+- **Must not:** Create a `facade.py`, add logic directly under package roots (except the domain entrypoint), define public models in `services/`, or extend legacy flat layouts. Existing `facade.py` modules are legacy and are renamed in dedicated PRs.
 
 ---
 
@@ -73,7 +74,7 @@ core/<domain>/
 
 **Relevant sources:** `src/dovo/common/models.py`, `src/dovo/core/*/models.py`
 
-Operations that can fail never raise for business or operational failures. When the outcome reaches a facade, command handler, formatter, or the wire format, return a Pydantic result object subclassing `BaseResult`:
+Operations that can fail never raise for business or operational failures. When the outcome reaches a domain entrypoint, command handler, formatter, or the wire format, return a Pydantic result object subclassing `BaseResult`:
 - `status: StrEnum`: Outcome state.
 - `warnings: list[str]`: Non-fatal issues (inherited from `BaseResult`).
 - `errors: list[str]`: Fatal issues (inherited from `BaseResult`).
@@ -86,7 +87,7 @@ Operations that can fail never raise for business or operational failures. When 
 
 ## Atomic File Writes
 
-**Relevant sources:** `src/dovo/common/filesystem/services/operations.py`, `src/dovo/common/filesystem/facade.py`
+**Relevant sources:** `src/dovo/common/filesystem/services/operations.py`, `src/dovo/common/filesystem/facade.py` (legacy-named entrypoint)
 
 - Never write config or state files directly in-place.
 - Write to a `.tmp` sibling, flush, `os.fsync`, and atomically swap via `Path.replace`.

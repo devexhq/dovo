@@ -21,7 +21,7 @@ rules:
   category: Architecture
   domain: cli
   scope: src/dovo/cli/
-  guideline: CLI command handlers take CliContext, invoke underlying domain services or facades, and return a BaseResult model.
+  guideline: CLI command handlers take CliContext, invoke underlying domain services or domain entrypoints, and return a BaseResult model.
     CLI packages must remain completely free of business logic, direct SQLite queries, or direct filesystem scans.
   evaluation_criteria: Inspect CLI command handlers in src/dovo/cli/*/commands/. Flag direct SQL execution, domain orchestration,
     or business logic.
@@ -145,12 +145,12 @@ rules:
   category: Models
   domain: [core, engine]
   scope: src/dovo/core/, src/dovo/engine/
-  guideline: Operations that can fail must not raise for business or operational failures. When the outcome reaches a facade,
-    a command handler, a formatter, or the wire format, return a Pydantic result object subclassing BaseResult; callers check
+  guideline: Operations that can fail must not raise for business or operational failures. When the outcome reaches a domain
+    entrypoint, a command handler, a formatter, or the wire format, return a Pydantic result object subclassing BaseResult; callers check
     .ok and render .errors/.warnings rather than catching exceptions. An internal helper with a single in-layer caller that only
     branches on success may instead return a plain value or an error message (str | None).
   evaluation_criteria: Inspect service methods. Flag methods that raise exceptions for business/operational failures, and
-    facade or command-level operations that return a plain value instead of a BaseResult. Do not flag an internal helper that
+    domain-entrypoint or command-level operations that return a plain value instead of a BaseResult. Do not flag an internal helper that
     returns str | None to a single in-layer caller.
   positive_example: return WorktreeDeleteResult(status=WorktreeDeleteStatus.NOT_FOUND, errors=['not found'])
   negative_example: raise WorktreeNotFoundError('Worktree does not exist')
@@ -849,7 +849,7 @@ rules:
     json's wire payload already proves, with a call-through spy fixture on ui_dispatcher.dispatch that still
     exercises the real formatter and render path (never a replacement stub, so this does not trip TEST-008). What
     that spy may be asserted against is scoped to one thing: the command action's own terminal BaseResult — the
-    same type its facade or service call returns and the JSON envelope wraps (WorktreeCreateResult for dovo worktree
+    same type its domain entrypoint or service call returns and the JSON envelope wraps (WorktreeCreateResult for dovo worktree
     create, DovoStatusResult for dovo status). It is never used to assert on other objects the same invocation
     dispatches — MessageEvent, WarningEvent, PromptEvent, or a lifecycle/progress event — even when the spy's
     fixture captures them incidentally. A command action known to dispatch only its own terminal result per
