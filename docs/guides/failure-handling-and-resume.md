@@ -1,12 +1,12 @@
 # Failure Handling & Session Resumption
 
-Dovo provides declarative quality assertions and durable run state so that long-running blueprints can recover gracefully from failures.
+Use `on_failure` policies and `assert:` checks to control what happens when a step fails, and `dovo resume` to continue a paused run.
 
 ---
 
 ## Failure Handling Policies (`on_failure`)
 
-Each step (or blueprint `defaults:`) can specify an `on_failure` directive to control execution flow when a step encounters an error or fails an assertion.
+Set `on_failure` on a step, or in the blueprint's `defaults:`, to control what happens when a step errors or fails an assertion.
 
 ### Policy Vocabulary
 
@@ -21,7 +21,7 @@ Each step (or blueprint `defaults:`) can specify an `on_failure` directive to co
 
 ## Configuring `on_failure`
 
-You can supply a bare policy name or a detailed retry specification:
+Use a policy name or a retry object:
 
 ### 1. Simple String Shorthand
 
@@ -51,7 +51,7 @@ steps:
 
 ## Step Quality Assertions (`assert:`)
 
-Steps can declare criteria that must pass for the step to be considered successful. If an assertion fails, the step is marked as failed even if the process exited with code `0`.
+Assertions are checks a step must pass. A failed assertion fails the step even if the process exited with `0`.
 
 ```yaml
 steps:
@@ -71,7 +71,7 @@ steps:
       file_not_empty: "report.json"
 ```
 
-For full details on assertion operators, see the [Assertions Schema Reference](../reference/assertions-schema.md).
+See the [Assertions Schema](../reference/assertions-schema.md) for all operators.
 
 ---
 
@@ -85,60 +85,58 @@ A failed agent attempt records exit code `201` (`unfixable`), `202` (`timeout`),
 
 ---
 
-## Interactive Prompts & Durable Run State
+## Interactive Prompts & Saved Run State
 
 When a step fails with `on_failure: prompt_user`:
 1. Dovo pauses the execution loop.
-2. The paused step and its failed attempt are persisted as **durable run state** in the centralized database.
+2. The paused step and its failed attempt are saved as run state.
 3. The user is prompted interactively:
    ```text
    Step 'verify-tests' failed (exit code: 1).
    [r]etry / [c]ontinue / [a]bort ?
    ```
 
-### Durable Run State Contents
-The session row owns the execution state and preserves:
+### What is saved
+The saved run state includes:
 - The paused step and the failed attempt that triggered the prompt.
 - The results of every completed step.
 - The worktree identifier of the retained worktree.
 - Resolved parameter input values and run options (`--keep`, `--agent`, `--auto-apply`).
 
-`session.json` in the session directory is a projection of this state (manifest, execution tree, lifecycle, flattened results), regenerated from the row.
+`session.json` in the session directory is a generated copy of this state.
 
 ---
 
 ## Resuming Sessions (`dovo resume`)
 
-If you exit or interrupt an interactive session (or if a prompt is left unresolved), the worktree remains preserved. You can resume execution from the exact point of failure using `dovo resume`:
+If you exit an interactive run or leave a prompt unanswered, the worktree is kept. Resume from the point of failure with `dovo resume`:
 
 ```bash
 # Resume by session ID
 dovo resume blueprint_a1b2c3d4
 ```
 
-Dovo reloads the retained worktree and re-enters the failure prompt for the paused step using its recorded failed attempt, without re-running the failed command or any earlier completed step. Choosing retry starts the next attempt; continue and abort finish the step as ignored or failed.
+Dovo reopens the kept worktree and shows the failure prompt for the paused step again. It does not re-run the failed command or any completed step. Retry starts the next attempt; continue and abort finish the step as ignored or failed.
 
 ### Resuming a paused loop
 
-A loop is part of the same durable run state: the paused loop, its current iteration, and the paused body step are all persisted. `dovo resume` re-enters the paused body step's prompt from its recorded failed attempt. It never re-runs finished body steps or earlier iterations, and it runs only the remaining body steps of the current iteration. The loop's `until` conditions are evaluated over every body step of that iteration, including those that finished before the pause. Granted iterations are persisted with the loop, so a resumed loop keeps its raised ceiling.
+The paused loop, its current iteration and the paused body step are all saved. `dovo resume` shows the paused step's prompt again, then runs only the remaining body steps of the current iteration. Finished steps and earlier iterations are not re-run. The `until` conditions consider every body step of that iteration, including those that finished before the pause. Extra iterations you granted are saved, so a resumed loop keeps its raised limit.
 
 ---
 
 ## Non-Interactive & CI/CD Execution
 
-In automated environments (such as CI pipelines or background cron jobs), interactive prompts cannot block on standard input.
-
-Pass the `--no-tty` flag:
+In CI or other unattended runs there is no one to answer a prompt. Pass `--no-tty`:
 
 ```bash
 dovo run test-suite --no-tty
 ```
 
-When `--no-tty` is enabled, any `prompt_user` policy automatically degrades to `abort` and emits a warning.
+With `--no-tty`, any `prompt_user` policy becomes `abort` and a warning is printed.
 
 ---
 
 ## Next Steps
 
-- Check out the [AI Agent Providers Guide](agent-providers.md).
-- Read the [Assertions Schema Reference](../reference/assertions-schema.md).
+- [AI Agent Providers](agent-providers.md)
+- [Assertions Schema](../reference/assertions-schema.md)

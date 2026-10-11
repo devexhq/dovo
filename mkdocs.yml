@@ -44,7 +44,7 @@ nav:
       - Assertions & Verification: reference/assertions-schema.md
       - Project Config (.dovo/config.json): reference/config-schema.md
   - Recipes & Examples:
-      - TDD Loop: recipes/tdd-loop.md
+      - Feature Development Loop: recipes/feature-development-loop.md
       - AI Code Patcher: recipes/ai-code-patcher.md
       - CI/CD Automation: recipes/ci-cd-automation.md
   - CLI Reference:
@@ -57,6 +57,10 @@ nav:
       - History (dovo history): cli/history.md
       - Logs (dovo logs): cli/logs.md
       - Worktree (dovo worktree): cli/worktree.md
+      - Blueprint (dovo blueprint): cli/blueprint.md
+      - Step (dovo step): cli/step.md
+      - Artifacts (dovo artifacts): cli/artifacts.md
+      - Doctor (dovo doctor): cli/doctor.md
 exclude_docs: |
   agents/*
   agents/**/*

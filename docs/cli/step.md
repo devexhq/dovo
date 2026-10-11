@@ -1,6 +1,6 @@
 # `dovo step`
 
-The `dovo step` command inspects, creates, deletes, and validates executable step YAML files, resolved across four precedence tiers: REPO (`.dovo/catalog/steps/`), USER (`~/.dovo/user/catalog/steps/`), GLOBAL (`~/.dovo/global/catalog/steps/`), and PACKAGED (bundled starter templates). It mirrors `dovo blueprint`'s command shapes and tier-resolution contract exactly, scoped to steps instead of blueprints — see [`dovo blueprint`](blueprint.md) for the shared tier-precedence, index, and reindexing behavior.
+The `dovo step` command inspects, creates, deletes, and validates executable step YAML files, resolved across four precedence tiers: REPO (`.dovo/catalog/steps/`), USER (`~/.dovo/user/catalog/steps/`), GLOBAL (`~/.dovo/global/catalog/steps/`), and PACKAGED (bundled starter templates). It works like [`dovo blueprint`](blueprint.md), including tier precedence, but for steps.
 
 `dovo step` requires an explicit subcommand; there is no bare-invocation default.
 
@@ -41,10 +41,10 @@ dovo step delete <sha_or_name> [--force] [--format terminal|json]
 
 ### `dovo step validate`
 
-Validates a step definition (YAML syntax, schema, and semantic invariants such as an unsafe `script_path`) without executing it. See [`CatalogValidateResult`](../agents/schemas.md) for the result shape and exit codes.
+Validates a step definition (YAML syntax, schema, and semantic invariants such as an unsafe `script_path`) without executing it.
 
 ```bash
 dovo step validate <target> [--format terminal|json]
 ```
 
-`target` is a catalog name or namespaced identifier, or a relative/absolute file path. There is no `--type` option: the command name itself already fixes the type.
+`target` is a catalog name or namespaced identifier, or a relative/absolute file path. There is no `--type` option.

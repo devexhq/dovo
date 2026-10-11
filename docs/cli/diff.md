@@ -1,6 +1,6 @@
 # `dovo diff`
 
-The `dovo diff` command views syntax-highlighted unified diffs from loop run sessions directly in the terminal without manually locating their session storage.
+`dovo diff` shows the syntax-highlighted diff recorded for a run session.
 
 ## Usage
 
@@ -18,8 +18,8 @@ dovo diff [session_id] [OPTIONS]
 
 | Flag | Description |
 | --- | --- |
-| `--raw` | Output unformatted plain text diff directly to stdout without headers, Rich panels, or ANSI codes. Truncation limits are completely bypassed. |
-| `--full` / `--no-full` | Bypass line truncation limits in interactive terminals (TTY) and render complete formatted diff. |
+| `--raw` | Print the plain patch to stdout, with no headers or colors and no truncation. |
+| `--full` / `--no-full` | Show the whole formatted diff instead of truncating it in a terminal. |
 | `--format <terminal\|json>` | Presentation format (`terminal` or `json`). Defaults to `terminal`. |
 
 ## Behavior

@@ -1,6 +1,6 @@
 # Blueprint Schema Reference
 
-This reference documents the complete YAML schema for generic blueprint definitions in Dovo.
+YAML schema for blueprint files.
 
 ---
 
@@ -8,36 +8,36 @@ This reference documents the complete YAML schema for generic blueprint definiti
 
 | Field | Type | Required | Default | Description |
 |---|---|---|---|---|
-| `name` | `string` | No | Catalog key | Unique display name of the blueprint; when omitted, it defaults to the catalog key. |
-| `description` | `string` | No | `""` | Detailed description of the blueprint's goal and behavior. |
-| `summary` | `string` | No | `""` | Short single-line description shown in `dovo blueprint list` output. |
-| `version` | `integer \| string` | No | `1` | Blueprint schema format version. |
-| `use_worktree` | `boolean` | No | `true` | When `true`, execution normally runs in an isolated Git worktree branch (`dovo/dovo_*`). |
-| `timeout_seconds`| `integer` | No | `null` | Accepted metadata; the current runtime does not apply it as an overall timeout. |
-| `env` | `map[string, string]` | No | `{}` | Accepted metadata; the current runtime does not inject it into child step environments. |
+| `name` | `string` | No | Catalog key | Display name. Defaults to the catalog key. |
+| `description` | `string` | No | `""` | Description of the blueprint. |
+| `summary` | `string` | No | `""` | One-line summary shown in `dovo blueprint list`. |
+| `version` | `integer \| string` | No | `1` | Schema version. |
+| `use_worktree` | `boolean` | No | `true` | When `true`, the run uses an isolated Git worktree on a `dovo/dovo_*` branch. |
+| `timeout_seconds`| `integer` | No | `null` | Currently has no effect. |
+| `env` | `map[string, string]` | No | `{}` | Currently has no effect. |
 | `inputs` | `map[string, ParameterInput]` | No | `{}` | Parameter inputs accepted by the blueprint. See [Inputs Schema](inputs-schema.md). |
-| `defaults` | `BlueprintDefaults` | No | `{}` | Shared defaults inherited by child steps. |
+| `defaults` | `BlueprintDefaults` | No | `{}` | Defaults inherited by steps. |
 | `steps` | `list[Step \| Loop]` | No | `[]` | Ordered list of steps to execute. See [Step Schema](step-schema.md). |
 
 ---
 
 ## `defaults` Object
 
-The `defaults` object defines blueprint-level fallback directives inherited by any child step that omits its own configuration:
+Values here apply to any step that does not set its own:
 
 | Field | Type | Default | Description |
 |---|---|---|---|
-| `on_failure` | `string \| FailureSpec` | `null` | Default failure handling policy copied to steps that do not define an explicit `on_failure`. |
+| `on_failure` | `string \| FailureSpec` | `null` | Failure policy for steps without their own `on_failure`. |
 
 ---
 
-## Generic Blueprint Structure
+## Location
 
-A blueprint is stored under `.dovo/catalog/blueprints/` and may contain standard steps and loop step blocks (`type: loop`). The catalog has no task or workflow kind.
+Blueprints live in `.dovo/catalog/blueprints/` and can contain steps and loop blocks (`type: loop`).
 
 ---
 
-## Full Example Specification
+## Example
 
 ```yaml
 name: full-verification-flow

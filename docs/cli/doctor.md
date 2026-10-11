@@ -37,7 +37,7 @@ Dovo Doctor Report
 │ Check        │ Category    │ Status │ Message                                                    │
 ├──────────────┼─────────────┼────────┼──────────────────────────────────────────────────────────┤
 │ git.repo     │ git         │ OK     │ Git repository detected at '/repo' on branch 'main'.       │
-│ config.schema│ config      │ OK     │ `.dovo/config.json` is present and passes schema V1... │
+│ config.schema│ config      │ OK     │ `.dovo/config.json` is present and passes the schema... │
 │ filesystem.writable │ filesystem │ OK │ All configured workspace paths are writable.               │
 │ worktree.refs │ worktree     │ OK     │ 2 worktree(es) verified against database and Git worktree... │
 │ env.binaries │ environment │ OK     │ 2 required binary(s) verified on PATH.                     │
@@ -88,10 +88,8 @@ Running `dovo doctor` against this workspace exits with status code `1`.
 dovo doctor --format json
 ```
 
-Emits a structured NDJSON payload suitable for automation and GUI integrations:
+Emits one JSON payload for automation:
 
 ```json
 {"event_type": "DiagnosticsReport", "payload": {"ok": false, "has_warnings": true, "workspace_root": "/abs/path/to/repo", "total_duration_ms": 12.4, "checks": [{"check_id": "git.repo", "name": "Git Repository Check", "category": "git", "status": "ok", "message": "Git repository detected at '/abs/path/to/repo' on branch 'main'.", "details": {"root": "/abs/path/to/repo", "branch": "main"}, "duration_ms": 2.1, "error_code": null, "errors": [], "warnings": [], "remediations": []}, {"check_id": "agent.setup", "name": "Agent Setup Check", "category": "agent", "status": "failed", "message": "Missing required credential for agent provider 'copilot': GH_TOKEN or GITHUB_TOKEN.", "details": {"provider": "copilot", "missing_env_var": "GH_TOKEN or GITHUB_TOKEN"}, "duration_ms": 0.3, "error_code": "DOCTOR_AGENT_KEY_MISSING", "errors": ["Missing required credential for agent provider 'copilot': GH_TOKEN or GITHUB_TOKEN."], "warnings": [], "remediations": ["Export GH_TOKEN or GITHUB_TOKEN"]}]}}
 ```
-
-See [`DiagnosticsReport`/`DiagnosticCheckResult`](../agents/schemas.md#doctor-models) for the full field reference and built-in check inventory.

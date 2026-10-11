@@ -1,6 +1,6 @@
 # Recipe: Agent Steps and Quality Gates
 
-This recipe demonstrates a blueprint that runs agent steps for planning, patching, and review alongside explicit quality-gate commands. Each agent step sends its prompt to the configured provider inside the worktree; see [Agent-Step Adapters](../guides/agent-providers.md).
+A blueprint that plans, patches and reviews a change with agent steps, with lint and test steps in between. Agent steps run in the worktree; see [Agent Providers](../guides/agent-providers.md).
 
 ---
 
@@ -71,10 +71,10 @@ steps:
 
 ## Running the Recipe
 
-Execute the blueprint with a feature description:
+Run it with a description of the change:
 
 ```bash
 dovo run ai-feature-dev --desc "Add support for custom HTTP timeouts in the API client"
 ```
 
-If a command step fails, you can interactively choose to retry, or later resume with `dovo resume blueprint_<id>`.
+If a command step fails, you can retry from the prompt or resume later with `dovo resume blueprint_<id>`.

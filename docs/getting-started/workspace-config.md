@@ -1,6 +1,6 @@
 # Workspace Configuration
 
-Dovo (`dovo`) operates with a local `.dovo/` directory in your Git repository root. This directory contains the configuration file (`config.json`) and the blueprint catalog (`catalog/`). Run and session state lives in a centralized SQLite database shared across all projects (under `DOVO_HOME` or `~/.dovo` by default), scoped to this project.
+Dovo keeps its configuration (`config.json`) and blueprint catalog (`catalog/`) in a `.dovo/` directory at your Git repository root. Run and session history is stored separately, under `DOVO_HOME` (default `~/.dovo`).
 
 ---
 
@@ -12,7 +12,7 @@ Run `dovo init` at the root of your Git repository:
 dovo init
 ```
 
-This provisions the local `.dovo/` directory structure:
+This creates:
 
 ```text
 .dovo/
@@ -29,8 +29,8 @@ Every command except `dovo init` requires this step first: without a valid `.dov
 
 ### Flags & Repair Options
 
-* `--repair`: Non-destructively inserts missing required keys into `.dovo/config.json` while preserving your custom project settings and timestamps.
-* `--overwrite`: Completely replaces `.dovo/config.json` with fresh canonical V1 defaults (destructive).
+* `--repair`: Adds missing keys to `.dovo/config.json` and keeps your existing settings.
+* `--overwrite`: Replaces `.dovo/config.json` with fresh defaults (destructive).
 
 ```bash
 # Repair an existing config file with updated schema keys
@@ -59,15 +59,15 @@ Output includes:
 
 ## Managing Configuration (`dovo config`)
 
-Inspect and modify your Dovo configuration directly using the `dovo config` subcommands.
+Use `dovo config` to inspect and change configuration.
 
 ### Configuration Precedence
 
-`dovo config show` and blueprint execution (`dovo run`/`dovo resume`) both resolve the identical four-tier merged configuration: Packaged defaults, then Global (`$DOVO_HOME/global/config.json`), User (`$DOVO_HOME/user/config.json`), and Repo (`.dovo/config.json`), each tier overriding the fields the previous tiers set. `DOVO_HOME` defaults to `~/.dovo` when unset. See [`dovo config`](../cli/config.md#configuration-precedence) for the full precedence and error-handling contract.
+`dovo config show`, `dovo run` and `dovo resume` all use the same merged configuration. Tiers, lowest to highest precedence: Packaged defaults, Global (`$DOVO_HOME/global/config.json`), User (`$DOVO_HOME/user/config.json`), and Repo (`.dovo/config.json`). `DOVO_HOME` defaults to `~/.dovo`. See [`dovo config`](../cli/config.md#configuration-precedence) for details.
 
 ### Show Effective Configuration
 
-Display normalized effective configuration as formatted JSON:
+Print the effective configuration as JSON:
 
 ```bash
 dovo config show
@@ -75,7 +75,7 @@ dovo config show
 
 ### Update Configuration Values
 
-Set specific configuration keys or nested dot-paths:
+Set a key or nested dot-path:
 
 ```bash
 dovo config set agent.provider copilot
@@ -85,7 +85,7 @@ dovo config set worktree.base_ref main
 
 ### Validate Configuration
 
-Validate `.dovo/config.json` against the schema and semantic rules:
+Check `.dovo/config.json` against the schema:
 
 ```bash
 dovo config validate
@@ -95,7 +95,7 @@ dovo config validate
 
 ## Configuration Overview
 
-Below is the canonical `.dovo/config.json` structure:
+The default `.dovo/config.json`:
 
 ```json
 {
@@ -147,19 +147,19 @@ Below is the canonical `.dovo/config.json` structure:
 }
 ```
 
-For full details on each field and validation rule, see the [Project Config Schema Reference](../reference/config-schema.md).
+See the [Project Config Schema](../reference/config-schema.md) for every field.
 
 ---
 
 ## API Keys & Environment Setup
 
-The configuration schema accepts only `copilot`; agent steps invoke it inside a Git worktree. Credentials can be checked by `dovo doctor`. The default provider requires the GitHub CLI (`gh`) on `PATH`, so `dovo doctor` reports `DOCTOR_BINARY_MISSING` or `DOCTOR_AGENT_KEY_MISSING` until both are available.
+The only supported agent provider is `copilot`. It needs the GitHub CLI (`gh`) on `PATH` and a token. `dovo doctor` reports `DOCTOR_BINARY_MISSING` or `DOCTOR_AGENT_KEY_MISSING` until both are available.
 
 ```bash
 # GitHub Copilot Provider
 export GITHUB_TOKEN="ghp_..."
 ```
 
-For persistent environment setup, save provider credentials to your local shell profile (`.bashrc` / `.zshrc`) or local `.env` file (ensure `.env` is listed in `.gitignore`).
+To keep the token across sessions, add it to your shell profile (`.bashrc` / `.zshrc`) or a `.env` file that is listed in `.gitignore`.
 
-For the runtime adapter distinction and current limitation, see the [AI Agent Providers Guide](../guides/agent-providers.md).
+See [AI Agent Providers](../guides/agent-providers.md) for provider setup.

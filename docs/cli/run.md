@@ -15,7 +15,7 @@ dovo run <name> [OPTIONS] [-- <input-overrides>]
 | `--no-worktree` | Run execution in-place in the working tree without creating a Git worktree. Agent steps are rejected under it, because they require a worktree. |
 | `--keep` | Retain the worktree after execution. Each run gets its own worktree at `.dovo/worktrees/<session_id>/` on branch `dovo/<session_id>`, so repeated `--keep` runs of one blueprint do not collide. |
 | `--auto-apply` | Automatically apply worktree changes to the main workspace on successful completion. |
-| `--agent <name>` | Override the agent provider for this run (model, endpoint, temperature, and max tokens still come from config); an unregistered name fails an agent step with `AGENT_PROVIDER_UNSUPPORTED` and has no effect on command/script steps. |
+| `--agent <name>` | Use this agent provider for the run. Model, endpoint, temperature and max tokens still come from config. An unknown name fails agent steps with `AGENT_PROVIDER_UNSUPPORTED`; command and script steps are unaffected. |
 | `--session-id <id>` | Explicit session identifier. |
 | `--no-tty` | Disable interactive prompts; prompt_user failures abort the run instead of blocking for input. |
 | `--env-mode <allowlist\|inherit>` | Override `agent.env_mode` for this invocation. |
@@ -27,9 +27,9 @@ Trailing CLI arguments (after options) are forwarded to declared blueprint input
 
 ### Behavior
 
-1. **Resolution**: Resolves `<name>` from `.dovo/catalog/` via `Blueprint.load`.
-2. **Execution**: Runs the blueprint through the unified runtime engine (`BlueprintRunService`).
-3. **Agent steps**: An agent step sends its interpolated `prompt` to the resolved provider in `direct` mode and applies any returned patch inside the worktree only. It fails with `Agent steps require an active git worktree.` under `--no-worktree` or a resumed in-place run. Its stdout is one JSON object (`status`, `summary`, `unfixable_reason`, `touched_files`); see [Agent-Step Adapters](../guides/agent-providers.md).
+1. **Resolution**: Looks up `<name>` in the blueprint catalog.
+2. **Execution**: Runs the blueprint.
+3. **Agent steps**: An agent step sends its `prompt` to the provider and applies any change inside the worktree. Under `--no-worktree`, or a resumed in-place run, it fails with `Agent steps require an active git worktree.` Its stdout is one JSON object (`status`, `summary`, `unfixable_reason`, `touched_files`); see [Agent Providers](../guides/agent-providers.md).
 4. **Secret masking**: Streamed step output, the per-step capture, and failure messages mask secret values: environment variables whose names end in `_KEY`, `_TOKEN`, `_SECRET`, `_PASSWORD`, or `_AUTH` (values of 6+ characters), matching keys in the repository `.env`, the step's own `env:` entries under those same name suffixes and 6+ character rule, and common credential formats (GitHub tokens, Anthropic keys, AWS access key IDs). Names listed under `environment.sensitive_variables` in `.dovo/config.json` are also masked with no length floor, including when set only in a step's `env:`; see [`dovo config`](config.md). A masked value prints as `[REDACTED:<NAME>]` or `[REDACTED]`. Assertions still evaluate the raw output.
 5. **Environment flags**: `--env-mode` and `--env-passthrough` apply only to this invocation, are never written to config or run state, and are validated before any step starts; an invalid value exits `1`. See [Agent Providers](../guides/agent-providers.md#subprocess-environment).
 6. **Exit Codes**:

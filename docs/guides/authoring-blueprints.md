@@ -1,12 +1,12 @@
 # Authoring Blueprints
 
-Blueprints are declarative YAML files stored in your project's catalog (`.dovo/catalog/`) that specify what commands, scripts, or AI agent prompts to execute.
+A blueprint is a YAML file in `.dovo/catalog/blueprints/` that lists the commands, scripts or agent prompts to run.
 
 ---
 
 ## Blueprint Anatomy
 
-Blueprints are stored under `.dovo/catalog/blueprints/*.yml` and use one generic top-level document structure:
+A complete blueprint:
 
 ```yaml
 name: build-and-test
@@ -46,27 +46,21 @@ steps:
 
 ---
 
-## Generic Blueprints
-
-A blueprint may contain sequential steps, assertions, failure policies, and loop blocks. Catalog item type does not restrict whether a blueprint can contain loops.
-
----
-
 ## Top-Level Blueprint Fields
 
 ### 1. Identity & Metadata
 * `name` *(string, optional)*: Unique display name; when omitted, it defaults to the catalog key.
-* `description` *(string, optional)*: In-depth explanation of the blueprint's purpose.
-* `summary` *(string, optional)*: Short single-sentence summary shown in `dovo blueprint list`.
-* `version` *(integer | string, default `1`)*: Format schema version.
+* `description` *(string, optional)*: Longer description of the blueprint's purpose.
+* `summary` *(string, optional)*: One-line summary shown in `dovo blueprint list`.
+* `version` *(integer | string, default `1`)*: Schema version.
 
 ### 2. Execution Controls
 * `use_worktree` *(boolean, default `true`)*: Whether to create an isolated Git worktree for execution.
-* `timeout_seconds` *(integer, optional)*: Accepted blueprint metadata; the current runtime does not apply it as an overall timeout.
-* `env` *(map[string, string], optional)*: Accepted blueprint metadata; the current runtime does not inject it into child steps.
+* `timeout_seconds` *(integer, optional)*: Currently has no effect.
+* `env` *(map[string, string], optional)*: Currently has no effect.
 
 ### 3. Parameter Inputs (`inputs:`)
-Declare typed parameters that can be customized at runtime via CLI flags or `-i/--input`:
+Declare typed parameters that are set at run time with CLI flags or `-i/--input`:
 
 ```yaml
 inputs:
@@ -80,10 +74,10 @@ inputs:
     default: 3
 ```
 
-For full details, see the [Parameter Inputs Guide](passing-inputs.md).
+See [Parameter Inputs & Expressions](passing-inputs.md).
 
 ### 4. Blueprint Defaults (`defaults:`)
-You can define blueprint-wide defaults inherited by all child steps that do not specify their own:
+Set defaults for every step that does not define its own:
 
 ```yaml
 defaults:
@@ -94,32 +88,29 @@ defaults:
     on_max_retries: prompt_user
 ```
 
-If a step defines its own `on_failure`, the step-specific configuration takes precedence.
+A step's own `on_failure` takes precedence.
 
 ---
 
 ## Agent Steps
 
-An agent step receives a private scratch directory outside the checkout for its temporary files, so those files are not part of the proposed diff. The agent can still create other files inside the checkout, and those do appear in the diff. See [Agent-Step Adapters](agent-providers.md#private-scratch).
+An agent step gets a private scratch directory outside the checkout, so its temporary files stay out of the diff. Other files the agent creates in the checkout do appear in the diff. See [Agent Providers](agent-providers.md#private-scratch).
 
 ---
 
 ## Creating Blueprints via CLI
 
-You can generate blueprint template scaffolds using `dovo blueprint create`:
+Scaffold a blueprint with `dovo blueprint create`:
 
 ```bash
-# Create a new blueprint
 dovo blueprint create --name fix-issue
-
-dovo blueprint create --name audit-deps
 ```
 
-This generates a pre-populated template in `.dovo/catalog/blueprints/<name>.yml`.
+This writes a template to `.dovo/catalog/blueprints/<name>.yml`.
 
 ---
 
 ## Next Steps
 
-- Explore [Working with Steps](working-with-steps.md) to configure commands, agent prompts, and reusable catalog steps.
-- Read the [Blueprint Schema Reference](../reference/blueprint-schema.md) for the complete attribute specification.
+- [Working with Steps](working-with-steps.md)
+- [Blueprint Schema](../reference/blueprint-schema.md)

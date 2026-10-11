@@ -1,12 +1,12 @@
 # Working with Steps
 
-Steps are the fundamental building blocks of Dovo blueprints. A step executes a shell command or script, resolves a reusable catalog step, or sends a prompt to an agent provider.
+A step runs a shell command or script, references a reusable catalog step, or sends a prompt to an agent provider.
 
 ---
 
 ## Step Execution Modes
 
-Dovo supports three primary ways to define a step:
+A step can be defined three ways:
 
 ```text
 Step Definition
@@ -19,7 +19,7 @@ Step Definition
 
 ### 1. Inline Shorthand (`run:`)
 
-For simple shell commands, use the concise `run:` key:
+For a shell command, use `run:`:
 
 ```yaml
 steps:
@@ -32,13 +32,13 @@ steps:
     run: ruff check .
 ```
 
-*When `run:` is provided, Dovo automatically maps it to a command step.*
+`run:` is shorthand for a command step.
 
 ---
 
 ### 2. Reusable Catalog Steps (`uses:`)
 
-Steps can be authored as standalone, reusable YAML files in `.dovo/catalog/steps/` and referenced by other blueprints via `uses:`.
+Put a reusable step in `.dovo/catalog/steps/` and reference it with `uses:`.
 
 ```yaml
 steps:
@@ -52,16 +52,16 @@ steps:
 ```
 
 #### Curated Built-in Steps (`dovo/*`)
-Dovo can provide curated step templates under `dovo/`. Inspect the checked-out catalog before relying on a particular template.
+Built-in steps live under `dovo/`. Run `dovo step list` to see what is available.
 
 ---
 
 ### 3. Explicit Inline Steps (`type:`)
 
-For advanced step configuration, use explicit `type:` primitives:
+For more control, set `type:` explicitly:
 
 #### A. Command Step (`type: command`)
-Executes a shell command with custom timeouts and environment variables:
+Runs a shell command with its own timeout and environment variables:
 
 ```yaml
 - id: compile-assets
@@ -74,7 +74,7 @@ Executes a shell command with custom timeouts and environment variables:
 ```
 
 #### B. Agent Step (`type: agent`)
-Sends the interpolated `prompt` to the resolved provider in the active Git worktree and applies any returned change there; it fails without a worktree. `tools` is a structured policy object enforced through the provider's controls; omit it to keep the default (read and write on the worktree and scratch, no shell, network, or MCP). A legacy string list is rejected. Copy-paste policies are in [Tool policy profiles](agent-providers.md#tool-policy-profiles); see [Agent-Step Adapters](agent-providers.md):
+Sends `prompt` to the agent provider and applies any change in the worktree. It fails without a worktree. `tools` is a policy object; omit it to keep the default (read and write on the worktree and scratch, no shell, network, or MCP). Ready-made policies are in [Agent Providers](agent-providers.md#profiles):
 
 ```yaml
 - id: fix-bug
@@ -96,7 +96,7 @@ Sends the interpolated `prompt` to the resolved provider in the active Git workt
 ```
 
 #### C. Script Step (`type: script`)
-Runs an executable script located within your repository:
+Runs a script from your repository:
 
 ```yaml
 - id: run-validation-script
@@ -110,7 +110,7 @@ Runs an executable script located within your repository:
 
 ## Step Attributes Reference
 
-Every step can be configured with the following properties:
+Properties every step accepts:
 
 | Field | Type | Default | Description |
 |---|---|---|---|
@@ -126,7 +126,7 @@ Every step can be configured with the following properties:
 
 ## Loop Step Blocks
 
-Generic blueprints support iterative loops using `type: loop`. Loops repeat a series of nested steps until a condition is met or `max_iterations` is reached:
+A `type: loop` step repeats nested steps until its `until` condition is met or `max_iterations` is reached:
 
 ```yaml
 steps:
@@ -153,11 +153,11 @@ steps:
 
 ## Runtime Execution Metadata & Environment Variables
 
-Dovo automatically exposes structured runtime metadata to step commands and templates through process environment variables (`DOVO_*`) and template interpolation (`{{ ... }}` or `${{ ... }}`).
+Dovo exposes run metadata to steps as `DOVO_*` environment variables and as template placeholders (`{{ ... }}` or `${{ ... }}`).
 
 ### Environment Variables
 
-Every step execution receives the complete set of `DOVO_*` environment variables. Values are always strings (empty string when not applicable):
+Every step receives these variables. Values are strings, empty when not applicable:
 
 | Environment Variable | Source | Description |
 |---|---|---|
@@ -181,24 +181,24 @@ Every step execution receives the complete set of `DOVO_*` environment variables
 
 ### Environment Precedence
 
-When resolving environment variables for step execution:
-1. **Explicit step `env`**: Key-value pairs declared under `env:` in the step definition take highest precedence.
-2. **`DOVO_*` runtime metadata**: Automatically injected metadata variables.
-3. **Ambient process environment**: Process environment variables from the host runner.
+Highest precedence first:
+1. **Explicit step `env`**: Values declared under `env:` in the step.
+2. **`DOVO_*` runtime metadata**: Injected metadata variables.
+3. **Ambient process environment**: Variables from the host environment.
 
 ### Interpolation Paths
 
-Step fields (`run`, `command`, `prompt`, `script_path`, and `env`) can reference execution metadata using `{{ <namespace>.<field> }}` or `${{ <namespace>.<field> }}` syntax:
+In `run`, `command`, `prompt`, `script_path` and `env`, reference metadata with `{{ <namespace>.<field> }}` or `${{ <namespace>.<field> }}`:
 
 * **Current Step**: `{{ step.id }}`, `{{ step.name }}`, `{{ step.index }}`, `{{ step.attempt }}`
-* **Blueprint**: `{{ blueprint.name }}`, `{{ blueprint.sha }}`. `task.*` and `workflow.*` are legacy aliases; use `blueprint.*` in new documents.
+* **Blueprint**: `{{ blueprint.name }}`, `{{ blueprint.sha }}`. `task.*` and `workflow.*` are older aliases; use `blueprint.*`.
 * **Immediate Previous Step**: `{{ previous_step.id }}`, `{{ previous_step.name }}`, `{{ previous_step.index }}`, `{{ previous_step.status }}`, `{{ previous_step.exit_code }}`
 * **Historical Steps (`steps`)**: Access any prior completed step by 0-based index (`steps[0]`), Python-style negative index (`steps[-1]`), or step ID (`steps.<id>` or `steps['<id>']`):
   * `{{ steps[0].id }}`: First completed step ID
   * `{{ steps[-1].status }}`: Most recently finished step status (equivalent to `{{ previous_step.status }}`)
   * `{{ steps.build.exit_code }}`: Exit code of step with `id: build`
   * `{{ steps.build.outputs.artifact_path }}` / `{{ steps['build'].outputs.artifact_path }}`: A specific output value step `build` wrote to `$DOVO_OUTPUT` (see [Step Outputs](#step-outputs-dovo_output) below). An unknown step ID or output key resolves to an empty string.
-  * Historical steps contain only completed/finished steps — the in-flight current step is never included in `steps`. Out-of-range indices or unknown step IDs resolve safely to an empty string.
+  * `steps` holds finished steps only, never the current one. Out-of-range indices and unknown step IDs resolve to an empty string.
 
 ```yaml
 steps:
@@ -243,7 +243,7 @@ steps:
     run: echo "Publishing {{ steps.build.outputs.artifact_path }}"
 ```
 
-For a value spanning multiple lines, use the heredoc form (mirrors GitHub Actions' `$GITHUB_OUTPUT`); everything between the `key<<DELIM` line and the matching `DELIM` terminator is captured verbatim and joined with newlines, so pick a delimiter unlikely to collide with the body itself:
+For a multi-line value, use the heredoc form (as in GitHub Actions' `$GITHUB_OUTPUT`). Everything between `key<<DELIM` and the matching `DELIM` line is captured as-is, so pick a delimiter that does not appear in the value:
 
 ```yaml
 steps:
@@ -263,6 +263,6 @@ steps:
 
 ## Next Steps
 
-- Learn how to pass arguments in [Parameter Inputs & Expressions](passing-inputs.md).
-- Configure assertions and retry policies in [Failure Handling & Resumption](failure-handling-and-resume.md).
-- Read the [Step Schema Reference](../reference/step-schema.md) for full syntax specifications.
+- [Parameter Inputs & Expressions](passing-inputs.md)
+- [Failure Handling & Resumption](failure-handling-and-resume.md)
+- [Step Schema](../reference/step-schema.md)

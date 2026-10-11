@@ -1,6 +1,6 @@
 # `dovo config`
 
-The `dovo config` command inspects, updates, and validates the local `.dovo/config.json` configuration file.
+`dovo config` shows, changes and validates configuration.
 
 Every `dovo config` subcommand requires `dovo init` first: without a valid `.dovo/project.json` it exits `1` with `Workspace is not initialized` and a `dovo init` prompt. Once initialized, the subcommands still run when `config.json` is missing or broken so they can report on it.
 
@@ -8,7 +8,7 @@ Every `dovo config` subcommand requires `dovo init` first: without a valid `.dov
 
 ### `dovo config show`
 
-Displays the effective configuration loaded from the four configuration tiers (see below) formatted as JSON:
+Prints the effective configuration, merged from four tiers (see below), as JSON:
 
 ```bash
 dovo config show
@@ -16,7 +16,12 @@ dovo config show
 
 #### Configuration Precedence
 
-The displayed configuration is the merge of four tiers, in increasing precedence: Packaged defaults, Global (`$DOVO_HOME/global/config.json`), User (`$DOVO_HOME/user/config.json`), and Repo (`.dovo/config.json`). `DOVO_HOME` defaults to `~/.dovo` when unset. A field set by a higher-precedence tier overrides the same field from a lower one; fields left unset by every tier fall back to the packaged default. A missing Repo tier is not backfilled — `dovo config show` still fails with `CONFIG_NOT_FOUND`, directing you to `dovo init`. The one exception is `environment.sensitive_variables`: names from the Global, User and Repo tiers are unioned in precedence order (duplicates dropped) instead of the higher tier replacing the list. A malformed or schema-invalid Global or User tier file produces a "Config Error" panel naming the offending tier and file path rather than a silent fallback. In `--format json`, the envelope's `raw` field now carries this fully-merged effective payload (every `DovoConfig` field, defaults included) rather than the literal contents of `.dovo/config.json` alone.
+Tiers, lowest to highest precedence: Packaged defaults, Global (`$DOVO_HOME/global/config.json`), User (`$DOVO_HOME/user/config.json`), and Repo (`.dovo/config.json`). `DOVO_HOME` defaults to `~/.dovo` when unset. A field set by a higher tier overrides the same field from a lower one; fields no tier sets use the packaged default.
+
+- If the Repo tier is missing, `dovo config show` fails with `CONFIG_NOT_FOUND` and points you to `dovo init`.
+- `environment.sensitive_variables` is the exception: names from the Global, User and Repo tiers are combined, with duplicates dropped.
+- A malformed or invalid Global or User file produces a "Config Error" panel naming the tier and file path.
+- With `--format json`, `raw` contains the full merged configuration, defaults included.
 
 ### `dovo config set`
 
@@ -46,13 +51,13 @@ dovo config set worktree.base_ref main
 
 #### `environment.sensitive_variables`
 
-Lists environment variable names whose values Dovo masks, with no minimum length, as `[REDACTED:<NAME>]` in step output, `diff.patch`, `dovo logs` and `dovo history`. The config stores names only; values are read from the process environment, from a step's own `env:`, or from the repository `.env` at masking time. A listed name that is unset or blank is skipped silently.
+Names of environment variables whose values Dovo masks as `[REDACTED:<NAME>]` in step output, `diff.patch`, `dovo logs` and `dovo history`, with no minimum length. The config stores names only; values are read at masking time from the process environment, a step's `env:` or the repository `.env`. A listed name that is unset or blank is ignored.
 
 ```bash
 dovo config set environment.sensitive_variables '["AWS_ACCESS_KEY_ID","DATABASE_URL"]'
 ```
 
-Each entry must match `^[A-Za-z_][A-Za-z0-9_]*$`; any other entry (for example `API-KEY` or `TOKEN=abc`) fails validation with an error naming `environment.sensitive_variables[<index>]`, and the error never echoes the entry. Unknown keys under `environment` are rejected.
+Each entry must match `^[A-Za-z_][A-Za-z0-9_]*$`. Any other entry (for example `API-KEY` or `TOKEN=abc`) fails validation with an error naming `environment.sensitive_variables[<index>]`; the entry itself is not echoed. Unknown keys under `environment` are rejected.
 
 ### `dovo config unset`
 
@@ -80,10 +85,10 @@ Removing a key that is already absent is a no-op and exits successfully without 
 
 ### `dovo config validate`
 
-Validates `.dovo/config.json` against the Dovo V1 JSON Schema and semantic rules:
+Checks `.dovo/config.json` against the schema:
 
 ```bash
 dovo config validate
 ```
 
-If validation fails, `dovo config validate` prints detailed error descriptions highlighting missing required fields or invalid property types. An `agent.provider` outside the supported set (only `copilot`) is reported as a structural schema error (`CONFIG_SCHEMA_INVALID`), and the config file is not modified; choose an installed, registered provider. The `AGENT_PROVIDER_UNSUPPORTED` error cannot occur while the schema and the provider registry agree.
+On failure it lists the missing fields or invalid values. An `agent.provider` other than `copilot` is reported as `CONFIG_SCHEMA_INVALID`. The file is never modified.
