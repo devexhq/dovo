@@ -55,11 +55,11 @@ class ProviderRegistryContractTests:
         assert all(key == spec.token for key, spec in PROVIDERS.items())
 
     def test_copilot_descriptor_matches_pre_determined_data(self) -> None:
-        """[tier-1/unit] PROVIDERS['copilot']: credential_envs ('GH_TOKEN','GITHUB_TOKEN'), requires_model False, binary 'gh', supports_tool_policy False, supports_os_sandbox False."""
+        """[tier-1/unit] PROVIDERS['copilot']: credential_envs ('GH_TOKEN','GITHUB_TOKEN'), requires_model False, binary 'gh', supports_tool_policy True, supports_os_sandbox False."""
         spec = PROVIDERS["copilot"]
 
         assert (spec.credential_envs, spec.requires_model, spec.binary) == (("GH_TOKEN", "GITHUB_TOKEN"), False, "gh")
-        assert (spec.supports_tool_policy, spec.supports_os_sandbox) == (False, False)
+        assert (spec.supports_tool_policy, spec.supports_os_sandbox) == (True, False)
 
     def test_get_agent_adapter_builds_copilot_adapter_without_side_effects(
         self, monkeypatch: pytest.MonkeyPatch

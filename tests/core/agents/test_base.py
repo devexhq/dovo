@@ -10,7 +10,16 @@ from pathlib import Path
 
 import pytest
 
-from dovo.core.agents import AgentEnvMode, AgentRequest, AgentResponse, AgentResponseStatus, BaseAgentProvider
+from dovo.common.tool_policy import ToolCapability, ToolPolicy, ToolRule
+from dovo.core.agents import (
+    AgentEnvMode,
+    AgentRequest,
+    AgentResponse,
+    AgentResponseStatus,
+    BaseAgentProvider,
+    default_tool_policy,
+    tool_policy_unsupported_message,
+)
 from dovo.core.agents.base import ProviderSpec, elapsed_ms
 from dovo.core.agents.credentials import missing_credential_error
 from dovo.core.agents.registry import PROVIDERS
@@ -32,9 +41,12 @@ class _DirectSubclassProvider(BaseAgentProvider):
         envs: tuple[str, ...] | None,
         response: AgentResponse = _PROVIDER_RESPONSE,
         control_envs: tuple[str, ...] = (),
+        supports_tool_policy: bool = False,
+        policy_rejection: str | None = None,
     ) -> None:
         self.invoke_calls: list[AgentRequest] = []
         self._response = response
+        self._policy_rejection = policy_rejection
         self._spec = (
             None
             if envs is None
@@ -42,7 +54,7 @@ class _DirectSubclassProvider(BaseAgentProvider):
                 token="unit-test",
                 credential_envs=envs,
                 requires_model=False,
-                supports_tool_policy=False,
+                supports_tool_policy=supports_tool_policy,
                 supports_os_sandbox=False,
                 build=lambda: self,
                 control_envs=control_envs,
@@ -51,6 +63,9 @@ class _DirectSubclassProvider(BaseAgentProvider):
 
     def _provider_spec(self) -> ProviderSpec | None:
         return self._spec
+
+    def _policy_unsupported(self, request: AgentRequest) -> str | None:
+        return self._policy_rejection
 
     def _invoke(self, request: AgentRequest) -> AgentResponse:
         self.invoke_calls.append(request)
@@ -131,6 +146,63 @@ class CredentialPreflightTests:
         provider = _DirectSubclassProvider(envs)
 
         response = provider.invoke(AgentRequestBuilder().with_worktree_path(tmp_path).build())
+
+        assert response == _PROVIDER_RESPONSE
+        assert len(provider.invoke_calls) == 1
+
+
+_POLICIES = {
+    "default": default_tool_policy(),
+    "empty": ToolPolicy(),
+    "allow-all": ToolPolicy(allow=[ToolRule(capability=ToolCapability.SHELL)], allow_all=True),
+    "allow-all-with-deny": ToolPolicy(allow_all=True, deny=[ToolRule(capability=ToolCapability.SHELL, pattern="rm *")]),
+}
+
+
+class ToolPolicyConformanceTests:
+    @pytest.mark.parametrize(
+        ("policy", "rejected"),
+        [
+            pytest.param("default", True, id="default-rejected"),
+            pytest.param("empty", True, id="empty-rejected"),
+            pytest.param("allow-all", False, id="allow-all-proceeds"),
+            pytest.param("allow-all-with-deny", True, id="allow-all-with-deny-rejected"),
+        ],
+    )
+    def test_non_policy_provider_rejects_restrictive_policy_before_invoke(
+        self, tmp_path: Path, policy: str, rejected: bool
+    ) -> None:
+        """[tier-1/unit] BaseAgentProvider.invoke: supports_tool_policy=False double returns PROVIDER_ERROR with errors == [tool_policy_unsupported_message('unit-test')] and zero _invoke calls when rejected; otherwise delegates once."""
+        provider = _DirectSubclassProvider(())
+        request = AgentRequestBuilder().with_worktree_path(tmp_path).with_tools(_POLICIES[policy]).build()
+
+        response = provider.invoke(request)
+
+        if rejected:
+            assert response.status == AgentResponseStatus.PROVIDER_ERROR
+            assert response.errors == [tool_policy_unsupported_message("unit-test")]
+            assert provider.invoke_calls == []
+        else:
+            assert response == _PROVIDER_RESPONSE
+            assert len(provider.invoke_calls) == 1
+
+    def test_policy_capable_provider_hook_rejection_blocks_invoke(self, tmp_path: Path) -> None:
+        """[tier-1/unit] BaseAgentProvider.invoke: supports_tool_policy=True double whose _policy_unsupported returns a message yields PROVIDER_ERROR and zero _invoke calls."""
+        provider = _DirectSubclassProvider((), supports_tool_policy=True, policy_rejection="hook says no")
+        request = AgentRequestBuilder().with_worktree_path(tmp_path).with_tools(default_tool_policy()).build()
+
+        response = provider.invoke(request)
+
+        assert response.status == AgentResponseStatus.PROVIDER_ERROR
+        assert response.errors == ["hook says no"]
+        assert provider.invoke_calls == []
+
+    def test_policy_capable_provider_without_rejection_delegates_to_provider(self, tmp_path: Path) -> None:
+        """[tier-1/unit] BaseAgentProvider.invoke: supports_tool_policy=True double that accepts the default policy delegates to _invoke once."""
+        provider = _DirectSubclassProvider((), supports_tool_policy=True)
+        request = AgentRequestBuilder().with_worktree_path(tmp_path).with_tools(default_tool_policy()).build()
+
+        response = provider.invoke(request)
 
         assert response == _PROVIDER_RESPONSE
         assert len(provider.invoke_calls) == 1

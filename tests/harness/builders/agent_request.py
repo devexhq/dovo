@@ -5,12 +5,12 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Self
 
+from dovo.common.tool_policy import ToolPolicy
 from dovo.core.agents import (
     AgentEnvMode,
     AgentFailurePayload,
     AgentInvocationContext,
     AgentRequest,
-    default_tool_policy,
 )
 
 
@@ -40,6 +40,7 @@ class AgentRequestBuilder:
         self._metadata_env: dict[str, str] = {}
         self._env_passthrough: list[str] = []
         self._env_mode: AgentEnvMode = "allowlist"
+        self._tools: ToolPolicy = ToolPolicy(allow_all=True)
 
     def with_worktree_path(self, worktree_path: Path) -> Self:
         """Set the worktree checkout the agent request runs against."""
@@ -96,6 +97,11 @@ class AgentRequestBuilder:
         self._env_mode = env_mode
         return self
 
+    def with_tools(self, tools: ToolPolicy) -> Self:
+        """Set the resolved tool policy; the builder defaults to unrestricted allow_all so unrelated tests run on any provider."""
+        self._tools = tools
+        return self
+
     def build(self) -> AgentRequest:
         """Assemble and return the complete AgentRequest."""
         if self._worktree_path is None:
@@ -117,5 +123,5 @@ class AgentRequestBuilder:
             metadata_env=self._metadata_env,
             env_passthrough=self._env_passthrough,
             env_mode=self._env_mode,
-            tools=default_tool_policy(),
+            tools=self._tools,
         )

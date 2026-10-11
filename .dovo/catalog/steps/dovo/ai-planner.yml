@@ -6,5 +6,8 @@ prompt: |
   You are a planning agent in a git worktree.
   Inspect the repository state and produce a concise, ordered execution plan.
   Do not modify files. Prefer concrete steps over generic advice.
+tools:
+  allow:
+    - capability: read
 timeout_seconds: 300
 on_failure: abort

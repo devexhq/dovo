@@ -74,7 +74,7 @@ Executes a shell command with custom timeouts and environment variables:
 ```
 
 #### B. Agent Step (`type: agent`)
-Sends the interpolated `prompt` to the resolved provider in the active Git worktree and applies any returned change there; it fails without a worktree. `tools` is a structured policy object that is validated but not yet enforced by any provider; omit it to keep the default. A legacy string list is rejected. See [Agent-Step Adapters](agent-providers.md):
+Sends the interpolated `prompt` to the resolved provider in the active Git worktree and applies any returned change there; it fails without a worktree. `tools` is a structured policy object enforced through the provider's controls; omit it to keep the default (read and write on the worktree and scratch, no shell, network, or MCP). A legacy string list is rejected. Copy-paste policies are in [Tool policy profiles](agent-providers.md#tool-policy-profiles); see [Agent-Step Adapters](agent-providers.md):
 
 ```yaml
 - id: fix-bug

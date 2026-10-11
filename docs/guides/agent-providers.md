@@ -18,7 +18,61 @@ The runtime-supported adapter identifiers are:
 
 Choose an installed, registered provider. Other providers are delayed beyond v1; a config that selects one fails `dovo config validate` with a schema error on `agent.provider`.
 
-`tools` is a structured policy that is validated but not yet enforced; see [Step Schema](../reference/step-schema.md).
+A step's `tools` policy decides what the agent may use; the default grants read and write on the worktree and the attempt's private scratch directory, and nothing else. See [Tool Policy](#tool-policy) and the [Step Schema](../reference/step-schema.md).
+
+---
+
+## Tool Policy
+
+`tools` is a structured policy (`allow`, `deny`, `allow_all`) that Dovo enforces through the provider's own controls. It does not add OS containment. Omit it to inherit `agent.tools` from config, or the default when that is absent: read and write on the worktree and on the invocation's private scratch directory, with no shell, network, or MCP. An explicit object replaces the inherited policy whole, and `tools: {}` grants nothing. Rule grammar: [`tool_policy.py`](../../src/dovo/common/tool_policy.py).
+
+The default policy is restrictive. A step that ran shell commands before the policy was enforced needs an explicit `shell` grant (see the profiles below). A provider that cannot enforce a restrictive policy rejects it before running ([`test_base.py`](../../tests/core/agents/test_base.py)), with `AGENT_TOOL_POLICY_UNSUPPORTED` and step exit `203`; `allow_all: true` with no `deny` rules keeps a provider's unrestricted behavior. A refused tool call at run time ends the step as `blocked` (`204`) with the grant that would allow it.
+
+### Copilot
+
+Rendered by [`copilot.py`](../../src/dovo/core/agents/copilot.py); the flags are pinned by [`test_copilot.py`](../../tests/core/agents/test_copilot.py), and the scratch and control directory checks by [`test_tools.py`](../../tests/core/agents/test_tools.py).
+
+- A restrictive policy runs with `--available-tools`, `--no-ask-user`, `--disallow-temp-dir` and `--disable-builtin-mcps`, never `--allow-all-tools` or `--allow-all-paths`; an unscoped `network` allow renders `--allow-all-urls`. Only the exact scratch directory is added with `--add-dir`, and Copilot's state lives in an isolated `COPILOT_HOME` under the invocation's control directory, so stored approvals and ambient MCP servers cannot widen the policy.
+- `allow_all: true` with no `deny` rules is the fully permissive run. With `deny` rules it adds the matching `--deny-tool` / `--deny-url` flags.
+- Host rules render for both `https://` and `http://`. A `*.host` rule also matches the bare `host` (Copilot's wildcard), so a `*.host` allow is slightly wider than Dovo's grammar and a `*.host` deny also blocks `host`.
+- Shell allow rules are not exclusive: Copilot runs read-only commands such as `git log` without a grant. Shell `deny` rules are enforced.
+- Rejected as `AGENT_TOOL_POLICY_UNSUPPORTED`: a policy with no grants, read or write patterns other than `**`, any read or write `deny`, a scratch grant that is not given to every granted path tool, a scratch-only grant, any `mcp` rule, and a restrictive policy with no invocation context. MCP support is not available yet.
+- If the installed `gh copilot` rejects a required flag, the step fails with a message to run `copilot update`; Dovo never retries with a permissive policy.
+
+### Tool policy profiles
+
+Set one of these on a step, or once for every agent step under `agent.tools` in `.dovo/config.json` (the same object):
+
+```json
+{ "agent": { "tools": { "allow": [{ "capability": "read" }] } } }
+```
+
+**Read-only reviewer** reads the worktree; it cannot edit files or run commands:
+
+```yaml
+tools:
+  allow:
+    - capability: read
+```
+
+**Dev loop** reads and writes the worktree, and runs shell commands:
+
+```yaml
+tools:
+  allow:
+    - capability: read
+    - capability: write
+    - capability: shell
+```
+
+**Fully open** keeps the provider's unrestricted behavior; `deny` rules still apply:
+
+```yaml
+tools:
+  allow_all: true
+```
+
+Shell grants are not confinement. Copilot checks the path and URL arguments of simple commands such as `cat`, `touch` and `curl`, but `sh -c` and interpreters such as `python3 -c` can read and write outside the worktree and scratch directory, so a policy that grants `shell` is not path-scoped and amounts to broad filesystem access. Network escapes through interpreters were not tested. The seeded `dovo/ai-planner`, `dovo/ai-reviewer` and `dovo/ai-code-patcher` steps declare the read-only and read/write profiles explicitly; workspaces seeded earlier keep their old copies, which run under the default policy until re-seeded.
 
 ---
 
