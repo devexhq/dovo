@@ -8,7 +8,7 @@
       "severity": "BLOCKER",
       "domain": "all",
       "scope": "src/dovo/",
-      "evaluation_criteria": "Scan imports. Verify common/ imports no core/, engine/, or cli/; core/ imports no engine/, cli/, or rich; engine/ imports no cli/; git/ imports no other core/ package; inputs/ imports no catalog or agents; catalog/ imports no agents, sessions, engine, cli; artifacts/ imports no engine; agents/ imports no engine; sessions/ imports no agents, worktree, catalog, engine, cli.",
+      "evaluation_criteria": "Scan imports. Verify common/ imports no core/, engine/, or cli/; core/ imports no engine/, cli/, or rich; engine/ imports no cli/; git/ imports no other core/ package; inputs/ imports no catalog or agents; catalog/ imports no agents, sessions, engine, cli; artifacts/ imports no engine; agents/ imports no engine; sessions/ imports no agents, worktree, catalog, engine, cli. Enforced by LAYER_RULES in tests/lint/test_layer_direction.py.",
       "bad_pattern": "from dovo.engine.engine import Engine  # upward import in core/sessions/"
     },
     {
@@ -518,7 +518,7 @@
       "severity": "BLOCKER",
       "domain": "all",
       "scope": "docs/agents/architecture.md",
-      "evaluation_criteria": "Verify diff in docs/agents/architecture.md only modifies structure sections (layers tree, domain ownership, package boundaries).",
+      "evaluation_criteria": "Verify diff in docs/agents/architecture.md only modifies structure sections (layers tree, package boundaries), and only when a package is added, removed, or moved or an import boundary changes. A new boundary also needs a row in LAYER_RULES in tests/lint/test_layer_direction.py.",
       "bad_pattern": "# 100 lines of narrative prose explaining pruning heuristics in architecture.md"
     },
     {

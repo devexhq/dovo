@@ -6,10 +6,14 @@ Guidelines for maintaining and updating documentation in Dovo CLI.
 
 Update docs in the same PR only when the change matches one of these gates:
 
-- **Package layout / ownership / import boundaries**: update
+- **Package added, removed, or moved, or an import boundary changed**: update
   [docs/agents/architecture.md](architecture.md) *structure*
-  sections only (layers tree, domain ownership, boundaries). Do **not** append
-  feature behavior essays there.
+  sections only (layers tree, boundaries). Adding files or classes inside an
+  existing package needs no edit. Do **not** append feature behavior essays
+  there. A new boundary belongs in `LAYER_RULES` in
+  [tests/lint/test_layer_direction.py](../../tests/lint/test_layer_direction.py);
+  [tests/lint/test_architecture_tree_parity.py](../../tests/lint/test_architecture_tree_parity.py)
+  fails when the layers tree and the source packages disagree.
 - **How to write Python in this repo** (models placement, Result/Outcome, DRY,
   errors): update [docs/agents/code-conventions.md](code-conventions.md).
 - **User-visible CLI behavior**: update [docs/cli/](../cli/) (not architecture).

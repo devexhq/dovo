@@ -11,7 +11,7 @@ rules:
   evaluation_criteria: Scan imports. Verify common/ imports no core/, engine/, or cli/; core/ imports no engine/, cli/,
     or rich; engine/ imports no cli/; git/ imports no other core/ package; inputs/ imports no catalog or agents;
     catalog/ imports no agents, sessions, engine, cli; artifacts/ imports no engine; agents/ imports no engine;
-    sessions/ imports no agents, worktree, catalog, engine, cli.
+    sessions/ imports no agents, worktree, catalog, engine, cli. Enforced by LAYER_RULES in tests/lint/test_layer_direction.py.
   positive_example: 'from dovo.core.sessions import SessionLogEvent  # in engine/'
   negative_example: 'from dovo.engine.engine import Engine  # upward import in core/sessions/'
   citation: docs/agents/architecture.md#package-boundaries-import-direction
@@ -360,7 +360,7 @@ rules:
 
     for item in items: repo.create(item)'
   negative_example: 'for item in items: repo = SessionsRepository(path); repo.create(item)'
-  citation: docs/agents/architecture.md#local-sqlite-datadb
+  citation: docs/agents/schemas.md#7-database
 - id: PERF-002
   title: Database Migration Hygiene and Consumer Call Sites
   severity: BLOCKER
@@ -386,7 +386,7 @@ rules:
     method could be used.
   positive_example: record = repo.get_by_path(rel_path)
   negative_example: record = next((r for r in repo.list() if r.path == rel_path), None)
-  citation: docs/agents/architecture.md#local-sqlite-datadb
+  citation: docs/agents/schemas.md#7-database
 - id: API-001
   title: Sibling Repository CRUD Method Naming Consistency
   severity: WARNING
@@ -873,8 +873,9 @@ rules:
   scope: docs/agents/architecture.md
   guideline: Update docs/agents/architecture.md structure sections ONLY when package layout, domain ownership, or import boundaries
     change. Do not append feature behavior essays there. Pure refactors need no architecture diff.
-  evaluation_criteria: Verify diff in docs/agents/architecture.md only modifies structure sections (layers tree, domain ownership,
-    package boundaries).
+  evaluation_criteria: Verify diff in docs/agents/architecture.md only modifies structure sections (layers tree, package
+    boundaries), and only when a package is added, removed, or moved or an import boundary changes. A new boundary also needs
+    a row in LAYER_RULES in tests/lint/test_layer_direction.py.
   positive_example: '# Updating layers tree in architecture.md for new core/prune/ domain'
   negative_example: '# 100 lines of narrative prose explaining pruning heuristics in architecture.md'
   citation: docs/agents/documentation.md
