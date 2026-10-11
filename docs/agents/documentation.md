@@ -14,6 +14,9 @@ Update docs in the same PR only when the change matches one of these gates:
   [tests/lint/test_layer_direction.py](../../tests/lint/test_layer_direction.py);
   [tests/lint/test_architecture_tree_parity.py](../../tests/lint/test_architecture_tree_parity.py)
   fails when the layers tree and the source packages disagree.
+- **A term's meaning changed** (step, blueprint, run, session, worktree,
+  checkpoint, ...): update the Terminology table in
+  [docs/agents/architecture.md](architecture.md#terminology).
 - **How to write Python in this repo** (models placement, Result/Outcome, DRY,
   errors): update [docs/agents/code-conventions.md](code-conventions.md).
 - **User-visible CLI behavior**: update [docs/cli/](../cli/) (not architecture).

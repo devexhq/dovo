@@ -1,10 +1,10 @@
 # Architecture
 
-Structural map for agents: which packages exist, who may import whom, and the procedures for adding a command, a catalog-backed domain, or an agent provider. **File placement rules** (where models vs services live) are in
+Structural map for agents: which packages exist, who may import whom, the shared vocabulary, and the procedures for adding a command, a catalog-backed domain, or an agent provider. **File placement rules** (where models vs services live) are in
 [code-conventions.md](code-conventions.md#core-package-layout).
 User-facing command behavior lives under [docs/cli/](../cli/). Cross-cutting contracts (config merge, paths, persistence authority, secrets) live in [schemas.md](schemas.md).
 
-Update this doc only when a package is added, removed, or moved, or an import boundary changes. Adding files or classes inside an existing package needs no edit here.
+Update this doc only when a package is added, removed, or moved, an import boundary changes, or a term's meaning changes. Adding files or classes inside an existing package needs no edit here.
 
 ## Layers
 
@@ -77,6 +77,24 @@ Not mechanically checked (review-time):
 
 - CLI commands never render directly or import formatters; they emit results through `ui_dispatcher.dispatch(result)`.
 - `cli/ui/` must not originate a domain fact. All domain facts, outcomes, warnings, and remediations originate in `core/` or `common/`; `cli/ui/` only derives presentation views.
+
+## Terminology
+
+Use these terms precisely. A backticked type below must exist in `src/`, enforced by [`tests/lint/test_terminology_symbols.py`](../../tests/lint/test_terminology_symbols.py).
+
+| Term | Definition |
+|:---|:---|
+| Step | The smallest unit of execution (`StepDefinition`): a command, agent prompt, script, or internal handler, with optional `assert` conditions and an `on_failure` policy. |
+| Loop step | A container step (`LoopStepBlock`) that repeats its `do:` child steps until its `until` condition holds or `max_iterations` is reached. |
+| Task | Convention: a blueprint made only of linear steps. |
+| Workflow | Convention: a blueprint that also uses loop steps. Tasks and workflows are both a `BlueprintDefinition`; no code distinguishes them. |
+| Blueprint | The authored YAML document (`BlueprintDefinition`) declaring inputs and steps; the only executable document type. |
+| Catalog | The disk-only, multi-tier (REPO, USER, GLOBAL, PACKAGED) index of named blueprints and steps. |
+| Run | The act of executing a blueprint from start to terminal outcome (`RunOutcome`). A run produces a session; it is not the record that outlives it. |
+| Session | What a run leaves behind: a unique id (`{kind}_{8-hex}`) tying together its database row (`SessionRecord`), status, `session.log`, diff artifact, and history. A session exists if and only if its record exists. Its files live under the global `DOVO_HOME` runtime root, never under `.dovo/`. |
+| Worktree | An isolated git checkout at `.dovo/worktrees/<id>/` on branch `dovo/<id>`. `dovo run` uses the run's session id as `<id>`; `dovo worktree create` generates `dovo_<8 hex>`. |
+| Checkpoint | A paused leaf step (top-level or loop body) together with its last failed attempt in the `ExecutionStateTree`, so a paused run resumes by re-entering the failure prompt without re-running the step. |
+| Input | A declared, typed blueprint parameter (`ParameterInput`) referenced as `${{ inputs.<name> }}`. |
 
 ## Adding a new command
 

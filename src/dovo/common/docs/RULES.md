@@ -29,8 +29,8 @@ model_config = {'extra': 'ignore'}
 # ❌ DO NOT: model_config = {'extra': 'ignore'}  # missing justifying comment
 ```
 
-- **[CODE-001] Identifier Readability and Approved Abbreviations (BLOCKER):**
-  Code must read naturally. Reject cryptic, arbitrary truncations (e.g. val_res, err_msg, acc). Permitted abbreviations: iteration variables (p, x, i, v, c, k, v), standard programming idioms (req, res, fn, fn_node, idx, mod, mod_name, loc, tmp/temp, str, arr, num, len, val, msg), and domain conventions (exc, rel_path, fs, cwd, db, ctx).
+- **[CODE-001] Full-Word Identifiers (BLOCKER):**
+  Write names as full words; do not shorten a word by dropping letters (res, req, msg, val, idx, tmp, rel_path, fs, exc, err, cfg, resp, acc, val_res). Allowed: single letters in comprehensions, generator expressions, and one-line loops; initialisms that are the domain term itself (db, cwd, ctx, id, url, cli, sha, ttl); and names a framework dictates (tmp_path, monkeypatch, ctx on a Click callback).
 
 ```python
 # ✅ DO: validation_result = validator.validate(document)
@@ -211,11 +211,11 @@ _unlock = _unlock_fd  # internal shim alias
 ```
 
 - **[DOC-007] Canonical Terminology Invariant (SUGGESTION):**
-  Adhere strictly to definitions in docs/agents/glossary.md. Do not conflate Task (linear steps only) vs Workflow (allows loop steps), Blueprint (unified document), Step, Run, Session, Worktree, Checkpoint.
+  Adhere strictly to the Terminology table in docs/agents/architecture.md. Do not conflate Task (convention - linear steps only) vs Workflow (convention - also uses loop steps), Blueprint (unified document), Step, Run, Session, Worktree, Checkpoint.
 
 ```python
 # ✅ DO: 'Task blueprint containing only linear step definitions.'
-# ❌ DO NOT: 'Task blueprint containing a loop block.'  # tasks are strictly linear
+# ❌ DO NOT: 'Task blueprint containing a loop block.'  # by convention a task has only linear steps
 ```
 
 - **[DOC-008] Verifiable Doc and Rule Claims (BLOCKER):**

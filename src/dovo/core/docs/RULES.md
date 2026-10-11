@@ -46,7 +46,7 @@ model_config = {'extra': 'ignore'}
 ```
 
 - **[MODEL-002] Result/Outcome Pattern over Exceptions (BLOCKER):**
-  Operations that can fail must not raise for business or operational failures. When the outcome reaches a facade, a command handler, a formatter, or the wire format, return a Pydantic result object subclassing BaseResult; callers check .ok and render .errors/.warnings rather than catching exceptions. An internal helper with a single in-layer caller that only branches on success may instead return a plain value or an error message (str | None).
+  Operations that can fail must not raise for business or operational failures. When the outcome reaches a domain entrypoint, a command handler, a formatter, or the wire format, return a Pydantic result object subclassing BaseResult; callers check .ok and render .errors/.warnings rather than catching exceptions. An internal helper with a single in-layer caller that only branches on success may instead return a plain value or an error message (str | None).
 
 ```python
 # ✅ DO: return WorktreeDeleteResult(status=WorktreeDeleteStatus.NOT_FOUND, errors=['not found'])
@@ -69,8 +69,8 @@ model_config = {'extra': 'ignore'}
 # ❌ DO NOT: class BlueprintLoadError(Exception): """YAML syntax error."""
 ```
 
-- **[CODE-001] Identifier Readability and Approved Abbreviations (BLOCKER):**
-  Code must read naturally. Reject cryptic, arbitrary truncations (e.g. val_res, err_msg, acc). Permitted abbreviations: iteration variables (p, x, i, v, c, k, v), standard programming idioms (req, res, fn, fn_node, idx, mod, mod_name, loc, tmp/temp, str, arr, num, len, val, msg), and domain conventions (exc, rel_path, fs, cwd, db, ctx).
+- **[CODE-001] Full-Word Identifiers (BLOCKER):**
+  Write names as full words; do not shorten a word by dropping letters (res, req, msg, val, idx, tmp, rel_path, fs, exc, err, cfg, resp, acc, val_res). Allowed: single letters in comprehensions, generator expressions, and one-line loops; initialisms that are the domain term itself (db, cwd, ctx, id, url, cli, sha, ttl); and names a framework dictates (tmp_path, monkeypatch, ctx on a Click callback).
 
 ```python
 # ✅ DO: validation_result = validator.validate(document)
@@ -194,8 +194,8 @@ for item in items: repo.create(item)
   Do not perform O(n) in-memory list comprehensions or linear scans over repository records when an indexed database column exists (e.g., querying _record_for_rel_path). Query the repository slice directly with filtered SQL.
 
 ```python
-# ✅ DO: record = repo.get_by_path(rel_path)
-# ❌ DO NOT: record = next((r for r in repo.list() if r.path == rel_path), None)
+# ✅ DO: record = repo.get_by_path(relative_path)
+# ❌ DO NOT: record = next((r for r in repo.list() if r.path == relative_path), None)
 ```
 
 - **[API-001] Sibling Repository CRUD Method Naming Consistency (WARNING):**
@@ -210,7 +210,7 @@ for item in items: repo.create(item)
   Maintain consistent error handling semantics across identical query paths. Do not swallow invalid enums or corrupt rows in one repository method while raising or returning BaseResult errors in another.
 
 ```python
-# ✅ DO: except ValidationError as exc: return RecordResult.from_error(exc)
+# ✅ DO: except ValidationError as error: return RecordResult.from_error(error)
 # ❌ DO NOT: except ValidationError: return None  # inconsistently swallows error
 ```
 
@@ -307,11 +307,11 @@ _unlock = _unlock_fd  # internal shim alias
 ```
 
 - **[DOC-007] Canonical Terminology Invariant (SUGGESTION):**
-  Adhere strictly to definitions in docs/agents/glossary.md. Do not conflate Task (linear steps only) vs Workflow (allows loop steps), Blueprint (unified document), Step, Run, Session, Worktree, Checkpoint.
+  Adhere strictly to the Terminology table in docs/agents/architecture.md. Do not conflate Task (convention - linear steps only) vs Workflow (convention - also uses loop steps), Blueprint (unified document), Step, Run, Session, Worktree, Checkpoint.
 
 ```python
 # ✅ DO: 'Task blueprint containing only linear step definitions.'
-# ❌ DO NOT: 'Task blueprint containing a loop block.'  # tasks are strictly linear
+# ❌ DO NOT: 'Task blueprint containing a loop block.'  # by convention a task has only linear steps
 ```
 
 - **[DOC-008] Verifiable Doc and Rule Claims (BLOCKER):**

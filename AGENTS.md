@@ -62,13 +62,12 @@ Documentation update gates, accuracy rules, and user-facing doc sync policies ar
 
 | Doc | When to use |
 |-----|-------------|
-| [docs/agents/architecture.md](docs/agents/architecture.md) | Module layout, domain ownership, import boundaries, `.dovo/` layout (structure only) |
+| [docs/agents/architecture.md](docs/agents/architecture.md) | Module layout, import boundaries, terminology (task / workflow / blueprint / step / run / session / worktree / checkpoint), `.dovo/` layout |
 | [docs/agents/code-conventions.md](docs/agents/code-conventions.md) | Python style, models placement, Result/Outcome, writes, console output, backwards compatibility |
 | [docs/agents/documentation.md](docs/agents/documentation.md) | Documentation update gates, accuracy rules, and user-facing doc sync |
 | [docs/agents/planning.md](docs/agents/planning.md) | Planning an issue before implementation (artifact inventory, code samples, plan template) |
 | [docs/agents/testing.md](docs/agents/testing.md) | Adding or running tests (execution tiers, harness matchers, contracts) |
 | [docs/agents/schemas.md](docs/agents/schemas.md) | Cross-cutting contracts (config merge, paths, persistence authority, secrets) and where each entity's source lives |
-| [docs/agents/glossary.md](docs/agents/glossary.md) | Disambiguating task / workflow / blueprint / step / run / session / worktree / checkpoint |
 | [docs/agents/troubleshooting.md](docs/agents/troubleshooting.md) | Diagnosing agent-provider setup failures (missing keys, missing CLIs, timeouts) |
 | [docs/agents/git-and-pr-conventions.md](docs/agents/git-and-pr-conventions.md) | Committing changes or opening a PR |
 | [docs/agents/github-issues.md](docs/agents/github-issues.md) | Creating or updating GitHub issues (structure, tone, required sections) |

@@ -104,7 +104,7 @@
         "engine"
       ],
       "scope": "src/dovo/core/, src/dovo/engine/",
-      "evaluation_criteria": "Inspect service methods. Flag methods that raise exceptions for business/operational failures, and facade or command-level operations that return a plain value instead of a BaseResult. Do not flag an internal helper that returns str | None to a single in-layer caller.",
+      "evaluation_criteria": "Inspect service methods. Flag methods that raise exceptions for business/operational failures, and domain-entrypoint or command-level operations that return a plain value instead of a BaseResult. Do not flag an internal helper that returns str | None to a single in-layer caller.",
       "bad_pattern": "raise WorktreeNotFoundError('Worktree does not exist')"
     },
     {
@@ -130,11 +130,11 @@
     },
     {
       "id": "CODE-001",
-      "name": "Identifier Readability and Approved Abbreviations",
+      "name": "Full-Word Identifiers",
       "severity": "BLOCKER",
       "domain": "all",
       "scope": "src/, tests/",
-      "evaluation_criteria": "Inspect new or modified variable, parameter, attribute, and function names. Flag arbitrary letter-dropping.",
+      "evaluation_criteria": "Inspect new or modified variable, parameter, attribute, and function names. Flag any name formed by dropping letters from a word, whether or not it appears in an earlier list of examples. Do not flag unmodified code.",
       "bad_pattern": "val_res = validator.validate(document); acc = []"
     },
     {
@@ -255,7 +255,7 @@
       ],
       "scope": "src/dovo/core/db/, src/dovo/core/*/services/, src/dovo/engine/services/",
       "evaluation_criteria": "Scan for in-memory list comprehensions or filter loops over full table fetches when an indexed query method could be used.",
-      "bad_pattern": "record = next((r for r in repo.list() if r.path == rel_path), None)"
+      "bad_pattern": "record = next((r for r in repo.list() if r.path == relative_path), None)"
     },
     {
       "id": "API-001",
@@ -492,7 +492,7 @@
       "domain": "tests",
       "scope": "tests/cli/",
       "evaluation_criteria": "Scan each CLI command domain's test directory under tests/cli/<command>/ for containment or equality checks against stdout or rendered output; any literal assertion, including a snapshot comparison, is permitted. Flag only assertions against help text wording, and name the Click metadata check that should replace them.",
-      "bad_pattern": "assert \"Show the current configuration value\" in res.output  # help text wording; assert Click metadata instead"
+      "bad_pattern": "assert \"Show the current configuration value\" in result.output  # help text wording; assert Click metadata instead"
     },
     {
       "id": "TEST-018",
@@ -573,7 +573,7 @@
       "domain": "all",
       "scope": "docs/, src/",
       "evaluation_criteria": "Check doc prose and code comments for misuse of terms (e.g. calling a workflow with loops a 'task').",
-      "bad_pattern": "'Task blueprint containing a loop block.'  # tasks are strictly linear"
+      "bad_pattern": "'Task blueprint containing a loop block.'  # by convention a task has only linear steps"
     },
     {
       "id": "DOC-008",
