@@ -17,6 +17,9 @@ jobs:
     steps:
       - name: Checkout Code Repository
         uses: actions/checkout@v4
+        with:
+          # The quality blueprint diffs against origin/main to find changed files.
+          fetch-depth: 0
 
       - name: Install uv
         uses: astral-sh/setup-uv@v5
@@ -29,9 +32,10 @@ jobs:
       - name: Install dependencies
         run: uv sync --all-extras
 
-      - name: Run tests with coverage
-        # fail_under=80 is configured in pyproject.toml [tool.coverage.report]
-        run: uv run python -m pytest --cov=dovo --cov-report=term-missing --cov-report=xml tests/ -q -n auto
+      - name: Run quality gates
+        # Format, lint, typecheck, docs build, complexity and tests with coverage
+        # (fail_under=80 in pyproject.toml [tool.coverage.report]).
+        run: uv run dovo run quality --no-tty
 
   prek:
     name: Prek

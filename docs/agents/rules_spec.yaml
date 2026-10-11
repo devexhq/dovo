@@ -990,17 +990,17 @@ rules:
   domain: all
   scope: Whole repository
   guideline: >-
-    Before committing, all five gates must pass: ruff format, ruff check, basedpyright src tests --level error
-    with zero errors, inv complexity with complexity at or under 10, and inv test -c meeting the coverage floor
-    configured in pyproject.toml under [tool.coverage.report] fail_under. That floor is the contract, it ratchets
+    Before committing, `dovo run quality` must pass: ruff format, ruff check, basedpyright src tests --level error
+    with zero errors, mkdocs build --strict, complexity at or under 10 on changed files, and the test suite meeting the
+    coverage floor configured in pyproject.toml under [tool.coverage.report] fail_under. That floor is the contract, it ratchets
     upward only as real contract tests land, and it is never lowered to make a commit pass. Coverage is a
     regression backstop, not a target: do not add tests to raise the percentage, and read a coverage drop caused
     by deleting duplicated or dead tests as a success.
   evaluation_criteria: >-
-    Verify all five commands succeed before any commit. Verify the fail_under value in pyproject.toml is greater
+    Verify `dovo run quality` succeeds before any commit. Verify the fail_under value in pyproject.toml is greater
     than or equal to the previous committed value. Flag any PR that lowers fail_under, and flag test additions
     whose stated justification is raising coverage.
-  positive_example: uv run inv test -c && ruff format . && ruff check . && basedpyright src tests --level error && inv complexity
+  positive_example: uv run ruff format . && uv run dovo run quality
   negative_example: '# fail_under lowered so a commit can pass, or tests added purely to reach a percentage'
   citation: AGENTS.md#essential-commands
 - id: CI-002
@@ -1060,15 +1060,15 @@ planner_rules:
   category: Planning
   phase: Reset & Prereqs
   scope: Agent session & filesystem
-  requirement: While planning, the agent is strictly read-only. Never edit src/ or tests/, never run tests or tooling (inv
-    test, pytest, ruff, basedpyright, inv complexity), and never commit, push, or touch PR state. Read-only git and gh commands
+  requirement: While planning, the agent is strictly read-only. Never edit src/ or tests/, never run tests or tooling (dovo
+    run tests, dovo run quality, pytest, ruff, basedpyright), and never commit, push, or touch PR state. Read-only git and gh commands
     are the only commands permitted.
   deliverable_contract: No source files edited. The plan document in .agentic/plan.md is the entire deliverable.
   validation_check: Verify git status after planning shows only .agentic/plan.md created.
   positive_example: '# Agent reads files and gh issues, then writes only to .agentic/plan.md
 
     '
-  negative_example: '# Agent runs `inv test` or edits `src/dovo/cli/app.py` while planning
+  negative_example: '# Agent runs `dovo run tests` or edits `src/dovo/cli/app.py` while planning
 
     '
   citation: docs/agents/planning.md#planning-before-implementation

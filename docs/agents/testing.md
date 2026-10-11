@@ -91,7 +91,7 @@ process groups. Secrets/env-dependent tests use `monkeypatch` to isolate environ
 
 ### Rich Render Assertions
 `render_rich(renderable, width=160)` via a real `Console` is the only supported capture method.
-Width is pinned at 160 everywhere (`pyproject.toml`, `tasks.py`, CI) via `COLUMNS=160`; tests must
+Width is pinned at 160 everywhere (`pyproject.toml`, the quality and tests blueprints, CI) via `COLUMNS=160`; tests must
 not rely on ambient terminal size or mutate `os.environ["COLUMNS"]`.
 
 ### Fixtures and Scope
@@ -138,11 +138,14 @@ Always `pytest.param(..., id="descriptive_case_id")`, no broad `Any` in signatur
 ## Running Tests and Coverage Gates
 
 ```bash
-uv run inv test                     # full suite, parallel
-uv run inv test -c                  # coverage report
-uv run inv test --fast-fail         # stop on first failure
-uv run inv test --path tests/core/  # scope to a file or directory subtree
+uv run dovo run tests                                # full suite, parallel
+uv run dovo run tests --coverage                     # coverage report (no floor enforced)
+uv run dovo run tests --fast-fail                    # stop on first failure
+uv run dovo run tests --path tests/core/             # scope to a file or directory subtree
+uv run dovo run quality                              # full gate: adds format, lint, typecheck, docs, complexity, coverage floor
 ```
+
+`dovo run tests` is for iteration. The coverage floor is enforced only by `dovo run quality`.
 
 Global coverage floor: >= 80% (`fail_under = 80`), branch coverage enabled. Coverage is a
 regression backstop, not a target — don't add tests to raise the percentage. A coverage drop from
