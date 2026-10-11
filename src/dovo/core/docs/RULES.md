@@ -69,8 +69,8 @@ model_config = {'extra': 'ignore'}
 # ❌ DO NOT: class BlueprintLoadError(Exception): """YAML syntax error."""
 ```
 
-- **[CODE-001] Identifier Readability and Approved Abbreviations (BLOCKER):**
-  Code must read naturally. Reject cryptic, arbitrary truncations (e.g. val_res, err_msg, acc). Permitted abbreviations: iteration variables (p, x, i, v, c, k, v), standard programming idioms (req, res, fn, fn_node, idx, mod, mod_name, loc, tmp/temp, str, arr, num, len, val, msg), and domain conventions (exc, rel_path, fs, cwd, db, ctx).
+- **[CODE-001] Full-Word Identifiers (BLOCKER):**
+  Write names as full words; do not shorten a word by dropping letters (res, req, msg, val, idx, tmp, rel_path, fs, exc, err, cfg, resp, acc, val_res). Allowed: single letters in comprehensions, generator expressions, and one-line loops; initialisms that are the domain term itself (db, cwd, ctx, id, url, cli, sha, ttl); and names a framework dictates (tmp_path, monkeypatch, ctx on a Click callback).
 
 ```python
 # ✅ DO: validation_result = validator.validate(document)
@@ -194,8 +194,8 @@ for item in items: repo.create(item)
   Do not perform O(n) in-memory list comprehensions or linear scans over repository records when an indexed database column exists (e.g., querying _record_for_rel_path). Query the repository slice directly with filtered SQL.
 
 ```python
-# ✅ DO: record = repo.get_by_path(rel_path)
-# ❌ DO NOT: record = next((r for r in repo.list() if r.path == rel_path), None)
+# ✅ DO: record = repo.get_by_path(relative_path)
+# ❌ DO NOT: record = next((r for r in repo.list() if r.path == relative_path), None)
 ```
 
 - **[API-001] Sibling Repository CRUD Method Naming Consistency (WARNING):**
@@ -210,7 +210,7 @@ for item in items: repo.create(item)
   Maintain consistent error handling semantics across identical query paths. Do not swallow invalid enums or corrupt rows in one repository method while raising or returning BaseResult errors in another.
 
 ```python
-# ✅ DO: except ValidationError as exc: return RecordResult.from_error(exc)
+# ✅ DO: except ValidationError as error: return RecordResult.from_error(error)
 # ❌ DO NOT: except ValidationError: return None  # inconsistently swallows error
 ```
 

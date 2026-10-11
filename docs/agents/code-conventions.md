@@ -15,17 +15,14 @@ Coding standards and patterns for the Dovo CLI codebase.
 
 ## Variable Naming
 
-Prioritize clarity and readability: code should read naturally and unambiguously.
+Write names as full words. Do not shorten a word by dropping letters.
 
-- **Comprehensions and generator expressions**: Single-letter variables (e.g. `p`, `x`, `i`, `v`, `c`, `k, v`) are standard and encouraged for short, local scopes.
-- **Accepted common abbreviations and idioms**: Widely recognized programming idioms and domain abbreviations are permitted when they keep code concise without hurting readability:
-  - Key/value and loop constructs: `k, v` (in dict iteration or comprehensions), `i, v` (in enumerate).
-  - Standard programming idioms: `req`, `res`, `fn` / `fn_node`, `idx`, `mod` / `mod_name`, `loc`, `tmp` / `temp`, `str`, `arr`, `num`, `len`, `val`, `msg`.
-  - Established domain conventions: `exc`, `rel_path`, `fs`, `cwd`, `db`, `ctx`.
-- **Disallowed**:
-  - Cryptic, arbitrary, or idiosyncratic truncations that harm readability (e.g. `val_res` instead of `validation_result` or `result`, `err_msg` instead of `error_message`, or arbitrary letter-dropping like `acc` when context is ambiguous).
-  - Arbitrary single-letter variables that carry no conventional meaning in context.
-- **Readability rule of thumb**: Does the line of code still read easily with the abbreviation? If an abbreviation is widely understood in the context of the function and does not force the reader to pause or guess its meaning, it is acceptable. If it obscures intent or requires deciphering, write the full word.
+- **Allowed: single letters in comprehensions and generator expressions** (`p`, `x`, `i`, `k, v`) and as the loop variable of a one-line loop.
+- **Allowed: initialisms that are the domain term itself**: `db`, `cwd`, `ctx`, `id`, `url`, `cli`, `sha`, `ttl`. Do not add to this list without a reason.
+- **Allowed: names a framework dictates**, such as pytest's `tmp_path` and `monkeypatch`, or `ctx` on a Click callback.
+- **Banned: any other shortened word**, e.g. `res`, `req`, `msg`, `val`, `idx`, `tmp`, `rel_path`, `fs`, `exc`, `err`, `cfg`, `resp`, `acc`, `val_res`. Spell it out: `result`, `request`, `message`, `value`, `index`, `relative_path`, `filesystem`, `error`.
+- **Test**: if you removed letters from a word to make the name shorter, spell it out.
+- **Scope**: apply this to names you add or modify. Do not rename unrelated code in a feature PR; existing abbreviations are migrated in dedicated PRs.
 
 ---
 

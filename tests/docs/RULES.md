@@ -29,8 +29,8 @@ model_config = {'extra': 'ignore'}
 # ❌ DO NOT: model_config = {'extra': 'ignore'}  # missing justifying comment
 ```
 
-- **[CODE-001] Identifier Readability and Approved Abbreviations (BLOCKER):**
-  Code must read naturally. Reject cryptic, arbitrary truncations (e.g. val_res, err_msg, acc). Permitted abbreviations: iteration variables (p, x, i, v, c, k, v), standard programming idioms (req, res, fn, fn_node, idx, mod, mod_name, loc, tmp/temp, str, arr, num, len, val, msg), and domain conventions (exc, rel_path, fs, cwd, db, ctx).
+- **[CODE-001] Full-Word Identifiers (BLOCKER):**
+  Write names as full words; do not shorten a word by dropping letters (res, req, msg, val, idx, tmp, rel_path, fs, exc, err, cfg, resp, acc, val_res). Allowed: single letters in comprehensions, generator expressions, and one-line loops; initialisms that are the domain term itself (db, cwd, ctx, id, url, cli, sha, ttl); and names a framework dictates (tmp_path, monkeypatch, ctx on a Click callback).
 
 ```python
 # ✅ DO: validation_result = validator.validate(document)
@@ -241,7 +241,7 @@ class TestConfig:
   Test doubles must be types production actually passes or implement a Protocol production is typed against. Never build a stub whose interface is the union of every branch in a hasattr chain.
 
 ```python
-# ✅ DO: class FakeBaseAgentProvider(BaseAgentProvider): def _invoke(self, req: AgentRequest) -> AgentResponse: ...
+# ✅ DO: class FakeBaseAgentProvider(BaseAgentProvider): def _invoke(self, request: AgentRequest) -> AgentResponse: ...
 # ❌ DO NOT: class MockAdapter: def __getattr__(self, name): return MagicMock()
 ```
 
@@ -326,9 +326,9 @@ class SessionStateStoreTests:
 
 ```python
 # ✅ DO:
-assert res.exit_code == 1
-assert "Status: valid with warnings" in res.stdout  # literal rendered output, not restricted to an error-code token
-# ❌ DO NOT: assert "Show the current configuration value" in res.output  # help text wording; assert Click metadata instead
+assert result.exit_code == 1
+assert "Status: valid with warnings" in result.stdout  # literal rendered output, not restricted to an error-code token
+# ❌ DO NOT: assert "Show the current configuration value" in result.output  # help text wording; assert Click metadata instead
 ```
 
 - **[TEST-018] Test Layer Import Boundary (BLOCKER):**
