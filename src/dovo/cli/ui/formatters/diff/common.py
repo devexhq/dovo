@@ -11,14 +11,17 @@ from dovo.common.utils import display_path
 from dovo.core.sessions import DiffResult
 
 
+def unresolved_diff_path(session_id: str | None) -> str:
+    """Return the placeholder diff path shown when no artifact path was resolved."""
+    return f"<sessions_dir>/{session_id or '<session_id>'}/diff.patch"
+
+
 def resolve_diff_rel_path(data: DiffResult, cwd: Path | None = None) -> str:
     """Resolve display path for diff artifact relative to current working directory."""
     effective_cwd = cwd or Path.cwd()
     if data.artifact_path is not None:
         return display_path(data.artifact_path, effective_cwd)
-    if data.session_id:
-        return f".dovo/sessions/{data.session_id}/diff.patch"
-    return ".dovo/sessions/<session_id>/diff.patch"
+    return unresolved_diff_path(data.session_id)
 
 
 def format_truncation_notice(

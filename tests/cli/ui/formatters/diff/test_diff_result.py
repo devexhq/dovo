@@ -95,8 +95,8 @@ EMPTY_DIFF = FormatterCase(
 SESSION_NOT_FOUND_DATA = DiffResult(
     status=DiffStatus.SESSION_NOT_FOUND,
     session_id="dovo_missing_99",
-    errors=["Session 'dovo_missing_99' not found under .dovo/sessions/."],
-    fixes=["Run `dovo worktree list` or check .dovo/sessions/ for valid session IDs"],
+    errors=["Session 'dovo_missing_99' not found."],
+    fixes=["Run `dovo history` to list valid session IDs"],
 )
 SESSION_NOT_FOUND = FormatterCase(
     data=SESSION_NOT_FOUND_DATA,
@@ -104,16 +104,16 @@ SESSION_NOT_FOUND = FormatterCase(
         status=DiffStatus.SESSION_NOT_FOUND,
         session_id="dovo_missing_99",
         artifact_path=None,
-        relative_path=".dovo/sessions/dovo_missing_99/diff.patch",
+        relative_path="<sessions_dir>/dovo_missing_99/diff.patch",
         diff_text="",
         total_lines=0,
-        errors=["Session 'dovo_missing_99' not found under .dovo/sessions/."],
-        fixes=["Run `dovo worktree list` or check .dovo/sessions/ for valid session IDs"],
+        errors=["Session 'dovo_missing_99' not found."],
+        fixes=["Run `dovo history` to list valid session IDs"],
     ),
     render_expectations=[
         "dovo_missing_99",
-        "Session 'dovo_missing_99' not found under .dovo/sessions/.",
-        "Run `dovo worktree list` or check .dovo/sessions/ for valid session IDs",
+        "Session 'dovo_missing_99' not found.",
+        "Run `dovo history` to list valid session IDs",
     ],
 )
 
@@ -199,7 +199,7 @@ DIFF_PAYLOAD_CASES = [
             "status": "session_not_found",
             "session_id": "dovo_missing_99",
             "artifact_path": None,
-            "relative_path": ".dovo/sessions/dovo_missing_99/diff.patch",
+            "relative_path": "<sessions_dir>/dovo_missing_99/diff.patch",
             "diff_text": "",
             "raw": False,
             "full": False,
@@ -207,9 +207,9 @@ DIFF_PAYLOAD_CASES = [
             "total_lines": 0,
             "truncated": False,
             "truncated_lines": 0,
-            "errors": ["Session 'dovo_missing_99' not found under .dovo/sessions/."],
+            "errors": ["Session 'dovo_missing_99' not found."],
             "warnings": [],
-            "fixes": ["Run `dovo worktree list` or check .dovo/sessions/ for valid session IDs"],
+            "fixes": ["Run `dovo history` to list valid session IDs"],
         },
         id="session_not_found",
     ),
@@ -244,7 +244,7 @@ TO_RAW_CASES = [
         DiffResult(
             status=DiffStatus.SESSION_NOT_FOUND,
             session_id="dovo_missing_raw",
-            errors=["Session 'dovo_missing_raw' not found under .dovo/sessions/."],
+            errors=["Session 'dovo_missing_raw' not found."],
         ),
         "Session 'dovo_missing_raw' not found",
         id="session_not_found_renders_error_panel_text",

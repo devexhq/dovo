@@ -82,11 +82,11 @@ class DiffCliIntegrationTests:
         assert "+new line" in result.stdout
 
     def test_diff_cli_unknown_session_exits_one(self, cli_runner: CliRunner, diff_workspace: Path) -> None:
-        """dovo diff <unknown-id>: exit 1, 'not found under .dovo/sessions' in stdout."""
+        """dovo diff <unknown-id>: exit 1, 'not found.' in stdout."""
         result = cli_runner.invoke(app, ["-p", str(diff_workspace), "diff", "unknown-session"])
 
         assert result.exit_code == 1
-        assert "not found under .dovo/sessions" in result.stdout
+        assert "not found." in result.stdout
 
     def test_diff_cli_json_emits_literal_wire_payload(self, cli_runner: CliRunner, diff_workspace: Path) -> None:
         """dovo diff <session_id> --format json: stdout equals the literal DiffResultView envelope."""
