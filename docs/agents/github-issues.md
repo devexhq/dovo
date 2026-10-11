@@ -165,6 +165,27 @@ it out of the issue (or open a separate issue when the decision is made).
 - Must be understandable **without** opening other GitHub issues.
 - Do not define non-goals as "see #N" or "covered by the config epic."
 - Keep it short; it prevents over-building, not multi-issue research.
+- List only capabilities that will **not** be built (features, flags,
+  commands, surfaces). Never use it to freeze existing code with "X stays
+  unchanged", "untouched", "keeps behaving as before", or "only shares Y".
+  Such lines force implementers to add parallel code beside the old path
+  instead of changing it.
+- Preservation language is allowed only when compatibility is an explicit
+  product requirement. Then name the exact frozen thing and why (for example,
+  "sessions written by the current release must still load").
+
+### Shared surfaces changed
+
+When the issue touches an existing type, event, field, schema, error code,
+command or file layout, add a **Shared surfaces changed** list to Scope. Name
+each surface and state the new shape. The implementer must update every caller,
+test and doc in the same change; do not leave the old name alongside the new
+one. If a surface is renamed, say "renamed", not "added".
+
+```markdown
+### Shared surfaces changed
+- `PromptEvent.prompt_id` is renamed `step_id` (events, prompter, formatter tests)
+```
 
 ### 3. Functional / Non-Functional Requirements
 
@@ -262,7 +283,9 @@ sections, such as:
 
 - End-to-end or integration outcomes that span multiple FRs
 - Coverage completeness bars ("every `ConfigLoadStatus` has a test")
-- Greenfield cutover ("callers use the new API; superseded paths removed")
+- Greenfield cutover ("callers use the new API; superseded paths removed"),
+  including a grep bar for renames and replacements ("no reference to the old
+  name remains in `src/`, `tests/` or `docs/`")
 - Docs or command wiring the issue owns
 - Explicit non-ships that are easy to miss ("this change does not add `dovo config
   show`")
@@ -291,6 +314,17 @@ Example shape:
 - `docs/agents/schemas.md` documents the load API and error codes
 - No `dovo config` CLI subcommand is added in this change
 ```
+
+## Pre-publish check for double implementations
+
+Before creating or updating an issue, search the body for phrases that freeze
+existing code: `unchanged`, `untouched`, `as before`, `exactly`, `existing`,
+`alongside`, `only share`, `keep`, `compatib`, `shim`, `legacy`. For each hit,
+either delete it, or turn it into a **Shared surfaces changed** entry, or (only
+when compatibility is truly required) state the frozen contract explicitly.
+Then ask of every new type, field, event, code path or doc page: "what does this
+replace?" If it replaces something, the issue must say the old one is removed
+and add the grep bar to Definition of Done.
 
 ## Extra sections (when they add clarity)
 
