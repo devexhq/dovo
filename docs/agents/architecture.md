@@ -32,7 +32,7 @@ src/dovo/core/                   Domain logic (no Typer, no engine)
   status/                            Workspace health collection
   worktree/                          Git worktree lifecycle
 
-src/dovo/engine/                 Run execution: Engine facade, run coordinator, session lifecycle
+src/dovo/engine/                 Run execution: Engine entrypoint, run coordinator, session lifecycle
   executors/                         Single-step execution
   services/                          Run and resume services
 
@@ -43,7 +43,7 @@ src/dovo/schemas/v1/             Packaged, versioned JSON Schemas
 ```
 
 - New domain code: `models.py` + `services/<verb>.py`. Do not extend the flat `config/` / `db/` pattern.
-- Single-step execution lives in `engine/executors/`; multi-step orchestration in `engine/` (`RunCoordinator`, driven by `drive_run`); the process facade is `Engine.run` / `Engine.resume`.
+- Single-step execution lives in `engine/executors/`; multi-step orchestration in `engine/` (`RunCoordinator`, driven by `drive_run`); the process entrypoint is `Engine.run` / `Engine.resume`.
 
 ### Ownership notes
 
@@ -102,7 +102,7 @@ Use these terms precisely. A backticked type below must exist in `src/`, enforce
 
 1. Create `src/dovo/cli/<name>/` with `app.py` and `commands/<action>.py` (or `commands/root.py`).
 2. Add formatters under `src/dovo/cli/ui/formatters/<name>/` implementing `transform()` and `to_rich()`, with view models for derived values, and register them in that package's `__init__.py`.
-3. Wire command logic to domain services or facades and dispatch results via `ui_dispatcher.dispatch(result)`. Keep CLI packages free of business logic, DB queries, or direct filesystem scans.
+3. Wire command logic to domain services or domain entrypoints and dispatch results via `ui_dispatcher.dispatch(result)`. Keep CLI packages free of business logic, DB queries, or direct filesystem scans.
 4. Register the command in [src/dovo/cli/cli.py](../../src/dovo/cli/cli.py) and list it in `README.md` ([`tests/lint/test_readme_command_parity.py`](../../tests/lint/test_readme_command_parity.py) fails otherwise).
 5. Add tests under `tests/cli/<name>/` and the per-command page under [docs/cli/](../cli/).
 

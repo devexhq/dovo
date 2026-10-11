@@ -25,7 +25,7 @@ rules:
     CLI packages must remain completely free of business logic, direct SQLite queries, or direct filesystem scans.
   evaluation_criteria: Inspect CLI command handlers in src/dovo/cli/*/commands/. Flag direct SQL execution, domain orchestration,
     or business logic.
-  positive_example: result = context.facade.status.collect(context.root_dir); ui_dispatcher.dispatch(result)
+  positive_example: result = Status(context.paths).collect(); ui_dispatcher.dispatch(result)
   negative_example: rows = context.db.connection.execute('SELECT * FROM worktrees').fetchall()
   citation: docs/agents/architecture.md#adding-a-new-command
 - id: ARCH-003
@@ -900,7 +900,7 @@ rules:
   scope: docs/agents/schemas.md
   guideline: Update docs/agents/schemas.md only when a cross-cutting contract changes (config tier merge rules, path ownership,
     persistence authority, secrets handling, catalog or database scoping). Adding or changing config keys, blueprint fields,
-    DTOs, enum members, exceptions, facade methods, or commands needs no schemas.md edit.
+    DTOs, enum members, exceptions, entrypoint methods, or commands needs no schemas.md edit.
   evaluation_criteria: Verify schemas.md changes only when a stated contract changes, and flag schemas.md edits that add field
     lists, enum members, exception names, or method lists.
   positive_example: '# Updating schemas.md because a config key switched from replace to union merge across tiers'

@@ -25,7 +25,7 @@ Before executing commands or editing files, state:
 When implementing a GitHub issue, **plan before writing code**: follow
 [docs/agents/planning.md](docs/agents/planning.md) to extract the issue's
 contract, ground it in the current tree, and enumerate every artifact (DTOs,
-services, facade methods, commands, subcommands, formatters, schemas, tests,
+services, entrypoint methods, commands, subcommands, formatters, schemas, tests,
 docs) into a plan with code samples. Skip it only for a single-file change that
 adds no new surface.
 

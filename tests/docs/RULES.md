@@ -356,7 +356,7 @@ assert "Status: valid with warnings" in result.stdout  # literal rendered output
 ```
 
 - **[DOC-003] Schema and Entity Documentation Gate (BLOCKER):**
-  Update docs/agents/schemas.md only when a cross-cutting contract changes (config tier merge rules, path ownership, persistence authority, secrets handling, catalog or database scoping). Adding or changing config keys, blueprint fields, DTOs, enum members, exceptions, facade methods, or commands needs no schemas.md edit.
+  Update docs/agents/schemas.md only when a cross-cutting contract changes (config tier merge rules, path ownership, persistence authority, secrets handling, catalog or database scoping). Adding or changing config keys, blueprint fields, DTOs, enum members, exceptions, entrypoint methods, or commands needs no schemas.md edit.
 
 ```python
 # ✅ DO: # Updating schemas.md because a config key switched from replace to union merge across tiers

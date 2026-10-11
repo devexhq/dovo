@@ -66,7 +66,7 @@ core/<domain>/
 
 - **Domain entrypoint:** the one class or module callers use to reach a domain (e.g. `Catalog`, `Worktree`, `Engine`); it coordinates `services/<verb>.py` and holds no logic of its own. Name its module after the domain (`prune.py`), not `facade.py`.
 - **Must:** Put new domain types in `models.py` and imperative operations in `services/<verb>.py`.
-- **Must not:** Create a `facade.py`, add logic directly under package roots (except the domain entrypoint), define public models in `services/`, or extend legacy flat layouts. Existing `facade.py` modules are legacy and are renamed in dedicated PRs.
+- **Must not:** Create a `facade.py`, add logic directly under package roots (except the domain entrypoint), define public models in `services/`, or extend legacy flat layouts.
 
 ---
 
@@ -87,7 +87,7 @@ Operations that can fail never raise for business or operational failures. When 
 
 ## Atomic File Writes
 
-**Relevant sources:** `src/dovo/common/filesystem/services/operations.py`, `src/dovo/common/filesystem/facade.py` (legacy-named entrypoint)
+**Relevant sources:** `src/dovo/common/filesystem/services/operations.py`, `src/dovo/common/filesystem/filesystem.py`
 
 - Never write config or state files directly in-place.
 - Write to a `.tmp` sibling, flush, `os.fsync`, and atomically swap via `Path.replace`.
@@ -190,7 +190,7 @@ applies.
 ### Banned
 
 1. **Any ignore that hides a type we can write.** `_fs: Filesystem = None`
-   (`reportAssignmentType` in `core/config/facade.py`) is the teaching case:
+   (`reportAssignmentType` in `core/config/config.py`) is the teaching case:
    the annotation is lying, and the ignore is what keeps the lie compiling.
 2. **`reportCallIssue` / `reportArgumentType` used to silence a sloppy test.**
    If the checker rejects a `MagicMock`, a wrong-shaped dict, or a missing

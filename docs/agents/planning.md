@@ -6,7 +6,7 @@ While planning, remain **read-only**: do not edit `src/` or `tests/`, do not run
 
 ## When to plan
 
-Plan when an issue adds or changes: a command or subcommand, a DTO/`*Result` model, a status enum, a domain exception, a service, a facade method, a formatter, a config key, a JSON/YAML schema field, or a `core/db/` table.
+Plan when an issue adds or changes: a command or subcommand, a DTO/`*Result` model, a status enum, a domain exception, a service, an entrypoint method, a formatter, a config key, a JSON/YAML schema field, or a `core/db/` table.
 
 Skip planning only for a single-file, no-new-surface change (a typo, a message string, a one-line branch fix).
 
@@ -33,7 +33,7 @@ If a detail is unspecified, choose the option matching the nearest existing patt
 Read the codebase directly before planning; never plan from memory (PLAN-007, PLAN-008):
 
 1. Read the always-on docs listed in [AGENTS.md](../../AGENTS.md).
-2. Read the existing code for every domain touched: `core/<domain>/{models,exceptions,facade}.py`, `services/`, `cli/<name>/app.py` and `commands/`, `cli/ui/formatters/<domain>/`, and mirrored tests.
+2. Read the existing code for every domain touched: `core/<domain>/{models,exceptions,<domain>}.py`, `services/`, `cli/<name>/app.py` and `commands/`, `cli/ui/formatters/<domain>/`, and mirrored tests.
 3. **Name the closest existing implementation to mirror**, with `file:line` citations (e.g. `dovo config set` -> `Config.set` in `src/dovo/core/config/mutate.py` -> `ConfigSetResult` -> `config_set_command` -> `ConfigSetFormatter`). Quote a mirrored symbol as signature + docstring only, never its body.
 4. **Verify doc field lists against source code**; record stale doc claims as traps.
 5. If the issue's description of current state differs from the codebase, state the discrepancy and the corrected state.
@@ -56,7 +56,7 @@ Write this table to `.agentic/evidence.md` under an `## Artifact inventory` head
 - **DTO / Result / Outcome / Status enum** -> `core/<domain>/models.py`
 - **Domain exception** -> `core/<domain>/exceptions.py`
 - **Service** -> `core/<domain>/services/<verb>.py` (public models never live here)
-- **Facade method** -> `core/<domain>/facade.py`
+- **Entrypoint method** -> `core/<domain>/<domain>.py`
 - **Command handler** -> `cli/<name>/commands/<action>.py`
 - **Typer registration** -> `cli/<name>/app.py` (and `cli/cli.py` for new top-level groups)
 - **Formatter** -> `cli/ui/formatters/<domain>/<name>.py`; view models in `<domain>_views.py` or `<name>_view.py`; register in `register_<domain>_formatters` and `__all__`
