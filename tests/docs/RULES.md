@@ -356,11 +356,11 @@ assert "Status: valid with warnings" in res.stdout  # literal rendered output, n
 ```
 
 - **[DOC-003] Schema and Entity Documentation Gate (BLOCKER):**
-  Update docs/agents/schemas.md whenever .dovo/config.json keys, blueprint YAML fields, domain DTOs, or database record shapes change.
+  Update docs/agents/schemas.md only when a cross-cutting contract changes (config tier merge rules, path ownership, persistence authority, secrets handling, catalog or database scoping). Adding or changing config keys, blueprint fields, DTOs, enum members, exceptions, facade methods, or commands needs no schemas.md edit.
 
 ```python
-# ✅ DO: # Adding WorktreePruneResult to section 2 of schemas.md
-# ❌ DO NOT: # Adding new Result model in core/models.py without updating schemas.md
+# ✅ DO: # Updating schemas.md because a config key switched from replace to union merge across tiers
+# ❌ DO NOT: # Listing a new Result model's fields in schemas.md
 ```
 
 - **[DOC-004] Ban on Duplicating Source in Docs (SUGGESTION):**

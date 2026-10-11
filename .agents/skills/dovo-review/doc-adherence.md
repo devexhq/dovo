@@ -11,7 +11,7 @@ Read the doc named by any gate that fires before judging whether it was satisfie
 | Package layout, domain ownership, or import boundaries changed | `architecture.md` *structure* sections updated (layers tree, ownership, boundaries) and nothing else appended there | `docs/agents/architecture.md` |
 | Command added, renamed, or removed in `src/dovo/cli/cli.py` (`add_typer` / `register_*`) | `README.md` Quick start and command surface match `dovo --help` exactly, no documented command that does not exist, none shipped undocumented | `README.md` |
 | User-visible CLI behavior or flags changed | per-command page updated (not `architecture.md`) | `docs/cli/` |
-| `.dovo/config.json` keys, blueprint YAML fields, or entity shapes changed | schema doc updated | `docs/agents/schemas.md` |
+| A cross-cutting contract changed (config merge rules, path ownership, persistence authority, secrets handling) | schema doc updated | `docs/agents/schemas.md` |
 | `core/db/` schema, table, or migration touched | migration hygiene checklist followed; a new table or column has a real caller in the same change, or an explicit note on why it lands ahead of one | `docs/agents/ci-and-tooling.md#migration-hygiene` |
 | New agent provider added | provider procedure followed and its setup failure modes documented | `architecture.md#adding-a-new-agent-provider` plus `docs/agents/troubleshooting.md` |
 | A package or subsystem removed | removal procedure followed | `docs/agents/ci-and-tooling.md#removing-dead-code` |

@@ -41,7 +41,7 @@ dovo step delete <sha_or_name> [--force] [--format terminal|json]
 
 ### `dovo step validate`
 
-Validates a step definition (YAML syntax, schema, and semantic invariants such as an unsafe `script_path`) without executing it. See [`CatalogValidateResult`](../agents/schemas.md) for the result shape and exit codes.
+Validates a step definition (YAML syntax, schema, and semantic invariants such as an unsafe `script_path`) without executing it. See [`CatalogValidateResult`](../../src/dovo/core/catalog/models.py) for the result shape.
 
 ```bash
 dovo step validate <target> [--format terminal|json]
