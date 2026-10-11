@@ -72,6 +72,17 @@ Four CI jobs run on pushes to `main` and on pull requests:
 - One-time data backfills must be versioned Alembic revisions (`op.execute()`), not ad-hoc raw SQL in models.
 - Database repositories and domain entrypoints must be constructed once per command invocation rather than inside loops.
 
+### Migration lifecycle
+
+Migrations live in `src/dovo/core/db/alembic/versions/`, with revision constants in `src/dovo/core/db/migrations.py`. Users' databases persist across upgrades and carry an Alembic revision stamp, so a revision that has shipped must stay loadable.
+
+- **Released revisions are immutable.** A revision file that exists in a release tag (`v*`) must not be edited, renamed or deleted. Fix a mistake with a new revision. The baseline is `0001_initial_schema` as shipped in `v0.6.0`.
+- **Unreleased revisions can still change.** A revision that is in no tag may be edited or squashed. Once it has merged to `main`, prefer a new revision, because developer databases are already stamped with it.
+- **Every revision implements `upgrade()` and `downgrade()`.** Downgrades are kept so a future move to another database (such as Postgres) can step back. Where a downgrade cannot restore dropped data, say so in the revision docstring.
+- **Stay dialect-neutral.** Use Alembic operations and SQLAlchemy constructs. Use `op.batch_alter_table` for column and constraint changes. Do not use SQLite-only SQL (`PRAGMA`, `sqlite_master`) in a revision.
+- **Test every revision** in `tests/core/db/test_migrations.py`: an upgrade from the previous revision that preserves existing rows, and a downgrade that restores the previous schema and keeps rows written after the upgrade.
+- There is no automated check for edits to released revisions yet; reviewers enforce it.
+
 ---
 
 ## Dead Code Removal

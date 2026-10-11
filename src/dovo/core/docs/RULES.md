@@ -230,6 +230,14 @@ for item in items: repo.create(item)
 # ❌ DO NOT: session_id: str = Field(unique=True, index=True)
 ```
 
+- **[DB-002] Released Migrations Are Immutable and Reversible (BLOCKER):**
+  A migration revision that exists in a release tag must not be edited, renamed or deleted; fix it with a new revision. Every revision must implement both upgrade() and downgrade() using dialect-neutral Alembic operations (op.batch_alter_table for column and constraint changes, no SQLite-only SQL).
+
+```python
+# ✅ DO: # New revision 0003 with upgrade(), downgrade() and a row-preserving upgrade/downgrade test
+# ❌ DO NOT: # Editing 0001_initial_schema.py after v0.6.0, or a revision whose downgrade() is `pass`
+```
+
 - **[FS-001] Atomic File Writes via Temporary Sibling (BLOCKER):**
   Never write config or state files directly in-place. Write to a .tmp sibling, flush, os.fsync, and atomically swap via Path.replace using Filesystem.atomic_write_json and Filesystem.atomic_write_text.
 
