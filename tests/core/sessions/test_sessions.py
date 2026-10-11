@@ -110,14 +110,14 @@ class SessionDiffTests:
     def test_diff_with_session_directory_but_no_run_record_returns_session_not_found(
         self, isolated_workspace: Path
     ) -> None:
-        """[tier-1/integration] Session.diff: a session directory holding diff.patch but no session record -> SESSION_NOT_FOUND with errors == ["Session '<id>' not found under .dovo/sessions/."] and artifact_path None."""
+        """[tier-1/integration] Session.diff: a session directory holding diff.patch but no session record -> SESSION_NOT_FOUND with errors == ["Session '<id>' not found."] and artifact_path None."""
         paths = _paths_for(isolated_workspace)
         _write_patch(paths, "orphan", "diff --git a/f.txt b/f.txt\n")
 
         result = Session(paths, "orphan").diff()
 
         assert result.status == DiffStatus.SESSION_NOT_FOUND
-        assert result.errors == ["Session 'orphan' not found under .dovo/sessions/."]
+        assert result.errors == ["Session 'orphan' not found."]
         assert result.artifact_path is None
 
     def test_diff_with_run_record_but_no_patch_returns_diff_not_found(self, isolated_workspace: Path) -> None:
@@ -167,12 +167,12 @@ class SessionCollectionLatestDiffTests:
     def test_latest_diff_with_no_run_records_returns_session_not_found_without_session_id(
         self, isolated_workspace: Path
     ) -> None:
-        """[tier-1/integration] SessionCollection.latest_diff: empty sessions table -> SESSION_NOT_FOUND, session_id None, errors == ["No sessions found under .dovo/sessions/."]."""
+        """[tier-1/integration] SessionCollection.latest_diff: empty sessions table -> SESSION_NOT_FOUND, session_id None, errors == ["No sessions found."]."""
         result = SessionCollection(_paths_for(isolated_workspace)).latest_diff()
 
         assert result.status == DiffStatus.SESSION_NOT_FOUND
         assert result.session_id is None
-        assert result.errors == ["No sessions found under .dovo/sessions/."]
+        assert result.errors == ["No sessions found."]
 
 
 class SessionCollectionGetTests:

@@ -10,7 +10,11 @@ from rich.syntax import Syntax
 from rich.text import Text
 
 from dovo.cli.ui.formatters.common import build_error_panel
-from dovo.cli.ui.formatters.diff.common import format_truncation_notice, resolve_diff_rel_path
+from dovo.cli.ui.formatters.diff.common import (
+    format_truncation_notice,
+    resolve_diff_rel_path,
+    unresolved_diff_path,
+)
 from dovo.cli.ui.formatters.diff.diff_view import DiffResultView
 from dovo.common.constants import DEFAULT_MAX_DIFF_LINES
 from dovo.common.types import ComponentFormatter
@@ -19,12 +23,8 @@ from dovo.core.sessions import DiffResult, DiffStatus
 
 def _format_session_not_found_panel(data: DiffResult | DiffResultView, *, raw: bool = False) -> Panel | str:
     """Format error panel when session is missing."""
-    default = (
-        f"Session '{data.session_id}' not found under .dovo/sessions/."
-        if data.session_id
-        else "No sessions found under .dovo/sessions/."
-    )
-    fixes = data.fixes or ["Run `dovo worktree list` or check .dovo/sessions/ for valid session IDs"]
+    default = f"Session '{data.session_id}' not found." if data.session_id else "No sessions found."
+    fixes = data.fixes or ["Run `dovo history` to list valid session IDs"]
     return build_error_panel("Session Not Found", data.errors, default, fixes, raw=raw)
 
 
@@ -32,7 +32,7 @@ def _format_diff_not_found_panel(data: DiffResult | DiffResultView, *, raw: bool
     """Format error panel when diff artifact is missing."""
     session_label = data.session_id or "unknown"
     default = f"Session '{session_label}' has no diff artifact."
-    fixes = data.fixes or [f"Verify the session generated a diff artifact at .dovo/sessions/{session_label}/diff.patch"]
+    fixes = data.fixes or [f"Verify the session generated a diff artifact at {unresolved_diff_path(data.session_id)}"]
     return build_error_panel("Diff Not Found", data.errors, default, fixes, raw=raw)
 
 

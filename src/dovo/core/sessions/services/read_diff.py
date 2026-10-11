@@ -15,7 +15,7 @@ def read_session_diff(paths: WorkspacePaths, session_id: str) -> DiffResult:
             session_id=session_id,
             artifact_path=patch_file,
             errors=[f"Session '{session_id}' has no diff artifact."],
-            fixes=[f"Verify the session generated a diff artifact at .dovo/sessions/{session_id}/diff.patch"],
+            fixes=[f"Verify the session generated a diff artifact at {patch_file}"],
         )
 
     try:

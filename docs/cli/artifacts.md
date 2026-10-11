@@ -2,7 +2,7 @@
 
 The `dovo artifacts` command group inspects and manages session artifacts: named file bundles published from a running blueprint's worktree into persistent storage, so they can be listed, downloaded, and eventually pruned once expired.
 
-Artifacts live under the global storage root: `~/.dovo/storage/projects/<project_id>/artifacts/<session_id>/<name>/` (the root honors `DOVO_HOME`). A workspace with no project identity yet (no `.dovo/project.json`) keeps them in the repository at `.dovo/artifacts/<session_id>/<name>/`. Each published bundle carries a `manifest.json` listing every file's relative path, SHA256 checksum, and size — see [`ArtifactManifest`](../../src/dovo/core/artifacts/models.py).
+Artifacts live under the global storage root: `~/.dovo/storage/projects/<project_id>/artifacts/<session_id>/<name>/` (the root honors `DOVO_HOME`). Each published bundle carries a `manifest.json` listing every file's relative path, SHA256 checksum, and size — see [`ArtifactManifest`](../../src/dovo/core/artifacts/models.py).
 
 There is no `dovo artifacts upload` command. Publishing happens two ways, both driven from inside a running blueprint:
 

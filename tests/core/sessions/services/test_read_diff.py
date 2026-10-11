@@ -53,6 +53,19 @@ class ReadSessionDiffTests:
         assert result.diff_text == ""
         assert result.ok is (expected_status == DiffStatus.EMPTY_DIFF)
 
+    def test_read_session_diff_with_missing_patch_fix_names_actual_artifact_path(
+        self, tmp_path: Path, workspace_paths_factory: WorkspacePathsFactory
+    ) -> None:
+        """[tier-1/integration] read_session_diff: no diff.patch -> fixes names the resolved artifact path, not a repo-local .dovo/sessions path."""
+        paths = workspace_paths_factory(tmp_path, None)
+        paths.session_dir("session-5").mkdir(parents=True)
+
+        result = read_session_diff(paths, "session-5")
+
+        assert result.fixes == [
+            f"Verify the session generated a diff artifact at {paths.session_dir('session-5') / 'diff.patch'}"
+        ]
+
     def test_read_session_diff_with_written_patch_returns_ok_with_exact_text(
         self, tmp_path: Path, workspace_paths_factory: WorkspacePathsFactory
     ) -> None:
