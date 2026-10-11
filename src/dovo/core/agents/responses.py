@@ -89,7 +89,8 @@ def blocked_response(
         elif denial.capability is not None:
             fix = (
                 f"Grant it in the step's tools policy, e.g. tools: {{allow: [{{capability: {denial.capability.value}}}]}}, "
-                "or set it once under agent.tools in .dovo/config.json"
+                "or set it once under agent.tools in .dovo/config.json "
+                "(see docs/guides/agent-providers.md#tool-policy-profiles)"
             )
         else:
             continue

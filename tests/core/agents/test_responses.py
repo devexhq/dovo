@@ -75,7 +75,8 @@ class BlockedResponseContractTests:
             ],
             fixes=[
                 "Grant it in the step's tools policy, e.g. tools: {allow: [{capability: shell}]}, "
-                "or set it once under agent.tools in .dovo/config.json",
+                "or set it once under agent.tools in .dovo/config.json "
+                "(see docs/guides/agent-providers.md#tool-policy-profiles)",
                 "Remove or narrow the deny rule that blocked 'edit': denied due to the following rules",
             ],
         )

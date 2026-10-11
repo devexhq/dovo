@@ -5,19 +5,32 @@ from __future__ import annotations
 import json
 import subprocess
 from pathlib import Path
+from typing import Literal
 
 import pytest
 
-from dovo.common.tool_policy import ToolCapability
-from dovo.core.agents import AgentEnvMode, AgentInvocationContext, AgentResponseStatus, default_tool_policy
+from dovo.common.tool_policy import ToolCapability, ToolPolicy, ToolRule
+from dovo.core.agents import (
+    AgentEnvMode,
+    AgentInvocationContext,
+    AgentResponseStatus,
+    PolicyRoots,
+    default_tool_policy,
+    tool_policy_unsupported_message,
+)
 from dovo.core.agents.cli_mutation import CliMutationOutcome, CliMutationRunRequest
 from dovo.core.agents.copilot import (
+    COPILOT_PROVIDER_SPEC,
     CopilotAgentAdapter,
+    CopilotPolicyArgs,
     default_copilot_run,
+    render_copilot_policy,
     resolve_copilot_token,
 )
 from dovo.core.agents.models import AgentDenial
 from tests.harness import AgentRequestBuilder, FakeAgentRunner
+
+_ALLOW_ALL = ToolPolicy(allow_all=True)
 
 
 @pytest.fixture(autouse=True)
@@ -73,9 +86,7 @@ class CopilotRunTests:
         monkeypatch.setattr("dovo.core.agents.copilot.run_isolated_process", runner)
 
         outcome = default_copilot_run(
-            CliMutationRunRequest(
-                worktree_path=tmp_path, prompt="hi", model=None, timeout_seconds=3, tools=default_tool_policy()
-            )
+            CliMutationRunRequest(worktree_path=tmp_path, prompt="hi", model=None, timeout_seconds=3, tools=_ALLOW_ALL)
         )
 
         assert outcome == CliMutationOutcome(
@@ -85,7 +96,7 @@ class CopilotRunTests:
         assert runner.calls == []
 
     def test_default_run_parses_jsonl(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        """gh copilot is invoked with the fixed argv and its JSONL stream is parsed to text."""
+        """gh copilot runs in the worktree with the prompt on stdin and its JSONL stream is parsed to text."""
         runner = FakeAgentRunner().returning(
             stdout=(
                 b'{"type":"assistant.message","data":{"content":"hello"}}\n{"type":"result","data":{"exitCode":0}}\n'
@@ -99,7 +110,7 @@ class CopilotRunTests:
                 prompt="hi",
                 model=None,
                 timeout_seconds=3,
-                tools=default_tool_policy(),
+                tools=_ALLOW_ALL,
                 env={"GH_TOKEN": "test-token"},
             )
         )
@@ -109,19 +120,6 @@ class CopilotRunTests:
         assert outcome.error_detail is None
 
         call = runner.last_call
-        assert call.cmd == [
-            "gh",
-            "copilot",
-            "--",
-            "-p",
-            "",
-            "--output-format",
-            "json",
-            "--silent",
-            "--allow-all-tools",
-            "--allow-all-paths",
-            "--allow-all-urls",
-        ]
         assert call.cwd == tmp_path
         assert call.input_data == b"hi"
         assert call.timeout_seconds == 3
@@ -133,9 +131,7 @@ class CopilotRunTests:
         monkeypatch.setattr("dovo.core.agents.copilot.run_isolated_process", runner)
 
         outcome = default_copilot_run(
-            CliMutationRunRequest(
-                worktree_path=tmp_path, prompt="hi", model=None, timeout_seconds=3, tools=default_tool_policy()
-            )
+            CliMutationRunRequest(worktree_path=tmp_path, prompt="hi", model=None, timeout_seconds=3, tools=_ALLOW_ALL)
         )
 
         assert outcome.status == "error"
@@ -150,9 +146,7 @@ class CopilotRunTests:
         monkeypatch.setattr("dovo.core.agents.copilot.run_isolated_process", runner)
 
         outcome = default_copilot_run(
-            CliMutationRunRequest(
-                worktree_path=tmp_path, prompt="hi", model=None, timeout_seconds=3, tools=default_tool_policy()
-            )
+            CliMutationRunRequest(worktree_path=tmp_path, prompt="hi", model=None, timeout_seconds=3, tools=_ALLOW_ALL)
         )
 
         assert outcome.status == "timeout"
@@ -421,9 +415,7 @@ def _run_recorded(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, stdout: bytes
     monkeypatch.setattr("dovo.core.agents.copilot.run_isolated_process", FakeAgentRunner().returning(stdout=stdout))
 
     return default_copilot_run(
-        CliMutationRunRequest(
-            worktree_path=tmp_path, prompt="hi", model=None, timeout_seconds=3, tools=default_tool_policy()
-        )
+        CliMutationRunRequest(worktree_path=tmp_path, prompt="hi", model=None, timeout_seconds=3, tools=_ALLOW_ALL)
     )
 
 
@@ -537,3 +529,321 @@ class CopilotDenialClassificationTests:
 
         assert outcome.status == "finished"
         assert outcome.denials == expected
+
+
+_OK_STREAM = b'{"type":"assistant.message","data":{"content":"ok"}}\n{"type":"result","data":{"exitCode":0}}\n'
+_ORIGINAL_ARGV = [
+    "gh",
+    "copilot",
+    "--",
+    "-p",
+    "",
+    "--output-format",
+    "json",
+    "--silent",
+    "--allow-all-tools",
+    "--allow-all-paths",
+    "--allow-all-urls",
+]
+
+
+def _real_invocation(tmp_path: Path) -> AgentInvocationContext:
+    """Create real scratch and control directories outside the worktree."""
+    root = tmp_path / "invocation"
+    scratch, control = root / "scratch", root / "control"
+    scratch.mkdir(parents=True)
+    control.mkdir()
+
+    return AgentInvocationContext(
+        invocation_id="a" * 32, scratch_path=scratch.resolve(), control_path=control.resolve()
+    )
+
+
+def _worktree(tmp_path: Path) -> Path:
+    worktree = tmp_path / "worktree"
+    worktree.mkdir()
+
+    return worktree
+
+
+def _rules(
+    capability: ToolCapability, *roots: Literal["worktree", "scratch"] | None, pattern: str | None = None
+) -> list[ToolRule]:
+    return [ToolRule(capability=capability, root=root, pattern=pattern) for root in roots]
+
+
+def _run_policy(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, policy: ToolPolicy, *, with_invocation: bool = True
+) -> tuple[FakeAgentRunner, AgentInvocationContext | None]:
+    invocation = _real_invocation(tmp_path) if with_invocation else None
+    runner = FakeAgentRunner().returning(stdout=_OK_STREAM)
+    monkeypatch.setattr("dovo.core.agents.copilot.run_isolated_process", runner)
+
+    default_copilot_run(
+        CliMutationRunRequest(
+            worktree_path=_worktree(tmp_path),
+            prompt="hi",
+            timeout_seconds=3,
+            tools=policy,
+            invocation=invocation,
+            env={"GH_TOKEN": "test-token"},
+        )
+    )
+
+    return runner, invocation
+
+
+def _flag_values(cmd: list[str], flag: str) -> list[str]:
+    return [cmd[index + 1] for index, value in enumerate(cmd) if value == flag]
+
+
+_READ_WRITE_WORKTREE = [
+    *_rules(ToolCapability.READ, None, pattern="**"),
+    *_rules(ToolCapability.WRITE, None, pattern="**"),
+]
+
+
+class CopilotPolicyRenderTests:
+    def test_default_policy_argv_restricts_tools_and_grants_only_exact_scratch(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """[tier-1/unit] default_copilot_run: default policy argv has no --allow-all-*, contains '--available-tools', '--no-ask-user', '--disallow-temp-dir', '--disable-builtin-mcps', exactly one '--add-dir' equal to str(scratch); no value equals str(control_path); env['COPILOT_HOME'] == str(control_path / 'copilot-home')."""
+        runner, invocation = _run_policy(tmp_path, monkeypatch, default_tool_policy())
+        assert invocation is not None
+
+        cmd, env = runner.last_call.cmd, runner.last_call.env
+
+        assert not [part for part in cmd if part.startswith("--allow-all")]
+        assert {"--available-tools", "--no-ask-user", "--disallow-temp-dir", "--disable-builtin-mcps"} <= set(cmd)
+        assert _flag_values(cmd, "--available-tools") == ["read,write"]
+        assert _flag_values(cmd, "--add-dir") == [str(invocation.scratch_path)]
+        assert _flag_values(cmd, "--allow-tool") == ["write"]
+        assert str(invocation.control_path) not in cmd
+        assert env["COPILOT_HOME"] == str(invocation.control_path / "copilot-home")
+
+    def test_worktree_only_policy_emits_no_add_dir_but_disallows_temp(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """[tier-1/unit] default_copilot_run: worktree-only read/write policy argv has no '--add-dir' and contains '--disallow-temp-dir'."""
+        runner, _ = _run_policy(tmp_path, monkeypatch, ToolPolicy(allow=_READ_WRITE_WORKTREE))
+
+        assert "--add-dir" not in runner.last_call.cmd
+        assert "--disallow-temp-dir" in runner.last_call.cmd
+
+    def test_unrestricted_policy_argv_is_the_original_allow_all_argv(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """[tier-1/unit] default_copilot_run: allow_all=True with no denies yields the original eleven-element argv and an env without COPILOT_HOME."""
+        runner, _ = _run_policy(tmp_path, monkeypatch, ToolPolicy(allow_all=True), with_invocation=False)
+
+        assert runner.last_call.cmd == _ORIGINAL_ARGV
+        assert "COPILOT_HOME" not in runner.last_call.env
+
+    @pytest.mark.parametrize(
+        ("rule", "flags"),
+        [
+            pytest.param(
+                ToolRule(capability=ToolCapability.SHELL, pattern="rm -rf"),
+                ["--deny-tool", "shell(rm -rf)"],
+                id="shell-exact",
+            ),
+            pytest.param(
+                ToolRule(capability=ToolCapability.SHELL, pattern="rm *"),
+                ["--deny-tool", "shell(rm:*)"],
+                id="shell-prefix",
+            ),
+            pytest.param(ToolRule(capability=ToolCapability.SHELL), ["--deny-tool", "shell"], id="shell-all"),
+            pytest.param(
+                ToolRule(capability=ToolCapability.NETWORK, pattern="example.com"),
+                ["--deny-url", "https://example.com", "--deny-url", "http://example.com"],
+                id="network-host-both-protocols",
+            ),
+            pytest.param(ToolRule(capability=ToolCapability.NETWORK), ["--deny-tool", "url"], id="network-all"),
+        ],
+    )
+    def test_allow_all_with_deny_appends_deny_flags_after_permissive_flags(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, rule: ToolRule, flags: list[str]
+    ) -> None:
+        """[tier-1/unit] default_copilot_run: allow_all=True + one deny -> argv tail is the three --allow-all-* flags followed by exactly the expected deny flags."""
+        runner, _ = _run_policy(tmp_path, monkeypatch, ToolPolicy(allow_all=True, deny=[rule]))
+
+        assert runner.last_call.cmd == [*_ORIGINAL_ARGV, *flags]
+        assert "COPILOT_HOME" not in runner.last_call.env
+
+    @pytest.mark.parametrize(
+        "policy",
+        [
+            pytest.param(ToolPolicy(allow=_rules(ToolCapability.READ, None)), id="read-only"),
+            pytest.param(ToolPolicy(allow=_READ_WRITE_WORKTREE), id="read-write"),
+            pytest.param(default_tool_policy(), id="default"),
+            pytest.param(
+                ToolPolicy(allow=[ToolRule(capability=ToolCapability.SHELL, pattern="git status")]), id="shell-only"
+            ),
+            pytest.param(
+                ToolPolicy(allow=[ToolRule(capability=ToolCapability.NETWORK, pattern="example.com")]),
+                id="network-only",
+            ),
+        ],
+    )
+    def test_restrictive_policy_never_emits_a_blank_available_tools_value(
+        self, tmp_path: Path, policy: ToolPolicy
+    ) -> None:
+        """[tier-1/unit] render_copilot_policy: every restrictive policy that renders has a non-empty '--available-tools' value built only from read, write, shell, web_fetch."""
+        worktree, scratch, control = (tmp_path / name for name in ("worktree", "scratch", "control"))
+        roots = PolicyRoots(worktree=worktree, scratch=scratch, control=control)
+
+        rendered = render_copilot_policy(policy, roots)
+
+        assert isinstance(rendered, CopilotPolicyArgs)
+        (value,) = _flag_values(list(rendered.flags), "--available-tools")
+        assert value
+        assert set(value.split(",")) <= {"read", "write", "shell", "web_fetch"}
+
+    def test_network_host_and_subdomain_wildcard_render_both_protocols(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """[tier-1/unit] default_copilot_run: allow network 'example.com' and '*.example.org', deny '*.example.net' -> argv contains '--allow-url' for https:// and http:// of 'example.com' and '*.example.org', and '--deny-url' for https:// and http:// of '*.example.net'."""
+        policy = ToolPolicy(
+            allow=[
+                ToolRule(capability=ToolCapability.NETWORK, pattern="example.com"),
+                ToolRule(capability=ToolCapability.NETWORK, pattern="*.example.org"),
+            ],
+            deny=[ToolRule(capability=ToolCapability.NETWORK, pattern="*.example.net")],
+        )
+
+        runner, _ = _run_policy(tmp_path, monkeypatch, policy)
+
+        cmd = runner.last_call.cmd
+        assert _flag_values(cmd, "--allow-url") == [
+            "https://example.com",
+            "http://example.com",
+            "https://*.example.org",
+            "http://*.example.org",
+        ]
+        assert _flag_values(cmd, "--deny-url") == ["https://*.example.net", "http://*.example.net"]
+        assert _flag_values(cmd, "--available-tools") == ["web_fetch"]
+
+    def test_shell_and_unscoped_network_allows_render_tool_and_url_flags(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """[tier-1/unit] default_copilot_run: shell allows render one --allow-tool each and an unscoped network allow renders --allow-all-urls."""
+        policy = ToolPolicy(
+            allow=[
+                ToolRule(capability=ToolCapability.SHELL),
+                ToolRule(capability=ToolCapability.SHELL, pattern="git add *"),
+                ToolRule(capability=ToolCapability.SHELL, pattern="git status"),
+                ToolRule(capability=ToolCapability.NETWORK),
+            ]
+        )
+        expected = ["shell", "shell(git add:*)", "shell(git status)"]
+        runner, _ = _run_policy(tmp_path, monkeypatch, policy)
+
+        cmd = runner.last_call.cmd
+        assert _flag_values(cmd, "--allow-tool") == expected
+        assert "--allow-all-urls" in cmd
+        assert _flag_values(cmd, "--available-tools") == ["shell,web_fetch"]
+
+    @pytest.mark.parametrize(
+        "policy",
+        [
+            pytest.param("empty-grants", id="empty-grants"),
+            pytest.param("read-src-glob", id="sub-root-glob"),
+            pytest.param("write-deny", id="read-write-deny"),
+            pytest.param("mcp-allow", id="mcp-allow-unsupported"),
+            pytest.param("mcp-deny-under-allow-all", id="mcp-deny-unsupported"),
+            pytest.param("scratch-only", id="worktree-not-granted"),
+            pytest.param("scratch-write-without-read", id="mixed-root-scope"),
+            pytest.param("read-scratch-write-worktree", id="scratch-readable-not-writable"),
+            pytest.param("restrictive-without-control-path", id="no-control-dir"),
+            pytest.param("scratch-without-context", id="no-invocation-context"),
+        ],
+    )
+    def test_unrepresentable_policy_is_rejected_before_spawn(
+        self, git_repo: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, policy: str
+    ) -> None:
+        """[tier-1/unit] CopilotAgentAdapter.invoke: PROVIDER_ERROR with errors == [tool_policy_unsupported_message('copilot')] and FakeAgentRunner.calls == []."""
+        policies = {
+            "empty-grants": ToolPolicy(),
+            "read-src-glob": ToolPolicy(allow=_rules(ToolCapability.READ, None, pattern="src/**")),
+            "write-deny": ToolPolicy(
+                allow=_READ_WRITE_WORKTREE, deny=_rules(ToolCapability.WRITE, None, pattern=".dovo/**")
+            ),
+            "mcp-allow": ToolPolicy(
+                allow=[*_READ_WRITE_WORKTREE, ToolRule(capability=ToolCapability.MCP, pattern="srv/*")]
+            ),
+            "mcp-deny-under-allow-all": ToolPolicy(
+                allow_all=True, deny=[ToolRule(capability=ToolCapability.MCP, pattern="srv/tool")]
+            ),
+            "scratch-only": ToolPolicy(allow=_rules(ToolCapability.READ, "scratch")),
+            "scratch-write-without-read": ToolPolicy(
+                allow=[*_rules(ToolCapability.READ, None), *_rules(ToolCapability.WRITE, None, "scratch")]
+            ),
+            "read-scratch-write-worktree": ToolPolicy(
+                allow=[*_rules(ToolCapability.READ, None, "scratch"), *_rules(ToolCapability.WRITE, None)]
+            ),
+            "restrictive-without-control-path": ToolPolicy(allow=_rules(ToolCapability.READ, None)),
+            "scratch-without-context": ToolPolicy(allow=_rules(ToolCapability.READ, None, "scratch")),
+        }
+        with_invocation = policy not in {"restrictive-without-control-path", "scratch-without-context"}
+        runner = FakeAgentRunner().returning(stdout=_OK_STREAM)
+        monkeypatch.setattr("dovo.core.agents.copilot.run_isolated_process", runner)
+        builder = AgentRequestBuilder().with_worktree_path(git_repo).with_tools(policies[policy])
+        if with_invocation:
+            builder = builder.with_invocation(_real_invocation(tmp_path))
+
+        response = CopilotAgentAdapter().invoke(builder.build())
+
+        assert response.status == AgentResponseStatus.PROVIDER_ERROR
+        assert response.errors == [tool_policy_unsupported_message("copilot")]
+        assert runner.calls == []
+
+    def test_unknown_option_failure_returns_update_error_without_second_spawn(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """[tier-1/unit] default_copilot_run: gh exits nonzero with stderr 'unknown option --disallow-temp-dir' -> CliMutationOutcome(status='error') naming the update fix; FakeAgentRunner.calls has length 1 and no allow-all flag."""
+        invocation = _real_invocation(tmp_path)
+        runner = FakeAgentRunner().returning(returncode=1, stderr=b"error: unknown option '--disallow-temp-dir'")
+        monkeypatch.setattr("dovo.core.agents.copilot.run_isolated_process", runner)
+
+        outcome = default_copilot_run(
+            CliMutationRunRequest(
+                worktree_path=_worktree(tmp_path),
+                prompt="hi",
+                timeout_seconds=3,
+                tools=default_tool_policy(),
+                invocation=invocation,
+            )
+        )
+
+        assert outcome == CliMutationOutcome(
+            status="error",
+            error_detail="Installed GitHub Copilot CLI lacks a required tool-policy control. "
+            "Fix: run `copilot update` or reinstall the GitHub Copilot CLI.",
+        )
+        assert len(runner.calls) == 1
+        assert not [part for part in runner.last_call.cmd if part.startswith("--allow-all")]
+
+    def test_unrepresentable_policy_run_returns_error_outcome_without_spawn(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """[tier-1/unit] default_copilot_run: a policy with no grants returns the unsupported error outcome and never spawns gh."""
+        runner = FakeAgentRunner().returning(stdout=_OK_STREAM)
+        monkeypatch.setattr("dovo.core.agents.copilot.run_isolated_process", runner)
+
+        outcome = default_copilot_run(
+            CliMutationRunRequest(
+                worktree_path=_worktree(tmp_path),
+                prompt="hi",
+                timeout_seconds=3,
+                tools=ToolPolicy(),
+                invocation=_real_invocation(tmp_path),
+            )
+        )
+
+        assert outcome == CliMutationOutcome(status="error", error_detail=tool_policy_unsupported_message("copilot"))
+        assert runner.calls == []
+
+    def test_copilot_descriptor_declares_policy_support_and_home_control(self) -> None:
+        """[tier-1/unit] COPILOT_PROVIDER_SPEC: supports_tool_policy is True and 'COPILOT_HOME' is in control_envs (updates tests/core/agents/test_registry.py)."""
+        assert COPILOT_PROVIDER_SPEC.supports_tool_policy is True
+        assert "COPILOT_HOME" in COPILOT_PROVIDER_SPEC.control_envs

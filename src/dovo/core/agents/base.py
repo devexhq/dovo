@@ -13,6 +13,7 @@ from dovo.core.agents.environment import forwarded_env_secrets, validate_agent_e
 from dovo.core.agents.models import AgentRequest, AgentResponse
 from dovo.core.agents.redaction import build_response_redactor, redact_agent_response
 from dovo.core.agents.responses import provider_error_response
+from dovo.core.agents.tools import check_policy_support
 
 
 def elapsed_ms(started: float) -> int:
@@ -28,7 +29,7 @@ class BaseAgentProvider(abc.ABC):
     """
 
     def invoke(self, request: AgentRequest) -> AgentResponse:
-        """Return the masked PROVIDER_ERROR when no credential is usable or an environment override is reserved, else the masked ``_invoke`` response."""
+        """Return the masked PROVIDER_ERROR when no credential is usable, an environment override is reserved, or the tool policy cannot be enforced, else the masked ``_invoke`` response."""
         started = time.monotonic()
         redactor = self._response_redactor(request)
 
@@ -38,7 +39,7 @@ class BaseAgentProvider(abc.ABC):
         return redact_agent_response(response, redactor)
 
     def _preflight_failure(self, request: AgentRequest, started: float) -> AgentResponse | None:
-        """Return the PROVIDER_ERROR for a missing credential or a reserved environment override, else None."""
+        """Return the PROVIDER_ERROR for a missing credential, a reserved environment override, or an unenforceable tool policy, else None."""
         missing = self._credential_preflight()
         if missing is not None:
             return provider_error_response(duration_ms=elapsed_ms(started), detail=missing)
@@ -47,6 +48,22 @@ class BaseAgentProvider(abc.ABC):
         if override_error is not None:
             return provider_error_response(duration_ms=elapsed_ms(started), errors=[override_error])
 
+        policy_error = self._tool_policy_preflight(request)
+        if policy_error is not None:
+            return provider_error_response(duration_ms=elapsed_ms(started), errors=[policy_error])
+
+        return None
+
+    def _tool_policy_preflight(self, request: AgentRequest) -> str | None:
+        """Return the unsupported message for a descriptor that cannot enforce the request's policy, or the adapter's own rejection, else None."""
+        spec = self._provider_spec()
+        if spec is None:
+            return None
+
+        return check_policy_support(spec, request.tools) or self._policy_unsupported(request)
+
+    def _policy_unsupported(self, request: AgentRequest) -> str | None:
+        """Return why this adapter cannot render the request's policy, or None; the default accepts."""
         return None
 
     def _env_preflight(self, request: AgentRequest) -> str | None:

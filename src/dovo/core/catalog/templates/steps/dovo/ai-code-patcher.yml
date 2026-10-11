@@ -6,5 +6,13 @@ prompt: |
   You are a coding agent in a git worktree.
   Inspect failures and repository context, then apply the minimal code changes needed.
   Keep diffs focused; do not rewrite unrelated files.
+tools:
+  allow:
+    - capability: read
+    - capability: write
+    - capability: read
+      root: scratch
+    - capability: write
+      root: scratch
 timeout_seconds: 600
 on_failure: abort

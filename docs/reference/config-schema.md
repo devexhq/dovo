@@ -79,7 +79,7 @@ This reference documents the complete JSON schema for `.dovo/config.json` (Versi
 * `max_tokens` *(integer)*: Maximum generation tokens (default: `4096`).
 * `env_passthrough` *(array of string)*: Host environment names (or `PREFIX*` patterns) forwarded to the agent subprocess (default: `[]`). A repo-tier list replaces a global-tier list rather than merging with it. See [Agent Providers](../guides/agent-providers.md#subprocess-environment).
 * `env_mode` *(string)*: `allowlist` (default) forwards only the allowlisted base plus passthrough; `inherit` forwards the full host environment.
-* `tools` *(object, optional)*: Default agent tool policy with the same shape as a step's `tools` (`allow`, `deny`, `allow_all`; see [Step Schema](step-schema.md)). Validated but not yet enforced by any provider. A higher tier's object replaces a lower tier's whole instead of merging; a legacy string list is rejected.
+* `tools` *(object, optional)*: Default agent tool policy with the same shape as a step's `tools` (`allow`, `deny`, `allow_all`; see [Step Schema](step-schema.md)). Enforced through the provider's own controls; absent means read and write on the worktree and scratch only (see [Tool Policy](../guides/agent-providers.md#tool-policy)). A higher tier's object replaces a lower tier's whole instead of merging; a legacy string list is rejected.
 
 ### 5. `history`
 * `save_attempt_logs` *(boolean)*: Accepted history setting (default: `true`); currently stored but not applied as a runtime switch.

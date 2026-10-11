@@ -6,5 +6,8 @@ prompt: |
   You are a code review agent in a git worktree.
   Review the current changes and report concrete findings (bugs, risks, missing tests).
   Do not modify files unless explicitly required by the caller override.
+tools:
+  allow:
+    - capability: read
 timeout_seconds: 300
 on_failure: abort

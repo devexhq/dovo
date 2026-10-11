@@ -19,9 +19,10 @@ from dovo.core.agents import (
     BaseAgentProvider,
     ResolvedAgentSettings,
     default_tool_policy,
+    tool_policy_unsupported_message,
 )
 from dovo.core.agents.models import AgentDenial
-from dovo.core.agents.responses import blocked_response
+from dovo.core.agents.responses import blocked_response, provider_error_response
 from dovo.core.agents.scratch import scratch_unavailable_message
 from dovo.core.catalog.definitions import StepDefinition
 from dovo.core.git import GitRunner
@@ -162,6 +163,21 @@ class ExecuteAgentStepBlockedTests:
         assert _summary(outcome)["status"] == "blocked"
         assert "AGENT_PERMISSION_BLOCKED" in outcome.stderr
         assert "tools: {allow: [{capability: shell}]}" in outcome.stderr
+
+
+class ExecuteAgentStepUnsupportedPolicyTests:
+    def test_unsupported_policy_response_fails_step_with_exit_203(
+        self, git_repo: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """[tier-2/integration] execute_agent_step: provider returns PROVIDER_ERROR with the unsupported message -> StepDispatchOutcome(status='failed', exit_code=203) and stderr contains 'AGENT_TOOL_POLICY_UNSUPPORTED'."""
+        response = provider_error_response(duration_ms=1, errors=[tool_policy_unsupported_message("copilot")])
+        _use_provider(monkeypatch, FakeAgentProvider(response))
+
+        outcome = _run(git_repo)
+
+        assert outcome.status == "failed"
+        assert outcome.exit_code == 203
+        assert "AGENT_TOOL_POLICY_UNSUPPORTED" in outcome.stderr
 
 
 class ExecuteAgentStepRequestTests:
