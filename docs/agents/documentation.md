@@ -23,7 +23,7 @@ Update docs in the same PR only when the change matches one of these gates:
 - **Cross-cutting contracts** (config tier merge rules, path ownership,
   persistence authority, secrets handling, catalog/DB scoping): update
   [docs/agents/schemas.md](schemas.md). Adding or changing a config key,
-  blueprint field, DTO, enum member, exception, facade method, or command needs
+  blueprint field, DTO, enum member, exception, entrypoint method, or command needs
   **no** schemas.md edit — the source and the parity tests are the reference:
   [tests/lint/test_config_schema_parity.py](../../tests/lint/test_config_schema_parity.py)
   (config keys vs `v1/config.json`) and

@@ -15,7 +15,7 @@ Produce an implementation plan precise enough that a different agent with no mem
 
 [docs/agents/planning.md](../../../docs/agents/planning.md) is the authority for plan content and process — its steps, artifact checklist, code sample rules, and plan template are not repeated here. Every step is backed by a `planner_rules` entry in [rules_spec.yaml](../../../docs/agents/rules_spec.yaml), rendered for reference at [PLANNER_RULES.md](../../../docs/agents/PLANNER_RULES.md): each names a phase, a scope, and a deliverable contract that following planning.md's matching step already satisfies.
 
-Plan when the issue adds or changes a command, DTO/`*Result` model, status enum, domain exception, service, facade method, formatter, config key, schema field, or `core/db/` table. Skip only for a genuinely single-file, no-new-surface change.
+Plan when the issue adds or changes a command, DTO/`*Result` model, status enum, domain exception, service, entrypoint method, formatter, config key, schema field, or `core/db/` table. Skip only for a genuinely single-file, no-new-surface change.
 
 ## Hard boundaries
 

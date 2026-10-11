@@ -70,7 +70,7 @@ Four CI jobs run on pushes to `main` and on pull requests:
 
 - Every new table or column must have real producer and consumer call sites in `src/` in the same PR.
 - One-time data backfills must be versioned Alembic revisions (`op.execute()`), not ad-hoc raw SQL in models.
-- Database repositories and facades must be constructed once per command invocation rather than inside loops.
+- Database repositories and domain entrypoints must be constructed once per command invocation rather than inside loops.
 
 ---
 

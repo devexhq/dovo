@@ -11,8 +11,8 @@ from typer.testing import CliRunner
 from dovo.cli import app
 from dovo.common.filesystem.models import WorkspacePaths
 from dovo.core.git.runner import GitRunner
-from dovo.core.worktree.facade import Worktree
 from dovo.core.worktree.models import WorktreeDiffStatus, WorktreeSession
+from dovo.core.worktree.worktree import Worktree
 from tests.harness.workspace_paths import initialized_workspace_paths
 
 

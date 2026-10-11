@@ -7,8 +7,8 @@ from typing import Any
 import pytest
 
 from dovo.common.filesystem import Filesystem, WorkspacePaths
+from dovo.core.config.config import Config
 from dovo.core.config.exceptions import ConfigLoadError
-from dovo.core.config.facade import Config
 from dovo.core.config.generator import build_default_config
 from dovo.core.config.models import ConfigTier
 

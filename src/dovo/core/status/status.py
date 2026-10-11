@@ -1,4 +1,4 @@
-"""Status domain facade."""
+"""Status domain entrypoint."""
 
 from __future__ import annotations
 

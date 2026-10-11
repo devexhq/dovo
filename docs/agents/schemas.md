@@ -1,8 +1,8 @@
 # Schemas and Entities
 
-Cross-cutting contracts for the entities in the Dovo codebase. This doc records what no single source file shows: invariants spanning modules, merge and resolution rules, and which file owns what. It does **not** list fields, enum members, exception classes, facade methods, or commands. Read the source for those; when a bullet here starts restating them, delete it.
+Cross-cutting contracts for the entities in the Dovo codebase. This doc records what no single source file shows: invariants spanning modules, merge and resolution rules, and which file owns what. It does **not** list fields, enum members, exception classes, entrypoint methods, or commands. Read the source for those; when a bullet here starts restating them, delete it.
 
-Update this doc only when a contract below changes. Adding a field, enum member, exception, DTO, facade method, or command needs no edit here ([documentation.md](documentation.md)).
+Update this doc only when a contract below changes. Adding a field, enum member, exception, DTO, entrypoint method, or command needs no edit here ([documentation.md](documentation.md)).
 
 ---
 
@@ -17,7 +17,7 @@ Update this doc only when a contract below changes. Adding a field, enum member,
 | Blueprint and step definitions | `core/catalog/definitions/` |
 | Tool policy | `common/tool_policy.py` |
 | DB tables | `core/db/models.py` |
-| Facades | the domain entrypoint module in each `core/<domain>/` (`facade.py` or `<domain>.py`) and `engine/engine.py` |
+| Domain entrypoints | `core/<domain>/<domain>.py` in each domain, and `engine/engine.py` |
 | Registered CLI commands | `src/dovo/cli/cli.py`; user behavior in [docs/cli/](../cli/) |
 | Agent providers | `core/agents/registry.py` (`PROVIDERS`) |
 | Doctor checks | `core/diagnostics/services/registry.py` (`get_default_registry`) |
@@ -35,7 +35,7 @@ Operations that can fail return a Pydantic result subclassing `BaseResult` ([`co
 
 - `RepositoryPaths` holds repo-local paths; `WorkspacePaths` extends it with project-scoped locations that need the project identity ([`common/filesystem/models.py`](../../src/dovo/common/filesystem/models.py)).
 - `resolve_workspace_paths` (`core/project/services/storage.py`) loads the required `project_id` from `project.json` and raises `WorkspaceNotInitializedError` when it is missing or unusable.
-- Every facade/service takes `paths: WorkspacePaths` as its only ambient location state; `CliContext.build()` resolves one snapshot per CLI invocation.
+- Every domain entrypoint and service takes `paths: WorkspacePaths` as its only ambient location state; `CliContext.build()` resolves one snapshot per CLI invocation.
 - Project identity is strict and extra-forbidding; it is the only source of `project_id`.
 
 ---

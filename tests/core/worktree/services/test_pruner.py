@@ -407,15 +407,15 @@ class WorktreePrunerIdempotencyTests:
         assert len(result2.errors) == 0
 
 
-class WorktreePrunerFacadeTests:
-    """Tests verifying helper function and Worktree facade method agree."""
+class WorktreePrunerEntrypointTests:
+    """Tests verifying helper function and Worktree entrypoint method agree."""
 
-    def test_prune_stale_worktrees_helper_and_worktree_facade_agree(
+    def test_prune_stale_worktrees_helper_and_worktree_entrypoint_agree(
         self,
         pruner_workspace: Path,
         pruner_workspace_paths: WorkspacePaths,
     ) -> None:
-        """Helper and facade methods return equivalent results on clean workspace."""
+        """Helper and entrypoint methods return equivalent results on clean workspace."""
         db = _repo(pruner_workspace_paths)
         manager = Worktree(pruner_workspace_paths, db)
 

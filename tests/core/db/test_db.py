@@ -1,4 +1,4 @@
-"""Contract tests for the DovoDb facade."""
+"""Contract tests for the DovoDb entrypoint."""
 
 from __future__ import annotations
 
@@ -46,10 +46,10 @@ class DovoDbTests:
             pytest.param("artifacts", ArtifactsRepository, id="artifacts"),
         ],
     )
-    def test_repository_properties_share_facade_state_and_cache(
+    def test_repository_properties_share_entrypoint_state_and_cache(
         self, tmp_path: Path, attribute: str, repo_type: type
     ) -> None:
-        """[tier-1/unit] DovoDb repository properties: return the correct repository type scoped to the facade's database_file/project_id/db_engine, and are cached across repeat access."""
+        """[tier-1/unit] DovoDb repository properties: return the correct repository type scoped to the entrypoint's database_file/project_id/db_engine, and are cached across repeat access."""
         db = DovoDb(tmp_path / "dovo.db", project_id="proj-1")
 
         repo = getattr(db, attribute)

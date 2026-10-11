@@ -1,4 +1,4 @@
-"""Worktree domain facade."""
+"""Worktree domain entrypoint."""
 
 from __future__ import annotations
 
