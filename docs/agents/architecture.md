@@ -1,68 +1,59 @@
 # Architecture
 
-Structural map for agents. **File placement rules** (where models vs services live) are in
+Structural map for agents: which packages exist, who may import whom, the shared vocabulary, and the procedures for adding a command, a catalog-backed domain, or an agent provider. **File placement rules** (where models vs services live) are in
 [code-conventions.md](code-conventions.md#core-package-layout).
-User-facing command behavior lives under [docs/cli/](../cli/). Entity shapes and schemas live in [schemas.md](schemas.md).
+User-facing command behavior lives under [docs/cli/](../cli/). Cross-cutting contracts (config merge, paths, persistence authority, secrets) live in [schemas.md](schemas.md).
+
+Update this doc only when a package is added, removed, or moved, an import boundary changes, or a term's meaning changes. Adding files or classes inside an existing package needs no edit here.
 
 ## Layers
 
 **Relevant sources:** `src/dovo/cli/`, `src/dovo/engine/`, `src/dovo/core/`, `src/dovo/common/`, `src/dovo/schemas/`.
 
+Every package directory under these four layers must appear below, enforced by [`tests/lint/test_architecture_tree_parity.py`](../../tests/lint/test_architecture_tree_parity.py).
+
 ```
-src/dovo/cli/                    Typer CLI entrypoint and subcommand wrappers (no domain logic)
-  cli.py                             Application definition, global options, top-level exception handling
-  <name>/                            Subcommand packages (blueprint, config, diff, history, init, logs, resume, run, worktree, status, step)
+src/dovo/cli/                    Typer entrypoint and subcommand wrappers (no domain logic)
+  artifacts/ blueprint/ config/ diff/ doctor/ history/ init/ logs/ resume/ run/ status/ step/ worktree/
+  ui/                                Dispatcher, events, and formatters; presentation only
 
-src/dovo/core/                   Domain business logic and orchestration (no Typer imports)
-  bootstrap/                         Workspace directory structure initialization and repair
-  git/                               Low-level Git CLI subprocess invocation and plumbing, and unified-diff parsing/validation
-  worktree/                           Isolated git worktree lifecycle (create, delete, list, prune, apply, diff)
-  config/                            Workspace configuration loading, validation, generation, and mutation
-  project/                           Stable project identity model, generation, and persistence services
-  db/                                SQLite persistence, connection management, Alembic migrations, and repositories
-  inputs/                            Parameter input declaration, CLI flag resolution, and placeholder interpolation
-  catalog/                           Blueprint/step template discovery, disk-only multi-tier indexing, seeding, inventory, and the authored blueprint/step/condition definitions with their resolution services
-  status/                            Workspace health diagnostics and telemetry collection
-  artifacts/                         Session artifact publishing, listing, downloading, and pruning
-  diagnostics/                       Diagnostic check registry, execution runner, and health validation engine
-  sessions/                          Session and SessionCollection entrypoints (diff, logs, run details, history), result models, session.log event model, session.log reading, and stale-run reconciliation
-    services/                          Diff artifact reading, session.log and step-capture reading, stale-run reconciliation
-  agents/                            AI agent provider base class, descriptor registry, provider integrations (copilot), per-attempt scratch allocation (`scratch.py`), and the direct-mode attempt pipeline
+src/dovo/core/                   Domain logic (no Typer, no engine)
+  agents/                            Provider base class, registry, provider integrations
+  artifacts/                         Session artifact publish, list, download, prune
+  bootstrap/                         Workspace directory initialization and repair
+  catalog/                           Disk-only multi-tier blueprint/step templates and definitions
+  config/                            Config loading, validation, generation, mutation
+  db/                                SQLite connection, migrations, repositories
+  diagnostics/                       Doctor check registry and runner
+  git/                               Git subprocess and diff parsing
+  inputs/                            Parameter declaration, resolution, interpolation
+  project/                           Project identity
+  sessions/                          Session and history entrypoints, session.log reading
+  status/                            Workspace health collection
+  worktree/                          Git worktree lifecycle
 
-src/dovo/engine/                 Execution engine: Engine facade, state-driven run coordinator, session lifecycle, run/resume services, and the executors/ package
-  executors/                         Step execution (StepExecution), assertions, metadata, condition evaluation, internal command dispatch, agent step dispatch, and execution models
+src/dovo/engine/                 Run execution: Engine entrypoint, run coordinator, session lifecycle
+  executors/                         Single-step execution
+  services/                          Run and resume services
 
-src/dovo/common/                 Shared foundational utilities (never imports core/ or cli/)
-  filesystem/                        Atomic file operations, path helpers, safe YAML I/O
-  schema_validation.py               JSON Schema Draft 2020-12 validation wrapper
-  lock.py, process.py, utils.py      Cross-process advisory locks, subprocess helpers, and console formatters
-  session_id.py                      Session id generation (`new_session_id(kind)`)
+src/dovo/common/                 Shared foundations (never imports core/ or cli/)
+  filesystem/                        Atomic writes, path models, safe YAML I/O
 
-src/dovo/schemas/v1/             Packaged, versioned JSON Schemas (config.json, project.json, workflow.json)
+src/dovo/schemas/v1/             Packaged, versioned JSON Schemas
 ```
 
-- Default for **new** domain code: `models.py` + `services/<verb>.py`. Do not extend the flat `config/` / `db/` pattern to new domains.
-- Single-step execution: `engine/executors/` (`step_executor.py`).
-- Multi-step orchestration: `engine/` (`RunCoordinator` in `coordinator.py`, driven by `drive_run` in `session.py`).
-- Process facade: `engine/` (`Engine.run` / `Engine.resume`, `BlueprintRunService` / `BlueprintResumeService`).
+- New domain code: `models.py` + `services/<verb>.py`. Do not extend the flat `config/` / `db/` pattern.
+- Single-step execution lives in `engine/executors/`; multi-step orchestration in `engine/` (`RunCoordinator`, driven by `drive_run`); the process entrypoint is `Engine.run` / `Engine.resume`.
 
-### Domain ownership
+### Ownership notes
 
-**Relevant sources:** `src/dovo/core/`, `src/dovo/engine/`
+Only what is not obvious from the tree:
 
-- **Inputs** (`core/inputs/`): `ParameterInput`, CLI flag resolution, `${{ inputs.* }}` placeholder interpolation. Must not import catalog or agents.
-- **Agents** (`core/agents/`): Provider base class (`BaseAgentProvider`), `ProviderSpec` registry (`PROVIDERS`), provider implementations (`copilot`), shared credential lookup (`credentials.py`), failure payload models, per-attempt scratch/control directory allocation (`scratch.py`), the direct-mode attempt pipeline (`run_direct_attempt` in `services/run_direct.py`). Must not import config or engine. Import order inside the package: leaves (`credentials.py`, `models.py`, `mutation_git.py`, `redaction.py`, `responses.py`, `scratch.py`, `tools.py`) → `base.py` → `cli_mutation.py` → provider modules (`copilot.py`) → `registry.py`/`factory.py`; no module imports one to its right (a cycle fails `basedpyright`, `typeCheckingMode = "recommended"` in `pyproject.toml`).
-- **Git** (`core/git/`): `GitRunner`, `parse_worktree_porcelain`, `GitDiffParser`/`validate_patch_text` (`patch.py`), `PatchApplyResult`. Must not import any other `core/` package.
-- **Engine** (`engine/`): Process-level run persistence, session ID minting (`RunRequest`), DB session records, canonical run execution state (`state_store.py`), the state-driven run coordinator (`coordinator.py`), paused-run validation (`loader.py`), the run session lifecycle (`session.py`), tree/row projector for `session.json` (`projection.py`) and its writer (`writer.py`), worktree/session infrastructure (`workspace.py`, and `storage_bridge.py` for the worktree's `.dovo/run` link), per-step execution (`step_coordinator.py`), loop policy, events, and structural state validation (`loop_policy.py`, `loop_events.py`, `state_validation.py`), the `session.log` timeline appender (`session_log.py`), observer dispatch (`notify.py`), failure-policy resolution (`failure.py`), shared run models (`models.py`, including `BlueprintRunResult`), run/resume services (`BlueprintRunService`, `BlueprintResumeService`). May import `common/` and any `core/` package. Must not import cli.
-- **Executors** (`engine/executors/`): Single-step execution (`StepExecution` in `step_executor.py`), assertions evaluation (`assertions/`), execution metadata (`metadata.py`), condition evaluation (`conditions.py`), the `type: internal` command registry and `artifacts.upload`/`artifacts.download` handlers (`internal_dispatch.py`), agent step dispatch (`agent_step.py`, including `build_agent_step_runner`), and execution models (`models.py`). Must not import engine modules outside `executors/`, or cli.
-- **Catalog** (`core/catalog/`): Disk-only, multi-tier (REPO/USER/GLOBAL/PACKAGED) template scanning and indexing via per-tier `index.json` caches, packaged seeds under `templates/`. Owns authored definitions (`core/catalog/definitions/`: `StepDefinition`, `LoopStepBlock`, `BlueprintDefinition`, condition syntax), the `Blueprint` handle (`blueprint.py`), step resolution (`services/resolve_step.py`), and definition exceptions (`exceptions.py`). Must not import agents, sessions, engine, or cli.
-- **Sessions** (`core/sessions/`): `Session` and `SessionCollection` in `sessions.py`; result models and the `session.log` timeline event model (`SessionLogEvent`; the engine appends events via `engine/session_log.py`) in `models.py`; `services/read_diff.py`, `services/read_logs.py`, `services/reconcile.py`. UI formatters reside in `cli/ui/formatters/{diff,history,logs}/`. Must not import agents, worktree, catalog, engine, or cli.
-- **Status** (`core/status/`): Workspace health and runtime telemetry collection (`collect_status`), result models (`DovoStatusResult`), warning aggregation.
-- **Artifacts** (`core/artifacts/`): Session artifact publishing (`publish_artifact`), listing, checksum-verified downloading, and expiry-based pruning (`Artifacts` entrypoint, `services/upload.py`, `services/download.py`, `services/prune.py`). The `type: internal` `artifacts.upload`/`artifacts.download` step handlers live in `engine/executors/internal_dispatch.py`; `engine/step_coordinator.py` also calls `publish_artifact` for the declarative `artifacts:` block auto-publish. Must not import engine.
-- **Diagnostics** (`core/diagnostics/`): Diagnostic check registry (`CheckRegistry`), execution runner (`DiagnosticRunner`), entrypoint coordinator (`Diagnostics`), check protocol (`DiagnosticCheck`), and result models (`DiagnosticCheckResult`, `DiagnosticsReport`).
-- **Worktree** (`core/worktree/`): Isolated git worktree checkout creation, deletion, listing, show, prune, and patch application (`Worktree` facade, `services/lifecycle.py`). Owns worktree lifecycle policy that `engine/` consumes.
-- **Project** (`core/project/`): Stable project identity model (`ProjectIdentity`) with generation and persistence services.
-- **Shared core infra**: `config/`, `db/`, `git/`, `bootstrap/`.
+- **Worktree** owns worktree lifecycle policy; `engine/` consumes it.
+- **Catalog** owns the authored definitions (`StepDefinition`, `BlueprintDefinition`, `LoopStepBlock`), not `engine/`.
+- **Engine** owns run persistence, session minting, and canonical execution state; it appends `session.log` events that `core/sessions` reads.
+- **Artifacts**: `core/artifacts` owns publish, download, and prune; the `type: internal` upload/download handlers and the declarative `artifacts:` auto-publish live in `engine/`.
+- **Agents**: provider modules are leaves of `base.py` → `cli_mutation.py` → provider → `registry.py`/`factory.py`; no module imports one to its right (a cycle fails `basedpyright`).
 
 ### Package boundaries (import direction)
 
@@ -73,31 +64,47 @@ common/  ->  core/  ->  engine/  ->  cli/
 core/project/  ->  core/{db,git,worktree,catalog,inputs,sessions,status,artifacts}/  ->  core/agents/  ->  core/diagnostics/
 ```
 
-- `common/` never depends on `core/` or `cli/`.
-- `core/project/` depends only on `common/`; `core/db/`, `core/sessions/`, `engine/`, `core/worktree/`, and `core/diagnostics/` may resolve project identity via `core/project/services/storage`.
-- `core/` and `common/` never import `cli/` or `rich`. All terminal rendering is driven through `ui_dispatcher.dispatch(result)`.
-- `core/` never imports `engine/`.
-- `core/inputs/` must not import `catalog` or `agents`.
-- `core/git/` imports no other `core/` package.
-- `core/agents/` may use `git/`; must not import `config/` or `engine/`.
+Banned imports per package are the table `LAYER_RULES` in [`tests/lint/test_layer_direction.py`](../../tests/lint/test_layer_direction.py); read it for the full list. Beyond the layer flow:
+
+- `core/` and `common/` never import `rich`; terminal rendering is driven through `ui_dispatcher.dispatch(result)`.
+- `core/git/` and `core/project/` import no other `core/` package.
+- `core/inputs/` and `core/catalog/` must not import `agents/`; `core/agents/` must not import `config/`.
 - `core/config/validate.py` may import `core/agents/registry`.
-- `core/sessions/` may use `db/`; must not import `agents/`, `worktree/`, `catalog/`, `engine/`, or `cli/` (enforced by `tests/lint/test_import_boundaries.py`).
-- `core/artifacts/` imports nothing from `engine/`.
-- `core/catalog/` must not import `agents/`, `sessions/`, `engine/`, or `cli/`.
-- `engine/` may import `common/` and any `core/` package; must not import `cli/`.
-- `cli/` may import `engine/`, `core/` and `common/`; lower layers never import `cli/`.
+- `engine/executors/` must not import engine modules outside `executors/`.
+- Known exceptions, tracked in `LAYER_EXCEPTIONS` and only ever removed: `common/filesystem/models.py` imports `dovo.core.catalog.models` for an annotation under `TYPE_CHECKING`, and `engine/executors/agent_step.py` imports `dovo.engine.session_log`.
+
+Not mechanically checked (review-time):
+
 - CLI commands never render directly or import formatters; they emit results through `ui_dispatcher.dispatch(result)`.
 - `cli/ui/` must not originate a domain fact. All domain facts, outcomes, warnings, and remediations originate in `core/` or `common/`; `cli/ui/` only derives presentation views.
+
+## Terminology
+
+Use these terms precisely. A backticked type below must exist in `src/`, enforced by [`tests/lint/test_terminology_symbols.py`](../../tests/lint/test_terminology_symbols.py).
+
+| Term | Definition |
+|:---|:---|
+| Step | The smallest unit of execution (`StepDefinition`): a command, agent prompt, script, or internal handler, with optional `assert` conditions and an `on_failure` policy. |
+| Loop step | A container step (`LoopStepBlock`) that repeats its `do:` child steps until its `until` condition holds or `max_iterations` is reached. |
+| Task | Convention: a blueprint made only of linear steps. |
+| Workflow | Convention: a blueprint that also uses loop steps. Tasks and workflows are both a `BlueprintDefinition`; no code distinguishes them. |
+| Blueprint | The authored YAML document (`BlueprintDefinition`) declaring inputs and steps; the only executable document type. |
+| Catalog | The disk-only, multi-tier (REPO, USER, GLOBAL, PACKAGED) index of named blueprints and steps. |
+| Run | The act of executing a blueprint from start to terminal outcome (`RunOutcome`). A run produces a session; it is not the record that outlives it. |
+| Session | What a run leaves behind: a unique id (`{kind}_{8-hex}`) tying together its database row (`SessionRecord`), status, `session.log`, diff artifact, and history. A session exists if and only if its record exists. Its files live under the global `DOVO_HOME` runtime root, never under `.dovo/`. |
+| Worktree | An isolated git checkout at `.dovo/worktrees/<id>/` on branch `dovo/<id>`. `dovo run` uses the run's session id as `<id>`; `dovo worktree create` generates `dovo_<8 hex>`. |
+| Checkpoint | A paused leaf step (top-level or loop body) together with its last failed attempt in the `ExecutionStateTree`, so a paused run resumes by re-entering the failure prompt without re-running the step. |
+| Input | A declared, typed blueprint parameter (`ParameterInput`) referenced as `${{ inputs.<name> }}`. |
 
 ## Adding a new command
 
 **Relevant sources:** `src/dovo/cli/`, `src/dovo/cli/ui/`, `src/dovo/cli/cli.py`
 
 1. Create `src/dovo/cli/<name>/` with `app.py` and `commands/<action>.py` (or `commands/root.py`).
-2. Add formatters in `src/dovo/cli/ui/formatters/<name>/<model>.py` implementing `transform()` and `to_rich()`. Presentation view models reside in `src/dovo/cli/ui/formatters/<name>/<name>_views.py` (or `<name>_view.py` for single-formatter domains) for formatters that derive values. Expose registration in `src/dovo/cli/ui/formatters/<name>/__init__.py`.
-3. Wire command logic directly to underlying domain services or facades (e.g. `BlueprintRunService`, `History`), dispatching results via `ui_dispatcher.dispatch(result)`. Keep CLI packages free of business logic, DB queries, or direct filesystem scans.
-4. Register the command in [src/dovo/cli/cli.py](../../src/dovo/cli/cli.py).
-5. Add tests under `tests/cli/<name>/`.
+2. Add formatters under `src/dovo/cli/ui/formatters/<name>/` implementing `transform()` and `to_rich()`, with view models for derived values, and register them in that package's `__init__.py`.
+3. Wire command logic to domain services or domain entrypoints and dispatch results via `ui_dispatcher.dispatch(result)`. Keep CLI packages free of business logic, DB queries, or direct filesystem scans.
+4. Register the command in [src/dovo/cli/cli.py](../../src/dovo/cli/cli.py) and list it in `README.md` ([`tests/lint/test_readme_command_parity.py`](../../tests/lint/test_readme_command_parity.py) fails otherwise).
+5. Add tests under `tests/cli/<name>/` and the per-command page under [docs/cli/](../cli/).
 
 ## Adding a new catalog-backed domain
 
@@ -105,18 +112,17 @@ core/project/  ->  core/{db,git,worktree,catalog,inputs,sessions,status,artifact
 2. **Exceptions**: `<X>LoadError` / `<X>ValidationError` subclassing definition errors in `core/catalog/exceptions.py`.
 3. **Handle**: `core/catalog/<x>.py` -> `Catalog.get(..., item_type=..., definition_cls=...)`.
 4. **Execution**: If executing steps, run them through `Engine.run` (via a run service); do not add a separate step loop.
-5. **CLI**: Thin `commands/root.py`, UI formatters in `cli/ui/formatters/<x>/`, plain-text formatters in `core/<x>/services/renderer.py` if needed for non-interactive diagnostics.
+5. **CLI**: Thin `commands/root.py`, UI formatters in `cli/ui/formatters/<x>/`.
 
 ## Adding a new agent provider
 
 **Relevant sources:** `src/dovo/core/agents/`, `src/dovo/core/config/models.py`
 
-1. Add provider token to `AgentProvider` in `core/config/models.py` if not already present.
-2. Use the direct-mutation pattern (provider CLI/SDK directly edits files in the worktree — `copilot`): subclass `CliDirectMutationAdapter` (`core/agents/cli_mutation.py`) and implement `_provider_name`, `_default_run`, and `_provider_spec`; `_preflight` is optional for provider-specific checks that run after the descriptor-driven credential check. A non-direct provider subclasses `BaseAgentProvider` and implements `_invoke` and `_provider_spec`; it never overrides `invoke`, which runs the credential check before delegating to `_invoke`.
-   Declare every credential env var in `credential_envs`, including names without a secret suffix such as `AWS_ACCESS_KEY_ID`, because response redaction reads that list.
-3. Resolve secrets via module-level `resolve_<provider>_api_key()` from environment variables (never from `config.json`).
-4. Declare the `ProviderSpec` in the provider module (as `copilot.py` does for `COPILOT_PROVIDER_SPEC`), import it in `core/agents/registry.py`, and add it to `PROVIDERS`; also add the token to the `agent.provider` enum in `schemas/v1/config.json`.
-5. Add tests under `tests/core/agents/test_<provider>.py` with fake execution functions or transports.
+1. Add the provider token to `AgentProvider` in `core/config/models.py` and to the `agent.provider` enum in `schemas/v1/config.json` ([`tests/lint/test_config_schema_parity.py`](../../tests/lint/test_config_schema_parity.py) fails if they differ).
+2. Direct-mutation providers (the provider CLI or SDK edits the worktree, like `copilot`) subclass `CliDirectMutationAdapter`; others subclass `BaseAgentProvider` and implement `_invoke`. Neither overrides `invoke`, which runs the credential check first. Declare every credential env var in `credential_envs`, including names without a secret suffix, because response redaction reads that list.
+3. Resolve secrets via a module-level `resolve_<provider>_api_key()` from environment variables, never from `config.json`.
+4. Declare the `ProviderSpec` in the provider module, import it in `core/agents/registry.py`, and add it to `PROVIDERS`.
+5. Add tests under `tests/core/agents/test_<provider>.py` with fake execution functions or transports, and the setup failure modes to [troubleshooting.md](troubleshooting.md).
 
 ## Secrets handling
 
@@ -138,38 +144,9 @@ Created and repaired idempotently by [core/bootstrap](../../src/dovo/core/bootst
   config.json                 # schemas/v1/config.json
   project.json                # schemas/v1/project.json; stable project identity
   catalog/                    # blueprints/, steps/ + seeded dovo/ templates; index.json is a derived cache, never hand-edited
-  worktrees/                  # git worktree checkouts
+  worktrees/                  # git worktree checkouts, .dovo/worktrees/<session_id>/
 ```
 
-`sessions/`, `artifacts/`, `tmp/`, and `logs/` are never created under `.dovo/`; that project-scoped runtime state lives only under the global `DOVO_HOME` storage root and requires a project identity.
+`sessions/`, `artifacts/`, `tmp/`, and `logs/` are never created under `.dovo/`; that project-scoped runtime state lives only under the global `DOVO_HOME` storage root and requires a project identity. Agent steps allocate their scratch and control directories beneath the session temp directory there, never in a checkout. Path ownership and the database layout are contracts in [schemas.md](schemas.md).
 
-Agent steps allocate `steps/<step-id>/agent/<invocation-id>/{scratch,control}` beneath the session temp directory under `tmp/`; it follows the session temp lifecycle and is never created in a checkout.
-
-### Path ownership: `RepositoryPaths` / `WorkspacePaths`
-
-**Relevant sources:** `src/dovo/common/filesystem/models.py`, `src/dovo/core/project/services/storage.py`
-
-- `RepositoryPaths` (`common/filesystem/models.py`) owns every repo-local path under a resolved root: `root_dir`, `dovo_dir`, `config_file`, `catalog_dir`/`catalog_steps_dir`/`catalog_blueprints_dir`, `worktrees_dir`, `lock_file`, `gitignore_file`. Built via `RepositoryPaths.from_root(root)`.
-- `WorkspacePaths` (same module) extends `RepositoryPaths` with the project-scoped, identity-dependent locations: `catalog_templates_dir`, `global_paths`, `database_file`, `project_id`, `runtime_root`, `logs_dir`, `sessions_dir`, `artifacts_dir`, `tmp_dir`, plus `session_dir(id)`/`worktree_dir(id)`/`catalog_dir_for(tier)` helpers. Built via `resolve_workspace_paths(repository_paths, global_paths)` in `core/project/services/storage.py`, which loads `project_id` from `project.json` and raises `WorkspaceNotInitializedError` when it is missing or unusable (`build_workspace_paths` is the pure variant `init` uses after provisioning an identity).
-- `CliContext.build()` (`cli/context.py`) resolves one `WorkspacePaths` snapshot per CLI invocation; CLI handlers construct their path-aware facades from that snapshot.
-
-### Centralized SQLite database
-
-**Relevant sources:** `src/dovo/core/db/`
-
-- A single SQLite database at `<global_root>/data/dovo.db` (resolved by `resolve_db_path` in `core/db/connection.py`, under `DOVO_HOME` or `~/.dovo` by default) backs every project, migrated by `init_database`.
-- `sessions`, `worktrees`, and `costs` rows carry `project_id` and are scoped to it by every repository query, so multiple projects share the physical file without colliding. The catalog is disk-only and has no table here (see [Catalog](#layers) above).
-- Repositories: `WorktreesRepository`, `SessionsRepository`, `CostsRepository` accessed via `DovoDb` facade.
-- Construct repositories/facades once per command invocation rather than per query.
-
-## Worktrees (core)
-
-**Relevant sources:** `src/dovo/core/worktree/`, `src/dovo/core/worktree/facade.py`
-
-- Handled by `Worktree` facade (`core/worktree/facade.py`) and `core/worktree/services/lifecycle.py`.
-- On-disk location: `.dovo/worktrees/<session_id>/`, branch `dovo/<id>`.
-- Operations: `create`, `list`, `show`, `delete`, `prune`, `apply`, `diff`.
-
-## Packaged resources
-
-Schemas (`schemas/v1/`) and catalog templates (`core/catalog/templates/`) ship inside the package and are loaded via `importlib.resources` at runtime.
+Schemas (`schemas/v1/`) and catalog templates (`core/catalog/templates/`) ship inside the package and are loaded via `importlib.resources`.

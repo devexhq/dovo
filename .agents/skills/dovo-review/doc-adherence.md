@@ -11,7 +11,7 @@ Read the doc named by any gate that fires before judging whether it was satisfie
 | Package layout, domain ownership, or import boundaries changed | `architecture.md` *structure* sections updated (layers tree, ownership, boundaries) and nothing else appended there | `docs/agents/architecture.md` |
 | Command added, renamed, or removed in `src/dovo/cli/cli.py` (`add_typer` / `register_*`) | `README.md` Quick start and command surface match `dovo --help` exactly, no documented command that does not exist, none shipped undocumented | `README.md` |
 | User-visible CLI behavior or flags changed | per-command page updated (not `architecture.md`) | `docs/cli/` |
-| `.dovo/config.json` keys, blueprint YAML fields, or entity shapes changed | schema doc updated | `docs/agents/schemas.md` |
+| A cross-cutting contract changed (config merge rules, path ownership, persistence authority, secrets handling) | schema doc updated | `docs/agents/schemas.md` |
 | `core/db/` schema, table, or migration touched | migration hygiene checklist followed; a new table or column has a real caller in the same change, or an explicit note on why it lands ahead of one | `docs/agents/ci-and-tooling.md#migration-hygiene` |
 | New agent provider added | provider procedure followed and its setup failure modes documented | `architecture.md#adding-a-new-agent-provider` plus `docs/agents/troubleshooting.md` |
 | A package or subsystem removed | removal procedure followed | `docs/agents/ci-and-tooling.md#removing-dead-code` |
@@ -28,7 +28,7 @@ A pure refactor that does not change public layout or ownership needs no `archit
 - **Unavoidable field tables need a test.** When a table is the specification for something external (a JSON Schema, a stable CLI output format), a test must fail when table and source disagree. A doc claim with no test behind it will eventually be wrong.
 - **Prefer deletion over accretion.** A stale bullet replaced is better than a parallel truth appended. Flag a doc that now states two contradictory things.
 - **Right doc for the content.** Feature behavior narrative in `architecture.md`, or user-facing CLI behavior anywhere but `docs/cli/`, is misplaced.
-- **Terminology.** Task, workflow, blueprint, step, run, session, worktree, and checkpoint each mean something specific; check new prose against `docs/agents/glossary.md`.
+- **Terminology.** Task, workflow, blueprint, step, run, session, worktree, and checkpoint each mean something specific; check new prose against the Terminology table in `docs/agents/architecture.md`.
 
 ## Process directives
 

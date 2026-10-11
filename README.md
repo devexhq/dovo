@@ -46,7 +46,8 @@ dovo history
 - `dovo doctor` — run diagnostic checks and print a workspace health report
 - `dovo run <blueprint>` — execute a task or workflow blueprint
 - `dovo resume <session-id>` — resume a paused run
-- `dovo history [show <session-id> [--logs]]` — list or inspect past sessions
+- `dovo history` / `dovo history list` — list past sessions
+- `dovo history show <session-id> [--logs]` — inspect a past session
 - `dovo logs <session-id>` — show a session's timeline or a step's captured output (`--step`, `--attempt`, `--stream`, `--tail`)
 
 ### Config
@@ -106,14 +107,11 @@ Dovo reserves these paths under the repository-local `.dovo/` directory:
 - `.dovo/catalog/tasks/*.yml`
 - `.dovo/worktrees/`
 - `.dovo/dovo.lock`
-- `.dovo/sessions/`, `.dovo/artifacts/`, `.dovo/logs/`, and `.dovo/tmp/` for legacy projects without `project.json`
 - `<worktree>/.dovo/run`, a symlink to the run's session directory that `dovo run` creates in each new run worktree
 
-Identified projects keep runtime session, artifact, log, and temporary data outside the repository at:
+Runtime session, artifact, log, and temporary data live outside the repository at:
 
-- `DOVO_HOME/storage/projects/<project-id>/sessions/` and `artifacts/` for projects with `.dovo/project.json` (`~/.dovo` when `DOVO_HOME` is unset)
-
-Projects without a persisted identity retain the legacy repository-local `.dovo/sessions/` and `.dovo/artifacts/` locations.
+- `DOVO_HOME/storage/projects/<project-id>/sessions/` and `artifacts/` (`~/.dovo` when `DOVO_HOME` is unset)
 
 ## Development
 

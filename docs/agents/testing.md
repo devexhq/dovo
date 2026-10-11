@@ -39,7 +39,7 @@ Rules: every source module has a test file, no exemption list; every test direct
 Different subject, different mocking policy, different assertion style. Do not mix them in one test.
 
 ### Tier 1 - Domain Behavior (Most Tests)
-Subject: services and facades under `core/`. Assert on returned `BaseResult` objects and real
+Subject: services and domain entrypoints under `core/`. Assert on returned `BaseResult` objects and real
 side effects (files, git refs, DB rows). No mocks except genuine process/network boundaries; use
 real `tmp_path`, SQLite, `GitWorkspaceHarness`.
 

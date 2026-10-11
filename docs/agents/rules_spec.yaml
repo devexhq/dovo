@@ -11,7 +11,7 @@ rules:
   evaluation_criteria: Scan imports. Verify common/ imports no core/, engine/, or cli/; core/ imports no engine/, cli/,
     or rich; engine/ imports no cli/; git/ imports no other core/ package; inputs/ imports no catalog or agents;
     catalog/ imports no agents, sessions, engine, cli; artifacts/ imports no engine; agents/ imports no engine;
-    sessions/ imports no agents, worktree, catalog, engine, cli.
+    sessions/ imports no agents, worktree, catalog, engine, cli. Enforced by LAYER_RULES in tests/lint/test_layer_direction.py.
   positive_example: 'from dovo.core.sessions import SessionLogEvent  # in engine/'
   negative_example: 'from dovo.engine.engine import Engine  # upward import in core/sessions/'
   citation: docs/agents/architecture.md#package-boundaries-import-direction
@@ -21,11 +21,11 @@ rules:
   category: Architecture
   domain: cli
   scope: src/dovo/cli/
-  guideline: CLI command handlers take CliContext, invoke underlying domain services or facades, and return a BaseResult model.
+  guideline: CLI command handlers take CliContext, invoke underlying domain services or domain entrypoints, and return a BaseResult model.
     CLI packages must remain completely free of business logic, direct SQLite queries, or direct filesystem scans.
   evaluation_criteria: Inspect CLI command handlers in src/dovo/cli/*/commands/. Flag direct SQL execution, domain orchestration,
     or business logic.
-  positive_example: result = context.facade.status.collect(context.root_dir); ui_dispatcher.dispatch(result)
+  positive_example: result = Status(context.paths).collect(); ui_dispatcher.dispatch(result)
   negative_example: rows = context.db.connection.execute('SELECT * FROM worktrees').fetchall()
   citation: docs/agents/architecture.md#adding-a-new-command
 - id: ARCH-003
@@ -145,12 +145,12 @@ rules:
   category: Models
   domain: [core, engine]
   scope: src/dovo/core/, src/dovo/engine/
-  guideline: Operations that can fail must not raise for business or operational failures. When the outcome reaches a facade,
-    a command handler, a formatter, or the wire format, return a Pydantic result object subclassing BaseResult; callers check
+  guideline: Operations that can fail must not raise for business or operational failures. When the outcome reaches a domain
+    entrypoint, a command handler, a formatter, or the wire format, return a Pydantic result object subclassing BaseResult; callers check
     .ok and render .errors/.warnings rather than catching exceptions. An internal helper with a single in-layer caller that only
     branches on success may instead return a plain value or an error message (str | None).
   evaluation_criteria: Inspect service methods. Flag methods that raise exceptions for business/operational failures, and
-    facade or command-level operations that return a plain value instead of a BaseResult. Do not flag an internal helper that
+    domain-entrypoint or command-level operations that return a plain value instead of a BaseResult. Do not flag an internal helper that
     returns str | None to a single in-layer caller.
   positive_example: return WorktreeDeleteResult(status=WorktreeDeleteStatus.NOT_FOUND, errors=['not found'])
   negative_example: raise WorktreeNotFoundError('Worktree does not exist')
@@ -181,15 +181,17 @@ rules:
   negative_example: 'class BlueprintLoadError(Exception): """YAML syntax error."""'
   citation: docs/agents/schemas.md#1-exception-hierarchy-and-domain-errors
 - id: CODE-001
-  title: Identifier Readability and Approved Abbreviations
+  title: Full-Word Identifiers
   severity: BLOCKER
   category: Code Conventions
   domain: all
   scope: src/, tests/
-  guideline: 'Code must read naturally. Reject cryptic, arbitrary truncations (e.g. val_res, err_msg, acc). Permitted abbreviations:
-    iteration variables (p, x, i, v, c, k, v), standard programming idioms (req, res, fn, fn_node, idx, mod, mod_name, loc,
-    tmp/temp, str, arr, num, len, val, msg), and domain conventions (exc, rel_path, fs, cwd, db, ctx).'
-  evaluation_criteria: Inspect new or modified variable, parameter, attribute, and function names. Flag arbitrary letter-dropping.
+  guideline: 'Write names as full words; do not shorten a word by dropping letters (res, req, msg, val, idx, tmp, rel_path,
+    fs, exc, err, cfg, resp, acc, val_res). Allowed: single letters in comprehensions, generator expressions, and one-line
+    loops; initialisms that are the domain term itself (db, cwd, ctx, id, url, cli, sha, ttl); and names a framework dictates
+    (tmp_path, monkeypatch, ctx on a Click callback).'
+  evaluation_criteria: Inspect new or modified variable, parameter, attribute, and function names. Flag any name formed by
+    dropping letters from a word, whether or not it appears in an earlier list of examples. Do not flag unmodified code.
   positive_example: validation_result = validator.validate(document)
   negative_example: val_res = validator.validate(document); acc = []
   citation: docs/agents/code-conventions.md#variable-naming
@@ -360,7 +362,7 @@ rules:
 
     for item in items: repo.create(item)'
   negative_example: 'for item in items: repo = SessionsRepository(path); repo.create(item)'
-  citation: docs/agents/architecture.md#local-sqlite-datadb
+  citation: docs/agents/schemas.md#7-database
 - id: PERF-002
   title: Database Migration Hygiene and Consumer Call Sites
   severity: BLOCKER
@@ -384,9 +386,9 @@ rules:
     column exists (e.g., querying _record_for_rel_path). Query the repository slice directly with filtered SQL.
   evaluation_criteria: Scan for in-memory list comprehensions or filter loops over full table fetches when an indexed query
     method could be used.
-  positive_example: record = repo.get_by_path(rel_path)
-  negative_example: record = next((r for r in repo.list() if r.path == rel_path), None)
-  citation: docs/agents/architecture.md#local-sqlite-datadb
+  positive_example: record = repo.get_by_path(relative_path)
+  negative_example: record = next((r for r in repo.list() if r.path == relative_path), None)
+  citation: docs/agents/schemas.md#7-database
 - id: API-001
   title: Sibling Repository CRUD Method Naming Consistency
   severity: WARNING
@@ -409,7 +411,7 @@ rules:
     rows in one repository method while raising or returning BaseResult errors in another.
   evaluation_criteria: Audit repository query methods for divergent exception handling (e.g. bare except returning None vs
     structured Result error capture).
-  positive_example: 'except ValidationError as exc: return RecordResult.from_error(exc)'
+  positive_example: 'except ValidationError as error: return RecordResult.from_error(error)'
   negative_example: 'except ValidationError: return None  # inconsistently swallows error'
   citation: docs/agents/code-conventions.md#resultoutcome-pattern
 - id: DRY-001
@@ -650,7 +652,7 @@ rules:
   guideline: Test doubles must be types production actually passes or implement a Protocol production is typed against. Never
     build a stub whose interface is the union of every branch in a hasattr chain.
   evaluation_criteria: Inspect test doubles and stubs. Verify they inherit from production types or satisfy typing.Protocol.
-  positive_example: 'class FakeBaseAgentProvider(BaseAgentProvider): def _invoke(self, req: AgentRequest) -> AgentResponse: ...'
+  positive_example: 'class FakeBaseAgentProvider(BaseAgentProvider): def _invoke(self, request: AgentRequest) -> AgentResponse: ...'
   negative_example: 'class MockAdapter: def __getattr__(self, name): return MagicMock()'
   citation: docs/agents/testing.md#core-testing-rules
 - id: TEST-009
@@ -819,8 +821,8 @@ rules:
     Scan each CLI command domain's test directory under tests/cli/<command>/ for containment or equality checks
     against stdout or rendered output; any literal assertion, including a snapshot comparison, is permitted. Flag
     only assertions against help text wording, and name the Click metadata check that should replace them.
-  positive_example: "assert res.exit_code == 1\nassert \"Status: valid with warnings\" in res.stdout  # literal rendered output, not restricted to an error-code token"
-  negative_example: 'assert "Show the current configuration value" in res.output  # help text wording; assert Click metadata instead'
+  positive_example: "assert result.exit_code == 1\nassert \"Status: valid with warnings\" in result.stdout  # literal rendered output, not restricted to an error-code token"
+  negative_example: 'assert "Show the current configuration value" in result.output  # help text wording; assert Click metadata instead'
   citation: docs/agents/testing.md#core-testing-rules
 - id: TEST-018
   title: Test Layer Import Boundary
@@ -847,7 +849,7 @@ rules:
     json's wire payload already proves, with a call-through spy fixture on ui_dispatcher.dispatch that still
     exercises the real formatter and render path (never a replacement stub, so this does not trip TEST-008). What
     that spy may be asserted against is scoped to one thing: the command action's own terminal BaseResult — the
-    same type its facade or service call returns and the JSON envelope wraps (WorktreeCreateResult for dovo worktree
+    same type its domain entrypoint or service call returns and the JSON envelope wraps (WorktreeCreateResult for dovo worktree
     create, DovoStatusResult for dovo status). It is never used to assert on other objects the same invocation
     dispatches — MessageEvent, WarningEvent, PromptEvent, or a lifecycle/progress event — even when the spy's
     fixture captures them incidentally. A command action known to dispatch only its own terminal result per
@@ -873,8 +875,9 @@ rules:
   scope: docs/agents/architecture.md
   guideline: Update docs/agents/architecture.md structure sections ONLY when package layout, domain ownership, or import boundaries
     change. Do not append feature behavior essays there. Pure refactors need no architecture diff.
-  evaluation_criteria: Verify diff in docs/agents/architecture.md only modifies structure sections (layers tree, domain ownership,
-    package boundaries).
+  evaluation_criteria: Verify diff in docs/agents/architecture.md only modifies structure sections (layers tree, package
+    boundaries), and only when a package is added, removed, or moved or an import boundary changes. A new boundary also needs
+    a row in LAYER_RULES in tests/lint/test_layer_direction.py.
   positive_example: '# Updating layers tree in architecture.md for new core/prune/ domain'
   negative_example: '# 100 lines of narrative prose explaining pruning heuristics in architecture.md'
   citation: docs/agents/documentation.md
@@ -895,11 +898,13 @@ rules:
   category: Documentation
   domain: all
   scope: docs/agents/schemas.md
-  guideline: Update docs/agents/schemas.md whenever .dovo/config.json keys, blueprint YAML fields, domain DTOs, or database
-    record shapes change.
-  evaluation_criteria: Verify schemas.md is updated whenever new DTOs, Result models, or config fields are added in src/.
-  positive_example: '# Adding WorktreePruneResult to section 2 of schemas.md'
-  negative_example: '# Adding new Result model in core/models.py without updating schemas.md'
+  guideline: Update docs/agents/schemas.md only when a cross-cutting contract changes (config tier merge rules, path ownership,
+    persistence authority, secrets handling, catalog or database scoping). Adding or changing config keys, blueprint fields,
+    DTOs, enum members, exceptions, entrypoint methods, or commands needs no schemas.md edit.
+  evaluation_criteria: Verify schemas.md changes only when a stated contract changes, and flag schemas.md edits that add field
+    lists, enum members, exception names, or method lists.
+  positive_example: '# Updating schemas.md because a config key switched from replace to union merge across tiers'
+  negative_example: '# Listing a new Result model''s fields in schemas.md'
   citation: docs/agents/documentation.md
 - id: DOC-004
   title: Ban on Duplicating Source in Docs
@@ -951,12 +956,13 @@ rules:
   category: Documentation
   domain: all
   scope: docs/, src/
-  guideline: Adhere strictly to definitions in docs/agents/glossary.md. Do not conflate Task (linear steps only) vs Workflow
-    (allows loop steps), Blueprint (unified document), Step, Run, Session, Worktree, Checkpoint.
+  guideline: Adhere strictly to the Terminology table in docs/agents/architecture.md. Do not conflate Task (convention - linear
+    steps only) vs Workflow (convention - also uses loop steps), Blueprint (unified document), Step, Run, Session, Worktree,
+    Checkpoint.
   evaluation_criteria: Check doc prose and code comments for misuse of terms (e.g. calling a workflow with loops a 'task').
   positive_example: '''Task blueprint containing only linear step definitions.'''
-  negative_example: '''Task blueprint containing a loop block.''  # tasks are strictly linear'
-  citation: docs/agents/glossary.md
+  negative_example: '''Task blueprint containing a loop block.''  # by convention a task has only linear steps'
+  citation: docs/agents/architecture.md#terminology
 - id: DOC-008
   title: Verifiable Doc and Rule Claims
   severity: BLOCKER

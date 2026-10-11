@@ -5,7 +5,6 @@ from dovo.core.worktree.exceptions import (
     WorktreeConfigError,
     WorktreeError,
 )
-from dovo.core.worktree.facade import Worktree
 from dovo.core.worktree.models import (
     PruneAction,
     PrunedItem,
@@ -30,6 +29,7 @@ from dovo.core.worktree.models import (
     WorktreeShowResult,
     WorktreeShowStatus,
 )
+from dovo.core.worktree.worktree import Worktree
 
 __all__ = [
     "PruneAction",

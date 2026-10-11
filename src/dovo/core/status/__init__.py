@@ -1,6 +1,5 @@
 """Workspace health and runtime status collection without side effects."""
 
-from dovo.core.status.facade import Status
 from dovo.core.status.models import (
     CatalogStatusInfo,
     ConfigStatusInfo,
@@ -9,6 +8,7 @@ from dovo.core.status.models import (
     GitStatusInfo,
     WorktreeStatusInfo,
 )
+from dovo.core.status.status import Status
 
 __all__ = [
     "CatalogStatusInfo",

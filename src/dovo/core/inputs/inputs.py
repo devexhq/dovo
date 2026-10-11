@@ -1,4 +1,4 @@
-"""Inputs domain facade."""
+"""Inputs domain entrypoint."""
 
 from __future__ import annotations
 

@@ -6,15 +6,29 @@ Guidelines for maintaining and updating documentation in Dovo CLI.
 
 Update docs in the same PR only when the change matches one of these gates:
 
-- **Package layout / ownership / import boundaries**: update
+- **Package added, removed, or moved, or an import boundary changed**: update
   [docs/agents/architecture.md](architecture.md) *structure*
-  sections only (layers tree, domain ownership, boundaries). Do **not** append
-  feature behavior essays there.
+  sections only (layers tree, boundaries). Adding files or classes inside an
+  existing package needs no edit. Do **not** append feature behavior essays
+  there. A new boundary belongs in `LAYER_RULES` in
+  [tests/lint/test_layer_direction.py](../../tests/lint/test_layer_direction.py);
+  [tests/lint/test_architecture_tree_parity.py](../../tests/lint/test_architecture_tree_parity.py)
+  fails when the layers tree and the source packages disagree.
+- **A term's meaning changed** (step, blueprint, run, session, worktree,
+  checkpoint, ...): update the Terminology table in
+  [docs/agents/architecture.md](architecture.md#terminology).
 - **How to write Python in this repo** (models placement, Result/Outcome, DRY,
   errors): update [docs/agents/code-conventions.md](code-conventions.md).
 - **User-visible CLI behavior**: update [docs/cli/](../cli/) (not architecture).
-- **config.json / blueprint YAML fields / entity shapes**: update
-  [docs/agents/schemas.md](schemas.md).
+- **Cross-cutting contracts** (config tier merge rules, path ownership,
+  persistence authority, secrets handling, catalog/DB scoping): update
+  [docs/agents/schemas.md](schemas.md). Adding or changing a config key,
+  blueprint field, DTO, enum member, exception, entrypoint method, or command needs
+  **no** schemas.md edit — the source and the parity tests are the reference:
+  [tests/lint/test_config_schema_parity.py](../../tests/lint/test_config_schema_parity.py)
+  (config keys vs `v1/config.json`) and
+  [tests/lint/test_readme_command_parity.py](../../tests/lint/test_readme_command_parity.py)
+  (README commands vs `cli.py`).
 - **`core/db/` schema, tables, or migrations**: follow the migration hygiene
   checklist in
   [docs/agents/ci-and-tooling.md](ci-and-tooling.md#database-migration-hygiene)
@@ -45,8 +59,8 @@ public layout or ownership need no architecture.md diff.
 Docs go stale in a specific, avoidable way: a field table, model signature, or enum
 list gets hand-copied from source, then the source changes and the doc doesn't
 (there's no gate that would catch it — it's not covered by `ruff`/`basedpyright`/
-tests). This has actually happened more than once (see
-[schemas.md](schemas.md)'s history). Two rules
+tests). This has actually happened more than once (the old field-by-field
+`schemas.md` is why it now records contracts only). Two rules
 that prevent it, in priority order:
 
 1. **Don't duplicate what a `Read` of the source already gives you unambiguously.**

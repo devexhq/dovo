@@ -1,4 +1,4 @@
-"""Contract tests for the Filesystem facade: repository-local paths, dynamic attribute lookup, and bound I/O helpers."""
+"""Contract tests for the Filesystem entrypoint: repository-local paths, dynamic attribute lookup, and bound I/O helpers."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from dovo.common.filesystem.facade import Filesystem
+from dovo.common.filesystem.filesystem import Filesystem
 from dovo.common.filesystem.models import YamlFile
 
 

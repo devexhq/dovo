@@ -70,8 +70,8 @@ class Session:
             return DiffResult(
                 status=DiffStatus.SESSION_NOT_FOUND,
                 session_id=self.session_id,
-                errors=[f"Session '{self.session_id}' not found under .dovo/sessions/."],
-                fixes=["Run `dovo worktree list` or check .dovo/sessions/ for valid session IDs"],
+                errors=[f"Session '{self.session_id}' not found."],
+                fixes=["Run `dovo history` to list valid session IDs"],
             )
 
         return read_session_diff(self.paths, self.session_id)
@@ -215,8 +215,8 @@ class SessionCollection:
         if not sessions:
             return DiffResult(
                 status=DiffStatus.SESSION_NOT_FOUND,
-                errors=["No sessions found under .dovo/sessions/."],
-                fixes=["Run `dovo worktree list` or check .dovo/sessions/ for valid session IDs"],
+                errors=["No sessions found."],
+                fixes=["Run `dovo history` to list valid session IDs"],
             )
 
         return read_session_diff(self.paths, sessions[0].session_id)

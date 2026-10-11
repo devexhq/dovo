@@ -2,7 +2,7 @@
 
 `dovo logs` shows the logs of a past session: the timeline (`session.log`) by default, or one step's stdout/stderr with `--step`.
 
-Logs live under the global storage root: `~/.dovo/storage/projects/<project_id>/logs/<session_id>/` (the root honors `DOVO_HOME`). A workspace with no project identity yet (no `.dovo/project.json`) keeps them in the repository at `.dovo/logs/<session_id>/`. They are kept after the run finishes.
+Logs live under the global storage root: `~/.dovo/storage/projects/<project_id>/logs/<session_id>/` (the root honors `DOVO_HOME`). They are kept after the run finishes.
 
 ```
 logs/<session_id>/

@@ -1,4 +1,4 @@
-"""Tests for dovo.core.status.collector and Status facade."""
+"""Tests for dovo.core.status.collector and Status entrypoint."""
 
 from __future__ import annotations
 
@@ -38,8 +38,8 @@ def _config_payload(*, model: str | None = "gpt-4o", max_active_worktrees: int =
     ).model_dump(mode="json")
 
 
-class StatusFacadeTests:
-    """Tests for Status domain facade."""
+class StatusEntrypointTests:
+    """Tests for Status domain entrypoint."""
 
     @pytest.mark.parametrize(
         "invoke",
@@ -54,8 +54,8 @@ class StatusFacadeTests:
         invoke: Callable[[WorkspacePaths], DovoStatusResult],
     ) -> None:
         workspace = (
-            WorkspaceBuilder(tmp_path / "facade_collect")
-            .with_git(branch="feature-facade")
+            WorkspaceBuilder(tmp_path / "entrypoint_collect")
+            .with_git(branch="feature-entrypoint")
             .without_catalog_templates()
             .build()
         )
@@ -68,7 +68,7 @@ class StatusFacadeTests:
         assert result.root_dir == workspace
         assert result.is_initialized is True
         assert result.git.is_git_repo is True
-        assert result.git.branch == "feature-facade"
+        assert result.git.branch == "feature-entrypoint"
 
 
 class StatusCollectorGitCollectionTests:

@@ -1,4 +1,4 @@
-"""Exceptions for the catalog inventory facade and authored definitions."""
+"""Exceptions for the catalog inventory entrypoint and authored definitions."""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ from dovo.common.exceptions import (
 
 
 class CatalogError(DefinitionError):
-    """Base catalog facade error."""
+    """Base catalog entrypoint error."""
 
 
 class CatalogFileNotFoundError(CatalogError):

@@ -29,8 +29,8 @@ model_config = {'extra': 'ignore'}
 # ❌ DO NOT: model_config = {'extra': 'ignore'}  # missing justifying comment
 ```
 
-- **[CODE-001] Identifier Readability and Approved Abbreviations (BLOCKER):**
-  Code must read naturally. Reject cryptic, arbitrary truncations (e.g. val_res, err_msg, acc). Permitted abbreviations: iteration variables (p, x, i, v, c, k, v), standard programming idioms (req, res, fn, fn_node, idx, mod, mod_name, loc, tmp/temp, str, arr, num, len, val, msg), and domain conventions (exc, rel_path, fs, cwd, db, ctx).
+- **[CODE-001] Full-Word Identifiers (BLOCKER):**
+  Write names as full words; do not shorten a word by dropping letters (res, req, msg, val, idx, tmp, rel_path, fs, exc, err, cfg, resp, acc, val_res). Allowed: single letters in comprehensions, generator expressions, and one-line loops; initialisms that are the domain term itself (db, cwd, ctx, id, url, cli, sha, ttl); and names a framework dictates (tmp_path, monkeypatch, ctx on a Click callback).
 
 ```python
 # ✅ DO: validation_result = validator.validate(document)
@@ -241,7 +241,7 @@ class TestConfig:
   Test doubles must be types production actually passes or implement a Protocol production is typed against. Never build a stub whose interface is the union of every branch in a hasattr chain.
 
 ```python
-# ✅ DO: class FakeBaseAgentProvider(BaseAgentProvider): def _invoke(self, req: AgentRequest) -> AgentResponse: ...
+# ✅ DO: class FakeBaseAgentProvider(BaseAgentProvider): def _invoke(self, request: AgentRequest) -> AgentResponse: ...
 # ❌ DO NOT: class MockAdapter: def __getattr__(self, name): return MagicMock()
 ```
 
@@ -326,9 +326,9 @@ class SessionStateStoreTests:
 
 ```python
 # ✅ DO:
-assert res.exit_code == 1
-assert "Status: valid with warnings" in res.stdout  # literal rendered output, not restricted to an error-code token
-# ❌ DO NOT: assert "Show the current configuration value" in res.output  # help text wording; assert Click metadata instead
+assert result.exit_code == 1
+assert "Status: valid with warnings" in result.stdout  # literal rendered output, not restricted to an error-code token
+# ❌ DO NOT: assert "Show the current configuration value" in result.output  # help text wording; assert Click metadata instead
 ```
 
 - **[TEST-018] Test Layer Import Boundary (BLOCKER):**
@@ -340,7 +340,7 @@ assert "Status: valid with warnings" in res.stdout  # literal rendered output, n
 ```
 
 - **[TEST-019] Command Result DTO Spy Scope for CLI Integration Tests (BLOCKER):**
-  A *CliIntegrationTests suite may pin the exact domain DTO a command handler produces, beyond what --format json's wire payload already proves, with a call-through spy fixture on ui_dispatcher.dispatch that still exercises the real formatter and render path (never a replacement stub, so this does not trip TEST-008). What that spy may be asserted against is scoped to one thing: the command action's own terminal BaseResult — the same type its facade or service call returns and the JSON envelope wraps (WorktreeCreateResult for dovo worktree create, DovoStatusResult for dovo status). It is never used to assert on other objects the same invocation dispatches — MessageEvent, WarningEvent, PromptEvent, or a lifecycle/progress event — even when the spy's fixture captures them incidentally. A command action known to dispatch only its own terminal result per invocation may assert the spy's sole captured item directly; a command action that also dispatches other event types must first isolate the captured instance of its own Result type rather than assume position or length. This is a genuine contract comparison against a BaseResult (TEST-001's good pattern), not a call-count check on a mocked collaborator, because the spy calls through to production and the assertion targets the DTO's fields, not the fact that dispatch fired.
+  A *CliIntegrationTests suite may pin the exact domain DTO a command handler produces, beyond what --format json's wire payload already proves, with a call-through spy fixture on ui_dispatcher.dispatch that still exercises the real formatter and render path (never a replacement stub, so this does not trip TEST-008). What that spy may be asserted against is scoped to one thing: the command action's own terminal BaseResult — the same type its domain entrypoint or service call returns and the JSON envelope wraps (WorktreeCreateResult for dovo worktree create, DovoStatusResult for dovo status). It is never used to assert on other objects the same invocation dispatches — MessageEvent, WarningEvent, PromptEvent, or a lifecycle/progress event — even when the spy's fixture captures them incidentally. A command action known to dispatch only its own terminal result per invocation may assert the spy's sole captured item directly; a command action that also dispatches other event types must first isolate the captured instance of its own Result type rather than assume position or length. This is a genuine contract comparison against a BaseResult (TEST-001's good pattern), not a call-count check on a mocked collaborator, because the spy calls through to production and the assertion targets the DTO's fields, not the fact that dispatch fired.
 
 ```python
 # ✅ DO: assert len(dispatch_spy) == 1; assert isinstance(dispatch_spy[0], WorktreeCreateResult)  # worktree create dispatches only its own terminal result
@@ -356,11 +356,11 @@ assert "Status: valid with warnings" in res.stdout  # literal rendered output, n
 ```
 
 - **[DOC-003] Schema and Entity Documentation Gate (BLOCKER):**
-  Update docs/agents/schemas.md whenever .dovo/config.json keys, blueprint YAML fields, domain DTOs, or database record shapes change.
+  Update docs/agents/schemas.md only when a cross-cutting contract changes (config tier merge rules, path ownership, persistence authority, secrets handling, catalog or database scoping). Adding or changing config keys, blueprint fields, DTOs, enum members, exceptions, entrypoint methods, or commands needs no schemas.md edit.
 
 ```python
-# ✅ DO: # Adding WorktreePruneResult to section 2 of schemas.md
-# ❌ DO NOT: # Adding new Result model in core/models.py without updating schemas.md
+# ✅ DO: # Updating schemas.md because a config key switched from replace to union merge across tiers
+# ❌ DO NOT: # Listing a new Result model's fields in schemas.md
 ```
 
 - **[DOC-004] Ban on Duplicating Source in Docs (SUGGESTION):**
@@ -390,11 +390,11 @@ assert "Status: valid with warnings" in res.stdout  # literal rendered output, n
 ```
 
 - **[DOC-007] Canonical Terminology Invariant (SUGGESTION):**
-  Adhere strictly to definitions in docs/agents/glossary.md. Do not conflate Task (linear steps only) vs Workflow (allows loop steps), Blueprint (unified document), Step, Run, Session, Worktree, Checkpoint.
+  Adhere strictly to the Terminology table in docs/agents/architecture.md. Do not conflate Task (convention - linear steps only) vs Workflow (convention - also uses loop steps), Blueprint (unified document), Step, Run, Session, Worktree, Checkpoint.
 
 ```python
 # ✅ DO: 'Task blueprint containing only linear step definitions.'
-# ❌ DO NOT: 'Task blueprint containing a loop block.'  # tasks are strictly linear
+# ❌ DO NOT: 'Task blueprint containing a loop block.'  # by convention a task has only linear steps
 ```
 
 - **[DOC-008] Verifiable Doc and Rule Claims (BLOCKER):**

@@ -1,7 +1,7 @@
 """Config generation, load, validate, models, and repository context."""
 
+from dovo.core.config.config import Config
 from dovo.core.config.exceptions import ConfigLoadError, ConfigTierValidationError
-from dovo.core.config.facade import Config
 from dovo.core.config.generator import ConfigGenerationResult
 from dovo.core.config.loader import ConfigLoadResult, ConfigLoadStatus
 from dovo.core.config.models import (
