@@ -1,10 +1,10 @@
 # Project Config Schema Reference
 
-This reference documents the complete JSON schema for `.dovo/config.json` (Version 1).
+Schema for `.dovo/config.json` (version 1).
 
 ---
 
-## Canonical V1 Configuration Structure
+## Structure
 
 ```json
 {
@@ -60,48 +60,51 @@ This reference documents the complete JSON schema for `.dovo/config.json` (Versi
 
 ### 1. Root
 * `version` *(integer, required)*: Must be integer `1`.
-* `ignore_global_root_error` *(boolean)*: Controls global-root validation behavior (default: `false`).
+* `ignore_global_root_error` *(boolean)*: Controls global-root validation (default: `false`).
 
 ### 2. `project`
-* `name` *(string)*: Project identifier. Defaults to directory name or `"unnamed_project"`.
-* `initialized_at` *(string \| null)*: Unrestricted creation-timestamp string or `null`; the schema does not validate ISO 8601 format.
+* `name` *(string)*: Project name. Defaults to the directory name, or `"unnamed_project"`.
+* `initialized_at` *(string \| null)*: Creation timestamp, or `null`. The format is not validated.
 
 ### 3. `worktree`
 * `base_ref` *(string)*: Base Git reference to branch from (default: `"HEAD"`).
 * `max_active_worktrees` *(integer)*: Maximum allowed concurrent worktrees (default: `3`).
-* `default_timeout_seconds` *(integer)*: Accepted worktree timeout setting (default: `900`); the current runtime does not consume it.
+* `default_timeout_seconds` *(integer)*: Currently has no effect (default: `900`).
 
 ### 4. `agent`
-* `provider` *(string)*: Agent provider. Only `copilot` is accepted (default: `"copilot"`); other providers are delayed beyond v1.
-* `model` *(string \| null)*: Agent model metadata (default: `null`).
-* `endpoint` *(string \| null)*: Custom API endpoint URL.
+* `provider` *(string)*: Agent provider. Only `copilot` is accepted (default: `"copilot"`); other values fail validation.
+* `model` *(string \| null)*: Model name (default: `null`).
+* `endpoint` *(string \| null)*: Custom API endpoint URL (default: `null`).
 * `temperature` *(number)*: Sampling temperature (default: `0.2`).
 * `max_tokens` *(integer)*: Maximum generation tokens (default: `4096`).
-* `env_passthrough` *(array of string)*: Host environment names (or `PREFIX*` patterns) forwarded to the agent subprocess (default: `[]`). A repo-tier list replaces a global-tier list rather than merging with it. See [Agent Providers](../guides/agent-providers.md#subprocess-environment).
-* `env_mode` *(string)*: `allowlist` (default) forwards only the allowlisted base plus passthrough; `inherit` forwards the full host environment.
-* `tools` *(object, optional)*: Default agent tool policy with the same shape as a step's `tools` (`allow`, `deny`, `allow_all`; see [Step Schema](step-schema.md)). Enforced through the provider's own controls; absent means read and write on the worktree and scratch only (see [Tool Policy](../guides/agent-providers.md#tool-policy)). A higher tier's object replaces a lower tier's whole instead of merging; a legacy string list is rejected.
+* `env_passthrough` *(array of string)*: Host environment names (or `PREFIX*` patterns) forwarded to the agent subprocess (default: `[]`). A repo-level list replaces a global one rather than merging. See [Agent Providers](../guides/agent-providers.md#subprocess-environment).
+* `env_mode` *(string)*: `allowlist` (default) forwards a fixed base set plus your passthrough names; `inherit` forwards the full host environment.
+* `tools` *(object, optional)*: Default agent tool policy with the same shape as a step's `tools` (`allow`, `deny`, `allow_all`; see [Step Schema](step-schema.md)). Absent means read and write on the worktree and scratch only (see [Tool Policy](../guides/agent-providers.md#tool-policy)). A higher tier's object replaces a lower tier's instead of merging. A plain string list is rejected.
 
 ### 5. `history`
-* `save_attempt_logs` *(boolean)*: Accepted history setting (default: `true`); currently stored but not applied as a runtime switch.
-* `save_agent_payloads` *(boolean)*: Accepted history setting (default: `true`); currently stored but not applied as a runtime switch.
-* `save_final_diff` *(boolean)*: Accepted history setting (default: `true`); currently stored but not applied as a runtime switch.
-* `max_sessions` *(integer)*: Accepted history retention setting (default: `1000`); currently stored but not applied as a retention limit.
+* `save_attempt_logs` *(boolean)*: Save per-attempt stdout/stderr logs (default: `true`). See [`dovo logs`](../cli/logs.md).
+* `save_agent_payloads` *(boolean)*: Currently has no effect (default: `true`).
+* `save_final_diff` *(boolean)*: Currently has no effect (default: `true`).
+* `max_sessions` *(integer)*: Currently has no effect (default: `1000`).
 
 ### 6. `doctor`
-* `check_git` *(boolean)*: Verify Git binary presence and repository state (default: `true`).
-* `check_paths_writable` *(boolean)*: Verify storage writability (default: `true`).
-* `check_config_schema` *(boolean)*: Check configuration integrity (default: `true`).
-* `check_stale_worktrees` *(boolean)*: Detect abandoned worktrees (default: `true`).
-* `check_required_binaries` *(boolean)*: Verify required tool binaries (default: `true`).
+* `check_git` *(boolean)*: Check the Git binary and repository state (default: `true`).
+* `check_paths_writable` *(boolean)*: Check that storage is writable (default: `true`).
+* `check_config_schema` *(boolean)*: Check the configuration file (default: `true`).
+* `check_stale_worktrees` *(boolean)*: Look for abandoned worktrees (default: `true`).
+* `check_required_binaries` *(boolean)*: Check required binaries (default: `true`).
 
 ### 7. `prune`
-* `remove_stale_worktrees` *(boolean)*: Accepted prune setting (default: `true`); currently stored but not applied as an automatic runtime policy.
-* `remove_orphaned_worktrees` *(boolean)*: Accepted prune setting (default: `true`); currently stored but not applied as an automatic runtime policy.
-* `remove_expired_artifacts` *(boolean)*: Accepted prune setting (default: `false`); currently stored but not applied as an automatic runtime policy.
-* `artifact_ttl_days` *(integer)*: Accepted artifact retention setting (default: `30`); currently stored but not applied as an automatic runtime policy.
+* `remove_stale_worktrees` *(boolean)*: Currently has no effect (default: `true`).
+* `remove_orphaned_worktrees` *(boolean)*: Currently has no effect (default: `true`).
+* `remove_expired_artifacts` *(boolean)*: Whether `dovo artifacts prune` deletes expired artifacts without `--force` (default: `false`).
+* `artifact_ttl_days` *(integer)*: Currently has no effect (default: `30`).
 
 ### 8. `telemetry`
-* `enabled` *(boolean)*: Accepted telemetry setting (default: `false`); currently stored but not applied as a runtime switch.
+* `enabled` *(boolean)*: Currently has no effect (default: `false`).
 
 ### 9. `concurrency`
-* `lock_timeout_seconds` *(number)*: Lock-acquisition timeout in seconds (default: `30.0`).
+* `lock_timeout_seconds` *(number)*: Seconds to wait for a workspace lock (default: `30.0`).
+
+### 10. `environment`
+* `sensitive_variables` *(array of string)*: Environment variable names whose values are masked in output and logs (default: `[]`). Names must match `^[A-Za-z_][A-Za-z0-9_]*$`. See [`dovo config`](../cli/config.md#environmentsensitive_variables).

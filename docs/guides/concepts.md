@@ -1,6 +1,6 @@
 # Core Concepts & Mental Model
 
-Dovo (`dovo`) is designed around a clean separation between **isolated worktrees**, **declarative blueprints**, and a **stateful runtime engine**.
+Dovo combines three parts: **isolated worktrees**, **declarative blueprints**, and a **runtime engine** that runs them and records the results.
 
 ```text
 ┌─────────────────────────────────────────────────────────────────────────┐
@@ -27,7 +27,7 @@ Dovo (`dovo`) is designed around a clean separation between **isolated worktrees
 │                   │  - Runs steps in sequence │                         │
 │                   │  - Checks assertions      │                         │
 │                   │  - Persists run state     │                         │
-│                   │  - Records to SQLite DB   │                         │
+│                   │  - Records session history│                         │
 │                   └───────────────────────────┘                         │
 │                                                                         │
 └─────────────────────────────────────────────────────────────────────────┘
@@ -95,7 +95,7 @@ Every execution via `dovo run` is tracked as a **Session**:
 4. **Assertions & Quality Gates**: Output and filesystem state are validated after each step.
 5. **Resilience & Resumption**:
    - On error, `on_failure` policies determine whether to `abort`, `continue`, `retry`, or `prompt_user`.
-   - If an interactive prompt is interrupted or paused, the run state is saved in the centralized database.
+   - If an interactive prompt is interrupted or paused, the run state is saved.
    - The session can be resumed at any time using `dovo resume blueprint_<id>`.
 6. **Audit History**: All runs, durations, and outputs are recorded and accessible via `dovo history`.
 

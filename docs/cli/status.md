@@ -1,6 +1,6 @@
 # `dovo status`
 
-The `dovo status` command displays the health and status of the current Dovo workspace, active Git branch, config validity, active worktrees capacity, and catalog inventory.
+`dovo status` shows the workspace's health: Git branch, config validity, worktree usage and catalog contents.
 
 ## Usage
 
@@ -16,14 +16,14 @@ dovo status [--format terminal|json]
 
 ## Description
 
-`dovo status` provides a scannable dashboard showing:
+It shows:
 - **Project Name**: Name of the configured Dovo project.
 - **Config Status**: Validation status and relative path to `.dovo/config.json`.
 - **Active Git Branch**: Current Git branch (with dirty indicator if uncommitted changes exist).
 - **Agent Model**: Configured agent model name.
-- **Active Worktrees**: Active worktrees count and concurrency ceiling (`active / max max`).
+- **Active Worktrees**: Active worktrees count and concurrency ceiling (`active / max`).
 - **Catalog Items**: Total valid blueprints and inventory breakdown (`valid / total`).
-- **Warnings**: Actionable developer and workspace configuration warnings.
+- **Warnings**: Configuration warnings and suggested fixes.
 
 ## Examples
 
@@ -59,12 +59,12 @@ Dovo Workspace Status (Uninitialized)
 ┌──────────────────────┬────────────────────────────────────────┐
 │ Property             │ Value                                  │
 ├──────────────────────┼────────────────────────────────────────┤
-│ Project Name         │ [dim]Uninitialized[/dim]               │
-│ Config Status        │ [yellow]CONFIG_NOT_FOUND[/yellow]         │
+│ Project Name         │ Uninitialized               │
+│ Config Status        │ CONFIG_NOT_FOUND         │
 │ Active Git Branch    │ main                                   │
-│ Agent Model          │ [dim]Not Configured[/dim]               │
-│ Active Worktrees     │ [dim]N/A[/dim]                         │
-│ Catalog Items        │ [dim]N/A[/dim]                         │
+│ Agent Model          │ Not Configured               │
+│ Active Worktrees     │ N/A                         │
+│ Catalog Items        │ N/A                         │
 └──────────────────────┴────────────────────────────────────────┘
 
 ⚠️ Configuration & Context Warnings:
@@ -83,12 +83,12 @@ Dovo Workspace Status (Degraded)
 ┌──────────────────────┬────────────────────────────────────────┐
 │ Property             │ Value                                  │
 ├──────────────────────┼────────────────────────────────────────┤
-│ Project Name         │ [dim]Uninitialized[/dim]               │
-│ Config Status        │ [red]CONFIG_MALFORMED_JSON[/red]       │
+│ Project Name         │ Uninitialized               │
+│ Config Status        │ CONFIG_MALFORMED_JSON       │
 │ Active Git Branch    │ main                                   │
-│ Agent Model          │ [dim]Not Configured[/dim]               │
-│ Active Worktrees     │ [dim]N/A[/dim]                         │
-│ Catalog Items        │ [dim]N/A[/dim]                         │
+│ Agent Model          │ Not Configured               │
+│ Active Worktrees     │ N/A                         │
+│ Catalog Items        │ N/A                         │
 └──────────────────────┴────────────────────────────────────────┘
 
 ⚠️ Configuration & Context Warnings:
@@ -104,7 +104,7 @@ Next Steps & Remediation:
 dovo status --format json
 ```
 
-Emits a structured NDJSON payload suitable for automation and GUI integrations:
+Emits a JSON payload for automation:
 
 ```json
 {"event_type": "DovoStatusResult", "payload": {"health": "ok", "root_dir": "/path/to/project", "project_name": "my-project", "config_status": "ok", "config_path_relative": ".dovo/config.json", "git_branch": "main", "git_is_dirty": false, "uncommitted_files": 0, "agent_model": null, "active_worktrees": 1, "max_active_worktrees": 5, "valid_catalog_items": 2, "total_catalog_items": 2, "total_sessions": 3, "errors": [], "warnings": [], "remediations": []}}

@@ -1,32 +1,30 @@
 # Installation
 
-Dovo CLI (`dovo`) can be installed using Python package managers.
+Install Dovo CLI (`dovo`) with a Python package manager.
 
-## Recommended Installation
+## Install
 
-### Python / Pip
-
-Install the package directly via `pip`:
+With `pip`:
 
 ```bash
 pip install devexhq-dovo
 ```
 
-Using `pipx` (isolated application environments):
+With `pipx`:
 
 ```bash
 pipx install devexhq-dovo
 ```
 
-Using `uv`:
+With `uv`:
 
 ```bash
 uv tool install devexhq-dovo
 ```
 
-### Local Development / Source Installation
+## Install from Source
 
-To install in editable mode with development dependencies:
+From a clone of the repository, install in editable mode with development dependencies:
 
 ```bash
 uv sync --all-extras
@@ -34,16 +32,9 @@ uv sync --all-extras
 # uv pip install -e ".[dev]"
 ```
 
-To install with documentation dependencies:
-
-```bash
-uv sync --extra docs
-# Or: uv pip install -e ".[docs]"
-```
-
 ## Verification
 
-Verify that `dovo` is installed and check your version:
+Check that `dovo` is installed:
 
 ```bash
 dovo --version

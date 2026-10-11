@@ -1,6 +1,6 @@
 # Quickstart Tutorial
 
-Get up and running with Dovo (`dovo`) in 5 minutes. In this tutorial, you will initialize a workspace, inspect the default blueprint catalog, create an isolated worktree, and run your first blueprint.
+This tutorial initializes a workspace, creates a blueprint, and runs it in an isolated worktree.
 
 ---
 
@@ -16,11 +16,11 @@ This provisions the `.dovo/` state directory:
 
 ```text
 .dovo/
-├── .gitignore          # Ignores local catalog metadata, locks, and worktrees
+├── .gitignore          # Local ignore rules
 ├── .meta/              # Local catalog metadata
 ├── config.json         # Project settings
 ├── project.json        # Project identity
-└── catalog/            # Project blueprint definitions (this repo's REPO tier)
+└── catalog/            # Project blueprints and steps
     ├── blueprints/
     └── steps/
 ```
@@ -35,13 +35,13 @@ dovo status
 
 ## 2. Discover Built-in Blueprints
 
-Dovo comes with built-in blueprint templates. List the available catalog items:
+List the blueprints in the catalog, including the built-in ones:
 
 ```bash
 dovo blueprint list
 ```
 
-You can view the contents of any catalog item or scaffold template:
+Show a built-in step:
 
 ```bash
 dovo step show dovo/git-sync-base
@@ -86,23 +86,24 @@ Execute your newly created blueprint:
 dovo run lint-and-format
 ```
 
-### What Happens Behind the Scenes:
+### What happens
+
 1. `dovo` creates an ephemeral Git worktree on a temporary `dovo/dovo_*` branch.
-2. Each step executes sequentially inside the isolated worktree directory.
-3. If all steps succeed, the worktree is cleanly removed.
-4. The execution result, step output, and duration are recorded for the session.
+2. Steps run in order inside the worktree.
+3. If all steps succeed, the worktree is removed.
+4. The result, step output and duration are recorded for the session.
 
 ---
 
 ## 5. Inspect Execution History
 
-Audit the execution results using `dovo history`:
+List past runs:
 
 ```bash
 dovo history list
 ```
 
-View detailed step-by-step logs and output for your run:
+Show one run's details:
 
 ```bash
 dovo history show <session-id>
@@ -112,6 +113,6 @@ dovo history show <session-id>
 
 ## Next Steps
 
-- Explore [Core Concepts](../guides/concepts.md) to learn how Dovo manages worktrees and multi-step blueprints.
-- Learn how to [Author Blueprints](../guides/authoring-blueprints.md) with typed parameter inputs and assertions.
-- Review [AI Agent Providers](../guides/agent-providers.md) for the current adapter set and agent-step limitation.
+- [Core Concepts](../guides/concepts.md)
+- [Authoring Blueprints](../guides/authoring-blueprints.md)
+- [AI Agent Providers](../guides/agent-providers.md)

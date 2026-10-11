@@ -1,6 +1,6 @@
 # `dovo history`
 
-The `dovo history` command inspects past blueprint executions, enabling developers to filter past sessions and view granular step details and error messages.
+`dovo history` lists past blueprint runs and shows the step details and errors of a single run.
 
 ## Usage
 
@@ -23,7 +23,7 @@ Error messages shown by `dovo history list` and `dovo history show` are masked o
 
 ### `dovo history` / `dovo history list` (Default)
 
-Lists execution history sessions recorded in the centralized database. Executing `dovo history` without subcommands defaults to listing sessions.
+Lists recorded sessions. `dovo history` with no subcommand does the same.
 
 ```bash
 dovo history [OPTIONS]
@@ -32,7 +32,7 @@ dovo history list [OPTIONS]
 
 ### `dovo history show`
 
-Show granular metadata and error details for a specific execution session.
+Shows the metadata and errors for one session.
 
 ```bash
 dovo history show <session_id> [OPTIONS]

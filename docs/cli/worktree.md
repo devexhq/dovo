@@ -1,6 +1,6 @@
 # `dovo worktree`
 
-The `dovo worktree` command provisions and manages isolated Git worktrees to allow AI agents or human developers to run experiments safely.
+`dovo worktree` creates and manages isolated Git worktrees.
 
 ## Subcommands
 

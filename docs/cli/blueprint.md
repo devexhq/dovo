@@ -1,12 +1,12 @@
 # `dovo blueprint`
 
-The `dovo blueprint` command inspects, creates, deletes, and validates executable blueprint YAML files, resolved across four precedence tiers: REPO (`.dovo/catalog/blueprints/`), USER (`~/.dovo/user/catalog/blueprints/`), GLOBAL (`~/.dovo/global/catalog/blueprints/`), and PACKAGED (bundled starter templates). No SQLite index is involved — each disk-backed tier keeps its own `index.json`, rebuilt wholesale from a directory walk before every lookup, so a command always sees the current contents of disk.
+The `dovo blueprint` command inspects, creates, deletes, and validates executable blueprint YAML files, resolved across four precedence tiers: REPO (`.dovo/catalog/blueprints/`), USER (`~/.dovo/user/catalog/blueprints/`), GLOBAL (`~/.dovo/global/catalog/blueprints/`), and PACKAGED (bundled starter templates).
 
-`dovo blueprint` requires an explicit subcommand; there is no bare-invocation default (unlike the retired `dovo catalog`).
+`dovo blueprint` requires an explicit subcommand; there is no bare-invocation default.
 
 ## Tier precedence
 
-When a name or SHA matches more than one tier, the REPO copy wins, then USER, then GLOBAL, then PACKAGED. A REPO-tier blueprint shadowing a USER-tier blueprint of the same name is expected layering, not an error; a duplicate match *within the same tier* produces a warning instead.
+When a name or SHA matches more than one tier, the REPO copy wins, then USER, then GLOBAL, then PACKAGED. A REPO-tier blueprint shadowing a USER-tier one of the same name is normal; a duplicate match *within the same tier* produces a warning.
 
 ## Subcommands
 
@@ -37,7 +37,7 @@ dovo blueprint show <sha_or_name> [--format terminal|json]
 
 ### `dovo blueprint delete`
 
-Deletes a REPO-tier blueprint file and reindexes that tier. A match resolved from USER or GLOBAL tier is refused with a "not deletable from this tier" error rather than deleted, since a repo-scoped command should never mutate shared state outside its own repository. Bundled templates in the `dovo/` namespace (e.g. `dovo/fix-tests`) are protected and cannot be deleted regardless of tier.
+Deletes a REPO-tier blueprint file and reindexes that tier. A match resolved from USER or GLOBAL tier is refused with a "not deletable from this tier" error. Bundled templates in the `dovo/` namespace (e.g. `dovo/fix-tests`) are protected and cannot be deleted regardless of tier.
 
 ```bash
 dovo blueprint delete <sha_or_name> [--force] [--format terminal|json]
@@ -45,10 +45,10 @@ dovo blueprint delete <sha_or_name> [--force] [--format terminal|json]
 
 ### `dovo blueprint validate`
 
-Validates a blueprint definition (YAML syntax, schema, and semantic invariants such as duplicate step IDs, undeclared input placeholders, and unsafe `script_path` values) without executing it. See [`CatalogValidateResult`](../../src/dovo/core/catalog/models.py) for the result shape.
+Validates a blueprint definition (YAML syntax, schema, and semantic invariants such as duplicate step IDs, undeclared input placeholders, and unsafe `script_path` values) without executing it.
 
 ```bash
 dovo blueprint validate <target> [--format terminal|json]
 ```
 
-`target` is a catalog name or namespaced identifier (e.g. `commit-plan`, `dovo/fix-tests`), or a relative/absolute file path. Unlike the retired `dovo catalog validate`, there is no `--type` option: the command name itself already fixes the type.
+`target` is a catalog name or namespaced identifier (e.g. `commit-plan`, `dovo/fix-tests`), or a relative/absolute file path. There is no `--type` option.

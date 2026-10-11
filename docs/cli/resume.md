@@ -1,6 +1,6 @@
 # `dovo resume`
 
-The `dovo resume` command continues a paused blueprint execution session, either by specifying an explicit session ID or by automatically resuming the latest paused run.
+`dovo resume` continues a paused session, by ID or the latest one.
 
 ## Usage
 
@@ -28,10 +28,10 @@ dovo resume [session_id] [OPTIONS]
 
 1. **Session Resolution**:
    - If `session_id` is provided, resumes that specific session.
-   - If `session_id` is omitted, queries `SessionsRepository.get_latest_paused()` and picks up the most recent paused run. If no paused session is found, renders a formatted error panel and exits with code `1`.
+   - If `session_id` is omitted, the most recent paused session is used. If there is none, an error is shown and the command exits `1`.
 
-2. **Readiness Classification**: Validates that the session exists, is in `paused` status, and has intact execution state and an accessible worktree (if worktree-backed).
-3. **Execution**: Re-enters step execution via `Engine.resume`.
+2. **Readiness Classification**: Checks that the session exists, is paused, and has intact saved state and an accessible worktree (if it used one).
+3. **Execution**: Continues running from the paused step.
 4. **Environment flags**: `--env-mode` and `--env-passthrough` apply only to this invocation, are never written to config or run state, and are validated before any step starts; an invalid value exits `1` and leaves the session paused.
 5. **Exit Codes**:
    - `0`: Successful completion or paused run (run state updated).

@@ -1,14 +1,14 @@
 # Recipe: CI/CD Automation & GitHub Actions
 
-Dovo blueprints can be executed inside Continuous Integration (CI) pipelines to standardize local developer runs and remote CI validation.
+Run the same blueprints locally and in CI.
 
 ---
 
 ## Key CLI Flags for CI/CD
 
-When executing Dovo in automated environments:
-* `--no-worktree`: Disables Git worktree branch creation and executes steps directly in the runner workspace.
-* `--no-tty`: Ensures `prompt_user` failure directives degrade safely to `abort` rather than hanging on standard input.
+Flags for unattended runs:
+* `--no-worktree`: Runs steps directly in the checkout instead of a worktree.
+* `--no-tty`: Turns `prompt_user` into `abort` so the job never waits for input.
 
 ```bash
 dovo run build-and-test --no-worktree --no-tty
@@ -42,10 +42,9 @@ jobs:
         with:
           python-version: "3.13"
 
-      - name: Install Dependencies
+      - name: Install Dovo
         run: |
-          pip install uv
-          uv sync --all-extras
+          pip install devexhq-dovo
 
       - name: Initialize Dovo Workspace
         run: dovo init
@@ -62,9 +61,9 @@ jobs:
 
 ---
 
-## Automated Failure Diagnostics
+## Failure Output
 
-In CI, when a step assertion fails, Dovo prints formatted diagnostics and non-zero exit codes that integrate with CI log viewers:
+When an assertion fails, Dovo prints the failures and exits non-zero:
 
 ```text
 Step 'run-tests' failed assertions:

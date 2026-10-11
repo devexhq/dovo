@@ -1,6 +1,6 @@
 # Parameter Inputs & Template Schema Reference
 
-This reference documents the parameter input declaration schema and `${{ inputs.<name> }}` template placeholder mechanics in Dovo blueprints.
+Schema for blueprint inputs and `${{ inputs.<name> }}` placeholders.
 
 ---
 
@@ -11,9 +11,9 @@ Each entry in a blueprint's `inputs:` mapping accepts the following fields:
 | Field | Type | Required | Default | Description |
 |---|---|---|---|---|
 | `type` | `string` | No | `string` | Data type: `string`, `boolean`, or `integer`. |
-| `description` | `string` | No | `null` | Explanation of the input parameter. |
+| `description` | `string` | No | `null` | What the input is for. |
 | `required` | `boolean` | No | `false` | When `true`, execution fails if no value is provided and no `default` exists. |
-| `default` | `string \| int \| bool` | No | `null` | Default fallback value if not specified at runtime. |
+| `default` | `string \| int \| bool` | No | `null` | Value used when none is given. |
 | `aliases` | `list[string] \| string` | No | `[]` | CLI flag aliases (e.g. `["-b", "--branch"]`). A single string is coerced to a 1-element list. |
 
 ---
@@ -30,7 +30,7 @@ Each entry in a blueprint's `inputs:` mapping accepts the following fields:
 
 ## CLI Flag Mapping
 
-Dovo maps CLI arguments to declared inputs in two ways:
+CLI arguments map to inputs in three ways:
 
 1. **Declared Aliases**:
    ```yaml
@@ -57,12 +57,14 @@ Dovo maps CLI arguments to declared inputs in two ways:
 
 ## Template Expression Syntax
 
-Values are referenced inside steps using:
+Reference an input inside a step with:
 
-$$\$\{\{\text{ inputs.<name> }\}\}$$
+```text
+${{ inputs.<name> }}
+```
 
 ### Interpolation Scope
-Template substitution occurs at execution time for:
+Placeholders are replaced in:
 * `run` string values
 * `command` string values
 * `prompt` string values
@@ -70,4 +72,4 @@ Template substitution occurs at execution time for:
 * String values within step `env` dictionaries
 
 ### Unresolved Placeholders
-If a template placeholder references an identifier not declared in `inputs:`, it is preserved literally as `${{ inputs.<name> }}` without error.
+If a template placeholder references an identifier not declared in `inputs:`, it is left as literal text, with no error.

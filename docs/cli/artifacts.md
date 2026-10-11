@@ -2,7 +2,7 @@
 
 The `dovo artifacts` command group inspects and manages session artifacts: named file bundles published from a running blueprint's worktree into persistent storage, so they can be listed, downloaded, and eventually pruned once expired.
 
-Artifacts live under the global storage root: `~/.dovo/storage/projects/<project_id>/artifacts/<session_id>/<name>/` (the root honors `DOVO_HOME`). Each published bundle carries a `manifest.json` listing every file's relative path, SHA256 checksum, and size — see [`ArtifactManifest`](../../src/dovo/core/artifacts/models.py).
+Artifacts live under the global storage root: `~/.dovo/storage/projects/<project_id>/artifacts/<session_id>/<name>/` (the root honors `DOVO_HOME`). Each published bundle carries a `manifest.json` listing every file's relative path, SHA256 checksum, and size.
 
 There is no `dovo artifacts upload` command. Publishing happens two ways, both driven from inside a running blueprint:
 
@@ -45,7 +45,7 @@ Every file's SHA256 is checksum-verified against `manifest.json` before anything
 | `--force` | Prune expired artifacts even when `prune.remove_expired_artifacts` is `false` in `.dovo/config.json`. |
 | `--format [terminal\|json]` | Presentation format (`terminal` or `json`). |
 
-Pruning deletes artifacts whose `expires_at` (set from a step's `retention_days`) is in the past. Without `--force`, `dovo artifacts prune` is a no-op when `prune.remove_expired_artifacts` is `false` (the default) — see [`PruneConfig`](../../src/dovo/core/config/models.py). `retention_days=0` (or omitted) means an artifact never expires.
+Pruning deletes artifacts whose `expires_at` (set from a step's `retention_days`) is in the past. Without `--force`, `dovo artifacts prune` is a no-op when `prune.remove_expired_artifacts` is `false` (the default). `retention_days=0` (or omitted) means an artifact never expires.
 
 ## Errors
 

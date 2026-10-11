@@ -1,6 +1,6 @@
 # Step Schema Reference
 
-This reference documents the YAML specification for Step definitions and Loop Step blocks in Dovo.
+YAML schema for steps and loop blocks.
 
 ---
 
@@ -14,14 +14,14 @@ Every standard step accepts the following fields:
 | `name` | `string` | No | `null` | Display name shown during execution progress. |
 | `description` | `string` | No | `null` | Optional description of the step's operation. |
 | `run` | `string` | Conditional | `null` | Shorthand shell command. It cannot be combined with `uses` or inline-type-only fields. |
-| `uses` | `string` | Conditional | `null` | Reference to a reusable step ID (`dovo/*` or catalog step). The current model does not enforce exclusivity with other mode-specific fields. |
+| `uses` | `string` | Conditional | `null` | Reference to a reusable step ID (`dovo/*` or catalog step). Other mode-specific fields are not rejected. |
 | `type` | `string` | Conditional | `null` | Primitive type: `command`, `agent`, or `script`. |
 | `command` | `string` | Conditional | `null` | Shell command string. Required when `type: command`. |
 | `prompt` | `string` | Conditional | `null` | Instruction sent to the agent provider after interpolation; it must not be blank. Required when `type: agent`. |
 | `script_path` | `string` | Conditional | `null` | Relative path to local script. Required when `type: script`. |
-| `tools` | `object` | No | omitted | Tool policy with `allow`, `deny` (lists of `{capability, root, pattern}` rules) and `allow_all`. Enforced through the provider's own controls (see [Tool Policy](../guides/agent-providers.md#tool-policy)); omitted means the configured default, which is read and write on the worktree and scratch only. An explicit object replaces any inherited policy whole, `tools: {}` included; a legacy string list is rejected. Capabilities are `shell` (exact command or `cmd *` prefix), `read`/`write` (root-relative glob, optional `root: worktree\|scratch`), `network` (host or `*.host`) and `mcp` (`server/tool` or `server/*`). Exact rules: [`tool_policy.py`](../../src/dovo/common/tool_policy.py). |
+| `tools` | `object` | No | omitted | Tool policy with `allow`, `deny` (lists of `{capability, root, pattern}` rules) and `allow_all`. See [Tool Policy](../guides/agent-providers.md#tool-policy). Omitted means the configured default (read and write on the worktree and scratch only). An explicit object replaces any inherited policy, `tools: {}` included; a plain string list is rejected. Capabilities are `shell` (exact command or `cmd *` prefix), `read`/`write` (root-relative glob, optional `root: worktree\|scratch`), `network` (host or `*.host`) and `mcp` (`server/tool` or `server/*`). |
 | `env` | `map[string, string]` | No | `{}` | Step-specific environment variables, forwarded to command, script, and agent steps. Supports `${{ inputs.* }}` interpolation. |
-| `timeout_seconds`| `integer` | No | `120` | Maximum execution duration (seconds, $> 0$). |
+| `timeout_seconds`| `integer` | No | `120` | Maximum execution duration (seconds, greater than 0). |
 | `assert` | `StepAssert` | No | `null` | Verification criteria. See [Assertions Schema](assertions-schema.md). |
 | `on_failure` | `string \| FailureSpec` | No | `abort` | Failure handling policy or detailed retry object. |
 
@@ -29,39 +29,39 @@ Every standard step accepts the following fields:
 
 ## Step Shape Validation Rules
 
-Dovo strictly validates step configurations:
-1. **Resolution Order**: A step must specify at least one of `run`, `uses`, or `type`; the model checks `run`, then `uses`, then `type`.
+Steps are validated as follows:
+1. **Resolution order**: A step needs at least one of `run`, `uses` or `type`, checked in that order.
 2. **`run` Exclusions**: When `run` is used, it cannot be combined with `uses`, `command`, `type`, `prompt`, `script_path`, or `tools`.
-3. **`uses` Boundary**: When `uses` is present without `run`, the current model does not enforce exclusivity with other mode-specific fields.
+3. **`uses` Boundary**: When `uses` is present without `run`, other mode-specific fields are not rejected.
 4. **Type Field Requirements**:
-   - `type: command` $\rightarrow$ requires `command`
-   - `type: agent` $\rightarrow$ requires `prompt`
-   - `type: script` $\rightarrow$ requires `script_path`
+   - `type: command` → requires `command`
+   - `type: agent` → requires `prompt`
+   - `type: script` → requires `script_path`
 
 ---
 
 ## `on_failure` FailureSpec Object
 
-When configuring detailed failure handling, `on_failure` can be specified as a mapping:
+`on_failure` can also be a mapping:
 
 | Field | Type | Default | Allowed Values / Bounds | Description |
 |---|---|---|---|---|
 | `action` | `string` | `abort` | `abort`, `continue`, `prompt_user`, `retry` | Initial action when a step fails. |
-| `max_retries` | `integer` | `3` | $\ge 1$ | Maximum number of retry attempts (when `action: retry`). |
-| `backoff_ms` | `integer` | `0` | $\ge 0$ | Milliseconds to sleep between retry attempts. |
+| `max_retries` | `integer` | `3` | at least 1 | Maximum number of retry attempts (when `action: retry`). |
+| `backoff_ms` | `integer` | `0` | at least 0 | Milliseconds to sleep between retry attempts. |
 | `on_max_retries` | `string` | `abort` | `abort`, `continue`, `prompt_user` | Terminal policy when all retry attempts are exhausted. |
 
 ---
 
 ## `LoopStepBlock`
 
-A generic-blueprint composite step block that repeats a list of steps in `do` until an `until` condition is met:
+Repeats the steps in `do` until an `until` condition is met:
 
 | Field | Type | Required | Default | Description |
 |---|---|---|---|---|
 | `id` | `string` | **Yes** | — | Unique identifier for the loop block. |
 | `type` | `string` | **Yes** | `loop` | Must be `loop`. |
-| `max_iterations`| `integer` | No | `5` | Maximum number of iterations ($\ge 1$). |
+| `max_iterations`| `integer` | No | `5` | Maximum number of iterations (at least 1). |
 | `until` | `list[string]` | **Yes** | — | Termination condition expressions (e.g. `['steps.test.exit_code == 0']`). |
 | `do` | `list[StepDefinition]` | **Yes** | — | List of steps to execute sequentially on each iteration. |
 | `on_max_iterations` | `string` | No | `prompt_user` | Terminal policy (`abort`, `continue`, `prompt_user`) if loop reaches `max_iterations` without terminating. |
@@ -70,7 +70,7 @@ A generic-blueprint composite step block that repeats a list of steps in `do` un
 
 ## Agent step outcomes
 
-An agent step records one outcome per attempt. The canonical mapping is `AGENT_OUTCOME_EXIT_CODES` in [`agent_step.py`](../../src/dovo/engine/executors/agent_step.py).
+An agent step records one outcome per attempt.
 
 | JSON status | Dispatch | Code |
 |---|---|---|
@@ -81,7 +81,7 @@ An agent step records one outcome per attempt. The canonical mapping is `AGENT_O
 | `provider_error` | `failed` | `203` |
 | `blocked` | `failed` | `204` |
 
-`blocked` means the provider refused a tool call under the step's tool permissions and the worktree diff is empty; the error names the refused tool and when the tool maps to a known capability or a deny rule matched, the fix says whether to grant the capability in the step's `tools` policy or to remove or narrow the deny rule. A refusal that still left edits proceeds through the normal patch gate instead.
+`blocked` means the provider refused a tool call under the step's `tools` policy and left the worktree unchanged. The error names the refused tool and says whether to grant the capability or to remove or narrow the matching `deny` rule. If the agent still made edits despite a refusal, the step continues as normal.
 
 Preflight failures (inactive worktree, missing agent settings, blank prompt), provider exceptions, patches that fail to apply, and an output callback that raises all record `provider_error` with `203`.
 
@@ -107,7 +107,7 @@ steps.agent.exit_code == 202
 
 ## Runtime Execution Metadata & Environment Variables
 
-Step executions receive structured runtime context through `DOVO_*` environment variables and template interpolation paths:
+Steps receive run context through `DOVO_*` environment variables and template placeholders:
 
 ### Environment Variables
 
@@ -134,7 +134,7 @@ Step executions receive structured runtime context through `DOVO_*` environment 
 ### Interpolation Paths
 
 - **Current step**: `{{ step.id }}`, `{{ step.name }}`, `{{ step.index }}`, `{{ step.attempt }}`
-- **Blueprint**: `{{ blueprint.name }}`, `{{ blueprint.sha }}`. `task.*` and `workflow.*` are legacy aliases; use `blueprint.*` in new documents.
+- **Blueprint**: `{{ blueprint.name }}`, `{{ blueprint.sha }}`. `task.*` and `workflow.*` are older aliases; use `blueprint.*`.
 - **Previous step**: `{{ previous_step.id }}`, `{{ previous_step.name }}`, `{{ previous_step.index }}`, `{{ previous_step.status }}`, `{{ previous_step.exit_code }}`
 - **Historical steps (`steps`)**:
   - `{{ steps[0].<field> }}`: 0-based indexing for finished steps in run order.
