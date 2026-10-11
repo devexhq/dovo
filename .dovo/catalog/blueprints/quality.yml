@@ -1,0 +1,62 @@
+version: 1
+name: quality
+id: quality
+description: Run the repository quality gates against the working tree, cheapest checks first
+summary: Format, lint, typecheck, docs build, complexity and tests with coverage
+use_worktree: false
+
+inputs:
+  base:
+    type: string
+    description: Git ref the complexity gate diffs against to find changed files
+    default: origin/main
+    aliases: ["-b", "--base"]
+
+steps:
+  - id: format
+    name: Check formatting
+    run: uv run ruff format --check .
+
+  - id: lint
+    name: Lint
+    run: uv run ruff check .
+
+  - id: typecheck
+    name: Typecheck
+    run: uv run basedpyright src tests --level error
+    timeout_seconds: 300
+
+  - id: docs
+    name: Build docs (strict)
+    run: uv run python -m mkdocs build --strict --site-dir "$DOVO_STEP_TEMP/site"
+    timeout_seconds: 180
+
+  - id: changed
+    name: Find changed Python files
+    run: |
+      files=$( { git diff --name-only --diff-filter=ACMR "$(git merge-base ${{ inputs.base }} HEAD)"; git ls-files --others --exclude-standard; } | grep '\.py$' | sort -u | paste -sd' ' - || true)
+      echo "files=$files" >> "$DOVO_OUTPUT"
+
+  - id: complexity
+    name: Check complexity of changed files
+    env:
+      FILES: "{{ steps.changed.outputs.files }}"
+    run: |
+      if [ -z "$FILES" ]; then
+        echo "No changed Python files; nothing to check."
+      else
+        uv run complexipy $FILES --max-complexity-allowed 10 --failed --plain
+      fi
+    timeout_seconds: 180
+
+  - id: tests
+    name: Run tests with coverage
+    env:
+      COLUMNS: "160"
+      PYTHONIOENCODING: utf-8
+    run: |
+      # Dovo's per-step variables leak into the test process and break tests that
+      # assert they are unset; clear them so the suite sees a plain environment.
+      unset_args=$(env | sed -n 's/^\(DOVO_\(STEP\|STEPS\|ITERATION\|BLUEPRINT\|PREVIOUS\|TEMP\|RUNNER\|OUTPUT\)[A-Z_]*\)=.*/-u \1/p' | tr '\n' ' ')
+      env $unset_args uv run python -m pytest tests/ --cov=dovo --cov-report=term-missing
+    timeout_seconds: 900

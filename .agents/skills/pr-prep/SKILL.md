@@ -95,8 +95,8 @@ breath — stop after the drafts and let them invoke it.
   `git push` / `gh pr create` either.** This skill's output is three drafted
   files, nothing more. Committing, pushing, and opening the PR is a human
   action taken outside this skill.
-- **Never run tests or tooling** (`inv test`, `ruff`, `basedpyright`, `inv
-  complexity`). This skill packages what's already there; it doesn't gate it.
+- **Never run tests or tooling** (`dovo run tests`, `dovo run quality`, `ruff`,
+  `basedpyright`). This skill packages what's already there; it doesn't gate it.
 - **Never edit code** while drafting. If the diff looks wrong or mixes
   unrelated concerns, say so and ask before drafting, since this repo
   requires one fix or feature per PR.

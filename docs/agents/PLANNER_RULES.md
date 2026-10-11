@@ -6,7 +6,7 @@
 ## [PLAN-001] Read-Only Planning Discipline
 - **Phase:** `Reset & Prereqs`
 - **Scope:** `Agent session & filesystem`
-- **Requirement:** While planning, the agent is strictly read-only. Never edit src/ or tests/, never run tests or tooling (inv test, pytest, ruff, basedpyright, inv complexity), and never commit, push, or touch PR state. Read-only git and gh commands are the only commands permitted.
+- **Requirement:** While planning, the agent is strictly read-only. Never edit src/ or tests/, never run tests or tooling (dovo run tests, dovo run quality, pytest, ruff, basedpyright), and never commit, push, or touch PR state. Read-only git and gh commands are the only commands permitted.
 - **Deliverable Contract:** No source files edited. The plan document in .agentic/plan.md is the entire deliverable.
 - **Validation Check:** Verify git status after planning shows only .agentic/plan.md created.
 
@@ -17,7 +17,7 @@
 
 <!-- ❌ NEGATIVE EXAMPLE -->
 ```markdown
-# Agent runs `inv test` or edits `src/dovo/cli/app.py` while planning
+# Agent runs `dovo run tests` or edits `src/dovo/cli/app.py` while planning
 ```
 
 ## [PLAN-002] Workspace Reset and State Isolation

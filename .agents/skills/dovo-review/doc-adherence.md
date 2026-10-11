@@ -36,4 +36,4 @@ These are `AGENTS.md` directives about how the work was done. Report violations 
 
 - **Governing directive stated.** Before executing commands or editing files, the author was to state the directive or doc governing the action and the target scope.
 - **Plan before code.** Implementing a GitHub issue required a plan per `docs/agents/planning.md` (contract extraction, grounding in the current tree, an artifact inventory with code samples). Skippable only for a single-file change adding no new surface.
-- **Gates before commit.** `inv test -c`, `ruff format`, `ruff check`, `basedpyright src --level error`, and `inv complexity --paths <changed> --plain --failed` all had to pass before committing. This skill does not run them (`/dovo-code` owns the gate); ask whether they were run and report the answer as reported, never as verified.
+- **Gates before commit.** `dovo run quality` (ruff format, ruff check, basedpyright, docs build, complexity on changed files, tests with coverage) had to pass before committing. This skill does not run them (`/dovo-code` owns the gate); ask whether they were run and report the answer as reported, never as verified.

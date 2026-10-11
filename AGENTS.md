@@ -37,22 +37,25 @@ quality gate results, provide a commit message following
 
 ```bash
 uv sync --all-extras            # install dependencies with uv (or uv pip install -e .[dev])
-uv run inv test                 # run tests (python -m pytest -n auto tests/ -q)
+uv run dovo run tests --path tests/core/   # scoped tests while iterating (also --fast-fail, --coverage)
+uv run dovo run quality         # all quality gates against the working tree
 uv run ruff check .             # lint
 uv run ruff format .            # format
 uv run basedpyright src tests   # typecheck package and tests (errors must be 0)
-inv complexity --paths <changed-file1>,<changed-file2> --plain   # complexity gate for changed files
 uv run python scripts/compile_rules.py   # recompile RULES.md after editing rules_spec.yaml
 ```
 
 ## Quality gates
 
-Before committing, all 5 quality gates must pass (see [docs/agents/ci-and-tooling.md](docs/agents/ci-and-tooling.md) and [docs/agents/testing.md](docs/agents/testing.md)):
-  - `uv run inv test -c` (coverage, **≥ 80%** via `fail_under` in `pyproject.toml`)
-  - `uv run ruff format`
-  - `uv run ruff check`
-  - `uv run basedpyright src tests --level error`
-  - `uv run inv complexity --paths <changed-file1>,<changed-file2> --plain --failed` (no touched function may exceed complexity 10)
+Before committing, `uv run dovo run quality` must pass (see [docs/agents/ci-and-tooling.md](docs/agents/ci-and-tooling.md) and [docs/agents/testing.md](docs/agents/testing.md)). It runs, in order, and stops at the first failure:
+  - `ruff format --check` (it does not rewrite files; run `uv run ruff format .` first)
+  - `ruff check`
+  - `basedpyright src tests --level error`
+  - `mkdocs build --strict`
+  - `complexipy` on the files changed against `origin/main` (no touched function may exceed complexity 10)
+  - the full test suite with coverage (**≥ 80%** via `fail_under` in `pyproject.toml`)
+
+CI runs the same blueprint. For quick feedback while iterating, use `uv run dovo run tests` with `--path`; it never replaces the full gate.
 
 ## Documentation policy
 

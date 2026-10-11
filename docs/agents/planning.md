@@ -2,7 +2,7 @@
 
 Read this **before writing any code** for a GitHub issue. The plan document (`.agentic/plan.md`) is the deliverable.
 
-While planning, remain **read-only**: do not edit `src/` or `tests/`, do not run `inv test`, do not commit, push, or touch PR state.
+While planning, remain **read-only**: do not edit `src/` or `tests/`, do not run `dovo run tests` or `dovo run quality`, do not commit, push, or touch PR state.
 
 ## When to plan
 
@@ -254,7 +254,7 @@ class <TestClass>:
 ## Cross-cutting
 
 - **Docs gates that fire:** <specific docs, or "none" with the reason>
-- **Validation:** `uv run inv test`, `uv run ruff format .`, `uv run ruff check .`, `uv run basedpyright src tests --level error`, `inv complexity --paths <files> --plain --failed`
+- **Validation:** `uv run dovo run tests --path <tests>` while iterating, then `uv run dovo run quality` (format check, lint, typecheck, docs build, complexity, tests with coverage)
 - **Open questions:** See Open Questions at the top of this document.
 ````
 

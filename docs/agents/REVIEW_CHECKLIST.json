@@ -590,7 +590,7 @@
       "severity": "BLOCKER",
       "domain": "all",
       "scope": "Whole repository",
-      "evaluation_criteria": "Verify all five commands succeed before any commit. Verify the fail_under value in pyproject.toml is greater than or equal to the previous committed value. Flag any PR that lowers fail_under, and flag test additions whose stated justification is raising coverage.",
+      "evaluation_criteria": "Verify `dovo run quality` succeeds before any commit. Verify the fail_under value in pyproject.toml is greater than or equal to the previous committed value. Flag any PR that lowers fail_under, and flag test additions whose stated justification is raising coverage.",
       "bad_pattern": "# fail_under lowered so a commit can pass, or tests added purely to reach a percentage"
     },
     {
