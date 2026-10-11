@@ -23,7 +23,9 @@ from dovo.core.agents.copilot import (
     COPILOT_PROVIDER_SPEC,
     CopilotAgentAdapter,
     CopilotPolicyArgs,
+    UserMcpConfig,
     default_copilot_run,
+    load_user_mcp_config,
     render_copilot_policy,
     resolve_copilot_token,
 )
@@ -692,7 +694,7 @@ class CopilotPolicyRenderTests:
         worktree, scratch, control = (tmp_path / name for name in ("worktree", "scratch", "control"))
         roots = PolicyRoots(worktree=worktree, scratch=scratch, control=control)
 
-        rendered = render_copilot_policy(policy, roots)
+        rendered = render_copilot_policy(policy, roots, None)
 
         assert isinstance(rendered, CopilotPolicyArgs)
         (value,) = _flag_values(list(rendered.flags), "--available-tools")
@@ -749,8 +751,6 @@ class CopilotPolicyRenderTests:
             pytest.param("empty-grants", id="empty-grants"),
             pytest.param("read-src-glob", id="sub-root-glob"),
             pytest.param("write-deny", id="read-write-deny"),
-            pytest.param("mcp-allow", id="mcp-allow-unsupported"),
-            pytest.param("mcp-deny-under-allow-all", id="mcp-deny-unsupported"),
             pytest.param("scratch-only", id="worktree-not-granted"),
             pytest.param("scratch-write-without-read", id="mixed-root-scope"),
             pytest.param("read-scratch-write-worktree", id="scratch-readable-not-writable"),
@@ -767,12 +767,6 @@ class CopilotPolicyRenderTests:
             "read-src-glob": ToolPolicy(allow=_rules(ToolCapability.READ, None, pattern="src/**")),
             "write-deny": ToolPolicy(
                 allow=_READ_WRITE_WORKTREE, deny=_rules(ToolCapability.WRITE, None, pattern=".dovo/**")
-            ),
-            "mcp-allow": ToolPolicy(
-                allow=[*_READ_WRITE_WORKTREE, ToolRule(capability=ToolCapability.MCP, pattern="srv/*")]
-            ),
-            "mcp-deny-under-allow-all": ToolPolicy(
-                allow_all=True, deny=[ToolRule(capability=ToolCapability.MCP, pattern="srv/tool")]
             ),
             "scratch-only": ToolPolicy(allow=_rules(ToolCapability.READ, "scratch")),
             "scratch-write-without-read": ToolPolicy(
@@ -847,3 +841,205 @@ class CopilotPolicyRenderTests:
         """[tier-1/unit] COPILOT_PROVIDER_SPEC: supports_tool_policy is True and 'COPILOT_HOME' is in control_envs (updates tests/core/agents/test_registry.py)."""
         assert COPILOT_PROVIDER_SPEC.supports_tool_policy is True
         assert "COPILOT_HOME" in COPILOT_PROVIDER_SPEC.control_envs
+
+
+def _mcp_rule(pattern: str) -> ToolRule:
+    return ToolRule(capability=ToolCapability.MCP, pattern=pattern)
+
+
+def _patch_user_mcp(monkeypatch: pytest.MonkeyPatch, user_mcp: UserMcpConfig | None) -> None:
+    monkeypatch.setattr("dovo.core.agents.copilot.load_user_mcp_config", lambda: user_mcp)
+
+
+class CopilotMcpRenderTests:
+    @pytest.mark.parametrize(
+        ("rule", "available", "grant"),
+        [
+            pytest.param(
+                _mcp_rule("probe-srv/mark"), "probe-srv-mark", ["--allow-tool", "probe-srv(mark)"], id="server-tool"
+            ),
+            pytest.param(_mcp_rule("probe-srv/*"), "probe-srv", ["--allow-tool", "probe-srv"], id="server-wildcard"),
+        ],
+    )
+    def test_mcp_allow_renders_availability_grant_and_user_config_flags(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, rule: ToolRule, available: str, grant: list[str]
+    ) -> None:
+        """[tier-1/unit] default_copilot_run: allow MCP rule with a user config defining probe-srv and other-srv -> argv has '--additional-mcp-config' '@<user path>', '--disable-mcp-server' 'other-srv', '--disable-builtin-mcps', the availability name in '--available-tools', and the expected '--allow-tool' pair."""
+        config_path = tmp_path / "user" / "mcp-config.json"
+        _patch_user_mcp(monkeypatch, UserMcpConfig(path=config_path, servers=frozenset({"probe-srv", "other-srv"})))
+
+        runner, _ = _run_policy(tmp_path, monkeypatch, ToolPolicy(allow=[rule]))
+
+        cmd = runner.last_call.cmd
+        assert _flag_values(cmd, "--additional-mcp-config") == [f"@{config_path}"]
+        assert _flag_values(cmd, "--disable-mcp-server") == ["other-srv"]
+        assert "--disable-builtin-mcps" in cmd
+        assert _flag_values(cmd, "--available-tools") == [available]
+        assert _flag_values(cmd, "--allow-tool") == [grant[1]]
+
+    def test_mcp_deny_under_allow_all_renders_deny_flags_without_user_config(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """[tier-1/unit] default_copilot_run: allow_all=True + MCP denies 'probe-srv/mark' and 'other-srv/*' -> argv tail has '--deny-tool' 'probe-srv(mark)' and '--deny-tool' 'other-srv', and no '--additional-mcp-config'."""
+        _patch_user_mcp(monkeypatch, None)
+        policy = ToolPolicy(allow_all=True, deny=[_mcp_rule("probe-srv/mark"), _mcp_rule("other-srv/*")])
+
+        runner, _ = _run_policy(tmp_path, monkeypatch, policy, with_invocation=False)
+
+        assert runner.last_call.cmd == [
+            *_ORIGINAL_ARGV,
+            "--deny-tool",
+            "probe-srv(mark)",
+            "--deny-tool",
+            "other-srv",
+        ]
+
+    def test_mcp_deny_under_a_restrictive_policy_needs_no_user_config(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """[tier-1/unit] default_copilot_run: restrictive read/write policy + MCP deny 'probe-srv/mark' and no user config -> argv has '--deny-tool' 'probe-srv(mark)', '--disable-builtin-mcps' and no '--additional-mcp-config'."""
+        _patch_user_mcp(monkeypatch, None)
+        policy = ToolPolicy(allow=_READ_WRITE_WORKTREE, deny=[_mcp_rule("probe-srv/mark")])
+
+        runner, _ = _run_policy(tmp_path, monkeypatch, policy)
+
+        cmd = runner.last_call.cmd
+        assert _flag_values(cmd, "--deny-tool") == ["probe-srv(mark)"]
+        assert "--disable-builtin-mcps" in cmd
+        assert "--additional-mcp-config" not in cmd
+
+    @pytest.mark.parametrize(
+        ("user_servers", "disabled"),
+        [
+            pytest.param(None, ["githubiq"], id="no-user-config"),
+            pytest.param(frozenset({"probe-srv"}), ["githubiq", "probe-srv"], id="user-config-servers-disabled"),
+        ],
+    )
+    def test_builtin_github_server_allow_keeps_builtin_mcps_and_disables_githubiq(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, user_servers: frozenset[str] | None, disabled: list[str]
+    ) -> None:
+        """[tier-1/unit] default_copilot_run: allow MCP 'github-mcp-server/search_users' with no user config, or one defining unreferenced 'probe-srv' -> argv omits '--disable-builtin-mcps', disables 'githubiq' (and 'probe-srv'), and has '--allow-tool' 'github-mcp-server(search_users)'."""
+        config_path = tmp_path / "user" / "mcp-config.json"
+        _patch_user_mcp(
+            monkeypatch, None if user_servers is None else UserMcpConfig(path=config_path, servers=user_servers)
+        )
+
+        runner, _ = _run_policy(tmp_path, monkeypatch, ToolPolicy(allow=[_mcp_rule("github-mcp-server/search_users")]))
+
+        cmd = runner.last_call.cmd
+        assert "--disable-builtin-mcps" not in cmd
+        assert _flag_values(cmd, "--additional-mcp-config") == ([] if user_servers is None else [f"@{config_path}"])
+        assert _flag_values(cmd, "--disable-mcp-server") == disabled
+        assert _flag_values(cmd, "--allow-tool") == ["github-mcp-server(search_users)"]
+        assert _flag_values(cmd, "--available-tools") == ["github-mcp-server-search_users"]
+
+
+class UserMcpConfigTests:
+    @pytest.mark.parametrize(
+        ("content", "expected"),
+        [
+            pytest.param('{"mcpServers": {"a": {}, "b": {}}}', frozenset({"a", "b"}), id="two-servers"),
+            pytest.param('{"mcpServers": {}}', frozenset(), id="no-servers"),
+            pytest.param("not json", None, id="unparseable"),
+            pytest.param('{"mcpServers": []}', None, id="servers-not-an-object"),
+            pytest.param(None, None, id="missing-file"),
+        ],
+    )
+    def test_load_reads_server_names_from_the_host_copilot_home(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, content: str | None, expected: frozenset[str] | None
+    ) -> None:
+        """[tier-1/unit] load_user_mcp_config: with COPILOT_HOME set to tmp_path, returns UserMcpConfig(path=tmp_path/'mcp-config.json', servers=expected), or None for a missing or unparseable file; without COPILOT_HOME it reads ~/.copilot."""
+        monkeypatch.setenv("COPILOT_HOME", str(tmp_path))
+        if content is not None:
+            (tmp_path / "mcp-config.json").write_text(content)
+
+        loaded = load_user_mcp_config()
+
+        assert loaded == (
+            None if expected is None else UserMcpConfig(path=tmp_path / "mcp-config.json", servers=expected)
+        )
+
+    def test_load_without_copilot_home_reads_the_dot_copilot_directory(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """[tier-1/unit] load_user_mcp_config: with COPILOT_HOME unset and Path.home() at tmp_path, reads tmp_path/.copilot/mcp-config.json."""
+        monkeypatch.delenv("COPILOT_HOME", raising=False)
+        monkeypatch.setattr(Path, "home", lambda: tmp_path)
+        (tmp_path / ".copilot").mkdir()
+        (tmp_path / ".copilot" / "mcp-config.json").write_text('{"mcpServers": {"a": {}}}')
+
+        assert load_user_mcp_config() == UserMcpConfig(
+            path=tmp_path / ".copilot" / "mcp-config.json", servers=frozenset({"a"})
+        )
+
+    def test_load_without_a_home_directory_returns_none(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """[tier-1/unit] load_user_mcp_config: with COPILOT_HOME unset and Path.home() raising RuntimeError, returns None instead of raising."""
+
+        def no_home() -> Path:
+            raise RuntimeError("Could not determine home directory.")
+
+        monkeypatch.delenv("COPILOT_HOME", raising=False)
+        monkeypatch.setattr(Path, "home", no_home)
+
+        assert load_user_mcp_config() is None
+
+
+class CopilotMcpUnsupportedTests:
+    @pytest.mark.parametrize(
+        "policy",
+        [
+            pytest.param("mcp-allow-unknown-server", id="mcp-unknown-server"),
+            pytest.param("mcp-allow-without-user-config", id="mcp-no-user-config"),
+            pytest.param("mcp-allow-without-pattern", id="mcp-no-pattern"),
+        ],
+    )
+    def test_mcp_allow_for_an_unavailable_server_is_rejected_before_spawn(
+        self, git_repo: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, policy: str
+    ) -> None:
+        """[tier-1/unit] CopilotAgentAdapter.invoke: PROVIDER_ERROR with errors == [tool_policy_unsupported_message('copilot')] and FakeAgentRunner.calls == [] when the allowed MCP server is neither github-mcp-server nor in the readable user config."""
+        user_config = UserMcpConfig(path=tmp_path / "mcp-config.json", servers=frozenset({"other-srv"}))
+        cases = {
+            "mcp-allow-unknown-server": (ToolPolicy(allow=[_mcp_rule("ghost-srv/tool")]), user_config),
+            "mcp-allow-without-user-config": (ToolPolicy(allow=[_mcp_rule("probe-srv/mark")]), None),
+            "mcp-allow-without-pattern": (
+                ToolPolicy(allow=[ToolRule(capability=ToolCapability.MCP)]),
+                user_config,
+            ),
+        }
+        mcp_policy, loaded = cases[policy]
+        _patch_user_mcp(monkeypatch, loaded)
+        runner = FakeAgentRunner().returning(stdout=_OK_STREAM)
+        monkeypatch.setattr("dovo.core.agents.copilot.run_isolated_process", runner)
+        request = (
+            AgentRequestBuilder()
+            .with_worktree_path(git_repo)
+            .with_tools(mcp_policy)
+            .with_invocation(_real_invocation(tmp_path))
+            .build()
+        )
+
+        response = CopilotAgentAdapter().invoke(request)
+
+        assert response.status == AgentResponseStatus.PROVIDER_ERROR
+        assert response.errors == [tool_policy_unsupported_message("copilot")]
+        assert runner.calls == []
+
+    def test_mcp_deny_without_a_pattern_is_rejected_before_spawn(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """[tier-1/unit] default_copilot_run: allow_all=True + an MCP deny with no pattern returns the unsupported error outcome and never spawns gh."""
+        _patch_user_mcp(monkeypatch, None)
+        runner = FakeAgentRunner().returning(stdout=_OK_STREAM)
+        monkeypatch.setattr("dovo.core.agents.copilot.run_isolated_process", runner)
+
+        outcome = default_copilot_run(
+            CliMutationRunRequest(
+                worktree_path=_worktree(tmp_path),
+                prompt="hi",
+                timeout_seconds=3,
+                tools=ToolPolicy(allow_all=True, deny=[ToolRule(capability=ToolCapability.MCP)]),
+            )
+        )
+
+        assert outcome == CliMutationOutcome(status="error", error_detail=tool_policy_unsupported_message("copilot"))
+        assert runner.calls == []

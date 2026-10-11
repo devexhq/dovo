@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
@@ -20,7 +21,6 @@ from dovo.core.agents.credentials import missing_credential_error, resolve_crede
 from dovo.core.agents.models import AgentDenial, AgentInvocationContext, AgentRequest
 from dovo.core.agents.tools import (
     PolicyRoots,
-    policy_rules,
     resolve_policy_roots,
     tool_policy_unsupported_message,
 )
@@ -33,8 +33,12 @@ _UPDATE_REQUIRED_DETAIL = (
 )
 _PATH_GLOB_ALL = (None, "**")
 _PATH_CAPABILITIES = (ToolCapability.READ, ToolCapability.WRITE)
+_COMMAND_CAPABILITIES = (ToolCapability.SHELL, ToolCapability.NETWORK)
 _UNRESTRICTED_FLAGS = ("--allow-all-tools", "--allow-all-paths", "--allow-all-urls")
 _HTTP_SCHEMES = ("https", "http")
+_BUILTIN_MCP_SERVER = "github-mcp-server"
+# Second built-in server that must be switched off when github-mcp-server is allowed (slice 5 probe, Copilot CLI 1.0.92)
+_BUILTIN_MCP_DISABLE_NAME = "githubiq"
 
 
 def resolve_copilot_token() -> str | None:
@@ -238,16 +242,125 @@ def _render_url_flags(rule: ToolRule, *, deny: bool) -> list[str] | str:
     return [part for scheme in _HTTP_SCHEMES for part in (flag, f"{scheme}://{rule.pattern}")]
 
 
+@dataclass(frozen=True)
+class UserMcpConfig:
+    """The user's Copilot MCP config file and the server names it defines."""
+
+    path: Path
+    servers: frozenset[str]
+
+
+def load_user_mcp_config() -> UserMcpConfig | None:
+    """Read mcp-config.json from the host COPILOT_HOME (else ~/.copilot) at call time; None when absent, unparseable, or no home directory exists."""
+    try:
+        home = os.environ.get("COPILOT_HOME")
+        path = (Path(home) if home else Path.home() / ".copilot") / "mcp-config.json"
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError, RuntimeError):
+        return None
+
+    servers = data.get("mcpServers", {}) if isinstance(data, dict) else None
+    if not isinstance(servers, dict):
+        return None
+
+    return UserMcpConfig(path=path, servers=frozenset(servers))
+
+
+def _parse_mcp_pattern(pattern: str | None) -> tuple[str, str | None] | None:
+    """Split a validated 'server/tool' or 'server/*' pattern into (server, tool), tool None for a wildcard; None for no pattern."""
+    if pattern is None:
+        return None
+
+    server, _, tool = pattern.partition("/")
+
+    return server, None if tool == "*" else tool
+
+
+def _mcp_permission(server: str, tool: str | None) -> str:
+    """Return the --allow-tool/--deny-tool permission for an MCP server tool, or the whole server."""
+    return server if tool is None else f"{server}({tool})"
+
+
+def _mcp_availability_names(policy: ToolPolicy) -> list[str]:
+    """Return the --available-tools names the MCP allow rules expose; a rule with no pattern exposes none."""
+    names: list[str] = []
+    for rule in policy.allow:
+        target = _parse_mcp_pattern(rule.pattern) if rule.capability == ToolCapability.MCP else None
+        if target is not None:
+            server, tool = target
+            names.append(server if tool is None else f"{server}-{tool}")
+
+    return names
+
+
+def _render_mcp_deny(rule: ToolRule) -> list[str] | str:
+    """Return the --deny-tool flags for one MCP deny rule, or an error."""
+    target = _parse_mcp_pattern(rule.pattern)
+    if target is None:
+        return "an mcp deny rule must name a server"
+
+    return ["--deny-tool", _mcp_permission(*target)]
+
+
+def _mcp_server_flags(servers: set[str], user_mcp: UserMcpConfig | None) -> list[str]:
+    """Return the flags that expose only the named MCP servers: built-in toggle, user config path, and disables."""
+    if _BUILTIN_MCP_SERVER in servers:
+        flags = ["--disable-mcp-server", _BUILTIN_MCP_DISABLE_NAME]
+    else:
+        flags = ["--disable-builtin-mcps"]
+
+    if user_mcp is not None:
+        flags.extend(["--additional-mcp-config", f"@{user_mcp.path}"])
+        for unreferenced in sorted(user_mcp.servers - servers):
+            flags.extend(["--disable-mcp-server", unreferenced])
+
+    return flags
+
+
+def _render_mcp_flags(policy: ToolPolicy, user_mcp: UserMcpConfig | None) -> list[str] | str:
+    """Return the MCP server and grant flags for the allow rules, or why a server is unavailable.
+
+    Denies are rendered by _render_mcp_deny; they need no availability entry and no user config.
+    """
+    targets: list[tuple[str, str | None]] = []
+    for rule in policy.allow:
+        if rule.capability != ToolCapability.MCP:
+            continue
+
+        target = _parse_mcp_pattern(rule.pattern)
+        if target is None:
+            return "an mcp allow rule must name a server"
+
+        targets.append(target)
+
+    if not targets:
+        return ["--disable-builtin-mcps"]
+
+    servers = {server for server, _ in targets}
+    known = {_BUILTIN_MCP_SERVER} | (user_mcp.servers if user_mcp is not None else frozenset())
+    unavailable = sorted(servers - known)
+    if unavailable:
+        return (
+            f"mcp server {unavailable[0]!r} is neither {_BUILTIN_MCP_SERVER} nor defined in the user's mcp-config.json"
+        )
+
+    grants = [part for server, tool in targets for part in ("--allow-tool", _mcp_permission(server, tool))]
+
+    return [*_mcp_server_flags(servers, user_mcp), *grants]
+
+
 def _render_command_rules(rules: list[ToolRule], *, deny: bool) -> list[str] | str:
-    """Return the flags for the shell and network rules, or the first error; read/write/mcp rules are rejected."""
+    """Return the flags for the shell and network rules, and MCP denies, or the first error; read/write deny rules are rejected."""
     flags: list[str] = []
     for rule in rules:
         if rule.capability == ToolCapability.SHELL:
             rendered = _render_rule_flags(rule, deny=deny)
         elif rule.capability == ToolCapability.NETWORK:
             rendered = _render_url_flags(rule, deny=deny)
+        elif rule.capability == ToolCapability.MCP and deny:
+            rendered = _render_mcp_deny(rule)
         else:
-            return f"{rule.capability.value} {'deny' if deny else 'allow'} rules cannot be rendered for Copilot"
+            return f"{rule.capability.value} deny rules cannot be rendered for Copilot"
 
         if isinstance(rendered, str):
             return rendered
@@ -328,7 +441,7 @@ def _available_tools_flags(names: list[str]) -> list[str] | str:
 
 
 def _tool_names(policy: ToolPolicy) -> list[str]:
-    """Return the Copilot tool aliases the allow rules expose, in a fixed order."""
+    """Return the Copilot tool aliases and MCP names the allow rules expose, in a fixed order."""
     granted = {rule.capability for rule in policy.allow}
     aliases = (
         (ToolCapability.READ, "read"),
@@ -337,24 +450,27 @@ def _tool_names(policy: ToolPolicy) -> list[str]:
         (ToolCapability.NETWORK, "web_fetch"),
     )
 
-    return [alias for capability, alias in aliases if capability in granted]
+    return [
+        *(alias for capability, alias in aliases if capability in granted),
+        *_mcp_availability_names(policy),
+    ]
 
 
-def _render_restricted(policy: ToolPolicy, roots: PolicyRoots) -> CopilotPolicyArgs | str:
+def _render_restricted(
+    policy: ToolPolicy, roots: PolicyRoots, user_mcp: UserMcpConfig | None
+) -> CopilotPolicyArgs | str:
     """Return the restrictive flags and isolated COPILOT_HOME, or why the policy cannot be preserved."""
     if roots.control is None:
         return "a restrictive policy needs a control directory for the isolated COPILOT_HOME"
 
-    if any(rule.capability == ToolCapability.MCP for rule in policy_rules(policy)):
-        return "mcp rules cannot be rendered for Copilot"
-
     available = _available_tools_flags(_tool_names(policy))
     scope = _path_scope(policy, roots)
     allows = _render_command_rules(
-        [rule for rule in policy.allow if rule.capability not in _PATH_CAPABILITIES], deny=False
+        [rule for rule in policy.allow if rule.capability in _COMMAND_CAPABILITIES], deny=False
     )
     denies = _render_command_rules(policy.deny, deny=True)
-    for rendered in (available, scope, allows, denies):
+    mcp = _render_mcp_flags(policy, user_mcp)
+    for rendered in (available, scope, allows, denies, mcp):
         if isinstance(rendered, str):
             return rendered
 
@@ -362,7 +478,7 @@ def _render_restricted(policy: ToolPolicy, roots: PolicyRoots) -> CopilotPolicyA
     flags = (
         "--no-ask-user",
         "--disallow-temp-dir",
-        "--disable-builtin-mcps",
+        *mcp,
         *available,
         *scope,
         *(["--allow-tool", "write"] if grants_write else []),
@@ -373,16 +489,21 @@ def _render_restricted(policy: ToolPolicy, roots: PolicyRoots) -> CopilotPolicyA
     return CopilotPolicyArgs(flags=flags, home=roots.control / "copilot-home")
 
 
-def render_copilot_policy(policy: ToolPolicy, roots: PolicyRoots) -> CopilotPolicyArgs | str:
+def render_copilot_policy(
+    policy: ToolPolicy, roots: PolicyRoots, user_mcp: UserMcpConfig | None
+) -> CopilotPolicyArgs | str:
     """Render policy into Copilot CLI flags, or return why a rule cannot be preserved."""
     if policy.allow_all:
         return _render_unrestricted(policy)
 
-    return _render_restricted(policy, roots)
+    return _render_restricted(policy, roots, user_mcp)
 
 
 def _render_for_request(
-    policy: ToolPolicy, worktree_path: Path, invocation: AgentInvocationContext | None
+    policy: ToolPolicy,
+    worktree_path: Path,
+    invocation: AgentInvocationContext | None,
+    user_mcp: UserMcpConfig | None,
 ) -> CopilotPolicyArgs | str:
     """Render the policy for one request, returning the first reason it is unsupported; an unrestricted policy needs no roots."""
     if policy.allow_all:
@@ -392,7 +513,7 @@ def _render_for_request(
     if isinstance(roots, str):
         return roots
 
-    return render_copilot_policy(policy, roots)
+    return render_copilot_policy(policy, roots, user_mcp)
 
 
 def default_copilot_run(request: CliMutationRunRequest) -> CliMutationOutcome:
@@ -401,7 +522,7 @@ def default_copilot_run(request: CliMutationRunRequest) -> CliMutationOutcome:
     if token is None:
         return CliMutationOutcome(status="error", error_detail=missing_credential_error(COPILOT_PROVIDER_SPEC))
 
-    rendered = _render_for_request(request.tools, request.worktree_path, request.invocation)
+    rendered = _render_for_request(request.tools, request.worktree_path, request.invocation, load_user_mcp_config())
     if isinstance(rendered, str):
         return CliMutationOutcome(status="error", error_detail=tool_policy_unsupported_message("copilot"))
 
@@ -451,7 +572,7 @@ class CopilotAgentAdapter(CliDirectMutationAdapter):
 
     def _policy_unsupported(self, request: AgentRequest) -> str | None:
         """Return the unsupported message when Copilot cannot preserve the request's policy."""
-        rendered = _render_for_request(request.tools, request.worktree_path, request.invocation)
+        rendered = _render_for_request(request.tools, request.worktree_path, request.invocation, load_user_mcp_config())
 
         return tool_policy_unsupported_message("copilot") if isinstance(rendered, str) else None
 
