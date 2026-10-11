@@ -45,7 +45,7 @@ dovo blueprint delete <sha_or_name> [--force] [--format terminal|json]
 
 ### `dovo blueprint validate`
 
-Validates a blueprint definition (YAML syntax, schema, and semantic invariants such as duplicate step IDs, undeclared input placeholders, and unsafe `script_path` values) without executing it. See [`CatalogValidateResult`](../agents/schemas.md) for the result shape and exit codes.
+Validates a blueprint definition (YAML syntax, schema, and semantic invariants such as duplicate step IDs, undeclared input placeholders, and unsafe `script_path` values) without executing it. See [`CatalogValidateResult`](../../src/dovo/core/catalog/models.py) for the result shape.
 
 ```bash
 dovo blueprint validate <target> [--format terminal|json]

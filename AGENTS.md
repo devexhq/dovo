@@ -67,7 +67,7 @@ Documentation update gates, accuracy rules, and user-facing doc sync policies ar
 | [docs/agents/documentation.md](docs/agents/documentation.md) | Documentation update gates, accuracy rules, and user-facing doc sync |
 | [docs/agents/planning.md](docs/agents/planning.md) | Planning an issue before implementation (artifact inventory, code samples, plan template) |
 | [docs/agents/testing.md](docs/agents/testing.md) | Adding or running tests (execution tiers, harness matchers, contracts) |
-| [docs/agents/schemas.md](docs/agents/schemas.md) | Entity shapes (exceptions, DTOs, facades, commands), config & blueprint schemas |
+| [docs/agents/schemas.md](docs/agents/schemas.md) | Cross-cutting contracts (config merge, paths, persistence authority, secrets) and where each entity's source lives |
 | [docs/agents/glossary.md](docs/agents/glossary.md) | Disambiguating task / workflow / blueprint / step / run / session / worktree / checkpoint |
 | [docs/agents/troubleshooting.md](docs/agents/troubleshooting.md) | Diagnosing agent-provider setup failures (missing keys, missing CLIs, timeouts) |
 | [docs/agents/git-and-pr-conventions.md](docs/agents/git-and-pr-conventions.md) | Committing changes or opening a PR |

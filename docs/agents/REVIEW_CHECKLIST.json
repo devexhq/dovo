@@ -536,8 +536,8 @@
       "severity": "BLOCKER",
       "domain": "all",
       "scope": "docs/agents/schemas.md",
-      "evaluation_criteria": "Verify schemas.md is updated whenever new DTOs, Result models, or config fields are added in src/.",
-      "bad_pattern": "# Adding new Result model in core/models.py without updating schemas.md"
+      "evaluation_criteria": "Verify schemas.md changes only when a stated contract changes, and flag schemas.md edits that add field lists, enum members, exception names, or method lists.",
+      "bad_pattern": "# Listing a new Result model's fields in schemas.md"
     },
     {
       "id": "DOC-004",
