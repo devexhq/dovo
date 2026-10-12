@@ -257,7 +257,6 @@ def _empty_or_large_patch_result(
         return PatchApplyResult(
             status=PatchApplyStatus.TOO_LARGE,
             errors=[f"Patch exceeds max_patch_kb ({max_patch_kb} KiB) (size={size_bytes} bytes)."],
-            fixes=["Reduce agent change size or raise patch.max_patch_kb / workflow patch.max_patch_kb"],
         )
     return None
 
