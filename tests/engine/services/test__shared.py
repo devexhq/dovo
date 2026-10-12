@@ -91,3 +91,14 @@ class SharedFinalizeTests:
         finalize(repo, warnings, outcome, "missing-session")
 
         assert warnings == ["caller warning", "outcome warning"]
+
+
+class FinalizePausedPromptTests:
+    def test_finalize_copies_paused_prompt_id(self, tmp_path: Path) -> None:
+        """[tier-1/unit] finalize: a RunOutcome with paused_prompt_id "approve" yields BlueprintRunResult.paused_prompt_id "approve"; a normal outcome yields None."""
+        repo = _repo(tmp_path)
+        paused = RunOutcome(status=SessionStatus.PAUSED, worktree_path=tmp_path, paused_prompt_id="approve")
+        completed = RunOutcome(status=SessionStatus.COMPLETED, worktree_path=tmp_path)
+
+        assert finalize(repo, [], paused, "missing").paused_prompt_id == "approve"
+        assert finalize(repo, [], completed, "missing").paused_prompt_id is None

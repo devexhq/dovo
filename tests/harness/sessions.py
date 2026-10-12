@@ -7,12 +7,16 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from dovo.common.filesystem.models import WorkspacePaths
+from dovo.core.artifacts import Artifacts
+from dovo.core.artifacts.store import ArtifactStore
 from dovo.core.catalog import Catalog
 from dovo.core.catalog.blueprint import Blueprint
 from dovo.core.catalog.definitions import LoopStepBlock, StepDefinition
 from dovo.core.db import SessionRecord, SessionsRepository, SessionStatus
-from dovo.engine import RunObserver, RunOutcome
+from dovo.core.db.repositories.artifacts import ArtifactsRepository
+from dovo.engine import RunCoordinator, RunObserver, RunOutcome
 from dovo.engine.executors.models import ConditionEvaluationResult, StepResult
+from dovo.engine.models import RunContext
 from dovo.engine.state_models import ExecutionLeafNode, NodeState, StepAttemptRecord
 from dovo.engine.state_store import SessionStateStore
 from dovo.engine.writer import snapshot_definitions
@@ -200,6 +204,36 @@ def seed_failed_session(
         error_message=f"Step '{failed_step_id}' failed: {SEEDED_FAILURE}",
     )
     assert saved.ok
+    row = sessions.get(session_id)
+    assert row is not None
+    return row
+
+
+def seed_paused_ask_session(
+    paths: WorkspacePaths,
+    sessions: SessionsRepository,
+    artifacts: ArtifactsRepository,
+    *,
+    session_id: str,
+    steps: list[dict[str, object]],
+) -> SessionRecord:
+    """Seed a session and run it with no interaction prompter, leaving it PAUSED at its first ask step with a stored pending_ask."""
+    seed_new_session(paths, sessions, session_id=session_id, steps=steps)
+    session_tmp_dir = paths.tmp_dir / session_id
+    (session_tmp_dir / "steps").mkdir(parents=True, exist_ok=True)
+    session_log_dir = paths.logs_dir / session_id
+    session_log_dir.mkdir(parents=True, exist_ok=True)
+    context = RunContext(
+        session_id=session_id,
+        paths=paths,
+        target_dir=paths.root_dir,
+        session_tmp_dir=session_tmp_dir,
+        session_log_dir=session_log_dir,
+        artifact_store=ArtifactStore(Artifacts(paths, artifacts), session_id),
+    )
+    outcome = RunCoordinator(SessionStateStore(sessions, paths, session_id), context).execute()
+    assert outcome.status is SessionStatus.PAUSED
+    sessions.update_status(session_id, SessionStatus.PAUSED)
     row = sessions.get(session_id)
     assert row is not None
     return row

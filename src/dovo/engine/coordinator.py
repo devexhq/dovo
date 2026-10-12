@@ -6,15 +6,17 @@ import json
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from enum import StrEnum
+from typing import TypedDict
 
 from dovo.common.lock import WorkspaceLock
 from dovo.common.models import FailurePolicy
 from dovo.common.process import process_registry
 from dovo.core.agents.models import ResolvedAgentSettings
 from dovo.core.catalog.blueprint import Blueprint
-from dovo.core.catalog.definitions import LoopStepBlock, StepDefinition
+from dovo.core.catalog.definitions import LoopStepBlock, StepDefinition, StepType
 from dovo.core.catalog.exceptions import BlueprintLoadError, BlueprintNotFoundError, BlueprintValidationError
 from dovo.core.db import SessionStatus
+from dovo.core.interaction import Interaction, InteractionAnswer, InteractionRequest
 from dovo.engine.exceptions import EngineSnapshotMissingError
 from dovo.engine.executors.models import ExecutionIdentity, PreviousStepMetadata, StepResult
 from dovo.engine.failure import (
@@ -67,6 +69,26 @@ class NodeTransitionKind(StrEnum):
     RETRY = "retry"
 
 
+class _AskArguments(TypedDict):
+    """Step-context keyword arguments shared by the StepCoordinator ask methods."""
+
+    step_context: dict[str, object] | None
+    previous_step: PreviousStepMetadata
+    steps: list[PreviousStepMetadata]
+    attempt: int
+    loop_iteration: int | None
+    loop_id: str | None
+
+
+@dataclass(frozen=True)
+class _AskSlot:
+    """Position of an ask leaf: 1-based index of total in its container, and the loop it belongs to."""
+
+    index: int
+    total: int
+    loop: ExecutionLoopNode | None
+
+
 @dataclass
 class _LoadedRun:
     """Durable state and definitions the coordinator drives, loaded once per execute()."""
@@ -98,6 +120,7 @@ class RunCoordinator:
         self._observer = observer
         self._prompter = prompter
         self._agent = agent
+        self._paused_prompt_id: str | None = None
         self._errors: list[str] = []
         self._warnings: list[str] = []
         self._loaded: _LoadedRun | None = None
@@ -168,6 +191,9 @@ class RunCoordinator:
         loop: ExecutionLoopNode | None,
     ) -> NodeTransitionKind:
         """Run or re-enter one live leaf at 1-based idx of total, attributed to the loop's last iteration when loop is set, with the shared attempt, failure-gate, and commit path."""
+        if step_def.type is StepType.ASK:
+            return self._advance_ask(leaf, step_def, index=idx, total=total, loop=loop)
+
         loop_id = loop.id if loop is not None else None
         loop_iteration = loop.iterations[-1].number if loop is not None else None
         if leaf.state is NodeState.PAUSED:
@@ -190,6 +216,144 @@ class RunCoordinator:
             loop_id=loop_id,
         )
         return self._settle_attempt(leaf, step_def, result)
+
+    def _advance_ask(
+        self,
+        leaf: ExecutionLeafNode,
+        step_def: StepDefinition,
+        *,
+        index: int,
+        total: int,
+        loop: ExecutionLoopNode | None,
+    ) -> NodeTransitionKind:
+        """Run, re-ask or fall back to the failure gate for an ask leaf depending on its state and pending_ask."""
+        if leaf.state is NodeState.PAUSED:
+            if leaf.pending_ask is None:
+                return self._resolve_failed_leaf(leaf, step_def)
+            if Interaction.request_errors(leaf.pending_ask):
+                return self._fail_invalid_pending_ask(leaf)
+            return self._ask_pending(leaf, step_def, leaf.pending_ask, _AskSlot(index, total, loop))
+
+        if leaf.state is NodeState.PENDING and not self._begin_attempt(leaf, 1):
+            return NodeTransitionKind.FAILED
+        return self._start_ask(leaf, step_def, index=index, total=total, loop=loop)
+
+    def _start_ask(
+        self,
+        leaf: ExecutionLeafNode,
+        step_def: StepDefinition,
+        *,
+        index: int,
+        total: int,
+        loop: ExecutionLoopNode | None,
+    ) -> NodeTransitionKind:
+        """Resolve the request of a fresh ask attempt and either settle it without a prompt or persist and ask it."""
+        resolution = self._run.step_coordinator.resolve_ask(
+            self._context,
+            step_def,
+            index=index,
+            total=total,
+            **self._ask_arguments(leaf, loop),
+        )
+        if resolution.result is not None:
+            self._warnings.extend(resolution.result.warnings)
+            return self._settle_attempt(leaf, step_def, resolution.result)
+        if resolution.request is None:
+            self._errors.append(f"Ask step '{leaf.id}' resolved neither a request nor a result.")
+            return NodeTransitionKind.FAILED
+        return self._ask_pending(leaf, step_def, resolution.request, _AskSlot(index, total, loop))
+
+    def _ask_arguments(self, leaf: ExecutionLeafNode, loop: ExecutionLoopNode | None) -> _AskArguments:
+        """Return the step-context arguments StepCoordinator ask methods share."""
+        steps_metadata = terminal_step_metadata(self._run.state)
+        loop_iteration = loop.iterations[-1].number if loop is not None else None
+        return _AskArguments(
+            step_context=self._step_context(loop_iteration),
+            previous_step=steps_metadata[-1] if steps_metadata else PreviousStepMetadata(),
+            steps=steps_metadata,
+            attempt=leaf.attempts[-1].number,
+            loop_iteration=loop_iteration,
+            loop_id=loop.id if loop is not None else None,
+        )
+
+    def _ask_pending(
+        self,
+        leaf: ExecutionLeafNode,
+        step_def: StepDefinition,
+        request: InteractionRequest,
+        slot: _AskSlot,
+    ) -> NodeTransitionKind:
+        """Persist the pending ask, read an answer, and apply it or pause the run at the prompt."""
+        if not self._persist_pending_ask(leaf, request):
+            return NodeTransitionKind.FAILED
+
+        answer = self._read_answer(request)
+        if answer is None:
+            return self._pause_at_prompt(leaf)
+        return self._apply_answer(leaf, step_def, request, answer, slot)
+
+    def _persist_pending_ask(self, leaf: ExecutionLeafNode, request: InteractionRequest) -> bool:
+        """Commit the leaf as PAUSED with pending_ask and the run as PAUSED before any input is read."""
+        leaf.pending_ask = request
+        leaf.state = NodeState.PAUSED
+        return self._commit(f"before asking step '{leaf.id}'", SessionStatus.PAUSED)
+
+    def _read_answer(self, request: InteractionRequest) -> InteractionAnswer | None:
+        """Ask the interaction prompter; None for no prompter, an unanswered or invalid answer, or KeyboardInterrupt."""
+        prompter = self._context.interaction_prompter
+        if prompter is None:
+            return None
+
+        try:
+            answer = prompter.ask(request)
+        except KeyboardInterrupt:
+            return None
+        if answer is None:
+            return None
+
+        validated = Interaction.validate(request, answer)
+        if validated.answer is None:
+            self._warnings.append(f"Ignored an invalid answer for prompt '{request.step_id}': {validated.errors[0]}")
+            return None
+        return validated.answer
+
+    def _apply_answer(
+        self,
+        leaf: ExecutionLeafNode,
+        step_def: StepDefinition,
+        request: InteractionRequest,
+        answer: InteractionAnswer,
+        slot: _AskSlot,
+    ) -> NodeTransitionKind:
+        """Clear pending_ask, commit the run back to RUNNING, then settle the answered result through the normal attempt path."""
+        result = self._run.step_coordinator.complete_ask(
+            self._context,
+            step_def,
+            request,
+            answer,
+            index=slot.index,
+            total=slot.total,
+            **self._ask_arguments(leaf, slot.loop),
+        )
+        leaf.attempts[-1] = leaf.attempts[-1].model_copy(update={"completed_at": _now(), "result": result})
+        leaf.pending_ask = None
+        leaf.state = NodeState.RUNNING
+        if not self._commit(f"after prompt '{leaf.id}' answered", SessionStatus.RUNNING):
+            return NodeTransitionKind.FAILED
+        return self._settle_attempt(leaf, step_def, result)
+
+    def _pause_at_prompt(self, leaf: ExecutionLeafNode) -> NodeTransitionKind:
+        """Record the leaf's id as the paused prompt and return PAUSED without recording any result."""
+        self._paused_prompt_id = leaf.id
+        return NodeTransitionKind.PAUSED
+
+    def _fail_invalid_pending_ask(self, leaf: ExecutionLeafNode) -> NodeTransitionKind:
+        """Fail the leaf with "Pending ask for '<id>' is invalid." and commit."""
+        self._errors.append(f"Pending ask for '{leaf.id}' is invalid.")
+        leaf.pending_ask = None
+        leaf.state = NodeState.FAILED
+        self._commit(f"after invalid pending ask for step '{leaf.id}'")
+        return NodeTransitionKind.FAILED
 
     def _drive(self) -> RunOutcome:
         """Dispatch the next non-terminal node until the run completes, pauses, or fails."""
@@ -605,4 +769,5 @@ class RunCoordinator:
             worktree_path=worktree.worktree_path if worktree is not None else self._context.target_dir,
             session_id=self._context.session_id,
             worktree_id=worktree.session_id if worktree is not None else None,
+            paused_prompt_id=self._paused_prompt_id if status is SessionStatus.PAUSED else None,
         )

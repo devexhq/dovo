@@ -369,3 +369,29 @@ class CatalogValidateServiceTests:
         )
 
         assert result.ok is False
+
+
+class CatalogValidateAskTests:
+    """Tier 1 integration tests for Catalog.validate over `type: ask` steps."""
+
+    def test_ask_rule_violation_reports_ask_invalid_with_step_id(self, isolated_workspace: Path) -> None:
+        """[tier-1/integration] Catalog.validate: a blueprint with `{id: approve, type: ask}` and no interaction returns INVALID whose error contains "Step 'approve'" and (CATALOG_ASK_INVALID)."""
+        target_path = _write_yaml(
+            isolated_workspace / "ask.yml", {"name": "ask", "steps": [{"id": "approve", "type": "ask"}]}
+        )
+
+        result = _validate(str(target_path), path=isolated_workspace, item_type=CatalogItemType.BLUEPRINT)
+
+        assert result.status == CatalogValidateStatus.INVALID
+        assert "Step 'approve'" in result.errors[0]
+        assert result.errors[0].endswith("(CATALOG_ASK_INVALID).")
+
+    def test_unknown_interaction_mode_stays_schema_invalid(self, isolated_workspace: Path) -> None:
+        """[tier-1/integration] Catalog.validate: `mode: dropdown` returns INVALID with (CATALOG_SCHEMA_INVALID) and no CATALOG_ASK_INVALID."""
+        steps = [{"id": "approve", "type": "ask", "interaction": {"mode": "dropdown", "message": "Go?"}}]
+        target_path = _write_yaml(isolated_workspace / "ask.yml", {"name": "ask", "steps": steps})
+
+        result = _validate(str(target_path), path=isolated_workspace, item_type=CatalogItemType.BLUEPRINT)
+
+        assert result.status == CatalogValidateStatus.INVALID
+        assert all(error.endswith("(CATALOG_SCHEMA_INVALID).") for error in result.errors)

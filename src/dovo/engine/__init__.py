@@ -17,6 +17,7 @@ from dovo.engine.models import (
     EngineResumeStatus,
     FailurePromptDecision,
     FailurePrompter,
+    InteractionPrompter,
     LoopPromptDecision,
     RunObserver,
     RunOutcome,
@@ -24,6 +25,7 @@ from dovo.engine.models import (
     RunStartConfig,
     StepAction,
 )
+from dovo.engine.preset_prompter import PresetInteractionPrompter
 from dovo.engine.services import BlueprintResumeService, BlueprintRunService
 from dovo.engine.state_models import ExecutionStateTree
 from dovo.engine.state_store import SessionStateStore
@@ -50,7 +52,9 @@ __all__ = [
     "ExecutionStateTree",
     "FailurePromptDecision",
     "FailurePrompter",
+    "InteractionPrompter",
     "LoopPromptDecision",
+    "PresetInteractionPrompter",
     "RunCoordinator",
     "RunObserver",
     "RunOutcome",

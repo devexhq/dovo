@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dovo.cli.context import CliContext
 from dovo.cli.run.observer import resolve_cli_observer
-from dovo.cli.run.prompter import DispatcherFailurePrompter
+from dovo.cli.run.prompter import DispatcherFailurePrompter, DispatcherInteractionPrompter, paused_prompt_message
 from dovo.cli.ui import (
     ErrorPanelEvent,
     MessageEvent,
@@ -21,6 +21,16 @@ from dovo.engine.models import BlueprintRunResult
 def _first_error(result: BlueprintRunResult, fallback: str) -> str:
     """Return the first error message or a fallback string."""
     return result.errors[0] if result.errors else fallback
+
+
+def _dispatch_paused_prompt(result: BlueprintRunResult, record: SessionRecord | None, *, non_interactive: bool) -> bool:
+    """Dispatch the paused-prompt hint and return True when the run stopped at an unanswered ask."""
+    if result.paused_prompt_id is None or record is None:
+        return False
+
+    message = paused_prompt_message(result.paused_prompt_id, record.session_id, non_interactive=non_interactive)
+    ui_dispatcher.dispatch(MessageEvent(message=message))
+    return True
 
 
 def _dispatch_run_outcome(
@@ -76,6 +86,7 @@ def run_command(
         output_format=output_format,
         display_format=display_format,
     )
+    interaction_prompter = DispatcherInteractionPrompter(ui_dispatcher, no_tty=no_tty)
     with observer:
         result = BlueprintRunService(
             name=name,
@@ -92,11 +103,13 @@ def run_command(
             env_passthrough=list(env_passthrough or []),
             observer=observer,
             failure_prompter=DispatcherFailurePrompter(ui_dispatcher),
+            interaction_prompter=interaction_prompter,
         ).execute()
 
     for warning in result.warnings:
         ui_dispatcher.dispatch(WarningEvent(message=warning))
 
     record = result.session_record
-    _dispatch_run_outcome(result, record)
+    if not _dispatch_paused_prompt(result, record, non_interactive=not interaction_prompter.is_interactive):
+        _dispatch_run_outcome(result, record)
     return result

@@ -6,7 +6,7 @@ from typing import Any
 
 import pytest
 
-from dovo.cli.ui.events import PromptEvent, PromptOption
+from dovo.cli.ui.events import PromptEvent, PromptEventArtifact, PromptEventComment, PromptOption
 from dovo.cli.ui.formatters.events.prompt import PromptFormatter
 from tests.harness.formatter import (
     FormatterCase,
@@ -20,7 +20,7 @@ _ABORT_OPTION = PromptOption(key="a", label="Abort", decision="abort")
 WITH_DIAGNOSTIC = FormatterCase(
     data=PromptEvent(
         prompt_type="step_failure",
-        prompt_id="step-1",
+        step_id="step-1",
         title="Action Needed",
         diagnostic="Step timed out",
         options=[_CONTINUE_OPTION],
@@ -28,7 +28,7 @@ WITH_DIAGNOSTIC = FormatterCase(
     ),
     view=PromptEvent(
         prompt_type="step_failure",
-        prompt_id="step-1",
+        step_id="step-1",
         title="Action Needed",
         diagnostic="Step timed out",
         options=[_CONTINUE_OPTION],
@@ -40,14 +40,14 @@ WITH_DIAGNOSTIC = FormatterCase(
 WITHOUT_DIAGNOSTIC = FormatterCase(
     data=PromptEvent(
         prompt_type="step_failure",
-        prompt_id="step-2",
+        step_id="step-2",
         title="Blueprint Prompt",
         diagnostic=None,
         options=[_ABORT_OPTION],
     ),
     view=PromptEvent(
         prompt_type="step_failure",
-        prompt_id="step-2",
+        step_id="step-2",
         title="Blueprint Prompt",
         diagnostic=None,
         options=[_ABORT_OPTION],
@@ -55,9 +55,78 @@ WITHOUT_DIAGNOSTIC = FormatterCase(
     render_expectations=["Blueprint Prompt"],
 )
 
+_INTERACTION_FULL = PromptEvent(
+    prompt_type="interaction",
+    step_id="approve",
+    title="Approve this plan?",
+    default=None,
+    mode="select",
+    message="Approve this plan?",
+    artifact=PromptEventArtifact(
+        name="plan",
+        revision=2,
+        digest="b07d44aa",
+        reference="plan@2  sha256:b07d44aa…",
+        preview=["Step one", "Step two"],
+    ),
+    options=[
+        PromptOption(key="1", label="Approve", decision="approve", comment="disabled", fail=False),
+        PromptOption(key="2", label="Request changes", decision="revise", comment="required", fail=False),
+    ],
+    comment=PromptEventComment(policy="optional", message="Instructions for the agent"),
+)
+INTERACTION_FULL = FormatterCase(
+    data=_INTERACTION_FULL,
+    view=_INTERACTION_FULL,
+    render_expectations=[
+        "approve",
+        "Approve this plan?",
+        "plan",
+        "2",
+        "b07d44aa",
+        "Step one",
+        "Step two",
+        "Request changes",
+    ],
+)
+
+_INTERACTION_SPARSE = PromptEvent(
+    prompt_type="interaction", step_id="why", title="Why?", default=None, mode="text", message="Why?", options=[]
+)
+INTERACTION_SPARSE = FormatterCase(
+    data=_INTERACTION_SPARSE, view=_INTERACTION_SPARSE, render_expectations=["why", "Why?"]
+)
+
+_INTERACTION_MULTISELECT = PromptEvent(
+    prompt_type="interaction",
+    step_id="triage",
+    title="Which findings should the agent fix?",
+    default=None,
+    mode="multiselect",
+    message="Which findings should the agent fix?",
+    options=[
+        PromptOption(
+            key="1",
+            label="Missing validation",
+            decision="B1",
+            comment="optional",
+            fail=False,
+            display="B1 — Missing validation",
+        )
+    ],
+)
+INTERACTION_MULTISELECT = FormatterCase(
+    data=_INTERACTION_MULTISELECT,
+    view=_INTERACTION_MULTISELECT,
+    render_expectations=["triage", "B1", "Missing validation"],
+)
+
 PROMPT_CASES = [
     pytest.param(WITH_DIAGNOSTIC, id="with_diagnostic"),
     pytest.param(WITHOUT_DIAGNOSTIC, id="without_diagnostic"),
+    pytest.param(INTERACTION_FULL, id="interaction_full"),
+    pytest.param(INTERACTION_SPARSE, id="interaction_sparse"),
+    pytest.param(INTERACTION_MULTISELECT, id="interaction_multiselect"),
 ]
 
 PROMPT_PAYLOAD_CASES = [
@@ -65,7 +134,7 @@ PROMPT_PAYLOAD_CASES = [
         WITH_DIAGNOSTIC,
         {
             "prompt_type": "step_failure",
-            "prompt_id": "step-1",
+            "step_id": "step-1",
             "title": "Action Needed",
             "diagnostic": "Step timed out",
             "options": [{"key": "c", "label": "Continue", "decision": "continue"}],
@@ -77,13 +146,52 @@ PROMPT_PAYLOAD_CASES = [
         WITHOUT_DIAGNOSTIC,
         {
             "prompt_type": "step_failure",
-            "prompt_id": "step-2",
+            "step_id": "step-2",
             "title": "Blueprint Prompt",
             "diagnostic": None,
             "options": [{"key": "a", "label": "Abort", "decision": "abort"}],
             "default": "abort",
         },
         id="without_diagnostic",
+    ),
+    pytest.param(
+        INTERACTION_FULL,
+        {
+            "prompt_type": "interaction",
+            "step_id": "approve",
+            "title": "Approve this plan?",
+            "diagnostic": None,
+            "options": [
+                {"key": "1", "label": "Approve", "decision": "approve", "comment": "disabled", "fail": False},
+                {"key": "2", "label": "Request changes", "decision": "revise", "comment": "required", "fail": False},
+            ],
+            "default": None,
+            "mode": "select",
+            "message": "Approve this plan?",
+            "artifact": {
+                "name": "plan",
+                "revision": 2,
+                "digest": "b07d44aa",
+                "reference": "plan@2  sha256:b07d44aa…",
+                "preview": ["Step one", "Step two"],
+            },
+            "comment": {"policy": "optional", "message": "Instructions for the agent"},
+        },
+        id="interaction_full",
+    ),
+    pytest.param(
+        INTERACTION_SPARSE,
+        {
+            "prompt_type": "interaction",
+            "step_id": "why",
+            "title": "Why?",
+            "diagnostic": None,
+            "options": [],
+            "default": None,
+            "mode": "text",
+            "message": "Why?",
+        },
+        id="interaction_sparse",
     ),
 ]
 

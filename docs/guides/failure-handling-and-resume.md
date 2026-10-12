@@ -109,6 +109,8 @@ The saved run state includes:
 
 ## Resuming Sessions (`dovo resume`)
 
+A run can also pause at an `ask` step that waits for a person's answer; see [Human Input](human-input.md).
+
 If you exit an interactive run or leave a prompt unanswered, the worktree is kept. Resume from the point of failure with `dovo resume`:
 
 ```bash

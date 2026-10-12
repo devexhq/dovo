@@ -183,11 +183,17 @@ Continues a paused session, by ID or the latest paused one.
 
 | Flag | Description |
 | --- | --- |
-| `--no-tty` | Disable interactive prompts; prompt_user failures abort the run instead of prompting. |
+| `--no-tty` | Disable interactive prompts; prompt_user failures abort the run, and an `ask` prompt pauses it again instead of blocking for input. |
+| `--answer <step_id>=<value>` | Answer the pending `ask` prompt (`multiselect`: a JSON array or comma-separated values; `text`: the text). |
+| `--comment <text>` | Comment accompanying `--answer`. |
+| `--comment-file <path>` | Read the comment accompanying `--answer` from a file. |
+| `--answers-file <path>` | JSON object `{"step_id": "...", "selected": ["B1"], "comment": "...", "text": "..."}`; cannot be combined with `--answer`, `--comment` or `--comment-file`. |
 | `--env-mode <allowlist\|inherit>` | Override `agent.env_mode` for this invocation. |
 | `--env-passthrough <name-or-prefix*>` | Forward a host variable name or a prefix ending in a single `*` to agent steps for this invocation; repeatable and appended to `agent.env_passthrough`. |
 | `--format <terminal\|json>` | Presentation format (`terminal` or `json`). Defaults to `terminal`. |
 | `--display <ansi\|live>` | Display format (`ansi` or `live`). Defaults to `ansi`. |
+
+The flag list is pinned to the command by [`tests/lint/test_step_schema_parity.py`](https://github.com/devexhq/dovo/blob/main/tests/lint/test_step_schema_parity.py).
 
 ### Behavior
 
@@ -196,12 +202,19 @@ Continues a paused session, by ID or the latest paused one.
    - If `session_id` is omitted, the most recent paused session is used. If there is none, an error is shown and the command exits `1`.
 2. **Readiness Classification**: Checks that the session exists, is paused, and has intact saved state and an accessible worktree (if it used one).
 3. **Execution**: Continues running from the paused step.
-4. **Environment flags**: `--env-mode` and `--env-passthrough` apply only to this invocation, are never written to config or run state, and are validated before any step starts; an invalid value exits `1` and leaves the session paused.
-5. **Exit Codes**:
-   - `0`: Successful completion or paused run (run state updated).
-   - `1`: Resume validation error, failed step, cancelled run, or no paused session found.
+4. **Pending prompts**: a session paused at an `ask` step asks the stored prompt again; the producing steps do not re-run. With `--answer` or `--answers-file` the answer is validated before any step runs and the run continues in the same process; a later `ask` pauses again. An unknown step id, a value that is not an option, a missing required comment, a comment over 8000 characters, or answers for a session with no pending prompt exit `1` with the valid choices and leave the session paused. See [Human Input](../guides/human-input.md).
+5. **Environment flags**: `--env-mode` and `--env-passthrough` apply only to this invocation, are never written to config or run state, and are validated before any step starts; an invalid value exits `1` and leaves the session paused.
+6. **Exit Codes**:
+   - `0`: Successful completion or paused run (run state updated), including a run paused at an `ask` prompt.
+   - `1`: Resume validation error, invalid answer, failed step, cancelled run, or no paused session found.
 
 ## Examples
+
+Answer a prompt a headless run paused at, then continue:
+
+```bash
+dovo resume blueprint_a1b2c3d4 --answer approve=revise --comment "Keep config compatible" --no-tty
+```
 
 List recent sessions:
 

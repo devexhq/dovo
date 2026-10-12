@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
+
 from dovo.common.filesystem import WorkspacePaths
 from dovo.core.catalog.exceptions import BlueprintLoadError, BlueprintNotFoundError, BlueprintValidationError
 from dovo.core.db import SessionRecord, SessionsRepository, SessionStatus
+from dovo.core.interaction import HeadlessAnswerInput, Interaction, InteractionAnswer
 from dovo.engine.exceptions import EngineResumeError, EngineSnapshotMissingError
 from dovo.engine.models import DefinitionsManifest, EngineResumeStatus
 from dovo.engine.projection import iter_leaves
@@ -53,6 +56,33 @@ class EngineLoader:
         return row, loaded.state, loaded.state.manifest
 
     @classmethod
+    def resolve_answers(
+        cls,
+        session_id: str,
+        state: ExecutionStateTree,
+        supplied: Sequence[HeadlessAnswerInput],
+        warnings: list[str],
+    ) -> dict[str, InteractionAnswer]:
+        """Validate supplied answers against the single pending ask; raise EngineResumeError(NO_PENDING_PROMPT | INVALID_ANSWER)."""
+        pending = next(
+            (leaf.pending_ask for leaf in iter_leaves(state) if leaf.state is NodeState.PAUSED and leaf.pending_ask),
+            None,
+        )
+        if pending is None:
+            raise EngineResumeError(
+                EngineResumeStatus.NO_PENDING_PROMPT, f"No prompt is pending for session '{session_id}'."
+            )
+
+        answers: dict[str, InteractionAnswer] = {}
+        for item in supplied:
+            parsed = Interaction.parse_headless(pending, item)
+            if parsed.answer is None:
+                raise EngineResumeError(EngineResumeStatus.INVALID_ANSWER, parsed.errors[0])
+            warnings.extend(parsed.warnings)
+            answers[pending.step_id] = parsed.answer
+        return answers
+
+    @classmethod
     def _state_failure_status(cls, load_status: SessionStateLoadStatus) -> EngineResumeStatus:
         """Map a state-load failure to NOT_FOUND, CORRUPT_STATE (missing state), MISSING_SNAPSHOT, or FAILED."""
         if load_status is SessionStateLoadStatus.NOT_FOUND:
@@ -65,7 +95,7 @@ class EngineLoader:
 
     @classmethod
     def _validate_paused_leaves(cls, session_id: str, state: ExecutionStateTree) -> None:
-        """Raise CORRUPT_STATE unless a non-terminal node exists and every PAUSED leaf's last attempt holds a result."""
+        """Raise CORRUPT_STATE unless a non-terminal node exists and every PAUSED leaf has a pending_ask or a recorded last-attempt result."""
         if all(node.state in TERMINAL_NODE_STATES for node in state.nodes):
             raise EngineResumeError(
                 EngineResumeStatus.CORRUPT_STATE,
@@ -73,7 +103,8 @@ class EngineLoader:
             )
 
         for leaf in iter_leaves(state):
-            if leaf.state is NodeState.PAUSED and (not leaf.attempts or leaf.attempts[-1].result is None):
+            has_result = bool(leaf.attempts) and leaf.attempts[-1].result is not None
+            if leaf.state is NodeState.PAUSED and leaf.pending_ask is None and not has_result:
                 raise EngineResumeError(
                     EngineResumeStatus.CORRUPT_STATE,
                     f"Cannot resume session '{session_id}': paused step '{leaf.id}' has no recorded attempt result.",

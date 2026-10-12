@@ -9,6 +9,7 @@ from dovo.common.models import BaseResult
 from dovo.core.agents.models import AgentResponseStatus
 from dovo.core.artifacts.store import ArtifactStore
 from dovo.core.catalog.definitions import StepDefinition
+from dovo.core.interaction import InteractionRequest
 
 
 class AssertionResult(BaseResult):
@@ -195,3 +196,12 @@ class StepResult(BaseResult):
     def ok(self) -> bool:
         """Return True if step finished successfully or was ignored."""
         return self.status in ("completed", "ignored")
+
+
+class AskResolution(BaseModel):
+    """Outcome of preparing an ask step: a request to ask, or a result that settles the step without asking."""
+
+    model_config = {"extra": "forbid", "strict": True}
+
+    request: InteractionRequest | None = None
+    result: StepResult | None = None

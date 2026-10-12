@@ -17,7 +17,7 @@ dovo run <name> [OPTIONS] [-- <input-overrides>]
 | `--auto-apply` | Automatically apply worktree changes to the main workspace on successful completion. |
 | `--agent <name>` | Use this agent provider for the run. Model, endpoint, temperature and max tokens still come from config. An unknown name fails agent steps with `AGENT_PROVIDER_UNSUPPORTED`; command and script steps are unaffected. |
 | `--session-id <id>` | Explicit session identifier. |
-| `--no-tty` | Disable interactive prompts; prompt_user failures abort the run instead of blocking for input. |
+| `--no-tty` | Disable interactive prompts; prompt_user failures abort the run instead of blocking for input, and a run that reaches an `ask` step pauses (exit `0`) so it can be answered with `dovo resume --answer`. |
 | `--env-mode <allowlist\|inherit>` | Override `agent.env_mode` for this invocation. |
 | `--env-passthrough <name-or-prefix*>` | Forward a host variable name or a prefix ending in a single `*` to agent steps for this invocation; repeatable and appended to `agent.env_passthrough`. |
 | `--format <terminal\|json>` | Presentation format (`terminal` or `json`). Defaults to `terminal`. |

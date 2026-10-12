@@ -9,6 +9,7 @@ from pydantic import BaseModel, Field
 
 from dovo.common.models import BaseResult, FailurePolicy
 from dovo.core.db import SessionStatus
+from dovo.core.interaction import InteractionRequest
 from dovo.engine.executors.models import StepResult
 from dovo.engine.models import DefinitionsManifest
 
@@ -49,6 +50,7 @@ class ExecutionLeafNode(BaseModel):
     name: str | None = None
     state: NodeState = NodeState.PENDING
     attempts: list[StepAttemptRecord] = Field(default_factory=list)
+    pending_ask: InteractionRequest | None = None
 
 
 class ExecutionIterationRecord(BaseModel):

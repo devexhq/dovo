@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from dovo.cli.context import CliContext
-from dovo.cli.run.commands.root import _first_error
+from dovo.cli.run.commands.root import _dispatch_paused_prompt, _first_error
 from dovo.cli.run.observer import resolve_cli_observer
-from dovo.cli.run.prompter import DispatcherFailurePrompter
+from dovo.cli.run.prompter import DispatcherFailurePrompter, DispatcherInteractionPrompter
 from dovo.cli.ui import (
     ErrorPanelEvent,
     MessageEvent,
@@ -15,6 +17,7 @@ from dovo.cli.ui import (
 )
 from dovo.common.models import AgentEnvModeOptions, DisplayFormatOptions, OutputFormatOptions
 from dovo.core.db import SessionRecord, SessionStatus
+from dovo.core.interaction import HeadlessArgumentsResult, Interaction, InteractionAnswerStatus
 from dovo.engine import BlueprintResumeService
 from dovo.engine.models import BlueprintRunResult
 
@@ -36,6 +39,30 @@ def _resume_failure_msg(result: BlueprintRunResult, session_id: str | None) -> s
     if result.errors:
         return "\n\n".join(result.errors)
     return f"Cannot resume session '{session_id}'." if session_id else "Resume failed."
+
+
+def _headless_answers(
+    answer: str | None, comment: str | None, comment_file: Path | None, answers_file: Path | None
+) -> HeadlessArgumentsResult:
+    """Read the comment and answers files, then combine all answer flags through Interaction.parse_arguments."""
+    if comment is not None and comment_file is not None:
+        return HeadlessArgumentsResult(
+            status=InteractionAnswerStatus.INVALID,
+            errors=["Use --comment or --comment-file together with --answer, not both."],
+        )
+
+    texts: dict[str, str | None] = {"comment": comment, "answers": None}
+    for key, path in (("comment", comment_file), ("answers", answers_file)):
+        if path is None:
+            continue
+        try:
+            texts[key] = path.read_text(encoding="utf-8")
+        except OSError as error:
+            return HeadlessArgumentsResult(
+                status=InteractionAnswerStatus.INVALID, errors=[f"Cannot read '{path}': {error}"]
+            )
+
+    return Interaction.parse_arguments(answer, texts["comment"], texts["answers"])
 
 
 def _dispatch_resume_outcome(
@@ -69,12 +96,22 @@ def session_resume_command(
     no_tty: bool = False,
     env_mode: AgentEnvModeOptions | None = None,
     env_passthrough: list[str] | None = None,
+    answer: str | None = None,
+    comment: str | None = None,
+    comment_file: Path | None = None,
+    answers_file: Path | None = None,
     output_format: OutputFormatOptions = OutputFormatOptions.TERMINAL,
     display_format: DisplayFormatOptions = DisplayFormatOptions.ANSI,
 ) -> BlueprintRunResult:
     """Resume a paused blueprint execution session."""
     ui_dispatcher.set_output_format(output_format)
+    arguments = _headless_answers(answer, comment, comment_file, answers_file)
+    if not arguments.ok:
+        ui_dispatcher.dispatch(ErrorPanelEvent(title="Resume Failed", message="\n\n".join(arguments.errors)))
+        return BlueprintRunResult(errors=arguments.errors)
+
     _emit_resume_start_notice(context, session_id)
+    interaction_prompter = DispatcherInteractionPrompter(ui_dispatcher, no_tty=no_tty)
 
     observer = resolve_cli_observer(
         ui_dispatcher, no_tty=no_tty, output_format=output_format, display_format=display_format
@@ -89,11 +126,14 @@ def session_resume_command(
             env_passthrough=list(env_passthrough or []),
             observer=observer,
             failure_prompter=DispatcherFailurePrompter(ui_dispatcher),
+            interaction_prompter=interaction_prompter,
+            answers=[] if arguments.supplied is None else [arguments.supplied],
         ).execute()
 
     for warning in result.warnings:
         ui_dispatcher.dispatch(WarningEvent(message=warning))
 
     record = result.session_record
-    _dispatch_resume_outcome(result, record, session_id)
+    if not _dispatch_paused_prompt(result, record, non_interactive=not interaction_prompter.is_interactive):
+        _dispatch_resume_outcome(result, record, session_id)
     return result

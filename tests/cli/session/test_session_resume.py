@@ -18,7 +18,7 @@ from dovo.core.db import DovoDb, SessionStatus
 from dovo.core.worktree import Worktree
 from tests.harness import FakeAgentRunner
 from tests.harness.catalog import write_runnable_step
-from tests.harness.sessions import seed_paused_session
+from tests.harness.sessions import seed_paused_ask_session, seed_paused_session
 from tests.harness.workspace_paths import initialized_workspace_paths
 
 
@@ -242,3 +242,156 @@ class SessionResumeEnvFlagsCliIntegrationTests:
         assert record is not None
         assert record.status == SessionStatus.PAUSED
         assert runner.calls == []
+
+
+_ASK_STEPS: list[dict[str, object]] = [
+    {
+        "id": "approve",
+        "type": "ask",
+        "interaction": {
+            "mode": "select",
+            "message": "Approve this plan?",
+            "options": [
+                {"value": "approve", "label": "Approve", "comment": "disabled"},
+                {"value": "revise", "label": "Request changes", "comment": "required"},
+                {"value": "deny", "label": "Deny", "fail": True},
+            ],
+        },
+    },
+    {"id": "done", "type": "command", "command": "touch done.marker"},
+]
+
+
+def _seed_paused_ask(workspace: Path, session_id: str = "ask-session") -> str:
+    """Seed a session paused at the unanswered `approve` ask and return its id."""
+    paths = _paths_for(workspace)
+    db = DovoDb(database_file=paths.database_file, project_id=paths.project_id)
+    seed_paused_ask_session(paths, db.sessions, db.artifacts, session_id=session_id, steps=_ASK_STEPS)
+    return session_id
+
+
+def _session_status(workspace: Path, session_id: str) -> SessionStatus:
+    """Return the persisted status of session_id."""
+    paths = _paths_for(workspace)
+    row = DovoDb(database_file=paths.database_file, project_id=paths.project_id).sessions.get(session_id)
+    assert row is not None
+    return row.status
+
+
+class SessionResumeAskCliIntegrationTests:
+    """Typer runner integration tests for dovo resume over a session paused at an ask."""
+
+    @pytest.mark.parametrize(
+        "command", [pytest.param(["resume"], id="resume"), pytest.param(["session", "resume"], id="session_resume")]
+    )
+    @pytest.mark.parametrize("style", ["inline", "comment_file", "answers_file"])
+    def test_answer_flags_bind_and_continue_the_run(
+        self, cli_runner: CliRunner, session_workspace: Path, tmp_path: Path, command: list[str], style: str
+    ) -> None:
+        """[tier-3/integration] dovo resume: `--answer approve=revise --comment x`, `--answer ... --comment-file f` and `--answers-file f` each complete the paused ask (exit 0, downstream marker written) through both `dovo resume` and `dovo session resume`."""
+        session_id = _seed_paused_ask(session_workspace)
+        comment_file = tmp_path / "comment.txt"
+        comment_file.write_text("Keep config compatible\n", encoding="utf-8")
+        answers_file = tmp_path / "answers.json"
+        answers_file.write_text(
+            json.dumps({"step_id": "approve", "selected": ["revise"], "comment": "Keep config compatible"}),
+            encoding="utf-8",
+        )
+        flags = {
+            "inline": ["--answer", "approve=revise", "--comment", "Keep config compatible"],
+            "comment_file": ["--answer", "approve=revise", "--comment-file", str(comment_file)],
+            "answers_file": ["--answers-file", str(answers_file)],
+        }[style]
+
+        result = cli_runner.invoke(app, ["-p", str(session_workspace), *command, session_id, *flags])
+
+        assert result.exit_code == 0, result.stdout
+        assert (session_workspace / "done.marker").exists()
+        assert _session_status(session_workspace, session_id) == SessionStatus.COMPLETED
+
+    def test_invalid_answer_exits_one_with_valid_choices_and_stays_paused(
+        self, cli_runner: CliRunner, session_workspace: Path
+    ) -> None:
+        """[tier-3/integration] dovo resume --answer approve=maybe: exits 1, output contains the invalid-answer message with the valid choices, and the session stays PAUSED."""
+        session_id = _seed_paused_ask(session_workspace)
+
+        result = cli_runner.invoke(
+            app, ["-p", str(session_workspace), "resume", session_id, "--answer", "approve=maybe"]
+        )
+
+        assert result.exit_code == 1
+        assert "'maybe' is not a valid answer for prompt 'approve'." in result.stdout
+        assert "Fix: use one of: approve, revise, deny" in result.stdout
+        assert _session_status(session_workspace, session_id) == SessionStatus.PAUSED
+        assert not (session_workspace / "done.marker").exists()
+
+    @pytest.mark.parametrize(
+        "case",
+        [
+            pytest.param("answers_file_with_answer", id="answers_file_with_answer"),
+            pytest.param("comment_with_comment_file", id="comment_with_comment_file"),
+            pytest.param("comment_alone", id="comment_alone"),
+            pytest.param("unreadable_answers_file", id="unreadable_answers_file"),
+            pytest.param("invalid_json_answers_file", id="invalid_json_answers_file"),
+        ],
+    )
+    def test_argument_errors_exit_one_before_any_resume(
+        self, cli_runner: CliRunner, session_workspace: Path, tmp_path: Path, case: str
+    ) -> None:
+        """[tier-3/integration] dovo resume: conflicting or unreadable answer flags each exit 1 and leave the session PAUSED with no step run."""
+        session_id = _seed_paused_ask(session_workspace)
+        valid_file = tmp_path / "valid.json"
+        valid_file.write_text(json.dumps({"step_id": "approve", "selected": ["approve"]}), encoding="utf-8")
+        broken_file = tmp_path / "broken.json"
+        broken_file.write_text("{not json", encoding="utf-8")
+        text_file = tmp_path / "comment.txt"
+        text_file.write_text("c", encoding="utf-8")
+        flags = {
+            "answers_file_with_answer": ["--answers-file", str(valid_file), "--answer", "approve=approve"],
+            "comment_with_comment_file": [
+                "--answer",
+                "approve=revise",
+                "--comment",
+                "c",
+                "--comment-file",
+                str(text_file),
+            ],
+            "comment_alone": ["--comment", "c"],
+            "unreadable_answers_file": ["--answers-file", str(tmp_path / "missing.json")],
+            "invalid_json_answers_file": ["--answers-file", str(broken_file)],
+        }[case]
+
+        result = cli_runner.invoke(app, ["-p", str(session_workspace), "resume", session_id, *flags])
+
+        assert result.exit_code == 1
+        assert _session_status(session_workspace, session_id) == SessionStatus.PAUSED
+        assert not (session_workspace / "done.marker").exists()
+
+    def test_answers_with_no_pending_prompt_exit_one(self, cli_runner: CliRunner, session_workspace: Path) -> None:
+        """[tier-3/integration] dovo resume --answer a=b: on a session paused at a failed step exits 1 with "No prompt is pending for session '<session_id>'."."""
+        _seed_paused_session(
+            session_workspace,
+            session_id="paused-session-1",
+            steps=[{"id": "a", "run": "true", "on_failure": "continue"}],
+            paused_step_id="a",
+        )
+
+        result = cli_runner.invoke(app, ["-p", str(session_workspace), "resume", "paused-session-1", "--answer", "a=b"])
+
+        assert result.exit_code == 1
+        assert "No prompt is pending for session 'paused-session-1'." in result.stdout
+
+    def test_no_tty_resume_re_asks_and_pauses_again_exit_zero(
+        self, cli_runner: CliRunner, session_workspace: Path
+    ) -> None:
+        """[tier-3/integration] dovo resume --no-tty: without answers exits 0 and prints the answer hint; the session stays PAUSED."""
+        session_id = _seed_paused_ask(session_workspace)
+
+        result = cli_runner.invoke(app, ["-p", str(session_workspace), "resume", session_id, "--no-tty"])
+
+        assert result.exit_code == 0, result.stdout
+        assert (
+            f"Run paused at prompt 'approve'. Answer with 'dovo resume {session_id} --answer approve=<value>'."
+            in result.stdout
+        )
+        assert _session_status(session_workspace, session_id) == SessionStatus.PAUSED

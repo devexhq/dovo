@@ -6,6 +6,8 @@ import pytest
 
 from dovo.common.filesystem.models import WorkspacePaths
 from dovo.core.db import SessionRecord, SessionsRepository, SessionStatus
+from dovo.core.db.repositories.artifacts import ArtifactsRepository
+from dovo.core.interaction import HeadlessAnswerInput
 from dovo.engine import EngineLoader, EngineResumeError, EngineResumeStatus, SessionStateStore
 from dovo.engine.executors.models import StepResult
 from dovo.engine.state_models import (
@@ -15,7 +17,7 @@ from dovo.engine.state_models import (
     StepAttemptRecord,
 )
 from dovo.engine.writer import snapshot_blueprint_path
-from tests.harness.sessions import SEEDED_FAILURE, seed_new_session, seed_paused_session
+from tests.harness.sessions import SEEDED_FAILURE, seed_new_session, seed_paused_ask_session, seed_paused_session
 
 _STEPS: list[dict[str, object]] = [{"id": "a", "run": "true"}, {"id": "b", "run": "exit 1"}]
 _LOOP_STEPS: list[dict[str, object]] = [
@@ -242,3 +244,168 @@ class EngineLoaderCorruptLoopStateTests:
         assert str(exc_info.value).endswith(
             "Loop 'fix' iteration 1 steps ['verify', 'edit'] do not match the loop body ['edit', 'verify']."
         )
+
+
+_ASK_STEPS: list[dict[str, object]] = [
+    {
+        "id": "approve",
+        "type": "ask",
+        "interaction": {
+            "mode": "select",
+            "message": "Approve?",
+            "options": [
+                {"value": "approve", "label": "Approve", "comment": "disabled"},
+                {"value": "revise", "label": "Revise", "comment": "required"},
+                {"value": "deny", "label": "Deny", "fail": True},
+            ],
+        },
+    }
+]
+
+
+class EngineLoaderPausedAskTests:
+    """[tier-1/integration] EngineLoader.load_for_resume: a paused ask leaf is resumable through its pending_ask."""
+
+    def test_paused_ask_leaf_without_attempt_result_is_resumable(
+        self,
+        engine_paths: WorkspacePaths,
+        sessions_repo: SessionsRepository,
+        artifacts_repository: ArtifactsRepository,
+    ) -> None:
+        """[tier-1/integration] EngineLoader.load_for_resume: a PAUSED leaf with pending_ask and an attempt without a result returns row, state and manifest."""
+        seed_paused_ask_session(
+            engine_paths, sessions_repo, artifacts_repository, session_id="paused-1", steps=_ASK_STEPS
+        )
+
+        row, state, manifest = EngineLoader.load_for_resume(sessions_repo, engine_paths, "paused-1")
+
+        leaf = state.nodes[0]
+        assert isinstance(leaf, ExecutionLeafNode)
+        assert (row.session_id, manifest) == ("paused-1", state.manifest)
+        assert (leaf.pending_ask is not None, leaf.attempts[-1].result) == (True, None)
+
+    def test_paused_leaf_without_pending_ask_or_result_is_corrupt(
+        self,
+        engine_paths: WorkspacePaths,
+        sessions_repo: SessionsRepository,
+        artifacts_repository: ArtifactsRepository,
+    ) -> None:
+        """[tier-1/integration] EngineLoader.load_for_resume: a PAUSED leaf with neither pending_ask nor a last-attempt result raises EngineResumeError(CORRUPT_STATE)."""
+        seed_paused_ask_session(
+            engine_paths, sessions_repo, artifacts_repository, session_id="paused-1", steps=_ASK_STEPS
+        )
+        store = SessionStateStore(sessions_repo, engine_paths, "paused-1")
+        state = store.load().state
+        assert state is not None
+        leaf = state.nodes[0]
+        assert isinstance(leaf, ExecutionLeafNode)
+        leaf.pending_ask = None
+        assert store.save(state).ok
+
+        with pytest.raises(EngineResumeError) as raised:
+            EngineLoader.load_for_resume(sessions_repo, engine_paths, "paused-1")
+
+        assert raised.value.status == EngineResumeStatus.CORRUPT_STATE
+
+
+class EngineLoaderResolveAnswersTests:
+    """[tier-1/integration] EngineLoader.resolve_answers: validate supplied answers against the pending ask."""
+
+    def test_valid_input_maps_to_normalized_answer_by_step_id(
+        self,
+        engine_paths: WorkspacePaths,
+        sessions_repo: SessionsRepository,
+        artifacts_repository: ArtifactsRepository,
+    ) -> None:
+        """[tier-1/integration] EngineLoader.resolve_answers: input approve=revise + comment returns {"approve": InteractionAnswer(selected=["revise"], comment=...)}."""
+        seed_paused_ask_session(
+            engine_paths, sessions_repo, artifacts_repository, session_id="paused-1", steps=_ASK_STEPS
+        )
+        _, state, _ = EngineLoader.load_for_resume(sessions_repo, engine_paths, "paused-1")
+        warnings: list[str] = []
+
+        answers = EngineLoader.resolve_answers(
+            "paused-1", state, [HeadlessAnswerInput(step_id="approve", value="revise", comment="Keep it")], warnings
+        )
+
+        assert list(answers) == ["approve"]
+        assert (answers["approve"].selected, answers["approve"].comment) == (["revise"], "Keep it")
+        assert warnings == []
+
+    @pytest.mark.parametrize(
+        ("supplied", "expected_message"),
+        [
+            pytest.param(
+                HeadlessAnswerInput(step_id="other", value="approve"),
+                "Prompt 'other' is not pending in this session.\nFix: use one of: approve",
+                id="unknown_step",
+            ),
+            pytest.param(
+                HeadlessAnswerInput(step_id="approve", value="maybe"),
+                "'maybe' is not a valid answer for prompt 'approve'.\nFix: use one of: approve, revise, deny",
+                id="unknown_value",
+            ),
+            pytest.param(
+                HeadlessAnswerInput(step_id="approve", value="revise"),
+                "Prompt 'approve' answered 'revise' requires a comment.\nFix: pass --comment or --comment-file.",
+                id="missing_required_comment",
+            ),
+            pytest.param(
+                HeadlessAnswerInput(step_id="approve", value="revise", comment="x" * 8001),
+                "Comment is too long (max 8000 characters).",
+                id="comment_too_long",
+            ),
+        ],
+    )
+    def test_rejections_raise_classified_resume_errors(
+        self,
+        engine_paths: WorkspacePaths,
+        sessions_repo: SessionsRepository,
+        artifacts_repository: ArtifactsRepository,
+        supplied: HeadlessAnswerInput,
+        expected_message: str,
+    ) -> None:
+        """[tier-1/integration] EngineLoader.resolve_answers: unknown step id, unknown value, missing required comment and an 8001-character comment raise INVALID_ANSWER listing the valid choices."""
+        seed_paused_ask_session(
+            engine_paths, sessions_repo, artifacts_repository, session_id="paused-1", steps=_ASK_STEPS
+        )
+        _, state, _ = EngineLoader.load_for_resume(sessions_repo, engine_paths, "paused-1")
+
+        with pytest.raises(EngineResumeError) as raised:
+            EngineLoader.resolve_answers("paused-1", state, [supplied], [])
+
+        assert raised.value.status == EngineResumeStatus.INVALID_ANSWER
+        assert str(raised.value) == expected_message
+
+    def test_state_without_pending_ask_raises_no_pending_prompt(
+        self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository
+    ) -> None:
+        """[tier-1/integration] EngineLoader.resolve_answers: a state whose paused leaf is a failed step raises NO_PENDING_PROMPT "No prompt is pending for session '<id>'."."""
+        _seed(engine_paths, sessions_repo)
+        _, state, _ = EngineLoader.load_for_resume(sessions_repo, engine_paths, "paused-1")
+
+        with pytest.raises(EngineResumeError) as raised:
+            EngineLoader.resolve_answers("paused-1", state, [HeadlessAnswerInput(step_id="b", value="x")], [])
+
+        assert raised.value.status == EngineResumeStatus.NO_PENDING_PROMPT
+        assert str(raised.value) == "No prompt is pending for session 'paused-1'."
+
+    def test_comment_on_disabled_policy_adds_a_warning(
+        self,
+        engine_paths: WorkspacePaths,
+        sessions_repo: SessionsRepository,
+        artifacts_repository: ArtifactsRepository,
+    ) -> None:
+        """[tier-1/integration] EngineLoader.resolve_answers: a comment for an option whose policy is disabled is dropped and reported in warnings."""
+        seed_paused_ask_session(
+            engine_paths, sessions_repo, artifacts_repository, session_id="paused-1", steps=_ASK_STEPS
+        )
+        _, state, _ = EngineLoader.load_for_resume(sessions_repo, engine_paths, "paused-1")
+        warnings: list[str] = []
+
+        answers = EngineLoader.resolve_answers(
+            "paused-1", state, [HeadlessAnswerInput(step_id="approve", value="approve", comment="hi")], warnings
+        )
+
+        assert answers["approve"].comment is None
+        assert len(warnings) == 1

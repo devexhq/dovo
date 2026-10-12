@@ -44,6 +44,7 @@ def finalize(
         session_record=record,
         errors=list(run_outcome.errors),
         warnings=warnings,
+        paused_prompt_id=run_outcome.paused_prompt_id,
     )
 
 

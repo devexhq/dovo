@@ -16,6 +16,7 @@ from dovo.core.agents.models import AgentEnvOverrides, ResolvedAgentSettings
 from dovo.core.artifacts.store import ArtifactStore
 from dovo.core.catalog.definitions import LoopStepBlock, StepDefinition
 from dovo.core.db import SessionRecord, SessionStatus
+from dovo.core.interaction import InteractionAnswer, InteractionRequest
 from dovo.core.sessions import StepRunSummary
 from dovo.core.worktree import WorktreeSession
 from dovo.engine.executors.models import ConditionEvaluationResult, ExecutionIdentity, StepResult
@@ -30,6 +31,8 @@ class EngineResumeStatus(StrEnum):
     MISSING_WORKTREE = "missing_worktree"
     CORRUPT_STATE = "corrupt_state"
     MISSING_SNAPSHOT = "missing_snapshot"
+    INVALID_ANSWER = "invalid_answer"
+    NO_PENDING_PROMPT = "no_pending_prompt"
     FAILED = "failed"
 
 
@@ -45,6 +48,7 @@ class RunRequest:
     session_id: str | None = None
     observer: RunObserver | None = None
     failure_prompter: FailurePrompter | None = None
+    interaction_prompter: InteractionPrompter | None = None
     no_tty: bool = False
     auto_apply: bool = False
     env_overrides: AgentEnvOverrides | None = None
@@ -132,6 +136,15 @@ class FailurePrompter(Protocol):
         ...
 
 
+@runtime_checkable
+class InteractionPrompter(Protocol):
+    """Injectable entrypoint that collects a human answer for an `ask` step."""
+
+    def ask(self, request: InteractionRequest) -> InteractionAnswer | None:
+        """Return the answer, or None when unanswered, interrupted or non-interactive."""
+        ...
+
+
 class AgentSettingsResolution(BaseResult):
     """Result of resolving the effective agent settings for one run drive."""
 
@@ -180,6 +193,7 @@ class RunContext:
     no_tty: bool = False
     save_attempt_logs: bool = True
     sensitive_variables: tuple[str, ...] = ()
+    interaction_prompter: InteractionPrompter | None = None
 
 
 @runtime_checkable
@@ -257,6 +271,7 @@ class RunOutcome(BaseModel):
     worktree_path: Path
     session_id: str | None = None
     worktree_id: str | None = None
+    paused_prompt_id: str | None = None
 
     @property
     def ok(self) -> bool:
@@ -268,6 +283,7 @@ class BlueprintRunResult(BaseResult):
     """Unified result for task and blueprint execution."""
 
     session_record: SessionRecord | None = None
+    paused_prompt_id: str | None = None
 
     @property
     def ok(self) -> bool:

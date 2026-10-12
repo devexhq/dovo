@@ -9,7 +9,7 @@ import pytest
 from dovo.common.filesystem.models import WorkspacePaths
 from dovo.core.agents.models import AgentEnvOverrides
 from dovo.core.db import SessionsRepository, SessionStatus
-from dovo.engine.models import FailurePrompter, RunObserver, RunOutcome
+from dovo.engine.models import FailurePrompter, InteractionPrompter, RunObserver, RunOutcome
 
 
 @pytest.fixture
@@ -28,6 +28,7 @@ def stub_drive_run(
             *,
             observer: RunObserver | None,
             prompter: FailurePrompter | None,
+            interaction_prompter: InteractionPrompter | None = None,
             no_tty: bool,
             env_overrides: AgentEnvOverrides | None = None,
         ) -> RunOutcome:

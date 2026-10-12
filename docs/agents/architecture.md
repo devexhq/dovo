@@ -27,6 +27,7 @@ src/dovo/core/                   Domain logic (no Typer, no engine)
   diagnostics/                       Doctor check registry and runner
   git/                               Git subprocess and diff parsing
   inputs/                            Parameter declaration, resolution, interpolation
+  interaction/                       Human-input prompt requests, option resolution, answer validation
   project/                           Project identity
   sessions/                          Session and history entrypoints, session.log reading
   status/                            Workspace health collection
@@ -61,7 +62,7 @@ Dependencies flow one way down the stack; do not import upward:
 
 ```
 common/  ->  core/  ->  engine/  ->  cli/
-core/project/  ->  core/{db,git,worktree,catalog,inputs,sessions,status,artifacts}/  ->  core/agents/  ->  core/diagnostics/
+core/project/  ->  core/{db,git,worktree,catalog,inputs,sessions,status,artifacts,interaction}/  ->  core/agents/  ->  core/diagnostics/
 ```
 
 Banned imports per package are the table `LAYER_RULES` in [`tests/lint/test_layer_direction.py`](../../tests/lint/test_layer_direction.py); read it for the full list. Beyond the layer flow:

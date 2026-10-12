@@ -52,3 +52,7 @@ class StepNotFoundError(DefinitionNotFoundError):
 
 class StepValidationError(DefinitionValidationError):
     """Raised when step definition YAML parsing or schema validation fails."""
+
+
+class AskStepInvalidError(DefinitionValidationError, ValueError):
+    """Raised by step validation when a `type: ask` step breaks an authoring rule; subclasses ValueError so Pydantic reports it with this cause attached."""

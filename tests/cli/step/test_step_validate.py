@@ -63,3 +63,34 @@ class StepValidateCliIntegrationTests:
 
         assert result.exit_code == 2
         assert "not found" in result.stdout
+
+
+class StepValidateAskCliIntegrationTests:
+    """Typer runner integration tests for dovo step validate over ask steps."""
+
+    def test_unsafe_options_from_path_exits_one_with_ask_invalid_code(
+        self, cli_runner: CliRunner, isolated_workspace: Path
+    ) -> None:
+        """[tier-3/integration] dovo step validate --format json: a step with `options_from.file: ../x.json` exits 1 and the errors contain "(CATALOG_ASK_INVALID)."."""
+        definition = {
+            "id": "pick",
+            "type": "ask",
+            "interaction": {
+                "mode": "select",
+                "message": "Pick one",
+                "options_from": {
+                    "artifact": "review",
+                    "file": "../x.json",
+                    "items_path": "findings",
+                    "value_field": "id",
+                    "label_field": "summary",
+                },
+            },
+        }
+        Catalog(_paths_for(isolated_workspace)).save("pick", definition, item_type=CatalogItemType.STEP)
+
+        result = cli_runner.invoke(app, ["-p", str(isolated_workspace), "step", "validate", "pick", "--format", "json"])
+
+        assert result.exit_code == 1
+        errors = json.loads(result.stdout)["payload"]["errors"]
+        assert errors[0].endswith("(CATALOG_ASK_INVALID).")

@@ -6,7 +6,7 @@ rules:
   domain: all
   scope: src/dovo/
   guideline: 'Dependencies flow strictly one way: common/ -> core/ -> engine/ -> cli/. Within core/: project/ ->
-    {db,git,worktree,catalog,inputs,sessions,status,artifacts}/ -> agents/ -> diagnostics/. Upward imports are
+    {db,git,worktree,catalog,inputs,sessions,status,artifacts,interaction}/ -> agents/ -> diagnostics/. Upward imports are
     strictly prohibited.'
   evaluation_criteria: Scan imports. Verify common/ imports no core/, engine/, or cli/; core/ imports no engine/, cli/,
     or rich; engine/ imports no cli/; git/ imports no other core/ package; inputs/ imports no catalog or agents;
