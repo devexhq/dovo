@@ -15,6 +15,7 @@ from dovo.engine.coordinator import RunCoordinator
 from dovo.engine.models import (
     AgentSettingsResolution,
     FailurePrompter,
+    InteractionPrompter,
     RunContext,
     RunObserver,
     RunOutcome,
@@ -33,6 +34,7 @@ def drive_run(
     *,
     observer: RunObserver | None,
     prompter: FailurePrompter | None,
+    interaction_prompter: InteractionPrompter | None = None,
     no_tty: bool,
     env_overrides: AgentEnvOverrides | None = None,
 ) -> RunOutcome:
@@ -54,7 +56,9 @@ def drive_run(
         safe_notify(observer, "on_run_completed", outcome)
         return outcome
 
-    opened = SessionRunner.open(row, paths, sessions, observer, prompter, no_tty, resolution.settings)
+    opened = SessionRunner.open(
+        row, paths, sessions, observer, prompter, no_tty, resolution.settings, interaction_prompter
+    )
     outcome = opened.run() if isinstance(opened, SessionRunner) else opened
     safe_notify(observer, "on_run_completed", outcome)
 
@@ -152,6 +156,7 @@ class SessionRunner:
         prompter: FailurePrompter | None,
         no_tty: bool,
         agent: ResolvedAgentSettings,
+        interaction_prompter: InteractionPrompter | None = None,
     ) -> SessionRunner | RunOutcome:
         """Set up the worktree and session directories and return the session, or a FAILED outcome on setup error."""
         config = Config(paths)
@@ -190,6 +195,7 @@ class SessionRunner:
             no_tty=no_tty,
             save_attempt_logs=config.history.save_attempt_logs,
             sensitive_variables=sensitive_variables,
+            interaction_prompter=interaction_prompter,
         )
         return cls(
             row, paths, sessions, observer, prompter, workspace, context, manager, worktree, setup_warnings, agent

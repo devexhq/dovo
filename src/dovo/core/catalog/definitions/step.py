@@ -8,6 +8,7 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 
 from dovo.common.models import FailurePolicy, OnFailureSpec
 from dovo.common.tool_policy import ToolPolicy, coerce_tool_policy
+from dovo.core.catalog.exceptions import AskStepInvalidError
 
 _DRIVE_PATH_RE = re.compile(r"^[A-Za-z]:/")
 DEFAULT_STEP_TIMEOUT_SECONDS = 120
@@ -20,6 +21,14 @@ class StepType(StrEnum):
     AGENT = "agent"
     SCRIPT = "script"
     INTERNAL = "internal"
+    ASK = "ask"
+
+
+InteractionMode = Literal["confirm", "select", "multiselect", "text"]
+CommentPolicy = Literal["disabled", "optional", "required"]
+
+OPTION_VALUE_RE = re.compile(r"^[A-Za-z0-9_.-]{1,64}$")
+_ASK_INCOMPATIBLE_FIELDS = ("run", "uses", "command", "prompt", "script_path", "tools", "artifacts", "assert")
 
 
 class StepAssert(BaseModel):
@@ -85,6 +94,152 @@ def _validate_inline_type_shape(step: "StepDefinition") -> None:
         raise ValueError("Internal steps must specify a non-empty 'command' string naming the internal command to run.")
 
 
+class InteractionOption(BaseModel):
+    """One selectable answer of a confirm, select or multiselect prompt."""
+
+    model_config = {"extra": "forbid", "strict": True}
+
+    value: str
+    label: str
+    fail: bool = False
+    comment: CommentPolicy | None = None
+
+
+class InteractionComment(BaseModel):
+    """Typed-comment policy and prompt text of an interaction."""
+
+    model_config = {"extra": "forbid", "strict": True}
+
+    policy: CommentPolicy = "disabled"
+    message: str = "Comment"
+
+
+class OptionsFrom(BaseModel):
+    """Source of prompt options: items of a JSON array inside a published artifact file."""
+
+    model_config = {"extra": "forbid", "strict": True}
+
+    artifact: str = Field(min_length=1)
+    file: str = Field(min_length=1)
+    items_path: str = Field(min_length=1)
+    value_field: str = Field(min_length=1)
+    label_field: str = Field(min_length=1)
+
+
+class InteractionSpec(BaseModel):
+    """Authored `interaction:` block of a `type: ask` step."""
+
+    model_config = {"extra": "forbid", "strict": True}
+
+    mode: InteractionMode
+    message: str = Field(min_length=1)
+    artifact: str | None = None
+    comment: InteractionComment = Field(default_factory=InteractionComment)
+    options: list[InteractionOption] | None = None
+    options_from: OptionsFrom | None = None
+
+
+def interaction_spec_errors(spec: InteractionSpec) -> list[str]:
+    """Return every static rule violation of an interaction block, without a step-id prefix."""
+    if spec.mode == "text":
+        return _text_mode_errors(spec)
+    return [*_options_source_errors(spec), *_option_field_errors(spec), *_options_from_errors(spec)]
+
+
+def _options_source_errors(spec: InteractionSpec) -> list[str]:
+    """Return violations of the per-mode option count and options / options_from exclusivity rules."""
+    if spec.mode == "confirm":
+        return _confirm_source_errors(spec)
+    options = spec.options
+    if options is not None and spec.options_from is not None:
+        return ["Specify either 'options' or 'options_from', not both."]
+    if options is None and spec.options_from is None:
+        return [f"'{spec.mode}' interaction requires 'options' or 'options_from'."]
+    minimum = 2 if spec.mode == "select" else 1
+    if options is not None and len(options) < minimum:
+        return [f"'{spec.mode}' interaction needs at least {minimum} option(s), got {len(options)}."]
+    return []
+
+
+def _confirm_source_errors(spec: InteractionSpec) -> list[str]:
+    """Return violations of the confirm rules: no options_from, and exactly 2 options when any are given."""
+    if spec.options_from is not None:
+        return ["'confirm' interaction cannot use 'options_from'."]
+    if spec.options is not None and len(spec.options) != 2:
+        return [f"'confirm' interaction needs exactly 2 options or none, got {len(spec.options)}."]
+    return []
+
+
+def _option_field_errors(spec: InteractionSpec) -> list[str]:
+    """Return violations of option value pattern, uniqueness, label and `fail` placement."""
+    errors: list[str] = []
+    seen: set[str] = set()
+    for option in spec.options or []:
+        errors.extend(_single_option_errors(option, spec.mode))
+        if option.value in seen:
+            errors.append(f"Option value '{option.value}' appears more than once.")
+        seen.add(option.value)
+    return errors
+
+
+def _single_option_errors(option: InteractionOption, mode: InteractionMode) -> list[str]:
+    """Return violations of one option's value pattern, label and `fail` placement."""
+    errors: list[str] = []
+    if not OPTION_VALUE_RE.match(option.value):
+        errors.append(f"Option value '{option.value}' must match ^[A-Za-z0-9_.-]{{1,64}}$.")
+    if not option.label.strip():
+        errors.append(f"Option '{option.value}' must have a non-empty label.")
+    if option.fail and mode not in ("confirm", "select"):
+        errors.append(f"Option '{option.value}' cannot set 'fail' in a '{mode}' interaction.")
+    return errors
+
+
+def _text_mode_errors(spec: InteractionSpec) -> list[str]:
+    """Return violations of the `text` mode rules: no options, no options_from, no `comment`."""
+    errors: list[str] = []
+    if spec.options is not None:
+        errors.append("'text' interaction cannot use 'options'.")
+    if spec.options_from is not None:
+        errors.append("'text' interaction cannot use 'options_from'.")
+    if "comment" in spec.model_fields_set:
+        errors.append("'text' interaction cannot use 'comment'.")
+    return errors
+
+
+def _options_from_errors(spec: InteractionSpec) -> list[str]:
+    """Return a violation when `options_from.file` is empty, absolute or contains a `..` segment."""
+    if spec.options_from is None:
+        return []
+    path = spec.options_from.file
+    normalized = path.replace("\\", "/")
+    unsafe = not normalized or normalized.startswith("/") or _DRIVE_PATH_RE.match(normalized)
+    if unsafe or any(part == ".." for part in normalized.split("/")):
+        return [f"options_from.file '{path}' must be a relative path without '..' segments."]
+    return []
+
+
+def _validate_ask_shape(step: "StepDefinition") -> None:
+    """Raise AskStepInvalidError for FR-1 conflicts, a missing interaction, or any interaction rule violation."""
+    if step.type != StepType.ASK:
+        if step.interaction is not None:
+            raise AskStepInvalidError(f"Step '{step.id}': 'interaction' is only valid with 'type: ask'.")
+        return
+    conflicting = [name for name in _ASK_INCOMPATIBLE_FIELDS if _ask_conflicts(step, name)]
+    if conflicting:
+        raise AskStepInvalidError(f"Step '{step.id}': 'type: ask' cannot be combined with {', '.join(conflicting)}.")
+    if step.interaction is None:
+        raise AskStepInvalidError(f"Step '{step.id}': 'type: ask' requires 'interaction'.")
+    errors = interaction_spec_errors(step.interaction)
+    if errors:
+        raise AskStepInvalidError("; ".join(f"Step '{step.id}': {error}" for error in errors))
+
+
+def _ask_conflicts(step: "StepDefinition", name: str) -> bool:
+    """Return True when the field named `name` is set on the step."""
+    value = step.assert_ if name == "assert" else getattr(step, name)
+    return bool(value) if isinstance(value, (str, list)) else value is not None
+
+
 class ArtifactPublishSpec(BaseModel):
     """Declarative artifact publish spec attached to a step, applied on step success."""
 
@@ -116,6 +271,7 @@ class StepDefinition(BaseModel):
     assert_: StepAssert | None = Field(default=None, validation_alias="assert", serialization_alias="assert")
     on_failure: OnFailureSpec = Field(default_factory=lambda: OnFailureSpec(action=FailurePolicy.ABORT))
     artifacts: list[ArtifactPublishSpec] = Field(default_factory=list)
+    interaction: InteractionSpec | None = None
 
     @field_validator("type", mode="before")
     @classmethod
@@ -145,6 +301,9 @@ class StepDefinition(BaseModel):
     @model_validator(mode="after")
     def validate_step_shape(self) -> "StepDefinition":
         """Enforce exactly one of run/uses/inline-type mode."""
+        _validate_ask_shape(self)
+        if self.type == StepType.ASK:
+            return self
         if self.run is not None:
             _validate_run_shape(self)
         elif self.uses is not None:

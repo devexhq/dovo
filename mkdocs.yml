@@ -36,6 +36,7 @@ nav:
       - Working with Steps: guides/working-with-steps.md
       - Parameter Inputs & Expressions: guides/passing-inputs.md
       - Failure Policies & Resumption: guides/failure-handling-and-resume.md
+      - Human Input: guides/human-input.md
       - AI Agent Providers: guides/agent-providers.md
   - Reference:
       - Blueprint Schema (YAML): reference/blueprint-schema.md

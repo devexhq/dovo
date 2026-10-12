@@ -11,6 +11,7 @@ import yaml
 from pydantic import ValidationError
 from pydantic_core import ErrorDetails
 
+from dovo.core.catalog.exceptions import AskStepInvalidError
 from dovo.core.catalog.models import CatalogItemType, CatalogValidateResult, CatalogValidateStatus
 
 _PLACEHOLDER_RE = re.compile(r"\$\{\{\s*inputs\.([a-zA-Z0-9_-]+)\s*\}\}")
@@ -206,9 +207,11 @@ def _extract_validation_error(exc: Exception) -> ValidationError | None:
 
 
 def _format_pydantic_error(error: ErrorDetails) -> str:
-    """Format one Pydantic error entry as '<dotted.location>: <message> (CATALOG_SCHEMA_INVALID).'."""
+    """Format one Pydantic error entry as '<dotted.location>: <message> (<CATALOG_ASK_INVALID|CATALOG_SCHEMA_INVALID>).'."""
     location = ".".join(str(part) for part in error["loc"]) or "<root>"
-    return f"{location}: {error['msg']} (CATALOG_SCHEMA_INVALID)."
+    cause = error.get("ctx", {}).get("error")
+    code = "CATALOG_ASK_INVALID" if isinstance(cause, AskStepInvalidError) else "CATALOG_SCHEMA_INVALID"
+    return f"{location}: {error['msg']} ({code})."
 
 
 def _iter_all_steps(steps: list[object]) -> list[object]:

@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import json
+import shutil
 from collections.abc import Callable
+from dataclasses import dataclass
 from pathlib import Path
 from typing import ClassVar
 
@@ -16,6 +18,7 @@ from dovo.core.artifacts.store import ArtifactStore
 from dovo.core.catalog.definitions import LoopStepBlock, StepDefinition
 from dovo.core.db import SessionsRepository, SessionStatus
 from dovo.core.db.repositories.artifacts import ArtifactsRepository
+from dovo.core.interaction import InteractionAnswer, InteractionRequest, RequestOption
 from dovo.core.sessions import SessionLogEvent, SessionLogEventType
 from dovo.core.sessions.services.read_logs import read_session_log_events
 from dovo.core.worktree.models import WorktreeSession
@@ -26,6 +29,7 @@ from dovo.engine.failure import USER_CONTINUED_MARKER
 from dovo.engine.models import (
     FailurePromptDecision,
     FailurePrompter,
+    InteractionPrompter,
     LoopPromptDecision,
     RunContext,
     RunObserver,
@@ -1845,3 +1849,338 @@ class CoordinatorWorktreeIdTests:
         assert row is not None
         assert row.worktree_id is None
         assert outcome.worktree_id is None
+
+
+_SESSION_ID = "ask_session"
+_APPROVE_OPTIONS: list[dict[str, object]] = [
+    {"value": "approve", "label": "Approve", "comment": "disabled"},
+    {"value": "revise", "label": "Request changes", "comment": "required"},
+    {"value": "deny", "label": "Deny", "fail": True},
+]
+
+
+def _approve_step(**extra: object) -> dict[str, object]:
+    """Return a select ask step `approve` over approve / revise / deny."""
+    interaction = {"mode": "select", "message": "Approve this plan?", "options": _APPROVE_OPTIONS}
+    return {"id": "approve", "type": "ask", "interaction": interaction, **extra}
+
+
+def _command(step_id: str, command: str, **extra: object) -> dict[str, object]:
+    """Return a command step running command."""
+    return {"id": step_id, "type": "command", "command": command, **extra}
+
+
+def _triage_step(artifact: str) -> dict[str, object]:
+    """Return a multiselect ask step `triage` whose options come from findings in artifact's review.json."""
+    options_from = {
+        "artifact": artifact,
+        "file": "review.json",
+        "items_path": "findings",
+        "value_field": "id",
+        "label_field": "summary",
+    }
+    interaction = {"mode": "multiselect", "message": "Fix?", "options_from": options_from}
+    return {"id": "triage", "type": "ask", "interaction": interaction}
+
+
+class _ScriptedPrompter(InteractionPrompter):
+    """InteractionPrompter replaying scripted answers (None means unanswered, an exception is raised) and recording requests."""
+
+    def __init__(
+        self,
+        answers: list[InteractionAnswer | BaseException | None],
+        on_ask: Callable[[InteractionRequest], None] | None = None,
+    ) -> None:
+        self.answers = list(answers)
+        self.requests: list[InteractionRequest] = []
+        self.on_ask = on_ask
+
+    def ask(self, request: InteractionRequest) -> InteractionAnswer | None:
+        self.requests.append(request)
+        if self.on_ask is not None:
+            self.on_ask(request)
+        scripted = self.answers.pop(0)
+        if isinstance(scripted, BaseException):
+            raise scripted
+        return scripted
+
+
+class _AbortPrompter(FailurePrompter):
+    """FailurePrompter recording prompted step ids and answering ABORT, or raising KeyboardInterrupt when interrupt is set."""
+
+    def __init__(self, *, interrupt: bool = False) -> None:
+        self.prompted: list[str] = []
+        self.interrupt = interrupt
+
+    def prompt_step_failure(self, *, step: StepDefinition, result: object, diagnostic: str) -> FailurePromptDecision:
+        self.prompted.append(step.id)
+        if self.interrupt:
+            raise KeyboardInterrupt
+        return FailurePromptDecision.ABORT
+
+    def prompt_loop_max_iterations(
+        self, *, loop: LoopStepBlock, iteration: int, diagnostic: str, grant_count: int = 3
+    ) -> LoopPromptDecision:
+        raise AssertionError("loop prompt is not expected")
+
+
+@dataclass
+class AskRun:
+    """Seed and drive ask runs through RunCoordinator over a real workspace."""
+
+    paths: WorkspacePaths
+    sessions: SessionsRepository
+    artifacts: ArtifactsRepository
+
+    def start(self, steps: list[dict[str, object]], prompter: InteractionPrompter | None = None) -> RunOutcome:
+        """Seed a fresh session for steps and execute it."""
+        seed_new_session(self.paths, self.sessions, session_id=_SESSION_ID, steps=steps)
+        return self.execute(prompter)
+
+    def execute(
+        self, prompter: InteractionPrompter | None = None, failure_prompter: FailurePrompter | None = None
+    ) -> RunOutcome:
+        """Execute (or resume) the seeded session with a new coordinator."""
+        session_tmp_dir = self.paths.tmp_dir / _SESSION_ID
+        (session_tmp_dir / "steps").mkdir(parents=True, exist_ok=True)
+        session_log_dir = self.paths.logs_dir / _SESSION_ID
+        session_log_dir.mkdir(parents=True, exist_ok=True)
+        context = RunContext(
+            session_id=_SESSION_ID,
+            paths=self.paths,
+            target_dir=self.paths.root_dir,
+            session_tmp_dir=session_tmp_dir,
+            session_log_dir=session_log_dir,
+            artifact_store=ArtifactStore(Artifacts(self.paths, self.artifacts), _SESSION_ID),
+            interaction_prompter=prompter,
+        )
+        coordinator = RunCoordinator(
+            SessionStateStore(self.sessions, self.paths, _SESSION_ID), context, prompter=failure_prompter
+        )
+        return coordinator.execute()
+
+    def state(self) -> ExecutionStateTree:
+        """Load the persisted execution state."""
+        state = SessionStateStore(self.sessions, self.paths, _SESSION_ID).load().state
+        assert state is not None
+        return state
+
+    def leaf(self, step_id: str) -> ExecutionLeafNode:
+        """Return the persisted top-level leaf step_id."""
+        node = next(node for node in self.state().nodes if node.id == step_id)
+        assert isinstance(node, ExecutionLeafNode)
+        return node
+
+    def row_status(self) -> SessionStatus:
+        """Return the persisted session row status."""
+        row = self.sessions.get(_SESSION_ID)
+        assert row is not None
+        return row.status
+
+    def file(self, name: str) -> Path:
+        """Return a path in the workspace root, where steps run."""
+        return self.paths.root_dir / name
+
+
+@pytest.fixture
+def ask_run(
+    engine_paths: WorkspacePaths, sessions_repo: SessionsRepository, artifacts_repository: ArtifactsRepository
+) -> AskRun:
+    """AskRun over the engine workspace."""
+    return AskRun(engine_paths, sessions_repo, artifacts_repository)
+
+
+def _answer(*selected: str, comment: str | None = None) -> InteractionAnswer:
+    """Return an answer choosing selected."""
+    return InteractionAnswer(selected=list(selected), comment=comment)
+
+
+class CoordinatorAskTests:
+    """Contract tests for ask-step transitions in RunCoordinator."""
+
+    def test_pending_ask_is_persisted_paused_before_the_prompter_is_consulted(self, ask_run: AskRun) -> None:
+        """[tier-1/integration] RunCoordinator.execute: when the prompter is called, the stored state has the leaf PAUSED with pending_ask equal to the request and the row status PAUSED."""
+        seen: list[tuple[NodeState, InteractionRequest | None, SessionStatus]] = []
+
+        def inspect(request: InteractionRequest) -> None:
+            leaf = ask_run.leaf("approve")
+            seen.append((leaf.state, leaf.pending_ask, ask_run.row_status()))
+
+        prompter = _ScriptedPrompter([_answer("approve")], on_ask=inspect)
+
+        ask_run.start([_approve_step()], prompter)
+
+        assert seen == [(NodeState.PAUSED, prompter.requests[0], SessionStatus.PAUSED)]
+
+    def test_valid_answer_clears_pending_ask_and_completes_with_outputs(self, ask_run: AskRun) -> None:
+        """[tier-1/integration] RunCoordinator.execute: answer approve completes the leaf, sets pending_ask None, restores row status RUNNING in that commit, and exposes outputs.selected "approve" to the next step."""
+        steps = [_approve_step(), _command("after", "echo '{{ steps.approve.outputs.selected }}' > got.txt")]
+
+        outcome = ask_run.start(steps, _ScriptedPrompter([_answer("approve")]))
+
+        leaf = ask_run.leaf("approve")
+        assert outcome.status == SessionStatus.COMPLETED
+        assert (leaf.state, leaf.pending_ask) == (NodeState.COMPLETED, None)
+        assert leaf.attempts[-1].result is not None
+        assert leaf.attempts[-1].result.outputs["selected"] == "approve"
+        assert ask_run.row_status() == SessionStatus.RUNNING
+        assert ask_run.file("got.txt").read_text(encoding="utf-8").strip() == "approve"
+
+    @pytest.mark.parametrize(
+        ("policy", "expected_status", "expected_state", "expected_errors"),
+        [
+            pytest.param(
+                "abort",
+                SessionStatus.FAILED,
+                NodeState.FAILED,
+                ["Step 'approve' failed: Prompt 'approve' answered 'deny'."],
+                id="abort",
+            ),
+            pytest.param("continue", SessionStatus.COMPLETED, NodeState.IGNORED, [], id="continue"),
+        ],
+    )
+    def test_fail_option_fails_the_step_and_applies_on_failure(
+        self,
+        ask_run: AskRun,
+        policy: str,
+        expected_status: SessionStatus,
+        expected_state: NodeState,
+        expected_errors: list[str],
+    ) -> None:
+        """[tier-1/integration] RunCoordinator.execute: answering deny with on_failure abort yields FAILED with the prompt error; with continue the leaf is IGNORED and the run COMPLETED."""
+        outcome = ask_run.start([_approve_step(on_failure=policy)], _ScriptedPrompter([_answer("deny")]))
+
+        assert outcome.status == expected_status
+        assert outcome.errors == expected_errors
+        assert ask_run.leaf("approve").state == expected_state
+
+    @pytest.mark.parametrize(
+        "scripted",
+        [
+            pytest.param(None, id="no_prompter"),
+            pytest.param([None], id="prompter_returns_none"),
+            pytest.param([KeyboardInterrupt()], id="keyboard_interrupt"),
+            pytest.param([_answer("maybe")], id="invalid_answer"),
+        ],
+    )
+    def test_unanswered_prompt_leaves_run_paused_and_records_nothing(
+        self, ask_run: AskRun, scripted: list[InteractionAnswer | BaseException | None] | None
+    ) -> None:
+        """[tier-1/integration] RunCoordinator.execute: no prompter, a prompter returning None, a KeyboardInterrupt and an invalid answer each yield PAUSED with paused_prompt_id "approve", leaf PAUSED, pending_ask kept and no attempt result."""
+        prompter = None if scripted is None else _ScriptedPrompter(scripted)
+
+        outcome = ask_run.start([_approve_step()], prompter)
+
+        leaf = ask_run.leaf("approve")
+        assert (outcome.status, outcome.paused_prompt_id, outcome.errors) == (SessionStatus.PAUSED, "approve", [])
+        assert (leaf.state, leaf.pending_ask is not None, leaf.attempts[-1].result) == (NodeState.PAUSED, True, None)
+
+    def test_interrupt_between_choice_and_comment_records_nothing(self, ask_run: AskRun) -> None:
+        """[tier-1/integration] RunCoordinator.execute: a prompter that raises KeyboardInterrupt after choosing `revise` (comment pending) leaves the stored leaf identical to the pending-ask state."""
+        ask_run.start([_approve_step()], None)
+        pending = ask_run.leaf("approve")
+
+        outcome = ask_run.execute(_ScriptedPrompter([KeyboardInterrupt()]))
+
+        assert outcome.paused_prompt_id == "approve"
+        assert ask_run.leaf("approve") == pending
+
+    def test_resume_asks_the_stored_request_without_rerunning_earlier_steps(self, ask_run: AskRun) -> None:
+        """[tier-1/integration] RunCoordinator.execute: after a paused ask is resumed, the prompter receives a request equal to the stored one even though the options artifact was removed, and the producer's counter file still reads 1."""
+        producer = _command(
+            "review",
+            'echo x >> counter.txt; echo \'{"findings": [{"id": "B1", "summary": "a"}]}\' > review.json',
+            artifacts=[{"name": "review", "path": "review.json"}],
+        )
+        triage = _triage_step("review")
+        ask_run.start([producer, triage], None)
+        stored = ask_run.leaf("triage").pending_ask
+        record = ask_run.artifacts.get(_SESSION_ID, "review")
+        assert record is not None
+        shutil.rmtree(record.path)
+        prompter = _ScriptedPrompter([_answer("B1")])
+
+        outcome = ask_run.execute(prompter)
+
+        assert outcome.status == SessionStatus.COMPLETED
+        assert prompter.requests == [stored]
+        assert ask_run.file("counter.txt").read_text(encoding="utf-8").splitlines() == ["x"]
+
+    def test_invalid_stored_pending_ask_fails_the_run(self, ask_run: AskRun) -> None:
+        """[tier-1/integration] RunCoordinator.execute: a stored pending_ask select request with one option returns FAILED with "Pending ask for 'approve' is invalid." and leaf FAILED."""
+        ask_run.start([_approve_step()], None)
+        state = ask_run.state()
+        leaf = state.nodes[0]
+        assert isinstance(leaf, ExecutionLeafNode)
+        assert leaf.pending_ask is not None
+        leaf.pending_ask = leaf.pending_ask.model_copy(update={"options": [RequestOption(value="only", label="Only")]})
+        assert SessionStateStore(ask_run.sessions, ask_run.paths, _SESSION_ID).save(state).ok
+
+        outcome = ask_run.execute(_ScriptedPrompter([]))
+
+        assert outcome.status == SessionStatus.FAILED
+        assert outcome.errors == ["Pending ask for 'approve' is invalid."]
+        assert ask_run.leaf("approve").state == NodeState.FAILED
+
+    def test_options_failure_fails_the_step_without_prompting(self, ask_run: AskRun) -> None:
+        """[tier-1/integration] RunCoordinator.execute: options_from over a missing artifact fails the step with "(ASK_OPTIONS_ARTIFACT_NOT_FOUND)", never calls the prompter and applies on_failure."""
+        triage = _triage_step("nothing")
+        prompter = _ScriptedPrompter([])
+
+        outcome = ask_run.start([triage], prompter)
+
+        assert outcome.status == SessionStatus.FAILED
+        assert "(ASK_OPTIONS_ARTIFACT_NOT_FOUND)" in outcome.errors[0]
+        assert prompter.requests == []
+
+    def test_empty_multiselect_completes_without_prompting(self, ask_run: AskRun) -> None:
+        """[tier-1/integration] RunCoordinator.execute: an empty options array completes the leaf, never calls the prompter, and surfaces the "No options to choose from" warning in RunOutcome.warnings."""
+        producer = _command(
+            "review", "echo '{\"findings\": []}' > review.json", artifacts=[{"name": "review", "path": "review.json"}]
+        )
+        triage = _triage_step("review")
+        prompter = _ScriptedPrompter([])
+
+        outcome = ask_run.start([producer, triage], prompter)
+
+        assert outcome.status == SessionStatus.COMPLETED
+        assert "No options to choose from for 'triage'; continuing with an empty selection." in outcome.warnings
+        assert prompter.requests == []
+        assert ask_run.leaf("triage").state == NodeState.COMPLETED
+
+    def test_loop_iteration_two_sees_iteration_one_comment(self, ask_run: AskRun) -> None:
+        """[tier-1/integration] RunCoordinator.execute: in a loop body, answers [revise+"Keep config compatible", approve] make iteration 2's producer see the comment, iteration 1 see "", and `until` end the loop after iteration 2."""
+        loop: dict[str, object] = {
+            "id": "plan-loop",
+            "type": "loop",
+            "max_iterations": 3,
+            "until": ['steps.approve.outputs.selected == "approve"'],
+            "do": [
+                _command("plan", 'echo "[{{ steps.approve.outputs.comment }}]" >> seen.txt'),
+                _approve_step(),
+            ],
+        }
+        prompter = _ScriptedPrompter([_answer("revise", comment="Keep config compatible"), _answer("approve")])
+
+        outcome = ask_run.start([loop], prompter)
+
+        assert outcome.status == SessionStatus.COMPLETED
+        assert ask_run.file("seen.txt").read_text(encoding="utf-8").splitlines() == ["[]", "[Keep config compatible]"]
+        loop_node = ask_run.state().nodes[0]
+        assert isinstance(loop_node, ExecutionLoopNode)
+        assert [iteration.until_passed for iteration in loop_node.iterations] == [False, True]
+
+    def test_paused_leaf_without_pending_ask_still_follows_the_failure_gate(self, ask_run: AskRun) -> None:
+        """[tier-1/integration] RunCoordinator.execute: an ask leaf answered `deny` under prompt_user is re-entered into the failure prompter on resume and never calls the interaction prompter."""
+        steps = [_approve_step(on_failure="prompt_user")]
+        seed_new_session(ask_run.paths, ask_run.sessions, session_id=_SESSION_ID, steps=steps)
+        ask_run.execute(_ScriptedPrompter([_answer("deny")]), _AbortPrompter(interrupt=True))
+        assert (ask_run.leaf("approve").state, ask_run.leaf("approve").pending_ask) == (NodeState.PAUSED, None)
+        failure_prompter = _AbortPrompter()
+        interaction_prompter = _ScriptedPrompter([])
+
+        outcome = ask_run.execute(interaction_prompter, failure_prompter)
+
+        assert failure_prompter.prompted == ["approve"]
+        assert interaction_prompter.requests == []
+        assert outcome.status == SessionStatus.FAILED

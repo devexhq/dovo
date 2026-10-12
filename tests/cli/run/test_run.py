@@ -474,3 +474,114 @@ class RunEnvFlagsCliIntegrationTests:
         assert len(events) == 1
         assert events[0]["env_withheld"].split(",") == withheld
         assert f"Agent environment filtered: {len(withheld)} variables withheld." in result.output
+
+
+def _ask_blueprint(workspace: Path) -> None:
+    """Write a runnable blueprint `ask-feature`: a plan producer, an approve ask over it, and a closing marker step."""
+    write_runnable_blueprint(
+        workspace,
+        key="ask-feature",
+        steps=[
+            {
+                "id": "plan",
+                "type": "command",
+                "command": "echo plan > PLAN.md",
+                "artifacts": [{"name": "plan", "path": "PLAN.md"}],
+            },
+            {
+                "id": "approve",
+                "type": "ask",
+                "interaction": {
+                    "mode": "select",
+                    "message": "Approve this plan?",
+                    "artifact": "plan",
+                    "comment": {"policy": "optional", "message": "What should change?"},
+                    "options": [
+                        {"value": "approve", "label": "Approve", "comment": "disabled"},
+                        {"value": "revise", "label": "Request changes", "comment": "required"},
+                        {"value": "deny", "label": "Deny", "fail": True},
+                    ],
+                },
+            },
+            {"id": "done", "type": "command", "command": "touch done.marker"},
+        ],
+    )
+
+
+class RunAskCliIntegrationTests:
+    """Typer runner integration tests for dovo run over blueprints with ask steps."""
+
+    def test_no_tty_run_pauses_at_ask_exit_zero_with_answer_hint(
+        self, cli_runner: CliRunner, run_workspace: Path
+    ) -> None:
+        """[tier-3/integration] dovo run ask-feature --no-tty: exits 0, prints the answer hint for prompt 'approve', and the session row is PAUSED."""
+        _ask_blueprint(run_workspace)
+
+        result = cli_runner.invoke(app, ["-p", str(run_workspace), "run", "ask-feature", "--no-tty", "--no-worktree"])
+
+        paths = _paths_for(run_workspace)
+        row = DovoDb(database_file=paths.database_file, project_id=paths.project_id).sessions.list(limit=1)[0]
+        assert result.exit_code == 0
+        assert row.status == SessionStatus.PAUSED
+        assert (
+            f"Run paused at prompt 'approve'. Answer with 'dovo resume {row.session_id} --answer approve=<value>'."
+            in result.stdout
+        )
+        assert not (run_workspace / "done.marker").exists()
+
+    def test_json_format_emits_the_prompt_event_envelope(self, cli_runner: CliRunner, run_workspace: Path) -> None:
+        """[tier-3/integration] dovo run ask-feature --format json: stdout contains the PromptEvent envelope equal to the literal payload (artifact with short digest) and the run exits 0."""
+        _ask_blueprint(run_workspace)
+
+        result = cli_runner.invoke(
+            app, ["-p", str(run_workspace), "run", "ask-feature", "--format", "json", "--no-worktree"]
+        )
+
+        envelopes = [json.loads(line) for line in result.stdout.splitlines() if line.startswith("{")]
+        prompt = next(envelope for envelope in envelopes if envelope["event_type"] == "PromptEvent")
+        digest = prompt["payload"]["artifact"]["digest"]
+        assert result.exit_code == 0
+        assert len(digest) == 8
+        assert prompt["payload"] == {
+            "prompt_type": "interaction",
+            "step_id": "approve",
+            "title": "Approve this plan?",
+            "diagnostic": None,
+            "options": [
+                {
+                    "key": "1",
+                    "label": "Approve",
+                    "decision": "approve",
+                    "comment": "disabled",
+                    "fail": False,
+                    "display": "Approve",
+                },
+                {
+                    "key": "2",
+                    "label": "Request changes",
+                    "decision": "revise",
+                    "comment": "required",
+                    "fail": False,
+                    "display": "Request changes",
+                },
+                {
+                    "key": "3",
+                    "label": "Deny",
+                    "decision": "deny",
+                    "comment": "optional",
+                    "fail": True,
+                    "display": "Deny",
+                },
+            ],
+            "default": None,
+            "mode": "select",
+            "message": "Approve this plan?",
+            "artifact": {
+                "name": "plan",
+                "revision": 1,
+                "digest": digest,
+                "reference": f"plan@1  sha256:{digest}…",
+                "preview": ["plan"],
+            },
+            "comment": {"policy": "optional", "message": "What should change?"},
+        }

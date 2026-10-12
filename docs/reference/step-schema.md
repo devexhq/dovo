@@ -15,7 +15,7 @@ Every standard step accepts the following fields:
 | `description` | `string` | No | `null` | Optional description of the step's operation. |
 | `run` | `string` | Conditional | `null` | Shorthand shell command. It cannot be combined with `uses` or inline-type-only fields. |
 | `uses` | `string` | Conditional | `null` | Reference to a reusable step ID (`dovo/*` or catalog step). Other mode-specific fields are not rejected. |
-| `type` | `string` | Conditional | `null` | Primitive type: `command`, `agent`, or `script`. |
+| `type` | `string` | Conditional | `null` | Primitive type: `command`, `agent`, `script`, or `ask`. |
 | `command` | `string` | Conditional | `null` | Shell command string. Required when `type: command`. |
 | `prompt` | `string` | Conditional | `null` | Instruction sent to the agent provider after interpolation; it must not be blank. Required when `type: agent`. |
 | `script_path` | `string` | Conditional | `null` | Relative path to local script. Required when `type: script`. |
@@ -25,6 +25,7 @@ Every standard step accepts the following fields:
 | `assert` | `StepAssert` | No | `null` | Verification criteria. See [Assertions Schema](assertions-schema.md). |
 | `on_failure` | `string \| FailureSpec` | No | `abort` | Failure handling policy or detailed retry object. |
 | `artifacts` | `list[ArtifactPublishSpec]` | No | `[]` | Files to publish as artifact revisions when the step succeeds. See [`artifacts` Entries](#artifacts-entries). |
+| `interaction` | `object` | Conditional | `null` | Prompt shown to a person. Required when `type: ask`, rejected on every other type. See [`interaction` Block](#interaction-block). |
 
 ---
 
@@ -53,6 +54,54 @@ Steps are validated as follows:
    - `type: command` → requires `command`
    - `type: agent` → requires `prompt`
    - `type: script` → requires `script_path`
+   - `type: ask` → requires `interaction`, and cannot be combined with `run`, `uses`, `command`, `prompt`, `script_path`, `tools`, `artifacts` or `assert`
+5. **`interaction` Boundary**: `interaction` is only valid with `type: ask`. Every rule on this page for an ask step is reported as `CATALOG_ASK_INVALID` by `dovo blueprint validate` and `dovo step validate`, with the step id in the message.
+
+---
+
+## `interaction` Block
+
+A `type: ask` step pauses the run for a person's answer. The answer is recorded as the step's outputs; nothing is auto-answered. See [Human Input](../guides/human-input.md) for worked blueprints.
+
+| Field | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `mode` | `string` | **Yes** | - | `confirm`, `select`, `multiselect` or `text`. |
+| `message` | `string` | **Yes** | - | Question shown to the person. Supports `${{ inputs.* }}`, `{{ steps.* }}` and `{{ artifacts.* }}` placeholders. |
+| `artifact` | `string` | No | `null` | Artifact shown above the options; its latest revision and digest are recorded. A single text file is shown, cut at 200 lines; any other artifact lists its files with sizes. |
+| `comment` | `object` | No | `{policy: disabled, message: Comment}` | Typed-comment policy (`disabled`, `optional`, `required`) and prompt text. Rejected in `text` mode. |
+| `options` | `list` | Conditional | `null` | Static options. |
+| `options_from` | `object` | Conditional | `null` | Options read from a JSON array inside an artifact file. |
+
+This table and the [Ask step outputs](#ask-step-outputs) table are pinned to the models by [`tests/lint/test_step_schema_parity.py`](https://github.com/devexhq/dovo/blob/main/tests/lint/test_step_schema_parity.py).
+
+| Mode | Options | Answer |
+|---|---|---|
+| `confirm` | omitted, or exactly 2. Omitted means `approve` (Approve) and `deny` (Deny, `fail: true`). | one option |
+| `select` | at least 2, from `options` or `options_from` | one option |
+| `multiselect` | at least 1, from `options` or `options_from` | zero or more options |
+| `text` | none | one non-empty text |
+
+Each option takes `value` (`^[A-Za-z0-9_.-]{1,64}$`, unique within the prompt), `label` (non-empty), `fail` (default `false`; `confirm` and `select` only) and `comment` (`disabled`, `optional` or `required`, overriding the interaction default). Answering a `fail: true` option records the outputs and fails the step with exit code `1` and the error `Prompt '<id>' answered '<value>'.`, so the step's `on_failure` applies.
+
+`options_from` replaces `options` (give one, not both) and takes `artifact`, `file` (a relative path of one file in that artifact), `items_path` (dot path to a JSON array), `value_field` and `label_field`; values are converted with `str()`. The latest revision at ask time is used and the file is validated before anything is shown. A missing artifact, an unreadable or invalid file and duplicate values fail the step; so does a `select` with fewer than 2 items. An empty array in `multiselect` is not an error: no prompt is shown and the step completes with an empty selection.
+
+With several chosen options in a `multiselect`, the strictest comment policy among them applies (`required` over `optional` over `disabled`).
+
+### Ask step outputs
+
+All values are strings.
+
+| Output | Value |
+|---|---|
+| `selected` | `confirm` / `select`: the option value. `multiselect`: a JSON array of values in option order. `text`: empty. |
+| `selected_count` | `1` for `confirm` / `select`, the number chosen for `multiselect`, `0` for `text`. |
+| `comment` | The comment, or empty. |
+| `text` | The `text` mode answer, else empty. |
+| `artifact_revision`, `artifact_digest` | Of `interaction.artifact`, else empty. |
+
+Read them with `{{ steps.<id>.outputs.<key> }}`. In a loop, `steps.<id>.outputs.*` resolves to the most recent finished instance of that step, so iteration 2 sees iteration 1's answer and iteration 1 sees an empty string.
+
+`until` conditions read an ask step's stdout, which is one JSON object with the same keys; `selected_count` is a JSON integer there, so `steps.triage.outputs.selected_count == 0` compares numerically. This is pinned by [`tests/engine/executors/test_ask_step.py`](https://github.com/devexhq/dovo/blob/main/tests/engine/executors/test_ask_step.py).
 
 ---
 

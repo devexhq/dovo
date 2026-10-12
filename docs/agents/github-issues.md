@@ -184,7 +184,7 @@ one. If a surface is renamed, say "renamed", not "added".
 
 ```markdown
 ### Shared surfaces changed
-- `PromptEvent.prompt_id` is renamed `step_id` (events, prompter, formatter tests)
+- `ErrorCode.CONFIG_UNREADABLE` is renamed `CONFIG_FILE_UNREADABLE` (error codes, formatters, tests)
 ```
 
 ### 3. Functional / Non-Functional Requirements

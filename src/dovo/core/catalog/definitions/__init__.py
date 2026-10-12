@@ -9,8 +9,15 @@ from dovo.core.catalog.definitions.conditions import (
 )
 from dovo.core.catalog.definitions.step import (
     DEFAULT_STEP_TIMEOUT_SECONDS,
+    OPTION_VALUE_RE,
     ArtifactPublishSpec,
+    CommentPolicy,
+    InteractionComment,
+    InteractionMode,
+    InteractionOption,
+    InteractionSpec,
     LoopStepBlock,
+    OptionsFrom,
     StepAssert,
     StepDefinition,
     StepType,
@@ -18,10 +25,17 @@ from dovo.core.catalog.definitions.step import (
 
 __all__ = [
     "DEFAULT_STEP_TIMEOUT_SECONDS",
+    "OPTION_VALUE_RE",
     "ArtifactPublishSpec",
     "BlueprintDefaults",
     "BlueprintDefinition",
+    "CommentPolicy",
+    "InteractionComment",
+    "InteractionMode",
+    "InteractionOption",
+    "InteractionSpec",
     "LoopStepBlock",
+    "OptionsFrom",
     "ParsedCondition",
     "StepAssert",
     "StepDefinition",

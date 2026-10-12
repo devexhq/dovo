@@ -69,6 +69,7 @@ LAYER_RULES: Final[dict[str, LayerRule]] = {
         CORE_ROOT / "catalog", ("dovo.core.agents", "dovo.core.sessions", "dovo.engine", "dovo.cli")
     ),
     "core_artifacts": LayerRule(CORE_ROOT / "artifacts", ("dovo.engine",)),
+    "core_interaction": LayerRule(CORE_ROOT / "interaction", ("dovo.core.agents", "dovo.engine", "dovo.cli")),
     "core_agents": LayerRule(CORE_ROOT / "agents", ("dovo.core.config", "dovo.engine")),
     "core_sessions": LayerRule(
         CORE_ROOT / "sessions",

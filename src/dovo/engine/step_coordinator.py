@@ -2,14 +2,16 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 
-from dovo.core.catalog.definitions import StepDefinition
+from dovo.core.catalog.definitions import StepDefinition, StepType
+from dovo.core.interaction import InteractionAnswer, InteractionRequest
 from dovo.core.sessions import SessionLogEvent, SessionLogEventType
 from dovo.engine.executors import StepExecution
 from dovo.engine.executors.agent_step import build_agent_step_runner
-from dovo.engine.executors.models import PreviousStepMetadata, StepExecutionContext, StepResult
+from dovo.engine.executors.ask_step import complete_ask_step, resolve_ask_request
+from dovo.engine.executors.models import AskResolution, PreviousStepMetadata, StepExecutionContext, StepResult
 from dovo.engine.failure import (
     failed_step_message,
     mark_continued_after_prompt,
@@ -89,19 +91,7 @@ class StepCoordinator:
         loop_id: str | None = None,
     ) -> StepResult:
         """Notify, log, run one StepExecution, and forward the result's warnings to the caller's run warnings."""
-        safe_notify(self.context.observer, "on_step_start", idx, total, step)
-        append_session_log_event(
-            run_context.session_log_dir,
-            SessionLogEvent(
-                event=SessionLogEventType.STEP_START,
-                step_index=idx,
-                step_id=step.id,
-                step_name=step.name,
-                attempt=initial_attempt,
-                loop_id=loop_id,
-                iteration=loop_iteration,
-            ),
-        )
+        self._log_step_start(run_context, step, idx, total, initial_attempt, loop_id, loop_iteration)
         on_output = (
             (
                 lambda stream_name, line: safe_notify(
@@ -112,33 +102,101 @@ class StepCoordinator:
             else None
         )
         result = StepExecution(
-            StepExecutionContext(
-                step=step,
-                worktree_path=run_context.target_dir,
-                context=step_context,
-                on_output=on_output,
-                step_index=idx,
-                initial_attempt=initial_attempt,
-                identity=self.context.identity,
+            self._execution_context(
+                run_context,
+                step,
+                idx=idx,
+                step_context=step_context,
                 previous_step=previous_step,
                 steps=steps,
-                session_tmp_dir=run_context.session_tmp_dir,
-                session_log_dir=run_context.session_log_dir,
-                save_attempt_logs=run_context.save_attempt_logs,
+                initial_attempt=initial_attempt,
                 loop_iteration=loop_iteration,
-                session_id=self.context.session_id or "",
-                artifact_store=run_context.artifact_store,
-                paths=self.context.paths,
-                agent_runner=build_agent_step_runner(
-                    self.context.agent,
-                    run_context.worktree is not None,
-                    session_tmp_dir=run_context.session_tmp_dir,
-                    main_checkout=self.context.paths.root_dir,
-                    session_log_dir=run_context.session_log_dir,
-                ),
-                sensitive_variables=self.context.sensitive_variables,
+                on_output=on_output,
             )
         ).run()
+        self._log_step_done(run_context, step, idx, total, result, loop_id, loop_iteration)
+        warnings.extend(result.warnings)
+        return result
+
+    def _execution_context(
+        self,
+        run_context: RunContext,
+        step: StepDefinition,
+        *,
+        idx: int,
+        step_context: dict[str, object] | None,
+        previous_step: PreviousStepMetadata | None,
+        steps: Sequence[PreviousStepMetadata] | None,
+        initial_attempt: int,
+        loop_iteration: int | None,
+        on_output: Callable[[str, str], None] | None = None,
+    ) -> StepExecutionContext:
+        """Build the StepExecutionContext shared by command, script, agent, internal and ask steps."""
+        return StepExecutionContext(
+            step=step,
+            worktree_path=run_context.target_dir,
+            context=step_context,
+            on_output=on_output,
+            step_index=idx,
+            initial_attempt=initial_attempt,
+            identity=self.context.identity,
+            previous_step=previous_step,
+            steps=steps,
+            session_tmp_dir=run_context.session_tmp_dir,
+            session_log_dir=run_context.session_log_dir,
+            save_attempt_logs=run_context.save_attempt_logs,
+            loop_iteration=loop_iteration,
+            session_id=self.context.session_id or "",
+            artifact_store=run_context.artifact_store,
+            paths=self.context.paths,
+            agent_runner=None
+            if step.type == StepType.ASK
+            else build_agent_step_runner(
+                self.context.agent,
+                run_context.worktree is not None,
+                session_tmp_dir=run_context.session_tmp_dir,
+                main_checkout=self.context.paths.root_dir,
+                session_log_dir=run_context.session_log_dir,
+            ),
+            sensitive_variables=self.context.sensitive_variables,
+        )
+
+    def _log_step_start(
+        self,
+        run_context: RunContext,
+        step: StepDefinition,
+        idx: int,
+        total: int,
+        attempt: int,
+        loop_id: str | None,
+        loop_iteration: int | None,
+    ) -> None:
+        """Notify the observer and append STEP_START for one attempt."""
+        safe_notify(self.context.observer, "on_step_start", idx, total, step)
+        append_session_log_event(
+            run_context.session_log_dir,
+            SessionLogEvent(
+                event=SessionLogEventType.STEP_START,
+                step_index=idx,
+                step_id=step.id,
+                step_name=step.name,
+                attempt=attempt,
+                loop_id=loop_id,
+                iteration=loop_iteration,
+            ),
+        )
+
+    def _log_step_done(
+        self,
+        run_context: RunContext,
+        step: StepDefinition,
+        idx: int,
+        total: int,
+        result: StepResult,
+        loop_id: str | None,
+        loop_iteration: int | None,
+    ) -> None:
+        """Notify the observer and append STEP_DONE for a settled attempt."""
         safe_notify(self.context.observer, "on_step_done", idx, total, step, result)
         append_session_log_event(
             run_context.session_log_dir,
@@ -155,5 +213,69 @@ class StepCoordinator:
                 iteration=loop_iteration,
             ),
         )
-        warnings.extend(result.warnings)
+
+    def resolve_ask(
+        self,
+        run_context: RunContext,
+        step: StepDefinition,
+        *,
+        index: int,
+        total: int,
+        step_context: dict[str, object] | None,
+        previous_step: PreviousStepMetadata | None,
+        steps: Sequence[PreviousStepMetadata] | None,
+        attempt: int,
+        loop_iteration: int | None,
+        loop_id: str | None,
+    ) -> AskResolution:
+        """Notify and log the step start, then resolve its request."""
+        self._log_step_start(run_context, step, index, total, attempt, loop_id, loop_iteration)
+        resolution = resolve_ask_request(
+            self._execution_context(
+                run_context,
+                step,
+                idx=index,
+                step_context=step_context,
+                previous_step=previous_step,
+                steps=steps,
+                initial_attempt=attempt,
+                loop_iteration=loop_iteration,
+            )
+        )
+        if resolution.result is not None:
+            self._log_step_done(run_context, step, index, total, resolution.result, loop_id, loop_iteration)
+        return resolution
+
+    def complete_ask(
+        self,
+        run_context: RunContext,
+        step: StepDefinition,
+        request: InteractionRequest,
+        answer: InteractionAnswer,
+        *,
+        index: int,
+        total: int,
+        step_context: dict[str, object] | None,
+        previous_step: PreviousStepMetadata | None,
+        steps: Sequence[PreviousStepMetadata] | None,
+        attempt: int,
+        loop_iteration: int | None,
+        loop_id: str | None,
+    ) -> StepResult:
+        """Build the answered step's result, then notify and log the step done."""
+        result = complete_ask_step(
+            self._execution_context(
+                run_context,
+                step,
+                idx=index,
+                step_context=step_context,
+                previous_step=previous_step,
+                steps=steps,
+                initial_attempt=attempt,
+                loop_iteration=loop_iteration,
+            ),
+            request,
+            answer,
+        )
+        self._log_step_done(run_context, step, index, total, result, loop_id, loop_iteration)
         return result

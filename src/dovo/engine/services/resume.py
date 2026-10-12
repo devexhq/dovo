@@ -8,9 +8,10 @@ from dovo.common.filesystem import WorkspacePaths
 from dovo.core.agents.models import AgentEnvMode
 from dovo.core.catalog import Catalog
 from dovo.core.db import SessionsRepository
+from dovo.core.interaction import HeadlessAnswerInput
 from dovo.engine.engine import Engine
 from dovo.engine.exceptions import EngineResumeError, EngineRuntimeError
-from dovo.engine.models import BlueprintRunResult, FailurePrompter, RunObserver
+from dovo.engine.models import BlueprintRunResult, FailurePrompter, InteractionPrompter, RunObserver
 from dovo.engine.services._shared import fail, finalize, load_record, resolve_env_overrides
 
 
@@ -26,6 +27,8 @@ class BlueprintResumeService:
     env_passthrough: list[str] = field(default_factory=list)
     observer: RunObserver | None = None
     failure_prompter: FailurePrompter | None = None
+    interaction_prompter: InteractionPrompter | None = None
+    answers: list[HeadlessAnswerInput] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
 
     def execute(self) -> BlueprintRunResult:
@@ -45,6 +48,8 @@ class BlueprintResumeService:
                 target_session_id,
                 observer=self.observer,
                 failure_prompter=self.failure_prompter,
+                interaction_prompter=self.interaction_prompter,
+                answers=self.answers,
                 no_tty=self.no_tty,
                 env_overrides=env_overrides,
             )

@@ -18,6 +18,7 @@ from dovo.engine.executors.models import StepResult
 from dovo.engine.models import (
     FailurePromptDecision,
     FailurePrompter,
+    InteractionPrompter,
     LoopPromptDecision,
     RunObserver,
     RunOutcome,
@@ -64,6 +65,7 @@ def _patch_drive_run(monkeypatch: pytest.MonkeyPatch, paths: WorkspacePaths, out
         *,
         observer: RunObserver | None,
         prompter: FailurePrompter | None,
+        interaction_prompter: InteractionPrompter | None = None,
         no_tty: bool,
         env_overrides: AgentEnvOverrides | None = None,
     ) -> RunOutcome:
@@ -217,6 +219,7 @@ class EngineDispatchTests:
             *,
             observer: RunObserver | None,
             prompter: FailurePrompter | None,
+            interaction_prompter: InteractionPrompter | None = None,
             no_tty: bool,
             env_overrides: AgentEnvOverrides | None = None,
         ) -> RunOutcome:
@@ -337,6 +340,7 @@ class EngineRunSnapshotsDefinitionsTests:
             *,
             observer: RunObserver | None,
             prompter: FailurePrompter | None,
+            interaction_prompter: InteractionPrompter | None = None,
             no_tty: bool,
             env_overrides: AgentEnvOverrides | None = None,
         ) -> RunOutcome:
@@ -576,6 +580,7 @@ class EngineFinalizeFallbackTests:
             *,
             observer: RunObserver | None,
             prompter: FailurePrompter | None,
+            interaction_prompter: InteractionPrompter | None = None,
             no_tty: bool,
             env_overrides: AgentEnvOverrides | None = None,
         ) -> RunOutcome:

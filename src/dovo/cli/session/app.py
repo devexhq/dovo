@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Annotated
 
 import typer
@@ -210,6 +211,23 @@ def session_resume(
             help="Forward a host variable name or trailing-'*' prefix to the agent for this invocation; repeatable.",
         ),
     ] = None,
+    answer: Annotated[
+        str | None,
+        typer.Option(
+            "--answer", help="Answer the pending prompt as <step_id>=<value> (multiselect: JSON array or comma list)."
+        ),
+    ] = None,
+    comment: Annotated[str | None, typer.Option("--comment", help="Comment accompanying --answer.")] = None,
+    comment_file: Annotated[
+        Path | None, typer.Option("--comment-file", help="Read the comment accompanying --answer from this file.")
+    ] = None,
+    answers_file: Annotated[
+        Path | None,
+        typer.Option(
+            "--answers-file",
+            help="JSON object with step_id, selected, comment and text; excludes the other answer flags.",
+        ),
+    ] = None,
     format: Annotated[
         OutputFormatOptions, typer.Option(help="Output format: 'terminal' or 'json'.")
     ] = OutputFormatOptions.TERMINAL,
@@ -225,6 +243,10 @@ def session_resume(
         no_tty=no_tty,
         env_mode=env_mode,
         env_passthrough=env_passthrough,
+        answer=answer,
+        comment=comment,
+        comment_file=comment_file,
+        answers_file=answers_file,
         output_format=format,
         display_format=display,
     )

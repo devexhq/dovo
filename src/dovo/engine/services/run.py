@@ -14,7 +14,7 @@ from dovo.core.inputs.services.resolve import format_input_error_message
 from dovo.core.sessions import reconcile_stale_sessions
 from dovo.engine.engine import Engine
 from dovo.engine.exceptions import EngineInputError, EngineRuntimeError
-from dovo.engine.models import BlueprintRunResult, FailurePrompter, RunObserver, RunRequest
+from dovo.engine.models import BlueprintRunResult, FailurePrompter, InteractionPrompter, RunObserver, RunRequest
 from dovo.engine.services._shared import fail, finalize, resolve_env_overrides
 
 
@@ -36,6 +36,7 @@ class BlueprintRunService:
     env_passthrough: list[str] = field(default_factory=list)
     observer: RunObserver | None = None
     failure_prompter: FailurePrompter | None = None
+    interaction_prompter: InteractionPrompter | None = None
     warnings: list[str] = field(default_factory=list)
 
     def execute(self) -> BlueprintRunResult:
@@ -64,6 +65,7 @@ class BlueprintRunService:
                     session_id=self.session_id,
                     observer=self.observer,
                     failure_prompter=self.failure_prompter,
+                    interaction_prompter=self.interaction_prompter,
                     no_tty=self.no_tty,
                     auto_apply=self.auto_apply,
                     env_overrides=env_overrides,

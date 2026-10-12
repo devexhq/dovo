@@ -86,7 +86,7 @@ Hierarchical resolution merges four tiers, lowest to highest precedence: **Packa
 - The `SessionRecord` row (`execution_state_json`, `execution_state_revision`) is the **canonical** execution state. `<session-dir>/session.json` is a database-derived projection, regenerated from the row when missing, corrupt, or different, and a newer file is rejected rather than imported.
 - `SessionStateStore` saves with a revision compare-and-swap and does not lock; callers hold the workspace lock.
 - `Engine.run` snapshots the blueprint and every transitively-resolved `uses:` step into `<session_dir>/definitions/`, so resume executes from the snapshot with no live catalog read. Resume fails with `EngineResumeError` when state or snapshots are inconsistent.
-- A paused leaf (top-level or loop body) keeps its failed attempt, so resume re-enters the failure prompt without re-running the step.
+- A paused leaf (top-level or loop body) keeps its failed attempt, so resume re-enters the failure prompt without re-running the step; a paused `ask` leaf keeps its resolved `pending_ask` request, so resume asks it again without re-resolving options.
 - `session.log` is an append-only timeline; write failures are dropped silently, and the log is read back through `core/sessions/services/read_logs.py`.
 - `RunCoordinator` applies one durable transition per node through `SessionStateStore`; loop decisions are pure (`LoopPolicy`) and applied by the coordinator.
 

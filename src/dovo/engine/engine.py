@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+from collections.abc import Sequence
 
 from dovo.common.filesystem import WorkspacePaths
 from dovo.common.lock import WorkspaceLock
@@ -15,16 +16,19 @@ from dovo.core.db import SessionsRepository, SessionStatus
 from dovo.core.git.exceptions import GitError
 from dovo.core.git.runner import GitRunner
 from dovo.core.inputs import InputResolveResult
+from dovo.core.interaction import HeadlessAnswerInput
 from dovo.engine.exceptions import EngineInputError
 from dovo.engine.loader import EngineLoader
 from dovo.engine.models import (
     DefinitionsManifest,
     FailurePrompter,
+    InteractionPrompter,
     RunObserver,
     RunOutcome,
     RunRequest,
     RunStartConfig,
 )
+from dovo.engine.preset_prompter import PresetInteractionPrompter
 from dovo.engine.session import drive_run
 from dovo.engine.state_models import SessionStateLoadStatus
 from dovo.engine.state_store import SessionStateStore
@@ -70,6 +74,7 @@ class Engine:
             sid,
             observer=req.observer,
             prompter=req.failure_prompter,
+            interaction_prompter=req.interaction_prompter,
             no_tty=req.no_tty,
             env_overrides=req.env_overrides,
         )
@@ -83,13 +88,18 @@ class Engine:
         *,
         observer: RunObserver | None = None,
         failure_prompter: FailurePrompter | None = None,
+        interaction_prompter: InteractionPrompter | None = None,
+        answers: Sequence[HeadlessAnswerInput] | None = None,
         no_tty: bool = False,
         env_overrides: AgentEnvOverrides | None = None,
     ) -> RunOutcome:
         """Load a paused run's durable state and execute it through the same RunCoordinator entry point as run()."""
         engine_warnings: list[str] = []
         with WorkspaceLock(self.paths.lock_file):
-            EngineLoader.load_for_resume(self.db, self.paths, session_id)
+            _, state, _ = EngineLoader.load_for_resume(self.db, self.paths, session_id)
+            if answers:
+                preset = EngineLoader.resolve_answers(session_id, state, answers, engine_warnings)
+                interaction_prompter = PresetInteractionPrompter(preset, interaction_prompter)
             self._mark_running(session_id, engine_warnings)
 
         outcome = drive_run(
@@ -98,6 +108,7 @@ class Engine:
             session_id,
             observer=observer,
             prompter=failure_prompter,
+            interaction_prompter=interaction_prompter,
             no_tty=no_tty,
             env_overrides=env_overrides,
         )
