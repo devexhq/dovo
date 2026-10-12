@@ -178,15 +178,14 @@ class SessionRunner:
 
         session_tmp_dir = workspace.prepare_session_tmp_dir(setup_warnings)
         session_log_dir = workspace.prepare_session_log_dir(setup_warnings)
-        artifacts_dir, artifacts_db = workspace.prepare_session_artifacts()
+        artifact_store = workspace.prepare_session_artifacts()
         context = RunContext(
             session_id=row.session_id,
             paths=paths,
             target_dir=target_dir,
             session_tmp_dir=session_tmp_dir,
             session_log_dir=session_log_dir,
-            artifacts_dir=artifacts_dir,
-            artifacts_db=artifacts_db,
+            artifact_store=artifact_store,
             worktree=worktree,
             no_tty=no_tty,
             save_attempt_logs=config.history.save_attempt_logs,

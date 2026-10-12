@@ -80,7 +80,7 @@ def _run_context(tmp_path: Path, *, session_log_dir: Path | None = None) -> RunC
         target_dir=tmp_path,
         session_tmp_dir=None,
         session_log_dir=session_log_dir,
-        artifacts_dir=None,
+        artifact_store=None,
     )
 
 

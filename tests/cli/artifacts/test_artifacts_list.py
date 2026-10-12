@@ -29,7 +29,7 @@ def _publish_artifact(
     (worktree_path / "dist" / "pkg.whl").write_bytes(b"package-bytes")
     paths = _paths_for(workspace)
     db = DovoDb(database_file=paths.database_file, project_id=paths.project_id)
-    Artifacts(paths, db=db.artifacts).upload(
+    Artifacts(paths, db=db.artifacts).publish(
         session_id,
         name,
         "dist/*.whl",

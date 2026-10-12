@@ -5,8 +5,9 @@ from __future__ import annotations
 from pathlib import Path
 
 from dovo.common.filesystem.models import WorkspacePaths
+from dovo.core.artifacts import Artifacts
 from dovo.core.artifacts.models import ArtifactProvenance
-from dovo.core.artifacts.services.upload import publish_artifact
+from dovo.core.artifacts.store import ArtifactStore
 from dovo.core.catalog.definitions import StepDefinition
 from dovo.core.db.repositories.artifacts import ArtifactsRepository
 from dovo.engine.executors.models import StepExecutionContext, StepResult
@@ -42,8 +43,7 @@ def _run(
             step=step,
             worktree_path=worktree_path,
             session_id="wf_1",
-            artifacts_dir=paths.artifacts_dir,
-            artifacts_db=repository,
+            artifact_store=ArtifactStore(Artifacts(paths, repository), "wf_1"),
             paths=paths,
             loop_iteration=loop_iteration,
         )
@@ -58,15 +58,8 @@ def _publish_plan(
     for relative_path, content in files.items():
         (source / relative_path).parent.mkdir(parents=True, exist_ok=True)
         (source / relative_path).write_text(content, encoding="utf-8")
-    result = publish_artifact(
-        source,
-        paths.artifacts_dir,
-        repository,
-        session_id="wf_1",
-        name="plan",
-        path_glob="*",
-        retention_days=None,
-        provenance=ArtifactProvenance(),
+    result = Artifacts(paths, repository).publish(
+        "wf_1", "plan", "*", worktree_path=source, provenance=ArtifactProvenance()
     )
     assert result.ok
 
@@ -150,6 +143,19 @@ class StepExecutionArtifactsTests:
         assert result.status == "completed"
         assert [record.name for record in artifacts_repository.list()] == ["plan"]
 
+    def test_failing_assertion_stops_before_artifact_publishing(
+        self, tmp_path: Path, engine_paths: WorkspacePaths, artifacts_repository: ArtifactsRepository
+    ) -> None:
+        """[tier-1/integration] StepExecution.run: command writes PLAN.md and exits 0 but assert_ fails -> status 'failed' with the assertion message and artifacts_repository.list() == []."""
+        step = _command_step("echo plan > PLAN.md", assert_={"file_exists": "missing.bin"})
+
+        result = _run(step, tmp_path / "wt", engine_paths, artifacts_repository)
+
+        assert result.status == "failed"
+        assert result.error_message is not None
+        assert result.error_message.startswith("Step 'plan' failed assertion checks:")
+        assert artifacts_repository.list() == []
+
 
 class StepExecutionArtifactReferencesTests:
     """[tier-1/integration] StepExecution.run: artifacts.* placeholder rendering."""
@@ -194,7 +200,7 @@ class StepExecutionArtifactReferencesTests:
     def test_later_run_sees_revision_published_by_earlier_run(
         self, tmp_path: Path, engine_paths: WorkspacePaths, artifacts_repository: ArtifactsRepository
     ) -> None:
-        """[tier-1/integration] StepExecution.run twice with the same artifacts_db: a publishing step then a rendering step print revision 1, then 2 after a second publish."""
+        """[tier-1/integration] StepExecution.run twice with the same artifacts repository: a publishing step then a rendering step print revision 1, then 2 after a second publish."""
         worktree_path = tmp_path / "wt"
         publisher = _command_step("echo plan > PLAN.md")
         renderer = StepDefinition.model_validate(

@@ -3,10 +3,9 @@
 from __future__ import annotations
 
 import re
-from collections.abc import Mapping
-from typing import Any, Final
+from collections.abc import Mapping, Sequence
+from typing import Any, Protocol
 
-ARTIFACT_FIELDS: Final[tuple[str, ...]] = ("revision", "digest", "dir", "content")
 _PLACEHOLDER_RE = re.compile(r"\$?\{\{\s*([^}]+?)\s*\}\}")
 _INTERPOLATED_FIELDS = ("command", "prompt", "script_path", "run")
 _STEP_ENTRY_FIELDS = {"id", "name", "index", "status", "exit_code"}
@@ -81,32 +80,6 @@ def _find_step_by_id(steps: list[Any], step_id: str) -> Any | None:
     return None
 
 
-def _resolve_steps_placeholder(key: str, metadata: Any) -> tuple[bool, str]:
-    """Resolve a steps placeholder expression against step execution metadata."""
-    parsed = _parse_steps_selector(key)
-    if parsed is None:
-        return False, ""
-
-    selector, field_name, is_quoted = parsed
-    if field_name not in _STEP_ENTRY_FIELDS:
-        return False, ""
-
-    steps_list = getattr(metadata, "steps", None) or []
-
-    if not is_quoted:
-        try:
-            index = int(selector)
-            if 0 <= index < len(steps_list) or (index < 0 and abs(index) <= len(steps_list)):
-                entry = steps_list[index]
-                return True, _resolve_step_entry_field(entry, field_name)
-            return True, ""
-        except ValueError:
-            pass
-
-    entry = _find_step_by_id(steps_list, selector)
-    return True, _resolve_step_entry_field(entry, field_name)
-
-
 def _parse_steps_outputs_selector(key: str) -> tuple[str, str] | None:
     """Parse `steps.<id>.outputs.<key>` or `steps['<id>'].outputs.<key>` into (step_id, output_key)."""
     bracket_match = _STEPS_OUTPUTS_BRACKET_RE.match(key)
@@ -120,179 +93,206 @@ def _parse_steps_outputs_selector(key: str) -> tuple[str, str] | None:
     return None
 
 
-def _resolve_step_outputs_placeholder(key: str, metadata: Any) -> tuple[bool, str]:
-    """Resolve steps.<id>.outputs.<key> to the step's output value, or "" when the step or key is unknown."""
-    parsed = _parse_steps_outputs_selector(key)
-    if parsed is None:
-        return False, ""
-    step_id, output_key = parsed
-    steps_list = getattr(metadata, "steps", None) or []
-    entry = _find_step_by_id(steps_list, step_id)
-    outputs = getattr(entry, "outputs", None) if entry is not None else None
-    return True, str((outputs or {}).get(output_key, ""))
+class ExecutionMetadataView(Protocol):
+    """Read-only attributes of execution metadata that placeholder providers consume."""
+
+    @property
+    def step(self) -> object:
+        """Metadata step namespace."""
+        ...
+
+    @property
+    def blueprint(self) -> object:
+        """Metadata blueprint namespace."""
+        ...
+
+    @property
+    def previous_step(self) -> object:
+        """Metadata previous step namespace."""
+        ...
+
+    @property
+    def iteration(self) -> object:
+        """Metadata iteration namespace."""
+        ...
+
+    @property
+    def steps(self) -> Sequence[object]:
+        """Metadata steps namespace."""
+        ...
 
 
-def _resolve_metadata_placeholder(key: str, metadata: Any) -> tuple[bool, str]:
-    """Extract a placeholder value from execution metadata if matched."""
-    extractor = _METADATA_EXTRACTORS.get(key)
-    if extractor is not None:
+class NamespaceProvider(Protocol):
+    """Resolves placeholder expressions for one namespace."""
+
+    namespace: str
+
+    def resolve(self, path: str) -> str | None:
+        """Return the rendered value for the dotted path, or None when this provider does not define it."""
+        ...
+
+
+class InputsProvider:
+    """Resolves `inputs.<name>` and bare `<name>` references against the resolved blueprint inputs."""
+
+    namespace = "inputs"
+
+    def __init__(self, inputs: Mapping[str, Any]) -> None:
+        self._inputs = inputs
+
+    def resolve(self, path: str) -> str | None:
+        """Return str(value) for `inputs.<name>` or a bare `<name>` present in inputs, else None."""
+        if path.startswith("inputs."):
+            input_name = path[len("inputs.") :]
+            if input_name in self._inputs:
+                return str(self._inputs[input_name])
+        if path in self._inputs:
+            return str(self._inputs[path])
+        return None
+
+
+class StepsProvider:
+    """Resolves `steps[...]` and `steps.<id>.outputs.<key>` references against execution metadata."""
+
+    namespace = "steps"
+
+    def __init__(self, metadata: ExecutionMetadataView) -> None:
+        self._steps: list[object] = list(metadata.steps or [])
+
+    def resolve(self, path: str) -> str | None:
+        """Return the step field or output value, '' for an unknown step/key, or None for a non-steps expression."""
+        if not path.startswith(("steps[", "steps.")):
+            return None
+
+        outputs_selector = _parse_steps_outputs_selector(path)
+        if outputs_selector is not None:
+            step_id, output_key = outputs_selector
+            entry = _find_step_by_id(self._steps, step_id)
+            outputs = getattr(entry, "outputs", None) if entry is not None else None
+            return str((outputs or {}).get(output_key, ""))
+
+        return self._resolve_entry_field(path)
+
+    def _resolve_entry_field(self, path: str) -> str | None:
+        """Resolve `steps[<selector>].<field>` by index or step id; None when the expression is not a step field."""
+        parsed = _parse_steps_selector(path)
+        if parsed is None:
+            return None
+
+        selector, field_name, is_quoted = parsed
+        if field_name not in _STEP_ENTRY_FIELDS:
+            return None
+
+        if not is_quoted:
+            try:
+                index = int(selector)
+            except ValueError:
+                pass
+            else:
+                if -len(self._steps) <= index < len(self._steps):
+                    return _resolve_step_entry_field(self._steps[index], field_name)
+                return ""
+
+        return _resolve_step_entry_field(_find_step_by_id(self._steps, selector), field_name)
+
+
+class MetadataProvider:
+    """Resolves one execution-metadata namespace such as `step`, `blueprint` or `previous_step`."""
+
+    def __init__(self, namespace: str, metadata: ExecutionMetadataView) -> None:
+        self.namespace = namespace
+        self._metadata = metadata
+
+    def resolve(self, path: str) -> str | None:
+        """Return the extractor value for a `<namespace>.<field>` key, or None when undefined."""
+        if not path.startswith(f"{self.namespace}."):
+            return None
+
+        extractor = _METADATA_EXTRACTORS.get(path)
+        if extractor is None:
+            return None
+
         try:
-            return True, extractor(metadata)
+            return extractor(self._metadata)
         except AttributeError:
-            pass
-    if key.startswith("steps[") or key.startswith("steps."):
-        found, value = _resolve_step_outputs_placeholder(key, metadata)
-        if found:
-            return True, value
-        return _resolve_steps_placeholder(key, metadata)
-    return False, ""
+            return None
 
 
-def _resolve_input_placeholder(key: str, inputs: dict[str, Any]) -> tuple[bool, str]:
-    """Extract a placeholder value from inputs dictionary if present."""
-    if key.startswith("inputs."):
-        input_name = key[7:]
-        if input_name in inputs:
-            return True, str(inputs[input_name])
-    if key in inputs:
-        return True, str(inputs[key])
-    return False, ""
+def metadata_providers(metadata: ExecutionMetadataView) -> list[NamespaceProvider]:
+    """Build one MetadataProvider per metadata namespace plus the StepsProvider."""
+    namespaces = dict.fromkeys(key.partition(".")[0] for key in _METADATA_EXTRACTORS)
+    providers: list[NamespaceProvider] = [MetadataProvider(namespace, metadata) for namespace in namespaces]
+    providers.append(StepsProvider(metadata))
+    return providers
 
 
-def _parse_artifact_key(key: str) -> tuple[str, str] | None:
-    """Parse `artifacts.<name>.<field>` into (name, field); the last segment is the field so names may contain dots."""
-    if not key.startswith("artifacts."):
-        return None
-    parts = key.split(".")
-    if len(parts) < 3:
-        return None
-    return ".".join(parts[1:-1]), parts[-1]
-
-
-def _resolve_artifact_placeholder(key: str, artifacts: Mapping[str, Mapping[str, str]] | None) -> tuple[bool, str]:
-    """Resolve artifacts.<name>.<field> to its value; unknown artifact or field resolves to an empty string."""
-    parsed = _parse_artifact_key(key)
-    if parsed is None:
-        return False, ""
-    name, field_name = parsed
-    return True, (artifacts or {}).get(name, {}).get(field_name, "")
-
-
-def _step_templates(step: object) -> list[str]:
-    """Return every string the step interpolates: its templated fields and its env values."""
-    templates = [
-        value for field_name in _INTERPOLATED_FIELDS if isinstance(value := getattr(step, field_name, None), str)
-    ]
-    env = getattr(step, "env", None)
-    if isinstance(env, dict):
-        templates.extend(value for value in env.values() if isinstance(value, str))
-    return templates
-
-
-def referenced_artifact_fields(step: object) -> dict[str, set[str]]:
-    """Return {artifact name: requested fields} for every artifacts.<name>.<field> placeholder in the step's interpolated fields and env values."""
-    referenced: dict[str, set[str]] = {}
-    for template in _step_templates(step):
-        for match in _PLACEHOLDER_RE.finditer(template):
-            parsed = _parse_artifact_key(match.group(1))
-            if parsed is not None and parsed[1] in ARTIFACT_FIELDS:
-                referenced.setdefault(parsed[0], set()).add(parsed[1])
-    return referenced
-
-
-def _resolve_placeholder(
-    key: str,
-    inputs: dict[str, Any] | None,
-    metadata: Any | None,
-    artifacts: Mapping[str, Mapping[str, str]] | None = None,
-) -> tuple[bool, str]:
-    """Resolve placeholder expression by querying metadata first, then artifacts, then inputs."""
+def build_providers(
+    *,
+    inputs: Mapping[str, Any] | None = None,
+    metadata: ExecutionMetadataView | None = None,
+    artifacts: NamespaceProvider | None = None,
+) -> list[NamespaceProvider]:
+    """Return providers in resolution order: metadata, steps, artifacts, then inputs; omit those not supplied."""
+    providers: list[NamespaceProvider] = []
     if metadata is not None:
-        found, val = _resolve_metadata_placeholder(key, metadata)
-        if found:
-            return True, val
-    found, val = _resolve_artifact_placeholder(key, artifacts)
-    if found:
-        return True, val
-    if inputs is not None:
-        found, val = _resolve_input_placeholder(key, inputs)
-        if found:
-            return True, val
-    return False, ""
+        providers.extend(metadata_providers(metadata))
+    if artifacts is not None:
+        providers.append(artifacts)
+    if inputs:
+        providers.append(InputsProvider(inputs))
+    return providers
 
 
-def interpolate_string(
-    template: str,
-    inputs: dict[str, Any] | None = None,
-    metadata: Any | None = None,
-    artifacts: Mapping[str, Mapping[str, str]] | None = None,
-) -> str:
-    """Replace ``${{ ... }}`` and ``{{ ... }}`` placeholders with resolved string values."""
-    if not inputs and metadata is None and artifacts is None:
+def interpolate_string(template: str, providers: Sequence[NamespaceProvider]) -> str:
+    """Replace ``${{ ... }}`` and ``{{ ... }}`` placeholders using the first provider that defines each path."""
+    if not providers:
         return template
 
     def _replace(match: re.Match[str]) -> str:
         key = match.group(1)
-        found, value = _resolve_placeholder(key, inputs, metadata, artifacts)
-        if not found:
-            return match.group(0)
-        return value
+        for provider in providers:
+            value = provider.resolve(key)
+            if value is not None:
+                return value
+        return match.group(0)
 
     return _PLACEHOLDER_RE.sub(_replace, template)
 
 
-def _interpolated_field_updates(
-    step: Any,
-    inputs: dict[str, Any] | None = None,
-    metadata: Any | None = None,
-    artifacts: Mapping[str, Mapping[str, str]] | None = None,
-) -> dict[str, Any]:
+def _interpolated_field_updates(step: Any, providers: Sequence[NamespaceProvider]) -> dict[str, Any]:
     """Compute string field replacements for an executable step model."""
     updates: dict[str, Any] = {}
     for field_name in _INTERPOLATED_FIELDS:
         value = getattr(step, field_name, None)
         if isinstance(value, str) and value:
-            interpolated = interpolate_string(value, inputs=inputs, metadata=metadata, artifacts=artifacts)
+            interpolated = interpolate_string(value, providers)
             if interpolated != value:
                 updates[field_name] = interpolated
     return updates
 
 
-def _interpolated_env(
-    step: Any,
-    inputs: dict[str, Any] | None = None,
-    metadata: Any | None = None,
-    artifacts: Mapping[str, Mapping[str, str]] | None = None,
-) -> dict[str, str] | None:
+def _interpolated_env(step: Any, providers: Sequence[NamespaceProvider]) -> dict[str, str] | None:
     """Compute environment dictionary replacements for an executable step model."""
     env = getattr(step, "env", None)
     if not isinstance(env, dict) or not env:
         return None
     new_env = {
-        key: interpolate_string(value, inputs=inputs, metadata=metadata, artifacts=artifacts)
-        if isinstance(value, str)
-        else value
-        for key, value in env.items()
+        key: interpolate_string(value, providers) if isinstance(value, str) else value for key, value in env.items()
     }
     return new_env if new_env != env else None
 
 
-def interpolate_step_fields(
-    step: Any,
-    inputs: dict[str, Any] | None = None,
-    metadata: Any | None = None,
-    artifacts: Mapping[str, Mapping[str, str]] | None = None,
-) -> Any:
+def interpolate_step_fields(step: Any, providers: Sequence[NamespaceProvider]) -> Any:
     """Return a copy of ``step`` with interpolatable string fields substituted.
 
     Supports ``command``, ``prompt``, ``script_path``, ``run``, and string values
     inside ``env``. Unknown attributes are left untouched.
     """
-    if not inputs and metadata is None and artifacts is None:
+    if not providers:
         return step
 
-    updates = _interpolated_field_updates(step, inputs=inputs, metadata=metadata, artifacts=artifacts)
-    new_env = _interpolated_env(step, inputs=inputs, metadata=metadata, artifacts=artifacts)
+    updates = _interpolated_field_updates(step, providers)
+    new_env = _interpolated_env(step, providers)
     if new_env is not None:
         updates["env"] = new_env
     if not updates:

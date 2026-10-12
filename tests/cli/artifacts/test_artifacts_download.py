@@ -21,7 +21,7 @@ def _publish_artifact(workspace: Path, *, session_id: str, name: str, content: b
     (worktree_path / "dist" / "pkg.whl").write_bytes(content)
     paths = initialized_workspace_paths(workspace)
     db = DovoDb(database_file=paths.database_file, project_id=paths.project_id)
-    result = Artifacts(paths, db=db.artifacts).upload(
+    result = Artifacts(paths, db=db.artifacts).publish(
         session_id, name, "dist/*.whl", worktree_path=worktree_path, provenance=ArtifactProvenance()
     )
     assert result.ok

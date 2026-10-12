@@ -13,9 +13,9 @@ from pydantic import BaseModel, Field
 from dovo.common.filesystem import WorkspacePaths
 from dovo.common.models import BaseResult
 from dovo.core.agents.models import AgentEnvOverrides, ResolvedAgentSettings
+from dovo.core.artifacts.store import ArtifactStore
 from dovo.core.catalog.definitions import LoopStepBlock, StepDefinition
 from dovo.core.db import SessionRecord, SessionStatus
-from dovo.core.db.repositories.artifacts import ArtifactsRepository
 from dovo.core.sessions import StepRunSummary
 from dovo.core.worktree import WorktreeSession
 from dovo.engine.executors.models import ConditionEvaluationResult, ExecutionIdentity, StepResult
@@ -175,8 +175,7 @@ class RunContext:
     target_dir: Path
     session_tmp_dir: Path | None
     session_log_dir: Path | None
-    artifacts_dir: Path | None
-    artifacts_db: ArtifactsRepository | None = None
+    artifact_store: ArtifactStore | None
     worktree: WorktreeSession | None = None
     no_tty: bool = False
     save_attempt_logs: bool = True
