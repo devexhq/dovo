@@ -241,7 +241,7 @@ def _is_unsafe_path(rel_path: str, worktree_path: Path) -> bool:
 def _empty_or_large_patch_result(
     unified_diff: object,
     *,
-    max_patch_kb: int,
+    max_patch_kb: int | None,
 ) -> PatchApplyResult | None:
     """Return an early failure for empty/oversized patches, else None."""
     if not isinstance(unified_diff, str) or not unified_diff.strip():
@@ -250,9 +250,10 @@ def _empty_or_large_patch_result(
             errors=["Patch is empty or whitespace-only."],
             fixes=["Ensure the agent returned a non-empty unified diff"],
         )
+    if max_patch_kb is None:
+        return None
     size_bytes = len(unified_diff.encode("utf-8"))
-    max_bytes = max_patch_kb * 1024
-    if size_bytes > max_bytes:
+    if size_bytes > max_patch_kb * 1024:
         return PatchApplyResult(
             status=PatchApplyStatus.TOO_LARGE,
             errors=[f"Patch exceeds max_patch_kb ({max_patch_kb} KiB) (size={size_bytes} bytes)."],
@@ -264,8 +265,8 @@ def _empty_or_large_patch_result(
 def _patch_parse_and_limits_result(
     unified_diff: str,
     *,
-    max_files: int,
-    reject_binary_changes: bool,
+    max_files: int | None,
+    reject_binary_changes: bool | None,
 ) -> tuple[list[str], PatchApplyResult | None]:
     """Parse diff headers and enforce file-count / binary gates."""
     git_diff_parser = GitDiffParser(unified_diff)
@@ -276,7 +277,7 @@ def _patch_parse_and_limits_result(
             errors=[f"Patch is not a valid unified diff: {parse_error}"],
             fixes=["Return a standard unified diff (diff --git / --- +++ / @@ hunks)"],
         )
-    if len(touched) > max_files:
+    if max_files is not None and len(touched) > max_files:
         return touched, PatchApplyResult(
             status=PatchApplyStatus.TOO_MANY_FILES,
             errors=[f"Patch touches {len(touched)} files; max_files is {max_files}."],
@@ -323,9 +324,9 @@ def _worktree_path_safety_result(
 def validate_patch_text(
     unified_diff: str,
     *,
-    max_files: int,
-    max_patch_kb: int,
-    reject_binary_changes: bool,
+    max_files: int | None,
+    max_patch_kb: int | None,
+    reject_binary_changes: bool | None,
     worktree_path: Path,
 ) -> PatchApplyResult:
     """Validate diff text against size/count/binary/path limits, no git apply.
@@ -337,9 +338,9 @@ def validate_patch_text(
 
     Args:
         unified_diff: Full unified diff text.
-        max_files: Maximum distinct target files allowed.
-        max_patch_kb: Maximum UTF-8 byte size of the diff in KiB.
-        reject_binary_changes: When True, reject binary file markers.
+        max_files: Maximum distinct target files allowed; None means no limit.
+        max_patch_kb: Maximum UTF-8 byte size of the diff in KiB; None means no limit.
+        reject_binary_changes: When True, reject binary file markers; None or False accepts them.
         worktree_path: Worktree root used for the unsafe-path check.
 
     Returns:

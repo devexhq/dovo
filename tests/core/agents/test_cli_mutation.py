@@ -291,16 +291,57 @@ class ScratchDiffIsolationTests:
 
 
 class ValidateRequestPatchTests:
-    def test_absent_bounds_use_defaults_and_accept_single_file_diff(self, git_repo: Path) -> None:
-        """[tier-1/unit] validate_request_patch: a request with max_files/max_patch_kb/reject_binary_changes all None and a one-file diff returns PatchApplyStatus.CHECKED_OK with that file in touched_files."""
+    def test_absent_bounds_apply_no_limits_to_a_large_binary_multi_file_diff(self, git_repo: Path) -> None:
+        """[tier-1/unit] validate_request_patch: a request with max_files/max_patch_kb/reject_binary_changes all None and a diff of 31 files, over 1 MiB, with a binary marker returns CHECKED_OK with all 32 files touched."""
         request = AgentRequest(
             mode="direct", instruction="go", worktree_path=git_repo, timeout_seconds=10, tools=default_tool_policy()
         )
+        diff = (
+            "".join(new_file_diff(f"f{index}.txt") for index in range(31))
+            + new_file_diff("big.txt", "x" * (1024 * 1024 + 1))
+            + "diff --git a/logo.png b/logo.png\nBinary files a/logo.png and b/logo.png differ\n"
+        )
 
-        result = validate_request_patch(request, new_file_diff("a.txt"))
+        result = validate_request_patch(request, diff)
 
         assert result.status == PatchApplyStatus.CHECKED_OK
-        assert result.touched_files == ["a.txt"]
+        assert len(result.touched_files) == 33
+
+    @pytest.mark.parametrize(
+        ("max_patch_kb", "reject_binary_changes", "diff", "status"),
+        [
+            pytest.param(1, None, new_file_diff("a.txt", "x" * 2048), PatchApplyStatus.TOO_LARGE, id="size"),
+            pytest.param(
+                None,
+                True,
+                "diff --git a/logo.png b/logo.png\nBinary files a/logo.png and b/logo.png differ\n",
+                PatchApplyStatus.BINARY_REJECTED,
+                id="binary",
+            ),
+        ],
+    )
+    def test_explicit_bound_rejects_matching_diff(
+        self,
+        git_repo: Path,
+        max_patch_kb: int | None,
+        reject_binary_changes: bool | None,
+        diff: str,
+        status: PatchApplyStatus,
+    ) -> None:
+        """[tier-1/unit] validate_request_patch: an explicit max_patch_kb=1 with a 2 KiB diff returns TOO_LARGE, and reject_binary_changes=True with a binary marker returns BINARY_REJECTED."""
+        request = AgentRequest(
+            mode="direct",
+            instruction="go",
+            worktree_path=git_repo,
+            timeout_seconds=10,
+            max_patch_kb=max_patch_kb,
+            reject_binary_changes=reject_binary_changes,
+            tools=default_tool_policy(),
+        )
+
+        result = validate_request_patch(request, diff)
+
+        assert result.status == status
 
     def test_explicit_step_bound_rejects_diff_over_limit_with_agent_step_fix(self, git_repo: Path) -> None:
         """[tier-1/unit] validate_request_patch: max_files=1 and a two-file diff returns TOO_MANY_FILES with fixes == ['Set max_files on the agent step.']."""
@@ -318,18 +359,6 @@ class ValidateRequestPatchTests:
 
         assert result.status == PatchApplyStatus.TOO_MANY_FILES
         assert result.fixes == ["Set max_files on the agent step."]
-
-    def test_absent_step_bound_uses_default_file_limit(self, git_repo: Path) -> None:
-        """[tier-1/unit] validate_request_patch: max_files=None and a 31-file diff returns TOO_MANY_FILES naming max_files is 30."""
-        request = AgentRequest(
-            mode="direct", instruction="go", worktree_path=git_repo, timeout_seconds=10, tools=default_tool_policy()
-        )
-        diff = "".join(new_file_diff(f"f{index}.txt") for index in range(31))
-
-        result = validate_request_patch(request, diff)
-
-        assert result.status == PatchApplyStatus.TOO_MANY_FILES
-        assert result.errors == ["Patch touches 31 files; max_files is 30."]
 
 
 class SharedMutationAdapterTests:

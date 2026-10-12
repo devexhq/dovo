@@ -52,13 +52,16 @@ def _use_provider(monkeypatch: pytest.MonkeyPatch, provider: BaseAgentProvider) 
     return requested
 
 
-def _attempt(worktree: Path, provider: str = "copilot", tools: ToolPolicy | None = None) -> AgentAttempt:
+def _attempt(
+    worktree: Path, provider: str = "copilot", tools: ToolPolicy | None = None, max_files: int | None = None
+) -> AgentAttempt:
     return run_direct_attempt(
         instruction="Plan the change",
         settings=_settings(provider),
         worktree_path=worktree,
         timeout_seconds=45,
         tools=tools or default_tool_policy(),
+        max_files=max_files,
     )
 
 
@@ -243,17 +246,28 @@ class RunDirectAttemptDirectMutationTests:
         assert attempt.touched_files == ["a.txt", "b.txt"]
         assert apply_calls == []
 
-    def test_mutation_over_shared_gate_limit_returns_provider_error_and_rolls_back(
+    def test_mutation_over_step_max_files_returns_provider_error_and_rolls_back(
         self, git_repo: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """[tier-1/unit] run_direct_attempt: a real CliDirectMutationAdapter subclass writing 31 files (default max_files 30) returns PROVIDER_ERROR and leaves git status --porcelain empty."""
+        """[tier-1/unit] run_direct_attempt: a real CliDirectMutationAdapter subclass writing 2 files with max_files=1 returns PROVIDER_ERROR and leaves git status --porcelain empty."""
+        _use_provider(monkeypatch, _EditingAdapter({"a.txt": "x\n", "b.txt": "x\n"}))
+
+        attempt = _attempt(git_repo, "copilot", max_files=1)
+
+        assert attempt.status == AgentResponseStatus.PROVIDER_ERROR
+        assert _porcelain(git_repo) == ""
+
+    def test_mutation_without_step_max_files_is_not_limited(
+        self, git_repo: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """[tier-1/unit] run_direct_attempt: a real CliDirectMutationAdapter subclass writing 31 files with no max_files returns PROPOSED_PATCH with 31 touched files."""
         files = {f"f{index}.txt": "x\n" for index in range(31)}
         _use_provider(monkeypatch, _EditingAdapter(files))
 
         attempt = _attempt(git_repo, "copilot")
 
-        assert attempt.status == AgentResponseStatus.PROVIDER_ERROR
-        assert _porcelain(git_repo) == ""
+        assert attempt.status == AgentResponseStatus.PROPOSED_PATCH
+        assert len(attempt.touched_files) == 31
 
     @pytest.mark.parametrize(
         "status",
