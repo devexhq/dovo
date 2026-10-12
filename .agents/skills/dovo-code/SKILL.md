@@ -6,8 +6,8 @@ description: >-
   suite (tests with coverage, ruff, basedpyright over src and tests, complexity) once
   implementation is complete, reporting observed gate numbers rather than
   documented thresholds, and never committing or pushing. Invoked as /dovo-code to implement
-  the plan, or /dovo-code review [--fix blockers|warnings|suggestions|all] to address the
-  findings in .agentic/review.md. Use when asked to implement a plan, write the code for a
+  the plan, or /dovo-code review [--tiers blockers,warnings,suggestions,nits|all | --fix B1,W2,...] to
+  address the findings in .agentic/review.md. Use when asked to implement a plan, write the code for a
   planned change, or fix review findings.
 disable-model-invocation: true
 ---
@@ -21,7 +21,7 @@ Turn `.agentic/plan.md` into working code, or in review mode, turn `.agentic/rev
 | Invocation | Input | Job |
 |---|---|---|
 | `/dovo-code` | `.agentic/plan.md` | Implement the plan |
-| `/dovo-code review [--fix <scope>]` | `.agentic/review.md` | Fix review findings (`blockers`, `warnings`, `suggestions`, `all`) |
+| `/dovo-code review [--tiers <tiers> \| --fix <ids>]` | `.agentic/review.md`, `.agentic/review.json` | Fix review findings by tier or by id |
 
 If the input file is missing, stop and say so. Do not reconstruct a plan from the conversation, and do not implement from memory of what was discussed: run `/dovo-plan` first.
 
@@ -34,7 +34,7 @@ If the input file is missing, stop and say so. Do not reconstruct a plan from th
 - **Do not implement anything the plan marks out of scope or flags as a trap.**
 - **Never create a test file the plan's `### Tests` stubs do not list**, and never skip a deletion the deletion ledger lists (`PLAN-009`). Both directions are contract breaches, and the additive direction is the one that slips through unnoticed.
 - **A green gate is not evidence that a check ran.** Report what each gate observed, never what a doc says it enforces.
-- **Never edit `.agentic/plan.md`, `.agentic/evidence.md`, `.agentic/review.md`, or `.agentic/review.json`.** The only `.agentic/` file this skill writes is `.agentic/implementation-report.md`.
+- **Never edit `.agentic/plan.md`, `.agentic/evidence.md`, `.agentic/review.md`, `.agentic/review.json`, or `.agentic/verdict.txt`.** The only `.agentic/` file this skill writes is `.agentic/implementation-report.md`.
 
 ## Implementation loop
 
@@ -121,9 +121,12 @@ Deviations must be factual. Do not use the report to pre-justify a contract chan
 
 ## Review mode (`/dovo-code review`)
 
-1. Read `.agentic/review.md`. If it is absent, stop and say so.
-2. Determine which findings to address from `--fix [blockers, warnings, suggestions, all]` or user instruction:
-   - **`blockers`** (default): fix every `BLOCKER`. **`warnings`**: also every `WARNING`. **`suggestions`**: also every `SUGGESTION`. **`all`**: all four tiers.
+1. Read `.agentic/review.md` for the finding detail and `.agentic/review.json` for the ids. If either is absent, stop and say so.
+2. Determine which findings to address. The review tables carry ids by tier (`B#` Blocking, `W#` Warnings, `S#` Suggestions, `N#` Nits), and `review.json` lists the same ids:
+   - **`--tiers <list>`**: a comma-separated list of `blockers`, `warnings`, `suggestions`, `nits`, or `all` for all four. Fix every finding in the named tiers, and only those.
+   - **`--fix <ids>`**: a comma-separated list (`B1,W2`) or a JSON array (`["B1","W2"]`). Fix exactly those findings, whatever their tier. An id that is not in `review.json` stops the run before any edit and names the valid ids. An empty list changes nothing and the report says so.
+   - `--tiers` and `--fix` cannot be combined; stop and say so. With neither, the default is `--tiers blockers`.
+   - Ids belong to one review round, because `/dovo-review` renumbers them every time. Resolve them against the `review.json` on disk, never against an earlier conversation.
 3. Re-read each cited file from disk before editing it, since the review may describe a state that has since changed.
 4. A finding that says "delete this" is fixed by deleting it — redundant tests (`TEST-004`), dead harness symbols (`TEST-013`), and duplicated contracts are resolved by subtraction, never by adding a comment explaining why the duplicate is fine.
 5. Dispute rather than comply when a finding is wrong: state the finding, why it does not hold, and flag it 🚨 for the human.
@@ -131,9 +134,9 @@ Deviations must be factual. Do not use the report to pre-justify a contract chan
 7. Run the same completion gate above once the fixes are in.
 8. Do not edit or delete `.agentic/review.md` or `.agentic/review.json`. They are the reviewer's artifacts, and the next round is compared against them.
 9. Edit `.agentic/implementation-report.md` in place after the gate is green; if it is absent, create it per the section above. Keep earlier content that is still true, and:
-   - add a `### Review round <n>` subsection under Implementation details listing each finding as fixed, disputed, or deferred with the `path:line` changed;
+   - add a `### Review round <n>` subsection under Implementation details listing each finding by id as fixed, disputed, or deferred with the `path:line` changed;
    - add any new deviation (including each disputed finding, with why it does not hold) to Plan deviations;
    - refresh Quality gates and Changed files to the post-fix state;
    - remove or correct any statement the fixes made false.
 
-Report each finding as fixed, disputed, or deferred, with the `path:line` you changed.
+Report each addressed finding by id as fixed, disputed, or deferred, with the `path:line` you changed.

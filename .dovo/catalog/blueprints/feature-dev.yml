@@ -1,0 +1,137 @@
+version: 1
+name: feature-dev
+id: feature-dev
+description: Plan a GitHub issue, implement it after approval, review and fix until approved, then optionally open a PR
+summary: Issue to reviewed PR with human gates
+
+inputs:
+  issue:
+    type: string
+    description: GitHub issue number to implement
+    required: true
+    aliases: ["-i", "--issue"]
+
+steps:
+  - id: plan
+    name: Plan the issue
+    type: agent
+    prompt: |
+      /dovo-plan ${{ inputs.issue }}
+
+      Follow .agents/skills/dovo-plan/SKILL.md if the slash command is not recognized.
+      Write the plan to .agentic/plan.md and stop; do not implement anything.
+    tools: { allow_all: true }
+    timeout_seconds: 1800
+    artifacts: [{ name: plan, path: .agentic/plan.md }]
+
+  - id: approve-plan
+    name: Approve the plan
+    type: ask
+    interaction:
+      mode: confirm
+      message: Approve this plan for issue ${{ inputs.issue }}?
+      artifact: plan
+      comment: { policy: optional, message: Instructions for the implementer }
+
+  - id: code-loop
+    name: Implement until the quality gate passes
+    type: loop
+    max_iterations: 3
+    until:
+      - steps.verify.exit_code == 0
+    on_max_iterations: prompt_user
+    do:
+      - id: code
+        name: Implement the plan
+        type: agent
+        prompt: |
+          /dovo-code
+
+          Follow .agents/skills/dovo-code/SKILL.md if the slash command is not recognized.
+          Implement .agentic/plan.md. Do not commit, stage or push.
+          Instructions from the approver: {{ steps.approve-plan.outputs.comment }}
+          If .agentic/gate.log exists, a previous attempt left the working tree in a failing
+          state: read it, keep the existing work and fix what it reports.
+        tools: { allow_all: true }
+        timeout_seconds: 3600
+        on_failure: continue
+
+      - id: verify
+        name: Run the quality gate
+        run: uv run dovo run quality > .agentic/gate.log 2>&1
+        timeout_seconds: 1800
+        on_failure: continue
+
+  - id: review-loop
+    name: Review and fix until approved
+    type: loop
+    max_iterations: 3
+    until:
+      - steps.verdict.exit_code == 0
+      - steps.triage.outputs.selected_count == 0
+    on_max_iterations: prompt_user
+    do:
+      - id: review
+        name: Review the change
+        type: agent
+        prompt: |
+          /dovo-review
+
+          Follow .agents/skills/dovo-review/SKILL.md if the slash command is not recognized.
+          Review the uncommitted changes and write .agentic/review.md, .agentic/review.json
+          and .agentic/verdict.txt.
+        tools: { allow_all: true }
+        timeout_seconds: 1800
+        artifacts: [{ name: review, path: .agentic/review.json }]
+
+      - id: verdict
+        name: Check the review verdict
+        run: grep -qx APPROVE .agentic/verdict.txt
+        on_failure: continue
+
+      - id: triage
+        name: Choose the findings to fix
+        type: ask
+        interaction:
+          mode: multiselect
+          message: Which findings should be fixed?
+          options_from:
+            artifact: review
+            file: review.json
+            items_path: findings
+            value_field: id
+            label_field: summary
+          comment: { policy: optional, message: Notes for the fixer }
+
+      - id: fix
+        name: Fix the selected findings
+        type: agent
+        prompt: |
+          /dovo-code review --fix {{ steps.triage.outputs.selected }}
+
+          Follow .agents/skills/dovo-code/SKILL.md if the slash command is not recognized.
+          Do not commit, stage or push.
+          Notes: {{ steps.triage.outputs.comment }}
+        tools: { allow_all: true }
+        timeout_seconds: 3600
+
+  - id: open-pr
+    name: Open a pull request?
+    type: ask
+    interaction:
+      mode: confirm
+      message: Review approved. Commit, push and open a pull request for issue ${{ inputs.issue }}?
+      options:
+        - { value: "yes", label: Open a PR }
+        - { value: "no", label: Stop here }
+
+  - id: push
+    name: Commit, push and open the PR
+    type: agent
+    prompt: |
+      The user's answer to "open a PR?" was: {{ steps.open-pr.outputs.selected }}
+      If it is not "yes", do nothing and report that you did nothing.
+      Otherwise run /dovo-push (follow .agents/skills/dovo-push/SKILL.md if the slash
+      command is not recognized). The change implements issue ${{ inputs.issue }}.
+    tools: { allow_all: true }
+    timeout_seconds: 900

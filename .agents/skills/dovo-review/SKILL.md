@@ -19,7 +19,7 @@ Review a change set in `Dovo CLI` on five axes:
 4. **Redundancy and subtraction**: does anything here duplicate a contract already pinned, or survive with no consumer.
 5. **Enforcement integrity**: can every check this change adds or relies on actually fail.
 
-Output goes to `.agentic/review.md`, which `/dovo-code review` consumes, paired with `.agentic/review.json`.
+Output goes to `.agentic/review.md`, which `/dovo-code review` consumes, paired with `.agentic/review.json` and `.agentic/verdict.txt`.
 
 ## Hard boundaries
 
@@ -121,20 +121,28 @@ Write this to `.agentic/review.md` (create `.agentic/` if needed), overwriting t
 **Provenance:** fresh session | same session that wrote the code
 
 ### Blocking
-- `path:line`
-  - Rule: `ARCH-001` (Strict Layered Import Flow)
-  - Issue: what is wrong and the rule it breaks (`<package>/docs/RULES.md#ARCH-001` or `<doc>#<section>`).
-  - Fix: the concrete fix.
+
+| ID | Location | Rule | Issue | Fix |
+|---|---|---|---|---|
+| B1 | `path:line` | `ARCH-001` (Strict Layered Import Flow) | What is wrong and the rule it breaks (`<package>/docs/RULES.md#ARCH-001` or `<doc>#<section>`). | The concrete fix. |
 
 ### Warnings
-- `path:line` — same shape as Blocking.
+
+| ID | Location | Rule | Issue | Fix |
+|---|---|---|---|---|
+| W1 | `path:line` | `TEST-016` | Same shape as Blocking. | The concrete fix. |
 
 ### Suggestions
-- `path:line` — Issue / Fix, no rule ID required.
+
+| ID | Location | Rule | Issue | Fix |
+|---|---|---|---|---|
+| S1 | `path:line` | - | Issue, no rule ID required. | The concrete fix. |
 
 ### Nits
-- `path:line` — minor style or wording observation.
 
+| ID | Location | Rule | Issue | Fix |
+|---|---|---|---|---|
+| N1 | `path:line` | - | Minor style or wording observation. | The concrete fix. |
 
 | Rule ID | Clause | Severity | Status | Evidence (quoted) |
 |---|---|---|---|---|
@@ -168,7 +176,9 @@ Write this to `.agentic/review.md` (create `.agentic/` if needed), overwriting t
 - <finding> - unresolved after round 3, handed to the human
 ```
 
-Say `APPROVE` only with zero Blocking items. An empty section stays, marked `none`. Each item is `path:line` (or `path` file-level) followed by `Rule`, `Issue`, `Fix`.
+Say `APPROVE` only with zero Blocking items. An empty section keeps its heading with the line `none` in place of the table. Each finding is one table row: `Location` is `path:line` (or `path` for a file-level finding) and `Rule` is `-` when no rule applies.
+
+IDs are the tier letter plus a number starting at 1 within the tier, in the order the rows appear: `B#` for Blocking, `W#` for Warnings, `S#` for Suggestions, `N#` for Nits. They are reassigned every round, and `/dovo-code review --fix` consumes them.
 
 With `--post` and a PR scope, post the same content as a comment review: `gh pr review <n> --comment --body-file .agentic/review.md`. Never `--approve` or `--request-changes`, and do not add reviewers.
 
@@ -176,7 +186,7 @@ On `CHANGES REQUIRED`, hand off to `/dovo-code review`, then re-run this skill a
 
 ## 11. Emit the machine-readable verdict
 
-Write `.agentic/review.json` alongside the markdown and print the same object as the last line of stdout, minified onto one line. A caller decides the next step from this file alone.
+Write `.agentic/review.json` and `.agentic/verdict.txt` alongside the markdown and print the same object as the last line of stdout, minified onto one line. A caller decides the next step from these files alone.
 
 ```json
 {
@@ -187,7 +197,7 @@ Write `.agentic/review.json` alongside the markdown and print the same object as
   "plan": ".agentic/plan.md",
   "counts": { "blocking": 2, "warnings": 1, "suggestions": 3, "nits": 1 },
   "findings": [
-    { "severity": "BLOCKER", "path": "src/dovo/core/sessions/sessions.py", "line": 42, "rule": "ARCH-001", "summary": "Core service imports CliContext directly." }
+    { "id": "B1", "severity": "BLOCKER", "path": "src/dovo/core/sessions/sessions.py", "line": 42, "rule": "ARCH-001", "summary": "Core service imports CliContext directly." }
   ],
   "unenforced_gates": ["coverage fail_under=0 in pyproject.toml"],
   "residual": []
@@ -199,7 +209,9 @@ Field contracts, since this is what a loop branches on:
 - `verdict` is exactly `APPROVE` or `CHANGES_REQUIRED` (underscored, so it survives shell and condition matching), and is `APPROVE` iff `counts.blocking` is `0`.
 - `provenance` is `fresh_session` or `same_session`. `scope.kind` is `pr`, `uncommitted`, or `branch`.
 - `plan` is the plan path, or `null` when absent.
-- `findings` carries every Blocking and Warning item with line-level detail; `counts` always reflects the full report.
+- `findings` carries every finding of all four tiers with line-level detail, Blocking first, then Warnings, Suggestions and Nits; `counts` always reflects the full report. `severity` is `BLOCKER`, `WARNING`, `SUGGESTION` or `NIT`, and `rule` is `null` when none applies.
+- Each finding's `id` is the one in the `review.md` table row it comes from (`B#`, `W#`, `S#` or `N#`) and is unique within the file, so a caller can offer the findings for selection and pass the chosen ids to `/dovo-code review --fix`.
+- `.agentic/verdict.txt` holds exactly the `verdict` value (`APPROVE` or `CHANGES_REQUIRED`) and a trailing newline, overwritten every round, so a shell condition can test it without parsing JSON.
 - `unenforced_gates` and `residual` stay `[]` when there are none.
 
 Changes to this shape are additive only. It is the contract a driver script consumes today, and the `outputs` condition a `dovo` blueprint will branch on later, so a renamed field breaks both.
