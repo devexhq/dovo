@@ -219,7 +219,7 @@ def _options_from_errors(spec: InteractionSpec) -> list[str]:
 
 
 def _validate_ask_shape(step: "StepDefinition") -> None:
-    """Raise AskStepInvalidError for FR-1 conflicts, a missing interaction, or any interaction rule violation."""
+    """Raise AskStepInvalidError for ask-step field conflicts, a missing interaction, or any interaction rule violation."""
     if step.type != StepType.ASK:
         if step.interaction is not None:
             raise AskStepInvalidError(f"Step '{step.id}': 'interaction' is only valid with 'type: ask'.")

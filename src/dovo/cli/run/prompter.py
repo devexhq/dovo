@@ -166,7 +166,7 @@ class DispatcherFailurePrompter(FailurePrompter):
 
 
 def paused_prompt_message(step_id: str, session_id: str, *, non_interactive: bool) -> str:
-    """Return the FR-11 answer hint when non_interactive, else the FR-10 resume hint."""
+    """Return the answer hint when non_interactive, else the resume hint."""
     if non_interactive:
         return f"Run paused at prompt '{step_id}'. Answer with 'dovo resume {session_id} --answer {step_id}=<value>'."
     return f"Run paused at prompt '{step_id}'. Resume with 'dovo resume {session_id}'."

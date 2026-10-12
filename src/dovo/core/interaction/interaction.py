@@ -69,7 +69,7 @@ class Interaction:
 
     @staticmethod
     def outputs(request: InteractionRequest, answer: InteractionAnswer) -> dict[str, str]:
-        """Return the FR-7 outputs for a validated answer."""
+        """Return the step outputs for a validated answer."""
         return build_outputs(request, answer)
 
     @staticmethod

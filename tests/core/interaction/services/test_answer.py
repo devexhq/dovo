@@ -344,7 +344,7 @@ class BuildOutputsTests:
         ],
     )
     def test_outputs_by_mode(self, mode: str, answer: InteractionAnswer, expected: dict[str, str]) -> None:
-        """[tier-1/unit] build_outputs: each mode yields the FR-7 selected, selected_count, comment and text strings; artifact outputs are empty without an artifact."""
+        """[tier-1/unit] build_outputs: each mode yields the selected, selected_count, comment and text strings; artifact outputs are empty without an artifact."""
         request = _request(mode, options=[] if mode == "text" else None)
 
         outputs = build_outputs(request, answer)
