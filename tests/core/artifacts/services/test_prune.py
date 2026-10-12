@@ -49,7 +49,7 @@ class PruneArtifactsServiceTests:
         self, tmp_path: Path, artifacts_repository: ArtifactsRepository
     ) -> None:
         """[tier-1/unit] prune_artifacts: remove_expired=False and force=False returns ArtifactsPruneStatus.DISABLED with an empty items list, and deletes nothing."""
-        result = prune_artifacts(tmp_path, tmp_path / "artifacts", artifacts_repository, remove_expired=False)
+        result = prune_artifacts(tmp_path, artifacts_repository, remove_expired=False)
 
         assert result.status == ArtifactsPruneStatus.DISABLED
         assert result.items == []
@@ -62,7 +62,7 @@ class PruneArtifactsServiceTests:
             "dovo.core.artifacts.services.prune.WorkspaceLock.__enter__",
             side_effect=LockTimeoutError("locked by another process"),
         ):
-            result = prune_artifacts(tmp_path, tmp_path / "artifacts", artifacts_repository, remove_expired=True)
+            result = prune_artifacts(tmp_path, artifacts_repository, remove_expired=True)
 
         assert result.status == ArtifactsPruneStatus.LOCKED
         assert result.errors == ["Failed to acquire workspace lock: locked by another process"]
@@ -76,7 +76,7 @@ class PruneArtifactsServiceTests:
         (artifact_dir / "manifest.json").write_text("{}", encoding="utf-8")
         _create_row(artifacts_repository, artifact_dir, expires_at=_past_timestamp())
 
-        result = prune_artifacts(tmp_path, tmp_path / "artifacts", artifacts_repository, remove_expired=True)
+        result = prune_artifacts(tmp_path, artifacts_repository, remove_expired=True)
 
         assert result.status == ArtifactsPruneStatus.OK
         assert result.items == [PrunedArtifact(session_id="wf_abc123", name="dist-packages", revision=1, pruned=True)]
@@ -92,28 +92,24 @@ class PruneArtifactsServiceTests:
         (artifact_dir / "manifest.json").write_text("{}", encoding="utf-8")
         _create_row(artifacts_repository, artifact_dir, expires_at=_past_timestamp())
 
-        result = prune_artifacts(
-            tmp_path, tmp_path / "artifacts", artifacts_repository, dry_run=True, remove_expired=True
-        )
+        result = prune_artifacts(tmp_path, artifacts_repository, dry_run=True, remove_expired=True)
 
         assert result.status == ArtifactsPruneStatus.OK
         assert result.items[0].pruned is True
         assert artifact_dir.exists()
         assert artifacts_repository.get("wf_abc123", "dist-packages") is not None
 
-    def test_prune_artifacts_locks_workspace_root_not_artifacts_dir(
+    def test_prune_artifacts_locks_workspace_root(
         self, tmp_path: Path, artifacts_repository: ArtifactsRepository
     ) -> None:
-        """[tier-1/unit] prune_artifacts: the advisory lock file lands under workspace_root/.dovo/.lock, not under artifacts_dir, so it coordinates with every other WorkspaceLock caller."""
-        artifacts_dir = tmp_path / "artifacts"
-        artifact_dir = artifacts_dir / "wf_abc123" / "dist-packages"
+        """[tier-1/unit] prune_artifacts: expired artifact with remove_expired=True -> the advisory lock file exists at workspace_root/.dovo/.lock."""
+        artifact_dir = tmp_path / "artifacts" / "wf_abc123" / "dist-packages"
         artifact_dir.mkdir(parents=True)
         _create_row(artifacts_repository, artifact_dir, expires_at=_past_timestamp())
 
-        prune_artifacts(tmp_path, artifacts_dir, artifacts_repository, remove_expired=True)
+        prune_artifacts(tmp_path, artifacts_repository, remove_expired=True)
 
         assert (tmp_path / ".dovo" / ".lock").exists()
-        assert not (artifacts_dir / ".dovo").exists()
 
     def test_prune_artifacts_removes_only_the_expired_revision(
         self, tmp_path: Path, artifacts_repository: ArtifactsRepository
@@ -126,7 +122,7 @@ class PruneArtifactsServiceTests:
         _create_row(artifacts_repository, name_dir / "1", revision=1, expires_at=_past_timestamp())
         _create_row(artifacts_repository, name_dir / "2", revision=2, expires_at=None)
 
-        result = prune_artifacts(tmp_path, tmp_path / "artifacts", artifacts_repository, remove_expired=True)
+        result = prune_artifacts(tmp_path, artifacts_repository, remove_expired=True)
 
         assert result.items == [PrunedArtifact(session_id="wf_abc123", name="dist-packages", revision=1, pruned=True)]
         assert not (name_dir / "1").exists()
@@ -154,7 +150,7 @@ class PruneArtifactsServiceTests:
         _create_row(artifacts_repository, name_dir, revision=1, digest=None, expires_at=_past_timestamp())
         _create_row(artifacts_repository, name_dir / "2", revision=2, expires_at=None)
 
-        result = prune_artifacts(tmp_path, tmp_path / "artifacts", artifacts_repository, remove_expired=True)
+        result = prune_artifacts(tmp_path, artifacts_repository, remove_expired=True)
 
         assert result.items == [PrunedArtifact(session_id="wf_abc123", name="dist-packages", revision=1, pruned=True)]
         assert not (name_dir / "manifest.json").exists()
@@ -170,7 +166,7 @@ class PruneArtifactsServiceTests:
         (name_dir / "2").mkdir(parents=True)
         _create_row(artifacts_repository, name_dir, digest=None, expires_at=_past_timestamp())
 
-        result = prune_artifacts(tmp_path, tmp_path / "artifacts", artifacts_repository, remove_expired=True)
+        result = prune_artifacts(tmp_path, artifacts_repository, remove_expired=True)
 
         assert [item.pruned for item in result.items] == [False]
         assert result.items[0].error is not None

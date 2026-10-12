@@ -9,9 +9,11 @@ import pytest
 
 from dovo.common.filesystem.models import WorkspacePaths
 from dovo.core.agents import AgentInvocationContext, allocate_invocation_paths, new_invocation_id
+from dovo.core.artifacts.models import ArtifactProvenance
 from dovo.core.config import ConfigLoadError
 from dovo.core.config.loader import ConfigLoadResult, ConfigLoadStatus
 from dovo.core.db import SessionStatus, WorktreesRepository, WorktreeStatus
+from dovo.core.db.repositories.artifacts import ArtifactsRepository
 from dovo.core.git.runner import GitRunner
 from dovo.core.worktree import Worktree, WorktreeApplyResult, WorktreeApplyStatus, WorktreeSession
 from dovo.core.worktree.models import WorktreeCreateResult, WorktreeCreateStatus
@@ -767,28 +769,33 @@ class WorkspacePrepareSessionTmpDirTests:
 
 
 class WorkspacePrepareSessionArtifactsTests:
-    """[tier-1/unit] Workspace.prepare_session_artifacts: per-run ArtifactsRepository construction."""
+    """[tier-1/unit] Workspace.prepare_session_artifacts: per-run ArtifactStore construction."""
 
-    def test_no_session_id_returns_none_none(self, tmp_path: Path) -> None:
-        """[tier-1/unit] prepare_session_artifacts: context.session_id=None returns (None, None)."""
+    def test_no_session_id_returns_no_store(self, tmp_path: Path) -> None:
+        """[tier-1/unit] prepare_session_artifacts: context.session_id=None returns None."""
         context = RunSettings(cwd=tmp_path, use_worktree=False, session_id=None, paths=_paths_for(tmp_path))
 
-        artifacts_dir, artifacts_db = Workspace(context).prepare_session_artifacts()
+        assert Workspace(context).prepare_session_artifacts() is None
 
-        assert (artifacts_dir, artifacts_db) == (None, None)
-
-    def test_session_id_set_returns_artifacts_dir_and_repository(self, tmp_path: Path) -> None:
-        """[tier-1/unit] prepare_session_artifacts: context.session_id set returns the resolved artifacts_dir and a bound ArtifactsRepository."""
+    def test_session_id_set_returns_store_bound_to_session(self, tmp_path: Path) -> None:
+        """[tier-1/integration] prepare_session_artifacts: context.session_id set returns a store bound to that session that publishes under paths.artifacts_dir and the project database."""
         workspace_root = WorkspaceBuilder(tmp_path / "artifacts_workspace").with_database().build()
         paths = _paths_for(workspace_root)
         context = RunSettings(cwd=workspace_root, use_worktree=False, session_id="session-abc", paths=paths)
+        (workspace_root / "PLAN.md").write_text("plan", encoding="utf-8")
 
-        artifacts_dir, artifacts_db = Workspace(context).prepare_session_artifacts()
+        store = Workspace(context).prepare_session_artifacts()
 
-        assert artifacts_dir == context.paths.artifacts_dir
-        assert artifacts_db is not None
-        assert artifacts_db.db_path == context.paths.database_file
-        assert artifacts_db.project_id == context.paths.project_id
+        assert store is not None
+        published = store.publish(
+            workspace_root, name="plan", path_glob="PLAN.md", retention_days=None, provenance=ArtifactProvenance()
+        )
+        assert published.ok
+        record = ArtifactsRepository(db_path=paths.database_file, project_id=paths.project_id).get(
+            "session-abc", "plan"
+        )
+        assert record is not None
+        assert record.path.is_relative_to(paths.artifacts_dir)
 
 
 class WorkspaceSinglePathResolutionTests:
@@ -817,9 +824,8 @@ class WorkspaceSinglePathResolutionTests:
         )
 
         assert workspace.prepare_session_tmp_dir(warnings) == paths.tmp_dir / "path-snapshot"
-        artifacts_dir, artifacts_db = workspace.prepare_session_artifacts()
-        assert artifacts_dir == paths.artifacts_dir
-        assert artifacts_db is not None
+        store = workspace.prepare_session_artifacts()
+        assert store is not None
         assert workspace.prepare_session_log_dir(warnings) == paths.logs_dir / "path-snapshot"
         workspace.capture_and_persist_diff(session, warnings)
         assert warnings == []

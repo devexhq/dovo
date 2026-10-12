@@ -6,6 +6,7 @@ from typing import Any
 
 from dovo.core.inputs.models import InputResolveResult, InputType, ParameterInput
 from dovo.core.inputs.services.interpolate import (
+    build_providers,
     interpolate_step_fields,
     interpolate_string,
 )
@@ -53,11 +54,7 @@ class Inputs:
         metadata: Any | None = None,
     ) -> str:
         """Interpolate `${{ inputs.* }}` and execution variables in a string template."""
-        return interpolate_string(
-            template,
-            inputs=inputs,
-            metadata=metadata,
-        )
+        return interpolate_string(template, build_providers(inputs=inputs, metadata=metadata))
 
     @staticmethod
     def interpolate_step(
@@ -67,7 +64,7 @@ class Inputs:
         metadata: Any | None = None,
     ) -> Any:
         """Interpolate variables across all templateable fields of a step."""
-        return interpolate_step_fields(step, inputs=inputs, metadata=metadata)
+        return interpolate_step_fields(step, build_providers(inputs=inputs, metadata=metadata))
 
     @staticmethod
     def format_spec(name: str, spec: ParameterInput) -> str:

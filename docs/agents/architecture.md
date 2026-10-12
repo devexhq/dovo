@@ -52,7 +52,7 @@ Only what is not obvious from the tree:
 - **Worktree** owns worktree lifecycle policy; `engine/` consumes it.
 - **Catalog** owns the authored definitions (`StepDefinition`, `BlueprintDefinition`, `LoopStepBlock`), not `engine/`.
 - **Engine** owns run persistence, session minting, and canonical execution state; it appends `session.log` events that `core/sessions` reads.
-- **Artifacts**: `core/artifacts` owns publish, download, and prune; the `type: internal` upload/download handlers and the declarative `artifacts:` auto-publish live in `engine/`.
+- **Artifacts**: `core/artifacts/artifacts.py` (`Artifacts`) is the sole caller of the artifact services (publish, download, references, prune); `core/artifacts/store.py` (`ArtifactStore`) is how engine code uses artifact storage. The `type: internal` upload/download handlers and the declarative `artifacts:` auto-publish live in `engine/`.
 - **Agents**: provider modules are leaves of `base.py` → `cli_mutation.py` → provider → `registry.py`/`factory.py`; no module imports one to its right (a cycle fails `basedpyright`).
 
 ### Package boundaries (import direction)

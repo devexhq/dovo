@@ -7,8 +7,8 @@ from pathlib import Path
 from pydantic import BaseModel, Field
 
 from dovo.core.artifacts.models import ArtifactProvenance, ArtifactUploadResult, ArtifactUploadStatus
+from dovo.core.artifacts.store import ArtifactStore
 from dovo.core.catalog.definitions import ArtifactPublishSpec, StepDefinition
-from dovo.engine.executors.artifact_store import ArtifactStore
 
 
 class ArtifactPublishOutcome(BaseModel):

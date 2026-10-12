@@ -31,9 +31,7 @@ def _remove_revision_directory(record: ArtifactRecord) -> None:
         record.path.rmdir()
 
 
-def _prune_one_artifact(
-    record: ArtifactRecord, artifacts_dir: Path, db: ArtifactsRepository, *, dry_run: bool
-) -> PrunedArtifact:
+def _prune_one_artifact(record: ArtifactRecord, db: ArtifactsRepository, *, dry_run: bool) -> PrunedArtifact:
     """Delete one expired artifact revision's directory and DB row (or report what would be deleted under dry_run), never raising."""
     if dry_run:
         return PrunedArtifact(session_id=record.session_id, name=record.name, revision=record.revision, pruned=True)
@@ -51,7 +49,6 @@ def _prune_one_artifact(
 
 def prune_artifacts(
     workspace_root: Path,
-    artifacts_dir: Path,
     db: ArtifactsRepository,
     *,
     dry_run: bool = False,
@@ -65,12 +62,12 @@ def prune_artifacts(
     now = datetime.now(UTC).strftime("%Y-%m-%d %H:%M:%S")
 
     if dry_run:
-        items = [_prune_one_artifact(record, artifacts_dir, db, dry_run=True) for record in db.list_expired(now)]
+        items = [_prune_one_artifact(record, db, dry_run=True) for record in db.list_expired(now)]
         return ArtifactsPruneResult(status=ArtifactsPruneStatus.OK, dry_run=dry_run, force=force, items=items)
 
     try:
         with WorkspaceLock(RepositoryPaths.from_root(workspace_root).lock_file):
-            items = [_prune_one_artifact(record, artifacts_dir, db, dry_run=False) for record in db.list_expired(now)]
+            items = [_prune_one_artifact(record, db, dry_run=False) for record in db.list_expired(now)]
             return ArtifactsPruneResult(status=ArtifactsPruneStatus.OK, dry_run=dry_run, force=force, items=items)
     except LockTimeoutError as exc:
         return ArtifactsPruneResult(

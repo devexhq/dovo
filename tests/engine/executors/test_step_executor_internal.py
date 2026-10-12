@@ -7,6 +7,8 @@ from pathlib import Path
 import pytest
 
 from dovo.common.filesystem.models import WorkspacePaths
+from dovo.core.artifacts import Artifacts
+from dovo.core.artifacts.store import ArtifactStore
 from dovo.core.catalog.definitions import StepDefinition, StepType
 from dovo.core.db.repositories.artifacts import ArtifactsRepository
 from dovo.engine.executors import step_executor
@@ -45,7 +47,7 @@ class InternalCommandDispatchTests:
         assert "boom" in result.error_message
 
     def test_execute_internal_no_active_session_fails_with_clear_message(self, tmp_path: Path) -> None:
-        """[tier-1/unit] _execute_internal: artifacts_dir/artifacts_db both None (no session_id) dispatches artifacts.upload to a failed StepDispatchOutcome naming the missing session, not an unhandled AttributeError."""
+        """[tier-1/unit] _execute_internal: artifact_store=None (no session) dispatches artifacts.upload to a failed StepDispatchOutcome naming the missing session, not an unhandled AttributeError."""
         step = StepDefinition(id="s1", type=StepType.INTERNAL, command="artifacts.upload")
 
         result = StepExecution(StepExecutionContext(step=step, worktree_path=tmp_path)).run()
@@ -71,8 +73,7 @@ class InternalCommandDispatchTests:
                 step=step,
                 worktree_path=tmp_path,
                 session_id="wf_1",
-                artifacts_dir=engine_paths.artifacts_dir,
-                artifacts_db=artifacts_repository,
+                artifact_store=ArtifactStore(Artifacts(engine_paths, artifacts_repository), "wf_1"),
                 loop_iteration=2,
             )
         ).run()

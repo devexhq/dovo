@@ -1,14 +1,14 @@
 from collections.abc import Callable, Sequence
 from pathlib import Path
-from typing import Any
+from typing import Any, Protocol
 
 from pydantic import BaseModel, Field
 
 from dovo.common.filesystem import WorkspacePaths
 from dovo.common.models import BaseResult
 from dovo.core.agents.models import AgentResponseStatus
+from dovo.core.artifacts.store import ArtifactStore
 from dovo.core.catalog.definitions import StepDefinition
-from dovo.core.db.repositories.artifacts import ArtifactsRepository
 
 
 class AssertionResult(BaseResult):
@@ -116,6 +116,14 @@ class StepDispatchOutcome(BaseModel):
     attempts: int = 1
 
 
+class StepPostcondition(Protocol):
+    """A check applied to a completed dispatch outcome after the command succeeds."""
+
+    def apply(self, outcome: StepDispatchOutcome, attempt: int) -> StepDispatchOutcome:
+        """Return outcome unchanged, or a failed copy with an error_message."""
+        ...
+
+
 OutputCallback = Callable[[str, str], None]
 AgentStepRunner = Callable[[StepDefinition, Path, OutputCallback | None, ExecutionMetadata], StepDispatchOutcome]
 
@@ -140,8 +148,7 @@ class StepExecutionContext(BaseModel):
     save_attempt_logs: bool = True
     loop_iteration: int | None = None
     session_id: str | None = None
-    artifacts_dir: Path | None = None
-    artifacts_db: ArtifactsRepository | None = None
+    artifact_store: ArtifactStore | None = None
     paths: WorkspacePaths | None = None
     agent_runner: AgentStepRunner | None = None
     sensitive_variables: tuple[str, ...] = ()
@@ -153,10 +160,8 @@ class InternalCommandContext(BaseModel):
     model_config = {"extra": "forbid", "strict": True, "arbitrary_types_allowed": True}
 
     worktree_path: Path
-    session_id: str
     env: dict[str, str] = Field(default_factory=dict)
-    artifacts_dir: Path | None = None
-    artifacts_db: ArtifactsRepository | None = None
+    artifact_store: ArtifactStore | None = None
     step_id: str | None = None
     attempt: int | None = None
     loop_iteration: int | None = None

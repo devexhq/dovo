@@ -10,7 +10,9 @@ from typing import ClassVar
 import pytest
 
 from dovo.common.filesystem.models import WorkspacePaths
+from dovo.core.artifacts import Artifacts
 from dovo.core.artifacts.services.download import download_artifact
+from dovo.core.artifacts.store import ArtifactStore
 from dovo.core.catalog.definitions import LoopStepBlock, StepDefinition
 from dovo.core.db import SessionsRepository, SessionStatus
 from dovo.core.db.repositories.artifacts import ArtifactsRepository
@@ -203,8 +205,7 @@ def _context(
         target_dir=paths.root_dir,
         session_tmp_dir=session_tmp_dir,
         session_log_dir=session_log_dir,
-        artifacts_dir=paths.artifacts_dir if artifacts_db is not None else None,
-        artifacts_db=artifacts_db,
+        artifact_store=ArtifactStore(Artifacts(paths, artifacts_db), session_id) if artifacts_db is not None else None,
         worktree=worktree,
         no_tty=no_tty,
     )

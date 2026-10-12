@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+from collections.abc import Collection, Mapping
 from pathlib import Path
 
 from dovo.common.filesystem import WorkspacePaths
 from dovo.core.artifacts.models import (
     ArtifactDownloadResult,
     ArtifactProvenance,
+    ArtifactReferencesResult,
     ArtifactsListResult,
     ArtifactsListStatus,
     ArtifactsPruneResult,
@@ -15,6 +17,7 @@ from dovo.core.artifacts.models import (
 )
 from dovo.core.artifacts.services.download import download_artifact
 from dovo.core.artifacts.services.prune import prune_artifacts
+from dovo.core.artifacts.services.references import resolve_artifact_references
 from dovo.core.artifacts.services.upload import publish_artifact
 from dovo.core.config.models import DovoConfig
 from dovo.core.db.repositories.artifacts import ArtifactsRepository
@@ -30,7 +33,7 @@ class Artifacts:
             db if db is not None else ArtifactsRepository(db_path=paths.database_file, project_id=paths.project_id)
         )
 
-    def upload(
+    def publish(
         self,
         session_id: str,
         name: str,
@@ -51,6 +54,10 @@ class Artifacts:
             retention_days=retention_days,
             provenance=provenance,
         )
+
+    def resolve_references(self, session_id: str, requested: Mapping[str, Collection[str]]) -> ArtifactReferencesResult:
+        """Resolve requested artifact placeholder fields against session_id's latest revisions."""
+        return resolve_artifact_references(self.db, session_id=session_id, requested=requested)
 
     def list(self, session_id: str | None = None) -> ArtifactsListResult:
         """List artifacts for the current project, optionally filtered to one session."""
@@ -81,6 +88,4 @@ class Artifacts:
         remove_expired resolves from config.prune.remove_expired_artifacts, defaulting to False when config is None.
         """
         remove_expired = config.prune.remove_expired_artifacts if config is not None else False
-        return prune_artifacts(
-            self.path, self.paths.artifacts_dir, self.db, dry_run=dry_run, force=force, remove_expired=remove_expired
-        )
+        return prune_artifacts(self.path, self.db, dry_run=dry_run, force=force, remove_expired=remove_expired)

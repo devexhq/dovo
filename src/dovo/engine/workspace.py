@@ -7,9 +7,10 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from dovo.common.redact import SecretRedactor
+from dovo.core.artifacts.artifacts import Artifacts
+from dovo.core.artifacts.store import ArtifactStore
 from dovo.core.config import ConfigLoadError
 from dovo.core.db import SessionStatus, WorktreesRepository
-from dovo.core.db.repositories.artifacts import ArtifactsRepository
 from dovo.core.git.runner import GitRunner
 from dovo.core.worktree import Worktree, WorktreeApplyStrategy, WorktreeSession
 from dovo.engine.models import RunSettings
@@ -216,14 +217,12 @@ class Workspace:
             return None
         return session_tmp_dir
 
-    def prepare_session_artifacts(self) -> tuple[Path | None, ArtifactsRepository | None]:
-        """Resolve the project artifacts_dir and construct a per-run ArtifactsRepository once, or (None, None) without a session."""
+    def prepare_session_artifacts(self) -> ArtifactStore | None:
+        """Build the run's ArtifactStore once, or return None without a session."""
         if self.context.session_id is None:
-            return None, None
-        artifacts_dir = self.context.paths.artifacts_dir
-        return artifacts_dir, ArtifactsRepository(
-            db_path=self.context.paths.database_file, project_id=self.context.paths.project_id
-        )
+            return None
+
+        return ArtifactStore(Artifacts(self.context.paths), self.context.session_id)
 
     def prepare_session_log_dir(self, warnings: list[str]) -> Path | None:
         """Resolve and create the session log directory, or warn and return None."""

@@ -127,8 +127,7 @@ class StepCoordinator:
                 save_attempt_logs=run_context.save_attempt_logs,
                 loop_iteration=loop_iteration,
                 session_id=self.context.session_id or "",
-                artifacts_dir=run_context.artifacts_dir,
-                artifacts_db=run_context.artifacts_db,
+                artifact_store=run_context.artifact_store,
                 paths=self.context.paths,
                 agent_runner=build_agent_step_runner(
                     self.context.agent,

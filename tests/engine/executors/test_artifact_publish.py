@@ -6,11 +6,13 @@ from pathlib import Path
 
 import pytest
 
+from dovo.common.filesystem.models import WorkspacePaths
+from dovo.core.artifacts import Artifacts
 from dovo.core.artifacts.models import ArtifactUploadResult, ArtifactUploadStatus
+from dovo.core.artifacts.store import ArtifactStore
 from dovo.core.catalog.definitions import ArtifactPublishSpec, StepDefinition, StepType
 from dovo.core.db.repositories.artifacts import ArtifactsRepository
 from dovo.engine.executors.artifact_publish import ArtifactPublishOutcome, publish_declared_artifacts
-from dovo.engine.executors.artifact_store import ArtifactStore
 
 _MISSING_PLAN = "Artifact 'plan' matched no files at 'PLAN.md' (ARTIFACT_NOT_PRODUCED)."
 
@@ -29,22 +31,22 @@ def _worktree(tmp_path: Path, *files: str) -> Path:
     return worktree_path
 
 
-def _store(tmp_path: Path, repository: ArtifactsRepository) -> ArtifactStore:
-    """Build an ArtifactStore for session wf_1 under tmp_path."""
-    return ArtifactStore(tmp_path / "artifacts", repository, "wf_1")
+def _store(paths: WorkspacePaths, repository: ArtifactsRepository) -> ArtifactStore:
+    """Build an ArtifactStore for session wf_1 over the engine workspace."""
+    return ArtifactStore(Artifacts(paths, repository), "wf_1")
 
 
 class PublishDeclaredArtifactsTests:
     """Contract tests for publish_declared_artifacts."""
 
     def test_required_spec_matching_nothing_returns_not_produced_message(
-        self, tmp_path: Path, artifacts_repository: ArtifactsRepository
+        self, tmp_path: Path, engine_paths: WorkspacePaths, artifacts_repository: ArtifactsRepository
     ) -> None:
         """[tier-1/unit] publish_declared_artifacts: required spec path 'PLAN.md' with an empty worktree -> error_message is the ARTIFACT_NOT_PRODUCED text and warnings == []."""
         outcome = publish_declared_artifacts(
             _step(ArtifactPublishSpec(name="plan", path="PLAN.md")),
             worktree_path=_worktree(tmp_path),
-            store=_store(tmp_path, artifacts_repository),
+            store=_store(engine_paths, artifacts_repository),
             attempt=1,
             loop_iteration=None,
         )
@@ -52,13 +54,13 @@ class PublishDeclaredArtifactsTests:
         assert outcome == ArtifactPublishOutcome(error_message=_MISSING_PLAN, warnings=[])
 
     def test_optional_spec_matching_nothing_returns_warning_and_no_error(
-        self, tmp_path: Path, artifacts_repository: ArtifactsRepository
+        self, tmp_path: Path, engine_paths: WorkspacePaths, artifacts_repository: ArtifactsRepository
     ) -> None:
         """[tier-1/unit] publish_declared_artifacts: required=False spec with no match -> error_message is None and a 'Failed to publish artifact' warning carrying the not-produced text."""
         outcome = publish_declared_artifacts(
             _step(ArtifactPublishSpec(name="plan", path="PLAN.md", required=False)),
             worktree_path=_worktree(tmp_path),
-            store=_store(tmp_path, artifacts_repository),
+            store=_store(engine_paths, artifacts_repository),
             attempt=1,
             loop_iteration=None,
         )
@@ -89,6 +91,7 @@ class PublishDeclaredArtifactsTests:
         required: bool,
         expected: ArtifactPublishOutcome,
         tmp_path: Path,
+        engine_paths: WorkspacePaths,
         artifacts_repository: ArtifactsRepository,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
@@ -97,12 +100,12 @@ class PublishDeclaredArtifactsTests:
         def _raising_publish(*_args: object, **_kwargs: object) -> ArtifactUploadResult:
             raise ValueError("boom")
 
-        monkeypatch.setattr("dovo.engine.executors.artifact_store.publish_artifact", _raising_publish)
+        monkeypatch.setattr("dovo.core.artifacts.artifacts.publish_artifact", _raising_publish)
 
         outcome = publish_declared_artifacts(
             _step(ArtifactPublishSpec(name="plan", path="PLAN.md", required=required)),
             worktree_path=_worktree(tmp_path, "PLAN.md"),
-            store=_store(tmp_path, artifacts_repository),
+            store=_store(engine_paths, artifacts_repository),
             attempt=1,
             loop_iteration=None,
         )
@@ -110,18 +113,22 @@ class PublishDeclaredArtifactsTests:
         assert outcome == expected
 
     def test_error_result_without_detail_uses_generic_text(
-        self, tmp_path: Path, artifacts_repository: ArtifactsRepository, monkeypatch: pytest.MonkeyPatch
+        self,
+        tmp_path: Path,
+        engine_paths: WorkspacePaths,
+        artifacts_repository: ArtifactsRepository,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """[tier-1/unit] publish_declared_artifacts: a failed publish result carrying no errors -> detail 'publish failed'."""
         monkeypatch.setattr(
-            "dovo.engine.executors.artifact_store.publish_artifact",
+            "dovo.core.artifacts.artifacts.publish_artifact",
             lambda *_args, **_kwargs: ArtifactUploadResult(status=ArtifactUploadStatus.ERROR),
         )
 
         outcome = publish_declared_artifacts(
             _step(ArtifactPublishSpec(name="plan", path="PLAN.md")),
             worktree_path=_worktree(tmp_path, "PLAN.md"),
-            store=_store(tmp_path, artifacts_repository),
+            store=_store(engine_paths, artifacts_repository),
             attempt=1,
             loop_iteration=None,
         )
@@ -142,7 +149,7 @@ class PublishDeclaredArtifactsTests:
         assert not (tmp_path / "artifacts").exists()
 
     def test_stops_at_first_required_failure_keeping_earlier_revision(
-        self, tmp_path: Path, artifacts_repository: ArtifactsRepository
+        self, tmp_path: Path, engine_paths: WorkspacePaths, artifacts_repository: ArtifactsRepository
     ) -> None:
         """[tier-1/unit] publish_declared_artifacts: specs [ok, missing-required, ok] -> error_message names the second spec, the first has revision 1 in the DB, the third has no row."""
         step = _step(
@@ -154,7 +161,7 @@ class PublishDeclaredArtifactsTests:
         outcome = publish_declared_artifacts(
             step,
             worktree_path=_worktree(tmp_path, "a.txt", "c.txt"),
-            store=_store(tmp_path, artifacts_repository),
+            store=_store(engine_paths, artifacts_repository),
             attempt=1,
             loop_iteration=None,
         )

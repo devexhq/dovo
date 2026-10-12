@@ -6,8 +6,6 @@ from collections.abc import Callable, Mapping
 from pathlib import Path
 
 from dovo.core.artifacts.models import ArtifactDownloadStatus, ArtifactProvenance, ArtifactUploadStatus
-from dovo.core.artifacts.services.download import download_artifact
-from dovo.core.artifacts.services.upload import publish_artifact
 from dovo.engine.executors.models import InternalCommandContext, StepDispatchOutcome
 
 
@@ -23,8 +21,8 @@ def _no_active_session_outcome(command: str) -> StepDispatchOutcome:
 
 
 def handle_artifacts_upload(ctx: InternalCommandContext) -> StepDispatchOutcome:
-    """Read ARTIFACT_NAME/ARTIFACT_PATH/ARTIFACT_RETENTION_DAYS from ctx.env and call publish_artifact."""
-    if ctx.artifacts_dir is None or ctx.artifacts_db is None:
+    """Read ARTIFACT_NAME/ARTIFACT_PATH/ARTIFACT_RETENTION_DAYS from ctx.env and publish through the artifact store."""
+    if ctx.artifact_store is None:
         return _no_active_session_outcome("artifacts.upload")
 
     name = ctx.env.get("ARTIFACT_NAME", "")
@@ -41,11 +39,8 @@ def handle_artifacts_upload(ctx: InternalCommandContext) -> StepDispatchOutcome:
     retention_raw = ctx.env.get("ARTIFACT_RETENTION_DAYS")
     retention_days = int(retention_raw) if retention_raw else None
 
-    result = publish_artifact(
+    result = ctx.artifact_store.publish(
         ctx.worktree_path,
-        ctx.artifacts_dir,
-        ctx.artifacts_db,
-        session_id=ctx.session_id,
         name=name,
         path_glob=path_glob,
         retention_days=retention_days,
@@ -77,8 +72,8 @@ def _revision_from_env(env: Mapping[str, str]) -> tuple[int | None, str | None]:
 
 
 def handle_artifacts_download(ctx: InternalCommandContext) -> StepDispatchOutcome:
-    """Read ARTIFACT_NAME/ARTIFACT_DEST/optional ARTIFACT_SESSION_ID and ARTIFACT_REVISION from ctx.env and call download_artifact."""
-    if ctx.artifacts_dir is None or ctx.artifacts_db is None:
+    """Read ARTIFACT_NAME/ARTIFACT_DEST/optional ARTIFACT_SESSION_ID and ARTIFACT_REVISION from ctx.env and download through the artifact store."""
+    if ctx.artifact_store is None:
         return _no_active_session_outcome("artifacts.download")
 
     name = ctx.env.get("ARTIFACT_NAME", "")
@@ -96,17 +91,14 @@ def handle_artifacts_download(ctx: InternalCommandContext) -> StepDispatchOutcom
     if revision_error is not None:
         return StepDispatchOutcome(status="failed", exit_code=1, stdout="", stderr="", error_message=revision_error)
 
-    session_id = ctx.env.get("ARTIFACT_SESSION_ID", ctx.session_id)
     dest_path = Path(dest_raw)
     dest = dest_path if dest_path.is_absolute() else ctx.worktree_path / dest_path
 
-    result = download_artifact(
-        ctx.artifacts_dir,
-        ctx.artifacts_db,
-        session_id=session_id,
+    result = ctx.artifact_store.download(
         name=name,
         dest=dest,
         revision=revision,
+        session_id=ctx.env.get("ARTIFACT_SESSION_ID"),
     )
     if result.status == ArtifactDownloadStatus.OK:
         return StepDispatchOutcome(status="completed", exit_code=0, stdout="", stderr="")
