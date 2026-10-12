@@ -25,11 +25,12 @@ def run_direct_attempt(
     worktree_path: Path,
     timeout_seconds: int,
     tools: ToolPolicy,
+    max_files: int | None = None,
     context: AgentAttemptContext | None = None,
 ) -> AgentAttempt:
     """Run one direct-mode agent attempt through the resolved provider, carrying the step's final tool policy, invocation paths, and environment layers to the request."""
     request = _build_request(
-        instruction, settings, worktree_path, timeout_seconds, tools, context or AgentAttemptContext()
+        instruction, settings, worktree_path, timeout_seconds, tools, max_files, context or AgentAttemptContext()
     )
 
     return _run_provider(request, settings.provider)
@@ -41,9 +42,10 @@ def _build_request(
     worktree_path: Path,
     timeout_seconds: int,
     tools: ToolPolicy,
+    max_files: int | None,
     context: AgentAttemptContext,
 ) -> AgentRequest:
-    """Build the direct-mode AgentRequest from the instruction, the resolved settings, the final tool policy, and the attempt context."""
+    """Build the direct-mode AgentRequest from the instruction, the resolved settings, the final tool policy, the step's file-limit override, and the attempt context."""
     invocation = context.invocation
     return AgentRequest(
         mode="direct",
@@ -55,6 +57,7 @@ def _build_request(
         endpoint=settings.endpoint,
         temperature=settings.temperature,
         max_tokens=settings.max_tokens,
+        max_files=max_files,
         agent_scratch_path=invocation.scratch_path if invocation is not None else None,
         invocation=invocation,
         env_passthrough=settings.env_passthrough,

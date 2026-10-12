@@ -2,9 +2,6 @@
 
 from dovo.core.agents.base import BaseAgentProvider, ProviderSpec
 from dovo.core.agents.cli_mutation import (
-    DEFAULT_MAX_FILES,
-    DEFAULT_MAX_PATCH_KB,
-    DEFAULT_REJECT_BINARY_CHANGES,
     CliDirectMutationAdapter,
     CliMutationOutcome,
     CliMutationRunFn,
@@ -44,9 +41,6 @@ from dovo.core.agents.tools import (
 )
 
 __all__ = [
-    "DEFAULT_MAX_FILES",
-    "DEFAULT_MAX_PATCH_KB",
-    "DEFAULT_REJECT_BINARY_CHANGES",
     "PROVIDERS",
     "TOOL_POLICY_UNSUPPORTED_CODE",
     "AgentAttempt",

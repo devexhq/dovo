@@ -10,12 +10,13 @@ import pytest
 import typer.main
 
 from dovo.cli.session.app import session_app
-from dovo.core.catalog.definitions.step import ArtifactPublishSpec, InteractionSpec
+from dovo.core.catalog.definitions.step import ArtifactPublishSpec, InteractionSpec, StepDefinition
 from dovo.core.interaction import Interaction, InteractionAnswer, InteractionRequest
 from tests.lint.astlib import REPO_ROOT
 
 STEP_SCHEMA_DOC: Final = REPO_ROOT / "docs" / "reference" / "step-schema.md"
 SESSION_DOC: Final = REPO_ROOT / "docs" / "cli" / "session.md"
+_STEP_HEADING: Final = "## `StepDefinition` Fields"
 _HEADING: Final = "## `artifacts` Entries"
 _INTERACTION_HEADING: Final = "## `interaction` Block"
 _OUTPUTS_HEADING: Final = "### Ask step outputs"
@@ -38,6 +39,11 @@ def _field_rows(section: str) -> dict[str, bool]:
 def _documented_rows() -> dict[str, bool]:
     """Map each documented `artifacts` entry field to whether the table marks it required."""
     return _field_rows(_section(STEP_SCHEMA_DOC, _HEADING, "\n---"))
+
+
+def _standard_step_rows() -> dict[str, bool]:
+    """Map each documented standard-step field to whether the table marks it required."""
+    return _field_rows(_section(STEP_SCHEMA_DOC, _STEP_HEADING, "\n---"))
 
 
 def _interaction_rows() -> dict[str, bool]:
@@ -80,6 +86,18 @@ class StepSchemaParityTests:
         expected = {name: field.is_required() for name, field in ArtifactPublishSpec.model_fields.items()}
 
         assert _documented_rows() == expected
+
+    def test_documented_step_fields_match_step_definition_fields(self) -> None:
+        """[tier-4/unit] step-schema reference: documented standard-step rows equal StepDefinition serialized field names and required flags, including max_files and assert."""
+        expected = {
+            field.serialization_alias or name: field.is_required()
+            for name, field in StepDefinition.model_fields.items()
+        }
+
+        documented = _standard_step_rows()
+
+        assert "max_files" in documented
+        assert documented == expected
 
 
 class InteractionSchemaParityTests:

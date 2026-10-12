@@ -28,7 +28,17 @@ InteractionMode = Literal["confirm", "select", "multiselect", "text"]
 CommentPolicy = Literal["disabled", "optional", "required"]
 
 OPTION_VALUE_RE = re.compile(r"^[A-Za-z0-9_.-]{1,64}$")
-_ASK_INCOMPATIBLE_FIELDS = ("run", "uses", "command", "prompt", "script_path", "tools", "artifacts", "assert")
+_ASK_INCOMPATIBLE_FIELDS = (
+    "run",
+    "uses",
+    "command",
+    "prompt",
+    "script_path",
+    "tools",
+    "artifacts",
+    "assert",
+    "max_files",
+)
 
 
 class StepAssert(BaseModel):
@@ -78,6 +88,8 @@ def _validate_run_shape(step: "StepDefinition") -> None:
     conflicting = [f for f in run_incompatible if getattr(step, f)]
     if step.tools is not None:
         conflicting.append("tools")
+    if step.max_files is not None:
+        conflicting.append("max_files")
     if conflicting:
         raise ValueError(f"Step '{step.id}': 'run' cannot be combined with {', '.join(conflicting)}.")
 
@@ -92,6 +104,8 @@ def _validate_inline_type_shape(step: "StepDefinition") -> None:
         raise ValueError("Script steps must specify a non-empty 'script_path' string.")
     if step.type == StepType.INTERNAL and not step.command:
         raise ValueError("Internal steps must specify a non-empty 'command' string naming the internal command to run.")
+    if step.max_files is not None and step.type != StepType.AGENT:
+        raise ValueError(f"Step '{step.id}': 'max_files' is only valid with 'type: agent'.")
 
 
 class InteractionOption(BaseModel):
@@ -272,6 +286,7 @@ class StepDefinition(BaseModel):
     on_failure: OnFailureSpec = Field(default_factory=lambda: OnFailureSpec(action=FailurePolicy.ABORT))
     artifacts: list[ArtifactPublishSpec] = Field(default_factory=list)
     interaction: InteractionSpec | None = None
+    max_files: int | None = Field(default=None, ge=1)
 
     @field_validator("type", mode="before")
     @classmethod

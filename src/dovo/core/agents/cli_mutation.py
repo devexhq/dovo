@@ -31,10 +31,6 @@ from dovo.core.git import PatchApplyResult, PatchApplyStatus, validate_patch_tex
 
 CliMutationRunStatus = Literal["finished", "timeout", "error"]
 
-DEFAULT_MAX_FILES = 30
-DEFAULT_MAX_PATCH_KB = 1024
-DEFAULT_REJECT_BINARY_CHANGES = True
-
 
 class CliMutationRunRequest(BaseModel):
     """Normalized inputs for invoking a direct-mutation CLI/SDK runner."""
@@ -109,16 +105,12 @@ def _prompt_body(request: AgentRequest) -> dict[str, object]:
 
 
 def validate_request_patch(request: AgentRequest, diff: str) -> PatchApplyResult:
-    """Run the shared patch gate on ``diff`` with the request's bounds, falling back to the DEFAULT_* limits."""
+    """Run the shared patch gate on ``diff`` with the request's bounds; every bound the request leaves unset is not enforced."""
     return validate_patch_text(
         diff,
-        max_files=request.max_files or DEFAULT_MAX_FILES,
-        max_patch_kb=request.max_patch_kb or DEFAULT_MAX_PATCH_KB,
-        reject_binary_changes=(
-            request.reject_binary_changes
-            if request.reject_binary_changes is not None
-            else DEFAULT_REJECT_BINARY_CHANGES
-        ),
+        max_files=request.max_files,
+        max_patch_kb=request.max_patch_kb,
+        reject_binary_changes=request.reject_binary_changes,
         worktree_path=request.worktree_path,
     )
 

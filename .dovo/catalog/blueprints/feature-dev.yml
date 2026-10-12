@@ -38,6 +38,10 @@ steps:
     type: loop
     max_iterations: 3
     until:
+      - steps.code.outputs.status != "unfixable"
+      - steps.code.outputs.status != "timeout"
+      - steps.code.outputs.status != "provider_error"
+      - steps.code.outputs.status != "blocked"
       - steps.verify.exit_code == 0
     on_max_iterations: prompt_user
     do:
@@ -54,7 +58,6 @@ steps:
           state: read it, keep the existing work and fix what it reports.
         tools: { allow_all: true }
         timeout_seconds: 3600
-        on_failure: continue
 
       - id: verify
         name: Run the quality gate
@@ -97,7 +100,7 @@ steps:
           message: Which findings should be fixed?
           options_from:
             artifact: review
-            file: review.json
+            file: .agentic/review.json
             items_path: findings
             value_field: id
             label_field: summary
