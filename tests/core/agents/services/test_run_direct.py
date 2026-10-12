@@ -114,6 +114,22 @@ class RunDirectAttemptRequestTests:
             )
         ]
 
+    def test_request_carries_step_max_files_to_provider(self, git_repo: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """[tier-1/unit] run_direct_attempt: max_files=100 produces a direct AgentRequest whose max_files is 100."""
+        provider = FakeAgentProvider(_no_op())
+        _use_provider(monkeypatch, provider)
+
+        run_direct_attempt(
+            instruction="Plan the change",
+            settings=_settings(),
+            worktree_path=git_repo,
+            timeout_seconds=45,
+            tools=default_tool_policy(),
+            max_files=100,
+        )
+
+        assert [request.max_files for request in provider.requests] == [100]
+
     def test_unregistered_provider_returns_provider_error_attempt(self, git_repo: Path) -> None:
         """[tier-1/unit] run_direct_attempt: provider 'unregistered' returns PROVIDER_ERROR with a diagnostic containing "Unsupported agent provider 'unregistered' (AGENT_PROVIDER_UNSUPPORTED)"."""
         attempt = _attempt(git_repo, "unregistered")

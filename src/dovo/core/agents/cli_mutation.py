@@ -112,7 +112,7 @@ def validate_request_patch(request: AgentRequest, diff: str) -> PatchApplyResult
     """Run the shared patch gate on ``diff`` with the request's bounds, falling back to the DEFAULT_* limits."""
     return validate_patch_text(
         diff,
-        max_files=request.max_files or DEFAULT_MAX_FILES,
+        max_files=request.max_files if request.max_files is not None else DEFAULT_MAX_FILES,
         max_patch_kb=request.max_patch_kb or DEFAULT_MAX_PATCH_KB,
         reject_binary_changes=(
             request.reject_binary_changes

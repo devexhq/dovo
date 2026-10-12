@@ -302,8 +302,8 @@ class ValidateRequestPatchTests:
         assert result.status == PatchApplyStatus.CHECKED_OK
         assert result.touched_files == ["a.txt"]
 
-    def test_explicit_bound_rejects_diff_over_limit(self, git_repo: Path) -> None:
-        """[tier-1/unit] validate_request_patch: max_files=1 and a two-file diff returns PatchApplyStatus.TOO_MANY_FILES."""
+    def test_explicit_step_bound_rejects_diff_over_limit_with_agent_step_fix(self, git_repo: Path) -> None:
+        """[tier-1/unit] validate_request_patch: max_files=1 and a two-file diff returns TOO_MANY_FILES with fixes == ['Set max_files on the agent step.']."""
         request = AgentRequest(
             mode="direct",
             instruction="go",
@@ -317,6 +317,19 @@ class ValidateRequestPatchTests:
         result = validate_request_patch(request, diff)
 
         assert result.status == PatchApplyStatus.TOO_MANY_FILES
+        assert result.fixes == ["Set max_files on the agent step."]
+
+    def test_absent_step_bound_uses_default_file_limit(self, git_repo: Path) -> None:
+        """[tier-1/unit] validate_request_patch: max_files=None and a 31-file diff returns TOO_MANY_FILES naming max_files is 30."""
+        request = AgentRequest(
+            mode="direct", instruction="go", worktree_path=git_repo, timeout_seconds=10, tools=default_tool_policy()
+        )
+        diff = "".join(new_file_diff(f"f{index}.txt") for index in range(31))
+
+        result = validate_request_patch(request, diff)
+
+        assert result.status == PatchApplyStatus.TOO_MANY_FILES
+        assert result.errors == ["Patch touches 31 files; max_files is 30."]
 
 
 class SharedMutationAdapterTests:

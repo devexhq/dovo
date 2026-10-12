@@ -93,7 +93,10 @@ Sends `prompt` to the agent provider and applies any change in the worktree. It 
       - capability: write
         pattern: ".dovo/**"
   timeout_seconds: 300
+  max_files: 100
 ```
+
+`max_files` is valid on agent steps only. It sets how many files one attempt's patch may touch (an integer of at least `1`); without it the limit is `30`. A patch above the limit is rejected, and the diagnostic tells you to set `max_files` on the step.
 
 #### C. Script Step (`type: script`)
 Runs a script from your repository:

@@ -91,6 +91,7 @@ def execute_agent_step(
         worktree_path=worktree_path,
         timeout_seconds=step.timeout_seconds,
         tools=tools,
+        max_files=step.max_files,
         context=AgentAttemptContext(invocation=scratch.context, env=step.env, metadata_env=metadata_to_env(metadata)),
     )
     _report_withheld(attempt, metadata, session_log_dir, on_output)

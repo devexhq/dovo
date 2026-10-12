@@ -48,6 +48,35 @@ class StepDefinitionArtifactsFieldTests:
             StepDefinition(id="s1", type=StepType.INTERNAL)
 
 
+class StepDefinitionMaxFilesTests:
+    def test_agent_max_files_accepts_positive_integer(self) -> None:
+        """[tier-1/unit] StepDefinition: type=agent with max_files=1 validates and preserves max_files == 1."""
+        step = StepDefinition(id="s1", type=StepType.AGENT, prompt="go", max_files=1)
+
+        assert step.max_files == 1
+
+    @pytest.mark.parametrize(
+        "payload",
+        [
+            pytest.param({"run": "echo hi"}, id="run"),
+            pytest.param({"type": "ask", "interaction": {"mode": "confirm", "message": "Go?"}}, id="ask"),
+            pytest.param({"type": "command", "command": "echo hi"}, id="command"),
+            pytest.param({"type": "script", "script_path": "scripts/check.py"}, id="script"),
+            pytest.param({"type": "internal", "command": "noop"}, id="internal"),
+        ],
+    )
+    def test_non_agent_max_files_raises_validation_error(self, payload: dict[str, object]) -> None:
+        """[tier-1/unit] StepDefinition: run, ask, command, script, and internal max_files each raise ValidationError naming max_files."""
+        with pytest.raises(ValidationError, match="max_files"):
+            StepDefinition.model_validate({"id": "s1", "max_files": 3, **payload})
+
+    @pytest.mark.parametrize("value", [pytest.param(0, id="zero"), pytest.param(-1, id="negative")])
+    def test_non_positive_max_files_raises_validation_error(self, value: int) -> None:
+        """[tier-1/unit] StepDefinition: agent max_files of 0 or -1 raises ValidationError naming max_files."""
+        with pytest.raises(ValidationError, match="max_files"):
+            StepDefinition.model_validate({"id": "s1", "type": "agent", "prompt": "go", "max_files": value})
+
+
 class ArtifactPublishSpecTests:
     """[tier-1/unit] ArtifactPublishSpec: the required flag."""
 

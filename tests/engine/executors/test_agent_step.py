@@ -24,7 +24,7 @@ from dovo.core.agents import (
 from dovo.core.agents.models import AgentDenial
 from dovo.core.agents.responses import blocked_response, provider_error_response
 from dovo.core.agents.scratch import scratch_unavailable_message
-from dovo.core.catalog.definitions import StepDefinition
+from dovo.core.catalog.definitions import StepDefinition, StepType
 from dovo.core.git import GitRunner
 from dovo.core.sessions import SessionLogEvent, SessionLogEventType
 from dovo.engine.executors.agent_step import (
@@ -180,33 +180,40 @@ class ExecuteAgentStepUnsupportedPolicyTests:
         assert "AGENT_TOOL_POLICY_UNSUPPORTED" in outcome.stderr
 
 
+def _record_direct_attempts(monkeypatch: pytest.MonkeyPatch) -> list[dict[str, object]]:
+    calls: list[dict[str, object]] = []
+
+    def _record(
+        *,
+        instruction: str,
+        settings: ResolvedAgentSettings,
+        worktree_path: Path,
+        timeout_seconds: int,
+        tools: ToolPolicy,
+        max_files: int | None,
+        context: AgentAttemptContext | None,
+    ) -> AgentAttempt:
+        calls.append(
+            {
+                "instruction": instruction,
+                "settings": settings,
+                "worktree_path": worktree_path,
+                "timeout_seconds": timeout_seconds,
+                "max_files": max_files,
+            }
+        )
+        return AgentAttempt(status=AgentResponseStatus.NO_OP)
+
+    monkeypatch.setattr("dovo.engine.executors.agent_step.run_direct_attempt", _record)
+    return calls
+
+
 class ExecuteAgentStepRequestTests:
     def test_valid_step_forwards_prompt_settings_worktree_and_timeout_to_run_direct_attempt(
         self, git_repo: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """[tier-1/unit] execute_agent_step: an active-worktree step with prompt 'Plan the change' and timeout_seconds 45 calls run_direct_attempt once with instruction='Plan the change', the given settings, worktree_path=git_repo, timeout_seconds=45."""
-        calls: list[dict[str, object]] = []
-
-        def _record(
-            *,
-            instruction: str,
-            settings: ResolvedAgentSettings,
-            worktree_path: Path,
-            timeout_seconds: int,
-            tools: ToolPolicy,
-            context: AgentAttemptContext | None,
-        ) -> AgentAttempt:
-            calls.append(
-                {
-                    "instruction": instruction,
-                    "settings": settings,
-                    "worktree_path": worktree_path,
-                    "timeout_seconds": timeout_seconds,
-                }
-            )
-            return AgentAttempt(status=AgentResponseStatus.NO_OP)
-
-        monkeypatch.setattr("dovo.engine.executors.agent_step.run_direct_attempt", _record)
+        """[tier-1/unit] execute_agent_step: an active-worktree step with prompt 'Plan the change' and timeout_seconds 45 calls run_direct_attempt once with instruction='Plan the change', the given settings, worktree_path=git_repo, timeout_seconds=45, and max_files=None."""
+        calls = _record_direct_attempts(monkeypatch)
 
         _run(git_repo)
 
@@ -216,8 +223,18 @@ class ExecuteAgentStepRequestTests:
                 "settings": _settings(),
                 "worktree_path": git_repo,
                 "timeout_seconds": 45,
+                "max_files": None,
             }
         ]
+
+    def test_agent_max_files_forwards_to_direct_attempt(self, git_repo: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """[tier-1/unit] execute_agent_step: an agent StepDefinition with max_files=100 calls run_direct_attempt with max_files=100."""
+        calls = _record_direct_attempts(monkeypatch)
+        step = StepDefinition(id="code", type=StepType.AGENT, prompt="Plan the change", max_files=100)
+
+        _run(git_repo, step=step)
+
+        assert [call["max_files"] for call in calls] == [100]
 
     def test_missing_settings_fail_before_provider_lookup(
         self, git_repo: Path, monkeypatch: pytest.MonkeyPatch
@@ -674,21 +691,7 @@ class BuildAgentStepRunnerTests:
         self, git_repo: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """[tier-1/unit] build_agent_step_runner: build_agent_step_runner(settings, worktree_active=True) runner called with (step, worktree_path, on_output) calls run_direct_attempt once with settings=settings, worktree_path=worktree_path, instruction=step.prompt, and delivers exactly one ('stdout', summary_line) to on_output."""
-        calls: list[dict[str, object]] = []
-
-        def _record(
-            *,
-            instruction: str,
-            settings: ResolvedAgentSettings,
-            worktree_path: Path,
-            timeout_seconds: int,
-            tools: ToolPolicy,
-            context: AgentAttemptContext | None,
-        ) -> AgentAttempt:
-            calls.append({"instruction": instruction, "settings": settings, "worktree_path": worktree_path})
-            return AgentAttempt(status=AgentResponseStatus.NO_OP)
-
-        monkeypatch.setattr("dovo.engine.executors.agent_step.run_direct_attempt", _record)
+        calls = _record_direct_attempts(monkeypatch)
         settings = _settings()
         step = _step()
         emitted: list[tuple[str, str]] = []
@@ -702,5 +705,7 @@ class BuildAgentStepRunnerTests:
         )
         outcome = runner(step, git_repo, lambda stream, line: emitted.append((stream, line)), _METADATA)
 
-        assert calls == [{"instruction": step.prompt, "settings": settings, "worktree_path": git_repo}]
+        assert [(call["instruction"], call["settings"], call["worktree_path"]) for call in calls] == [
+            (step.prompt, settings, git_repo)
+        ]
         assert emitted == [("stdout", outcome.stdout)]

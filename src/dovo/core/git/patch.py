@@ -280,7 +280,7 @@ def _patch_parse_and_limits_result(
         return touched, PatchApplyResult(
             status=PatchApplyStatus.TOO_MANY_FILES,
             errors=[f"Patch touches {len(touched)} files; max_files is {max_files}."],
-            fixes=["Split the change or raise patch.max_files"],
+            fixes=["Set max_files on the agent step."],
         )
     if reject_binary_changes and binary_paths:
         joined = ", ".join(binary_paths) if binary_paths else "(binary change)"
