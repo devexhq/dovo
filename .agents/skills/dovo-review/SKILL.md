@@ -19,7 +19,7 @@ Review a change set in `Dovo CLI` on five axes:
 4. **Redundancy and subtraction**: does anything here duplicate a contract already pinned, or survive with no consumer.
 5. **Enforcement integrity**: can every check this change adds or relies on actually fail.
 
-Output goes to `.agentic/review.md`, which `/dovo-code review` consumes, paired with `.agentic/review.json`.
+Output goes to `.agentic/review.md`, which `/dovo-code review` consumes, paired with `.agentic/review.json` and `.agentic/verdict.txt`.
 
 ## Hard boundaries
 
@@ -176,7 +176,7 @@ On `CHANGES REQUIRED`, hand off to `/dovo-code review`, then re-run this skill a
 
 ## 11. Emit the machine-readable verdict
 
-Write `.agentic/review.json` alongside the markdown and print the same object as the last line of stdout, minified onto one line. A caller decides the next step from this file alone.
+Write `.agentic/review.json` and `.agentic/verdict.txt` alongside the markdown and print the same object as the last line of stdout, minified onto one line. A caller decides the next step from these files alone.
 
 ```json
 {
@@ -187,7 +187,7 @@ Write `.agentic/review.json` alongside the markdown and print the same object as
   "plan": ".agentic/plan.md",
   "counts": { "blocking": 2, "warnings": 1, "suggestions": 3, "nits": 1 },
   "findings": [
-    { "severity": "BLOCKER", "path": "src/dovo/core/sessions/sessions.py", "line": 42, "rule": "ARCH-001", "summary": "Core service imports CliContext directly." }
+    { "id": "F1", "severity": "BLOCKER", "path": "src/dovo/core/sessions/sessions.py", "line": 42, "rule": "ARCH-001", "summary": "Core service imports CliContext directly." }
   ],
   "unenforced_gates": ["coverage fail_under=0 in pyproject.toml"],
   "residual": []
@@ -200,6 +200,8 @@ Field contracts, since this is what a loop branches on:
 - `provenance` is `fresh_session` or `same_session`. `scope.kind` is `pr`, `uncommitted`, or `branch`.
 - `plan` is the plan path, or `null` when absent.
 - `findings` carries every Blocking and Warning item with line-level detail; `counts` always reflects the full report.
+- Each finding's `id` is `F<n>`, numbered from 1 in `findings` order and unique within the file, so a caller can offer the findings for selection and pass the chosen ids back.
+- `.agentic/verdict.txt` holds exactly the `verdict` value (`APPROVE` or `CHANGES_REQUIRED`) and a trailing newline, overwritten every round, so a shell condition can test it without parsing JSON.
 - `unenforced_gates` and `residual` stay `[]` when there are none.
 
 Changes to this shape are additive only. It is the contract a driver script consumes today, and the `outputs` condition a `dovo` blueprint will branch on later, so a renamed field breaks both.
