@@ -110,8 +110,6 @@ steps:
           /dovo-code review --fix {{ steps.triage.outputs.selected }}
 
           Follow .agents/skills/dovo-code/SKILL.md if the slash command is not recognized.
-          The values are ids from the findings in .agentic/review.json; fix exactly those findings from
-          .agentic/review.md and nothing else. If the list is [], change nothing.
           Do not commit, stage or push.
           Notes: {{ steps.triage.outputs.comment }}
         tools: { allow_all: true }
