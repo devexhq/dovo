@@ -58,7 +58,6 @@ steps:
           state: read it, keep the existing work and fix what it reports.
         tools: { allow_all: true }
         timeout_seconds: 3600
-        max_files: 100
 
       - id: verify
         name: Run the quality gate
@@ -118,7 +117,6 @@ steps:
           Notes: {{ steps.triage.outputs.comment }}
         tools: { allow_all: true }
         timeout_seconds: 3600
-        max_files: 100
 
   - id: open-pr
     name: Open a pull request?
