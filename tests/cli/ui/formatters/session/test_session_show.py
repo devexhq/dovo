@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -77,6 +78,22 @@ COMPLETED_RUN = FormatterCase(
     data=HistoryShowResult(status=HistoryShowStatus.OK, session_id="sess-12345678", session=_sample_session_record()),
     view=_make_session_show_view(),
     render_expectations=["sess-12345678", "deploy-blueprint", "feature/test", format_session_duration(10.0)],
+)
+
+KEPT_WORKTREE_RUN = FormatterCase(
+    data=HistoryShowResult(
+        status=HistoryShowStatus.OK,
+        session_id="sess-12345678",
+        session=_sample_session_record(status=SessionStatus.FAILED),
+        worktree_kept=True,
+        worktree_path=Path.cwd() / ".dovo" / "worktrees" / "sess-12345678",
+    ),
+    view=_make_session_show_view(
+        session=_make_session_summary_view(status="failed"),
+        worktree_kept=True,
+        worktree_path=".dovo/worktrees/sess-12345678",
+    ),
+    render_expectations=["sess-12345678", ".dovo/worktrees/sess-12345678"],
 )
 
 FAILED_RUN_WITH_ERROR = FormatterCase(
@@ -213,6 +230,7 @@ SHOW_ERROR = FormatterCase(
 
 HISTORY_SHOW_CASES = [
     pytest.param(COMPLETED_RUN, id="completed_run"),
+    pytest.param(KEPT_WORKTREE_RUN, id="kept_worktree_run"),
     pytest.param(FAILED_RUN_WITH_ERROR, id="failed_run_with_error"),
     pytest.param(PAUSED_RUN_WITH_ERROR, id="paused_run_with_error"),
     pytest.param(RUN_WITH_LOGS, id="run_with_logs"),
@@ -223,6 +241,32 @@ HISTORY_SHOW_CASES = [
 ]
 
 HISTORY_SHOW_PAYLOAD_CASES = [
+    pytest.param(
+        KEPT_WORKTREE_RUN,
+        {
+            "status": "ok",
+            "session_id": "sess-12345678",
+            "session": {
+                "session_id": "sess-12345678",
+                "blueprint_name": "deploy-blueprint",
+                "status": "failed",
+                "branch_name": "feature/test",
+                "started_at": "2026-08-19 01:00:00",
+                "completed_at": "2026-08-19 01:00:10",
+                "duration_seconds": 10.0,
+                "error_message": None,
+            },
+            "log_files": [],
+            "log_snippet": [],
+            "steps": [],
+            "worktree_kept": True,
+            "worktree_path": ".dovo/worktrees/sess-12345678",
+            "errors": [],
+            "warnings": [],
+            "fixes": [],
+        },
+        id="kept_worktree_run",
+    ),
     pytest.param(
         COMPLETED_RUN,
         {
@@ -241,6 +285,8 @@ HISTORY_SHOW_PAYLOAD_CASES = [
             "log_files": [],
             "log_snippet": [],
             "steps": [],
+            "worktree_kept": None,
+            "worktree_path": None,
             "errors": [],
             "warnings": [],
             "fixes": [],
@@ -265,6 +311,8 @@ HISTORY_SHOW_PAYLOAD_CASES = [
             "log_files": [],
             "log_snippet": [],
             "steps": [],
+            "worktree_kept": None,
+            "worktree_path": None,
             "errors": [],
             "warnings": [],
             "fixes": [],
@@ -289,6 +337,8 @@ HISTORY_SHOW_PAYLOAD_CASES = [
             "log_files": [],
             "log_snippet": [],
             "steps": [],
+            "worktree_kept": None,
+            "worktree_path": None,
             "errors": [],
             "warnings": [],
             "fixes": [],
@@ -316,6 +366,8 @@ HISTORY_SHOW_PAYLOAD_CASES = [
             ],
             "log_snippet": ["[2026-08-19T01:00:01+00:00] step_start step_id=build"],
             "steps": [],
+            "worktree_kept": None,
+            "worktree_path": None,
             "errors": [],
             "warnings": [],
             "fixes": [],
@@ -406,6 +458,8 @@ HISTORY_SHOW_PAYLOAD_CASES = [
                     "iterations": None,
                 },
             ],
+            "worktree_kept": None,
+            "worktree_path": None,
             "errors": [],
             "warnings": [],
             "fixes": [],
@@ -430,6 +484,8 @@ HISTORY_SHOW_PAYLOAD_CASES = [
             "log_files": [],
             "log_snippet": [],
             "steps": [],
+            "worktree_kept": None,
+            "worktree_path": None,
             "errors": [],
             "warnings": ["No step data recorded for this session."],
             "fixes": [],
@@ -445,6 +501,8 @@ HISTORY_SHOW_PAYLOAD_CASES = [
             "log_files": [],
             "log_snippet": [],
             "steps": [],
+            "worktree_kept": None,
+            "worktree_path": None,
             "errors": [],
             "warnings": [],
             "fixes": [],
@@ -460,6 +518,8 @@ HISTORY_SHOW_PAYLOAD_CASES = [
             "log_files": [],
             "log_snippet": [],
             "steps": [],
+            "worktree_kept": None,
+            "worktree_path": None,
             "errors": ["Database locked"],
             "warnings": [],
             "fixes": [],

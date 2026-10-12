@@ -38,11 +38,25 @@ CLEANUP_CLEANED = FormatterCase(
     render_expectations=[],
 )
 
+CLEANUP_KEPT_WITH_FIX = FormatterCase(
+    data=WorktreeLifecycleEvent(
+        action="cleanup", path=".dovo/worktrees/s1", kept=True, worktree_id="s1", branch="dovo/s1"
+    ),
+    view=WorktreeLifecycleEvent(
+        action="cleanup", path=".dovo/worktrees/s1", kept=True, worktree_id="s1", branch="dovo/s1"
+    ),
+    render_expectations=[
+        "Worktree: Kept at .dovo/worktrees/s1 (branch dovo/s1)",
+        "Fix: inspect it with `git -C .dovo/worktrees/s1 status`, remove it with `dovo worktree delete s1`.",
+    ],
+)
+
 WORKTREE_CASES = [
     pytest.param(READY_ACTIVE, id="ready_active"),
     pytest.param(READY_IN_PLACE, id="ready_in_place"),
     pytest.param(CLEANUP_RETAINED, id="cleanup_retained"),
     pytest.param(CLEANUP_CLEANED, id="cleanup_cleaned"),
+    pytest.param(CLEANUP_KEPT_WITH_FIX, id="cleanup_kept_with_fix"),
 ]
 
 WORKTREE_PAYLOAD_CASES = [
@@ -53,6 +67,8 @@ WORKTREE_PAYLOAD_CASES = [
             "path": "/tmp/worktree1",
             "active": True,
             "kept": None,
+            "worktree_id": None,
+            "branch": None,
         },
         id="ready_active",
     ),
@@ -63,6 +79,8 @@ WORKTREE_PAYLOAD_CASES = [
             "path": "",
             "active": False,
             "kept": None,
+            "worktree_id": None,
+            "branch": None,
         },
         id="ready_in_place",
     ),
@@ -73,6 +91,8 @@ WORKTREE_PAYLOAD_CASES = [
             "path": "/tmp/worktree2",
             "active": None,
             "kept": True,
+            "worktree_id": None,
+            "branch": None,
         },
         id="cleanup_retained",
     ),
@@ -83,8 +103,22 @@ WORKTREE_PAYLOAD_CASES = [
             "path": "",
             "active": None,
             "kept": False,
+            "worktree_id": None,
+            "branch": None,
         },
         id="cleanup_cleaned",
+    ),
+    pytest.param(
+        CLEANUP_KEPT_WITH_FIX,
+        {
+            "action": "cleanup",
+            "path": ".dovo/worktrees/s1",
+            "active": None,
+            "kept": True,
+            "worktree_id": "s1",
+            "branch": "dovo/s1",
+        },
+        id="cleanup_kept_with_fix",
     ),
 ]
 
@@ -107,3 +141,11 @@ class WorktreeLifecycleFormatterTests:
     ) -> None:
         """Verify that all non-null semantic view model values reach the Rich renderable output."""
         assert_rich_render_shows_every_view_value(WorktreeLifecycleFormatter, case.data, case.render_expectations)
+
+    def test_cleanup_kept_without_id_and_branch_renders_retained_without_fix(self) -> None:
+        """[tier-2/unit] WorktreeLifecycleFormatter.to_rich: kept=True with worktree_id=None renders exactly "Worktree: Retained (<path>)" and no "Fix:" line."""
+        event = WorktreeLifecycleEvent(action="cleanup", path="/tmp/worktree2", kept=True)
+
+        rendered = WorktreeLifecycleFormatter().to_rich(event)
+
+        assert rendered.plain == "Worktree: Retained (/tmp/worktree2)"

@@ -155,6 +155,7 @@ class SessionRecord(SQLModel, table=True):
     commit_sha: str | None = Field(default=None)
     use_worktree: bool = Field(default=True)
     keep: bool = Field(default=False)
+    discard: bool = Field(default=False)
     agent: str | None = Field(default=None)
     inputs_json: str | None = Field(default=None)
     auto_apply: bool = Field(default=False)

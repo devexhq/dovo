@@ -42,7 +42,7 @@ When you execute a blueprint, Dovo normally creates an isolated **Git worktree**
 ### Why Worktrees?
 - **Zero Pollution**: Your active working directory and branch remain untouched while steps run.
 - **Safety**: Broken code, test failures, or unintended edits are contained within the worktree.
-- **Automatic Lifecycle**: Unless `--keep` is specified or execution is paused, the worktree and branch are automatically cleaned up when the run finishes.
+- **Retention**: A completed or cancelled run removes its worktree and branch. A failed or paused run keeps them, and `--keep` / `--discard` override the rule; see [worktree retention](../cli/run.md#worktree-retention).
 
 If you ever want to run a blueprint directly in your current working directory without worktree isolation (e.g. in CI or a container), use the `--no-worktree` flag:
 

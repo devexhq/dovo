@@ -13,7 +13,8 @@ dovo run <name> [OPTIONS] [-- <input-overrides>]
 | Flag | Description |
 | --- | --- |
 | `--no-worktree` | Run execution in-place in the working tree without creating a Git worktree. Agent steps are rejected under it, because they require a worktree. |
-| `--keep` | Retain the worktree after execution. Each run gets its own worktree at `.dovo/worktrees/<session_id>/` on branch `dovo/<session_id>`, so repeated `--keep` runs of one blueprint do not collide. |
+| `--keep` | Keep the worktree whatever the run status. Each run gets its own worktree at `.dovo/worktrees/<session_id>/` on branch `dovo/<session_id>`, so repeated `--keep` runs of one blueprint do not collide. |
+| `--discard` | Remove the worktree whatever the run status, including after a failed run. Cannot be combined with `--keep`: the pair exits `2` with a usage error before any session is created. |
 | `--auto-apply` | Automatically apply worktree changes to the main workspace on successful completion. |
 | `--agent <name>` | Use this agent provider for the run. Model, endpoint, temperature and max tokens still come from config. An unknown name fails agent steps with `AGENT_PROVIDER_UNSUPPORTED`; command and script steps are unaffected. |
 | `--session-id <id>` | Explicit session identifier. |
@@ -24,6 +25,27 @@ dovo run <name> [OPTIONS] [-- <input-overrides>]
 | `--display <ansi\|live>` | Display format (`ansi` or `live`). Defaults to `ansi`. |
 
 Trailing CLI arguments (after options) are forwarded to declared blueprint inputs.
+
+### Worktree retention
+
+When the run ends, the worktree is kept or removed by the run status and the flags:
+
+- `completed` and `cancelled` runs remove the worktree by default; `--keep` keeps it.
+- `failed` runs keep the worktree by default, with or without `--keep`.
+- `--discard` removes the worktree whatever the status.
+
+A `paused` run always keeps its worktree so `dovo resume` can reopen it, and so does a run whose `--auto-apply` hit a conflict, because the worktree holds the only copy of the work that could not be applied. `--discard` does not override either.
+
+A kept failed worktree prints where it is and how to inspect or remove it:
+
+```text
+Worktree: Kept at .dovo/worktrees/blueprint_a3cb925b (branch dovo/blueprint_a3cb925b)
+Fix: inspect it with `git -C .dovo/worktrees/blueprint_a3cb925b status`, remove it with `dovo worktree delete blueprint_a3cb925b`.
+```
+
+Kept worktrees count toward `worktree.max_active_worktrees`; when the limit is reached a new run fails with a `Fix:` naming `dovo worktree delete`. Pass `--discard` in CI and scripts to restore the old cleanup of failed runs. If removal fails, the run status is unchanged and a `Failed to remove worktree '<path>': <detail>` warning is added.
+
+The `path` of a `cleanup` event (including with `--format json`) is relative to the working directory when the worktree is inside it and absolute otherwise; the `ready` event keeps the absolute path.
 
 ### Behavior
 

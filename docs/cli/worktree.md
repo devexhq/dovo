@@ -44,6 +44,8 @@ Remove an isolated worktree when work is complete:
 dovo worktree delete <worktree-id> [--force] [--format terminal|json]
 ```
 
+This is also how a failed run's kept worktree is removed (see [`dovo run`](run.md#worktree-retention)). Kept worktrees count toward `worktree.max_active_worktrees`, and `dovo worktree prune` does not remove them.
+
 ### `dovo worktree apply`
 
 Apply changes from an isolated worktree back into the main workspace:

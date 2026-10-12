@@ -175,6 +175,8 @@ class HistoryShowResult(BaseResult):
     log_files: list[str] = Field(default_factory=list)
     log_snippet: list[str] = Field(default_factory=list)
     steps: list[StepRunSummary] = Field(default_factory=list)
+    worktree_kept: bool | None = None
+    worktree_path: Path | None = None
 
     @property
     def ok(self) -> bool:

@@ -12,6 +12,7 @@ from typer.testing import CliRunner
 from dovo.cli import app
 from dovo.common.filesystem import Filesystem
 from dovo.common.filesystem.models import WorkspacePaths
+from dovo.common.utils import display_path
 from dovo.core.db import DovoDb, SessionStatus
 from tests.harness.sessions import seed_failed_session
 from tests.harness.workspace_paths import initialized_workspace_paths
@@ -77,7 +78,11 @@ class SessionShowCliIntegrationTests:
             project_id=_paths_for(session_workspace).project_id,
         )
         db.sessions.create(
-            session_id="session-known", blueprint_name="task-a", blueprint_key="task-a", status=SessionStatus.COMPLETED
+            session_id="session-known",
+            blueprint_name="task-a",
+            blueprint_key="task-a",
+            status=SessionStatus.COMPLETED,
+            use_worktree=False,
         )
 
         result = cli_runner.invoke(
@@ -107,10 +112,47 @@ class SessionShowCliIntegrationTests:
             "log_files": [],
             "log_snippet": [],
             "steps": [],
+            "worktree_kept": None,
+            "worktree_path": None,
             "errors": [],
             "warnings": ["No step data recorded for this session."],
             "fixes": [],
         }
+
+    def test_session_show_cli_kept_worktree_prints_kept_line_and_json_fields(
+        self, cli_runner: CliRunner, session_workspace: Path
+    ) -> None:
+        """[tier-3/integration] dovo session show <id>: a failed session with worktree_kept True prints "Worktree: kept (<path>)", and --format json carries worktree_kept == true and worktree_path == "<path>"."""
+        worktree_path = display_path(_paths_for(session_workspace).worktree_dir("wt-show"), Path.cwd())
+        sessions = _db_for(session_workspace).sessions
+        sessions.create(session_id="wt-show", blueprint_name="task-a", blueprint_key="task-a")
+        sessions.update_status("wt-show", SessionStatus.FAILED, worktree_id="wt-show", worktree_kept=True)
+
+        terminal = cli_runner.invoke(app, ["-p", str(session_workspace), "session", "show", "wt-show"])
+        wire = cli_runner.invoke(app, ["-p", str(session_workspace), "session", "show", "wt-show", "--format", "json"])
+
+        assert terminal.exit_code == 0
+        assert re.search(rf"Worktree:\s+kept \({re.escape(worktree_path)}\)", terminal.stdout)
+        payload = json.loads(wire.stdout)["payload"]
+        assert payload["worktree_kept"] is True
+        assert payload["worktree_path"] == worktree_path
+
+    def test_session_show_cli_removed_worktree_prints_removed_line(
+        self, cli_runner: CliRunner, session_workspace: Path
+    ) -> None:
+        """[tier-3/integration] dovo session show <id>: a completed worktree-backed session with worktree_kept False prints "Worktree: removed", and --format json carries worktree_kept == false and worktree_path == null."""
+        sessions = _db_for(session_workspace).sessions
+        sessions.create(session_id="wt-show", blueprint_name="task-a", blueprint_key="task-a")
+        sessions.update_status("wt-show", SessionStatus.COMPLETED, worktree_id="wt-show", worktree_kept=False)
+
+        terminal = cli_runner.invoke(app, ["-p", str(session_workspace), "session", "show", "wt-show"])
+        wire = cli_runner.invoke(app, ["-p", str(session_workspace), "session", "show", "wt-show", "--format", "json"])
+
+        assert terminal.exit_code == 0
+        assert re.search(r"Worktree:\s+removed", terminal.stdout)
+        payload = json.loads(wire.stdout)["payload"]
+        assert payload["worktree_kept"] is False
+        assert payload["worktree_path"] is None
 
     def test_session_show_cli_failed_session_prints_steps_table(
         self, cli_runner: CliRunner, session_workspace: Path
@@ -172,6 +214,8 @@ class SessionShowCliIntegrationTests:
             "log_files",
             "log_snippet",
             "steps",
+            "worktree_kept",
+            "worktree_path",
             "errors",
             "warnings",
             "fixes",

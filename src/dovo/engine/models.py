@@ -44,6 +44,7 @@ class RunRequest:
     cli_args: list[str] | None = None
     use_worktree: bool | None = None
     keep: bool = False
+    discard: bool = False
     agent: str | None = None
     session_id: str | None = None
     observer: RunObserver | None = None
@@ -62,6 +63,7 @@ class RunStartConfig:
     commit_sha: str | None
     use_worktree: bool
     keep: bool
+    discard: bool
     agent: str | None
     inputs: dict[str, str | int | bool]
     auto_apply: bool
@@ -166,6 +168,7 @@ class RunSettings:
     cwd: Path
     use_worktree: bool = True
     keep: bool = False
+    discard: bool = False
     agent: ResolvedAgentSettings | None = None
     observer: RunObserver | None = None
     inputs: dict[str, str | int | bool] | None = None
@@ -245,8 +248,10 @@ class RunObserver(Protocol):
         """Called when a loop block finishes."""
         ...
 
-    def on_worktree_cleanup(self, kept: bool, path: Path) -> None:
-        """Called after worktree cleanup/keep decision is applied."""
+    def on_worktree_cleanup(
+        self, kept: bool, path: Path, worktree_id: str | None = None, branch: str | None = None
+    ) -> None:
+        """Called after worktree cleanup/keep decision is applied; worktree_id and branch are set when a run's worktree is kept for inspection."""
         ...
 
     def on_run_started(self, steps: Sequence[StepDefinition | LoopStepBlock]) -> None:

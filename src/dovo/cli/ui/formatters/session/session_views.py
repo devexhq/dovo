@@ -55,6 +55,8 @@ class SessionShowView(BaseModel):
     log_files: list[str] = Field(default_factory=list)
     log_snippet: list[str] = Field(default_factory=list)
     steps: list[StepRunSummary] = Field(default_factory=list)
+    worktree_kept: bool | None = None
+    worktree_path: str | None = None
     errors: list[str] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
     fixes: list[str] = Field(default_factory=list)

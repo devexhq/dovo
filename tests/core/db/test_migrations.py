@@ -12,6 +12,7 @@ from alembic.config import Config
 import dovo.core.db.migrations as migrations
 from dovo.core.db.connection import sqlite_url
 from dovo.core.db.migrations import (
+    ARTIFACT_REVISIONS_REVISION,
     INITIAL_SCHEMA_REVISION,
     LATEST_SCHEMA_REVISION,
     SESSIONS_RENAME_REVISION,
@@ -87,7 +88,7 @@ class SessionsMigrationTests:
     """[tier-1/integration] 0002_rename_runs_to_sessions: table, index, and constraint rename."""
 
     def test_upgrade_from_initial_schema_preserves_rows_and_column_definitions(self, tmp_path: Path) -> None:
-        """[tier-1/integration] init_database: upgrading a 0001_initial_schema database holding two runs rows leaves SELECT * FROM sessions ORDER BY id equal to the pre-upgrade SELECT * FROM runs ORDER BY id, PRAGMA table_info(sessions) equal to the pre-upgrade PRAGMA table_info(runs), a unique index on session_id, and SessionsRepository.list() returning both session_ids."""
+        """[tier-1/integration] init_database: upgrading a 0001_initial_schema database holding two runs rows leaves SELECT * FROM sessions ORDER BY id equal to the pre-upgrade SELECT * FROM runs ORDER BY id plus the later discard column, PRAGMA table_info(sessions) equal to the pre-upgrade PRAGMA table_info(runs) plus the later discard column, a unique index on session_id, and SessionsRepository.list() returning both session_ids."""
         database_file = tmp_path / "dovo.db"
         command.upgrade(_alembic_config(database_file), INITIAL_SCHEMA_REVISION)
         connection = sqlite3.connect(database_file)
@@ -104,8 +105,10 @@ class SessionsMigrationTests:
 
         connection = sqlite3.connect(database_file)
         try:
-            assert connection.execute("SELECT * FROM sessions ORDER BY id").fetchall() == rows_before
-            assert connection.execute("PRAGMA table_info(sessions)").fetchall() == columns_before
+            assert [row[:-1] for row in connection.execute("SELECT * FROM sessions ORDER BY id")] == rows_before
+            columns_after = connection.execute("PRAGMA table_info(sessions)").fetchall()
+            assert [column[1] for column in columns_after][-1] == "discard"
+            assert columns_after[:-1] == columns_before
             unique_columns = [
                 connection.execute(f"PRAGMA index_info({index[1]})").fetchall()[0][2]
                 for index in connection.execute("PRAGMA index_list(sessions)").fetchall()
@@ -294,3 +297,65 @@ class ArtifactRevisionsMigrationTests:
         finally:
             connection.close()
         assert kept == [("dist", "/artifacts/wf_a/dist/1"), ("plan", "/artifacts/wf_a/plan/2")]
+
+
+def _insert_session_row(connection: sqlite3.Connection, session_id: str) -> None:
+    """Insert one sessions row through raw SQL, leaving every optional column at its schema default."""
+    connection.execute(
+        "INSERT INTO sessions (project_id, session_id, blueprint_key, blueprint_name, status) "
+        "VALUES ('proj', ?, 'bp', 'Blueprint', 'completed')",
+        (session_id,),
+    )
+
+
+class SessionDiscardMigrationTests:
+    """[tier-1/integration] 0004_session_discard: the sessions.discard column."""
+
+    def test_upgrade_adds_discard_column_defaulting_existing_rows_false(self, tmp_path: Path) -> None:
+        """[tier-1/integration] upgrade 0003 -> 0004: sessions gains column discard and every pre-existing row reads discard == 0 with its other columns unchanged."""
+        database_file = tmp_path / "dovo.db"
+        command.upgrade(_alembic_config(database_file), ARTIFACT_REVISIONS_REVISION)
+        connection = sqlite3.connect(database_file)
+        try:
+            _insert_session_row(connection, "wf_a")
+            _insert_session_row(connection, "wf_b")
+            connection.commit()
+            rows_before = connection.execute(
+                "SELECT id, project_id, session_id, blueprint_key, blueprint_name, status, keep FROM sessions ORDER BY id"
+            ).fetchall()
+        finally:
+            connection.close()
+
+        init_database(database_file)
+
+        connection = sqlite3.connect(database_file)
+        try:
+            rows_after = connection.execute(
+                "SELECT id, project_id, session_id, blueprint_key, blueprint_name, status, keep FROM sessions ORDER BY id"
+            ).fetchall()
+            discards = connection.execute("SELECT discard FROM sessions ORDER BY id").fetchall()
+        finally:
+            connection.close()
+        assert rows_after == rows_before
+        assert discards == [(0,), (0,)]
+
+    def test_downgrade_drops_discard_column_and_keeps_rows(self, tmp_path: Path) -> None:
+        """[tier-1/integration] downgrade 0004 -> 0003: sessions has no discard column and rows written after the upgrade are still present."""
+        database_file = init_database(tmp_path / "dovo.db")
+        connection = sqlite3.connect(database_file)
+        try:
+            _insert_session_row(connection, "wf_a")
+            connection.commit()
+        finally:
+            connection.close()
+
+        command.downgrade(_alembic_config(database_file), ARTIFACT_REVISIONS_REVISION)
+
+        connection = sqlite3.connect(database_file)
+        try:
+            columns = {row[1] for row in connection.execute("PRAGMA table_info(sessions)")}
+            session_ids = connection.execute("SELECT session_id FROM sessions").fetchall()
+        finally:
+            connection.close()
+        assert "discard" not in columns
+        assert session_ids == [("wf_a",)]

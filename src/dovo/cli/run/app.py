@@ -51,7 +51,12 @@ def run_callback(
     keep: bool = typer.Option(
         False,
         "--keep",
-        help="Retain worktree after execution.",
+        help="Keep the worktree whatever the run status.",
+    ),
+    discard: bool = typer.Option(
+        False,
+        "--discard",
+        help="Remove the worktree whatever the run status, including after a failed run.",
     ),
     agent: str | None = typer.Option(
         None,
@@ -92,12 +97,16 @@ def run_callback(
     ] = DisplayFormatOptions.ANSI,
 ) -> None:
     """Execute a blueprint."""
+    if keep and discard:
+        raise typer.BadParameter("--keep and --discard are mutually exclusive.")
+
     context: CliContext = ctx.obj["context"]
     result = run_command(
         context,
         name=name,
         no_worktree=no_worktree,
         keep=keep,
+        discard=discard,
         agent=agent,
         session_id=session_id,
         no_tty=no_tty,

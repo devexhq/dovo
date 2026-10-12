@@ -12,11 +12,21 @@ from dovo.core.artifacts.store import ArtifactStore
 from dovo.core.config import ConfigLoadError
 from dovo.core.db import SessionStatus, WorktreesRepository
 from dovo.core.git.runner import GitRunner
-from dovo.core.worktree import Worktree, WorktreeApplyStrategy, WorktreeSession
+from dovo.core.worktree import Worktree, WorktreeApplyStrategy, WorktreeCreateResult, WorktreeSession
 from dovo.engine.models import RunSettings
 from dovo.engine.notify import safe_notify
 from dovo.engine.storage_bridge import create_storage_bridge, remove_storage_bridge
 from dovo.engine.writer import get_session_dir, write_session_diff
+
+
+def _creation_failure_message(create_result: WorktreeCreateResult) -> str:
+    """Return `Git worktree creation failed: <detail>` plus a `Fix:` line built from the result's fixes when present."""
+    detail = create_result.errors[0] if create_result.errors else "Worktree creation failed."
+    message = f"Git worktree creation failed: {detail}"
+    if create_result.fixes:
+        message += f"\nFix: {' '.join(create_result.fixes)}"
+
+    return message
 
 
 @dataclass(frozen=True)
@@ -77,8 +87,7 @@ class Workspace:
         except ConfigLoadError as exc:
             return self.context.cwd.resolve(), None, None, f"Git worktree creation failed: {exc}"
         if not create_result.ok or create_result.session is None:
-            detail = create_result.errors[0] if create_result.errors else "Worktree creation failed."
-            return self.context.cwd.resolve(), None, None, f"Git worktree creation failed: {detail}"
+            return self.context.cwd.resolve(), None, None, _creation_failure_message(create_result)
 
         session = create_result.session
         target_dir = session.worktree_path
@@ -108,35 +117,57 @@ class Workspace:
         safe_notify(self.context.observer, "on_worktree_cleanup", kept=False, path=session.worktree_path)
         return f"Worktree storage bridge failed: {link_error}"
 
-    def _discard_worktree(self, manager: Worktree, session: WorktreeSession) -> None:
-        """Best-effort Worktree.cleanup that never raises."""
+    def _retains(self, status: SessionStatus) -> bool:
+        """Return True when the worktree outlives the run: --discard removes, --keep keeps, otherwise only FAILED keeps."""
+        if self.context.discard:
+            return False
+
+        return self.context.keep or status == SessionStatus.FAILED
+
+    def _discard_worktree(self, manager: Worktree, session: WorktreeSession) -> str | None:
+        """Remove the worktree and return `Failed to remove worktree '<path>': <detail>` when removal raised or reported a problem."""
         try:
-            manager.cleanup(session)
-        except Exception:
-            # Best-effort cleanup: worktree removal is independent of run outcome.
-            pass
+            problems = manager.cleanup(session)
+        except Exception as exc:
+            return f"Failed to remove worktree '{session.worktree_path}': {exc}"
+
+        if problems:
+            return f"Failed to remove worktree '{session.worktree_path}': {problems[0]}"
+
+        return None
 
     def cleanup(
         self,
         manager: Worktree | None,
         session: WorktreeSession | None,
         target_dir: Path,
+        status: SessionStatus,
         warnings: list[str],
     ) -> bool:
-        """Clean up worktree unless keep is requested. Returns whether it was kept."""
+        """Keep or remove the worktree per `_retains(status)`, appending a removal warning on failure; return whether it was kept."""
         if manager is None or session is None:
             safe_notify(self.context.observer, "on_worktree_cleanup", kept=False, path=target_dir)
             return False
 
-        if self.context.keep:
-            safe_notify(self.context.observer, "on_worktree_cleanup", kept=True, path=session.worktree_path)
+        if self._retains(status):
+            safe_notify(
+                self.context.observer,
+                "on_worktree_cleanup",
+                kept=True,
+                path=session.worktree_path,
+                worktree_id=session.session_id,
+                branch=session.target_branch,
+            )
             return True
 
         unlink_warning = remove_storage_bridge(session.worktree_path)
         if unlink_warning is not None:
             warnings.append(unlink_warning)
 
-        self._discard_worktree(manager, session)
+        removal_warning = self._discard_worktree(manager, session)
+        if removal_warning is not None:
+            warnings.append(removal_warning)
+
         safe_notify(self.context.observer, "on_worktree_cleanup", kept=False, path=session.worktree_path)
         return False
 
@@ -196,13 +227,16 @@ class Workspace:
         apply_failed: bool,
         warnings: list[str],
     ) -> bool:
-        """Clean up or keep the worktree based on run status."""
+        """Clean up or keep the worktree based on run status.
+
+        Paused and apply-failed runs keep the worktree even with --discard.
+        """
         if status == SessionStatus.PAUSED or apply_failed:
             kept_path = session.worktree_path if session is not None else target_dir
             safe_notify(self.context.observer, "on_worktree_cleanup", kept=True, path=kept_path)
             return True
 
-        return self.cleanup(manager, session, target_dir, warnings)
+        return self.cleanup(manager, session, target_dir, status, warnings)
 
     def prepare_session_tmp_dir(self, warnings: list[str]) -> Path | None:
         """Resolve and create the session scratch directory tree, or warn and return None."""

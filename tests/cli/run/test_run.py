@@ -21,6 +21,7 @@ from dovo.core.worktree import Worktree
 from dovo.engine import SessionStateStore
 from dovo.engine.writer import get_session_dir
 from tests.harness import FakeAgentRunner
+from tests.harness.builders import WorkspaceBuilder
 from tests.harness.catalog import write_runnable_blueprint, write_runnable_step
 from tests.harness.workspace_paths import initialized_workspace_paths
 
@@ -341,6 +342,95 @@ def _set_agent_config(workspace: Path, **agent: object) -> None:
     data = json.loads(config_path.read_text(encoding="utf-8"))
     data.setdefault("agent", {}).update(agent)
     config_path.write_text(json.dumps(data), encoding="utf-8")
+
+
+class RunCliRetentionIntegrationTests:
+    """Typer runner integration tests for worktree retention flags on dovo run."""
+
+    def test_run_cli_keep_and_discard_together_exits_two(self, cli_runner: CliRunner, run_workspace: Path) -> None:
+        """[tier-3/integration] dovo run keep-task --keep --discard: exit 2, output contains "mutually exclusive", and no session row exists."""
+        write_runnable_blueprint(run_workspace, key="keep-task", steps=[{"id": "s1", "run": "true"}])
+        paths = _paths_for(run_workspace)
+
+        result = cli_runner.invoke(app, ["-p", str(run_workspace), "run", "keep-task", "--keep", "--discard"])
+
+        assert result.exit_code == 2
+        assert "mutually exclusive" in result.output
+        db = DovoDb(database_file=paths.database_file, project_id=paths.project_id)
+        assert db.sessions.list() == []
+
+    def test_run_cli_failed_run_without_flags_keeps_worktree_exits_one(
+        self, cli_runner: CliRunner, run_workspace: Path
+    ) -> None:
+        """[tier-3/integration] dovo run failing-task: exit 1, .dovo/worktrees/<session_id> is a directory, branch dovo/<session_id> exists, and the session row has worktree_kept == True."""
+        write_runnable_blueprint(run_workspace, key="failing-task", steps=[{"id": "s1", "run": "exit 1"}])
+        paths = _paths_for(run_workspace)
+
+        result = cli_runner.invoke(app, ["-p", str(run_workspace), "run", "failing-task"])
+
+        assert result.exit_code == 1
+        row = DovoDb(database_file=paths.database_file, project_id=paths.project_id).sessions.list(limit=1)[0]
+        assert paths.worktree_dir(row.session_id).is_dir()
+        assert f"dovo/{row.session_id}" in GitRunner.list_branches(run_workspace)
+        assert row.worktree_kept is True
+
+    def test_run_cli_failed_run_with_discard_removes_worktree_exits_one(
+        self, cli_runner: CliRunner, run_workspace: Path
+    ) -> None:
+        """[tier-3/integration] dovo run failing-task --discard: exit 1, .dovo/worktrees/<session_id> does not exist, and the session row has worktree_kept == False and discard == True."""
+        write_runnable_blueprint(run_workspace, key="failing-task", steps=[{"id": "s1", "run": "exit 1"}])
+        paths = _paths_for(run_workspace)
+
+        result = cli_runner.invoke(app, ["-p", str(run_workspace), "run", "failing-task", "--discard"])
+
+        assert result.exit_code == 1
+        row = DovoDb(database_file=paths.database_file, project_id=paths.project_id).sessions.list(limit=1)[0]
+        assert not paths.worktree_dir(row.session_id).exists()
+        assert row.worktree_kept is False
+        assert row.discard is True
+
+    def test_run_cli_failed_run_prints_kept_summary_and_fix(self, cli_runner: CliRunner, run_workspace: Path) -> None:
+        """[tier-3/integration] dovo run failing-task: stdout contains "Worktree: Kept at " ending in ".dovo/worktrees/<session_id> (branch dovo/<session_id>)" and "remove it with `dovo worktree delete <session_id>`"."""
+        write_runnable_blueprint(run_workspace, key="failing-task", steps=[{"id": "s1", "run": "exit 1"}])
+        paths = _paths_for(run_workspace)
+
+        result = cli_runner.invoke(app, ["-p", str(run_workspace), "run", "failing-task"])
+
+        session_id = (
+            DovoDb(database_file=paths.database_file, project_id=paths.project_id).sessions.list(limit=1)[0].session_id
+        )
+        output = " ".join(result.stdout.split())
+        assert result.exit_code == 1
+        assert f".dovo/worktrees/{session_id} (branch dovo/{session_id})" in output
+        assert "Worktree: Kept at " in output
+        assert f"remove it with `dovo worktree delete {session_id}`" in output
+
+    def test_run_cli_second_run_after_kept_failure_hits_capacity_with_fix(
+        self, cli_runner: CliRunner, tmp_path: Path
+    ) -> None:
+        """[tier-3/integration] dovo run failing-task twice with worktree.max_active_worktrees == 1: the second run exits 1 and its output contains "Maximum active worktrees reached (1/1)." and "dovo worktree delete <worktree-id>"."""
+        workspace = (
+            WorkspaceBuilder(tmp_path / "capacity-workspace")
+            .with_git()
+            .with_database()
+            .with_config(
+                data={
+                    "version": 1,
+                    "project": {"name": "capacity"},
+                    "worktree": {"base_ref": "HEAD", "max_active_worktrees": 1, "default_timeout_seconds": 900},
+                }
+            )
+            .build()
+        )
+        write_runnable_blueprint(workspace, key="failing-task", steps=[{"id": "s1", "run": "exit 1"}])
+        first = cli_runner.invoke(app, ["-p", str(workspace), "run", "failing-task"])
+        assert first.exit_code == 1
+
+        second = cli_runner.invoke(app, ["-p", str(workspace), "run", "failing-task"])
+
+        assert second.exit_code == 1
+        assert "Maximum active worktrees reached (1/1)." in second.stdout
+        assert "dovo worktree delete <worktree-id>" in second.stdout
 
 
 class RunEnvFlagsCliIntegrationTests:

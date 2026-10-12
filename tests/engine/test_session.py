@@ -97,7 +97,9 @@ class _LifecycleObserver(NoOpRunObserver):
     def on_step_done(self, idx: int, total: int, step: StepDefinition, result: StepResult) -> None:
         self.events.append(("step_done", idx, total, result.step_id))
 
-    def on_worktree_cleanup(self, kept: bool, path: Path) -> None:
+    def on_worktree_cleanup(
+        self, kept: bool, path: Path, worktree_id: str | None = None, branch: str | None = None
+    ) -> None:
         self.events.append(("worktree_cleanup", kept, path))
 
 
@@ -137,7 +139,9 @@ class _SequenceObserver(NoOpRunObserver):
     def on_loop_done(self, loop_id: str, status: str, total_iterations: int) -> None:
         self.calls.append(("loop_done", status, total_iterations))
 
-    def on_worktree_cleanup(self, kept: bool, path: Path) -> None:
+    def on_worktree_cleanup(
+        self, kept: bool, path: Path, worktree_id: str | None = None, branch: str | None = None
+    ) -> None:
         self.calls.append(("worktree_cleanup",))
 
     def on_run_completed(self, outcome: RunOutcome) -> None:
@@ -331,6 +335,42 @@ class DriveRunMissingRowTests:
         assert outcome.worktree_path == engine_paths.root_dir
 
 
+class DriveRunRetentionTests:
+    """[tier-1/integration] drive_run: failed runs keep their worktree unless the row says discard."""
+
+    def test_failed_run_keeps_worktree_and_records_outcome(
+        self, git_paths: WorkspacePaths, git_runs: SessionsRepository
+    ) -> None:
+        """[tier-1/integration] drive_run: a worktree-backed run whose step exits 1 returns status FAILED, worktree_kept True, worktree_id == session id, and the worktree directory still on disk."""
+        seed_new_session(git_paths, git_runs, session_id="failed-keep", steps=[_step("a", "exit 1")], use_worktree=True)
+
+        outcome = _drive(git_paths, git_runs, "failed-keep")
+
+        assert outcome.status == SessionStatus.FAILED
+        assert outcome.worktree_kept is True
+        assert outcome.worktree_id == "failed-keep"
+        assert outcome.worktree_path.is_dir()
+
+    def test_discard_row_removes_failed_run_worktree(
+        self, git_paths: WorkspacePaths, git_runs: SessionsRepository
+    ) -> None:
+        """[tier-1/integration] drive_run: row discard=True with a failing worktree-backed run returns worktree_kept False and the worktree directory removed."""
+        seed_new_session(
+            git_paths,
+            git_runs,
+            session_id="failed-discard",
+            steps=[_step("a", "exit 1")],
+            use_worktree=True,
+            discard=True,
+        )
+
+        outcome = _drive(git_paths, git_runs, "failed-discard")
+
+        assert outcome.status == SessionStatus.FAILED
+        assert outcome.worktree_kept is False
+        assert not outcome.worktree_path.exists()
+
+
 class DriveRunCleanupTests:
     """[tier-1/integration] drive_run: cleanup, scratch directories, logs, auto-apply, and config plumbing."""
 
@@ -424,18 +464,28 @@ class DriveRunCleanupTests:
     def test_cleanup_failure_after_step_failure_still_reports_failed(
         self, git_paths: WorkspacePaths, git_runs: SessionsRepository, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """[tier-1/integration] drive_run: Worktree.cleanup raising after an aborted step still returns status FAILED."""
+        """[tier-1/integration] drive_run: a discard=True run whose Worktree.cleanup raises after an aborted step still returns status FAILED, worktree_kept False, and the removal failure as a warning."""
 
         def exploding_cleanup(self: Worktree, session: object, **kwargs: object) -> list[str]:
             raise RuntimeError("Cleanup filesystem removal failed")
 
         monkeypatch.setattr(Worktree, "cleanup", exploding_cleanup)
-        seed_new_session(git_paths, git_runs, session_id="cleanup", steps=[_step("fail", "exit 1")], use_worktree=True)
+        seed_new_session(
+            git_paths,
+            git_runs,
+            session_id="cleanup",
+            steps=[_step("fail", "exit 1")],
+            use_worktree=True,
+            discard=True,
+        )
 
         outcome = _drive(git_paths, git_runs, "cleanup")
 
         assert outcome.status == SessionStatus.FAILED
         assert outcome.worktree_kept is False
+        assert outcome.warnings == [
+            f"Failed to remove worktree '{outcome.worktree_path}': Cleanup filesystem removal failed"
+        ]
         assert outcome.errors == ["Step 'fail' failed: Command failed with exit code 1."]
 
     @pytest.mark.parametrize(
