@@ -106,6 +106,7 @@ def _workspace_context(
         cwd=paths.root_dir,
         use_worktree=row.use_worktree,
         keep=row.keep,
+        discard=row.discard,
         observer=observer,
         session_id=row.session_id,
         auto_apply=row.auto_apply,

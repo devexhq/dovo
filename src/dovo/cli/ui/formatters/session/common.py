@@ -22,6 +22,7 @@ _SESSION_SHOW_FIELDS = (
     "Start time",
     "Completion time",
     "Duration",
+    "Worktree",
 )
 
 
@@ -101,8 +102,10 @@ def build_session_table(sessions: Sequence[SessionSummaryView]) -> Table:
     return table
 
 
-def build_metadata_table(session: SessionSummaryView) -> Table:
-    """Build key/value table for session metadata."""
+def build_metadata_table(
+    session: SessionSummaryView, *, worktree_kept: bool | None = None, worktree_path: str | None = None
+) -> Table:
+    """Build key/value table for session metadata, with a Worktree row when the session has a worktree outcome."""
     duration = format_session_duration(session.duration_seconds)
     values = {
         "Session ID": session.session_id,
@@ -113,12 +116,15 @@ def build_metadata_table(session: SessionSummaryView) -> Table:
         "Completion time": session.completed_at or "-",
         "Duration": duration,
     }
+    if worktree_kept is not None:
+        values["Worktree"] = f"kept ({worktree_path})" if worktree_kept else "removed"
 
     table = Table(show_header=False, box=None, padding=(0, 2, 0, 0))
     table.add_column(style="bold")
     table.add_column()
     for field in _SESSION_SHOW_FIELDS:
-        table.add_row(f"{field}:", values[field])
+        if field in values:
+            table.add_row(f"{field}:", values[field])
     return table
 
 

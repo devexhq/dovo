@@ -38,6 +38,20 @@ def history_redactor(paths: WorkspacePaths, sensitive_variables: Sequence[str]) 
     return SecretRedactor.from_environment(credential_envs=sensitive_variables, env_file_dir=paths.root_dir)
 
 
+def _worktree_outcome(row: SessionRecord, paths: WorkspacePaths) -> tuple[bool | None, Path | None]:
+    """Return (worktree_kept, worktree_path) for a finished worktree-backed session, with the path set only when kept; (None, None) for in-place, running, or never-created-worktree sessions."""
+    if not row.use_worktree or row.status == SessionStatus.RUNNING:
+        return None, None
+
+    if row.worktree_id is None:
+        return None, None
+
+    if not row.worktree_kept:
+        return False, None
+
+    return True, paths.worktree_dir(row.worktree_id)
+
+
 def _mask_record(row: SessionRecord, redactor: SecretRedactor) -> SessionRecord:
     """Return ``row`` itself without an error_message, else a detached copy whose error_message is masked."""
     if row.error_message is None:
@@ -118,8 +132,15 @@ class Session:
             return HistoryShowResult(status=HistoryShowStatus.NOT_FOUND, session_id=self.session_id)
 
         row = _mask_record(row, history_redactor(self.paths, self.sensitive_variables))
+        worktree_kept, worktree_path = _worktree_outcome(row, self.paths)
         if not include_logs:
-            return HistoryShowResult(status=HistoryShowStatus.OK, session_id=self.session_id, session=row)
+            return HistoryShowResult(
+                status=HistoryShowStatus.OK,
+                session_id=self.session_id,
+                session=row,
+                worktree_kept=worktree_kept,
+                worktree_path=worktree_path,
+            )
 
         session_log_dir = self.paths.logs_dir / self.session_id
         try:
@@ -131,6 +152,8 @@ class Session:
                 session_id=self.session_id,
                 session=row,
                 errors=[f"Failed reading session logs in '{session_log_dir}': {exc}"],
+                worktree_kept=worktree_kept,
+                worktree_path=worktree_path,
             )
 
         return HistoryShowResult(
@@ -139,6 +162,8 @@ class Session:
             session=row,
             log_files=log_files,
             log_snippet=log_snippet,
+            worktree_kept=worktree_kept,
+            worktree_path=worktree_path,
         )
 
     def _read_step_logs(

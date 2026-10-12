@@ -436,6 +436,26 @@ class EngineRunConfigPersistenceTests:
         assert row.auto_apply is True
         assert row.commit_sha == GitRunner.rev_parse(workspace)
 
+    @pytest.mark.parametrize("discard", [True, False])
+    def test_run_request_discard_is_stored_on_session_row(
+        self,
+        engine_paths: WorkspacePaths,
+        sessions_repo: SessionsRepository,
+        monkeypatch: pytest.MonkeyPatch,
+        discard: bool,
+    ) -> None:
+        """[tier-1/integration] Engine.run: RunRequest(discard=True) stores SessionRecord.discard == True and RunRequest() stores False."""
+        blueprint = _catalog_blueprint(engine_paths, "discard-task", [{"id": "s1", "run": "echo one"}])
+        _patch_drive_run(monkeypatch, engine_paths)
+
+        _engine(engine_paths, sessions_repo).run(
+            blueprint, RunRequest(session_id="discard-1", use_worktree=False, discard=discard)
+        )
+
+        row = sessions_repo.get("discard-1")
+        assert row is not None
+        assert row.discard is discard
+
     def test_run_persists_resolved_inputs_json_on_row(
         self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository, monkeypatch: pytest.MonkeyPatch
     ) -> None:

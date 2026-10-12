@@ -45,7 +45,9 @@ class _NoOpRunObserver(RunObserver):
     def on_loop_done(self, loop_id: str, status: str, total_iterations: int) -> None:
         pass
 
-    def on_worktree_cleanup(self, kept: bool, path: Path) -> None:
+    def on_worktree_cleanup(
+        self, kept: bool, path: Path, worktree_id: str | None = None, branch: str | None = None
+    ) -> None:
         pass
 
     def on_run_started(self, steps: Sequence[StepDefinition | LoopStepBlock]) -> None:

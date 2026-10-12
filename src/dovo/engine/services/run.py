@@ -27,6 +27,7 @@ class BlueprintRunService:
     sessions_db: SessionsRepository
     no_worktree: bool = False
     keep: bool = False
+    discard: bool = False
     agent: str | None = None
     session_id: str | None = None
     cli_args: list[str] | None = None
@@ -61,6 +62,7 @@ class BlueprintRunService:
                     cli_args=self.cli_args,
                     use_worktree=not self.no_worktree,
                     keep=self.keep,
+                    discard=self.discard,
                     agent=self.agent,
                     session_id=self.session_id,
                     observer=self.observer,

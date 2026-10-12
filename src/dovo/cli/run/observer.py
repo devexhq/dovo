@@ -16,6 +16,7 @@ from dovo.cli.ui.events import (
     WorktreeLifecycleEvent,
 )
 from dovo.common.models import DisplayFormatOptions, OutputFormatOptions
+from dovo.common.utils import display_path
 from dovo.core.catalog.definitions import LoopStepBlock, StepDefinition
 from dovo.engine import RunObserver, RunOutcome
 from dovo.engine.executors.models import ConditionEvaluationResult, StepResult
@@ -151,9 +152,19 @@ class DispatcherRunObserver(RunObserver):
             )
         )
 
-    def on_worktree_cleanup(self, kept: bool, path: Path) -> None:
+    def on_worktree_cleanup(
+        self, kept: bool, path: Path, worktree_id: str | None = None, branch: str | None = None
+    ) -> None:
         """Dispatch worktree cleanup event."""
-        self._dispatcher.dispatch(WorktreeLifecycleEvent(action="cleanup", path=str(path), kept=kept))
+        self._dispatcher.dispatch(
+            WorktreeLifecycleEvent(
+                action="cleanup",
+                path=display_path(path, Path.cwd()),
+                kept=kept,
+                worktree_id=worktree_id,
+                branch=branch,
+            )
+        )
 
     def on_run_started(self, steps: Sequence[StepDefinition | LoopStepBlock]) -> None:
         """Ignore run start; the CLI renders step and loop events as they happen."""

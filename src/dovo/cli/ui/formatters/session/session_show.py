@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
 from rich.console import Group
@@ -17,6 +18,7 @@ from dovo.cli.ui.formatters.session.common import (
 )
 from dovo.cli.ui.formatters.session.session_views import SessionShowView
 from dovo.common.types import ComponentFormatter
+from dovo.common.utils import display_path
 from dovo.core.sessions import HistoryShowResult, HistoryShowStatus
 
 
@@ -65,7 +67,7 @@ def _render_show_run(view: SessionShowView) -> Any:
 
     renderables: list[Any] = [
         Panel(
-            build_metadata_table(view.session),
+            build_metadata_table(view.session, worktree_kept=view.worktree_kept, worktree_path=view.worktree_path),
             title=f"Session Metadata: {view.session.session_id}",
             border_style="blue",
         )
@@ -104,6 +106,8 @@ class SessionShowFormatter(ComponentFormatter[HistoryShowResult, SessionShowView
             log_files=list(data.log_files),
             log_snippet=list(data.log_snippet),
             steps=list(data.steps),
+            worktree_kept=data.worktree_kept,
+            worktree_path=display_path(data.worktree_path, Path.cwd()) if data.worktree_path is not None else None,
             errors=list(data.errors),
             warnings=list(data.warnings),
             fixes=list(data.fixes),

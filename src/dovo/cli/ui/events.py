@@ -99,6 +99,8 @@ class WorktreeLifecycleEvent(BaseModel):
     path: str
     active: bool | None = None
     kept: bool | None = None
+    worktree_id: str | None = None
+    branch: str | None = None
 
 
 class LoopConditionView(BaseModel):

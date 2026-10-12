@@ -101,7 +101,7 @@ The saved run state includes:
 - The paused step and the failed attempt that triggered the prompt.
 - The results of every completed step.
 - The worktree identifier of the retained worktree.
-- Resolved parameter input values and run options (`--keep`, `--agent`, `--auto-apply`).
+- Resolved parameter input values and run options (`--keep`, `--discard`, `--agent`, `--auto-apply`).
 
 `session.json` in the session directory is a generated copy of this state.
 
@@ -110,6 +110,8 @@ The saved run state includes:
 ## Resuming Sessions (`dovo resume`)
 
 A run can also pause at an `ask` step that waits for a person's answer; see [Human Input](human-input.md).
+
+A run that ends `failed` also keeps its worktree and branch, so you can inspect what the failed step left behind. The run summary prints the path, and `dovo worktree delete <worktree-id>` removes it when you are done; `--discard` removes it automatically. See [worktree retention](../cli/run.md#worktree-retention).
 
 If you exit an interactive run or leave a prompt unanswered, the worktree is kept. Resume from the point of failure with `dovo resume`:
 

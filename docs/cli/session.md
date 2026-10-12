@@ -51,6 +51,8 @@ Lists recorded sessions, newest first.
 
 Shows the metadata, errors and per-step results for one session.
 
+For a finished run that used a worktree, the metadata includes a `Worktree` row: `kept (<path>)` when the worktree was kept, `removed` otherwise. With `--format json` the payload carries `worktree_kept` and `worktree_path`, both `null` for in-place and still-running sessions, and `worktree_path` is `null` when the worktree was removed. The row reports the outcome recorded when the run ended, so a later `dovo worktree delete` does not change it.
+
 Below the metadata, a `Steps` table lists every step in plan order with its state, attempt count, exit code and duration. A loop appears as its own row followed by its body steps, labeled `<step id> (iter <n>)` for each iteration. Missing values show `-`, and durations under 0.1 seconds show `<0.1s`. Failed steps list their error message under the table, with secrets redacted. Step stdout, stderr and outputs are never shown here; use [`dovo session logs`](#dovo-session-logs) with `--step`.
 
 ```

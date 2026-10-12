@@ -106,7 +106,7 @@ class WorktreeLifecycle:
                 status=WorktreeCreateStatus.CAPACITY_EXCEEDED,
                 errors=[f"Maximum active worktrees reached ({len(active)}/{max_allowed})."],
                 fixes=[
-                    "Run `dovo prune` to remove stale worktrees, or",
+                    "Remove a kept worktree with `dovo worktree delete <worktree-id>` (see `dovo worktree list`), or",
                     "Raise worktree.max_active_worktrees in .dovo/config.json",
                 ],
             )

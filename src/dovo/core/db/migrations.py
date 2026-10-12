@@ -11,7 +11,8 @@ from dovo.core.db.connection import sqlite_url
 INITIAL_SCHEMA_REVISION = "0001_initial_schema"
 SESSIONS_RENAME_REVISION = "0002_rename_runs_to_sessions"
 ARTIFACT_REVISIONS_REVISION = "0003_artifact_revisions"
-LATEST_SCHEMA_REVISION = ARTIFACT_REVISIONS_REVISION
+SESSION_DISCARD_REVISION = "0004_session_discard"
+LATEST_SCHEMA_REVISION = SESSION_DISCARD_REVISION
 
 
 def init_database(database_file: Path) -> Path:

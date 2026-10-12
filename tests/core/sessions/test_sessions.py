@@ -530,6 +530,47 @@ class SessionDetailsTests:
         assert result.session == _as_expected_record(seeded_session)
 
 
+class SessionDetailsWorktreeOutcomeTests:
+    """[tier-1/unit] Session.details: worktree outcome reported for finished worktree-backed sessions."""
+
+    @pytest.mark.parametrize(
+        ("use_worktree", "status", "worktree_kept", "expected_kept", "expects_path", "worktree_id"),
+        [
+            pytest.param(True, SessionStatus.FAILED, True, True, True, "wt-session", id="failed-kept"),
+            pytest.param(True, SessionStatus.COMPLETED, False, False, False, "wt-session", id="completed-removed"),
+            pytest.param(False, SessionStatus.COMPLETED, False, None, False, "wt-session", id="in-place"),
+            pytest.param(True, SessionStatus.RUNNING, False, None, False, "wt-session", id="running"),
+            pytest.param(True, SessionStatus.FAILED, False, None, False, None, id="setup-failed-no-worktree"),
+        ],
+    )
+    def test_details_reports_worktree_outcome(
+        self,
+        isolated_workspace: Path,
+        use_worktree: bool,
+        status: SessionStatus,
+        worktree_kept: bool,
+        expected_kept: bool | None,
+        expects_path: bool,
+        worktree_id: str | None,
+    ) -> None:
+        """[tier-1/unit] Session.details: HistoryShowResult.worktree_kept == expected_kept and worktree_path == paths.worktree_dir(worktree_id) when expects_path else None."""
+        paths = _paths_for(isolated_workspace)
+        session = Session(paths, "wt-session")
+        session.db.create(
+            session_id="wt-session",
+            blueprint_name="bp",
+            blueprint_key="bp",
+            use_worktree=use_worktree,
+        )
+        if status != SessionStatus.RUNNING:
+            session.db.update_status("wt-session", status, worktree_id=worktree_id, worktree_kept=worktree_kept)
+
+        result = session.details()
+
+        assert result.worktree_kept is expected_kept
+        assert result.worktree_path == (paths.worktree_dir("wt-session") if expects_path else None)
+
+
 class SessionDetailsIncludeLogsTests:
     """[tier-1/integration] Session.details(include_logs=...): log file listing and session.log snippet."""
 

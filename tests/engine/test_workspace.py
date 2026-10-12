@@ -29,6 +29,7 @@ class _RecordingRunObserver(RunObserver):
 
     def __init__(self) -> None:
         self.events: list[tuple[object, ...]] = []
+        self.kept_details: list[tuple[str | None, str | None]] = []
 
     def on_worktree_ready(self, path: Path, active: bool) -> None:
         self.events.append(("worktree_ready", path, active))
@@ -54,8 +55,11 @@ class _RecordingRunObserver(RunObserver):
     def on_loop_done(self, *args: object, **kwargs: object) -> None:
         pass
 
-    def on_worktree_cleanup(self, kept: bool, path: Path) -> None:
+    def on_worktree_cleanup(
+        self, kept: bool, path: Path, worktree_id: str | None = None, branch: str | None = None
+    ) -> None:
         self.events.append(("worktree_cleanup", kept, path))
+        self.kept_details.append((worktree_id, branch))
 
     def on_run_started(self, *args: object, **kwargs: object) -> None:
         pass
@@ -142,6 +146,37 @@ class WorkspaceSetupTests:
         assert manager is None
         assert session is None
         assert error == "Git worktree creation failed: git worktree add failed"
+
+    def test_capacity_failure_message_includes_fix_line(self, tmp_path: Path) -> None:
+        """[tier-1/integration] setup: a worktree directory count at max_active_worktrees returns error_message == "Git worktree creation failed: Maximum active worktrees reached (N/N).\nFix: Remove a kept worktree with `dovo worktree delete <worktree-id>` (see `dovo worktree list`), or Raise worktree.max_active_worktrees in .dovo/config.json"."""
+        workspace_root = (
+            WorkspaceBuilder(tmp_path / "workspace")
+            .with_git()
+            .with_database()
+            .with_config(
+                data={
+                    "version": 1,
+                    "project": {"name": "capacity"},
+                    "worktree": {"base_ref": "HEAD", "max_active_worktrees": 1, "default_timeout_seconds": 900},
+                }
+            )
+            .build()
+        )
+        paths = _paths_for(workspace_root)
+        first = Workspace(RunSettings(cwd=workspace_root, use_worktree=True, session_id="first", paths=paths))
+        assert first.setup()[3] is None
+
+        _, manager, session, error = Workspace(
+            RunSettings(cwd=workspace_root, use_worktree=True, session_id="second", paths=paths)
+        ).setup()
+
+        assert manager is None
+        assert session is None
+        assert error == (
+            "Git worktree creation failed: Maximum active worktrees reached (1/1).\n"
+            "Fix: Remove a kept worktree with `dovo worktree delete <worktree-id>` (see `dovo worktree list`), "
+            "or Raise worktree.max_active_worktrees in .dovo/config.json"
+        )
 
     def test_worktree_creation_config_load_error_returns_error_message(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -233,7 +268,7 @@ class WorkspaceCleanupTests:
 
         warnings: list[str] = []
 
-        kept = Workspace(context).cleanup(None, None, tmp_path, warnings)
+        kept = Workspace(context).cleanup(None, None, tmp_path, SessionStatus.COMPLETED, warnings)
 
         assert kept is False
         assert observer.events == [("worktree_cleanup", False, tmp_path)]
@@ -254,7 +289,7 @@ class WorkspaceCleanupTests:
 
         warnings: list[str] = []
 
-        kept = Workspace(context).cleanup(manager, session, target_dir, warnings)
+        kept = Workspace(context).cleanup(manager, session, target_dir, SessionStatus.COMPLETED, warnings)
 
         assert kept is True
         assert target_dir.exists()
@@ -276,7 +311,7 @@ class WorkspaceCleanupTests:
 
         warnings: list[str] = []
 
-        kept = Workspace(context).cleanup(manager, session, target_dir, warnings)
+        kept = Workspace(context).cleanup(manager, session, target_dir, SessionStatus.COMPLETED, warnings)
 
         assert kept is False
         assert not target_dir.exists()
@@ -298,9 +333,64 @@ class WorkspaceCleanupTests:
 
         warnings: list[str] = []
 
-        kept = Workspace(context).cleanup(manager, session, target_dir, warnings)
+        kept = Workspace(context).cleanup(manager, session, target_dir, SessionStatus.COMPLETED, warnings)
 
         assert kept is False
+
+    def test_removal_failure_appends_warning_with_path_and_returns_false(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """[tier-1/integration] cleanup: Worktree.cleanup raising appends exactly "Failed to remove worktree '<session.worktree_path>': <exception text>" to warnings, returns False, and does not raise."""
+        workspace_root = _worktree_workspace(tmp_path)
+        context = RunSettings(cwd=workspace_root, use_worktree=True, paths=_paths_for(workspace_root))
+        target_dir, manager, session, _ = Workspace(context).setup()
+        assert session is not None
+
+        def _raise(self: Worktree, *args: object, **kwargs: object) -> list[str]:
+            raise RuntimeError("worktree removal failed")
+
+        monkeypatch.setattr(Worktree, "cleanup", _raise)
+        warnings: list[str] = []
+
+        kept = Workspace(context).cleanup(manager, session, target_dir, SessionStatus.COMPLETED, warnings)
+
+        assert kept is False
+        assert warnings == [f"Failed to remove worktree '{session.worktree_path}': worktree removal failed"]
+
+    def test_removal_reporting_problems_appends_first_problem_and_returns_false(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """[tier-1/integration] cleanup: Worktree.cleanup returning problems appends exactly "Failed to remove worktree '<session.worktree_path>': <first problem>" to warnings and returns False."""
+        workspace_root = _worktree_workspace(tmp_path)
+        context = RunSettings(cwd=workspace_root, use_worktree=True, paths=_paths_for(workspace_root))
+        target_dir, manager, session, _ = Workspace(context).setup()
+        assert session is not None
+        monkeypatch.setattr(Worktree, "cleanup", lambda self, *args, **kwargs: ["partial failure", "second"])
+        warnings: list[str] = []
+
+        kept = Workspace(context).cleanup(manager, session, target_dir, SessionStatus.COMPLETED, warnings)
+
+        assert kept is False
+        assert warnings == [f"Failed to remove worktree '{session.worktree_path}': partial failure"]
+
+    def test_kept_cleanup_notifies_worktree_id_and_branch(self, tmp_path: Path) -> None:
+        """[tier-1/integration] cleanup: a kept run worktree invokes on_worktree_cleanup with worktree_id == session.session_id and branch == session.target_branch."""
+        observer = _RecordingRunObserver()
+        workspace_root = _worktree_workspace(tmp_path)
+        context = RunSettings(
+            cwd=workspace_root,
+            use_worktree=True,
+            session_id="kept-run",
+            observer=observer,
+            paths=_paths_for(workspace_root),
+        )
+        target_dir, manager, session, _ = Workspace(context).setup()
+        assert session is not None
+
+        kept = Workspace(context).cleanup(manager, session, target_dir, SessionStatus.FAILED, [])
+
+        assert kept is True
+        assert observer.kept_details[-1] == ("kept-run", "dovo/kept-run")
 
     def test_cleanup_of_linked_worktree_preserves_session_contents(self, tmp_path: Path) -> None:
         """[tier-1/integration] Workspace.cleanup: keep=False on a linked worktree with sentinel.txt written into paths.session_dir(id) returns False, removes the worktree, appends no warnings, and sentinel.txt still reads its original content."""
@@ -316,7 +406,7 @@ class WorkspaceCleanupTests:
         sentinel_path.write_text("preserve me", encoding="utf-8")
         warnings: list[str] = []
 
-        kept = workspace.cleanup(manager, session, target_dir, warnings)
+        kept = workspace.cleanup(manager, session, target_dir, SessionStatus.COMPLETED, warnings)
 
         assert kept is False
         assert warnings == []
@@ -338,7 +428,7 @@ class WorkspaceCleanupTests:
         monkeypatch.setattr("dovo.engine.workspace.remove_storage_bridge", lambda worktree_path: message)
         warnings: list[str] = []
 
-        kept = workspace.cleanup(manager, session, target_dir, warnings)
+        kept = workspace.cleanup(manager, session, target_dir, SessionStatus.COMPLETED, warnings)
 
         assert kept is False
         assert warnings == [message]
@@ -702,6 +792,61 @@ class WorkspaceFinalizeCleanupTests:
 
         kept = Workspace(context).finalize_cleanup(
             manager, session, target_dir, SessionStatus.COMPLETED, apply_failed=True, warnings=warnings
+        )
+
+        assert kept is True
+        assert target_dir.exists()
+
+    @pytest.mark.parametrize(
+        ("status", "keep", "discard", "expected_kept"),
+        [
+            pytest.param(SessionStatus.COMPLETED, False, False, False, id="completed-default"),
+            pytest.param(SessionStatus.COMPLETED, True, False, True, id="completed-keep"),
+            pytest.param(SessionStatus.COMPLETED, False, True, False, id="completed-discard"),
+            pytest.param(SessionStatus.FAILED, False, False, True, id="failed-default"),
+            pytest.param(SessionStatus.FAILED, True, False, True, id="failed-keep"),
+            pytest.param(SessionStatus.FAILED, False, True, False, id="failed-discard"),
+            pytest.param(SessionStatus.CANCELLED, False, False, False, id="cancelled-default"),
+            pytest.param(SessionStatus.CANCELLED, True, False, True, id="cancelled-keep"),
+            pytest.param(SessionStatus.CANCELLED, False, True, False, id="cancelled-discard"),
+        ],
+    )
+    def test_retention_matrix_matches_issue_table(
+        self, tmp_path: Path, status: SessionStatus, keep: bool, discard: bool, expected_kept: bool
+    ) -> None:
+        """[tier-1/integration] finalize_cleanup: each (status, keep, discard) cell of the FR-1 table returns expected_kept and leaves the worktree directory present iff expected_kept."""
+        workspace_root = _worktree_workspace(tmp_path)
+        context = RunSettings(
+            cwd=workspace_root, use_worktree=True, keep=keep, discard=discard, paths=_paths_for(workspace_root)
+        )
+        target_dir, manager, session, _ = Workspace(context).setup()
+        assert session is not None
+
+        kept = Workspace(context).finalize_cleanup(
+            manager, session, target_dir, status, apply_failed=False, warnings=[]
+        )
+
+        assert kept is expected_kept
+        assert target_dir.exists() is expected_kept
+
+    @pytest.mark.parametrize(
+        ("status", "apply_failed"),
+        [
+            pytest.param(SessionStatus.PAUSED, False, id="paused"),
+            pytest.param(SessionStatus.COMPLETED, True, id="apply-failed"),
+        ],
+    )
+    def test_discard_does_not_override_paused_or_apply_failed(
+        self, tmp_path: Path, status: SessionStatus, apply_failed: bool
+    ) -> None:
+        """[tier-1/integration] finalize_cleanup: discard=True with PAUSED, and discard=True with COMPLETED + apply_failed=True, both return True and keep the worktree directory."""
+        workspace_root = _worktree_workspace(tmp_path)
+        context = RunSettings(cwd=workspace_root, use_worktree=True, discard=True, paths=_paths_for(workspace_root))
+        target_dir, manager, session, _ = Workspace(context).setup()
+        assert session is not None
+
+        kept = Workspace(context).finalize_cleanup(
+            manager, session, target_dir, status, apply_failed=apply_failed, warnings=[]
         )
 
         assert kept is True

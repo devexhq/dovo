@@ -107,7 +107,7 @@ class WorktreeCapacityTests:
         ]
         assert overflow.warnings == []
         assert overflow.fixes == [
-            "Run `dovo prune` to remove stale worktrees, or",
+            "Remove a kept worktree with `dovo worktree delete <worktree-id>` (see `dovo worktree list`), or",
             "Raise worktree.max_active_worktrees in .dovo/config.json",
         ]
         assert not (worktree_workspace / ".dovo" / "worktrees" / overflow_id).exists()

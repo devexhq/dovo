@@ -65,7 +65,9 @@ class NoOpRunObserver(RunObserver):
     def on_loop_done(self, loop_id: str, status: str, total_iterations: int) -> None:
         pass
 
-    def on_worktree_cleanup(self, kept: bool, path: Path) -> None:
+    def on_worktree_cleanup(
+        self, kept: bool, path: Path, worktree_id: str | None = None, branch: str | None = None
+    ) -> None:
         pass
 
     def on_run_started(self, steps: Sequence[StepDefinition | LoopStepBlock]) -> None:
@@ -83,6 +85,7 @@ def seed_new_session(
     steps: list[dict[str, object]],
     use_worktree: bool = False,
     keep: bool = False,
+    discard: bool = False,
     auto_apply: bool = False,
     agent: str | None = None,
 ) -> SessionRecord:
@@ -100,6 +103,7 @@ def seed_new_session(
         status=SessionStatus.RUNNING,
         use_worktree=use_worktree,
         keep=keep,
+        discard=discard,
         inputs_json="{}",
         auto_apply=auto_apply,
         agent=agent,
