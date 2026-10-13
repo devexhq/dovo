@@ -132,6 +132,7 @@ class StepCoordinator:
         on_output: Callable[[str, str], None] | None = None,
     ) -> StepExecutionContext:
         """Build the StepExecutionContext shared by command, script, agent, internal and ask steps."""
+        session_dir = self.context.paths.session_dir(self.context.session_id) if self.context.session_id else None
         return StepExecutionContext(
             step=step,
             worktree_path=run_context.target_dir,
@@ -157,6 +158,7 @@ class StepCoordinator:
                 session_tmp_dir=run_context.session_tmp_dir,
                 main_checkout=self.context.paths.root_dir,
                 session_log_dir=run_context.session_log_dir,
+                session_dir=session_dir,
             ),
             sensitive_variables=self.context.sensitive_variables,
         )

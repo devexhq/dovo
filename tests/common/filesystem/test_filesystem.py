@@ -165,3 +165,26 @@ class FilesystemStaticHelperTests:
         fs = Filesystem(tmp_path)
         assert Filesystem.read_yaml_file(target).parsed == fs.read_yaml(target).parsed
         assert [f.name for f in Filesystem.scan_yaml_directory(tmp_path)] == [f.name for f in fs.scan_yaml(tmp_path)]
+
+
+class FilesystemAtomicWriteBytesTests:
+    def test_non_utf8_bytes_and_crlf_are_written_verbatim_replacing_existing_file(self, tmp_path: Path) -> None:
+        """[tier-1/integration] Filesystem.atomic_write_bytes: writing b'\\xff\\xfe\\r\\nx' over an existing file leaves exactly those bytes at the path and no '.tmp' sibling."""
+        target = tmp_path / "nested" / "out.patch"
+        target.parent.mkdir()
+        target.write_bytes(b"old")
+
+        Filesystem.atomic_write_bytes(target, b"\xff\xfe\r\nx")
+
+        assert target.read_bytes() == b"\xff\xfe\r\nx"
+        assert not target.with_name("out.patch.tmp").exists()
+
+    def test_unwritable_parent_raises_oserror_and_leaves_no_tmp_sibling(self, tmp_path: Path) -> None:
+        """[tier-1/integration] Filesystem.atomic_write_bytes: a path whose parent is a regular file raises OSError and creates no '.tmp' file."""
+        blocker = tmp_path / "blocker"
+        blocker.write_text("file", encoding="utf-8")
+
+        with pytest.raises(OSError):
+            Filesystem.atomic_write_bytes(blocker / "out.patch", b"data")
+
+        assert sorted(path.name for path in tmp_path.iterdir()) == ["blocker"]

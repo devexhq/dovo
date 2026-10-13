@@ -29,7 +29,7 @@ from dovo.core.agents.mutation_git import (
     discard_since,
     resolve_pre_agent_baseline,
 )
-from dovo.core.git import PatchApplyStatus
+from dovo.core.git import PatchApplyResult, PatchApplyStatus
 from tests.harness import AgentRequestBuilder, new_file_diff
 
 
@@ -74,6 +74,15 @@ def _request_with_invocation(git_repo: Path, invocation: AgentInvocationContext)
         agent_scratch_path=invocation.scratch_path,
         invocation=invocation,
     )
+
+
+def _gated_request(git_repo: Path, destination: Path | None) -> AgentRequest:
+    """Build a request whose max_files=1 gate rejects any multi-file edit, saving it to ``destination``."""
+    builder = AgentRequestBuilder().with_worktree_path(git_repo).with_max_files(1)
+    if destination is not None:
+        builder = builder.with_rejected_patch_destination(destination)
+
+    return builder.build()
 
 
 def _porcelain(repo: Path) -> str:
@@ -409,21 +418,22 @@ class SharedMutationAdapterTests:
         assert resp.mutation_baseline_ref is not None
         assert resp.errors == ["Agent provider error (AGENT_PROVIDER_ERROR): boom"]
 
-    def test_gate_violation_discards_edits(self, git_repo: Path) -> None:
+    def test_gate_violation_discards_edits(self, git_repo: Path, tmp_path: Path) -> None:
         """Edits touching more files than max_files are discarded back to baseline."""
         adapter = UnitTestAdapter(run_fn=_fake_run(edits={"README.md": "edit one\n", "b.txt": "edit two\n"}))
+        destination = tmp_path / "rejected" / "code_attempt_1.patch"
 
-        resp = adapter.invoke(AgentRequestBuilder().with_worktree_path(git_repo).with_max_files(1).build())
+        resp = adapter.invoke(_gated_request(git_repo, destination))
 
         assert resp.status == AgentResponseStatus.PROVIDER_ERROR
         assert resp.raw_text == "done"
         assert resp.mutation_baseline_ref is not None
-        assert resp.errors == ["Patch touches 2 files; max_files is 1."]
+        assert resp.errors == ["Patch touches 2 files; max_files is 1.", f"Discarded edit saved to {destination}."]
         assert (git_repo / "README.md").read_text(encoding="utf-8") == "# Test Repo\n"
         assert not (git_repo / "b.txt").exists()
 
     def test_gate_violation_discard_git_error_precedes_gate_errors(
-        self, git_repo: Path, monkeypatch: pytest.MonkeyPatch
+        self, git_repo: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """A discard() failure after a gate violation leads the errors, followed by the gate errors."""
         adapter = UnitTestAdapter(run_fn=_fake_run(edits={"a.txt": "1\n", "b.txt": "2\n"}))
@@ -433,7 +443,9 @@ class SharedMutationAdapterTests:
 
         monkeypatch.setattr("dovo.core.agents.cli_mutation.discard_since", _fail_discard)
 
-        resp = adapter.invoke(AgentRequestBuilder().with_worktree_path(git_repo).with_max_files(1).build())
+        destination = tmp_path / "rejected" / "code_attempt_1.patch"
+
+        resp = adapter.invoke(_gated_request(git_repo, destination))
 
         assert resp.status == AgentResponseStatus.PROVIDER_ERROR
         assert resp.raw_text == "done"
@@ -442,6 +454,7 @@ class SharedMutationAdapterTests:
             "Agent provider error (AGENT_PROVIDER_ERROR): "
             "Failed to discard rejected worktree edit: git reset failed: index locked",
             "Patch touches 2 files; max_files is 1.",
+            f"Rejected edit saved to {destination}.",
         ]
 
     @pytest.mark.parametrize(
@@ -475,17 +488,19 @@ class SharedMutationAdapterTests:
         assert resp.status == AgentResponseStatus.PROVIDER_ERROR
         assert resp.errors == [expected_error]
 
-    def test_gate_violation_preserves_wip(self, git_repo: Path) -> None:
+    def test_gate_violation_preserves_wip(self, git_repo: Path, tmp_path: Path) -> None:
         """Discard restores pre-existing uncommitted WIP, not the last committed tip."""
         (git_repo / "a.txt").write_text("wip content\n", encoding="utf-8")
         adapter = UnitTestAdapter(run_fn=_fake_run(edits={"a.txt": "edit 1\n", "b.txt": "edit 2\n"}))
 
-        resp = adapter.invoke(AgentRequestBuilder().with_worktree_path(git_repo).with_max_files(1).build())
+        destination = tmp_path / "rejected" / "code_attempt_1.patch"
+
+        resp = adapter.invoke(_gated_request(git_repo, destination))
 
         assert resp.status == AgentResponseStatus.PROVIDER_ERROR
         assert resp.raw_text == "done"
         assert resp.mutation_baseline_ref is not None
-        assert resp.errors == ["Patch touches 2 files; max_files is 1."]
+        assert resp.errors == ["Patch touches 2 files; max_files is 1.", f"Discarded edit saved to {destination}."]
         assert (git_repo / "a.txt").read_text(encoding="utf-8") == "wip content\n"
         assert not (git_repo / "b.txt").exists()
 
@@ -663,3 +678,158 @@ class MutationEnvReportTests:
         )
 
         assert "env" not in request.model_dump()
+
+
+class RejectedPatchSaveTests:
+    def test_too_many_files_rejection_leaves_patch_that_applies_to_baseline(
+        self, git_repo: Path, tmp_path: Path
+    ) -> None:
+        """[tier-1/integration] CliDirectMutationAdapter.invoke: max_files=1 with a tracked edit, an untracked file and a binary file saves destination, resets the worktree to baseline, and 'git apply' of the patch recreates all three."""
+        expected = {"README.md": b"# Test Repo\nagent edit\n", "new.txt": b"fresh\n", "image.png": bytes(range(256))}
+
+        def _write(request: CliMutationRunRequest) -> CliMutationOutcome:
+            for name, content in expected.items():
+                (request.worktree_path / name).write_bytes(content)
+            return CliMutationOutcome(status="finished", result_text="done")
+
+        destination = tmp_path / "rejected" / "code_attempt_1.patch"
+
+        response = UnitTestAdapter(run_fn=_write).invoke(_gated_request(git_repo, destination))
+
+        assert response.rejected_patch_path == str(destination)
+        assert _porcelain(git_repo) == ""
+        subprocess.run(["git", "apply", str(destination)], cwd=git_repo, check=True)
+        assert {name: (git_repo / name).read_bytes() for name in expected} == expected
+
+    @pytest.mark.parametrize(
+        "status",
+        [
+            pytest.param(PatchApplyStatus.TOO_LARGE, id="too-large"),
+            pytest.param(PatchApplyStatus.TOO_MANY_FILES, id="too-many-files"),
+            pytest.param(PatchApplyStatus.BINARY_REJECTED, id="binary-rejected"),
+            pytest.param(PatchApplyStatus.UNSAFE_PATH, id="unsafe-path"),
+            pytest.param(PatchApplyStatus.INVALID_DIFF, id="invalid-diff"),
+            pytest.param(PatchApplyStatus.WORKTREE_MISSING, id="worktree-missing"),
+        ],
+    )
+    def test_every_gate_status_saves_then_discards(
+        self, git_repo: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, status: PatchApplyStatus
+    ) -> None:
+        """[tier-1/unit] CliDirectMutationAdapter.invoke: validate_request_patch patched to return each non-CHECKED_OK status yields PROVIDER_ERROR, response.rejected_patch_path == str(destination), destination exists, and the agent's file is gone from the worktree."""
+        monkeypatch.setattr(
+            "dovo.core.agents.cli_mutation.validate_request_patch",
+            lambda request, diff: PatchApplyResult(status=status, errors=["gate said no"]),
+        )
+        destination = tmp_path / "rejected" / "code_attempt_1.patch"
+
+        response = UnitTestAdapter(run_fn=_fake_run(edits={"agent.txt": "agent\n"})).invoke(
+            AgentRequestBuilder().with_worktree_path(git_repo).with_rejected_patch_destination(destination).build()
+        )
+
+        assert response.status == AgentResponseStatus.PROVIDER_ERROR
+        assert response.rejected_patch_path == str(destination)
+        assert "agent.txt" in destination.read_text(encoding="utf-8")
+        assert not (git_repo / "agent.txt").exists()
+
+    def test_saved_rejection_errors_are_gate_error_then_discarded_line(self, git_repo: Path, tmp_path: Path) -> None:
+        """[tier-1/integration] CliDirectMutationAdapter.invoke: a 2-file edit with max_files=1 returns errors == ['Patch touches 2 files; max_files is 1.', f'Discarded edit saved to {destination}.']."""
+        destination = tmp_path / "rejected" / "code_attempt_1.patch"
+
+        response = UnitTestAdapter(run_fn=_fake_run(edits={"a.txt": "1\n", "b.txt": "2\n"})).invoke(
+            _gated_request(git_repo, destination)
+        )
+
+        assert response.errors == ["Patch touches 2 files; max_files is 1.", f"Discarded edit saved to {destination}."]
+
+
+class RejectedPatchCaptureFailureTests:
+    def test_unwritable_destination_keeps_edits_and_reports_could_not_save(
+        self, git_repo: Path, tmp_path: Path
+    ) -> None:
+        """[tier-1/integration] CliDirectMutationAdapter.invoke: a destination under a regular file with max_files=1 and a 2-file edit returns PROVIDER_ERROR, both files still contain the agent's text, rejected_patch_path is None, and errors == ['Patch touches 2 files; max_files is 1.', 'Could not save the rejected edit (<reason>); the worktree was left unchanged.']."""
+        blocker = tmp_path / "blocker"
+        blocker.write_text("file", encoding="utf-8")
+        destination = blocker / "code_attempt_1.patch"
+
+        response = UnitTestAdapter(run_fn=_fake_run(edits={"a.txt": "1\n", "b.txt": "2\n"})).invoke(
+            _gated_request(git_repo, destination)
+        )
+
+        assert response.status == AgentResponseStatus.PROVIDER_ERROR
+        assert response.rejected_patch_path is None
+        assert response.errors[0] == "Patch touches 2 files; max_files is 1."
+        assert len(response.errors) == 2
+        assert response.errors[1].startswith(f"Could not save the rejected edit (cannot write {destination}: ")
+        assert response.errors[1].endswith("); the worktree was left unchanged.")
+        assert (git_repo / "a.txt").read_text(encoding="utf-8") == "1\n"
+        assert (git_repo / "b.txt").read_text(encoding="utf-8") == "2\n"
+
+    def test_missing_destination_reports_no_session_storage_and_keeps_edits(self, git_repo: Path) -> None:
+        """[tier-1/integration] CliDirectMutationAdapter.invoke: an AgentRequest with rejected_patch_destination None and a gate rejection returns errors ending 'Could not save the rejected edit (no session storage directory is available); the worktree was left unchanged.' and the edited files remain."""
+        response = UnitTestAdapter(run_fn=_fake_run(edits={"a.txt": "1\n", "b.txt": "2\n"})).invoke(
+            _gated_request(git_repo, None)
+        )
+
+        assert response.errors[-1] == (
+            "Could not save the rejected edit (no session storage directory is available); "
+            "the worktree was left unchanged."
+        )
+        assert (git_repo / "a.txt").exists()
+        assert (git_repo / "b.txt").exists()
+
+
+class RejectedPatchContentTests:
+    def test_saved_patch_keeps_secret_looking_text_unredacted_and_response_never_contains_it(
+        self, git_repo: Path, tmp_path: Path
+    ) -> None:
+        """[tier-1/integration] CliDirectMutationAdapter.invoke: an edit writing 'API_KEY=sk-test-123' rejected by max_files=1 leaves that exact text in the saved patch, and the response's errors, raw_text and rejected_patch_path do not contain it."""
+        destination = tmp_path / "rejected" / "code_attempt_1.patch"
+
+        response = UnitTestAdapter(run_fn=_fake_run(edits={"a.txt": "API_KEY=sk-test-123\n", "b.txt": "2\n"})).invoke(
+            _gated_request(git_repo, destination)
+        )
+
+        assert "API_KEY=sk-test-123" in destination.read_text(encoding="utf-8")
+        surfaced = [*response.errors, response.raw_text, response.rejected_patch_path]
+        assert not any("sk-test-123" in (item or "") for item in surfaced)
+
+
+class RejectedPatchDiscardOrderTests:
+    def test_empty_capture_discards_without_a_patch_or_path(
+        self, git_repo: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """[tier-1/unit] CliDirectMutationAdapter.invoke: save_rejected_patch patched to return None yields errors == ['Patch touches 2 files; max_files is 1.'], rejected_patch_path None, and the worktree reset to baseline."""
+        monkeypatch.setattr("dovo.core.agents.cli_mutation.save_rejected_patch", lambda *args, **kwargs: None)
+        destination = tmp_path / "rejected" / "code_attempt_1.patch"
+
+        response = UnitTestAdapter(run_fn=_fake_run(edits={"a.txt": "1\n", "b.txt": "2\n"})).invoke(
+            _gated_request(git_repo, destination)
+        )
+
+        assert response.errors == ["Patch touches 2 files; max_files is 1."]
+        assert response.rejected_patch_path is None
+        assert _porcelain(git_repo) == ""
+        assert not destination.exists()
+
+    def test_discard_failure_after_save_reports_rejected_line_and_keeps_path(
+        self, git_repo: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """[tier-1/integration] CliDirectMutationAdapter.invoke: discard_since patched to raise MutationGitError('git reset failed: index locked') returns errors == ['Agent provider error (AGENT_PROVIDER_ERROR): Failed to discard rejected worktree edit: git reset failed: index locked', 'Patch touches 2 files; max_files is 1.', f'Rejected edit saved to {destination}.'] and rejected_patch_path == str(destination)."""
+
+        def _fail_discard(*args: object, **kwargs: object) -> None:
+            raise MutationGitError("git reset failed: index locked")
+
+        monkeypatch.setattr("dovo.core.agents.cli_mutation.discard_since", _fail_discard)
+        destination = tmp_path / "rejected" / "code_attempt_1.patch"
+
+        response = UnitTestAdapter(run_fn=_fake_run(edits={"a.txt": "1\n", "b.txt": "2\n"})).invoke(
+            _gated_request(git_repo, destination)
+        )
+
+        assert response.errors == [
+            "Agent provider error (AGENT_PROVIDER_ERROR): "
+            "Failed to discard rejected worktree edit: git reset failed: index locked",
+            "Patch touches 2 files; max_files is 1.",
+            f"Rejected edit saved to {destination}.",
+        ]
+        assert response.rejected_patch_path == str(destination)

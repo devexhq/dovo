@@ -59,6 +59,7 @@ def _build_request(
         max_tokens=settings.max_tokens,
         max_files=max_files,
         agent_scratch_path=invocation.scratch_path if invocation is not None else None,
+        rejected_patch_destination=context.rejected_patch_destination,
         invocation=invocation,
         env_passthrough=settings.env_passthrough,
         env_mode=settings.env_mode,
@@ -96,6 +97,7 @@ def _settle(response: AgentResponse) -> AgentAttempt:
         unfixable_reason=response.unfixable_reason,
         diagnostics=diagnostics,
         env_withheld=response.env_withheld,
+        rejected_patch_path=response.rejected_patch_path,
     )
 
 

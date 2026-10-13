@@ -50,3 +50,19 @@ def atomic_write_text(path: Path, text: str) -> None:
         if tmp_path.exists():
             tmp_path.unlink(missing_ok=True)
         raise
+
+
+def atomic_write_bytes(path: Path, data: bytes) -> None:
+    """Write bytes atomically via a .tmp sibling, preserving every byte."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp_path = path.with_name(f"{path.name}.tmp")
+    try:
+        with open(tmp_path, "wb") as f:
+            f.write(data)
+            f.flush()
+            os.fsync(f.fileno())
+        tmp_path.replace(path)
+    except Exception:
+        if tmp_path.exists():
+            tmp_path.unlink(missing_ok=True)
+        raise

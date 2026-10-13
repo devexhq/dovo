@@ -65,6 +65,7 @@ def _leaf_summary(
         exit_code=results[-1].exit_code if results else None,
         duration_seconds=sum(result.duration_seconds for result in results) if results else None,
         error_message=_last_error_message(leaf.attempts, redactor),
+        rejected_patch_path=_last_rejected_patch_path(leaf.attempts, redactor),
         loop_id=loop_id,
         iteration=iteration,
     )
@@ -81,3 +82,11 @@ def _last_error_message(attempts: list[StepAttemptRecord], redactor: SecretRedac
         return None
 
     return redactor.redact_text(attempts[-1].result.error_message)
+
+
+def _last_rejected_patch_path(attempts: list[StepAttemptRecord], redactor: SecretRedactor) -> str | None:
+    """Return the redacted rejected_patch_path of the last attempt, None when it has no result or no path."""
+    if not attempts or attempts[-1].result is None or attempts[-1].result.rejected_patch_path is None:
+        return None
+
+    return redactor.redact_text(attempts[-1].result.rejected_patch_path)

@@ -124,6 +124,7 @@ class StepCoordinatorAgentRunnerTests:
             session_tmp_dir: Path | None,
             main_checkout: Path,
             session_log_dir: Path | None,
+            session_dir: Path | None,
         ) -> Any:
             builds.append((agent, worktree_active))
             return build_agent_step_runner(
@@ -132,6 +133,7 @@ class StepCoordinatorAgentRunnerTests:
                 session_tmp_dir=session_tmp_dir,
                 main_checkout=main_checkout,
                 session_log_dir=session_log_dir,
+                session_dir=session_dir,
             )
 
         class _CapturingStepExecution(StepExecution):
@@ -199,6 +201,7 @@ class StepCoordinatorRunnerWiringTests:
             session_tmp_dir: Path | None,
             main_checkout: Path,
             session_log_dir: Path | None,
+            session_dir: Path | None,
         ) -> Any:
             scratch_roots.append((session_tmp_dir, session_log_dir, main_checkout))
             return build_agent_step_runner(
@@ -207,6 +210,7 @@ class StepCoordinatorRunnerWiringTests:
                 session_tmp_dir=session_tmp_dir,
                 main_checkout=main_checkout,
                 session_log_dir=session_log_dir,
+                session_dir=session_dir,
             )
 
         monkeypatch.setattr("dovo.engine.step_coordinator.build_agent_step_runner", _recording_build)
@@ -222,6 +226,43 @@ class StepCoordinatorRunnerWiringTests:
         StepCoordinator(context).run_attempt(run_context, [], step, idx=1, total=1, step_context=None)
 
         assert scratch_roots == [(session_tmp, session_log, paths.root_dir)]
+
+    @pytest.mark.parametrize(
+        "session_id", [pytest.param("blueprint_abc", id="with-session"), pytest.param(None, id="no-session")]
+    )
+    def test_runner_session_dir_is_the_session_storage_directory_or_none(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, session_id: str | None
+    ) -> None:
+        """[tier-1/unit] StepCoordinator.run_attempt: build_agent_step_runner receives session_dir == paths.session_dir(session_id) for a session id and None without one."""
+        session_dirs: list[Path | None] = []
+
+        def _recording_build(
+            agent: ResolvedAgentSettings | None,
+            worktree_active: bool,
+            *,
+            session_tmp_dir: Path | None,
+            main_checkout: Path,
+            session_log_dir: Path | None,
+            session_dir: Path | None,
+        ) -> Any:
+            session_dirs.append(session_dir)
+            return build_agent_step_runner(
+                agent,
+                worktree_active,
+                session_tmp_dir=session_tmp_dir,
+                main_checkout=main_checkout,
+                session_log_dir=session_log_dir,
+                session_dir=session_dir,
+            )
+
+        monkeypatch.setattr("dovo.engine.step_coordinator.build_agent_step_runner", _recording_build)
+        paths = _paths_for(tmp_path)
+        context = RunSettings(cwd=tmp_path, use_worktree=False, paths=paths, session_id=session_id)
+        step = StepBuilder.command("echo ok").with_id("ok").build()
+
+        StepCoordinator(context).run_attempt(_run_context(tmp_path), [], step, idx=1, total=1, step_context=None)
+
+        assert session_dirs == [paths.session_dir(session_id) if session_id else None]
 
 
 class StepCoordinatorLoopIterationForwardingTests:

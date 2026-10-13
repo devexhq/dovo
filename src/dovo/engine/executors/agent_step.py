@@ -61,6 +61,7 @@ def execute_agent_step(
     session_tmp_dir: Path | None,
     main_checkout: Path,
     session_log_dir: Path | None,
+    session_dir: Path | None,
     metadata: ExecutionMetadata,
     on_output: OutputCallback | None,
 ) -> StepDispatchOutcome:
@@ -92,7 +93,14 @@ def execute_agent_step(
         timeout_seconds=step.timeout_seconds,
         tools=tools,
         max_files=step.max_files,
-        context=AgentAttemptContext(invocation=scratch.context, env=step.env, metadata_env=metadata_to_env(metadata)),
+        context=AgentAttemptContext(
+            invocation=scratch.context,
+            env=step.env,
+            metadata_env=metadata_to_env(metadata),
+            rejected_patch_destination=_rejected_patch_destination(
+                session_dir, step.id, metadata.step.attempt, metadata.loop_iteration
+            ),
+        ),
     )
     _report_withheld(attempt, metadata, session_log_dir, on_output)
 
@@ -106,6 +114,7 @@ def build_agent_step_runner(
     session_tmp_dir: Path | None,
     main_checkout: Path,
     session_log_dir: Path | None,
+    session_dir: Path | None,
 ) -> AgentStepRunner:
     """Return a runner closing over the run's agent settings, worktree state, scratch roots, and session log directory."""
 
@@ -120,11 +129,24 @@ def build_agent_step_runner(
             session_tmp_dir=session_tmp_dir,
             main_checkout=main_checkout,
             session_log_dir=session_log_dir,
+            session_dir=session_dir,
             metadata=metadata,
             on_output=on_output,
         )
 
     return _run
+
+
+def _rejected_patch_destination(
+    session_dir: Path | None, step_id: str, attempt: int, loop_iteration: int | None
+) -> Path | None:
+    """Return ``<session_dir>/rejected/<step_id>[_iter_<k>]_attempt_<attempt>.patch``, or None without a session directory."""
+    if session_dir is None:
+        return None
+
+    iteration = f"_iter_{loop_iteration}" if loop_iteration is not None else ""
+
+    return session_dir / "rejected" / f"{step_id}{iteration}_attempt_{attempt}.patch"
 
 
 def _report_withheld(
@@ -198,7 +220,9 @@ def _to_outcome(attempt: AgentAttempt, on_output: OutputCallback | None) -> Step
     callback_error = _emit_output(on_output, "stdout", line)
 
     if not attempt.completed:
-        return _failed_outcome(attempt.status, line, _failure_text(attempt))
+        return _failed_outcome(
+            attempt.status, line, _failure_text(attempt), rejected_patch_path=attempt.rejected_patch_path
+        )
 
     if callback_error is not None:
         downgraded = _summary_line(attempt, status=AgentResponseStatus.PROVIDER_ERROR)
@@ -215,8 +239,15 @@ def _to_outcome(attempt: AgentAttempt, on_output: OutputCallback | None) -> Step
     )
 
 
-def _failed_outcome(status: AgentResponseStatus, line: str, message: str) -> StepDispatchOutcome:
-    """Build the failed dispatch outcome carrying the mapped exit code for status, the summary line, and the diagnostic."""
+def _failed_outcome(
+    status: AgentResponseStatus, line: str, message: str, *, rejected_patch_path: str | None = None
+) -> StepDispatchOutcome:
+    """Build the failed dispatch outcome carrying the mapped exit code for status, the summary line, the diagnostic, and any saved rejected-edit path."""
     return StepDispatchOutcome(
-        status="failed", exit_code=AGENT_OUTCOME_EXIT_CODES[status], stdout=line, stderr=message, error_message=message
+        status="failed",
+        exit_code=AGENT_OUTCOME_EXIT_CODES[status],
+        stdout=line,
+        stderr=message,
+        error_message=message,
+        rejected_patch_path=rejected_patch_path,
     )

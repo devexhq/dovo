@@ -161,6 +161,7 @@ class StepRunSummary(BaseModel):
     exit_code: int | None = None
     duration_seconds: float | None = None
     error_message: str | None = None
+    rejected_patch_path: str | None = None
     loop_id: str | None = None
     iteration: int | None = None
     iterations: int | None = None

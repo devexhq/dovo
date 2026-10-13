@@ -108,6 +108,20 @@ def capture_diff_since(worktree_path: Path, baseline: str) -> tuple[str, list[st
     return diff.stdout.decode("utf-8", errors="replace"), touched
 
 
+def capture_binary_patch_since(worktree_path: Path, baseline: str) -> bytes:
+    """Stage all worktree changes and return ``git diff --cached --binary`` against ``baseline`` as raw bytes.
+
+    Raises:
+        MutationGitError: When the underlying git commands fail.
+    """
+    add = _run_git(["add", "-A"], cwd=worktree_path)
+    _require_ok(add, action="git add -A (capture patch)")
+    diff = _run_git(["diff", "--cached", "--binary", baseline], cwd=worktree_path)
+    _require_ok(diff, action="git diff --cached --binary")
+
+    return diff.stdout
+
+
 def discard_since(worktree_path: Path, baseline: str) -> None:
     """Reset the worktree to ``baseline`` and remove untracked agent edits.
 

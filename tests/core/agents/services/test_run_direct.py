@@ -53,7 +53,11 @@ def _use_provider(monkeypatch: pytest.MonkeyPatch, provider: BaseAgentProvider) 
 
 
 def _attempt(
-    worktree: Path, provider: str = "copilot", tools: ToolPolicy | None = None, max_files: int | None = None
+    worktree: Path,
+    provider: str = "copilot",
+    tools: ToolPolicy | None = None,
+    max_files: int | None = None,
+    context: AgentAttemptContext | None = None,
 ) -> AgentAttempt:
     return run_direct_attempt(
         instruction="Plan the change",
@@ -62,6 +66,7 @@ def _attempt(
         timeout_seconds=45,
         tools=tools or default_tool_policy(),
         max_files=max_files,
+        context=context,
     )
 
 
@@ -247,12 +252,14 @@ class RunDirectAttemptDirectMutationTests:
         assert apply_calls == []
 
     def test_mutation_over_step_max_files_returns_provider_error_and_rolls_back(
-        self, git_repo: Path, monkeypatch: pytest.MonkeyPatch
+        self, git_repo: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """[tier-1/unit] run_direct_attempt: a real CliDirectMutationAdapter subclass writing 2 files with max_files=1 returns PROVIDER_ERROR and leaves git status --porcelain empty."""
         _use_provider(monkeypatch, _EditingAdapter({"a.txt": "x\n", "b.txt": "x\n"}))
 
-        attempt = _attempt(git_repo, "copilot", max_files=1)
+        context = AgentAttemptContext(rejected_patch_destination=tmp_path / "rejected" / "code_attempt_1.patch")
+
+        attempt = _attempt(git_repo, "copilot", max_files=1, context=context)
 
         assert attempt.status == AgentResponseStatus.PROVIDER_ERROR
         assert _porcelain(git_repo) == ""
@@ -369,3 +376,37 @@ class RunDirectAttemptEnvTests:
         _use_provider(monkeypatch, FakeAgentProvider(response))
 
         assert _attempt(git_repo).env_withheld == ["A"]
+
+
+class RunDirectRejectedPatchTests:
+    def test_provider_error_response_path_is_carried_onto_the_attempt(
+        self, git_repo: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """[tier-1/unit] run_direct_attempt: an adapter returning PROVIDER_ERROR with rejected_patch_path '/s/rejected/code_attempt_1.patch' yields an AgentAttempt with that rejected_patch_path."""
+        _use_provider(
+            monkeypatch,
+            FakeAgentProvider(
+                AgentResponse(
+                    status=AgentResponseStatus.PROVIDER_ERROR,
+                    errors=["gate said no"],
+                    rejected_patch_path="/s/rejected/code_attempt_1.patch",
+                )
+            ),
+        )
+
+        attempt = _attempt(git_repo)
+
+        assert attempt.status == AgentResponseStatus.PROVIDER_ERROR
+        assert attempt.rejected_patch_path == "/s/rejected/code_attempt_1.patch"
+
+    def test_context_destination_reaches_the_agent_request(
+        self, git_repo: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """[tier-1/unit] run_direct_attempt: AgentAttemptContext(rejected_patch_destination=Path('/s/rejected/code_attempt_1.patch')) produces an AgentRequest with the same rejected_patch_destination."""
+        provider = FakeAgentProvider(_no_op())
+        _use_provider(monkeypatch, provider)
+        destination = Path("/s/rejected/code_attempt_1.patch")
+
+        _attempt(git_repo, context=AgentAttemptContext(rejected_patch_destination=destination))
+
+        assert [request.rejected_patch_destination for request in provider.requests] == [destination]

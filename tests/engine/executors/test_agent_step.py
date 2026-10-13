@@ -84,6 +84,8 @@ def _run(
     worktree_active: bool = True,
     session_tmp_dir: Path | None = None,
     session_log_dir: Path | None = None,
+    session_dir: Path | None = None,
+    metadata: ExecutionMetadata = _METADATA,
     on_output: Callable[[str, str], None] | None = None,
 ) -> StepDispatchOutcome:
     return execute_agent_step(
@@ -94,7 +96,8 @@ def _run(
         session_tmp_dir=session_tmp_dir or _session_tmp_dir(worktree),
         main_checkout=worktree,
         session_log_dir=session_log_dir,
-        metadata=_METADATA,
+        session_dir=session_dir,
+        metadata=metadata,
         on_output=on_output,
     )
 
@@ -250,6 +253,7 @@ class ExecuteAgentStepRequestTests:
             session_tmp_dir=_session_tmp_dir(git_repo),
             main_checkout=git_repo,
             session_log_dir=None,
+            session_dir=None,
             metadata=_METADATA,
             on_output=None,
         )
@@ -455,6 +459,7 @@ class ExecuteAgentStepScratchTests:
             session_tmp_dir=None,
             main_checkout=git_repo,
             session_log_dir=None,
+            session_dir=None,
             metadata=_METADATA,
             on_output=None,
         )
@@ -509,6 +514,7 @@ class ExecuteAgentStepScratchTests:
             session_tmp_dir=session_tmp,
             main_checkout=git_repo,
             session_log_dir=None,
+            session_dir=None,
             metadata=_METADATA,
             on_output=None,
         )
@@ -680,6 +686,7 @@ class BuildAgentStepRunnerTests:
             session_tmp_dir=_session_tmp_dir(git_repo),
             main_checkout=git_repo,
             session_log_dir=None,
+            session_dir=None,
         )
         outcome = runner(_step(), git_repo, None, _METADATA)
 
@@ -702,6 +709,7 @@ class BuildAgentStepRunnerTests:
             session_tmp_dir=_session_tmp_dir(git_repo),
             main_checkout=git_repo,
             session_log_dir=None,
+            session_dir=None,
         )
         outcome = runner(step, git_repo, lambda stream, line: emitted.append((stream, line)), _METADATA)
 
@@ -709,3 +717,71 @@ class BuildAgentStepRunnerTests:
             (step.prompt, settings, git_repo)
         ]
         assert emitted == [("stdout", outcome.stdout)]
+
+
+def _record_contexts(monkeypatch: pytest.MonkeyPatch, attempt: AgentAttempt | None = None) -> list[AgentAttemptContext]:
+    contexts: list[AgentAttemptContext] = []
+
+    def _record(*, context: AgentAttemptContext | None, **kwargs: object) -> AgentAttempt:
+        assert context is not None
+        contexts.append(context)
+        return attempt or AgentAttempt(status=AgentResponseStatus.NO_OP)
+
+    monkeypatch.setattr("dovo.engine.executors.agent_step.run_direct_attempt", _record)
+    return contexts
+
+
+class AgentStepRejectedPatchTests:
+    def test_rejected_attempt_failed_outcome_carries_path_and_error_message_lists_it(
+        self, git_repo: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """[tier-1/unit] execute_agent_step: run_direct_attempt returning a PROVIDER_ERROR attempt with rejected_patch_path 'P' and diagnostics ending 'Discarded edit saved to P.' yields status 'failed', exit_code 203, rejected_patch_path 'P'."""
+        _record_contexts(
+            monkeypatch,
+            AgentAttempt(
+                status=AgentResponseStatus.PROVIDER_ERROR,
+                diagnostics=["gate said no", "Discarded edit saved to P."],
+                rejected_patch_path="P",
+            ),
+        )
+
+        outcome = _run(git_repo)
+
+        assert outcome.status == "failed"
+        assert outcome.exit_code == 203
+        assert outcome.rejected_patch_path == "P"
+        assert (outcome.error_message or "").endswith("Discarded edit saved to P.")
+
+    def test_destination_is_session_dir_rejected_step_id_attempt_patch(
+        self, git_repo: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """[tier-1/unit] execute_agent_step: session_dir=tmp_path, step id 'code', metadata attempt 2 passes AgentAttemptContext.rejected_patch_destination == tmp_path / 'rejected' / 'code_attempt_2.patch' to run_direct_attempt."""
+        contexts = _record_contexts(monkeypatch)
+        metadata = ExecutionMetadata(step=StepMetadata(id="code", name="code", index=1, attempt=2))
+
+        _run(git_repo, step=StepBuilder.agent("Plan").with_id("code").build(), session_dir=tmp_path, metadata=metadata)
+
+        assert [context.rejected_patch_destination for context in contexts] == [
+            tmp_path / "rejected" / "code_attempt_2.patch"
+        ]
+
+    def test_loop_iteration_adds_iter_segment_to_destination(
+        self, git_repo: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """[tier-1/unit] execute_agent_step: session_dir=tmp_path, step id 'code', attempt 1, metadata.loop_iteration 2 passes AgentAttemptContext.rejected_patch_destination == tmp_path / 'rejected' / 'code_iter_2_attempt_1.patch'."""
+        contexts = _record_contexts(monkeypatch)
+        metadata = ExecutionMetadata(step=StepMetadata(id="code", name="code", index=1), loop_iteration=2)
+
+        _run(git_repo, step=StepBuilder.agent("Plan").with_id("code").build(), session_dir=tmp_path, metadata=metadata)
+
+        assert [context.rejected_patch_destination for context in contexts] == [
+            tmp_path / "rejected" / "code_iter_2_attempt_1.patch"
+        ]
+
+    def test_missing_session_dir_passes_no_destination(self, git_repo: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """[tier-1/unit] execute_agent_step: session_dir=None passes AgentAttemptContext.rejected_patch_destination None to run_direct_attempt."""
+        contexts = _record_contexts(monkeypatch)
+
+        _run(git_repo, session_dir=None)
+
+        assert [context.rejected_patch_destination for context in contexts] == [None]

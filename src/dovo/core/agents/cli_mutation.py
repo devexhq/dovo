@@ -27,6 +27,7 @@ from dovo.core.agents.mutation_git import (
     resolve_pre_agent_baseline,
 )
 from dovo.core.agents.responses import blocked_response, no_op_response, provider_error_response, timeout_response
+from dovo.core.agents.save_rejected_patch import save_rejected_patch
 from dovo.core.git import PatchApplyResult, PatchApplyStatus, validate_patch_text
 
 CliMutationRunStatus = Literal["finished", "timeout", "error"]
@@ -245,17 +246,43 @@ class CliDirectMutationAdapter(BaseAgentProvider):
         baseline: str,
         duration_ms: int,
     ) -> AgentResponse:
-        """Discard the rejected edit and return PROVIDER_ERROR carrying the gate's errors, led by any discard failure."""
+        """Save the rejected edit, then discard it and return PROVIDER_ERROR carrying the gate's errors, the saved path, and any discard failure; a failed save leaves the worktree untouched."""
+        saved, reason = _save_rejected_edit(request, baseline)
+        if reason is not None:
+            return provider_error_response(
+                duration_ms=duration_ms,
+                errors=[*gate.errors, f"Could not save the rejected edit ({reason}); the worktree was left unchanged."],
+                raw_text=outcome.result_text,
+                mutation_baseline_ref=baseline,
+            )
+
         discard_detail: str | None = None
         try:
             discard_since(request.worktree_path, baseline)
         except MutationGitError as exc:
             discard_detail = f"Failed to discard rejected worktree edit: {exc}"
 
-        return provider_error_response(
+        errors = list(gate.errors)
+        if saved is not None:
+            errors.append(f"Rejected edit saved to {saved}." if discard_detail else f"Discarded edit saved to {saved}.")
+
+        response = provider_error_response(
             duration_ms=duration_ms,
             detail=discard_detail,
-            errors=gate.errors,
+            errors=errors,
             raw_text=outcome.result_text,
             mutation_baseline_ref=baseline,
         )
+
+        return response.model_copy(update={"rejected_patch_path": str(saved) if saved is not None else None})
+
+
+def _save_rejected_edit(request: AgentRequest, baseline: str) -> tuple[Path | None, str | None]:
+    """Return ``(saved path or None, failure reason or None)``; a missing destination is a failure."""
+    if request.rejected_patch_destination is None:
+        return None, "no session storage directory is available"
+
+    try:
+        return save_rejected_patch(request.worktree_path, baseline, request.rejected_patch_destination), None
+    except MutationGitError as exc:
+        return None, str(exc)
