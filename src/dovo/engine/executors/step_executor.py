@@ -246,6 +246,7 @@ class StepExecution:
             steps=self.steps,
             session_tmp_dir=self.session_tmp_dir,
             session_id=self.session_id,
+            loop_iteration=self.loop_iteration,
         )
         try:
             self.step = interpolate_step_fields(self._uninterpolated_step, self._namespace_providers(metadata))
@@ -661,5 +662,6 @@ def _step_result(
         attempts=outcome.attempts,
         error_message=None if outcome.error_message is None else redactor.redact_text(outcome.error_message),
         outputs=outputs or {},
+        rejected_patch_path=outcome.rejected_patch_path,
         warnings=warnings or [],
     )

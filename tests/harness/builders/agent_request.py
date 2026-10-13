@@ -36,6 +36,7 @@ class AgentRequestBuilder:
         self._max_tokens: int | None = None
         self._max_files: int | None = None
         self._invocation: AgentInvocationContext | None = None
+        self._rejected_patch_destination: Path | None = None
         self._env: dict[str, str] = {}
         self._metadata_env: dict[str, str] = {}
         self._env_passthrough: list[str] = []
@@ -75,6 +76,11 @@ class AgentRequestBuilder:
     def with_invocation(self, invocation: AgentInvocationContext) -> Self:
         """Set the authored attempt's private scratch and control paths."""
         self._invocation = invocation
+        return self
+
+    def with_rejected_patch_destination(self, destination: Path) -> Self:
+        """Set where a gate-rejected edit is saved before the worktree is discarded."""
+        self._rejected_patch_destination = destination
         return self
 
     def with_env(self, env: dict[str, str]) -> Self:
@@ -118,6 +124,7 @@ class AgentRequestBuilder:
             max_tokens=self._max_tokens,
             max_files=self._max_files,
             agent_scratch_path=None if self._invocation is None else self._invocation.scratch_path,
+            rejected_patch_destination=self._rejected_patch_destination,
             invocation=self._invocation,
             env=self._env,
             metadata_env=self._metadata_env,

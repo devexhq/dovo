@@ -207,3 +207,23 @@ class SummarizeSessionStepsTests:
             ("tests", "failed", SEEDED_FAILURE),
         ]
         assert snapshot() == before
+
+
+class SummarizeSessionStepsRejectedPatchTests:
+    def test_last_attempt_path_is_reported_and_older_state_without_it_reports_none(self) -> None:
+        """[tier-1/unit] summarize_session_steps: attempts [no path, path 'P'] give rejected_patch_path 'P'; a node whose result lacks the field gives None."""
+        rejected = _attempt(2, exit_code=203, duration_seconds=1.0, error_message="gate said no")
+        assert rejected.result is not None
+        rejected.result.rejected_patch_path = "P"
+        saved = ExecutionLeafNode(
+            id="saved",
+            state=NodeState.FAILED,
+            attempts=[_attempt(1, exit_code=203, duration_seconds=1.0), rejected],
+        )
+        legacy = ExecutionLeafNode(
+            id="legacy", state=NodeState.FAILED, attempts=[_attempt(1, exit_code=1, duration_seconds=1.0)]
+        )
+
+        result = summarize_session_steps(_record([saved, legacy]), _REDACTOR)
+
+        assert [(row.step_id, row.rejected_patch_path) for row in result.steps] == [("saved", "P"), ("legacy", None)]

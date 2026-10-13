@@ -129,6 +129,7 @@ class AgentAttemptContext(BaseModel):
     invocation: AgentInvocationContext | None = None
     env: dict[str, str] = Field(default_factory=dict)
     metadata_env: dict[str, str] = Field(default_factory=dict)
+    rejected_patch_destination: Path | None = None
 
 
 class AgentScratchResult(BaseResult):
@@ -161,6 +162,7 @@ class AgentRequest(BaseModel):
     max_patch_kb: int | None = None
     reject_binary_changes: bool | None = None
     agent_scratch_path: Path | None = None
+    rejected_patch_destination: Path | None = None
     invocation: AgentInvocationContext | None = Field(default=None, exclude=True)
     env_passthrough: list[EnvPassthroughEntry] = Field(default_factory=list)
     env_mode: AgentEnvMode = "allowlist"
@@ -205,6 +207,7 @@ class AgentResponse(BaseModel):
     fixes: list[str] = Field(default_factory=list)
     mutation_baseline_ref: str | None = None
     env_withheld: list[str] = Field(default_factory=list)
+    rejected_patch_path: str | None = None
 
     @property
     def ok(self) -> bool:
@@ -222,6 +225,7 @@ class AgentAttempt:
     touched_files: list[str] = field(default_factory=list)
     diagnostics: list[str] = field(default_factory=list)
     env_withheld: list[str] = field(default_factory=list)
+    rejected_patch_path: str | None = None
 
     @property
     def completed(self) -> bool:

@@ -7,6 +7,7 @@ import pytest
 
 from dovo.core.agents.mutation_git import (
     MutationGitError,
+    capture_binary_patch_since,
     capture_diff_since,
     discard_since,
     resolve_pre_agent_baseline,
@@ -170,3 +171,27 @@ class DiscardSinceTests:
         """Discarding to a nonexistent ref raises MutationGitError."""
         with pytest.raises(MutationGitError):
             discard_since(git_repo, "not-a-real-ref")
+
+
+class CaptureBinaryPatchSinceTests:
+    def test_tracked_untracked_and_binary_changes_yield_patch_that_applies_to_baseline(self, git_repo: Path) -> None:
+        """[tier-1/integration] capture_binary_patch_since: after editing README.md, adding new.txt and a PNG-like binary, resetting to the baseline and running 'git apply' on the returned bytes restores all three files byte-for-byte."""
+        baseline = resolve_pre_agent_baseline(git_repo)
+        expected = {
+            "README.md": b"# Test Repo\nagent edit\r\n",
+            "new.txt": b"fresh\xff\n",
+            "image.png": bytes(range(256)),
+        }
+        for name, content in expected.items():
+            (git_repo / name).write_bytes(content)
+
+        patch = capture_binary_patch_since(git_repo, baseline)
+        discard_since(git_repo, baseline)
+        subprocess.run(["git", "apply"], cwd=git_repo, input=patch, check=True)
+
+        assert {name: (git_repo / name).read_bytes() for name in expected} == expected
+
+    def test_unknown_baseline_raises_mutation_git_error(self, git_repo: Path) -> None:
+        """[tier-1/integration] capture_binary_patch_since: baseline 'not-a-real-ref' raises MutationGitError."""
+        with pytest.raises(MutationGitError):
+            capture_binary_patch_since(git_repo, "not-a-real-ref")

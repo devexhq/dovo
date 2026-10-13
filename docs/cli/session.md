@@ -67,7 +67,9 @@ Steps
 Use 'dovo logs <session_id> --step <step_id>' for step output.
 ```
 
-When a session has no recorded execution state, the command prints `No step data recorded for this session.` instead of the table; when the state cannot be parsed, it prints `Step data could not be read: <reason>`. Neither changes the exit code. With `--format json`, the payload carries a `steps` list of `StepRunSummary` objects (kind, step_id, name, state, attempts, exit_code, duration_seconds, error_message, loop_id, iteration, iterations) (`[]` in both cases) and the reason is added to `warnings`.
+A failed agent step whose edit tripped a patch limit lists `Discarded edit saved to <path>.`; with `--format json` the step carries `rejected_patch_path` (`null` for every other step). The saved patch is stored exactly as the agent wrote it and may contain secrets from the agent's output, so no command prints its content; treat the file like any other session artifact.
+
+When a session has no recorded execution state, the command prints `No step data recorded for this session.` instead of the table; when the state cannot be parsed, it prints `Step data could not be read: <reason>`. Neither changes the exit code. With `--format json`, the payload carries a `steps` list of `StepRunSummary` objects (kind, step_id, name, state, attempts, exit_code, duration_seconds, error_message, rejected_patch_path, loop_id, iteration, iterations) (`[]` in both cases) and the reason is added to `warnings`.
 
 ### Arguments
 

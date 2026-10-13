@@ -170,6 +170,14 @@ def seed_paused_session(
     return row
 
 
+def _seeded_error_message(rejected_patch_path: str | None) -> str:
+    """Return SEEDED_FAILURE, followed by the production 'Discarded edit saved to' line when a patch path is given."""
+    if rejected_patch_path is None:
+        return SEEDED_FAILURE
+
+    return f"{SEEDED_FAILURE}\nDiscarded edit saved to {rejected_patch_path}."
+
+
 def seed_failed_session(
     paths: WorkspacePaths,
     sessions: SessionsRepository,
@@ -177,8 +185,9 @@ def seed_failed_session(
     session_id: str,
     steps: list[dict[str, object]],
     failed_step_id: str,
+    rejected_patch_path: str | None = None,
 ) -> SessionRecord:
-    """Seed a session whose steps before failed_step_id completed and whose failed_step_id attempt failed (exit 1, error_message SEEDED_FAILURE), saved with run_status=FAILED."""
+    """Seed a session whose steps before failed_step_id completed and whose failed_step_id attempt failed (exit 1, error_message SEEDED_FAILURE, followed by a 'Discarded edit saved to' line when rejected_patch_path is given), saved with run_status=FAILED."""
     seed_new_session(paths, sessions, session_id=session_id, steps=steps)
     store = SessionStateStore(sessions, paths, session_id)
     state = store.load().state
@@ -195,7 +204,8 @@ def seed_failed_session(
             stdout="",
             stderr="",
             duration_seconds=0.5,
-            error_message=None if completed else SEEDED_FAILURE,
+            error_message=None if completed else _seeded_error_message(rejected_patch_path),
+            rejected_patch_path=None if completed else rejected_patch_path,
         )
         node.attempts = [StepAttemptRecord(number=1, started_at=now, completed_at=now, result=result)]
         node.state = NodeState.COMPLETED if completed else NodeState.FAILED

@@ -189,6 +189,7 @@ class SessionShowCliIntegrationTests:
                 "exit_code": 0,
                 "duration_seconds": 0.5,
                 "error_message": None,
+                "rejected_patch_path": None,
                 "loop_id": None,
                 "iteration": None,
                 "iterations": None,
@@ -202,6 +203,7 @@ class SessionShowCliIntegrationTests:
                 "exit_code": 1,
                 "duration_seconds": 0.5,
                 "error_message": "seeded failure",
+                "rejected_patch_path": None,
                 "loop_id": None,
                 "iteration": None,
                 "iterations": None,
@@ -353,3 +355,34 @@ class SessionShowLogsCliIntegrationTests:
 
         assert result.exit_code == 0
         assert expected_text in result.stdout
+
+
+class SessionShowRejectedPatchCliIntegrationTests:
+    def test_json_step_carries_rejected_patch_path_and_terminal_prints_discarded_line(
+        self, cli_runner: CliRunner, session_workspace: Path
+    ) -> None:
+        """[tier-3/integration] dovo session show <id> --format json: a seeded failed agent step with rejected_patch_path 'P' emits that step dict with "rejected_patch_path": "P" and all other steps null; the terminal run exits 0 with 'Discarded edit saved to P.' in stdout."""
+        paths = _paths_for(session_workspace)
+        db = DovoDb(database_file=paths.database_file, project_id=paths.project_id)
+        seed_failed_session(
+            paths,
+            db.sessions,
+            session_id="session-rejected",
+            steps=[{"id": "format", "run": "true"}, {"id": "code", "run": "false"}],
+            failed_step_id="code",
+            rejected_patch_path="/s/rejected/code_attempt_1.patch",
+        )
+
+        json_result = cli_runner.invoke(
+            app, ["-p", str(session_workspace), "session", "show", "session-rejected", "--format", "json"]
+        )
+        terminal_result = cli_runner.invoke(app, ["-p", str(session_workspace), "session", "show", "session-rejected"])
+
+        assert json_result.exit_code == 0
+        steps = json.loads(json_result.stdout)["payload"]["steps"]
+        assert {step["step_id"]: step["rejected_patch_path"] for step in steps} == {
+            "format": None,
+            "code": "/s/rejected/code_attempt_1.patch",
+        }
+        assert terminal_result.exit_code == 0
+        assert "Discarded edit saved to /s/rejected/code_attempt_1.patch." in terminal_result.stdout

@@ -8,6 +8,7 @@ from typing import Any
 from dovo.common.filesystem.models import RepositoryPaths, YamlFile
 from dovo.common.filesystem.services.git import is_git_repository as _is_git_repository
 from dovo.common.filesystem.services.operations import (
+    atomic_write_bytes as _atomic_write_bytes,
     atomic_write_json as _atomic_write_json,
     atomic_write_text as _atomic_write_text,
     compute_content_checksum as _compute_content_checksum,
@@ -151,6 +152,11 @@ class Filesystem:
     def atomic_write_text(path: Path, text: str) -> None:
         """Write text content atomically with UTF-8 encoding."""
         _atomic_write_text(path, text)
+
+    @staticmethod
+    def atomic_write_bytes(path: Path, data: bytes) -> None:
+        """Write bytes atomically via a .tmp sibling, preserving every byte."""
+        _atomic_write_bytes(path, data)
 
     @staticmethod
     def atomic_write_json(path: Path, data: dict[str, Any]) -> None:

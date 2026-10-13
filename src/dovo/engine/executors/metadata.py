@@ -52,6 +52,7 @@ def build_execution_metadata(
     steps: Sequence[PreviousStepMetadata] | None = None,
     session_tmp_dir: Path | None = None,
     session_id: str = "",
+    loop_iteration: int | None = None,
 ) -> ExecutionMetadata:
     """Build structured execution metadata for a single step attempt."""
     step_metadata = StepMetadata(
@@ -81,6 +82,7 @@ def build_execution_metadata(
         iteration=IterationMetadata(index=iteration_index),
         tmp=_build_tmp_metadata(session_tmp_dir, step.id),
         session_id=session_id,
+        loop_iteration=loop_iteration,
     )
 
 

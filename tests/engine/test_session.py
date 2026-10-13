@@ -831,6 +831,7 @@ def captured_agent_args(monkeypatch: pytest.MonkeyPatch) -> list[ResolvedAgentSe
         session_tmp_dir: Path | None,
         main_checkout: Path,
         session_log_dir: Path | None,
+        session_dir: Path | None,
     ) -> AgentStepRunner:
         captured.append(agent)
         return build_agent_step_runner(
@@ -839,6 +840,7 @@ def captured_agent_args(monkeypatch: pytest.MonkeyPatch) -> list[ResolvedAgentSe
             session_tmp_dir=session_tmp_dir,
             main_checkout=main_checkout,
             session_log_dir=session_log_dir,
+            session_dir=session_dir,
         )
 
     monkeypatch.setattr("dovo.engine.step_coordinator.build_agent_step_runner", _recording_build)

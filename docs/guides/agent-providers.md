@@ -184,6 +184,12 @@ Fix:
 
 ---
 
+## Rejected Edits
+
+When an agent edits the worktree and the result trips a patch limit (`max_files`, patch size, a binary change, or an unsafe path), Dovo saves the full change set as a patch before resetting the worktree, at `~/.dovo/storage/projects/<project_id>/sessions/<session_id>/rejected/<step_id>_attempt_<n>.patch` (`<step_id>_iter_<k>_attempt_<n>.patch` inside a loop; the root honors `DOVO_HOME`). The step error ends with `Discarded edit saved to <path>.`, and `dovo session show` lists the same path. Recover the work with `git apply <path>` from a worktree at the same baseline. If the patch cannot be written, the worktree keeps the agent's edits and the step fails with `Could not save the rejected edit (<reason>); the worktree was left unchanged.` Saved patches are kept as long as the session.
+
+---
+
 ## Next Steps
 
 - [Blueprint Schema](../reference/blueprint-schema.md)

@@ -102,6 +102,8 @@ class ExecutionMetadata(BaseModel):
     iteration: IterationMetadata = Field(default_factory=IterationMetadata)
     tmp: TempMetadata = Field(default_factory=TempMetadata)
     session_id: str = ""
+    # Unlike iteration.index (1 outside loops), None here means the step is not inside a loop.
+    loop_iteration: int | None = None
 
 
 class StepDispatchOutcome(BaseModel):
@@ -115,6 +117,7 @@ class StepDispatchOutcome(BaseModel):
     stderr: str
     error_message: str | None = None
     attempts: int = 1
+    rejected_patch_path: str | None = None
 
 
 class StepPostcondition(Protocol):
@@ -191,6 +194,7 @@ class StepResult(BaseResult):
     attempts: int = 1
     error_message: str | None = None
     outputs: dict[str, str] = Field(default_factory=dict)
+    rejected_patch_path: str | None = None
 
     @property
     def ok(self) -> bool:

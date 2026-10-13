@@ -40,7 +40,7 @@ def _runner(worktree: Path) -> AgentStepRunner:
     session_tmp.mkdir(exist_ok=True)
 
     return build_agent_step_runner(
-        _settings(), True, session_tmp_dir=session_tmp, main_checkout=worktree, session_log_dir=None
+        _settings(), True, session_tmp_dir=session_tmp, main_checkout=worktree, session_log_dir=None, session_dir=None
     )
 
 
@@ -210,3 +210,41 @@ class AgentStepRedactionTests:
         assert "[REDACTED:SVC_SECRET]" in result.stderr + (result.error_message or "")
         assert "s3cr3t-value" not in result.stderr
         assert "s3cr3t-value" not in (result.error_message or "")
+
+
+class StepExecutorRejectedPatchTests:
+    def test_loop_iteration_reaches_the_agent_runner_metadata(self, git_repo: Path) -> None:
+        """[tier-1/integration] StepExecution.run: StepExecutionContext(loop_iteration=3) calls agent_runner with metadata.loop_iteration == 3; without it metadata.loop_iteration is None."""
+        received: list[ExecutionMetadata] = []
+
+        def _runner(
+            step: StepDefinition, worktree: Path, on_output: OutputCallback | None, metadata: ExecutionMetadata
+        ) -> StepDispatchOutcome:
+            received.append(metadata)
+            return StepDispatchOutcome(status="completed", exit_code=0, stdout="", stderr="")
+
+        step = StepBuilder.agent("plan").build()
+
+        StepExecution(
+            StepExecutionContext(step=step, worktree_path=git_repo, agent_runner=_runner, loop_iteration=3)
+        ).run()
+        StepExecution(StepExecutionContext(step=step, worktree_path=git_repo, agent_runner=_runner)).run()
+
+        assert [metadata.loop_iteration for metadata in received] == [3, None]
+
+    def test_failed_agent_outcome_path_becomes_step_result_field(self, git_repo: Path) -> None:
+        """[tier-1/unit] StepExecutor.run: an agent runner returning a failed StepDispatchOutcome with rejected_patch_path 'P' yields StepResult.rejected_patch_path == 'P' and status 'failed'."""
+
+        def _runner(
+            step: StepDefinition, worktree: Path, on_output: OutputCallback | None, metadata: ExecutionMetadata
+        ) -> StepDispatchOutcome:
+            return StepDispatchOutcome(
+                status="failed", exit_code=203, stdout="", stderr="no", error_message="no", rejected_patch_path="P"
+            )
+
+        step = StepBuilder.agent("plan").build()
+
+        result = StepExecution(StepExecutionContext(step=step, worktree_path=git_repo, agent_runner=_runner)).run()
+
+        assert result.status == "failed"
+        assert result.rejected_patch_path == "P"
