@@ -341,10 +341,29 @@ class StepExecution:
         )
 
     def _execute_agent(self, metadata: ExecutionMetadata) -> StepDispatchOutcome:
-        """Execute an AGENT step through the injected agent runner, failing with MISSING_SETTINGS_MESSAGE when none is set."""
+        """Execute an AGENT step through the injected runner, appending its masked provider lines to the attempt's stdout and stderr logs."""
         if self.agent_runner is None:
             return _failed_dispatch(MISSING_SETTINGS_MESSAGE)
-        return self.agent_runner(self.step, self.worktree_path, self.on_output, metadata)
+
+        self._refresh_redactor(self._build_process_env(metadata))
+        stdout_log, stderr_log = self._open_attempt_logs(metadata)
+        # Each stream is written by its own reader thread, so each handle has a single writer.
+        handles: dict[str, IO[str] | None] = {"stdout": stdout_log, "stderr": stderr_log}
+
+        def on_agent_line(stream_name: str, line: str) -> None:
+            handles[stream_name] = self._append_log_line(handles[stream_name], f"{line}\n")
+
+        try:
+            return self.agent_runner(
+                self.step,
+                self.worktree_path,
+                self.on_output,
+                None if stdout_log is None and stderr_log is None else on_agent_line,
+                metadata,
+            )
+        finally:
+            self._close_log_file(handles["stdout"])
+            self._close_log_file(handles["stderr"])
 
     def _masked_output_callback(self, callback: OutputCallback | None) -> OutputCallback | None:
         """Wrap ``callback`` so every streamed line is masked with the current redactor; None stays None."""

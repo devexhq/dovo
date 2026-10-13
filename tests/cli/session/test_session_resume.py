@@ -47,7 +47,7 @@ def _fake_copilot(monkeypatch: pytest.MonkeyPatch) -> FakeAgentRunner:
     """Install a FakeAgentRunner at the Copilot process boundary with a usable GH_TOKEN."""
     monkeypatch.setenv("GH_TOKEN", "test-token")
     runner = FakeAgentRunner().returning(stdout=_AGENT_STDOUT)
-    monkeypatch.setattr("dovo.core.agents.copilot.run_isolated_process", runner)
+    monkeypatch.setattr("dovo.core.agents.copilot.stream_isolated_process", runner)
 
     return runner
 

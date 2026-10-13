@@ -6,7 +6,14 @@ from pathlib import Path
 
 import pytest
 
-from dovo.engine.executors.models import StepExecutionContext
+from dovo.core.catalog.definitions import StepDefinition
+from dovo.engine.executors.models import (
+    AgentStepRunner,
+    ExecutionMetadata,
+    OutputCallback,
+    StepDispatchOutcome,
+    StepExecutionContext,
+)
 from dovo.engine.executors.step_executor import StepExecution
 from tests.harness.builders import StepBuilder
 
@@ -70,5 +77,85 @@ class StepExecutionAttemptLogFileTests:
         result = StepExecution(StepExecutionContext(step=step, worktree_path=tmp_path, session_log_dir=log_dir)).run()
 
         assert (result.status, result.exit_code, result.stdout) == ("completed", 0, "one\n")
+        assert len(result.warnings) == 1
+        assert "No space left on device" in result.warnings[0]
+
+
+def _emitting_agent_runner(lines: list[tuple[str, str]], received: list[OutputCallback | None]) -> AgentStepRunner:
+    """Return an agent runner that records the line callback it was given and replays lines through it."""
+
+    def _runner(
+        step: StepDefinition,
+        worktree: Path,
+        on_output: OutputCallback | None,
+        on_agent_line: OutputCallback | None,
+        metadata: ExecutionMetadata,
+    ) -> StepDispatchOutcome:
+        received.append(on_agent_line)
+        if on_agent_line is not None:
+            for stream_name, line in lines:
+                on_agent_line(stream_name, line)
+        return StepDispatchOutcome(status="completed", exit_code=0, stdout="", stderr="")
+
+    return _runner
+
+
+class StepExecutionAgentAttemptLogTests:
+    def test_agent_lines_land_in_the_matching_stream_logs_and_never_reach_on_output(self, tmp_path: Path) -> None:
+        """[tier-1/integration] StepExecution.run: an agent runner calling on_agent_line for ('stdout','a'), ('stderr','b'), ('stdout','c') leaves 01_<step>_attempt_1.stdout.log == 'a\\nc\\n' and .stderr.log == 'b\\n', and the on_output callback receives none of those lines."""
+        log_dir = tmp_path / "logs"
+        log_dir.mkdir()
+        streamed: list[tuple[str, str]] = []
+        runner = _emitting_agent_runner([("stdout", "a"), ("stderr", "b"), ("stdout", "c")], [])
+        step = StepBuilder.agent("plan").with_id("plan").build()
+
+        StepExecution(
+            StepExecutionContext(
+                step=step,
+                worktree_path=tmp_path,
+                session_log_dir=log_dir,
+                agent_runner=runner,
+                on_output=lambda stream, line: streamed.append((stream, line)),
+            )
+        ).run()
+
+        assert (log_dir / "01_plan_attempt_1.stdout.log").read_text(encoding="utf-8") == "a\nc\n"
+        assert (log_dir / "01_plan_attempt_1.stderr.log").read_text(encoding="utf-8") == "b\n"
+        assert streamed == []
+
+    def test_disabled_capture_passes_no_line_callback_and_creates_no_logs(self, tmp_path: Path) -> None:
+        """[tier-1/integration] StepExecution.run: save_attempt_logs=False makes the agent runner receive on_agent_line None, and the log directory stays empty."""
+        log_dir = tmp_path / "logs"
+        log_dir.mkdir()
+        received: list[OutputCallback | None] = []
+        step = StepBuilder.agent("plan").with_id("plan").build()
+
+        StepExecution(
+            StepExecutionContext(
+                step=step,
+                worktree_path=tmp_path,
+                session_log_dir=log_dir,
+                save_attempt_logs=False,
+                agent_runner=_emitting_agent_runner([("stdout", "a")], received),
+            )
+        ).run()
+
+        assert received == [None]
+        assert list(log_dir.iterdir()) == []
+
+    @pytest.mark.skipif(not Path("/dev/full").exists(), reason="requires /dev/full to simulate a full disk")
+    def test_log_write_failure_adds_one_warning_and_keeps_the_attempt_completed(self, tmp_path: Path) -> None:
+        """[tier-1/integration] StepExecution.run: an OSError writing the stdout attempt log gives StepResult.status 'completed' and exactly one warning containing 'No space left on device'."""
+        log_dir = tmp_path / "logs"
+        log_dir.mkdir()
+        (log_dir / "01_plan_attempt_1.stdout.log").symlink_to("/dev/full")
+        step = StepBuilder.agent("plan").with_id("plan").build()
+        runner = _emitting_agent_runner([("stdout", "a"), ("stdout", "b")], [])
+
+        result = StepExecution(
+            StepExecutionContext(step=step, worktree_path=tmp_path, session_log_dir=log_dir, agent_runner=runner)
+        ).run()
+
+        assert result.status == "completed"
         assert len(result.warnings) == 1
         assert "No space left on device" in result.warnings[0]

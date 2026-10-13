@@ -102,6 +102,8 @@ Per-attempt stdout/stderr capture is controlled by `history.save_attempt_logs` i
 
 Persisted step logs and error messages are masked when written and again when read, so a secret still present in the environment is hidden even in logs written before masking existed. Masked values print as `[REDACTED:<NAME>]` or `[REDACTED]`. Names listed under `environment.sensitive_variables` in `.dovo/config.json` are masked here too, including in logs written before the name was listed.
 
+For agent steps, the capture files hold the provider's stdout and stderr lines as they arrive, after secret masking; the step's one-line JSON summary is not written to them. Provider output is never printed live. While an agent attempt runs, the terminal shows a `[<step id>] agent running (<elapsed>s)` line every 30 seconds.
+
 ### Arguments
 
 | Argument | Description |

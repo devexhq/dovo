@@ -248,6 +248,28 @@ class CliMutationInvocationPropagationTests:
         assert [request.invocation for request in received] == [invocation]
 
 
+class CliMutationOnLinePropagationTests:
+    @pytest.mark.parametrize("with_callback", [pytest.param(True, id="with-callback"), pytest.param(False, id="none")])
+    def test_invoke_forwards_on_line_to_the_runner_request(self, git_repo: Path, with_callback: bool) -> None:
+        """[tier-1/unit] CliDirectMutationAdapter._invoke: the CliMutationRunRequest passed to _default_run has on_line equal to the AgentRequest's on_line, and None when the request has none."""
+
+        def on_line(stream_name: str, line: str) -> None:
+            """Line callback used only as a distinguishable callable value."""
+
+        received: list[CliMutationRunRequest] = []
+
+        def _record(request: CliMutationRunRequest) -> CliMutationOutcome:
+            received.append(request)
+            return CliMutationOutcome(status="finished")
+
+        builder = AgentRequestBuilder().with_worktree_path(git_repo)
+        agent_request = builder.build().model_copy(update={"on_line": on_line if with_callback else None})
+
+        UnitTestAdapter(run_fn=_record).invoke(agent_request)
+
+        assert [request.on_line for request in received] == [on_line if with_callback else None]
+
+
 class ScratchDiffIsolationTests:
     def test_scratch_file_never_appears_in_the_captured_diff(self, git_repo: Path, tmp_path: Path) -> None:
         """[tier-1/integration] CliDirectMutationAdapter.invoke: a real git_repo adapter writing 'notes.py' into scratch_path and 'src/a.py' into the worktree returns a PROPOSED_PATCH whose unified_diff names only src/a.py and whose capture_diff_since(baseline) paths == ['src/a.py']."""

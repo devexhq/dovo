@@ -190,6 +190,12 @@ When an agent edits the worktree and the result trips a patch limit (`max_files`
 
 ---
 
+## Attempt Logs and Heartbeat
+
+An agent attempt streams the provider's output while it runs. Each stdout and stderr line is masked and appended to the attempt's capture files, so a run in progress can be inspected on disk with `dovo session logs --step <step_id>`. Capture follows `history.save_attempt_logs`. The terminal is not given the provider's lines; it shows `[<step id>] agent running (<elapsed>s)` every 30 seconds until the attempt ends. The step's own output remains the single JSON summary line.
+
+---
+
 ## Next Steps
 
 - [Blueprint Schema](../reference/blueprint-schema.md)

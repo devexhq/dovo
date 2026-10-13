@@ -45,6 +45,7 @@ class CliMutationRunRequest(BaseModel):
     tools: ToolPolicy
     invocation: AgentInvocationContext | None = Field(default=None, exclude=True)
     env: dict[str, str] = Field(default_factory=dict, exclude=True)
+    on_line: Callable[[str, str], None] | None = Field(default=None, exclude=True)
 
 
 class CliMutationOutcome(BaseModel):
@@ -163,6 +164,7 @@ class CliDirectMutationAdapter(BaseAgentProvider):
                 tools=request.tools,
                 invocation=request.invocation,
                 env=env,
+                on_line=request.on_line,
             )
         )
         duration_ms = elapsed_ms(started)
