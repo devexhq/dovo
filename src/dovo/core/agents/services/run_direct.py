@@ -66,6 +66,7 @@ def _build_request(
         tools=tools,
         env=dict(context.env),
         metadata_env=dict(context.metadata_env),
+        on_line=context.on_line,
     )
 
 

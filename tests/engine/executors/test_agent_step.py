@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import itertools
 import json
 import os
 import subprocess
+import threading
 from collections.abc import Callable
 from pathlib import Path
 
@@ -99,6 +101,7 @@ def _run(
         session_dir=session_dir,
         metadata=metadata,
         on_output=on_output,
+        on_agent_line=None,
     )
 
 
@@ -256,6 +259,7 @@ class ExecuteAgentStepRequestTests:
             session_dir=None,
             metadata=_METADATA,
             on_output=None,
+            on_agent_line=None,
         )
 
         assert outcome.status == "failed"
@@ -462,6 +466,7 @@ class ExecuteAgentStepScratchTests:
             session_dir=None,
             metadata=_METADATA,
             on_output=None,
+            on_agent_line=None,
         )
 
         assert outcome.status == "failed"
@@ -517,6 +522,7 @@ class ExecuteAgentStepScratchTests:
             session_dir=None,
             metadata=_METADATA,
             on_output=None,
+            on_agent_line=None,
         )
 
         assert outcome.error_message == expected_message
@@ -688,7 +694,7 @@ class BuildAgentStepRunnerTests:
             session_log_dir=None,
             session_dir=None,
         )
-        outcome = runner(_step(), git_repo, None, _METADATA)
+        outcome = runner(_step(), git_repo, None, None, _METADATA)
 
         assert outcome.status == "failed"
         assert WORKTREE_REQUIRED_MESSAGE in (outcome.error_message or "")
@@ -711,7 +717,7 @@ class BuildAgentStepRunnerTests:
             session_log_dir=None,
             session_dir=None,
         )
-        outcome = runner(step, git_repo, lambda stream, line: emitted.append((stream, line)), _METADATA)
+        outcome = runner(step, git_repo, lambda stream, line: emitted.append((stream, line)), None, _METADATA)
 
         assert [(call["instruction"], call["settings"], call["worktree_path"]) for call in calls] == [
             (step.prompt, settings, git_repo)
@@ -785,3 +791,87 @@ class AgentStepRejectedPatchTests:
         _run(git_repo, session_dir=None)
 
         assert [context.rejected_patch_destination for context in contexts] == [None]
+
+
+_HEARTBEAT_WAIT_SECONDS = 20.0
+
+
+class ExecuteAgentStepHeartbeatTests:
+    @staticmethod
+    def _use_fast_heartbeat(monkeypatch: pytest.MonkeyPatch, clock_values: list[float]) -> None:
+        """Shrink the heartbeat interval and script the module clock: the given values, then 91.0 forever."""
+        readings = itertools.chain(clock_values, itertools.repeat(91.0))
+        monkeypatch.setattr("dovo.engine.executors.agent_step.AGENT_HEARTBEAT_INTERVAL_SECONDS", 0.01)
+        monkeypatch.setattr("dovo.engine.executors.agent_step.monotonic", lambda: next(readings))
+
+    def test_running_attempt_emits_elapsed_heartbeats_before_the_final_summary(
+        self, git_repo: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """[tier-1/unit] execute_agent_step: with the heartbeat interval patched small, monotonic patched to start at 0.0 then return 30.4 and 60.9, and a provider double that returns only after two heartbeats were observed, on_output lines begin '[plan] agent running (30s)\\n', '[plan] agent running (60s)\\n' and the last line is the JSON summary."""
+        self._use_fast_heartbeat(monkeypatch, [0.0, 30.4, 60.9])
+        lines: list[str] = []
+        two_heartbeats_seen = threading.Event()
+        provider_released: list[bool] = []
+
+        def on_output(stream_name: str, line: str) -> None:
+            lines.append(line)
+            if sum("agent running" in seen for seen in lines) >= 2:
+                two_heartbeats_seen.set()
+
+        def hold_until_heartbeats(request: object) -> None:
+            provider_released.append(two_heartbeats_seen.wait(_HEARTBEAT_WAIT_SECONDS))
+
+        _use_provider(monkeypatch, FakeAgentProvider(_no_op(), on_call=hold_until_heartbeats))
+
+        _run(git_repo, step=StepBuilder.agent("Plan the change").with_id("plan").build(), on_output=on_output)
+
+        assert provider_released == [True]
+        assert lines[:2] == ["[plan] agent running (30s)\n", "[plan] agent running (60s)\n"]
+        assert json.loads(lines[-1])["status"] == "no_op"
+
+    def test_heartbeat_thread_is_gone_after_the_step_returns(
+        self, git_repo: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """[tier-1/unit] execute_agent_step: after the step returns, no live thread is named 'agent-heartbeat-plan' and the number of on_output lines no longer changes."""
+        self._use_fast_heartbeat(monkeypatch, [0.0, 30.4])
+        lines: list[str] = []
+        heartbeat_seen = threading.Event()
+        names_during_attempt: list[list[str]] = []
+
+        def on_output(stream_name: str, line: str) -> None:
+            lines.append(line)
+            heartbeat_seen.set()
+
+        def hold_until_heartbeat(request: object) -> None:
+            heartbeat_seen.wait(_HEARTBEAT_WAIT_SECONDS)
+            names_during_attempt.append([thread.name for thread in threading.enumerate()])
+
+        _use_provider(monkeypatch, FakeAgentProvider(_no_op(), on_call=hold_until_heartbeat))
+
+        _run(git_repo, step=StepBuilder.agent("Plan the change").with_id("plan").build(), on_output=on_output)
+
+        assert "agent-heartbeat-plan" in names_during_attempt[0]
+        assert "agent-heartbeat-plan" not in [thread.name for thread in threading.enumerate()]
+        assert json.loads(lines[-1])["status"] == "no_op"
+
+    def test_heartbeat_callback_failure_leaves_the_attempt_outcome_unchanged(
+        self, git_repo: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """[tier-1/unit] execute_agent_step: an on_output that raises for lines containing 'agent running' and accepts the summary yields StepDispatchOutcome(status='completed', exit_code=0)."""
+        self._use_fast_heartbeat(monkeypatch, [0.0, 30.4])
+        heartbeat_attempted = threading.Event()
+
+        def on_output(stream_name: str, line: str) -> None:
+            if "agent running" in line:
+                heartbeat_attempted.set()
+                raise RuntimeError("terminal gone")
+
+        def hold_until_heartbeat(request: object) -> None:
+            heartbeat_attempted.wait(_HEARTBEAT_WAIT_SECONDS)
+
+        _use_provider(monkeypatch, FakeAgentProvider(_no_op(), on_call=hold_until_heartbeat))
+
+        outcome = _run(git_repo, step=StepBuilder.agent("Plan the change").with_id("plan").build(), on_output=on_output)
+
+        assert heartbeat_attempted.is_set()
+        assert (outcome.status, outcome.exit_code) == ("completed", 0)

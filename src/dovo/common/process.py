@@ -8,11 +8,12 @@ import subprocess
 import sys
 import threading
 import time
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from pathlib import Path
-from typing import Any
+from typing import IO, Any, Final
 
 DEFAULT_GRACE_PERIOD_SECONDS: float = 2.0
+_POST_KILL_JOIN_SECONDS: Final[float] = 5.0
 
 
 def get_isolated_process_kwargs() -> dict[str, Any]:
@@ -170,77 +171,145 @@ def _cleanup_process_streams(proc: subprocess.Popen[Any]) -> None:
                 pass
 
 
-def run_isolated_process(
+def stream_isolated_process(
     cmd: Sequence[str] | str,
     *,
     cwd: str | Path | None = None,
     env: dict[str, str] | None = None,
     input_data: bytes | str | None = None,
     timeout_seconds: float | None = None,
-    shell: bool = False,
-    text: bool = False,
+    on_stdout_line: Callable[[str], None] | None = None,
+    on_stderr_line: Callable[[str], None] | None = None,
     grace_seconds: float = DEFAULT_GRACE_PERIOD_SECONDS,
-) -> subprocess.CompletedProcess[Any]:
-    """Execute a subprocess inside an isolated process group with cascading termination.
+) -> subprocess.CompletedProcess[bytes]:
+    """Run cmd in an isolated process group, delivering each decoded stdout and stderr line to its callback as it arrives.
 
-    Spawns the subprocess in a dedicated session/process group (via `start_new_session=True`
-    on POSIX or `CREATE_NEW_PROCESS_GROUP` on Windows) and registers it in `ProcessRegistry`.
-    If execution exceeds `timeout_seconds`, cascading termination is sent to the entire
-    process tree (`SIGTERM` followed by `grace_seconds` before escalating to `SIGKILL`).
-    Upon any unexpected exception or interrupt, active child processes are reaped before
-    re-raising.
-
-    Args:
-        cmd: Command string or list of argument strings to execute.
-        cwd: Optional working directory for the subprocess.
-        env: Optional environment variables dictionary.
-        input_data: Optional bytes or string input to pass to standard input.
-        timeout_seconds: Subprocess execution timeout in seconds.
-        shell: When True, executes the command through the system shell.
-        text: When True, stdout and stderr streams are decoded as strings.
-        grace_seconds: Grace period duration between SIGTERM and SIGKILL on timeout.
-
-    Returns:
-        A CompletedProcess instance containing stdout, stderr, and returncode.
-
-    Raises:
-        subprocess.TimeoutExpired: When execution exceeds `timeout_seconds`.
-        FileNotFoundError: When the executable command cannot be found.
-        OSError: When process spawning fails.
+    One deadline covers the stdin write, the wait and the pipe drain. On expiry the whole process tree is terminated
+    and the raised TimeoutExpired carries the bytes captured so far.
     """
-    isolation_kwargs = get_isolated_process_kwargs()
-    effective_cwd = str(cwd) if cwd is not None else None
-
-    proc: subprocess.Popen[Any] = subprocess.Popen(
-        cmd,
-        cwd=effective_cwd,
-        env=env,
-        stdin=subprocess.PIPE if input_data is not None else subprocess.DEVNULL,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        shell=shell,
-        text=text,
-        **isolation_kwargs,
-    )
+    proc = _spawn_isolated_process(cmd, cwd, env, input_data is not None)
     pgid = proc.pid
     process_registry.register(proc, pgid=pgid)
 
+    deadline = time.monotonic() + timeout_seconds if timeout_seconds is not None else None
+    stdout_bytes = bytearray()
+    stderr_bytes = bytearray()
+    readers, threads = _start_stream_threads(
+        proc, input_data, (on_stdout_line, on_stderr_line), stdout_bytes, stderr_bytes
+    )
+
     try:
-        stdout_data, stderr_data = proc.communicate(input=input_data, timeout=timeout_seconds)
+        proc.wait(timeout=_remaining_seconds(deadline))
+        if not _join_threads(readers, deadline):
+            raise subprocess.TimeoutExpired(cmd, timeout_seconds or 0.0)
         return subprocess.CompletedProcess(
             args=cmd,
             returncode=proc.returncode,
-            stdout=stdout_data,
-            stderr=stderr_data,
+            stdout=bytes(stdout_bytes),
+            stderr=bytes(stderr_bytes),
         )
-    except subprocess.TimeoutExpired as exc:
+    except subprocess.TimeoutExpired:
         terminate_process_tree(proc, grace_seconds=grace_seconds, pgid=pgid)
-        raise exc
+        _join_threads(threads, time.monotonic() + _POST_KILL_JOIN_SECONDS)
+        raise subprocess.TimeoutExpired(
+            cmd, timeout_seconds or 0.0, output=bytes(stdout_bytes), stderr=bytes(stderr_bytes)
+        ) from None
     except BaseException:
         terminate_process_tree(proc, grace_seconds=0.5, pgid=pgid)
         raise
     finally:
-        process_registry.unregister(proc)
         if proc.poll() is None:
             terminate_process_tree(proc, grace_seconds=0.5, pgid=pgid)
+        _join_threads(threads, time.monotonic() + _POST_KILL_JOIN_SECONDS)
+        process_registry.unregister(proc)
         _cleanup_process_streams(proc)
+
+
+def _start_stream_threads(
+    proc: subprocess.Popen[bytes],
+    input_data: bytes | str | None,
+    callbacks: tuple[Callable[[str], None] | None, Callable[[str], None] | None],
+    stdout_bytes: bytearray,
+    stderr_bytes: bytearray,
+) -> tuple[list[threading.Thread], list[threading.Thread]]:
+    """Start the stdout and stderr reader threads and the stdin writer when there is input; return the readers and all threads."""
+    readers = [
+        threading.Thread(target=_read_process_stream, args=(proc.stdout, stdout_bytes, callbacks[0]), daemon=True),
+        threading.Thread(target=_read_process_stream, args=(proc.stderr, stderr_bytes, callbacks[1]), daemon=True),
+    ]
+    threads = list(readers)
+    if input_data is not None:
+        payload = input_data.encode("utf-8") if isinstance(input_data, str) else input_data
+        threads.append(threading.Thread(target=_write_process_stdin, args=(proc.stdin, payload), daemon=True))
+    for thread in threads:
+        thread.start()
+
+    return readers, threads
+
+
+def _spawn_isolated_process(
+    cmd: Sequence[str] | str, cwd: str | Path | None, env: dict[str, str] | None, has_input_data: bool
+) -> subprocess.Popen[bytes]:
+    """Start cmd in its own process group with byte pipes for stdout and stderr."""
+    return subprocess.Popen[bytes](
+        cmd,
+        cwd=str(cwd) if cwd is not None else None,
+        env=env,
+        stdin=subprocess.PIPE if has_input_data else subprocess.DEVNULL,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        shell=False,
+        **get_isolated_process_kwargs(),
+    )
+
+
+def _read_process_stream(stream: IO[bytes] | None, captured: bytearray, callback: Callable[[str], None] | None) -> None:
+    """Capture one pipe record by record, delivering each decoded line without its newline; a callback that raises loses only that line."""
+    if stream is None:
+        return
+    try:
+        for record in iter(stream.readline, b""):
+            captured.extend(record)
+            if callback is None:
+                continue
+            body = record.removesuffix(b"\n")
+            if len(body) != len(record):
+                body = body.removesuffix(b"\r")
+            try:
+                callback(body.decode("utf-8", errors="replace"))
+            except Exception:
+                # Deliberately swallowed: common/ has no error sink, and one failing callback must not stop capture.
+                pass
+    except (OSError, ValueError):
+        # The stream was closed under the reader after its join deadline passed.
+        pass
+    finally:
+        try:
+            stream.close()
+        except OSError:
+            pass
+
+
+def _write_process_stdin(stdin: IO[bytes] | None, data: bytes) -> None:
+    """Write data to stdin and close it; a child that closed its end first ends the write silently."""
+    if stdin is None:
+        return
+    try:
+        stdin.write(data)
+        stdin.close()
+    except (OSError, ValueError):
+        pass
+
+
+def _remaining_seconds(deadline: float | None) -> float | None:
+    """Return the non-negative seconds left until the monotonic deadline, or None when there is no deadline."""
+    if deadline is None:
+        return None
+    return max(0.0, deadline - time.monotonic())
+
+
+def _join_threads(threads: Sequence[threading.Thread], deadline: float | None) -> bool:
+    """Join every thread until the monotonic deadline (unbounded when None) and return False when any is still alive."""
+    for thread in threads:
+        thread.join(_remaining_seconds(deadline))
+    return not any(thread.is_alive() for thread in threads)

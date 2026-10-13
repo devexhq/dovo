@@ -7,7 +7,13 @@ from pathlib import Path
 import pytest
 
 from dovo.common.filesystem import WorkspacePaths
-from dovo.engine.executors.models import StepExecutionContext
+from dovo.core.catalog.definitions import StepDefinition
+from dovo.engine.executors.models import (
+    ExecutionMetadata,
+    OutputCallback,
+    StepDispatchOutcome,
+    StepExecutionContext,
+)
 from dovo.engine.executors.step_executor import StepExecution
 from tests.harness.builders import StepBuilder
 
@@ -37,6 +43,33 @@ class StepExecutionRedactionTests:
         assert (log_dir / "01_show_attempt_1.stdout.log").read_text(encoding="utf-8") == (
             "[REDACTED:ANTHROPIC_API_KEY]\n"
         )
+
+    def test_run_masks_env_secret_in_agent_attempt_log(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """[tier-1/integration] StepExecution.run: an agent runner emitting ('stdout', 'token sk-ant-secret-value-123') with ANTHROPIC_API_KEY set writes 'token [REDACTED:ANTHROPIC_API_KEY]\\n' to the stdout attempt log and no line containing the secret."""
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-secret-value-123")
+        log_dir = tmp_path / "logs"
+        log_dir.mkdir()
+
+        def _runner(
+            step: StepDefinition,
+            worktree: Path,
+            on_output: OutputCallback | None,
+            on_agent_line: OutputCallback | None,
+            metadata: ExecutionMetadata,
+        ) -> StepDispatchOutcome:
+            assert on_agent_line is not None
+            on_agent_line("stdout", "token sk-ant-secret-value-123")
+            return StepDispatchOutcome(status="completed", exit_code=0, stdout="", stderr="")
+
+        step = StepBuilder.agent("plan").with_id("plan").build()
+
+        StepExecution(
+            StepExecutionContext(step=step, worktree_path=tmp_path, session_log_dir=log_dir, agent_runner=_runner)
+        ).run()
+
+        logged = (log_dir / "01_plan_attempt_1.stdout.log").read_text(encoding="utf-8")
+        assert logged == "token [REDACTED:ANTHROPIC_API_KEY]\n"
+        assert "sk-ant-secret-value-123" not in logged
 
     def test_run_masks_step_env_secret_on_stderr(self, tmp_path: Path) -> None:
         """[tier-1/integration] StepExecution.run: step env {"DEPLOY_TOKEN": "s3cr3t-value"} with command 'echo $DEPLOY_TOKEN >&2' returns StepResult.stderr == "[REDACTED:DEPLOY_TOKEN]\\n"."""

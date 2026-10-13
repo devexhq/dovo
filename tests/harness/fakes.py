@@ -1,6 +1,6 @@
 """Fake process-boundary runner for direct-mutation agent adapter tests.
 
-Stands in for dovo.common.process.run_isolated_process's call signature at the
+Stands in for dovo.common.process.stream_isolated_process's call signature at the
 subprocess boundary, so a test can monkeypatch a single configurable object instead of
 hand-rolling a `fake_run` closure with an ad-hoc captured dict per test file. Configure it
 to return a canned CompletedProcess via `.returning(...)`, or to raise a canned exception
@@ -33,7 +33,7 @@ class FakeAgentRunnerCall(BaseModel):
 
 
 class FakeAgentRunner:
-    """Configurable stand-in for run_isolated_process, returning a result or raising."""
+    """Configurable stand-in for stream_isolated_process, returning a result or raising."""
 
     def __init__(self) -> None:
         self._returncode: int | None = None

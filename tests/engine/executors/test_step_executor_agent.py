@@ -55,11 +55,15 @@ def _use_provider(monkeypatch: pytest.MonkeyPatch, provider: FakeAgentProvider) 
 
 class AgentRunnerDispatchTests:
     def test_agent_step_dispatch_passes_execution_metadata_to_the_runner(self, git_repo: Path) -> None:
-        """[tier-1/integration] StepExecution.run: an AGENT step calls agent_runner with a fourth argument whose step.id and step.attempt match the executing step."""
+        """[tier-1/integration] StepExecution.run: an AGENT step calls agent_runner with a metadata argument whose step.id and step.attempt match the executing step."""
         received: list[ExecutionMetadata] = []
 
         def _runner(
-            step: StepDefinition, worktree: Path, on_output: OutputCallback | None, metadata: ExecutionMetadata
+            step: StepDefinition,
+            worktree: Path,
+            on_output: OutputCallback | None,
+            on_agent_line: OutputCallback | None,
+            metadata: ExecutionMetadata,
         ) -> StepDispatchOutcome:
             received.append(metadata)
             return StepDispatchOutcome(status="completed", exit_code=0, stdout="", stderr="")
@@ -218,7 +222,11 @@ class StepExecutorRejectedPatchTests:
         received: list[ExecutionMetadata] = []
 
         def _runner(
-            step: StepDefinition, worktree: Path, on_output: OutputCallback | None, metadata: ExecutionMetadata
+            step: StepDefinition,
+            worktree: Path,
+            on_output: OutputCallback | None,
+            on_agent_line: OutputCallback | None,
+            metadata: ExecutionMetadata,
         ) -> StepDispatchOutcome:
             received.append(metadata)
             return StepDispatchOutcome(status="completed", exit_code=0, stdout="", stderr="")
@@ -236,7 +244,11 @@ class StepExecutorRejectedPatchTests:
         """[tier-1/unit] StepExecutor.run: an agent runner returning a failed StepDispatchOutcome with rejected_patch_path 'P' yields StepResult.rejected_patch_path == 'P' and status 'failed'."""
 
         def _runner(
-            step: StepDefinition, worktree: Path, on_output: OutputCallback | None, metadata: ExecutionMetadata
+            step: StepDefinition,
+            worktree: Path,
+            on_output: OutputCallback | None,
+            on_agent_line: OutputCallback | None,
+            metadata: ExecutionMetadata,
         ) -> StepDispatchOutcome:
             return StepDispatchOutcome(
                 status="failed", exit_code=203, stdout="", stderr="no", error_message="no", rejected_patch_path="P"

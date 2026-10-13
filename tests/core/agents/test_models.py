@@ -11,6 +11,7 @@ from pydantic import ValidationError
 from dovo.common.tool_policy import ToolCapability, ToolPolicy, ToolRule
 from dovo.core.agents import (
     AgentAttempt,
+    AgentAttemptContext,
     AgentFailurePayload,
     AgentInvocationContext,
     AgentRequest,
@@ -308,3 +309,44 @@ class AgentRequestToolsContractTests:
             "allow_all": False,
         }
         assert ToolPolicy.model_validate(request.model_dump()["tools"]) == policy
+
+
+def _record_line(stream_name: str, line: str) -> None:
+    """Line callback used only as a distinguishable callable value."""
+
+
+class OnLineCallbackModelTests:
+    @pytest.mark.parametrize(
+        "model_kind",
+        [
+            pytest.param("agent-request", id="agent-request"),
+            pytest.param("attempt-context", id="attempt-context"),
+            pytest.param("run-request", id="run-request"),
+        ],
+    )
+    def test_on_line_is_excluded_from_dumps_but_kept_on_the_instance(self, tmp_path: Path, model_kind: str) -> None:
+        """[tier-1/unit] AgentRequest / AgentAttemptContext / CliMutationRunRequest: with on_line set, model_dump() and json.loads(model_dump_json()) contain no 'on_line' key while the instance's on_line is still the callable."""
+        model: AgentRequest | AgentAttemptContext | CliMutationRunRequest
+        if model_kind == "agent-request":
+            model = AgentRequest(
+                mode="direct",
+                instruction="go",
+                worktree_path=tmp_path,
+                timeout_seconds=5,
+                tools=default_tool_policy(),
+                on_line=_record_line,
+            )
+        elif model_kind == "attempt-context":
+            model = AgentAttemptContext(on_line=_record_line)
+        else:
+            model = CliMutationRunRequest(
+                worktree_path=tmp_path,
+                prompt="go",
+                timeout_seconds=5.0,
+                tools=default_tool_policy(),
+                on_line=_record_line,
+            )
+
+        assert "on_line" not in model.model_dump()
+        assert "on_line" not in json.loads(model.model_dump_json())
+        assert model.on_line is _record_line

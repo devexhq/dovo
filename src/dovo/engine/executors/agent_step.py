@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+import threading
+from collections.abc import Callable, Mapping
 from pathlib import Path
+from time import monotonic
 from types import MappingProxyType
 from typing import Final
 
@@ -38,6 +40,7 @@ MISSING_SETTINGS_MESSAGE = (
     "(agent.provider, agent.model, agent.endpoint, agent.temperature, agent.max_tokens)."
 )
 BLANK_PROMPT_MESSAGE = "Agent step prompt is blank after interpolation."
+AGENT_HEARTBEAT_INTERVAL_SECONDS: Final[int] = 30
 
 # Step outcome code per agent status; 200 is unused.
 AGENT_OUTCOME_EXIT_CODES: Final[Mapping[AgentResponseStatus, int]] = MappingProxyType(
@@ -64,6 +67,7 @@ def execute_agent_step(
     session_dir: Path | None,
     metadata: ExecutionMetadata,
     on_output: OutputCallback | None,
+    on_agent_line: OutputCallback | None,
 ) -> StepDispatchOutcome:
     """Run one agent attempt through its resolved provider and return the classified dispatch outcome."""
     if not worktree_active:
@@ -86,19 +90,24 @@ def execute_agent_step(
     if not scratch.ok:
         return _to_outcome(_provider_error(*diagnostics_with_fixes(scratch.errors, scratch.fixes)), on_output)
 
-    attempt = run_direct_attempt(
-        instruction=step.prompt or "",
-        settings=agent,
-        worktree_path=worktree_path,
-        timeout_seconds=step.timeout_seconds,
-        tools=tools,
-        max_files=step.max_files,
-        context=AgentAttemptContext(
-            invocation=scratch.context,
-            env=step.env,
-            metadata_env=metadata_to_env(metadata),
-            rejected_patch_destination=_rejected_patch_destination(
-                session_dir, step.id, metadata.step.attempt, metadata.loop_iteration
+    attempt = _run_with_heartbeat(
+        step.id,
+        on_output,
+        lambda: run_direct_attempt(
+            instruction=step.prompt or "",
+            settings=agent,
+            worktree_path=worktree_path,
+            timeout_seconds=step.timeout_seconds,
+            tools=tools,
+            max_files=step.max_files,
+            context=AgentAttemptContext(
+                invocation=scratch.context,
+                env=step.env,
+                metadata_env=metadata_to_env(metadata),
+                rejected_patch_destination=_rejected_patch_destination(
+                    session_dir, step.id, metadata.step.attempt, metadata.loop_iteration
+                ),
+                on_line=on_agent_line,
             ),
         ),
     )
@@ -119,7 +128,11 @@ def build_agent_step_runner(
     """Return a runner closing over the run's agent settings, worktree state, scratch roots, and session log directory."""
 
     def _run(
-        step: StepDefinition, worktree_path: Path, on_output: OutputCallback | None, metadata: ExecutionMetadata
+        step: StepDefinition,
+        worktree_path: Path,
+        on_output: OutputCallback | None,
+        on_agent_line: OutputCallback | None,
+        metadata: ExecutionMetadata,
     ) -> StepDispatchOutcome:
         return execute_agent_step(
             step,
@@ -132,9 +145,30 @@ def build_agent_step_runner(
             session_dir=session_dir,
             metadata=metadata,
             on_output=on_output,
+            on_agent_line=on_agent_line,
         )
 
     return _run
+
+
+def _run_with_heartbeat(
+    step_id: str, on_output: OutputCallback | None, run_attempt: Callable[[], AgentAttempt]
+) -> AgentAttempt:
+    """Run the attempt while a heartbeat thread reports elapsed whole seconds every interval, and stop and join it before returning."""
+    started = monotonic()
+    completed = threading.Event()
+
+    def _beat() -> None:
+        while not completed.wait(AGENT_HEARTBEAT_INTERVAL_SECONDS):
+            _emit_output(on_output, "stdout", f"[{step_id}] agent running ({int(monotonic() - started)}s)\n")
+
+    heartbeat = threading.Thread(target=_beat, name=f"agent-heartbeat-{step_id}", daemon=True)
+    heartbeat.start()
+    try:
+        return run_attempt()
+    finally:
+        completed.set()
+        heartbeat.join()
 
 
 def _rejected_patch_destination(

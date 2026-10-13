@@ -329,6 +329,23 @@ class RunDirectAttemptInvocationTests:
         assert request.agent_scratch_path == (invocation.scratch_path if with_invocation else None)
 
 
+class RunDirectAttemptCallbackTests:
+    @pytest.mark.parametrize("with_callback", [pytest.param(True, id="with-callback"), pytest.param(False, id="none")])
+    def test_request_carries_the_context_callback_only_when_supplied(
+        self, git_repo: Path, monkeypatch: pytest.MonkeyPatch, with_callback: bool
+    ) -> None:
+        """[tier-1/unit] run_direct_attempt: the provider's AgentRequest.on_line is the AgentAttemptContext.on_line callable when supplied, and None when the context has none."""
+        provider = FakeAgentProvider(_no_op())
+        _use_provider(monkeypatch, provider)
+
+        def on_line(stream_name: str, line: str) -> None:
+            """Line callback used only as a distinguishable callable value."""
+
+        _attempt(git_repo, context=AgentAttemptContext(on_line=on_line if with_callback else None))
+
+        assert provider.requests[0].on_line is (on_line if with_callback else None)
+
+
 class RunDirectAttemptEnvTests:
     def test_settings_env_fields_and_step_env_reach_the_agent_request(
         self, git_repo: Path, monkeypatch: pytest.MonkeyPatch

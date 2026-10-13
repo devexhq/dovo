@@ -129,7 +129,9 @@ class StepPostcondition(Protocol):
 
 
 OutputCallback = Callable[[str, str], None]
-AgentStepRunner = Callable[[StepDefinition, Path, OutputCallback | None, ExecutionMetadata], StepDispatchOutcome]
+AgentStepRunner = Callable[
+    [StepDefinition, Path, OutputCallback | None, OutputCallback | None, ExecutionMetadata], StepDispatchOutcome
+]
 
 
 class StepExecutionContext(BaseModel):

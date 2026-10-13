@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from enum import StrEnum
 from pathlib import Path
@@ -130,6 +131,7 @@ class AgentAttemptContext(BaseModel):
     env: dict[str, str] = Field(default_factory=dict)
     metadata_env: dict[str, str] = Field(default_factory=dict)
     rejected_patch_destination: Path | None = None
+    on_line: Callable[[str, str], None] | None = Field(default=None, exclude=True)
 
 
 class AgentScratchResult(BaseResult):
@@ -169,6 +171,7 @@ class AgentRequest(BaseModel):
     tools: ToolPolicy
     env: dict[str, str] = Field(default_factory=dict, exclude=True)
     metadata_env: dict[str, str] = Field(default_factory=dict, exclude=True)
+    on_line: Callable[[str, str], None] | None = Field(default=None, exclude=True)
 
     @model_validator(mode="after")
     def validate_mode_contract(self) -> AgentRequest:

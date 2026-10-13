@@ -5,11 +5,12 @@ from __future__ import annotations
 import json
 import os
 import subprocess
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from dovo.common.process import run_isolated_process
+from dovo.common.process import stream_isolated_process
 from dovo.common.tool_policy import ToolCapability, ToolPolicy, ToolRule
 from dovo.core.agents.base import ProviderSpec
 from dovo.core.agents.cli_mutation import (
@@ -516,6 +517,17 @@ def _render_for_request(
     return render_copilot_policy(policy, roots, user_mcp)
 
 
+def _line_forwarder(stream_name: str, on_line: Callable[[str, str], None] | None) -> Callable[[str], None] | None:
+    """Return a callback that passes each line to on_line tagged with stream_name, or None when on_line is None."""
+    if on_line is None:
+        return None
+
+    def forward(line: str) -> None:
+        on_line(stream_name, line)
+
+    return forward
+
+
 def default_copilot_run(request: CliMutationRunRequest) -> CliMutationOutcome:
     """Invoke `gh copilot` with request.env plus the adapter-owned COPILOT_MODEL and map its JSONL stream into an outcome."""
     token = resolve_copilot_token()
@@ -535,12 +547,14 @@ def default_copilot_run(request: CliMutationRunRequest) -> CliMutationOutcome:
         env["COPILOT_MODEL"] = request.model
 
     try:
-        completed = run_isolated_process(
+        completed = stream_isolated_process(
             cmd,
             cwd=request.worktree_path,
             env=env,
             input_data=request.prompt.encode("utf-8"),
             timeout_seconds=request.timeout_seconds,
+            on_stdout_line=_line_forwarder("stdout", request.on_line),
+            on_stderr_line=_line_forwarder("stderr", request.on_line),
         )
     except subprocess.TimeoutExpired:
         return CliMutationOutcome(status="timeout")
