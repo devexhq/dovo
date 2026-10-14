@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from enum import StrEnum
 from pathlib import Path
-from typing import Annotated, Any, Literal
+from typing import Annotated, Any, Literal, get_args
 
 from pydantic import (
     BaseModel,
@@ -21,6 +21,7 @@ from dovo.common.tool_policy import ToolPolicy, coerce_tool_policy
 from dovo.core.agents.models import AgentEnvMode, EnvPassthroughEntry
 
 AgentProvider = Literal["copilot"]  # "claude" is added by the Claude adapter change
+ModelName = Annotated[str, Field(min_length=1)]
 
 
 class ProjectConfig(BaseModel):
@@ -48,13 +49,27 @@ class AgentConfig(BaseModel):
     model_config = {"extra": "forbid", "strict": True}
 
     provider: AgentProvider = "copilot"
-    model: str | None = Field(default=None, min_length=1)
+    models: dict[str, ModelName] = Field(default_factory=dict)
     endpoint: str | None = Field(default=None, min_length=1)
     temperature: float = Field(default=0.2, ge=0, le=2)
     max_tokens: int = Field(default=4096, ge=1)
     env_passthrough: list[EnvPassthroughEntry] = Field(default_factory=list)
     env_mode: AgentEnvMode = "allowlist"
     tools: ToolPolicy | None = None
+
+    @field_validator("models")
+    @classmethod
+    def validate_model_provider_keys(cls, val: dict[str, str]) -> dict[str, str]:
+        """Reject a models key that is not a registered provider token."""
+        unknown = sorted(set(val) - set(get_args(AgentProvider)))
+        if unknown:
+            raise ValueError(f"unknown agent provider(s) in models: {', '.join(unknown)}")
+        return val
+
+    @property
+    def active_model(self) -> str | None:
+        """Return the model configured for the active provider, or None when it has no entry."""
+        return self.models.get(self.provider)
 
     @field_validator("tools", mode="before")
     @classmethod

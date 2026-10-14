@@ -76,7 +76,7 @@ class ConfigLayerResolutionTests:
         repo_config_path = repo_root / ".dovo" / "config.json"
 
         global_data = {"agent": {"temperature": 0.5}}
-        user_data = {"agent": {"model": "local-llm"}}
+        user_data = {"agent": {"models": {"copilot": "local-llm"}}}
         repo_data = {"worktree": {"base_ref": "main"}}
         _write_tier_config(global_config_path, global_data)
         _write_tier_config(user_config_path, user_data)
@@ -107,7 +107,7 @@ class ConfigLayerResolutionTests:
         global_paths = resolve_global_paths(global_root)
         user_config_path = global_paths.user_dir / "config.json"
         repo_config_path = repo_root / ".dovo" / "config.json"
-        _write_tier_config(user_config_path, {"agent": {"model": "test-model"}})
+        _write_tier_config(user_config_path, {"agent": {"models": {"copilot": "test-model"}}})
         _write_tier_config(repo_config_path, {"worktree": {"base_ref": "main"}})
 
         layers = resolve_config_layers(workspace_paths_factory(repo_root, global_root))
@@ -135,13 +135,13 @@ class HierarchicalConfigMergeTests:
     ) -> None:
         global_root = tmp_path / "global_home"
         global_paths = resolve_global_paths(global_root)
-        _write_tier_config(global_paths.user_dir / "config.json", {"agent": {"model": "test-model"}})
+        _write_tier_config(global_paths.user_dir / "config.json", {"agent": {"models": {"copilot": "test-model"}}})
         _write_tier_config(isolated_workspace / ".dovo" / "config.json", {"worktree": {"base_ref": "main"}})
 
         result = load_hierarchical_config(workspace_paths_factory(isolated_workspace, global_root))
 
         assert result.config is not None
-        assert result.config.agent.model == "test-model"
+        assert result.config.agent.models == {"copilot": "test-model"}
 
     def test_repo_tier_overrides_worktree_base_ref_over_user_default(
         self, isolated_workspace: Path, tmp_path: Path, workspace_paths_factory: WorkspacePathsFactory
@@ -164,13 +164,13 @@ class HierarchicalConfigMergeTests:
         global_root = tmp_path / "global_home"
         global_paths = resolve_global_paths(global_root)
         _write_tier_config(global_paths.global_dir / "config.json", {"agent": {"temperature": 0.5}})
-        _write_tier_config(global_paths.user_dir / "config.json", {"agent": {"model": "local-llm"}})
+        _write_tier_config(global_paths.user_dir / "config.json", {"agent": {"models": {"copilot": "local-llm"}}})
 
         result = load_hierarchical_config(workspace_paths_factory(isolated_workspace, global_root))
 
         assert result.config is not None
         assert result.config.agent.temperature == 0.5
-        assert result.config.agent.model == "local-llm"
+        assert result.config.agent.models == {"copilot": "local-llm"}
 
     def test_sensitive_variables_are_unioned_across_tiers_in_precedence_order(
         self, isolated_workspace: Path, tmp_path: Path, workspace_paths_factory: WorkspacePathsFactory
@@ -213,13 +213,13 @@ class HierarchicalConfigMergeTests:
         custom_home = tmp_path / "custom_home"
         monkeypatch.setenv("DOVO_HOME", str(custom_home))
         _write_tier_config(custom_home / "global" / "config.json", {"agent": {"temperature": 0.7}})
-        _write_tier_config(custom_home / "user" / "config.json", {"agent": {"model": "dovo-home-model"}})
+        _write_tier_config(custom_home / "user" / "config.json", {"agent": {"models": {"copilot": "dovo-home-model"}}})
 
         result = load_hierarchical_config(workspace_paths_factory(isolated_workspace, None))
 
         assert result.config is not None
         assert result.config.agent.temperature == 0.7
-        assert result.config.agent.model == "dovo-home-model"
+        assert result.config.agent.models == {"copilot": "dovo-home-model"}
 
 
 class AgentConfigEnvTests:
@@ -366,14 +366,14 @@ class HierarchicalConfigErrorTests:
         global_root = tmp_path / "global_home"
         global_paths = resolve_global_paths(global_root)
         _write_tier_config(global_paths.global_dir / "config.json", {"agent": {"temperature": 0.3}})
-        _write_tier_config(global_paths.user_dir / "config.json", {"agent": {"model": "user-model"}})
+        _write_tier_config(global_paths.user_dir / "config.json", {"agent": {"models": {"copilot": "user-model"}}})
 
         result = load_hierarchical_config(workspace_paths_factory(isolated_workspace, global_root))
 
         assert result.status == HierarchicalConfigLoadStatus.OK
         assert result.config is not None
         assert result.config.agent.temperature == 0.3
-        assert result.config.agent.model == "user-model"
+        assert result.config.agent.models == {"copilot": "user-model"}
 
 
 class HierarchicalMergePurityTests:
@@ -384,7 +384,7 @@ class HierarchicalMergePurityTests:
     ) -> None:
         global_root = tmp_path / "global_home"
         global_paths = resolve_global_paths(global_root)
-        _write_tier_config(global_paths.user_dir / "config.json", {"agent": {"model": "test-model"}})
+        _write_tier_config(global_paths.user_dir / "config.json", {"agent": {"models": {"copilot": "test-model"}}})
         _write_tier_config(isolated_workspace / ".dovo" / "config.json", {"agent": {"temperature": 0.9}})
 
         paths = workspace_paths_factory(isolated_workspace, global_root)
@@ -407,11 +407,11 @@ class HierarchicalMergePurityTests:
 
         (repo_root_a / ".dovo").mkdir()
         (repo_root_a / ".dovo" / "config.json").write_text(
-            '{"worktree": {"base_ref": "main"}, "agent": {"model": "x"}}', encoding="utf-8"
+            '{"worktree": {"base_ref": "main"}, "agent": {"models": {"copilot": "x"}}}', encoding="utf-8"
         )
         (repo_root_b / ".dovo").mkdir()
         (repo_root_b / ".dovo" / "config.json").write_text(
-            '{"agent": {"model": "x"}, "worktree": {"base_ref": "main"}}', encoding="utf-8"
+            '{"agent": {"models": {"copilot": "x"}}, "worktree": {"base_ref": "main"}}', encoding="utf-8"
         )
 
         result_a = load_hierarchical_config(workspace_paths_factory(repo_root_a, global_root))

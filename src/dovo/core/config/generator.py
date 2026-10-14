@@ -31,7 +31,7 @@ CANONICAL_V1_DEFAULTS: dict[str, Any] = {
     },
     "agent": {
         "provider": "copilot",
-        "model": None,
+        "models": {},
         "endpoint": None,
         "temperature": 0.2,
         "max_tokens": 4096,

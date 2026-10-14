@@ -85,7 +85,7 @@ def set_nested_value(config_dict: dict[str, Any], dot_path: str, value: Any) -> 
 
     Args:
         config_dict: Mutable configuration object root.
-        dot_path: Dot-separated key path (e.g. ``agent.model``).
+        dot_path: Dot-separated key path (e.g. ``agent.models.copilot``).
         value: Value to assign at the final segment.
 
     Raises:
@@ -121,7 +121,7 @@ def unset_nested_value(config_dict: dict[str, Any], dot_path: str) -> bool:
 
     Args:
         config_dict: Mutable configuration object root.
-        dot_path: Dot-separated key path (e.g. ``agent.model``).
+        dot_path: Dot-separated key path (e.g. ``agent.models.copilot``).
 
     Returns:
         True if the key existed and was removed, False if it was a no-op.

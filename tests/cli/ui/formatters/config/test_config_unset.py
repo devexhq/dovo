@@ -21,18 +21,18 @@ OK_EXISTED = FormatterCase(
     data=ConfigUnsetResult(
         status=ConfigUnsetStatus.OK,
         config_path=_CONFIG_PATH,
-        key="agent.model",
+        key="agent.models.copilot",
         existed=True,
         previous_value="qwen2.5-coder",
     ),
     view=ConfigUnsetResult(
         status=ConfigUnsetStatus.OK,
         config_path=_CONFIG_PATH,
-        key="agent.model",
+        key="agent.models.copilot",
         existed=True,
         previous_value="qwen2.5-coder",
     ),
-    render_expectations=["agent.model"],
+    render_expectations=["agent.models.copilot"],
 )
 
 OK_NOT_EXISTED = FormatterCase(
@@ -92,7 +92,7 @@ CONFIG_UNSET_PAYLOAD_CASES = [
         {
             "status": "ok",
             "config_path": "/workspace/.dovo/config.json",
-            "key": "agent.model",
+            "key": "agent.models.copilot",
             "existed": True,
             "previous_value": "qwen2.5-coder",
             "warnings": [],

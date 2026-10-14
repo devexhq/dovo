@@ -147,6 +147,47 @@ class ConfigLoaderTests:
         assert result.fixes == ["Repair JSON syntax, or restore from backup"]
 
 
+class AgentModelsSchemaTests:
+    """Schema contract for the per-provider agent.models map."""
+
+    @pytest.mark.parametrize(
+        "agent",
+        [
+            pytest.param({"model": "gpt-4.1"}, id="legacy_model_key"),
+            pytest.param({"models": {"unknown": "x"}}, id="unknown_provider_key"),
+            pytest.param({"models": {"copilot": ""}}, id="empty_value"),
+            pytest.param({"models": {"copilot": 1}}, id="non_string_value"),
+        ],
+    )
+    def test_invalid_agent_models_fail_schema_validation(
+        self, workspace_paths: WorkspacePaths, agent: dict[str, object]
+    ) -> None:
+        """[tier-1/unit] load_config: an agent section with a legacy `model` key, an unknown provider key, an empty value, or a non-string value returns SCHEMA_INVALID with 'CONFIG_SCHEMA_INVALID' in errors."""
+        payload = {**build_default_config("test-project"), "agent": agent}
+        Filesystem.atomic_write_json(workspace_paths.config_file, payload)
+
+        result = load_config(workspace_paths)
+
+        assert result.status == ConfigLoadStatus.SCHEMA_INVALID
+        assert "CONFIG_SCHEMA_INVALID" in result.errors[0]
+
+    def test_models_defaults_to_empty_and_valid_entry_loads(self, workspace_paths: WorkspacePaths) -> None:
+        """[tier-1/unit] load_config: an agent section without `models` yields AgentConfig.models == {}; {"models": {"copilot": "gpt-4.1"}} yields {"copilot": "gpt-4.1"}."""
+        base = {"version": 1, "project": {"name": "test-project"}}
+        Filesystem.atomic_write_json(workspace_paths.config_file, {**base, "agent": {}})
+        clear_config_cache()
+        absent = load_config(workspace_paths)
+
+        Filesystem.atomic_write_json(workspace_paths.config_file, {**base, "agent": {"models": {"copilot": "gpt-4.1"}}})
+        clear_config_cache()
+        present = load_config(workspace_paths)
+
+        assert absent.config is not None
+        assert absent.config.agent.models == {}
+        assert present.config is not None
+        assert present.config.agent.models == {"copilot": "gpt-4.1"}
+
+
 class ConfigEnvironmentSectionTests:
     """[tier-1/integration] Contracts for the `environment` section of config.json."""
 

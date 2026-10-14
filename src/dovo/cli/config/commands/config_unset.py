@@ -18,7 +18,7 @@ def config_unset_command(
 
     Args:
         context: CLI context instance.
-        key: Dot-path key (e.g. ``agent.model`` or ``version``).
+        key: Dot-path key (e.g. ``agent.models.copilot`` or ``version``).
         output_format: Presentation format ("terminal" or "json").
     """
     result = Config(context.paths).unset(key)

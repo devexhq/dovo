@@ -34,16 +34,16 @@ class ConfigSetRootTests:
 
         paths = _paths_for(isolated_workspace)
         context = CliContext(paths=paths, db=DovoDb(database_file=paths.database_file, project_id=paths.project_id))
-        result = config_set_command(context, "agent.model", "qwen2.5-coder")
+        result = config_set_command(context, "agent.models.copilot", "qwen2.5-coder")
 
         assert result.status == ConfigSetStatus.OK
         assert result.config_path == config_path
-        assert result.key == "agent.model"
+        assert result.key == "agent.models.copilot"
         assert result.value == "qwen2.5-coder"
         assert result.errors == []
         assert result.warnings == []
         assert result.fixes == []
-        assert json.loads(config_path.read_text())["agent"]["model"] == "qwen2.5-coder"
+        assert json.loads(config_path.read_text())["agent"]["models"]["copilot"] == "qwen2.5-coder"
 
     def test_config_set_schema_violation_returns_error(self, isolated_workspace: Path) -> None:
         """Handler returns SCHEMA_INVALID ConfigSetResult on bad schema key."""
@@ -81,12 +81,12 @@ class ConfigSetCliIntegrationTests:
 
         res = cli_runner.invoke(
             app,
-            ["-p", str(isolated_workspace), "config", "set", "agent.model", "qwen2.5-coder"],
+            ["-p", str(isolated_workspace), "config", "set", "agent.models.copilot", "qwen2.5-coder"],
         )
 
         assert res.exit_code == 0
-        assert "Config updated: agent.model" in res.stdout
-        assert json.loads(config_path.read_text())["agent"]["model"] == "qwen2.5-coder"
+        assert "Config updated: agent.models.copilot" in res.stdout
+        assert json.loads(config_path.read_text())["agent"]["models"]["copilot"] == "qwen2.5-coder"
 
     def test_config_set_cli_stores_boolean_true_from_string(
         self, cli_runner: CliRunner, isolated_workspace: Path
@@ -141,7 +141,7 @@ class ConfigSetCliIntegrationTests:
                 str(isolated_workspace),
                 "config",
                 "set",
-                "agent.model",
+                "agent.models.copilot",
                 "qwen2.5-coder",
                 "--format",
                 "json",
@@ -154,7 +154,7 @@ class ConfigSetCliIntegrationTests:
             "payload": {
                 "status": "ok",
                 "config_path": str(config_path),
-                "key": "agent.model",
+                "key": "agent.models.copilot",
                 "value": "qwen2.5-coder",
                 "value_str": "qwen2.5-coder",
                 "value_type": "str",

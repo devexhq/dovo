@@ -255,8 +255,8 @@ def _collect_warnings(
     if git.is_dirty:
         warnings.append(f"Working tree has {git.uncommitted_files} uncommitted change(s).")
 
-    if config.config is not None and not config.config.agent.model:
-        warnings.append("Agent model is not configured (agent.model is null).")
+    if config.config is not None and not config.config.agent.active_model:
+        warnings.append(f"Agent model is not configured (agent.models.{config.config.agent.provider} is unset).")
 
     if worktrees.max_active_worktrees > 5:
         warnings.append(f"max_active_worktrees ({worktrees.max_active_worktrees}) is unusually high.")

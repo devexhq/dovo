@@ -47,7 +47,6 @@ def _make_config(name: str = "valid-proj") -> DovoConfig:
         ),
         agent=AgentConfig(
             provider="copilot",
-            model=None,
             endpoint=None,
             temperature=0.2,
             max_tokens=4096,
@@ -105,9 +104,11 @@ VALID_WITH_WARNINGS_CASE = FormatterCase(
         status=ConfigValidationStatus.VALID,
         config_path=CONFIG_PATH,
         config=VALID_CONFIG,
-        warnings=["agent.provider 'copilot' requires agent.model but it is missing (CONFIG_WARN_AGENT_MODEL_MISSING)."],
+        warnings=[
+            "agent.provider 'copilot' requires agent.models.copilot but it is missing (CONFIG_WARN_AGENT_MODEL_MISSING)."
+        ],
         errors=[],
-        fixes=["Set agent.model in .dovo/config.json"],
+        fixes=["Set agent.models.copilot in .dovo/config.json"],
     ),
     view=ConfigValidationView(
         status=ConfigValidationStatus.VALID,
@@ -116,14 +117,16 @@ VALID_WITH_WARNINGS_CASE = FormatterCase(
         raw=None,
         config=VALID_CONFIG,
         errors=[],
-        warnings=["agent.provider 'copilot' requires agent.model but it is missing (CONFIG_WARN_AGENT_MODEL_MISSING)."],
-        fixes=["Set agent.model in .dovo/config.json"],
+        warnings=[
+            "agent.provider 'copilot' requires agent.models.copilot but it is missing (CONFIG_WARN_AGENT_MODEL_MISSING)."
+        ],
+        fixes=["Set agent.models.copilot in .dovo/config.json"],
     ),
     render_expectations=[
         CONFIG_PATH.as_posix(),
         "valid with warnings",
-        "agent.provider 'copilot' requires agent.model but it is missing (CONFIG_WARN_AGENT_MODEL_MISSING).",
-        "Set agent.model in .dovo/config.json",
+        "agent.provider 'copilot' requires agent.models.copilot but it is missing (CONFIG_WARN_AGENT_MODEL_MISSING).",
+        "Set agent.models.copilot in .dovo/config.json",
     ],
 )
 
@@ -204,7 +207,7 @@ VALIDATION_PAYLOAD_CASES = [
                 },
                 "agent": {
                     "provider": "copilot",
-                    "model": None,
+                    "models": {},
                     "endpoint": None,
                     "temperature": 0.2,
                     "max_tokens": 4096,

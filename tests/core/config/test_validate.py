@@ -13,7 +13,7 @@ from dovo.common.filesystem import Filesystem
 from dovo.common.schema_validation import CONFIG_VALIDATOR
 from dovo.core.agents.registry import PROVIDERS
 from dovo.core.config.generator import build_default_config
-from dovo.core.config.models import AgentProvider, DovoConfig
+from dovo.core.config.models import AgentConfig, AgentProvider, DovoConfig
 from dovo.core.config.validate import (
     ConfigValidationStatus,
     validate_config_result,
@@ -27,7 +27,7 @@ class ConfigSemanticValidationTests:
         self, tmp_path: Path, model_required_provider: None
     ) -> None:
         payload = build_default_config("demo")
-        payload["agent"]["model"] = None
+        payload["agent"]["models"] = {}
         config_path = tmp_path / "config.json"
         Filesystem.atomic_write_json(config_path, payload)
 
@@ -36,9 +36,9 @@ class ConfigSemanticValidationTests:
         assert result.status == ConfigValidationStatus.VALID
         assert result.errors == []
         assert result.warnings == [
-            "agent.provider 'copilot' requires agent.model but it is missing (CONFIG_WARN_AGENT_MODEL_MISSING)."
+            "agent.provider 'copilot' requires agent.models.copilot but it is missing (CONFIG_WARN_AGENT_MODEL_MISSING)."
         ]
-        assert result.fixes == ["Set agent.model"]
+        assert result.fixes == ["Set agent.models.copilot"]
 
     def test_validate_config_default_config_has_no_model_warning(self, tmp_path: Path) -> None:
         config_path = tmp_path / "config.json"
@@ -121,12 +121,27 @@ class ConfigProviderRegistryValidationTests:
 
 class ProviderVocabularyAgreementTests:
     def test_registry_model_and_schema_agree_on_provider_set(self) -> None:
-        """[tier-1/unit] PROVIDERS vs AgentProvider vs schemas/v1/config.json agent.provider enum: all three token sets equal {'copilot'} and the schema default is 'copilot'."""
+        """[tier-1/unit] PROVIDERS vs AgentProvider vs schemas/v1/config.json agent.provider enum: all three token sets equal {'copilot'}, the schema default is 'copilot', and the agent.models schema keys equal the registered tokens."""
         schema = json.loads(files("dovo.schemas.v1").joinpath("config.json").read_text(encoding="utf-8"))
         provider_schema = schema["properties"]["agent"]["properties"]["provider"]
 
         assert set(PROVIDERS) == set(get_args(AgentProvider)) == set(provider_schema["enum"]) == {"copilot"}
         assert provider_schema["default"] == "copilot"
+        assert set(schema["properties"]["agent"]["properties"]["models"]["properties"]) == set(PROVIDERS)
+
+
+class AgentModelsValidatorTests:
+    """Direct construction contract for AgentConfig.models."""
+
+    def test_unknown_provider_key_raises_validation_error_naming_it(self) -> None:
+        """[tier-1/unit] AgentConfig: models with a key that is not a registered provider token raises ValidationError naming the unknown key."""
+        with pytest.raises(ValidationError, match=r"unknown agent provider\(s\) in models: other"):
+            AgentConfig(models={"copilot": "gpt-4.1", "other": "x"})
+
+    def test_active_model_reads_active_provider_entry_or_none(self) -> None:
+        """[tier-1/unit] AgentConfig.active_model: returns the active provider's entry, and None when models is empty."""
+        assert AgentConfig(models={"copilot": "gpt-4.1"}).active_model == "gpt-4.1"
+        assert AgentConfig().active_model is None
 
 
 class AgentConfigEnvTests:

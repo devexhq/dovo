@@ -782,7 +782,7 @@ class DriveRunObserverContractTests:
 
 _AGENT_CONFIG: dict[str, object] = {
     "provider": "copilot",
-    "model": "test-model",
+    "models": {"copilot": "test-model"},
     "endpoint": "http://127.0.0.1:9999",
     "temperature": 0.7,
     "max_tokens": 512,
@@ -1003,7 +1003,7 @@ class DriveRunAgentSettingsTests:
         captured_agent_args: list[ResolvedAgentSettings | None],
         noop_agent_provider: FakeAgentProvider,
     ) -> None:
-        """[tier-1/integration] drive_run: a paused agent-step row with agent='fake-provider' resumed with RETRY reaches StepExecution with provider 'fake-provider' and the config's model, endpoint, temperature, max_tokens."""
+        """[tier-1/integration] drive_run: a paused agent-step row with agent='fake-provider' resumed with RETRY reaches StepExecution with provider 'fake-provider', model None (no models entry for it), and the config's endpoint, temperature, max_tokens."""
         paths, sessions = _agent_workspace(tmp_path, _AGENT_CONFIG)
         seed_paused_session(
             paths,
@@ -1021,7 +1021,7 @@ class DriveRunAgentSettingsTests:
         assert captured_agent_args == [
             ResolvedAgentSettings(
                 provider="fake-provider",
-                model="test-model",
+                model=None,
                 endpoint="http://127.0.0.1:9999",
                 temperature=0.7,
                 max_tokens=512,
@@ -1165,7 +1165,7 @@ class DriveRunAgentExecutionTests:
     def test_provider_override_and_tuning_reach_the_provider(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """[tier-1/integration] drive_run: config agent settings with row.agent 'fake-provider' asks the factory for 'fake-provider' and delivers an AgentRequest with the configured model, endpoint, temperature, max_tokens, and the step's timeout_seconds."""
+        """[tier-1/integration] drive_run: config agent settings with row.agent 'fake-provider' asks the factory for 'fake-provider' and delivers an AgentRequest with model None (models only has a copilot entry), the configured endpoint, temperature, max_tokens, and the step's timeout_seconds."""
         paths, sessions = _agent_workspace(tmp_path, _AGENT_CONFIG)
         provider = FakeAgentProvider(AgentResponse(status=AgentResponseStatus.NO_OP))
         requested: list[str] = []
@@ -1189,7 +1189,7 @@ class DriveRunAgentExecutionTests:
         assert outcome.status == SessionStatus.COMPLETED
         assert requested == ["fake-provider"]
         request = provider.requests[0]
-        assert request.model == "test-model"
+        assert request.model is None
         assert request.endpoint == "http://127.0.0.1:9999"
         assert request.temperature == 0.7
         assert request.max_tokens == 512

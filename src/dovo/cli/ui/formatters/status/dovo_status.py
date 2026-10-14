@@ -57,11 +57,7 @@ class DovoStatusFormatter(ComponentFormatter[DovoStatusResult, StatusView]):
         """Derive the presentation-ready view from workspace status domain data."""
         active_worktrees, max_worktrees = _derive_worktree_counts(data)
         valid_items, total_items = _derive_catalog_counts(data)
-        agent_model = (
-            data.config.config.agent.model
-            if (data.config.config is not None and data.config.config.agent.model)
-            else None
-        )
+        agent_model = data.config.config.agent.active_model if data.config.config is not None else None
         git_branch = data.git.branch if data.git.is_git_repo else None
 
         return StatusView(

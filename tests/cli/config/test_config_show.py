@@ -119,8 +119,8 @@ class ConfigShowCliIntegrationTests:
         isolated_workspace: Path,
         write_tier_config: Callable[[ConfigTier, dict[str, Any] | str], Path],
     ) -> None:
-        """[tier-3/integration] dovo config show --format json: User tier agent.model override appears in the config field; exit 0."""
-        write_tier_config(ConfigTier.USER, {"agent": {"model": "user-tier-model"}})
+        """[tier-3/integration] dovo config show --format json: User tier agent.models override appears in the config field; exit 0."""
+        write_tier_config(ConfigTier.USER, {"agent": {"models": {"copilot": "user-tier-model"}}})
 
         config_path = isolated_workspace / ".dovo" / "config.json"
         Filesystem.atomic_write_json(config_path, {"version": 1, "project": {"name": "demo-workspace"}})
@@ -129,7 +129,7 @@ class ConfigShowCliIntegrationTests:
 
         assert res.exit_code == 0
         payload = json.loads(res.stdout)
-        assert payload["payload"]["config"]["agent"]["model"] == "user-tier-model"
+        assert payload["payload"]["config"]["agent"]["models"] == {"copilot": "user-tier-model"}
 
     def test_config_show_cli_malformed_user_tier_exits_one_with_config_error_panel(
         self,

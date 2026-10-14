@@ -209,13 +209,14 @@ def _agent_key_missing(result: DiagnosticCheckResult) -> list[Remediation]:
 
 def _agent_no_model(result: DiagnosticCheckResult) -> list[Remediation]:
     """Return the remediation for an agent provider with no model configured (DOCTOR_AGENT_NO_MODEL)."""
+    provider = result.details.get("provider", "<provider>")
     return [
         Remediation(
             code="DOCTOR_AGENT_NO_MODEL",
             title="Configure agent model",
             action_type=RemediationType.COMMAND,
-            command='dovo config set agent.model "<model>"',
-            description="Set `agent.model` in `.dovo/config.json` to a model supported by the configured provider, e.g. `dovo config set agent.model <model-name>`.",
+            command=f'dovo config set agent.models.{provider} "<model>"',
+            description=f"Set `agent.models.{provider}` in `.dovo/config.json` to a model supported by that provider, e.g. `dovo config set agent.models.{provider} <model-name>`.",
             doc_path="docs/cli/config.md",
             is_automated=False,
         )

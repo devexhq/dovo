@@ -289,7 +289,9 @@ class ConfigTolerantCommandsPostInitTests:
         """dovo config set: valid identity and no config.json dispatches the normal ConfigSetResult and never prints the guard message."""
         workspace = WorkspaceBuilder(tmp_path / "workspace").without_config().build()
 
-        result = cli_runner.invoke(app, ["-p", str(workspace), "config", "set", "agent.model", "qwen2.5-coder"])
+        result = cli_runner.invoke(
+            app, ["-p", str(workspace), "config", "set", "agent.models.copilot", "qwen2.5-coder"]
+        )
 
         set_results = [item for item in dispatch_spy if isinstance(item, ConfigSetResult)]
         assert "WORKSPACE_NOT_INITIALIZED" not in result.stdout

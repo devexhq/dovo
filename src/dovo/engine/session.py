@@ -68,17 +68,18 @@ def drive_run(
 def _resolve_agent_settings(
     paths: WorkspacePaths, override: str | None, env_overrides: AgentEnvOverrides | None
 ) -> AgentSettingsResolution:
-    """Resolve agent settings; the run-row override replaces only the provider and env_overrides layer over config."""
+    """Resolve agent settings; the run-row override replaces the provider and selects that provider's model entry; env_overrides layer over config."""
     result = Config(paths).load()
     if not result.ok or result.config is None:
         return AgentSettingsResolution(errors=list(result.errors) or ["Failed to resolve agent settings."])
 
     agent = result.config.agent
     env_passthrough, env_mode = _merge_env_settings(agent, env_overrides)
+    provider = override or agent.provider
     return AgentSettingsResolution(
         settings=ResolvedAgentSettings(
-            provider=override or agent.provider,
-            model=agent.model,
+            provider=provider,
+            model=agent.models.get(provider),
             endpoint=agent.endpoint,
             temperature=agent.temperature,
             max_tokens=agent.max_tokens,

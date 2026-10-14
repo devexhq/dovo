@@ -21,7 +21,7 @@ def config_set_command(
 
     Args:
         context: CLI context instance.
-        key: Dot-path key (e.g. ``agent.model`` or ``version``).
+        key: Dot-path key (e.g. ``agent.models.copilot`` or ``version``).
         value: String value from CLI to parse and store at ``key``.
         output_format: Presentation format ("terminal" or "json").
     """

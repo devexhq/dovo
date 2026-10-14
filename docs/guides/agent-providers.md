@@ -26,7 +26,7 @@ Set the provider and optional model settings in `.dovo/config.json`:
 {
   "agent": {
     "provider": "copilot",
-    "model": null,
+    "models": {},
     "endpoint": null,
     "temperature": 0.2,
     "max_tokens": 4096,
@@ -40,11 +40,11 @@ Or with `dovo config set`:
 
 ```bash
 dovo config set agent.provider copilot
-dovo config set agent.model gpt-4.1
+dovo config set agent.models.copilot gpt-4.1
 dovo config set agent.temperature 0.1
 ```
 
-`dovo run <blueprint> --agent <identifier>` overrides the provider for one run.
+`dovo run <blueprint> --agent <identifier>` overrides the provider for one run. The run's model is `agent.models[<provider used>]`, so `--agent` also switches which entry is used; a provider with no entry runs with no model.
 
 `dovo doctor` checks provider credentials, for example `GH_TOKEN` or `GITHUB_TOKEN` for `copilot`. A passing check does not guarantee the provider will accept a request.
 

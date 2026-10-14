@@ -38,7 +38,7 @@ WORKTREE_REQUIRED_MESSAGE = (
 )
 MISSING_SETTINGS_MESSAGE = (
     "Agent step has no resolved agent settings "
-    "(agent.provider, agent.model, agent.endpoint, agent.temperature, agent.max_tokens)."
+    "(agent.provider, agent.models, agent.endpoint, agent.temperature, agent.max_tokens)."
 )
 BLANK_PROMPT_MESSAGE = "Agent step prompt is blank after interpolation."
 AGENT_HEARTBEAT_INTERVAL_SECONDS: Final[int] = 30
