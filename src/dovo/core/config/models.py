@@ -20,7 +20,7 @@ from dovo.common.models import BaseResult
 from dovo.common.tool_policy import ToolPolicy, coerce_tool_policy
 from dovo.core.agents.models import AgentEnvMode, EnvPassthroughEntry
 
-AgentProvider = Literal["copilot"]  # "claude" is added by the Claude adapter change
+AgentProvider = Literal["copilot", "claude"]
 ModelName = Annotated[str, Field(min_length=1)]
 
 

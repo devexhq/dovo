@@ -72,8 +72,8 @@ Schema for `.dovo/config.json` (version 1).
 * `default_timeout_seconds` *(integer)*: Currently has no effect (default: `900`).
 
 ### 4. `agent`
-* `provider` *(string)*: Agent provider. Only `copilot` is accepted (default: `"copilot"`); other values fail validation.
-* `models` *(object)*: Model name per provider, keyed by provider token (currently `copilot`); each value is a non-empty string (default: `{}`). The run uses the entry of the provider it runs with.
+* `provider` *(string)*: Agent provider. `copilot` and `claude` are accepted (default: `"copilot"`); other values fail validation.
+* `models` *(object)*: Model name per provider, keyed by provider token (`copilot` or `claude`); each value is a non-empty string (default: `{}`). The run uses the entry of the provider it runs with.
 * `endpoint` *(string \| null)*: Custom API endpoint URL (default: `null`).
 * `temperature` *(number)*: Sampling temperature (default: `0.2`).
 * `max_tokens` *(integer)*: Maximum generation tokens (default: `4096`).

@@ -6,9 +6,10 @@ A token in ``PROVIDERS`` is what the factory can build and what ``validate_confi
 from __future__ import annotations
 
 from dovo.core.agents.base import ProviderSpec
+from dovo.core.agents.claude import CLAUDE_PROVIDER_SPEC
 from dovo.core.agents.copilot import COPILOT_PROVIDER_SPEC
 
-PROVIDERS: dict[str, ProviderSpec] = {spec.token: spec for spec in (COPILOT_PROVIDER_SPEC,)}
+PROVIDERS: dict[str, ProviderSpec] = {spec.token: spec for spec in (CLAUDE_PROVIDER_SPEC, COPILOT_PROVIDER_SPEC)}
 
 
 def unsupported_provider_message(token: str) -> str:

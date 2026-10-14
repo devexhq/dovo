@@ -99,7 +99,7 @@ class ConfigProviderRegistryValidationTests:
     def test_schema_valid_unregistered_provider_is_semantically_invalid(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """[tier-1/unit] validate_config_result: with 'copilot' removed from PROVIDERS and a fake token registered, agent.provider 'copilot' returns INVALID, ok False, the AGENT_PROVIDER_UNSUPPORTED error naming the fake token, and no warnings."""
+        """[tier-1/unit] validate_config_result: with 'copilot' removed from PROVIDERS and a fake token registered, agent.provider 'copilot' returns INVALID, ok False, the AGENT_PROVIDER_UNSUPPORTED error listing the remaining registered tokens, and no warnings."""
         monkeypatch.setitem(PROVIDERS, "fake", dataclasses.replace(PROVIDERS["copilot"], token="fake"))
         monkeypatch.delitem(PROVIDERS, "copilot")
 
@@ -107,7 +107,24 @@ class ConfigProviderRegistryValidationTests:
 
         assert result.status == ConfigValidationStatus.INVALID
         assert result.ok is False
-        assert result.errors == ["Unsupported agent provider 'copilot' (AGENT_PROVIDER_UNSUPPORTED). Supported: fake."]
+        assert result.errors == [
+            "Unsupported agent provider 'copilot' (AGENT_PROVIDER_UNSUPPORTED). Supported: claude, fake."
+        ]
+        assert result.warnings == []
+
+    @pytest.mark.parametrize("token", list(PROVIDERS))
+    def test_registered_provider_with_model_is_valid(self, token: str, tmp_path: Path) -> None:
+        """[tier-1/unit] validate_config_result: agent.provider token with agent.models {token: 'm'} returns VALID, ok True, errors [] and warnings []."""
+        config_path = self._write_config(tmp_path, token)
+        payload = json.loads(config_path.read_text(encoding="utf-8"))
+        payload["agent"]["models"] = {token: "m"}
+        Filesystem.atomic_write_json(config_path, payload)
+
+        result = validate_config_result(config_path)
+
+        assert result.status == ConfigValidationStatus.VALID
+        assert result.ok is True
+        assert result.errors == []
         assert result.warnings == []
 
     def test_schema_invalid_token_keeps_structural_failure(self, tmp_path: Path) -> None:
@@ -121,11 +138,11 @@ class ConfigProviderRegistryValidationTests:
 
 class ProviderVocabularyAgreementTests:
     def test_registry_model_and_schema_agree_on_provider_set(self) -> None:
-        """[tier-1/unit] PROVIDERS vs AgentProvider vs schemas/v1/config.json agent.provider enum: all three token sets equal {'copilot'}, the schema default is 'copilot', and the agent.models schema keys equal the registered tokens."""
+        """[tier-1/unit] PROVIDERS vs AgentProvider vs schemas/v1/config.json agent.provider enum: all three token sets equal {'copilot', 'claude'}, the schema default is 'copilot', and the agent.models schema keys equal the registered tokens."""
         schema = json.loads(files("dovo.schemas.v1").joinpath("config.json").read_text(encoding="utf-8"))
         provider_schema = schema["properties"]["agent"]["properties"]["provider"]
 
-        assert set(PROVIDERS) == set(get_args(AgentProvider)) == set(provider_schema["enum"]) == {"copilot"}
+        assert set(PROVIDERS) == set(get_args(AgentProvider)) == set(provider_schema["enum"]) == {"copilot", "claude"}
         assert provider_schema["default"] == "copilot"
         assert set(schema["properties"]["agent"]["properties"]["models"]["properties"]) == set(PROVIDERS)
 
