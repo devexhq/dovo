@@ -9,7 +9,7 @@ import pytest
 
 from dovo.core.agents import AgentProgress, AgentProgressKind
 from dovo.core.agents.copilot_progress import COPILOT_TARGET_FIELDS, COPILOT_TOOL_KINDS, map_copilot_line
-from tests.harness.fixtures import load_copilot_fixture
+from tests.harness.fixtures import load_agent_fixture
 
 _WORKTREE = Path("/work/repo")
 _FIXTURE_NAMES = [
@@ -155,7 +155,7 @@ class MapCopilotLineTests:
     @pytest.mark.parametrize("fixture_name", _FIXTURE_NAMES)
     def test_fixture_log_maps_to_its_expected_progress_sequence(self, fixture_name: str) -> None:
         """[tier-1/unit] map_copilot_line: each committed fixture log, mapped line by line with worktree /work/repo, yields the exact (kind, target) sequence pinned for that fixture and never raises."""
-        mapped = [progress for line in load_copilot_fixture(fixture_name) for progress in _map(line)]
+        mapped = [progress for line in load_agent_fixture("copilot", fixture_name) for progress in _map(line)]
 
         assert [(progress.kind, progress.target) for progress in mapped] == _EXPECTED_SEQUENCES[fixture_name]
 
@@ -166,7 +166,7 @@ class MapCopilotFixtureCoverageTests:
         tool_names: set[str] = set()
         kinds: set[AgentProgressKind] = set()
         for fixture_name in _FIXTURE_NAMES:
-            for line in load_copilot_fixture(fixture_name):
+            for line in load_agent_fixture("copilot", fixture_name):
                 event = json.loads(line)
                 if event.get("type") == "tool.execution_start":
                     tool_names.add(event["data"]["toolName"])
