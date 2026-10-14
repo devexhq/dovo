@@ -29,6 +29,7 @@ from dovo.core.agents.copilot import (
     render_copilot_policy,
     resolve_copilot_token,
 )
+from dovo.core.agents.copilot_progress import map_copilot_line
 from dovo.core.agents.models import AgentDenial, AgentProgress, AgentProgressKind
 from tests.harness import AgentRequestBuilder, FakeAgentRunner, StreamingAgentRunner
 
@@ -85,6 +86,10 @@ class CopilotRunProgressTests:
         b'{"type":"assistant.message","data":{"content":"hello"}}\n{"type":"result","data":{"exitCode":0}}\n'
     )
 
+    def test_copilot_descriptor_registers_map_copilot_line(self) -> None:
+        """[tier-1/unit] COPILOT_PROVIDER_SPEC: progress_mapper is map_copilot_line."""
+        assert COPILOT_PROVIDER_SPEC.progress_mapper is map_copilot_line
+
     def _view_line(self, worktree: Path) -> str:
         return self._VIEW_LINE.replace("{root}", str(worktree))
 
@@ -106,6 +111,7 @@ class CopilotRunProgressTests:
                 tools=_ALLOW_ALL,
                 on_line=lambda stream_name, text: raw.append((stream_name, text)),
                 on_progress=progress.append,
+                progress_mapper=map_copilot_line,
             )
         )
 

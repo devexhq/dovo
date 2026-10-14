@@ -1,4 +1,4 @@
-"""Map provider stdout events to provider-agnostic agent progress items; masking and truncation belong to the reporter."""
+"""Map Copilot stdout events to provider-agnostic agent progress items; masking and truncation belong to the reporter."""
 
 from __future__ import annotations
 

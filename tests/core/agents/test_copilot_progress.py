@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 
 from dovo.core.agents import AgentProgress, AgentProgressKind
-from dovo.core.agents.services.map_progress import COPILOT_TOOL_KINDS, map_copilot_line
+from dovo.core.agents.copilot_progress import COPILOT_TARGET_FIELDS, COPILOT_TOOL_KINDS, map_copilot_line
 from tests.harness.fixtures import load_copilot_fixture
 
 _WORKTREE = Path("/work/repo")
@@ -174,3 +174,9 @@ class MapCopilotFixtureCoverageTests:
 
         assert tool_names >= set(COPILOT_TOOL_KINDS)
         assert kinds == set(AgentProgressKind)
+
+
+class CopilotProgressContractTests:
+    def test_every_tool_except_apply_patch_has_a_target_field(self) -> None:
+        """[tier-1/unit] COPILOT_TARGET_FIELDS: set(COPILOT_TOOL_KINDS) - {'apply_patch'} == set(COPILOT_TARGET_FIELDS)."""
+        assert set(COPILOT_TOOL_KINDS) - {"apply_patch"} == set(COPILOT_TARGET_FIELDS)
