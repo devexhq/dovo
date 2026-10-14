@@ -13,6 +13,7 @@ from dovo.core.agents.claude_policy import ClaudePolicyArgs, render_claude_polic
 
 _ALL_TOOLS = "Read,Grep,Glob,Edit,Write,NotebookEdit,Bash,WebFetch"
 _READ_WRITE_TOOLS = "Read,Grep,Glob,Edit,Write,NotebookEdit"
+_MCP_FLAGS = ("--strict-mcp-config", "--mcp-config", '{"mcpServers":{}}')
 
 
 def _roots(tmp_path: Path, *, scratch: bool = True) -> PolicyRoots:
@@ -30,6 +31,7 @@ def _read_write_flags(root: Path) -> tuple[str, ...]:
     return (
         "--permission-mode",
         "dontAsk",
+        *_MCP_FLAGS,
         "--tools",
         _READ_WRITE_TOOLS,
         "--allowedTools",
@@ -80,6 +82,7 @@ class ClaudePolicyRenderTests:
             flags=(
                 "--permission-mode",
                 "dontAsk",
+                *_MCP_FLAGS,
                 "--tools",
                 _READ_WRITE_TOOLS,
                 "--allowedTools",
@@ -98,6 +101,7 @@ class ClaudePolicyRenderTests:
             flags=(
                 "--permission-mode",
                 "dontAsk",
+                *_MCP_FLAGS,
                 "--tools",
                 "Read,Grep,Glob",
                 "--allowedTools",
@@ -115,6 +119,7 @@ class ClaudePolicyRenderTests:
             flags=(
                 "--permission-mode",
                 "dontAsk",
+                *_MCP_FLAGS,
                 "--tools",
                 "",
                 "--disallowedTools",
@@ -132,6 +137,7 @@ class ClaudePolicyRenderTests:
             flags=(
                 "--permission-mode",
                 "dontAsk",
+                *_MCP_FLAGS,
                 "--tools",
                 _ALL_TOOLS,
                 "--allowedTools",
@@ -141,10 +147,60 @@ class ClaudePolicyRenderTests:
             )
         )
 
+    def test_default_policy_carries_empty_mcp_set_after_permission_mode(self, tmp_path: Path) -> None:
+        """[tier-1/unit] render_claude_policy: default_tool_policy() returns flags whose first five items are '--permission-mode', 'dontAsk', '--strict-mcp-config', '--mcp-config', '{"mcpServers":{}}'."""
+        result = render_claude_policy(default_tool_policy(), _roots(tmp_path))
+
+        assert isinstance(result, ClaudePolicyArgs)
+        assert result.flags[:5] == (
+            "--permission-mode",
+            "dontAsk",
+            "--strict-mcp-config",
+            "--mcp-config",
+            '{"mcpServers":{}}',
+        )
+
+    @pytest.mark.parametrize(
+        ("pattern", "denied"),
+        [
+            pytest.param("github/create_issue", "mcp__github__create_issue", id="server-tool"),
+            pytest.param("github/*", "mcp__github", id="server-wildcard"),
+        ],
+    )
+    def test_mcp_deny_renders_claude_tool_name(self, tmp_path: Path, pattern: str, denied: str) -> None:
+        """[tier-1/unit] render_claude_policy: an mcp deny 'github/create_issue' renders '--disallowedTools' 'mcp__github__create_issue' and 'github/*' renders 'mcp__github', each beside the MCP flags with no '--allowedTools'."""
+        policy = ToolPolicy(deny=[_rule(ToolCapability.MCP, pattern)])
+
+        assert render_claude_policy(policy, _roots(tmp_path)) == ClaudePolicyArgs(
+            flags=("--permission-mode", "dontAsk", *_MCP_FLAGS, "--tools", "", "--disallowedTools", denied)
+        )
+
+    def test_mcp_deny_composes_with_other_denies_in_rule_order(self, tmp_path: Path) -> None:
+        """[tier-1/unit] render_claude_policy: shell deny 'git push *', mcp deny 'github/*', mcp deny 'github/*' return '--disallowedTools' 'Bash(git push:*),mcp__github' (duplicate collapsed)."""
+        policy = ToolPolicy(
+            deny=[
+                _rule(ToolCapability.SHELL, "git push *"),
+                _rule(ToolCapability.MCP, "github/*"),
+                _rule(ToolCapability.MCP, "github/*"),
+            ]
+        )
+
+        assert render_claude_policy(policy, _roots(tmp_path)) == ClaudePolicyArgs(
+            flags=(
+                "--permission-mode",
+                "dontAsk",
+                *_MCP_FLAGS,
+                "--tools",
+                "",
+                "--disallowedTools",
+                "Bash(git push:*),mcp__github",
+            )
+        )
+
     def test_empty_policy_emits_empty_tools_value_and_no_other_lists(self, tmp_path: Path) -> None:
-        """[tier-1/unit] render_claude_policy: ToolPolicy() returns ClaudePolicyArgs(flags=('--permission-mode', 'dontAsk', '--tools', ''))."""
+        """[tier-1/unit] render_claude_policy: ToolPolicy() returns ClaudePolicyArgs(flags=('--permission-mode', 'dontAsk', <MCP flags>, '--tools', ''))."""
         assert render_claude_policy(ToolPolicy(), _roots(tmp_path)) == ClaudePolicyArgs(
-            flags=("--permission-mode", "dontAsk", "--tools", "")
+            flags=("--permission-mode", "dontAsk", *_MCP_FLAGS, "--tools", "")
         )
 
     @pytest.mark.parametrize(
@@ -162,7 +218,7 @@ class ClaudePolicyRenderTests:
         policy = ToolPolicy(allow=[_rule(ToolCapability.SHELL, pattern)])
 
         assert render_claude_policy(policy, _roots(tmp_path)) == ClaudePolicyArgs(
-            flags=("--permission-mode", "dontAsk", "--tools", "Bash", "--allowedTools", permission)
+            flags=("--permission-mode", "dontAsk", *_MCP_FLAGS, "--tools", "Bash", "--allowedTools", permission)
         )
 
     @pytest.mark.parametrize(
@@ -179,7 +235,7 @@ class ClaudePolicyRenderTests:
         policy = ToolPolicy(allow=[_rule(ToolCapability.NETWORK, pattern)])
 
         assert render_claude_policy(policy, _roots(tmp_path)) == ClaudePolicyArgs(
-            flags=("--permission-mode", "dontAsk", "--tools", "WebFetch", "--allowedTools", permission)
+            flags=("--permission-mode", "dontAsk", *_MCP_FLAGS, "--tools", "WebFetch", "--allowedTools", permission)
         )
 
     def test_tools_follow_fixed_order_and_duplicate_permissions_collapse(self, tmp_path: Path) -> None:
@@ -198,6 +254,7 @@ class ClaudePolicyRenderTests:
             flags=(
                 "--permission-mode",
                 "dontAsk",
+                *_MCP_FLAGS,
                 "--tools",
                 _ALL_TOOLS,
                 "--allowedTools",
@@ -205,12 +262,12 @@ class ClaudePolicyRenderTests:
             )
         )
 
-    def test_allow_all_without_denies_returns_bypass_only(self, tmp_path: Path) -> None:
-        """[tier-1/unit] render_claude_policy: ToolPolicy(allow_all=True) with a stray mcp allow returns ClaudePolicyArgs(flags=('--permission-mode', 'bypassPermissions')) with no '--tools' or '--allowedTools'."""
+    def test_allow_all_ignores_stray_mcp_allow_and_still_isolates_mcp(self, tmp_path: Path) -> None:
+        """[tier-1/unit] render_claude_policy: ToolPolicy(allow_all=True, allow=[mcp 'server/tool']) returns ClaudePolicyArgs(flags=('--permission-mode', 'bypassPermissions', '--strict-mcp-config', '--mcp-config', '{"mcpServers":{}}'))."""
         policy = ToolPolicy(allow_all=True, allow=[_rule(ToolCapability.MCP, "server/tool")])
 
         assert render_claude_policy(policy, _roots(tmp_path)) == ClaudePolicyArgs(
-            flags=("--permission-mode", "bypassPermissions")
+            flags=("--permission-mode", "bypassPermissions", *_MCP_FLAGS)
         )
 
     def test_allow_all_with_denies_grants_every_builtin_and_renders_denies(self, tmp_path: Path) -> None:
@@ -221,12 +278,31 @@ class ClaudePolicyRenderTests:
             flags=(
                 "--permission-mode",
                 "dontAsk",
+                *_MCP_FLAGS,
                 "--tools",
                 _ALL_TOOLS,
                 "--allowedTools",
                 "Read,Edit,Bash,WebFetch",
                 "--disallowedTools",
                 "Bash(git push:*)",
+            )
+        )
+
+    def test_allow_all_with_mcp_deny_renders_it_beside_dontask_grants(self, tmp_path: Path) -> None:
+        """[tier-1/unit] render_claude_policy: allow_all with mcp deny 'github/*' returns ('--permission-mode', 'dontAsk', '--strict-mcp-config', '--mcp-config', '{"mcpServers":{}}', '--tools', <all eight names>, '--allowedTools', 'Read,Edit,Bash,WebFetch', '--disallowedTools', 'mcp__github')."""
+        policy = ToolPolicy(allow_all=True, deny=[_rule(ToolCapability.MCP, "github/*")])
+
+        assert render_claude_policy(policy, _roots(tmp_path)) == ClaudePolicyArgs(
+            flags=(
+                "--permission-mode",
+                "dontAsk",
+                *_MCP_FLAGS,
+                "--tools",
+                _ALL_TOOLS,
+                "--allowedTools",
+                "Read,Edit,Bash,WebFetch",
+                "--disallowedTools",
+                "mcp__github",
             )
         )
 
@@ -241,6 +317,7 @@ class ClaudePolicyRenderTests:
             flags=(
                 "--permission-mode",
                 "dontAsk",
+                *_MCP_FLAGS,
                 "--tools",
                 "Bash",
                 "--allowedTools",
@@ -260,6 +337,7 @@ class ClaudePolicyRenderTests:
             flags=(
                 "--permission-mode",
                 "dontAsk",
+                *_MCP_FLAGS,
                 "--tools",
                 _READ_WRITE_TOOLS,
                 "--allowedTools",
@@ -279,6 +357,7 @@ class ClaudePolicyRenderTests:
             flags=(
                 "--permission-mode",
                 "dontAsk",
+                *_MCP_FLAGS,
                 "--tools",
                 "Read,Grep,Glob",
                 "--allowedTools",
@@ -304,14 +383,20 @@ class ClaudePolicyRenderTests:
             pytest.param(
                 ToolPolicy(allow=[_rule(ToolCapability.MCP, "server/tool")]),
                 True,
-                "mcp rules cannot be preserved for Claude Code",
+                "mcp allow rules cannot be preserved because Claude Code runs without user MCP servers",
                 id="mcp-allow",
             ),
             pytest.param(
-                ToolPolicy(deny=[_rule(ToolCapability.MCP, "server/tool")]),
+                ToolPolicy(allow=[_rule(ToolCapability.MCP)]),
                 True,
-                "mcp rules cannot be preserved for Claude Code",
-                id="mcp-deny",
+                "mcp allow rules cannot be preserved because Claude Code runs without user MCP servers",
+                id="mcp-allow-without-pattern",
+            ),
+            pytest.param(
+                ToolPolicy(deny=[_rule(ToolCapability.MCP)]),
+                True,
+                "an mcp deny rule must name a server",
+                id="mcp-deny-without-pattern",
             ),
             pytest.param(
                 ToolPolicy(allow=[_rule(ToolCapability.NETWORK, "*.example.com")]),
@@ -374,8 +459,19 @@ class ClaudePolicyRenderTests:
     def test_unsupported_rule_returns_reason_string(
         self, tmp_path: Path, policy: ToolPolicy, scratch: bool, reason: str
     ) -> None:
-        """[tier-1/unit] render_claude_policy: mcp allow, mcp deny, network '*.example.com' allow and deny, default_tool_policy() with roots.scratch None ('a scratch rule requires a scratch root'), scratch read deny with roots.scratch None (same reason), and model_construct patterns '../x', '/etc/x', 'C:x' and 'a\\..\\b' ('<capability> pattern '<pattern>' resolves outside its <root> root') each return the exact str and no ClaudePolicyArgs."""
+        """[tier-1/unit] render_claude_policy: mcp allow with and without a pattern ('mcp allow rules cannot be preserved because Claude Code runs without user MCP servers'), mcp deny without a pattern ('an mcp deny rule must name a server'), network '*.example.com' allow and deny, default_tool_policy() with roots.scratch None ('a scratch rule requires a scratch root'), scratch read deny with roots.scratch None (same reason), and model_construct patterns '../x', '/etc/x', 'C:x' and 'a\\..\\b' ('<capability> pattern '<pattern>' resolves outside its <root> root') each return the exact str and no ClaudePolicyArgs."""
         assert render_claude_policy(policy, _roots(tmp_path, scratch=scratch)) == reason
+
+    def test_mcp_deny_with_comma_returns_reason_string(self, tmp_path: Path) -> None:
+        """[tier-1/unit] render_claude_policy: an mcp deny whose model_construct pattern is 'a,b/tool' returns "mcp pattern 'a,b/tool' contains a comma and cannot be preserved for Claude Code" and no ClaudePolicyArgs."""
+        policy = ToolPolicy.model_construct(
+            deny=[ToolRule.model_construct(capability=ToolCapability.MCP, root=None, pattern="a,b/tool")]
+        )
+
+        assert (
+            render_claude_policy(policy, _roots(tmp_path))
+            == "mcp pattern 'a,b/tool' contains a comma and cannot be preserved for Claude Code"
+        )
 
     @pytest.mark.parametrize(
         ("worktree_name", "pattern", "reason_path"),
@@ -409,6 +505,7 @@ class ClaudePolicyRenderTests:
             flags=(
                 "--permission-mode",
                 "dontAsk",
+                *_MCP_FLAGS,
                 "--tools",
                 _READ_WRITE_TOOLS,
                 "--allowedTools",
