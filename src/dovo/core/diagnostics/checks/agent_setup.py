@@ -16,17 +16,18 @@ class AgentSetupCheck:
     category: CheckCategory = CheckCategory.AGENT
 
     def execute(self, context: DiagnosticsContext) -> DiagnosticCheckResult:
-        """Validate the active provider's required credential, if any, and its configured model."""
+        """Validate the active provider's required credential, if any, and its configured model entry."""
         agent_config = context.config.agent if context.config is not None else AgentConfig()
 
         missing_env = _missing_credential_env(agent_config.provider)
         if missing_env is not None:
             return _key_missing_result(self.check_id, self.name, self.category, agent_config.provider, missing_env)
 
-        if agent_config.model is None:
+        model = agent_config.active_model
+        if model is None:
             return _no_model_result(self.check_id, self.name, self.category, agent_config.provider)
 
-        return _ok_result(self.check_id, self.name, self.category, agent_config.provider, agent_config.model)
+        return _ok_result(self.check_id, self.name, self.category, agent_config.provider, model)
 
 
 def _missing_credential_env(provider: str) -> str | None:

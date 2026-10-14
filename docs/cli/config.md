@@ -33,7 +33,7 @@ dovo config set <key> <value>
 
 #### Arguments
 
-- `key`: Key or nested dot-path (e.g. `agent.provider`, `agent.model`, `worktree.base_ref`).
+- `key`: Key or nested dot-path (e.g. `agent.provider`, `agent.models.copilot`, `worktree.base_ref`).
 - `value`: New value to store.
 
 #### Examples
@@ -43,7 +43,7 @@ dovo config set <key> <value>
 dovo config set agent.provider copilot
 
 # Set model name
-dovo config set agent.model gpt-4.1
+dovo config set agent.models.copilot gpt-4.1
 
 # Configure the worktree base ref
 dovo config set worktree.base_ref main
@@ -69,13 +69,13 @@ dovo config unset <key>
 
 #### Arguments
 
-- `key`: Key or nested dot-path (e.g. `agent.model`, `telemetry.enabled`).
+- `key`: Key or nested dot-path (e.g. `agent.models.copilot`, `telemetry.enabled`).
 
 #### Examples
 
 ```bash
 # Remove a custom model override, falling back to the schema default
-dovo config unset agent.model
+dovo config unset agent.models.copilot
 
 # Remove an entire section, falling back to its section defaults
 dovo config unset agent

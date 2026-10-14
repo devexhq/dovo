@@ -49,6 +49,7 @@ Hierarchical resolution merges four tiers, lowest to highest precedence: **Packa
 - Default: a higher tier **replaces** a lower tier's value.
 - `environment.sensitive_variables` is **unioned** across the Global, User, and Repo tiers.
 - `agent.tools` is **atomic**: a higher tier replaces the whole policy (`_ATOMIC_KEY_PATHS` in `hierarchical_loader.py`).
+- `agent.models` merges per provider key across tiers: a higher tier overrides only the providers it names.
 - `agent.env_passthrough` and `agent.env_mode` use the default replace rule, so a repo list replaces a global one.
 - `sensitive_variables` and `env_passthrough` hold variable **names only**, never values.
 - A Global or User tier that is unreadable, malformed, or invalid surfaces as `ConfigLoadStatus.TIER_INVALID` through `resolve_effective_config`. `Config.load()`, every `Config.<section>` accessor, `dovo config show`, and `dovo run`/`dovo resume` all route through it.

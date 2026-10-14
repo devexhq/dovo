@@ -32,15 +32,15 @@ class ConfigLoadTests:
         write_tier_config: Callable[[ConfigTier, dict[str, Any] | str], Path],
         workspace_paths_factory: WorkspacePathsFactory,
     ) -> None:
-        """[tier-1/unit] Config.load: User tier agent.model override is present on the returned ConfigLoadResult.config."""
-        write_tier_config(ConfigTier.USER, {"agent": {"model": "user-tier-model"}})
+        """[tier-1/unit] Config.load: User tier agent.models override is present on the returned ConfigLoadResult.config."""
+        write_tier_config(ConfigTier.USER, {"agent": {"models": {"copilot": "user-tier-model"}}})
         paths = workspace_paths_factory(isolated_workspace, None)
         Filesystem.atomic_write_json(paths.config_file, {"version": 1, "project": {"name": "demo-workspace"}})
 
         result = Config(paths).load()
 
         assert result.config is not None
-        assert result.config.agent.model == "user-tier-model"
+        assert result.config.agent.models == {"copilot": "user-tier-model"}
 
 
 class ConfigLoadRequiredTests:

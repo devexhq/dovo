@@ -77,7 +77,7 @@ CONFIG_LOAD_PAYLOAD_CASES = [
                 },
                 "agent": {
                     "provider": "copilot",
-                    "model": None,
+                    "models": {},
                     "endpoint": None,
                     "temperature": 0.2,
                     "max_tokens": 4096,

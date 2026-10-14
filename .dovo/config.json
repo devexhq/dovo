@@ -11,7 +11,7 @@
   },
   "agent": {
     "provider": "copilot",
-    "model": "claude-sonnet-5.5",
+    "models": { "copilot": "claude-sonnet-5.5" },
     "endpoint": null,
     "temperature": 0.2,
     "max_tokens": 4096

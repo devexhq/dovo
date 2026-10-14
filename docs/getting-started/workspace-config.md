@@ -79,7 +79,7 @@ Set a key or nested dot-path:
 
 ```bash
 dovo config set agent.provider copilot
-dovo config set agent.model gpt-4.1
+dovo config set agent.models.copilot gpt-4.1
 dovo config set worktree.base_ref main
 ```
 
@@ -112,7 +112,7 @@ The default `.dovo/config.json`:
   },
   "agent": {
     "provider": "copilot",
-    "model": null,
+    "models": {},
     "endpoint": null,
     "temperature": 0.2,
     "max_tokens": 4096,

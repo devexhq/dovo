@@ -55,10 +55,10 @@ WARNING_CHECK = DiagnosticCheckResult(
             code="DOCTOR_AGENT_NO_MODEL",
             title="Configure agent model",
             action_type=RemediationType.COMMAND,
-            command='dovo config set agent.model "<model>"',
+            command='dovo config set agent.models.copilot "<model>"',
             description=(
-                "Set `agent.model` in `.dovo/config.json` to a model supported by the configured provider, "
-                "e.g. `dovo config set agent.model <model-name>`."
+                "Set `agent.models.copilot` in `.dovo/config.json` to a model supported by that provider, "
+                "e.g. `dovo config set agent.models.copilot <model-name>`."
             ),
             doc_path="docs/cli/config.md",
             is_automated=False,
@@ -146,7 +146,7 @@ MIXED_STATUS = FormatterCase(
         "SKIPPED",
         "4 checks: 1 ok, 1 warning, 1 failed (12.4ms)",
         "Configure agent model:",
-        'dovo config set agent.model "<model>"',
+        'dovo config set agent.models.copilot "<model>"',
         "Initialize Dovo workspace:",
         "dovo init",
     ],
@@ -201,10 +201,10 @@ DOCTOR_REPORT_PAYLOAD_CASES = [
                             "code": "DOCTOR_AGENT_NO_MODEL",
                             "title": "Configure agent model",
                             "action_type": "command",
-                            "command": 'dovo config set agent.model "<model>"',
+                            "command": 'dovo config set agent.models.copilot "<model>"',
                             "description": (
-                                "Set `agent.model` in `.dovo/config.json` to a model supported by the "
-                                "configured provider, e.g. `dovo config set agent.model <model-name>`."
+                                "Set `agent.models.copilot` in `.dovo/config.json` to a model supported by that provider, "
+                                "e.g. `dovo config set agent.models.copilot <model-name>`."
                             ),
                             "doc_path": "docs/cli/config.md",
                             "is_automated": False,

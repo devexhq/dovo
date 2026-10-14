@@ -21,16 +21,17 @@ class ConfigUnsetCliIntegrationTests:
         """[tier-3/integration] dovo config unset: removing an existing value exits 0, prints the confirmation line, and deletes the key from config.json."""
         config_path = isolated_workspace / ".dovo" / "config.json"
         payload = build_default_config("demo-workspace")
+        payload["agent"]["models"] = {"copilot": "gpt-4.1"}
         Filesystem.atomic_write_json(config_path, payload)
 
         res = cli_runner.invoke(
             app,
-            ["-p", str(isolated_workspace), "config", "unset", "agent.model"],
+            ["-p", str(isolated_workspace), "config", "unset", "agent.models.copilot"],
         )
 
         assert res.exit_code == 0
-        assert "Config unset: agent.model" in res.stdout
-        assert "model" not in json.loads(config_path.read_text())["agent"]
+        assert "Config unset: agent.models.copilot" in res.stdout
+        assert json.loads(config_path.read_text())["agent"]["models"] == {}
 
     def test_config_unset_cli_missing_key_exits_zero_without_write(
         self, cli_runner: CliRunner, isolated_workspace: Path
@@ -68,11 +69,12 @@ class ConfigUnsetCliIntegrationTests:
         """[tier-3/integration] dovo config unset --format json: emits the exact ConfigUnsetResult NDJSON envelope literal."""
         config_path = isolated_workspace / ".dovo" / "config.json"
         payload = build_default_config("demo-workspace")
+        payload["agent"]["models"] = {"copilot": "gpt-4.1"}
         Filesystem.atomic_write_json(config_path, payload)
 
         res = cli_runner.invoke(
             app,
-            ["-p", str(isolated_workspace), "config", "unset", "agent.model", "--format", "json"],
+            ["-p", str(isolated_workspace), "config", "unset", "agent.models.copilot", "--format", "json"],
         )
 
         assert res.exit_code == 0
@@ -81,9 +83,9 @@ class ConfigUnsetCliIntegrationTests:
             "payload": {
                 "status": "ok",
                 "config_path": str(config_path),
-                "key": "agent.model",
+                "key": "agent.models.copilot",
                 "existed": True,
-                "previous_value": payload["agent"]["model"],
+                "previous_value": "gpt-4.1",
                 "error_code": None,
                 "errors": [],
                 "warnings": [],

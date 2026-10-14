@@ -17,6 +17,7 @@ from dovo.core.config.mutate import (
     unset_config_value_result,
     unset_nested_value,
 )
+from dovo.core.config.validate import ConfigValidationStatus, validate_config_result
 
 
 class ConfigMutationTests:
@@ -28,18 +29,18 @@ class ConfigMutationTests:
         payload = build_default_config("demo-workspace")
         Filesystem.atomic_write_json(config_path, payload)
 
-        result = set_config_value_result("agent.model", "qwen2.5-coder", config_path=config_path)
+        result = set_config_value_result("agent.models.copilot", "qwen2.5-coder", config_path=config_path)
 
         assert result.status == ConfigSetStatus.OK
         assert result.config_path == config_path
-        assert result.key == "agent.model"
+        assert result.key == "agent.models.copilot"
         assert result.value == "qwen2.5-coder"
         assert result.errors == []
         assert result.warnings == []
         assert result.fixes == []
 
         data = json.loads(config_path.read_text())
-        assert data["agent"]["model"] == "qwen2.5-coder"
+        assert data["agent"]["models"]["copilot"] == "qwen2.5-coder"
         assert data["agent"]["provider"] == payload["agent"]["provider"]
 
     def test_set_dot_path_converts_and_validates_types(self, isolated_workspace: Path) -> None:
@@ -79,12 +80,14 @@ class ConfigMutationTests:
         disk_data["agent"] = "scalar"
         Filesystem.atomic_write_json(config_path, disk_data)
 
-        collision_result = set_config_value_result("agent.model", "qwen2.5-coder", config_path=config_path)
+        collision_result = set_config_value_result("agent.models.copilot", "qwen2.5-coder", config_path=config_path)
         assert collision_result.status == ConfigSetStatus.TYPE_COLLISION
         assert collision_result.config_path == config_path
-        assert collision_result.key == "agent.model"
+        assert collision_result.key == "agent.models.copilot"
         assert collision_result.value == "qwen2.5-coder"
-        assert collision_result.errors == ["Cannot set 'agent.model'. 'agent' is already defined as a scalar value."]
+        assert collision_result.errors == [
+            "Cannot set 'agent.models.copilot'. 'agent' is already defined as a scalar value."
+        ]
         assert collision_result.warnings == []
         assert collision_result.fixes == []
 
@@ -94,16 +97,16 @@ class ConfigUnsetNestedValueTests:
 
     def test_removes_existing_nested_leaf_returns_true(self) -> None:
         """[tier-1/domain] unset_nested_value: removing an existing nested leaf returns True and deletes only that key."""
-        config_dict: dict[str, Any] = {"agent": {"model": "x", "provider": "y"}}
+        config_dict: dict[str, Any] = {"agent": {"models": {"copilot": "x"}, "provider": "y"}}
 
-        result = unset_nested_value(config_dict, "agent.model")
+        result = unset_nested_value(config_dict, "agent.models.copilot")
 
         assert result is True
-        assert config_dict == {"agent": {"provider": "y"}}
+        assert config_dict == {"agent": {"models": {}, "provider": "y"}}
 
     def test_removes_entire_top_level_section_returns_true(self) -> None:
         """[tier-1/domain] unset_nested_value: removing a single-segment top-level key returns True and deletes the whole section."""
-        config_dict: dict[str, Any] = {"agent": {"model": "x"}, "worktree": {"max_active_worktrees": 3}}
+        config_dict: dict[str, Any] = {"agent": {"models": {"copilot": "x"}}, "worktree": {"max_active_worktrees": 3}}
 
         result = unset_nested_value(config_dict, "agent")
 
@@ -115,7 +118,7 @@ class ConfigUnsetNestedValueTests:
         [
             pytest.param({"agent": {}}, "telemetry.enabled", id="missing_top_level"),
             pytest.param({"agent": {}}, "agent.nested.deep", id="missing_nested_parent"),
-            pytest.param({"agent": {"provider": "x"}}, "agent.model", id="present_parent_missing_leaf"),
+            pytest.param({"agent": {"provider": "x"}}, "agent.models.copilot", id="present_parent_missing_leaf"),
         ],
     )
     def test_missing_key_is_noop_returns_false(self, config_dict: dict[str, Any], dot_path: str) -> None:
@@ -137,12 +140,12 @@ class ConfigUnsetNestedValueTests:
             unset_nested_value({}, dot_path)
 
     def test_empty_segment_raises_value_error(self) -> None:
-        """[tier-1/domain] unset_nested_value: a dot_path containing an empty segment ('agent..model') raises ValueError naming the empty-segment defect."""
+        """[tier-1/domain] unset_nested_value: a dot_path containing an empty segment ('agent..models') raises ValueError naming the empty-segment defect."""
         with pytest.raises(
             ValueError,
-            match=r"Cannot unset 'agent\.\.model': config key path contains an empty segment\.",
+            match=r"Cannot unset 'agent\.\.models': config key path contains an empty segment\.",
         ):
-            unset_nested_value({}, "agent..model")
+            unset_nested_value({}, "agent..models")
 
     def test_scalar_traversal_collision_raises_value_error(self) -> None:
         """[tier-1/domain] unset_nested_value: traversing through a scalar-valued intermediate key raises ValueError naming the conflicting segment, without mutating config_dict."""
@@ -150,9 +153,9 @@ class ConfigUnsetNestedValueTests:
 
         with pytest.raises(
             ValueError,
-            match=r"Cannot unset 'agent\.model'\. 'agent' is already defined as a scalar value\.",
+            match=r"Cannot unset 'agent\.models\.copilot'\. 'agent' is already defined as a scalar value\.",
         ):
-            unset_nested_value(config_dict, "agent.model")
+            unset_nested_value(config_dict, "agent.models.copilot")
 
         assert config_dict == {"agent": "scalar"}
 
@@ -164,22 +167,23 @@ class ConfigUnsetMutationTests:
         """[tier-1/domain] unset_config_value_result: removing an existing nested leaf returns OK with existed=True and previous_value set, and persists the removal to disk."""
         config_path = isolated_workspace / ".dovo" / "config.json"
         payload = build_default_config("demo-workspace")
+        payload["agent"]["models"] = {"copilot": "gpt-4.1"}
         Filesystem.atomic_write_json(config_path, payload)
-        previous_model = payload["agent"]["model"]
 
-        result = unset_config_value_result("agent.model", config_path=config_path)
+        result = unset_config_value_result("agent.models.copilot", config_path=config_path)
 
         assert result.status == ConfigUnsetStatus.OK
         assert result.config_path == config_path
-        assert result.key == "agent.model"
+        assert result.key == "agent.models.copilot"
         assert result.existed is True
-        assert result.previous_value == previous_model
+        assert result.previous_value == "gpt-4.1"
         assert result.errors == []
         assert result.warnings == []
         assert result.fixes == []
         data = json.loads(config_path.read_text())
-        assert "model" not in data["agent"]
+        assert data["agent"]["models"] == {}
         assert data["agent"]["provider"] == payload["agent"]["provider"]
+        assert validate_config_result(config_path).status == ConfigValidationStatus.VALID
 
     def test_unset_leaves_empty_parent_object_after_removing_all_children(self, isolated_workspace: Path) -> None:
         """[tier-1/domain] unset_config_value_result: removing every child key of a section leaves that section's JSON object present and empty, not deleted."""
@@ -187,7 +191,7 @@ class ConfigUnsetMutationTests:
         payload = build_default_config("demo-workspace")
         Filesystem.atomic_write_json(config_path, payload)
 
-        for child_key in ("provider", "model", "endpoint", "temperature", "max_tokens", "env_passthrough", "env_mode"):
+        for child_key in ("provider", "models", "endpoint", "temperature", "max_tokens", "env_passthrough", "env_mode"):
             result = unset_config_value_result(f"agent.{child_key}", config_path=config_path)
             assert result.ok
 
@@ -217,11 +221,11 @@ class ConfigUnsetMutationTests:
         """[tier-1/domain] unset_config_value_result: a missing config.json returns ConfigUnsetStatus.NOT_FOUND."""
         config_path = isolated_workspace / ".dovo" / "config.json"
 
-        result = unset_config_value_result("agent.model", config_path=config_path)
+        result = unset_config_value_result("agent.models.copilot", config_path=config_path)
 
         assert result.status == ConfigUnsetStatus.NOT_FOUND
         assert result.config_path == config_path
-        assert result.key == "agent.model"
+        assert result.key == "agent.models.copilot"
         assert result.existed is False
         assert result.previous_value is None
         assert result.errors == [f"Configuration file not found at '{config_path}' (CONFIG_NOT_FOUND)."]
@@ -233,11 +237,11 @@ class ConfigUnsetMutationTests:
         config_path = isolated_workspace / ".dovo" / "config.json"
         config_path.mkdir(parents=True)
 
-        result = unset_config_value_result("agent.model", config_path=config_path)
+        result = unset_config_value_result("agent.models.copilot", config_path=config_path)
 
         assert result.status == ConfigUnsetStatus.PATH_IS_DIRECTORY
         assert result.config_path == config_path
-        assert result.key == "agent.model"
+        assert result.key == "agent.models.copilot"
         assert result.existed is False
         assert result.previous_value is None
         assert result.errors == [f"Config path is a directory, not a file: '{config_path}' (CONFIG_PATH_IS_DIRECTORY)."]
@@ -249,11 +253,11 @@ class ConfigUnsetMutationTests:
         config_path = isolated_workspace / ".dovo" / "config.json"
         config_path.write_text("{not valid json", encoding="utf-8")
 
-        result = unset_config_value_result("agent.model", config_path=config_path)
+        result = unset_config_value_result("agent.models.copilot", config_path=config_path)
 
         assert result.status == ConfigUnsetStatus.MALFORMED_JSON
         assert result.config_path == config_path
-        assert result.key == "agent.model"
+        assert result.key == "agent.models.copilot"
         assert result.existed is False
         assert result.previous_value is None
         assert result.errors == [
@@ -269,11 +273,11 @@ class ConfigUnsetMutationTests:
         config_path = isolated_workspace / ".dovo" / "config.json"
         config_path.write_text("[]", encoding="utf-8")
 
-        result = unset_config_value_result("agent.model", config_path=config_path)
+        result = unset_config_value_result("agent.models.copilot", config_path=config_path)
 
         assert result.status == ConfigUnsetStatus.ROOT_NOT_OBJECT
         assert result.config_path == config_path
-        assert result.key == "agent.model"
+        assert result.key == "agent.models.copilot"
         assert result.existed is False
         assert result.previous_value is None
         assert result.errors == [
@@ -312,6 +316,7 @@ class ConfigUnsetMutationTests:
         """[tier-1/domain] unset_config_value_result: an OSError from Filesystem.atomic_write_json returns ConfigUnsetStatus.WRITE_FAILED."""
         config_path = isolated_workspace / ".dovo" / "config.json"
         payload = build_default_config("demo-workspace")
+        payload["agent"]["models"] = {"copilot": "gpt-4.1"}
         Filesystem.atomic_write_json(config_path, payload)
 
         def _raise_os_error(path: Path, data: object) -> None:
@@ -319,13 +324,13 @@ class ConfigUnsetMutationTests:
 
         monkeypatch.setattr(Filesystem, "atomic_write_json", staticmethod(_raise_os_error))
 
-        result = unset_config_value_result("agent.model", config_path=config_path)
+        result = unset_config_value_result("agent.models.copilot", config_path=config_path)
 
         assert result.status == ConfigUnsetStatus.WRITE_FAILED
         assert result.config_path == config_path
-        assert result.key == "agent.model"
+        assert result.key == "agent.models.copilot"
         assert result.existed is True
-        assert result.previous_value == payload["agent"]["model"]
+        assert result.previous_value == payload["agent"]["models"]["copilot"]
         assert result.errors == [f"Unable to write config.json at '{config_path}': disk full (CONFIG_WRITE_FAILED)."]
         assert result.warnings == []
         assert result.fixes == ["Check file permissions and free disk space"]
@@ -355,14 +360,14 @@ class ConfigUnsetMutationTests:
         Filesystem.atomic_write_json(config_path, payload)
         before = config_path.read_bytes()
 
-        result = unset_config_value_result("agent.model", config_path=config_path)
+        result = unset_config_value_result("agent.models.copilot", config_path=config_path)
 
         assert result.status == ConfigUnsetStatus.TYPE_COLLISION
         assert result.config_path == config_path
-        assert result.key == "agent.model"
+        assert result.key == "agent.models.copilot"
         assert result.existed is False
         assert result.previous_value is None
-        assert result.errors == ["Cannot unset 'agent.model'. 'agent' is already defined as a scalar value."]
+        assert result.errors == ["Cannot unset 'agent.models.copilot'. 'agent' is already defined as a scalar value."]
         assert result.warnings == []
         assert result.fixes == []
         assert config_path.read_bytes() == before

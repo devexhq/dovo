@@ -34,7 +34,7 @@ def config_set(
     ctx: typer.Context,
     key: str = typer.Argument(
         ...,
-        help="Config key or nested dot-path (e.g. agent.model).",
+        help="Config key or nested dot-path (e.g. agent.models.copilot).",
     ),
     value: str = typer.Argument(
         ...,
@@ -58,7 +58,7 @@ def config_unset(
     ctx: typer.Context,
     key: str = typer.Argument(
         ...,
-        help="Config key or nested dot-path (e.g. agent.model).",
+        help="Config key or nested dot-path (e.g. agent.models.copilot).",
     ),
     format: str = typer.Option(
         "terminal",

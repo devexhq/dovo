@@ -349,13 +349,35 @@ REMEDIATION_RESOLUTION_CASES = [
                 code="DOCTOR_AGENT_NO_MODEL",
                 title="Configure agent model",
                 action_type=RemediationType.COMMAND,
-                command='dovo config set agent.model "<model>"',
-                description="Set `agent.model` in `.dovo/config.json` to a model supported by the configured provider, e.g. `dovo config set agent.model <model-name>`.",
+                command='dovo config set agent.models.copilot "<model>"',
+                description="Set `agent.models.copilot` in `.dovo/config.json` to a model supported by that provider, e.g. `dovo config set agent.models.copilot <model-name>`.",
                 doc_path="docs/cli/config.md",
                 is_automated=False,
             )
         ],
         id="agent_no_model",
+    ),
+    pytest.param(
+        DiagnosticCheckResult(
+            check_id="agent.setup",
+            name="Agent Setup Check",
+            category=CheckCategory.AGENT,
+            status=CheckStatus.WARNING,
+            message="Agent provider has no model configured.",
+            error_code="DOCTOR_AGENT_NO_MODEL",
+        ),
+        [
+            Remediation(
+                code="DOCTOR_AGENT_NO_MODEL",
+                title="Configure agent model",
+                action_type=RemediationType.COMMAND,
+                command='dovo config set agent.models.<provider> "<model>"',
+                description="Set `agent.models.<provider>` in `.dovo/config.json` to a model supported by that provider, e.g. `dovo config set agent.models.<provider> <model-name>`.",
+                doc_path="docs/cli/config.md",
+                is_automated=False,
+            )
+        ],
+        id="agent_no_model_missing_details_fallback",
     ),
     pytest.param(
         DiagnosticCheckResult(

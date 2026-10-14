@@ -33,7 +33,7 @@ def _config_payload(*, model: str | None = "gpt-4o", max_active_worktrees: int =
     return DovoConfig(
         version=1,
         project=ProjectConfig(name="status-ws"),
-        agent=AgentConfig(model=model),
+        agent=AgentConfig(models={"copilot": model} if model else {}),
         worktree=WorktreeConfig(max_active_worktrees=max_active_worktrees),
     ).model_dump(mode="json")
 
@@ -444,7 +444,7 @@ class StatusCollectorWarningsOrderingTests:
         assert result2.warnings == [
             "Active branch is 'main'. Automated workflows on primary branches are discouraged.",
             "Working tree has 1 uncommitted change(s).",
-            "Agent model is not configured (agent.model is null).",
+            "Agent model is not configured (agent.models.copilot is unset).",
             "max_active_worktrees (8) is unusually high.",
             "1 invalid blueprint file(s) detected in catalog.",
         ]

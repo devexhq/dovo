@@ -65,7 +65,7 @@ class AgentSetupCheckTests:
         """[tier-1/unit] AgentSetupCheck.execute: provider=token with every PROVIDERS[token].credential_envs unset (when non-empty) -> FAILED, error_code 'DOCTOR_AGENT_KEY_MISSING', details {'provider': token, 'missing_env_var': ' or '.join(credential_envs)}, errors [f"Agent provider '{token}' is missing required credential '{joined}'."]."""
         _clear_credential_envs(monkeypatch, token)
         joined = " or ".join(PROVIDERS[token].credential_envs)
-        agent = AgentConfig(provider=cast(AgentProvider, token), model="some-model")
+        agent = AgentConfig(provider=cast(AgentProvider, token), models={token: "some-model"})
         context = _context_with_agent(tmp_path, agent, workspace_paths_factory)
 
         result = AgentSetupCheck().execute(context)
@@ -88,7 +88,7 @@ class AgentSetupCheckTests:
         """[tier-1/unit] AgentSetupCheck.execute: provider=token with only the last PROVIDERS[token].credential_envs entry set to 'x' and model 'test-model' -> OK, error_code None, details {'provider': token, 'model': 'test-model'}."""
         _clear_credential_envs(monkeypatch, token)
         monkeypatch.setenv(PROVIDERS[token].credential_envs[-1], "x")
-        agent = AgentConfig(provider=cast(AgentProvider, token), model="test-model")
+        agent = AgentConfig(provider=cast(AgentProvider, token), models={token: "test-model"})
         context = _context_with_agent(tmp_path, agent, workspace_paths_factory)
 
         result = AgentSetupCheck().execute(context)
@@ -105,7 +105,9 @@ class AgentSetupCheckTests:
         """[tier-1/unit] AgentSetupCheck.execute: default provider with every credential env set to '   ' -> FAILED, error_code 'DOCTOR_AGENT_KEY_MISSING'."""
         for env_name in PROVIDERS[DEFAULT_TOKEN].credential_envs:
             monkeypatch.setenv(env_name, "   ")
-        context = _context_with_agent(tmp_path, AgentConfig(model="some-model"), workspace_paths_factory)
+        context = _context_with_agent(
+            tmp_path, AgentConfig(models={DEFAULT_TOKEN: "some-model"}), workspace_paths_factory
+        )
 
         result = AgentSetupCheck().execute(context)
 
@@ -118,7 +120,9 @@ class AgentSetupCheckTests:
         """[tier-1/unit] AgentSetupCheck.execute: PROVIDERS[default] replaced via dataclasses.replace(credential_envs=()) and model set -> OK, error_code None, details {'provider': token, 'model': model}."""
         _clear_credential_envs(monkeypatch, DEFAULT_TOKEN)
         monkeypatch.setitem(PROVIDERS, DEFAULT_TOKEN, dataclasses.replace(PROVIDERS[DEFAULT_TOKEN], credential_envs=()))
-        context = _context_with_agent(tmp_path, AgentConfig(model="some-model"), workspace_paths_factory)
+        context = _context_with_agent(
+            tmp_path, AgentConfig(models={DEFAULT_TOKEN: "some-model"}), workspace_paths_factory
+        )
 
         result = AgentSetupCheck().execute(context)
 
@@ -132,7 +136,9 @@ class AgentSetupCheckTests:
         """[tier-1/unit] AgentSetupCheck.execute: default provider token deleted from PROVIDERS via monkeypatch.delitem, model set -> OK, error_code None."""
         _clear_credential_envs(monkeypatch, DEFAULT_TOKEN)
         monkeypatch.delitem(PROVIDERS, DEFAULT_TOKEN)
-        context = _context_with_agent(tmp_path, AgentConfig(model="some-model"), workspace_paths_factory)
+        context = _context_with_agent(
+            tmp_path, AgentConfig(models={DEFAULT_TOKEN: "some-model"}), workspace_paths_factory
+        )
 
         result = AgentSetupCheck().execute(context)
 
@@ -147,7 +153,9 @@ class AgentSetupCheckTests:
         monkeypatch.delenv("BETA_KEY", raising=False)
         spec = dataclasses.replace(PROVIDERS[DEFAULT_TOKEN], credential_envs=("ALPHA_KEY", "BETA_KEY"))
         monkeypatch.setitem(PROVIDERS, DEFAULT_TOKEN, spec)
-        context = _context_with_agent(tmp_path, AgentConfig(model="some-model"), workspace_paths_factory)
+        context = _context_with_agent(
+            tmp_path, AgentConfig(models={DEFAULT_TOKEN: "some-model"}), workspace_paths_factory
+        )
 
         result = AgentSetupCheck().execute(context)
 

@@ -21,7 +21,7 @@ Schema for `.dovo/config.json` (version 1).
   },
   "agent": {
     "provider": "copilot",
-    "model": null,
+    "models": {},
     "endpoint": null,
     "temperature": 0.2,
     "max_tokens": 4096
@@ -73,7 +73,7 @@ Schema for `.dovo/config.json` (version 1).
 
 ### 4. `agent`
 * `provider` *(string)*: Agent provider. Only `copilot` is accepted (default: `"copilot"`); other values fail validation.
-* `model` *(string \| null)*: Model name (default: `null`).
+* `models` *(object)*: Model name per provider, keyed by provider token (currently `copilot`); each value is a non-empty string (default: `{}`). The run uses the entry of the provider it runs with.
 * `endpoint` *(string \| null)*: Custom API endpoint URL (default: `null`).
 * `temperature` *(number)*: Sampling temperature (default: `0.2`).
 * `max_tokens` *(integer)*: Maximum generation tokens (default: `4096`).

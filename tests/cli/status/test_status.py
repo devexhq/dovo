@@ -18,7 +18,7 @@ from dovo.core.status.models import (
 from tests.harness.builders import WorkspaceBuilder
 
 _BRANCH_WARNING = "Active branch is 'main'. Automated workflows on primary branches are discouraged."
-_AGENT_MODEL_WARNING = "Agent model is not configured (agent.model is null)."
+_AGENT_MODEL_WARNING = "Agent model is not configured (agent.models.copilot is unset)."
 
 
 class StatusCliIntegrationTests:
@@ -114,7 +114,7 @@ class StatusCliIntegrationTests:
                 "errors": [],
                 "warnings": [
                     "Active branch is 'main'. Automated workflows on primary branches are discouraged.",
-                    "Agent model is not configured (agent.model is null).",
+                    "Agent model is not configured (agent.models.copilot is unset).",
                 ],
                 "remediations": [],
             },
