@@ -6,8 +6,13 @@ from pathlib import Path
 
 import pytest
 
-from dovo.common.tool_policy import ToolPolicy
-from dovo.core.agents import AgentResponseStatus
+from dovo.common.tool_policy import ToolCapability, ToolPolicy, ToolRule
+from dovo.core.agents import (
+    AgentInvocationContext,
+    AgentResponseStatus,
+    default_tool_policy,
+    tool_policy_unsupported_message,
+)
 from dovo.core.agents.claude import (
     ClaudeAgentAdapter,
     default_claude_run,
@@ -63,6 +68,101 @@ class ClaudeDefaultRunTests:
         assert response.status == AgentResponseStatus.PROVIDER_ERROR
         assert any("Claude Code invocation is not available" in error for error in response.errors)
         assert runner.calls == []
+
+
+def _real_invocation(tmp_path: Path) -> AgentInvocationContext:
+    """Create real scratch and control directories outside the worktree."""
+    root = tmp_path / "invocation"
+    scratch, control = root / "scratch", root / "control"
+    scratch.mkdir(parents=True)
+    control.mkdir()
+
+    return AgentInvocationContext(
+        invocation_id="a" * 32, scratch_path=scratch.resolve(), control_path=control.resolve()
+    )
+
+
+class ClaudePolicyPreflightTests:
+    @pytest.mark.parametrize(
+        "policy",
+        [
+            pytest.param(
+                ToolPolicy(allow=[ToolRule(capability=ToolCapability.READ, pattern="src/**")]), id="narrow-read"
+            ),
+            pytest.param(ToolPolicy(deny=[ToolRule(capability=ToolCapability.READ)]), id="read-deny"),
+            pytest.param(ToolPolicy(allow=[ToolRule(capability=ToolCapability.MCP, pattern="server/tool")]), id="mcp"),
+            pytest.param(
+                ToolPolicy(allow=[ToolRule(capability=ToolCapability.READ, root="scratch", pattern="**")]),
+                id="scratch-only-read",
+            ),
+        ],
+    )
+    def test_unsupported_policy_is_rejected_before_spawn(
+        self, git_repo: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, policy: ToolPolicy
+    ) -> None:
+        """[tier-1/integration] ClaudeAgentAdapter.invoke: ANTHROPIC_API_KEY set and a read 'src/**' / read deny / mcp allow / scratch-only read request returns PROVIDER_ERROR with errors == [tool_policy_unsupported_message('claude')] and FakeAgentRunner.calls == []."""
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test")
+        runner = FakeAgentRunner()
+        monkeypatch.setattr("dovo.core.agents.cli_mutation.stream_isolated_process", runner)
+        request = (
+            AgentRequestBuilder()
+            .with_worktree_path(git_repo)
+            .with_invocation(_real_invocation(tmp_path))
+            .with_tools(policy)
+            .build()
+        )
+
+        response = ClaudeAgentAdapter().invoke(request)
+
+        assert response.status == AgentResponseStatus.PROVIDER_ERROR
+        assert response.errors == [tool_policy_unsupported_message("claude")]
+        assert runner.calls == []
+
+    def test_default_policy_with_a_real_invocation_passes_preflight(
+        self, git_repo: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """[tier-1/integration] ClaudeAgentAdapter.invoke: default_tool_policy() with an invocation whose scratch and control directories exist returns PROVIDER_ERROR whose errors contain 'Claude Code invocation is not available', not the unsupported message."""
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test")
+        request = (
+            AgentRequestBuilder()
+            .with_worktree_path(git_repo)
+            .with_invocation(_real_invocation(tmp_path))
+            .with_tools(default_tool_policy())
+            .build()
+        )
+
+        response = ClaudeAgentAdapter().invoke(request)
+
+        assert response.status == AgentResponseStatus.PROVIDER_ERROR
+        assert any("Claude Code invocation is not available" in error for error in response.errors)
+
+    def test_default_policy_without_an_invocation_is_rejected_before_spawn(
+        self, git_repo: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """[tier-1/integration] ClaudeAgentAdapter.invoke: default_tool_policy() with no invocation returns PROVIDER_ERROR with errors == [tool_policy_unsupported_message('claude')] and FakeAgentRunner.calls == []."""
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test")
+        runner = FakeAgentRunner()
+        monkeypatch.setattr("dovo.core.agents.cli_mutation.stream_isolated_process", runner)
+        request = AgentRequestBuilder().with_worktree_path(git_repo).with_tools(default_tool_policy()).build()
+
+        response = ClaudeAgentAdapter().invoke(request)
+
+        assert response.status == AgentResponseStatus.PROVIDER_ERROR
+        assert response.errors == [tool_policy_unsupported_message("claude")]
+        assert runner.calls == []
+
+    def test_supported_policy_passes_preflight_and_reaches_not_available_error(
+        self, git_repo: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """[tier-1/integration] ClaudeAgentAdapter.invoke: a shell allow 'git *' request returns PROVIDER_ERROR whose errors contain 'Claude Code invocation is not available', not the unsupported message."""
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test")
+        policy = ToolPolicy(allow=[ToolRule(capability=ToolCapability.SHELL, pattern="git *")])
+        request = AgentRequestBuilder().with_worktree_path(git_repo).with_tools(policy).build()
+
+        response = ClaudeAgentAdapter().invoke(request)
+
+        assert response.status == AgentResponseStatus.PROVIDER_ERROR
+        assert any("Claude Code invocation is not available" in error for error in response.errors)
 
 
 class ClaudeCredentialTests:

@@ -2,9 +2,15 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
+from dovo.common.tool_policy import ToolPolicy
 from dovo.core.agents.base import ProviderSpec
+from dovo.core.agents.claude_policy import ClaudePolicyArgs, render_claude_policy
 from dovo.core.agents.cli_mutation import CliDirectMutationAdapter, CliMutationOutcome, CliMutationRunRequest
 from dovo.core.agents.credentials import resolve_credential
+from dovo.core.agents.models import AgentInvocationContext, AgentRequest
+from dovo.core.agents.tools import resolve_policy_roots, tool_policy_unsupported_message
 
 CLAUDE_API_KEY_ENVS = ("ANTHROPIC_API_KEY",)
 CLAUDE_CONTROL_ENVS = (
@@ -30,8 +36,25 @@ def default_claude_run(request: CliMutationRunRequest) -> CliMutationOutcome:
     return CliMutationOutcome(status="error", error_detail=_NOT_AVAILABLE_DETAIL)
 
 
+def _render_for_request(
+    policy: ToolPolicy, worktree_path: Path, invocation: AgentInvocationContext | None
+) -> ClaudePolicyArgs | str:
+    """Resolve the policy roots for one request and render the policy, returning the first reason it is unsupported."""
+    roots = resolve_policy_roots(policy, worktree_path, invocation)
+    if isinstance(roots, str):
+        return roots
+
+    return render_claude_policy(policy, roots)
+
+
 class ClaudeAgentAdapter(CliDirectMutationAdapter):
     """Run Claude Code through the shared direct-mutation base."""
+
+    def _policy_unsupported(self, request: AgentRequest) -> str | None:
+        """Return the unsupported message when Claude Code cannot preserve the request's policy."""
+        rendered = _render_for_request(request.tools, request.worktree_path, request.invocation)
+
+        return tool_policy_unsupported_message("claude") if isinstance(rendered, str) else None
 
     def _provider_spec(self) -> ProviderSpec:
         """Return the Claude descriptor."""

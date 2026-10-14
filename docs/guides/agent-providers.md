@@ -108,6 +108,14 @@ The seeded `dovo/ai-planner`, `dovo/ai-reviewer` and `dovo/ai-code-patcher` step
 - These policies are rejected with `AGENT_TOOL_POLICY_UNSUPPORTED`: no grants at all, read or write patterns other than `**`, any read or write `deny`, a scratch grant not given to every granted path tool, a scratch-only grant, and an `mcp` allow for a server that is neither `github-mcp-server` nor defined in your `mcp-config.json`.
 - If the installed `gh copilot` rejects a required flag, the step fails and tells you to run `copilot update`. Dovo never retries with a more permissive policy.
 
+### Claude Code behavior
+
+- Claude Code invocation is not yet available (see [Supported Providers](#supported-providers)). Until it is, only the tool policy check runs.
+- These policies are rejected with `AGENT_TOOL_POLICY_UNSUPPORTED`: read or write patterns other than `**`, a scratch grant not given to every granted path tool, a scratch-only grant, a scratch grant without an invocation, any read or write `deny`, any `mcp` rule, and a `*.host` network pattern in an `allow` or `deny`.
+- Whole-worktree `read`/`write` (with the attempt's scratch directory), `shell` and `network` rules are accepted, including the default policy. Under `allow_all: true`, `allow` rules are not checked; `deny` rules are. With `allow_all: true` and `deny` rules, the attempt's scratch directory is not added.
+- A `deny` rule always wins over an `allow` rule.
+- Shell `allow` rules are not exclusive: Claude Code runs a built-in set of read-only commands such as `ls` and `grep` without a grant. Shell `deny` rules are enforced.
+
 ---
 
 ## Subprocess Environment
