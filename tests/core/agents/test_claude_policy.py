@@ -13,12 +13,28 @@ from dovo.core.agents.claude_policy import ClaudePolicyArgs, render_claude_polic
 
 _ALL_TOOLS = "Read,Grep,Glob,Edit,Write,NotebookEdit,Bash,WebFetch"
 _READ_WRITE_TOOLS = "Read,Grep,Glob,Edit,Write,NotebookEdit"
-_READ_WRITE_FLAGS = ("--permission-mode", "dontAsk", "--tools", _READ_WRITE_TOOLS, "--allowedTools", "Read,Edit")
 
 
 def _roots(tmp_path: Path, *, scratch: bool = True) -> PolicyRoots:
     """Build policy roots under tmp_path, with a scratch root only when requested."""
     return PolicyRoots(worktree=tmp_path, scratch=tmp_path / "scratch" if scratch else None, control=None)
+
+
+def _spec(root: Path, pattern: str = "**") -> str:
+    """Return the absolute-path permission spec for pattern under root, written as '//' plus the root without its leading '/'."""
+    return "//" + str(root).lstrip("/") + "/" + pattern
+
+
+def _read_write_flags(root: Path) -> tuple[str, ...]:
+    """Return the flags for a whole-root read and write grant on root."""
+    return (
+        "--permission-mode",
+        "dontAsk",
+        "--tools",
+        _READ_WRITE_TOOLS,
+        "--allowedTools",
+        f"Read({_spec(root)}),Edit({_spec(root)})",
+    )
 
 
 def _rule(
@@ -38,16 +54,91 @@ class ClaudePolicyRenderTests:
             pytest.param("worktree", None, id="worktree-only"),
         ],
     )
-    def test_worktree_read_write_renders_tools_and_bare_preapprovals(
+    def test_worktree_read_write_renders_tools_and_anchored_preapprovals(
         self, tmp_path: Path, root: Literal["worktree"] | None, pattern: str | None
     ) -> None:
-        """[tier-1/unit] render_claude_policy: read+write whole-worktree grants (root None and 'worktree', pattern None and '**') return ClaudePolicyArgs(flags=('--permission-mode', 'dontAsk', '--tools', 'Read,Grep,Glob,Edit,Write,NotebookEdit', '--allowedTools', 'Read,Edit'))."""
+        """[tier-1/unit] render_claude_policy: read+write whole-worktree grants (root None and 'worktree', pattern None and '**') return flags ending '--allowedTools', f'Read(//{root}/**),Edit(//{root}/**)' with tools 'Read,Grep,Glob,Edit,Write,NotebookEdit'."""
         policy = ToolPolicy(
             allow=[_rule(ToolCapability.READ, pattern, root), _rule(ToolCapability.WRITE, pattern, root)]
         )
 
         assert render_claude_policy(policy, _roots(tmp_path, scratch=False)) == ClaudePolicyArgs(
-            flags=_READ_WRITE_FLAGS
+            flags=_read_write_flags(tmp_path)
+        )
+
+    def test_narrowed_patterns_anchor_to_their_root(self, tmp_path: Path) -> None:
+        """[tier-1/unit] render_claude_policy: read 'src/**', write 'docs/*.md' and write 'a\\b' on worktree return '--allowedTools' 'Read(//<root>/src/**),Edit(//<root>/docs/*.md),Edit(//<root>/a/b)'."""
+        policy = ToolPolicy(
+            allow=[
+                _rule(ToolCapability.READ, "src/**"),
+                _rule(ToolCapability.WRITE, "docs/*.md"),
+                _rule(ToolCapability.WRITE, "a\\b"),
+            ]
+        )
+
+        assert render_claude_policy(policy, _roots(tmp_path, scratch=False)) == ClaudePolicyArgs(
+            flags=(
+                "--permission-mode",
+                "dontAsk",
+                "--tools",
+                _READ_WRITE_TOOLS,
+                "--allowedTools",
+                f"Read({_spec(tmp_path, 'src/**')}),Edit({_spec(tmp_path, 'docs/*.md')}),Edit({_spec(tmp_path, 'a/b')})",
+            )
+        )
+
+    def test_read_and_write_denies_render_beside_overlapping_allows(self, tmp_path: Path) -> None:
+        """[tier-1/unit] render_claude_policy: read allow None + read deny 'secrets/**' + write deny None return '--allowedTools' 'Read(//<root>/**)' and '--disallowedTools' 'Read(//<root>/secrets/**),Edit(//<root>/**)'."""
+        policy = ToolPolicy(
+            allow=[_rule(ToolCapability.READ)],
+            deny=[_rule(ToolCapability.READ, "secrets/**"), _rule(ToolCapability.WRITE)],
+        )
+
+        assert render_claude_policy(policy, _roots(tmp_path, scratch=False)) == ClaudePolicyArgs(
+            flags=(
+                "--permission-mode",
+                "dontAsk",
+                "--tools",
+                "Read,Grep,Glob",
+                "--allowedTools",
+                f"Read({_spec(tmp_path)})",
+                "--disallowedTools",
+                f"Read({_spec(tmp_path, 'secrets/**')}),Edit({_spec(tmp_path)})",
+            )
+        )
+
+    def test_deny_only_path_rules_expose_no_tools(self, tmp_path: Path) -> None:
+        """[tier-1/unit] render_claude_policy: write deny None alone returns flags ('--permission-mode', 'dontAsk', '--tools', '', '--disallowedTools', 'Edit(//<root>/**)') with no '--allowedTools'."""
+        policy = ToolPolicy(deny=[_rule(ToolCapability.WRITE)])
+
+        assert render_claude_policy(policy, _roots(tmp_path)) == ClaudePolicyArgs(
+            flags=(
+                "--permission-mode",
+                "dontAsk",
+                "--tools",
+                "",
+                "--disallowedTools",
+                f"Edit({_spec(tmp_path)})",
+            )
+        )
+
+    def test_allow_all_anchors_path_denies_and_adds_no_directory(self, tmp_path: Path) -> None:
+        """[tier-1/unit] render_claude_policy: allow_all with read deny on scratch 'private/**' returns dontAsk, all eight tools, 'Read,Edit,Bash,WebFetch', '--disallowedTools' 'Read(//<scratch>/private/**)' and no '--add-dir'."""
+        roots = _roots(tmp_path)
+        assert roots.scratch is not None
+        policy = ToolPolicy(allow_all=True, deny=[_rule(ToolCapability.READ, "private/**", "scratch")])
+
+        assert render_claude_policy(policy, roots) == ClaudePolicyArgs(
+            flags=(
+                "--permission-mode",
+                "dontAsk",
+                "--tools",
+                _ALL_TOOLS,
+                "--allowedTools",
+                "Read,Edit,Bash,WebFetch",
+                "--disallowedTools",
+                f"Read({_spec(roots.scratch, 'private/**')})",
+            )
         )
 
     def test_empty_policy_emits_empty_tools_value_and_no_other_lists(self, tmp_path: Path) -> None:
@@ -92,7 +183,7 @@ class ClaudePolicyRenderTests:
         )
 
     def test_tools_follow_fixed_order_and_duplicate_permissions_collapse(self, tmp_path: Path) -> None:
-        """[tier-1/unit] render_claude_policy: allows listed network, shell, write, read, read return '--tools' 'Read,Grep,Glob,Edit,Write,NotebookEdit,Bash,WebFetch' and '--allowedTools' with 'Read' exactly once."""
+        """[tier-1/unit] render_claude_policy: allows listed network, shell, write, read, read return '--tools' 'Read,Grep,Glob,Edit,Write,NotebookEdit,Bash,WebFetch' and '--allowedTools' with 'Read(//<root>/**)' exactly once."""
         policy = ToolPolicy(
             allow=[
                 _rule(ToolCapability.NETWORK),
@@ -104,7 +195,14 @@ class ClaudePolicyRenderTests:
         )
 
         assert render_claude_policy(policy, _roots(tmp_path)) == ClaudePolicyArgs(
-            flags=("--permission-mode", "dontAsk", "--tools", _ALL_TOOLS, "--allowedTools", "WebFetch,Bash,Edit,Read")
+            flags=(
+                "--permission-mode",
+                "dontAsk",
+                "--tools",
+                _ALL_TOOLS,
+                "--allowedTools",
+                f"WebFetch,Bash,Edit({_spec(tmp_path)}),Read({_spec(tmp_path)})",
+            )
         )
 
     def test_allow_all_without_denies_returns_bypass_only(self, tmp_path: Path) -> None:
@@ -152,41 +250,57 @@ class ClaudePolicyRenderTests:
             )
         )
 
-    def test_default_policy_appends_add_dir_for_the_scratch_root(self, tmp_path: Path) -> None:
-        """[tier-1/unit] render_claude_policy: default_tool_policy() with roots.scratch set returns the worktree read/write flags followed by ('--add-dir', str(roots.scratch)) as the last two elements."""
+    def test_default_policy_appends_add_dir_and_anchors_both_roots(self, tmp_path: Path) -> None:
+        """[tier-1/unit] render_claude_policy: default_tool_policy() with roots.scratch set returns '--allowedTools' 'Read(//<root>/**),Edit(//<root>/**),Read(//<scratch>/**),Edit(//<scratch>/**)' followed last by ('--add-dir', str(roots.scratch))."""
         roots = _roots(tmp_path)
+        assert roots.scratch is not None
+        allowed = ",".join(f"{tool}({_spec(root)})" for root in (tmp_path, roots.scratch) for tool in ("Read", "Edit"))
 
         assert render_claude_policy(default_tool_policy(), roots) == ClaudePolicyArgs(
-            flags=(*_READ_WRITE_FLAGS, "--add-dir", str(roots.scratch))
+            flags=(
+                "--permission-mode",
+                "dontAsk",
+                "--tools",
+                _READ_WRITE_TOOLS,
+                "--allowedTools",
+                allowed,
+                "--add-dir",
+                str(roots.scratch),
+            )
         )
+
+    def test_scratch_only_read_is_supported_and_adds_the_directory(self, tmp_path: Path) -> None:
+        """[tier-1/unit] render_claude_policy: read allow on scratch with no worktree grant returns '--tools' 'Read,Grep,Glob', '--allowedTools' 'Read(//<scratch>/**)' and ('--add-dir', str(roots.scratch))."""
+        roots = _roots(tmp_path)
+        assert roots.scratch is not None
+        policy = ToolPolicy(allow=[_rule(ToolCapability.READ, root="scratch")])
+
+        assert render_claude_policy(policy, roots) == ClaudePolicyArgs(
+            flags=(
+                "--permission-mode",
+                "dontAsk",
+                "--tools",
+                "Read,Grep,Glob",
+                "--allowedTools",
+                f"Read({_spec(roots.scratch)})",
+                "--add-dir",
+                str(roots.scratch),
+            )
+        )
+
+    def test_control_directory_is_never_rendered(self, tmp_path: Path) -> None:
+        """[tier-1/unit] render_claude_policy: default_tool_policy() with roots.control set returns flags none of which contain str(roots.control)."""
+        control = tmp_path / "control"
+        roots = PolicyRoots(worktree=tmp_path / "work", scratch=tmp_path / "scratch", control=control)
+
+        result = render_claude_policy(default_tool_policy(), roots)
+
+        assert isinstance(result, ClaudePolicyArgs)
+        assert not any(str(control) in flag for flag in result.flags)
 
     @pytest.mark.parametrize(
         ("policy", "scratch", "reason"),
         [
-            pytest.param(
-                ToolPolicy(allow=[_rule(ToolCapability.READ, "src/**")]),
-                True,
-                "read pattern 'src/**' is narrower than a whole root and cannot be preserved",
-                id="read-narrow-pattern",
-            ),
-            pytest.param(
-                ToolPolicy(allow=[_rule(ToolCapability.WRITE, "docs/**")]),
-                True,
-                "write pattern 'docs/**' is narrower than a whole root and cannot be preserved",
-                id="write-narrow-pattern",
-            ),
-            pytest.param(
-                ToolPolicy(deny=[_rule(ToolCapability.READ)]),
-                True,
-                "read deny rules cannot be preserved for Claude Code",
-                id="read-deny",
-            ),
-            pytest.param(
-                ToolPolicy(deny=[_rule(ToolCapability.WRITE)]),
-                True,
-                "write deny rules cannot be preserved for Claude Code",
-                id="write-deny",
-            ),
             pytest.param(
                 ToolPolicy(allow=[_rule(ToolCapability.MCP, "server/tool")]),
                 True,
@@ -212,39 +326,94 @@ class ClaudePolicyRenderTests:
                 id="network-deny-wildcard",
             ),
             pytest.param(
-                ToolPolicy(allow=[_rule(ToolCapability.READ, root="scratch")]),
-                True,
-                "a read or write grant that omits the worktree cannot be preserved",
-                id="scratch-only-read",
-            ),
-            pytest.param(
-                ToolPolicy(
-                    allow=[
-                        _rule(ToolCapability.READ, root="worktree"),
-                        _rule(ToolCapability.WRITE, root="worktree"),
-                        _rule(ToolCapability.WRITE, root="scratch"),
-                    ]
-                ),
-                True,
-                "scratch must be granted to every available path tool or to none",
-                id="scratch-granted-to-write-only",
-            ),
-            pytest.param(
                 default_tool_policy(),
                 False,
-                "a scratch grant requires a scratch root",
+                "a scratch rule requires a scratch root",
                 id="scratch-grant-without-scratch-root",
             ),
             pytest.param(
-                ToolPolicy(allow_all=True, deny=[_rule(ToolCapability.READ)]),
+                ToolPolicy(deny=[_rule(ToolCapability.READ, root="scratch")]),
+                False,
+                "a scratch rule requires a scratch root",
+                id="scratch-deny-without-scratch-root",
+            ),
+            pytest.param(
+                ToolPolicy.model_construct(
+                    allow=[ToolRule.model_construct(capability=ToolCapability.READ, root=None, pattern="../x")]
+                ),
                 True,
-                "read deny rules cannot be preserved for Claude Code",
-                id="allow-all-with-read-deny",
+                "read pattern '../x' resolves outside its worktree root",
+                id="read-pattern-escapes-root",
+            ),
+            pytest.param(
+                ToolPolicy.model_construct(
+                    allow=[ToolRule.model_construct(capability=ToolCapability.WRITE, root=None, pattern="/etc/x")]
+                ),
+                True,
+                "write pattern '/etc/x' resolves outside its worktree root",
+                id="write-pattern-absolute",
+            ),
+            pytest.param(
+                ToolPolicy.model_construct(
+                    allow=[ToolRule.model_construct(capability=ToolCapability.READ, root="scratch", pattern="C:x")]
+                ),
+                True,
+                "read pattern 'C:x' resolves outside its scratch root",
+                id="read-pattern-drive-letter",
+            ),
+            pytest.param(
+                ToolPolicy.model_construct(
+                    deny=[ToolRule.model_construct(capability=ToolCapability.READ, root=None, pattern="a\\..\\b")]
+                ),
+                True,
+                "read pattern 'a\\\\..\\\\b' resolves outside its worktree root",
+                id="read-pattern-backslash-parent",
             ),
         ],
     )
     def test_unsupported_rule_returns_reason_string(
         self, tmp_path: Path, policy: ToolPolicy, scratch: bool, reason: str
     ) -> None:
-        """[tier-1/unit] render_claude_policy: read 'src/**', write 'docs/**', read deny, write deny, mcp allow, mcp deny, network allow '*.example.com', network deny '*.example.com', scratch-only read, scratch granted to write while read is worktree-only, scratch grant with roots.scratch None each return the str naming the rejected rule and no ClaudePolicyArgs."""
+        """[tier-1/unit] render_claude_policy: mcp allow, mcp deny, network '*.example.com' allow and deny, default_tool_policy() with roots.scratch None ('a scratch rule requires a scratch root'), scratch read deny with roots.scratch None (same reason), and model_construct patterns '../x', '/etc/x', 'C:x' and 'a\\..\\b' ('<capability> pattern '<pattern>' resolves outside its <root> root') each return the exact str and no ClaudePolicyArgs."""
         assert render_claude_policy(policy, _roots(tmp_path, scratch=scratch)) == reason
+
+    @pytest.mark.parametrize(
+        ("worktree_name", "pattern", "reason_path"),
+        [
+            pytest.param("work", "src/{a,b}/**", "src/{a,b}/**", id="comma-in-pattern"),
+            pytest.param("a,b", None, "**", id="comma-in-root"),
+        ],
+    )
+    def test_comma_in_path_spec_returns_reason_string(
+        self, tmp_path: Path, worktree_name: str, pattern: str | None, reason_path: str
+    ) -> None:
+        """[tier-1/unit] render_claude_policy: a read allow whose pattern 'src/{a,b}/**' or whose worktree root contains a comma returns "read path '<spec>' contains a comma and cannot be preserved for Claude Code" and no ClaudePolicyArgs."""
+        worktree = tmp_path / worktree_name
+        roots = PolicyRoots(worktree=worktree, scratch=None, control=None)
+        policy = ToolPolicy(allow=[_rule(ToolCapability.READ, pattern)])
+
+        assert (
+            render_claude_policy(policy, roots)
+            == f"read path {_spec(worktree, reason_path)!r} contains a comma and cannot be preserved for Claude Code"
+        )
+
+    def test_scratch_read_allow_does_not_widen_worktree_write_allow(self, tmp_path: Path) -> None:
+        """[tier-1/unit] render_claude_policy: write allow on the worktree plus read allow on scratch returns '--allowedTools' 'Edit(//<root>/**),Read(//<scratch>/**)' with no Edit spec for scratch, followed by ('--add-dir', str(roots.scratch))."""
+        roots = _roots(tmp_path)
+        assert roots.scratch is not None
+        policy = ToolPolicy(
+            allow=[_rule(ToolCapability.WRITE, root="worktree"), _rule(ToolCapability.READ, root="scratch")]
+        )
+
+        assert render_claude_policy(policy, roots) == ClaudePolicyArgs(
+            flags=(
+                "--permission-mode",
+                "dontAsk",
+                "--tools",
+                _READ_WRITE_TOOLS,
+                "--allowedTools",
+                f"Edit({_spec(tmp_path)}),Read({_spec(roots.scratch)})",
+                "--add-dir",
+                str(roots.scratch),
+            )
+        )

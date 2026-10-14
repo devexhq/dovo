@@ -83,27 +83,14 @@ def _real_invocation(tmp_path: Path) -> AgentInvocationContext:
 
 
 class ClaudePolicyPreflightTests:
-    @pytest.mark.parametrize(
-        "policy",
-        [
-            pytest.param(
-                ToolPolicy(allow=[ToolRule(capability=ToolCapability.READ, pattern="src/**")]), id="narrow-read"
-            ),
-            pytest.param(ToolPolicy(deny=[ToolRule(capability=ToolCapability.READ)]), id="read-deny"),
-            pytest.param(ToolPolicy(allow=[ToolRule(capability=ToolCapability.MCP, pattern="server/tool")]), id="mcp"),
-            pytest.param(
-                ToolPolicy(allow=[ToolRule(capability=ToolCapability.READ, root="scratch", pattern="**")]),
-                id="scratch-only-read",
-            ),
-        ],
-    )
-    def test_unsupported_policy_is_rejected_before_spawn(
-        self, git_repo: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, policy: ToolPolicy
+    def test_mcp_policy_is_rejected_before_spawn(
+        self, git_repo: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """[tier-1/integration] ClaudeAgentAdapter.invoke: ANTHROPIC_API_KEY set and a read 'src/**' / read deny / mcp allow / scratch-only read request returns PROVIDER_ERROR with errors == [tool_policy_unsupported_message('claude')] and FakeAgentRunner.calls == []."""
+        """[tier-1/integration] ClaudeAgentAdapter.invoke: an mcp allow request returns PROVIDER_ERROR with errors == [tool_policy_unsupported_message('claude')] and FakeAgentRunner.calls == []."""
         monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test")
         runner = FakeAgentRunner()
         monkeypatch.setattr("dovo.core.agents.cli_mutation.stream_isolated_process", runner)
+        policy = ToolPolicy(allow=[ToolRule(capability=ToolCapability.MCP, pattern="server/tool")])
         request = (
             AgentRequestBuilder()
             .with_worktree_path(git_repo)
@@ -117,6 +104,28 @@ class ClaudePolicyPreflightTests:
         assert response.status == AgentResponseStatus.PROVIDER_ERROR
         assert response.errors == [tool_policy_unsupported_message("claude")]
         assert runner.calls == []
+
+    def test_narrowed_read_with_read_deny_passes_preflight(
+        self, git_repo: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """[tier-1/integration] ClaudeAgentAdapter.invoke: read allow 'src/**' plus read deny 'secrets/**' with a real invocation returns PROVIDER_ERROR whose errors contain 'Claude Code invocation is not available', not the unsupported message."""
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test")
+        policy = ToolPolicy(
+            allow=[ToolRule(capability=ToolCapability.READ, pattern="src/**")],
+            deny=[ToolRule(capability=ToolCapability.READ, pattern="secrets/**")],
+        )
+        request = (
+            AgentRequestBuilder()
+            .with_worktree_path(git_repo)
+            .with_invocation(_real_invocation(tmp_path))
+            .with_tools(policy)
+            .build()
+        )
+
+        response = ClaudeAgentAdapter().invoke(request)
+
+        assert response.status == AgentResponseStatus.PROVIDER_ERROR
+        assert any("Claude Code invocation is not available" in error for error in response.errors)
 
     def test_default_policy_with_a_real_invocation_passes_preflight(
         self, git_repo: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch

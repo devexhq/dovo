@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Final
 
-from dovo.common.tool_policy import ToolCapability, ToolPolicy, ToolRule
+from dovo.common.tool_policy import ToolCapability, ToolPolicy, ToolRule, validate_rule_pattern
 from dovo.core.agents.tools import PolicyRoots
 
 
@@ -16,7 +17,6 @@ class ClaudePolicyArgs:
     flags: tuple[str, ...]
 
 
-_PATH_GLOB_ALL: Final = (None, "**")
 _PATH_CAPABILITIES: Final = (ToolCapability.READ, ToolCapability.WRITE)
 _TOOL_GROUPS: Final = (
     (ToolCapability.READ, ("Read", "Grep", "Glob")),
@@ -35,24 +35,47 @@ _SHELL_PREFIX_SUFFIX: Final = " *"
 _NETWORK_WILDCARD_PREFIX: Final = "*."
 
 
-def _path_rule_error(rule: ToolRule, *, deny: bool) -> str | None:
-    """Return why a read/write rule cannot be preserved, or None."""
-    if deny:
-        return f"{rule.capability.value} deny rules cannot be preserved for Claude Code"
+def _rule_root(rule: ToolRule, roots: PolicyRoots) -> Path | None:
+    """Return the canonical root a read/write rule anchors to, or None when scratch is unavailable."""
+    if rule.root == "scratch":
+        return roots.scratch
 
-    if rule.pattern not in _PATH_GLOB_ALL:
-        return f"{rule.capability.value} pattern {rule.pattern!r} is narrower than a whole root and cannot be preserved"
+    return roots.worktree
+
+
+def _normalize_pattern(pattern: str) -> str:
+    """Return pattern with backslashes as forward slashes."""
+    return pattern.replace("\\", "/")
+
+
+def _path_spec(root: Path, pattern: str | None) -> str:
+    """Return '//<abs-root>/<pattern>' with backslashes as '/' and '**' for an absent pattern."""
+    return "/" + root.as_posix() + "/" + (_normalize_pattern(pattern) if pattern is not None else "**")
+
+
+def _path_rule_error(rule: ToolRule, roots: PolicyRoots) -> str | None:
+    """Return why a read/write rule cannot be anchored to its root, or None."""
+    root = _rule_root(rule, roots)
+    if root is None:
+        return "a scratch rule requires a scratch root"
+
+    if validate_rule_pattern(rule.capability, rule.pattern) is not None:
+        return f"{rule.capability.value} pattern {rule.pattern!r} resolves outside its {rule.root or 'worktree'} root"
+
+    spec = _path_spec(root, rule.pattern)
+    if "," in spec:
+        return f"{rule.capability.value} path {spec!r} contains a comma and cannot be preserved for Claude Code"
 
     return None
 
 
-def _rule_error(rule: ToolRule, *, deny: bool) -> str | None:
+def _rule_error(rule: ToolRule, roots: PolicyRoots) -> str | None:
     """Return why rule cannot be preserved for Claude Code, or None."""
     if rule.capability == ToolCapability.MCP:
         return "mcp rules cannot be preserved for Claude Code"
 
     if rule.capability in _PATH_CAPABILITIES:
-        return _path_rule_error(rule, deny=deny)
+        return _path_rule_error(rule, roots)
 
     if rule.capability == ToolCapability.NETWORK and (rule.pattern or "").startswith(_NETWORK_WILDCARD_PREFIX):
         return f"network pattern {rule.pattern!r} cannot be preserved for Claude Code"
@@ -60,10 +83,13 @@ def _rule_error(rule: ToolRule, *, deny: bool) -> str | None:
     return None
 
 
-def _rule_permission(rule: ToolRule) -> str:
+def _rule_permission(rule: ToolRule, roots: PolicyRoots) -> str:
     """Return the Claude permission string for a rule that passed _rule_error."""
     bare = _BARE_PERMISSIONS[rule.capability]
-    if rule.pattern is None or rule.capability in _PATH_CAPABILITIES:
+    if rule.capability in _PATH_CAPABILITIES and (root := _rule_root(rule, roots)) is not None:
+        return f"{bare}({_path_spec(root, rule.pattern)})"
+
+    if rule.pattern is None:
         return bare
 
     if rule.capability == ToolCapability.NETWORK:
@@ -75,10 +101,10 @@ def _rule_permission(rule: ToolRule) -> str:
     return f"{bare}({rule.pattern})"
 
 
-def _first_error(rules: list[ToolRule], *, deny: bool) -> str | None:
+def _first_error(rules: list[ToolRule], roots: PolicyRoots) -> str | None:
     """Return the first _rule_error across rules, or None."""
     for rule in rules:
-        error = _rule_error(rule, deny=deny)
+        error = _rule_error(rule, roots)
         if error is not None:
             return error
 
@@ -97,38 +123,16 @@ def _tool_names(policy: ToolPolicy) -> list[str]:
     return [name for capability, names in _TOOL_GROUPS if capability in granted for name in names]
 
 
-def _granted_roots(policy: ToolPolicy, capability: ToolCapability) -> set[str]:
-    """Return the roots the allow rules of capability grant."""
-    return {rule.root or "worktree" for rule in policy.allow if rule.capability == capability}
+def _scratch_flags(policy: ToolPolicy, roots: PolicyRoots) -> list[str]:
+    """Return ['--add-dir', scratch] when an allow rule grants the scratch root, else [].
 
-
-def _scratch_flags(policy: ToolPolicy, roots: PolicyRoots) -> list[str] | str:
-    """Return the --add-dir flags the read/write grants imply, or why their per-root grants cannot be preserved.
-
-    `--add-dir` grants edit access, so scratch must reach every granted path tool or none.
+    Under dontAsk an added directory is readable without a rule, but edits there still need an Edit allow rule.
     """
-    granted = [
-        capability_roots
-        for capability in _PATH_CAPABILITIES
-        if (capability_roots := _granted_roots(policy, capability))
-    ]
-    if not granted:
-        return []
+    grants_scratch = any(rule.capability in _PATH_CAPABILITIES and rule.root == "scratch" for rule in policy.allow)
+    if grants_scratch and roots.scratch is not None:
+        return ["--add-dir", str(roots.scratch)]
 
-    if any("worktree" not in granted_roots for granted_roots in granted):
-        return "a read or write grant that omits the worktree cannot be preserved"
-
-    scratch_flags = ["scratch" in granted_roots for granted_roots in granted]
-    if any(scratch_flags) != all(scratch_flags):
-        return "scratch must be granted to every available path tool or to none"
-
-    if not any(scratch_flags):
-        return []
-
-    if roots.scratch is None:
-        return "a scratch grant requires a scratch root"
-
-    return ["--add-dir", str(roots.scratch)]
+    return []
 
 
 def _flags(
@@ -148,40 +152,36 @@ def _flags(
     return ClaudePolicyArgs(flags=(*flags, *add_dirs))
 
 
-def _render_allow_all(policy: ToolPolicy) -> ClaudePolicyArgs | str:
+def _render_allow_all(policy: ToolPolicy, roots: PolicyRoots) -> ClaudePolicyArgs | str:
     """Return bypassPermissions without denies, else dontAsk with every built-in granted and the denies rendered."""
     if not policy.deny:
         return ClaudePolicyArgs(flags=("--permission-mode", "bypassPermissions"))
 
-    error = _first_error(policy.deny, deny=True)
+    error = _first_error(policy.deny, roots)
     if error is not None:
         return error
 
     every_tool = [name for _, names in _TOOL_GROUPS for name in names]
-    denied = _unique([_rule_permission(rule) for rule in policy.deny])
+    denied = _unique([_rule_permission(rule, roots) for rule in policy.deny])
 
     return _flags("dontAsk", every_tool, list(_ALL_BUILTINS_APPROVALS), denied, [])
 
 
 def _render_restricted(policy: ToolPolicy, roots: PolicyRoots) -> ClaudePolicyArgs | str:
     """Return dontAsk flags for the allow and deny rules, or why a rule cannot be preserved."""
-    error = _first_error(policy.allow, deny=False) or _first_error(policy.deny, deny=True)
+    error = _first_error(policy.allow, roots) or _first_error(policy.deny, roots)
     if error is not None:
         return error
 
-    add_dirs = _scratch_flags(policy, roots)
-    if isinstance(add_dirs, str):
-        return add_dirs
+    allowed = _unique([_rule_permission(rule, roots) for rule in policy.allow])
+    denied = _unique([_rule_permission(rule, roots) for rule in policy.deny])
 
-    allowed = _unique([_rule_permission(rule) for rule in policy.allow])
-    denied = _unique([_rule_permission(rule) for rule in policy.deny])
-
-    return _flags("dontAsk", _tool_names(policy), allowed, denied, add_dirs)
+    return _flags("dontAsk", _tool_names(policy), allowed, denied, _scratch_flags(policy, roots))
 
 
 def render_claude_policy(policy: ToolPolicy, roots: PolicyRoots) -> ClaudePolicyArgs | str:
     """Render policy into Claude Code flags, or return why a rule cannot be preserved."""
     if policy.allow_all:
-        return _render_allow_all(policy)
+        return _render_allow_all(policy, roots)
 
     return _render_restricted(policy, roots)
