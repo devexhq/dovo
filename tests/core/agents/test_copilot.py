@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 import subprocess
-from collections.abc import Callable
 from pathlib import Path
 from typing import Literal
 
@@ -31,7 +30,7 @@ from dovo.core.agents.copilot import (
     resolve_copilot_token,
 )
 from dovo.core.agents.models import AgentDenial, AgentProgress, AgentProgressKind
-from tests.harness import AgentRequestBuilder, FakeAgentRunner
+from tests.harness import AgentRequestBuilder, FakeAgentRunner, StreamingAgentRunner
 
 _ALLOW_ALL = ToolPolicy(allow_all=True)
 
@@ -78,80 +77,6 @@ class CopilotAuthTests:
         ]
 
 
-class _StreamingRunnerDouble:
-    """Typed stand-in for stream_isolated_process that replays canned lines through the stream callbacks it receives."""
-
-    def __init__(self, *, stdout_lines: list[str], stderr_lines: list[str], completed_stdout: bytes) -> None:
-        self._stdout_lines = stdout_lines
-        self._stderr_lines = stderr_lines
-        self._completed_stdout = completed_stdout
-        self.received_stdout_callback: Callable[[str], None] | None = None
-        self.received_stderr_callback: Callable[[str], None] | None = None
-
-    def __call__(
-        self,
-        cmd: list[str],
-        *,
-        cwd: Path,
-        env: dict[str, str],
-        input_data: bytes,
-        timeout_seconds: float,
-        on_stdout_line: Callable[[str], None] | None = None,
-        on_stderr_line: Callable[[str], None] | None = None,
-    ) -> subprocess.CompletedProcess[bytes]:
-        self.received_stdout_callback = on_stdout_line
-        self.received_stderr_callback = on_stderr_line
-        if on_stdout_line is not None:
-            for line in self._stdout_lines:
-                on_stdout_line(line)
-        if on_stderr_line is not None:
-            for line in self._stderr_lines:
-                on_stderr_line(line)
-        return subprocess.CompletedProcess(args=cmd, returncode=0, stdout=self._completed_stdout, stderr=b"")
-
-
-class CopilotRunStreamingTests:
-    _COMPLETED_STDOUT = (
-        b'{"type":"assistant.message","data":{"content":"hello"}}\n{"type":"result","data":{"exitCode":0}}\n'
-    )
-
-    def test_default_run_tags_each_stream_line_for_on_line(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        """[tier-1/unit] default_copilot_run: a typed streaming runner double that calls on_stdout_line('o1') and on_stderr_line('e1') makes request.on_line receive [('stdout','o1'), ('stderr','e1')], and the outcome is still classified from the double's completed bytes."""
-        runner = _StreamingRunnerDouble(
-            stdout_lines=["o1"], stderr_lines=["e1"], completed_stdout=self._COMPLETED_STDOUT
-        )
-        monkeypatch.setattr("dovo.core.agents.copilot.stream_isolated_process", runner)
-        received: list[tuple[str, str]] = []
-
-        outcome = default_copilot_run(
-            CliMutationRunRequest(
-                worktree_path=tmp_path,
-                prompt="hi",
-                timeout_seconds=3,
-                tools=_ALLOW_ALL,
-                on_line=lambda stream_name, line: received.append((stream_name, line)),
-            )
-        )
-
-        assert received == [("stdout", "o1"), ("stderr", "e1")]
-        assert (outcome.status, outcome.result_text) == ("finished", "hello")
-
-    def test_default_run_without_on_line_passes_no_stream_callbacks(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        """[tier-1/unit] default_copilot_run: a request with on_line None calls the runner with on_stdout_line None and on_stderr_line None."""
-        runner = _StreamingRunnerDouble(stdout_lines=[], stderr_lines=[], completed_stdout=self._COMPLETED_STDOUT)
-        monkeypatch.setattr("dovo.core.agents.copilot.stream_isolated_process", runner)
-
-        default_copilot_run(
-            CliMutationRunRequest(worktree_path=tmp_path, prompt="hi", timeout_seconds=3, tools=_ALLOW_ALL)
-        )
-
-        assert (runner.received_stdout_callback, runner.received_stderr_callback) == (None, None)
-
-
 class CopilotRunProgressTests:
     _VIEW_LINE = json.dumps(
         {"type": "tool.execution_start", "data": {"toolName": "view", "arguments": {"path": "{root}/x.py"}}}
@@ -168,8 +93,8 @@ class CopilotRunProgressTests:
     ) -> None:
         """[tier-1/unit] default_copilot_run: a streaming runner double that emits a view tool.execution_start stdout line makes request.on_progress receive exactly (AgentProgress(kind=read, target='x.py'),) and request.on_line still receives the raw line."""
         line = self._view_line(tmp_path)
-        runner = _StreamingRunnerDouble(stdout_lines=[line], stderr_lines=[], completed_stdout=self._COMPLETED_STDOUT)
-        monkeypatch.setattr("dovo.core.agents.copilot.stream_isolated_process", runner)
+        runner = StreamingAgentRunner(stdout_lines=[line], stderr_lines=[], completed_stdout=self._COMPLETED_STDOUT)
+        monkeypatch.setattr("dovo.core.agents.cli_mutation.stream_isolated_process", runner)
         progress: list[AgentProgress] = []
         raw: list[tuple[str, str]] = []
 
@@ -187,56 +112,6 @@ class CopilotRunProgressTests:
         assert progress == [AgentProgress(kind=AgentProgressKind.READ, target="x.py")]
         assert raw == [("stdout", line)]
 
-    def test_default_run_maps_progress_when_on_line_is_unset(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        """[tier-1/unit] default_copilot_run: a request with on_progress set and on_line None still passes a stdout callback to the runner and delivers the mapped progress."""
-        runner = _StreamingRunnerDouble(
-            stdout_lines=[self._view_line(tmp_path)], stderr_lines=[], completed_stdout=self._COMPLETED_STDOUT
-        )
-        monkeypatch.setattr("dovo.core.agents.copilot.stream_isolated_process", runner)
-        progress: list[AgentProgress] = []
-
-        default_copilot_run(
-            CliMutationRunRequest(
-                worktree_path=tmp_path, prompt="hi", timeout_seconds=3, tools=_ALLOW_ALL, on_progress=progress.append
-            )
-        )
-
-        assert runner.received_stdout_callback is not None
-        assert progress == [AgentProgress(kind=AgentProgressKind.READ, target="x.py")]
-
-    def test_default_run_ignores_on_progress_failure(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        """[tier-1/unit] default_copilot_run: an on_progress that raises RuntimeError leaves the outcome (status 'finished', result_text) equal to the run without on_progress."""
-        runner = _StreamingRunnerDouble(
-            stdout_lines=[self._view_line(tmp_path)], stderr_lines=[], completed_stdout=self._COMPLETED_STDOUT
-        )
-        monkeypatch.setattr("dovo.core.agents.copilot.stream_isolated_process", runner)
-
-        def failing(progress: AgentProgress) -> None:
-            raise RuntimeError("terminal gone")
-
-        outcome = default_copilot_run(
-            CliMutationRunRequest(
-                worktree_path=tmp_path, prompt="hi", timeout_seconds=3, tools=_ALLOW_ALL, on_progress=failing
-            )
-        )
-
-        assert (outcome.status, outcome.result_text) == ("finished", "hello")
-
-    def test_default_run_without_callbacks_passes_no_stdout_callback(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        """[tier-1/unit] default_copilot_run: a request with on_line None and on_progress None calls the runner with on_stdout_line None."""
-        runner = _StreamingRunnerDouble(stdout_lines=[], stderr_lines=[], completed_stdout=self._COMPLETED_STDOUT)
-        monkeypatch.setattr("dovo.core.agents.copilot.stream_isolated_process", runner)
-
-        default_copilot_run(
-            CliMutationRunRequest(worktree_path=tmp_path, prompt="hi", timeout_seconds=3, tools=_ALLOW_ALL)
-        )
-
-        assert runner.received_stdout_callback is None
-
 
 class CopilotRunTests:
     def test_missing_token_returns_canonical_error_without_running_gh(
@@ -246,7 +121,7 @@ class CopilotRunTests:
         monkeypatch.delenv("GH_TOKEN", raising=False)
         monkeypatch.delenv("GITHUB_TOKEN", raising=False)
         runner = FakeAgentRunner()
-        monkeypatch.setattr("dovo.core.agents.copilot.stream_isolated_process", runner)
+        monkeypatch.setattr("dovo.core.agents.cli_mutation.stream_isolated_process", runner)
 
         outcome = default_copilot_run(
             CliMutationRunRequest(worktree_path=tmp_path, prompt="hi", model=None, timeout_seconds=3, tools=_ALLOW_ALL)
@@ -265,7 +140,7 @@ class CopilotRunTests:
                 b'{"type":"assistant.message","data":{"content":"hello"}}\n{"type":"result","data":{"exitCode":0}}\n'
             )
         )
-        monkeypatch.setattr("dovo.core.agents.copilot.stream_isolated_process", runner)
+        monkeypatch.setattr("dovo.core.agents.cli_mutation.stream_isolated_process", runner)
 
         outcome = default_copilot_run(
             CliMutationRunRequest(
@@ -291,7 +166,7 @@ class CopilotRunTests:
     def test_missing_gh_binary_returns_error_status(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """A missing gh binary maps to an error outcome naming the GitHub CLI."""
         runner = FakeAgentRunner().raising(FileNotFoundError("gh"))
-        monkeypatch.setattr("dovo.core.agents.copilot.stream_isolated_process", runner)
+        monkeypatch.setattr("dovo.core.agents.cli_mutation.stream_isolated_process", runner)
 
         outcome = default_copilot_run(
             CliMutationRunRequest(worktree_path=tmp_path, prompt="hi", model=None, timeout_seconds=3, tools=_ALLOW_ALL)
@@ -303,19 +178,6 @@ class CopilotRunTests:
             "gh is not installed or not on PATH: gh. Fix: install the GitHub CLI (https://cli.github.com)"
         )
 
-    def test_process_timeout_returns_timeout_status(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        """A subprocess timeout maps to a timeout outcome."""
-        runner = FakeAgentRunner().raising(subprocess.TimeoutExpired(cmd="gh", timeout=3))
-        monkeypatch.setattr("dovo.core.agents.copilot.stream_isolated_process", runner)
-
-        outcome = default_copilot_run(
-            CliMutationRunRequest(worktree_path=tmp_path, prompt="hi", model=None, timeout_seconds=3, tools=_ALLOW_ALL)
-        )
-
-        assert outcome.status == "timeout"
-        assert outcome.result_text is None
-        assert outcome.error_detail is None
-
 
 class CopilotInvokeOutcomeTests:
     def test_invoke_maps_elapsed_subprocess_timeout_to_timeout_status(
@@ -323,7 +185,7 @@ class CopilotInvokeOutcomeTests:
     ) -> None:
         """[tier-1/integration] CopilotAgentAdapter.invoke: stream_isolated_process raising subprocess.TimeoutExpired returns status TIMEOUT with errors[0].splitlines()[0] == "Agent timed out after 10s (provider=copilot)." and no other status."""
         runner = FakeAgentRunner().raising(subprocess.TimeoutExpired(cmd="gh", timeout=10))
-        monkeypatch.setattr("dovo.core.agents.copilot.stream_isolated_process", runner)
+        monkeypatch.setattr("dovo.core.agents.cli_mutation.stream_isolated_process", runner)
 
         resp = CopilotAgentAdapter().invoke(AgentRequestBuilder().with_worktree_path(git_repo).build())
 
@@ -355,7 +217,7 @@ class CopilotInvokeOutcomeTests:
         self, git_repo: Path, monkeypatch: pytest.MonkeyPatch, runner: FakeAgentRunner, expected_error: str
     ) -> None:
         """[tier-1/integration] CopilotAgentAdapter.invoke: gh missing, an OSError, or a non-zero exit returns status PROVIDER_ERROR (never TIMEOUT) with errors == [expected_error]."""
-        monkeypatch.setattr("dovo.core.agents.copilot.stream_isolated_process", runner)
+        monkeypatch.setattr("dovo.core.agents.cli_mutation.stream_isolated_process", runner)
 
         resp = CopilotAgentAdapter().invoke(AgentRequestBuilder().with_worktree_path(git_repo).build())
 
@@ -393,7 +255,7 @@ class CopilotRedactionTests:
         token = "gho_" + "a" * 36
         monkeypatch.setenv("GH_TOKEN", token)
         runner = FakeAgentRunner().returning(returncode=1, stderr=f"auth failed for {token}".encode())
-        monkeypatch.setattr("dovo.core.agents.copilot.stream_isolated_process", runner)
+        monkeypatch.setattr("dovo.core.agents.cli_mutation.stream_isolated_process", runner)
 
         resp = CopilotAgentAdapter().invoke(AgentRequestBuilder().with_worktree_path(git_repo).build())
 
@@ -408,7 +270,7 @@ class CopilotRedactionTests:
         monkeypatch.setenv("GH_TOKEN", "sh1")
         monkeypatch.setenv("GITHUB_TOKEN", "sh2")
         runner = FakeAgentRunner().returning(stdout=_assistant_stream("saw sh1 and sh2"))
-        monkeypatch.setattr("dovo.core.agents.copilot.stream_isolated_process", runner)
+        monkeypatch.setattr("dovo.core.agents.cli_mutation.stream_isolated_process", runner)
 
         resp = CopilotAgentAdapter().invoke(AgentRequestBuilder().with_worktree_path(git_repo).build())
 
@@ -421,7 +283,7 @@ class CopilotRedactionTests:
         token = "gho_" + "b" * 36
         monkeypatch.setenv("GH_TOKEN", token)
         runner = _FileWritingRunner().returning(stdout=_assistant_stream(f"done with {token}"))
-        monkeypatch.setattr("dovo.core.agents.copilot.stream_isolated_process", runner)
+        monkeypatch.setattr("dovo.core.agents.cli_mutation.stream_isolated_process", runner)
 
         resp = CopilotAgentAdapter().invoke(AgentRequestBuilder().with_worktree_path(git_repo).build())
 
@@ -439,11 +301,11 @@ class CopilotEnvBoundaryTests:
     def test_allowlist_spawn_env_lacks_unrelated_secrets_and_carries_resolved_token(
         self, git_repo: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """[tier-1/integration] CopilotAgentAdapter.invoke: FakeAgentRunner at dovo.core.agents.copilot.stream_isolated_process records an env without AWS_SECRET_ACCESS_KEY, SSH_AUTH_SOCK, ANTHROPIC_API_KEY, DOVO_TEST_UNRELATED_SECRET and with GH_TOKEN equal to the resolved token."""
+        """[tier-1/integration] CopilotAgentAdapter.invoke: FakeAgentRunner at dovo.core.agents.cli_mutation.stream_isolated_process records an env without AWS_SECRET_ACCESS_KEY, SSH_AUTH_SOCK, ANTHROPIC_API_KEY, DOVO_TEST_UNRELATED_SECRET and with GH_TOKEN equal to the resolved token."""
         for name in ("AWS_SECRET_ACCESS_KEY", "SSH_AUTH_SOCK", "ANTHROPIC_API_KEY", "DOVO_TEST_UNRELATED_SECRET"):
             monkeypatch.setenv(name, "host-value")
         runner = FakeAgentRunner().returning(stdout=_assistant_stream("ok"))
-        monkeypatch.setattr("dovo.core.agents.copilot.stream_isolated_process", runner)
+        monkeypatch.setattr("dovo.core.agents.cli_mutation.stream_isolated_process", runner)
 
         CopilotAgentAdapter().invoke(AgentRequestBuilder().with_worktree_path(git_repo).build())
 
@@ -458,7 +320,7 @@ class CopilotEnvBoundaryTests:
         """[tier-1/integration] CopilotAgentAdapter.invoke: with env_mode 'inherit' the recorded env contains DOVO_TEST_UNRELATED_SECRET."""
         monkeypatch.setenv("DOVO_TEST_UNRELATED_SECRET", "host-value")
         runner = FakeAgentRunner().returning(stdout=_assistant_stream("ok"))
-        monkeypatch.setattr("dovo.core.agents.copilot.stream_isolated_process", runner)
+        monkeypatch.setattr("dovo.core.agents.cli_mutation.stream_isolated_process", runner)
 
         CopilotAgentAdapter().invoke(
             AgentRequestBuilder().with_worktree_path(git_repo).with_env_mode("inherit").build()
@@ -476,7 +338,7 @@ class CopilotEnvBoundaryTests:
         monkeypatch.setenv("COPILOT_MODEL", "ambient-model")
         monkeypatch.setenv("GITHUB_TOKEN", "non-winning")
         runner = FakeAgentRunner().returning(stdout=_assistant_stream("ok"))
-        monkeypatch.setattr("dovo.core.agents.copilot.stream_isolated_process", runner)
+        monkeypatch.setattr("dovo.core.agents.cli_mutation.stream_isolated_process", runner)
 
         CopilotAgentAdapter().invoke(
             AgentRequestBuilder().with_worktree_path(git_repo).with_model("gpt-x").with_env_mode(mode).build()
@@ -492,7 +354,7 @@ class CopilotEnvBoundaryTests:
     ) -> None:
         """[tier-1/integration] CopilotAgentAdapter.invoke: two calls with different invocation contexts record DOVO_AGENT_SCRATCH, TMPDIR, TMP, TEMP equal to each call's own scratch_path, never control_path or its parent."""
         runner = FakeAgentRunner().returning(stdout=_assistant_stream("ok"))
-        monkeypatch.setattr("dovo.core.agents.copilot.stream_isolated_process", runner)
+        monkeypatch.setattr("dovo.core.agents.cli_mutation.stream_isolated_process", runner)
         adapter = CopilotAgentAdapter()
         invocations = [_invocation(tmp_path / "first"), _invocation(tmp_path / "second")]
 
@@ -575,7 +437,9 @@ _NO_INTERACTIVE_STREAM = (
 
 
 def _run_recorded(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, stdout: bytes) -> CliMutationOutcome:
-    monkeypatch.setattr("dovo.core.agents.copilot.stream_isolated_process", FakeAgentRunner().returning(stdout=stdout))
+    monkeypatch.setattr(
+        "dovo.core.agents.cli_mutation.stream_isolated_process", FakeAgentRunner().returning(stdout=stdout)
+    )
 
     return default_copilot_run(
         CliMutationRunRequest(worktree_path=tmp_path, prompt="hi", model=None, timeout_seconds=3, tools=_ALLOW_ALL)
@@ -740,7 +604,7 @@ def _run_policy(
 ) -> tuple[FakeAgentRunner, AgentInvocationContext | None]:
     invocation = _real_invocation(tmp_path) if with_invocation else None
     runner = FakeAgentRunner().returning(stdout=_OK_STREAM)
-    monkeypatch.setattr("dovo.core.agents.copilot.stream_isolated_process", runner)
+    monkeypatch.setattr("dovo.core.agents.cli_mutation.stream_isolated_process", runner)
 
     default_copilot_run(
         CliMutationRunRequest(
@@ -941,7 +805,7 @@ class CopilotPolicyRenderTests:
         }
         with_invocation = policy not in {"restrictive-without-control-path", "scratch-without-context"}
         runner = FakeAgentRunner().returning(stdout=_OK_STREAM)
-        monkeypatch.setattr("dovo.core.agents.copilot.stream_isolated_process", runner)
+        monkeypatch.setattr("dovo.core.agents.cli_mutation.stream_isolated_process", runner)
         builder = AgentRequestBuilder().with_worktree_path(git_repo).with_tools(policies[policy])
         if with_invocation:
             builder = builder.with_invocation(_real_invocation(tmp_path))
@@ -958,7 +822,7 @@ class CopilotPolicyRenderTests:
         """[tier-1/unit] default_copilot_run: gh exits nonzero with stderr 'unknown option --disallow-temp-dir' -> CliMutationOutcome(status='error') naming the update fix; FakeAgentRunner.calls has length 1 and no allow-all flag."""
         invocation = _real_invocation(tmp_path)
         runner = FakeAgentRunner().returning(returncode=1, stderr=b"error: unknown option '--disallow-temp-dir'")
-        monkeypatch.setattr("dovo.core.agents.copilot.stream_isolated_process", runner)
+        monkeypatch.setattr("dovo.core.agents.cli_mutation.stream_isolated_process", runner)
 
         outcome = default_copilot_run(
             CliMutationRunRequest(
@@ -983,7 +847,7 @@ class CopilotPolicyRenderTests:
     ) -> None:
         """[tier-1/unit] default_copilot_run: a policy with no grants returns the unsupported error outcome and never spawns gh."""
         runner = FakeAgentRunner().returning(stdout=_OK_STREAM)
-        monkeypatch.setattr("dovo.core.agents.copilot.stream_isolated_process", runner)
+        monkeypatch.setattr("dovo.core.agents.cli_mutation.stream_isolated_process", runner)
 
         outcome = default_copilot_run(
             CliMutationRunRequest(
@@ -1170,7 +1034,7 @@ class CopilotMcpUnsupportedTests:
         mcp_policy, loaded = cases[policy]
         _patch_user_mcp(monkeypatch, loaded)
         runner = FakeAgentRunner().returning(stdout=_OK_STREAM)
-        monkeypatch.setattr("dovo.core.agents.copilot.stream_isolated_process", runner)
+        monkeypatch.setattr("dovo.core.agents.cli_mutation.stream_isolated_process", runner)
         request = (
             AgentRequestBuilder()
             .with_worktree_path(git_repo)
@@ -1191,7 +1055,7 @@ class CopilotMcpUnsupportedTests:
         """[tier-1/unit] default_copilot_run: allow_all=True + an MCP deny with no pattern returns the unsupported error outcome and never spawns gh."""
         _patch_user_mcp(monkeypatch, None)
         runner = FakeAgentRunner().returning(stdout=_OK_STREAM)
-        monkeypatch.setattr("dovo.core.agents.copilot.stream_isolated_process", runner)
+        monkeypatch.setattr("dovo.core.agents.cli_mutation.stream_isolated_process", runner)
 
         outcome = default_copilot_run(
             CliMutationRunRequest(

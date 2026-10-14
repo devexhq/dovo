@@ -85,6 +85,38 @@ class FakeAgentRunner:
         return self.calls[-1]
 
 
+class StreamingAgentRunner:
+    """Typed stand-in for stream_isolated_process that replays canned lines through the stream callbacks it receives."""
+
+    def __init__(self, *, stdout_lines: list[str], stderr_lines: list[str], completed_stdout: bytes) -> None:
+        self._stdout_lines = stdout_lines
+        self._stderr_lines = stderr_lines
+        self._completed_stdout = completed_stdout
+        self.received_stdout_callback: Callable[[str], None] | None = None
+        self.received_stderr_callback: Callable[[str], None] | None = None
+
+    def __call__(
+        self,
+        cmd: list[str],
+        *,
+        cwd: Path,
+        env: dict[str, str],
+        input_data: bytes,
+        timeout_seconds: float,
+        on_stdout_line: Callable[[str], None] | None = None,
+        on_stderr_line: Callable[[str], None] | None = None,
+    ) -> subprocess.CompletedProcess[bytes]:
+        self.received_stdout_callback = on_stdout_line
+        self.received_stderr_callback = on_stderr_line
+        if on_stdout_line is not None:
+            for line in self._stdout_lines:
+                on_stdout_line(line)
+        if on_stderr_line is not None:
+            for line in self._stderr_lines:
+                on_stderr_line(line)
+        return subprocess.CompletedProcess(args=cmd, returncode=0, stdout=self._completed_stdout, stderr=b"")
+
+
 class FakeAgentProvider(BaseAgentProvider):
     """Provider double returning queued responses and recording every AgentRequest it receives."""
 

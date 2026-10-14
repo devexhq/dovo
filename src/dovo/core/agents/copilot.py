@@ -4,19 +4,19 @@ from __future__ import annotations
 
 import json
 import os
-import subprocess
-from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from dovo.common.process import stream_isolated_process
 from dovo.common.tool_policy import ToolCapability, ToolPolicy, ToolRule
 from dovo.core.agents.base import ProviderSpec
 from dovo.core.agents.cli_mutation import (
     CliDirectMutationAdapter,
     CliMutationOutcome,
     CliMutationRunRequest,
+    decode_output,
+    run_cli_process,
+    unknown_option_detail,
 )
 from dovo.core.agents.credentials import missing_credential_error, resolve_credential
 from dovo.core.agents.models import AgentDenial, AgentInvocationContext, AgentRequest
@@ -185,8 +185,9 @@ def _parse_jsonl(stdout_text: str) -> tuple[str | None, int | None, str | None, 
 def _classify_copilot_output(completed_code: int, stdout_text: str, stderr_text: str) -> CliMutationOutcome:
     """Classify CLI process exit code and output text into a CliMutationOutcome."""
     if completed_code != 0:
-        if "unknown option" in stderr_text.lower():
-            return CliMutationOutcome(status="error", error_detail=_UPDATE_REQUIRED_DETAIL)
+        update_detail = unknown_option_detail(stderr_text, _UPDATE_REQUIRED_DETAIL)
+        if update_detail is not None:
+            return CliMutationOutcome(status="error", error_detail=update_detail)
 
         detail = stderr_text.strip() or stdout_text.strip() or f"exit {completed_code}"
         return CliMutationOutcome(status="error", error_detail=detail)
@@ -518,40 +519,6 @@ def _render_for_request(
     return render_copilot_policy(policy, roots, user_mcp)
 
 
-def _line_forwarder(stream_name: str, on_line: Callable[[str, str], None] | None) -> Callable[[str], None] | None:
-    """Return a callback that passes each line to on_line tagged with stream_name, or None when on_line is None."""
-    if on_line is None:
-        return None
-
-    def forward(line: str) -> None:
-        on_line(stream_name, line)
-
-    return forward
-
-
-def _stdout_forwarder(request: CliMutationRunRequest) -> Callable[[str], None] | None:
-    """Return the stdout line callback that tags each line for on_line and maps it into on_progress, or None when neither is set.
-
-    Mapper and on_progress failures are dropped so a bad line never kills the stream reader.
-    """
-    on_progress = request.on_progress
-    forward_line = _line_forwarder("stdout", request.on_line)
-    if on_progress is None:
-        return forward_line
-
-    def forward(line: str) -> None:
-        if forward_line is not None:
-            forward_line(line)
-
-        try:
-            for progress in map_copilot_line(line, worktree_path=request.worktree_path):
-                on_progress(progress)
-        except Exception:
-            return
-
-    return forward
-
-
 def default_copilot_run(request: CliMutationRunRequest) -> CliMutationOutcome:
     """Invoke `gh copilot` with request.env plus the adapter-owned COPILOT_MODEL and map its JSONL stream into an outcome."""
     token = resolve_copilot_token()
@@ -570,30 +537,19 @@ def default_copilot_run(request: CliMutationRunRequest) -> CliMutationOutcome:
     if request.model:
         env["COPILOT_MODEL"] = request.model
 
-    try:
-        completed = stream_isolated_process(
-            cmd,
-            cwd=request.worktree_path,
-            env=env,
-            input_data=request.prompt.encode("utf-8"),
-            timeout_seconds=request.timeout_seconds,
-            on_stdout_line=_stdout_forwarder(request),
-            on_stderr_line=_line_forwarder("stderr", request.on_line),
-        )
-    except subprocess.TimeoutExpired:
-        return CliMutationOutcome(status="timeout")
-    except FileNotFoundError as exc:
-        return CliMutationOutcome(
-            status="error",
-            error_detail=(
-                f"gh is not installed or not on PATH: {exc}. Fix: install the GitHub CLI (https://cli.github.com)"
-            ),
-        )
-    except OSError as exc:
-        return CliMutationOutcome(status="error", error_detail=str(exc))
+    completed = run_cli_process(
+        cmd,
+        request,
+        env=env,
+        binary="gh",
+        install_hint="install the GitHub CLI (https://cli.github.com)",
+        mapper=map_copilot_line,
+    )
+    if isinstance(completed, CliMutationOutcome):
+        return completed
 
-    stdout_text = (completed.stdout or b"").decode("utf-8", errors="replace")
-    stderr_text = (completed.stderr or b"").decode("utf-8", errors="replace")
+    stdout_text, stderr_text = decode_output(completed)
+
     return _classify_copilot_output(int(completed.returncode), stdout_text, stderr_text)
 
 
