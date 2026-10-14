@@ -33,6 +33,7 @@ Direct-mutation adapter registered for Claude Code; the invocation itself has no
 | `status=provider_error`, `"invalid stream-json from Claude Code"` | A stdout line was not a JSON object | Check the installed `claude` version |
 | `status=provider_error`, `"Claude Code stream ended without a result"` or `"... (exit <code>)"` | The stream was cut off before a result, with exit 0 or with the shown non-zero exit code | Re-run the step |
 | `status=provider_error`, `"Claude Code result error (<subtype>)"` | Claude Code reported an error result, such as a bad model or an API failure | Read the quoted result text after the colon |
+| `status=blocked`, `AGENT_PERMISSION_BLOCKED` | Claude Code denied a tool call, shown by the terminal result's `permission_denials` array or a `user` `tool_result` with `is_error` true whose text starts `Permission to use <tool> has been denied`, and the worktree diff is empty | Follow the fix text: add the capability under the step's `tools` (or `agent.tools` in `.dovo/config.json`), or remove or narrow the deny rule it names |
 | `status=provider_error`, `"unsupported Claude Code result status"` | The result subtype is not one Dovo recognizes | Upgrade Dovo or Claude Code |
 | `status=provider_error`, `"Installed Claude Code lacks a required flag"` | Claude Code is too old for a flag Dovo passes | Run `claude update` or reinstall Claude Code |
 | `status=provider_error`, `"exit <code>"` | Non-zero exit with no output to quote | Run `claude` directly in the worktree |

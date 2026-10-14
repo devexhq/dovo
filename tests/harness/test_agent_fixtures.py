@@ -26,6 +26,7 @@ _CLAUDE_SCENARIOS = [
     "implementing_create",
     "implementing_edit",
     "permission_denied",
+    "permission_denied_by_rule",
     "tool_failure",
     "provider_error",
 ]
