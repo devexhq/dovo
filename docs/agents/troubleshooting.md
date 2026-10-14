@@ -23,13 +23,19 @@ Direct-mutation adapter shelling out to GitHub CLI `gh copilot`.
 
 ## 2. Claude Code (`claude`)
 
-**Relevant sources:** [`src/dovo/core/agents/claude.py`](../../src/dovo/core/agents/claude.py)
-Direct-mutation adapter registered for Claude Code; the invocation itself has not landed.
+**Relevant sources:** [`src/dovo/core/agents/claude.py`](../../src/dovo/core/agents/claude.py), [`src/dovo/core/agents/claude_stream.py`](../../src/dovo/core/agents/claude_stream.py)
+Direct-mutation adapter registered for Claude Code; the invocation itself has not landed. The stream-json rows below are produced once the invocation slice wires in the classifier.
 
 | Symptom | Cause | Resolution |
 |:---|:---|:---|
 | `status=provider_error`, `"missing ANTHROPIC_API_KEY"` | Key not set or blank | Export `ANTHROPIC_API_KEY=...` |
 | `status=provider_error`, `"Claude Code invocation is not available"` | Registration only; the invocation slice has not landed | None yet; use another provider |
+| `status=provider_error`, `"invalid stream-json from Claude Code"` | A stdout line was not a JSON object | Check the installed `claude` version |
+| `status=provider_error`, `"Claude Code stream ended without a result"` or `"... (exit <code>)"` | The stream was cut off before a result, with exit 0 or with the shown non-zero exit code | Re-run the step |
+| `status=provider_error`, `"Claude Code result error (<subtype>)"` | Claude Code reported an error result, such as a bad model or an API failure | Read the quoted result text after the colon |
+| `status=provider_error`, `"unsupported Claude Code result status"` | The result subtype is not one Dovo recognizes | Upgrade Dovo or Claude Code |
+| `status=provider_error`, `"Installed Claude Code lacks a required flag"` | Claude Code is too old for a flag Dovo passes | Run `claude update` or reinstall Claude Code |
+| `status=provider_error`, `"exit <code>"` | Non-zero exit with no output to quote | Run `claude` directly in the worktree |
 
 ---
 
