@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
-import importlib.util
 import os
-from datetime import UTC
+import subprocess
+import sys
+from collections.abc import Generator
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -37,6 +39,19 @@ def _kill_reports_no_such_process(monkeypatch: pytest.MonkeyPatch) -> None:
         raise ProcessLookupError
 
     monkeypatch.setattr("dovo.core.sessions.services.reconcile.os.kill", _kill)
+
+
+@pytest.fixture
+def child_process() -> Generator[subprocess.Popen[bytes]]:
+    """Live child process that is terminated and reaped at teardown."""
+    child = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"])
+    yield child
+    child.terminate()
+    try:
+        child.wait(timeout=10)
+    except subprocess.TimeoutExpired:
+        child.kill()
+        child.wait()
 
 
 class IsPidAliveTests:
@@ -73,16 +88,25 @@ class GetProcessStartTimeTests:
         """[tier-1/unit] get_process_start_time: pid 0 returns None."""
         assert get_process_start_time(0) is None
 
-    @pytest.mark.skipif(
-        importlib.util.find_spec("psutil") is None and not Path("/proc").is_dir(),
-        reason="start time needs psutil or /proc",
-    )
-    def test_current_pid_returns_timezone_aware_utc_datetime(self) -> None:
-        """[tier-1/unit] get_process_start_time: os.getpid() returns a datetime with tzinfo == UTC."""
-        started = get_process_start_time(os.getpid())
+    def test_live_child_start_time_is_utc_between_test_process_start_and_now(
+        self, child_process: subprocess.Popen[bytes]
+    ) -> None:
+        """[tier-1/unit] get_process_start_time: live child pid returns tzinfo == UTC with get_process_start_time(os.getpid()) <= result <= datetime.now(UTC)."""
+        test_process_start = get_process_start_time(os.getpid())
 
-        assert started is not None
-        assert started.tzinfo == UTC
+        child_start = get_process_start_time(child_process.pid)
+
+        assert test_process_start is not None
+        assert child_start is not None
+        assert child_start.tzinfo == UTC
+        assert test_process_start <= child_start <= datetime.now(UTC)
+
+    def test_reaped_child_pid_returns_none(self, child_process: subprocess.Popen[bytes]) -> None:
+        """[tier-1/unit] get_process_start_time: pid of a terminated and waited child returns None (psutil.NoSuchProcess)."""
+        child_process.terminate()
+        child_process.wait(timeout=10)
+
+        assert get_process_start_time(child_process.pid) is None
 
 
 class IsRunStaleTests:
@@ -104,18 +128,35 @@ class IsRunStaleTests:
 
         assert is_run_stale(run) is True
 
-    def test_live_current_pid_started_now_is_not_stale(self, isolated_workspace: Path) -> None:
-        """[tier-1/integration] is_run_stale: RUNNING row owned by os.getpid() with started_at now returns False."""
+    @pytest.mark.parametrize(
+        ("session_offset_seconds", "expected"),
+        [
+            pytest.param(10, False, id="session-after-process"),
+            pytest.param(-10, True, id="session-before-process"),
+        ],
+    )
+    def test_running_child_is_stale_only_when_process_started_after_session_start(
+        self,
+        isolated_workspace: Path,
+        child_process: subprocess.Popen[bytes],
+        session_offset_seconds: int,
+        expected: bool,
+    ) -> None:
+        """[tier-1/integration] is_run_stale: RUNNING row for a live child with started_at = child start +10s returns False; with started_at = child start -10s returns True."""
+        child_start = get_process_start_time(child_process.pid)
+        assert child_start is not None
+        started_at = (child_start + timedelta(seconds=session_offset_seconds)).strftime("%Y-%m-%d %H:%M:%S")
+        run = _sessions_for(isolated_workspace).create("session-1", "blueprint", "blueprint", pid=child_process.pid)
+        run = run.model_copy(update={"started_at": started_at})
+
+        assert is_run_stale(run) is expected
+
+    def test_unparseable_started_at_with_live_pid_is_not_stale(self, isolated_workspace: Path) -> None:
+        """[tier-1/integration] is_run_stale: RUNNING row owned by os.getpid() with started_at 'not-a-timestamp' returns False."""
         run = _sessions_for(isolated_workspace).create("session-1", "blueprint", "blueprint", pid=os.getpid())
+        run = run.model_copy(update={"started_at": "not-a-timestamp"})
 
         assert is_run_stale(run) is False
-
-    def test_live_pid_started_before_process_start_is_stale_as_reused(self, isolated_workspace: Path) -> None:
-        """[tier-1/integration] is_run_stale: RUNNING row owned by os.getpid() with started_at '2000-01-01 00:00:00' returns True (pid reused)."""
-        run = _sessions_for(isolated_workspace).create("session-1", "blueprint", "blueprint", pid=os.getpid())
-        run = run.model_copy(update={"started_at": "2000-01-01 00:00:00"})
-
-        assert is_run_stale(run) is True
 
 
 class FormatReconciliationWarningTests:

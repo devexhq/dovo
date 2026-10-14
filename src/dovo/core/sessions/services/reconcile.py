@@ -6,6 +6,8 @@ import os
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
+import psutil
+
 from dovo.common.filesystem.models import RepositoryPaths
 from dovo.common.lock import WorkspaceLock
 from dovo.core.db import SessionRecord, SessionsRepository, SessionStatus
@@ -31,28 +33,14 @@ def is_pid_alive(pid: int) -> bool:
 
 
 def get_process_start_time(pid: int) -> datetime | None:
-    """Retrieve UTC creation/start timestamp of process with pid if accessible."""
+    """Return the UTC creation time of process pid, or None when it cannot be read."""
     if pid <= 0:
         return None
 
     try:
-        import importlib
-
-        psutil_mod = importlib.import_module("psutil")
-        proc = psutil_mod.Process(pid)
-        return datetime.fromtimestamp(proc.create_time(), tz=UTC)
-    except Exception:
-        pass
-
-    proc_dir = Path(f"/proc/{pid}")
-    if proc_dir.is_dir():
-        try:
-            stat_info = proc_dir.stat()
-            return datetime.fromtimestamp(stat_info.st_ctime, tz=UTC)
-        except OSError:
-            return None
-
-    return None
+        return datetime.fromtimestamp(psutil.Process(pid).create_time(), tz=UTC)
+    except psutil.Error:
+        return None
 
 
 def _parse_timestamp(timestamp_str: str) -> datetime | None:
