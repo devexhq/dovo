@@ -33,6 +33,8 @@ _BARE_PERMISSIONS: Final = {
 }
 _SHELL_PREFIX_SUFFIX: Final = " *"
 _NETWORK_WILDCARD_PREFIX: Final = "*."
+_EMPTY_MCP_FLAGS: Final = ("--strict-mcp-config", "--mcp-config", '{"mcpServers":{}}')
+_MCP_WILDCARD: Final = "*"
 
 
 def _rule_root(rule: ToolRule, roots: PolicyRoots) -> Path | None:
@@ -69,10 +71,33 @@ def _path_rule_error(rule: ToolRule, roots: PolicyRoots) -> str | None:
     return None
 
 
-def _rule_error(rule: ToolRule, roots: PolicyRoots) -> str | None:
+def _mcp_permission(pattern: str) -> str:
+    """Return 'mcp__<server>__<tool>' for 'server/tool' and 'mcp__<server>' for 'server/*'."""
+    server, tool = pattern.split("/", 1)
+    if tool == _MCP_WILDCARD:
+        return f"mcp__{server}"
+
+    return f"mcp__{server}__{tool}"
+
+
+def _mcp_rule_error(rule: ToolRule, *, deny: bool) -> str | None:
+    """Return why an mcp rule cannot be preserved: every allow, a deny with no pattern, or a deny pattern containing a comma."""
+    if not deny:
+        return "mcp allow rules cannot be preserved because Claude Code runs without user MCP servers"
+
+    if rule.pattern is None:
+        return "an mcp deny rule must name a server"
+
+    if "," in rule.pattern:
+        return f"mcp pattern {rule.pattern!r} contains a comma and cannot be preserved for Claude Code"
+
+    return None
+
+
+def _rule_error(rule: ToolRule, roots: PolicyRoots, *, deny: bool) -> str | None:
     """Return why rule cannot be preserved for Claude Code, or None."""
     if rule.capability == ToolCapability.MCP:
-        return "mcp rules cannot be preserved for Claude Code"
+        return _mcp_rule_error(rule, deny=deny)
 
     if rule.capability in _PATH_CAPABILITIES:
         return _path_rule_error(rule, roots)
@@ -85,6 +110,9 @@ def _rule_error(rule: ToolRule, roots: PolicyRoots) -> str | None:
 
 def _rule_permission(rule: ToolRule, roots: PolicyRoots) -> str:
     """Return the Claude permission string for a rule that passed _rule_error."""
+    if rule.capability == ToolCapability.MCP and rule.pattern is not None:
+        return _mcp_permission(rule.pattern)
+
     bare = _BARE_PERMISSIONS[rule.capability]
     if rule.capability in _PATH_CAPABILITIES and (root := _rule_root(rule, roots)) is not None:
         return f"{bare}({_path_spec(root, rule.pattern)})"
@@ -101,10 +129,10 @@ def _rule_permission(rule: ToolRule, roots: PolicyRoots) -> str:
     return f"{bare}({rule.pattern})"
 
 
-def _first_error(rules: list[ToolRule], roots: PolicyRoots) -> str | None:
+def _first_error(rules: list[ToolRule], roots: PolicyRoots, *, deny: bool) -> str | None:
     """Return the first _rule_error across rules, or None."""
     for rule in rules:
-        error = _rule_error(rule, roots)
+        error = _rule_error(rule, roots, deny=deny)
         if error is not None:
             return error
 
@@ -138,8 +166,8 @@ def _scratch_flags(policy: ToolPolicy, roots: PolicyRoots) -> list[str]:
 def _flags(
     mode: str, tools: list[str] | None, allowed: list[str], denied: list[str], add_dirs: list[str]
 ) -> ClaudePolicyArgs:
-    """Assemble the flag tuple; --tools is emitted whenever tools is not None, the lists only when non-empty, add_dirs last."""
-    flags = ["--permission-mode", mode]
+    """Assemble the flag tuple: mode, the empty MCP set, then --tools when not None, the lists only when non-empty, add_dirs last."""
+    flags = ["--permission-mode", mode, *_EMPTY_MCP_FLAGS]
     if tools is not None:
         flags += ["--tools", ",".join(tools)]
 
@@ -155,9 +183,9 @@ def _flags(
 def _render_allow_all(policy: ToolPolicy, roots: PolicyRoots) -> ClaudePolicyArgs | str:
     """Return bypassPermissions without denies, else dontAsk with every built-in granted and the denies rendered."""
     if not policy.deny:
-        return ClaudePolicyArgs(flags=("--permission-mode", "bypassPermissions"))
+        return _flags("bypassPermissions", None, [], [], [])
 
-    error = _first_error(policy.deny, roots)
+    error = _first_error(policy.deny, roots, deny=True)
     if error is not None:
         return error
 
@@ -169,7 +197,7 @@ def _render_allow_all(policy: ToolPolicy, roots: PolicyRoots) -> ClaudePolicyArg
 
 def _render_restricted(policy: ToolPolicy, roots: PolicyRoots) -> ClaudePolicyArgs | str:
     """Return dontAsk flags for the allow and deny rules, or why a rule cannot be preserved."""
-    error = _first_error(policy.allow, roots) or _first_error(policy.deny, roots)
+    error = _first_error(policy.allow, roots, deny=False) or _first_error(policy.deny, roots, deny=True)
     if error is not None:
         return error
 

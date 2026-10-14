@@ -111,8 +111,9 @@ The seeded `dovo/ai-planner`, `dovo/ai-reviewer` and `dovo/ai-code-patcher` step
 ### Claude Code behavior
 
 - Claude Code invocation is not yet available (see [Supported Providers](#supported-providers)). Until it is, only the tool policy check runs.
-- These policies are rejected with `AGENT_TOOL_POLICY_UNSUPPORTED`: any `mcp` rule, a `*.host` network pattern in an `allow` or `deny`, a read or write pattern that escapes its root, a read or write path containing a comma, and a scratch rule without an invocation.
+- These policies are rejected with `AGENT_TOOL_POLICY_UNSUPPORTED`: an `mcp` allow rule, an `mcp` deny rule without a pattern, an `mcp` deny pattern containing a comma, a `*.host` network pattern in an `allow` or `deny`, a read or write pattern that escapes its root, a read or write path containing a comma, and a scratch rule without an invocation.
 - `read` and `write` rules accept the `worktree` and `scratch` roots, glob patterns, and both `allow` and `deny`. They are rendered as `Read(//<root>/<pattern>)` and `Edit(//<root>/<pattern>)`, anchored to the root's absolute path; an absent pattern is `**`. A `scratch` allow adds the attempt's scratch directory. `shell` and `network` rules are accepted, including the default policy. Under `allow_all: true`, `allow` rules are not checked; `deny` rules are. With `allow_all: true` and `deny` rules, the attempt's scratch directory is not added.
+- Claude Code runs with no MCP servers: user, project and plugin servers are not loaded, including under `allow_all`. `mcp` `deny` rules `server/tool` and `server/*` are still enforced.
 - A `deny` rule always wins over an `allow` rule.
 - Shell `allow` rules are not exclusive: Claude Code runs a built-in set of read-only commands such as `ls` and `grep` without a grant. Shell `deny` rules are enforced.
 
