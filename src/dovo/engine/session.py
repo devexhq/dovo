@@ -12,6 +12,7 @@ from dovo.core.db import SessionRecord, SessionsRepository, SessionStatus
 from dovo.core.sessions import SessionLogEvent, SessionLogEventType
 from dovo.core.worktree import Worktree, WorktreeSession
 from dovo.engine.coordinator import RunCoordinator
+from dovo.engine.executors.session_log import append_session_log_event
 from dovo.engine.models import (
     AgentSettingsResolution,
     FailurePrompter,
@@ -22,7 +23,6 @@ from dovo.engine.models import (
     RunSettings,
 )
 from dovo.engine.notify import safe_notify
-from dovo.engine.session_log import append_session_log_event
 from dovo.engine.state_store import SessionStateStore
 from dovo.engine.workspace import Workspace
 

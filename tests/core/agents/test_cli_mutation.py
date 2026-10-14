@@ -10,7 +10,13 @@ from typing import Literal
 
 import pytest
 
-from dovo.core.agents import AgentInvocationContext, AgentRequest, AgentResponseStatus, default_tool_policy
+from dovo.core.agents import (
+    AgentInvocationContext,
+    AgentProgress,
+    AgentRequest,
+    AgentResponseStatus,
+    default_tool_policy,
+)
 from dovo.core.agents.base import ProviderSpec
 from dovo.core.agents.cli_mutation import (
     CliDirectMutationAdapter,
@@ -268,6 +274,26 @@ class CliMutationOnLinePropagationTests:
         UnitTestAdapter(run_fn=_record).invoke(agent_request)
 
         assert [request.on_line for request in received] == [on_line if with_callback else None]
+
+    @pytest.mark.parametrize("with_callback", [pytest.param(True, id="with-callback"), pytest.param(False, id="none")])
+    def test_invoke_forwards_on_progress_to_the_runner_request(self, git_repo: Path, with_callback: bool) -> None:
+        """[tier-1/unit] CliDirectMutationAdapter._invoke: the CliMutationRunRequest passed to _default_run has on_progress equal to the AgentRequest's on_progress, and None when the request has none."""
+
+        def on_progress(progress: AgentProgress) -> None:
+            """Progress callback used only as a distinguishable callable value."""
+
+        received: list[CliMutationRunRequest] = []
+
+        def _record(request: CliMutationRunRequest) -> CliMutationOutcome:
+            received.append(request)
+            return CliMutationOutcome(status="finished")
+
+        builder = AgentRequestBuilder().with_worktree_path(git_repo)
+        agent_request = builder.build().model_copy(update={"on_progress": on_progress if with_callback else None})
+
+        UnitTestAdapter(run_fn=_record).invoke(agent_request)
+
+        assert [request.on_progress for request in received] == [on_progress if with_callback else None]
 
 
 class ScratchDiffIsolationTests:

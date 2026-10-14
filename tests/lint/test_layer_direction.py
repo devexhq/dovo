@@ -53,7 +53,6 @@ LAYER_EXCEPTIONS: Final[frozenset[tuple[str, str]]] = frozenset(
     {
         # Annotation-only import under TYPE_CHECKING in common/filesystem/models.py.
         ("src/dovo/common/filesystem/models.py", "dovo.core.catalog.models"),
-        ("src/dovo/engine/executors/agent_step.py", "dovo.engine.session_log"),
     }
 )
 

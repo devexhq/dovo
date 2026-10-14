@@ -17,7 +17,7 @@ from typing import Self
 
 from pydantic import BaseModel
 
-from dovo.core.agents import AgentRequest, AgentResponse, BaseAgentProvider
+from dovo.core.agents import AgentProgress, AgentRequest, AgentResponse, BaseAgentProvider
 
 
 class FakeAgentRunnerCall(BaseModel):
@@ -107,3 +107,19 @@ class FakeAgentProvider(BaseAgentProvider):
             self._on_call(request)
         index = min(len(self._requests), len(self._responses)) - 1
         return self._responses[index]
+
+
+class RecordingProgressSink:
+    """AgentProgressSink double recording every reported item and answering a scripted quiet window."""
+
+    def __init__(self, seconds_since_last_report: float | None = None) -> None:
+        self.reported: list[AgentProgress] = []
+        self._seconds_since_last_report = seconds_since_last_report
+
+    def report(self, progress: AgentProgress) -> None:
+        """Record one progress item."""
+        self.reported.append(progress)
+
+    def seconds_since_last_report(self) -> float | None:
+        """Return the scripted quiet window."""
+        return self._seconds_since_last_report

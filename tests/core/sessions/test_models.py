@@ -59,6 +59,17 @@ class SessionLogEventContractTests:
         assert restored.details() == {"step_id": "s", "env_withheld": "A,B"}
 
 
+class SessionLogEventProgressTests:
+    def test_agent_progress_event_round_trips_and_details_lists_kind_and_target(self) -> None:
+        """[tier-1/unit] SessionLogEvent: event 'agent_progress' with step_id 's', kind 'edit' and target 'a.txt' round-trips JSON and details() == {'step_id': 's', 'kind': 'edit', 'target': 'a.txt'}."""
+        event = SessionLogEvent(event=SessionLogEventType.AGENT_PROGRESS, step_id="s", kind="edit", target="a.txt")
+
+        restored = SessionLogEvent.model_validate_json(event.model_dump_json())
+
+        assert restored == event
+        assert restored.details() == {"step_id": "s", "kind": "edit", "target": "a.txt"}
+
+
 class HistoryListResultTests:
     """[tier-1/unit] HistoryListResult: envelope defaults and ok semantics."""
 

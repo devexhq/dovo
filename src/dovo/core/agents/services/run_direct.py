@@ -67,6 +67,7 @@ def _build_request(
         env=dict(context.env),
         metadata_env=dict(context.metadata_env),
         on_line=context.on_line,
+        on_progress=context.on_progress,
     )
 
 

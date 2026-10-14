@@ -24,13 +24,14 @@ from dovo.core.catalog.definitions import StepDefinition
 from dovo.core.sessions import SessionLogEvent, SessionLogEventType
 from dovo.engine.executors.metadata import metadata_to_env
 from dovo.engine.executors.models import (
+    AgentProgressSink,
     AgentStepRunner,
     AgentStepSummary,
     ExecutionMetadata,
     OutputCallback,
     StepDispatchOutcome,
 )
-from dovo.engine.session_log import append_session_log_event
+from dovo.engine.executors.session_log import append_session_log_event
 
 WORKTREE_REQUIRED_MESSAGE = (
     "Agent steps require an active git worktree.\nFix: remove --no-worktree and run the blueprint with a worktree."
@@ -68,6 +69,7 @@ def execute_agent_step(
     metadata: ExecutionMetadata,
     on_output: OutputCallback | None,
     on_agent_line: OutputCallback | None,
+    progress: AgentProgressSink,
 ) -> StepDispatchOutcome:
     """Run one agent attempt through its resolved provider and return the classified dispatch outcome."""
     if not worktree_active:
@@ -93,6 +95,7 @@ def execute_agent_step(
     attempt = _run_with_heartbeat(
         step.id,
         on_output,
+        progress,
         lambda: run_direct_attempt(
             instruction=step.prompt or "",
             settings=agent,
@@ -108,6 +111,7 @@ def execute_agent_step(
                     session_dir, step.id, metadata.step.attempt, metadata.loop_iteration
                 ),
                 on_line=on_agent_line,
+                on_progress=progress.report,
             ),
         ),
     )
@@ -132,6 +136,7 @@ def build_agent_step_runner(
         worktree_path: Path,
         on_output: OutputCallback | None,
         on_agent_line: OutputCallback | None,
+        progress: AgentProgressSink,
         metadata: ExecutionMetadata,
     ) -> StepDispatchOutcome:
         return execute_agent_step(
@@ -146,20 +151,25 @@ def build_agent_step_runner(
             metadata=metadata,
             on_output=on_output,
             on_agent_line=on_agent_line,
+            progress=progress,
         )
 
     return _run
 
 
 def _run_with_heartbeat(
-    step_id: str, on_output: OutputCallback | None, run_attempt: Callable[[], AgentAttempt]
+    step_id: str, on_output: OutputCallback | None, progress: AgentProgressSink, run_attempt: Callable[[], AgentAttempt]
 ) -> AgentAttempt:
-    """Run the attempt while a heartbeat thread reports elapsed whole seconds every interval, and stop and join it before returning."""
+    """Run the attempt while a heartbeat thread reports elapsed whole seconds every interval it has seen no progress, and stop and join it before returning."""
     started = monotonic()
     completed = threading.Event()
 
     def _beat() -> None:
         while not completed.wait(AGENT_HEARTBEAT_INTERVAL_SECONDS):
+            quiet_seconds = progress.seconds_since_last_report()
+            if quiet_seconds is not None and quiet_seconds < AGENT_HEARTBEAT_INTERVAL_SECONDS:
+                continue
+
             _emit_output(on_output, "stdout", f"[{step_id}] agent running ({int(monotonic() - started)}s)\n")
 
     heartbeat = threading.Thread(target=_beat, name=f"agent-heartbeat-{step_id}", daemon=True)

@@ -6,7 +6,7 @@ from pydantic import BaseModel, Field
 
 from dovo.common.filesystem import WorkspacePaths
 from dovo.common.models import BaseResult
-from dovo.core.agents.models import AgentResponseStatus
+from dovo.core.agents.models import AgentProgress, AgentResponseStatus
 from dovo.core.artifacts.store import ArtifactStore
 from dovo.core.catalog.definitions import StepDefinition
 from dovo.core.interaction import InteractionRequest
@@ -129,8 +129,23 @@ class StepPostcondition(Protocol):
 
 
 OutputCallback = Callable[[str, str], None]
+
+
+class AgentProgressSink(Protocol):
+    """Receives provider progress and tells the heartbeat how recently some arrived."""
+
+    def report(self, progress: AgentProgress) -> None:
+        """Record one progress item."""
+        ...
+
+    def seconds_since_last_report(self) -> float | None:
+        """Return whole seconds since the last item, or None when none has arrived."""
+        ...
+
+
 AgentStepRunner = Callable[
-    [StepDefinition, Path, OutputCallback | None, OutputCallback | None, ExecutionMetadata], StepDispatchOutcome
+    [StepDefinition, Path, OutputCallback | None, OutputCallback | None, AgentProgressSink, ExecutionMetadata],
+    StepDispatchOutcome,
 ]
 
 
@@ -153,6 +168,7 @@ class StepExecutionContext(BaseModel):
     session_log_dir: Path | None = None
     save_attempt_logs: bool = True
     loop_iteration: int | None = None
+    loop_id: str | None = None
     session_id: str | None = None
     artifact_store: ArtifactStore | None = None
     paths: WorkspacePaths | None = None

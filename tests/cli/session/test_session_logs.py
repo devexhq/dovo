@@ -131,6 +131,8 @@ class SessionLogsCliIntegrationTests:
                         "all_passed": None,
                         "next_iteration": None,
                         "env_withheld": None,
+                        "kind": None,
+                        "target": None,
                         "conditions": None,
                     },
                     {
@@ -151,6 +153,8 @@ class SessionLogsCliIntegrationTests:
                         "all_passed": None,
                         "next_iteration": None,
                         "env_withheld": None,
+                        "kind": None,
+                        "target": None,
                         "conditions": None,
                     },
                 ],

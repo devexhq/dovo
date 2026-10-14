@@ -7,7 +7,7 @@ from tests.harness.builders import (
     WorkspaceBuilder,
 )
 from tests.harness.diffs import AGENT_ADAPTER_FACTORY, new_file_diff
-from tests.harness.fakes import FakeAgentProvider, FakeAgentRunner, FakeAgentRunnerCall
+from tests.harness.fakes import FakeAgentProvider, FakeAgentRunner, FakeAgentRunnerCall, RecordingProgressSink
 from tests.harness.formatter import (
     FormatterCase,
     assert_json_payload_matches_published_shape,
@@ -25,6 +25,7 @@ __all__ = [
     "FakeAgentRunner",
     "FakeAgentRunnerCall",
     "FormatterCase",
+    "RecordingProgressSink",
     "StepBuilder",
     "WorkspaceBuilder",
     "assert_json_payload_matches_published_shape",

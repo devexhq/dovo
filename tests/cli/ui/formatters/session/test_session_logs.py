@@ -94,6 +94,8 @@ LOGS_SHOW_PAYLOAD_CASES = [
                     "all_passed": None,
                     "next_iteration": None,
                     "env_withheld": None,
+                    "kind": None,
+                    "target": None,
                     "conditions": None,
                 }
             ],
@@ -134,3 +136,22 @@ class SessionLogsFormatterTests:
     ) -> None:
         """SessionLogsFormatter.to_rich renders the case's view values at width 160."""
         assert_rich_render_shows_every_view_value(SessionLogsFormatter, case.data, case.render_expectations)
+
+
+class SessionLogsFormatterProgressTests:
+    def test_progress_event_row_shows_kind_and_target_in_details(self) -> None:
+        """[tier-1/unit] SessionLogsFormatter: a LogsShowResult holding an agent_progress event renders a row whose Event cell is 'agent_progress' and whose Details cell contains 'kind=edit target=a.txt'."""
+        event = SessionLogEvent(
+            ts="2026-09-26T10:00:00+00:00",
+            event=SessionLogEventType.AGENT_PROGRESS,
+            step_index=1,
+            step_id="code",
+            attempt=1,
+            kind="edit",
+            target="a.txt",
+        )
+        result = LogsShowResult(status=LogsShowStatus.OK, session_id="sess-1", events=[event])
+
+        assert_rich_render_shows_every_view_value(
+            SessionLogsFormatter, result, ["agent_progress", "kind=edit target=a.txt"]
+        )

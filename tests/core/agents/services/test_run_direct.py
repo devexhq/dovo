@@ -13,6 +13,7 @@ from dovo.core.agents import (
     AgentAttempt,
     AgentAttemptContext,
     AgentInvocationContext,
+    AgentProgress,
     AgentRequest,
     AgentResponse,
     AgentResponseStatus,
@@ -344,6 +345,21 @@ class RunDirectAttemptCallbackTests:
         _attempt(git_repo, context=AgentAttemptContext(on_line=on_line if with_callback else None))
 
         assert provider.requests[0].on_line is (on_line if with_callback else None)
+
+    @pytest.mark.parametrize("with_callback", [pytest.param(True, id="with-callback"), pytest.param(False, id="none")])
+    def test_request_carries_the_progress_callback_only_when_supplied(
+        self, git_repo: Path, monkeypatch: pytest.MonkeyPatch, with_callback: bool
+    ) -> None:
+        """[tier-1/unit] run_direct_attempt: the provider's AgentRequest.on_progress is the AgentAttemptContext.on_progress callable when supplied, and None when the context has none."""
+        provider = FakeAgentProvider(_no_op())
+        _use_provider(monkeypatch, provider)
+
+        def on_progress(progress: AgentProgress) -> None:
+            """Progress callback used only as a distinguishable callable value."""
+
+        _attempt(git_repo, context=AgentAttemptContext(on_progress=on_progress if with_callback else None))
+
+        assert provider.requests[0].on_progress is (on_progress if with_callback else None)
 
 
 class RunDirectAttemptEnvTests:

@@ -9,6 +9,7 @@ import pytest
 from dovo.common.filesystem import WorkspacePaths
 from dovo.core.catalog.definitions import StepDefinition
 from dovo.engine.executors.models import (
+    AgentProgressSink,
     ExecutionMetadata,
     OutputCallback,
     StepDispatchOutcome,
@@ -55,6 +56,7 @@ class StepExecutionRedactionTests:
             worktree: Path,
             on_output: OutputCallback | None,
             on_agent_line: OutputCallback | None,
+            progress: AgentProgressSink,
             metadata: ExecutionMetadata,
         ) -> StepDispatchOutcome:
             assert on_agent_line is not None

@@ -8,6 +8,7 @@ import pytest
 
 from dovo.core.catalog.definitions import StepDefinition
 from dovo.engine.executors.models import (
+    AgentProgressSink,
     AgentStepRunner,
     ExecutionMetadata,
     OutputCallback,
@@ -89,6 +90,7 @@ def _emitting_agent_runner(lines: list[tuple[str, str]], received: list[OutputCa
         worktree: Path,
         on_output: OutputCallback | None,
         on_agent_line: OutputCallback | None,
+        progress: AgentProgressSink,
         metadata: ExecutionMetadata,
     ) -> StepDispatchOutcome:
         received.append(on_agent_line)
