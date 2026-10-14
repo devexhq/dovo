@@ -5,14 +5,11 @@ from __future__ import annotations
 import shutil
 from typing import Final
 
-from dovo.core.config.models import AgentConfig, AgentProvider
+from dovo.core.agents.registry import PROVIDERS
+from dovo.core.config.models import AgentConfig
 from dovo.core.diagnostics.models import CheckCategory, CheckStatus, DiagnosticCheckResult, DiagnosticsContext
 
 REQUIRED_HOST_BINARIES: Final[tuple[str, ...]] = ("git",)
-
-PROVIDER_REQUIRED_BINARY: Final[dict[AgentProvider, str]] = {
-    "copilot": "gh",
-}
 
 
 class EnvBinariesCheck:
@@ -36,11 +33,11 @@ class EnvBinariesCheck:
 
 
 def _required_binaries(agent_config: AgentConfig) -> list[str]:
-    """Return the ordered list of binaries required for the host and the active provider."""
+    """Return the ordered binaries required for the host plus the registry-declared binary of the active provider."""
     required: list[str] = list(REQUIRED_HOST_BINARIES)
-    provider_binary = PROVIDER_REQUIRED_BINARY.get(agent_config.provider)
-    if provider_binary is not None:
-        required.append(provider_binary)
+    spec = PROVIDERS.get(agent_config.provider)
+    if spec is not None and spec.binary is not None:
+        required.append(spec.binary)
     return required
 
 
