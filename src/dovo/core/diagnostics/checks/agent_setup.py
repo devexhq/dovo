@@ -2,16 +2,10 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
-from typing import Final
-
-from dovo.core.agents.copilot import resolve_copilot_token
+from dovo.core.agents.credentials import resolve_credential
+from dovo.core.agents.registry import PROVIDERS
 from dovo.core.config.models import AgentConfig, AgentProvider
 from dovo.core.diagnostics.models import CheckCategory, CheckStatus, DiagnosticCheckResult, DiagnosticsContext
-
-PROVIDER_CREDENTIAL_RESOLVERS: Final[dict[AgentProvider, tuple[Callable[[], str | None], str]]] = {
-    "copilot": (resolve_copilot_token, "GH_TOKEN or GITHUB_TOKEN"),
-}
 
 
 class AgentSetupCheck:
@@ -35,15 +29,14 @@ class AgentSetupCheck:
         return _ok_result(self.check_id, self.name, self.category, agent_config.provider, agent_config.model)
 
 
-def _missing_credential_env(provider: AgentProvider) -> str | None:
-    """Return the missing required environment variable name for provider, or None when satisfied or unrequired."""
-    resolver_entry = PROVIDER_CREDENTIAL_RESOLVERS.get(provider)
-    if resolver_entry is None:
+def _missing_credential_env(provider: str) -> str | None:
+    """Return the ' or '-joined credential names when the registry declares credentials and none resolves, else None."""
+    spec = PROVIDERS.get(provider)
+    if spec is None or not spec.credential_envs:
         return None
 
-    resolver, env_name = resolver_entry
-    if resolver() is None:
-        return env_name
+    if resolve_credential(spec.credential_envs) is None:
+        return " or ".join(spec.credential_envs)
 
     return None
 

@@ -10,8 +10,9 @@ import pytest
 from typer.testing import CliRunner
 
 from dovo.cli import app
+from dovo.core.agents.registry import PROVIDERS
+from dovo.core.config.models import AgentConfig
 from dovo.core.diagnostics import CheckStatus, DiagnosticsReport
-from dovo.core.diagnostics.checks.agent_setup import PROVIDER_CREDENTIAL_RESOLVERS
 from tests.harness.workspace_paths import initialized_workspace_paths
 
 
@@ -25,11 +26,12 @@ class DoctorCliIntegrationTests:
         dispatch_spy: list[Any],
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """dovo doctor: healthy git+config workspace with the default copilot provider's `gh` and token present exits 0, dispatches the exact DiagnosticsReport, and renders the checks table."""
+        """dovo doctor: healthy git+config workspace with the default provider's registry-declared binary and credential present exits 0, dispatches the exact DiagnosticsReport, and renders the checks table."""
         monkeypatch.setattr("dovo.core.diagnostics.checks.env_binaries.shutil.which", lambda _name: "/usr/bin/tool")
-        monkeypatch.setitem(
-            PROVIDER_CREDENTIAL_RESOLVERS, "copilot", (lambda: "fake-token", "GH_TOKEN or GITHUB_TOKEN")
-        )
+        credential_envs = PROVIDERS[AgentConfig().provider].credential_envs
+        for env_name in credential_envs:
+            monkeypatch.delenv(env_name, raising=False)
+        monkeypatch.setenv(credential_envs[0], "fake-token")
         result = cli_runner.invoke(app, ["-p", str(doctor_workspace), "doctor"])
 
         assert result.exit_code == 0

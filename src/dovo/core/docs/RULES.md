@@ -23,7 +23,7 @@
   API keys and secrets must be resolved from environment variables at call time via module-level resolve_<provider>_api_key(). Secrets must never be stored in config.json, persisted to data.db, or passed into prompt builders.
 
 ```python
-# ✅ DO: api_key = resolve_copilot_token()  # reads environment dynamically
+# ✅ DO: api_key = resolve_credential(spec.credential_envs)  # reads environment dynamically
 # ❌ DO NOT: api_key = config.agent.copilot_token  # serializing secrets in static config
 ```
 

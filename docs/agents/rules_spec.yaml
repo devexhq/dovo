@@ -67,7 +67,7 @@ rules:
     Secrets must never be stored in config.json, persisted to data.db, or passed into prompt builders.
   evaluation_criteria: Search for API key field additions in DovoConfig or SQLite models. Ensure environment resolution
     helpers are used.
-  positive_example: 'api_key = resolve_copilot_token()  # reads environment dynamically'
+  positive_example: 'api_key = resolve_credential(spec.credential_envs)  # reads environment dynamically'
   negative_example: 'api_key = config.agent.copilot_token  # serializing secrets in static config'
   citation: docs/agents/architecture.md#secrets-handling
 - id: RENDER-001
