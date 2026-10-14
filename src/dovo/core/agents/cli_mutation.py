@@ -3,13 +3,15 @@
 from __future__ import annotations
 
 import json
+import subprocess
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import Literal
 
 from pydantic import BaseModel, Field
 
+from dovo.common.process import stream_isolated_process
 from dovo.common.tool_policy import ToolPolicy
 from dovo.core.agents.base import BaseAgentProvider, elapsed_ms
 from dovo.core.agents.environment import ENV_FILTERED_PROMPT_LINE, build_agent_env, withheld_env_names
@@ -62,6 +64,89 @@ class CliMutationOutcome(BaseModel):
 
 
 CliMutationRunFn = Callable[[CliMutationRunRequest], CliMutationOutcome]
+
+
+def forward_line(stream_name: str, on_line: Callable[[str, str], None] | None) -> Callable[[str], None] | None:
+    """Return a callback that passes each line to on_line tagged with stream_name, or None when on_line is None."""
+    if on_line is None:
+        return None
+
+    def forward(line: str) -> None:
+        on_line(stream_name, line)
+
+    return forward
+
+
+def forward_stdout(
+    request: CliMutationRunRequest, mapper: Callable[..., tuple[AgentProgress, ...]]
+) -> Callable[[str], None] | None:
+    """Return the stdout line callback that tags each line for on_line and maps it into on_progress, or None when neither is set.
+
+    Mapper and on_progress failures are dropped so a bad line never kills the stream reader.
+    """
+    on_progress = request.on_progress
+    line_callback = forward_line("stdout", request.on_line)
+    if on_progress is None:
+        return line_callback
+
+    def forward(line: str) -> None:
+        if line_callback is not None:
+            line_callback(line)
+
+        try:
+            for progress in mapper(line, worktree_path=request.worktree_path):
+                on_progress(progress)
+        except Exception:
+            return
+
+    return forward
+
+
+def run_cli_process(
+    cmd: Sequence[str],
+    request: CliMutationRunRequest,
+    *,
+    env: dict[str, str],
+    binary: str,
+    install_hint: str,
+    mapper: Callable[..., tuple[AgentProgress, ...]],
+) -> subprocess.CompletedProcess[bytes] | CliMutationOutcome:
+    """Run cmd in the request worktree, streaming lines to the request callbacks, or return the terminal outcome for a timeout or spawn failure."""
+    try:
+        return stream_isolated_process(
+            cmd,
+            cwd=request.worktree_path,
+            env=env,
+            input_data=request.prompt.encode("utf-8"),
+            timeout_seconds=request.timeout_seconds,
+            on_stdout_line=forward_stdout(request, mapper),
+            on_stderr_line=forward_line("stderr", request.on_line),
+        )
+    except subprocess.TimeoutExpired:
+        return CliMutationOutcome(status="timeout")
+    except FileNotFoundError as error:
+        return CliMutationOutcome(
+            status="error",
+            error_detail=f"{binary} is not installed or not on PATH: {error}. Fix: {install_hint}",
+        )
+    except OSError as error:
+        return CliMutationOutcome(status="error", error_detail=str(error))
+
+
+def decode_output(completed: subprocess.CompletedProcess[bytes]) -> tuple[str, str]:
+    """Return the completed process's stdout and stderr as text, replacing undecodable bytes."""
+    return (
+        (completed.stdout or b"").decode("utf-8", errors="replace"),
+        (completed.stderr or b"").decode("utf-8", errors="replace"),
+    )
+
+
+def unknown_option_detail(stderr_text: str, detail: str) -> str | None:
+    """Return detail when stderr reports an unknown option, else None."""
+    if "unknown option" in stderr_text.lower():
+        return detail
+
+    return None
 
 
 _DIRECT_PROMPT_HEADER = (

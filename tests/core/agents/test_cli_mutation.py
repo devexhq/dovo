@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import subprocess
+from collections.abc import Callable
 from pathlib import Path
 from typing import Literal
 
@@ -13,6 +14,7 @@ import pytest
 from dovo.core.agents import (
     AgentInvocationContext,
     AgentProgress,
+    AgentProgressKind,
     AgentRequest,
     AgentResponseStatus,
     default_tool_policy,
@@ -25,6 +27,11 @@ from dovo.core.agents.cli_mutation import (
     CliMutationRunRequest,
     CliMutationRunStatus,
     build_mutation_prompt,
+    decode_output,
+    forward_line,
+    forward_stdout,
+    run_cli_process,
+    unknown_option_detail,
     validate_request_patch,
 )
 from dovo.core.agents.environment import ENV_FILTERED_PROMPT_LINE
@@ -36,7 +43,13 @@ from dovo.core.agents.mutation_git import (
     resolve_pre_agent_baseline,
 )
 from dovo.core.git import PatchApplyResult, PatchApplyStatus
-from tests.harness import AgentRequestBuilder, new_file_diff
+from tests.harness import (
+    AgentRequestBuilder,
+    FakeAgentRunner,
+    FakeAgentRunnerCall,
+    StreamingAgentRunner,
+    new_file_diff,
+)
 
 
 def _fake_run(
@@ -881,3 +894,258 @@ class RejectedPatchDiscardOrderTests:
             f"Rejected edit saved to {destination}.",
         ]
         assert response.rejected_patch_path == str(destination)
+
+
+def _request(
+    worktree_path: Path,
+    *,
+    on_line: Callable[[str, str], None] | None = None,
+    on_progress: Callable[[AgentProgress], None] | None = None,
+) -> CliMutationRunRequest:
+    return CliMutationRunRequest(
+        worktree_path=worktree_path,
+        prompt="hi",
+        timeout_seconds=3,
+        tools=default_tool_policy(),
+        on_line=on_line,
+        on_progress=on_progress,
+    )
+
+
+def _mapped(*targets: str) -> Callable[..., tuple[AgentProgress, ...]]:
+    def mapper(line: str, *, worktree_path: Path) -> tuple[AgentProgress, ...]:
+        return tuple(AgentProgress(kind=AgentProgressKind.READ, target=target) for target in targets)
+
+    return mapper
+
+
+class ForwardLineTests:
+    @pytest.mark.parametrize("stream_name", [pytest.param("stdout", id="stdout"), pytest.param("stderr", id="stderr")])
+    def test_callback_tags_each_line_with_stream_name(self, stream_name: str) -> None:
+        """[tier-1/unit] forward_line: with an on_line recorder, the returned callback delivers 'a' then 'b' as [(stream_name, 'a'), (stream_name, 'b')]."""
+        received: list[tuple[str, str]] = []
+        callback = forward_line(stream_name, lambda name, line: received.append((name, line)))
+        assert callback is not None
+
+        callback("a")
+        callback("b")
+
+        assert received == [(stream_name, "a"), (stream_name, "b")]
+
+    def test_none_on_line_returns_none(self) -> None:
+        """[tier-1/unit] forward_line: on_line None returns None."""
+        assert forward_line("stdout", None) is None
+
+
+class ForwardStdoutTests:
+    def test_neither_callback_set_returns_none(self, tmp_path: Path) -> None:
+        """[tier-1/unit] forward_stdout: request with on_line None and on_progress None returns None."""
+        request = _request(tmp_path)
+
+        assert forward_stdout(request, _mapped("a")) is None
+
+    def test_on_line_only_tags_stdout_and_never_calls_mapper(self, tmp_path: Path) -> None:
+        """[tier-1/unit] forward_stdout: on_line set and on_progress None delivers [('stdout', 'o1')] and the mapper recorder has zero calls."""
+        received: list[tuple[str, str]] = []
+        mapper_calls: list[str] = []
+
+        def mapper(line: str, *, worktree_path: Path) -> tuple[AgentProgress, ...]:
+            mapper_calls.append(line)
+            return ()
+
+        request = _request(
+            tmp_path,
+            on_line=lambda name, line: received.append((name, line)),
+        )
+        callback = forward_stdout(request, mapper)
+        assert callback is not None
+
+        callback("o1")
+
+        assert received == [("stdout", "o1")]
+        assert mapper_calls == []
+
+    def test_on_progress_only_delivers_mapped_items_in_order(self, tmp_path: Path) -> None:
+        """[tier-1/unit] forward_stdout: on_progress set and on_line None returns a callback, and a mapper returning (AgentProgress(kind=READ, target='a'), AgentProgress(kind=READ, target='b')) makes on_progress receive exactly those two in order, with the mapper called as mapper(line, worktree_path=tmp_path)."""
+        progress: list[AgentProgress] = []
+        mapper_calls: list[tuple[str, Path]] = []
+
+        def mapper(line: str, *, worktree_path: Path) -> tuple[AgentProgress, ...]:
+            mapper_calls.append((line, worktree_path))
+            return _mapped("a", "b")(line, worktree_path=worktree_path)
+
+        request = _request(tmp_path, on_progress=progress.append)
+        callback = forward_stdout(request, mapper)
+        assert callback is not None
+
+        callback("line")
+
+        assert progress == [
+            AgentProgress(kind=AgentProgressKind.READ, target="a"),
+            AgentProgress(kind=AgentProgressKind.READ, target="b"),
+        ]
+        assert mapper_calls == [("line", tmp_path)]
+
+    def test_both_callbacks_deliver_raw_line_and_progress(self, tmp_path: Path) -> None:
+        """[tier-1/unit] forward_stdout: with both set, one line yields on_line [('stdout', line)] and on_progress [mapped item]."""
+        received: list[tuple[str, str]] = []
+        progress: list[AgentProgress] = []
+        request = _request(
+            tmp_path,
+            on_line=lambda name, line: received.append((name, line)),
+            on_progress=progress.append,
+        )
+        callback = forward_stdout(request, _mapped("a"))
+        assert callback is not None
+
+        callback("line")
+
+        assert received == [("stdout", "line")]
+        assert progress == [AgentProgress(kind=AgentProgressKind.READ, target="a")]
+
+    @pytest.mark.parametrize(
+        "failing",
+        [pytest.param("mapper", id="mapper-raises"), pytest.param("on_progress", id="on-progress-raises")],
+    )
+    def test_callback_failure_is_dropped_and_raw_line_still_delivered(self, tmp_path: Path, failing: str) -> None:
+        """[tier-1/unit] forward_stdout: a mapper or on_progress raising RuntimeError does not propagate from the callback, and on_line still receives [('stdout', line)]."""
+        received: list[tuple[str, str]] = []
+
+        def raising_mapper(line: str, *, worktree_path: Path) -> tuple[AgentProgress, ...]:
+            raise RuntimeError("bad line")
+
+        def raising_progress(progress: AgentProgress) -> None:
+            raise RuntimeError("terminal gone")
+
+        request = _request(
+            tmp_path,
+            on_line=lambda name, line: received.append((name, line)),
+            on_progress=raising_progress,
+        )
+        callback = forward_stdout(request, raising_mapper if failing == "mapper" else _mapped("a"))
+        assert callback is not None
+
+        callback("line")
+
+        assert received == [("stdout", "line")]
+
+
+class RunCliProcessTests:
+    def test_completed_process_is_returned_with_request_derived_spawn_arguments(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """[tier-1/unit] run_cli_process: FakeAgentRunner at dovo.core.agents.cli_mutation.stream_isolated_process returning stdout b'out' makes the call return a CompletedProcess with stdout b'out', and runner.last_call equals cmd, cwd=worktree_path, the passed env, input_data=b'hi', timeout_seconds=3."""
+        runner = FakeAgentRunner().returning(stdout=b"out")
+        monkeypatch.setattr("dovo.core.agents.cli_mutation.stream_isolated_process", runner)
+        request = _request(tmp_path)
+
+        completed = run_cli_process(
+            ["tool", "--x"], request, env={"K": "V"}, binary="tool", install_hint="install tool", mapper=_mapped()
+        )
+
+        assert isinstance(completed, subprocess.CompletedProcess)
+        assert completed.stdout == b"out"
+        assert runner.last_call == FakeAgentRunnerCall(
+            cmd=["tool", "--x"], cwd=tmp_path, env={"K": "V"}, input_data=b"hi", timeout_seconds=3
+        )
+
+    def test_stream_callbacks_reach_the_runner(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """[tier-1/unit] run_cli_process: StreamingAgentRunner replaying stdout 'o1' and stderr 'e1' makes request.on_line receive [('stdout', 'o1'), ('stderr', 'e1')] and the mapper's item reach request.on_progress."""
+        runner = StreamingAgentRunner(stdout_lines=["o1"], stderr_lines=["e1"], completed_stdout=b"")
+        monkeypatch.setattr("dovo.core.agents.cli_mutation.stream_isolated_process", runner)
+        received: list[tuple[str, str]] = []
+        progress: list[AgentProgress] = []
+        request = _request(
+            tmp_path,
+            on_line=lambda name, line: received.append((name, line)),
+            on_progress=progress.append,
+        )
+
+        run_cli_process(["tool"], request, env={}, binary="tool", install_hint="x", mapper=_mapped("a"))
+
+        assert received == [("stdout", "o1"), ("stderr", "e1")]
+        assert progress == [AgentProgress(kind=AgentProgressKind.READ, target="a")]
+
+    def test_request_without_callbacks_passes_no_stream_callbacks(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """[tier-1/unit] run_cli_process: a request with no callbacks gives the runner on_stdout_line None and on_stderr_line None."""
+        runner = StreamingAgentRunner(stdout_lines=[], stderr_lines=[], completed_stdout=b"")
+        monkeypatch.setattr("dovo.core.agents.cli_mutation.stream_isolated_process", runner)
+
+        run_cli_process(["tool"], _request(tmp_path), env={}, binary="tool", install_hint="x", mapper=_mapped())
+
+        assert (runner.received_stdout_callback, runner.received_stderr_callback) == (None, None)
+
+    @pytest.mark.parametrize(
+        ("raised", "expected"),
+        [
+            pytest.param(
+                subprocess.TimeoutExpired(cmd="tool", timeout=3),
+                CliMutationOutcome(status="timeout"),
+                id="timeout-expired",
+            ),
+            pytest.param(
+                FileNotFoundError("tool"),
+                CliMutationOutcome(
+                    status="error", error_detail="tool is not installed or not on PATH: tool. Fix: install tool"
+                ),
+                id="missing-binary",
+            ),
+            pytest.param(
+                OSError("exec failed"), CliMutationOutcome(status="error", error_detail="exec failed"), id="os-error"
+            ),
+        ],
+    )
+    def test_spawn_failure_returns_terminal_outcome(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, raised: Exception, expected: CliMutationOutcome
+    ) -> None:
+        """[tier-1/unit] run_cli_process: a runner raising TimeoutExpired returns status 'timeout'; FileNotFoundError('tool') with binary='tool' and install_hint='install tool' returns the not-installed error naming both; any other OSError returns its text."""
+        monkeypatch.setattr("dovo.core.agents.cli_mutation.stream_isolated_process", FakeAgentRunner().raising(raised))
+        request = _request(tmp_path)
+
+        outcome = run_cli_process(
+            ["tool"], request, env={}, binary="tool", install_hint="install tool", mapper=_mapped()
+        )
+
+        assert outcome == expected
+
+
+class DecodeOutputTests:
+    def test_valid_bytes_decode_to_text(self) -> None:
+        """[tier-1/unit] decode_output: CompletedProcess(stdout=b'out', stderr=b'err') returns ('out', 'err')."""
+        completed = subprocess.CompletedProcess(args=["x"], returncode=0, stdout=b"out", stderr=b"err")
+
+        assert decode_output(completed) == ("out", "err")
+
+    @pytest.mark.parametrize(
+        ("stdout", "stderr", "expected"),
+        [
+            pytest.param(b"a\xffb", b"", ("a\ufffdb", ""), id="invalid-utf8-replaced"),
+            pytest.param(None, None, ("", ""), id="none-streams-empty"),
+        ],
+    )
+    def test_undecodable_or_missing_streams_never_raise(
+        self, stdout: bytes | None, stderr: bytes | None, expected: tuple[str, str]
+    ) -> None:
+        """[tier-1/unit] decode_output: invalid UTF-8 bytes become U+FFFD and None streams become '', without raising."""
+        completed = subprocess.CompletedProcess(args=["x"], returncode=0, stdout=stdout, stderr=stderr)
+
+        assert decode_output(completed) == expected
+
+
+class UnknownOptionDetailTests:
+    @pytest.mark.parametrize(
+        "stderr_text",
+        [
+            pytest.param("error: unknown option '--x'", id="lowercase"),
+            pytest.param("Error: Unknown Option --x", id="mixed-case"),
+        ],
+    )
+    def test_unknown_option_stderr_returns_adapter_detail(self, stderr_text: str) -> None:
+        """[tier-1/unit] unknown_option_detail: stderr containing 'unknown option' in any case returns the passed detail unchanged."""
+        assert unknown_option_detail(stderr_text, "update it") == "update it"
+
+    def test_unrelated_stderr_returns_none(self) -> None:
+        """[tier-1/unit] unknown_option_detail: stderr 'some other failure' returns None."""
+        assert unknown_option_detail("some other failure", "update it") is None

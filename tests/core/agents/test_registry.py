@@ -126,7 +126,7 @@ class RegisteredProviderRedactionTests:
             monkeypatch.setenv(name, value)
         adapter = spec.build()
         runner = FakeAgentRunner()
-        monkeypatch.setattr(f"{type(adapter).__module__}.stream_isolated_process", runner)
+        monkeypatch.setattr("dovo.core.agents.cli_mutation.stream_isolated_process", runner)
         request = AgentRequestBuilder().with_worktree_path(git_repo).build()
         reflected = " ".join(values)
 

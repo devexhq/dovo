@@ -7,7 +7,13 @@ from tests.harness.builders import (
     WorkspaceBuilder,
 )
 from tests.harness.diffs import AGENT_ADAPTER_FACTORY, new_file_diff
-from tests.harness.fakes import FakeAgentProvider, FakeAgentRunner, FakeAgentRunnerCall, RecordingProgressSink
+from tests.harness.fakes import (
+    FakeAgentProvider,
+    FakeAgentRunner,
+    FakeAgentRunnerCall,
+    RecordingProgressSink,
+    StreamingAgentRunner,
+)
 from tests.harness.formatter import (
     FormatterCase,
     assert_json_payload_matches_published_shape,
@@ -27,6 +33,7 @@ __all__ = [
     "FormatterCase",
     "RecordingProgressSink",
     "StepBuilder",
+    "StreamingAgentRunner",
     "WorkspaceBuilder",
     "assert_json_payload_matches_published_shape",
     "assert_rich_render_shows_every_view_value",
