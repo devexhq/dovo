@@ -19,7 +19,7 @@ from dovo.core.agents import (
     AgentResponseStatus,
     default_tool_policy,
 )
-from dovo.core.agents.base import ProviderSpec
+from dovo.core.agents.base import ProgressMapper, ProviderSpec
 from dovo.core.agents.cli_mutation import (
     CliDirectMutationAdapter,
     CliMutationOutcome,
@@ -156,6 +156,25 @@ class EnvironmentAdapter(UnitTestAdapter):
             supports_tool_policy=False,
             supports_os_sandbox=False,
             build=lambda: self,
+        )
+
+
+class MappedAdapter(UnitTestAdapter):
+    """Adapter double whose credential-free descriptor declares the given progress mapper."""
+
+    def __init__(self, progress_mapper: ProgressMapper, run_fn: CliMutationRunFn) -> None:
+        super().__init__(run_fn=run_fn)
+        self._progress_mapper = progress_mapper
+
+    def _provider_spec(self) -> ProviderSpec:
+        return ProviderSpec(
+            token="unit-test",
+            credential_envs=(),
+            requires_model=False,
+            supports_tool_policy=False,
+            supports_os_sandbox=False,
+            build=lambda: self,
+            progress_mapper=self._progress_mapper,
         )
 
 
@@ -307,6 +326,24 @@ class CliMutationOnLinePropagationTests:
         UnitTestAdapter(run_fn=_record).invoke(agent_request)
 
         assert [request.on_progress for request in received] == [on_progress if with_callback else None]
+
+
+class CliMutationProgressMapperPropagationTests:
+    @pytest.mark.parametrize("with_descriptor", [pytest.param(True, id="descriptor"), pytest.param(False, id="none")])
+    def test_descriptor_progress_mapper_reaches_the_run_request(self, git_repo: Path, with_descriptor: bool) -> None:
+        """[tier-1/integration] CliDirectMutationAdapter.invoke: a double whose descriptor sets progress_mapper=M gives _default_run a CliMutationRunRequest with progress_mapper is M; a double with no descriptor gets None."""
+        mapper = _mapped("a")
+        received: list[CliMutationRunRequest] = []
+
+        def _record(request: CliMutationRunRequest) -> CliMutationOutcome:
+            received.append(request)
+            return CliMutationOutcome(status="finished")
+
+        adapter = MappedAdapter(mapper, run_fn=_record) if with_descriptor else UnitTestAdapter(run_fn=_record)
+
+        adapter.invoke(AgentRequestBuilder().with_worktree_path(git_repo).build())
+
+        assert [request.progress_mapper for request in received] == [mapper if with_descriptor else None]
 
 
 class ScratchDiffIsolationTests:
@@ -901,6 +938,7 @@ def _request(
     *,
     on_line: Callable[[str, str], None] | None = None,
     on_progress: Callable[[AgentProgress], None] | None = None,
+    progress_mapper: ProgressMapper | None = None,
 ) -> CliMutationRunRequest:
     return CliMutationRunRequest(
         worktree_path=worktree_path,
@@ -909,10 +947,11 @@ def _request(
         tools=default_tool_policy(),
         on_line=on_line,
         on_progress=on_progress,
+        progress_mapper=progress_mapper,
     )
 
 
-def _mapped(*targets: str) -> Callable[..., tuple[AgentProgress, ...]]:
+def _mapped(*targets: str) -> ProgressMapper:
     def mapper(line: str, *, worktree_path: Path) -> tuple[AgentProgress, ...]:
         return tuple(AgentProgress(kind=AgentProgressKind.READ, target=target) for target in targets)
 
@@ -942,7 +981,7 @@ class ForwardStdoutTests:
         """[tier-1/unit] forward_stdout: request with on_line None and on_progress None returns None."""
         request = _request(tmp_path)
 
-        assert forward_stdout(request, _mapped("a")) is None
+        assert forward_stdout(request) is None
 
     def test_on_line_only_tags_stdout_and_never_calls_mapper(self, tmp_path: Path) -> None:
         """[tier-1/unit] forward_stdout: on_line set and on_progress None delivers [('stdout', 'o1')] and the mapper recorder has zero calls."""
@@ -956,8 +995,9 @@ class ForwardStdoutTests:
         request = _request(
             tmp_path,
             on_line=lambda name, line: received.append((name, line)),
+            progress_mapper=mapper,
         )
-        callback = forward_stdout(request, mapper)
+        callback = forward_stdout(request)
         assert callback is not None
 
         callback("o1")
@@ -974,8 +1014,8 @@ class ForwardStdoutTests:
             mapper_calls.append((line, worktree_path))
             return _mapped("a", "b")(line, worktree_path=worktree_path)
 
-        request = _request(tmp_path, on_progress=progress.append)
-        callback = forward_stdout(request, mapper)
+        request = _request(tmp_path, on_progress=progress.append, progress_mapper=mapper)
+        callback = forward_stdout(request)
         assert callback is not None
 
         callback("line")
@@ -986,6 +1026,23 @@ class ForwardStdoutTests:
         ]
         assert mapper_calls == [("line", tmp_path)]
 
+    def test_none_progress_mapper_delivers_lines_without_progress(self, tmp_path: Path) -> None:
+        """[tier-1/unit] forward_stdout: a request with on_line and on_progress set and progress_mapper None returns a callback; one line yields on_line [('stdout', line)], zero on_progress calls and no exception."""
+        received: list[tuple[str, str]] = []
+        progress: list[AgentProgress] = []
+        request = _request(
+            tmp_path,
+            on_line=lambda name, line: received.append((name, line)),
+            on_progress=progress.append,
+        )
+        callback = forward_stdout(request)
+        assert callback is not None
+
+        callback("line")
+
+        assert received == [("stdout", "line")]
+        assert progress == []
+
     def test_both_callbacks_deliver_raw_line_and_progress(self, tmp_path: Path) -> None:
         """[tier-1/unit] forward_stdout: with both set, one line yields on_line [('stdout', line)] and on_progress [mapped item]."""
         received: list[tuple[str, str]] = []
@@ -994,8 +1051,9 @@ class ForwardStdoutTests:
             tmp_path,
             on_line=lambda name, line: received.append((name, line)),
             on_progress=progress.append,
+            progress_mapper=_mapped("a"),
         )
-        callback = forward_stdout(request, _mapped("a"))
+        callback = forward_stdout(request)
         assert callback is not None
 
         callback("line")
@@ -1021,8 +1079,9 @@ class ForwardStdoutTests:
             tmp_path,
             on_line=lambda name, line: received.append((name, line)),
             on_progress=raising_progress,
+            progress_mapper=raising_mapper if failing == "mapper" else _mapped("a"),
         )
-        callback = forward_stdout(request, raising_mapper if failing == "mapper" else _mapped("a"))
+        callback = forward_stdout(request)
         assert callback is not None
 
         callback("line")
@@ -1040,7 +1099,7 @@ class RunCliProcessTests:
         request = _request(tmp_path)
 
         completed = run_cli_process(
-            ["tool", "--x"], request, env={"K": "V"}, binary="tool", install_hint="install tool", mapper=_mapped()
+            ["tool", "--x"], request, env={"K": "V"}, binary="tool", install_hint="install tool"
         )
 
         assert isinstance(completed, subprocess.CompletedProcess)
@@ -1059,9 +1118,10 @@ class RunCliProcessTests:
             tmp_path,
             on_line=lambda name, line: received.append((name, line)),
             on_progress=progress.append,
+            progress_mapper=_mapped("a"),
         )
 
-        run_cli_process(["tool"], request, env={}, binary="tool", install_hint="x", mapper=_mapped("a"))
+        run_cli_process(["tool"], request, env={}, binary="tool", install_hint="x")
 
         assert received == [("stdout", "o1"), ("stderr", "e1")]
         assert progress == [AgentProgress(kind=AgentProgressKind.READ, target="a")]
@@ -1073,7 +1133,7 @@ class RunCliProcessTests:
         runner = StreamingAgentRunner(stdout_lines=[], stderr_lines=[], completed_stdout=b"")
         monkeypatch.setattr("dovo.core.agents.cli_mutation.stream_isolated_process", runner)
 
-        run_cli_process(["tool"], _request(tmp_path), env={}, binary="tool", install_hint="x", mapper=_mapped())
+        run_cli_process(["tool"], _request(tmp_path), env={}, binary="tool", install_hint="x")
 
         assert (runner.received_stdout_callback, runner.received_stderr_callback) == (None, None)
 
@@ -1104,9 +1164,7 @@ class RunCliProcessTests:
         monkeypatch.setattr("dovo.core.agents.cli_mutation.stream_isolated_process", FakeAgentRunner().raising(raised))
         request = _request(tmp_path)
 
-        outcome = run_cli_process(
-            ["tool"], request, env={}, binary="tool", install_hint="install tool", mapper=_mapped()
-        )
+        outcome = run_cli_process(["tool"], request, env={}, binary="tool", install_hint="install tool")
 
         assert outcome == expected
 

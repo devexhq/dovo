@@ -13,7 +13,7 @@ from pydantic import BaseModel, Field
 
 from dovo.common.process import stream_isolated_process
 from dovo.common.tool_policy import ToolPolicy
-from dovo.core.agents.base import BaseAgentProvider, elapsed_ms
+from dovo.core.agents.base import BaseAgentProvider, ProgressMapper, ProviderSpec, elapsed_ms
 from dovo.core.agents.environment import ENV_FILTERED_PROMPT_LINE, build_agent_env, withheld_env_names
 from dovo.core.agents.models import (
     AgentDenial,
@@ -50,6 +50,7 @@ class CliMutationRunRequest(BaseModel):
     env: dict[str, str] = Field(default_factory=dict, exclude=True)
     on_line: Callable[[str, str], None] | None = Field(default=None, exclude=True)
     on_progress: Callable[[AgentProgress], None] | None = Field(default=None, exclude=True)
+    progress_mapper: ProgressMapper | None = Field(default=None, exclude=True)
 
 
 class CliMutationOutcome(BaseModel):
@@ -77,16 +78,15 @@ def forward_line(stream_name: str, on_line: Callable[[str, str], None] | None) -
     return forward
 
 
-def forward_stdout(
-    request: CliMutationRunRequest, mapper: Callable[..., tuple[AgentProgress, ...]]
-) -> Callable[[str], None] | None:
-    """Return the stdout line callback that tags each line for on_line and maps it into on_progress, or None when neither is set.
+def forward_stdout(request: CliMutationRunRequest) -> Callable[[str], None] | None:
+    """Return the stdout line callback that tags each line for on_line and maps it through request.progress_mapper into on_progress, or None when neither callback is set.
 
-    Mapper and on_progress failures are dropped so a bad line never kills the stream reader.
+    A request with no progress_mapper maps nothing. Mapper and on_progress failures are dropped so a bad line never kills the stream reader.
     """
     on_progress = request.on_progress
+    mapper = request.progress_mapper
     line_callback = forward_line("stdout", request.on_line)
-    if on_progress is None:
+    if on_progress is None or mapper is None:
         return line_callback
 
     def forward(line: str) -> None:
@@ -109,7 +109,6 @@ def run_cli_process(
     env: dict[str, str],
     binary: str,
     install_hint: str,
-    mapper: Callable[..., tuple[AgentProgress, ...]],
 ) -> subprocess.CompletedProcess[bytes] | CliMutationOutcome:
     """Run cmd in the request worktree, streaming lines to the request callbacks, or return the terminal outcome for a timeout or spawn failure."""
     try:
@@ -119,7 +118,7 @@ def run_cli_process(
             env=env,
             input_data=request.prompt.encode("utf-8"),
             timeout_seconds=request.timeout_seconds,
-            on_stdout_line=forward_stdout(request, mapper),
+            on_stdout_line=forward_stdout(request),
             on_stderr_line=forward_line("stderr", request.on_line),
         )
     except subprocess.TimeoutExpired:
@@ -253,6 +252,7 @@ class CliDirectMutationAdapter(BaseAgentProvider):
                 env=env,
                 on_line=request.on_line,
                 on_progress=request.on_progress,
+                progress_mapper=_progress_mapper_for(self._provider_spec()),
             )
         )
         duration_ms = elapsed_ms(started)
@@ -365,6 +365,11 @@ class CliDirectMutationAdapter(BaseAgentProvider):
         )
 
         return response.model_copy(update={"rejected_patch_path": str(saved) if saved is not None else None})
+
+
+def _progress_mapper_for(spec: ProviderSpec | None) -> ProgressMapper | None:
+    """Return the descriptor's progress mapper, or None when the provider declares no descriptor."""
+    return None if spec is None else spec.progress_mapper
 
 
 def _save_rejected_edit(request: AgentRequest, baseline: str) -> tuple[Path | None, str | None]:

@@ -18,9 +18,9 @@ from dovo.core.agents.cli_mutation import (
     run_cli_process,
     unknown_option_detail,
 )
+from dovo.core.agents.copilot_progress import map_copilot_line
 from dovo.core.agents.credentials import missing_credential_error, resolve_credential
 from dovo.core.agents.models import AgentDenial, AgentInvocationContext, AgentRequest
-from dovo.core.agents.services.map_progress import map_copilot_line
 from dovo.core.agents.tools import (
     PolicyRoots,
     resolve_policy_roots,
@@ -543,7 +543,6 @@ def default_copilot_run(request: CliMutationRunRequest) -> CliMutationOutcome:
         env=env,
         binary="gh",
         install_hint="install the GitHub CLI (https://cli.github.com)",
-        mapper=map_copilot_line,
     )
     if isinstance(completed, CliMutationOutcome):
         return completed
@@ -584,4 +583,5 @@ COPILOT_PROVIDER_SPEC = ProviderSpec(
     build=CopilotAgentAdapter,
     binary="gh",
     control_envs=COPILOT_CONTROL_ENVS,
+    progress_mapper=map_copilot_line,
 )

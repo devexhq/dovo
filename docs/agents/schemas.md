@@ -104,7 +104,9 @@ Hierarchical resolution merges four tiers, lowest to highest precedence: **Packa
 
 ### Copilot progress mapping
 
-The Copilot adapter maps each `tool.execution_start` stdout event to live progress items through `map_copilot_line` ([`core/agents/services/map_progress.py`](../../src/dovo/core/agents/services/map_progress.py)); other event types and unlisted tools such as `skill` are skipped. The table below is the mapping specification, and [`tests/lint/test_copilot_progress_mapping_parity.py`](../../tests/lint/test_copilot_progress_mapping_parity.py) fails when it disagrees with `COPILOT_TOOL_KINDS`.
+A provider reports live progress when its `ProviderSpec.progress_mapper` ([`core/agents/base.py`](../../src/dovo/core/agents/base.py)) is set; `None` means it reports none. Each such provider documents its mapping under its own `### <Provider> progress mapping` heading, and [`tests/lint/test_progress_mapping_parity.py`](../../tests/lint/test_progress_mapping_parity.py) fails when a table disagrees with that provider's tool-kind or target-field constants.
+
+The Copilot adapter maps each `tool.execution_start` stdout event through `map_copilot_line` ([`core/agents/copilot_progress.py`](../../src/dovo/core/agents/copilot_progress.py)); other event types and unlisted tools such as `skill` are skipped. The table below is the mapping specification.
 
 | Kind | Tool names | Target |
 | --- | --- | --- |

@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from dovo.common.redact import SecretRedactor
 from dovo.core.agents.credentials import missing_credential_error, resolve_credential
 from dovo.core.agents.environment import forwarded_env_secrets, validate_agent_env_request
-from dovo.core.agents.models import AgentRequest, AgentResponse
+from dovo.core.agents.models import AgentProgress, AgentRequest, AgentResponse
 from dovo.core.agents.redaction import build_response_redactor, redact_agent_response
 from dovo.core.agents.responses import provider_error_response
 from dovo.core.agents.tools import check_policy_support
@@ -101,12 +101,18 @@ class BaseAgentProvider(abc.ABC):
         return None
 
 
+ProgressMapper = Callable[..., tuple[AgentProgress, ...]]  # (line: str, *, worktree_path: Path)
+
+
 @dataclass(frozen=True)
 class ProviderSpec:
     """Static descriptor of one agent provider and its implemented capabilities.
 
     ``credential_envs`` are alternatives (any one suffices; empty means none required), ``binary`` is set only for a fixed
-    executable, ``control_envs`` are adapter-owned variables no environment layer may forward or override, and the capability flags describe current behavior, not planned features.
+    executable, ``control_envs`` are adapter-owned variables no environment layer may forward or override,
+    ``progress_mapper`` maps one stdout line to live progress items (``None`` means the provider reports no progress;
+    only ``CliDirectMutationAdapter`` providers read it),
+    and the capability flags describe current behavior, not planned features.
     """
 
     token: str
@@ -117,3 +123,4 @@ class ProviderSpec:
     build: Callable[[], BaseAgentProvider]
     binary: str | None = None
     control_envs: tuple[str, ...] = ()
+    progress_mapper: ProgressMapper | None = None
