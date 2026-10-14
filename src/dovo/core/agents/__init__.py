@@ -1,6 +1,7 @@
 """Agent adapter interfaces and provider implementations."""
 
 from dovo.core.agents.base import BaseAgentProvider, ProviderSpec
+from dovo.core.agents.claude import ClaudeAgentAdapter
 from dovo.core.agents.cli_mutation import (
     CliDirectMutationAdapter,
     CliMutationOutcome,
@@ -58,6 +59,7 @@ __all__ = [
     "AgentResponseStatus",
     "AgentScratchResult",
     "BaseAgentProvider",
+    "ClaudeAgentAdapter",
     "CliDirectMutationAdapter",
     "CliMutationOutcome",
     "CliMutationRunFn",

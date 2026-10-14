@@ -36,12 +36,13 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "provider": { "type": "string", "enum": ["copilot"], "default": "copilot" },
+        "provider": { "type": "string", "enum": ["copilot", "claude"], "default": "copilot" },
         "models": {
           "type": "object",
           "additionalProperties": false,
           "properties": {
-            "copilot": { "type": "string", "minLength": 1 }
+            "copilot": { "type": "string", "minLength": 1 },
+            "claude": { "type": "string", "minLength": 1 }
           },
           "default": {}
         },

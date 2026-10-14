@@ -88,6 +88,19 @@ class ConfigSetCliIntegrationTests:
         assert "Config updated: agent.models.copilot" in res.stdout
         assert json.loads(config_path.read_text())["agent"]["models"]["copilot"] == "qwen2.5-coder"
 
+    def test_config_set_agent_provider_claude_persists_value(
+        self, cli_runner: CliRunner, isolated_workspace: Path
+    ) -> None:
+        """[tier-3/integration] dovo config set agent.provider claude: exits 0, prints 'Config updated: agent.provider', and .dovo/config.json holds agent.provider 'claude'."""
+        config_path = isolated_workspace / ".dovo" / "config.json"
+        Filesystem.atomic_write_json(config_path, build_default_config("demo-workspace"))
+
+        result = cli_runner.invoke(app, ["-p", str(isolated_workspace), "config", "set", "agent.provider", "claude"])
+
+        assert result.exit_code == 0
+        assert "Config updated: agent.provider" in result.stdout
+        assert json.loads(config_path.read_text())["agent"]["provider"] == "claude"
+
     def test_config_set_cli_stores_boolean_true_from_string(
         self, cli_runner: CliRunner, isolated_workspace: Path
     ) -> None:

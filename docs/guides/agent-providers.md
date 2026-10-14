@@ -13,8 +13,9 @@ The step's stdout is one JSON object with a `status` (see [Agent step outcomes](
 | Identifier | Requirements |
 |---|---|
 | `copilot` | Default. Requires `gh` on `PATH` and `GH_TOKEN` or `GITHUB_TOKEN`. |
+| `claude` | Requires `claude` on `PATH` and `ANTHROPIC_API_KEY`. Invocation is not yet available: an agent step fails with `Claude Code invocation is not available`. |
 
-Selecting any other provider fails `dovo config validate` with a schema error on `agent.provider`.
+Selecting any provider not listed fails `dovo config validate` with a schema error on `agent.provider`.
 
 ---
 
@@ -46,7 +47,7 @@ dovo config set agent.temperature 0.1
 
 `dovo run <blueprint> --agent <identifier>` overrides the provider for one run. The run's model is `agent.models[<provider used>]`, so `--agent` also switches which entry is used; a provider with no entry runs with no model.
 
-`dovo doctor` checks provider credentials, for example `GH_TOKEN` or `GITHUB_TOKEN` for `copilot`. A passing check does not guarantee the provider will accept a request.
+`dovo doctor` checks provider credentials, for example `GH_TOKEN` or `GITHUB_TOKEN` for `copilot` and `ANTHROPIC_API_KEY` for `claude`. A passing check does not guarantee the provider will accept a request.
 
 ---
 

@@ -21,6 +21,18 @@ Direct-mutation adapter shelling out to GitHub CLI `gh copilot`.
 
 ---
 
+## 2. Claude Code (`claude`)
+
+**Relevant sources:** [`src/dovo/core/agents/claude.py`](../../src/dovo/core/agents/claude.py)
+Direct-mutation adapter registered for Claude Code; the invocation itself has not landed.
+
+| Symptom | Cause | Resolution |
+|:---|:---|:---|
+| `status=provider_error`, `"missing ANTHROPIC_API_KEY"` | Key not set or blank | Export `ANTHROPIC_API_KEY=...` |
+| `status=provider_error`, `"Claude Code invocation is not available"` | Registration only; the invocation slice has not landed | None yet; use another provider |
+
+---
+
 ## Cross-Provider Rules
 
 - All setup and preflight failures are non-raising and populate `AgentResponse.errors`.

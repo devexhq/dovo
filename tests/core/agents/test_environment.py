@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from dovo.core.agents import AgentEnvMode, AgentInvocationContext
+from dovo.core.agents import AgentEnvMode, AgentInvocationContext, ProviderSpec
 from dovo.core.agents.copilot import COPILOT_PROVIDER_SPEC
 from dovo.core.agents.environment import (
     NETWORK_TLS_ENV_NAMES,
@@ -20,12 +20,17 @@ from dovo.core.agents.environment import (
     validate_agent_env_request,
     withheld_env_names,
 )
+from dovo.core.agents.registry import PROVIDERS
 from tests.harness import AgentRequestBuilder
 
 _OVERRIDE_MESSAGE = (
     "Agent environment override '{name}' conflicts with provider or Dovo controls (AGENT_ENV_OVERRIDE_INVALID). "
     "Fix: remove it from agent.env_passthrough or the agent step's env."
 )
+
+_CONTROL_CASES = [
+    pytest.param(spec, name, id=f"{token}-{name}") for token, spec in PROVIDERS.items() for name in spec.control_envs
+]
 
 
 class _HostEnv(dict[str, str]):
@@ -65,7 +70,7 @@ class BuildAgentEnvTests:
         [
             pytest.param("AWS_SECRET_ACCESS_KEY", id="aws"),
             pytest.param("SSH_AUTH_SOCK", id="ssh"),
-            pytest.param("ANTHROPIC_API_KEY", id="other-provider"),
+            pytest.param("OPENAI_API_KEY", id="unrelated-api-key"),
             pytest.param("DOVO_TEST_UNRELATED_SECRET", id="dovo-prefix"),
             pytest.param("DOVO_STEP_ID", id="ambient-dovo-metadata-name"),
         ],
@@ -209,16 +214,17 @@ class BuildAgentEnvTests:
         assert ("ANTHROPIC_API_KEY" in env) == (mode == "inherit")
 
     @pytest.mark.parametrize("mode", [pytest.param("allowlist", id="allowlist"), pytest.param("inherit", id="inherit")])
+    @pytest.mark.parametrize("token", list(PROVIDERS))
     def test_adapter_controls_are_stripped_in_both_modes(
-        self, mode: AgentEnvMode, host_env: dict[str, str], builder: AgentRequestBuilder
+        self, token: str, mode: AgentEnvMode, host_env: dict[str, str], builder: AgentRequestBuilder
     ) -> None:
-        """[tier-1/unit] build_agent_env: ambient COPILOT_ALLOW_ALL, COPILOT_GITHUB_TOKEN, COPILOT_MODEL are absent in allowlist and inherit modes."""
-        controls = ("COPILOT_ALLOW_ALL", "COPILOT_GITHUB_TOKEN", "COPILOT_MODEL")
-        host_env.update(dict.fromkeys(controls, "ambient"))
+        """[tier-1/unit] build_agent_env: with every PROVIDERS[token].control_envs name set ambiently, the returned env contains none of them in allowlist and inherit modes."""
+        spec = PROVIDERS[token]
+        host_env.update(dict.fromkeys(spec.control_envs, "ambient"))
 
-        env = build_agent_env(COPILOT_PROVIDER_SPEC, builder.with_env_mode(mode).build())
+        env = build_agent_env(spec, builder.with_env_mode(mode).build())
 
-        assert [name in env for name in controls] == [False] * 3
+        assert [name for name in spec.control_envs if name in env] == []
 
     def test_withheld_names_are_sorted_and_reported_in_allowlist_mode(
         self, host_env: dict[str, str], builder: AgentRequestBuilder
@@ -305,7 +311,6 @@ class ValidateAgentEnvRequestTests:
     @pytest.mark.parametrize(
         "name",
         [
-            pytest.param("COPILOT_MODEL", id="control"),
             pytest.param("DOVO_STEP_ID", id="metadata"),
             pytest.param("DOVO_ENV_WITHHELD", id="withheld"),
             pytest.param("TMPDIR", id="scratch-temp"),
@@ -320,6 +325,18 @@ class ValidateAgentEnvRequestTests:
         request = request.with_env_passthrough([name]) if source == "passthrough" else request.with_env({name: "x"})
 
         assert validate_agent_env_request(COPILOT_PROVIDER_SPEC, request.build()) == _OVERRIDE_MESSAGE.format(name=name)
+
+    @pytest.mark.parametrize(
+        "source", [pytest.param("passthrough", id="passthrough"), pytest.param("step-env", id="step-env")]
+    )
+    @pytest.mark.parametrize(("spec", "name"), _CONTROL_CASES)
+    def test_control_name_returns_the_fixed_override_message(
+        self, source: str, spec: ProviderSpec, name: str, builder: AgentRequestBuilder
+    ) -> None:
+        """[tier-1/unit] validate_agent_env_request: literal env_passthrough [name] or step env {name: 'x'} for each control name returns "Agent environment override '<name>' conflicts with provider or Dovo controls (AGENT_ENV_OVERRIDE_INVALID). Fix: remove it from agent.env_passthrough or the agent step's env."."""
+        request = builder.with_env_passthrough([name]) if source == "passthrough" else builder.with_env({name: "x"})
+
+        assert validate_agent_env_request(spec, request.build()) == _OVERRIDE_MESSAGE.format(name=name)
 
     def test_step_env_credential_name_is_rejected_but_passthrough_credential_name_is_allowed(
         self, builder: AgentRequestBuilder, tmp_path: Path

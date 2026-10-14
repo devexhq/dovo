@@ -566,6 +566,23 @@ class RunEnvFlagsCliIntegrationTests:
         assert f"Agent environment filtered: {len(withheld)} variables withheld." in result.output
 
 
+class RunAgentFlagCliIntegrationTests:
+    """Typer runner integration tests for the dovo run --agent flag."""
+
+    def test_run_agent_claude_reaches_the_claude_adapter_stub(
+        self, cli_runner: CliRunner, run_workspace: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """[tier-3/integration] dovo run agent-task --agent claude: with ANTHROPIC_API_KEY set the step fails with output containing 'Claude Code invocation is not available' and no 'AGENT_PROVIDER_UNSUPPORTED'."""
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test")
+        _write_agent_blueprint(run_workspace)
+
+        result = cli_runner.invoke(app, ["-p", str(run_workspace), "run", "agent-task", "--agent", "claude"])
+
+        assert result.exit_code == 1
+        assert "Claude Code invocation is not available" in result.output
+        assert "AGENT_PROVIDER_UNSUPPORTED" not in result.output
+
+
 def _ask_blueprint(workspace: Path) -> None:
     """Write a runnable blueprint `ask-feature`: a plan producer, an approve ask over it, and a closing marker step."""
     write_runnable_blueprint(
