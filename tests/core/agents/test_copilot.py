@@ -30,7 +30,7 @@ from dovo.core.agents.copilot import (
     render_copilot_policy,
     resolve_copilot_token,
 )
-from dovo.core.agents.models import AgentDenial
+from dovo.core.agents.models import AgentDenial, AgentProgress, AgentProgressKind
 from tests.harness import AgentRequestBuilder, FakeAgentRunner
 
 _ALLOW_ALL = ToolPolicy(allow_all=True)
@@ -150,6 +150,92 @@ class CopilotRunStreamingTests:
         )
 
         assert (runner.received_stdout_callback, runner.received_stderr_callback) == (None, None)
+
+
+class CopilotRunProgressTests:
+    _VIEW_LINE = json.dumps(
+        {"type": "tool.execution_start", "data": {"toolName": "view", "arguments": {"path": "{root}/x.py"}}}
+    )
+    _COMPLETED_STDOUT = (
+        b'{"type":"assistant.message","data":{"content":"hello"}}\n{"type":"result","data":{"exitCode":0}}\n'
+    )
+
+    def _view_line(self, worktree: Path) -> str:
+        return self._VIEW_LINE.replace("{root}", str(worktree))
+
+    def test_default_run_maps_stdout_lines_into_on_progress(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """[tier-1/unit] default_copilot_run: a streaming runner double that emits a view tool.execution_start stdout line makes request.on_progress receive exactly (AgentProgress(kind=read, target='x.py'),) and request.on_line still receives the raw line."""
+        line = self._view_line(tmp_path)
+        runner = _StreamingRunnerDouble(stdout_lines=[line], stderr_lines=[], completed_stdout=self._COMPLETED_STDOUT)
+        monkeypatch.setattr("dovo.core.agents.copilot.stream_isolated_process", runner)
+        progress: list[AgentProgress] = []
+        raw: list[tuple[str, str]] = []
+
+        default_copilot_run(
+            CliMutationRunRequest(
+                worktree_path=tmp_path,
+                prompt="hi",
+                timeout_seconds=3,
+                tools=_ALLOW_ALL,
+                on_line=lambda stream_name, text: raw.append((stream_name, text)),
+                on_progress=progress.append,
+            )
+        )
+
+        assert progress == [AgentProgress(kind=AgentProgressKind.READ, target="x.py")]
+        assert raw == [("stdout", line)]
+
+    def test_default_run_maps_progress_when_on_line_is_unset(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """[tier-1/unit] default_copilot_run: a request with on_progress set and on_line None still passes a stdout callback to the runner and delivers the mapped progress."""
+        runner = _StreamingRunnerDouble(
+            stdout_lines=[self._view_line(tmp_path)], stderr_lines=[], completed_stdout=self._COMPLETED_STDOUT
+        )
+        monkeypatch.setattr("dovo.core.agents.copilot.stream_isolated_process", runner)
+        progress: list[AgentProgress] = []
+
+        default_copilot_run(
+            CliMutationRunRequest(
+                worktree_path=tmp_path, prompt="hi", timeout_seconds=3, tools=_ALLOW_ALL, on_progress=progress.append
+            )
+        )
+
+        assert runner.received_stdout_callback is not None
+        assert progress == [AgentProgress(kind=AgentProgressKind.READ, target="x.py")]
+
+    def test_default_run_ignores_on_progress_failure(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """[tier-1/unit] default_copilot_run: an on_progress that raises RuntimeError leaves the outcome (status 'finished', result_text) equal to the run without on_progress."""
+        runner = _StreamingRunnerDouble(
+            stdout_lines=[self._view_line(tmp_path)], stderr_lines=[], completed_stdout=self._COMPLETED_STDOUT
+        )
+        monkeypatch.setattr("dovo.core.agents.copilot.stream_isolated_process", runner)
+
+        def failing(progress: AgentProgress) -> None:
+            raise RuntimeError("terminal gone")
+
+        outcome = default_copilot_run(
+            CliMutationRunRequest(
+                worktree_path=tmp_path, prompt="hi", timeout_seconds=3, tools=_ALLOW_ALL, on_progress=failing
+            )
+        )
+
+        assert (outcome.status, outcome.result_text) == ("finished", "hello")
+
+    def test_default_run_without_callbacks_passes_no_stdout_callback(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """[tier-1/unit] default_copilot_run: a request with on_line None and on_progress None calls the runner with on_stdout_line None."""
+        runner = _StreamingRunnerDouble(stdout_lines=[], stderr_lines=[], completed_stdout=self._COMPLETED_STDOUT)
+        monkeypatch.setattr("dovo.core.agents.copilot.stream_isolated_process", runner)
+
+        default_copilot_run(
+            CliMutationRunRequest(worktree_path=tmp_path, prompt="hi", timeout_seconds=3, tools=_ALLOW_ALL)
+        )
+
+        assert runner.received_stdout_callback is None
 
 
 class CopilotRunTests:

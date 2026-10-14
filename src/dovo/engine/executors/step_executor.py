@@ -24,6 +24,7 @@ from dovo.core.catalog.exceptions import StepValidationError
 from dovo.core.catalog.services.resolve_step import resolve_step_definition
 from dovo.core.inputs.exceptions import NamespaceResolutionError
 from dovo.core.inputs.services.interpolate import NamespaceProvider, build_providers, interpolate_step_fields
+from dovo.engine.executors.agent_progress import AgentProgressReporter
 from dovo.engine.executors.agent_step import MISSING_SETTINGS_MESSAGE
 from dovo.engine.executors.artifact_namespace import ArtifactNamespaceProvider
 from dovo.engine.executors.internal_dispatch import INTERNAL_COMMAND_HANDLERS
@@ -152,6 +153,7 @@ class StepExecution:
         self.session_log_dir = metadata.session_log_dir
         self.save_attempt_logs = metadata.save_attempt_logs
         self.loop_iteration = metadata.loop_iteration
+        self.loop_id = metadata.loop_id
         self.session_id = metadata.session_id or ""
         self.artifact_store = metadata.artifact_store
         self.paths = metadata.paths
@@ -353,12 +355,24 @@ class StepExecution:
         def on_agent_line(stream_name: str, line: str) -> None:
             handles[stream_name] = self._append_log_line(handles[stream_name], f"{line}\n")
 
+        progress = AgentProgressReporter(
+            step_id=self.step.id,
+            step_index=metadata.step.index,
+            attempt=metadata.step.attempt,
+            loop_id=self.loop_id,
+            iteration=self.loop_iteration,
+            on_output=self.on_output,
+            session_log_dir=self.session_log_dir,
+            redactor=self.redactor,
+        )
+
         try:
             return self.agent_runner(
                 self.step,
                 self.worktree_path,
                 self.on_output,
                 None if stdout_log is None and stderr_log is None else on_agent_line,
+                progress,
                 metadata,
             )
         finally:

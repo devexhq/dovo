@@ -7,11 +7,21 @@ from pathlib import Path
 
 import pytest
 
+from dovo.common.constants import SESSION_LOG_FILENAME
 from dovo.common.models import FailurePolicy
-from dovo.core.agents import AgentResponse, AgentResponseStatus, ResolvedAgentSettings, default_tool_policy
+from dovo.core.agents import (
+    AgentProgress,
+    AgentProgressKind,
+    AgentResponse,
+    AgentResponseStatus,
+    ResolvedAgentSettings,
+    default_tool_policy,
+)
 from dovo.core.catalog.definitions import StepAssert, StepDefinition
+from dovo.core.sessions import SessionLogEvent, SessionLogEventType
 from dovo.engine.executors.agent_step import MISSING_SETTINGS_MESSAGE, build_agent_step_runner
 from dovo.engine.executors.models import (
+    AgentProgressSink,
     AgentStepRunner,
     ExecutionMetadata,
     OutputCallback,
@@ -63,6 +73,7 @@ class AgentRunnerDispatchTests:
             worktree: Path,
             on_output: OutputCallback | None,
             on_agent_line: OutputCallback | None,
+            progress: AgentProgressSink,
             metadata: ExecutionMetadata,
         ) -> StepDispatchOutcome:
             received.append(metadata)
@@ -226,6 +237,7 @@ class StepExecutorRejectedPatchTests:
             worktree: Path,
             on_output: OutputCallback | None,
             on_agent_line: OutputCallback | None,
+            progress: AgentProgressSink,
             metadata: ExecutionMetadata,
         ) -> StepDispatchOutcome:
             received.append(metadata)
@@ -248,6 +260,7 @@ class StepExecutorRejectedPatchTests:
             worktree: Path,
             on_output: OutputCallback | None,
             on_agent_line: OutputCallback | None,
+            progress: AgentProgressSink,
             metadata: ExecutionMetadata,
         ) -> StepDispatchOutcome:
             return StepDispatchOutcome(
@@ -260,3 +273,69 @@ class StepExecutorRejectedPatchTests:
 
         assert result.status == "failed"
         assert result.rejected_patch_path == "P"
+
+
+class StepExecutorAgentProgressTests:
+    @staticmethod
+    def _reporting_runner(received: list[OutputCallback | None]) -> AgentStepRunner:
+        def _runner(
+            step: StepDefinition,
+            worktree: Path,
+            on_output: OutputCallback | None,
+            on_agent_line: OutputCallback | None,
+            progress: AgentProgressSink,
+            metadata: ExecutionMetadata,
+        ) -> StepDispatchOutcome:
+            received.append(on_agent_line)
+            progress.report(AgentProgress(kind=AgentProgressKind.READ, target="x"))
+            return StepDispatchOutcome(status="completed", exit_code=0, stdout="", stderr="")
+
+        return _runner
+
+    def test_runner_receives_a_reporter_bound_to_the_step_identity(self, git_repo: Path, tmp_path: Path) -> None:
+        """[tier-1/integration] StepExecution.run: an AGENT step in loop 'code-loop' iteration 2 calls agent_runner with a progress argument whose report writes '[code] Reading x\\n' to on_output."""
+        streamed: list[tuple[str, str]] = []
+        log_dir = tmp_path / "logs"
+        log_dir.mkdir()
+        context = StepExecutionContext(
+            step=StepBuilder.agent("plan").with_id("code").build(),
+            worktree_path=git_repo,
+            agent_runner=self._reporting_runner([]),
+            on_output=lambda stream_name, line: streamed.append((stream_name, line)),
+            loop_id="code-loop",
+            loop_iteration=2,
+            session_log_dir=log_dir,
+        )
+
+        StepExecution(context).run()
+
+        assert streamed == [("stdout", "[code] Reading x\n")]
+        (event,) = [
+            SessionLogEvent.model_validate_json(line)
+            for line in (log_dir / SESSION_LOG_FILENAME).read_text(encoding="utf-8").splitlines()
+        ]
+        assert (event.event, event.step_id, event.loop_id, event.iteration, event.kind, event.target) == (
+            SessionLogEventType.AGENT_PROGRESS,
+            "code",
+            "code-loop",
+            2,
+            "read",
+            "x",
+        )
+
+    def test_progress_works_when_attempt_logs_are_disabled(self, git_repo: Path) -> None:
+        """[tier-1/integration] StepExecution.run: save_attempt_logs False still gives the runner a working progress sink while on_agent_line stays None."""
+        received: list[OutputCallback | None] = []
+        streamed: list[tuple[str, str]] = []
+        context = StepExecutionContext(
+            step=StepBuilder.agent("plan").with_id("code").build(),
+            worktree_path=git_repo,
+            agent_runner=self._reporting_runner(received),
+            on_output=lambda stream_name, line: streamed.append((stream_name, line)),
+            save_attempt_logs=False,
+        )
+
+        StepExecution(context).run()
+
+        assert received == [None]
+        assert streamed == [("stdout", "[code] Reading x\n")]

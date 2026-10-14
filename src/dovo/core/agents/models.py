@@ -101,6 +101,24 @@ class AgentResponseStatus(StrEnum):
     BLOCKED = "blocked"
 
 
+class AgentProgressKind(StrEnum):
+    """What a provider event shows the agent doing."""
+
+    EDIT = "edit"
+    READ = "read"
+    SEARCH = "search"
+    SHELL = "shell"
+
+
+class AgentProgress(BaseModel):
+    """One provider-agnostic progress step: what the agent did and to what."""
+
+    model_config = {"extra": "forbid", "strict": True}
+
+    kind: AgentProgressKind
+    target: str
+
+
 class AgentDenial(BaseModel):
     """One tool call the provider refused, with the capability it maps to when known."""
 
@@ -132,6 +150,7 @@ class AgentAttemptContext(BaseModel):
     metadata_env: dict[str, str] = Field(default_factory=dict)
     rejected_patch_destination: Path | None = None
     on_line: Callable[[str, str], None] | None = Field(default=None, exclude=True)
+    on_progress: Callable[[AgentProgress], None] | None = Field(default=None, exclude=True)
 
 
 class AgentScratchResult(BaseResult):
@@ -172,6 +191,7 @@ class AgentRequest(BaseModel):
     env: dict[str, str] = Field(default_factory=dict, exclude=True)
     metadata_env: dict[str, str] = Field(default_factory=dict, exclude=True)
     on_line: Callable[[str, str], None] | None = Field(default=None, exclude=True)
+    on_progress: Callable[[AgentProgress], None] | None = Field(default=None, exclude=True)
 
     @model_validator(mode="after")
     def validate_mode_contract(self) -> AgentRequest:

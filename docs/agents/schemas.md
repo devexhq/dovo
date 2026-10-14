@@ -102,6 +102,17 @@ Hierarchical resolution merges four tiers, lowest to highest precedence: **Packa
 - Environment inputs are names-only for reporting: `env_withheld` carries the names the allowlist withheld, never values.
 - A runner outcome with denials and an empty worktree diff becomes a `blocked` response (built by `blocked_response`).
 
+### Copilot progress mapping
+
+The Copilot adapter maps each `tool.execution_start` stdout event to live progress items through `map_copilot_line` ([`core/agents/services/map_progress.py`](../../src/dovo/core/agents/services/map_progress.py)); other event types and unlisted tools such as `skill` are skipped. The table below is the mapping specification, and [`tests/lint/test_copilot_progress_mapping_parity.py`](../../tests/lint/test_copilot_progress_mapping_parity.py) fails when it disagrees with `COPILOT_TOOL_KINDS`.
+
+| Kind | Tool names | Target |
+| --- | --- | --- |
+| `read` | `view` | `arguments.path` |
+| `search` | `rg`, `grep`, `glob` | `arguments.pattern` |
+| `edit` | `create`, `edit`, `apply_patch` | `arguments.path`; for `apply_patch`, each `*** Add File:`, `*** Update File:` or `*** Delete File:` path in the `arguments` string |
+| `shell` | `bash` | `arguments.command` |
+
 ---
 
 ## 10. Artifacts

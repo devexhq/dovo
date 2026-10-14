@@ -293,6 +293,35 @@ class StepCoordinatorLoopIterationForwardingTests:
         assert (tmp_path / expected_filename).exists()
 
 
+class StepCoordinatorLoopIdTests:
+    @pytest.mark.parametrize(
+        ("loop_id", "expected"),
+        [pytest.param("code-loop", "code-loop", id="loop-step"), pytest.param(None, None, id="top-level-step")],
+    )
+    def test_loop_step_context_carries_the_loop_id(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, loop_id: str | None, expected: str | None
+    ) -> None:
+        """[tier-1/unit] StepCoordinator.run_attempt: a loop sub-step run with loop_id 'code-loop' builds a StepExecutionContext whose loop_id is 'code-loop'; a top-level step's loop_id is None."""
+        seen: list[str | None] = []
+
+        class _CapturingStepExecution(StepExecution):
+            """StepExecution subclass recording the loop_id of the StepExecutionContext it is constructed with."""
+
+            def __init__(self, metadata: StepExecutionContext) -> None:
+                seen.append(metadata.loop_id)
+                super().__init__(metadata)
+
+        monkeypatch.setattr("dovo.engine.step_coordinator.StepExecution", _CapturingStepExecution)
+        context = RunSettings(cwd=tmp_path, use_worktree=False, paths=_paths_for(tmp_path))
+        step = StepBuilder.command("echo ok").with_id("ok").build()
+
+        StepCoordinator(context).run_attempt(
+            _run_context(tmp_path), [], step, idx=1, total=1, step_context=None, loop_iteration=2, loop_id=loop_id
+        )
+
+        assert seen == [expected]
+
+
 class _RecordingRunObserver(NoOpRunObserver):
     """Test double implementing RunObserver, recording step lifecycle callbacks in call order."""
 

@@ -7,9 +7,9 @@ from pathlib import Path
 
 from dovo.core.sessions import SessionLogEvent, SessionLogEventType
 from dovo.engine.executors.models import ConditionEvaluationResult
+from dovo.engine.executors.session_log import append_session_log_event
 from dovo.engine.models import RunObserver
 from dovo.engine.notify import safe_notify
-from dovo.engine.session_log import append_session_log_event
 
 
 @dataclass(frozen=True)

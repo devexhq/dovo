@@ -16,6 +16,9 @@ from dovo.common.tool_policy import ToolCapability, ToolPolicy, ToolRule
 from dovo.core.agents import (
     AgentAttempt,
     AgentAttemptContext,
+    AgentProgress,
+    AgentProgressKind,
+    AgentRequest,
     AgentResponse,
     AgentResponseStatus,
     BaseAgentProvider,
@@ -38,8 +41,8 @@ from dovo.engine.executors.agent_step import (
     execute_agent_step,
 )
 from dovo.engine.executors.metadata import metadata_to_env
-from dovo.engine.executors.models import ExecutionMetadata, StepDispatchOutcome, StepMetadata
-from tests.harness import AGENT_ADAPTER_FACTORY, FakeAgentProvider, new_file_diff
+from dovo.engine.executors.models import AgentProgressSink, ExecutionMetadata, StepDispatchOutcome, StepMetadata
+from tests.harness import AGENT_ADAPTER_FACTORY, FakeAgentProvider, RecordingProgressSink, new_file_diff
 from tests.harness.builders import StepBuilder
 
 _NO_OP_SUMMARY = "Inspected the repository; no edits were required."
@@ -89,6 +92,7 @@ def _run(
     session_dir: Path | None = None,
     metadata: ExecutionMetadata = _METADATA,
     on_output: Callable[[str, str], None] | None = None,
+    progress: AgentProgressSink | None = None,
 ) -> StepDispatchOutcome:
     return execute_agent_step(
         step or _step(),
@@ -102,6 +106,7 @@ def _run(
         metadata=metadata,
         on_output=on_output,
         on_agent_line=None,
+        progress=progress or RecordingProgressSink(),
     )
 
 
@@ -260,6 +265,7 @@ class ExecuteAgentStepRequestTests:
             metadata=_METADATA,
             on_output=None,
             on_agent_line=None,
+            progress=RecordingProgressSink(),
         )
 
         assert outcome.status == "failed"
@@ -467,6 +473,7 @@ class ExecuteAgentStepScratchTests:
             metadata=_METADATA,
             on_output=None,
             on_agent_line=None,
+            progress=RecordingProgressSink(),
         )
 
         assert outcome.status == "failed"
@@ -523,6 +530,7 @@ class ExecuteAgentStepScratchTests:
             metadata=_METADATA,
             on_output=None,
             on_agent_line=None,
+            progress=RecordingProgressSink(),
         )
 
         assert outcome.error_message == expected_message
@@ -694,7 +702,7 @@ class BuildAgentStepRunnerTests:
             session_log_dir=None,
             session_dir=None,
         )
-        outcome = runner(_step(), git_repo, None, None, _METADATA)
+        outcome = runner(_step(), git_repo, None, None, RecordingProgressSink(), _METADATA)
 
         assert outcome.status == "failed"
         assert WORKTREE_REQUIRED_MESSAGE in (outcome.error_message or "")
@@ -717,7 +725,14 @@ class BuildAgentStepRunnerTests:
             session_log_dir=None,
             session_dir=None,
         )
-        outcome = runner(step, git_repo, lambda stream, line: emitted.append((stream, line)), None, _METADATA)
+        outcome = runner(
+            step,
+            git_repo,
+            lambda stream, line: emitted.append((stream, line)),
+            None,
+            RecordingProgressSink(),
+            _METADATA,
+        )
 
         assert [(call["instruction"], call["settings"], call["worktree_path"]) for call in calls] == [
             (step.prompt, settings, git_repo)
@@ -875,3 +890,61 @@ class ExecuteAgentStepHeartbeatTests:
 
         assert heartbeat_attempted.is_set()
         assert (outcome.status, outcome.exit_code) == ("completed", 0)
+
+
+class ExecuteAgentStepProgressTests:
+    def test_progress_is_forwarded_to_the_attempt_context(
+        self, git_repo: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """[tier-1/unit] execute_agent_step: the AgentAttemptContext reaching run_direct_attempt has on_progress equal to the sink's report."""
+        sink = RecordingProgressSink()
+        item = AgentProgress(kind=AgentProgressKind.READ, target="x.py")
+
+        def report_through_request(request: object) -> None:
+            assert isinstance(request, AgentRequest)
+            assert request.on_progress is not None
+            request.on_progress(item)
+
+        _use_provider(monkeypatch, FakeAgentProvider(_no_op(), on_call=report_through_request))
+
+        _run(git_repo, progress=sink)
+
+        assert sink.reported == [item]
+
+    @pytest.mark.parametrize(
+        ("quiet_seconds", "heartbeat_expected"),
+        [
+            pytest.param(0.0, False, id="recent-progress-suppresses"),
+            pytest.param(None, True, id="no-progress-beats"),
+        ],
+    )
+    def test_heartbeat_follows_the_progress_quiet_window(
+        self, git_repo: Path, monkeypatch: pytest.MonkeyPatch, quiet_seconds: float | None, heartbeat_expected: bool
+    ) -> None:
+        """[tier-1/unit] execute_agent_step: with the heartbeat interval patched to 0.01 seconds, a sink reporting 0 seconds since the last item at every tick emits no '[plan] agent running' line, and a sink reporting None emits at least one by the second tick."""
+        ExecuteAgentStepHeartbeatTests._use_fast_heartbeat(monkeypatch, [0.0, 30.4])
+        second_tick_seen = threading.Event()
+        lines: list[str] = []
+
+        class TickCountingSink(RecordingProgressSink):
+            ticks = 0
+
+            def seconds_since_last_report(self) -> float | None:
+                self.ticks += 1
+                if self.ticks >= 2:
+                    second_tick_seen.set()
+                return super().seconds_since_last_report()
+
+        def hold_until_second_tick(request: object) -> None:
+            second_tick_seen.wait(_HEARTBEAT_WAIT_SECONDS)
+
+        _use_provider(monkeypatch, FakeAgentProvider(_no_op(), on_call=hold_until_second_tick))
+
+        _run(
+            git_repo,
+            step=StepBuilder.agent("Plan the change").with_id("plan").build(),
+            on_output=lambda stream_name, line: lines.append(line),
+            progress=TickCountingSink(quiet_seconds),
+        )
+
+        assert any("agent running" in line for line in lines) is heartbeat_expected

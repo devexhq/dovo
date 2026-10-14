@@ -16,6 +16,7 @@ from dovo.core.agents.environment import ENV_FILTERED_PROMPT_LINE, build_agent_e
 from dovo.core.agents.models import (
     AgentDenial,
     AgentInvocationContext,
+    AgentProgress,
     AgentRequest,
     AgentResponse,
     AgentResponseStatus,
@@ -46,6 +47,7 @@ class CliMutationRunRequest(BaseModel):
     invocation: AgentInvocationContext | None = Field(default=None, exclude=True)
     env: dict[str, str] = Field(default_factory=dict, exclude=True)
     on_line: Callable[[str, str], None] | None = Field(default=None, exclude=True)
+    on_progress: Callable[[AgentProgress], None] | None = Field(default=None, exclude=True)
 
 
 class CliMutationOutcome(BaseModel):
@@ -165,6 +167,7 @@ class CliDirectMutationAdapter(BaseAgentProvider):
                 invocation=request.invocation,
                 env=env,
                 on_line=request.on_line,
+                on_progress=request.on_progress,
             )
         )
         duration_ms = elapsed_ms(started)

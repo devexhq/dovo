@@ -20,6 +20,7 @@ from dovo.core.agents.cli_mutation import (
 )
 from dovo.core.agents.credentials import missing_credential_error, resolve_credential
 from dovo.core.agents.models import AgentDenial, AgentInvocationContext, AgentRequest
+from dovo.core.agents.services.map_progress import map_copilot_line
 from dovo.core.agents.tools import (
     PolicyRoots,
     resolve_policy_roots,
@@ -528,6 +529,29 @@ def _line_forwarder(stream_name: str, on_line: Callable[[str, str], None] | None
     return forward
 
 
+def _stdout_forwarder(request: CliMutationRunRequest) -> Callable[[str], None] | None:
+    """Return the stdout line callback that tags each line for on_line and maps it into on_progress, or None when neither is set.
+
+    Mapper and on_progress failures are dropped so a bad line never kills the stream reader.
+    """
+    on_progress = request.on_progress
+    forward_line = _line_forwarder("stdout", request.on_line)
+    if on_progress is None:
+        return forward_line
+
+    def forward(line: str) -> None:
+        if forward_line is not None:
+            forward_line(line)
+
+        try:
+            for progress in map_copilot_line(line, worktree_path=request.worktree_path):
+                on_progress(progress)
+        except Exception:
+            return
+
+    return forward
+
+
 def default_copilot_run(request: CliMutationRunRequest) -> CliMutationOutcome:
     """Invoke `gh copilot` with request.env plus the adapter-owned COPILOT_MODEL and map its JSONL stream into an outcome."""
     token = resolve_copilot_token()
@@ -553,7 +577,7 @@ def default_copilot_run(request: CliMutationRunRequest) -> CliMutationOutcome:
             env=env,
             input_data=request.prompt.encode("utf-8"),
             timeout_seconds=request.timeout_seconds,
-            on_stdout_line=_line_forwarder("stdout", request.on_line),
+            on_stdout_line=_stdout_forwarder(request),
             on_stderr_line=_line_forwarder("stderr", request.on_line),
         )
     except subprocess.TimeoutExpired:

@@ -55,6 +55,7 @@ class SessionLogEventType(StrEnum):
     LOOP_CONDITIONS_EVALUATED = "loop_conditions_evaluated"
     LOOP_DONE = "loop_done"
     AGENT_ENV_FILTERED = "agent_env_filtered"
+    AGENT_PROGRESS = "agent_progress"
 
 
 class SessionLogEvent(BaseModel):
@@ -83,6 +84,8 @@ class SessionLogEvent(BaseModel):
     all_passed: bool | None = None
     next_iteration: int | None = None
     env_withheld: str | None = None
+    kind: str | None = None
+    target: str | None = None
     conditions: list[dict[str, object]] | None = None
 
     def details(self) -> dict[str, object]:

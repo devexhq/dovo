@@ -72,7 +72,7 @@ Banned imports per package are the table `LAYER_RULES` in [`tests/lint/test_laye
 - `core/inputs/` and `core/catalog/` must not import `agents/`; `core/agents/` must not import `config/`.
 - `core/config/validate.py` may import `core/agents/registry`.
 - `engine/executors/` must not import engine modules outside `executors/`.
-- Known exceptions, tracked in `LAYER_EXCEPTIONS` and only ever removed: `common/filesystem/models.py` imports `dovo.core.catalog.models` for an annotation under `TYPE_CHECKING`, and `engine/executors/agent_step.py` imports `dovo.engine.session_log`.
+- Known exceptions, tracked in `LAYER_EXCEPTIONS` and only ever removed: `common/filesystem/models.py` imports `dovo.core.catalog.models` for an annotation under `TYPE_CHECKING`.
 
 Not mechanically checked (review-time):
 

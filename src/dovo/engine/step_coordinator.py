@@ -12,6 +12,7 @@ from dovo.engine.executors import StepExecution
 from dovo.engine.executors.agent_step import build_agent_step_runner
 from dovo.engine.executors.ask_step import complete_ask_step, resolve_ask_request
 from dovo.engine.executors.models import AskResolution, PreviousStepMetadata, StepExecutionContext, StepResult
+from dovo.engine.executors.session_log import append_session_log_event
 from dovo.engine.failure import (
     failed_step_message,
     mark_continued_after_prompt,
@@ -19,7 +20,6 @@ from dovo.engine.failure import (
 )
 from dovo.engine.models import FailurePromptDecision, RunContext, RunSettings, StepAction
 from dovo.engine.notify import safe_notify
-from dovo.engine.session_log import append_session_log_event
 
 
 @dataclass(frozen=True)
@@ -111,6 +111,7 @@ class StepCoordinator:
                 steps=steps,
                 initial_attempt=initial_attempt,
                 loop_iteration=loop_iteration,
+                loop_id=loop_id,
                 on_output=on_output,
             )
         ).run()
@@ -129,6 +130,7 @@ class StepCoordinator:
         steps: Sequence[PreviousStepMetadata] | None,
         initial_attempt: int,
         loop_iteration: int | None,
+        loop_id: str | None,
         on_output: Callable[[str, str], None] | None = None,
     ) -> StepExecutionContext:
         """Build the StepExecutionContext shared by command, script, agent, internal and ask steps."""
@@ -147,6 +149,7 @@ class StepCoordinator:
             session_log_dir=run_context.session_log_dir,
             save_attempt_logs=run_context.save_attempt_logs,
             loop_iteration=loop_iteration,
+            loop_id=loop_id,
             session_id=self.context.session_id or "",
             artifact_store=run_context.artifact_store,
             paths=self.context.paths,
@@ -242,6 +245,7 @@ class StepCoordinator:
                 steps=steps,
                 initial_attempt=attempt,
                 loop_iteration=loop_iteration,
+                loop_id=loop_id,
             )
         )
         if resolution.result is not None:
@@ -275,6 +279,7 @@ class StepCoordinator:
                 steps=steps,
                 initial_attempt=attempt,
                 loop_iteration=loop_iteration,
+                loop_id=loop_id,
             ),
             request,
             answer,
