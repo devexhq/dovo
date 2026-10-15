@@ -154,11 +154,14 @@ See the [Project Config Schema](../reference/config-schema.md) for every field.
 
 ## API Keys & Environment Setup
 
-The only supported agent provider is `copilot`. It needs the GitHub CLI (`gh`) on `PATH` and a token. `dovo doctor` reports `DOCTOR_BINARY_MISSING` or `DOCTOR_AGENT_KEY_MISSING` until both are available.
+The supported agent providers are `copilot` and `claude`. `copilot` needs the GitHub CLI (`gh`) on `PATH` and a token. `claude` needs Claude Code (`claude`) on `PATH` and `ANTHROPIC_API_KEY`; a `claude auth login` subscription session alone does not authenticate it. `dovo doctor` reports `DOCTOR_BINARY_MISSING` or `DOCTOR_AGENT_KEY_MISSING` until both are available.
 
 ```bash
 # GitHub Copilot Provider
 export GITHUB_TOKEN="ghp_..."
+
+# Claude Code Provider
+export ANTHROPIC_API_KEY="sk-ant-..."
 ```
 
 To keep the token across sessions, add it to your shell profile (`.bashrc` / `.zshrc`) or a `.env` file that is listed in `.gitignore`.

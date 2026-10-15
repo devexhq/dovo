@@ -314,6 +314,17 @@ def _fake_copilot(monkeypatch: pytest.MonkeyPatch) -> FakeAgentRunner:
     return runner
 
 
+def _fake_claude(monkeypatch: pytest.MonkeyPatch) -> FakeAgentRunner:
+    """Install a FakeAgentRunner at the Claude process boundary with a usable ANTHROPIC_API_KEY."""
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test")
+    runner = FakeAgentRunner().returning(
+        stdout=b'{"type":"result","subtype":"success","is_error":false,"result":"done"}\n'
+    )
+    monkeypatch.setattr("dovo.core.agents.cli_mutation.stream_isolated_process", runner)
+
+    return runner
+
+
 def _write_agent_blueprint(workspace: Path, **step_extra: object) -> None:
     write_runnable_blueprint(
         workspace,
@@ -543,17 +554,17 @@ class RunEnvFlagsCliIntegrationTests:
 class RunAgentFlagCliIntegrationTests:
     """Typer runner integration tests for the dovo run --agent flag."""
 
-    def test_run_agent_claude_reaches_the_claude_adapter_stub(
+    def test_run_agent_claude_reaches_the_claude_adapter(
         self, cli_runner: CliRunner, run_workspace: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test")
+        """Exit 0 and record one runner call whose cmd[0] is 'claude'."""
+        runner = _fake_claude(monkeypatch)
         _write_agent_blueprint(run_workspace)
 
         result = cli_runner.invoke(app, ["-p", str(run_workspace), "run", "agent-task", "--agent", "claude"])
 
-        assert result.exit_code == 1
-        assert "Claude Code invocation is not available" in result.output
-        assert "AGENT_PROVIDER_UNSUPPORTED" not in result.output
+        assert result.exit_code == 0
+        assert [call.cmd[0] for call in runner.calls] == ["claude"]
 
 
 def _ask_blueprint(workspace: Path) -> None:
