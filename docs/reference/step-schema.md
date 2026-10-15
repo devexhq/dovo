@@ -200,8 +200,7 @@ Steps receive run context through `DOVO_*` environment variables and template pl
 ### Interpolation Paths
 
 - **Current step**: `{{ step.id }}`, `{{ step.name }}`, `{{ step.index }}`, `{{ step.attempt }}`
-- **Blueprint**: `{{ blueprint.name }}`, `{{ blueprint.sha }}`. `task.*` and `workflow.*` are older aliases; use `blueprint.*`.
-- **Previous step**: `{{ previous_step.id }}`, `{{ previous_step.name }}`, `{{ previous_step.index }}`, `{{ previous_step.status }}`, `{{ previous_step.exit_code }}`
+- **Blueprint**: `{{ blueprint.name }}`, `{{ blueprint.sha }}`.- **Previous step**: `{{ previous_step.id }}`, `{{ previous_step.name }}`, `{{ previous_step.index }}`, `{{ previous_step.status }}`, `{{ previous_step.exit_code }}`
 - **Historical steps (`steps`)**:
   - `{{ steps[0].<field> }}`: 0-based indexing for finished steps in run order.
   - `{{ steps[-1].<field> }}`: Python-style negative index (`-1` is the last finished step; matches `previous_step`).

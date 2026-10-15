@@ -59,7 +59,7 @@ def make_init_view(**overrides: Any) -> WorkspaceInitView:
         "config_skipped_existing": False,
         "config_path_relative": ".dovo/config.json",
         "inserted_keys": [],
-        "seeded_files": [".dovo/workflows/test.yml"],
+        "seeded_files": [".dovo/catalog/blueprints/test.yml"],
         "skipped_seed_files": [],
         "overwritten_seed_files": [],
         "failure_mode": None,
@@ -84,7 +84,7 @@ INITIALIZED = FormatterCase(
             created=True,
         ),
         seed_result=SeedResult(
-            created_files=[DOVO / "workflows" / "test.yml"],
+            created_files=[DOVO / "catalog" / "blueprints" / "test.yml"],
         ),
     ),
     view=make_init_view(
@@ -95,7 +95,7 @@ INITIALIZED = FormatterCase(
         ".dovo",
         ".dovo/config.json",
         ".dovo/sessions",
-        ".dovo/workflows/test.yml",
+        ".dovo/catalog/blueprints/test.yml",
     ],
 )
 
@@ -117,7 +117,7 @@ INITIALIZED_WITH_IDENTITY = FormatterCase(
             created=True,
         ),
         seed_result=SeedResult(
-            created_files=[DOVO / "workflows" / "test.yml"],
+            created_files=[DOVO / "catalog" / "blueprints" / "test.yml"],
         ),
     ),
     view=make_init_view(
@@ -130,7 +130,7 @@ INITIALIZED_WITH_IDENTITY = FormatterCase(
         ".dovo",
         ".dovo/config.json",
         ".dovo/.meta",
-        ".dovo/workflows/test.yml",
+        ".dovo/catalog/blueprints/test.yml",
         "brave-otter",
         ".dovo/project.json",
         "catalog/",
@@ -151,7 +151,7 @@ REPAIRED = FormatterCase(
             inserted_keys=["telemetry.enabled"],
         ),
         seed_result=SeedResult(
-            skipped_existing_files=[DOVO / "workflows" / "fix-tests.yml"],
+            skipped_existing_files=[DOVO / "catalog" / "blueprints" / "fix-tests.yml"],
         ),
     ),
     view=make_init_view(
@@ -162,14 +162,14 @@ REPAIRED = FormatterCase(
         config_repaired=True,
         inserted_keys=["telemetry.enabled"],
         seeded_files=[],
-        skipped_seed_files=[".dovo/workflows/fix-tests.yml"],
+        skipped_seed_files=[".dovo/catalog/blueprints/fix-tests.yml"],
     ),
     render_expectations=[
         ".dovo",
         ".dovo/config.json",
         ".dovo/sessions",
         "telemetry.enabled",
-        ".dovo/workflows/fix-tests.yml",
+        ".dovo/catalog/blueprints/fix-tests.yml",
     ],
 )
 
@@ -186,7 +186,7 @@ ALREADY_INITIALIZED_OVERWRITTEN = FormatterCase(
             overwritten=True,
         ),
         seed_result=SeedResult(
-            overwritten_files=[DOVO / "workflows" / "x.yml"],
+            overwritten_files=[DOVO / "catalog" / "blueprints" / "x.yml"],
         ),
     ),
     view=make_init_view(
@@ -197,7 +197,7 @@ ALREADY_INITIALIZED_OVERWRITTEN = FormatterCase(
         config_created=False,
         config_overwritten=True,
         seeded_files=[],
-        overwritten_seed_files=[".dovo/workflows/x.yml"],
+        overwritten_seed_files=[".dovo/catalog/blueprints/x.yml"],
     ),
     render_expectations=[".dovo", ".dovo/config.json"],
 )
@@ -385,7 +385,7 @@ INIT_PAYLOAD_CASES = [
             "config_skipped_existing": False,
             "config_path_relative": ".dovo/config.json",
             "inserted_keys": [],
-            "seeded_files": [".dovo/workflows/test.yml"],
+            "seeded_files": [".dovo/catalog/blueprints/test.yml"],
             "skipped_seed_files": [],
             "overwritten_seed_files": [],
             "failure_mode": None,
@@ -414,7 +414,7 @@ INIT_PAYLOAD_CASES = [
             "config_skipped_existing": False,
             "config_path_relative": ".dovo/config.json",
             "inserted_keys": [],
-            "seeded_files": [".dovo/workflows/test.yml"],
+            "seeded_files": [".dovo/catalog/blueprints/test.yml"],
             "skipped_seed_files": [],
             "overwritten_seed_files": [],
             "failure_mode": None,
@@ -444,7 +444,7 @@ INIT_PAYLOAD_CASES = [
             "config_path_relative": ".dovo/config.json",
             "inserted_keys": ["telemetry.enabled"],
             "seeded_files": [],
-            "skipped_seed_files": [".dovo/workflows/fix-tests.yml"],
+            "skipped_seed_files": [".dovo/catalog/blueprints/fix-tests.yml"],
             "overwritten_seed_files": [],
             "failure_mode": None,
             "errors": [],

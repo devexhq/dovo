@@ -19,7 +19,7 @@ class InputType(StrEnum):
 
 
 class ParameterInput(BaseModel):
-    """Typed input parameter declared on a task or workflow blueprint."""
+    """Typed input parameter declared on a blueprint."""
 
     model_config = {"extra": "forbid", "strict": True}
 

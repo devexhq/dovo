@@ -87,8 +87,6 @@ Use these terms precisely. A backticked type below must exist in `src/`, enforce
 |:---|:---|
 | Step | The smallest unit of execution (`StepDefinition`): a command, agent prompt, script, or internal handler, with optional `assert` conditions and an `on_failure` policy. |
 | Loop step | A container step (`LoopStepBlock`) that repeats its `do:` child steps until its `until` condition holds or `max_iterations` is reached. |
-| Task | Convention: a blueprint made only of linear steps. |
-| Workflow | Convention: a blueprint that also uses loop steps. Tasks and workflows are both a `BlueprintDefinition`; no code distinguishes them. |
 | Blueprint | The authored YAML document (`BlueprintDefinition`) declaring inputs and steps; the only executable document type. |
 | Catalog | The disk-only, multi-tier (REPO, USER, GLOBAL, PACKAGED) index of named blueprints and steps. |
 | Run | The act of executing a blueprint from start to terminal outcome (`RunOutcome`). A run produces a session; it is not the record that outlives it. |

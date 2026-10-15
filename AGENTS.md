@@ -65,7 +65,7 @@ Documentation update gates, accuracy rules, and user-facing doc sync policies ar
 
 | Doc | When to use |
 |-----|-------------|
-| [docs/agents/architecture.md](docs/agents/architecture.md) | Module layout, import boundaries, terminology (task / workflow / blueprint / step / run / session / worktree / checkpoint), `.dovo/` layout |
+| [docs/agents/architecture.md](docs/agents/architecture.md) | Module layout, import boundaries, terminology (blueprint / step / run / session / worktree / checkpoint), `.dovo/` layout |
 | [docs/agents/code-conventions.md](docs/agents/code-conventions.md) | Python style, models placement, Result/Outcome, writes, console output, backwards compatibility |
 | [docs/agents/documentation.md](docs/agents/documentation.md) | Documentation update gates, accuracy rules, and user-facing doc sync |
 | [docs/agents/planning.md](docs/agents/planning.md) | Planning an issue before implementation (artifact inventory, code samples, plan template) |

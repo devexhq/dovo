@@ -206,7 +206,7 @@ class WorkspaceInitFormatter(ComponentFormatter[WorkspaceInitResult, WorkspaceIn
         renderables.append(Text(""))
         renderables.append(
             Text.from_markup(
-                "[bold dim]Next: run [bold cyan]dovo config show[/bold cyan] or [bold cyan]dovo workflow list[/bold cyan][/bold dim]"
+                "[bold dim]Next: run [bold cyan]dovo config show[/bold cyan] or [bold cyan]dovo blueprint list[/bold cyan][/bold dim]"
             )
         )
         return Group(*renderables)

@@ -19,7 +19,7 @@ if TYPE_CHECKING:
 
 
 class Blueprint:
-    """Load, inspect, and dump a unified task/blueprint document."""
+    """Load, inspect, and dump a blueprint document."""
 
     spec: ClassVar[type[BlueprintDefinition]] = BlueprintDefinition
 

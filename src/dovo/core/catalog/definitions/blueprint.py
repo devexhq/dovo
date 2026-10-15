@@ -67,7 +67,7 @@ def _validate_loop_steps(steps: list[StepDefinition | LoopStepBlock]) -> None:
 
 
 class BlueprintDefaults(BaseModel):
-    """Optional task/blueprint blueprint defaults applied fill-if-omitted to steps."""
+    """Optional blueprint defaults applied fill-if-omitted to steps."""
 
     model_config = {"extra": "forbid"}
     on_failure: OnFailureSpec | None = None

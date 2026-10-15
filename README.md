@@ -43,7 +43,7 @@ dovo session list
 - `dovo init`
 - `dovo status`
 - `dovo doctor` — run diagnostic checks and print a workspace health report
-- `dovo run <blueprint>` — execute a task or workflow blueprint
+- `dovo run <blueprint>` — execute a blueprint
 
 ### Sessions
 
@@ -93,9 +93,9 @@ dovo session list
 - `dovo artifacts download <session-id> <name> --dest <path>` — checksum-verify and extract a published artifact bundle
 - `dovo artifacts prune [--dry-run] [--force]` — delete expired artifact bundles
 
-## Agent providers for workflow runs
+## Agent providers for blueprint runs
 
-Workflow definitions support one provider:
+Blueprints support one provider:
 
 - `copilot`
 
@@ -107,8 +107,7 @@ Dovo reserves these paths under the repository-local `.dovo/` directory:
 
 - `.dovo/config.json`
 - `.dovo/project.json`
-- `.dovo/catalog/workflows/*.yml`
-- `.dovo/catalog/tasks/*.yml`
+- `.dovo/catalog/blueprints/*.yml`
 - `.dovo/worktrees/`
 - `.dovo/dovo.lock`
 - `<worktree>/.dovo/run`, a symlink to the run's session directory that `dovo run` creates in each new run worktree

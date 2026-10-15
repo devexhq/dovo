@@ -402,12 +402,6 @@ class BlueprintBuilderTests:
         )
         assert blueprint == expected
 
-    def test_workflow_and_task_factories_set_name(self) -> None:
-        workflow_blueprint = BlueprintBuilder.workflow("wf-1").build()
-        task_blueprint = BlueprintBuilder.task("task-1").build()
-        assert workflow_blueprint == BlueprintDefinition(name="wf-1")
-        assert task_blueprint == BlueprintDefinition(name="task-1")
-
     def test_with_input_adds_parameter_input(self) -> None:
         blueprint = (
             BlueprintBuilder().with_input("env", input_type=InputType.STRING, default="prod", required=True).build()
