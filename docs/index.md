@@ -1,75 +1,83 @@
-# Dovo CLI (`dovo`) Documentation
+# Dovo
 
-Welcome to **Dovo CLI** (`dovo`), a CLI tool providing isolated Git worktree developer workflows and AI agent workspaces backed by a local `.dovo/` state directory.
+Run AI agent and developer workflows as blueprints, each in its own isolated Git worktree.
+Plan with an agent, approve it yourself, and review the diff before anything touches your branch.
 
----
+```yaml
+name: feature
+description: Plan a feature until approved, then implement it
+version: 1
+use_worktree: true
 
-## Overview
+inputs:
+  feature:
+    type: string
+    description: Description of the feature to build
+    required: true
+    aliases: ["-f", "--feature"]
 
-`dovo` runs blueprints in isolated Git worktrees.
+steps:
+  - id: plan-loop
+    name: Plan until approved
+    type: loop
+    max_iterations: 3
+    until:
+      - steps.approve.outputs.selected == "approve"
+    on_max_iterations: prompt_user
+    do:
+      - id: plan
+        type: agent
+        prompt: |
+          Plan the implementation of: ${{ inputs.feature }}. Write the plan to PLAN.md and change nothing else.
+          Previous plan: {{ artifacts.plan.content }}
+          Feedback to address: {{ steps.approve.outputs.comment }}
+        tools:
+          allow:
+            - capability: read
+            - capability: write
+        artifacts:
+          - name: plan
+            path: PLAN.md
+        timeout_seconds: 180
 
-Key capabilities include:
+      - id: approve
+        type: ask
+        interaction:
+          mode: select
+          message: Approve this plan?
+          artifact: plan
+          comment:
+            policy: optional
+            message: What should change?
+          options:
+            - { value: approve, label: Approve, comment: disabled }
+            - { value: revise, label: Request changes, comment: required }
+            - { value: deny, label: Deny, fail: true }
 
-- **Isolated Worktrees**: Work without touching your main working tree, using `dovo worktree`.
-- **Unified Blueprint Execution**: Execute cataloged blueprints via `dovo run`.
-- **Durable Resumption**: Resume paused sessions from saved run state via `dovo resume`.
-- **Execution History**: Inspect and audit recorded blueprint run sessions via `dovo session`.
-- **Catalog System**: Discover and manage project blueprints and steps with `dovo blueprint` and `dovo step`.
-
----
-
-## Quickstart
-
-```bash
-# Install Dovo CLI
-pip install devexhq-dovo
-
-# Initialize local Dovo configuration
-dovo init
-
-# List available catalog items
-dovo blueprint list
-
-# Create an isolated worktree environment
-dovo worktree create my-feature
+  - id: implement
+    name: Implement the approved plan
+    type: agent
+    prompt: "Implement this plan for: ${{ inputs.feature }}\n{{ artifacts.plan.content }}"
+    tools:
+      allow:
+        - capability: read
+        - capability: write
+        - capability: shell
+    timeout_seconds: 300
 ```
 
----
+<div class="grid cards" markdown>
 
-## Documentation Map
+- **[Learn](getting-started/installation.md)**
 
-### Getting Started
-- **[Installation](getting-started/installation.md)**: Install with `pip`, `pipx`, or `uv`.
-- **[Quickstart Tutorial](getting-started/quickstart.md)**: Run your first blueprint in a worktree.
-- **[Workspace Configuration](getting-started/workspace-config.md)**: Set up `.dovo/config.json` and project settings.
+    Install Dovo and run your first blueprint.
 
-### How-To Guides
-- **[Core Concepts](guides/concepts.md)**: Worktrees, blueprints, steps, and session lifecycle.
-- **[Authoring Blueprints](guides/authoring-blueprints.md)**: Creating custom blueprint documents.
-- **[Working with Steps](guides/working-with-steps.md)**: Command, Agent, and Script steps, shorthands, and reusable catalog steps.
-- **[Parameter Inputs & Expressions](guides/passing-inputs.md)**: Declaring typed parameters, CLI flags, and `${{ inputs.* }}` interpolation.
-- **[Failure Handling & Resumption](guides/failure-handling-and-resume.md)**: Retry policies, interactive prompts, durable run state, and `dovo resume`.
-- **[AI Agent Providers](guides/agent-providers.md)**: Provider setup, tool policy, and agent environment.
+- **[Recipes](recipes/feature-development-loop.md)**
 
-### Reference
-- **[Blueprint Schema](reference/blueprint-schema.md)**: Full generic-blueprint YAML schema reference.
-- **[Step Schema](reference/step-schema.md)**: Step primitive properties, modes, and loop blocks.
-- **[Inputs Schema](reference/inputs-schema.md)**: Parameter input types, aliases, and expression syntax.
-- **[Assertions Schema](reference/assertions-schema.md)**: Quality assertions and verification operators.
-- **[Project Config Schema](reference/config-schema.md)**: Full `.dovo/config.json` specification.
+    Complete blueprints you can copy.
 
-### Recipes & Examples
-- **[Feature Development Loop](recipes/feature-development-loop.md)**: Plan a feature, then code and review it in a loop until the review finds nothing to fix.
-- **[AI Code Patcher](recipes/ai-code-patcher.md)**: A blueprint that plans, patches, and reviews with agent steps alongside quality gates.
-- **[CI/CD Automation](recipes/ci-cd-automation.md)**: Running headless Dovo blueprints in GitHub Actions.
+- **[Reference](reference/blueprint-schema.md)**
 
-### CLI Reference
-- **[Workspace Init (`dovo init`)](cli/init.md)**: Provision local workspace and configuration defaults.
-- **[Status (`dovo status`)](cli/status.md)**: Inspect workspace health, catalog, worktrees, and recorded sessions.
-- **[Config (`dovo config`)](cli/config.md)**: Display, modify, and validate project configuration.
-- **[Run (`dovo run`)](cli/run.md)**: Execute a blueprint by name.
-- **[Session (`dovo session`)](cli/session.md)**: List, inspect, diff, read the logs of and resume recorded sessions.
-- **[Doctor (`dovo doctor`)](cli/doctor.md)**: Run registered workspace diagnostics.
-- **[Worktree (`dovo worktree`)](cli/worktree.md)**: Git worktree isolation.
-- **[Blueprint (`dovo blueprint`)](cli/blueprint.md)**: Blueprint catalog items across all tiers.
-- **[Step (`dovo step`)](cli/step.md)**: Step catalog items across all tiers.
+    Schemas and every `dovo` command.
+
+</div>

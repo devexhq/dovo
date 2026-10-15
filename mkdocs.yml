@@ -1,22 +1,34 @@
 site_name: Dovo CLI Documentation
 site_description: Documentation for Dovo CLI (dovo) - isolated Git worktrees and AI agent workspaces
+site_url: https://devexhq.github.io/dovo/
+repo_url: https://github.com/devexhq/dovo
+edit_uri: edit/main/docs/
 theme:
   name: material
   palette:
-    - scheme: default
-      toggle:
-        icon: material/brightness-7
-        name: Switch to dark mode
     - scheme: slate
       toggle:
         icon: material/brightness-4
         name: Switch to light mode
+    - scheme: default
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
   features:
-    - content.code.copy
-    - navigation.expand
+    - navigation.tabs
+    - navigation.tabs.sticky
+    - navigation.indexes
+    - navigation.path
+    - navigation.instant
     - navigation.top
+    - toc.follow
+    - content.code.copy
+    - content.code.annotate
+    - content.tabs.link
+    - content.action.edit
     - search.suggest
     - search.highlight
+    - search.share
 markdown_extensions:
   - pymdownx.highlight:
       anchor_linenums: true
@@ -24,41 +36,47 @@ markdown_extensions:
   - pymdownx.inlinehilite
   - pymdownx.snippets
   - admonition
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.details
+  - attr_list
+  - md_in_html
 nav:
   - Home: index.md
-  - Getting Started:
+  - Learn:
       - Installation: getting-started/installation.md
-      - Quickstart Tutorial: getting-started/quickstart.md
-      - Workspace Configuration: getting-started/workspace-config.md
-  - How-To Guides:
+      - Quickstart: getting-started/quickstart.md
       - Core Concepts: guides/concepts.md
       - Authoring Blueprints: guides/authoring-blueprints.md
       - Working with Steps: guides/working-with-steps.md
       - Parameter Inputs & Expressions: guides/passing-inputs.md
       - Failure Policies & Resumption: guides/failure-handling-and-resume.md
       - Human Input: guides/human-input.md
-      - AI Agent Providers: guides/agent-providers.md
-  - Reference:
-      - Blueprint Schema (YAML): reference/blueprint-schema.md
-      - Step Schema & Types: reference/step-schema.md
-      - Inputs & Placeholders: reference/inputs-schema.md
-      - Assertions & Verification: reference/assertions-schema.md
-      - Project Config (.dovo/config.json): reference/config-schema.md
-  - Recipes & Examples:
+      - Advanced:
+          - Workspace Configuration: getting-started/workspace-config.md
+          - AI Agent Providers: guides/agent-providers.md
+  - Recipes:
       - Feature Development Loop: recipes/feature-development-loop.md
       - AI Code Patcher: recipes/ai-code-patcher.md
       - CI/CD Automation: recipes/ci-cd-automation.md
-  - CLI Reference:
-      - Workspace Init (dovo init): cli/init.md
-      - Status (dovo status): cli/status.md
-      - Config (dovo config): cli/config.md
-      - Run (dovo run): cli/run.md
-      - Session (dovo session): cli/session.md
-      - Worktree (dovo worktree): cli/worktree.md
-      - Blueprint (dovo blueprint): cli/blueprint.md
-      - Step (dovo step): cli/step.md
-      - Artifacts (dovo artifacts): cli/artifacts.md
-      - Doctor (dovo doctor): cli/doctor.md
+  - Reference:
+      - Schemas:
+          - Blueprint Schema (YAML): reference/blueprint-schema.md
+          - Step Schema & Types: reference/step-schema.md
+          - Inputs & Placeholders: reference/inputs-schema.md
+          - Assertions & Verification: reference/assertions-schema.md
+          - Project Config (.dovo/config.json): reference/config-schema.md
+      - CLI:
+          - Workspace Init (dovo init): cli/init.md
+          - Status (dovo status): cli/status.md
+          - Config (dovo config): cli/config.md
+          - Run (dovo run): cli/run.md
+          - Session (dovo session): cli/session.md
+          - Worktree (dovo worktree): cli/worktree.md
+          - Blueprint (dovo blueprint): cli/blueprint.md
+          - Step (dovo step): cli/step.md
+          - Artifacts (dovo artifacts): cli/artifacts.md
+          - Doctor (dovo doctor): cli/doctor.md
 exclude_docs: |
   agents/*
   agents/**/*
