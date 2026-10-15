@@ -101,6 +101,15 @@ def build_agent_env(spec: _EnvDescriptor, request: AgentRequest) -> dict[str, st
     return env
 
 
+def build_probe_env(spec: _EnvDescriptor) -> dict[str, str]:
+    """Return the allowlisted base environment for a login probe, without the descriptor's control or credential names."""
+    env = _allowlisted_env(os.environ)
+    for name in (*spec.control_envs, *spec.credential_envs):
+        env.pop(name, None)
+
+    return env
+
+
 def validate_agent_env_request(spec: _EnvDescriptor, request: AgentRequest) -> str | None:
     """Return the fixed AGENT_ENV_OVERRIDE_INVALID message for the first reserved name in literal passthrough or step env, else None."""
     reserved = _reserved_names(spec, request)
@@ -190,6 +199,11 @@ def _base_env(host: Mapping[str, str], request: AgentRequest) -> dict[str, str]:
     if request.env_mode == "inherit":
         return dict(host)
 
+    return _allowlisted_env(host)
+
+
+def _allowlisted_env(host: Mapping[str, str]) -> dict[str, str]:
+    """Return the host values of the base, platform and network/TLS allowlist names."""
     platform_names = WINDOWS_ENV_NAMES if sys.platform.startswith("win") else ()
     names = (*BASE_ENV_NAMES, *platform_names, *NETWORK_TLS_ENV_NAMES)
 

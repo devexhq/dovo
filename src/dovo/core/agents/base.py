@@ -95,10 +95,17 @@ class BaseAgentProvider(abc.ABC):
         if spec is None or not spec.credential_envs:
             return None
 
-        if resolve_credential(spec.credential_envs) is None:
-            return missing_credential_error(spec)
+        if resolve_credential(spec.credential_envs) is not None:
+            return None
 
-        return None
+        if spec.auth_label is not None and spec.auth_label() is not None:
+            return None
+
+        return self._missing_credential_detail(spec)
+
+    def _missing_credential_detail(self, spec: ProviderSpec) -> str:
+        """Return the diagnostic for a provider with no usable credential; the default names ``credential_envs``."""
+        return missing_credential_error(spec)
 
 
 ProgressMapper = Callable[..., tuple[AgentProgress, ...]]  # (line: str, *, worktree_path: Path)
@@ -108,8 +115,12 @@ ProgressMapper = Callable[..., tuple[AgentProgress, ...]]  # (line: str, *, work
 class ProviderSpec:
     """Static descriptor of one agent provider and its implemented capabilities.
 
-    ``credential_envs`` are alternatives (any one suffices; empty means none required), ``binary`` is set only for a fixed
-    executable, ``control_envs`` are adapter-owned variables no environment layer may forward or override,
+    ``credential_envs`` are alternatives (any one suffices; empty means none required),
+    ``auth_label`` names the authentication in use, including a login that needs no credential variable,
+    and returns ``None`` when there is none (``None`` means the provider has no such login),
+    ``auth_fix`` is the remediation text reported when none is usable,
+    ``binary`` is set only for a fixed executable,
+    ``control_envs`` are adapter-owned variables no environment layer may forward or override,
     ``progress_mapper`` maps one stdout line to live progress items (``None`` means the provider reports no progress;
     only ``CliDirectMutationAdapter`` providers read it),
     and the capability flags describe current behavior, not planned features.
@@ -124,3 +135,5 @@ class ProviderSpec:
     binary: str | None = None
     control_envs: tuple[str, ...] = ()
     progress_mapper: ProgressMapper | None = None
+    auth_label: Callable[[], str | None] | None = None
+    auth_fix: str | None = None

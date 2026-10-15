@@ -13,6 +13,7 @@ from tests.harness.fakes import (
     FakeAgentRunnerCall,
     RecordingProgressSink,
     StreamingAgentRunner,
+    patch_claude_probe,
 )
 from tests.harness.formatter import (
     FormatterCase,
@@ -40,5 +41,6 @@ __all__ = [
     "assert_transform_derives_expected_view",
     "initialized_workspace_paths",
     "new_file_diff",
+    "patch_claude_probe",
     "render_rich",
 ]

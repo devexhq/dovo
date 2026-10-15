@@ -6,6 +6,7 @@ import abc
 import subprocess
 import time
 import urllib.request
+from collections.abc import Callable
 from pathlib import Path
 
 import pytest
@@ -21,7 +22,6 @@ from dovo.core.agents import (
     tool_policy_unsupported_message,
 )
 from dovo.core.agents.base import ProviderSpec, elapsed_ms
-from dovo.core.agents.credentials import missing_credential_error
 from dovo.core.agents.registry import PROVIDERS
 from tests.harness import AgentRequestBuilder
 
@@ -43,6 +43,7 @@ class _DirectSubclassProvider(BaseAgentProvider):
         control_envs: tuple[str, ...] = (),
         supports_tool_policy: bool = False,
         policy_rejection: str | None = None,
+        auth_label: Callable[[], str | None] | None = None,
     ) -> None:
         self.invoke_calls: list[AgentRequest] = []
         self._response = response
@@ -58,6 +59,7 @@ class _DirectSubclassProvider(BaseAgentProvider):
                 supports_os_sandbox=False,
                 build=lambda: self,
                 control_envs=control_envs,
+                auth_label=auth_label,
             )
         )
 
@@ -146,6 +148,52 @@ class CredentialPreflightTests:
         assert len(provider.invoke_calls) == 1
 
 
+class CredentialPreflightProbeTests:
+    @pytest.mark.parametrize(
+        ("label_result", "has_label", "expected_errors", "expected_calls"),
+        [
+            pytest.param("login", True, [], 1, id="label-delegates"),
+            pytest.param(None, True, [_CANONICAL_MISSING_CREDENTIAL_ERROR], 0, id="no-label-returns-missing-detail"),
+            pytest.param(None, False, [_CANONICAL_MISSING_CREDENTIAL_ERROR], 0, id="no-hook-keeps-existing-behavior"),
+        ],
+    )
+    def test_unset_credentials_follow_the_auth_label(
+        self,
+        label_result: str | None,
+        has_label: bool,
+        expected_errors: list[str],
+        expected_calls: int,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Delegate only when auth_label names an authentication; otherwise return the missing-credential detail."""
+        _clear_test_credentials(monkeypatch)
+        label = (lambda: label_result) if has_label else None
+        provider = _DirectSubclassProvider(("TEST_CREDENTIAL_PRIMARY", "TEST_CREDENTIAL_FALLBACK"), auth_label=label)
+
+        response = provider.invoke(AgentRequestBuilder().with_worktree_path(tmp_path).build())
+
+        assert (response.errors, len(provider.invoke_calls)) == (expected_errors, expected_calls)
+
+    def test_label_is_not_called_when_a_credential_env_is_set(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Record zero auth_label calls when any credential_envs value is non-blank."""
+        _clear_test_credentials(monkeypatch)
+        monkeypatch.setenv("TEST_CREDENTIAL_FALLBACK", "k")
+        label_calls: list[str] = []
+
+        def _label() -> str | None:
+            label_calls.append("called")
+            return None
+
+        provider = _DirectSubclassProvider(("TEST_CREDENTIAL_PRIMARY", "TEST_CREDENTIAL_FALLBACK"), auth_label=_label)
+
+        provider.invoke(AgentRequestBuilder().with_worktree_path(tmp_path).build())
+
+        assert (label_calls, len(provider.invoke_calls)) == ([], 1)
+
+
 _POLICIES = {
     "default": default_tool_policy(),
     "empty": ToolPolicy(),
@@ -200,14 +248,25 @@ class ToolPolicyConformanceTests:
         assert len(provider.invoke_calls) == 1
 
 
+_EXPECTED_MISSING_DETAIL = {
+    "copilot": "missing GH_TOKEN or GITHUB_TOKEN. Fix: export GH_TOKEN=... or export GITHUB_TOKEN=...",
+    "claude": (
+        "Claude Code is not authenticated. Fix: run `claude auth login`, "
+        "export CLAUDE_CODE_OAUTH_TOKEN=... (from `claude setup-token`) or export ANTHROPIC_API_KEY=..."
+    ),
+}
+
+
 class RegisteredAdapterCredentialContractTests:
     @pytest.mark.parametrize(
         "token",
         [pytest.param(token, id=token) for token, spec in PROVIDERS.items() if spec.credential_envs],
     )
-    def test_missing_credential_returns_canonical_error_with_no_backend_activity(
+    def test_missing_credential_returns_provider_detail_with_no_backend_activity(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, token: str
     ) -> None:
+        """Return each credentialed provider's literal missing-credential detail while its login probe reports logged out."""
+        monkeypatch.setattr("dovo.core.agents.claude.shutil.which", lambda _name: "/usr/bin/claude")
         spec = PROVIDERS[token]
         for name in spec.credential_envs:
             monkeypatch.delenv(name, raising=False)
@@ -227,7 +286,7 @@ class RegisteredAdapterCredentialContractTests:
         response = spec.build().invoke(AgentRequestBuilder().with_worktree_path(tmp_path).build())
 
         assert response.status == AgentResponseStatus.PROVIDER_ERROR
-        assert response.errors == [f"Agent provider error (AGENT_PROVIDER_ERROR): {missing_credential_error(spec)}"]
+        assert response.errors == [f"Agent provider error (AGENT_PROVIDER_ERROR): {_EXPECTED_MISSING_DETAIL[token]}"]
         assert backend_calls == []
 
 

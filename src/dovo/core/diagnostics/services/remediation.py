@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import Final
+from typing import Any, Final
 
 from dovo.core.diagnostics.models import CheckStatus, DiagnosticCheckResult, Remediation, RemediationType
 
@@ -190,11 +190,37 @@ def _binary_missing(result: DiagnosticCheckResult) -> list[Remediation]:
     ]
 
 
+def _credential_names(details: dict[str, Any]) -> list[str]:
+    """Return the missing credential names from details, falling back to missing_env_var, then to a placeholder."""
+    credential_envs = details.get("credential_envs")
+    if (
+        isinstance(credential_envs, list)
+        and credential_envs
+        and all(isinstance(name, str) and name for name in credential_envs)
+    ):
+        return list(credential_envs)
+
+    missing_env_var = details.get("missing_env_var")
+
+    return [missing_env_var if isinstance(missing_env_var, str) and missing_env_var else "<PROVIDER>_API_KEY"]
+
+
+def _claude_login_remediation() -> Remediation:
+    """Return the manual remediation for authenticating Claude Code through `claude auth login`."""
+    return Remediation(
+        code="DOCTOR_AGENT_KEY_MISSING",
+        title="Log in to Claude Code",
+        action_type=RemediationType.MANUAL,
+        command=None,
+        description="Run `claude auth login`, or export CLAUDE_CODE_OAUTH_TOKEN from `claude setup-token`, so Claude Code authenticates without an API key.",
+        doc_path="docs/guides/agent-providers.md",
+        is_automated=False,
+    )
+
+
 def _agent_key_missing(result: DiagnosticCheckResult) -> list[Remediation]:
-    """Return the remediation naming the missing agent provider credential environment variable (DOCTOR_AGENT_KEY_MISSING)."""
-    missing_env_var = result.details.get("missing_env_var")
-    env_var = missing_env_var if isinstance(missing_env_var, str) and missing_env_var else "<PROVIDER>_API_KEY"
-    return [
+    """Return one export remediation per missing credential name, plus the Claude login remediation for claude (DOCTOR_AGENT_KEY_MISSING)."""
+    remediations = [
         Remediation(
             code="DOCTOR_AGENT_KEY_MISSING",
             title="Export agent API key",
@@ -204,7 +230,12 @@ def _agent_key_missing(result: DiagnosticCheckResult) -> list[Remediation]:
             doc_path="docs/guides/agent-providers.md",
             is_automated=False,
         )
+        for env_var in _credential_names(result.details)
     ]
+    if result.details.get("provider") == "claude":
+        remediations.append(_claude_login_remediation())
+
+    return remediations
 
 
 def _agent_no_model(result: DiagnosticCheckResult) -> list[Remediation]:

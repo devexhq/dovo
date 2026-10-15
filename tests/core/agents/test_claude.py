@@ -18,29 +18,36 @@ from dovo.core.agents import (
     tool_policy_unsupported_message,
 )
 from dovo.core.agents.claude import (
+    CLAUDE_AUTH_FIX,
     ClaudeAgentAdapter,
+    claude_auth_label,
+    claude_cli_logged_in,
     default_claude_run,
-    resolve_claude_api_key,
     resolve_claude_auth_mode,
+    resolve_claude_credential,
 )
 from dovo.core.agents.cli_mutation import CliMutationOutcome, CliMutationRunRequest
 from dovo.core.agents.registry import PROVIDERS
-from tests.harness import AgentRequestBuilder, FakeAgentRunner
+from tests.harness import AgentRequestBuilder, FakeAgentRunner, FakeAgentRunnerCall, patch_claude_probe
 
 
 class ClaudeDescriptorTests:
     def test_descriptor_matches_pre_determined_data(self) -> None:
         spec = PROVIDERS["claude"]
 
-        assert (spec.token, spec.credential_envs, spec.requires_model) == ("claude", ("ANTHROPIC_API_KEY",), False)
+        assert (spec.token, spec.credential_envs, spec.requires_model) == (
+            "claude",
+            ("CLAUDE_CODE_OAUTH_TOKEN", "ANTHROPIC_API_KEY"),
+            False,
+        )
         assert (spec.supports_tool_policy, spec.supports_os_sandbox) == (True, False)
         assert (spec.binary, spec.progress_mapper, spec.build) == ("claude", None, ClaudeAgentAdapter)
+        assert (spec.auth_label, spec.auth_fix) == (claude_auth_label, CLAUDE_AUTH_FIX)
         assert spec.control_envs == (
             "ANTHROPIC_BASE_URL",
             "ANTHROPIC_AUTH_TOKEN",
             "ANTHROPIC_MODEL",
             "CLAUDE_CONFIG_DIR",
-            "CLAUDE_CODE_OAUTH_TOKEN",
             "CLAUDE_CODE_USE_BEDROCK",
             "CLAUDE_CODE_USE_VERTEX",
             "CLAUDE_CODE_USE_FOUNDRY",
@@ -65,12 +72,59 @@ _ALLOW_ALL_ARGV = [
 
 
 def _fake_claude(monkeypatch: pytest.MonkeyPatch) -> FakeAgentRunner:
-    """Install a FakeAgentRunner at the Claude process boundary with a usable ANTHROPIC_API_KEY."""
+    """Install a FakeAgentRunner at the Claude process boundary with a usable ANTHROPIC_API_KEY and no OAuth token."""
     monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test")
+    monkeypatch.delenv("CLAUDE_CODE_OAUTH_TOKEN", raising=False)
     runner = FakeAgentRunner().returning(stdout=_SUCCESS_STDOUT)
     monkeypatch.setattr("dovo.core.agents.cli_mutation.stream_isolated_process", runner)
 
     return runner
+
+
+def _stub_login_probe(
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    stdout: bytes = b'{"loggedIn": true}',
+    stderr: bytes = b"",
+    returncode: int = 0,
+    error: Exception | None = None,
+) -> list[tuple[list[str], dict[str, object]]]:
+    """Replace the probe subprocess with a canned outcome and return its recorded (argv, kwargs) calls."""
+    calls: list[tuple[list[str], dict[str, object]]] = []
+
+    def _run(argv: list[str], **kwargs: object) -> subprocess.CompletedProcess[bytes]:
+        calls.append((list(argv), kwargs))
+        if error is not None:
+            raise error
+
+        return subprocess.CompletedProcess(argv, returncode, stdout=stdout, stderr=stderr)
+
+    patch_claude_probe(monkeypatch, _run)
+
+    return calls
+
+
+def _configure_mode(monkeypatch: pytest.MonkeyPatch, mode: str) -> None:
+    """Set the host environment and login probe so resolve_claude_auth_mode returns the given mode."""
+    monkeypatch.delenv("CLAUDE_CODE_OAUTH_TOKEN", raising=False)
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    if mode == "oauth":
+        monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "oauth")
+    elif mode == "key":
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test")
+
+    _stub_login_probe(monkeypatch, returncode=0 if mode == "cli" else 1)
+
+
+def _spawn_in_mode(mode: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> FakeAgentRunnerCall:
+    """Run default_claude_run in the given mode with both credentials in the request env and return the spawn call."""
+    runner = _fake_claude(monkeypatch)
+    _configure_mode(monkeypatch, mode)
+    env = {"ANTHROPIC_API_KEY": "sk-test", "CLAUDE_CODE_OAUTH_TOKEN": "oauth", "PATH": "/bin"}
+
+    default_claude_run(_run_request(tmp_path, env=env))
+
+    return runner.last_call
 
 
 def _run_request(
@@ -143,17 +197,38 @@ class ClaudeRunTests:
         assert outcome == CliMutationOutcome(status="error", error_detail=tool_policy_unsupported_message("claude"))
         assert runner.calls == []
 
-    def test_missing_key_returns_registration_diagnostic_and_starts_no_process(
+    def test_no_authentication_returns_fr4_detail_and_starts_no_process(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """Return error 'missing ANTHROPIC_API_KEY. Fix: export ANTHROPIC_API_KEY=...' with zero runner calls."""
+        """Return the 'Claude Code is not authenticated' error and zero runner calls with no token, login or key."""
         runner = _fake_claude(monkeypatch)
         monkeypatch.delenv("ANTHROPIC_API_KEY")
+        monkeypatch.setattr("dovo.core.agents.claude.shutil.which", lambda _name: "/usr/bin/claude")
 
         outcome = default_claude_run(_run_request(tmp_path))
 
         assert outcome == CliMutationOutcome(
-            status="error", error_detail="missing ANTHROPIC_API_KEY. Fix: export ANTHROPIC_API_KEY=..."
+            status="error",
+            error_detail=(
+                "Claude Code is not authenticated. Fix: run `claude auth login`, "
+                "export CLAUDE_CODE_OAUTH_TOKEN=... (from `claude setup-token`) or export ANTHROPIC_API_KEY=..."
+            ),
+        )
+        assert runner.calls == []
+
+    def test_missing_binary_with_no_authentication_returns_install_diagnostic(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Return the install diagnostic and zero runner calls when claude is not on PATH and no mode resolves."""
+        runner = _fake_claude(monkeypatch)
+        monkeypatch.delenv("ANTHROPIC_API_KEY")
+        monkeypatch.setattr("dovo.core.agents.claude.shutil.which", lambda _name: None)
+
+        outcome = default_claude_run(_run_request(tmp_path))
+
+        assert outcome == CliMutationOutcome(
+            status="error",
+            error_detail="claude is not installed or not on PATH. Fix: install Claude Code (https://code.claude.com/docs)",
         )
         assert runner.calls == []
 
@@ -203,16 +278,51 @@ class ClaudeRunTests:
 
         assert (outcome.status, outcome.result_text, outcome.error_detail) == ("finished", "done", None)
 
-    def test_oauth_token_in_request_env_never_reaches_the_process(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    @pytest.mark.parametrize(
+        ("mode", "expects_bare", "expected_env"),
+        [
+            pytest.param("oauth", False, {"CLAUDE_CODE_OAUTH_TOKEN": "oauth", "PATH": "/bin"}, id="oauth"),
+            pytest.param("cli", False, {"PATH": "/bin"}, id="cli"),
+            pytest.param("key", True, {"ANTHROPIC_API_KEY": "sk-test", "PATH": "/bin"}, id="key"),
+        ],
+    )
+    def test_mode_argv_and_env_follow_the_fr3_table(
+        self,
+        mode: str,
+        expects_bare: bool,
+        expected_env: dict[str, str],
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """Spawn with ANTHROPIC_API_KEY kept and CLAUDE_CODE_OAUTH_TOKEN dropped from the request env."""
+        """Spawn with '--bare' only for key, passing only the mode's credential from a request env holding both."""
         runner = _fake_claude(monkeypatch)
+        _configure_mode(monkeypatch, mode)
         env = {"ANTHROPIC_API_KEY": "sk-test", "CLAUDE_CODE_OAUTH_TOKEN": "oauth", "PATH": "/bin"}
 
         default_claude_run(_run_request(tmp_path, env=env))
 
-        assert runner.last_call.env == {"ANTHROPIC_API_KEY": "sk-test", "PATH": "/bin"}
+        assert ("--bare" in runner.last_call.cmd, runner.last_call.env) == (expects_bare, expected_env)
+
+    def test_modes_differ_only_in_bare_and_credentials(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Record identical stdin, cwd, timeout and policy flags across the three modes, with argv differing only by '--bare'."""
+        calls = {mode: _spawn_in_mode(mode, tmp_path, monkeypatch) for mode in ("cli", "oauth", "key")}
+
+        without_bare = {mode: [part for part in call.cmd if part != "--bare"] for mode, call in calls.items()}
+        shared = {mode: (call.input_data, call.cwd, call.timeout_seconds) for mode, call in calls.items()}
+        assert without_bare["cli"] == without_bare["oauth"] == without_bare["key"]
+        assert shared["cli"] == shared["oauth"] == shared["key"]
+        assert [mode for mode, call in calls.items() if "--bare" in call.cmd] == ["key"]
+
+    @pytest.mark.parametrize(
+        "mode", [pytest.param("cli", id="cli"), pytest.param("oauth", id="oauth"), pytest.param("key", id="key")]
+    )
+    def test_no_credential_value_appears_on_argv(
+        self, mode: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Spawn with neither 'oauth' nor 'sk-test' in any argv element."""
+        call = _spawn_in_mode(mode, tmp_path, monkeypatch)
+
+        assert not any("oauth" in part or "sk-test" in part for part in call.cmd)
 
     def test_unwritable_mcp_config_returns_error_and_starts_no_process(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -250,6 +360,25 @@ class ClaudeInvokeTests:
         response = ClaudeAgentAdapter().invoke(request)
 
         assert (response.status, response.raw_text) == (AgentResponseStatus.NO_OP, "done")
+
+    def test_invoke_without_authentication_returns_provider_error_with_fr4_detail(
+        self, git_repo: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Return PROVIDER_ERROR with the wrapped 'Claude Code is not authenticated' detail and zero runner calls."""
+        runner = _fake_claude(monkeypatch)
+        monkeypatch.delenv("ANTHROPIC_API_KEY")
+        monkeypatch.setattr("dovo.core.agents.claude.shutil.which", lambda _name: "/usr/bin/claude")
+        request = AgentRequestBuilder().with_worktree_path(git_repo).build()
+
+        response = ClaudeAgentAdapter().invoke(request)
+
+        assert response.status == AgentResponseStatus.PROVIDER_ERROR
+        assert response.errors == [
+            "Agent provider error (AGENT_PROVIDER_ERROR): Claude Code is not authenticated. "
+            "Fix: run `claude auth login`, export CLAUDE_CODE_OAUTH_TOKEN=... (from `claude setup-token`) "
+            "or export ANTHROPIC_API_KEY=..."
+        ]
+        assert runner.calls == []
 
     def test_allowlist_spawn_env_has_only_the_approved_key_and_no_claude_or_control_names(
         self, git_repo: Path, monkeypatch: pytest.MonkeyPatch
@@ -506,47 +635,159 @@ class ClaudePolicyPreflightTests:
 
 class ClaudeCredentialTests:
     @pytest.mark.parametrize(
-        ("value", "expected"),
+        ("token", "key", "expected"),
         [
-            pytest.param("  sk-test \n", "sk-test", id="stripped"),
-            pytest.param("", None, id="empty"),
-            pytest.param("   ", None, id="blank"),
-            pytest.param(None, None, id="unset"),
+            pytest.param(" tok ", "k", ("CLAUDE_CODE_OAUTH_TOKEN", "tok"), id="token-wins-stripped"),
+            pytest.param("  ", "k", ("ANTHROPIC_API_KEY", "k"), id="blank-token-falls-to-key"),
+            pytest.param(None, "  ", None, id="both-blank"),
+            pytest.param(None, None, None, id="both-unset"),
         ],
     )
-    def test_resolve_claude_api_key_returns_stripped_value_or_none(
-        self, value: str | None, expected: str | None, monkeypatch: pytest.MonkeyPatch
+    def test_resolve_claude_credential_returns_first_non_blank_entry_stripped(
+        self,
+        token: str | None,
+        key: str | None,
+        expected: tuple[str, str] | None,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        if value is None:
-            monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
-        else:
-            monkeypatch.setenv("ANTHROPIC_API_KEY", value)
+        """Return the first non-blank credential as (name, stripped value), or None when both are blank or unset."""
+        for name, value in (("CLAUDE_CODE_OAUTH_TOKEN", token), ("ANTHROPIC_API_KEY", key)):
+            if value is None:
+                monkeypatch.delenv(name, raising=False)
+            else:
+                monkeypatch.setenv(name, value)
 
-        assert resolve_claude_api_key() == expected
+        assert resolve_claude_credential() == expected
+
+    def test_token_wins_without_consulting_login_probe_or_key(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Return 'oauth' and record zero probe subprocess calls when the token, a login and a key all exist."""
+        monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "tok")
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "k")
+        probe_calls = _stub_login_probe(monkeypatch)
+
+        assert (resolve_claude_auth_mode(), probe_calls) == ("oauth", [])
+
+    def test_login_wins_over_key(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Return 'cli' when no token exists, the probe reports loggedIn true and a key exists."""
+        monkeypatch.delenv("CLAUDE_CODE_OAUTH_TOKEN", raising=False)
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "k")
+        _stub_login_probe(monkeypatch)
+
+        assert resolve_claude_auth_mode() == "cli"
 
     @pytest.mark.parametrize(
-        ("value", "expected"),
-        [
-            pytest.param("sk-test", "key", id="key"),
-            pytest.param("   ", None, id="blank"),
-            pytest.param(None, None, id="unset"),
-        ],
+        ("key", "expected"),
+        [pytest.param("k", "key", id="key-fallback"), pytest.param(None, None, id="nothing")],
     )
-    def test_resolve_claude_auth_mode_follows_key_at_call_time(
-        self, value: str | None, expected: str | None, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        """Return 'key' for a non-blank ANTHROPIC_API_KEY and None for blank or unset."""
-        if value is None:
+    def test_key_is_last_fallback(self, key: str | None, expected: str | None, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Return 'key' when the probe reports logged out and only the key exists; return None when nothing exists."""
+        monkeypatch.delenv("CLAUDE_CODE_OAUTH_TOKEN", raising=False)
+        if key is None:
             monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
         else:
-            monkeypatch.setenv("ANTHROPIC_API_KEY", value)
+            monkeypatch.setenv("ANTHROPIC_API_KEY", key)
 
         assert resolve_claude_auth_mode() == expected
 
-    def test_resolve_claude_api_key_observes_changes_between_calls(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_mode_observes_environment_changes_between_calls(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Return None, then 'key' after ANTHROPIC_API_KEY is set, then 'oauth' after the token is set."""
+        monkeypatch.delenv("CLAUDE_CODE_OAUTH_TOKEN", raising=False)
         monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
-        before = resolve_claude_api_key()
-
+        before = resolve_claude_auth_mode()
         monkeypatch.setenv("ANTHROPIC_API_KEY", "k")
+        with_key = resolve_claude_auth_mode()
+        monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "tok")
 
-        assert (before, resolve_claude_api_key()) == (None, "k")
+        assert (before, with_key, resolve_claude_auth_mode()) == (None, "key", "oauth")
+
+
+class ClaudeAuthLabelTests:
+    @pytest.mark.parametrize(
+        ("mode", "expected"),
+        [
+            pytest.param("oauth", "CLAUDE_CODE_OAUTH_TOKEN", id="oauth"),
+            pytest.param("cli", "cli session", id="cli"),
+            pytest.param("key", "ANTHROPIC_API_KEY", id="key"),
+            pytest.param("none", None, id="none"),
+        ],
+    )
+    def test_label_names_the_mode_in_use(
+        self, mode: str, expected: str | None, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Return the label of the resolved mode, or None when no authentication is usable."""
+        _configure_mode(monkeypatch, mode)
+
+        assert claude_auth_label() == expected
+
+
+class ClaudeLoginProbeTests:
+    @pytest.mark.parametrize(
+        ("stdout", "expected"),
+        [
+            pytest.param(b'{"loggedIn": true}', True, id="logged-in"),
+            pytest.param(b'{"loggedIn": false}', False, id="logged-out"),
+            pytest.param(b'{"loggedIn": "true"}', False, id="string-true"),
+            pytest.param(b'{"loggedIn": 1}', False, id="integer-one"),
+            pytest.param(b"{}", False, id="missing-field"),
+            pytest.param(b"[]", False, id="not-an-object"),
+            pytest.param(b"not json", False, id="not-json"),
+            pytest.param(b"", False, id="empty"),
+            pytest.param(b"\xff\xfe", False, id="invalid-utf8"),
+        ],
+    )
+    def test_exit_zero_stdout_decides_login(
+        self, stdout: bytes, expected: bool, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Return True only for a JSON object whose loggedIn is true, and False for every other stdout."""
+        _stub_login_probe(monkeypatch, stdout=stdout)
+
+        assert claude_cli_logged_in() is expected
+
+    def test_non_zero_exit_returns_false_even_with_logged_in_stdout(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Return False for returncode 1 with stdout b'{"loggedIn": true}'."""
+        _stub_login_probe(monkeypatch, returncode=1)
+
+        assert claude_cli_logged_in() is False
+
+    @pytest.mark.parametrize(
+        "error",
+        [
+            pytest.param(FileNotFoundError("claude"), id="missing-binary"),
+            pytest.param(subprocess.TimeoutExpired("claude", 10), id="timeout"),
+        ],
+    )
+    def test_spawn_failure_or_timeout_returns_false(self, error: Exception, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Return False without raising when the probe raises FileNotFoundError or TimeoutExpired."""
+        _stub_login_probe(monkeypatch, error=error)
+
+        assert claude_cli_logged_in() is False
+
+    def test_probe_call_shape(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Call subprocess.run with the status argv, a 10-second timeout, no shell and an env without credentials or controls."""
+        for name in ("CLAUDE_CODE_OAUTH_TOKEN", "ANTHROPIC_API_KEY", "ANTHROPIC_BASE_URL", "CLAUDE_CONFIG_DIR"):
+            monkeypatch.setenv(name, "secret")
+        monkeypatch.setenv("PATH", "/bin")
+        calls = _stub_login_probe(monkeypatch)
+
+        claude_cli_logged_in()
+
+        ((argv, kwargs),) = calls
+        env = kwargs["env"]
+        assert isinstance(env, dict)
+        assert (argv, kwargs["timeout"], kwargs["shell"]) == (["claude", "auth", "status", "--json"], 10, False)
+        assert env["PATH"] == "/bin"
+        assert not {"CLAUDE_CODE_OAUTH_TOKEN", "ANTHROPIC_API_KEY", "ANTHROPIC_BASE_URL", "CLAUDE_CONFIG_DIR"} & set(
+            env
+        )
+
+    def test_probe_output_never_reaches_log_or_stdout(
+        self, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """Emit nothing to caplog, stdout or stderr when the probe prints secret-looking stdout and stderr."""
+        _stub_login_probe(monkeypatch, stdout=b'{"loggedIn": true, "token": "sk-leak"}', stderr=b"sk-leak")
+
+        with caplog.at_level("DEBUG"):
+            claude_cli_logged_in()
+
+        captured = capsys.readouterr()
+        assert (caplog.text, captured.out, captured.err) == ("", "", "")
