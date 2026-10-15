@@ -44,7 +44,9 @@ Write names as full words. Do not shorten a word by dropping letters.
 - All non-test public functions and methods must carry a docstring following Google docstring style.
 - When documenting parameters (`Args:`), all function parameters must be documented (enforced by `D417`).
 - Test functions under `tests/` are exempt from Ruff `D` rules per [testing.md](testing.md).
-- Keep docstrings terse: a one-line title, plus a description only for hidden contracts or safety behavior the code cannot show (CODE-003).
+- Keep docstrings terse: a one-line title, plus a description only for hidden contracts or safety behavior the code cannot show (CODE-003). Outcomes and failure paths go in the description, not the title.
+- Describe only the documented unit's own behavior, never what a caller or another module does with it (CODE-004).
+- One docstring per unit; a second bare string statement after it is dead code that reads as documentation (CODE-005).
 
 ---
 

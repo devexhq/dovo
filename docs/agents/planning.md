@@ -137,12 +137,12 @@ def prune_worktrees(context: CliContext, dry_run: bool = False) -> WorktreePrune
     raise NotImplementedError
 ```
 
-**Test stubs:** signature + single-line docstring starting `[<tier>/<type>]` (per `docs/agents/testing.md#the-four-execution-tiers`), naming the public symbol exercised and the exact outcome contract, ending `raise NotImplementedError` (PLAN-018). The docstring alone is the assertion contract — no separate index table (see Tests below).
+**Test stubs:** signature + single-line imperative docstring stating the exact outcome contract, ending `raise NotImplementedError` (PLAN-018). Omit the docstring when the test name and the assertion already say it. The docstring alone is the assertion contract — no separate index table (see Tests below).
 
 ```python
 class WorktreePruneCliIntegrationTests:
     def test_prune_empty_returns_nothing_to_prune(self, cli_runner: CliRunner, worktree_workspace: Path) -> None:
-        """[tier-3/integration] dovo worktree prune: empty worktrees directory prints 'Nothing to prune'; exit 0."""
+        """Print 'Nothing to prune' and exit 0 when the worktrees directory is empty."""
         raise NotImplementedError
 ```
 
@@ -158,7 +158,7 @@ Non-obvious traps, execution gotchas, or sequencing constraints not already in G
 
 ### Tests: contract stubs only, no index table
 
-Just the stubs from Code sample rules — no separate index table alongside them. A stub's docstring already leads with `[tier-N/type]` and states the exact outcome contract in one line (PLAN-018); a `Test | Tier | Outcome` table next to it restates the same fact in a second place that can drift from the first when one is edited without the other. Assert exact contracts (literal JSON dict, exit code, filesystem state, or `*Result` fields) in the docstring. Ban vague phrasing (`"Verifies pruning works"`), piecewise assertions (`"Checks exit code is 0"`), and omitted fields.
+Just the stubs from Code sample rules — no separate index table alongside them. A stub's docstring already states the exact outcome contract in one line (PLAN-018); a `Test | Outcome` table next to it restates the same fact in a second place that can drift from the first when one is edited without the other. Assert exact contracts (literal JSON dict, exit code, filesystem state, or `*Result` fields) in the docstring. Ban vague phrasing (`"Verifies pruning works"`), piecewise assertions (`"Checks exit code is 0"`), and omitted fields.
 
 ### Plan document template
 
@@ -245,7 +245,7 @@ Full file-by-file manifest, including what's explicitly not needed for this issu
 ```python
 class <TestClass>:
     def <test_method>(self, ...):
-        """[<tier>/<type>] <public_symbol>: <exact outcome contract>."""
+        """<Imperative verb> <exact outcome contract>."""
         raise NotImplementedError
 ```
 
