@@ -5,12 +5,14 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from pydantic import ValidationError
 
 from dovo.common.filesystem import Filesystem, WorkspacePaths
+from dovo.common.mcp_servers import McpServerDefinition
 from dovo.core.config.config import Config
 from dovo.core.config.exceptions import ConfigLoadError
 from dovo.core.config.generator import build_default_config
-from dovo.core.config.models import ConfigTier
+from dovo.core.config.models import AgentConfig, ConfigTier
 
 WorkspacePathsFactory = Callable[[Path, Path | None], WorkspacePaths]
 
@@ -199,3 +201,10 @@ class ConfigGenerateTests:
 
         assert result.overwritten is True
         assert config._loaded_config.project.name == "replaced-name"
+
+
+class AgentConfigMcpServersTests:
+    def test_config_with_invalid_server_name_fails_validation(self) -> None:
+        """[tier-1/unit] AgentConfig: mcp_servers {'a__b': <valid stdio definition>} raises ValidationError naming 'a__b'."""
+        with pytest.raises(ValidationError, match="'a__b'"):
+            AgentConfig(mcp_servers={"a__b": McpServerDefinition(command="npx")})

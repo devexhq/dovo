@@ -8,6 +8,7 @@ from pathlib import Path
 
 import pytest
 
+from dovo.common.mcp_servers import McpServerDefinition
 from dovo.common.tool_policy import ToolCapability, ToolPolicy, ToolRule
 from dovo.core.agents import (
     AgentAttempt,
@@ -122,6 +123,24 @@ class RunDirectAttemptRequestTests:
                 tools=default_tool_policy(),
             )
         ]
+
+    def test_request_carries_configured_mcp_servers_to_provider(
+        self, git_repo: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """[tier-1/unit] run_direct_attempt: settings.mcp_servers {'github': stdio npx} produce a direct AgentRequest whose mcp_servers equals that mapping."""
+        provider = FakeAgentProvider(_no_op())
+        _use_provider(monkeypatch, provider)
+        servers = {"github": McpServerDefinition(command="npx")}
+
+        run_direct_attempt(
+            instruction="Plan the change",
+            settings=_settings().model_copy(update={"mcp_servers": servers}),
+            worktree_path=git_repo,
+            timeout_seconds=45,
+            tools=default_tool_policy(),
+        )
+
+        assert [request.mcp_servers for request in provider.requests] == [servers]
 
     def test_request_carries_step_max_files_to_provider(self, git_repo: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """[tier-1/unit] run_direct_attempt: max_files=100 produces a direct AgentRequest whose max_files is 100."""

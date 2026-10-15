@@ -213,6 +213,7 @@ VALIDATION_PAYLOAD_CASES = [
                     "max_tokens": 4096,
                     "env_passthrough": [],
                     "env_mode": "allowlist",
+                    "mcp_servers": {},
                 },
                 "history": {
                     "save_attempt_logs": True,

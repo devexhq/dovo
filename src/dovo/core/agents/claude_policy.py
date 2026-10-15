@@ -2,19 +2,31 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+import json
+from collections.abc import Mapping
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Final
 
+from dovo.common.mcp_servers import McpServerDefinition
 from dovo.common.tool_policy import ToolCapability, ToolPolicy, ToolRule, validate_rule_pattern
 from dovo.core.agents.tools import PolicyRoots
 
 
 @dataclass(frozen=True)
+class McpConfigFile:
+    """The MCP config the runner writes before spawning; path is where the flags point, content is the JSON."""
+
+    path: Path
+    content: str = field(repr=False)
+
+
+@dataclass(frozen=True)
 class ClaudePolicyArgs:
-    """Rendered Claude Code CLI flags for one resolved policy."""
+    """Rendered Claude Code CLI flags for one resolved policy, plus the MCP config file they reference when servers are granted."""
 
     flags: tuple[str, ...]
+    mcp_config: McpConfigFile | None = None
 
 
 _PATH_CAPABILITIES: Final = (ToolCapability.READ, ToolCapability.WRITE)
@@ -33,7 +45,8 @@ _BARE_PERMISSIONS: Final = {
 }
 _SHELL_PREFIX_SUFFIX: Final = " *"
 _NETWORK_WILDCARD_PREFIX: Final = "*."
-_EMPTY_MCP_FLAGS: Final = ("--strict-mcp-config", "--mcp-config", '{"mcpServers":{}}')
+_EMPTY_MCP_CONFIG: Final = '{"mcpServers":{}}'
+_MCP_CONFIG_FILENAME: Final = "mcp-config.json"
 _MCP_WILDCARD: Final = "*"
 
 
@@ -81,12 +94,9 @@ def _mcp_permission(pattern: str) -> str:
 
 
 def _mcp_rule_error(rule: ToolRule, *, deny: bool) -> str | None:
-    """Return why an mcp rule cannot be preserved: every allow, a deny with no pattern, or a deny pattern containing a comma."""
-    if not deny:
-        return "mcp allow rules cannot be preserved because Claude Code runs without user MCP servers"
-
+    """Return why an mcp rule cannot be preserved: no pattern, or a pattern containing a comma."""
     if rule.pattern is None:
-        return "an mcp deny rule must name a server"
+        return f"an mcp {'deny' if deny else 'allow'} rule must name a server"
 
     if "," in rule.pattern:
         return f"mcp pattern {rule.pattern!r} contains a comma and cannot be preserved for Claude Code"
@@ -163,11 +173,57 @@ def _scratch_flags(policy: ToolPolicy, roots: PolicyRoots) -> list[str]:
     return []
 
 
+def _mcp_allow_servers(rules: list[ToolRule]) -> list[str]:
+    """Return the server names the mcp allow rules name, de-duplicated in first-seen order."""
+    return _unique(
+        [rule.pattern.split("/", 1)[0] for rule in rules if rule.capability == ToolCapability.MCP and rule.pattern]
+    )
+
+
+def _resolve_mcp_servers(
+    rules: list[ToolRule],
+    roots: PolicyRoots,
+    configured: Mapping[str, McpServerDefinition],
+    user: Mapping[str, dict[str, object]],
+) -> tuple[McpConfigFile | None, str | None]:
+    """Return the config file for the servers the allow rules name, or why one cannot be resolved; a name in both sources takes the configured entry."""
+    names = _mcp_allow_servers(rules)
+    if not names:
+        return None, None
+
+    if roots.control is None:
+        return None, "an mcp allow rule requires a control root"
+
+    servers: dict[str, object] = {}
+    for name in names:
+        if name in configured:
+            servers[name] = configured[name].model_dump(exclude_defaults=True, mode="json")
+        elif name in user:
+            servers[name] = user[name]
+        else:
+            return None, f"mcp server {name!r} is neither defined in agent.mcp_servers nor in the user's Claude config"
+
+    content = json.dumps({"mcpServers": servers}, separators=(",", ":"))
+
+    return McpConfigFile(path=roots.control / _MCP_CONFIG_FILENAME, content=content), None
+
+
+def _mcp_flags(mcp_config: McpConfigFile | None) -> tuple[str, ...]:
+    """Return the strict MCP flags pointing at the config file, or at the empty configuration when none is granted."""
+    value = str(mcp_config.path) if mcp_config is not None else _EMPTY_MCP_CONFIG
+
+    return ("--strict-mcp-config", "--mcp-config", value)
+
+
 def _flags(
-    mode: str, tools: list[str] | None, allowed: list[str], denied: list[str], add_dirs: list[str]
+    mode: str,
+    tools: list[str] | None,
+    allowed: list[str],
+    denied: list[str],
+    mcp_config: McpConfigFile | None,
 ) -> ClaudePolicyArgs:
-    """Assemble the flag tuple: mode, the empty MCP set, then --tools when not None, the lists only when non-empty, add_dirs last."""
-    flags = ["--permission-mode", mode, *_EMPTY_MCP_FLAGS]
+    """Assemble the flag tuple: mode, the MCP flags, then --tools when not None, the lists only when non-empty."""
+    flags = ["--permission-mode", mode, *_mcp_flags(mcp_config)]
     if tools is not None:
         flags += ["--tools", ",".join(tools)]
 
@@ -177,39 +233,67 @@ def _flags(
     if denied:
         flags += ["--disallowedTools", ",".join(denied)]
 
-    return ClaudePolicyArgs(flags=(*flags, *add_dirs))
+    return ClaudePolicyArgs(flags=tuple(flags), mcp_config=mcp_config)
 
 
-def _render_allow_all(policy: ToolPolicy, roots: PolicyRoots) -> ClaudePolicyArgs | str:
-    """Return bypassPermissions without denies, else dontAsk with every built-in granted and the denies rendered."""
-    if not policy.deny:
-        return _flags("bypassPermissions", None, [], [], [])
-
-    error = _first_error(policy.deny, roots, deny=True)
+def _render_allow_all(
+    policy: ToolPolicy,
+    roots: PolicyRoots,
+    configured: Mapping[str, McpServerDefinition],
+    user: Mapping[str, dict[str, object]],
+) -> ClaudePolicyArgs | str:
+    """Return bypassPermissions without denies, else dontAsk with every built-in granted and the denies rendered; mcp allow rules load only the servers they name."""
+    mcp_allows = [rule for rule in policy.allow if rule.capability == ToolCapability.MCP]
+    error = _first_error(mcp_allows, roots, deny=False) or _first_error(policy.deny, roots, deny=True)
     if error is not None:
         return error
 
+    mcp_config, error = _resolve_mcp_servers(mcp_allows, roots, configured, user)
+    if error is not None:
+        return error
+
+    if not policy.deny:
+        return _flags("bypassPermissions", None, [], [], mcp_config)
+
     every_tool = [name for _, names in _TOOL_GROUPS for name in names]
+    allowed = [*_ALL_BUILTINS_APPROVALS, *_unique([_rule_permission(rule, roots) for rule in mcp_allows])]
     denied = _unique([_rule_permission(rule, roots) for rule in policy.deny])
 
-    return _flags("dontAsk", every_tool, list(_ALL_BUILTINS_APPROVALS), denied, [])
+    return _flags("dontAsk", every_tool, allowed, denied, mcp_config)
 
 
-def _render_restricted(policy: ToolPolicy, roots: PolicyRoots) -> ClaudePolicyArgs | str:
+def _render_restricted(
+    policy: ToolPolicy,
+    roots: PolicyRoots,
+    configured: Mapping[str, McpServerDefinition],
+    user: Mapping[str, dict[str, object]],
+) -> ClaudePolicyArgs | str:
     """Return dontAsk flags for the allow and deny rules, or why a rule cannot be preserved."""
     error = _first_error(policy.allow, roots, deny=False) or _first_error(policy.deny, roots, deny=True)
+    if error is not None:
+        return error
+
+    mcp_config, error = _resolve_mcp_servers(policy.allow, roots, configured, user)
     if error is not None:
         return error
 
     allowed = _unique([_rule_permission(rule, roots) for rule in policy.allow])
     denied = _unique([_rule_permission(rule, roots) for rule in policy.deny])
 
-    return _flags("dontAsk", _tool_names(policy), allowed, denied, _scratch_flags(policy, roots))
+    rendered = _flags("dontAsk", _tool_names(policy), allowed, denied, mcp_config)
+
+    return replace(rendered, flags=(*rendered.flags, *_scratch_flags(policy, roots)))
 
 
-def render_claude_policy(policy: ToolPolicy, roots: PolicyRoots) -> ClaudePolicyArgs | str:
+def render_claude_policy(
+    policy: ToolPolicy,
+    roots: PolicyRoots,
+    *,
+    configured: Mapping[str, McpServerDefinition],
+    user: Mapping[str, dict[str, object]],
+) -> ClaudePolicyArgs | str:
     """Render policy into Claude Code flags, or return why a rule cannot be preserved."""
     if policy.allow_all:
-        return _render_allow_all(policy, roots)
+        return _render_allow_all(policy, roots, configured, user)
 
-    return _render_restricted(policy, roots)
+    return _render_restricted(policy, roots, configured, user)

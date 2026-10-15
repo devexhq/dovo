@@ -55,6 +55,12 @@
           "default": []
         },
         "env_mode": { "type": "string", "enum": ["allowlist", "inherit"], "default": "allowlist" },
+        "mcp_servers": {
+          "type": "object",
+          "propertyNames": { "pattern": "^(?!.*__)[^/*\\s,]+$" },
+          "additionalProperties": { "$ref": "#/$defs/mcpServer" },
+          "default": {}
+        },
         "tools": { "$ref": "#/$defs/toolPolicy" }
       }
     },
@@ -115,6 +121,41 @@
     }
   },
   "$defs": {
+    "mcpServer": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "type": { "type": "string", "enum": ["stdio", "http", "sse"], "default": "stdio" },
+        "command": { "type": "string", "minLength": 1 },
+        "args": { "type": "array", "items": { "type": "string" }, "default": [] },
+        "env": {
+          "type": "object",
+          "additionalProperties": { "type": "string", "pattern": "\\$\\{[A-Za-z_][A-Za-z0-9_]*(:-[^}]*)?\\}" },
+          "default": {}
+        },
+        "url": { "type": "string", "minLength": 1 },
+        "headers": {
+          "type": "object",
+          "additionalProperties": { "type": "string", "pattern": "\\$\\{[A-Za-z_][A-Za-z0-9_]*(:-[^}]*)?\\}" },
+          "default": {}
+        }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "type": { "const": "stdio" } } },
+          "then": {
+            "required": ["command"],
+            "not": { "required": ["url"] },
+            "properties": { "headers": { "maxProperties": 0 } }
+          },
+          "else": {
+            "required": ["url"],
+            "not": { "required": ["command"] },
+            "properties": { "args": { "maxItems": 0 }, "env": { "maxProperties": 0 } }
+          }
+        }
+      ]
+    },
     "toolPolicy": {
       "type": "object",
       "additionalProperties": false,

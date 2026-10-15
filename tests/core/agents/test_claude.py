@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
 
+from dovo.common.mcp_servers import McpServerDefinition
 from dovo.common.tool_policy import ToolCapability, ToolPolicy, ToolRule
 from dovo.core.agents import (
     AgentInvocationContext,
@@ -86,8 +88,9 @@ class ClaudePolicyPreflightTests:
     def test_mcp_policy_is_rejected_before_spawn(
         self, git_repo: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """[tier-1/integration] ClaudeAgentAdapter.invoke: an mcp allow request returns PROVIDER_ERROR with errors == [tool_policy_unsupported_message('claude')] and FakeAgentRunner.calls == []."""
+        """[tier-1/integration] ClaudeAgentAdapter.invoke: an mcp allow for a server defined in neither agent.mcp_servers nor the user's Claude config returns PROVIDER_ERROR with errors == [tool_policy_unsupported_message('claude')] and FakeAgentRunner.calls == []."""
         monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test")
+        monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path / "claude-home"))
         runner = FakeAgentRunner()
         monkeypatch.setattr("dovo.core.agents.cli_mutation.stream_isolated_process", runner)
         policy = ToolPolicy(allow=[ToolRule(capability=ToolCapability.MCP, pattern="server/tool")])
@@ -104,6 +107,44 @@ class ClaudePolicyPreflightTests:
         assert response.status == AgentResponseStatus.PROVIDER_ERROR
         assert response.errors == [tool_policy_unsupported_message("claude")]
         assert runner.calls == []
+
+    @pytest.mark.parametrize(
+        ("configured", "user_config"),
+        [
+            pytest.param({"github": McpServerDefinition(command="npx")}, None, id="configured-server"),
+            pytest.param({}, {"mcpServers": {"github": {"command": "uvx"}}}, id="user-config-server"),
+        ],
+    )
+    def test_mcp_allow_for_resolvable_server_passes_preflight(
+        self,
+        git_repo: Path,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        configured: dict[str, McpServerDefinition],
+        user_config: dict[str, object] | None,
+    ) -> None:
+        """[tier-1/integration] ClaudeAgentAdapter.invoke: an mcp allow for a server in request.mcp_servers or in the user's Claude config returns PROVIDER_ERROR whose errors contain 'Claude Code invocation is not available', not the unsupported message."""
+        claude_home = tmp_path / "claude-home"
+        claude_home.mkdir()
+        if user_config is not None:
+            (claude_home / ".claude.json").write_text(json.dumps(user_config), encoding="utf-8")
+
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test")
+        monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(claude_home))
+        policy = ToolPolicy(allow=[ToolRule(capability=ToolCapability.MCP, pattern="github/*")])
+        request = (
+            AgentRequestBuilder()
+            .with_worktree_path(git_repo)
+            .with_invocation(_real_invocation(tmp_path))
+            .with_tools(policy)
+            .build()
+            .model_copy(update={"mcp_servers": configured})
+        )
+
+        response = ClaudeAgentAdapter().invoke(request)
+
+        assert response.status == AgentResponseStatus.PROVIDER_ERROR
+        assert any("Claude Code invocation is not available" in error for error in response.errors)
 
     def test_narrowed_read_with_read_deny_passes_preflight(
         self, git_repo: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch

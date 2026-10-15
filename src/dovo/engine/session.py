@@ -85,6 +85,7 @@ def _resolve_agent_settings(
             max_tokens=agent.max_tokens,
             env_passthrough=env_passthrough,
             env_mode=env_mode,
+            mcp_servers=agent.mcp_servers,
             tools=agent.tools if agent.tools is not None else default_tool_policy(),
         )
     )

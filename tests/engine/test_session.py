@@ -9,6 +9,7 @@ from pathlib import Path
 import pytest
 
 from dovo.common.filesystem.models import WorkspacePaths
+from dovo.common.mcp_servers import McpServerDefinition
 from dovo.common.tool_policy import ToolCapability, ToolPolicy, ToolRule
 from dovo.core.agents import default_tool_policy
 from dovo.core.agents.models import (
@@ -931,6 +932,26 @@ class ResolveAgentSettingsToolsTests:
 
         assert captured_agent_args[0] is not None
         assert captured_agent_args[0].tools == expected
+
+
+class ResolveAgentSettingsMcpServersTests:
+    """[tier-2/integration] drive_run: config agent.mcp_servers resolved into ResolvedAgentSettings.mcp_servers."""
+
+    def test_configured_mcp_servers_reach_resolved_settings(
+        self,
+        tmp_path: Path,
+        captured_agent_args: list[ResolvedAgentSettings | None],
+        noop_agent_provider: FakeAgentProvider,
+    ) -> None:
+        """[tier-2/integration] _resolve_agent_settings: config agent.mcp_servers {'github': {'command': 'npx'}} yields ResolvedAgentSettings.mcp_servers == {'github': McpServerDefinition(command='npx')}."""
+        agent_config = {**_AGENT_CONFIG, "mcp_servers": {"github": {"command": "npx"}}}
+        paths, sessions = _agent_workspace(tmp_path, agent_config)
+        seed_new_session(paths, sessions, session_id="mcp", steps=[_agent_step("a")], use_worktree=True)
+
+        _drive(paths, sessions, "mcp")
+
+        assert captured_agent_args[0] is not None
+        assert captured_agent_args[0].mcp_servers == {"github": McpServerDefinition(command="npx")}
 
 
 class DriveRunAgentSettingsTests:

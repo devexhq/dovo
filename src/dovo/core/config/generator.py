@@ -37,6 +37,7 @@ CANONICAL_V1_DEFAULTS: dict[str, Any] = {
         "max_tokens": 4096,
         "env_passthrough": [],
         "env_mode": "allowlist",
+        "mcp_servers": {},
     },
     "history": {
         "save_attempt_logs": True,

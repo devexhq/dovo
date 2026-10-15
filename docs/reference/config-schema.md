@@ -79,6 +79,7 @@ Schema for `.dovo/config.json` (version 1).
 * `max_tokens` *(integer)*: Maximum generation tokens (default: `4096`).
 * `env_passthrough` *(array of string)*: Host environment names (or `PREFIX*` patterns) forwarded to the agent subprocess (default: `[]`). A repo-level list replaces a global one rather than merging. See [Agent Providers](../guides/agent-providers.md#subprocess-environment).
 * `env_mode` *(string)*: `allowlist` (default) forwards a fixed base set plus your passthrough names; `inherit` forwards the full host environment.
+* `mcp_servers` *(object)*: MCP servers by name, each a `stdio` (`command`, `args`, `env`) or `http`/`sse` (`url`, `headers`) definition (default: `{}`). Claude only; Copilot ignores it. A name must not contain `/`, `*`, `,`, `__` or whitespace, and every `env` and `headers` value must contain a `${NAME}` reference so the config never stores a secret. See [Agent Providers](../guides/agent-providers.md#claude-code-behavior).
 * `tools` *(object, optional)*: Default agent tool policy with the same shape as a step's `tools` (`allow`, `deny`, `allow_all`; see [Step Schema](step-schema.md)). Absent means read and write on the worktree and scratch only (see [Tool Policy](../guides/agent-providers.md#tool-policy)). A higher tier's object replaces a lower tier's instead of merging. A plain string list is rejected.
 
 ### 5. `history`
