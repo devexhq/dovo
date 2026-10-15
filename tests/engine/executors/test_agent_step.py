@@ -33,7 +33,6 @@ from dovo.core.catalog.definitions import StepDefinition, StepType
 from dovo.core.git import GitRunner
 from dovo.core.sessions import SessionLogEvent, SessionLogEventType
 from dovo.engine.executors.agent_step import (
-    AGENT_OUTCOME_EXIT_CODES,
     BLANK_PROMPT_MESSAGE,
     MISSING_SETTINGS_MESSAGE,
     WORKTREE_REQUIRED_MESSAGE,
@@ -41,7 +40,13 @@ from dovo.engine.executors.agent_step import (
     execute_agent_step,
 )
 from dovo.engine.executors.metadata import metadata_to_env
-from dovo.engine.executors.models import AgentProgressSink, ExecutionMetadata, StepDispatchOutcome, StepMetadata
+from dovo.engine.executors.models import (
+    AGENT_OUTCOME_EXIT_CODES,
+    AgentProgressSink,
+    ExecutionMetadata,
+    StepDispatchOutcome,
+    StepMetadata,
+)
 from tests.harness import AGENT_ADAPTER_FACTORY, FakeAgentProvider, RecordingProgressSink, new_file_diff
 from tests.harness.builders import StepBuilder
 
@@ -541,21 +546,27 @@ class ExecuteAgentStepScratchTests:
 
 
 def _stub_attempt(monkeypatch: pytest.MonkeyPatch, attempt: AgentAttempt) -> list[dict[str, object]]:
-    """Replace run_direct_attempt with a recorder returning ``attempt`` and return the captured keyword arguments."""
+    """Replace run_direct_attempt with a recorder returning ``attempt`` and return the captured keyword arguments.
+
+    The recorder reports ``attempt.env_withheld`` through the context callback before returning, as a provider does.
+    """
     calls: list[dict[str, object]] = []
 
     def _record(**kwargs: object) -> AgentAttempt:
         calls.append(kwargs)
+        context = kwargs["context"]
+        assert isinstance(context, AgentAttemptContext)
+        if attempt.env_withheld and context.on_env_withheld is not None:
+            context.on_env_withheld(attempt.env_withheld)
+
         return attempt
 
     monkeypatch.setattr("dovo.engine.executors.agent_step.run_direct_attempt", _record)
     return calls
 
 
-_FILTERED_LINE = (
-    "Agent environment filtered: 3 variables withheld. "
-    "Fix: add names to agent.env_passthrough or pass --env-passthrough NAME.\n"
-)
+_FILTERED_LINE = "  ! Agent environment filtered: 3 variables withheld.\n"
+_FIX_LINE = "  ! Fix: add names to agent.env_passthrough or pass --env-passthrough NAME.\n"
 
 
 class ExecuteAgentStepToolsTests:
@@ -614,7 +625,8 @@ class ExecuteAgentStepEnvTests:
             SessionLogEvent.model_validate_json(line)
             for line in (log_dir / "session.log").read_text(encoding="utf-8").splitlines()
         ]
-        assert ("stderr", _FILTERED_LINE) in emitted
+        assert [stream for stream, _ in emitted] == ["stderr", "stdout"]
+        assert emitted[0] == ("stderr", _FILTERED_LINE)
         assert [(event.event, event.step_id, event.env_withheld) for event in events] == [
             (SessionLogEventType.AGENT_ENV_FILTERED, "plan", "AWS_KEY_X,FOO,ZED")
         ]
@@ -644,7 +656,7 @@ class ExecuteAgentStepEnvTests:
         outcome = _run(git_repo, session_log_dir=log_dir, on_output=lambda stream, line: emitted.append((stream, line)))
 
         assert outcome.exit_code == 202
-        assert ("stderr", _FILTERED_LINE) in emitted
+        assert [line for stream, line in emitted if stream == "stderr"] == [_FILTERED_LINE, _FIX_LINE]
         assert len((log_dir / "session.log").read_text(encoding="utf-8").splitlines()) == 1
 
     def test_withheld_report_without_a_session_log_dir_still_prints_the_console_line(
@@ -809,7 +821,7 @@ class ExecuteAgentStepHeartbeatTests:
         _run(git_repo, step=StepBuilder.agent("Plan the change").with_id("plan").build(), on_output=on_output)
 
         assert provider_released == [True]
-        assert lines[:2] == ["[plan] agent running (30s)\n", "[plan] agent running (60s)\n"]
+        assert lines[:2] == ["  agent running (30s)\n", "  agent running (60s)\n"]
         assert json.loads(lines[-1])["status"] == "no_op"
 
     def test_heartbeat_thread_is_gone_after_the_step_returns(

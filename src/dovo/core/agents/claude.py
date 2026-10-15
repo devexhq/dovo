@@ -15,6 +15,7 @@ from dovo.common.tool_policy import ToolCapability, ToolPolicy
 from dovo.core.agents.base import ProviderSpec
 from dovo.core.agents.claude_mcp import load_user_claude_mcp_servers
 from dovo.core.agents.claude_policy import ClaudePolicyArgs, McpConfigFile, render_claude_policy
+from dovo.core.agents.claude_progress import map_claude_line
 from dovo.core.agents.claude_stream import classify_claude_output
 from dovo.core.agents.cli_mutation import (
     CliDirectMutationAdapter,
@@ -265,4 +266,5 @@ CLAUDE_PROVIDER_SPEC = ProviderSpec(
     control_envs=CLAUDE_CONTROL_ENVS,
     auth_label=claude_auth_label,
     auth_fix=CLAUDE_AUTH_FIX,
+    progress_mapper=map_claude_line,
 )

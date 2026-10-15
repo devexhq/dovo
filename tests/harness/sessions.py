@@ -15,7 +15,7 @@ from dovo.core.catalog.definitions import LoopStepBlock, StepDefinition
 from dovo.core.db import SessionRecord, SessionsRepository, SessionStatus
 from dovo.core.db.repositories.artifacts import ArtifactsRepository
 from dovo.engine import RunCoordinator, RunObserver, RunOutcome
-from dovo.engine.executors.models import ConditionEvaluationResult, StepResult
+from dovo.engine.executors.models import AgentProgressUpdate, ConditionEvaluationResult, StepResult
 from dovo.engine.models import RunContext
 from dovo.engine.state_models import ExecutionLeafNode, NodeState, StepAttemptRecord
 from dovo.engine.state_store import SessionStateStore
@@ -42,6 +42,9 @@ class NoOpRunObserver(RunObserver):
         line: str,
         stream: str = "stdout",
     ) -> None:
+        pass
+
+    def on_step_progress(self, idx: int, total: int, step: StepDefinition, update: AgentProgressUpdate) -> None:
         pass
 
     def on_step_done(self, idx: int, total: int, step: StepDefinition, result: StepResult) -> None:

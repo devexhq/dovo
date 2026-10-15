@@ -27,6 +27,7 @@ from dovo.cli.ui.formatters.config import (
     ConfigValidateFormatter,
 )
 from dovo.cli.ui.formatters.events import (
+    AgentProgressFormatter,
     ErrorPanelFormatter,
     LockWaitFormatter,
     LoopLifecycleFormatter,
@@ -72,6 +73,7 @@ from dovo.cli.ui.formatters.worktree import (
 
 __all__ = [
     "FORMATTER_REGISTRY",
+    "AgentProgressFormatter",
     "ArtifactDownloadFormatter",
     "ArtifactsListFormatter",
     "ArtifactsPruneFormatter",

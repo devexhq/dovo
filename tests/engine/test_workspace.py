@@ -40,6 +40,9 @@ class _RecordingRunObserver(RunObserver):
     def on_step_output(self, *args: object, **kwargs: object) -> None:
         pass
 
+    def on_step_progress(self, *args: object, **kwargs: object) -> None:
+        pass
+
     def on_step_done(self, *args: object, **kwargs: object) -> None:
         pass
 

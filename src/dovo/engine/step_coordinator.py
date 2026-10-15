@@ -11,7 +11,13 @@ from dovo.core.sessions import SessionLogEvent, SessionLogEventType
 from dovo.engine.executors import StepExecution
 from dovo.engine.executors.agent_step import build_agent_step_runner
 from dovo.engine.executors.ask_step import complete_ask_step, resolve_ask_request
-from dovo.engine.executors.models import AskResolution, PreviousStepMetadata, StepExecutionContext, StepResult
+from dovo.engine.executors.models import (
+    AskResolution,
+    PreviousStepMetadata,
+    ProgressCallback,
+    StepExecutionContext,
+    StepResult,
+)
 from dovo.engine.executors.session_log import append_session_log_event
 from dovo.engine.failure import (
     failed_step_message,
@@ -101,6 +107,11 @@ class StepCoordinator:
             if self.context.observer is not None
             else None
         )
+        on_progress = (
+            (lambda update: safe_notify(self.context.observer, "on_step_progress", idx, total, step, update))
+            if self.context.observer is not None
+            else None
+        )
         result = StepExecution(
             self._execution_context(
                 run_context,
@@ -113,6 +124,7 @@ class StepCoordinator:
                 loop_iteration=loop_iteration,
                 loop_id=loop_id,
                 on_output=on_output,
+                on_progress=on_progress,
             )
         ).run()
         self._log_step_done(run_context, step, idx, total, result, loop_id, loop_iteration)
@@ -132,6 +144,7 @@ class StepCoordinator:
         loop_iteration: int | None,
         loop_id: str | None,
         on_output: Callable[[str, str], None] | None = None,
+        on_progress: ProgressCallback | None = None,
     ) -> StepExecutionContext:
         """Build the StepExecutionContext shared by command, script, agent, internal and ask steps."""
         session_dir = self.context.paths.session_dir(self.context.session_id) if self.context.session_id else None
@@ -140,6 +153,7 @@ class StepCoordinator:
             worktree_path=run_context.target_dir,
             context=step_context,
             on_output=on_output,
+            on_progress=on_progress,
             step_index=idx,
             initial_attempt=initial_attempt,
             identity=self.context.identity,

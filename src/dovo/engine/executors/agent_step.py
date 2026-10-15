@@ -3,10 +3,9 @@
 from __future__ import annotations
 
 import threading
-from collections.abc import Callable, Mapping
+from collections.abc import Callable
 from pathlib import Path
 from time import monotonic
-from types import MappingProxyType
 from typing import Final
 
 from dovo.core.agents import (
@@ -24,6 +23,7 @@ from dovo.core.catalog.definitions import StepDefinition
 from dovo.core.sessions import SessionLogEvent, SessionLogEventType
 from dovo.engine.executors.metadata import metadata_to_env
 from dovo.engine.executors.models import (
+    AGENT_OUTCOME_EXIT_CODES,
     AgentProgressSink,
     AgentStepRunner,
     AgentStepSummary,
@@ -42,18 +42,6 @@ MISSING_SETTINGS_MESSAGE = (
 )
 BLANK_PROMPT_MESSAGE = "Agent step prompt is blank after interpolation."
 AGENT_HEARTBEAT_INTERVAL_SECONDS: Final[int] = 30
-
-# Step outcome code per agent status; 200 is unused.
-AGENT_OUTCOME_EXIT_CODES: Final[Mapping[AgentResponseStatus, int]] = MappingProxyType(
-    {
-        AgentResponseStatus.PROPOSED_PATCH: 0,
-        AgentResponseStatus.NO_OP: 0,
-        AgentResponseStatus.UNFIXABLE: 201,
-        AgentResponseStatus.TIMEOUT: 202,
-        AgentResponseStatus.PROVIDER_ERROR: 203,
-        AgentResponseStatus.BLOCKED: 204,
-    }
-)
 
 
 def execute_agent_step(
@@ -112,10 +100,11 @@ def execute_agent_step(
                 ),
                 on_line=on_agent_line,
                 on_progress=progress.report,
+                on_env_withheld=lambda names: _report_withheld_names(names, metadata, session_log_dir, on_output),
             ),
         ),
     )
-    _report_withheld(attempt, metadata, session_log_dir, on_output)
+    _report_withheld_fix(attempt, on_output)
 
     return _to_outcome(attempt, on_output)
 
@@ -170,7 +159,7 @@ def _run_with_heartbeat(
             if quiet_seconds is not None and quiet_seconds < AGENT_HEARTBEAT_INTERVAL_SECONDS:
                 continue
 
-            _emit_output(on_output, "stdout", f"[{step_id}] agent running ({int(monotonic() - started)}s)\n")
+            _emit_output(on_output, "stdout", f"  agent running ({int(monotonic() - started)}s)\n")
 
     heartbeat = threading.Thread(target=_beat, name=f"agent-heartbeat-{step_id}", daemon=True)
     heartbeat.start()
@@ -193,19 +182,11 @@ def _rejected_patch_destination(
     return session_dir / "rejected" / f"{step_id}{iteration}_attempt_{attempt}.patch"
 
 
-def _report_withheld(
-    attempt: AgentAttempt, metadata: ExecutionMetadata, session_log_dir: Path | None, on_output: OutputCallback | None
+def _report_withheld_names(
+    names: list[str], metadata: ExecutionMetadata, session_log_dir: Path | None, on_output: OutputCallback | None
 ) -> None:
-    """Emit the operator stderr line and append one agent_env_filtered session-log event when names were withheld."""
-    if not attempt.env_withheld:
-        return
-
-    _emit_output(
-        on_output,
-        "stderr",
-        f"Agent environment filtered: {len(attempt.env_withheld)} variables withheld. "
-        "Fix: add names to agent.env_passthrough or pass --env-passthrough NAME.\n",
-    )
+    """Emit the operator stderr notice and one agent_env_filtered session-log event."""
+    _emit_output(on_output, "stderr", f"  ! Agent environment filtered: {len(names)} variables withheld.\n")
     append_session_log_event(
         session_log_dir,
         SessionLogEvent(
@@ -213,9 +194,17 @@ def _report_withheld(
             step_index=metadata.step.index,
             step_id=metadata.step.id,
             attempt=metadata.step.attempt,
-            env_withheld=",".join(attempt.env_withheld),
+            env_withheld=",".join(names),
         ),
     )
+
+
+def _report_withheld_fix(attempt: AgentAttempt, on_output: OutputCallback | None) -> None:
+    """Emit the passthrough fix line when names were withheld and the attempt did not succeed."""
+    if not attempt.env_withheld or AGENT_OUTCOME_EXIT_CODES[attempt.status] == 0:
+        return
+
+    _emit_output(on_output, "stderr", "  ! Fix: add names to agent.env_passthrough or pass --env-passthrough NAME.\n")
 
 
 def _provider_error(*diagnostics: str) -> AgentAttempt:

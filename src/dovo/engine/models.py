@@ -19,7 +19,7 @@ from dovo.core.db import SessionRecord, SessionStatus
 from dovo.core.interaction import InteractionAnswer, InteractionRequest
 from dovo.core.sessions import StepRunSummary
 from dovo.core.worktree import WorktreeSession
-from dovo.engine.executors.models import ConditionEvaluationResult, ExecutionIdentity, StepResult
+from dovo.engine.executors.models import AgentProgressUpdate, ConditionEvaluationResult, ExecutionIdentity, StepResult
 
 
 class EngineResumeStatus(StrEnum):
@@ -220,6 +220,10 @@ class RunObserver(Protocol):
         stream: str = "stdout",
     ) -> None:
         """Called when a running step emits a line of output."""
+        ...
+
+    def on_step_progress(self, idx: int, total: int, step: StepDefinition, update: AgentProgressUpdate) -> None:
+        """Called when a running agent step reports an action, a note or a tool result."""
         ...
 
     def on_step_done(self, idx: int, total: int, step: StepDefinition, result: StepResult) -> None:

@@ -10,6 +10,7 @@ from types import MappingProxyType
 from typing import Final
 
 from dovo.core.agents.models import AgentProgress, AgentProgressKind
+from dovo.core.agents.progress_target import display_progress_target
 
 COPILOT_TOOL_KINDS: Final[Mapping[str, AgentProgressKind]] = MappingProxyType(
     {
@@ -37,7 +38,6 @@ COPILOT_TARGET_FIELDS: Final[Mapping[str, str]] = MappingProxyType(
 )
 
 _PATCH_FILE_PATTERN: Final[re.Pattern[str]] = re.compile(r"^\*\*\* (?:Add|Update|Delete) File: (.+?)\s*$", re.MULTILINE)
-_PATH_KINDS: Final[frozenset[AgentProgressKind]] = frozenset({AgentProgressKind.READ, AgentProgressKind.EDIT})
 
 
 def map_copilot_line(line: str, *, worktree_path: Path) -> tuple[AgentProgress, ...]:
@@ -53,7 +53,8 @@ def map_copilot_line(line: str, *, worktree_path: Path) -> tuple[AgentProgress, 
     kind, raw_targets = targets
 
     return tuple(
-        AgentProgress(kind=kind, target=_display_target(kind, raw_target, worktree_path)) for raw_target in raw_targets
+        AgentProgress(kind=kind, target=display_progress_target(kind, raw_target, worktree_path))
+        for raw_target in raw_targets
     )
 
 
@@ -100,14 +101,3 @@ def _targets_for_tool(tool_name: str, arguments: object) -> tuple[AgentProgressK
 def _patch_paths(patch_text: str) -> list[str]:
     """Return each Add, Update or Delete File path in an apply_patch argument string, in order."""
     return _PATCH_FILE_PATTERN.findall(patch_text)
-
-
-def _display_target(kind: AgentProgressKind, raw_target: str, worktree_path: Path) -> str:
-    """Make a path relative to the worktree or collapse command whitespace, per kind."""
-    if kind not in _PATH_KINDS:
-        return " ".join(raw_target.split())
-
-    try:
-        return str(Path(raw_target).relative_to(worktree_path))
-    except ValueError:
-        return raw_target

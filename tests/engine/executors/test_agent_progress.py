@@ -1,4 +1,4 @@
-"""Contract tests for the agent progress reporter: terminal lines, session-log events and the quiet window."""
+"""Contract tests for the agent progress reporter: observer updates, session-log events and the quiet window."""
 
 from __future__ import annotations
 
@@ -10,25 +10,28 @@ import pytest
 from dovo.common.constants import SESSION_LOG_FILENAME
 from dovo.common.redact import SecretRedactor
 from dovo.core.agents import AgentProgress, AgentProgressKind
+from dovo.core.agents.claude_progress import map_claude_line
 from dovo.core.sessions import SessionLogEvent, SessionLogEventType
 from dovo.engine.executors.agent_progress import AgentProgressReporter
+from dovo.engine.executors.models import AgentProgressUpdate
+from tests.harness.fixtures import load_agent_fixture
 
 
 def _reporter(
     *,
-    on_output: list[tuple[str, str]] | None = None,
+    updates: list[AgentProgressUpdate] | None = None,
     session_log_dir: Path | None = None,
     redactor: SecretRedactor | None = None,
     raising: bool = False,
     loop_id: str | None = None,
     iteration: int | None = None,
 ) -> AgentProgressReporter:
-    def collect(stream_name: str, line: str) -> None:
+    def collect(update: AgentProgressUpdate) -> None:
         if raising:
             raise RuntimeError("terminal gone")
 
-        if on_output is not None:
-            on_output.append((stream_name, line))
+        if updates is not None:
+            updates.append(update)
 
     return AgentProgressReporter(
         step_id="code",
@@ -36,7 +39,7 @@ def _reporter(
         attempt=1,
         loop_id=loop_id,
         iteration=iteration,
-        on_output=collect,
+        on_progress=collect,
         session_log_dir=session_log_dir,
         redactor=redactor or SecretRedactor([]),
     )
@@ -48,41 +51,87 @@ def _logged_events(session_log_dir: Path) -> list[SessionLogEvent]:
     return [SessionLogEvent.model_validate_json(line) for line in lines]
 
 
+def _shown(updates: list[AgentProgressUpdate]) -> list[tuple[AgentProgressKind, str]]:
+    return [(update.kind, update.target) for update in updates]
+
+
 class AgentProgressReporterTests:
     @pytest.mark.parametrize(
-        ("kind", "target", "expected"),
+        ("kind", "target"),
         [
-            pytest.param(AgentProgressKind.EDIT, "src/x.py", "[code] Editing src/x.py\n", id="edit"),
-            pytest.param(AgentProgressKind.READ, "src/x.py", "[code] Reading src/x.py\n", id="read"),
-            pytest.param(AgentProgressKind.SEARCH, "Needle", "[code] Searching for Needle\n", id="search"),
-            pytest.param(AgentProgressKind.SHELL, "uv run pytest", "[code] Running uv run pytest\n", id="shell"),
+            pytest.param(AgentProgressKind.EDIT, "src/x.py", id="edit"),
+            pytest.param(AgentProgressKind.READ, "src/x.py", id="read"),
+            pytest.param(AgentProgressKind.SEARCH, "Needle", id="search"),
+            pytest.param(AgentProgressKind.SHELL, "uv run pytest", id="shell"),
         ],
     )
-    def test_report_prints_the_kind_format_with_the_step_id(
-        self, kind: AgentProgressKind, target: str, expected: str
+    def test_report_delivers_an_action_update_with_its_kind_and_target(
+        self, kind: AgentProgressKind, target: str
     ) -> None:
-        printed: list[tuple[str, str]] = []
+        updates: list[AgentProgressUpdate] = []
 
-        _reporter(on_output=printed).report(AgentProgress(kind=kind, target=target))
+        _reporter(updates=updates).report(AgentProgress(kind=kind, target=target))
 
-        assert printed == [("stdout", expected)]
+        assert updates == [AgentProgressUpdate(kind=kind, target=target)]
 
-    def test_consecutive_identical_items_print_once(self) -> None:
-        printed: list[tuple[str, str]] = []
-        reporter = _reporter(on_output=printed)
+    def test_consecutive_identical_items_are_delivered_once(self) -> None:
+        updates: list[AgentProgressUpdate] = []
+        reporter = _reporter(updates=updates)
         read = AgentProgress(kind=AgentProgressKind.READ, target="src/x.py")
         edit = AgentProgress(kind=AgentProgressKind.EDIT, target="src/x.py")
 
         for item in (read, read, edit, read):
             reporter.report(item)
 
-        assert [line for _, line in printed] == [
-            "[code] Reading src/x.py\n",
-            "[code] Editing src/x.py\n",
-            "[code] Reading src/x.py\n",
+        assert _shown(updates) == [
+            (AgentProgressKind.READ, "src/x.py"),
+            (AgentProgressKind.EDIT, "src/x.py"),
+            (AgentProgressKind.READ, "src/x.py"),
         ]
 
-    def test_on_output_failure_does_not_raise(self, tmp_path: Path) -> None:
+    def test_notes_are_held_until_the_next_action_then_reported_before_it(self, tmp_path: Path) -> None:
+        updates: list[AgentProgressUpdate] = []
+        reporter = _reporter(updates=updates, session_log_dir=tmp_path)
+
+        reporter.report(AgentProgress(kind=AgentProgressKind.NOTE, target="Step 1: read it."))
+        reporter.report(AgentProgress(kind=AgentProgressKind.NOTE, target="Using Bash instead."))
+
+        assert updates == []
+
+        reporter.report(AgentProgress(kind=AgentProgressKind.SHELL, target="ls"))
+
+        assert _shown(updates) == [
+            (AgentProgressKind.NOTE, "Step 1: read it."),
+            (AgentProgressKind.NOTE, "Using Bash instead."),
+            (AgentProgressKind.SHELL, "ls"),
+        ]
+        assert [(event.kind, event.target) for event in _logged_events(tmp_path)] == [
+            ("note", "Step 1: read it."),
+            ("note", "Using Bash instead."),
+            ("shell", "ls"),
+        ]
+
+    def test_note_still_held_when_the_attempt_ends_is_never_reported(self, tmp_path: Path) -> None:
+        updates: list[AgentProgressUpdate] = []
+        reporter = _reporter(updates=updates, session_log_dir=tmp_path)
+
+        reporter.report(AgentProgress(kind=AgentProgressKind.READ, target="x"))
+        reporter.report(AgentProgress(kind=AgentProgressKind.NOTE, target="All done."))
+
+        assert _shown(updates) == [(AgentProgressKind.READ, "x")]
+        assert [event.kind for event in _logged_events(tmp_path)] == ["read"]
+
+    def test_held_note_is_masked_with_the_step_redactor(self) -> None:
+        secret = "QWERTYUIOPASDFGHJKLZ"
+        updates: list[AgentProgressUpdate] = []
+        reporter = _reporter(updates=updates, redactor=SecretRedactor([("TOKEN", secret)]))
+
+        reporter.report(AgentProgress(kind=AgentProgressKind.NOTE, target=f"Using {secret} now."))
+        reporter.report(AgentProgress(kind=AgentProgressKind.READ, target="x"))
+
+        assert secret not in "".join(update.target for update in updates)
+
+    def test_on_progress_failure_does_not_raise(self, tmp_path: Path) -> None:
         reporter = _reporter(raising=True, session_log_dir=tmp_path)
 
         assert reporter.report(AgentProgress(kind=AgentProgressKind.READ, target="x")) is None
@@ -98,6 +147,116 @@ class AgentProgressReporterTests:
         reporter.report(AgentProgress(kind=AgentProgressKind.READ, target="x"))
 
         assert reporter.seconds_since_last_report() == 10
+
+
+class AgentProgressResultTests:
+    def test_result_of_a_shown_action_delivers_a_capped_excerpt_with_the_call_kind_and_line_count(self) -> None:
+        updates: list[AgentProgressUpdate] = []
+        reporter = _reporter(updates=updates)
+
+        reporter.report(AgentProgress(kind=AgentProgressKind.SHELL, target="ls", call_id="c1"))
+        reporter.report(AgentProgress(kind=AgentProgressKind.RESULT, target="a\nb\nc\nd\ne", call_id="c1"))
+
+        assert updates[1] == AgentProgressUpdate(
+            kind=AgentProgressKind.RESULT, target="a\nb\nc", call_kind=AgentProgressKind.SHELL, line_count=5
+        )
+
+    def test_error_result_is_flagged_on_the_update(self) -> None:
+        updates: list[AgentProgressUpdate] = []
+        reporter = _reporter(updates=updates)
+
+        reporter.report(AgentProgress(kind=AgentProgressKind.EDIT, target="x.py", call_id="c1"))
+        reporter.report(AgentProgress(kind=AgentProgressKind.RESULT, target="denied", call_id="c1", is_error=True))
+
+        assert updates[1] == AgentProgressUpdate(
+            kind=AgentProgressKind.RESULT,
+            target="denied",
+            call_kind=AgentProgressKind.EDIT,
+            line_count=1,
+            is_error=True,
+        )
+
+    @pytest.mark.parametrize(
+        "result_call_id",
+        [
+            pytest.param("unknown", id="call-never-reported"),
+            pytest.param(None, id="result-without-call-id"),
+        ],
+    )
+    def test_result_without_a_reported_action_is_dropped(self, result_call_id: str | None) -> None:
+        updates: list[AgentProgressUpdate] = []
+        reporter = _reporter(updates=updates)
+
+        reporter.report(AgentProgress(kind=AgentProgressKind.READ, target="x", call_id="c1"))
+        reporter.report(AgentProgress(kind=AgentProgressKind.RESULT, target="out", call_id=result_call_id))
+
+        assert _shown(updates) == [(AgentProgressKind.READ, "x")]
+
+    def test_result_of_an_adjacent_duplicate_action_is_dropped_but_the_first_one_is_kept(self) -> None:
+        updates: list[AgentProgressUpdate] = []
+        reporter = _reporter(updates=updates)
+
+        reporter.report(AgentProgress(kind=AgentProgressKind.READ, target="x", call_id="c1"))
+        reporter.report(AgentProgress(kind=AgentProgressKind.READ, target="x", call_id="c2"))
+        reporter.report(AgentProgress(kind=AgentProgressKind.RESULT, target="first", call_id="c1"))
+        reporter.report(AgentProgress(kind=AgentProgressKind.RESULT, target="second", call_id="c2"))
+
+        assert _shown(updates) == [(AgentProgressKind.READ, "x"), (AgentProgressKind.RESULT, "first")]
+
+    def test_same_action_run_again_after_its_result_is_shown_again(self) -> None:
+        updates: list[AgentProgressUpdate] = []
+        reporter = _reporter(updates=updates)
+
+        reporter.report(AgentProgress(kind=AgentProgressKind.SHELL, target="pytest", call_id="c1"))
+        reporter.report(AgentProgress(kind=AgentProgressKind.RESULT, target="1 failed", call_id="c1"))
+        reporter.report(AgentProgress(kind=AgentProgressKind.SHELL, target="pytest", call_id="c2"))
+        reporter.report(AgentProgress(kind=AgentProgressKind.RESULT, target="1 passed", call_id="c2"))
+
+        assert _shown(updates) == [
+            (AgentProgressKind.SHELL, "pytest"),
+            (AgentProgressKind.RESULT, "1 failed"),
+            (AgentProgressKind.SHELL, "pytest"),
+            (AgentProgressKind.RESULT, "1 passed"),
+        ]
+
+    def test_result_is_masked_and_each_line_truncated(self) -> None:
+        secret = "QWERTYUIOPASDFGHJKLZ"
+        updates: list[AgentProgressUpdate] = []
+        reporter = _reporter(updates=updates, redactor=SecretRedactor([("TOKEN", secret)]))
+
+        reporter.report(AgentProgress(kind=AgentProgressKind.SHELL, target="env", call_id="c1"))
+        reporter.report(
+            AgentProgress(kind=AgentProgressKind.RESULT, target=f"TOKEN={secret}\n{'x' * 300}", call_id="c1")
+        )
+
+        first_line, second_line = updates[1].target.splitlines()
+        assert secret not in first_line
+        assert second_line == "x" * 119 + "…"
+
+    def test_result_is_not_appended_to_the_session_log(self, tmp_path: Path) -> None:
+        reporter = _reporter(session_log_dir=tmp_path)
+
+        reporter.report(AgentProgress(kind=AgentProgressKind.READ, target="x", call_id="c1"))
+        reporter.report(AgentProgress(kind=AgentProgressKind.RESULT, target="out", call_id="c1"))
+
+        assert [event.kind for event in _logged_events(tmp_path)] == ["read"]
+
+    def test_claude_fixture_replay_reports_each_action_with_its_result_and_drops_the_closing_message(self) -> None:
+        updates: list[AgentProgressUpdate] = []
+        reporter = _reporter(updates=updates)
+
+        for line in load_agent_fixture("claude", "implementing_edit"):
+            for progress in map_claude_line(line, worktree_path=Path("/work")):
+                reporter.report(progress)
+
+        assert [(update.kind, update.call_kind, update.is_error) for update in updates] == [
+            (AgentProgressKind.SHELL, None, False),
+            (AgentProgressKind.RESULT, AgentProgressKind.SHELL, False),
+            (AgentProgressKind.EDIT, None, False),
+            (AgentProgressKind.RESULT, AgentProgressKind.EDIT, True),
+        ]
+        assert updates[0].target == "cat /work/calc.py; ls -la /work/"
+        assert updates[2].target == "calc.py"
 
 
 class AgentProgressSessionLogTests:
@@ -134,18 +293,18 @@ class AgentProgressSessionLogTests:
         assert secret not in event.target
 
     def test_report_without_a_session_log_dir_writes_no_event(self) -> None:
-        printed: list[tuple[str, str]] = []
+        updates: list[AgentProgressUpdate] = []
 
-        result = _reporter(on_output=printed).report(AgentProgress(kind=AgentProgressKind.READ, target="x"))
+        result = _reporter(updates=updates).report(AgentProgress(kind=AgentProgressKind.READ, target="x"))
 
         assert result is None
-        assert printed == [("stdout", "[code] Reading x\n")]
+        assert updates == [AgentProgressUpdate(kind=AgentProgressKind.READ, target="x")]
 
     def test_report_masks_a_step_only_secret_before_truncating_the_target(self, tmp_path: Path) -> None:
         secret = "QWERTYUIOPASDFGHJKLZ"
         redactor = SecretRedactor([("TOKEN", secret)])
-        printed: list[tuple[str, str]] = []
-        reporter = _reporter(on_output=printed, session_log_dir=tmp_path, redactor=redactor)
+        updates: list[AgentProgressUpdate] = []
+        reporter = _reporter(updates=updates, session_log_dir=tmp_path, redactor=redactor)
         command = "a" * 110 + secret + "b" * 100
         expected = redactor.redact_text(command)[:119] + "…"
 
@@ -154,7 +313,7 @@ class AgentProgressSessionLogTests:
         (event,) = _logged_events(tmp_path)
         assert event.target == expected
         assert secret[:4] not in expected
-        assert printed == [("stdout", f"[code] Running {expected}\n")]
+        assert updates == [AgentProgressUpdate(kind=AgentProgressKind.SHELL, target=expected)]
 
     def test_report_truncates_a_long_target_to_119_characters_plus_ellipsis(self, tmp_path: Path) -> None:
         reporter = _reporter(session_log_dir=tmp_path)

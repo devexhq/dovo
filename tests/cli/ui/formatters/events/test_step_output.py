@@ -2,16 +2,24 @@
 
 from __future__ import annotations
 
+import json
 from typing import Any
 
 import pytest
 
-from dovo.cli.ui.events import StepOutputEvent
+from dovo.cli.ui.events import AgentSummaryView, StepOutputEvent
 from dovo.cli.ui.formatters.events.step_output import StepOutputFormatter
 from tests.harness.formatter import (
     FormatterCase,
     assert_json_payload_matches_published_shape,
     assert_rich_render_shows_every_view_value,
+)
+
+SUCCESS_SUMMARY_LINE = json.dumps(
+    {"status": "no_op", "summary": "Wrote the plan.", "unfixable_reason": None, "touched_files": ["notes.txt"]}
+)
+FAILURE_SUMMARY_LINE = json.dumps(
+    {"status": "unfixable", "summary": None, "unfixable_reason": "no network", "touched_files": []}
 )
 
 STDOUT_LINE = FormatterCase(
@@ -26,9 +34,50 @@ STDERR_LINE = FormatterCase(
     render_expectations=["warning: deprecated"],
 )
 
+SUCCESS_SUMMARY = FormatterCase(
+    data=StepOutputEvent(
+        step_id="plan",
+        line=SUCCESS_SUMMARY_LINE,
+        agent_summary=AgentSummaryView(
+            status="no_op", succeeded=True, summary="Wrote the plan.", touched_files=["notes.txt"]
+        ),
+    ),
+    view=StepOutputEvent(
+        step_id="plan",
+        line=SUCCESS_SUMMARY_LINE,
+        agent_summary=AgentSummaryView(
+            status="no_op", succeeded=True, summary="Wrote the plan.", touched_files=["notes.txt"]
+        ),
+    ),
+    render_expectations=["no_op", "Wrote the plan.", "notes.txt"],
+)
+
+FAILURE_SUMMARY = FormatterCase(
+    data=StepOutputEvent(
+        step_id="plan",
+        line=FAILURE_SUMMARY_LINE,
+        agent_summary=AgentSummaryView(status="unfixable", succeeded=False, unfixable_reason="no network"),
+    ),
+    view=StepOutputEvent(
+        step_id="plan",
+        line=FAILURE_SUMMARY_LINE,
+        agent_summary=AgentSummaryView(status="unfixable", succeeded=False, unfixable_reason="no network"),
+    ),
+    render_expectations=["unfixable", "no network"],
+)
+
+JSON_LINE_WITHOUT_SUMMARY = FormatterCase(
+    data=StepOutputEvent(step_id="step-1", line='{"status": "ok"}'),
+    view=StepOutputEvent(step_id="step-1", line='{"status": "ok"}'),
+    render_expectations=['{"status": "ok"}'],
+)
+
 STEP_OUTPUT_CASES = [
     pytest.param(STDOUT_LINE, id="stdout_line"),
     pytest.param(STDERR_LINE, id="stderr_line"),
+    pytest.param(SUCCESS_SUMMARY, id="success_summary"),
+    pytest.param(FAILURE_SUMMARY, id="failure_summary"),
+    pytest.param(JSON_LINE_WITHOUT_SUMMARY, id="json_line_without_summary"),
 ]
 
 STEP_OUTPUT_PAYLOAD_CASES = [
@@ -49,6 +98,15 @@ STEP_OUTPUT_PAYLOAD_CASES = [
             "stream": "stderr",
         },
         id="stderr_line",
+    ),
+    pytest.param(
+        SUCCESS_SUMMARY,
+        {
+            "step_id": "plan",
+            "line": SUCCESS_SUMMARY_LINE,
+            "stream": "stdout",
+        },
+        id="summary_keeps_the_raw_line",
     ),
 ]
 

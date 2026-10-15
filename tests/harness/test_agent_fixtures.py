@@ -29,6 +29,7 @@ _CLAUDE_SCENARIOS = [
     "permission_denied_by_rule",
     "tool_failure",
     "provider_error",
+    "unmapped_tool",
 ]
 
 

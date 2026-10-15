@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
-from pydantic import BaseModel, SerializerFunctionWrapHandler, model_serializer
+from pydantic import BaseModel, Field, SerializerFunctionWrapHandler, model_serializer
 
+from dovo.core.agents import AgentProgressKind
 from dovo.core.db import SessionStatus
 
 
@@ -80,14 +81,47 @@ class StepDoneEvent(BaseModel):
     error_message: str | None = None
 
 
+class AgentSummaryView(BaseModel):
+    """Presentation view of the JSON summary an agent step prints when it finishes."""
+
+    model_config = {"extra": "forbid", "strict": True}
+
+    status: str
+    succeeded: bool
+    summary: str | None = None
+    unfixable_reason: str | None = None
+    touched_files: list[str] = []
+
+
 class StepOutputEvent(BaseModel):
-    """UI event representing a stream output line emitted by a running step."""
+    """UI event representing a stream output line emitted by a running step.
+
+    ``agent_summary`` is set when the line is an agent step's summary; it never reaches the JSON wire format.
+    """
 
     model_config = {"extra": "forbid", "strict": True}
 
     step_id: str
     line: str
     stream: str = "stdout"
+    agent_summary: AgentSummaryView | None = Field(default=None, exclude=True)
+
+
+class AgentProgressEvent(BaseModel):
+    """UI event representing one agent action, note or tool result.
+
+    A RESULT event holds an excerpt of the output in ``target``, its full ``line_count``,
+    and the ``call_kind`` of the action that produced it.
+    """
+
+    model_config = {"extra": "forbid", "strict": True}
+
+    step_id: str
+    kind: AgentProgressKind
+    target: str
+    call_kind: AgentProgressKind | None = None
+    line_count: int = 0
+    is_error: bool = False
 
 
 class WorktreeLifecycleEvent(BaseModel):

@@ -1,12 +1,13 @@
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
-from typing import Any, Protocol
+from types import MappingProxyType
+from typing import Any, Final, Protocol
 
 from pydantic import BaseModel, Field
 
 from dovo.common.filesystem import WorkspacePaths
 from dovo.common.models import BaseResult
-from dovo.core.agents.models import AgentProgress, AgentResponseStatus
+from dovo.core.agents.models import AgentProgress, AgentProgressKind, AgentResponseStatus
 from dovo.core.artifacts.store import ArtifactStore
 from dovo.core.catalog.definitions import StepDefinition
 from dovo.core.interaction import InteractionRequest
@@ -131,6 +132,25 @@ class StepPostcondition(Protocol):
 OutputCallback = Callable[[str, str], None]
 
 
+class AgentProgressUpdate(BaseModel):
+    """One masked, size-capped progress item delivered to observers.
+
+    A RESULT update holds an excerpt of the call's output in ``target``, the output's full ``line_count``,
+    and the ``call_kind`` of the action that produced it.
+    """
+
+    model_config = {"extra": "forbid", "strict": True}
+
+    kind: AgentProgressKind
+    target: str
+    call_kind: AgentProgressKind | None = None
+    line_count: int = 0
+    is_error: bool = False
+
+
+ProgressCallback = Callable[[AgentProgressUpdate], None]
+
+
 class AgentProgressSink(Protocol):
     """Receives provider progress and tells the heartbeat how recently some arrived."""
 
@@ -158,6 +178,7 @@ class StepExecutionContext(BaseModel):
     worktree_path: Path
     context: dict[str, Any] | None = None
     on_output: OutputCallback | None = None
+    on_progress: ProgressCallback | None = None
     step_index: int = 1
     initial_attempt: int = 1
     iteration_index: int = 1
@@ -189,6 +210,19 @@ class InternalCommandContext(BaseModel):
     loop_iteration: int | None = None
 
 
+# Step outcome code per agent status; 200 is unused.
+AGENT_OUTCOME_EXIT_CODES: Final[Mapping[AgentResponseStatus, int]] = MappingProxyType(
+    {
+        AgentResponseStatus.PROPOSED_PATCH: 0,
+        AgentResponseStatus.NO_OP: 0,
+        AgentResponseStatus.UNFIXABLE: 201,
+        AgentResponseStatus.TIMEOUT: 202,
+        AgentResponseStatus.PROVIDER_ERROR: 203,
+        AgentResponseStatus.BLOCKED: 204,
+    }
+)
+
+
 class AgentStepSummary(BaseModel):
     """JSON summary an agent step writes to stdout."""
 
@@ -198,6 +232,11 @@ class AgentStepSummary(BaseModel):
     summary: str | None = None
     unfixable_reason: str | None = None
     touched_files: list[str] = Field(default_factory=list)
+
+    @property
+    def succeeded(self) -> bool:
+        """Whether the status maps to a zero step exit code."""
+        return AGENT_OUTCOME_EXIT_CODES[self.status] == 0
 
 
 class StepResult(BaseResult):

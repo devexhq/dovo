@@ -10,12 +10,12 @@ import pytest
 
 from dovo.common.filesystem.models import WorkspacePaths
 from dovo.common.models import FailurePolicy
-from dovo.core.agents import default_tool_policy
+from dovo.core.agents import AgentProgressKind, default_tool_policy
 from dovo.core.agents.models import ResolvedAgentSettings
 from dovo.core.catalog.definitions import StepDefinition
 from dovo.core.worktree import WorktreeSession
 from dovo.engine.executors.agent_step import build_agent_step_runner
-from dovo.engine.executors.models import StepExecutionContext, StepResult
+from dovo.engine.executors.models import AgentProgressUpdate, ProgressCallback, StepExecutionContext, StepResult
 from dovo.engine.executors.step_executor import StepExecution
 from dovo.engine.failure import USER_CONTINUED_MARKER
 from dovo.engine.models import (
@@ -316,8 +316,53 @@ class _RecordingRunObserver(NoOpRunObserver):
     def on_step_start(self, idx: int, total: int, step: StepDefinition) -> None:
         self.events.append(f"start:{step.id}")
 
+    def on_step_progress(self, idx: int, total: int, step: StepDefinition, update: AgentProgressUpdate) -> None:
+        self.events.append(f"progress:{idx}/{total}:{step.id}:{update.kind.value}:{update.target}")
+
     def on_step_done(self, idx: int, total: int, step: StepDefinition, result: StepResult) -> None:
         self.events.append(f"done:{result.step_id}")
+
+
+class StepCoordinatorProgressWiringTests:
+    @staticmethod
+    def _captured_callbacks(monkeypatch: pytest.MonkeyPatch) -> list[ProgressCallback | None]:
+        callbacks: list[ProgressCallback | None] = []
+
+        class _CapturingStepExecution(StepExecution):
+            """StepExecution subclass recording the on_progress callback of the StepExecutionContext it receives."""
+
+            def __init__(self, metadata: StepExecutionContext) -> None:
+                callbacks.append(metadata.on_progress)
+                super().__init__(metadata)
+
+        monkeypatch.setattr("dovo.engine.step_coordinator.StepExecution", _CapturingStepExecution)
+        return callbacks
+
+    def test_progress_callback_notifies_the_observer_with_the_step_position(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        callbacks = self._captured_callbacks(monkeypatch)
+        observer = _RecordingRunObserver()
+        context = RunSettings(cwd=tmp_path, use_worktree=False, observer=observer, paths=_paths_for(tmp_path))
+        step = StepBuilder.command("echo ok").with_id("ok").build()
+
+        StepCoordinator(context).run_attempt(_run_context(tmp_path), [], step, idx=2, total=5, step_context=None)
+
+        [callback] = callbacks
+        assert callback is not None
+        callback(AgentProgressUpdate(kind=AgentProgressKind.READ, target="x.py"))
+        assert "progress:2/5:ok:read:x.py" in observer.events
+
+    def test_progress_callback_is_absent_without_an_observer(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        callbacks = self._captured_callbacks(monkeypatch)
+        context = RunSettings(cwd=tmp_path, use_worktree=False, paths=_paths_for(tmp_path))
+        step = StepBuilder.command("echo ok").with_id("ok").build()
+
+        StepCoordinator(context).run_attempt(_run_context(tmp_path), [], step, idx=1, total=1, step_context=None)
+
+        assert callbacks == [None]
 
 
 class StepCoordinatorPrimitiveTests:
