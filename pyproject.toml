@@ -73,7 +73,7 @@ source = "vcs"
 local_scheme = "no-local-version"
 
 [tool.pytest.ini_options]
-addopts = "-q --strict-markers --strict-config -n auto"
+addopts = "-q --strict-markers --strict-config -n 4"
 testpaths = ["tests"]
 # Repo root must be importable so `tests.*` helpers resolve when invoked via the
 # `pytest` console script (sys.path[0] is not cwd in that mode).

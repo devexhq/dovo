@@ -21,6 +21,8 @@ Both blueprints run against the working tree (`use_worktree: false`) and need `u
   uv run dovo run tests --path tests/core/ --fast-fail  # stop at the first failure
   uv run dovo run tests --coverage                      # print a coverage report (no floor enforced)
   ```
+- Pytest runs on 4 xdist workers (`-n 4` in `pyproject.toml`); override with `-n <count>` (for example `-n 0` to run
+  in-process).
 - Both strip Dovo's per-step `DOVO_*` variables before invoking pytest, because tests assert they are unset.
 
 ---
