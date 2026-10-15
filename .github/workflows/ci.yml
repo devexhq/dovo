@@ -13,6 +13,8 @@ jobs:
     env:
       COLUMNS: "160"
       PYTHONIOENCODING: "utf-8"
+      # Appended after the `-n 4` in pyproject.toml, so CI uses one worker per core.
+      PYTEST_ADDOPTS: "-n auto"
 
     steps:
       - name: Checkout Code Repository
