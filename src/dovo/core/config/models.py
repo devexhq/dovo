@@ -16,6 +16,7 @@ from pydantic import (
 )
 
 from dovo.common.constants import DEFAULT_MAXIMUM_WORKTREES_ALLOWED
+from dovo.common.mcp_servers import McpServerDefinition, validate_mcp_server_name
 from dovo.common.models import BaseResult
 from dovo.common.tool_policy import ToolPolicy, coerce_tool_policy
 from dovo.core.agents.models import AgentEnvMode, EnvPassthroughEntry
@@ -55,7 +56,19 @@ class AgentConfig(BaseModel):
     max_tokens: int = Field(default=4096, ge=1)
     env_passthrough: list[EnvPassthroughEntry] = Field(default_factory=list)
     env_mode: AgentEnvMode = "allowlist"
+    mcp_servers: dict[str, McpServerDefinition] = Field(default_factory=dict)
     tools: ToolPolicy | None = None
+
+    @field_validator("mcp_servers")
+    @classmethod
+    def validate_mcp_server_names(cls, servers: dict[str, McpServerDefinition]) -> dict[str, McpServerDefinition]:
+        """Reject a server name that cannot be an mcp allow-rule or grant key."""
+        for name in servers:
+            reason = validate_mcp_server_name(name)
+            if reason is not None:
+                raise ValueError(reason)
+
+        return servers
 
     @field_validator("models")
     @classmethod

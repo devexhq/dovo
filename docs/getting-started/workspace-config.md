@@ -117,7 +117,8 @@ The default `.dovo/config.json`:
     "temperature": 0.2,
     "max_tokens": 4096,
     "env_passthrough": [],
-    "env_mode": "allowlist"
+    "env_mode": "allowlist",
+    "mcp_servers": {}
   },
   "history": {
     "save_attempt_logs": true,

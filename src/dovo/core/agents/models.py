@@ -10,6 +10,7 @@ from typing import Annotated, Literal
 
 from pydantic import BaseModel, Field, StringConstraints, model_validator
 
+from dovo.common.mcp_servers import McpServerDefinition
 from dovo.common.models import BaseResult
 from dovo.common.tool_policy import ToolCapability, ToolPolicy
 
@@ -87,6 +88,7 @@ class ResolvedAgentSettings(BaseModel):
     max_tokens: int = Field(ge=1)
     env_passthrough: list[EnvPassthroughEntry] = Field(default_factory=list)
     env_mode: AgentEnvMode = "allowlist"
+    mcp_servers: dict[str, McpServerDefinition] = Field(default_factory=dict)
     tools: ToolPolicy
 
 
@@ -187,6 +189,7 @@ class AgentRequest(BaseModel):
     invocation: AgentInvocationContext | None = Field(default=None, exclude=True)
     env_passthrough: list[EnvPassthroughEntry] = Field(default_factory=list)
     env_mode: AgentEnvMode = "allowlist"
+    mcp_servers: dict[str, McpServerDefinition] = Field(default_factory=dict, exclude=True)
     tools: ToolPolicy
     env: dict[str, str] = Field(default_factory=dict, exclude=True)
     metadata_env: dict[str, str] = Field(default_factory=dict, exclude=True)

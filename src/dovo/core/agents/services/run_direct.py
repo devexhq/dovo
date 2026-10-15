@@ -63,6 +63,7 @@ def _build_request(
         invocation=invocation,
         env_passthrough=settings.env_passthrough,
         env_mode=settings.env_mode,
+        mcp_servers=settings.mcp_servers,
         tools=tools,
         env=dict(context.env),
         metadata_env=dict(context.metadata_env),
