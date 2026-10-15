@@ -24,7 +24,6 @@ class FilesystemWritableCheckTests:
     def test_execute_all_configured_paths_writable_returns_ok(
         self, tmp_path: Path, workspace_paths_factory: WorkspacePathsFactory
     ) -> None:
-        """[tier-1/unit] FilesystemWritableCheck.execute: default paths, all dirs creatable -> OK with verified_paths."""
         config = DovoConfig(version=1, project=ProjectConfig(name="demo"))
         check = FilesystemWritableCheck()
         paths = workspace_paths_factory(tmp_path, None)
@@ -50,7 +49,6 @@ class FilesystemWritableCheckTests:
     def test_execute_readonly_directory_returns_unwritable_failure(
         self, tmp_path: Path, workspace_paths_factory: WorkspacePathsFactory
     ) -> None:
-        """[tier-1/unit] FilesystemWritableCheck.execute: worktrees_dir pre-created read-only -> FAILED with DOCTOR_FS_UNWRITABLE."""
         worktrees_dir = tmp_path / ".dovo" / "worktrees"
         worktrees_dir.mkdir(parents=True, exist_ok=True)
         worktrees_dir.chmod(0o500)
@@ -75,7 +73,6 @@ class FilesystemWritableCheckTests:
     def test_execute_readonly_parent_directory_returns_unwritable_failure(
         self, tmp_path: Path, workspace_paths_factory: WorkspacePathsFactory
     ) -> None:
-        """[tier-1/unit] FilesystemWritableCheck.execute: .dovo read-only, worktrees dir not yet created -> probe write and mkdir raise OSError -> FAILED with DOCTOR_FS_UNWRITABLE."""
         config = DovoConfig(version=1, project=ProjectConfig(name="demo"))
         check = FilesystemWritableCheck()
         paths = workspace_paths_factory(tmp_path, None)
@@ -103,7 +100,6 @@ class FilesystemWritableCheckTests:
     def test_execute_missing_config_falls_back_to_default_paths(
         self, tmp_path: Path, workspace_paths_factory: WorkspacePathsFactory
     ) -> None:
-        """[tier-1/unit] FilesystemWritableCheck.execute: context.config=None -> probes deterministic default paths."""
         check = FilesystemWritableCheck()
         paths = workspace_paths_factory(tmp_path, None)
         context = DiagnosticsContext(cwd=tmp_path, config=None, paths=paths)
@@ -127,7 +123,6 @@ class FilesystemWritableCheckTests:
     def test_execute_with_project_identity_probes_global_runtime_paths(
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path, workspace_paths_factory: WorkspacePathsFactory
     ) -> None:
-        """An identified project probes global runtime paths and local workspace state."""
         global_root = tmp_path / "global"
         identity = ProjectIdentity(id="project-626", created_at=datetime(2026, 1, 1, tzinfo=UTC))
         config = DovoConfig(version=1, project=ProjectConfig(name="demo"))

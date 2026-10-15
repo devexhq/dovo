@@ -38,7 +38,6 @@ class RepositoryPathsTests:
     """Contract tests for repository-local path discovery."""
 
     def test_from_root_derives_repository_local_paths(self, tmp_path: Path) -> None:
-        """[tier-1/unit] RepositoryPaths.from_root: derives every repo-local child path under .dovo/, and the real .lock filename."""
         repo_root = tmp_path / "repository"
 
         paths = RepositoryPaths.from_root(repo_root)
@@ -55,7 +54,6 @@ class RepositoryPathsTests:
         assert paths.gitignore_file == repo_root / ".gitignore"
 
     def test_from_root_given_dovo_dir_resolves_parent_as_root(self, tmp_path: Path) -> None:
-        """[tier-1/unit] RepositoryPaths.from_root: passing the .dovo directory itself resolves root_dir to its parent."""
         repo_root = tmp_path / "repository"
         dovo_dir = repo_root / ".dovo"
 
@@ -114,7 +112,7 @@ def _resolve_fixture_workspace_paths(repository: Path) -> WorkspacePaths:
 
 class WorkspacePathsContractTests:
     def test_catalog_dir_for_packaged_raises_value_error(self, sample_workspace_paths: WorkspacePaths) -> None:
-        """[tier-1/unit] WorkspacePaths.catalog_dir_for(CatalogTier.PACKAGED): raises ValueError with message "Tier 'packaged' is not disk-backed and has no tier root."."""
+        """Raise ValueError "Tier 'packaged' is not disk-backed and has no tier root." for the PACKAGED tier."""
         with pytest.raises(ValueError, match="not disk-backed"):
             sample_workspace_paths.catalog_dir_for(CatalogTier.PACKAGED)
 
@@ -129,7 +127,6 @@ class WorkspacePathsContractTests:
     def test_catalog_dir_for_disk_backed_tiers_resolves_expected_root(
         self, sample_workspace_paths: WorkspacePaths, tier: CatalogTier, expected_attr: str
     ) -> None:
-        """[tier-1/unit] WorkspacePaths.catalog_dir_for: REPO/USER/GLOBAL each resolve to their real disk-backed tier root."""
         if tier is CatalogTier.REPO:
             expected = sample_workspace_paths.catalog_dir
         else:
@@ -140,7 +137,6 @@ class WorkspacePathsContractTests:
     def test_session_dir_and_worktree_dir_do_not_create_directories(
         self, sample_workspace_paths: WorkspacePaths, tmp_path: Path
     ) -> None:
-        """[tier-1/unit] WorkspacePaths.session_dir/worktree_dir: returned paths do not exist on disk after the call (no mkdir side effect)."""
         session_dir = sample_workspace_paths.session_dir("sess_1")
         worktree_dir = sample_workspace_paths.worktree_dir("dovo_1")
 
@@ -154,7 +150,6 @@ class WorkspacePathsParityTests:
     def test_workspace_paths_matches_legacy_resolution_with_project_identity(
         self, fixture_repo_with_identity: Path
     ) -> None:
-        """[tier-2/unit] WorkspacePaths keeps the legacy project-aware runtime layout field-for-field."""
         paths = _resolve_fixture_workspace_paths(fixture_repo_with_identity)
         legacy_dovo_dir = fixture_repo_with_identity / ".dovo"
         legacy_runtime_root = paths.global_paths.storage_dir / "projects" / "project-626"
@@ -182,7 +177,6 @@ class WorkspacePathsParityTests:
 
 class WorkspacePathsModelTests:
     def test_project_id_none_raises_validation_error(self, sample_workspace_paths: WorkspacePaths) -> None:
-        """[tier-1/unit] WorkspacePaths: constructing it with project_id None raises ValidationError."""
         fields = dict(sample_workspace_paths)
         fields["project_id"] = None
 
@@ -190,7 +184,6 @@ class WorkspacePathsModelTests:
             WorkspacePaths(**fields)
 
     def test_project_id_omitted_raises_validation_error(self, sample_workspace_paths: WorkspacePaths) -> None:
-        """[tier-1/unit] WorkspacePaths: constructing it without project_id raises ValidationError."""
         fields = dict(sample_workspace_paths)
         del fields["project_id"]
 

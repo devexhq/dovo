@@ -45,7 +45,6 @@ class DbRecordModelTests:
     def test_record_declares_project_id_as_required_field(
         self, record_cls: RecordClass, expected_tablename: str
     ) -> None:
-        """[tier-1/unit] Record: __tablename__ matches the centralized table and project_id has no default."""
         assert record_cls.__tablename__ == expected_tablename
         assert record_cls.model_fields["project_id"].is_required()
 
@@ -84,7 +83,6 @@ class DbRecordModelTests:
         migrated_engine: Engine,
         record_factory: Callable[[], SQLModel],
     ) -> None:
-        """[tier-1/integration] SessionRecord/WorktreeRecord/CostRecord/ArtifactRecord: omitting project_id raises IntegrityError on commit."""
         record = record_factory()
         with Session(migrated_engine) as session:
             session.add(record)
@@ -96,7 +94,6 @@ class SessionRecordDefaultsTests:
     """Contract tests for SessionRecord column defaults."""
 
     def test_session_record_without_auto_apply_defaults_false(self, migrated_engine: Engine) -> None:
-        """[tier-1/integration] SessionRecord: a record committed without auto_apply reads back auto_apply False."""
         with Session(migrated_engine) as session:
             session.add(
                 SessionRecord(project_id="proj-a", session_id="wf_a", blueprint_name="deploy", blueprint_key="deploy")

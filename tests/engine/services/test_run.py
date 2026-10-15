@@ -22,7 +22,6 @@ class BlueprintRunServiceExecuteTests:
         sessions_repo: SessionsRepository,
         stub_drive_run: Callable[[RunOutcome | None], None],
     ) -> None:
-        """[tier-1/integration] BlueprintRunService.execute: a cataloged blueprint whose run completes returns ok with session_record.session_id equal to the requested session id and status COMPLETED."""
         write_runnable_blueprint(engine_paths.root_dir, key="lint", steps=[{"id": "a", "run": "true"}])
         stub_drive_run(None)
 
@@ -41,7 +40,6 @@ class BlueprintRunServiceExecuteTests:
         sessions_repo: SessionsRepository,
         stub_drive_run: Callable[[RunOutcome | None], None],
     ) -> None:
-        """[tier-1/integration] BlueprintRunService.execute: a run outcome carrying errors yields a non-ok result whose errors and warnings equal the outcome's."""
         write_runnable_blueprint(engine_paths.root_dir, key="lint", steps=[{"id": "a", "run": "true"}])
         stub_drive_run(
             RunOutcome(
@@ -63,7 +61,6 @@ class BlueprintRunServiceExecuteTests:
     def test_execute_unknown_blueprint_returns_failed_result_without_run_record(
         self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository
     ) -> None:
-        """[tier-1/integration] BlueprintRunService.execute: a blueprint name absent from the catalog returns session_record None and exactly one error naming the blueprint."""
         result = BlueprintRunService(name="nope", paths=engine_paths, sessions_db=sessions_repo).execute()
 
         assert not result.ok
@@ -74,7 +71,6 @@ class BlueprintRunServiceExecuteTests:
     def test_execute_missing_required_input_returns_formatted_input_error(
         self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository
     ) -> None:
-        """[tier-1/integration] BlueprintRunService.execute: a blueprint declaring a required input run without it returns session_record None and one error naming the missing input."""
         write_runnable_blueprint(engine_paths.root_dir, key="needs-input", steps=[{"id": "a", "run": "true"}])
         blueprint_path = engine_paths.root_dir / ".dovo" / "catalog" / "blueprints" / "needs-input.yml"
         blueprint_path.write_text(
@@ -99,7 +95,7 @@ class BlueprintRunServiceExecuteTests:
         sessions_repo: SessionsRepository,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """[tier-1/unit] BlueprintRunService.execute: a stale-run reconciliation warning is appended to warnings before the blueprint loads, so even a failed load reports it."""
+        """Append the reconciliation warning before the blueprint loads, so a failed load still reports it."""
         monkeypatch.setattr(
             "dovo.engine.services.run.reconcile_stale_sessions",
             lambda sessions_db, *, path: ReconciliationResult(warning="reconciled 1 stale run"),
@@ -114,7 +110,6 @@ class BlueprintRunServiceEnvTests:
     def test_invalid_passthrough_returns_fail_result_without_constructing_the_engine(
         self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """[tier-1/integration] BlueprintRunService.execute: env_passthrough ['A*B'] returns a non-ok BlueprintRunResult whose errors[0] is the fixed message and Engine is never instantiated."""
         constructed: list[object] = []
         monkeypatch.setattr("dovo.engine.services.run.Engine", lambda *args, **kwargs: constructed.append(args))
         write_runnable_blueprint(engine_paths.root_dir, key="lint", steps=[{"id": "a", "run": "true"}])
@@ -149,7 +144,6 @@ class BlueprintRunServiceEnvTests:
         sessions_repo: SessionsRepository,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """[tier-1/integration] BlueprintRunService.execute: set flags reach drive_run as AgentEnvOverrides and unset flags as None."""
         seen: list[AgentEnvOverrides | None] = []
 
         def _drive(*args: object, env_overrides: AgentEnvOverrides | None = None, **kwargs: object) -> RunOutcome:

@@ -19,7 +19,6 @@ class WorktreeCreateCliIntegrationTests:
     def test_worktree_create_cli_creates_worktree_and_branch_exits_zero(
         self, cli_runner: CliRunner, worktree_workspace: Path, dispatch_spy: list[Any]
     ) -> None:
-        """dovo worktree create --name demo creates the worktree dir and branch, exits 0, and dispatches the exact WorktreeCreateResult DTO."""
         result = cli_runner.invoke(
             app,
             ["-p", str(worktree_workspace), "worktree", "create", "--name", "demo"],
@@ -51,7 +50,6 @@ class WorktreeCreateCliIntegrationTests:
     def test_worktree_create_cli_capacity_exceeded_exits_one(
         self, cli_runner: CliRunner, worktree_workspace: Path, dispatch_spy: list[Any]
     ) -> None:
-        """A 4th dovo worktree create beyond the default limit of 3 exits 1 and dispatches the exact CAPACITY_EXCEEDED DTO."""
         for _ in range(3):
             create_result = cli_runner.invoke(app, ["-p", str(worktree_workspace), "worktree", "create"])
             assert create_result.exit_code == 0
@@ -68,7 +66,6 @@ class WorktreeCreateCliIntegrationTests:
         assert len(payload.fixes) > 0
 
     def test_worktree_create_cli_renders_json(self, cli_runner: CliRunner, worktree_workspace: Path) -> None:
-        """dovo worktree create --name demo --format json emits a WorktreeCreateResult envelope."""
         result = cli_runner.invoke(
             app,
             ["-p", str(worktree_workspace), "worktree", "create", "--name", "demo", "--format", "json"],
@@ -106,7 +103,6 @@ class WorktreeCreateCliIntegrationTests:
     def test_worktree_create_cli_with_wip_flag_overlays_and_exits_zero(
         self, cli_runner: CliRunner, worktree_workspace: Path, dispatch_spy: list[Any]
     ) -> None:
-        """dovo worktree create --wip binds the flag and dispatches WorktreeCreateResult with wip_applied=True."""
         (worktree_workspace / "dirty.txt").write_text("uncommitted\n", encoding="utf-8")
 
         result = cli_runner.invoke(
@@ -127,7 +123,6 @@ class WorktreeCreateCliIntegrationTests:
     def test_worktree_create_cli_with_base_ref_option_branches_from_specified_target(
         self, cli_runner: CliRunner, worktree_workspace: Path, dispatch_spy: list[Any]
     ) -> None:
-        """dovo worktree create --base-ref binds the option and creates a worktree branching from the specified ref."""
         (worktree_workspace / "first.txt").write_text("first commit\n", encoding="utf-8")
         GitRunner.add_all(worktree_workspace)
         GitRunner.commit(worktree_workspace, "Add first.txt")

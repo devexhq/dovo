@@ -145,7 +145,6 @@ def _forbid_git_apply(monkeypatch: pytest.MonkeyPatch) -> list[str]:
 
 class AgentOutcomeMappingTests:
     def test_mapping_covers_every_status_with_issue_codes(self) -> None:
-        """[tier-1/unit] AGENT_OUTCOME_EXIT_CODES: equals {PROPOSED_PATCH: 0, NO_OP: 0, UNFIXABLE: 201, TIMEOUT: 202, PROVIDER_ERROR: 203, BLOCKED: 204} and its keys equal set(AgentResponseStatus)."""
         assert dict(AGENT_OUTCOME_EXIT_CODES) == {
             AgentResponseStatus.PROPOSED_PATCH: 0,
             AgentResponseStatus.NO_OP: 0,
@@ -161,7 +160,6 @@ class ExecuteAgentStepBlockedTests:
     def test_blocked_attempt_fails_step_with_exit_204_and_blocked_summary(
         self, git_repo: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """[tier-2/integration] execute_agent_step: provider returns BLOCKED with one denial -> StepDispatchOutcome(status='failed', exit_code=204), stdout summary line status 'blocked', stderr contains 'AGENT_PERMISSION_BLOCKED'."""
         response = blocked_response(
             duration_ms=1, denials=[AgentDenial(tool="bash", message="denied", capability=ToolCapability.SHELL)]
         )
@@ -180,7 +178,6 @@ class ExecuteAgentStepUnsupportedPolicyTests:
     def test_unsupported_policy_response_fails_step_with_exit_203(
         self, git_repo: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """[tier-2/integration] execute_agent_step: provider returns PROVIDER_ERROR with the unsupported message -> StepDispatchOutcome(status='failed', exit_code=203) and stderr contains 'AGENT_TOOL_POLICY_UNSUPPORTED'."""
         response = provider_error_response(duration_ms=1, errors=[tool_policy_unsupported_message("copilot")])
         _use_provider(monkeypatch, FakeAgentProvider(response))
 
@@ -223,7 +220,6 @@ class ExecuteAgentStepRequestTests:
     def test_valid_step_forwards_prompt_settings_worktree_and_timeout_to_run_direct_attempt(
         self, git_repo: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """[tier-1/unit] execute_agent_step: an active-worktree step with prompt 'Plan the change' and timeout_seconds 45 calls run_direct_attempt once with instruction='Plan the change', the given settings, worktree_path=git_repo, timeout_seconds=45, and max_files=None."""
         calls = _record_direct_attempts(monkeypatch)
 
         _run(git_repo)
@@ -239,7 +235,6 @@ class ExecuteAgentStepRequestTests:
         ]
 
     def test_agent_max_files_forwards_to_direct_attempt(self, git_repo: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        """[tier-1/unit] execute_agent_step: an agent StepDefinition with max_files=100 calls run_direct_attempt with max_files=100."""
         calls = _record_direct_attempts(monkeypatch)
         step = StepDefinition(id="code", type=StepType.AGENT, prompt="Plan the change", max_files=100)
 
@@ -250,7 +245,6 @@ class ExecuteAgentStepRequestTests:
     def test_missing_settings_fail_before_provider_lookup(
         self, git_repo: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """[tier-1/unit] execute_agent_step: agent=None with an active worktree fails with the missing-settings diagnostic and never asks the factory for an adapter."""
         requested = _use_provider(monkeypatch, FakeAgentProvider(_no_op()))
 
         outcome = execute_agent_step(
@@ -277,7 +271,6 @@ class ExecuteAgentStepRequestTests:
     def test_blank_interpolated_prompt_fails_before_provider_lookup(
         self, git_repo: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """[tier-1/unit] execute_agent_step: a step whose prompt is whitespace fails with the blank-prompt diagnostic and no factory call."""
         requested = _use_provider(monkeypatch, FakeAgentProvider(_no_op()))
 
         outcome = _run(git_repo, step=_step(prompt="   "))
@@ -292,7 +285,6 @@ class ExecuteAgentStepWorktreeTests:
     def test_inactive_worktree_fails_before_provider_or_patch(
         self, git_repo: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """[tier-1/unit] execute_agent_step: worktree_active=False fails with the exact worktree diagnostic and records zero provider, apply_check, and apply calls."""
         requested = _use_provider(monkeypatch, FakeAgentProvider(_patch()))
         apply_calls = _forbid_git_apply(monkeypatch)
 
@@ -314,7 +306,6 @@ class ExecuteAgentStepOutputTests:
     def test_no_op_writes_exact_summary_line_and_completes(
         self, git_repo: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """[tier-1/unit] execute_agent_step: NO_OP with a summary completes with exit 0, empty stderr, no error_message, and the exact one-line JSON stdout."""
         _use_provider(monkeypatch, FakeAgentProvider(_no_op()))
 
         outcome = _run(git_repo)
@@ -367,7 +358,6 @@ class ExecuteAgentStepOutputTests:
         errors: list[str],
         expected_error: str,
     ) -> None:
-        """[tier-1/unit] execute_agent_step: UNFIXABLE/TIMEOUT/PROVIDER_ERROR fail with exit 201/202/203, stderr == error_message == the diagnostic, and the matching stdout status."""
         response = AgentResponse(status=status, unfixable_reason=unfixable_reason, errors=errors)
         _use_provider(monkeypatch, FakeAgentProvider(response))
 
@@ -383,7 +373,6 @@ class ExecuteAgentStepOutputTests:
     def test_proposed_patch_completes_with_exit_zero_and_sorted_touched_files(
         self, git_repo: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """[tier-1/unit] execute_agent_step: PROPOSED_PATCH with a clean new-file diff completes with exit 0, empty stderr, and one-line stdout status 'proposed_patch' with touched_files ['a.txt']."""
         _use_provider(monkeypatch, FakeAgentProvider(_patch("a.txt")))
 
         outcome = _run(git_repo)
@@ -398,7 +387,6 @@ class ExecuteAgentStepOutputTests:
     def test_missing_summary_falls_back_to_raw_text_and_escapes_newlines(
         self, git_repo: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """[tier-1/unit] execute_agent_step: NO_OP with summary None and multi-line raw_text writes a single-line stdout whose JSON summary equals the raw text."""
         _use_provider(monkeypatch, FakeAgentProvider(_no_op(summary=None, raw_text="plan:\n1. do x")))
 
         outcome = _run(git_repo)
@@ -406,7 +394,6 @@ class ExecuteAgentStepOutputTests:
         assert _summary(outcome)["summary"] == "plan:\n1. do x"
 
     def test_output_callback_receives_summary_line_once(self, git_repo: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        """[tier-1/unit] execute_agent_step: on_output is called exactly once with ('stdout', <the returned stdout>)."""
         _use_provider(monkeypatch, FakeAgentProvider(_no_op()))
         received: list[tuple[str, str]] = []
 
@@ -417,7 +404,6 @@ class ExecuteAgentStepOutputTests:
     def test_callback_failure_fails_attempt_and_drops_success_classification(
         self, git_repo: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """[tier-1/unit] execute_agent_step: a callback raising RuntimeError('ui down') after a clean patch fails with the callback diagnostic and stored status 'provider_error' keeping touched_files."""
         _use_provider(monkeypatch, FakeAgentProvider(_patch("a.txt")))
 
         def _broken(stream: str, line: str) -> None:
@@ -436,7 +422,6 @@ class ExecuteAgentStepScratchTests:
     def test_dispatch_allocates_once_and_passes_context_to_the_attempt(
         self, git_repo: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """[tier-1/integration] execute_agent_step: with a real session_tmp_dir, run_direct_attempt receives invocation whose scratch_path and control_path exist and lie under session_tmp_dir/steps/<step.id>/agent/."""
         provider = FakeAgentProvider(_no_op())
         _use_provider(monkeypatch, provider)
         step = _step()
@@ -457,7 +442,6 @@ class ExecuteAgentStepScratchTests:
     def test_allocation_failure_returns_203_with_diagnostic_and_never_looks_up_the_provider(
         self, git_repo: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """[tier-1/integration] execute_agent_step: session_tmp_dir None returns StepDispatchOutcome(status='failed', exit_code=203) whose error_message equals scratch_unavailable_message(step.id, detail) followed by a 'Fix:' block, and get_agent_adapter is never called."""
         requested = _use_provider(monkeypatch, FakeAgentProvider(_no_op()))
         step = _step()
 
@@ -488,7 +472,6 @@ class ExecuteAgentStepScratchTests:
     def test_directory_creation_failure_leaves_worktree_files_unchanged(
         self, git_repo: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """[tier-1/integration] execute_agent_step: an unwritable session_tmp_dir returns exit_code 203 and the worktree's file contents and git status are byte-identical before and after."""
         requested = _use_provider(monkeypatch, FakeAgentProvider(_patch("a.txt")))
         session_tmp = _session_tmp_dir(git_repo)
         session_tmp.chmod(0o500)
@@ -515,7 +498,6 @@ class ExecuteAgentStepScratchTests:
         ],
     )
     def test_guards_run_before_allocation(self, git_repo: Path, guard: str, expected_message: str) -> None:
-        """[tier-1/unit] execute_agent_step: worktree_active False, agent None, and a blank prompt each return their existing diagnostic and create no directory under session_tmp_dir."""
         session_tmp = _session_tmp_dir(git_repo)
 
         outcome = execute_agent_step(
@@ -546,7 +528,6 @@ class ExecuteAgentStepScratchTests:
     def test_provider_failures_leave_directories_in_place(
         self, git_repo: Path, monkeypatch: pytest.MonkeyPatch, response_status: AgentResponseStatus, exit_code: int
     ) -> None:
-        """[tier-1/integration] execute_agent_step: provider timeout and provider-error attempts each return their mapped exit code (202, 203) and the allocated scratch and control directories still exist afterward."""
         provider = FakeAgentProvider(AgentResponse(status=response_status, errors=["down"]))
         _use_provider(monkeypatch, provider)
 
@@ -593,7 +574,6 @@ class ExecuteAgentStepToolsTests:
     def test_step_policy_or_configured_policy_reaches_run_direct_attempt(
         self, git_repo: Path, monkeypatch: pytest.MonkeyPatch, step_policy: ToolPolicy | None, expected: str
     ) -> None:
-        """[tier-2/integration] execute_agent_step: run_direct_attempt receives tools == step.tools when set, else agent.tools (parametrized)."""
         calls = _stub_attempt(monkeypatch, AgentAttempt(status=AgentResponseStatus.NO_OP))
         configured = ToolPolicy(allow=[ToolRule(capability=ToolCapability.NETWORK, pattern="example.com")])
         settings = _settings().model_copy(update={"tools": configured})
@@ -608,7 +588,6 @@ class ExecuteAgentStepEnvTests:
     def test_step_env_and_generated_metadata_are_forwarded_to_run_direct_attempt(
         self, git_repo: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """[tier-1/integration] execute_agent_step: run_direct_attempt receives env == step.env and metadata_env == metadata_to_env(metadata)."""
         calls = _stub_attempt(monkeypatch, AgentAttempt(status=AgentResponseStatus.NO_OP))
         step = StepBuilder.agent("Plan the change").with_env("MY_VAR", "x").build()
 
@@ -622,7 +601,6 @@ class ExecuteAgentStepEnvTests:
     def test_withheld_names_emit_operator_stderr_line_and_one_session_log_event(
         self, git_repo: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """[tier-1/integration] execute_agent_step: env_withheld ['AWS_KEY_X','FOO','ZED'] sends 'Agent environment filtered: 3 variables withheld. Fix: add names to agent.env_passthrough or pass --env-passthrough NAME.\\n' on stream 'stderr' and appends one agent_env_filtered event with env_withheld == 'AWS_KEY_X,FOO,ZED'."""
         _stub_attempt(
             monkeypatch, AgentAttempt(status=AgentResponseStatus.NO_OP, env_withheld=["AWS_KEY_X", "FOO", "ZED"])
         )
@@ -645,7 +623,6 @@ class ExecuteAgentStepEnvTests:
     def test_empty_withheld_list_emits_no_line_and_no_event(
         self, git_repo: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """[tier-1/integration] execute_agent_step: env_withheld [] sends no stderr callback and writes no session.log line."""
         _stub_attempt(monkeypatch, AgentAttempt(status=AgentResponseStatus.NO_OP))
         log_dir = tmp_path / "logs"
         log_dir.mkdir()
@@ -659,7 +636,6 @@ class ExecuteAgentStepEnvTests:
     def test_withheld_report_is_emitted_for_a_timed_out_attempt(
         self, git_repo: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """[tier-1/integration] execute_agent_step: a TIMEOUT attempt with env_withheld still emits the stderr line and the event."""
         _stub_attempt(monkeypatch, AgentAttempt(status=AgentResponseStatus.TIMEOUT, env_withheld=["A", "B", "C"]))
         log_dir = tmp_path / "logs"
         log_dir.mkdir()
@@ -674,7 +650,6 @@ class ExecuteAgentStepEnvTests:
     def test_withheld_report_without_a_session_log_dir_still_prints_the_console_line(
         self, git_repo: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """[tier-1/integration] execute_agent_step: env_withheld set and session_log_dir None sends the stderr line and raises nothing."""
         _stub_attempt(monkeypatch, AgentAttempt(status=AgentResponseStatus.NO_OP, env_withheld=["A", "B", "C"]))
         emitted: list[tuple[str, str]] = []
 
@@ -687,7 +662,6 @@ class BuildAgentStepRunnerTests:
     def test_runner_built_without_active_worktree_fails_with_worktree_required_message(
         self, git_repo: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """[tier-1/unit] build_agent_step_runner: build_agent_step_runner(settings, worktree_active=False) returns a runner whose call yields status 'failed' with error_message containing WORKTREE_REQUIRED_MESSAGE and run_direct_attempt is called zero times."""
         calls: list[object] = []
         monkeypatch.setattr(
             "dovo.engine.executors.agent_step.run_direct_attempt",
@@ -711,7 +685,6 @@ class BuildAgentStepRunnerTests:
     def test_runner_passes_bound_settings_worktree_path_and_callback_to_the_provider_attempt(
         self, git_repo: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """[tier-1/unit] build_agent_step_runner: build_agent_step_runner(settings, worktree_active=True) runner called with (step, worktree_path, on_output) calls run_direct_attempt once with settings=settings, worktree_path=worktree_path, instruction=step.prompt, and delivers exactly one ('stdout', summary_line) to on_output."""
         calls = _record_direct_attempts(monkeypatch)
         settings = _settings()
         step = _step()
@@ -756,7 +729,6 @@ class AgentStepRejectedPatchTests:
     def test_rejected_attempt_failed_outcome_carries_path_and_error_message_lists_it(
         self, git_repo: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """[tier-1/unit] execute_agent_step: run_direct_attempt returning a PROVIDER_ERROR attempt with rejected_patch_path 'P' and diagnostics ending 'Discarded edit saved to P.' yields status 'failed', exit_code 203, rejected_patch_path 'P'."""
         _record_contexts(
             monkeypatch,
             AgentAttempt(
@@ -776,7 +748,6 @@ class AgentStepRejectedPatchTests:
     def test_destination_is_session_dir_rejected_step_id_attempt_patch(
         self, git_repo: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """[tier-1/unit] execute_agent_step: session_dir=tmp_path, step id 'code', metadata attempt 2 passes AgentAttemptContext.rejected_patch_destination == tmp_path / 'rejected' / 'code_attempt_2.patch' to run_direct_attempt."""
         contexts = _record_contexts(monkeypatch)
         metadata = ExecutionMetadata(step=StepMetadata(id="code", name="code", index=1, attempt=2))
 
@@ -789,7 +760,6 @@ class AgentStepRejectedPatchTests:
     def test_loop_iteration_adds_iter_segment_to_destination(
         self, git_repo: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """[tier-1/unit] execute_agent_step: session_dir=tmp_path, step id 'code', attempt 1, metadata.loop_iteration 2 passes AgentAttemptContext.rejected_patch_destination == tmp_path / 'rejected' / 'code_iter_2_attempt_1.patch'."""
         contexts = _record_contexts(monkeypatch)
         metadata = ExecutionMetadata(step=StepMetadata(id="code", name="code", index=1), loop_iteration=2)
 
@@ -800,7 +770,6 @@ class AgentStepRejectedPatchTests:
         ]
 
     def test_missing_session_dir_passes_no_destination(self, git_repo: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        """[tier-1/unit] execute_agent_step: session_dir=None passes AgentAttemptContext.rejected_patch_destination None to run_direct_attempt."""
         contexts = _record_contexts(monkeypatch)
 
         _run(git_repo, session_dir=None)
@@ -822,7 +791,6 @@ class ExecuteAgentStepHeartbeatTests:
     def test_running_attempt_emits_elapsed_heartbeats_before_the_final_summary(
         self, git_repo: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """[tier-1/unit] execute_agent_step: with the heartbeat interval patched small, monotonic patched to start at 0.0 then return 30.4 and 60.9, and a provider double that returns only after two heartbeats were observed, on_output lines begin '[plan] agent running (30s)\\n', '[plan] agent running (60s)\\n' and the last line is the JSON summary."""
         self._use_fast_heartbeat(monkeypatch, [0.0, 30.4, 60.9])
         lines: list[str] = []
         two_heartbeats_seen = threading.Event()
@@ -847,7 +815,6 @@ class ExecuteAgentStepHeartbeatTests:
     def test_heartbeat_thread_is_gone_after_the_step_returns(
         self, git_repo: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """[tier-1/unit] execute_agent_step: after the step returns, no live thread is named 'agent-heartbeat-plan' and the number of on_output lines no longer changes."""
         self._use_fast_heartbeat(monkeypatch, [0.0, 30.4])
         lines: list[str] = []
         heartbeat_seen = threading.Event()
@@ -872,7 +839,6 @@ class ExecuteAgentStepHeartbeatTests:
     def test_heartbeat_callback_failure_leaves_the_attempt_outcome_unchanged(
         self, git_repo: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """[tier-1/unit] execute_agent_step: an on_output that raises for lines containing 'agent running' and accepts the summary yields StepDispatchOutcome(status='completed', exit_code=0)."""
         self._use_fast_heartbeat(monkeypatch, [0.0, 30.4])
         heartbeat_attempted = threading.Event()
 
@@ -896,7 +862,6 @@ class ExecuteAgentStepProgressTests:
     def test_progress_is_forwarded_to_the_attempt_context(
         self, git_repo: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """[tier-1/unit] execute_agent_step: the AgentAttemptContext reaching run_direct_attempt has on_progress equal to the sink's report."""
         sink = RecordingProgressSink()
         item = AgentProgress(kind=AgentProgressKind.READ, target="x.py")
 
@@ -921,7 +886,6 @@ class ExecuteAgentStepProgressTests:
     def test_heartbeat_follows_the_progress_quiet_window(
         self, git_repo: Path, monkeypatch: pytest.MonkeyPatch, quiet_seconds: float | None, heartbeat_expected: bool
     ) -> None:
-        """[tier-1/unit] execute_agent_step: with the heartbeat interval patched to 0.01 seconds, a sink reporting 0 seconds since the last item at every tick emits no '[plan] agent running' line, and a sink reporting None emits at least one by the second tick."""
         ExecuteAgentStepHeartbeatTests._use_fast_heartbeat(monkeypatch, [0.0, 30.4])
         second_tick_seen = threading.Event()
         lines: list[str] = []

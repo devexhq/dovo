@@ -42,7 +42,7 @@ def _render(
 
 
 def _spec(root: Path, pattern: str = "**") -> str:
-    """Return the absolute-path permission spec for pattern under root, written as '//' plus the root without its leading '/'."""
+    """Return the permission spec for pattern under root: '//' plus the root without its leading '/'."""
     return "//" + str(root).lstrip("/") + "/" + pattern
 
 
@@ -79,7 +79,6 @@ class ClaudePolicyRenderTests:
     def test_worktree_read_write_renders_tools_and_anchored_preapprovals(
         self, tmp_path: Path, root: Literal["worktree"] | None, pattern: str | None
     ) -> None:
-        """[tier-1/unit] render_claude_policy: read+write whole-worktree grants (root None and 'worktree', pattern None and '**') return flags ending '--allowedTools', f'Read(//{root}/**),Edit(//{root}/**)' with tools 'Read,Grep,Glob,Edit,Write,NotebookEdit'."""
         policy = ToolPolicy(
             allow=[_rule(ToolCapability.READ, pattern, root), _rule(ToolCapability.WRITE, pattern, root)]
         )
@@ -87,7 +86,6 @@ class ClaudePolicyRenderTests:
         assert _render(policy, _roots(tmp_path, scratch=False)) == ClaudePolicyArgs(flags=_read_write_flags(tmp_path))
 
     def test_narrowed_patterns_anchor_to_their_root(self, tmp_path: Path) -> None:
-        """[tier-1/unit] render_claude_policy: read 'src/**', write 'docs/*.md' and write 'a\\b' on worktree return '--allowedTools' 'Read(//<root>/src/**),Edit(//<root>/docs/*.md),Edit(//<root>/a/b)'."""
         policy = ToolPolicy(
             allow=[
                 _rule(ToolCapability.READ, "src/**"),
@@ -109,7 +107,6 @@ class ClaudePolicyRenderTests:
         )
 
     def test_read_and_write_denies_render_beside_overlapping_allows(self, tmp_path: Path) -> None:
-        """[tier-1/unit] render_claude_policy: read allow None + read deny 'secrets/**' + write deny None return '--allowedTools' 'Read(//<root>/**)' and '--disallowedTools' 'Read(//<root>/secrets/**),Edit(//<root>/**)'."""
         policy = ToolPolicy(
             allow=[_rule(ToolCapability.READ)],
             deny=[_rule(ToolCapability.READ, "secrets/**"), _rule(ToolCapability.WRITE)],
@@ -130,7 +127,6 @@ class ClaudePolicyRenderTests:
         )
 
     def test_deny_only_path_rules_expose_no_tools(self, tmp_path: Path) -> None:
-        """[tier-1/unit] render_claude_policy: write deny None alone returns flags ('--permission-mode', 'dontAsk', '--tools', '', '--disallowedTools', 'Edit(//<root>/**)') with no '--allowedTools'."""
         policy = ToolPolicy(deny=[_rule(ToolCapability.WRITE)])
 
         assert _render(policy, _roots(tmp_path)) == ClaudePolicyArgs(
@@ -146,7 +142,6 @@ class ClaudePolicyRenderTests:
         )
 
     def test_allow_all_anchors_path_denies_and_adds_no_directory(self, tmp_path: Path) -> None:
-        """[tier-1/unit] render_claude_policy: allow_all with read deny on scratch 'private/**' returns dontAsk, all eight tools, 'Read,Edit,Bash,WebFetch', '--disallowedTools' 'Read(//<scratch>/private/**)' and no '--add-dir'."""
         roots = _roots(tmp_path)
         assert roots.scratch is not None
         policy = ToolPolicy(allow_all=True, deny=[_rule(ToolCapability.READ, "private/**", "scratch")])
@@ -166,7 +161,6 @@ class ClaudePolicyRenderTests:
         )
 
     def test_default_policy_carries_empty_mcp_set_after_permission_mode(self, tmp_path: Path) -> None:
-        """[tier-1/unit] render_claude_policy: default_tool_policy() returns flags whose first five items are '--permission-mode', 'dontAsk', '--strict-mcp-config', '--mcp-config', '{"mcpServers":{}}'."""
         result = _render(default_tool_policy(), _roots(tmp_path))
 
         assert isinstance(result, ClaudePolicyArgs)
@@ -186,7 +180,6 @@ class ClaudePolicyRenderTests:
         ],
     )
     def test_mcp_deny_renders_claude_tool_name(self, tmp_path: Path, pattern: str, denied: str) -> None:
-        """[tier-1/unit] render_claude_policy: an mcp deny 'github/create_issue' renders '--disallowedTools' 'mcp__github__create_issue' and 'github/*' renders 'mcp__github', each beside the MCP flags with no '--allowedTools'."""
         policy = ToolPolicy(deny=[_rule(ToolCapability.MCP, pattern)])
 
         assert _render(policy, _roots(tmp_path)) == ClaudePolicyArgs(
@@ -194,7 +187,6 @@ class ClaudePolicyRenderTests:
         )
 
     def test_mcp_deny_composes_with_other_denies_in_rule_order(self, tmp_path: Path) -> None:
-        """[tier-1/unit] render_claude_policy: shell deny 'git push *', mcp deny 'github/*', mcp deny 'github/*' return '--disallowedTools' 'Bash(git push:*),mcp__github' (duplicate collapsed)."""
         policy = ToolPolicy(
             deny=[
                 _rule(ToolCapability.SHELL, "git push *"),
@@ -216,7 +208,6 @@ class ClaudePolicyRenderTests:
         )
 
     def test_empty_policy_emits_empty_tools_value_and_no_other_lists(self, tmp_path: Path) -> None:
-        """[tier-1/unit] render_claude_policy: ToolPolicy() returns ClaudePolicyArgs(flags=('--permission-mode', 'dontAsk', <MCP flags>, '--tools', ''))."""
         assert _render(ToolPolicy(), _roots(tmp_path)) == ClaudePolicyArgs(
             flags=("--permission-mode", "dontAsk", *_MCP_FLAGS, "--tools", "")
         )
@@ -232,7 +223,6 @@ class ClaudePolicyRenderTests:
     def test_shell_allow_maps_pattern_to_bash_permission(
         self, tmp_path: Path, pattern: str | None, permission: str
     ) -> None:
-        """[tier-1/unit] render_claude_policy: shell allow None/'git *'/'git status' returns flags with '--tools' 'Bash' and '--allowedTools' 'Bash'/'Bash(git:*)'/'Bash(git status)'."""
         policy = ToolPolicy(allow=[_rule(ToolCapability.SHELL, pattern)])
 
         assert _render(policy, _roots(tmp_path)) == ClaudePolicyArgs(
@@ -249,7 +239,6 @@ class ClaudePolicyRenderTests:
     def test_network_allow_maps_host_to_webfetch_permission(
         self, tmp_path: Path, pattern: str | None, permission: str
     ) -> None:
-        """[tier-1/unit] render_claude_policy: network allow None/'example.com' returns flags with '--tools' 'WebFetch' and '--allowedTools' 'WebFetch'/'WebFetch(domain:example.com)'."""
         policy = ToolPolicy(allow=[_rule(ToolCapability.NETWORK, pattern)])
 
         assert _render(policy, _roots(tmp_path)) == ClaudePolicyArgs(
@@ -257,7 +246,6 @@ class ClaudePolicyRenderTests:
         )
 
     def test_tools_follow_fixed_order_and_duplicate_permissions_collapse(self, tmp_path: Path) -> None:
-        """[tier-1/unit] render_claude_policy: allows listed network, shell, write, read, read return '--tools' 'Read,Grep,Glob,Edit,Write,NotebookEdit,Bash,WebFetch' and '--allowedTools' with 'Read(//<root>/**)' exactly once."""
         policy = ToolPolicy(
             allow=[
                 _rule(ToolCapability.NETWORK),
@@ -281,7 +269,6 @@ class ClaudePolicyRenderTests:
         )
 
     def test_allow_all_with_mcp_allow_loads_named_server(self, tmp_path: Path) -> None:
-        """[tier-1/unit] render_claude_policy: allow_all with configured 'github' and mcp allow 'github/*' returns ('--permission-mode', 'bypassPermissions', '--strict-mcp-config', '--mcp-config', '<control>/mcp-config.json') and an mcp_config naming only 'github'."""
         roots = _control_roots(tmp_path)
         policy = ToolPolicy(allow_all=True, allow=[_rule(ToolCapability.MCP, "github/*")])
 
@@ -297,7 +284,6 @@ class ClaudePolicyRenderTests:
         )
 
     def test_allow_all_with_denies_and_mcp_allow_grants_server_through_allowed_tools(self, tmp_path: Path) -> None:
-        """[tier-1/unit] render_claude_policy: allow_all with configured 'github', mcp allow 'github/create_issue' and shell deny 'git push *' returns dontAsk with '--allowedTools' 'Read,Edit,Bash,WebFetch,mcp__github__create_issue' beside the control-file MCP flags."""
         roots = _control_roots(tmp_path)
         policy = ToolPolicy(
             allow_all=True,
@@ -318,7 +304,6 @@ class ClaudePolicyRenderTests:
         )
 
     def test_allow_all_with_denies_grants_every_builtin_and_renders_denies(self, tmp_path: Path) -> None:
-        """[tier-1/unit] render_claude_policy: allow_all with shell deny 'git push *' returns flags ('--permission-mode', 'dontAsk', '--tools', <all eight names>, '--allowedTools', 'Read,Edit,Bash,WebFetch', '--disallowedTools', 'Bash(git push:*)')."""
         policy = ToolPolicy(allow_all=True, deny=[_rule(ToolCapability.SHELL, "git push *")])
 
         assert _render(policy, _roots(tmp_path)) == ClaudePolicyArgs(
@@ -336,7 +321,6 @@ class ClaudePolicyRenderTests:
         )
 
     def test_allow_all_with_mcp_deny_renders_it_beside_dontask_grants(self, tmp_path: Path) -> None:
-        """[tier-1/unit] render_claude_policy: allow_all with mcp deny 'github/*' returns ('--permission-mode', 'dontAsk', '--strict-mcp-config', '--mcp-config', '{"mcpServers":{}}', '--tools', <all eight names>, '--allowedTools', 'Read,Edit,Bash,WebFetch', '--disallowedTools', 'mcp__github')."""
         policy = ToolPolicy(allow_all=True, deny=[_rule(ToolCapability.MCP, "github/*")])
 
         assert _render(policy, _roots(tmp_path)) == ClaudePolicyArgs(
@@ -354,7 +338,6 @@ class ClaudePolicyRenderTests:
         )
 
     def test_deny_appears_in_disallowed_tools_and_is_not_removed_by_a_broader_allow(self, tmp_path: Path) -> None:
-        """[tier-1/unit] render_claude_policy: shell allow 'git *' with shell deny 'git push *' and network deny None returns '--allowedTools' 'Bash(git:*)' and '--disallowedTools' 'Bash(git push:*),WebFetch'."""
         policy = ToolPolicy(
             allow=[_rule(ToolCapability.SHELL, "git *")],
             deny=[_rule(ToolCapability.SHELL, "git push *"), _rule(ToolCapability.NETWORK)],
@@ -375,7 +358,6 @@ class ClaudePolicyRenderTests:
         )
 
     def test_default_policy_appends_add_dir_and_anchors_both_roots(self, tmp_path: Path) -> None:
-        """[tier-1/unit] render_claude_policy: default_tool_policy() with roots.scratch set returns '--allowedTools' 'Read(//<root>/**),Edit(//<root>/**),Read(//<scratch>/**),Edit(//<scratch>/**)' followed last by ('--add-dir', str(roots.scratch))."""
         roots = _roots(tmp_path)
         assert roots.scratch is not None
         allowed = ",".join(f"{tool}({_spec(root)})" for root in (tmp_path, roots.scratch) for tool in ("Read", "Edit"))
@@ -395,7 +377,6 @@ class ClaudePolicyRenderTests:
         )
 
     def test_scratch_only_read_is_supported_and_adds_the_directory(self, tmp_path: Path) -> None:
-        """[tier-1/unit] render_claude_policy: read allow on scratch with no worktree grant returns '--tools' 'Read,Grep,Glob', '--allowedTools' 'Read(//<scratch>/**)' and ('--add-dir', str(roots.scratch))."""
         roots = _roots(tmp_path)
         assert roots.scratch is not None
         policy = ToolPolicy(allow=[_rule(ToolCapability.READ, root="scratch")])
@@ -415,7 +396,6 @@ class ClaudePolicyRenderTests:
         )
 
     def test_control_directory_is_never_rendered(self, tmp_path: Path) -> None:
-        """[tier-1/unit] render_claude_policy: default_tool_policy() with roots.control set returns flags none of which contain str(roots.control)."""
         control = tmp_path / "control"
         roots = PolicyRoots(worktree=tmp_path / "work", scratch=tmp_path / "scratch", control=control)
 
@@ -494,11 +474,9 @@ class ClaudePolicyRenderTests:
     def test_unsupported_rule_returns_reason_string(
         self, tmp_path: Path, policy: ToolPolicy, scratch: bool, reason: str
     ) -> None:
-        """[tier-1/unit] render_claude_policy: mcp deny without a pattern ('an mcp deny rule must name a server'), network '*.example.com' allow and deny, default_tool_policy() with roots.scratch None ('a scratch rule requires a scratch root'), scratch read deny with roots.scratch None (same reason), and model_construct patterns '../x', '/etc/x', 'C:x' and 'a\\..\\b' ('<capability> pattern '<pattern>' resolves outside its <root> root') each return the exact str and no ClaudePolicyArgs."""
         assert _render(policy, _roots(tmp_path, scratch=scratch)) == reason
 
     def test_mcp_deny_with_comma_returns_reason_string(self, tmp_path: Path) -> None:
-        """[tier-1/unit] render_claude_policy: an mcp deny whose model_construct pattern is 'a,b/tool' returns "mcp pattern 'a,b/tool' contains a comma and cannot be preserved for Claude Code" and no ClaudePolicyArgs."""
         policy = ToolPolicy.model_construct(
             deny=[ToolRule.model_construct(capability=ToolCapability.MCP, root=None, pattern="a,b/tool")]
         )
@@ -518,7 +496,6 @@ class ClaudePolicyRenderTests:
     def test_comma_in_path_spec_returns_reason_string(
         self, tmp_path: Path, worktree_name: str, pattern: str | None, reason_path: str
     ) -> None:
-        """[tier-1/unit] render_claude_policy: a read allow whose pattern 'src/{a,b}/**' or whose worktree root contains a comma returns "read path '<spec>' contains a comma and cannot be preserved for Claude Code" and no ClaudePolicyArgs."""
         worktree = tmp_path / worktree_name
         roots = PolicyRoots(worktree=worktree, scratch=None, control=None)
         policy = ToolPolicy(allow=[_rule(ToolCapability.READ, pattern)])
@@ -529,7 +506,6 @@ class ClaudePolicyRenderTests:
         )
 
     def test_scratch_read_allow_does_not_widen_worktree_write_allow(self, tmp_path: Path) -> None:
-        """[tier-1/unit] render_claude_policy: write allow on the worktree plus read allow on scratch returns '--allowedTools' 'Edit(//<root>/**),Read(//<scratch>/**)' with no Edit spec for scratch, followed by ('--add-dir', str(roots.scratch))."""
         roots = _roots(tmp_path)
         assert roots.scratch is not None
         policy = ToolPolicy(
@@ -551,7 +527,6 @@ class ClaudePolicyRenderTests:
         )
 
     def test_mcp_allow_renders_config_file_and_grant(self, tmp_path: Path) -> None:
-        """[tier-1/unit] render_claude_policy: configured {'github': stdio npx} with mcp allow 'github/*' returns flags containing '--strict-mcp-config', '--mcp-config', '<control>/mcp-config.json' and '--allowedTools' 'mcp__github', and mcp_config.content == '{"mcpServers":{"github":{"command":"npx","args":["-y","pkg"],"env":{"TOKEN":"${GITHUB_TOKEN}"}}}}'."""
         policy = ToolPolicy(allow=[_rule(ToolCapability.MCP, "github/*")])
         config_path = tmp_path / "control" / "mcp-config.json"
 
@@ -571,7 +546,6 @@ class ClaudePolicyRenderTests:
         )
 
     def test_mcp_allow_tool_grants_only_that_tool(self, tmp_path: Path) -> None:
-        """[tier-1/unit] render_claude_policy: mcp allow 'github/create_issue' returns '--allowedTools' 'mcp__github__create_issue' with no 'mcp__github'."""
         policy = ToolPolicy(allow=[_rule(ToolCapability.MCP, "github/create_issue")])
 
         result = _render(policy, _control_roots(tmp_path), configured={"github": _GITHUB})
@@ -580,7 +554,6 @@ class ClaudePolicyRenderTests:
         assert result.flags[-2:] == ("--allowedTools", "mcp__github__create_issue")
 
     def test_server_named_by_several_allow_rules_is_written_once(self, tmp_path: Path) -> None:
-        """[tier-1/unit] render_claude_policy: mcp allows 'github/create_issue' and 'github/*' return mcp_config.content listing 'github' once and '--allowedTools' 'mcp__github__create_issue,mcp__github'."""
         policy = ToolPolicy(
             allow=[_rule(ToolCapability.MCP, "github/create_issue"), _rule(ToolCapability.MCP, "github/*")]
         )
@@ -592,7 +565,6 @@ class ClaudePolicyRenderTests:
         assert result.flags[-1] == "mcp__github__create_issue,mcp__github"
 
     def test_user_config_server_is_used_when_not_configured(self, tmp_path: Path) -> None:
-        """[tier-1/unit] render_claude_policy: user {'github': {'command': 'uvx'}}, nothing configured, mcp allow 'github/*' returns mcp_config.content == '{"mcpServers":{"github":{"command":"uvx"}}}'."""
         policy = ToolPolicy(allow=[_rule(ToolCapability.MCP, "github/*")])
 
         result = _render(policy, _control_roots(tmp_path), user={"github": {"command": "uvx"}})
@@ -602,7 +574,6 @@ class ClaudePolicyRenderTests:
         assert result.mcp_config.content == '{"mcpServers":{"github":{"command":"uvx"}}}'
 
     def test_configured_server_wins_over_user_config(self, tmp_path: Path) -> None:
-        """[tier-1/unit] render_claude_policy: the same name in configured and user returns mcp_config.content with the configured command only."""
         policy = ToolPolicy(allow=[_rule(ToolCapability.MCP, "github/*")])
 
         result = _render(
@@ -617,7 +588,6 @@ class ClaudePolicyRenderTests:
         assert result.mcp_config.content == '{"mcpServers":{"github":{"command":"npx"}}}'
 
     def test_only_allowed_servers_are_written(self, tmp_path: Path) -> None:
-        """[tier-1/unit] render_claude_policy: configured {'a','b'} with mcp allow 'a/*' returns mcp_config.content listing only 'a'."""
         policy = ToolPolicy(allow=[_rule(ToolCapability.MCP, "a/*")])
 
         result = _render(
@@ -663,13 +633,11 @@ class ClaudePolicyRenderTests:
     def test_unresolvable_mcp_allow_returns_reason(
         self, tmp_path: Path, policy: ToolPolicy, has_control: bool, reason: str
     ) -> None:
-        """[tier-1/unit] render_claude_policy: an unknown server (restricted or allow_all), a patternless allow, and an allow with roots.control None each return the exact reason string and no ClaudePolicyArgs."""
         roots = _control_roots(tmp_path) if has_control else _roots(tmp_path)
 
         assert _render(policy, roots) == reason
 
     def test_policy_without_mcp_allow_keeps_empty_configuration(self, tmp_path: Path) -> None:
-        """[tier-1/unit] render_claude_policy: default_tool_policy() with configured servers present returns '--mcp-config' '{"mcpServers":{}}' and mcp_config None."""
         result = _render(default_tool_policy(), _control_roots(tmp_path), configured={"github": _GITHUB})
 
         assert isinstance(result, ClaudePolicyArgs)

@@ -184,7 +184,6 @@ class PrunedItemFormatterTests:
 
     @pytest.mark.parametrize("case", PRUNED_ITEM_CASES)
     def test_transform_derives_expected_view(self, case: FormatterCase[PrunedItem, PrunedItemView]) -> None:
-        """Verify transform derives the exact PrunedItemView model representation."""
         assert_transform_derives_expected_view(PrunedItemFormatter, case.data, case.view)
 
     @pytest.mark.parametrize(("case", "expected_payload"), PRUNED_ITEM_PAYLOAD_CASES)
@@ -193,10 +192,8 @@ class PrunedItemFormatterTests:
         case: FormatterCase[PrunedItem, PrunedItemView],
         expected_payload: dict[str, Any],
     ) -> None:
-        """Verify to_json_serializable matches the exact published wire-format literal dict."""
         assert_json_payload_matches_published_shape(PrunedItemFormatter, case.data, expected_payload)
 
     @pytest.mark.parametrize("case", PRUNED_ITEM_CASES)
     def test_rich_render_shows_every_view_value(self, case: FormatterCase[PrunedItem, PrunedItemView]) -> None:
-        """Verify that all non-null semantic view model values reach the Rich renderable output."""
         assert_rich_render_shows_every_view_value(PrunedItemFormatter, case.data, case.render_expectations)

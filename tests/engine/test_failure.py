@@ -75,10 +75,7 @@ class FailurePolicyHelperTests:
 
 
 class FailedStepMessageTests:
-    """[tier-1/unit] failed_step_message: diagnostic message format."""
-
     def test_formats_step_id_and_diagnostic_detail(self) -> None:
-        """[tier-1/unit] failed_step_message: renders "Step '<id>' failed: <diagnostic>" using error_message when present."""
         result = StepResult(
             step_id="fail",
             status="failed",
@@ -93,8 +90,6 @@ class FailedStepMessageTests:
 
 
 class ResolveTerminalActionTests:
-    """[tier-1/unit] resolve_terminal_action: non-prompt terminal policy to StepAction."""
-
     @pytest.mark.parametrize(
         ("policy", "action", "recorded_status", "error_message"),
         [
@@ -105,7 +100,6 @@ class ResolveTerminalActionTests:
     def test_resolve_terminal_action_maps_policy_to_action_result_and_message(
         self, policy: FailurePolicy, action: StepAction, recorded_status: str, error_message: str | None
     ) -> None:
-        """[tier-1/unit] resolve_terminal_action: CONTINUE returns (StepAction.CONTINUE, an ignored result carrying the user-continued marker, None); ABORT returns (StepAction.ABORT, the unchanged failed result, "Step '<id>' failed: <detail>")."""
         failed = StepResult(
             step_id="fail",
             status="failed",

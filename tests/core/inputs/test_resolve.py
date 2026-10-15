@@ -62,12 +62,10 @@ class InputTypeConversionTests:
 
     @pytest.mark.parametrize(("token", "expected"), VALID_BOOLEAN_CASES)
     def test_convert_input_truthy_bool_evaluates_valid_forms(self, token: str, expected: bool) -> None:
-        """Evaluate truthy and falsy string forms into expected booleans."""
         assert is_truthy_bool(token) is expected
 
     @pytest.mark.parametrize("token", INVALID_BOOLEAN_CASES)
     def test_convert_input_truthy_bool_rejects_invalid_values(self, token: str) -> None:
-        """Reject non-boolean tokens with ValueError naming the invalid value."""
         with pytest.raises(ValueError, match=rf"invalid boolean value '{re.escape(token)}'"):
             is_truthy_bool(token)
 
@@ -101,7 +99,6 @@ class InputSyntaxValidationTests:
 
     @pytest.mark.parametrize("cli_args", MALFORMED_SYNTAX_CASES)
     def test_resolve_inputs_invalid_syntax_names_malformed_token(self, cli_args: list[str]) -> None:
-        """Reject malformed input overrides and report expected syntax error."""
         result = resolve_inputs(_sample_declarations(), cli_args=cli_args)
 
         assert result.values == {}
@@ -111,7 +108,6 @@ class InputSyntaxValidationTests:
         assert result.fixes == []
 
     def test_resolve_inputs_warns_on_unrecognized_cli_options(self) -> None:
-        """Collect warnings on unrecognized options and unexpected positional arguments."""
         result = resolve_inputs(
             _sample_declarations(),
             cli_args=["-m", "ship it", "--unrecognized-option", "positional_arg"],
@@ -127,7 +123,6 @@ class InputSyntaxValidationTests:
         assert result.fixes == []
 
     def test_format_missing_inputs_error_includes_cli_usage_example(self) -> None:
-        """Format structured missing-input error with actionable CLI usage examples."""
         declarations = {
             "message": ParameterInput(
                 type=InputType.STRING,
@@ -210,7 +205,6 @@ class InputFlagResolutionTests:
         cli_args: list[str],
         expected_values: dict[str, str | int | bool],
     ) -> None:
-        """Resolve declared flag aliases and generic overrides into typed parameter values."""
         result = resolve_inputs(_sample_declarations(), cli_args=cli_args)
 
         assert result.values == expected_values
@@ -220,7 +214,6 @@ class InputFlagResolutionTests:
         assert result.fixes == []
 
     def test_resolve_prioritizes_declared_alias_matching_generic_flag(self) -> None:
-        """Resolve declared '-i' flag alias onto target input instead of treating as generic override."""
         inputs = {
             "issue": ParameterInput(
                 type=InputType.STRING,

@@ -1,4 +1,4 @@
-"""Parity invariant: the spec tables in `docs/reference/step-schema.md` and `docs/cli/session.md` match their source models and commands."""
+"""Parity: the spec tables in `docs/reference/step-schema.md` and `docs/cli/session.md` match their source models."""
 
 from __future__ import annotations
 
@@ -75,20 +75,18 @@ class StepSchemaParityTests:
     """The `artifacts` Entries table must agree with `ArtifactPublishSpec` field for field."""
 
     def test_documented_fields_match_artifact_publish_spec_fields(self) -> None:
-        """Documented field names equal the model fields (and the table was actually found)."""
         documented = _documented_rows()
 
         assert documented
         assert set(documented) == set(ArtifactPublishSpec.model_fields)
 
     def test_documented_required_flags_match_artifact_publish_spec(self) -> None:
-        """Each field's Required cell is `**Yes**` exactly when the model field has no default."""
+        """Mark a field's Required cell `**Yes**` exactly when the model field has no default."""
         expected = {name: field.is_required() for name, field in ArtifactPublishSpec.model_fields.items()}
 
         assert _documented_rows() == expected
 
     def test_documented_step_fields_match_step_definition_fields(self) -> None:
-        """[tier-4/unit] step-schema reference: documented standard-step rows equal StepDefinition serialized field names and required flags, including max_files and assert."""
         expected = {
             field.serialization_alias or name: field.is_required()
             for name, field in StepDefinition.model_fields.items()
@@ -104,7 +102,6 @@ class InteractionSchemaParityTests:
     """The `interaction` table, Ask step outputs and resume flags must agree with their sources."""
 
     def test_interaction_fields_and_required_flags_match_interaction_spec(self) -> None:
-        """Documented `interaction` fields and Required cells equal `InteractionSpec`, with `Conditional` counting as optional."""
         expected = {name: field.is_required() for name, field in InteractionSpec.model_fields.items()}
 
         documented = _interaction_rows()
@@ -113,7 +110,6 @@ class InteractionSchemaParityTests:
         assert documented == expected
 
     def test_documented_ask_outputs_match_interaction_outputs(self) -> None:
-        """The Ask step outputs table names exactly the keys `Interaction.outputs` produces."""
         request = InteractionRequest(step_id="ask", mode="text", message="Why?")
 
         produced = set(Interaction.outputs(request, InteractionAnswer(text="x")))
@@ -121,7 +117,6 @@ class InteractionSchemaParityTests:
         assert _documented_output_keys() == produced
 
     def test_documented_resume_flags_match_the_resume_command(self) -> None:
-        """The resume Options table lists every long flag of `dovo session resume`, and nothing else."""
         documented = _documented_resume_flags()
 
         assert "--answer" in documented
@@ -134,7 +129,7 @@ class InteractionSchemaParityTests:
         ],
     )
     def test_a_table_row_missing_from_the_source_is_detected(self, heading: str, end: str) -> None:
-        """Negative fixture: a documented field absent from the model makes the field-name comparison fail."""
+        """Fail the field-name comparison when a documented field is absent from the model."""
         section = _section(STEP_SCHEMA_DOC, heading, end) + "| `invented_field` | `string` | No | - | x |\n"
 
         assert set(_field_rows(section)) != set(InteractionSpec.model_fields)

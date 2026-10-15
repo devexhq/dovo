@@ -57,10 +57,7 @@ def _schema_names(database_file: Path, table: str) -> tuple[set[str], set[str], 
 
 
 class InitDatabaseTests:
-    """[tier-1/integration] init_database: caller-supplied database_file handling."""
-
     def test_database_file_creates_tables_at_that_exact_location(self, tmp_path: Path) -> None:
-        """[tier-1/integration] init_database(database_file): schema is created at the caller-supplied path, and that exact path is returned."""
         explicit_path = tmp_path / "custom" / "nested" / "dovo.db"
 
         returned_path = init_database(explicit_path)
@@ -75,7 +72,6 @@ class InitDatabaseTests:
         assert "sessions" in tables
 
     def test_database_file_with_missing_parent_directories_creates_them(self, tmp_path: Path) -> None:
-        """[tier-1/integration] init_database(database_file): parent directories that do not yet exist are created before the database file is written."""
         explicit_path = tmp_path / "does" / "not" / "exist" / "yet" / "dovo.db"
         assert not explicit_path.parent.exists()
 
@@ -85,10 +81,7 @@ class InitDatabaseTests:
 
 
 class SessionsMigrationTests:
-    """[tier-1/integration] 0002_rename_runs_to_sessions: table, index, and constraint rename."""
-
     def test_upgrade_from_initial_schema_preserves_rows_and_column_definitions(self, tmp_path: Path) -> None:
-        """[tier-1/integration] init_database: upgrading a 0001_initial_schema database holding two runs rows leaves SELECT * FROM sessions ORDER BY id equal to the pre-upgrade SELECT * FROM runs ORDER BY id plus the later discard column, PRAGMA table_info(sessions) equal to the pre-upgrade PRAGMA table_info(runs) plus the later discard column, a unique index on session_id, and SessionsRepository.list() returning both session_ids."""
         database_file = tmp_path / "dovo.db"
         command.upgrade(_alembic_config(database_file), INITIAL_SCHEMA_REVISION)
         connection = sqlite3.connect(database_file)
@@ -121,7 +114,6 @@ class SessionsMigrationTests:
         assert sorted(record.session_id for record in listed) == ["wf_a", "wf_b"]
 
     def test_fresh_database_names_sessions_table_indexes_and_constraint(self, tmp_path: Path) -> None:
-        """[tier-1/integration] init_database: a new database has tables exactly {alembic_version, artifacts, costs, sessions, worktrees}, sessions indexes exactly {idx_sessions_project_id, idx_sessions_started, idx_sessions_status} plus the session_id unique autoindex, DDL naming ck_sessions_status, and alembic_version equal to LATEST_SCHEMA_REVISION."""
         database_file = init_database(tmp_path / "dovo.db")
 
         tables, indexes, ddl = _schema_names(database_file, "sessions")
@@ -141,7 +133,6 @@ class SessionsMigrationTests:
         assert version == LATEST_SCHEMA_REVISION
 
     def test_sessions_status_check_rejects_unknown_status(self, tmp_path: Path) -> None:
-        """[tier-1/integration] init_database: inserting status='bogus' into sessions through sqlite3 raises sqlite3.IntegrityError after the constraint recreate."""
         database_file = init_database(tmp_path / "dovo.db")
 
         connection = sqlite3.connect(database_file)
@@ -155,7 +146,6 @@ class SessionsMigrationTests:
             connection.close()
 
     def test_downgrade_restores_runs_names_and_keeps_rows_written_after_upgrade(self, tmp_path: Path) -> None:
-        """[tier-1/integration] alembic downgrade to INITIAL_SCHEMA_REVISION: a row created through SessionsRepository.create survives in table runs, indexes are exactly {idx_runs_project_id, idx_runs_started, idx_runs_status} plus the unique autoindex, DDL names ck_runs_status, and no sessions table remains."""
         database_file = init_database(tmp_path / "dovo.db")
         SessionsRepository(db_path=database_file, project_id="proj").create(
             "wf_kept", blueprint_name="Blueprint", blueprint_key="bp"
@@ -180,7 +170,6 @@ class SessionsMigrationTests:
         assert "ck_runs_status" in ddl
 
     def test_second_init_database_is_noop(self, tmp_path: Path) -> None:
-        """[tier-1/integration] init_database: a second call on a head database leaves the sessions rows and alembic_version unchanged."""
         database_file = init_database(tmp_path / "dovo.db")
         SessionsRepository(db_path=database_file, project_id="proj").create(
             "wf_once", blueprint_name="Blueprint", blueprint_key="bp"
@@ -213,10 +202,7 @@ def _insert_artifact_row(connection: sqlite3.Connection, session_id: str, name: 
 
 
 class ArtifactRevisionsMigrationTests:
-    """[tier-1/integration] 0003_artifact_revisions: revision, digest and provenance columns."""
-
     def test_upgrade_from_sessions_rename_backfills_revision_one_and_preserves_rows(self, tmp_path: Path) -> None:
-        """[tier-1/integration] init_database: a 0002 database with two artifacts rows upgrades so revision, digest, step_id, attempt, loop_iteration are (1, None, None, None, None) for both and every pre-existing column value is unchanged."""
         database_file = tmp_path / "dovo.db"
         command.upgrade(_alembic_config(database_file), SESSIONS_RENAME_REVISION)
         connection = sqlite3.connect(database_file)
@@ -248,7 +234,6 @@ class ArtifactRevisionsMigrationTests:
         assert new_columns == [(1, None, None, None, None), (1, None, None, None, None)]
 
     def test_upgraded_unique_constraint_allows_second_revision_and_rejects_duplicate(self, tmp_path: Path) -> None:
-        """[tier-1/integration] init_database: after upgrade, inserting revision=2 of an existing name succeeds and inserting revision=1 again raises sqlite3.IntegrityError."""
         database_file = init_database(tmp_path / "dovo.db")
         connection = sqlite3.connect(database_file)
         try:
@@ -266,7 +251,6 @@ class ArtifactRevisionsMigrationTests:
             connection.close()
 
     def test_downgrade_keeps_highest_revision_per_name_and_restores_old_constraint(self, tmp_path: Path) -> None:
-        """[tier-1/integration] alembic downgrade to 0002: revisions 1 and 2 of 'plan' collapse to the revision-2 row, other names keep their row, and a second row for the same (project, session, name) raises sqlite3.IntegrityError."""
         database_file = init_database(tmp_path / "dovo.db")
         connection = sqlite3.connect(database_file)
         try:
@@ -309,10 +293,7 @@ def _insert_session_row(connection: sqlite3.Connection, session_id: str) -> None
 
 
 class SessionDiscardMigrationTests:
-    """[tier-1/integration] 0004_session_discard: the sessions.discard column."""
-
     def test_upgrade_adds_discard_column_defaulting_existing_rows_false(self, tmp_path: Path) -> None:
-        """[tier-1/integration] upgrade 0003 -> 0004: sessions gains column discard and every pre-existing row reads discard == 0 with its other columns unchanged."""
         database_file = tmp_path / "dovo.db"
         command.upgrade(_alembic_config(database_file), ARTIFACT_REVISIONS_REVISION)
         connection = sqlite3.connect(database_file)
@@ -340,7 +321,6 @@ class SessionDiscardMigrationTests:
         assert discards == [(0,), (0,)]
 
     def test_downgrade_drops_discard_column_and_keeps_rows(self, tmp_path: Path) -> None:
-        """[tier-1/integration] downgrade 0004 -> 0003: sessions has no discard column and rows written after the upgrade are still present."""
         database_file = init_database(tmp_path / "dovo.db")
         connection = sqlite3.connect(database_file)
         try:

@@ -14,7 +14,7 @@ from tests.harness.workspace_paths import initialized_workspace_paths
 
 @pytest.fixture
 def artifacts_paths(tmp_path: Path) -> WorkspacePaths:
-    """WorkspacePaths for a freshly initialized, project-scoped workspace."""
+    """Return WorkspacePaths for a freshly initialized, project-scoped workspace."""
     workspace_root = WorkspaceBuilder(tmp_path / "artifacts_repo_workspace").with_database().build()
     return initialized_workspace_paths(workspace_root)
 

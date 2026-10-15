@@ -32,7 +32,8 @@ Rules: every source module has a test file, no exemption list; every test direct
   `test_basic`, `test_default`, `test_works`, `test_timeout`, `test_no_op`, `test_help`. A
   `should` prefix is filler, not an outcome.
 - Docstrings are optional and must not restate the name; write one only for a constraint the
-  identifier can't carry.
+  identifier can't carry. It is one imperative sentence with no `[tier-N/type]` tag and no
+  `<symbol>:` prefix, within 120 columns (TEST-020).
 
 ## The Four Execution Tiers
 

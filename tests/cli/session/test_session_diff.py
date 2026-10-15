@@ -73,7 +73,6 @@ class SessionDiffCliIntegrationTests:
     def test_diff_cli_known_session_renders_patch_exits_zero(
         self, cli_runner: CliRunner, session_workspace: Path
     ) -> None:
-        """dovo session diff <session_id>: reads diff.patch off disk, exit 0, patch content in stdout."""
         _write_session_diff(session_workspace, "sess-diff-1")
 
         result = cli_runner.invoke(app, ["-p", str(session_workspace), "session", "diff", "sess-diff-1"])
@@ -84,7 +83,6 @@ class SessionDiffCliIntegrationTests:
         assert "+new line" in result.stdout
 
     def test_diff_cli_unknown_session_exits_one(self, cli_runner: CliRunner, session_workspace: Path) -> None:
-        """dovo session diff <unknown-id>: exit 1, 'not found.' in stdout."""
         result = cli_runner.invoke(app, ["-p", str(session_workspace), "session", "diff", "unknown-session"])
 
         assert result.exit_code == 1
@@ -92,7 +90,6 @@ class SessionDiffCliIntegrationTests:
         assert "Run `dovo session list`" in result.stdout
 
     def test_diff_cli_json_emits_literal_wire_payload(self, cli_runner: CliRunner, session_workspace: Path) -> None:
-        """dovo session diff <session_id> --format json: stdout equals the literal DiffResultView envelope."""
         patch_path = _write_session_diff(session_workspace, "sess-diff-1")
 
         result = cli_runner.invoke(
@@ -123,7 +120,7 @@ class SessionDiffCliIntegrationTests:
     def test_diff_cli_with_project_identity_reads_global_patch_and_exits_zero(
         self, cli_runner: CliRunner, monkeypatch: pytest.MonkeyPatch, session_workspace: Path, tmp_path: Path
     ) -> None:
-        """An identified project presents the patch persisted in global storage."""
+        """Present the patch persisted in global storage for an identified project."""
         global_root = tmp_path / "global"
         monkeypatch.setenv("DOVO_HOME", str(global_root))
         _write_global_session_diff(session_workspace, "session-626")
@@ -137,7 +134,6 @@ class SessionDiffCliIntegrationTests:
     def test_diff_cli_with_project_identity_json_emits_global_artifact_path(
         self, cli_runner: CliRunner, monkeypatch: pytest.MonkeyPatch, session_workspace: Path, tmp_path: Path
     ) -> None:
-        """JSON output exposes the exact global patch path and patch body."""
         global_root = tmp_path / "global"
         monkeypatch.setenv("DOVO_HOME", str(global_root))
         patch_path = _write_global_session_diff(session_workspace, "session-626")
@@ -170,7 +166,6 @@ class SessionDiffCliIntegrationTests:
     def test_diff_cli_without_session_id_renders_latest_started_session(
         self, cli_runner: CliRunner, session_workspace: Path
     ) -> None:
-        """[tier-3/integration] dovo session diff (no id): two seeded session records where the earlier started_at has the newer directory mtime -> exit 0 and stdout contains the later started_at session's patch lines."""
         later_patch = _write_session_diff(session_workspace, "later-run", started_at="2026-01-02 00:00:00")
         later_patch.write_text("diff --git a/later.txt b/later.txt\n-before\n+later-session-line\n", encoding="utf-8")
         earlier_patch = _write_session_diff(session_workspace, "earlier-run", started_at="2026-01-01 00:00:00")
@@ -185,7 +180,6 @@ class SessionDiffCliIntegrationTests:
     def test_diff_cli_raw_and_full_flags_bind_into_json_payload(
         self, cli_runner: CliRunner, session_workspace: Path
     ) -> None:
-        """[tier-3/integration] dovo session diff <id> --raw --full --format json: exit 0 and payload carries "raw": true, "full": true, "max_lines": 500."""
         _write_session_diff(session_workspace, "sess-diff-1")
 
         result = cli_runner.invoke(
@@ -199,7 +193,6 @@ class SessionDiffCliIntegrationTests:
     def test_diff_cli_unknown_session_json_payload_keeps_default_display_options(
         self, cli_runner: CliRunner, session_workspace: Path
     ) -> None:
-        """[tier-3/integration] dovo session diff unknown --format json: exit 1 and payload has status "session_not_found", "raw": false, "full": false, "max_lines": null."""
         result = cli_runner.invoke(
             app, ["-p", str(session_workspace), "session", "diff", "unknown", "--raw", "--full", "--format", "json"]
         )
@@ -214,7 +207,6 @@ class SessionDiffLatestCliIntegrationTests:
     """Typer runner integration tests for dovo session diff with the session id omitted."""
 
     def test_diff_without_id_header_reads_latest(self, cli_runner: CliRunner, session_workspace: Path) -> None:
-        """[tier-3/integration] dovo session diff: seeded latest session with diff.patch -> exit 0; stdout begins "Session: <id> (latest)" and does not contain the "(<relative path>)" header."""
         patch_path = _write_session_diff(session_workspace, "sess-diff-1")
 
         result = cli_runner.invoke(app, ["-p", str(session_workspace), "session", "diff"])
@@ -226,7 +218,6 @@ class SessionDiffLatestCliIntegrationTests:
     def test_diff_without_id_raw_and_json_omit_latest_line(
         self, cli_runner: CliRunner, session_workspace: Path
     ) -> None:
-        """[tier-3/integration] dovo session diff --raw, and dovo session diff --format json: stdout has no "(latest)" text; --raw stdout equals the patch text; JSON payload has no "latest" key."""
         _write_session_diff(session_workspace, "sess-diff-1")
 
         raw = cli_runner.invoke(app, ["-p", str(session_workspace), "session", "diff", "--raw"])
@@ -241,7 +232,6 @@ class SessionDiffLatestCliIntegrationTests:
     def test_diff_without_sessions_exits_one_with_create_session_fix(
         self, cli_runner: CliRunner, session_workspace: Path
     ) -> None:
-        """[tier-3/integration] dovo session diff: empty project -> exit 1; stdout contains "Session Not Found" and "Run `dovo run <blueprint>` to create a session"."""
         result = cli_runner.invoke(app, ["-p", str(session_workspace), "session", "diff"])
 
         assert result.exit_code == 1
@@ -251,7 +241,6 @@ class SessionDiffLatestCliIntegrationTests:
     def test_shortcut_and_session_form_print_identical_raw_diff(
         self, cli_runner: CliRunner, session_workspace: Path
     ) -> None:
-        """[tier-3/integration] dovo diff --raw vs dovo session diff --raw: seeded latest session -> equal stdout and equal exit_code 0."""
         _write_session_diff(session_workspace, "sess-diff-1")
 
         shortcut = cli_runner.invoke(app, ["-p", str(session_workspace), "diff", "--raw"])

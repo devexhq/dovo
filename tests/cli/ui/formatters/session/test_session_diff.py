@@ -27,7 +27,7 @@ _SAMPLE_DIFF = """diff --git a/src/main.py b/src/main.py
 
 
 def make_diff_view(**overrides: Any) -> SessionDiffView:
-    """Helper to construct a SessionDiffView with healthy baseline defaults."""
+    """Construct a SessionDiffView with healthy baseline defaults."""
     defaults: dict[str, Any] = {
         "status": DiffStatus.OK,
         "session_id": "dovo_fmt_1",
@@ -295,7 +295,6 @@ class SessionDiffFormatterTests:
 
     @pytest.mark.parametrize("case", DIFF_CASES)
     def test_transform_derives_expected_view(self, case: FormatterCase[DiffResult, SessionDiffView]) -> None:
-        """Verify transform derives the exact SessionDiffView model representation."""
         assert_transform_derives_expected_view(_TERMINAL_FORMATTER, case.data, case.view)
 
     @pytest.mark.parametrize(("case", "expected_payload"), DIFF_PAYLOAD_CASES)
@@ -304,12 +303,10 @@ class SessionDiffFormatterTests:
         case: FormatterCase[DiffResult, SessionDiffView],
         expected_payload: dict[str, Any],
     ) -> None:
-        """Verify to_json_serializable matches the exact published wire-format literal dict."""
         assert_json_payload_matches_published_shape(SessionDiffFormatter, case.data, expected_payload)
 
     @pytest.mark.parametrize("case", DIFF_CASES)
     def test_rich_render_shows_every_view_value(self, case: FormatterCase[DiffResult, SessionDiffView]) -> None:
-        """Verify that all non-null semantic view model values reach the Rich renderable output."""
         assert_rich_render_shows_every_view_value(_TERMINAL_FORMATTER, case.data, case.render_expectations)
 
     @pytest.mark.parametrize(("formatter", "result", "expected"), TO_RAW_CASES)
@@ -319,6 +316,5 @@ class SessionDiffFormatterTests:
         result: DiffResult,
         expected: str,
     ) -> None:
-        """Verify to_raw renders expected raw diff output, notice, error panel, or truncation."""
         raw_output = formatter.to_raw(result)
         assert expected in raw_output

@@ -100,7 +100,6 @@ class ValidateAnswerTests:
     def test_choice_rules_by_mode(
         self, mode: str, answer: InteractionAnswer, expected_selected: list[str] | None, expected_error: str | None
     ) -> None:
-        """[tier-1/unit] validate_answer: confirm/select need exactly one known value, multiselect takes zero or more known values in option order; violations list the valid choices."""
         result = validate_answer(_request(mode), answer)
 
         if expected_error is None:
@@ -130,7 +129,6 @@ class ValidateAnswerTests:
     def test_text_mode_requires_non_empty_trimmed_text(
         self, answer: InteractionAnswer, expected_error: str | None
     ) -> None:
-        """[tier-1/unit] validate_answer: text mode needs non-empty text after trimming and returns it trimmed."""
         result = validate_answer(_request("text", options=[]), answer)
 
         if expected_error is None:
@@ -166,7 +164,6 @@ class ValidateAnswerTests:
     def test_comment_policy_rules(
         self, policy: CommentPolicy, comment: str | None, expected_comment: str | None, expected_error: str | None
     ) -> None:
-        """[tier-1/unit] validate_answer: required + empty is INVALID, optional + empty becomes None, 8001 characters is INVALID, trailing whitespace is stripped, disabled drops the comment."""
         request = _request(options=_options("approve", "revise", policy=policy))
 
         result = validate_answer(request, InteractionAnswer(selected=["revise"], comment=comment))
@@ -178,7 +175,6 @@ class ValidateAnswerTests:
             assert result.errors == [expected_error]
 
     def test_effective_policy_picks_chosen_option_then_strictest_then_default(self) -> None:
-        """[tier-1/unit] effective_comment_policy: one chosen option returns its policy; chosen [optional, required] returns required; nothing chosen returns the interaction default."""
         options = [
             RequestOption(value="a", label="A", comment="optional"),
             RequestOption(value="b", label="B", comment="required"),
@@ -199,7 +195,6 @@ class ParseHeadlessAnswerTests:
         "value", [pytest.param('["B1","B3"]', id="json_array"), pytest.param("B1, B3", id="comma_list")]
     )
     def test_multiselect_accepts_json_array_and_comma_list(self, value: str) -> None:
-        """[tier-1/unit] parse_headless_answer: value `["B1","B3"]` and `B1,B3` both yield selected ["B1","B3"]."""
         request = _request("multiselect", options=_options("B1", "B2", "B3"))
 
         result = parse_headless_answer(request, HeadlessAnswerInput(step_id="approve", value=value))
@@ -208,7 +203,6 @@ class ParseHeadlessAnswerTests:
         assert result.answer.selected == ["B1", "B3"]
 
     def test_text_value_is_taken_verbatim(self) -> None:
-        """[tier-1/unit] parse_headless_answer: for mode text, value `a=b, c` yields text "a=b, c"."""
         request = _request("text", options=[])
 
         result = parse_headless_answer(request, HeadlessAnswerInput(step_id="approve", value="a=b, c"))
@@ -239,14 +233,12 @@ class ParseHeadlessAnswerTests:
     def test_invalid_input_is_rejected_with_valid_choices(
         self, supplied: HeadlessAnswerInput, expected_error: str
     ) -> None:
-        """[tier-1/unit] parse_headless_answer: an unknown value, an unknown step id and value plus selected are INVALID with the listed choices."""
         result = parse_headless_answer(_request(), supplied)
 
         assert result.status == InteractionAnswerStatus.INVALID
         assert result.errors == [expected_error]
 
     def test_comment_on_disabled_policy_is_discarded_with_warning(self) -> None:
-        """[tier-1/unit] parse_headless_answer: a comment supplied for a `disabled` effective policy returns OK with answer.comment None and one warning."""
         result = parse_headless_answer(
             _request(), HeadlessAnswerInput(step_id="approve", value="approve", comment="hi")
         )
@@ -261,13 +253,11 @@ class ParseAnswerArgumentsTests:
     """Contract tests for parse_answer_arguments."""
 
     def test_answer_flag_splits_on_first_equals(self) -> None:
-        """[tier-1/unit] parse_answer_arguments: `approve=revise=x` plus comment "x" returns step_id approve, value `revise=x`, comment x."""
         result = parse_answer_arguments("approve=revise=x", "x", None)
 
         assert result.supplied == HeadlessAnswerInput(step_id="approve", value="revise=x", comment="x")
 
     def test_answers_file_decodes_object(self) -> None:
-        """[tier-1/unit] parse_answer_arguments: `{"step_id":"triage","selected":["B1"],"comment":"c","text":"t"}` returns the matching HeadlessAnswerInput."""
         document = json.dumps({"step_id": "triage", "selected": ["B1"], "comment": "c", "text": "t"})
 
         result = parse_answer_arguments(None, None, document)
@@ -275,7 +265,6 @@ class ParseAnswerArgumentsTests:
         assert result.supplied == HeadlessAnswerInput(step_id="triage", selected=["B1"], comment="c", text="t")
 
     def test_no_flags_return_ok_without_input(self) -> None:
-        """[tier-1/unit] parse_answer_arguments: no flags at all return OK with supplied None."""
         result = parse_answer_arguments(None, None, None)
 
         assert result.ok is True
@@ -297,7 +286,6 @@ class ParseAnswerArgumentsTests:
     def test_invalid_argument_combinations_are_rejected(
         self, answer: str | None, comment: str | None, answers_file_text: str | None
     ) -> None:
-        """[tier-1/unit] parse_answer_arguments: conflicting flags, a comment without an answer, malformed answers and bad answers files each return INVALID."""
         result = parse_answer_arguments(answer, comment, answers_file_text)
 
         assert result.status == InteractionAnswerStatus.INVALID
@@ -305,7 +293,6 @@ class ParseAnswerArgumentsTests:
         assert len(result.errors) == 1
 
     def test_comment_without_answer_names_the_flag_rule(self) -> None:
-        """[tier-1/unit] parse_answer_arguments: --comment without --answer reports the together-with-answer message."""
         result = parse_answer_arguments(None, "c", None)
 
         assert result.errors == ["--comment and --comment-file need --answer."]
@@ -344,7 +331,6 @@ class BuildOutputsTests:
         ],
     )
     def test_outputs_by_mode(self, mode: str, answer: InteractionAnswer, expected: dict[str, str]) -> None:
-        """[tier-1/unit] build_outputs: each mode yields the selected, selected_count, comment and text strings; artifact outputs are empty without an artifact."""
         request = _request(mode, options=[] if mode == "text" else None)
 
         outputs = build_outputs(request, answer)
@@ -352,7 +338,6 @@ class BuildOutputsTests:
         assert outputs == {**expected, "artifact_revision": "", "artifact_digest": ""}
 
     def test_artifact_outputs_carry_revision_and_digest(self) -> None:
-        """[tier-1/unit] build_outputs: a request pinned to plan@2 reports artifact_revision "2" and its digest."""
         request = _request(artifact=RequestArtifact(name="plan", revision=2, digest="b07d44aa"))
 
         outputs = build_outputs(request, InteractionAnswer(selected=["approve"]))
@@ -360,7 +345,6 @@ class BuildOutputsTests:
         assert (outputs["artifact_revision"], outputs["artifact_digest"]) == ("2", "b07d44aa")
 
     def test_failing_option_is_reported_for_confirm_and_select_only(self) -> None:
-        """[tier-1/unit] failed_option: choosing the failing option of a select returns it, a non-failing one returns None, and multiselect never reports one."""
         options = _options("approve", "deny", failing="deny")
 
         assert failed_option(_request("select", options), InteractionAnswer(selected=["deny"])) == options[1]
@@ -383,9 +367,7 @@ class RequestErrorsTests:
         ],
     )
     def test_inconsistent_stored_request_reports_errors(self, mode: str, options: list[RequestOption]) -> None:
-        """[tier-1/unit] request_errors: select with one option, duplicate values, text with options, a failing multiselect option, a three-option confirm and an empty multiselect each return a non-empty list."""
         assert request_errors(_request(mode, options=options)) != []
 
     def test_well_formed_request_has_no_errors(self) -> None:
-        """[tier-1/unit] request_errors: a well-formed select request returns []."""
         assert request_errors(_request()) == []

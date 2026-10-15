@@ -36,7 +36,6 @@ class CredentialResolutionTests:
     def test_process_environment_resolves_first_usable_value(
         self, monkeypatch: pytest.MonkeyPatch, env: dict[str, str], expected: str | None
     ) -> None:
-        """[tier-1/unit] resolve_credential: envs ("A","B") over the process environment return the first non-blank stripped value, else None."""
         for name in ("A", "B"):
             monkeypatch.delenv(name, raising=False)
         for name, value in env.items():
@@ -45,7 +44,6 @@ class CredentialResolutionTests:
         assert resolve_credential(("A", "B")) == expected
 
     def test_process_environment_changes_between_calls_are_observed(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """[tier-1/unit] resolve_credential: with env omitted, A unset returns None, then A="a" set returns "a", then A="  " set returns None."""
         monkeypatch.delenv("A", raising=False)
         before = resolve_credential(("A",))
 
@@ -62,14 +60,12 @@ class ResolveCredentialEntryTests:
     def test_first_non_blank_alternative_returns_its_name_and_stripped_value(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """[tier-1/unit] resolve_credential_entry: GH_TOKEN blank and GITHUB_TOKEN ' b ' returns ('GITHUB_TOKEN', 'b')."""
         monkeypatch.setenv("GH_TOKEN", "  ")
         monkeypatch.setenv("GITHUB_TOKEN", " b ")
 
         assert resolve_credential_entry(("GH_TOKEN", "GITHUB_TOKEN")) == ("GITHUB_TOKEN", "b")
 
     def test_no_usable_alternative_returns_none(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """[tier-1/unit] resolve_credential_entry: all alternatives unset or blank returns None."""
         monkeypatch.delenv("GH_TOKEN", raising=False)
         monkeypatch.setenv("GITHUB_TOKEN", " ")
 
@@ -98,10 +94,8 @@ class MissingCredentialErrorTests:
         ],
     )
     def test_descriptor_names_render_in_order_without_prefix(self, envs: tuple[str, ...], expected: str) -> None:
-        """[tier-1/unit] missing_credential_error: a spec with the given credential_envs returns the exact unprefixed string."""
         assert missing_credential_error(_spec(envs)) == expected
 
     def test_empty_credential_envs_raises_value_error(self) -> None:
-        """[tier-1/unit] missing_credential_error: credential_envs=() raises ValueError "provider 'x' declares no credential_envs"."""
         with pytest.raises(ValueError, match="provider 'x' declares no credential_envs"):
             missing_credential_error(_spec(()))

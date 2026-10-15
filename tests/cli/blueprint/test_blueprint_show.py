@@ -25,7 +25,6 @@ class BlueprintShowCliIntegrationTests:
     def test_blueprint_show_cli_renders_terminal_metadata(
         self, cli_runner: CliRunner, isolated_workspace: Path
     ) -> None:
-        """dovo blueprint show <name>: renders blueprint metadata and YAML definition; exit 0."""
         Catalog(_paths_for(isolated_workspace)).create(CatalogItemType.BLUEPRINT, "show-blueprint")
 
         result = cli_runner.invoke(app, ["-p", str(isolated_workspace), "blueprint", "show", "show-blueprint"])
@@ -35,7 +34,6 @@ class BlueprintShowCliIntegrationTests:
         assert "Blueprint:" in result.stdout
 
     def test_blueprint_show_cli_renders_json(self, cli_runner: CliRunner, isolated_workspace: Path) -> None:
-        """dovo blueprint show <name> --format json: envelope's item is tagged tier='repo'."""
         Catalog(_paths_for(isolated_workspace)).create(CatalogItemType.BLUEPRINT, "json-show-blueprint")
 
         result = cli_runner.invoke(
@@ -48,7 +46,6 @@ class BlueprintShowCliIntegrationTests:
         assert payload["payload"]["item"]["tier"] == "repo"
 
     def test_blueprint_show_cli_scopes_to_blueprint_type(self, cli_runner: CliRunner, isolated_workspace: Path) -> None:
-        """dovo blueprint show <name>: a same-named step is not returned; exits 1 not found."""
         Catalog(_paths_for(isolated_workspace)).create(CatalogItemType.STEP, "shared-name")
 
         result = cli_runner.invoke(app, ["-p", str(isolated_workspace), "blueprint", "show", "shared-name"])
@@ -57,7 +54,6 @@ class BlueprintShowCliIntegrationTests:
         assert "not found" in result.stdout
 
     def test_blueprint_show_cli_missing_exits_one(self, cli_runner: CliRunner, isolated_workspace: Path) -> None:
-        """dovo blueprint show missing-blueprint: exits 1 with a not-found message."""
         result = cli_runner.invoke(app, ["-p", str(isolated_workspace), "blueprint", "show", "missing-blueprint"])
 
         assert result.exit_code == 1

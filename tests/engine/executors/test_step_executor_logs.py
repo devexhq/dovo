@@ -20,10 +20,7 @@ from tests.harness.builders import StepBuilder
 
 
 class StepExecutionAttemptLogFileTests:
-    """[tier-1/integration] StepExecution: per-attempt log files under session_log_dir."""
-
     def test_run_process_writes_stdout_lines_to_attempt_log_file_immediately(self, tmp_path: Path) -> None:
-        """[tier-1/integration] StepExecution: two stdout lines land verbatim in the attempt's .stdout.log; .stderr.log is empty."""
         log_dir = tmp_path / "logs"
         log_dir.mkdir()
         step = StepBuilder.command("echo one; echo two").with_id("build").build()
@@ -35,7 +32,6 @@ class StepExecutionAttemptLogFileTests:
         assert (log_dir / "01_build_attempt_1.stderr.log").read_text(encoding="utf-8") == ""
 
     def test_run_process_skips_attempt_log_files_when_save_attempt_logs_false(self, tmp_path: Path) -> None:
-        """[tier-1/integration] StepExecution: save_attempt_logs=False creates no attempt log files and leaves status unaffected."""
         log_dir = tmp_path / "logs"
         log_dir.mkdir()
         step = StepBuilder.command("echo one").with_id("build").build()
@@ -48,7 +44,6 @@ class StepExecutionAttemptLogFileTests:
         assert list(log_dir.iterdir()) == []
 
     def test_run_process_retry_writes_separate_log_file_per_attempt(self, tmp_path: Path) -> None:
-        """[tier-1/integration] StepExecution: a step retried once keeps attempt 1's and attempt 2's logs side by side."""
         log_dir = tmp_path / "logs"
         log_dir.mkdir()
         marker = tmp_path / "marker"
@@ -69,7 +64,6 @@ class StepExecutionAttemptLogFileTests:
 
     @pytest.mark.skipif(not Path("/dev/full").exists(), reason="requires /dev/full to simulate a full disk")
     def test_run_process_log_write_failure_does_not_fail_the_step(self, tmp_path: Path) -> None:
-        """[tier-1/integration] StepExecution: an OSError from the attempt log write becomes a StepResult warning; status reflects only the command."""
         log_dir = tmp_path / "logs"
         log_dir.mkdir()
         (log_dir / "01_build_attempt_1.stdout.log").symlink_to("/dev/full")
@@ -104,7 +98,6 @@ def _emitting_agent_runner(lines: list[tuple[str, str]], received: list[OutputCa
 
 class StepExecutionAgentAttemptLogTests:
     def test_agent_lines_land_in_the_matching_stream_logs_and_never_reach_on_output(self, tmp_path: Path) -> None:
-        """[tier-1/integration] StepExecution.run: an agent runner calling on_agent_line for ('stdout','a'), ('stderr','b'), ('stdout','c') leaves 01_<step>_attempt_1.stdout.log == 'a\\nc\\n' and .stderr.log == 'b\\n', and the on_output callback receives none of those lines."""
         log_dir = tmp_path / "logs"
         log_dir.mkdir()
         streamed: list[tuple[str, str]] = []
@@ -126,7 +119,6 @@ class StepExecutionAgentAttemptLogTests:
         assert streamed == []
 
     def test_disabled_capture_passes_no_line_callback_and_creates_no_logs(self, tmp_path: Path) -> None:
-        """[tier-1/integration] StepExecution.run: save_attempt_logs=False makes the agent runner receive on_agent_line None, and the log directory stays empty."""
         log_dir = tmp_path / "logs"
         log_dir.mkdir()
         received: list[OutputCallback | None] = []
@@ -147,7 +139,6 @@ class StepExecutionAgentAttemptLogTests:
 
     @pytest.mark.skipif(not Path("/dev/full").exists(), reason="requires /dev/full to simulate a full disk")
     def test_log_write_failure_adds_one_warning_and_keeps_the_attempt_completed(self, tmp_path: Path) -> None:
-        """[tier-1/integration] StepExecution.run: an OSError writing the stdout attempt log gives StepResult.status 'completed' and exactly one warning containing 'No space left on device'."""
         log_dir = tmp_path / "logs"
         log_dir.mkdir()
         (log_dir / "01_plan_attempt_1.stdout.log").symlink_to("/dev/full")

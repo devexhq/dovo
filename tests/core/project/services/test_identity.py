@@ -34,7 +34,6 @@ class ProjectIdentityServiceTests:
 
     @freeze_time(UTC_TIMESTAMP)
     def test_generate_project_identity_with_explicit_values_returns_utc_identity(self) -> None:
-        """Explicit project values are retained with the frozen UTC creation timestamp."""
         identity = generate_project_identity("project-624", "Project 624")
 
         assert identity.id == "project-624"
@@ -42,7 +41,6 @@ class ProjectIdentityServiceTests:
         assert identity.created_at == UTC_TIMESTAMP
 
     def test_generate_project_identity_without_id_uses_generated_slug(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """An omitted project ID uses the generated slug collaborator and a UTC timestamp."""
         monkeypatch.setattr(identity_service, "generate_slug", lambda: "calm-otter")
 
         identity = generate_project_identity(display_name="Generated Project")
@@ -51,7 +49,6 @@ class ProjectIdentityServiceTests:
         assert identity.created_at.utcoffset() == UTC_TIMESTAMP.utcoffset()
 
     def test_load_project_identity_valid_json_returns_ok_result(self, tmp_path: Path) -> None:
-        """Valid serialized JSON returns the complete persisted identity."""
         path = tmp_path / "project.json"
         identity = ProjectIdentity(id="project-624", display_name="Project 624", created_at=UTC_TIMESTAMP)
         path.write_text(identity.model_dump_json(), encoding="utf-8")
@@ -64,7 +61,6 @@ class ProjectIdentityServiceTests:
         assert result.error is None
 
     def test_load_project_identity_missing_path_returns_not_found_result(self, tmp_path: Path) -> None:
-        """An absent project identity file returns NOT_FOUND with its requested path."""
         path = tmp_path / "project.json"
 
         result = load_project_identity(path)
@@ -86,7 +82,6 @@ class ProjectIdentityServiceTests:
     def test_load_project_identity_invalid_content_returns_invalid_schema_result(
         self, tmp_path: Path, contents: str
     ) -> None:
-        """Malformed or schema-invalid JSON returns INVALID_SCHEMA with its requested path."""
         path = tmp_path / "project.json"
         path.write_text(contents, encoding="utf-8")
 
@@ -102,7 +97,6 @@ class ProjectIdentityServiceTests:
     def test_load_project_identity_unreadable_path_returns_unreadable_result(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """A read OSError returns UNREADABLE with its requested path."""
         path = tmp_path / "project.json"
         path.write_text("{}", encoding="utf-8")
 
@@ -121,7 +115,6 @@ class ProjectIdentityServiceTests:
         assert result.errors == [result.error.message]
 
     def test_load_project_identity_invalid_utf8_bytes_returns_unreadable_result(self, tmp_path: Path) -> None:
-        """Invalid UTF-8 bytes return UNREADABLE with its requested path."""
         path = tmp_path / "project.json"
         path.write_bytes(b"\xff\xfe\x00invalid")
 
@@ -135,7 +128,6 @@ class ProjectIdentityServiceTests:
         assert result.errors == [result.error.message]
 
     def test_save_project_identity_writes_indented_json_without_temp_sibling(self, tmp_path: Path) -> None:
-        """A valid identity is persisted as indented JSON without a temporary sibling."""
         path = tmp_path / "project.json"
         identity = ProjectIdentity(id="project-624", display_name="Project 624", created_at=UTC_TIMESTAMP)
 
@@ -152,7 +144,6 @@ class ProjectIdentityServiceTests:
     def test_save_project_identity_atomic_write_oserror_returns_write_failed_result(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """An atomic-write OSError returns WRITE_FAILED with its requested path."""
         path = tmp_path / "project.json"
         identity = ProjectIdentity(id="project-624", display_name="Project 624", created_at=UTC_TIMESTAMP)
 
@@ -172,7 +163,6 @@ class ProjectIdentityServiceTests:
         assert result.errors == [result.error.message]
 
     def test_save_project_identity_lock_timeout_returns_locked_result(self, tmp_path: Path) -> None:
-        """A workspace lock timeout returns LOCKED with its requested path."""
         path = tmp_path / "project.json"
         identity = ProjectIdentity(id="project-624", display_name="Project 624", created_at=UTC_TIMESTAMP)
 
@@ -191,7 +181,6 @@ class ProjectIdentityServiceTests:
         assert result.errors == [result.error.message]
 
     def test_provision_project_identity_without_id_generates_slug_and_creates(self, tmp_path: Path) -> None:
-        """No --id writes project.json with a PROJECT_ID_REGEX-matching generated slug, status=CREATED."""
         result = provision_project_identity(tmp_path)
 
         assert result.status == ProjectIdentityProvisionStatus.CREATED
@@ -200,7 +189,6 @@ class ProjectIdentityServiceTests:
         assert (tmp_path / "project.json").exists()
 
     def test_provision_project_identity_with_valid_id_creates_with_explicit_id(self, tmp_path: Path) -> None:
-        """A valid explicit --id and display name are persisted with status=CREATED."""
         result = provision_project_identity(tmp_path, project_id="custom-id", display_name="Custom")
 
         assert result.status == ProjectIdentityProvisionStatus.CREATED
@@ -209,7 +197,6 @@ class ProjectIdentityServiceTests:
         assert result.identity.display_name == "Custom"
 
     def test_provision_project_identity_with_invalid_id_returns_invalid_id_status(self, tmp_path: Path) -> None:
-        """A malformed --id returns status=INVALID_ID with the exact literal error and writes nothing."""
         result = provision_project_identity(tmp_path, project_id="Bad Id!")
 
         assert result.status == ProjectIdentityProvisionStatus.INVALID_ID
@@ -218,7 +205,6 @@ class ProjectIdentityServiceTests:
         assert not (tmp_path / "project.json").exists()
 
     def test_provision_project_identity_existing_without_force_preserves_identity(self, tmp_path: Path) -> None:
-        """A pre-existing identity with no id/force is preserved with a generic warning."""
         existing = ProjectIdentity(id="existing-id", display_name="Existing", created_at=UTC_TIMESTAMP)
         path = tmp_path / "project.json"
         path.write_text(existing.model_dump_json(), encoding="utf-8")
@@ -237,7 +223,6 @@ class ProjectIdentityServiceTests:
     def test_provision_project_identity_existing_with_id_no_force_ignores_id_and_preserves(
         self, tmp_path: Path
     ) -> None:
-        """A pre-existing identity with --id but no --force is preserved, naming the ignored id."""
         existing = ProjectIdentity(id="existing-id", display_name="Existing", created_at=UTC_TIMESTAMP)
         path = tmp_path / "project.json"
         path.write_text(existing.model_dump_json(), encoding="utf-8")
@@ -253,7 +238,6 @@ class ProjectIdentityServiceTests:
         ]
 
     def test_provision_project_identity_existing_with_force_no_id_preserves(self, tmp_path: Path) -> None:
-        """A pre-existing identity with force=True but no id is preserved, warning that --force needs --id."""
         existing = ProjectIdentity(id="existing-id", display_name="Existing", created_at=UTC_TIMESTAMP)
         path = tmp_path / "project.json"
         path.write_text(existing.model_dump_json(), encoding="utf-8")
@@ -270,7 +254,6 @@ class ProjectIdentityServiceTests:
 
     @freeze_time(UTC_TIMESTAMP)
     def test_provision_project_identity_existing_with_id_and_force_overwrites_identity(self, tmp_path: Path) -> None:
-        """A pre-existing identity with id and force=True is replaced and persisted to disk."""
         existing = ProjectIdentity(id="existing-id", display_name="Existing", created_at=UTC_TIMESTAMP)
         path = tmp_path / "project.json"
         path.write_text(existing.model_dump_json(), encoding="utf-8")
@@ -286,7 +269,6 @@ class ProjectIdentityServiceTests:
     def test_provision_project_identity_existing_corrupt_without_force_returns_failed_status(
         self, tmp_path: Path
     ) -> None:
-        """An unreadable existing project.json without id+force returns FAILED, file left untouched."""
         path = tmp_path / "project.json"
         path.write_text("{not-json", encoding="utf-8")
 
@@ -297,7 +279,6 @@ class ProjectIdentityServiceTests:
         assert path.read_text(encoding="utf-8") == "{not-json"
 
     def test_provision_project_identity_existing_corrupt_with_id_and_force_recovers(self, tmp_path: Path) -> None:
-        """An unreadable existing project.json with id+force returns OVERWRITTEN, replacing the corrupt file."""
         path = tmp_path / "project.json"
         path.write_text("{not-json", encoding="utf-8")
 

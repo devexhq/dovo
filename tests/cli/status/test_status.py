@@ -27,7 +27,6 @@ class StatusCliIntegrationTests:
     def test_status_cli_clean_worktree_exits_zero(
         self, cli_runner: CliRunner, status_workspace: Path, dispatch_spy: list[Any]
     ) -> None:
-        """dovo status on a clean git worktree exits 0, renders the bare branch name, and dispatches the exact DTO."""
         result = cli_runner.invoke(app, ["-p", str(status_workspace), "status"])
 
         assert result.exit_code == 0
@@ -57,7 +56,6 @@ class StatusCliIntegrationTests:
     def test_status_cli_dirty_worktree_shows_dirty_branch_exits_zero(
         self, cli_runner: CliRunner, status_workspace: Path, dispatch_spy: list[Any]
     ) -> None:
-        """dovo status with one untracked file exits 0, renders 'main (dirty)', and dispatches the exact DTO."""
         (status_workspace / "untracked.txt").write_text("scratch\n", encoding="utf-8")
 
         result = cli_runner.invoke(app, ["-p", str(status_workspace), "status"])
@@ -90,7 +88,6 @@ class StatusCliIntegrationTests:
         ]
 
     def test_status_cli_renders_json(self, cli_runner: CliRunner, status_workspace: Path) -> None:
-        """dovo status --format json on a clean git worktree emits the literal StatusView payload."""
         result = cli_runner.invoke(app, ["-p", str(status_workspace), "status", "--format", "json"])
 
         assert result.exit_code == 0
@@ -123,7 +120,6 @@ class StatusCliIntegrationTests:
     def test_status_cli_identity_without_config_reports_not_initialized(
         self, cli_runner: CliRunner, tmp_path: Path, dispatch_spy: list[Any]
     ) -> None:
-        """dovo status: a workspace with a valid identity and no config.json exits 0 and dispatches DovoStatusResult with is_initialized False."""
         workspace = WorkspaceBuilder(tmp_path / "workspace").with_git().without_config().build()
 
         result = cli_runner.invoke(app, ["-p", str(workspace), "status"])

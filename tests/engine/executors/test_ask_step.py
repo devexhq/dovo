@@ -78,7 +78,6 @@ class AskStepExecutorTests:
     def test_message_interpolates_inputs_steps_and_artifacts(
         self, tmp_path: Path, engine_paths: WorkspacePaths, artifacts_repository: ArtifactsRepository
     ) -> None:
-        """[tier-1/integration] resolve_ask_request: a message with inputs, steps and artifacts placeholders resolves to the interpolated text in request.message."""
         context = _context(engine_paths, artifacts_repository, {"mode": "confirm", "message": _MESSAGE})
         assert context.artifact_store is not None
         _publish(context.artifact_store, tmp_path, "plan", {"PLAN.md": "plan"})
@@ -91,7 +90,6 @@ class AskStepExecutorTests:
     def test_failed_resolution_becomes_failed_step_result_with_code(
         self, engine_paths: WorkspacePaths, artifacts_repository: ArtifactsRepository
     ) -> None:
-        """[tier-1/integration] resolve_ask_request: an unknown options_from artifact returns request None and a failed StepResult (exit 1) whose error_message contains "(ASK_OPTIONS_ARTIFACT_NOT_FOUND)"."""
         interaction = {"mode": "multiselect", "message": "Fix?", "options_from": _OPTIONS_FROM}
 
         resolution = resolve_ask_request(_context(engine_paths, artifacts_repository, interaction, "triage"))
@@ -104,7 +102,6 @@ class AskStepExecutorTests:
     def test_empty_multiselect_settles_completed_without_a_request(
         self, tmp_path: Path, engine_paths: WorkspacePaths, artifacts_repository: ArtifactsRepository
     ) -> None:
-        """[tier-1/integration] resolve_ask_request: an empty options_from array returns request None and a completed result with selected "[]", selected_count "0" and the empty-selection warning."""
         interaction = {"mode": "multiselect", "message": "Fix?", "options_from": _OPTIONS_FROM}
         context = _context(engine_paths, artifacts_repository, interaction, "triage")
         assert context.artifact_store is not None
@@ -123,7 +120,6 @@ class AskStepExecutorTests:
     def test_answered_step_completes_with_masked_outputs_and_json_stdout(
         self, ask_context: StepExecutionContext, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """[tier-1/integration] complete_ask_step: a select answer revise + comment containing an env secret returns completed, exit 0, a masked comment output, and stdout equal to the JSON object with integer selected_count 1."""
         monkeypatch.setenv("ASK_TEST_SECRET", "s3cr3t-value")
         request = resolve_ask_request(ask_context).request
         assert request is not None
@@ -144,7 +140,6 @@ class AskStepExecutorTests:
         }
 
     def test_fail_option_returns_failed_result_with_recorded_outputs(self, ask_context: StepExecutionContext) -> None:
-        """[tier-1/integration] complete_ask_step: choosing deny returns failed, exit_code 1, error_message "Prompt 'approve' answered 'deny'." and outputs.selected "deny"."""
         request = resolve_ask_request(ask_context).request
         assert request is not None
 
@@ -165,7 +160,6 @@ class AskStepExecutorTests:
     def test_stdout_json_drives_until_conditions(
         self, ask_context: StepExecutionContext, expression: str, selected: list[str], expected: bool
     ) -> None:
-        """[tier-1/unit] evaluate_condition: over the stdout of complete_ask_step, `selected == "approve"` and numeric `selected_count == 1` evaluate against the chosen option."""
         request = resolve_ask_request(ask_context).request
         assert request is not None
         result = complete_ask_step(ask_context, request, InteractionAnswer(selected=selected, comment="c"))
@@ -177,7 +171,6 @@ class AskStepExecutorTests:
     def test_empty_selection_stdout_satisfies_zero_count_condition(
         self, tmp_path: Path, engine_paths: WorkspacePaths, artifacts_repository: ArtifactsRepository
     ) -> None:
-        """[tier-1/unit] evaluate_condition: `steps.triage.outputs.selected_count == 0` passes over the stdout of an empty-selection multiselect."""
         interaction = {"mode": "multiselect", "message": "Fix?", "options_from": _OPTIONS_FROM}
         context = _context(engine_paths, artifacts_repository, interaction, "triage")
         assert context.artifact_store is not None

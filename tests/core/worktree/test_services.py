@@ -38,7 +38,6 @@ class WorktreeCreationTests:
         worktree_workspace: Path,
         worktree_workspace_paths: WorkspacePaths,
     ) -> None:
-        """Create initializes worktree on disk, git branch, and DB row."""
         db = WorktreesRepository(
             db_path=worktree_workspace_paths.database_file, project_id=worktree_workspace_paths.project_id
         )
@@ -87,7 +86,6 @@ class WorktreeCapacityTests:
         worktree_workspace: Path,
         worktree_workspace_paths: WorkspacePaths,
     ) -> None:
-        """Creating a worktree beyond max_active_worktrees returns CAPACITY_EXCEEDED."""
         db = WorktreesRepository(
             db_path=worktree_workspace_paths.database_file, project_id=worktree_workspace_paths.project_id
         )

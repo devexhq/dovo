@@ -30,7 +30,6 @@ class ConfigShowRootTests:
     """Direct handler unit tests for config_show_command."""
 
     def test_config_show_returns_effective_config(self, isolated_workspace: Path) -> None:
-        """Handler returns ConfigLoadResult with loaded configuration."""
         config_path = isolated_workspace / ".dovo" / "config.json"
         payload = build_default_config("demo-workspace")
         Filesystem.atomic_write_json(config_path, payload)
@@ -48,7 +47,6 @@ class ConfigShowRootTests:
         assert result.fixes == []
 
     def test_config_show_missing_config_returns_not_found(self, isolated_workspace: Path) -> None:
-        """Handler returns NOT_FOUND status when config.json is missing."""
         config_path = isolated_workspace / ".dovo" / "config.json"
         paths = _paths_for(isolated_workspace)
         context = CliContext(paths=paths, db=DovoDb(database_file=paths.database_file, project_id=paths.project_id))
@@ -69,7 +67,6 @@ class ConfigShowCliIntegrationTests:
     def test_config_show_cli_renders_effective_config_terminal(
         self, cli_runner: CliRunner, isolated_workspace: Path
     ) -> None:
-        """dovo config show prints header and effective JSON."""
         config_path = isolated_workspace / ".dovo" / "config.json"
         payload = build_default_config("demo-workspace")
         Filesystem.atomic_write_json(config_path, payload)
@@ -82,7 +79,6 @@ class ConfigShowCliIntegrationTests:
         assert '"version": 1' in res.stdout
 
     def test_config_show_cli_renders_json(self, cli_runner: CliRunner, isolated_workspace: Path) -> None:
-        """dovo config show --format json emits NDJSON ConfigLoadResult."""
         config_path = isolated_workspace / ".dovo" / "config.json"
         payload = build_default_config("demo-workspace")
         Filesystem.atomic_write_json(config_path, payload)
@@ -106,7 +102,6 @@ class ConfigShowCliIntegrationTests:
         }
 
     def test_config_show_cli_missing_config_exits_one(self, cli_runner: CliRunner, isolated_workspace: Path) -> None:
-        """dovo config show exits on missing config with error panel."""
         res = cli_runner.invoke(app, ["-p", str(isolated_workspace), "config", "show"])
 
         assert res.exit_code == 1
@@ -119,7 +114,6 @@ class ConfigShowCliIntegrationTests:
         isolated_workspace: Path,
         write_tier_config: Callable[[ConfigTier, dict[str, Any] | str], Path],
     ) -> None:
-        """[tier-3/integration] dovo config show --format json: User tier agent.models override appears in the config field; exit 0."""
         write_tier_config(ConfigTier.USER, {"agent": {"models": {"copilot": "user-tier-model"}}})
 
         config_path = isolated_workspace / ".dovo" / "config.json"
@@ -137,7 +131,6 @@ class ConfigShowCliIntegrationTests:
         isolated_workspace: Path,
         write_tier_config: Callable[[ConfigTier, dict[str, Any] | str], Path],
     ) -> None:
-        """[tier-3/integration] dovo config show: malformed User tier config.json → exit 1, 'Config Error' and 'Invalid configuration in user layer' in stdout."""
         write_tier_config(ConfigTier.USER, "{not valid json")
 
         config_path = isolated_workspace / ".dovo" / "config.json"

@@ -19,7 +19,6 @@ class GitRepoCheckTests:
     def test_execute_missing_git_binary_returns_binary_missing_failure(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, workspace_paths_factory: WorkspacePathsFactory
     ) -> None:
-        """[tier-1/unit] GitRepoCheck.execute: shutil.which('git') is None -> FAILED with DOCTOR_GIT_BINARY_MISSING."""
         monkeypatch.setattr("dovo.core.diagnostics.checks.git_repo.shutil.which", lambda _name: None)
         check = GitRepoCheck()
         context = DiagnosticsContext(cwd=tmp_path, paths=workspace_paths_factory(tmp_path, None))
@@ -35,7 +34,6 @@ class GitRepoCheckTests:
     def test_execute_git_disappears_after_which_returns_binary_missing_failure(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, workspace_paths_factory: WorkspacePathsFactory
     ) -> None:
-        """[tier-1/unit] GitRepoCheck.execute: shutil.which finds git but GitRunner.run raises GitNotFoundError -> FAILED with DOCTOR_GIT_BINARY_MISSING."""
         monkeypatch.setattr("dovo.core.diagnostics.checks.git_repo.shutil.which", lambda _name: "/usr/bin/git")
 
         def _raise_not_found(*_args: object, **_kwargs: object) -> str:
@@ -56,7 +54,6 @@ class GitRepoCheckTests:
     def test_execute_outside_git_repository_returns_not_repo_failure(
         self, tmp_path: Path, workspace_paths_factory: WorkspacePathsFactory
     ) -> None:
-        """[tier-1/unit] GitRepoCheck.execute: context.cwd has no .git -> FAILED with DOCTOR_GIT_NOT_REPO."""
         check = GitRepoCheck()
         context = DiagnosticsContext(cwd=tmp_path, paths=workspace_paths_factory(tmp_path, None))
 
@@ -71,7 +68,6 @@ class GitRepoCheckTests:
     def test_execute_inside_git_repository_returns_ok_with_root_and_branch(
         self, git_repo: Path, workspace_paths_factory: WorkspacePathsFactory
     ) -> None:
-        """[tier-1/unit] GitRepoCheck.execute: context.cwd=git_repo (main, HEAD resolvable) -> OK with root and branch."""
         check = GitRepoCheck()
         context = DiagnosticsContext(cwd=git_repo, paths=workspace_paths_factory(git_repo, None))
 

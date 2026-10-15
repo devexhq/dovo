@@ -223,18 +223,54 @@ rules:
   category: Code Conventions
   domain: all
   scope: src/
-  guideline: Every docstring opens with a one-line title stating what the thing is or does. Add a description only for what
-    the code cannot show a reader and whose absence would cause wrong code - a hidden contract, a data-loss or safety behavior,
-    a non-obvious ordering constraint, or a deliberate oddity. Do not narrate steps, restate parameters or types, or repeat
-    the title.
-  evaluation_criteria: Inspect new or modified docstrings. Flag a description that retells the body, lists what the signature
-    already shows, or restates the title. Flag a missing description where the code has a hidden contract or a safety behavior.
+  guideline: Every docstring opens with a one-line title stating what the thing is or does. A comma may enumerate a distinct
+    list, but outcomes, failure paths, and side effects belong in the description, not the title. Add a description only for
+    what the code cannot show a reader and whose absence would cause wrong code - a hidden contract, a data-loss or safety
+    behavior, a non-obvious ordering constraint, or a deliberate oddity. Do not narrate steps, restate parameters, types, or
+    the return annotation, or repeat the title in other words.
+  evaluation_criteria: Inspect new or modified docstrings. Flag a title that carries an outcome clause such as ", or why X
+    cannot be done". Flag a description that retells the body, lists what the signature already shows, or adds no fact the
+    title lacks. Flag a missing description where the code has a hidden contract or a safety behavior.
   positive_example: '"""Base for providers that edit the worktree directly instead of returning a diff.
 
 
     Edits that fail patch validation are discarded from the worktree; a failed discard is reported in the response errors."""'
   negative_example: '"""Run the provider. First resolve the baseline, then build the prompt, then run the tool, then diff the
-    worktree, then validate the patch."""'
+    worktree, then validate the patch."""  # or: """Return flags for the rules, or why a rule cannot be preserved."""  # outcome
+    in the title'
+  citation: docs/agents/code-conventions.md#docstrings
+- id: CODE-004
+  title: Docstrings Describe Only the Documented Unit
+  severity: WARNING
+  category: Code Conventions
+  domain: all
+  scope: src/
+  guideline: A docstring states only behavior the documented unit itself implements. Do not describe what a caller does
+    with its result or logic that lives in another module, because that claim goes stale when the other module changes and
+    nothing in the diff shows it. A reference to a sibling in the same module is acceptable.
+  evaluation_criteria: Inspect new or modified docstrings. Flag a sentence that names another module's, class's, or caller's
+    behavior, such as how an adapter handles the returned value.
+  positive_example: '"""Render a restricted policy''s allow and deny rules as dontAsk flags.
+
+
+    A rule Claude Code cannot express yields its reason as a string."""'
+  negative_example: '"""Render a restricted policy''s allow and deny rules as dontAsk flags.
+
+
+    The adapter surfaces a returned reason as an unsupported-policy error before the process is spawned."""'
+  citation: docs/agents/code-conventions.md#docstrings
+- id: CODE-005
+  title: One Docstring per Unit
+  severity: WARNING
+  category: Code Conventions
+  domain: all
+  scope: src/
+  guideline: A module, class, or function carries exactly one docstring. A bare string literal statement after the docstring
+    is dead code that reads as documentation; merge it into the docstring or delete it.
+  evaluation_criteria: Inspect new or modified modules, classes, and functions. Flag any body with a bare string statement
+    after its first statement.
+  positive_example: '"""Render a restricted policy as dontAsk flags."""'
+  negative_example: '"""Return dontAsk flags for the rules."""  # followed by a second """...""" string statement'
   citation: docs/agents/code-conventions.md#docstrings
 - id: TYPE-001
   title: Ban on -> Any Return Annotations
@@ -882,6 +918,21 @@ rules:
   positive_example: 'assert len(dispatch_spy) == 1; assert isinstance(dispatch_spy[0], WorktreeCreateResult)  # worktree create dispatches only its own terminal result'
   negative_example: 'assert isinstance(dispatch_spy[-1], MessageEvent)  # asserting an incidental progress event through the result spy'
   citation: docs/agents/testing.md#tier-3---cli-wiring-runner-required-root-tests-when-earned
+- id: TEST-020
+  title: Test Docstrings Are Imperative Contracts Without Tags
+  severity: WARNING
+  category: Testing
+  domain: tests
+  scope: tests/
+  guideline: A test docstring exists only when it adds a fact the test name and assertions do not, such as an exact literal,
+    an ordering contract, or the inputs behind a parametrized case. It is one imperative sentence stating the outcome, with
+    no `[tier-N/type]` tag, no `<symbol>:` or `dovo <command>:` prefix, and every line within 120 columns. The execution tier
+    follows from the test file path.
+  evaluation_criteria: Inspect new or modified test docstrings. Flag a docstring that carries a tier tag, opens with a
+    non-imperative word, exceeds 120 columns, or only rewords the test name.
+  positive_example: '"""Exit 1 with ''Maximum active worktrees reached'' in stdout when 3 worktrees already exist."""'
+  negative_example: '"""[tier-3/integration] dovo worktree create: 3 prior worktrees exist -> exit 1, ''Maximum active worktrees reached'' in stdout."""'
+  citation: docs/agents/testing.md#naming-conventions
 - id: DOC-001
   title: Architecture Doc Structural Gate
   severity: BLOCKER
@@ -983,18 +1034,22 @@ rules:
   severity: BLOCKER
   category: Documentation
   domain: all
-  scope: AGENTS.md, docs/, .agents/skills/, docs/agents/rules_spec.yaml
+  scope: AGENTS.md, docs/, .agents/skills/, docs/agents/rules_spec.yaml, src/ docstrings
   guideline: >-
-    A doc, skill, or rule sentence asserting that something is enforced, gated, or checked must name the
+    A doc, skill, rule, or docstring sentence asserting that something is enforced, gated, or checked must name the
     enforcing artifact by path, and that path must resolve to a file in the tree. The same applies to any helper,
     fixture, builder, or assertion function a doc instructs an implementer to use: the symbol exists before the
     instruction ships. Documentation of behavior that is planned rather than built is prohibited, including in
     rule examples, because an exemplar is copied more often than the guideline is read. When a claim becomes
     false, the fix is to delete or correct the sentence in the same change, never to leave it as aspiration.
+    A change that alters the behavior a docstring describes owns that docstring: it re-reads it against the new code
+    and corrects or deletes any sentence the change made false.
   evaluation_criteria: >-
     For each doc claim of the form "enforced by", "gated by", or "see <path>", resolve the path. For each
     documented helper or fixture name, resolve the symbol. Flag unresolvable claims, rule examples naming
-    nonexistent modules, and doc paragraphs describing behavior absent from the tree.
+    nonexistent modules, and doc paragraphs describing behavior absent from the tree. For each docstring in the
+    diff, and each docstring of a function whose behavior the diff changes, re-read it against the code and flag
+    any sentence the change made false.
   positive_example: '# "COLUMNS is pinned to 160 by [tool.pytest_env] in pyproject.toml" - resolvable and true'
   negative_example: '# "enforced by tests/lint/test_doc_parity.py" in AGENTS.md, where the module does not exist'
   citation: docs/agents/documentation.md
@@ -1291,35 +1346,35 @@ planner_rules:
   negative_example: "```python\ndef prune_worktrees(db: WorktreesRepository, cwd: Path) -> WorktreePruneResult:\n    \"\"\"Prune worktrees.\n\n    1. Query active worktrees from db\n    2. Diff against on-disk worktrees\n    3. Delete unreferenced ones\n    \"\"\"\n    raise NotImplementedError\n```\n"
   citation: docs/agents/planning.md#code-sample-rules
 - id: PLAN-018
-  title: Test Stubs with Mandatory Tier, Type, and Contract Docstrings
+  title: Test Stubs with Imperative Contract Docstrings
   category: Planning
   phase: Specification & Samples
   scope: '### Tests section in .agentic/plan.md'
-  requirement: 'Write a signature and a single-line contract docstring for every planned test stub, ending with `raise NotImplementedError`.
-    The docstring must begin with `[<tier>/<type>]` (where tier is tier-1, tier-2, tier-3, or tier-4 per docs/agents/testing.md#the-four-execution-tiers
-    and type is unit or integration), state the public symbol exercised, and state the exact outcome contract asserted. The `### Tests`
-    table acts as a concise summary index.'
-  deliverable_contract: 'Signature + single-line docstring with `[<tier>/<type>]` tag and outcome contract + `raise NotImplementedError`.'
-  validation_check: 'Flag any test stub missing the tier/type tag (e.g. `[tier-1/unit]`, `[tier-3/integration]`), missing the outcome contract, or containing numbered steps/body code.'
+  requirement: 'Write a signature and, where the test name does not already say it, a single-line imperative contract docstring for every
+    planned test stub, ending with `raise NotImplementedError`. The docstring states the exact outcome contract asserted and does not
+    repeat the public symbol, which the class and test name carry; the execution tier follows from the test file path
+    (docs/agents/testing.md#the-four-execution-tiers). The `### Tests` table acts as a concise summary index.'
+  deliverable_contract: 'Signature + single-line imperative docstring with the outcome contract (when the name does not say it) + `raise NotImplementedError`.'
+  validation_check: 'Flag any test stub whose docstring is not imperative, repeats its test name without adding a contract, carries a tier/type tag, or contains numbered steps/body code.'
   positive_example: |
     ### Tests
 
-    | Test | Tier | Outcome |
-    |---|---|---|
-    | `WorktreeCreateCliIntegrationTests::test_create_cli_capacity_exceeded_exits_one` | Tier 3 (integration) | exit 1; capacity exceeded error |
+    | Test | Outcome |
+    |---|---|
+    | `WorktreeCreateCliIntegrationTests::test_create_cli_capacity_exceeded_exits_one` | exit 1; capacity exceeded error |
 
     ```python
     class WorktreeCreateCliIntegrationTests:
         def test_create_cli_capacity_exceeded_exits_one(
             self, cli_runner: CliRunner, worktree_workspace: Path
         ) -> None:
-            """[tier-3/integration] dovo worktree create: 3 prior worktrees exist → exit 1, 'Maximum active worktrees reached' in stdout."""
+            """Exit 1 with 'Maximum active worktrees reached' in stdout when 3 worktrees already exist."""
             raise NotImplementedError
     ```
   negative_example: |
-    # Test stub missing tier/type tag and specific contract
+    # Test stub with a tier tag, a symbol prefix and a non-imperative, non-specific contract
     def test_create_cli_capacity_exceeded_exits_one(self, cli_runner, worktree_workspace):
-        """Verifies create fails when capacity exceeded."""
+        """[tier-3/integration] dovo worktree create: verifies create fails when capacity exceeded."""
         raise NotImplementedError
   citation: docs/agents/planning.md#code-sample-rules
 - id: PLAN-012

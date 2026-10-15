@@ -41,7 +41,7 @@ BASELINE_IDENTITY_RESULT = ProjectIdentityProvisionResult(
 
 
 def make_init_view(**overrides: Any) -> WorkspaceInitView:
-    """Helper to construct a WorkspaceInitView with baseline initialized defaults."""
+    """Construct a WorkspaceInitView with baseline initialized defaults."""
     defaults: dict[str, Any] = {
         "ok": True,
         "root_path": DOVO,
@@ -490,7 +490,6 @@ class WorkspaceInitFormatterTests:
 
     @pytest.mark.parametrize("case", INIT_CASES)
     def test_transform_derives_expected_view(self, case: FormatterCase[WorkspaceInitResult, WorkspaceInitView]) -> None:
-        """Verify transform derives the exact WorkspaceInitView model representation."""
         assert_transform_derives_expected_view(WorkspaceInitFormatter, case.data, case.view)
 
     @pytest.mark.parametrize(("case", "expected_payload"), INIT_PAYLOAD_CASES)
@@ -499,12 +498,10 @@ class WorkspaceInitFormatterTests:
         case: FormatterCase[WorkspaceInitResult, WorkspaceInitView],
         expected_payload: dict[str, Any],
     ) -> None:
-        """Verify to_json_serializable matches the exact published wire-format literal dict."""
         assert_json_payload_matches_published_shape(WorkspaceInitFormatter, case.data, expected_payload)
 
     @pytest.mark.parametrize("case", INIT_CASES)
     def test_rich_render_shows_every_view_value(
         self, case: FormatterCase[WorkspaceInitResult, WorkspaceInitView]
     ) -> None:
-        """Verify that non-null semantic view model values reach the Rich renderable output."""
         assert_rich_render_shows_every_view_value(WorkspaceInitFormatter, case.data, case.render_expectations)

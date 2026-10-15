@@ -45,7 +45,6 @@ class DownloadServiceTests:
     def test_download_artifact_missing_returns_not_found_status(
         self, tmp_path: Path, artifacts_repository: ArtifactsRepository
     ) -> None:
-        """[tier-1/unit] download_artifact: no artifact row for (session_id, name) returns ArtifactDownloadStatus.NOT_FOUND and writes nothing to dest."""
         dest = tmp_path / "out"
 
         result = download_artifact(
@@ -58,7 +57,6 @@ class DownloadServiceTests:
     def test_download_artifact_checksum_mismatch_returns_before_any_copy(
         self, tmp_path: Path, artifacts_repository: ArtifactsRepository
     ) -> None:
-        """[tier-1/unit] download_artifact: a stored file's live SHA256 no longer matches manifest.json returns ArtifactDownloadStatus.CHECKSUM_MISMATCH and dest remains empty."""
         artifacts_dir = _publish(tmp_path, artifacts_repository, session_id="wf_abc123", name="dist-packages")
         (artifacts_dir / "wf_abc123" / "dist-packages" / "1" / "dist" / "pkg.whl").write_bytes(b"corrupted")
         dest = tmp_path / "out"
@@ -73,7 +71,6 @@ class DownloadServiceTests:
     def test_download_artifact_dest_write_failure_returns_error_status(
         self, tmp_path: Path, artifacts_repository: ArtifactsRepository, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """[tier-1/unit] download_artifact: an OSError raised while writing a verified file into dest returns ArtifactDownloadStatus.ERROR with the OSError message in errors."""
         artifacts_dir = _publish(tmp_path, artifacts_repository, session_id="wf_abc123", name="dist-packages")
 
         def _broken_copy2(*_args: object, **_kwargs: object) -> None:
@@ -92,7 +89,6 @@ class DownloadServiceTests:
     def test_download_artifact_verified_copies_all_files(
         self, tmp_path: Path, artifacts_repository: ArtifactsRepository
     ) -> None:
-        """[tier-1/unit] download_artifact: every file's SHA256 matches manifest.json -> ArtifactDownloadStatus.OK and file_count equals manifest.json's file_count."""
         artifacts_dir = _publish(tmp_path, artifacts_repository, session_id="wf_abc123", name="dist-packages")
         dest = tmp_path / "out"
 
@@ -108,7 +104,6 @@ class DownloadServiceTests:
     def test_download_artifact_revision_selects_that_revisions_files(
         self, tmp_path: Path, artifacts_repository: ArtifactsRepository
     ) -> None:
-        """[tier-1/integration] download_artifact: revisions 1 ('v1') and 2 ('v2') published, revision=1 -> dest holds 'v1'; revision=None -> dest holds 'v2' and result.revision == 2."""
         _publish(tmp_path, artifacts_repository, session_id="wf_abc123", name="dist-packages", content=b"v1")
         artifacts_dir = _publish(
             tmp_path, artifacts_repository, session_id="wf_abc123", name="dist-packages", content=b"v2"
@@ -134,7 +129,6 @@ class DownloadServiceTests:
     def test_download_artifact_unknown_revision_returns_not_found_message(
         self, tmp_path: Path, artifacts_repository: ArtifactsRepository
     ) -> None:
-        """[tier-1/unit] download_artifact: revision=9 on a name with revision 1 -> NOT_FOUND with the revision-specific message; dest untouched."""
         artifacts_dir = _publish(tmp_path, artifacts_repository, session_id="wf_abc123", name="dist-packages")
         dest = tmp_path / "out"
 

@@ -33,13 +33,11 @@ class ConfigSchemaParityTests:
     """The packaged config schema must agree with the config models key for key."""
 
     def test_top_level_schema_keys_match_dovo_config_fields(self) -> None:
-        """Top-level schema properties equal the `DovoConfig` fields."""
         schema = _load_schema()
 
         assert set(schema["properties"]) == set(DovoConfig.model_fields)
 
     def test_top_level_required_keys_match_required_dovo_config_fields(self) -> None:
-        """Schema `required` equals the `DovoConfig` fields without defaults."""
         schema = _load_schema()
         required_fields = {name for name, field in DovoConfig.model_fields.items() if field.is_required()}
 
@@ -50,13 +48,11 @@ class ConfigSchemaParityTests:
         [pytest.param(name, model, id=name) for name, model in _section_models()],
     )
     def test_section_schema_keys_match_section_model_fields(self, section: str, model: type[BaseModel]) -> None:
-        """Each config section's schema properties equal its model fields."""
         schema = _load_schema()
 
         assert set(schema["properties"][section]["properties"]) == set(model.model_fields)
 
     def test_agent_provider_enum_matches_agent_provider_literal(self) -> None:
-        """The schema's provider enum equals the `AgentProvider` literal."""
         schema = _load_schema()
 
         assert set(schema["properties"]["agent"]["properties"]["provider"]["enum"]) == set(get_args(AgentProvider))
@@ -101,7 +97,6 @@ class ConfigSchemaParityTests:
     def test_mcp_servers_validity_agrees_between_model_and_schema(
         self, servers: dict[str, dict[str, object]], valid: bool
     ) -> None:
-        """`agent.mcp_servers` is accepted or rejected identically by `AgentConfig` and by `CONFIG_VALIDATOR`."""
         try:
             AgentConfig.model_validate({"mcp_servers": servers})
             model_valid = True

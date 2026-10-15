@@ -31,7 +31,6 @@ class ExecutionStateTreeTests:
     """Contract tests for ExecutionStateTree validation and serialization."""
 
     def test_nested_loop_tree_round_trips_through_json(self) -> None:
-        """[tier-1/unit] ExecutionStateTree: model_validate_json(model_dump_json()) of a tree with a loop node, one iteration, and a leaf attempt carrying a StepResult equals the original."""
         result = StepResult(step_id="edit", status="completed", exit_code=0, stdout="", stderr="", duration_seconds=0.5)
         leaf = ExecutionLeafNode(
             id="edit",
@@ -52,23 +51,18 @@ class ExecutionStateTreeTests:
         assert restored == tree
 
     def test_unknown_node_kind_raises_validation_error(self) -> None:
-        """[tier-1/unit] ExecutionStateTree: a node dict with kind 'parallel' raises pydantic.ValidationError."""
         with pytest.raises(ValidationError):
             ExecutionStateTree.model_validate(
                 {"manifest": _manifest_dict(), "nodes": [{"kind": "parallel", "id": "x"}]}
             )
 
     def test_extra_field_raises_validation_error(self) -> None:
-        """[tier-1/unit] ExecutionStateTree: an unexpected top-level key raises pydantic.ValidationError (extra=forbid)."""
         with pytest.raises(ValidationError):
             ExecutionStateTree.model_validate({"manifest": _manifest_dict(), "unexpected": 1})
 
 
 class ExecutionLoopNodeCeilingTests:
-    """[tier-1/unit] ExecutionLoopNode: the iteration ceiling is max_iterations plus granted_iterations."""
-
     def test_iteration_ceiling_adds_granted_iterations_and_round_trips_through_json(self) -> None:
-        """[tier-1/unit] ExecutionLoopNode: max_iterations 2 with granted_iterations 3 has iteration_ceiling 5, default granted_iterations is 0, and the tree round-trips through model_dump_json / model_validate_json unchanged."""
         granted = ExecutionLoopNode(id="l", max_iterations=2, granted_iterations=3)
         tree = ExecutionStateTree(manifest=_MANIFEST, nodes=[granted])
 
@@ -77,7 +71,6 @@ class ExecutionLoopNodeCeilingTests:
         assert ExecutionStateTree.model_validate_json(tree.model_dump_json()) == tree
 
     def test_negative_granted_iterations_raises_validation_error(self) -> None:
-        """[tier-1/unit] ExecutionLoopNode: granted_iterations -1 raises pydantic.ValidationError."""
         with pytest.raises(ValidationError):
             ExecutionLoopNode(id="l", max_iterations=2, granted_iterations=-1)
 
@@ -86,7 +79,6 @@ class PendingAskStateTests:
     """Contract tests for ExecutionLeafNode.pending_ask persistence."""
 
     def test_pending_ask_round_trips_and_defaults_to_none(self) -> None:
-        """[tier-1/unit] ExecutionStateTree: a leaf with pending_ask survives model_dump_json / model_validate_json unchanged, and a leaf JSON without the key loads with pending_ask None."""
         request = InteractionRequest(
             step_id="approve",
             mode="select",
@@ -108,7 +100,6 @@ class PendingAskStateTests:
         assert leaf_without_key.pending_ask is None
 
     def test_invalid_pending_ask_is_rejected(self) -> None:
-        """[tier-1/unit] ExecutionLeafNode: a pending_ask with an unknown mode raises a pydantic ValidationError."""
         with pytest.raises(ValidationError):
             ExecutionLeafNode.model_validate(
                 {"id": "approve", "pending_ask": {"step_id": "a", "mode": "dropdown", "message": "m"}}

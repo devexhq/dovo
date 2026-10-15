@@ -99,7 +99,7 @@ class BlueprintBuilder:
         return self
 
     def add_step(self, step: StepDefinition | StepBuilder | LoopStepBlock) -> BlueprintBuilder:
-        """Alias for with_step."""
+        """Add a step; an alias of with_step."""
         return self.with_step(step)
 
     def with_defaults(self, defaults: BlueprintDefaults) -> BlueprintBuilder:

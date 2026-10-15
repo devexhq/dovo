@@ -43,8 +43,6 @@ class _LoopObserver(NoOpRunObserver):
 
 
 class LoopEventEmitterTests:
-    """[tier-1/integration] LoopEventEmitter: each lifecycle point logs one session.log line and notifies the observer."""
-
     @pytest.mark.parametrize(
         ("emit", "log_fields", "observer_call"),
         [
@@ -87,7 +85,6 @@ class LoopEventEmitterTests:
         log_fields: dict[str, object],
         observer_call: tuple[str, tuple[object, ...], dict[str, object]],
     ) -> None:
-        """[tier-1/integration] LoopEventEmitter: start(5), iteration_start(2, 5), conditions_evaluated([r], False, 3), done("completed", 2) each append one session.log line with event LOOP_START / LOOP_ITERATION_START / LOOP_CONDITIONS_EVALUATED / LOOP_DONE and loop_id, plus max_iterations / iteration / all_passed+next_iteration+conditions / status+iteration, and call the matching on_loop_* hook with the same arguments."""
         observer = _LoopObserver()
 
         emit(LoopEventEmitter("l", tmp_path, observer))
@@ -99,7 +96,6 @@ class LoopEventEmitterTests:
         assert observer.calls == [observer_call]
 
     def test_none_log_dir_and_none_observer_do_nothing(self, tmp_path: Path) -> None:
-        """[tier-1/unit] LoopEventEmitter: session_log_dir None and observer None make every method return without writing or raising."""
         emitter = LoopEventEmitter("l", None, None)
 
         emitter.start(5)

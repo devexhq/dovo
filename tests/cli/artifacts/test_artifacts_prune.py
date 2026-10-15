@@ -63,7 +63,6 @@ class ArtifactsPruneCliIntegrationTests:
     def test_artifacts_prune_cli_no_expired_artifacts_exits_zero(
         self, cli_runner: CliRunner, artifacts_workspace: Path, dispatch_spy: list[Any]
     ) -> None:
-        """dovo artifacts prune: no expired artifacts exits 0, dispatches ArtifactsPruneResult(status=OK, items=[])."""
         _write_prune_config(artifacts_workspace, remove_expired_artifacts=True)
 
         result = cli_runner.invoke(app, ["-p", str(artifacts_workspace), "artifacts", "prune"])
@@ -77,7 +76,6 @@ class ArtifactsPruneCliIntegrationTests:
     def test_artifacts_prune_cli_force_flag_bypasses_disabled_config(
         self, cli_runner: CliRunner, artifacts_workspace: Path
     ) -> None:
-        """dovo artifacts prune --force: with prune.remove_expired_artifacts=False in config.json, an expired artifact is still pruned; exit 0."""
         _write_prune_config(artifacts_workspace, remove_expired_artifacts=False)
         _seed_expired_artifact(artifacts_workspace)
 
@@ -89,7 +87,6 @@ class ArtifactsPruneCliIntegrationTests:
     def test_artifacts_prune_cli_disabled_config_without_force_exits_zero(
         self, cli_runner: CliRunner, artifacts_workspace: Path
     ) -> None:
-        """dovo artifacts prune: prune.remove_expired_artifacts=False and no --force leaves the expired artifact untouched, exit 0."""
         _write_prune_config(artifacts_workspace, remove_expired_artifacts=False)
         _seed_expired_artifact(artifacts_workspace)
 
@@ -101,7 +98,6 @@ class ArtifactsPruneCliIntegrationTests:
     def test_artifacts_prune_cli_dry_run_flag_binds_without_deleting(
         self, cli_runner: CliRunner, artifacts_workspace: Path
     ) -> None:
-        """dovo artifacts prune --dry-run: with pruning enabled, the expired artifact is reported but not deleted."""
         _write_prune_config(artifacts_workspace, remove_expired_artifacts=True)
         _seed_expired_artifact(artifacts_workspace)
 

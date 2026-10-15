@@ -37,7 +37,6 @@ class ResolveRequestTests:
     """Contract tests for resolve_request."""
 
     def test_confirm_without_options_defaults_to_approve_and_failing_deny(self) -> None:
-        """[tier-1/unit] resolve_request: confirm with `options=None` yields approve (no fail) and deny (fail) with the interaction's comment policy."""
         spec = _spec(comment={"policy": "optional"})
 
         result = resolve_request("approve", spec, "Go?", None, _NO_SECRETS)
@@ -49,7 +48,6 @@ class ResolveRequestTests:
         ]
 
     def test_option_comment_override_beats_interaction_default(self) -> None:
-        """[tier-1/unit] resolve_request: with `comment.policy=optional`, an option declaring `required` resolves `required` and one declaring none resolves `optional`."""
         spec = _spec(
             mode="select",
             comment={"policy": "optional"},
@@ -65,7 +63,6 @@ class ResolveRequestTests:
         assert [o.comment for o in result.request.options] == ["required", "optional"]
 
     def test_text_mode_resolves_without_options(self) -> None:
-        """[tier-1/unit] resolve_request: text mode returns OK with options == []."""
         result = resolve_request("ask", _spec(mode="text"), "Why?", None, _NO_SECRETS)
 
         assert result.status == InteractionResolveStatus.OK
@@ -75,7 +72,6 @@ class ResolveRequestTests:
     def test_options_from_converts_values_with_str_and_keeps_item_order(
         self, artifact_store: ArtifactStore, publish_artifact: PublishArtifact
     ) -> None:
-        """[tier-1/integration] resolve_request: items `[{"id": 7, ...}, {"id": "B2", ...}]` become options [`7`/a, `B2`/b] in item order."""
         publish_artifact("review", _findings([{"id": 7, "summary": "a"}, {"id": "B2", "summary": "b"}]))
         spec = _spec(mode="multiselect", options_from=_FINDINGS_FROM)
 
@@ -87,7 +83,6 @@ class ResolveRequestTests:
     def test_display_artifact_uses_latest_revision_and_records_it(
         self, artifact_store: ArtifactStore, publish_artifact: PublishArtifact
     ) -> None:
-        """[tier-1/integration] resolve_request: with `plan` published twice, `request.artifact.revision == 2` and the preview is revision 2's content."""
         publish_artifact("plan", {"PLAN.md": "v1"})
         publish_artifact("plan", {"PLAN.md": "v2"})
 
@@ -102,7 +97,6 @@ class ResolveRequestTests:
     def test_multiselect_empty_array_returns_no_options_request(
         self, artifact_store: ArtifactStore, publish_artifact: PublishArtifact
     ) -> None:
-        """[tier-1/integration] resolve_request: `{"findings": []}` returns status NO_OPTIONS, ok True, request.options == []."""
         publish_artifact("review", _findings([]))
         spec = _spec(mode="multiselect", options_from=_FINDINGS_FROM)
 
@@ -169,7 +163,6 @@ class ResolveRequestTests:
         status: InteractionResolveStatus,
         code: str,
     ) -> None:
-        """[tier-1/integration] resolve_request: missing artifact, file outside the artifact, invalid JSON, non-array path, missing field and bad value map to their status and ASK_* code."""
         if files is not None:
             publish_artifact("review", files)
         spec = _spec(mode="multiselect", options_from=options_from)
@@ -184,7 +177,6 @@ class ResolveRequestTests:
     def test_duplicate_option_values_name_the_value(
         self, artifact_store: ArtifactStore, publish_artifact: PublishArtifact
     ) -> None:
-        """[tier-1/integration] resolve_request: two items with id `B1` return OPTIONS_DUPLICATE naming 'B1', even for a select that would otherwise be short."""
         publish_artifact("review", _findings([{"id": "B1", "summary": "a"}, {"id": "B1", "summary": "b"}]))
         spec = _spec(mode="select", options_from=_FINDINGS_FROM)
 
@@ -197,7 +189,6 @@ class ResolveRequestTests:
     def test_select_with_fewer_than_two_items_reports_options_empty(
         self, artifact_store: ArtifactStore, publish_artifact: PublishArtifact
     ) -> None:
-        """[tier-1/integration] resolve_request: select over a one-item array returns OPTIONS_EMPTY with ASK_OPTIONS_EMPTY."""
         publish_artifact("review", _findings([{"id": "B1", "summary": "a"}]))
         spec = _spec(mode="select", options_from=_FINDINGS_FROM)
 
@@ -207,7 +198,6 @@ class ResolveRequestTests:
         assert result.error_code == "ASK_OPTIONS_EMPTY"
 
     def test_unknown_display_artifact_reports_artifact_not_found(self, artifact_store: ArtifactStore) -> None:
-        """[tier-1/unit] resolve_request: `interaction.artifact: missing` returns ARTIFACT_NOT_FOUND with ASK_ARTIFACT_NOT_FOUND."""
         result = resolve_request("approve", _spec(artifact="missing"), "Go?", artifact_store, _NO_SECRETS)
 
         assert result.status == InteractionResolveStatus.ARTIFACT_NOT_FOUND
@@ -224,7 +214,6 @@ class ResolveRequestTests:
     def test_single_text_file_preview_truncates_at_200_lines_with_notice(
         self, artifact_store: ArtifactStore, publish_artifact: PublishArtifact, line_count: int, expected_tail: str
     ) -> None:
-        """[tier-1/integration] resolve_request: a 300-line PLAN.md gives 200 lines plus the notice; a 200-line file gives 200 lines and no notice."""
         publish_artifact("plan", {"PLAN.md": "\n".join(f"line {n}" for n in range(line_count))})
 
         result = resolve_request("approve", _spec(artifact="plan"), "Go?", artifact_store, _NO_SECRETS)
@@ -238,7 +227,6 @@ class ResolveRequestTests:
     def test_multi_file_artifact_preview_lists_files_with_sizes(
         self, artifact_store: ArtifactStore, publish_artifact: PublishArtifact
     ) -> None:
-        """[tier-1/integration] resolve_request: an artifact of two files previews one `<path> (<size_bytes> bytes)` line per manifest file."""
         publish_artifact("plan", {"A.md": "aaa", "B.md": "bb"})
 
         result = resolve_request("approve", _spec(artifact="plan"), "Go?", artifact_store, _NO_SECRETS)
@@ -250,7 +238,6 @@ class ResolveRequestTests:
     def test_preview_and_message_are_masked_with_the_redactor(
         self, artifact_store: ArtifactStore, publish_artifact: PublishArtifact
     ) -> None:
-        """[tier-1/integration] resolve_request: a secret in PLAN.md and in the message appears as `[REDACTED:<NAME>]` in the preview and request.message."""
         redactor = SecretRedactor([("API_TOKEN", "s3cr3t-value")])
         publish_artifact("plan", {"PLAN.md": "use s3cr3t-value here"})
 

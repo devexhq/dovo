@@ -47,7 +47,6 @@ class ProviderRegistryContractTests:
     def test_descriptor_inspection_and_adapter_construction_read_no_environment(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """[tier-1/unit] PROVIDERS / get_agent_adapter: with os.environ replaced by a mapping that raises AssertionError on any read, envs == {'claude': ('ANTHROPIC_API_KEY',), 'copilot': ('GH_TOKEN','GITHUB_TOKEN')} and every token builds via get_agent_adapter without raising."""
         monkeypatch.setattr(os, "environ", _UnreadableEnvironment())
 
         envs = {token: spec.credential_envs for token, spec in PROVIDERS.items()}
@@ -57,12 +56,10 @@ class ProviderRegistryContractTests:
         assert adapter_types == {"claude": ClaudeAgentAdapter, "copilot": CopilotAgentAdapter}
 
     def test_registered_tokens_match_registry(self) -> None:
-        """[tier-1/unit] PROVIDERS: keys equal {'claude', 'copilot'} and every key equals its spec.token."""
         assert set(PROVIDERS) == {"claude", "copilot"}
         assert all(key == spec.token for key, spec in PROVIDERS.items())
 
     def test_copilot_descriptor_matches_pre_determined_data(self) -> None:
-        """[tier-1/unit] PROVIDERS['copilot']: credential_envs ('GH_TOKEN','GITHUB_TOKEN'), requires_model False, binary 'gh', supports_tool_policy True, supports_os_sandbox False."""
         spec = PROVIDERS["copilot"]
 
         assert (spec.credential_envs, spec.requires_model, spec.binary) == (("GH_TOKEN", "GITHUB_TOKEN"), False, "gh")
@@ -78,7 +75,6 @@ class ProviderRegistryContractTests:
     def test_get_agent_adapter_builds_exact_adapter_without_side_effects(
         self, token: str, adapter_type: type, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """[tier-1/unit] get_agent_adapter: with every credential_envs name unset and Popen and urlopen patched to fail, each registered token returns an instance of exactly its adapter class."""
         for name in PROVIDERS[token].credential_envs:
             monkeypatch.delenv(name, raising=False)
 
@@ -91,7 +87,6 @@ class ProviderRegistryContractTests:
         assert type(get_agent_adapter(token)) is adapter_type
 
     def test_unregistered_token_raises_classified_value_error(self) -> None:
-        """[tier-1/unit] get_agent_adapter: 'unregistered' raises ValueError whose message is "Unsupported agent provider 'unregistered' (AGENT_PROVIDER_UNSUPPORTED). Supported: claude, copilot." and builds no adapter."""
         with pytest.raises(ValueError) as exc:
             get_agent_adapter("unregistered")
 
@@ -107,7 +102,6 @@ class ResolvedAgentSettingsTests:
         [{"temperature": -0.1}, {"temperature": 2.1}, {"max_tokens": 0}],
     )
     def test_out_of_range_values_are_rejected_and_instance_is_frozen(self, overrides: dict[str, float | int]) -> None:
-        """[tier-1/unit] ResolvedAgentSettings: temperature outside [0, 2] or max_tokens below 1 raises ValidationError, and assigning a field on a valid instance raises ValidationError."""
         valid = {
             "provider": "copilot",
             "model": None,
@@ -133,7 +127,6 @@ class RegisteredProviderRedactionTests:
     def test_registered_credentialed_provider_masks_reflected_credential_on_invoke(
         self, token: str, git_repo: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """[tier-1/integration] PROVIDERS[token].build().invoke: with every credential_envs name set and the adapter's _default_run patched to return an error outcome and a finished outcome that both reflect each value, the response errors and raw_text hold none of the values and contain at least len(values) '[REDACTED:' markers."""
         spec = PROVIDERS[token]
         values = [f"cr{index}x" for index, _ in enumerate(spec.credential_envs)]
         for name, value in zip(spec.credential_envs, values, strict=True):
@@ -162,7 +155,6 @@ class RegisteredProviderRedactionTests:
     def test_copilot_masks_reflected_credential_from_process_stderr_and_stream(
         self, git_repo: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """[tier-1/integration] CopilotAgentAdapter.invoke: with every credential_envs name set and a spied process boundary reflecting each value in stderr and in the assistant stream, the response errors and raw_text hold none of the values and contain at least len(values) '[REDACTED:' markers."""
         spec = PROVIDERS["copilot"]
         values = [f"cr{index}x" for index, _ in enumerate(spec.credential_envs)]
         for name, value in zip(spec.credential_envs, values, strict=True):

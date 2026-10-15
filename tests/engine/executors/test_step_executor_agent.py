@@ -65,7 +65,6 @@ def _use_provider(monkeypatch: pytest.MonkeyPatch, provider: FakeAgentProvider) 
 
 class AgentRunnerDispatchTests:
     def test_agent_step_dispatch_passes_execution_metadata_to_the_runner(self, git_repo: Path) -> None:
-        """[tier-1/integration] StepExecution.run: an AGENT step calls agent_runner with a metadata argument whose step.id and step.attempt match the executing step."""
         received: list[ExecutionMetadata] = []
 
         def _runner(
@@ -90,7 +89,6 @@ class AgentStepRunnerTests:
     def test_completed_no_op_still_evaluates_assert_block(
         self, git_repo: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """[tier-1/unit] StepExecution.run: an agent step with a NO_OP fake completes when its output_contains matches and fails with a '[FAIL]' assertion diagnostic when it does not."""
         _use_provider(monkeypatch, FakeAgentProvider(AgentResponse(status=AgentResponseStatus.NO_OP, summary="ok")))
 
         matching = _run_agent_step(
@@ -108,7 +106,6 @@ class AgentStepRunnerTests:
         assert "[FAIL]" in (missing.error_message or "")
 
     def test_retry_invokes_provider_once_per_attempt(self, git_repo: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        """[tier-1/unit] StepExecution.run: on_failure retry max_retries=2 backoff_ms=0 with a fake answering PROVIDER_ERROR then NO_OP completes with attempts == 2 and exactly two recorded requests."""
         provider = FakeAgentProvider(
             AgentResponse(status=AgentResponseStatus.PROVIDER_ERROR, errors=["down"]),
             AgentResponse(status=AgentResponseStatus.NO_OP),
@@ -122,7 +119,6 @@ class AgentStepRunnerTests:
         assert len(provider.requests) == 2
 
     def test_exhausted_retries_fail_with_last_summary(self, git_repo: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        """[tier-1/unit] StepExecution.run: on_failure retry max_retries=2 with a fake always answering TIMEOUT returns status 'failed', attempts 2, exit_code 202, and stdout JSON status 'timeout'."""
         _use_provider(monkeypatch, FakeAgentProvider(AgentResponse(status=AgentResponseStatus.TIMEOUT)))
 
         result = _run_agent_step(git_repo, StepBuilder.agent("plan").with_retry(max_retries=2, backoff_ms=0))
@@ -135,7 +131,6 @@ class AgentStepRunnerTests:
     def test_continue_policy_ignores_unfixable_step_but_keeps_summary_status(
         self, git_repo: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """[tier-1/unit] StepExecution.run: on_failure continue with a fake answering UNFIXABLE returns status 'ignored', exit_code 0, and stdout JSON status 'unfixable'."""
         _use_provider(monkeypatch, FakeAgentProvider(AgentResponse(status=AgentResponseStatus.UNFIXABLE)))
 
         result = _run_agent_step(git_repo, StepBuilder.agent("plan").with_on_failure(FailurePolicy.CONTINUE))
@@ -147,7 +142,6 @@ class AgentStepRunnerTests:
 
 class StepExecutionAgentRunnerTests:
     def test_agent_step_without_agent_runner_fails_with_missing_settings_message(self, git_repo: Path) -> None:
-        """[tier-1/unit] StepExecution.run: an agent step run from StepExecutionContext(agent_runner=None) returns status 'failed', exit_code 1, error_message == MISSING_SETTINGS_MESSAGE, stdout '' and stderr ''."""
         context = StepExecutionContext(step=StepBuilder.agent("plan").build(), worktree_path=git_repo)
 
         result = StepExecution(context).run()
@@ -163,7 +157,6 @@ class AgentRunnerAttemptIdentityTests:
     def test_retries_and_resumed_attempts_get_distinct_ids_and_paths(
         self, git_repo: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """[tier-1/integration] StepExecution.run: three retry attempts, then a second StepExecution with the same step id and initial_attempt, pass four distinct invocation_ids and four distinct scratch_paths to the provider."""
         provider = FakeAgentProvider(AgentResponse(status=AgentResponseStatus.TIMEOUT))
         _use_provider(monkeypatch, provider)
         retried = StepBuilder.agent("plan").with_id("plan-step").with_retry(max_retries=3, backoff_ms=0).build()
@@ -187,7 +180,6 @@ class AgentStepRedactionTests:
     def test_agent_step_masks_reflected_credential_in_result_and_stream(
         self, git_repo: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """[tier-1/integration] StepExecution.run: an agent step whose FakeAgentProvider returns summary "token SVC_SECRET-value" with SVC_SECRET set yields StepResult.stdout and the on_output line holding "[REDACTED:SVC_SECRET]" and not the literal."""
         monkeypatch.setenv("SVC_SECRET", "s3cr3t-value")
         _use_provider(
             monkeypatch,
@@ -212,7 +204,6 @@ class AgentStepRedactionTests:
     def test_agent_step_failure_diagnostic_is_masked_in_stderr_and_error_message(
         self, git_repo: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """[tier-1/integration] StepExecution.run: a PROVIDER_ERROR fake response whose errors hold a SVC_SECRET value yields StepResult.stderr and error_message with the literal absent."""
         monkeypatch.setenv("SVC_SECRET", "s3cr3t-value")
         _use_provider(
             monkeypatch,
@@ -229,7 +220,6 @@ class AgentStepRedactionTests:
 
 class StepExecutorRejectedPatchTests:
     def test_loop_iteration_reaches_the_agent_runner_metadata(self, git_repo: Path) -> None:
-        """[tier-1/integration] StepExecution.run: StepExecutionContext(loop_iteration=3) calls agent_runner with metadata.loop_iteration == 3; without it metadata.loop_iteration is None."""
         received: list[ExecutionMetadata] = []
 
         def _runner(
@@ -253,7 +243,6 @@ class StepExecutorRejectedPatchTests:
         assert [metadata.loop_iteration for metadata in received] == [3, None]
 
     def test_failed_agent_outcome_path_becomes_step_result_field(self, git_repo: Path) -> None:
-        """[tier-1/unit] StepExecutor.run: an agent runner returning a failed StepDispatchOutcome with rejected_patch_path 'P' yields StepResult.rejected_patch_path == 'P' and status 'failed'."""
 
         def _runner(
             step: StepDefinition,
@@ -293,7 +282,6 @@ class StepExecutorAgentProgressTests:
         return _runner
 
     def test_runner_receives_a_reporter_bound_to_the_step_identity(self, git_repo: Path, tmp_path: Path) -> None:
-        """[tier-1/integration] StepExecution.run: an AGENT step in loop 'code-loop' iteration 2 calls agent_runner with a progress argument whose report writes '[code] Reading x\\n' to on_output."""
         streamed: list[tuple[str, str]] = []
         log_dir = tmp_path / "logs"
         log_dir.mkdir()
@@ -324,7 +312,6 @@ class StepExecutorAgentProgressTests:
         )
 
     def test_progress_works_when_attempt_logs_are_disabled(self, git_repo: Path) -> None:
-        """[tier-1/integration] StepExecution.run: save_attempt_logs False still gives the runner a working progress sink while on_agent_line stays None."""
         received: list[OutputCallback | None] = []
         streamed: list[tuple[str, str]] = []
         context = StepExecutionContext(

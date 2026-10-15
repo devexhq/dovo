@@ -117,11 +117,9 @@ class MapCopilotLineTests:
     def test_mapped_tool_returns_kind_and_target(
         self, tool_name: str, arguments: dict[str, str], kind: AgentProgressKind, target: str
     ) -> None:
-        """[tier-1/unit] map_copilot_line: a tool.execution_start line for the given tool and arguments with worktree /work/repo returns exactly (AgentProgress(kind=kind, target=target),)."""
         assert _map(_tool_line(tool_name, arguments)) == (AgentProgress(kind=kind, target=target),)
 
     def test_apply_patch_returns_one_item_per_file_in_order(self) -> None:
-        """[tier-1/unit] map_copilot_line: an apply_patch line whose patch adds a.txt and updates b.txt returns (edit a.txt, edit b.txt) in that order."""
         patch = "*** Begin Patch\n*** Add File: a.txt\n+x\n*** Update File: b.txt\n@@\n-y\n+z\n*** End Patch\n"
 
         assert _map(_tool_line("apply_patch", patch)) == (
@@ -149,12 +147,10 @@ class MapCopilotLineTests:
         ],
     )
     def test_skipped_line_returns_empty_tuple(self, line: str) -> None:
-        """[tier-1/unit] map_copilot_line: a non-JSON line, a non-object JSON value, an unmapped event type, an unmapped tool or a mapped tool without its target field returns ()."""
         assert _map(line) == ()
 
     @pytest.mark.parametrize("fixture_name", _FIXTURE_NAMES)
     def test_fixture_log_maps_to_its_expected_progress_sequence(self, fixture_name: str) -> None:
-        """[tier-1/unit] map_copilot_line: each committed fixture log, mapped line by line with worktree /work/repo, yields the exact (kind, target) sequence pinned for that fixture and never raises."""
         mapped = [progress for line in load_agent_fixture("copilot", fixture_name) for progress in _map(line)]
 
         assert [(progress.kind, progress.target) for progress in mapped] == _EXPECTED_SEQUENCES[fixture_name]
@@ -162,7 +158,6 @@ class MapCopilotLineTests:
 
 class MapCopilotFixtureCoverageTests:
     def test_fixtures_exercise_every_tool_in_the_mapping(self) -> None:
-        """[tier-1/unit] COPILOT_TOOL_KINDS: the union of tool.execution_start toolName values across the seven fixtures is a superset of COPILOT_TOOL_KINDS' keys, and mapping every fixture yields all four AgentProgressKind values."""
         tool_names: set[str] = set()
         kinds: set[AgentProgressKind] = set()
         for fixture_name in _FIXTURE_NAMES:
@@ -178,5 +173,4 @@ class MapCopilotFixtureCoverageTests:
 
 class CopilotProgressContractTests:
     def test_every_tool_except_apply_patch_has_a_target_field(self) -> None:
-        """[tier-1/unit] COPILOT_TARGET_FIELDS: set(COPILOT_TOOL_KINDS) - {'apply_patch'} == set(COPILOT_TARGET_FIELDS)."""
         assert set(COPILOT_TOOL_KINDS) - {"apply_patch"} == set(COPILOT_TARGET_FIELDS)

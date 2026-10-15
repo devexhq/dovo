@@ -1,4 +1,4 @@
-"""Parity invariant: each provider's progress mapping table in `docs/agents/schemas.md` matches its mapper's tool table."""
+"""Parity: each provider's progress mapping table in `docs/agents/schemas.md` matches its mapper's tool table."""
 
 from __future__ import annotations
 
@@ -81,7 +81,6 @@ def _mapped_tools_by_kind(entry: ProgressParityEntry) -> dict[str, set[str]]:
 class ProgressMappingParityTests:
     @pytest.mark.parametrize("entry", PROGRESS_PARITY_REGISTRY, ids=lambda entry: entry.provider)
     def test_schemas_table_matches_the_mapper_tool_kinds(self, entry: ProgressParityEntry) -> None:
-        """[tier-1/unit] ProgressParityEntry.tool_kinds: the (Kind, Tool names) rows under entry.heading in docs/agents/schemas.md are non-empty and equal entry.tool_kinds grouped by kind value, and set(entry.target_fields) <= set(entry.tool_kinds)."""
         documented = _documented_tools_by_kind(SCHEMAS_PATH.read_text(encoding="utf-8"), entry.heading)
 
         assert documented
@@ -90,21 +89,18 @@ class ProgressMappingParityTests:
 
     @pytest.mark.parametrize("entry", PROGRESS_PARITY_REGISTRY, ids=lambda entry: entry.provider)
     def test_schemas_target_column_matches_the_mapper_target_fields(self, entry: ProgressParityEntry) -> None:
-        """[tier-1/unit] ProgressParityEntry.target_fields: the leading `arguments.<field>` of each row's Target column under entry.heading is non-empty and equals entry.target_fields grouped by kind value."""
         documented = _documented_target_field_by_kind(SCHEMAS_PATH.read_text(encoding="utf-8"), entry.heading)
 
         assert documented
         assert documented == _mapped_target_field_by_kind(entry)
 
     def test_registry_covers_every_provider_with_a_progress_mapper(self) -> None:
-        """[tier-1/unit] PROGRESS_PARITY_REGISTRY: {entry.provider for entry in registry} == {token for token, spec in PROVIDERS.items() if spec.progress_mapper is not None}."""
         mapped_tokens = {token for token, spec in PROVIDERS.items() if spec.progress_mapper is not None}
 
         assert mapped_tokens
         assert {entry.provider for entry in PROGRESS_PARITY_REGISTRY} == mapped_tokens
 
     def test_target_parser_flags_a_row_that_drifts_from_the_mapper(self) -> None:
-        """[tier-1/unit] _documented_target_field_by_kind: a table under the Copilot heading naming `arguments.command` for search parses to a mapping that differs from _mapped_target_field_by_kind(copilot entry)."""
         drifted = (
             f"{COPILOT_ENTRY.heading}\n\n| Kind | Tool names | Target |\n| --- | --- | --- |\n"
             "| `search` | `rg`, `grep`, `glob` | `arguments.command` |\n"
@@ -115,7 +111,6 @@ class ProgressMappingParityTests:
         )
 
     def test_table_parser_flags_a_row_that_drifts_from_the_mapper(self) -> None:
-        """[tier-1/unit] _documented_tools_by_kind: a table under the Copilot heading listing `glob` under read instead of search parses to a mapping that differs from _mapped_tools_by_kind(copilot entry)."""
         drifted = (
             f"{COPILOT_ENTRY.heading}\n\n| Kind | Tool names | Target |\n| --- | --- | --- |\n"
             "| `read` | `view`, `glob` | x |\n"

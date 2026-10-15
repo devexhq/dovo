@@ -12,7 +12,6 @@ class StepRunnerAssertionContractTests:
     """Contract tests for step runner assertion evaluation and status resolution."""
 
     def test_assertion_failure_marks_step_failed_preserving_exit_code_zero(self, tmp_path: Path) -> None:
-        """A step whose process exits 0 but whose assertion fails reports failed status with exit_code 0."""
         step = StepDefinition(
             id="test-assert-fail",
             type=StepType.COMMAND,

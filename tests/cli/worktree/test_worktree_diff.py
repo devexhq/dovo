@@ -52,7 +52,6 @@ class WorktreeDiffCliIntegrationTests:
     def test_worktree_diff_cli_renders_unified_diff_exits_zero(
         self, cli_runner: CliRunner, worktree_workspace: Path, dispatch_spy: list[Any]
     ) -> None:
-        """dovo worktree diff <id> renders the unified diff hunk for a committed change, exits 0, and dispatches the exact OK DTO."""
         session = _create_worktree_with_committed_change(worktree_workspace)
 
         result = cli_runner.invoke(app, ["-p", str(worktree_workspace), "worktree", "diff", session.session_id])
@@ -65,7 +64,6 @@ class WorktreeDiffCliIntegrationTests:
     def test_worktree_diff_cli_stat_flag_renders_diffstat(
         self, cli_runner: CliRunner, worktree_workspace: Path, dispatch_spy: list[Any]
     ) -> None:
-        """dovo worktree diff <id> --stat renders the diffstat summary instead of the unified diff."""
         session = _create_worktree_with_committed_change(worktree_workspace)
 
         result = cli_runner.invoke(
@@ -80,7 +78,6 @@ class WorktreeDiffCliIntegrationTests:
     def test_worktree_diff_cli_missing_worktree_exits_one(
         self, cli_runner: CliRunner, worktree_workspace: Path, dispatch_spy: list[Any]
     ) -> None:
-        """dovo worktree diff on a missing id exits 1, reports not found, and dispatches the exact NOT_FOUND DTO."""
         result = cli_runner.invoke(app, ["-p", str(worktree_workspace), "worktree", "diff", "missing-id"])
 
         assert result.exit_code == 1
@@ -95,7 +92,6 @@ class WorktreeDiffCliIntegrationTests:
         assert captured.errors == ["Worktree 'missing-id' not found."]
 
     def test_worktree_diff_cli_renders_json(self, cli_runner: CliRunner, worktree_workspace: Path) -> None:
-        """dovo worktree diff <id> --format json emits a WorktreeDiffResult envelope."""
         session = _create_worktree_with_committed_change(worktree_workspace)
 
         result = cli_runner.invoke(

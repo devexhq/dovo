@@ -28,7 +28,6 @@ class CliSmokeTests:
     """Smoke tests for top-level dovo CLI behavior."""
 
     def test_cli_bare_invocation_prints_banner_and_help_exits_zero(self, cli_runner: CliRunner) -> None:
-        """dovo (bare invocation): exit 0, 'Dovo CLI' and 'init' in stdout."""
         result = cli_runner.invoke(app, [])
 
         assert result.exit_code == 0
@@ -37,10 +36,9 @@ class CliSmokeTests:
 
 
 class CliContextBuildTests:
-    """[tier-3/integration] Command-scoped path snapshots."""
+    """Command-scoped path snapshots."""
 
     def test_build_returns_paths_for_load_config_false(self, tmp_path: Path) -> None:
-        """Non-strict context construction returns paths without requiring config loading."""
         workspace = WorkspaceBuilder(tmp_path / "workspace").without_config().build()
 
         context = CliContext.build(path=workspace, load_config=False)
@@ -58,7 +56,6 @@ class CliContextBuildTests:
     def test_sensitive_variables_returns_configured_names_or_empty_without_config(
         self, tmp_path: Path, names: list[str] | None, expected: tuple[str, ...]
     ) -> None:
-        """[tier-1/unit] CliContext.sensitive_variables: config.environment.sensitive_variables ["A","B"] returns ("A","B"); config=None returns ()."""
         workspace = WorkspaceBuilder(tmp_path / "workspace").without_config().build()
         context = CliContext.build(path=workspace, load_config=False)
         if names is not None:
@@ -71,7 +68,6 @@ class CliContextBuildTests:
     def test_build_two_sequential_calls_do_not_share_state(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """Two roots and global homes produce independent immutable snapshots."""
         first_workspace = WorkspaceBuilder(tmp_path / "first").without_config().build()
         second_workspace = WorkspaceBuilder(tmp_path / "second").without_config().build()
         first_home = tmp_path / "first_home"
@@ -89,12 +85,12 @@ class CliContextBuildTests:
 
 
 class CliNonStrictConfigCommandsCliIntegrationTests:
-    """[tier-3/integration] Callback paths all receive the shared context shape."""
+    """Callback paths that all receive the shared context shape."""
 
     def test_config_doctor_status_build_identical_paths_shape(
         self, cli_runner: CliRunner, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """All non-strict commands use CliContext.build rather than app-local reconstruction."""
+        """Build every non-strict command's context through CliContext.build, not app-local reconstruction."""
         workspace = WorkspaceBuilder(tmp_path / "workspace").build()
         expected_fields = set(type(CliContext.build(path=workspace).paths).model_fields)
         captured: list[CliContext] = []
@@ -121,7 +117,6 @@ class RunCliCrashProtectionTests:
     def test_run_cli_lock_timeout_renders_error_panel_and_exits_one(
         self, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
     ) -> None:
-        """run_cli(): app() raising LockTimeoutError renders a 'Workspace Lock Timeout' panel and exits via SystemExit(1)."""
 
         def _raise_lock_timeout() -> None:
             raise LockTimeoutError("lock held by another process")
@@ -137,7 +132,6 @@ class RunCliCrashProtectionTests:
     def test_run_cli_unexpected_exception_renders_fatal_panel_and_exits_one(
         self, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
     ) -> None:
-        """run_cli(): app() raising a bare Exception renders a 'Fatal Error' panel and exits via SystemExit(1)."""
 
         def _raise_unexpected() -> None:
             raise RuntimeError("missing record.id")
@@ -156,7 +150,7 @@ GUARD_FIX = "Run `dovo init` to initialize this workspace."
 
 
 class IdentityGuardCliTests:
-    """[tier-3/integration] Every command except init requires a project identity."""
+    """Every command except init requires a project identity."""
 
     @pytest.mark.parametrize(
         "argv",
@@ -174,7 +168,6 @@ class IdentityGuardCliTests:
     def test_command_in_uninitialized_repo_prints_prompt_exits_one_and_creates_nothing(
         self, cli_runner: CliRunner, git_repo: Path, argv: list[str]
     ) -> None:
-        """dovo <command>: git repo with no .dovo/ exits 1, prints the guard message and fix, and creates no .dovo/."""
         result = cli_runner.invoke(app, ["-p", str(git_repo), *argv])
 
         assert result.exit_code == 1
@@ -185,7 +178,6 @@ class IdentityGuardCliTests:
     def test_legacy_repo_with_config_but_no_identity_fails_with_the_guard_message(
         self, cli_runner: CliRunner, tmp_path: Path
     ) -> None:
-        """dovo worktree list: a workspace with config.json and no project.json exits 1 with the guard message and creates no runtime directories under .dovo/."""
         workspace = WorkspaceBuilder(tmp_path / "workspace").without_identity().build()
 
         result = cli_runner.invoke(app, ["-p", str(workspace), "worktree", "list"])
@@ -197,7 +189,6 @@ class IdentityGuardCliTests:
             assert not (workspace / ".dovo" / runtime_dir).exists()
 
     def test_unusable_identity_adds_force_hint(self, cli_runner: CliRunner, tmp_path: Path) -> None:
-        """dovo status: a workspace with an invalid project.json exits 1 and mentions 'dovo init --id <project-id> --force'."""
         workspace = WorkspaceBuilder(tmp_path / "workspace").build()
         (workspace / ".dovo" / "project.json").write_text("not json", encoding="utf-8")
 
@@ -207,7 +198,6 @@ class IdentityGuardCliTests:
         assert "dovo init --id <project-id> --force" in result.stdout
 
     def test_help_does_not_trip_the_guard_in_an_uninitialized_repo(self, cli_runner: CliRunner, git_repo: Path) -> None:
-        """dovo worktree list --help: git repo with no .dovo/ exits 0 and prints no guard message."""
         result = cli_runner.invoke(app, ["-p", str(git_repo), "worktree", "list", "--help"])
 
         assert result.exit_code == 0
@@ -217,7 +207,6 @@ class IdentityGuardCliTests:
     def test_init_works_from_root_and_subdirectory_without_a_context(
         self, cli_runner: CliRunner, git_repo: Path, monkeypatch: pytest.MonkeyPatch, subdirectory: bool
     ) -> None:
-        """dovo init: from the repo root or a subdirectory of an uninitialized repo writes project.json and config.json and never calls CliContext.build."""
         start = git_repo / "nested" if subdirectory else git_repo
         start.mkdir(exist_ok=True)
 
@@ -233,7 +222,6 @@ class IdentityGuardCliTests:
         assert (git_repo / ".dovo" / "config.json").exists()
 
     def test_init_then_next_command_succeeds(self, cli_runner: CliRunner, git_repo: Path) -> None:
-        """dovo init followed by dovo worktree list: the second command exits 0 and prints no guard message."""
         init_result = cli_runner.invoke(app, ["-p", str(git_repo), "init"])
 
         result = cli_runner.invoke(app, ["-p", str(git_repo), "worktree", "list"])
@@ -244,7 +232,7 @@ class IdentityGuardCliTests:
 
 
 class ConfigTolerantCommandsPostInitTests:
-    """[tier-3/integration] NON_STRICT_CONFIG_COMMANDS keep reporting once an identity exists."""
+    """NON_STRICT_CONFIG_COMMANDS keep reporting once an identity exists."""
 
     @pytest.mark.parametrize(
         "config_text",
@@ -272,7 +260,6 @@ class ConfigTolerantCommandsPostInitTests:
         dispatched_type: type[object],
         config_text: str | None,
     ) -> None:
-        """dovo status|doctor|config show|config validate: valid identity plus missing, malformed, or schema-invalid config.json dispatches the command's normal result and never prints the guard message."""
         workspace = WorkspaceBuilder(tmp_path / "workspace").with_git().without_config().build()
         if config_text is not None:
             (workspace / ".dovo" / "config.json").write_text(config_text, encoding="utf-8")
@@ -286,7 +273,6 @@ class ConfigTolerantCommandsPostInitTests:
     def test_config_set_with_a_valid_identity_and_a_missing_config_dispatches_its_result(
         self, cli_runner: CliRunner, tmp_path: Path, dispatch_spy: list[Any]
     ) -> None:
-        """dovo config set: valid identity and no config.json dispatches the normal ConfigSetResult and never prints the guard message."""
         workspace = WorkspaceBuilder(tmp_path / "workspace").without_config().build()
 
         result = cli_runner.invoke(
@@ -301,7 +287,6 @@ class ConfigTolerantCommandsPostInitTests:
     def test_strict_command_with_broken_config_still_fails_with_the_config_panel(
         self, cli_runner: CliRunner, tmp_path: Path
     ) -> None:
-        """dovo worktree list: valid identity and malformed config.json exits 1 with a config error and not the guard message."""
         workspace = WorkspaceBuilder(tmp_path / "workspace").without_config().build()
         (workspace / ".dovo" / "config.json").write_text("{not valid json", encoding="utf-8")
 
@@ -316,7 +301,6 @@ class SessionCliTests:
     """Root wiring of the session group and its shortcuts."""
 
     def test_root_help_lists_session_and_shortcuts(self, cli_runner: CliRunner) -> None:
-        """[tier-3/integration] dovo --help: exit 0; output lists "session", "logs", "diff", "resume"."""
         result = cli_runner.invoke(app, ["--help"])
 
         assert result.exit_code == 0
@@ -334,7 +318,6 @@ class SessionCliTests:
     def test_shortcut_and_session_form_produce_identical_output_and_exit_code(
         self, cli_runner: CliRunner, tmp_path: Path, shortcut: list[str], grouped: list[str]
     ) -> None:
-        """[tier-3/integration] dovo logs|diff|resume vs dovo session logs|diff|resume: same arguments yield equal stdout and equal exit_code."""
         workspace = WorkspaceBuilder(tmp_path / "workspace").with_git().with_database().build()
 
         shortcut_result = cli_runner.invoke(app, ["-p", str(workspace), *shortcut])
@@ -345,7 +328,6 @@ class SessionCliTests:
         assert grouped_result.stdout == shortcut_result.stdout
 
     def test_shortcut_commands_bind_the_same_handler_function(self) -> None:
-        """[tier-3/integration] register_session_shortcuts: the callback of root `logs`, `diff`, `resume` is the identical function object as the `session` subcommand callback."""
         root_callbacks = {command.name: command.callback for command in app.registered_commands}
         session_callbacks = {command.name: command.callback for command in session_app.registered_commands}
 

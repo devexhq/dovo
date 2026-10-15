@@ -34,7 +34,6 @@ class ArtifactsDownloadCliIntegrationTests:
     def test_artifacts_download_cli_happy_path_extracts_files_and_exits_zero(
         self, cli_runner: CliRunner, artifacts_workspace: Path, tmp_path: Path
     ) -> None:
-        """dovo artifacts download <id> <name> --dest <path>: exit 0 and the file is extracted to --dest."""
         _publish_artifact(artifacts_workspace, session_id="wf_one", name="dist-packages")
         dest = tmp_path / "out"
 
@@ -49,7 +48,6 @@ class ArtifactsDownloadCliIntegrationTests:
     def test_artifacts_download_cli_not_found_exits_one(
         self, cli_runner: CliRunner, artifacts_workspace: Path, tmp_path: Path
     ) -> None:
-        """dovo artifacts download <id> missing --dest ./out: exit 1, "Artifact 'missing' not found for session '<id>'" in stdout."""
         dest = tmp_path / "out"
 
         result = cli_runner.invoke(
@@ -63,7 +61,6 @@ class ArtifactsDownloadCliIntegrationTests:
     def test_artifacts_download_cli_checksum_mismatch_exits_one_without_partial_files(
         self, cli_runner: CliRunner, artifacts_workspace: Path, tmp_path: Path
     ) -> None:
-        """dovo artifacts download: a corrupted on-disk file vs. manifest.json exits 1 with status CHECKSUM_MISMATCH and leaves --dest empty."""
         _publish_artifact(artifacts_workspace, session_id="wf_one", name="dist-packages")
         artifacts_dir = initialized_workspace_paths(artifacts_workspace).artifacts_dir
         artifact_dir = artifacts_dir / "wf_one" / "dist-packages" / "1"
@@ -81,7 +78,6 @@ class ArtifactsDownloadCliIntegrationTests:
     def test_artifacts_download_cli_format_json_emits_wire_schema(
         self, cli_runner: CliRunner, artifacts_workspace: Path, tmp_path: Path
     ) -> None:
-        """dovo artifacts download --format json: stdout equals the literal ArtifactDownloadResult envelope."""
         _publish_artifact(artifacts_workspace, session_id="wf_one", name="dist-packages")
         dest = tmp_path / "out"
 
@@ -121,7 +117,6 @@ class ArtifactsDownloadCliIntegrationTests:
     def test_artifacts_download_cli_revision_option_binds_to_domain_and_extracts_that_revision(
         self, cli_runner: CliRunner, artifacts_workspace: Path, tmp_path: Path
     ) -> None:
-        """[tier-3/integration] dovo artifacts download <session> plan --dest D --revision 1: exit 0 and D holds revision 1's bytes."""
         _publish_artifact(artifacts_workspace, session_id="wf_one", name="plan", content=b"v1")
         _publish_artifact(artifacts_workspace, session_id="wf_one", name="plan", content=b"v2")
         dest = tmp_path / "out"
@@ -148,7 +143,6 @@ class ArtifactsDownloadCliIntegrationTests:
     def test_artifacts_download_cli_unknown_revision_exits_one(
         self, cli_runner: CliRunner, artifacts_workspace: Path, tmp_path: Path
     ) -> None:
-        """[tier-3/integration] dovo artifacts download <session> plan --dest D --revision 9: exit 1 and the revision-specific not-found text in stdout."""
         _publish_artifact(artifacts_workspace, session_id="wf_one", name="plan")
 
         result = cli_runner.invoke(
@@ -173,7 +167,6 @@ class ArtifactsDownloadCliIntegrationTests:
     def test_artifacts_download_cli_revision_zero_is_rejected_by_option_validation(
         self, cli_runner: CliRunner, artifacts_workspace: Path, tmp_path: Path
     ) -> None:
-        """[tier-3/integration] dovo artifacts download ... --revision 0: exit 2 (Typer min=1) and nothing written to the destination."""
         _publish_artifact(artifacts_workspace, session_id="wf_one", name="plan")
         dest = tmp_path / "out"
 

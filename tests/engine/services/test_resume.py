@@ -38,7 +38,6 @@ class BlueprintResumeServiceExecuteTests:
         sessions_repo: SessionsRepository,
         stub_drive_run: Callable[[RunOutcome | None], None],
     ) -> None:
-        """[tier-1/integration] BlueprintResumeService.execute: an explicit paused session id resumes that session and returns ok with its session_record."""
         _seed(engine_paths, sessions_repo, "paused-1")
         stub_drive_run(None)
 
@@ -54,7 +53,6 @@ class BlueprintResumeServiceExecuteTests:
         sessions_repo: SessionsRepository,
         stub_drive_run: Callable[[RunOutcome | None], None],
     ) -> None:
-        """[tier-1/integration] BlueprintResumeService.execute: with no session id, the most recently started paused run is resumed."""
         _seed(engine_paths, sessions_repo, "paused-old")
         _seed(engine_paths, sessions_repo, "paused-new")
         latest = sessions_repo.get_latest_paused()
@@ -69,7 +67,6 @@ class BlueprintResumeServiceExecuteTests:
     def test_execute_without_session_and_no_paused_run_returns_failed_result(
         self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository
     ) -> None:
-        """[tier-1/integration] BlueprintResumeService.execute: no session id and no paused run returns session_record None and the single error 'No paused session found to resume.'."""
         result = BlueprintResumeService(paths=engine_paths, db=sessions_repo).execute()
 
         assert not result.ok
@@ -79,7 +76,6 @@ class BlueprintResumeServiceExecuteTests:
     def test_execute_unknown_session_returns_the_engine_resume_error_message(
         self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository
     ) -> None:
-        """[tier-1/integration] BlueprintResumeService.execute: a session id with no session row returns session_record None and one error naming the session id."""
         result = BlueprintResumeService(paths=engine_paths, db=sessions_repo, session_id="ghost").execute()
 
         assert not result.ok
@@ -92,7 +88,6 @@ class BlueprintResumeServiceEnvTests:
     def test_invalid_passthrough_returns_fail_result_without_resuming(
         self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """[tier-1/integration] BlueprintResumeService.execute: env_passthrough ['*'] returns a non-ok BlueprintRunResult whose errors[0] is the fixed message and Engine.resume is never called."""
         resumed: list[object] = []
         monkeypatch.setattr("dovo.engine.services.resume.Engine", lambda *args, **kwargs: resumed.append(args))
         _seed(engine_paths, sessions_repo, "paused-1")
@@ -114,7 +109,6 @@ class BlueprintResumeServiceEnvTests:
     def test_valid_flags_reach_drive_run_as_overrides(
         self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """[tier-1/integration] BlueprintResumeService.execute: --env-mode and --env-passthrough values reach drive_run as AgentEnvOverrides."""
         seen: list[AgentEnvOverrides | None] = []
 
         def _drive(*args: object, env_overrides: AgentEnvOverrides | None = None, **kwargs: object) -> RunOutcome:
@@ -164,7 +158,6 @@ class BlueprintResumeAnswerTests:
         sessions_repo: SessionsRepository,
         artifacts_repository: ArtifactsRepository,
     ) -> None:
-        """[tier-1/integration] BlueprintResumeService.execute: with answers approve=approve, the paused session completes and the downstream step ran."""
         steps = [_ask_step(), _marker_step("after")]
         seed_paused_ask_session(engine_paths, sessions_repo, artifacts_repository, session_id="ask-1", steps=steps)
 
@@ -187,7 +180,6 @@ class BlueprintResumeAnswerTests:
         sessions_repo: SessionsRepository,
         artifacts_repository: ArtifactsRepository,
     ) -> None:
-        """[tier-1/integration] BlueprintResumeService.execute: answers approve=maybe returns the invalid-answer error, the row stays PAUSED and the step marker file is absent."""
         steps = [_ask_step(), _marker_step("after")]
         seed_paused_ask_session(engine_paths, sessions_repo, artifacts_repository, session_id="ask-1", steps=steps)
 
@@ -209,7 +201,6 @@ class BlueprintResumeAnswerTests:
     def test_answers_without_pending_prompt_fail_with_pending_message(
         self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository
     ) -> None:
-        """[tier-1/integration] BlueprintResumeService.execute: answers against a session paused on a failed step return "No prompt is pending for session '<id>'." and leave it paused."""
         _seed(engine_paths, sessions_repo, "paused-1")
 
         result = BlueprintResumeService(
@@ -230,7 +221,6 @@ class BlueprintResumeAnswerTests:
         sessions_repo: SessionsRepository,
         artifacts_repository: ArtifactsRepository,
     ) -> None:
-        """[tier-1/integration] BlueprintResumeService.execute: answering the first of two asks with no fallback prompter returns a PAUSED result with paused_prompt_id of the second ask."""
         steps = [_ask_step("first"), _marker_step("between"), _ask_step("second")]
         seed_paused_ask_session(engine_paths, sessions_repo, artifacts_repository, session_id="ask-1", steps=steps)
 
@@ -341,7 +331,6 @@ class AskLoopEndToEndTests:
     """End-to-end tests for ask steps inside loops."""
 
     def test_revise_until_approved_loop_completes_headlessly(self, ask_workspace: AskWorkspace) -> None:
-        """[tier-1/integration] BlueprintRunService + BlueprintResumeService: with scripted answers [revise + "Keep config compatible", approve] over command steps, the run pauses, resumes twice and COMPLETES; iteration 2's producer recorded the comment and the session has two `plan` revisions."""
         first = ask_workspace.run("revise-loop", _loop_steps())
         session_id = _session_id(first)
         assert first.paused_prompt_id == "approve"
@@ -364,7 +353,6 @@ class AskLoopEndToEndTests:
         assert record.revision == 2
 
     def test_resuming_a_pending_ask_does_not_rerun_the_producer(self, ask_workspace: AskWorkspace) -> None:
-        """[tier-1/integration] BlueprintResumeService.execute: after a --no-tty run pauses at `approve`, a --no-tty resume (no answers) leaves the producer's counter file at 1 and the plan artifact at revision 1."""
         session_id = _session_id(ask_workspace.run("revise-loop", _loop_steps()))
 
         resumed = ask_workspace.resume(session_id)
@@ -385,7 +373,6 @@ class AskLoopEndToEndTests:
     def test_triage_loop_ends_when_nothing_is_selected(
         self, ask_workspace: AskWorkspace, answers: list[list[str]], expected_fixed: list[str], expected_reviews: int
     ) -> None:
-        """[tier-1/integration] BlueprintRunService: a triage multiselect answered with zero findings ends the loop through `selected_count == 0` after that iteration's fix step; answered with ["B1"] the fix step receives it and the loop iterates."""
         result = ask_workspace.run("review-triage", _triage_steps())
         session_id = _session_id(result)
 

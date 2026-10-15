@@ -12,7 +12,6 @@ from dovo.core.agents.save_rejected_patch import save_rejected_patch
 
 class SaveRejectedPatchTests:
     def test_changed_worktree_writes_patch_to_destination_and_returns_it(self, git_repo: Path, tmp_path: Path) -> None:
-        """[tier-1/integration] save_rejected_patch: an edited and an added file return destination, and the file at destination contains both file names."""
         baseline = resolve_pre_agent_baseline(git_repo)
         (git_repo / "README.md").write_text("# Test Repo\nedited\n", encoding="utf-8")
         (git_repo / "added.txt").write_text("added\n", encoding="utf-8")
@@ -26,7 +25,6 @@ class SaveRejectedPatchTests:
         assert "added.txt" in patch_text
 
     def test_empty_change_set_writes_no_file_and_returns_none(self, git_repo: Path, tmp_path: Path) -> None:
-        """[tier-1/integration] save_rejected_patch: a clean worktree at baseline returns None and destination does not exist."""
         baseline = resolve_pre_agent_baseline(git_repo)
         destination = tmp_path / "rejected" / "code_attempt_1.patch"
 
@@ -38,7 +36,6 @@ class SaveRejectedPatchTests:
     def test_unwritable_destination_raises_mutation_git_error_without_touching_worktree(
         self, git_repo: Path, tmp_path: Path
     ) -> None:
-        """[tier-1/integration] save_rejected_patch: a destination whose parent is a regular file raises MutationGitError and the agent's edited files are unchanged."""
         baseline = resolve_pre_agent_baseline(git_repo)
         (git_repo / "README.md").write_text("agent text\n", encoding="utf-8")
         blocker = tmp_path / "blocker"

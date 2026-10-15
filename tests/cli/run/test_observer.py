@@ -23,7 +23,7 @@ class _RecordingDispatcher(UiDispatcher):
 
 
 class DispatcherRunObserverCleanupTests:
-    """[tier-1/unit] DispatcherRunObserver.on_worktree_cleanup: dispatched WorktreeLifecycleEvent."""
+    """Dispatch of the worktree cleanup event by DispatcherRunObserver.on_worktree_cleanup."""
 
     @pytest.mark.parametrize(
         ("inside_cwd", "expected_path"),
@@ -35,7 +35,6 @@ class DispatcherRunObserverCleanupTests:
     def test_cleanup_event_path_is_relative_only_inside_cwd(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, inside_cwd: bool, expected_path: str | None
     ) -> None:
-        """[tier-1/unit] on_worktree_cleanup: path is cwd-relative POSIX inside the cwd and unchanged absolute outside it."""
         cwd = tmp_path / "cwd"
         cwd.mkdir()
         monkeypatch.chdir(cwd)
@@ -49,7 +48,6 @@ class DispatcherRunObserverCleanupTests:
         assert event.path == (expected_path or str(worktree_path))
 
     def test_cleanup_event_forwards_kept_id_and_branch(self, tmp_path: Path) -> None:
-        """[tier-1/unit] on_worktree_cleanup: action "cleanup" carries kept, worktree_id and branch to the event."""
         dispatcher = _RecordingDispatcher()
 
         DispatcherRunObserver(dispatcher).on_worktree_cleanup(

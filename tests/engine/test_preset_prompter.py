@@ -31,7 +31,6 @@ class PresetInteractionPrompterTests:
     """Contract tests for PresetInteractionPrompter.ask."""
 
     def test_preset_answer_is_returned_once_then_the_fallback_is_used(self) -> None:
-        """[tier-1/unit] PresetInteractionPrompter.ask: the first ask for the preset step id returns the preset answer; a second ask returns the fallback's answer."""
         prompter = PresetInteractionPrompter(
             {"approve": InteractionAnswer(selected=["approve"])}, _FixedPrompter("deny")
         )
@@ -43,7 +42,6 @@ class PresetInteractionPrompterTests:
         assert second == InteractionAnswer(selected=["deny"])
 
     def test_without_fallback_an_unmatched_ask_returns_none(self) -> None:
-        """[tier-1/unit] PresetInteractionPrompter.ask: a request whose step id has no preset and no fallback returns None."""
         prompter = PresetInteractionPrompter({"approve": InteractionAnswer(selected=["approve"])}, None)
 
         assert prompter.ask(_request("other")) is None

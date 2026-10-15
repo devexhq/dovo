@@ -11,7 +11,6 @@ from dovo.core.config.generator import generate_default_config
 
 class AgentConfigEnvTests:
     def test_default_config_generation_includes_env_defaults(self, tmp_path: Path) -> None:
-        """[tier-1/integration] generate_default_config: written payload agent block contains env_passthrough == [] and env_mode == 'allowlist' and passes CONFIG_VALIDATOR."""
         config_path = tmp_path / "config.json"
 
         result = generate_default_config(config_path, "demo")
@@ -22,7 +21,6 @@ class AgentConfigEnvTests:
         assert CONFIG_VALIDATOR.validate(payload).ok
 
     def test_repair_inserts_env_defaults_into_a_config_written_before_them(self, tmp_path: Path) -> None:
-        """[tier-1/integration] generate_default_config: repair=True on a config lacking both agent env keys inserts them and the result passes CONFIG_VALIDATOR."""
         config_path = tmp_path / "config.json"
         generate_default_config(config_path, "demo")
         legacy = json.loads(config_path.read_text(encoding="utf-8"))

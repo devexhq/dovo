@@ -28,7 +28,6 @@ class EvaluateJsonMatchTests:
         ],
     )
     def test_satisfied_operator_yields_no_failures(self, config: dict[str, Any], stdout: str) -> None:
-        """[tier-1/unit] evaluate_json_match: each supported operator returns [] when the value at the dot-path satisfies it."""
         assert evaluate_json_match(config, stdout) == []
 
     @pytest.mark.parametrize(
@@ -57,11 +56,9 @@ class EvaluateJsonMatchTests:
     def test_unsatisfied_operator_reports_actual_and_expected(
         self, config: dict[str, Any], stdout: str, expected: str
     ) -> None:
-        """[tier-1/unit] evaluate_json_match: an unsatisfied operator returns exactly one failure quoting the actual and expected values."""
         assert evaluate_json_match(config, stdout) == [expected]
 
     def test_invalid_json_stdout_fails(self) -> None:
-        """[tier-1/unit] evaluate_json_match: non-JSON stdout returns the single 'Invalid JSON output' failure."""
         assert evaluate_json_match(_config("a", "eq", 1), "not json") == ["json_match: Invalid JSON output"]
 
     @pytest.mark.parametrize(
@@ -73,11 +70,9 @@ class EvaluateJsonMatchTests:
         ],
     )
     def test_unresolvable_path_fails(self, path: str, stdout: str) -> None:
-        """[tier-1/unit] evaluate_json_match: a path that does not resolve through nested mapping keys reports 'not found' for that path."""
         assert evaluate_json_match(_config(path, "eq", 1), stdout) == [f"json_match: JSON path '{path}' not found"]
 
     def test_unsupported_operator_fails(self) -> None:
-        """[tier-1/unit] evaluate_json_match: an operator outside the supported set reports 'unsupported operator'."""
         assert evaluate_json_match(_config("a", "approx", 1), '{"a": 1}') == [
             "json_match: unsupported operator 'approx'"
         ]
@@ -122,7 +117,6 @@ class EvaluateJsonMatchTests:
         expected_val: object,
         expected_failures: list[str],
     ) -> None:
-        """[tier-1/unit] evaluate_json_match: numeric ordering operators reject booleans to prevent True == 1 coercion."""
         result = evaluate_json_match({"path": "flag", "operator": operator, "value": expected_val}, stdout)
 
         assert result == expected_failures

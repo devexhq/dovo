@@ -229,36 +229,36 @@ def prune_worktrees(db: WorktreesRepository, cwd: Path) -> WorktreePruneResult:
     raise NotImplementedError
 ```
 
-## [PLAN-018] Test Stubs with Mandatory Tier, Type, and Contract Docstrings
+## [PLAN-018] Test Stubs with Imperative Contract Docstrings
 - **Phase:** `Specification & Samples`
 - **Scope:** `### Tests section in .agentic/plan.md`
-- **Requirement:** Write a signature and a single-line contract docstring for every planned test stub, ending with `raise NotImplementedError`. The docstring must begin with `[<tier>/<type>]` (where tier is tier-1, tier-2, tier-3, or tier-4 per docs/agents/testing.md#the-four-execution-tiers and type is unit or integration), state the public symbol exercised, and state the exact outcome contract asserted. The `### Tests` table acts as a concise summary index.
-- **Deliverable Contract:** Signature + single-line docstring with `[<tier>/<type>]` tag and outcome contract + `raise NotImplementedError`.
-- **Validation Check:** Flag any test stub missing the tier/type tag (e.g. `[tier-1/unit]`, `[tier-3/integration]`), missing the outcome contract, or containing numbered steps/body code.
+- **Requirement:** Write a signature and, where the test name does not already say it, a single-line imperative contract docstring for every planned test stub, ending with `raise NotImplementedError`. The docstring states the exact outcome contract asserted and does not repeat the public symbol, which the class and test name carry; the execution tier follows from the test file path (docs/agents/testing.md#the-four-execution-tiers). The `### Tests` table acts as a concise summary index.
+- **Deliverable Contract:** Signature + single-line imperative docstring with the outcome contract (when the name does not say it) + `raise NotImplementedError`.
+- **Validation Check:** Flag any test stub whose docstring is not imperative, repeats its test name without adding a contract, carries a tier/type tag, or contains numbered steps/body code.
 
 <!-- ✅ POSITIVE EXAMPLE -->
 ```markdown
 ### Tests
 
-| Test | Tier | Outcome |
-|---|---|---|
-| `WorktreeCreateCliIntegrationTests::test_create_cli_capacity_exceeded_exits_one` | Tier 3 (integration) | exit 1; capacity exceeded error |
+| Test | Outcome |
+|---|---|
+| `WorktreeCreateCliIntegrationTests::test_create_cli_capacity_exceeded_exits_one` | exit 1; capacity exceeded error |
 
 ```python
 class WorktreeCreateCliIntegrationTests:
     def test_create_cli_capacity_exceeded_exits_one(
         self, cli_runner: CliRunner, worktree_workspace: Path
     ) -> None:
-        """[tier-3/integration] dovo worktree create: 3 prior worktrees exist → exit 1, 'Maximum active worktrees reached' in stdout."""
+        """Exit 1 with 'Maximum active worktrees reached' in stdout when 3 worktrees already exist."""
         raise NotImplementedError
 ```
 ```
 
 <!-- ❌ NEGATIVE EXAMPLE -->
 ```markdown
-# Test stub missing tier/type tag and specific contract
+# Test stub with a tier tag, a symbol prefix and a non-imperative, non-specific contract
 def test_create_cli_capacity_exceeded_exits_one(self, cli_runner, worktree_workspace):
-    """Verifies create fails when capacity exceeded."""
+    """[tier-3/integration] dovo worktree create: verifies create fails when capacity exceeded."""
     raise NotImplementedError
 ```
 

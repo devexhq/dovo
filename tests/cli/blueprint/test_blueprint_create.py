@@ -15,7 +15,6 @@ class BlueprintCreateCliIntegrationTests:
     """Typer runner integration tests for dovo blueprint create."""
 
     def test_blueprint_create_cli_creates_item_terminal(self, cli_runner: CliRunner, isolated_workspace: Path) -> None:
-        """dovo blueprint create --name <name>: scaffolds a repo-tier file and renders confirmation; exit 0."""
         result = cli_runner.invoke(
             app, ["-p", str(isolated_workspace), "blueprint", "create", "--name", "new-blueprint"]
         )
@@ -26,7 +25,6 @@ class BlueprintCreateCliIntegrationTests:
         assert target_file.is_file()
 
     def test_blueprint_create_cli_renders_json(self, cli_runner: CliRunner, isolated_workspace: Path) -> None:
-        """dovo blueprint create --name <name> --format json: envelope's item is tagged tier='repo', type='blueprint'."""
         result = cli_runner.invoke(
             app,
             ["-p", str(isolated_workspace), "blueprint", "create", "--name", "json-blueprint", "--format", "json"],
@@ -39,7 +37,6 @@ class BlueprintCreateCliIntegrationTests:
         assert payload["payload"]["item"]["item_type"] == "blueprint"
 
     def test_blueprint_create_cli_collision_exits_one(self, cli_runner: CliRunner, isolated_workspace: Path) -> None:
-        """dovo blueprint create --name <existing name>: exits 1 on path collision."""
         cli_runner.invoke(app, ["-p", str(isolated_workspace), "blueprint", "create", "--name", "dup-blueprint"])
 
         result = cli_runner.invoke(
@@ -50,7 +47,6 @@ class BlueprintCreateCliIntegrationTests:
         assert "collision" in result.stdout
 
     def test_blueprint_create_cli_requires_name_option(self, cli_runner: CliRunner, isolated_workspace: Path) -> None:
-        """dovo blueprint create with no --name exits nonzero (missing required option)."""
         result = cli_runner.invoke(app, ["-p", str(isolated_workspace), "blueprint", "create"])
 
         assert result.exit_code != 0
@@ -58,7 +54,6 @@ class BlueprintCreateCliIntegrationTests:
     def test_blueprint_create_cli_user_flag_writes_user_tier_file(
         self, cli_runner: CliRunner, isolated_workspace: Path
     ) -> None:
-        """dovo blueprint create --user: writes <DOVO_HOME>/user/catalog/blueprints/<name>.yml, JSON payload item.tier == 'user'."""
         result = cli_runner.invoke(
             app,
             [
@@ -83,7 +78,6 @@ class BlueprintCreateCliIntegrationTests:
     def test_blueprint_create_cli_global_flag_writes_global_tier_file(
         self, cli_runner: CliRunner, isolated_workspace: Path
     ) -> None:
-        """dovo blueprint create --global: writes <DOVO_HOME>/global/catalog/blueprints/<name>.yml, JSON payload item.tier == 'global'."""
         result = cli_runner.invoke(
             app,
             [
@@ -108,7 +102,6 @@ class BlueprintCreateCliIntegrationTests:
     def test_blueprint_create_cli_user_and_global_together_exits_one(
         self, cli_runner: CliRunner, isolated_workspace: Path
     ) -> None:
-        """dovo blueprint create --user --global: exit 1, 'mutually exclusive' in stdout, no file written under either tier."""
         result = cli_runner.invoke(
             app,
             ["-p", str(isolated_workspace), "blueprint", "create", "--name", "both-blueprint", "--user", "--global"],

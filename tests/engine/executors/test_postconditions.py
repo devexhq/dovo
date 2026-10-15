@@ -32,17 +32,13 @@ def _store(paths: WorkspacePaths, repository: ArtifactsRepository) -> ArtifactSt
 
 
 class AssertionPostconditionTests:
-    """[tier-1/unit] AssertionPostcondition.apply: assert: checks downgrade a completed outcome."""
-
     def test_passing_assertions_return_outcome_unchanged(self, tmp_path: Path) -> None:
-        """[tier-1/unit] AssertionPostcondition.apply: completed outcome and a satisfied assert_ -> the same StepDispatchOutcome."""
         (tmp_path / "present.bin").write_text("x", encoding="utf-8")
         step = _step(assert_={"file_exists": "present.bin"})
 
         assert AssertionPostcondition(step, tmp_path).apply(_COMPLETED, 1) == _COMPLETED
 
     def test_failing_assertion_returns_failed_copy_with_diagnostic(self, tmp_path: Path) -> None:
-        """[tier-1/unit] AssertionPostcondition.apply: file_exists on 'missing.bin' -> status 'failed' and error_message starts with "Step 'check' failed assertion checks:"."""
         step = _step(assert_={"file_exists": "missing.bin"})
 
         outcome = AssertionPostcondition(step, tmp_path).apply(_COMPLETED, 1)
@@ -53,12 +49,9 @@ class AssertionPostconditionTests:
 
 
 class ArtifactPublishPostconditionTests:
-    """[tier-1/integration] ArtifactPublishPostcondition.apply: declared artifacts publish after success."""
-
     def test_declared_artifact_is_published_and_outcome_unchanged(
         self, tmp_path: Path, engine_paths: WorkspacePaths, artifacts_repository: ArtifactsRepository
     ) -> None:
-        """[tier-1/integration] ArtifactPublishPostcondition.apply: PLAN.md present, required spec 'plan' -> outcome unchanged and one row revision 1 for session wf_1."""
         (tmp_path / "PLAN.md").write_text("plan", encoding="utf-8")
         postcondition = ArtifactPublishPostcondition(
             _step(artifacts=[{"name": "plan", "path": "PLAN.md"}]),
@@ -74,7 +67,6 @@ class ArtifactPublishPostconditionTests:
     def test_missing_required_artifact_returns_failed_copy(
         self, tmp_path: Path, engine_paths: WorkspacePaths, artifacts_repository: ArtifactsRepository
     ) -> None:
-        """[tier-1/integration] ArtifactPublishPostcondition.apply: required 'PLAN.md' absent -> status 'failed' and the ARTIFACT_NOT_PRODUCED error_message."""
         postcondition = ArtifactPublishPostcondition(
             _step(artifacts=[{"name": "plan", "path": "PLAN.md"}]),
             worktree_path=tmp_path,
@@ -91,7 +83,6 @@ class ArtifactPublishPostconditionTests:
     def test_optional_artifact_failure_appends_warning_and_keeps_outcome(
         self, tmp_path: Path, engine_paths: WorkspacePaths, artifacts_repository: ArtifactsRepository
     ) -> None:
-        """[tier-1/integration] ArtifactPublishPostcondition.apply: required=False spec with no match -> outcome unchanged and warnings == ["Failed to publish artifact 'plan': ..."]."""
         warnings: list[str] = []
         postcondition = ArtifactPublishPostcondition(
             _step(artifacts=[{"name": "plan", "path": "PLAN.md", "required": False}]),
@@ -108,10 +99,7 @@ class ArtifactPublishPostconditionTests:
 
 
 class BuildPostconditionsTests:
-    """[tier-1/unit] build_postconditions: evaluation order."""
-
     def test_returns_assertions_then_artifact_publishing(self, tmp_path: Path) -> None:
-        """[tier-1/unit] build_postconditions: returns [AssertionPostcondition, ArtifactPublishPostcondition] in that order."""
         postconditions = build_postconditions(
             _step(), worktree_path=tmp_path, store=None, loop_iteration=None, warnings=[]
         )

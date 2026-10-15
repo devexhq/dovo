@@ -74,7 +74,6 @@ class DiagnosticRunnerFilteringTests:
     def test_category_filter_omits_non_matching_checks(
         self, tmp_path: Path, workspace_paths_factory: WorkspacePathsFactory
     ) -> None:
-        """[tier-1/unit] DiagnosticRunner.run_checks: category filter omits checks belonging to other categories from DiagnosticsReport.checks."""
         registry = CheckRegistry()
         git_check = MockCheck(check_id="git.repo", category=CheckCategory.GIT)
         config_check = MockCheck(check_id="config.schema", category=CheckCategory.CONFIG)
@@ -110,7 +109,6 @@ class DiagnosticRunnerFilteringTests:
         categories: list[CheckCategory] | None,
         workspace_paths_factory: WorkspacePathsFactory,
     ) -> None:
-        """[tier-1/unit] DiagnosticRunner.run_checks: passing categories=None or categories=[] considers all registered checks."""
         registry = CheckRegistry()
         check1 = MockCheck(check_id="check.one", category=CheckCategory.GIT)
         check2 = MockCheck(check_id="check.two", category=CheckCategory.ENVIRONMENT)
@@ -171,7 +169,6 @@ class DiagnosticRunnerConfigToggleTests:
         category: CheckCategory,
         workspace_paths_factory: WorkspacePathsFactory,
     ) -> None:
-        """[tier-1/unit] DiagnosticRunner.run_checks: config.doctor.<toggle>=False produces status SKIPPED and duration 0.0."""
         registry = CheckRegistry()
         check = MockCheck(check_id=check_id, category=category)
         registry.register(check)
@@ -200,7 +197,6 @@ class DiagnosticRunnerConfigToggleTests:
     def test_config_none_does_not_skip_checks(
         self, tmp_path: Path, workspace_paths_factory: WorkspacePathsFactory
     ) -> None:
-        """[tier-1/unit] DiagnosticRunner.run_checks: when context.config is None, config toggle skipping is bypassed and checks execute."""
         registry = CheckRegistry()
         check = MockCheck(check_id="git.repo", category=CheckCategory.GIT)
         registry.register(check)
@@ -220,7 +216,6 @@ class DiagnosticRunnerContainmentTests:
     def test_unhandled_exception_recorded_as_failed_with_doctor_check_crash(
         self, tmp_path: Path, workspace_paths_factory: WorkspacePathsFactory
     ) -> None:
-        """[tier-1/unit] execute_single_check: check raising unexpected RuntimeError returns status FAILED with error_code DOCTOR_CHECK_CRASH and measured duration."""
         check = MockCheck(
             check_id="crashing.check",
             name="Crashing Check",
@@ -249,7 +244,6 @@ class DiagnosticRunnerContainmentTests:
     def test_crashing_check_does_not_halt_subsequent_checks(
         self, tmp_path: Path, workspace_paths_factory: WorkspacePathsFactory
     ) -> None:
-        """[tier-1/unit] DiagnosticRunner.run_checks: first check raising exception does not prevent subsequent checks from executing and reporting results."""
         registry = CheckRegistry()
         crash_check = MockCheck(
             check_id="check.crash",
@@ -289,7 +283,6 @@ class DiagnosticRunnerMetricsTests:
         monkeypatch: pytest.MonkeyPatch,
         workspace_paths_factory: WorkspacePathsFactory,
     ) -> None:
-        """[tier-1/unit] DiagnosticRunner.run_checks: total_duration_ms on DiagnosticsReport captures check execution elapsed time and runner overhead."""
         registry = CheckRegistry()
         check1 = MockCheck(check_id="c1", category=CheckCategory.GIT)
         check2 = MockCheck(check_id="c2", category=CheckCategory.FILESYSTEM)

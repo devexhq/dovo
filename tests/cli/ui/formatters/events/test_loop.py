@@ -181,17 +181,14 @@ class LoopLifecycleFormatterTests:
         case: FormatterCase[LoopLifecycleEvent, LoopLifecycleEvent],
         expected_payload: dict[str, Any],
     ) -> None:
-        """Verify to_json_serializable matches the exact published wire-format literal dict."""
         assert_json_payload_matches_published_shape(LoopLifecycleFormatter, case.data, expected_payload)
 
     @pytest.mark.parametrize("case", LOOP_CASES)
     def test_rich_render_shows_every_view_value(
         self, case: FormatterCase[LoopLifecycleEvent, LoopLifecycleEvent]
     ) -> None:
-        """Verify that all non-null semantic view model values reach the Rich renderable output."""
         assert_rich_render_shows_every_view_value(LoopLifecycleFormatter, case.data, case.render_expectations)
 
     def test_conditions_evaluated_renders_no_literal_backslash(self) -> None:
-        """[tier-2/formatter] LoopLifecycleFormatter.to_rich: conditions_evaluated Text contains no literal backslash before the loop id."""
         rendered = render_rich(LoopLifecycleFormatter().to_rich(CONDITIONS_EVALUATED.data))
         assert "\\[" not in rendered

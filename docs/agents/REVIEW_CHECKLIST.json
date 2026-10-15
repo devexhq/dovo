@@ -152,8 +152,26 @@
       "severity": "SUGGESTION",
       "domain": "all",
       "scope": "src/",
-      "evaluation_criteria": "Inspect new or modified docstrings. Flag a description that retells the body, lists what the signature already shows, or restates the title. Flag a missing description where the code has a hidden contract or a safety behavior.",
-      "bad_pattern": "\"\"\"Run the provider. First resolve the baseline, then build the prompt, then run the tool, then diff the worktree, then validate the patch.\"\"\""
+      "evaluation_criteria": "Inspect new or modified docstrings. Flag a title that carries an outcome clause such as \", or why X cannot be done\". Flag a description that retells the body, lists what the signature already shows, or adds no fact the title lacks. Flag a missing description where the code has a hidden contract or a safety behavior.",
+      "bad_pattern": "\"\"\"Run the provider. First resolve the baseline, then build the prompt, then run the tool, then diff the worktree, then validate the patch.\"\"\"  # or: \"\"\"Return flags for the rules, or why a rule cannot be preserved.\"\"\"  # outcome in the title"
+    },
+    {
+      "id": "CODE-004",
+      "name": "Docstrings Describe Only the Documented Unit",
+      "severity": "WARNING",
+      "domain": "all",
+      "scope": "src/",
+      "evaluation_criteria": "Inspect new or modified docstrings. Flag a sentence that names another module's, class's, or caller's behavior, such as how an adapter handles the returned value.",
+      "bad_pattern": "\"\"\"Render a restricted policy's allow and deny rules as dontAsk flags.\n\nThe adapter surfaces a returned reason as an unsupported-policy error before the process is spawned.\"\"\""
+    },
+    {
+      "id": "CODE-005",
+      "name": "One Docstring per Unit",
+      "severity": "WARNING",
+      "domain": "all",
+      "scope": "src/",
+      "evaluation_criteria": "Inspect new or modified modules, classes, and functions. Flag any body with a bare string statement after its first statement.",
+      "bad_pattern": "\"\"\"Return dontAsk flags for the rules.\"\"\"  # followed by a second \"\"\"...\"\"\" string statement"
     },
     {
       "id": "TYPE-001",
@@ -522,6 +540,15 @@
       "bad_pattern": "assert isinstance(dispatch_spy[-1], MessageEvent)  # asserting an incidental progress event through the result spy"
     },
     {
+      "id": "TEST-020",
+      "name": "Test Docstrings Are Imperative Contracts Without Tags",
+      "severity": "WARNING",
+      "domain": "tests",
+      "scope": "tests/",
+      "evaluation_criteria": "Inspect new or modified test docstrings. Flag a docstring that carries a tier tag, opens with a non-imperative word, exceeds 120 columns, or only rewords the test name.",
+      "bad_pattern": "\"\"\"[tier-3/integration] dovo worktree create: 3 prior worktrees exist -> exit 1, 'Maximum active worktrees reached' in stdout.\"\"\""
+    },
+    {
       "id": "DOC-001",
       "name": "Architecture Doc Structural Gate",
       "severity": "BLOCKER",
@@ -589,8 +616,8 @@
       "name": "Verifiable Doc and Rule Claims",
       "severity": "BLOCKER",
       "domain": "all",
-      "scope": "AGENTS.md, docs/, .agents/skills/, docs/agents/rules_spec.yaml",
-      "evaluation_criteria": "For each doc claim of the form \"enforced by\", \"gated by\", or \"see <path>\", resolve the path. For each documented helper or fixture name, resolve the symbol. Flag unresolvable claims, rule examples naming nonexistent modules, and doc paragraphs describing behavior absent from the tree.",
+      "scope": "AGENTS.md, docs/, .agents/skills/, docs/agents/rules_spec.yaml, src/ docstrings",
+      "evaluation_criteria": "For each doc claim of the form \"enforced by\", \"gated by\", or \"see <path>\", resolve the path. For each documented helper or fixture name, resolve the symbol. Flag unresolvable claims, rule examples naming nonexistent modules, and doc paragraphs describing behavior absent from the tree. For each docstring in the diff, and each docstring of a function whose behavior the diff changes, re-read it against the code and flag any sentence the change made false.",
       "bad_pattern": "# \"enforced by tests/lint/test_doc_parity.py\" in AGENTS.md, where the module does not exist"
     },
     {

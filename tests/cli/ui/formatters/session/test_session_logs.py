@@ -120,27 +120,24 @@ class SessionLogsFormatterTests:
 
     @pytest.mark.parametrize("case", LOGS_SHOW_CASES)
     def test_transform_maps_result_to_view(self, case: FormatterCase[LogsShowResult, SessionLogsView]) -> None:
-        """SessionLogsFormatter.transform maps LogsShowResult field-for-field to SessionLogsView."""
         assert_transform_derives_expected_view(SessionLogsFormatter, case.data, case.view)
 
     @pytest.mark.parametrize(("case", "expected_payload"), LOGS_SHOW_PAYLOAD_CASES)
     def test_json_wire_matches_literal_dict_for_populated_and_empty_states(
         self, case: FormatterCase[LogsShowResult, SessionLogsView], expected_payload: dict[str, Any]
     ) -> None:
-        """SessionLogsFormatter.to_json_serializable equals the literal wire dict for populated and sparse states."""
         assert_json_payload_matches_published_shape(SessionLogsFormatter, case.data, expected_payload)
 
     @pytest.mark.parametrize("case", LOGS_SHOW_CASES)
     def test_rich_render_shows_only_view_sourced_values(
         self, case: FormatterCase[LogsShowResult, SessionLogsView]
     ) -> None:
-        """SessionLogsFormatter.to_rich renders the case's view values at width 160."""
         assert_rich_render_shows_every_view_value(SessionLogsFormatter, case.data, case.render_expectations)
 
 
 class SessionLogsFormatterProgressTests:
     def test_progress_event_row_shows_kind_and_target_in_details(self) -> None:
-        """[tier-1/unit] SessionLogsFormatter: a LogsShowResult holding an agent_progress event renders a row whose Event cell is 'agent_progress' and whose Details cell contains 'kind=edit target=a.txt'."""
+        """Render an agent_progress event row whose Details cell contains 'kind=edit target=a.txt'."""
         event = SessionLogEvent(
             ts="2026-09-26T10:00:00+00:00",
             event=SessionLogEventType.AGENT_PROGRESS,

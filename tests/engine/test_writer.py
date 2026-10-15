@@ -42,7 +42,6 @@ class SnapshotDefinitionsTests:
     """Contract tests for snapshot_definitions writing session-scoped run-definition YAML."""
 
     def test_snapshot_definitions_writes_blueprint_and_direct_step_and_returns_manifest(self, tmp_path: Path) -> None:
-        """snapshot_definitions: single uses: step writes both YAML files under session_dir/definitions/ and returns a two-ref manifest with matching Filesystem.compute_checksum shas."""
         workspace = tmp_path / "workspace"
         write_runnable_step(workspace, key="lint-check", definition={"id": "lint-check", "run": "echo lint"})
         write_runnable_blueprint(workspace, key="run-def-task", steps=[{"id": "s1", "uses": "lint-check"}])
@@ -66,7 +65,6 @@ class SnapshotDefinitionsTests:
         assert manifest.steps[0].sha == Filesystem.compute_checksum(step_file.read_text(encoding="utf-8"))
 
     def test_snapshot_definitions_zero_uses_steps_creates_no_steps_directory(self, tmp_path: Path) -> None:
-        """snapshot_definitions: a blueprint with no uses: steps returns definitions.steps == [] and never creates session_dir/definitions/steps/."""
         workspace = tmp_path / "workspace"
         write_runnable_blueprint(workspace, key="no-uses-task", steps=[{"id": "s1", "run": "echo hi"}])
         catalog = Catalog(_paths_for(workspace))
@@ -83,7 +81,6 @@ class SnapshotDefinitionsTests:
         assert not (session_dir / "definitions" / "steps").exists()
 
     def test_snapshot_definitions_recursive_uses_chain_snapshots_every_hop(self, tmp_path: Path) -> None:
-        """snapshot_definitions: a leaf-uses-mid-uses-root chain writes mid.yml and root.yml and lists both in definitions.steps."""
         workspace = tmp_path / "workspace"
         write_runnable_step(workspace, key="root", definition={"id": "root", "run": "echo root"})
         write_runnable_step(workspace, key="mid", definition={"id": "mid", "uses": "root", "name": "Mid Name"})
@@ -104,7 +101,6 @@ class SnapshotDefinitionsTests:
         assert (session_dir / "definitions" / "steps" / "root.yml").is_file()
 
     def test_snapshot_definitions_blueprint_not_catalog_backed_returns_none_with_warning(self, tmp_path: Path) -> None:
-        """snapshot_definitions: a Blueprint whose key is not indexed in the catalog returns None and appends a 'not found in catalog' warning."""
         workspace = tmp_path / "workspace"
         workspace.mkdir(parents=True, exist_ok=True)
         catalog = Catalog(_paths_for(workspace))
@@ -124,7 +120,6 @@ class SnapshotDefinitionsTests:
         assert not (session_dir / "definitions").exists()
 
     def test_snapshot_definitions_missing_uses_step_returns_none_with_warning(self, tmp_path: Path) -> None:
-        """snapshot_definitions: a uses: reference with no matching catalog step returns None and appends a warning naming that step, writing no files."""
         workspace = tmp_path / "workspace"
         write_runnable_blueprint(workspace, key="missing-step-task", steps=[{"id": "s1", "uses": "ghost-step"}])
         catalog = Catalog(_paths_for(workspace))
@@ -143,7 +138,6 @@ class LoadBlueprintFromSnapshotTests:
     """Contract tests for load_blueprint_from_snapshot rebuilding a run's blueprint from its session files."""
 
     def test_uses_step_with_run_shorthand_base_resolves_to_command_step(self, tmp_path: Path) -> None:
-        """load_blueprint_from_snapshot: a uses: step whose snapshotted base step is written with run: shorthand resolves to a command step carrying that command."""
         workspace = tmp_path / "workspace"
         write_runnable_step(workspace, key="lint-check", definition={"id": "lint-check", "run": "echo lint"})
         write_runnable_blueprint(workspace, key="shorthand-task", steps=[{"id": "s1", "uses": "lint-check"}])
@@ -163,7 +157,6 @@ class WriteSessionRunProjectionTests:
     """Contract tests for write_session_projection writing session.json."""
 
     def test_write_session_projection_writes_indented_payload_json_and_returns_path(self, tmp_path: Path) -> None:
-        """[tier-1/integration] write_session_projection: returns <session_dir>/session.json whose text equals payload.model_dump_json(indent=2) and that parses back to an equal SessionJsonPayload."""
         payload = SessionJsonPayload(
             revision=2,
             manifest=DefinitionsManifest(
@@ -185,7 +178,6 @@ class SessionArtifactWriterTests:
     def test_get_session_dir_with_project_identity_creates_global_session_directory(
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path, workspace_paths_factory: WorkspacePathsFactory
     ) -> None:
-        """An identified project creates its session directory in global storage."""
         global_root = tmp_path / "global"
         repository = tmp_path / "repository"
         identity = ProjectIdentity(id="project-626", created_at=datetime(2026, 1, 1, tzinfo=UTC))
@@ -200,7 +192,6 @@ class SessionArtifactWriterTests:
         assert not (repository / ".dovo" / "sessions" / "session-626").exists()
 
     def test_write_session_diff_persists_diff_text_and_returns_the_patch_file_path(self, tmp_path: Path) -> None:
-        """write_session_diff: writes diff.patch under the given session directory and returns its path."""
         session_dir = tmp_path / "session-dir"
         session_dir.mkdir()
 
@@ -212,7 +203,6 @@ class SessionArtifactWriterTests:
     def test_write_session_diff_persists_masked_copy_and_leaves_input_unchanged(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """[tier-1/unit] write_session_diff: with ANTHROPIC_API_KEY="sk-ant-secret-value-123", diff_text "+key=sk-ant-secret-value-123\\n" writes "+key=[REDACTED:ANTHROPIC_API_KEY]\\n" to <session_dir>/diff.patch and returns that path."""
         monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-secret-value-123")
         session_dir = tmp_path / "session-dir"
         session_dir.mkdir()

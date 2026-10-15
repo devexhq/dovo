@@ -27,7 +27,7 @@ from tests.harness.formatter import (
 
 
 def _make_pruned_item_view(**overrides: Any) -> PrunedItemView:
-    """Helper to construct a PrunedItemView with all fields explicitly specified."""
+    """Construct a PrunedItemView with all fields explicitly specified."""
     defaults: dict[str, Any] = {
         "category": StaleWorktreeCategory.STALE_BRANCH,
         "category_label": "stale branch",
@@ -45,7 +45,7 @@ def _make_pruned_item_view(**overrides: Any) -> PrunedItemView:
 
 
 def _make_prune_view(**overrides: Any) -> WorktreePruneView:
-    """Helper to construct a WorktreePruneView with all fields explicitly specified."""
+    """Construct a WorktreePruneView with all fields explicitly specified."""
     defaults: dict[str, Any] = {
         "status": WorktreePruneStatus.OK,
         "dry_run": False,
@@ -274,7 +274,6 @@ class WorktreePruneFormatterTests:
 
     @pytest.mark.parametrize("case", PRUNE_CASES)
     def test_transform_derives_expected_view(self, case: FormatterCase[WorktreePruneResult, WorktreePruneView]) -> None:
-        """Verify transform derives the exact WorktreePruneView model representation."""
         assert_transform_derives_expected_view(WorktreePruneFormatter, case.data, case.view)
 
     @pytest.mark.parametrize(("case", "expected_payload"), PRUNE_PAYLOAD_CASES)
@@ -283,12 +282,10 @@ class WorktreePruneFormatterTests:
         case: FormatterCase[WorktreePruneResult, WorktreePruneView],
         expected_payload: dict[str, Any],
     ) -> None:
-        """Verify to_json_serializable matches the exact published wire-format literal dict."""
         assert_json_payload_matches_published_shape(WorktreePruneFormatter, case.data, expected_payload)
 
     @pytest.mark.parametrize("case", PRUNE_CASES)
     def test_rich_render_shows_every_view_value(
         self, case: FormatterCase[WorktreePruneResult, WorktreePruneView]
     ) -> None:
-        """Verify that all non-null semantic view model values reach the Rich renderable output."""
         assert_rich_render_shows_every_view_value(WorktreePruneFormatter, case.data, case.render_expectations)

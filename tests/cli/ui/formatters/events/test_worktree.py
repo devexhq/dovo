@@ -132,18 +132,15 @@ class WorktreeLifecycleFormatterTests:
         case: FormatterCase[WorktreeLifecycleEvent, WorktreeLifecycleEvent],
         expected_payload: dict[str, Any],
     ) -> None:
-        """Verify to_json_serializable matches the published wire format dict."""
         assert_json_payload_matches_published_shape(WorktreeLifecycleFormatter, case.data, expected_payload)
 
     @pytest.mark.parametrize("case", WORKTREE_CASES)
     def test_rich_render_shows_every_view_value(
         self, case: FormatterCase[WorktreeLifecycleEvent, WorktreeLifecycleEvent]
     ) -> None:
-        """Verify that all non-null semantic view model values reach the Rich renderable output."""
         assert_rich_render_shows_every_view_value(WorktreeLifecycleFormatter, case.data, case.render_expectations)
 
     def test_cleanup_kept_without_id_and_branch_renders_retained_without_fix(self) -> None:
-        """[tier-2/unit] WorktreeLifecycleFormatter.to_rich: kept=True with worktree_id=None renders exactly "Worktree: Retained (<path>)" and no "Fix:" line."""
         event = WorktreeLifecycleEvent(action="cleanup", path="/tmp/worktree2", kept=True)
 
         rendered = WorktreeLifecycleFormatter().to_rich(event)

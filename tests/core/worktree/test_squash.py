@@ -40,7 +40,6 @@ class WorktreeSquashApplyTests:
         worktree_workspace: Path,
         worktree_workspace_paths: WorkspacePaths,
     ) -> None:
-        """Squash strategy collapses multiple intermediate worktree commits into single commit with message."""
         db = WorktreesRepository(
             db_path=worktree_workspace_paths.database_file, project_id=worktree_workspace_paths.project_id
         )
@@ -89,7 +88,6 @@ class WorktreeSquashApplyTests:
         worktree_workspace: Path,
         worktree_workspace_paths: WorkspacePaths,
     ) -> None:
-        """Squash apply with delete=True deletes worktree branch, worktree directory, and marks worktree merged."""
         db = WorktreesRepository(
             db_path=worktree_workspace_paths.database_file, project_id=worktree_workspace_paths.project_id
         )

@@ -32,7 +32,6 @@ class WorktreePruneCliIntegrationTests:
         dry_run: bool,
         force: bool,
     ) -> None:
-        """dovo worktree prune --dry-run/--force on a healthy workspace exits 0, reports no stale worktrees, and dispatches the exact empty DTO."""
         result = cli_runner.invoke(app, ["-p", str(worktree_workspace), "worktree", "prune", flag])
 
         assert result.exit_code == 0
@@ -47,7 +46,6 @@ class WorktreePruneCliIntegrationTests:
         assert len(payload.errors) == 0
 
     def test_worktree_prune_cli_renders_json(self, cli_runner: CliRunner, worktree_workspace: Path) -> None:
-        """dovo worktree prune --dry-run --format json emits a WorktreePruneResult envelope wrapping the empty view."""
         result = cli_runner.invoke(
             app, ["-p", str(worktree_workspace), "worktree", "prune", "--dry-run", "--format", "json"]
         )

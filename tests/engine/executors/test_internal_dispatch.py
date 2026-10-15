@@ -17,12 +17,9 @@ from dovo.engine.executors.models import InternalCommandContext
 
 
 class HandleArtifactsUploadTests:
-    """[tier-1/unit] handle_artifacts_upload: env-driven inputs mapped to StepDispatchOutcome."""
-
     def test_handle_artifacts_upload_success_maps_to_completed_outcome(
         self, tmp_path: Path, engine_paths: WorkspacePaths, artifacts_repository: ArtifactsRepository
     ) -> None:
-        """[tier-1/unit] handle_artifacts_upload: ctx.env with matching ARTIFACT_NAME/ARTIFACT_PATH maps a successful publish_artifact() call to StepDispatchOutcome(status='completed')."""
         worktree_path = tmp_path / "worktree"
         (worktree_path / "dist").mkdir(parents=True)
         (worktree_path / "dist" / "pkg.whl").write_bytes(b"bytes")
@@ -42,7 +39,6 @@ class HandleArtifactsUploadTests:
     def test_handle_artifacts_upload_no_matching_files_maps_to_failed_outcome(
         self, tmp_path: Path, engine_paths: WorkspacePaths, artifacts_repository: ArtifactsRepository
     ) -> None:
-        """[tier-1/unit] handle_artifacts_upload: publish_artifact() returning NO_MATCHING_FILES maps to StepDispatchOutcome(status='failed') carrying the same error message."""
         worktree_path = tmp_path / "worktree"
         worktree_path.mkdir()
 
@@ -62,7 +58,6 @@ class HandleArtifactsUploadTests:
     def test_handle_artifacts_upload_records_context_provenance(
         self, tmp_path: Path, engine_paths: WorkspacePaths, artifacts_repository: ArtifactsRepository
     ) -> None:
-        """[tier-1/unit] handle_artifacts_upload: InternalCommandContext(step_id='up', attempt=2, loop_iteration=3) -> the stored row has those values and the same digest as its manifest.json."""
         worktree_path = tmp_path / "worktree"
         worktree_path.mkdir()
         (worktree_path / "PLAN.md").write_text("plan", encoding="utf-8")
@@ -105,12 +100,9 @@ def _publish_two_revisions(tmp_path: Path, store: ArtifactStore) -> None:
 
 
 class HandleArtifactsDownloadTests:
-    """[tier-1/integration] handle_artifacts_download: ARTIFACT_REVISION handling."""
-
     def test_handle_artifacts_download_artifact_revision_extracts_that_revision(
         self, tmp_path: Path, engine_paths: WorkspacePaths, artifacts_repository: ArtifactsRepository
     ) -> None:
-        """[tier-1/integration] handle_artifacts_download: ARTIFACT_REVISION='1' -> completed outcome and revision 1's bytes in ARTIFACT_DEST."""
         store = _store(engine_paths, artifacts_repository)
         _publish_two_revisions(tmp_path, store)
         ctx = InternalCommandContext(
@@ -127,7 +119,6 @@ class HandleArtifactsDownloadTests:
     def test_handle_artifacts_download_without_revision_extracts_latest(
         self, tmp_path: Path, engine_paths: WorkspacePaths, artifacts_repository: ArtifactsRepository
     ) -> None:
-        """[tier-1/integration] handle_artifacts_download: unset (or empty) ARTIFACT_REVISION -> the latest revision's bytes in ARTIFACT_DEST."""
         store = _store(engine_paths, artifacts_repository)
         _publish_two_revisions(tmp_path, store)
         ctx = InternalCommandContext(
@@ -145,7 +136,6 @@ class HandleArtifactsDownloadTests:
     def test_handle_artifacts_download_invalid_revision_fails_without_download(
         self, raw: str, tmp_path: Path, engine_paths: WorkspacePaths, artifacts_repository: ArtifactsRepository
     ) -> None:
-        """[tier-1/unit] handle_artifacts_download: invalid ARTIFACT_REVISION -> failed, exit_code 1, the positive-integer message, and nothing downloaded."""
         store = _store(engine_paths, artifacts_repository)
         _publish_two_revisions(tmp_path, store)
         ctx = InternalCommandContext(
@@ -165,7 +155,6 @@ class HandleArtifactsDownloadTests:
     def test_handle_artifacts_download_unknown_revision_fails_with_not_found_text(
         self, tmp_path: Path, engine_paths: WorkspacePaths, artifacts_repository: ArtifactsRepository
     ) -> None:
-        """[tier-1/unit] handle_artifacts_download: ARTIFACT_REVISION='9' with no such revision -> failed with the revision-specific not-found text."""
         store = _store(engine_paths, artifacts_repository)
         _publish_two_revisions(tmp_path, store)
         ctx = InternalCommandContext(

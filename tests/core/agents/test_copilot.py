@@ -55,7 +55,6 @@ class CopilotAuthTests:
     def test_resolve_checks_gh_token_before_github_token(
         self, monkeypatch: pytest.MonkeyPatch, env: dict[str, str], expected: str | None
     ) -> None:
-        """[tier-1/unit] resolve_copilot_token: with both variables cleared then env applied, returns the first non-blank stripped value, else None."""
         for name in ("GH_TOKEN", "GITHUB_TOKEN"):
             monkeypatch.delenv(name, raising=False)
         for name, value in env.items():
@@ -64,7 +63,6 @@ class CopilotAuthTests:
         assert resolve_copilot_token() == expected
 
     def test_preflight_requires_token(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        """[tier-1/unit] CopilotAgentAdapter.invoke: GH_TOKEN and GITHUB_TOKEN unset returns PROVIDER_ERROR with the canonical missing-credential error."""
         monkeypatch.delenv("GH_TOKEN", raising=False)
         monkeypatch.delenv("GITHUB_TOKEN", raising=False)
         adapter = CopilotAgentAdapter()
@@ -87,7 +85,6 @@ class CopilotRunProgressTests:
     )
 
     def test_copilot_descriptor_registers_map_copilot_line(self) -> None:
-        """[tier-1/unit] COPILOT_PROVIDER_SPEC: progress_mapper is map_copilot_line."""
         assert COPILOT_PROVIDER_SPEC.progress_mapper is map_copilot_line
 
     def _view_line(self, worktree: Path) -> str:
@@ -96,7 +93,6 @@ class CopilotRunProgressTests:
     def test_default_run_maps_stdout_lines_into_on_progress(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """[tier-1/unit] default_copilot_run: a streaming runner double that emits a view tool.execution_start stdout line makes request.on_progress receive exactly (AgentProgress(kind=read, target='x.py'),) and request.on_line still receives the raw line."""
         line = self._view_line(tmp_path)
         runner = StreamingAgentRunner(stdout_lines=[line], stderr_lines=[], completed_stdout=self._COMPLETED_STDOUT)
         monkeypatch.setattr("dovo.core.agents.cli_mutation.stream_isolated_process", runner)
@@ -123,7 +119,6 @@ class CopilotRunTests:
     def test_missing_token_returns_canonical_error_without_running_gh(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """[tier-1/unit] default_copilot_run: GH_TOKEN and GITHUB_TOKEN unset returns the canonical error outcome, and the patched stream_isolated_process is never called."""
         monkeypatch.delenv("GH_TOKEN", raising=False)
         monkeypatch.delenv("GITHUB_TOKEN", raising=False)
         runner = FakeAgentRunner()
@@ -140,7 +135,7 @@ class CopilotRunTests:
         assert runner.calls == []
 
     def test_default_run_parses_jsonl(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        """gh copilot runs in the worktree with the prompt on stdin and its JSONL stream is parsed to text."""
+        """Run gh copilot in the worktree with the prompt on stdin and parse its JSONL stream to text."""
         runner = FakeAgentRunner().returning(
             stdout=(
                 b'{"type":"assistant.message","data":{"content":"hello"}}\n{"type":"result","data":{"exitCode":0}}\n'
@@ -170,7 +165,6 @@ class CopilotRunTests:
         assert call.env["GH_TOKEN"] == "test-token"
 
     def test_missing_gh_binary_returns_error_status(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        """A missing gh binary maps to an error outcome naming the GitHub CLI."""
         runner = FakeAgentRunner().raising(FileNotFoundError("gh"))
         monkeypatch.setattr("dovo.core.agents.cli_mutation.stream_isolated_process", runner)
 
@@ -189,7 +183,6 @@ class CopilotInvokeOutcomeTests:
     def test_invoke_maps_elapsed_subprocess_timeout_to_timeout_status(
         self, git_repo: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """[tier-1/integration] CopilotAgentAdapter.invoke: stream_isolated_process raising subprocess.TimeoutExpired returns status TIMEOUT with errors[0].splitlines()[0] == "Agent timed out after 10s (provider=copilot)." and no other status."""
         runner = FakeAgentRunner().raising(subprocess.TimeoutExpired(cmd="gh", timeout=10))
         monkeypatch.setattr("dovo.core.agents.cli_mutation.stream_isolated_process", runner)
 
@@ -222,7 +215,6 @@ class CopilotInvokeOutcomeTests:
     def test_invoke_maps_non_timeout_subprocess_failure_to_provider_error(
         self, git_repo: Path, monkeypatch: pytest.MonkeyPatch, runner: FakeAgentRunner, expected_error: str
     ) -> None:
-        """[tier-1/integration] CopilotAgentAdapter.invoke: gh missing, an OSError, or a non-zero exit returns status PROVIDER_ERROR (never TIMEOUT) with errors == [expected_error]."""
         monkeypatch.setattr("dovo.core.agents.cli_mutation.stream_isolated_process", runner)
 
         resp = CopilotAgentAdapter().invoke(AgentRequestBuilder().with_worktree_path(git_repo).build())
@@ -257,7 +249,6 @@ def _assistant_stream(text: str) -> bytes:
 
 class CopilotRedactionTests:
     def test_invoke_masks_token_reflected_by_gh_stderr(self, git_repo: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        """[tier-1/integration] CopilotAgentAdapter.invoke: GH_TOKEN="gho_"+36 chars with FakeAgentRunner returning returncode=1 and stderr containing that token yields PROVIDER_ERROR whose errors, joined, do not contain the token."""
         token = "gho_" + "a" * 36
         monkeypatch.setenv("GH_TOKEN", token)
         runner = FakeAgentRunner().returning(returncode=1, stderr=f"auth failed for {token}".encode())
@@ -272,7 +263,6 @@ class CopilotRedactionTests:
     def test_invoke_masks_both_copilot_credential_alternatives(
         self, git_repo: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """[tier-1/integration] CopilotAgentAdapter.invoke: GH_TOKEN="short1" and GITHUB_TOKEN="short2" with the runner reflecting both in result text yield a response whose raw_text has neither."""
         monkeypatch.setenv("GH_TOKEN", "sh1")
         monkeypatch.setenv("GITHUB_TOKEN", "sh2")
         runner = FakeAgentRunner().returning(stdout=_assistant_stream("saw sh1 and sh2"))
@@ -285,7 +275,6 @@ class CopilotRedactionTests:
     def test_invoke_masks_reflected_token_in_a_proposed_patch_response(
         self, git_repo: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """[tier-1/integration] CopilotAgentAdapter.invoke: a runner that writes a file and reflects GH_TOKEN in the final message yields PROPOSED_PATCH whose raw_text is masked and whose unified_diff is unchanged."""
         token = "gho_" + "b" * 36
         monkeypatch.setenv("GH_TOKEN", token)
         runner = _FileWritingRunner().returning(stdout=_assistant_stream(f"done with {token}"))
@@ -307,7 +296,6 @@ class CopilotEnvBoundaryTests:
     def test_allowlist_spawn_env_lacks_unrelated_secrets_and_carries_resolved_token(
         self, git_repo: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """[tier-1/integration] CopilotAgentAdapter.invoke: FakeAgentRunner at dovo.core.agents.cli_mutation.stream_isolated_process records an env without AWS_SECRET_ACCESS_KEY, SSH_AUTH_SOCK, ANTHROPIC_API_KEY, DOVO_TEST_UNRELATED_SECRET and with GH_TOKEN equal to the resolved token."""
         for name in ("AWS_SECRET_ACCESS_KEY", "SSH_AUTH_SOCK", "ANTHROPIC_API_KEY", "DOVO_TEST_UNRELATED_SECRET"):
             monkeypatch.setenv(name, "host-value")
         runner = FakeAgentRunner().returning(stdout=_assistant_stream("ok"))
@@ -323,7 +311,6 @@ class CopilotEnvBoundaryTests:
         )
 
     def test_inherit_spawn_env_keeps_unrelated_secrets(self, git_repo: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        """[tier-1/integration] CopilotAgentAdapter.invoke: with env_mode 'inherit' the recorded env contains DOVO_TEST_UNRELATED_SECRET."""
         monkeypatch.setenv("DOVO_TEST_UNRELATED_SECRET", "host-value")
         runner = FakeAgentRunner().returning(stdout=_assistant_stream("ok"))
         monkeypatch.setattr("dovo.core.agents.cli_mutation.stream_isolated_process", runner)
@@ -338,7 +325,6 @@ class CopilotEnvBoundaryTests:
     def test_competing_copilot_controls_never_reach_the_subprocess(
         self, mode: AgentEnvMode, git_repo: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """[tier-1/integration] CopilotAgentAdapter.invoke: ambient COPILOT_GITHUB_TOKEN, COPILOT_ALLOW_ALL, and the non-winning GITHUB_TOKEN are absent from the recorded env while COPILOT_MODEL equals request.model."""
         monkeypatch.setenv("COPILOT_GITHUB_TOKEN", "competing")
         monkeypatch.setenv("COPILOT_ALLOW_ALL", "1")
         monkeypatch.setenv("COPILOT_MODEL", "ambient-model")
@@ -358,7 +344,6 @@ class CopilotEnvBoundaryTests:
     def test_scratch_keys_follow_each_invocation_across_repeated_calls(
         self, git_repo: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """[tier-1/integration] CopilotAgentAdapter.invoke: two calls with different invocation contexts record DOVO_AGENT_SCRATCH, TMPDIR, TMP, TEMP equal to each call's own scratch_path, never control_path or its parent."""
         runner = FakeAgentRunner().returning(stdout=_assistant_stream("ok"))
         monkeypatch.setattr("dovo.core.agents.cli_mutation.stream_isolated_process", runner)
         adapter = CopilotAgentAdapter()
@@ -481,14 +466,12 @@ class CopilotDenialClassificationTests:
     def test_denied_tool_event_is_collected_as_a_denial(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, stream: bytes, expected: list[AgentDenial]
     ) -> None:
-        """[tier-1/unit] default_copilot_run: recorded JSONL with a denied tool.execution_complete and exit 0 -> CliMutationOutcome(status='finished', denials == [AgentDenial(tool, message, capability, by_rule)]) with by_rule True only for the 'following rules' form."""
         outcome = _run_recorded(tmp_path, monkeypatch, stream)
 
         assert outcome.status == "finished"
         assert outcome.denials == expected
 
     def test_successful_tool_events_yield_no_denials(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        """[tier-1/unit] default_copilot_run: recorded JSONL with only successful tool events -> denials == []."""
         outcome = _run_recorded(tmp_path, monkeypatch, _TOOL_SUCCESS_STREAM)
 
         assert outcome.status == "finished"
@@ -507,7 +490,6 @@ class CopilotDenialClassificationTests:
     def test_denied_tool_maps_to_its_capability(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, tool_name: str, capability: ToolCapability | None
     ) -> None:
-        """[tier-1/unit] default_copilot_run: a denied call to read_bash/grep/edit/web_fetch maps to shell/read/write/network and an unlisted tool maps to None."""
         stream = _DENY_RULE_STREAM.replace(b'"toolName":"bash"', f'"toolName":"{tool_name}"'.encode())
 
         outcome = _run_recorded(tmp_path, monkeypatch, stream)
@@ -557,7 +539,6 @@ class CopilotDenialClassificationTests:
     def test_unmatched_or_malformed_complete_events(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, stream: bytes, expected: list[AgentDenial]
     ) -> None:
-        """[tier-1/unit] default_copilot_run: a failed tool.execution_complete with no matching start falls back to tool 'unknown'; non-denial failures and malformed error payloads yield no denial."""
         outcome = _run_recorded(tmp_path, monkeypatch, stream)
 
         assert outcome.status == "finished"
@@ -640,7 +621,6 @@ class CopilotPolicyRenderTests:
     def test_default_policy_argv_restricts_tools_and_grants_only_exact_scratch(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """[tier-1/unit] default_copilot_run: default policy argv has no --allow-all-*, contains '--available-tools', '--no-ask-user', '--disallow-temp-dir', '--disable-builtin-mcps', exactly one '--add-dir' equal to str(scratch); no value equals str(control_path); env['COPILOT_HOME'] == str(control_path / 'copilot-home')."""
         runner, invocation = _run_policy(tmp_path, monkeypatch, default_tool_policy())
         assert invocation is not None
 
@@ -657,7 +637,6 @@ class CopilotPolicyRenderTests:
     def test_worktree_only_policy_emits_no_add_dir_but_disallows_temp(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """[tier-1/unit] default_copilot_run: worktree-only read/write policy argv has no '--add-dir' and contains '--disallow-temp-dir'."""
         runner, _ = _run_policy(tmp_path, monkeypatch, ToolPolicy(allow=_READ_WRITE_WORKTREE))
 
         assert "--add-dir" not in runner.last_call.cmd
@@ -666,7 +645,6 @@ class CopilotPolicyRenderTests:
     def test_unrestricted_policy_argv_is_the_original_allow_all_argv(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """[tier-1/unit] default_copilot_run: allow_all=True with no denies yields the original eleven-element argv and an env without COPILOT_HOME."""
         runner, _ = _run_policy(tmp_path, monkeypatch, ToolPolicy(allow_all=True), with_invocation=False)
 
         assert runner.last_call.cmd == _ORIGINAL_ARGV
@@ -697,7 +675,6 @@ class CopilotPolicyRenderTests:
     def test_allow_all_with_deny_appends_deny_flags_after_permissive_flags(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, rule: ToolRule, flags: list[str]
     ) -> None:
-        """[tier-1/unit] default_copilot_run: allow_all=True + one deny -> argv tail is the three --allow-all-* flags followed by exactly the expected deny flags."""
         runner, _ = _run_policy(tmp_path, monkeypatch, ToolPolicy(allow_all=True, deny=[rule]))
 
         assert runner.last_call.cmd == [*_ORIGINAL_ARGV, *flags]
@@ -721,7 +698,6 @@ class CopilotPolicyRenderTests:
     def test_restrictive_policy_never_emits_a_blank_available_tools_value(
         self, tmp_path: Path, policy: ToolPolicy
     ) -> None:
-        """[tier-1/unit] render_copilot_policy: every restrictive policy that renders has a non-empty '--available-tools' value built only from read, write, shell, web_fetch."""
         worktree, scratch, control = (tmp_path / name for name in ("worktree", "scratch", "control"))
         roots = PolicyRoots(worktree=worktree, scratch=scratch, control=control)
 
@@ -735,7 +711,6 @@ class CopilotPolicyRenderTests:
     def test_network_host_and_subdomain_wildcard_render_both_protocols(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """[tier-1/unit] default_copilot_run: allow network 'example.com' and '*.example.org', deny '*.example.net' -> argv contains '--allow-url' for https:// and http:// of 'example.com' and '*.example.org', and '--deny-url' for https:// and http:// of '*.example.net'."""
         policy = ToolPolicy(
             allow=[
                 ToolRule(capability=ToolCapability.NETWORK, pattern="example.com"),
@@ -759,7 +734,6 @@ class CopilotPolicyRenderTests:
     def test_shell_and_unscoped_network_allows_render_tool_and_url_flags(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """[tier-1/unit] default_copilot_run: shell allows render one --allow-tool each and an unscoped network allow renders --allow-all-urls."""
         policy = ToolPolicy(
             allow=[
                 ToolRule(capability=ToolCapability.SHELL),
@@ -792,7 +766,6 @@ class CopilotPolicyRenderTests:
     def test_unrepresentable_policy_is_rejected_before_spawn(
         self, git_repo: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, policy: str
     ) -> None:
-        """[tier-1/unit] CopilotAgentAdapter.invoke: PROVIDER_ERROR with errors == [tool_policy_unsupported_message('copilot')] and FakeAgentRunner.calls == []."""
         policies = {
             "empty-grants": ToolPolicy(),
             "read-src-glob": ToolPolicy(allow=_rules(ToolCapability.READ, None, pattern="src/**")),
@@ -825,7 +798,6 @@ class CopilotPolicyRenderTests:
     def test_unknown_option_failure_returns_update_error_without_second_spawn(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """[tier-1/unit] default_copilot_run: gh exits nonzero with stderr 'unknown option --disallow-temp-dir' -> CliMutationOutcome(status='error') naming the update fix; FakeAgentRunner.calls has length 1 and no allow-all flag."""
         invocation = _real_invocation(tmp_path)
         runner = FakeAgentRunner().returning(returncode=1, stderr=b"error: unknown option '--disallow-temp-dir'")
         monkeypatch.setattr("dovo.core.agents.cli_mutation.stream_isolated_process", runner)
@@ -851,7 +823,6 @@ class CopilotPolicyRenderTests:
     def test_unrepresentable_policy_run_returns_error_outcome_without_spawn(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """[tier-1/unit] default_copilot_run: a policy with no grants returns the unsupported error outcome and never spawns gh."""
         runner = FakeAgentRunner().returning(stdout=_OK_STREAM)
         monkeypatch.setattr("dovo.core.agents.cli_mutation.stream_isolated_process", runner)
 
@@ -869,7 +840,6 @@ class CopilotPolicyRenderTests:
         assert runner.calls == []
 
     def test_copilot_descriptor_declares_policy_support_and_home_control(self) -> None:
-        """[tier-1/unit] COPILOT_PROVIDER_SPEC: supports_tool_policy is True and 'COPILOT_HOME' is in control_envs (updates tests/core/agents/test_registry.py)."""
         assert COPILOT_PROVIDER_SPEC.supports_tool_policy is True
         assert "COPILOT_HOME" in COPILOT_PROVIDER_SPEC.control_envs
 
@@ -895,7 +865,6 @@ class CopilotMcpRenderTests:
     def test_mcp_allow_renders_availability_grant_and_user_config_flags(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, rule: ToolRule, available: str, grant: list[str]
     ) -> None:
-        """[tier-1/unit] default_copilot_run: allow MCP rule with a user config defining probe-srv and other-srv -> argv has '--additional-mcp-config' '@<user path>', '--disable-mcp-server' 'other-srv', '--disable-builtin-mcps', the availability name in '--available-tools', and the expected '--allow-tool' pair."""
         config_path = tmp_path / "user" / "mcp-config.json"
         _patch_user_mcp(monkeypatch, UserMcpConfig(path=config_path, servers=frozenset({"probe-srv", "other-srv"})))
 
@@ -911,7 +880,6 @@ class CopilotMcpRenderTests:
     def test_mcp_deny_under_allow_all_renders_deny_flags_without_user_config(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """[tier-1/unit] default_copilot_run: allow_all=True + MCP denies 'probe-srv/mark' and 'other-srv/*' -> argv tail has '--deny-tool' 'probe-srv(mark)' and '--deny-tool' 'other-srv', and no '--additional-mcp-config'."""
         _patch_user_mcp(monkeypatch, None)
         policy = ToolPolicy(allow_all=True, deny=[_mcp_rule("probe-srv/mark"), _mcp_rule("other-srv/*")])
 
@@ -928,7 +896,6 @@ class CopilotMcpRenderTests:
     def test_mcp_deny_under_a_restrictive_policy_needs_no_user_config(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """[tier-1/unit] default_copilot_run: restrictive read/write policy + MCP deny 'probe-srv/mark' and no user config -> argv has '--deny-tool' 'probe-srv(mark)', '--disable-builtin-mcps' and no '--additional-mcp-config'."""
         _patch_user_mcp(monkeypatch, None)
         policy = ToolPolicy(allow=_READ_WRITE_WORKTREE, deny=[_mcp_rule("probe-srv/mark")])
 
@@ -949,7 +916,6 @@ class CopilotMcpRenderTests:
     def test_builtin_github_server_allow_keeps_builtin_mcps_and_disables_githubiq(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, user_servers: frozenset[str] | None, disabled: list[str]
     ) -> None:
-        """[tier-1/unit] default_copilot_run: allow MCP 'github-mcp-server/search_users' with no user config, or one defining unreferenced 'probe-srv' -> argv omits '--disable-builtin-mcps', disables 'githubiq' (and 'probe-srv'), and has '--allow-tool' 'github-mcp-server(search_users)'."""
         config_path = tmp_path / "user" / "mcp-config.json"
         _patch_user_mcp(
             monkeypatch, None if user_servers is None else UserMcpConfig(path=config_path, servers=user_servers)
@@ -979,7 +945,6 @@ class UserMcpConfigTests:
     def test_load_reads_server_names_from_the_host_copilot_home(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, content: str | None, expected: frozenset[str] | None
     ) -> None:
-        """[tier-1/unit] load_user_mcp_config: with COPILOT_HOME set to tmp_path, returns UserMcpConfig(path=tmp_path/'mcp-config.json', servers=expected), or None for a missing or unparseable file; without COPILOT_HOME it reads ~/.copilot."""
         monkeypatch.setenv("COPILOT_HOME", str(tmp_path))
         if content is not None:
             (tmp_path / "mcp-config.json").write_text(content)
@@ -993,7 +958,6 @@ class UserMcpConfigTests:
     def test_load_without_copilot_home_reads_the_dot_copilot_directory(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """[tier-1/unit] load_user_mcp_config: with COPILOT_HOME unset and Path.home() at tmp_path, reads tmp_path/.copilot/mcp-config.json."""
         monkeypatch.delenv("COPILOT_HOME", raising=False)
         monkeypatch.setattr(Path, "home", lambda: tmp_path)
         (tmp_path / ".copilot").mkdir()
@@ -1004,7 +968,6 @@ class UserMcpConfigTests:
         )
 
     def test_load_without_a_home_directory_returns_none(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """[tier-1/unit] load_user_mcp_config: with COPILOT_HOME unset and Path.home() raising RuntimeError, returns None instead of raising."""
 
         def no_home() -> Path:
             raise RuntimeError("Could not determine home directory.")
@@ -1027,7 +990,6 @@ class CopilotMcpUnsupportedTests:
     def test_mcp_allow_for_an_unavailable_server_is_rejected_before_spawn(
         self, git_repo: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, policy: str
     ) -> None:
-        """[tier-1/unit] CopilotAgentAdapter.invoke: PROVIDER_ERROR with errors == [tool_policy_unsupported_message('copilot')] and FakeAgentRunner.calls == [] when the allowed MCP server is neither github-mcp-server nor in the readable user config."""
         user_config = UserMcpConfig(path=tmp_path / "mcp-config.json", servers=frozenset({"other-srv"}))
         cases = {
             "mcp-allow-unknown-server": (ToolPolicy(allow=[_mcp_rule("ghost-srv/tool")]), user_config),
@@ -1058,7 +1020,6 @@ class CopilotMcpUnsupportedTests:
     def test_mcp_deny_without_a_pattern_is_rejected_before_spawn(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """[tier-1/unit] default_copilot_run: allow_all=True + an MCP deny with no pattern returns the unsupported error outcome and never spawns gh."""
         _patch_user_mcp(monkeypatch, None)
         runner = FakeAgentRunner().returning(stdout=_OK_STREAM)
         monkeypatch.setattr("dovo.core.agents.cli_mutation.stream_isolated_process", runner)

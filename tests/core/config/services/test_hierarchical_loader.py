@@ -47,8 +47,6 @@ FILE_BASED_TIERS = [
 
 
 class ConfigLayerResolutionTests:
-    """[tier-1/unit] Layer discovery contracts for resolve_config_layers."""
-
     def test_zero_optional_tiers_returns_only_packaged_layer(
         self, tmp_path: Path, workspace_paths_factory: WorkspacePathsFactory
     ) -> None:
@@ -116,8 +114,6 @@ class ConfigLayerResolutionTests:
 
 
 class HierarchicalConfigMergeTests:
-    """[tier-1/unit] Precedence and recursive-merge contracts for load_hierarchical_config."""
-
     def test_no_tier_files_returns_packaged_defaults_as_dovo_config(
         self, tmp_path: Path, workspace_paths_factory: WorkspacePathsFactory
     ) -> None:
@@ -223,12 +219,9 @@ class HierarchicalConfigMergeTests:
 
 
 class AgentConfigEnvTests:
-    """[tier-1/integration] agent.env_passthrough and agent.env_mode loading contracts for load_hierarchical_config."""
-
     def test_config_without_env_keys_loads_with_defaults(
         self, isolated_workspace: Path, tmp_path: Path, workspace_paths_factory: WorkspacePathsFactory
     ) -> None:
-        """[tier-1/integration] load_hierarchical_config: a repo config.json lacking both keys yields agent.env_passthrough == [] and agent.env_mode == 'allowlist'."""
         _write_tier_config(isolated_workspace / ".dovo" / "config.json", {"agent": {"provider": "copilot"}})
 
         result = load_hierarchical_config(workspace_paths_factory(isolated_workspace, tmp_path / "global_home"))
@@ -239,7 +232,6 @@ class AgentConfigEnvTests:
     def test_repo_tier_passthrough_replaces_global_tier_passthrough(
         self, isolated_workspace: Path, tmp_path: Path, workspace_paths_factory: WorkspacePathsFactory
     ) -> None:
-        """[tier-1/integration] load_hierarchical_config: global ['A'] and repo ['B'] resolve to agent.env_passthrough == ['B']."""
         global_root = tmp_path / "global_home"
         _write_tier_config(
             resolve_global_paths(global_root).global_dir / "config.json", {"agent": {"env_passthrough": ["A"]}}
@@ -259,7 +251,6 @@ class AgentToolsTierMergeTests:
     def test_higher_tier_tools_object_replaces_lower_tier_whole(
         self, isolated_workspace: Path, tmp_path: Path, workspace_paths_factory: WorkspacePathsFactory
     ) -> None:
-        """[tier-1/unit] load/merge: user tier {allow:[r], allow_all:true} + repo tier {deny:[d]} -> merged agent.tools == {deny:[d]} with allow == [] and allow_all False."""
         global_root = tmp_path / "global_home"
         read_rule = {"capability": "read", "pattern": "src/**"}
         deny_rule = {"capability": "write", "pattern": ".dovo/**"}
@@ -276,8 +267,6 @@ class AgentToolsTierMergeTests:
 
 
 class HierarchicalConfigErrorTests:
-    """[tier-1/unit] Tier-attributed error contracts for load_hierarchical_config."""
-
     @pytest.mark.parametrize("tier", FILE_BASED_TIERS)
     def test_malformed_json_in_tier_returns_malformed_json_status(
         self,
@@ -377,8 +366,6 @@ class HierarchicalConfigErrorTests:
 
 
 class HierarchicalMergePurityTests:
-    """[tier-1/unit] NFR-1/NFR-2 purity and determinism contracts for the merge pipeline."""
-
     def test_deep_merge_does_not_mutate_source_tier_dicts(
         self, isolated_workspace: Path, tmp_path: Path, workspace_paths_factory: WorkspacePathsFactory
     ) -> None:

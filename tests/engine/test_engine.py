@@ -75,8 +75,6 @@ def _patch_drive_run(monkeypatch: pytest.MonkeyPatch, paths: WorkspacePaths, out
 
 
 class EngineRunStartFailureTests:
-    """[tier-1/unit] Engine.run: run-start persistence failures fail the run before any step executes."""
-
     @pytest.mark.parametrize(
         ("fault", "expected_error"),
         [
@@ -97,7 +95,6 @@ class EngineRunStartFailureTests:
         fault: str,
         expected_error: str,
     ) -> None:
-        """[tier-1/unit] Engine.run: a snapshot, row-insert, or state-initialize fault returns status FAILED with errors[0] naming the fault, a step marker file absent, and (for state-initialize) the inserted row marked FAILED."""
         if fault == "snapshot":
             blueprint = Blueprint(
                 BlueprintBuilder("uncataloged")
@@ -131,12 +128,9 @@ class EngineRunStartFailureTests:
 
 
 class EngineDispatchTests:
-    """[tier-1/integration] Engine.run and Engine.resume: one dispatch path through drive_run and RunCoordinator."""
-
     def test_run_and_resume_both_complete_through_coordinator_and_finalize_row(
         self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository
     ) -> None:
-        """[tier-1/integration] Engine.run and Engine.resume: a fresh two-step run and a resumed paused run both return COMPLETED, and each row ends status COMPLETED with execution_state_revision > 0 and the original manifest."""
         engine = _engine(engine_paths, sessions_repo)
         fresh = engine.run(
             _catalog_blueprint(engine_paths, "fresh", [{"id": "a", "run": "true"}, {"id": "b", "run": "true"}]),
@@ -175,7 +169,6 @@ class EngineDispatchTests:
     def test_resume_of_invalid_run_raises_before_any_step_executes(
         self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository, fault: str
     ) -> None:
-        """[tier-1/integration] Engine.resume: an unknown session or a non-paused row raises EngineResumeError (NOT_FOUND / WRONG_STATUS) and the step marker file is never written."""
         if fault == "wrong-status":
             seed_paused_session(
                 engine_paths,
@@ -209,7 +202,6 @@ class EngineDispatchTests:
         entry: str,
         expected_session_id: str | None,
     ) -> None:
-        """[tier-1/integration] Engine.run and Engine.resume: drive_run receives the explicit, generated, or resumed session id, and the outcome carries the same id."""
         seen: list[str] = []
 
         def recording_drive_run(
@@ -247,8 +239,6 @@ class EngineDispatchTests:
 
 
 class EngineResumeFinalizationTests:
-    """[tier-1/integration] Engine.resume: row status flips and finalization record persistence failures as warnings."""
-
     @staticmethod
     def _seed(paths: WorkspacePaths, sessions: SessionsRepository, session_id: str) -> None:
         seed_paused_session(
@@ -262,7 +252,6 @@ class EngineResumeFinalizationTests:
     def test_resume_mark_running_failure_appends_warning_but_still_runs(
         self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """[tier-1/integration] Engine.resume: a failing paused-to-running status update appends one warning, still dispatches, and the row is finalized COMPLETED."""
         self._seed(engine_paths, sessions_repo, "mark-running")
         _patch_drive_run(monkeypatch, engine_paths)
 
@@ -281,7 +270,6 @@ class EngineResumeFinalizationTests:
     def test_resume_finalize_failure_appends_warning_and_leaves_row_running(
         self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """[tier-1/integration] Engine.resume: a failing final state save appends a warning and leaves the row running with no completed_at."""
         self._seed(engine_paths, sessions_repo, "finalize")
         _patch_drive_run(monkeypatch, engine_paths)
 
@@ -299,12 +287,9 @@ class EngineResumeFinalizationTests:
 
 
 class EngineRunSnapshotsDefinitionsTests:
-    """[tier-1/unit] Engine.run: definitions snapshotting on run start."""
-
     def test_run_writes_snapshot_files_and_records_manifest_in_state(
         self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """[tier-1/unit] Engine.run: a catalog-backed blueprint with one uses: step produces session_dir/definitions/<key>.yml, session_dir/definitions/steps/<step_key>.yml, and an execution state whose manifest references both."""
         write_runnable_step(
             engine_paths.root_dir, key="lint-check", definition={"id": "lint-check", "run": "echo lint"}
         )
@@ -327,7 +312,6 @@ class EngineRunSnapshotsDefinitionsTests:
     def test_run_persists_initial_state_and_projection_before_first_step(
         self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """[tier-1/unit] Engine.run: when drive_run is entered, the row is RUNNING with execution_state_revision 0, SessionStateStore.load() returns a tree whose nodes are the blueprint's steps in order, and session.json parses to a SessionJsonPayload whose nodes equal that tree's nodes."""
         blueprint = _catalog_blueprint(
             engine_paths, "init-task", [{"id": "s1", "run": "echo one"}, {"id": "s2", "run": "echo two"}]
         )
@@ -369,7 +353,6 @@ class EngineRunSnapshotsDefinitionsTests:
     def test_run_finalizes_row_with_revision_one_and_completed_status(
         self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """[tier-1/unit] Engine.run: after a COMPLETED outcome the row is COMPLETED with completed_at set and execution_state_revision 1."""
         blueprint = _catalog_blueprint(engine_paths, "final-task", [{"id": "s1", "run": "echo one"}])
         _patch_drive_run(monkeypatch, engine_paths)
 
@@ -383,12 +366,9 @@ class EngineRunSnapshotsDefinitionsTests:
 
 
 class EngineResumePreservesDefinitionsTests:
-    """[tier-1/unit] Engine.resume: the execution state keeps the manifest captured by the original Engine.run."""
-
     def test_resume_finalization_keeps_original_manifest_and_bumps_revision(
         self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """[tier-1/unit] Engine.resume: finalizing a resumed run keeps the seeded manifest and advances the state revision by one."""
         seed_paused_session(
             engine_paths,
             sessions_repo,
@@ -412,10 +392,7 @@ class EngineResumePreservesDefinitionsTests:
 
 
 class EngineRunConfigPersistenceTests:
-    """[tier-1/unit] Engine.run: resolved run configuration lands on the session row."""
-
     def test_run_persists_resolved_configuration_on_row(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        """[tier-1/unit] Engine.run: RunRequest(use_worktree=False, keep=True, agent='claude', auto_apply=True) with resolved inputs {'env': 'prod'} leaves a row with use_worktree False, keep True, agent 'claude', inputs_json '{\"env\": \"prod\"}', auto_apply True, and commit_sha equal to git rev-parse HEAD."""
         workspace = WorkspaceBuilder(tmp_path / "git-workspace").with_git().with_database().build()
         paths = initialized_workspace_paths(workspace)
         sessions = SessionsRepository(db_path=paths.database_file, project_id=paths.project_id)
@@ -444,7 +421,6 @@ class EngineRunConfigPersistenceTests:
         monkeypatch: pytest.MonkeyPatch,
         discard: bool,
     ) -> None:
-        """[tier-1/integration] Engine.run: RunRequest(discard=True) stores SessionRecord.discard == True and RunRequest() stores False."""
         blueprint = _catalog_blueprint(engine_paths, "discard-task", [{"id": "s1", "run": "echo one"}])
         _patch_drive_run(monkeypatch, engine_paths)
 
@@ -459,7 +435,6 @@ class EngineRunConfigPersistenceTests:
     def test_run_persists_resolved_inputs_json_on_row(
         self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """[tier-1/unit] Engine.run: resolved inputs {'env': 'prod'} leave inputs_json '{\"env\": \"prod\"}' on the row."""
         blueprint = Blueprint(
             BlueprintBuilder("inputs")
             .with_use_worktree(False)
@@ -481,7 +456,6 @@ class EngineRunConfigPersistenceTests:
     def test_run_catalog_blueprint_records_manifest_tier_on_row(
         self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """[tier-1/unit] Engine.run: a catalog-backed blueprint leaves blueprint_tier equal to the manifest blueprint ref's tier."""
         blueprint = _catalog_blueprint(engine_paths, "tier-task", [{"id": "s1", "run": "echo one"}])
         _patch_drive_run(monkeypatch, engine_paths)
 
@@ -494,7 +468,6 @@ class EngineRunConfigPersistenceTests:
     def test_run_outside_git_repository_stores_null_commit_sha(
         self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """[tier-1/unit] Engine.run: a workspace that is not a git repository completes with commit_sha None on the row."""
         blueprint = _catalog_blueprint(engine_paths, "nogit-task", [{"id": "s1", "run": "echo one"}])
         _patch_drive_run(monkeypatch, engine_paths)
 
@@ -523,7 +496,6 @@ class EngineRunConfigPersistenceTests:
         outcome_status: SessionStatus,
         outcome_worktree_id: str | None,
     ) -> None:
-        """[tier-1/unit] Engine.run: row.worktree_id equals the RunOutcome.worktree_id drive_run reported, for completed and paused runs, and stays None when no worktree was used."""
         blueprint = _catalog_blueprint(engine_paths, "worktree-task", [{"id": "s1", "run": "echo one"}])
         _patch_drive_run(
             monkeypatch,
@@ -542,8 +514,6 @@ class EngineRunConfigPersistenceTests:
 
 
 class EngineRunProjectionTests:
-    """[tier-1/integration] Engine.run: the terminal row and session.json agree."""
-
     @pytest.mark.parametrize("keep", [False, True])
     def test_run_terminal_row_and_session_json_agree(
         self,
@@ -552,7 +522,6 @@ class EngineRunProjectionTests:
         monkeypatch: pytest.MonkeyPatch,
         keep: bool,
     ) -> None:
-        """[tier-1/integration] Engine.run: a completed worktree-backed run leaves session.json.revision == row.execution_state_revision, session.json.results == outcome.step_results, and session.json.lifecycle equal to the row's status/error_message/completed_at/worktree_id/worktree_kept, with worktree_kept == keep."""
         blueprint = _catalog_blueprint(engine_paths, "proj-task", [{"id": "s1", "run": "echo one"}])
         _patch_drive_run(
             monkeypatch,
@@ -585,12 +554,9 @@ class EngineRunProjectionTests:
 
 
 class EngineFinalizeFallbackTests:
-    """[tier-1/unit] Engine.run: finalization falls back to a plain status update when the state cannot be reloaded."""
-
     def test_finalize_falls_back_to_row_update_when_state_is_corrupt(
         self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """[tier-1/unit] Engine.run: a state document corrupted during the run leaves the row COMPLETED via update_status and one warning naming the corrupt state."""
         blueprint = _catalog_blueprint(engine_paths, "corrupt-task", [{"id": "s1", "run": "echo one"}])
 
         def corrupting_drive_run(

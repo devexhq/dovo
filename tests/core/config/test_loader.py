@@ -134,7 +134,6 @@ class ConfigLoaderTests:
     def test_load_malformed_json_returns_malformed_json_status_with_location_detail(
         self, workspace_paths: WorkspacePaths
     ) -> None:
-        """[tier-1/unit] load_config: config.json containing invalid JSON syntax -> MALFORMED_JSON status, error names the file and a line/column location, config/raw are None."""
         config_path = workspace_paths.config_file
         config_path.write_text("{not valid json", encoding="utf-8")
 
@@ -162,7 +161,6 @@ class AgentModelsSchemaTests:
     def test_invalid_agent_models_fail_schema_validation(
         self, workspace_paths: WorkspacePaths, agent: dict[str, object]
     ) -> None:
-        """[tier-1/unit] load_config: an agent section with a legacy `model` key, an unknown provider key, an empty value, or a non-string value returns SCHEMA_INVALID with 'CONFIG_SCHEMA_INVALID' in errors."""
         payload = {**build_default_config("test-project"), "agent": agent}
         Filesystem.atomic_write_json(workspace_paths.config_file, payload)
 
@@ -172,7 +170,6 @@ class AgentModelsSchemaTests:
         assert "CONFIG_SCHEMA_INVALID" in result.errors[0]
 
     def test_models_defaults_to_empty_and_valid_entry_loads(self, workspace_paths: WorkspacePaths) -> None:
-        """[tier-1/unit] load_config: an agent section without `models` yields AgentConfig.models == {}; {"models": {"copilot": "gpt-4.1"}} yields {"copilot": "gpt-4.1"}."""
         base = {"version": 1, "project": {"name": "test-project"}}
         Filesystem.atomic_write_json(workspace_paths.config_file, {**base, "agent": {}})
         clear_config_cache()
@@ -189,8 +186,6 @@ class AgentModelsSchemaTests:
 
 
 class ConfigEnvironmentSectionTests:
-    """[tier-1/integration] Contracts for the `environment` section of config.json."""
-
     @staticmethod
     def _write_payload(workspace_paths: WorkspacePaths, environment: object | None) -> None:
         payload = build_default_config("demo-workspace")
@@ -260,7 +255,6 @@ class ConfigEnvironmentSectionTests:
     def test_load_does_not_echo_trailing_newline_entry_that_passes_the_json_schema(
         self, workspace_paths: WorkspacePaths
     ) -> None:
-        """[tier-1/integration] load_config: ["GOOD", "SOMEVALUE\\n"] passes the JSON schema, fails the model, and returns schema_invalid with "environment.sensitive_variables[1]" and without "SOMEVALUE"."""
         self._write_payload(workspace_paths, {"sensitive_variables": ["GOOD", "SOMEVALUE\n"]})
 
         result = load_config(workspace_paths)
@@ -279,12 +273,9 @@ class ConfigEnvironmentSectionTests:
 
 
 class ClearConfigCacheTests:
-    """[tier-1/unit] clear_config_cache: in-memory load_config cache invalidation."""
-
     def test_clearing_specific_path_forces_a_disk_reread_reflecting_the_new_content(
         self, workspace_paths: WorkspacePaths
     ) -> None:
-        """[tier-1/unit] clear_config_cache(config_path): a subsequent load_config call re-reads the file from disk instead of returning the stale cached result."""
         config_path = workspace_paths.config_file
         Filesystem.atomic_write_json(config_path, build_default_config("first-name"))
         first = load_config(workspace_paths)
@@ -301,7 +292,6 @@ class ClearConfigCacheTests:
     def test_clearing_with_no_path_clears_every_cached_entry(
         self, tmp_path: Path, workspace_paths_factory: Callable[[Path, Path | None], WorkspacePaths]
     ) -> None:
-        """[tier-1/unit] clear_config_cache(None): clears the entire cache, so a subsequent load for any previously cached workspace re-reads from disk."""
         workspace_a = workspace_paths_factory(tmp_path / "a", None)
         workspace_b = workspace_paths_factory(tmp_path / "b", None)
         for paths, name in ((workspace_a, "workspace-a"), (workspace_b, "workspace-b")):

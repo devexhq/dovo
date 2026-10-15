@@ -65,12 +65,9 @@ def _publish_plan(
 
 
 class StepExecutionArtifactsTests:
-    """[tier-1/integration] StepExecution.run: required/optional publishing of declared artifacts."""
-
     def test_required_artifact_missing_fails_step_with_not_produced_message(
         self, tmp_path: Path, engine_paths: WorkspacePaths, artifacts_repository: ArtifactsRepository
     ) -> None:
-        """[tier-1/integration] StepExecution.run: command step exiting 0 with required artifact 'PLAN.md' absent -> failed with the ARTIFACT_NOT_PRODUCED message and no row."""
         result = _run(_command_step("true"), tmp_path / "wt", engine_paths, artifacts_repository)
 
         assert (result.status, result.error_message) == ("failed", _NOT_PRODUCED)
@@ -79,7 +76,6 @@ class StepExecutionArtifactsTests:
     def test_optional_artifact_missing_completes_with_warning(
         self, tmp_path: Path, engine_paths: WorkspacePaths, artifacts_repository: ArtifactsRepository
     ) -> None:
-        """[tier-1/integration] StepExecution.run: required=false and PLAN.md absent -> completed, StepResult.warnings hold the 'Failed to publish artifact' text, no row."""
         step = _command_step("true", artifacts=[{"name": "plan", "path": "PLAN.md", "required": False}])
 
         result = _run(step, tmp_path / "wt", engine_paths, artifacts_repository)
@@ -91,7 +87,6 @@ class StepExecutionArtifactsTests:
     def test_required_artifact_with_continue_policy_is_ignored_and_publishes_nothing(
         self, tmp_path: Path, engine_paths: WorkspacePaths, artifacts_repository: ArtifactsRepository
     ) -> None:
-        """[tier-1/integration] StepExecution.run: on_failure=continue and a missing required artifact -> status 'ignored' and no artifact rows."""
         step = _command_step("true", on_failure="continue")
 
         result = _run(step, tmp_path / "wt", engine_paths, artifacts_repository)
@@ -102,7 +97,6 @@ class StepExecutionArtifactsTests:
     def test_retry_republishes_after_artifact_appears_on_second_attempt(
         self, tmp_path: Path, engine_paths: WorkspacePaths, artifacts_repository: ArtifactsRepository
     ) -> None:
-        """[tier-1/integration] StepExecution.run: retry(max_retries=2) with PLAN.md written only on DOVO_STEP_ATTEMPT=2 -> completed, attempts 2, one row revision 1 with attempt 2."""
         step = _command_step(
             '[ "$DOVO_STEP_ATTEMPT" != 2 ] || echo plan > PLAN.md',
             on_failure={"action": "retry", "max_retries": 2, "backoff_ms": 0},
@@ -116,7 +110,6 @@ class StepExecutionArtifactsTests:
     def test_run_shorthand_step_publishes_declared_artifacts(
         self, tmp_path: Path, engine_paths: WorkspacePaths, artifacts_repository: ArtifactsRepository
     ) -> None:
-        """[tier-1/integration] StepExecution.run: a run: step declaring artifacts publishes them (the shorthand expansion keeps artifacts)."""
         step = StepDefinition.model_validate(
             {"id": "plan", "run": "echo plan > PLAN.md", "artifacts": [{"name": "plan", "path": "PLAN.md"}]}
         )
@@ -129,7 +122,6 @@ class StepExecutionArtifactsTests:
     def test_uses_step_publishes_declared_artifacts(
         self, tmp_path: Path, engine_paths: WorkspacePaths, artifacts_repository: ArtifactsRepository
     ) -> None:
-        """[tier-1/integration] StepExecution.run: a uses: step carrying artifacts: [{name, path}] publishes the artifact (merge_uses_step keeps artifacts)."""
         engine_paths.catalog_steps_dir.mkdir(parents=True, exist_ok=True)
         (engine_paths.catalog_steps_dir / "make-plan.yaml").write_text(
             "id: make-plan\ntype: command\ncommand: echo plan > PLAN.md\n", encoding="utf-8"
@@ -146,7 +138,6 @@ class StepExecutionArtifactsTests:
     def test_failing_assertion_stops_before_artifact_publishing(
         self, tmp_path: Path, engine_paths: WorkspacePaths, artifacts_repository: ArtifactsRepository
     ) -> None:
-        """[tier-1/integration] StepExecution.run: command writes PLAN.md and exits 0 but assert_ fails -> status 'failed' with the assertion message and artifacts_repository.list() == []."""
         step = _command_step("echo plan > PLAN.md", assert_={"file_exists": "missing.bin"})
 
         result = _run(step, tmp_path / "wt", engine_paths, artifacts_repository)
@@ -158,12 +149,9 @@ class StepExecutionArtifactsTests:
 
 
 class StepExecutionArtifactReferencesTests:
-    """[tier-1/integration] StepExecution.run: artifacts.* placeholder rendering."""
-
     def test_command_renders_latest_revision_number_and_content(
         self, tmp_path: Path, engine_paths: WorkspacePaths, artifacts_repository: ArtifactsRepository
     ) -> None:
-        """[tier-1/integration] StepExecution.run: command echoing revision and content with plan at revision 2 -> stdout '2:' followed by the revision-2 text."""
         _publish_plan(engine_paths, artifacts_repository, tmp_path, {"PLAN.md": "first"})
         _publish_plan(engine_paths, artifacts_repository, tmp_path, {"PLAN.md": "second"})
         step = StepDefinition.model_validate(
@@ -181,7 +169,6 @@ class StepExecutionArtifactReferencesTests:
     def test_content_unavailable_fails_step_with_classified_message(
         self, tmp_path: Path, engine_paths: WorkspacePaths, artifacts_repository: ArtifactsRepository
     ) -> None:
-        """[tier-1/integration] StepExecution.run: content requested for a two-file artifact -> failed with the ARTIFACT_CONTENT_UNAVAILABLE message and the command never ran."""
         _publish_plan(engine_paths, artifacts_repository, tmp_path, {"a.md": "a", "b.md": "b"})
         worktree_path = tmp_path / "wt"
         step = StepDefinition.model_validate(
@@ -200,7 +187,6 @@ class StepExecutionArtifactReferencesTests:
     def test_later_run_sees_revision_published_by_earlier_run(
         self, tmp_path: Path, engine_paths: WorkspacePaths, artifacts_repository: ArtifactsRepository
     ) -> None:
-        """[tier-1/integration] StepExecution.run twice with the same artifacts repository: a publishing step then a rendering step print revision 1, then 2 after a second publish."""
         worktree_path = tmp_path / "wt"
         publisher = _command_step("echo plan > PLAN.md")
         renderer = StepDefinition.model_validate(

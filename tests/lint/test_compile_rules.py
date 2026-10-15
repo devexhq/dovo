@@ -47,7 +47,6 @@ def _build(tmp_path: Path, rules: list[dict[str, Any]]) -> dict[Path, str]:
 
 class CompileRulesTests:
     def test_engine_domain_emits_engine_rules_md_with_all_and_engine_rules(self, tmp_path: Path) -> None:
-        """[tier-1/unit] build_artifacts: a spec with one 'all' rule, one 'engine' rule, and one 'core' rule emits <root>/src/dovo/engine/docs/RULES.md titled '(Engine Domain)' containing the 'all' and 'engine' rule ids and not the 'core' rule id."""
         artifacts = _build(tmp_path, [_rule("ALL-001", "all"), _rule("ENG-001", "engine"), _rule("COR-001", "core")])
 
         engine_rules = artifacts[tmp_path / "src" / "dovo" / "engine" / "docs" / "RULES.md"]
@@ -58,7 +57,6 @@ class CompileRulesTests:
         assert "COR-001" not in engine_rules
 
     def test_list_domain_rule_appears_in_every_listed_package_rules_md(self, tmp_path: Path) -> None:
-        """[tier-1/unit] build_artifacts: a rule with domain ['core', 'engine'] appears in both <root>/src/dovo/core/docs/RULES.md and <root>/src/dovo/engine/docs/RULES.md and in neither the cli nor tests RULES.md; the checklist JSON carries "domain": ["core", "engine"]."""
         artifacts = _build(tmp_path, [_rule("BOTH-001", ["core", "engine"])])
 
         package_docs = {
@@ -78,6 +76,5 @@ class CompileRulesTests:
         "domain", [pytest.param("platform", id="string"), pytest.param(["core", "platform"], id="list")]
     )
     def test_unknown_domain_raises_value_error_naming_the_rule(self, tmp_path: Path, domain: Any) -> None:
-        """[tier-1/unit] build_artifacts: a rule with domain 'platform', and a rule with domain ['core', 'platform'], each raise ValueError whose message contains the rule id and 'invalid or missing domain'."""
         with pytest.raises(ValueError, match=r"BAD-001.*invalid or missing domain"):
             _build(tmp_path, [_rule("BAD-001", domain)])

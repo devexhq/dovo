@@ -69,22 +69,19 @@ class ArtifactsPruneFormatterTests:
     """Tier 2 presentation contract tests for ArtifactsPruneFormatter."""
 
     def test_transform_derives_pruned_and_failed_counts(self) -> None:
-        """[tier-2/unit] ArtifactsPruneFormatter.transform: items list derives pruned_count/failed_count aggregates."""
         assert_transform_derives_expected_view(ArtifactsPruneFormatter, WITH_PRUNED_ITEM.data, WITH_PRUNED_ITEM.view)
 
     @pytest.mark.parametrize(("case", "expected_payload"), ARTIFACTS_PRUNE_PAYLOAD_CASES)
     def test_to_json_serializable_matches_literal_populated_and_empty_dicts(
         self, case: FormatterCase[ArtifactsPruneResult, ArtifactsPruneView], expected_payload: dict[str, Any]
     ) -> None:
-        """Verify to_json_serializable matches the published wire format dict for a populated and an empty/disabled state."""
         assert_json_payload_matches_published_shape(ArtifactsPruneFormatter, case, expected_payload)
 
     def test_to_rich_renders_disabled_state_without_items(self) -> None:
-        """[tier-2/unit] ArtifactsPruneFormatter.to_rich: DISABLED status renders without any pruned item lines."""
         assert_rich_render_shows_every_view_value(ArtifactsPruneFormatter, DISABLED.data, DISABLED.render_expectations)
 
     def test_to_rich_renders_pinned_session_id_and_name(self) -> None:
-        """[tier-2/unit] ArtifactsPruneFormatter.to_rich: render_rich output contains the pruned item's session_id, name and revision."""
+        """Show the pruned item's session_id, name and revision in the render."""
         assert_rich_render_shows_every_view_value(
             ArtifactsPruneFormatter, WITH_PRUNED_ITEM.data, WITH_PRUNED_ITEM.render_expectations
         )

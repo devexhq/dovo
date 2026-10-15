@@ -222,7 +222,10 @@ def _flags(
     denied: list[str],
     mcp_config: McpConfigFile | None,
 ) -> ClaudePolicyArgs:
-    """Assemble the flag tuple: mode, the MCP flags, then --tools when not None, the lists only when non-empty."""
+    """Build the Claude Code flags for one permission mode.
+
+    The flag order is fixed, so later flags are appended after these.
+    """
     flags = ["--permission-mode", mode, *_mcp_flags(mcp_config)]
     if tools is not None:
         flags += ["--tools", ",".join(tools)]
@@ -242,7 +245,11 @@ def _render_allow_all(
     configured: Mapping[str, McpServerDefinition],
     user: Mapping[str, dict[str, object]],
 ) -> ClaudePolicyArgs | str:
-    """Return bypassPermissions without denies, else dontAsk with every built-in granted and the denies rendered; mcp allow rules load only the servers they name."""
+    """Render an allow_all policy as bypassPermissions flags, or dontAsk flags when it has deny rules.
+
+    Allow rules other than mcp are neither checked nor rendered, since everything is already granted.
+    Deny rules and mcp allow rules are held to the same checks as in a restricted policy.
+    """
     mcp_allows = [rule for rule in policy.allow if rule.capability == ToolCapability.MCP]
     error = _first_error(mcp_allows, roots, deny=False) or _first_error(policy.deny, roots, deny=True)
     if error is not None:
@@ -268,7 +275,10 @@ def _render_restricted(
     configured: Mapping[str, McpServerDefinition],
     user: Mapping[str, dict[str, object]],
 ) -> ClaudePolicyArgs | str:
-    """Return dontAsk flags for the allow and deny rules, or why a rule cannot be preserved."""
+    """Render a restricted policy's allow and deny rules as dontAsk flags.
+
+    A rule Claude Code cannot express, such as an unsupported pattern or an mcp server defined nowhere, yields its reason as a string.
+    """
     error = _first_error(policy.allow, roots, deny=False) or _first_error(policy.deny, roots, deny=True)
     if error is not None:
         return error

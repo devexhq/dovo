@@ -75,10 +75,7 @@ class _RecordingOnStepStartObserver(_NoOpRunObserver):
 
 
 class SafeNotifyTests:
-    """[tier-1/unit] safe_notify: dispatches observer hooks and swallows every failure."""
-
     def test_none_observer_is_noop(self) -> None:
-        """[tier-1/unit] safe_notify: observer=None returns None without raising."""
         step = StepBuilder.command("echo test").build()
 
         result = safe_notify(None, "on_step_start", 1, 2, step)
@@ -86,7 +83,6 @@ class SafeNotifyTests:
         assert result is None
 
     def test_observer_missing_method_is_noop(self) -> None:
-        """[tier-1/unit] safe_notify: an observer lacking method_name returns None without raising."""
         observer = _NoOpRunObserver()
 
         result = safe_notify(observer, "on_some_hook_not_in_the_protocol")
@@ -94,7 +90,6 @@ class SafeNotifyTests:
         assert result is None
 
     def test_observer_method_exception_is_swallowed(self) -> None:
-        """[tier-1/unit] safe_notify: an observer whose method raises RuntimeError returns None, exception not propagated."""
         observer = _ExplodingOnStepStartObserver()
         step = StepBuilder.command("echo test").build()
 
@@ -103,7 +98,6 @@ class SafeNotifyTests:
         assert result is None
 
     def test_observer_method_called_with_exact_args_and_kwargs(self) -> None:
-        """[tier-1/unit] safe_notify: observer.method_name is invoked with the same *args/**kwargs safe_notify received, verified via a recording double."""
         observer = _RecordingOnStepStartObserver()
         step = StepBuilder.command("echo test").build()
 

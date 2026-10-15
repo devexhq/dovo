@@ -104,7 +104,10 @@ class AgentRequestBuilder:
         return self
 
     def with_tools(self, tools: ToolPolicy) -> Self:
-        """Set the resolved tool policy; the builder defaults to unrestricted allow_all so unrelated tests run on any provider."""
+        """Set the resolved tool policy.
+
+        The builder defaults to unrestricted allow_all so unrelated tests run on any provider.
+        """
         self._tools = tools
         return self
 

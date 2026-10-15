@@ -30,7 +30,6 @@ class CostsRepositoryTests:
     """Contract tests proving CostsRepository queries never cross project_id boundaries."""
 
     def test_get_session_total_cost_scopes_to_repository_project_id(self, db_path: Path, db_engine: Engine) -> None:
-        """[tier-1/integration] CostsRepository.get_session_total_cost: usage recorded under project_id='proj-a' yields all-zero totals when queried from project_id='proj-b'."""
         repo_a = CostsRepository(db_path=db_path, db_engine=db_engine, project_id="proj-a")
         repo_b = CostsRepository(db_path=db_path, db_engine=db_engine, project_id="proj-b")
         repo_a.record_token_usage(
@@ -52,7 +51,6 @@ class CostsRepositoryTests:
         }
 
     def test_record_token_usage_persists_project_id(self, db_path: Path, db_engine: Engine) -> None:
-        """[tier-1/integration] CostsRepository.record_token_usage: inserted CostRecord.project_id equals the repository's own project_id, verified via get_session_total_cost isolation."""
         repo_a = CostsRepository(db_path=db_path, db_engine=db_engine, project_id="proj-a")
         repo_a.record_token_usage(
             session_id="s1",

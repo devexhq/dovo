@@ -439,7 +439,6 @@ class ResolveRemediationsTests:
     def test_resolve_remediations_returns_exact_mapping(
         self, result: DiagnosticCheckResult, expected: list[Remediation]
     ) -> None:
-        """[tier-1/unit] resolve_remediations: returns the exact literal Remediation list for each parametrized DiagnosticCheckResult case."""
         assert resolve_remediations(result) == expected
 
 
@@ -509,5 +508,4 @@ class FormatRemediationSummaryTests:
     def test_format_remediation_summary_returns_exact_text(
         self, remediations: list[Remediation], expected: str
     ) -> None:
-        """[tier-1/unit] format_remediation_summary: returns the exact literal string for each parametrized remediation list."""
         assert format_remediation_summary(remediations) == expected

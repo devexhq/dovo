@@ -19,7 +19,6 @@ from dovo.core.agents.responses import (
 
 class TimeoutResponseTests:
     def test_timeout_response_builds_canonical_diagnostic_and_preserves_metadata(self) -> None:
-        """[tier-1/unit] timeout_response: provider="copilot", timeout_seconds=10, duration_ms=250, raw_text="partial", mutation_baseline_ref="abc" returns AgentResponse(status=TIMEOUT, duration_ms=250, raw_text="partial", mutation_baseline_ref="abc", errors=["Agent timed out after 10s (provider=copilot)."], fixes=["Raise timeout_seconds on the agent step"])."""
         response = timeout_response(
             provider="copilot",
             timeout_seconds=10,
@@ -38,7 +37,6 @@ class TimeoutResponseTests:
         )
 
     def test_timeout_response_without_metadata_leaves_it_none(self) -> None:
-        """[tier-1/unit] timeout_response: only provider, timeout_seconds and duration_ms supplied returns raw_text and mutation_baseline_ref both None and exactly one error."""
         response = timeout_response(provider="copilot", timeout_seconds=10, duration_ms=250)
 
         assert response.raw_text is None
@@ -48,7 +46,6 @@ class TimeoutResponseTests:
 
 class BlockedResponseContractTests:
     def test_blocked_response_carries_denials_then_fix(self) -> None:
-        """[tier-1/unit] blocked_response: status BLOCKED, errors lead with the AGENT_PERMISSION_BLOCKED line for the first denial then one '<tool>: <message>' per further denial, fixes hold the shell grant snippet for an ungranted bash denial and the remove-or-narrow text for a by_rule denial, duration_ms, raw_text and mutation_baseline_ref preserved."""
         response = blocked_response(
             duration_ms=7,
             denials=[
@@ -95,14 +92,12 @@ class BlockedResponseContractTests:
     def test_blocked_response_lists_one_fix_per_distinct_known_cause(
         self, denials: list[AgentDenial], expected_fix_count: int
     ) -> None:
-        """[tier-1/unit] blocked_response: repeated identical denials yield one fix and a denial with no capability and no rule yields none, while every denial still appears in errors."""
         response = blocked_response(duration_ms=1, denials=denials)
 
         assert len(response.fixes) == expected_fix_count
         assert len(response.errors) == len(denials)
 
     def test_blocked_response_requires_at_least_one_denial(self) -> None:
-        """[tier-1/unit] blocked_response: an empty denials sequence raises ValueError because the first denial leads the error text."""
         with pytest.raises(ValueError):
             blocked_response(duration_ms=1, denials=[])
 
@@ -131,14 +126,12 @@ class ProviderErrorResponseTests:
     def test_provider_error_response_orders_and_prefixes_diagnostics(
         self, detail: str | None, errors: Sequence[str], expected: list[str]
     ) -> None:
-        """[tier-1/unit] provider_error_response: (detail, errors) returns status PROVIDER_ERROR with errors == expected, the prefix present exactly once only on detail."""
         response = provider_error_response(duration_ms=1, detail=detail, errors=errors)
 
         assert response.status == AgentResponseStatus.PROVIDER_ERROR
         assert response.errors == expected
 
     def test_provider_error_response_does_not_mutate_input_errors(self) -> None:
-        """[tier-1/unit] provider_error_response: errors=["a", "b"] with detail="d" leaves the input list == ["a", "b"]."""
         errors = ["a", "b"]
 
         provider_error_response(duration_ms=1, detail="d", errors=errors)
@@ -146,7 +139,6 @@ class ProviderErrorResponseTests:
         assert errors == ["a", "b"]
 
     def test_provider_error_response_preserves_metadata(self) -> None:
-        """[tier-1/unit] provider_error_response: duration_ms=7, raw_text="r", mutation_baseline_ref="abc" are returned unchanged on the response."""
         response = provider_error_response(duration_ms=7, detail="d", raw_text="r", mutation_baseline_ref="abc")
 
         assert response.duration_ms == 7
@@ -156,7 +148,6 @@ class ProviderErrorResponseTests:
 
 class NoOpResponseTests:
     def test_no_op_response_preserves_metadata_and_carries_no_diff_or_errors(self) -> None:
-        """[tier-1/unit] no_op_response: duration_ms=9, raw_text="r", mutation_baseline_ref="abc" returns status NO_OP with those values preserved, unified_diff None, and errors == []."""
         response = no_op_response(duration_ms=9, raw_text="r", mutation_baseline_ref="abc")
 
         assert response.status == AgentResponseStatus.NO_OP
@@ -177,5 +168,4 @@ class DiagnosticsWithFixesTests:
         ],
     )
     def test_fixes_form_one_trailing_block(self, errors: list[str], fixes: list[str], expected: list[str]) -> None:
-        """[tier-1/unit] diagnostics_with_fixes: errors followed by one 'Fix:' bullet block, and no block when fixes is empty."""
         assert diagnostics_with_fixes(errors, fixes) == expected

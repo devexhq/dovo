@@ -273,17 +273,15 @@ class DoctorReportFormatterTests:
 
     @pytest.mark.parametrize("case", DOCTOR_REPORT_CASES)
     def test_transform_derives_expected_view(self, case: FormatterCase[DiagnosticsReport, DoctorReportView]) -> None:
-        """[tier-2/unit] DoctorReportFormatter.transform: derives the exact DoctorReportView for each pinned DiagnosticsReport case (mixed-status and empty-checks)."""
         assert_transform_derives_expected_view(DoctorReportFormatter, case.data, case.view)
 
     @pytest.mark.parametrize(("case", "expected_payload"), DOCTOR_REPORT_PAYLOAD_CASES)
     def test_json_payload_matches_published_shape(
         self, case: FormatterCase[DiagnosticsReport, DoctorReportView], expected_payload: dict[str, Any]
     ) -> None:
-        """[tier-2/unit] DoctorReportFormatter.to_json_serializable: matches the exact published wire-format literal dict for each pinned case."""
         assert_json_payload_matches_published_shape(DoctorReportFormatter, case.data, expected_payload)
 
     @pytest.mark.parametrize("case", DOCTOR_REPORT_CASES)
     def test_rich_render_shows_every_view_value(self, case: FormatterCase[DiagnosticsReport, DoctorReportView]) -> None:
-        """[tier-2/unit] DoctorReportFormatter.to_rich: every non-null semantic view value (check ids, upper-cased statuses, summary counts, fix bullets) reaches the rendered output."""
+        """Render every non-null view value: check ids, upper-cased statuses, summary counts and fix bullets."""
         assert_rich_render_shows_every_view_value(DoctorReportFormatter, case.data, case.render_expectations)

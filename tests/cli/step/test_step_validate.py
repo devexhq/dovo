@@ -23,7 +23,6 @@ class StepValidateCliIntegrationTests:
     """Typer runner integration tests for dovo step validate."""
 
     def test_step_validate_cli_valid_step_exits_zero(self, cli_runner: CliRunner, isolated_workspace: Path) -> None:
-        """dovo step validate <name>: a freshly scaffolded step passes validation; exit 0."""
         Catalog(_paths_for(isolated_workspace)).create(CatalogItemType.STEP, "valid-step")
 
         result = cli_runner.invoke(app, ["-p", str(isolated_workspace), "step", "validate", "valid-step"])
@@ -32,7 +31,6 @@ class StepValidateCliIntegrationTests:
         assert "PASSED" in result.stdout
 
     def test_step_validate_cli_renders_json(self, cli_runner: CliRunner, isolated_workspace: Path) -> None:
-        """dovo step validate <name> --format json: envelope reports valid=true."""
         Catalog(_paths_for(isolated_workspace)).create(CatalogItemType.STEP, "json-valid-step")
 
         result = cli_runner.invoke(
@@ -47,7 +45,6 @@ class StepValidateCliIntegrationTests:
     def test_step_validate_cli_invalid_step_schema_exits_one(
         self, cli_runner: CliRunner, isolated_workspace: Path
     ) -> None:
-        """dovo step validate <name>: an invalid step fails schema validation; exit 1."""
         Catalog(_paths_for(isolated_workspace)).save(
             "invalid-step", {"id": "invalid-step", "type": "unknown_type"}, item_type=CatalogItemType.STEP
         )
@@ -58,7 +55,6 @@ class StepValidateCliIntegrationTests:
         assert "FAILED" in result.stdout
 
     def test_step_validate_cli_missing_exits_two(self, cli_runner: CliRunner, isolated_workspace: Path) -> None:
-        """dovo step validate missing-step: exits 2 (CATALOG_ITEM_NOT_FOUND)."""
         result = cli_runner.invoke(app, ["-p", str(isolated_workspace), "step", "validate", "missing-step"])
 
         assert result.exit_code == 2
@@ -71,7 +67,6 @@ class StepValidateAskCliIntegrationTests:
     def test_unsafe_options_from_path_exits_one_with_ask_invalid_code(
         self, cli_runner: CliRunner, isolated_workspace: Path
     ) -> None:
-        """[tier-3/integration] dovo step validate --format json: a step with `options_from.file: ../x.json` exits 1 and the errors contain "(CATALOG_ASK_INVALID)."."""
         definition = {
             "id": "pick",
             "type": "ask",

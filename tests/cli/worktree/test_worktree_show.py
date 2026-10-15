@@ -27,7 +27,6 @@ class WorktreeShowCliIntegrationTests:
     def test_worktree_show_cli_existing_worktree_exits_zero(
         self, cli_runner: CliRunner, worktree_workspace: Path, dispatch_spy: list[Any]
     ) -> None:
-        """dovo worktree show <id> on an existing worktree exits 0, renders its session_id, and dispatches the exact record."""
         create_result = Worktree(paths=_paths_for(worktree_workspace)).create(name="show-me")
         assert create_result.session is not None
         session = create_result.session
@@ -56,7 +55,6 @@ class WorktreeShowCliIntegrationTests:
     def test_worktree_show_cli_missing_worktree_exits_one(
         self, cli_runner: CliRunner, worktree_workspace: Path, dispatch_spy: list[Any]
     ) -> None:
-        """dovo worktree show on a missing id exits 1, reports not found, and dispatches the exact NOT_FOUND DTO."""
         result = cli_runner.invoke(app, ["-p", str(worktree_workspace), "worktree", "show", "missing-id"])
 
         assert result.exit_code == 1
@@ -73,7 +71,6 @@ class WorktreeShowCliIntegrationTests:
         assert result_dto.fixes == ["Run `dovo worktree list` to see known worktrees"]
 
     def test_worktree_show_cli_renders_json(self, cli_runner: CliRunner, worktree_workspace: Path) -> None:
-        """dovo worktree show <id> --format json emits a WorktreeShowResult envelope matching the seeded record."""
         create_result = Worktree(paths=_paths_for(worktree_workspace)).create(name="show-me")
         assert create_result.session is not None
         session = create_result.session

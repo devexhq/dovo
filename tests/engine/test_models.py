@@ -23,7 +23,6 @@ class BlueprintRunResultTests:
         ],
     )
     def test_ok_requires_a_run_record_and_no_errors(self, has_record: bool, errors: list[str], expected: bool) -> None:
-        """[tier-1/unit] BlueprintRunResult.ok: True only when session_record is set and errors is empty."""
         record = SessionRecord(session_id="s", blueprint_name="lint", blueprint_key="lint") if has_record else None
 
         result = BlueprintRunResult(session_record=record, errors=errors)
@@ -44,7 +43,6 @@ class RunOutcomeTests:
     def test_ok_requires_completed_status_and_no_errors(
         self, tmp_path: Path, status: SessionStatus, errors: list[str], expected: bool
     ) -> None:
-        """[tier-1/unit] RunOutcome.ok: True only for status COMPLETED with an empty errors list."""
         outcome = RunOutcome(status=status, worktree_path=tmp_path, errors=errors)
 
         assert outcome.ok is expected
@@ -52,7 +50,6 @@ class RunOutcomeTests:
 
 class AgentSettingsResolutionTests:
     def test_ok_is_false_without_settings_and_true_with_them(self) -> None:
-        """[tier-1/unit] AgentSettingsResolution.ok: False when settings is None, True when resolved settings are present."""
         settings = ResolvedAgentSettings(
             provider="copilot",
             model="m",
@@ -68,6 +65,5 @@ class AgentSettingsResolutionTests:
 
 class DefinitionRefTests:
     def test_unknown_field_is_rejected(self) -> None:
-        """[tier-1/unit] DefinitionRef: an unexpected field raises ValidationError, so a manifest cannot carry undeclared keys."""
         with pytest.raises(ValidationError):
             DefinitionRef.model_validate({"ref": "lint", "sha": "abc", "resolved_at": "t", "extra": 1})

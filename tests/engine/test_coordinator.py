@@ -354,12 +354,9 @@ def saved_states(monkeypatch: pytest.MonkeyPatch) -> list[ExecutionStateTree]:
 
 
 class CoordinatorExecuteTests:
-    """[tier-1/integration] RunCoordinator.execute: durable transitions for linear runs."""
-
     def test_two_leaf_run_completes_with_flattened_results_and_advancing_revision(
         self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository
     ) -> None:
-        """[tier-1/integration] RunCoordinator.execute: two echo leaves return COMPLETED with step_results ids [a, b], both nodes completed in the persisted state, and execution_state_revision greater than its initial value."""
         outcome = _run_new(engine_paths, sessions_repo, "two", [_step("a", "echo a"), _step("b", "echo b")])
 
         assert outcome.status == SessionStatus.COMPLETED
@@ -373,7 +370,6 @@ class CoordinatorExecuteTests:
     def test_abort_policy_failure_marks_leaf_failed_and_skips_later_leaves(
         self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository, engine_workspace: Path
     ) -> None:
-        """[tier-1/integration] RunCoordinator.execute: leaf a exits 1 under abort returns FAILED with errors == ["Step 'a' failed: <detail>"], node a failed, node b pending, and b's marker file absent."""
         outcome = _run_new(engine_paths, sessions_repo, "abort", [_step("a", "exit 1"), _step("b", "touch b.ran")])
 
         assert outcome.status == SessionStatus.FAILED
@@ -385,7 +381,6 @@ class CoordinatorExecuteTests:
     def test_continue_policy_marks_leaf_ignored_and_runs_remaining_leaves(
         self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository
     ) -> None:
-        """[tier-1/integration] RunCoordinator.execute: leaf a failing under continue returns COMPLETED with step_results statuses ["ignored", "completed"] and node a ignored."""
         outcome = _run_new(
             engine_paths,
             sessions_repo,
@@ -400,7 +395,6 @@ class CoordinatorExecuteTests:
     def test_fresh_and_resumed_linear_runs_produce_equal_step_results(
         self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository
     ) -> None:
-        """[tier-1/integration] RunCoordinator.execute: a three-step run executed straight through and one paused at step 2 then resumed with continue return step_results with equal (step_id, status) sequences."""
         straight = _run_new(
             engine_paths,
             sessions_repo,
@@ -427,7 +421,6 @@ class CoordinatorExecuteTests:
     def test_unreadable_state_returns_failed_outcome_without_running_steps(
         self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository, engine_workspace: Path
     ) -> None:
-        """[tier-1/integration] RunCoordinator.execute: a row with corrupt execution_state_json returns FAILED with errors == [store error "Execution state for session '<id>' is corrupt."] and no step marker file."""
         seed_new_session(engine_paths, sessions_repo, session_id="bad", steps=[_step("a", "touch a.ran")])
         sessions_repo.save_execution_state("bad", "{not json", expected_revision=0, next_revision=1)
 
@@ -444,7 +437,6 @@ class CoordinatorExecuteTests:
         engine_workspace: Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """[tier-1/integration] RunCoordinator.execute: save_execution_state returning None after leaf a finished returns FAILED with errors[0] starting "Failed to persist run state after step 'a' finished:" and node b's marker file absent."""
         seed_new_session(
             engine_paths, sessions_repo, session_id="persist", steps=[_step("a", "echo a"), _step("b", "touch b.ran")]
         )
@@ -489,7 +481,6 @@ class CoordinatorExecuteTests:
     def test_interrupted_attempt_is_closed_failed_and_never_completed(
         self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository, engine_workspace: Path
     ) -> None:
-        """[tier-1/integration] RunCoordinator.execute: a RUNNING leaf whose last attempt has result None ends with attempts[-1].result.status "failed" and error_message "Step attempt was interrupted before it recorded a result.", and the leaf is never completed."""
         seed_new_session(engine_paths, sessions_repo, session_id="crash", steps=[_step("a", "touch a.ran")])
         store = SessionStateStore(sessions_repo, engine_paths, "crash")
         state = _state(engine_paths, sessions_repo, "crash")
@@ -510,7 +501,6 @@ class CoordinatorExecuteTests:
     def test_keyboard_interrupt_during_step_cancels_run_and_marks_node_cancelled(
         self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """[tier-1/integration] RunCoordinator.execute: KeyboardInterrupt raised by StepExecution.run returns CANCELLED with errors == ["Execution cancelled by user."] and the in-flight node persisted cancelled."""
 
         def interrupted(self: StepExecution) -> StepResult:
             raise KeyboardInterrupt
@@ -527,7 +517,6 @@ class CoordinatorExecuteTests:
     def test_observer_exception_does_not_abort_run(
         self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository
     ) -> None:
-        """[tier-1/integration] RunCoordinator.execute: an observer raising from every callback still yields COMPLETED with both step results."""
         outcome = _run_new(
             engine_paths,
             sessions_repo,
@@ -542,7 +531,6 @@ class CoordinatorExecuteTests:
     def test_retried_step_logs_final_attempt_number(
         self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository
     ) -> None:
-        """[tier-1/integration] RunCoordinator.execute: a step with retry max_retries 3 failing twice then passing records a STEP_DONE event with attempt 3 and a result with attempts == 3."""
         flaky = 'n=$(cat count 2>/dev/null || echo 0); n=$((n+1)); echo $n > count; [ "$n" -ge 3 ]'
         outcome = _run_new(
             engine_paths,
@@ -572,7 +560,6 @@ class CoordinatorExecuteTests:
         command: str,
         expected_artifacts: list[str],
     ) -> None:
-        """[tier-1/integration] RunCoordinator.execute: a passing leaf declaring artifacts under a context with an artifacts repository leaves those artifacts listed by the repository, and a failing leaf declaring artifacts publishes none."""
         _run_new(
             engine_paths,
             sessions_repo,
@@ -585,8 +572,6 @@ class CoordinatorExecuteTests:
 
 
 class CoordinatorArtifactRevisionsTests:
-    """[tier-1/integration] RunCoordinator loop republishing: every iteration adds an immutable artifact revision."""
-
     def test_loop_republishing_plan_creates_revisions_one_to_n_all_downloadable(
         self,
         engine_paths: WorkspacePaths,
@@ -594,7 +579,6 @@ class CoordinatorArtifactRevisionsTests:
         artifacts_repository: ArtifactsRepository,
         tmp_path: Path,
     ) -> None:
-        """[tier-1/integration] RunCoordinator.execute: a loop (max_iterations=3) whose do: step writes PLAN.md per iteration and declares artifacts -> rows revision 1..3 with loop_iteration 1..3, and download_artifact(revision=n) returns iteration n's text."""
         steps = [
             _loop(
                 "loop",
@@ -630,12 +614,9 @@ class CoordinatorArtifactRevisionsTests:
 
 
 class CoordinatorObserverContractTests:
-    """[tier-1/integration] RunCoordinator.execute: observer callback sequence and session.log round-trip contracts."""
-
     def test_linear_run_emits_pinned_observer_sequence(
         self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository
     ) -> None:
-        """[tier-1/integration] RunCoordinator.execute: a 3-step run [a, b, c] gives one ordered observer sequence ("step_start", 1, 3, "a"), ("step_done", 1, 3, "a", "completed"), then the same pair at 2/3 for b and 3/3 for c, with no loop callbacks."""
         observer = _SequenceObserver()
 
         _run_new(
@@ -658,7 +639,6 @@ class CoordinatorObserverContractTests:
     def test_loop_run_emits_pinned_observer_sequence(
         self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository
     ) -> None:
-        """[tier-1/integration] RunCoordinator.execute: a 2-iteration loop of [s1, s2] gives the 14-call ordered observer sequence loop_start(2), iteration_start(1), s1 (1/2), s2 (2/2), conditions([False], False, next 2), iteration_start(2), s1 (1/2), s2 (2/2), conditions([True], True, None), loop_done("completed", 2)."""
         observer = _SequenceObserver()
 
         _run_new(
@@ -689,7 +669,6 @@ class CoordinatorObserverContractTests:
     def test_loop_session_log_round_trips_through_reader(
         self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository
     ) -> None:
-        """[tier-1/integration] read_session_log_events: a coordinator-written session.log for a 2-iteration loop "loop" of [s1, s2] returns one event per file line matching the pinned 14-event (event, details()) sequence, with step_start/step_done details carrying loop_id "loop", iteration 1 then 2 and step_name absent, step_done duration_seconds a float, loop_done iteration 2, and conditions passed [False] then [True]."""
         _run_new(engine_paths, sessions_repo, "loop-log", [_loop("loop", [_step("s1", "true"), _step("s2", "true")])])
         log_dir = engine_paths.logs_dir / "loop-log"
 
@@ -715,7 +694,6 @@ class CoordinatorObserverContractTests:
     def test_top_level_step_events_leave_loop_fields_null(
         self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository
     ) -> None:
-        """[tier-1/integration] read_session_log_events: a coordinator-written session.log for top-level steps [a, b] has step_start/step_done events whose loop_id and iteration are None."""
         _run_new(engine_paths, sessions_repo, "flat-log", [_step("a", "true"), _step("b", "true")])
 
         events = read_session_log_events(engine_paths.logs_dir / "flat-log", tail=None)
@@ -727,7 +705,6 @@ class CoordinatorObserverContractTests:
     def test_step_name_and_duration_are_logged(
         self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository
     ) -> None:
-        """[tier-1/integration] read_session_log_events: a run of [step "a" with name "Run tests", step "b" without name] gives step_start step_name "Run tests" then None, and step_done duration_seconds equal to the matching RunOutcome.step_results[i].duration_seconds."""
         outcome = _run_new(
             engine_paths,
             sessions_repo,
@@ -744,12 +721,9 @@ class CoordinatorObserverContractTests:
 
 
 class CoordinatorLoadTests:
-    """[tier-1/integration] RunCoordinator.load and steps: memoized definition loading."""
-
     def test_execute_after_failed_load_returns_failed_with_load_error_once(
         self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository
     ) -> None:
-        """[tier-1/integration] RunCoordinator.load: a run whose definitions snapshot is missing gives load() False, and a following execute() returns FAILED with the load error appearing exactly once in errors."""
         seed_new_session(engine_paths, sessions_repo, session_id="load-fail", steps=[_step("a", "true")])
         snapshot_blueprint_path(engine_paths.session_dir("load-fail"), "load-fail").unlink()
         coordinator = _coordinator(engine_paths, sessions_repo, "load-fail")
@@ -763,7 +737,6 @@ class CoordinatorLoadTests:
     def test_steps_returns_top_level_definitions_after_load(
         self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository
     ) -> None:
-        """[tier-1/integration] RunCoordinator.steps: after load() on a run of [step "a", loop "loop"], steps ids are ["a", "loop"]; a second load() after deleting the snapshot still returns True."""
         seed_new_session(
             engine_paths,
             sessions_repo,
@@ -780,12 +753,9 @@ class CoordinatorLoadTests:
 
 
 class CoordinatorMetadataTests:
-    """[tier-1/integration] RunCoordinator.execute: execution metadata reaches step environments and templates."""
-
     def test_first_step_sees_empty_previous_step_env_vars(
         self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository
     ) -> None:
-        """[tier-1/integration] RunCoordinator.execute: the first step's DOVO_PREVIOUS_STEP_ID and DOVO_PREVIOUS_STEP_STATUS are empty."""
         outcome = _run_new(
             engine_paths,
             sessions_repo,
@@ -798,7 +768,6 @@ class CoordinatorMetadataTests:
     def test_second_step_sees_previous_step_id_name_index_status_exit_code_env_vars(
         self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository
     ) -> None:
-        """[tier-1/integration] RunCoordinator.execute: the second step's DOVO_PREVIOUS_STEP_* variables carry the first step's id, name, 1-based index, status, and exit code."""
         outcome = _run_new(
             engine_paths,
             sessions_repo,
@@ -822,7 +791,6 @@ class CoordinatorMetadataTests:
     def test_continue_on_failure_previous_step_status_is_ignored_with_exit_code_zero(
         self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository
     ) -> None:
-        """[tier-1/integration] RunCoordinator.execute: after a failing step under continue, the next step sees previous status ignored and exit code 0."""
         outcome = _run_new(
             engine_paths,
             sessions_repo,
@@ -843,7 +811,6 @@ class CoordinatorMetadataTests:
     def test_prompt_user_retry_increments_step_attempt_env_var_from_one_to_two(
         self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository
     ) -> None:
-        """[tier-1/integration] RunCoordinator.execute: a prompt_user retry runs the step again with DOVO_STEP_ATTEMPT 2 and records attempts == 2."""
         outcome = _run_new(
             engine_paths,
             sessions_repo,
@@ -864,7 +831,6 @@ class CoordinatorMetadataTests:
     def test_three_step_run_propagates_steps_context_and_dovo_steps_json_excluding_in_flight_step(
         self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository
     ) -> None:
-        """[tier-1/integration] RunCoordinator.execute: later steps see only finished steps through the steps template context and DOVO_STEPS_JSON."""
         outcome = _run_new(
             engine_paths,
             sessions_repo,
@@ -908,7 +874,6 @@ class CoordinatorMetadataTests:
         consumer: str,
         expected: str,
     ) -> None:
-        """[tier-1/integration] RunCoordinator.execute: step_b's '{{ steps.step_a.outputs.<key> }}' interpolates to step_a's $DOVO_OUTPUT value, or an empty string for an unknown key."""
         outcome = _run_new(
             engine_paths,
             sessions_repo,
@@ -922,7 +887,6 @@ class CoordinatorMetadataTests:
     def test_final_step_sees_correctly_named_steps_for_prior_step_and_both_loop_iterations(
         self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository
     ) -> None:
-        """[tier-1/integration] RunCoordinator.execute: a run of [top-level 'first', a 2-iteration loop with one sub-step 'tick', top-level 'last'] gives 'last' a command '{{ steps[0].name }}|{{ steps[1].name }}|{{ steps[2].name }}' whose stdout is 'First|Tick|Tick'."""
         outcome = _run_new(
             engine_paths,
             sessions_repo,
@@ -939,12 +903,9 @@ class CoordinatorMetadataTests:
 
 
 class CoordinatorLeafTransitionTests:
-    """[tier-1/integration] RunCoordinator.execute: one durable transition per leaf, including prompt decisions."""
-
     def test_pending_leaf_success_returns_completed_and_persists_state(
         self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository
     ) -> None:
-        """[tier-1/integration] RunCoordinator.execute: a PENDING echo leaf completes the run, and the row's state shows the node completed with one attempt whose number is 1."""
         outcome = _run_new(engine_paths, sessions_repo, "adv-ok", [_step("a", "echo a")])
 
         leaf = _leaf(_state(engine_paths, sessions_repo, "adv-ok"), "a")
@@ -955,7 +916,6 @@ class CoordinatorLeafTransitionTests:
     def test_prompt_retry_then_abort_prompts_twice_and_fails_node_with_two_attempts(
         self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository
     ) -> None:
-        """[tier-1/integration] RunCoordinator.execute: a prompt_user failure answered retry then abort prompts twice, and the persisted node is failed with two attempts."""
         prompter = _Prompter([FailurePromptDecision.RETRY, FailurePromptDecision.ABORT])
 
         outcome = _run_new(
@@ -975,7 +935,6 @@ class CoordinatorLeafTransitionTests:
     def test_prompt_continue_decision_ignores_node_with_user_continued_marker(
         self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository
     ) -> None:
-        """[tier-1/integration] RunCoordinator.execute: a prompt_user failure answered continue completes the run, the node is ignored, and attempts[-1].result.error_message ends "(user continued after prompt_user)"."""
         outcome = _run_new(
             engine_paths,
             sessions_repo,
@@ -992,7 +951,6 @@ class CoordinatorLeafTransitionTests:
     def test_prompt_abort_decision_fails_node_with_step_failed_message(
         self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository
     ) -> None:
-        """[tier-1/integration] RunCoordinator.execute: a prompt_user failure answered abort fails the node and the outcome errors are ["Step '<id>' failed: <detail>"]."""
         outcome = _run_new(
             engine_paths,
             sessions_repo,
@@ -1021,7 +979,6 @@ class CoordinatorLeafTransitionTests:
         prompter: _Prompter | None,
         warning_substr: str,
     ) -> None:
-        """[tier-1/integration] RunCoordinator.execute: prompt_user with no_tty=True or prompter None fails the run with the warning "Warning: step '<id>' requested prompt_user but ... aborting." and no saved revision has run status paused."""
         outcome = _run_new(
             engine_paths,
             sessions_repo,
@@ -1042,7 +999,6 @@ class CoordinatorLeafTransitionTests:
     def test_prompt_persists_paused_state_before_prompter_is_consulted(
         self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository
     ) -> None:
-        """[tier-1/integration] RunCoordinator.execute: a prompter that reads the session row when called sees status paused and the leaf PAUSED with its failed attempt result, and a continue decision then completes the run."""
         seen: dict[str, object] = {}
 
         def read_row() -> None:
@@ -1067,7 +1023,6 @@ class CoordinatorLeafTransitionTests:
     def test_keyboard_interrupt_at_top_level_prompt_returns_paused_outcome_with_diagnostic(
         self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository
     ) -> None:
-        """[tier-1/integration] RunCoordinator.execute: a KeyboardInterrupt raised by the prompter of a top-level leaf returns a PAUSED outcome with the failed-step diagnostic as errors[0], the row paused, and the leaf PAUSED."""
         outcome = _run_new(
             engine_paths,
             sessions_repo,
@@ -1087,7 +1042,6 @@ class CoordinatorLeafTransitionTests:
     def test_retry_exhausted_escalates_to_on_max_retries_prompt(
         self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository
     ) -> None:
-        """[tier-1/integration] RunCoordinator.execute: retry max_retries 2 with on_max_retries prompt_user prompts once after both attempts fail, with the prompted result's attempts == 2."""
         prompter = _Prompter([FailurePromptDecision.ABORT])
 
         outcome = _run_new(
@@ -1109,7 +1063,7 @@ class CoordinatorLeafTransitionTests:
 
 
 def _counting_body(paused_position: int | None) -> list[dict[str, object]]:
-    """Three prompt_user body steps that append to <id>.count; the step at paused_position also fails until `allow` exists."""
+    """Build three prompt_user body steps counting runs in <id>.count; paused_position fails until `allow` exists."""
     body: list[dict[str, object]] = []
     for position in range(3):
         command = f"echo ran >> s{position}.count"
@@ -1135,8 +1089,6 @@ def _pause_loop(
 
 
 class CoordinatorLoopBodyParityTests:
-    """[tier-1/integration] RunCoordinator loop bodies: body leaves share the top-level leaf path."""
-
     @pytest.mark.parametrize(
         ("on_failure", "decisions", "no_tty"),
         [
@@ -1155,7 +1107,6 @@ class CoordinatorLoopBodyParityTests:
         decisions: list[FailurePromptDecision],
         no_tty: bool,
     ) -> None:
-        """[tier-1/integration] RunCoordinator.execute: for on_failure retry-then-pass, continue, prompt_user answered continue, prompt_user answered abort, and prompt_user with no_tty, a single-step loop (max_iterations 1) yields the same (status, attempts, error_message) for its body leaf and the same outcome errors and warnings as the identical top-level step."""
 
         def flaky(marker: str) -> dict[str, object]:
             command = f"test -f {marker} || {{ touch {marker}; exit 1; }}"
@@ -1190,7 +1141,6 @@ class CoordinatorLoopBodyParityTests:
         sessions_repo: SessionsRepository,
         artifacts_repository: ArtifactsRepository,
     ) -> None:
-        """[tier-1/integration] RunCoordinator.execute: a loop body step with an `artifacts` entry that succeeds publishes exactly one artifact row named per the spec."""
         _run_new(
             engine_paths,
             sessions_repo,
@@ -1210,7 +1160,6 @@ class CoordinatorLoopBodyParityTests:
     def test_second_iteration_step_sees_first_iteration_step_as_previous_step(
         self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository
     ) -> None:
-        """[tier-1/integration] RunCoordinator.execute: iteration 2's first body step echoing {{ previous_step.status }} prints "completed" from iteration 1's last body step."""
         outcome = _run_new(
             engine_paths,
             sessions_repo,
@@ -1223,7 +1172,6 @@ class CoordinatorLoopBodyParityTests:
     def test_iteration_index_and_attempt_logs_are_distinct_per_iteration(
         self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository
     ) -> None:
-        """[tier-1/integration] RunCoordinator.execute: a two-iteration loop writes attempt logs whose names contain `_iter_1_` and `_iter_2_` and neither overwrites the other."""
         _run_new(engine_paths, sessions_repo, "loop-logs", [_loop("loop", [_step("s", "echo $DOVO_ITERATION_INDEX")])])
 
         names = sorted(path.name for path in (engine_paths.logs_dir / "loop-logs").glob("*.stdout.log"))
@@ -1231,13 +1179,10 @@ class CoordinatorLoopBodyParityTests:
 
 
 class CoordinatorLoopResumeTests:
-    """[tier-1/integration] RunCoordinator loop resume: the paused iteration and body step continue from durable state."""
-
     @pytest.mark.parametrize("paused_position", [0, 1, 2])
     def test_interrupt_at_body_step_pauses_run_with_loop_and_iteration_running(
         self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository, paused_position: int
     ) -> None:
-        """[tier-1/integration] RunCoordinator.execute: Ctrl-C from the prompter at body step `paused_position` of a three-step body returns PAUSED; that leaf is paused with a failed last attempt, earlier leaves completed, later leaves pending, iteration 1 and the loop running."""
         outcome = _pause_loop(
             engine_paths,
             sessions_repo,
@@ -1262,7 +1207,6 @@ class CoordinatorLoopResumeTests:
         engine_workspace: Path,
         paused_position: int,
     ) -> None:
-        """[tier-1/integration] RunCoordinator.execute: resuming after a pause at `paused_position` with a retry decision leaves each earlier step's counter file at one line, hands the prompter the persisted failed result (exit_code 1, original error_message) before the paused command re-runs as attempt 2, runs later steps once, and returns COMPLETED."""
         steps = [_loop("loop", _counting_body(paused_position), max_iterations=1)]
         _pause_loop(engine_paths, sessions_repo, "loop-retry", steps)
         paused_id = f"s{paused_position}"
@@ -1288,7 +1232,6 @@ class CoordinatorLoopResumeTests:
     def test_resume_continue_ignores_paused_step_and_proceeds(
         self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository, engine_workspace: Path
     ) -> None:
-        """[tier-1/integration] RunCoordinator.execute: resume with continue marks the paused body leaf ignored with the user-continued marker, runs the remaining body steps, and returns COMPLETED."""
         _pause_loop(engine_paths, sessions_repo, "loop-continue", [_loop("loop", _counting_body(1), max_iterations=1)])
 
         outcome = _coordinator(
@@ -1304,7 +1247,6 @@ class CoordinatorLoopResumeTests:
     def test_resume_abort_fails_loop_and_leaves_later_steps_pending(
         self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository
     ) -> None:
-        """[tier-1/integration] RunCoordinator.execute: resume with abort returns FAILED with errors == ["Step '<id>' failed: <detail>"], the body leaf, iteration, and loop failed, later body leaves pending, and no further iteration."""
         _pause_loop(engine_paths, sessions_repo, "loop-abort-resume", [_loop("loop", _counting_body(1))])
 
         outcome = _coordinator(
@@ -1325,7 +1267,6 @@ class CoordinatorLoopResumeTests:
     def test_pause_in_second_iteration_never_reexecutes_first_iteration(
         self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository, engine_workspace: Path
     ) -> None:
-        """[tier-1/integration] RunCoordinator.execute: a pause at body step 2 of iteration 2 then resume keeps every iteration-1 step's counter file at one line and finishes iteration 2 without creating a third iteration."""
         second_iteration_gate = "echo ran >> s1.count; test $(wc -l < s1.count) -lt 2 || test -f allow"
         steps = [
             _loop(
@@ -1348,7 +1289,6 @@ class CoordinatorLoopResumeTests:
     def test_paused_and_resumed_loop_matches_uninterrupted_flattened_results(
         self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository, engine_workspace: Path
     ) -> None:
-        """[tier-1/integration] RunCoordinator.execute: the flattened (step_id, status) list of a paused-then-resumed two-iteration loop equals the uninterrupted run's list, in the same order."""
         gate = "test $(wc -l < s1.count) -lt 2 || test -f allow"
         steps = [
             _loop(
@@ -1372,7 +1312,6 @@ class CoordinatorLoopResumeTests:
     def test_running_body_attempt_without_result_recovers_to_paused_and_reprompts(
         self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository, engine_workspace: Path
     ) -> None:
-        """[tier-1/integration] RunCoordinator.execute: a body leaf RUNNING with an unfinished attempt is closed as failed with "Step attempt was interrupted before it recorded a result.", marked paused, handed to the prompter, and its command is not re-run."""
         seed_new_session(
             engine_paths,
             sessions_repo,
@@ -1399,7 +1338,6 @@ class CoordinatorLoopResumeTests:
     def test_resume_emits_no_second_loop_start_or_iteration_start_for_the_paused_iteration(
         self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository
     ) -> None:
-        """[tier-1/integration] RunCoordinator.execute: session.log after pause plus resume holds exactly one LOOP_START and one LOOP_ITERATION_START for iteration 1."""
         _pause_loop(engine_paths, sessions_repo, "loop-events", [_loop("loop", _counting_body(1), max_iterations=1)])
 
         _coordinator(
@@ -1412,12 +1350,9 @@ class CoordinatorLoopResumeTests:
 
 
 class CoordinatorLoopUntilTests:
-    """[tier-1/integration] RunCoordinator loop conditions: until sees the whole iteration."""
-
     def test_until_after_resume_sees_results_persisted_before_the_pause(
         self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository, engine_workspace: Path
     ) -> None:
-        """[tier-1/integration] RunCoordinator.execute: body [a, b] with until ["steps.a.exit_code == 0", "steps.b.exit_code == 0"], paused at b and resumed with retry, completes in iteration 1 with until_passed True and an observer on_loop_conditions_evaluated carrying two passed results."""
         steps = [
             _loop(
                 "loop",
@@ -1441,12 +1376,9 @@ class CoordinatorLoopUntilTests:
 
 
 class CoordinatorLoopTerminalTests:
-    """[tier-1/integration] RunCoordinator loop transitions: iteration completion, repetition, and loop termination."""
-
     def test_passing_until_on_first_iteration_persists_single_completed_iteration(
         self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository
     ) -> None:
-        """[tier-1/integration] RunCoordinator.execute: max_iterations 5 with until true on iteration 1 persists exactly one iteration (COMPLETED, until_passed True) and a COMPLETED loop."""
         outcome = _run_new(
             engine_paths,
             sessions_repo,
@@ -1465,7 +1397,7 @@ class CoordinatorLoopTerminalTests:
         sessions_repo: SessionsRepository,
         saved_states: list[ExecutionStateTree],
     ) -> None:
-        """[tier-1/integration] RunCoordinator.execute: a saved revision exists with iteration 1 COMPLETED and until_passed False and only one iteration in the loop, and a later revision adds iteration 2."""
+        """Persist iteration 1 COMPLETED with until_passed False before iteration 2 exists."""
         _run_new(engine_paths, sessions_repo, "loop-persist", [_loop("loop", [_step("s", "true")])])
 
         shapes = [
@@ -1477,7 +1409,6 @@ class CoordinatorLoopTerminalTests:
     def test_loop_block_results_recorded_as_iterations_and_flattened_in_order(
         self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository
     ) -> None:
-        """[tier-1/integration] RunCoordinator.execute: plain step, two-iteration loop of two steps, plain step returns step_results ids [p1, s1, s2, s1, s2, p2] with iterations numbered [1, 2] and until_passed [False, True]."""
         outcome = _run_new(
             engine_paths,
             sessions_repo,
@@ -1501,7 +1432,6 @@ class CoordinatorLoopTerminalTests:
     def test_body_abort_marks_iteration_and_loop_failed_with_single_step_error(
         self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository
     ) -> None:
-        """[tier-1/integration] RunCoordinator.execute: a body step failing under abort returns FAILED with errors == ["Step 's' failed: <detail>"] (once), iteration FAILED, loop FAILED."""
         outcome = _run_new(
             engine_paths,
             sessions_repo,
@@ -1516,8 +1446,6 @@ class CoordinatorLoopTerminalTests:
 
 
 class CoordinatorLoopCeilingTests:
-    """[tier-1/integration] RunCoordinator loop ceiling: on_max_iterations applies exactly once."""
-
     _CEILING = "Loop 'loop' reached max_iterations (2) without meeting 'until' conditions."
 
     @pytest.mark.parametrize(
@@ -1544,7 +1472,6 @@ class CoordinatorLoopCeilingTests:
         warnings: list[str],
         loop_state: NodeState,
     ) -> None:
-        """[tier-1/integration] RunCoordinator.execute: max_iterations 2 with unmet until: abort -> FAILED, errors == ["Loop 'loop' reached max_iterations (2) without meeting 'until' conditions."], loop FAILED; continue -> COMPLETED with that text ending "; continuing." once in warnings, loop COMPLETED; each has iterations with until_passed [False, False]."""
         outcome = _run_new(
             engine_paths,
             sessions_repo,
@@ -1596,7 +1523,6 @@ class CoordinatorLoopCeilingTests:
         errors: list[str],
         warnings: list[str],
     ) -> None:
-        """[tier-1/integration] RunCoordinator.execute: prompt_user ceiling answered continue -> COMPLETED with the continuing warning; answered abort -> FAILED with "Loop 'loop' aborted by user after max_iterations."; no_tty -> FAILED with "Loop 'loop' reached max_iterations (2) and run is non-interactive." and the prompter never consulted."""
         prompter = _Prompter(loop_decisions=[answer] if answer is not None else [])
 
         outcome = _run_new(
@@ -1614,7 +1540,6 @@ class CoordinatorLoopCeilingTests:
     def test_grant_decision_persists_larger_ceiling_and_runs_more_iterations(
         self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository
     ) -> None:
-        """[tier-1/integration] RunCoordinator.execute: max_iterations 1, until "iteration.index >= 3", prompter answering grant once: prompter called once with iteration 1 and grant_count 3, persisted loop.max_iterations 1 and granted_iterations 3, three iterations, COMPLETED."""
         prompter = _Prompter(loop_decisions=[LoopPromptDecision.GRANT])
 
         outcome = _run_new(
@@ -1633,7 +1558,6 @@ class CoordinatorLoopCeilingTests:
     def test_interrupt_at_ceiling_prompt_cancels_run_and_marks_loop_cancelled(
         self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository
     ) -> None:
-        """[tier-1/integration] RunCoordinator.execute: Ctrl-C from the ceiling prompt returns CANCELLED, the loop node is cancelled, and the last body leaf stays completed."""
         outcome = _run_new(
             engine_paths,
             sessions_repo,
@@ -1648,8 +1572,6 @@ class CoordinatorLoopCeilingTests:
 
 
 class CoordinatorCorruptLoopStateTests:
-    """[tier-1/integration] RunCoordinator.execute: loop state that differs structurally from the snapshot is rejected before any step runs."""
-
     @pytest.mark.parametrize("corruption", ["loop_id", "child_order", "child_id"])
     def test_structurally_corrupt_loop_state_fails_before_any_step_runs(
         self,
@@ -1658,7 +1580,6 @@ class CoordinatorCorruptLoopStateTests:
         engine_workspace: Path,
         corruption: str,
     ) -> None:
-        """[tier-1/integration] RunCoordinator.execute: a saved tree with a renamed loop id, swapped iteration children, or a renamed child returns FAILED with errors == ["Execution state for session '<id>' is corrupt: <validator message>"], no marker file created, and no further state revision saved."""
         body = [_step("edit", "touch edit.ran"), _step("verify", "touch verify.ran")]
         seed_new_session(engine_paths, sessions_repo, session_id="corrupt-loop", steps=[_loop("fix", body)])
         store = SessionStateStore(sessions_repo, engine_paths, "corrupt-loop")
@@ -1685,8 +1606,6 @@ class CoordinatorCorruptLoopStateTests:
 
 
 class CoordinatorPausedGateTests:
-    """[tier-1/integration] RunCoordinator.execute: a PAUSED leaf re-enters the failure gate without re-executing."""
-
     _STEPS: ClassVar[list[dict[str, object]]] = [
         _step("a", "true"),
         _step("b", "echo ran >> b.ran", on_failure="prompt_user"),
@@ -1699,7 +1618,6 @@ class CoordinatorPausedGateTests:
     def test_paused_leaf_reprompts_from_last_attempt_without_reexecuting(
         self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository, engine_workspace: Path
     ) -> None:
-        """[tier-1/integration] RunCoordinator.execute: a PAUSED leaf resumed with a prompter answering continue never runs its command (counter file absent), passes the persisted failed result (exit_code 1, error_message from the seed) to the prompter, and ends ignored."""
         self._seed(engine_paths, sessions_repo, "gate-continue")
         prompter = _Prompter([FailurePromptDecision.CONTINUE])
 
@@ -1717,7 +1635,6 @@ class CoordinatorPausedGateTests:
     def test_paused_leaf_retry_decision_starts_next_attempt_and_reexecutes_once(
         self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository, engine_workspace: Path
     ) -> None:
-        """[tier-1/integration] RunCoordinator.execute: a PAUSED leaf whose last attempt is number 1 resumed with retry runs its command exactly once as attempt 2, and on success the node is completed with attempts numbered [1, 2]."""
         self._seed(engine_paths, sessions_repo, "gate-retry")
 
         outcome = _coordinator(
@@ -1733,7 +1650,6 @@ class CoordinatorPausedGateTests:
     def test_paused_leaf_abort_decision_fails_node_without_executing(
         self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository, engine_workspace: Path
     ) -> None:
-        """[tier-1/integration] RunCoordinator.execute: a PAUSED leaf resumed with abort returns FAILED with errors == ["Step '<id>' failed: <detail>"], node failed, command marker file absent, later leaves pending."""
         self._seed(engine_paths, sessions_repo, "gate-abort")
 
         outcome = _coordinator(
@@ -1749,12 +1665,9 @@ class CoordinatorPausedGateTests:
 
 
 class CoordinatorInvalidStateTests:
-    """[tier-1/integration] RunCoordinator: runs whose durable state cannot be driven fail without executing steps."""
-
     def test_step_missing_from_snapshot_definitions_fails_run_without_executing(
         self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository, engine_workspace: Path
     ) -> None:
-        """[tier-1/integration] RunCoordinator.execute: a state node whose id has no snapshot definition returns FAILED with errors == ["Step 'ghost' has no matching definition in the run snapshot."] and no marker file."""
         seed_new_session(engine_paths, sessions_repo, session_id="ghost-def", steps=[_step("a", "touch a.ran")])
         store = SessionStateStore(sessions_repo, engine_paths, "ghost-def")
         state = _state(engine_paths, sessions_repo, "ghost-def")
@@ -1770,7 +1683,6 @@ class CoordinatorInvalidStateTests:
     def test_paused_leaf_without_recorded_result_fails_run_without_executing(
         self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository, engine_workspace: Path
     ) -> None:
-        """[tier-1/integration] RunCoordinator.execute: a PAUSED leaf whose last attempt has no result returns FAILED with errors == ["Paused step 'b' has no recorded attempt result."] and no marker file."""
         seed_paused_session(
             engine_paths,
             sessions_repo,
@@ -1792,7 +1704,6 @@ class CoordinatorInvalidStateTests:
     def test_run_row_deleted_after_state_load_fails_run(
         self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """[tier-1/integration] RunCoordinator.execute: a session row that disappears after its state was loaded returns FAILED with errors == ["Session 'vanished' not found."]."""
         seed_new_session(engine_paths, sessions_repo, session_id="vanished", steps=[_step("a", "true")])
         real_get = SessionsRepository.get
         calls: list[str] = []
@@ -1810,12 +1721,9 @@ class CoordinatorInvalidStateTests:
 
 
 class CoordinatorWorktreeIdTests:
-    """[tier-1/integration] RunCoordinator worktree identity: the row's worktree_id follows the session's worktree."""
-
     def test_worktree_run_persists_worktree_id_on_first_transition_save(
         self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """[tier-1/integration] RunCoordinator.execute: with context.worktree set, the row read from inside the first step's command already has worktree_id equal to context.worktree.session_id."""
         worktree = WorktreeSession(
             session_id="dovo_77",
             target_branch="dovo/dovo_77",
@@ -1842,7 +1750,6 @@ class CoordinatorWorktreeIdTests:
     def test_run_without_worktree_leaves_worktree_id_none(
         self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository
     ) -> None:
-        """[tier-1/integration] RunCoordinator.execute: with context.worktree None the completed row has worktree_id None."""
         outcome = _run_new(engine_paths, sessions_repo, "no-worktree", [_step("a", "true")])
 
         row = sessions_repo.get("no-worktree")
@@ -1884,7 +1791,7 @@ def _triage_step(artifact: str) -> dict[str, object]:
 
 
 class _ScriptedPrompter(InteractionPrompter):
-    """InteractionPrompter replaying scripted answers (None means unanswered, an exception is raised) and recording requests."""
+    """InteractionPrompter that replays scripted answers (None means unanswered) and records requests."""
 
     def __init__(
         self,
@@ -1906,7 +1813,7 @@ class _ScriptedPrompter(InteractionPrompter):
 
 
 class _AbortPrompter(FailurePrompter):
-    """FailurePrompter recording prompted step ids and answering ABORT, or raising KeyboardInterrupt when interrupt is set."""
+    """FailurePrompter that records prompted step ids and answers ABORT, or raises KeyboardInterrupt when set."""
 
     def __init__(self, *, interrupt: bool = False) -> None:
         self.prompted: list[str] = []
@@ -1999,7 +1906,6 @@ class CoordinatorAskTests:
     """Contract tests for ask-step transitions in RunCoordinator."""
 
     def test_pending_ask_is_persisted_paused_before_the_prompter_is_consulted(self, ask_run: AskRun) -> None:
-        """[tier-1/integration] RunCoordinator.execute: when the prompter is called, the stored state has the leaf PAUSED with pending_ask equal to the request and the row status PAUSED."""
         seen: list[tuple[NodeState, InteractionRequest | None, SessionStatus]] = []
 
         def inspect(request: InteractionRequest) -> None:
@@ -2013,7 +1919,6 @@ class CoordinatorAskTests:
         assert seen == [(NodeState.PAUSED, prompter.requests[0], SessionStatus.PAUSED)]
 
     def test_valid_answer_clears_pending_ask_and_completes_with_outputs(self, ask_run: AskRun) -> None:
-        """[tier-1/integration] RunCoordinator.execute: answer approve completes the leaf, sets pending_ask None, restores row status RUNNING in that commit, and exposes outputs.selected "approve" to the next step."""
         steps = [_approve_step(), _command("after", "echo '{{ steps.approve.outputs.selected }}' > got.txt")]
 
         outcome = ask_run.start(steps, _ScriptedPrompter([_answer("approve")]))
@@ -2047,7 +1952,6 @@ class CoordinatorAskTests:
         expected_state: NodeState,
         expected_errors: list[str],
     ) -> None:
-        """[tier-1/integration] RunCoordinator.execute: answering deny with on_failure abort yields FAILED with the prompt error; with continue the leaf is IGNORED and the run COMPLETED."""
         outcome = ask_run.start([_approve_step(on_failure=policy)], _ScriptedPrompter([_answer("deny")]))
 
         assert outcome.status == expected_status
@@ -2066,7 +1970,6 @@ class CoordinatorAskTests:
     def test_unanswered_prompt_leaves_run_paused_and_records_nothing(
         self, ask_run: AskRun, scripted: list[InteractionAnswer | BaseException | None] | None
     ) -> None:
-        """[tier-1/integration] RunCoordinator.execute: no prompter, a prompter returning None, a KeyboardInterrupt and an invalid answer each yield PAUSED with paused_prompt_id "approve", leaf PAUSED, pending_ask kept and no attempt result."""
         prompter = None if scripted is None else _ScriptedPrompter(scripted)
 
         outcome = ask_run.start([_approve_step()], prompter)
@@ -2076,7 +1979,6 @@ class CoordinatorAskTests:
         assert (leaf.state, leaf.pending_ask is not None, leaf.attempts[-1].result) == (NodeState.PAUSED, True, None)
 
     def test_interrupt_between_choice_and_comment_records_nothing(self, ask_run: AskRun) -> None:
-        """[tier-1/integration] RunCoordinator.execute: a prompter that raises KeyboardInterrupt after choosing `revise` (comment pending) leaves the stored leaf identical to the pending-ask state."""
         ask_run.start([_approve_step()], None)
         pending = ask_run.leaf("approve")
 
@@ -2086,7 +1988,7 @@ class CoordinatorAskTests:
         assert ask_run.leaf("approve") == pending
 
     def test_resume_asks_the_stored_request_without_rerunning_earlier_steps(self, ask_run: AskRun) -> None:
-        """[tier-1/integration] RunCoordinator.execute: after a paused ask is resumed, the prompter receives a request equal to the stored one even though the options artifact was removed, and the producer's counter file still reads 1."""
+        """Hand the prompter the stored request, even without its options artifact, without re-running the producer."""
         producer = _command(
             "review",
             'echo x >> counter.txt; echo \'{"findings": [{"id": "B1", "summary": "a"}]}\' > review.json',
@@ -2107,7 +2009,7 @@ class CoordinatorAskTests:
         assert ask_run.file("counter.txt").read_text(encoding="utf-8").splitlines() == ["x"]
 
     def test_invalid_stored_pending_ask_fails_the_run(self, ask_run: AskRun) -> None:
-        """[tier-1/integration] RunCoordinator.execute: a stored pending_ask select request with one option returns FAILED with "Pending ask for 'approve' is invalid." and leaf FAILED."""
+        """Return FAILED with "Pending ask for 'approve' is invalid." and the leaf FAILED for a one-option select."""
         ask_run.start([_approve_step()], None)
         state = ask_run.state()
         leaf = state.nodes[0]
@@ -2123,7 +2025,6 @@ class CoordinatorAskTests:
         assert ask_run.leaf("approve").state == NodeState.FAILED
 
     def test_options_failure_fails_the_step_without_prompting(self, ask_run: AskRun) -> None:
-        """[tier-1/integration] RunCoordinator.execute: options_from over a missing artifact fails the step with "(ASK_OPTIONS_ARTIFACT_NOT_FOUND)", never calls the prompter and applies on_failure."""
         triage = _triage_step("nothing")
         prompter = _ScriptedPrompter([])
 
@@ -2134,7 +2035,6 @@ class CoordinatorAskTests:
         assert prompter.requests == []
 
     def test_empty_multiselect_completes_without_prompting(self, ask_run: AskRun) -> None:
-        """[tier-1/integration] RunCoordinator.execute: an empty options array completes the leaf, never calls the prompter, and surfaces the "No options to choose from" warning in RunOutcome.warnings."""
         producer = _command(
             "review", "echo '{\"findings\": []}' > review.json", artifacts=[{"name": "review", "path": "review.json"}]
         )
@@ -2149,7 +2049,6 @@ class CoordinatorAskTests:
         assert ask_run.leaf("triage").state == NodeState.COMPLETED
 
     def test_loop_iteration_two_sees_iteration_one_comment(self, ask_run: AskRun) -> None:
-        """[tier-1/integration] RunCoordinator.execute: in a loop body, answers [revise+"Keep config compatible", approve] make iteration 2's producer see the comment, iteration 1 see "", and `until` end the loop after iteration 2."""
         loop: dict[str, object] = {
             "id": "plan-loop",
             "type": "loop",
@@ -2171,7 +2070,6 @@ class CoordinatorAskTests:
         assert [iteration.until_passed for iteration in loop_node.iterations] == [False, True]
 
     def test_paused_leaf_without_pending_ask_still_follows_the_failure_gate(self, ask_run: AskRun) -> None:
-        """[tier-1/integration] RunCoordinator.execute: an ask leaf answered `deny` under prompt_user is re-entered into the failure prompter on resume and never calls the interaction prompter."""
         steps = [_approve_step(on_failure="prompt_user")]
         seed_new_session(ask_run.paths, ask_run.sessions, session_id=_SESSION_ID, steps=steps)
         ask_run.execute(_ScriptedPrompter([_answer("deny")]), _AbortPrompter(interrupt=True))

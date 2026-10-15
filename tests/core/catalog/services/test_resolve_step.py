@@ -28,7 +28,6 @@ class StepResolutionTests:
     """Unit tests verifying step shorthand expansion, inheritance, and field overlay behavior."""
 
     def test_step_loader_expands_run_shorthand_preserving_environment(self) -> None:
-        """Shorthand 'run' step expands to command type preserving explicit environment variables."""
         raw = {"id": "test", "run": "npm test", "env": {"CI": "1"}}
         step = resolve_step_definition(raw)
         assert step.id == "test"
@@ -37,7 +36,6 @@ class StepResolutionTests:
         assert step.env == {"CI": "1"}
 
     def test_step_loader_expands_run_shorthand_preserving_artifacts(self) -> None:
-        """Shorthand 'run' step keeps its declared artifacts so the executor can publish them."""
         raw = {"id": "test", "run": "make plan", "artifacts": [{"name": "plan", "path": "PLAN.md"}]}
 
         step = resolve_step_definition(raw)
@@ -47,7 +45,6 @@ class StepResolutionTests:
     def test_resolve_step_uses_inherits_and_overlays_explicit_fields_only(
         self, tmp_path: Path, workspace_paths_factory: Callable[[Path, Path | None], WorkspacePaths]
     ) -> None:
-        """Inherited step overlays explicitly set fields while preserving base definition defaults."""
         steps_dir = tmp_path / ".dovo" / "catalog" / "steps"
         steps_dir.mkdir(parents=True, exist_ok=True)
         _persist_project_identity(tmp_path)
@@ -84,14 +81,12 @@ class StepResolutionTests:
         assert resolved.timeout_seconds == 300
 
     def test_resolve_concrete_type_returns_same_definition(self) -> None:
-        """Step with explicit type resolves to an equal definition unchanged."""
         inst = StepDefinition(id="c", type=StepType.COMMAND, command="ls")
         assert resolve_step_definition(inst) == inst
 
     def test_resolve_step_recursive_uses(
         self, tmp_path: Path, workspace_paths_factory: Callable[[Path, Path | None], WorkspacePaths]
     ) -> None:
-        """Step inheriting from another shorthand step resolves recursively."""
         steps_dir = tmp_path / ".dovo" / "catalog" / "steps"
         steps_dir.mkdir(parents=True, exist_ok=True)
         _persist_project_identity(tmp_path)
@@ -106,17 +101,14 @@ class StepResolutionTests:
         assert resolved.command == "echo root"
 
     def test_resolve_step_without_path_raises_validation_error(self) -> None:
-        """Resolving a 'uses' step without path raises StepValidationError."""
         with pytest.raises(StepValidationError, match="without workspace paths"):
             resolve_step_definition({"id": "d", "uses": "base"})
 
     def test_resolve_step_missing_shorthand_or_type_raises_validation_error(self) -> None:
-        """Step without run, uses, or type raises StepValidationError."""
         with pytest.raises(StepValidationError, match="must specify one of 'run', 'uses', or 'type'"):
             resolve_step_definition(StepDefinition.model_construct(id="empty"))
 
     def test_resolve_step_malformed_dict_raises_validation_error(self) -> None:
-        """Malformed dictionary passed to resolve_step_definition raises StepValidationError."""
         with pytest.raises(StepValidationError, match="Step validation failed"):
             resolve_step_definition({"id": "bad", "timeout_seconds": "invalid-int"})
 
@@ -127,7 +119,6 @@ class StepLoadingTests:
     def test_load_step_by_name_resolves_catalog_step(
         self, tmp_path: Path, workspace_paths_factory: Callable[[Path, Path | None], WorkspacePaths]
     ) -> None:
-        """load_step_by_name resolves an indexed step from the workspace catalog."""
         steps_dir = tmp_path / ".dovo" / "catalog" / "steps"
         steps_dir.mkdir(parents=True, exist_ok=True)
         _persist_project_identity(tmp_path)
@@ -139,16 +130,13 @@ class StepLoadingTests:
         assert loaded.run == "echo hello"
 
     def test_load_step_from_definition_returns_it(self) -> None:
-        """load_step returns an existing StepDefinition unchanged."""
         inst = StepDefinition(id="inst", type=StepType.COMMAND, command="echo 1")
         assert load_step(inst) is inst
 
     def test_load_step_invalid_dictionary_returns_none(self) -> None:
-        """load_step returns None on schema-invalid dictionary payloads."""
         assert load_step({"unexpected": "key", "id": 123}) is None
 
     def test_load_step_by_path_returns_definition_or_none(self, tmp_path: Path) -> None:
-        """load_step_by_path loads valid YAML file and returns None for missing path."""
         step_file = tmp_path / "custom.yaml"
         step_file.write_text("id: custom\ntype: command\ncommand: echo hi\n", encoding="utf-8")
 
@@ -164,7 +152,6 @@ class MergeUsesStepTests:
     """Contract tests for merge_uses_step's field-overlay semantics."""
 
     def test_merge_uses_step_overlays_only_explicitly_set_fields(self) -> None:
-        """merge_uses_step: a using-step with only name/env set inherits base command/type/timeout and overlays name plus merged env."""
         base = StepDefinition(
             id="base-step",
             type=StepType.COMMAND,
@@ -199,7 +186,6 @@ class MergeUsesStepTests:
     def test_artifacts_on_using_step_survive_the_merge(
         self, using_artifacts: list[ArtifactPublishSpec] | None, expected_path: str
     ) -> None:
-        """[tier-1/unit] merge_uses_step: using-step artifacts replace the base's; omitted artifacts inherit the base's."""
         base = StepDefinition(
             id="base-step",
             type=StepType.COMMAND,
@@ -241,7 +227,6 @@ class UsesToolsMergeTests:
     def test_merge_uses_step_preserves_omission_and_replacement(
         self, using_tools: str | None, base_tools: str | None, expected: str | None
     ) -> None:
-        """[tier-1/unit] merge_uses_step: merged.tools equals the expected policy and is None (not ToolPolicy()) when neither declares one."""
         base = StepDefinition(id="base-step", type=StepType.COMMAND, command="echo base")
         if base_tools is not None:
             base = StepDefinition(id="base-step", type=StepType.AGENT, prompt="go", tools=_TOOLS_BY_KEY[base_tools])

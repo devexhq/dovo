@@ -152,12 +152,10 @@ class WorktreeShowFormatterTests:
         case: FormatterCase[WorktreeShowResult, WorktreeShowResult],
         expected_payload: dict[str, Any],
     ) -> None:
-        """Verify to_json_serializable matches the exact published wire-format literal dict."""
         assert_json_payload_matches_published_shape(WorktreeShowFormatter, case.data, expected_payload)
 
     @pytest.mark.parametrize("case", WORKTREE_SHOW_CASES)
     def test_rich_render_shows_every_view_value(
         self, case: FormatterCase[WorktreeShowResult, WorktreeShowResult]
     ) -> None:
-        """Verify that all non-null semantic view model values reach the Rich renderable output."""
         assert_rich_render_shows_every_view_value(WorktreeShowFormatter, case.data, case.render_expectations)

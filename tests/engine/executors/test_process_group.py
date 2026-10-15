@@ -45,7 +45,6 @@ class ProcessGroupEscalationTests:
     """Integration tests verifying process group isolation and escalation to SIGKILL."""
 
     def test_timeout_escalates_from_sigterm_to_sigkill(self, tmp_path: Path) -> None:
-        """Verify child process ignoring SIGTERM is escalated to SIGKILL after grace period."""
         if sys.platform == "win32":
             pytest.skip("POSIX process groups and signal trapping required")
 
@@ -83,7 +82,6 @@ class ProcessGroupEscalationTests:
         assert _wait_pid_dead(child_pid) is True
 
     def test_keyboard_interrupt_terminates_child_process_tree(self, tmp_path: Path) -> None:
-        """Verify KeyboardInterrupt cleans up child and grandchild processes in the process group."""
         if sys.platform == "win32":
             pytest.skip("POSIX process groups and signal trapping required")
 

@@ -23,7 +23,6 @@ class BlueprintDeleteCliIntegrationTests:
     """Typer runner integration tests for dovo blueprint delete."""
 
     def test_blueprint_delete_cli_with_force_exits_zero(self, cli_runner: CliRunner, isolated_workspace: Path) -> None:
-        """dovo blueprint delete <name> --force: repo-tier file removed from disk; exit 0."""
         Catalog(_paths_for(isolated_workspace)).create(CatalogItemType.BLUEPRINT, "del-blueprint")
 
         result = cli_runner.invoke(
@@ -36,7 +35,6 @@ class BlueprintDeleteCliIntegrationTests:
     def test_blueprint_delete_cli_confirmation_declined_exits_one(
         self, cli_runner: CliRunner, isolated_workspace: Path
     ) -> None:
-        """dovo blueprint delete <name>, answering 'n' at the prompt: cancels and exits 1."""
         Catalog(_paths_for(isolated_workspace)).create(CatalogItemType.BLUEPRINT, "declined-blueprint")
 
         result = cli_runner.invoke(
@@ -47,7 +45,6 @@ class BlueprintDeleteCliIntegrationTests:
         assert "Deletion cancelled" in result.stdout
 
     def test_blueprint_delete_cli_renders_json(self, cli_runner: CliRunner, isolated_workspace: Path) -> None:
-        """dovo blueprint delete <name> --force --format json: envelope reports deleted=true."""
         Catalog(_paths_for(isolated_workspace)).create(CatalogItemType.BLUEPRINT, "json-del-blueprint")
 
         result = cli_runner.invoke(
@@ -72,7 +69,6 @@ class BlueprintDeleteCliIntegrationTests:
     def test_blueprint_delete_cli_bundled_template_exits_one(
         self, cli_runner: CliRunner, isolated_workspace: Path
     ) -> None:
-        """dovo blueprint delete dovo/<name> --force: exit 1, CatalogProtectionError message in stdout, file untouched."""
         result = cli_runner.invoke(
             app, ["-p", str(isolated_workspace), "blueprint", "delete", "dovo/fix-tests", "--force"]
         )
@@ -81,7 +77,6 @@ class BlueprintDeleteCliIntegrationTests:
         assert "Cannot delete bundled catalog template" in result.stdout
 
     def test_blueprint_delete_cli_missing_exits_one(self, cli_runner: CliRunner, isolated_workspace: Path) -> None:
-        """dovo blueprint delete missing-blueprint --force: exits 1 with a not-found message."""
         result = cli_runner.invoke(
             app, ["-p", str(isolated_workspace), "blueprint", "delete", "missing-blueprint", "--force"]
         )

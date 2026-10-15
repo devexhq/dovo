@@ -53,7 +53,6 @@ class InitCliIntegrationTests:
     def test_init_cli_fresh_git_repo_creates_workspace_exits_zero(
         self, cli_runner: CliRunner, tmp_path: Path, dispatch_spy: list[Any]
     ) -> None:
-        """dovo init: fresh git repo, exit 0, config.json created and centralized database initialized, dispatched WorkspaceInitResult.bootstrap_result.outcome=INITIALIZED."""
         _init_git_repo(tmp_path)
 
         result = cli_runner.invoke(app, ["-p", str(tmp_path), "init"])
@@ -91,7 +90,6 @@ class InitCliIntegrationTests:
     def test_init_cli_rerun_without_flags_skips_existing_exits_zero(
         self, cli_runner: CliRunner, tmp_path: Path, dispatch_spy: list[Any]
     ) -> None:
-        """dovo init: second invocation with no flags exits 0, dispatched WorkspaceInitResult.bootstrap_result.outcome=ALREADY_INITIALIZED."""
         _init_git_repo(tmp_path)
         cli_runner.invoke(app, ["-p", str(tmp_path), "init"])
         dispatch_spy.clear()
@@ -128,7 +126,6 @@ class InitCliIntegrationTests:
     def test_init_cli_overwrite_flag_regenerates_default_config_exits_zero(
         self, cli_runner: CliRunner, tmp_path: Path
     ) -> None:
-        """dovo init --overwrite: reverts a mutated project.name back to the workspace directory name, exit 0."""
         _init_git_repo(tmp_path)
         cli_runner.invoke(app, ["-p", str(tmp_path), "init"])
         config_path = tmp_path / ".dovo" / "config.json"
@@ -143,7 +140,6 @@ class InitCliIntegrationTests:
         assert persisted["project"]["name"] == tmp_path.name
 
     def test_init_cli_outside_git_repo_exits_one(self, cli_runner: CliRunner, tmp_path: Path) -> None:
-        """dovo init: non-git directory, exit 1, 'not a valid Git repository' in stdout, no .dovo/ created."""
         result = cli_runner.invoke(app, ["-p", str(tmp_path), "init"])
 
         assert result.exit_code == 1
@@ -151,7 +147,6 @@ class InitCliIntegrationTests:
         assert not (tmp_path / ".dovo").exists()
 
     def test_init_cli_json_format_emits_literal_wire_payload(self, cli_runner: CliRunner, tmp_path: Path) -> None:
-        """dovo init --format json: fresh git repo with an explicit --id, stdout equals the literal WorkspaceInitView envelope."""
         _init_git_repo(tmp_path)
 
         result = cli_runner.invoke(app, ["-p", str(tmp_path), "init", "--id", "test-project", "--format", "json"])
@@ -199,7 +194,6 @@ class InitCliIntegrationTests:
     def test_init_cli_with_id_flag_creates_project_json_with_explicit_id(
         self, cli_runner: CliRunner, tmp_path: Path
     ) -> None:
-        """dovo init --id: exit 0; .dovo/project.json contains the explicit id."""
         _init_git_repo(tmp_path)
 
         result = cli_runner.invoke(app, ["-p", str(tmp_path), "init", "--id", "custom-id"])
@@ -209,7 +203,6 @@ class InitCliIntegrationTests:
         assert project_json["id"] == "custom-id"
 
     def test_init_cli_with_invalid_id_flag_exits_two(self, cli_runner: CliRunner, tmp_path: Path) -> None:
-        """dovo init --id: malformed slug exits 2, stdout contains the literal invalid-id message, no project.json written."""
         _init_git_repo(tmp_path)
 
         result = cli_runner.invoke(app, ["-p", str(tmp_path), "init", "--id", "Bad Id!"])
@@ -220,7 +213,6 @@ class InitCliIntegrationTests:
         assert not (_dovo_dir(tmp_path) / "project.json").exists()
 
     def test_init_cli_without_id_flag_generates_slug(self, cli_runner: CliRunner, tmp_path: Path) -> None:
-        """dovo init: without --id, .dovo/project.json's id matches PROJECT_ID_REGEX."""
         _init_git_repo(tmp_path)
 
         result = cli_runner.invoke(app, ["-p", str(tmp_path), "init"])
@@ -232,7 +224,6 @@ class InitCliIntegrationTests:
     def test_init_cli_force_without_id_preserves_identity_and_config(
         self, cli_runner: CliRunner, tmp_path: Path
     ) -> None:
-        """dovo init --force (no --id): rerun leaves project.json's id and a prior mutated config.json project.name both unchanged, exit 0."""
         _init_git_repo(tmp_path)
         cli_runner.invoke(app, ["-p", str(tmp_path), "init"])
         project_json_path = _dovo_dir(tmp_path) / "project.json"
@@ -249,7 +240,6 @@ class InitCliIntegrationTests:
         assert json.loads(config_path.read_text(encoding="utf-8"))["project"]["name"] == "mutated-name"
 
     def test_init_cli_force_with_id_overwrites_identity_only(self, cli_runner: CliRunner, tmp_path: Path) -> None:
-        """dovo init --id new-id --force: rerun rewrites project.json's id to new-id but leaves a prior mutated config.json project.name unchanged, exit 0."""
         _init_git_repo(tmp_path)
         cli_runner.invoke(app, ["-p", str(tmp_path), "init"])
         config_path = _dovo_dir(tmp_path) / "config.json"
@@ -265,7 +255,6 @@ class InitCliIntegrationTests:
         assert json.loads(config_path.read_text(encoding="utf-8"))["project"]["name"] == "mutated-name"
 
     def test_init_cli_fresh_git_repo_seeds_dovo_gitignore(self, cli_runner: CliRunner, tmp_path: Path) -> None:
-        """dovo init: exit 0; .dovo/.gitignore exists with the literal DOVO_GITIGNORE_CONTENT; repository-root .gitignore is not created/modified."""
         _init_git_repo(tmp_path)
         root_gitignore = tmp_path / ".gitignore"
         assert not root_gitignore.exists()
@@ -279,7 +268,6 @@ class InitCliIntegrationTests:
     def test_init_cli_rerun_without_force_preserves_existing_project_id(
         self, cli_runner: CliRunner, tmp_path: Path
     ) -> None:
-        """dovo init: rerun without --force, .dovo/project.json's id unchanged across two dovo init invocations."""
         _init_git_repo(tmp_path)
         cli_runner.invoke(app, ["-p", str(tmp_path), "init"])
         project_json_path = _dovo_dir(tmp_path) / "project.json"
@@ -293,7 +281,6 @@ class InitCliIntegrationTests:
     def test_init_cli_fresh_git_repo_reports_gitignore_tracked_entries(
         self, cli_runner: CliRunner, tmp_path: Path
     ) -> None:
-        """dovo init: fresh git repo stdout reports .dovo/.gitignore populated and names config.json, project.json, catalog/ as tracked."""
         _init_git_repo(tmp_path)
 
         result = cli_runner.invoke(app, ["-p", str(tmp_path), "init"])

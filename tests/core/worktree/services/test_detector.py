@@ -47,7 +47,6 @@ class WorktreeDetectorBaselineTests:
         detector_workspace: Path,
         detector_workspace_paths: WorkspacePaths,
     ) -> None:
-        """Clean repository with no worktrees should return OK with 0 stale items."""
         db = _repo(detector_workspace_paths)
         detector = WorktreeDetector(detector_workspace, db)
 
@@ -63,7 +62,6 @@ class WorktreeDetectorBaselineTests:
         detector_workspace: Path,
         detector_workspace_paths: WorkspacePaths,
     ) -> None:
-        """Valid active worktrees must be recorded in active count and excluded from stale items."""
         db = _repo(detector_workspace_paths)
         manager = Worktree(detector_workspace_paths, db)
 
@@ -88,7 +86,6 @@ class WorktreeDetectorCategoryTests:
         detector_workspace: Path,
         detector_workspace_paths: WorkspacePaths,
     ) -> None:
-        """Stale worktree administrative entries and their unattached branches should be detected."""
         db = _repo(detector_workspace_paths)
         target = detector_workspace / ".dovo" / "worktrees" / "dovo_stale1"
         GitRunner.worktree_add(
@@ -123,7 +120,6 @@ class WorktreeDetectorCategoryTests:
         detector_workspace: Path,
         detector_workspace_paths: WorkspacePaths,
     ) -> None:
-        """Orphaned directories should be classified with their dirty state and DB reconciliation reason."""
         db = _repo(detector_workspace_paths)
         worktrees_dir = detector_workspace / ".dovo" / "worktrees"
         worktrees_dir.mkdir(parents=True, exist_ok=True)
@@ -181,7 +177,6 @@ class WorktreeDetectorCategoryTests:
         detector_workspace: Path,
         detector_workspace_paths: WorkspacePaths,
     ) -> None:
-        """Active database records with missing worktree directories should be detected."""
         db = _repo(detector_workspace_paths)
         missing_path = detector_workspace / ".dovo" / "worktrees" / "dovo_missing"
         db.create(
@@ -211,7 +206,6 @@ class WorktreeDetectorCategoryTests:
         detector_workspace: Path,
         detector_workspace_paths: WorkspacePaths,
     ) -> None:
-        """Unattached worktree branches matching dovo/dovo_* should be detected."""
         db = _repo(detector_workspace_paths)
         branch_name = "dovo/dovo_abandoned"
         GitRunner.run(["branch", branch_name], detector_workspace)
@@ -238,7 +232,6 @@ class WorktreeDetectorEntrypointTests:
         detector_workspace: Path,
         detector_workspace_paths: WorkspacePaths,
     ) -> None:
-        """Helper and entrypoint methods return equivalent results on clean workspace."""
         db = _repo(detector_workspace_paths)
         manager = Worktree(detector_workspace_paths, db)
 
@@ -259,7 +252,6 @@ class WorktreeDetectorFailureTests:
         detector_workspace: Path,
         detector_workspace_paths: WorkspacePaths,
     ) -> None:
-        """When GitRunner.worktree_list fails with GitCommandError, status should be GIT_FAILED."""
         db = _repo(detector_workspace_paths)
         detector = WorktreeDetector(detector_workspace, db)
 
@@ -280,7 +272,6 @@ class WorktreeDetectorFailureTests:
         detector_workspace: Path,
         detector_workspace_paths: WorkspacePaths,
     ) -> None:
-        """When database listing fails, status should be ERROR with description."""
         db = _repo(detector_workspace_paths)
         detector = WorktreeDetector(detector_workspace, db)
 

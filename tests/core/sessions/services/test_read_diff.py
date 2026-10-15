@@ -38,7 +38,6 @@ class ReadSessionDiffTests:
         patch_text: str | None,
         expected_status: DiffStatus,
     ) -> None:
-        """[tier-1/integration] read_session_diff: no diff.patch -> DIFF_NOT_FOUND; blank diff.patch -> EMPTY_DIFF with diff_text ''; both keep session_id and artifact_path, and ok is True only for EMPTY_DIFF."""
         paths = workspace_paths_factory(tmp_path, None)
         if patch_text is None:
             paths.session_dir("session-3").mkdir(parents=True)
@@ -56,7 +55,6 @@ class ReadSessionDiffTests:
     def test_read_session_diff_with_missing_patch_fix_names_actual_artifact_path(
         self, tmp_path: Path, workspace_paths_factory: WorkspacePathsFactory
     ) -> None:
-        """[tier-1/integration] read_session_diff: no diff.patch -> fixes names the resolved artifact path, not a repo-local .dovo/sessions path."""
         paths = workspace_paths_factory(tmp_path, None)
         paths.session_dir("session-5").mkdir(parents=True)
 
@@ -69,7 +67,6 @@ class ReadSessionDiffTests:
     def test_read_session_diff_with_written_patch_returns_ok_with_exact_text(
         self, tmp_path: Path, workspace_paths_factory: WorkspacePathsFactory
     ) -> None:
-        """[tier-1/integration] read_session_diff: a written diff.patch -> status OK, diff_text equal to the file text, raw False, full False, max_lines None."""
         paths = workspace_paths_factory(tmp_path, None)
         patch_text = "diff --git a/f.txt b/f.txt\n-old\n+new\n"
         _write_patch(paths, "session-1", patch_text)
@@ -83,7 +80,6 @@ class ReadSessionDiffTests:
     def test_read_session_diff_with_unreadable_patch_returns_read_failure(
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path, workspace_paths_factory: WorkspacePathsFactory
     ) -> None:
-        """[tier-1/integration] read_session_diff: an OSError reading diff.patch -> READ_FAILURE with errors == [f"Failed to read diff artifact at '{patch_path}': denied"] and ok False."""
         paths = workspace_paths_factory(tmp_path, None)
         patch_path = _write_patch(paths, "session-4", "diff --git a/f.txt b/f.txt\n")
 

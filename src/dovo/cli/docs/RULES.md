@@ -94,14 +94,36 @@ return result
 ```
 
 - **[CODE-003] Terse Docstrings, Description Only for Hidden Contracts (SUGGESTION):**
-  Every docstring opens with a one-line title stating what the thing is or does. Add a description only for what the code cannot show a reader and whose absence would cause wrong code - a hidden contract, a data-loss or safety behavior, a non-obvious ordering constraint, or a deliberate oddity. Do not narrate steps, restate parameters or types, or repeat the title.
+  Every docstring opens with a one-line title stating what the thing is or does. A comma may enumerate a distinct list, but outcomes, failure paths, and side effects belong in the description, not the title. Add a description only for what the code cannot show a reader and whose absence would cause wrong code - a hidden contract, a data-loss or safety behavior, a non-obvious ordering constraint, or a deliberate oddity. Do not narrate steps, restate parameters, types, or the return annotation, or repeat the title in other words.
 
 ```python
 # ✅ DO:
 """Base for providers that edit the worktree directly instead of returning a diff.
 
 Edits that fail patch validation are discarded from the worktree; a failed discard is reported in the response errors."""
-# ❌ DO NOT: """Run the provider. First resolve the baseline, then build the prompt, then run the tool, then diff the worktree, then validate the patch."""
+# ❌ DO NOT: """Run the provider. First resolve the baseline, then build the prompt, then run the tool, then diff the worktree, then validate the patch."""  # or: """Return flags for the rules, or why a rule cannot be preserved."""  # outcome in the title
+```
+
+- **[CODE-004] Docstrings Describe Only the Documented Unit (WARNING):**
+  A docstring states only behavior the documented unit itself implements. Do not describe what a caller does with its result or logic that lives in another module, because that claim goes stale when the other module changes and nothing in the diff shows it. A reference to a sibling in the same module is acceptable.
+
+```python
+# ✅ DO:
+"""Render a restricted policy's allow and deny rules as dontAsk flags.
+
+A rule Claude Code cannot express yields its reason as a string."""
+# ❌ DO NOT:
+"""Render a restricted policy's allow and deny rules as dontAsk flags.
+
+The adapter surfaces a returned reason as an unsupported-policy error before the process is spawned."""
+```
+
+- **[CODE-005] One Docstring per Unit (WARNING):**
+  A module, class, or function carries exactly one docstring. A bare string literal statement after the docstring is dead code that reads as documentation; merge it into the docstring or delete it.
+
+```python
+# ✅ DO: """Render a restricted policy as dontAsk flags."""
+# ❌ DO NOT: """Return dontAsk flags for the rules."""  # followed by a second """...""" string statement
 ```
 
 - **[TYPE-001] Ban on -> Any Return Annotations (BLOCKER):**
@@ -267,7 +289,7 @@ _unlock = _unlock_fd  # internal shim alias
 ```
 
 - **[DOC-008] Verifiable Doc and Rule Claims (BLOCKER):**
-  A doc, skill, or rule sentence asserting that something is enforced, gated, or checked must name the enforcing artifact by path, and that path must resolve to a file in the tree. The same applies to any helper, fixture, builder, or assertion function a doc instructs an implementer to use: the symbol exists before the instruction ships. Documentation of behavior that is planned rather than built is prohibited, including in rule examples, because an exemplar is copied more often than the guideline is read. When a claim becomes false, the fix is to delete or correct the sentence in the same change, never to leave it as aspiration.
+  A doc, skill, rule, or docstring sentence asserting that something is enforced, gated, or checked must name the enforcing artifact by path, and that path must resolve to a file in the tree. The same applies to any helper, fixture, builder, or assertion function a doc instructs an implementer to use: the symbol exists before the instruction ships. Documentation of behavior that is planned rather than built is prohibited, including in rule examples, because an exemplar is copied more often than the guideline is read. When a claim becomes false, the fix is to delete or correct the sentence in the same change, never to leave it as aspiration. A change that alters the behavior a docstring describes owns that docstring: it re-reads it against the new code and corrects or deletes any sentence the change made false.
 
 ```python
 # ✅ DO: # "COLUMNS is pinned to 160 by [tool.pytest_env] in pyproject.toml" - resolvable and true

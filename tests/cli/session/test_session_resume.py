@@ -73,7 +73,6 @@ class SessionResumeCliIntegrationTests:
     def test_resume_cli_from_paused_state_completes_remaining_steps_exits_zero(
         self, cli_runner: CliRunner, session_workspace: Path
     ) -> None:
-        """dovo session resume <session_id>: paused run state with use_worktree=False resumes and completes, exit 0, session record status becomes COMPLETED."""
         _seed_paused_session(
             session_workspace,
             session_id="paused-session-1",
@@ -97,7 +96,6 @@ class SessionResumeCliIntegrationTests:
         assert (session_workspace / "resumed.marker").exists()
 
     def test_resume_cli_unknown_session_exits_one(self, cli_runner: CliRunner, session_workspace: Path) -> None:
-        """dovo session resume <unknown-id>: no matching paused session, exit 1, 'Resume Failed' in stdout."""
         result = cli_runner.invoke(app, ["-p", str(session_workspace), "session", "resume", "does-not-exist"])
 
         assert result.exit_code == 1
@@ -106,7 +104,6 @@ class SessionResumeCliIntegrationTests:
     def test_resume_cli_json_format_emits_run_success_event(
         self, cli_runner: CliRunner, session_workspace: Path
     ) -> None:
-        """dovo session resume <session_id> --format json: NDJSON stream includes a RunSuccessEvent with payload.status == 'completed'."""
         _seed_paused_session(
             session_workspace,
             session_id="paused-session-2",
@@ -133,11 +130,10 @@ class SessionResumeCliIntegrationTests:
         session_workspace: Path,
         write_tier_config: Callable[[ConfigTier, dict[str, Any] | str], Path],
     ) -> None:
-        """[tier-3/integration] dovo session resume: malformed User tier config.json → exit 1, tier-attributed message in stdout, no unhandled exception.
+        """Exit 1 with a tier-attributed Config Error panel when the User tier config.json is malformed.
 
-        The top-level callback resolves config before the resume handler ever runs, so a
-        tier failure here renders a "Config Error" panel, not "Resume Failed" — no paused
-        session is ever looked up.
+        The top-level callback resolves config before the resume handler runs,
+        so no paused session is looked up.
         """
         ui_dispatcher.set_output_format("terminal")
         write_tier_config(ConfigTier.USER, "{not valid json")
@@ -151,7 +147,6 @@ class SessionResumeCliIntegrationTests:
     def test_resume_cli_completes_after_source_catalog_blueprint_deleted(
         self, cli_runner: CliRunner, session_workspace: Path
     ) -> None:
-        """[tier-3/integration] dovo session resume <session_id>: a session paused by dovo run with a uses: step still resumes and completes exit 0 after both the catalog blueprint and step YAML files are deleted from disk."""
         write_runnable_step(
             session_workspace, key="lint-check", definition={"id": "lint-check", "type": "command", "command": "true"}
         )
@@ -186,7 +181,6 @@ class SessionResumeEnvFlagsCliIntegrationTests:
     def test_resume_cli_env_flags_reach_the_resumed_agent_subprocess_env(
         self, cli_runner: CliRunner, session_workspace: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """[tier-3/integration] dovo session resume: '--env-mode inherit --env-passthrough NAME' on a paused session exits 0 and the FakeAgentRunner env reflects both for the resumed agent step."""
         runner = _fake_copilot(monkeypatch)
         monkeypatch.setenv("DOVO_TEST_UNRELATED_SECRET", "host-value")
         monkeypatch.setenv("NAME_HOST", "named")
@@ -207,7 +201,6 @@ class SessionResumeEnvFlagsCliIntegrationTests:
     def test_resume_cli_flags_do_not_persist_to_a_later_resume(
         self, cli_runner: CliRunner, session_workspace: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """[tier-3/integration] dovo session resume: a second resume without flags records an allowlist env lacking the earlier passthrough name."""
         runner = _fake_copilot(monkeypatch)
         monkeypatch.setenv("NAME_HOST", "named")
         _seed_paused_agent_session(session_workspace, "paused-first")
@@ -227,7 +220,6 @@ class SessionResumeEnvFlagsCliIntegrationTests:
     def test_resume_cli_invalid_passthrough_exits_one_and_leaves_session_paused(
         self, cli_runner: CliRunner, session_workspace: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """[tier-3/integration] dovo session resume: '--env-passthrough =X' exits 1 with the fixed invalid-value message and the session status stays 'paused'."""
         runner = _fake_copilot(monkeypatch)
         _seed_paused_agent_session(session_workspace, "paused-bad")
 
@@ -288,7 +280,10 @@ class SessionResumeAskCliIntegrationTests:
     def test_answer_flags_bind_and_continue_the_run(
         self, cli_runner: CliRunner, session_workspace: Path, tmp_path: Path, command: list[str], style: str
     ) -> None:
-        """[tier-3/integration] dovo resume: `--answer approve=revise --comment x`, `--answer ... --comment-file f` and `--answers-file f` each complete the paused ask (exit 0, downstream marker written) through both `dovo resume` and `dovo session resume`."""
+        """Complete the paused ask via `--answer` with `--comment` or `--comment-file`, or via `--answers-file`.
+
+        Cover both `dovo resume` and `dovo session resume`; each exits 0 and writes the downstream marker.
+        """
         session_id = _seed_paused_ask(session_workspace)
         comment_file = tmp_path / "comment.txt"
         comment_file.write_text("Keep config compatible\n", encoding="utf-8")
@@ -312,7 +307,6 @@ class SessionResumeAskCliIntegrationTests:
     def test_invalid_answer_exits_one_with_valid_choices_and_stays_paused(
         self, cli_runner: CliRunner, session_workspace: Path
     ) -> None:
-        """[tier-3/integration] dovo resume --answer approve=maybe: exits 1, output contains the invalid-answer message with the valid choices, and the session stays PAUSED."""
         session_id = _seed_paused_ask(session_workspace)
 
         result = cli_runner.invoke(
@@ -338,7 +332,6 @@ class SessionResumeAskCliIntegrationTests:
     def test_argument_errors_exit_one_before_any_resume(
         self, cli_runner: CliRunner, session_workspace: Path, tmp_path: Path, case: str
     ) -> None:
-        """[tier-3/integration] dovo resume: conflicting or unreadable answer flags each exit 1 and leave the session PAUSED with no step run."""
         session_id = _seed_paused_ask(session_workspace)
         valid_file = tmp_path / "valid.json"
         valid_file.write_text(json.dumps({"step_id": "approve", "selected": ["approve"]}), encoding="utf-8")
@@ -368,7 +361,6 @@ class SessionResumeAskCliIntegrationTests:
         assert not (session_workspace / "done.marker").exists()
 
     def test_answers_with_no_pending_prompt_exit_one(self, cli_runner: CliRunner, session_workspace: Path) -> None:
-        """[tier-3/integration] dovo resume --answer a=b: on a session paused at a failed step exits 1 with "No prompt is pending for session '<session_id>'."."""
         _seed_paused_session(
             session_workspace,
             session_id="paused-session-1",
@@ -384,7 +376,6 @@ class SessionResumeAskCliIntegrationTests:
     def test_no_tty_resume_re_asks_and_pauses_again_exit_zero(
         self, cli_runner: CliRunner, session_workspace: Path
     ) -> None:
-        """[tier-3/integration] dovo resume --no-tty: without answers exits 0 and prints the answer hint; the session stays PAUSED."""
         session_id = _seed_paused_ask(session_workspace)
 
         result = cli_runner.invoke(app, ["-p", str(session_workspace), "resume", session_id, "--no-tty"])

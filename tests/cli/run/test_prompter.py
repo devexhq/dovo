@@ -65,7 +65,6 @@ class DispatcherFailurePrompterTests:
     def test_prompt_step_failure_terminal_valid_decisions(
         self, monkeypatch: pytest.MonkeyPatch, raw_input: str, expected: FailurePromptDecision
     ) -> None:
-        """DispatcherFailurePrompter.prompt_step_failure: each valid raw input token resolves to its FailurePromptDecision."""
         dispatcher, _ = _buffered_dispatcher(force_terminal=True)
         prompter = DispatcherFailurePrompter(dispatcher)
         monkeypatch.setattr("builtins.input", lambda *_args, **_kwargs: raw_input)
@@ -75,7 +74,6 @@ class DispatcherFailurePrompterTests:
         assert decision == expected
 
     def test_prompt_step_failure_invalid_then_valid_reprompts(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """DispatcherFailurePrompter.prompt_step_failure: invalid input then 'c' returns CONTINUE and prints 'Invalid option'."""
         dispatcher, buffer = _buffered_dispatcher(force_terminal=True)
         prompter = DispatcherFailurePrompter(dispatcher)
         responses = iter(["zz", "c"])
@@ -87,7 +85,6 @@ class DispatcherFailurePrompterTests:
         assert "Invalid option" in buffer.getvalue()
 
     def test_prompt_step_failure_eof_aborts(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """DispatcherFailurePrompter.prompt_step_failure: input() raising EOFError returns FailurePromptDecision.ABORT."""
         dispatcher, _ = _buffered_dispatcher(force_terminal=True)
         prompter = DispatcherFailurePrompter(dispatcher)
 
@@ -101,7 +98,6 @@ class DispatcherFailurePrompterTests:
         assert decision == FailurePromptDecision.ABORT
 
     def test_prompt_text_visible_before_input_blocks(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """DispatcherFailurePrompter.prompt_step_failure: prompt title and diagnostic are in the buffer at the moment input() is called."""
         dispatcher, buffer = _buffered_dispatcher(force_terminal=True)
         prompter = DispatcherFailurePrompter(dispatcher)
         seen_before_input: list[str] = []
@@ -119,7 +115,6 @@ class DispatcherFailurePrompterTests:
         assert "disk full" in seen_before_input[0]
 
     def test_prompt_loop_max_iterations_terminal_grant_decision(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """DispatcherFailurePrompter.prompt_loop_max_iterations: input 'g' returns LoopPromptDecision.GRANT, buffer contains the max-iterations title."""
         dispatcher, buffer = _buffered_dispatcher(force_terminal=True)
         prompter = DispatcherFailurePrompter(dispatcher)
         monkeypatch.setattr("builtins.input", lambda *_args, **_kwargs: "g")
@@ -132,7 +127,6 @@ class DispatcherFailurePrompterTests:
     def test_prompt_step_failure_non_interactive_json_mode_aborts_without_blocking(
         self, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
     ) -> None:
-        """DispatcherFailurePrompter.prompt_step_failure: json output_format dispatches one PromptEvent NDJSON line and returns ABORT without calling input()."""
         dispatcher = UiDispatcher(output_format="json")
         prompter = DispatcherFailurePrompter(dispatcher)
 
@@ -154,7 +148,6 @@ class DispatcherFailurePrompterEventTests:
     """Contract tests for the event field renamed to step_id."""
 
     def test_events_carry_the_step_or_loop_id_as_step_id(self, capsys: pytest.CaptureFixture[str]) -> None:
-        """[tier-1/unit] DispatcherFailurePrompter: prompt_step_failure emits step_id "s1" and prompt_loop_max_iterations emits step_id "loop1" on the JSON envelope payload."""
         prompter = DispatcherFailurePrompter(UiDispatcher(output_format="json"))
 
         prompter.prompt_step_failure(step=_failing_step(), result=_failing_result(), diagnostic="boom")
@@ -230,7 +223,6 @@ class DispatcherInteractionPrompterTests:
     """Contract tests for DispatcherInteractionPrompter."""
 
     def test_select_answer_by_index_with_required_comment(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """[tier-1/unit] DispatcherInteractionPrompter.ask: inputs `2`, then comment `Keep config compatible` return InteractionAnswer(selected=["revise"], comment="Keep config compatible")."""
         answer, _, _ = _ask(monkeypatch, _select_request(), ["2", "Keep config compatible"])
 
         assert answer == InteractionAnswer(selected=["revise"], comment="Keep config compatible")
@@ -247,14 +239,12 @@ class DispatcherInteractionPrompterTests:
     def test_multiselect_reads_comma_indexes_and_enter_for_none(
         self, monkeypatch: pytest.MonkeyPatch, raw: str, expected: list[str]
     ) -> None:
-        """[tier-1/unit] DispatcherInteractionPrompter.ask: `1,3` returns ["B1","B3"], an empty line returns [], and `3,1,1` returns ["B1","B3"] in option order."""
         answer, terminal, _ = _ask(monkeypatch, _multiselect_request(), [raw])
 
         assert answer == InteractionAnswer(selected=expected)
         assert terminal.prompts == ["Select (comma-separated, Enter for none): "]
 
     def test_text_mode_reprompts_until_non_empty(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """[tier-1/unit] DispatcherInteractionPrompter.ask: inputs ``, `  `, `use sqlite ` return InteractionAnswer(text="use sqlite")."""
         request = InteractionRequest(step_id="why", mode="text", message="Why?")
 
         answer, terminal, _ = _ask(monkeypatch, request, ["", "  ", "use sqlite "])
@@ -263,7 +253,6 @@ class DispatcherInteractionPrompterTests:
         assert terminal.prompts == ["Text (required): "] * 3
 
     def test_invalid_choice_reprompts_with_a_message(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """[tier-1/unit] DispatcherInteractionPrompter.ask: `9`, `x`, then `1` returns the first option after two invalid-choice messages."""
         answer, terminal, buffer = _ask(monkeypatch, _select_request(), ["9", "x", "1"])
 
         assert answer == InteractionAnswer(selected=["approve"])
@@ -320,7 +309,7 @@ class DispatcherInteractionPrompterTests:
         expected_prompts: list[str],
         expected_message: str | None,
     ) -> None:
-        """[tier-1/unit] DispatcherInteractionPrompter.ask: optional/required comment prompts, Enter-to-skip, empty re-prompt for required, the 8000-character limit message and trailing-whitespace stripping."""
+        """Enforce the comment policy: skip, required re-prompt, 8000-character limit and whitespace stripping."""
         answer, terminal, buffer = _ask(monkeypatch, _select_request(policy=policy), entries)
 
         assert answer is not None
@@ -340,7 +329,6 @@ class DispatcherInteractionPrompterTests:
     def test_edit_command_uses_visual_then_editor_then_eof_input(
         self, monkeypatch: pytest.MonkeyPatch, environment: dict[str, str], expected: str
     ) -> None:
-        """[tier-1/unit] DispatcherInteractionPrompter.ask: a comment line `/edit` takes the comment from $VISUAL, else $EDITOR, else multi-line input ended by EOF."""
         monkeypatch.delenv("VISUAL", raising=False)
         monkeypatch.delenv("EDITOR", raising=False)
         for name, value in environment.items():
@@ -358,7 +346,6 @@ class DispatcherInteractionPrompterTests:
     def test_interrupt_between_choice_and_comment_returns_none(
         self, monkeypatch: pytest.MonkeyPatch, interrupt: type[BaseException]
     ) -> None:
-        """[tier-1/unit] DispatcherInteractionPrompter.ask: a valid choice followed by KeyboardInterrupt or EOFError at the required-comment read returns None."""
         answer, _, _ = _ask(monkeypatch, _select_request(), ["2", interrupt()])
 
         assert answer is None
@@ -379,7 +366,6 @@ class DispatcherInteractionPrompterTests:
         no_tty: bool,
         force_terminal: bool,
     ) -> None:
-        """[tier-1/unit] DispatcherInteractionPrompter.ask: with no_tty, a non-terminal console, or JSON format the prompt event is written once, `input` is never called and the result is None."""
         if mode == "json":
             dispatcher, buffer = UiDispatcher(output_format="json"), io.StringIO()
         else:
@@ -397,7 +383,6 @@ class DispatcherInteractionPrompterTests:
             assert [json.loads(line)["event_type"] for line in written.splitlines() if line.strip()] == ["PromptEvent"]
 
     def test_event_uses_one_based_keys_option_values_and_short_digest(self, capsys: pytest.CaptureFixture[str]) -> None:
-        """[tier-1/unit] DispatcherInteractionPrompter.ask: the emitted payload has option keys "1","2","3", decisions equal to option values, comment/fail per option, a 8-character artifact digest, and step_id equal to the request's step id."""
         artifact = RequestArtifact(name="plan", revision=2, digest="b07d44aa11223344", preview=["line"])
         prompter = DispatcherInteractionPrompter(UiDispatcher(output_format="json"), no_tty=True)
 
@@ -420,7 +405,6 @@ class DispatcherInteractionPrompterTests:
         ]
 
     def test_multiselect_event_displays_the_value_with_the_label(self, capsys: pytest.CaptureFixture[str]) -> None:
-        """[tier-1/unit] DispatcherInteractionPrompter.ask: a multiselect request emits each option's display as "<value> — <label>", while a select request emits the bare label."""
         prompter = DispatcherInteractionPrompter(UiDispatcher(output_format="json"), no_tty=True)
 
         prompter.ask(_multiselect_request())
@@ -435,14 +419,12 @@ class TerminalReaderTests:
     """Contract tests for TerminalReader."""
 
     def test_read_until_eof_joins_lines(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """[tier-1/unit] TerminalReader.read_until_eof: lines read until EOFError are joined with newlines."""
         terminal = _Terminal(["first", "second", EOFError()])
         monkeypatch.setattr("builtins.input", terminal)
 
         assert TerminalReader().read_until_eof() == "first\nsecond"
 
     def test_edit_returns_the_file_content_the_editor_wrote(self, tmp_path: Path) -> None:
-        """[tier-1/unit] TerminalReader.edit: runs the editor command on a temporary file and returns what it wrote."""
         editor = tmp_path / "editor.sh"
         editor.write_text("#!/bin/sh\nprintf 'edited text' > \"$1\"\n", encoding="utf-8")
         editor.chmod(0o755)
@@ -469,5 +451,4 @@ class PausedPromptMessageTests:
         ],
     )
     def test_message_text_by_interactivity(self, non_interactive: bool, expected: str) -> None:
-        """[tier-1/unit] paused_prompt_message: interactive returns the resume hint, non-interactive returns the answer hint."""
         assert paused_prompt_message("approve", "blueprint_a1b2c3d4", non_interactive=non_interactive) == expected

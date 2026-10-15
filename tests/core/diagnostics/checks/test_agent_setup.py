@@ -39,7 +39,6 @@ class AgentSetupCheckTests:
     def test_execute_config_none_defaults_to_default_provider_no_model(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, workspace_paths_factory: WorkspacePathsFactory
     ) -> None:
-        """[tier-1/unit] AgentSetupCheck.execute: context.config=None, default provider's credentials set -> WARNING, error_code 'DOCTOR_AGENT_NO_MODEL', details {'provider': AgentConfig().provider}."""
         _clear_credential_envs(monkeypatch, DEFAULT_TOKEN)
         monkeypatch.setenv(PROVIDERS[DEFAULT_TOKEN].credential_envs[0], "fake-token")
         check = AgentSetupCheck()
@@ -62,7 +61,6 @@ class AgentSetupCheckTests:
         monkeypatch: pytest.MonkeyPatch,
         workspace_paths_factory: WorkspacePathsFactory,
     ) -> None:
-        """[tier-1/unit] AgentSetupCheck.execute: provider=token with every PROVIDERS[token].credential_envs unset (when non-empty) -> FAILED, error_code 'DOCTOR_AGENT_KEY_MISSING', details {'provider': token, 'missing_env_var': ' or '.join(credential_envs)}, errors [f"Agent provider '{token}' is missing required credential '{joined}'."]."""
         _clear_credential_envs(monkeypatch, token)
         joined = " or ".join(PROVIDERS[token].credential_envs)
         agent = AgentConfig(provider=cast(AgentProvider, token), models={token: "some-model"})
@@ -85,7 +83,6 @@ class AgentSetupCheckTests:
         monkeypatch: pytest.MonkeyPatch,
         workspace_paths_factory: WorkspacePathsFactory,
     ) -> None:
-        """[tier-1/unit] AgentSetupCheck.execute: provider=token with only the last PROVIDERS[token].credential_envs entry set to 'x' and model 'test-model' -> OK, error_code None, details {'provider': token, 'model': 'test-model'}."""
         _clear_credential_envs(monkeypatch, token)
         monkeypatch.setenv(PROVIDERS[token].credential_envs[-1], "x")
         agent = AgentConfig(provider=cast(AgentProvider, token), models={token: "test-model"})
@@ -102,7 +99,6 @@ class AgentSetupCheckTests:
     def test_execute_blank_credential_returns_failed_key_missing(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, workspace_paths_factory: WorkspacePathsFactory
     ) -> None:
-        """[tier-1/unit] AgentSetupCheck.execute: default provider with every credential env set to '   ' -> FAILED, error_code 'DOCTOR_AGENT_KEY_MISSING'."""
         for env_name in PROVIDERS[DEFAULT_TOKEN].credential_envs:
             monkeypatch.setenv(env_name, "   ")
         context = _context_with_agent(
@@ -117,7 +113,6 @@ class AgentSetupCheckTests:
     def test_execute_empty_credential_envs_skips_credential_step(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, workspace_paths_factory: WorkspacePathsFactory
     ) -> None:
-        """[tier-1/unit] AgentSetupCheck.execute: PROVIDERS[default] replaced via dataclasses.replace(credential_envs=()) and model set -> OK, error_code None, details {'provider': token, 'model': model}."""
         _clear_credential_envs(monkeypatch, DEFAULT_TOKEN)
         monkeypatch.setitem(PROVIDERS, DEFAULT_TOKEN, dataclasses.replace(PROVIDERS[DEFAULT_TOKEN], credential_envs=()))
         context = _context_with_agent(
@@ -133,7 +128,6 @@ class AgentSetupCheckTests:
     def test_execute_provider_absent_from_registry_skips_credential_step(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, workspace_paths_factory: WorkspacePathsFactory
     ) -> None:
-        """[tier-1/unit] AgentSetupCheck.execute: default provider token deleted from PROVIDERS via monkeypatch.delitem, model set -> OK, error_code None."""
         _clear_credential_envs(monkeypatch, DEFAULT_TOKEN)
         monkeypatch.delitem(PROVIDERS, DEFAULT_TOKEN)
         context = _context_with_agent(
@@ -148,7 +142,6 @@ class AgentSetupCheckTests:
     def test_execute_multiple_credential_envs_join_with_or(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, workspace_paths_factory: WorkspacePathsFactory
     ) -> None:
-        """[tier-1/unit] AgentSetupCheck.execute: PROVIDERS[default] replaced with credential_envs ('ALPHA_KEY', 'BETA_KEY'), both unset -> FAILED, details['missing_env_var'] == 'ALPHA_KEY or BETA_KEY'."""
         monkeypatch.delenv("ALPHA_KEY", raising=False)
         monkeypatch.delenv("BETA_KEY", raising=False)
         spec = dataclasses.replace(PROVIDERS[DEFAULT_TOKEN], credential_envs=("ALPHA_KEY", "BETA_KEY"))

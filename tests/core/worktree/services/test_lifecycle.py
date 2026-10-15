@@ -27,10 +27,7 @@ def _paths(workspace: Path) -> WorkspacePaths:
 
 
 class WorktreeLifecycleStorageIndependenceTests:
-    """[tier-1/integration] WorktreeLifecycle: worktree create and cleanup never manage session storage."""
-
     def test_create_makes_no_run_symlink_and_no_session_directory(self, worktree_workspace: Path) -> None:
-        """[tier-1/integration] WorktreeLifecycle.create: session_id 'dovo_independent' returns OK, <worktree>/.dovo/run does not exist, and paths.session_dir('dovo_independent') does not exist."""
         paths = _paths(worktree_workspace)
         lifecycle = WorktreeLifecycle(
             paths, WorktreesRepository(db_path=paths.database_file, project_id=paths.project_id)
@@ -47,7 +44,6 @@ class WorktreeLifecycleStorageIndependenceTests:
     def test_cleanup_of_worktree_containing_run_symlink_leaves_link_target_contents_intact(
         self, worktree_workspace: Path, tmp_path: Path
     ) -> None:
-        """[tier-1/integration] WorktreeLifecycle.cleanup: a worktree whose .dovo/run symlink points at an external directory holding sentinel.txt returns warnings == [], the worktree directory is removed, and sentinel.txt still reads its original content."""
         paths = _paths(worktree_workspace)
         lifecycle = WorktreeLifecycle(
             paths, WorktreesRepository(db_path=paths.database_file, project_id=paths.project_id)
@@ -71,12 +67,9 @@ class WorktreeLifecycleStorageIndependenceTests:
 
 
 class WorktreeLifecycleCapacityTests:
-    """[tier-1/integration] WorktreeLifecycle._check_capacity, exercised through create()."""
-
     def test_create_at_capacity_returns_capacity_exceeded_without_creating_worktree(
         self, worktree_workspace: Path
     ) -> None:
-        """[tier-1/integration] WorktreeLifecycle.create: DEFAULT_MAXIMUM_WORKTREES_ALLOWED (3) active worktree directories already exist -> CAPACITY_EXCEEDED, no fourth worktree or branch is created."""
         paths = _paths(worktree_workspace)
         lifecycle = WorktreeLifecycle(
             paths, WorktreesRepository(db_path=paths.database_file, project_id=paths.project_id)
@@ -93,10 +86,7 @@ class WorktreeLifecycleCapacityTests:
 
 
 class WorktreeLifecycleCleanupTests:
-    """[tier-1/integration] WorktreeLifecycle.cleanup: worktree removal and branch deletion."""
-
     def test_cleanup_removes_dovo_directory_and_deletes_temporary_branch(self, worktree_workspace: Path) -> None:
-        """[tier-1/integration] WorktreeLifecycle.cleanup: removes the worktree directory from disk and deletes its temporary dovo/<id> branch, with no warnings."""
         paths = _paths(worktree_workspace)
         lifecycle = WorktreeLifecycle(
             paths, WorktreesRepository(db_path=paths.database_file, project_id=paths.project_id)
@@ -113,7 +103,6 @@ class WorktreeLifecycleCleanupTests:
         assert "dovo/dovo_cleanup_branch" not in GitRunner.list_branches(worktree_workspace)
 
     def test_cleanup_of_already_removed_worktree_is_idempotent_and_warning_free(self, worktree_workspace: Path) -> None:
-        """[tier-1/integration] WorktreeLifecycle.cleanup: calling cleanup a second time after the worktree directory is already gone still deletes the branch (idempotent) and produces no warnings."""
         paths = _paths(worktree_workspace)
         lifecycle = WorktreeLifecycle(
             paths, WorktreesRepository(db_path=paths.database_file, project_id=paths.project_id)
@@ -130,10 +119,7 @@ class WorktreeLifecycleCleanupTests:
 
 
 class WorktreeLifecycleDiscardPartialTests:
-    """[tier-1/integration] WorktreeLifecycle.discard_partial: best-effort cleanup after a failed create."""
-
     def test_discard_partial_removes_dovo_directory_and_branch(self, worktree_workspace: Path) -> None:
-        """[tier-1/integration] WorktreeLifecycle.discard_partial: removes the given worktree directory and deletes the given branch."""
         paths = _paths(worktree_workspace)
         lifecycle = WorktreeLifecycle(
             paths, WorktreesRepository(db_path=paths.database_file, project_id=paths.project_id)
@@ -149,7 +135,6 @@ class WorktreeLifecycleDiscardPartialTests:
         assert temp_branch not in GitRunner.list_branches(worktree_workspace)
 
     def test_discard_partial_on_nonexistent_branch_does_not_raise(self, worktree_workspace: Path) -> None:
-        """[tier-1/integration] WorktreeLifecycle.discard_partial: a branch that was never created is a best-effort no-op, not an exception."""
         paths = _paths(worktree_workspace)
         lifecycle = WorktreeLifecycle(
             paths, WorktreesRepository(db_path=paths.database_file, project_id=paths.project_id)

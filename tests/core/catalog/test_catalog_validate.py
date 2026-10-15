@@ -45,7 +45,6 @@ class CatalogValidateServiceTests:
     """Tier 1 domain contract tests for Catalog.validate."""
 
     def test_validate_direct_file_path_resolves_and_validates(self, isolated_workspace: Path) -> None:
-        """[tier-1/domain] Catalog.validate: absolute file path target with item_type=BLUEPRINT validates directly; status OK, resolved_path set."""
         target_path = _write_yaml(
             isolated_workspace / "external.yml",
             {"name": "external", "steps": [{"id": "s1", "run": "echo hi"}]},
@@ -63,7 +62,6 @@ class CatalogValidateServiceTests:
         assert result.fixes == []
 
     def test_validate_catalog_name_resolves_via_get(self, isolated_workspace: Path) -> None:
-        """[tier-1/domain] Catalog.validate: indexed catalog name resolves via Catalog.get; item_type='blueprint' taken from the record."""
         write_runnable_blueprint(isolated_workspace, key="sample-flow", steps=[{"id": "s1", "run": "echo hi"}])
 
         result = _validate("sample-flow", path=isolated_workspace)
@@ -78,7 +76,6 @@ class CatalogValidateServiceTests:
         assert result.fixes == []
 
     def test_validate_unknown_name_returns_not_found(self, isolated_workspace: Path) -> None:
-        """[tier-1/domain] Catalog.validate: unmatched name returns status=NOT_FOUND with CATALOG_ITEM_NOT_FOUND error."""
         result = _validate("nonexistent-flow", path=isolated_workspace)
 
         assert result.status == CatalogValidateStatus.NOT_FOUND
@@ -95,7 +92,6 @@ class CatalogValidateServiceTests:
     def test_validate_file_target_without_type_returns_type_required(
         self, isolated_workspace: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """[tier-1/domain] Catalog.validate: file target with item_type=None returns status=TYPE_REQUIRED with CATALOG_TYPE_REQUIRED, never reading the file."""
         draft_path = _write_yaml(isolated_workspace / "draft.yml", {"name": "draft"})
         catalog = Catalog(_paths_for(isolated_workspace))
 
@@ -116,7 +112,6 @@ class CatalogValidateServiceTests:
         assert result.fixes == ["Pass --type blueprint or --type step for a file target."]
 
     def test_validate_unreadable_file_returns_unreadable_status(self, isolated_workspace: Path) -> None:
-        """[tier-1/domain] Catalog.validate: unreadable file path (item_type=BLUEPRINT) returns status=UNREADABLE with CATALOG_FILE_UNREADABLE."""
         target_path = _write_yaml(isolated_workspace / "noperm.yml", {"name": "noperm"})
         target_path.chmod(0)
         try:
@@ -139,7 +134,6 @@ class CatalogValidateServiceTests:
         assert result.fixes == [f"Check that '{target_path}' exists and is readable."]
 
     def test_validate_yaml_syntax_error_reports_line_and_column(self, isolated_workspace: Path) -> None:
-        """[tier-1/domain] Catalog.validate: YAML scanner error (item_type=BLUEPRINT) returns status=SYNTAX_ERROR with line/column in the error text."""
         target_path = isolated_workspace / "bad.yml"
         target_path.write_text("foo: bar: baz\n", encoding="utf-8")
 
@@ -152,7 +146,6 @@ class CatalogValidateServiceTests:
         assert "line 1, column 9" in result.errors[0]
 
     def test_validate_non_mapping_root_returns_invalid(self, isolated_workspace: Path) -> None:
-        """[tier-1/domain] Catalog.validate: list-rooted YAML (item_type=BLUEPRINT) returns status=INVALID with CATALOG_ROOT_NOT_OBJECT."""
         target_path = isolated_workspace / "list.yml"
         target_path.write_text("- a\n- b\n", encoding="utf-8")
 
@@ -168,7 +161,6 @@ class CatalogValidateServiceTests:
         assert result.fixes == [f"Rewrite '{target_path}' with a top-level YAML mapping (key: value pairs)."]
 
     def test_validate_schema_invalid_blueprint_reports_field_paths(self, isolated_workspace: Path) -> None:
-        """[tier-1/domain] Catalog.validate: invalid timeout_seconds type reports 'timeout_seconds' field path and CATALOG_SCHEMA_INVALID."""
         _write_yaml(
             isolated_workspace / "bad_timeout.yml",
             {"name": "bad-timeout", "timeout_seconds": "not-a-number", "steps": [{"id": "s1", "run": "echo hi"}]},
@@ -183,7 +175,6 @@ class CatalogValidateServiceTests:
         assert "CATALOG_SCHEMA_INVALID" in result.errors[0]
 
     def test_validate_step_shape_conflict_surfaces_as_schema_error(self, isolated_workspace: Path) -> None:
-        """[tier-1/domain] Catalog.validate: run+uses conflict on a step (item_type=STEP) surfaces as a schema error, not a separate semantic check."""
         _write_yaml(
             isolated_workspace / "conflict.yml",
             {"id": "s1", "run": "pytest", "uses": "dovo/ai-code-patcher"},
@@ -199,7 +190,6 @@ class CatalogValidateServiceTests:
         assert "CATALOG_SCHEMA_INVALID" in result.errors[0]
 
     def test_validate_step_target_uses_step_schema(self, isolated_workspace: Path) -> None:
-        """[tier-1/domain] Catalog.validate: file target with item_type=STEP missing required id fails StepDefinition schema validation."""
         _write_yaml(isolated_workspace / "missing_id.yml", {"run": "pytest"})
 
         result = _validate("missing_id.yml", path=isolated_workspace, item_type=CatalogItemType.STEP)
@@ -214,7 +204,6 @@ class CatalogValidateServiceTests:
         assert result.fixes == ["Fix the reported schema error for target 'missing_id'."]
 
     def test_validate_duplicate_step_id_reports_error(self, isolated_workspace: Path) -> None:
-        """[tier-1/domain] Catalog.validate: two top-level steps sharing id='run-tests' reports CATALOG_DUPLICATE_STEP_ID."""
         _write_yaml(
             isolated_workspace / "dup.yml",
             {"name": "d", "steps": [{"id": "run-tests", "run": "pytest"}, {"id": "run-tests", "run": "pytest -x"}]},
@@ -234,7 +223,6 @@ class CatalogValidateServiceTests:
         ]
 
     def test_validate_duplicate_step_id_in_nested_loop_reports_error(self, isolated_workspace: Path) -> None:
-        """[tier-1/domain] Catalog.validate: duplicate ids inside a loop's 'do' block report CATALOG_DUPLICATE_STEP_ID."""
         _write_yaml(
             isolated_workspace / "loopdup.yml",
             {
@@ -260,7 +248,6 @@ class CatalogValidateServiceTests:
         assert result.errors == ["Step id 'inner' is used by more than one step (CATALOG_DUPLICATE_STEP_ID)."]
 
     def test_validate_duplicate_input_alias_reports_error(self, isolated_workspace: Path) -> None:
-        """[tier-1/domain] Catalog.validate: two inputs declaring the same alias report CATALOG_DUPLICATE_INPUT_ALIAS."""
         _write_yaml(
             isolated_workspace / "alias.yml",
             {
@@ -287,7 +274,6 @@ class CatalogValidateServiceTests:
         ]
 
     def test_validate_undeclared_placeholder_reports_warning(self, isolated_workspace: Path) -> None:
-        """[tier-1/domain] Catalog.validate: '${{ inputs.missing }}' with no declared 'missing' input reports CATALOG_UNDECLARED_INPUT_PLACEHOLDER warning; status stays OK."""
         _write_yaml(
             isolated_workspace / "ph.yml",
             {"name": "ph", "steps": [{"id": "s1", "run": "echo ${{ inputs.missing }}"}]},
@@ -307,7 +293,6 @@ class CatalogValidateServiceTests:
         assert result.fixes == []
 
     def test_validate_unsafe_script_path_reports_error(self, isolated_workspace: Path) -> None:
-        """[tier-1/domain] Catalog.validate: script_path='../escape.sh' reports CATALOG_UNSAFE_SCRIPT_PATH error."""
         _write_yaml(
             isolated_workspace / "script.yml",
             {"name": "s", "steps": [{"id": "s1", "type": "script", "script_path": "../escape.sh"}]},
@@ -329,7 +314,6 @@ class CatalogValidateServiceTests:
         ]
 
     def test_validate_missing_script_file_reports_warning(self, isolated_workspace: Path) -> None:
-        """[tier-1/domain] Catalog.validate: safe but nonexistent script_path reports CATALOG_SCRIPT_NOT_FOUND warning; status stays OK."""
         _write_yaml(
             isolated_workspace / "missing_script.yml",
             {"name": "s", "steps": [{"id": "s1", "type": "script", "script_path": "scripts/none.sh"}]},
@@ -349,7 +333,6 @@ class CatalogValidateServiceTests:
         assert result.fixes == []
 
     def test_validate_valid_blueprint_returns_ok_status(self, isolated_workspace: Path) -> None:
-        """[tier-1/domain] Catalog.validate: fully valid indexed blueprint returns status=OK, valid=True, errors=[]."""
         write_runnable_blueprint(isolated_workspace, key="clean-flow", steps=[{"id": "s1", "run": "echo hi"}])
 
         result = _validate("clean-flow", path=isolated_workspace)
@@ -360,7 +343,6 @@ class CatalogValidateServiceTests:
         assert result.ok is True
 
     def test_validate_result_ok_property_requires_valid_and_no_errors(self) -> None:
-        """[tier-1/domain] CatalogValidateResult.ok: False when valid=True but errors is non-empty."""
         result = CatalogValidateResult(
             status=CatalogValidateStatus.OK,
             valid=True,
@@ -375,7 +357,6 @@ class CatalogValidateAskTests:
     """Tier 1 integration tests for Catalog.validate over `type: ask` steps."""
 
     def test_ask_rule_violation_reports_ask_invalid_with_step_id(self, isolated_workspace: Path) -> None:
-        """[tier-1/integration] Catalog.validate: a blueprint with `{id: approve, type: ask}` and no interaction returns INVALID whose error contains "Step 'approve'" and (CATALOG_ASK_INVALID)."""
         target_path = _write_yaml(
             isolated_workspace / "ask.yml", {"name": "ask", "steps": [{"id": "approve", "type": "ask"}]}
         )
@@ -387,7 +368,6 @@ class CatalogValidateAskTests:
         assert result.errors[0].endswith("(CATALOG_ASK_INVALID).")
 
     def test_unknown_interaction_mode_stays_schema_invalid(self, isolated_workspace: Path) -> None:
-        """[tier-1/integration] Catalog.validate: `mode: dropdown` returns INVALID with (CATALOG_SCHEMA_INVALID) and no CATALOG_ASK_INVALID."""
         steps = [{"id": "approve", "type": "ask", "interaction": {"mode": "dropdown", "message": "Go?"}}]
         target_path = _write_yaml(isolated_workspace / "ask.yml", {"name": "ask", "steps": steps})
 

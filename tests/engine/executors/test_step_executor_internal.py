@@ -17,10 +17,7 @@ from dovo.engine.executors.step_executor import StepExecution
 
 
 class InternalCommandDispatchTests:
-    """[tier-1/unit] StepExecution._execute_internal: registry lookup, handler exceptions, and missing-session dispatch."""
-
     def test_execute_internal_unknown_command_returns_failed_dispatch(self, tmp_path: Path) -> None:
-        """[tier-1/unit] _execute_internal: command='artifacts.nonexistent' returns a failed StepDispatchOutcome naming the unknown command, without raising."""
         step = StepDefinition(id="s1", type=StepType.INTERNAL, command="artifacts.nonexistent")
 
         result = StepExecution(StepExecutionContext(step=step, worktree_path=tmp_path)).run()
@@ -32,7 +29,6 @@ class InternalCommandDispatchTests:
     def test_execute_internal_handler_exception_returns_failed_dispatch(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """[tier-1/unit] _execute_internal: a registered handler raising an unexpected exception is caught into a failed StepDispatchOutcome, not propagated."""
 
         def _broken_handler(ctx: object) -> object:
             raise RuntimeError("boom")
@@ -47,7 +43,7 @@ class InternalCommandDispatchTests:
         assert "boom" in result.error_message
 
     def test_execute_internal_no_active_session_fails_with_clear_message(self, tmp_path: Path) -> None:
-        """[tier-1/unit] _execute_internal: artifact_store=None (no session) dispatches artifacts.upload to a failed StepDispatchOutcome naming the missing session, not an unhandled AttributeError."""
+        """Fail naming the missing session, not an AttributeError, when artifact_store is None."""
         step = StepDefinition(id="s1", type=StepType.INTERNAL, command="artifacts.upload")
 
         result = StepExecution(StepExecutionContext(step=step, worktree_path=tmp_path)).run()
@@ -59,7 +55,6 @@ class InternalCommandDispatchTests:
     def test_loop_iteration_and_attempt_reach_upload_handler(
         self, tmp_path: Path, engine_paths: WorkspacePaths, artifacts_repository: ArtifactsRepository
     ) -> None:
-        """[tier-1/integration] StepExecution.run: artifacts.upload step with loop_iteration=2 on attempt 1 -> stored row loop_iteration 2, attempt 1, step_id == step.id."""
         (tmp_path / "PLAN.md").write_text("plan", encoding="utf-8")
         step = StepDefinition(
             id="upload-plan",

@@ -15,14 +15,12 @@ from dovo.engine.executors.assertions.filesystem import (
 
 class EvaluateFileExistsTests:
     def test_existing_file_passes(self, tmp_path: Path) -> None:
-        """[tier-1/unit] evaluate_file_exists: an existing file, given as a string or a list, yields no failures."""
         (tmp_path / "a.txt").write_text("x", encoding="utf-8")
 
         assert evaluate_file_exists("a.txt", tmp_path) == []
         assert evaluate_file_exists(["a.txt"], tmp_path) == []
 
     def test_missing_path_and_directory_each_fail(self, tmp_path: Path) -> None:
-        """[tier-1/unit] evaluate_file_exists: a missing path and a directory each produce their own failure, in list order."""
         (tmp_path / "dir").mkdir()
 
         failures = evaluate_file_exists(["missing.txt", "dir"], tmp_path)
@@ -33,7 +31,6 @@ class EvaluateFileExistsTests:
         ]
 
     def test_path_escaping_the_root_fails_closed(self, tmp_path: Path) -> None:
-        """[tier-1/unit] evaluate_file_exists: a traversal outside the root reports an escape failure even if the target exists."""
         root = tmp_path / "worktree"
         root.mkdir()
         (tmp_path / "outside.txt").write_text("x", encoding="utf-8")
@@ -45,11 +42,9 @@ class EvaluateFileExistsTests:
 
 class EvaluateFileNotExistsTests:
     def test_absent_path_passes(self, tmp_path: Path) -> None:
-        """[tier-1/unit] evaluate_file_not_exists: an absent path yields no failures."""
         assert evaluate_file_not_exists("gone.txt", tmp_path) == []
 
     def test_present_path_fails(self, tmp_path: Path) -> None:
-        """[tier-1/unit] evaluate_file_not_exists: an existing path fails with 'exists but must not'."""
         (tmp_path / "here.txt").write_text("x", encoding="utf-8")
 
         assert evaluate_file_not_exists("here.txt", tmp_path) == [
@@ -57,7 +52,6 @@ class EvaluateFileNotExistsTests:
         ]
 
     def test_path_escaping_the_root_fails_closed(self, tmp_path: Path) -> None:
-        """[tier-1/unit] evaluate_file_not_exists: a traversal outside the root reports an escape failure."""
         root = tmp_path / "worktree"
         root.mkdir()
 
@@ -66,7 +60,6 @@ class EvaluateFileNotExistsTests:
 
 class EvaluateFileNotEmptyTests:
     def test_non_empty_file_passes(self, tmp_path: Path) -> None:
-        """[tier-1/unit] evaluate_file_not_empty: a file with content yields no failures."""
         (tmp_path / "a.txt").write_text("x", encoding="utf-8")
 
         assert evaluate_file_not_empty("a.txt", tmp_path) == []
@@ -80,7 +73,6 @@ class EvaluateFileNotEmptyTests:
         ],
     )
     def test_unusable_path_fails_with_its_reason(self, tmp_path: Path, kind: str, expected: str) -> None:
-        """[tier-1/unit] evaluate_file_not_empty: a missing path, a directory and a zero-byte file each fail with their own reason."""
         if kind == "dir":
             (tmp_path / "p").mkdir()
         elif kind == "empty":
@@ -89,7 +81,6 @@ class EvaluateFileNotEmptyTests:
         assert evaluate_file_not_empty("p", tmp_path) == [expected]
 
     def test_path_escaping_the_root_fails_closed(self, tmp_path: Path) -> None:
-        """[tier-1/unit] evaluate_file_not_empty: a traversal outside the root reports an escape failure."""
         root = tmp_path / "worktree"
         root.mkdir()
 

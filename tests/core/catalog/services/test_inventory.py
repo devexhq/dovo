@@ -31,8 +31,6 @@ def _write_blueprint(tier_dir: Path, stem: str, content: str) -> None:
 
 
 class ScanAndIndexTierTests:
-    """[tier-1/unit] Layer discovery contracts for scan_and_index_tier."""
-
     def test_scan_and_index_tier_repo_rewrites_index_json_from_disk_walk(
         self, tmp_path: Path, workspace_paths_factory: WorkspacePathsFactory
     ) -> None:
@@ -60,12 +58,12 @@ class ScanAndIndexTierTests:
 
 
 class CatalogReindexSingleResolutionTests:
-    """[tier-2/unit] Reindexing consumes its supplied workspace snapshot."""
+    """Reindexing consumes the workspace snapshot it is given."""
 
     def test_scan_and_index_catalog_resolves_global_paths_once(
         self, workspace_paths: WorkspacePaths, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """The three-tier scan does not perform a fresh global-root resolution."""
+        """Scan three tiers without a fresh global-root resolution."""
 
         def _unexpected_resolution(*args: object, **kwargs: object) -> object:
             raise AssertionError("catalog reindex must use the supplied WorkspacePaths")
@@ -92,8 +90,6 @@ class CatalogReindexSingleResolutionTests:
 
 
 class ResolveCatalogRecordsTests:
-    """[tier-1/unit] Multi-tier precedence contracts for resolve_catalog_records."""
-
     def test_resolve_catalog_records_orders_repo_before_user_before_global(
         self, tmp_path: Path, workspace_paths_factory: WorkspacePathsFactory
     ) -> None:
@@ -112,8 +108,6 @@ class ResolveCatalogRecordsTests:
 
 
 class CreateCatalogItemTests:
-    """[tier-1/unit] Multi-tier write, reindex, and lock-root contracts for create_catalog_item."""
-
     @pytest.mark.parametrize(
         ("tier", "expected_tier_dir_attr"),
         [
@@ -129,7 +123,6 @@ class CreateCatalogItemTests:
         expected_tier_dir_attr: str | None,
         workspace_paths_factory: WorkspacePathsFactory,
     ) -> None:
-        """create_catalog_item: writes blueprints/<name>.yml under the selected tier's root and returns a CatalogRecord tagged with that tier."""
         repo_root = tmp_path / "repo"
         global_root = tmp_path / "global_home"
         paths = workspace_paths_factory(repo_root, global_root)
@@ -147,7 +140,6 @@ class CreateCatalogItemTests:
     def test_create_catalog_item_user_tier_leaves_repo_and_global_index_untouched(
         self, tmp_path: Path, workspace_paths_factory: WorkspacePathsFactory
     ) -> None:
-        """create_catalog_item(tier=USER): only <global_root>/user/index.json is written; repo and global index.json files do not exist afterward."""
         repo_root = tmp_path / "repo"
         global_root = tmp_path / "global_home"
         paths = workspace_paths_factory(repo_root, global_root)
@@ -162,7 +154,6 @@ class CreateCatalogItemTests:
     def test_create_catalog_item_user_tier_acquires_lock_under_global_data_dir_not_repo_root(
         self, tmp_path: Path, workspace_paths_factory: WorkspacePathsFactory
     ) -> None:
-        """create_catalog_item(tier=USER): <global_root>/data/.dovo/.lock exists afterward; <repo_root>/.dovo/.lock does not."""
         repo_root = tmp_path / "repo"
         global_root = tmp_path / "global_home"
         paths = workspace_paths_factory(repo_root, global_root)
@@ -175,7 +166,7 @@ class CreateCatalogItemTests:
     def test_create_catalog_item_collision_at_selected_tier_raises_file_exists_error(
         self, tmp_path: Path, workspace_paths_factory: WorkspacePathsFactory
     ) -> None:
-        """create_catalog_item(tier=USER): a pre-existing file at the USER tier's target path raises FileExistsError naming the USER-relative path, independent of any REPO-tier file at the same relative path."""
+        """Raise FileExistsError naming the USER-relative path, independent of a REPO-tier file at the same path."""
         paths = workspace_paths_factory(tmp_path / "repo", tmp_path / "global_home")
         create_catalog_item(CatalogItemType.BLUEPRINT, "dup", CatalogTier.USER, paths)
 
@@ -185,7 +176,6 @@ class CreateCatalogItemTests:
     def test_create_catalog_item_auto_provisions_missing_user_tier_directories(
         self, tmp_path: Path, workspace_paths_factory: WorkspacePathsFactory
     ) -> None:
-        """create_catalog_item(tier=USER): a global_root with no existing user/catalog/{blueprints,steps} directories succeeds, creating both before the write."""
         global_root = tmp_path / "global_home"
         paths = workspace_paths_factory(tmp_path / "repo", global_root)
 
