@@ -191,7 +191,6 @@ class CatalogShowFormatterTests:
 
     @pytest.mark.parametrize("case", SHOW_CASES)
     def test_transform_derives_expected_view(self, case: FormatterCase[CatalogShowResult, CatalogShowView]) -> None:
-        """Verify transform derives the expected CatalogShowView."""
         assert_transform_derives_expected_view(CatalogShowFormatter, case.data, case.view)
 
     @pytest.mark.parametrize(("case", "expected_payload"), PAYLOAD_CASES)
@@ -200,10 +199,8 @@ class CatalogShowFormatterTests:
         case: FormatterCase[CatalogShowResult, CatalogShowView],
         expected_payload: dict[str, Any],
     ) -> None:
-        """Verify to_json_serializable matches the published wire format dict."""
         assert_json_payload_matches_published_shape(CatalogShowFormatter, case.data, expected_payload)
 
     @pytest.mark.parametrize("case", SHOW_CASES)
     def test_rich_render_shows_every_view_value(self, case: FormatterCase[CatalogShowResult, CatalogShowView]) -> None:
-        """Verify that all non-null semantic view model values reach the Rich renderable output."""
         assert_rich_render_shows_every_view_value(CatalogShowFormatter, case.data, case.render_expectations)

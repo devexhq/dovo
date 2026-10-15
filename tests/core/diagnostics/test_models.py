@@ -68,7 +68,6 @@ class DiagnosticsModelsTests:
         status: CheckStatus,
         expected_ok: bool,
     ) -> None:
-        """[tier-1/unit] DiagnosticCheckResult.ok: returns True for OK and SKIPPED status; returns False for FAILED and WARNING status."""
         result = DiagnosticCheckResult(
             check_id="test.status",
             name="Status Check",
@@ -89,7 +88,6 @@ class DiagnosticsModelsTests:
     def test_doctor_context_extra_fields_forbidden(
         self, tmp_path: Path, workspace_paths_factory: WorkspacePathsFactory
     ) -> None:
-        """[tier-1/unit] DiagnosticsContext: instantiating with unknown keyword argument raises ValidationError."""
         paths = workspace_paths_factory(tmp_path, None)
         context = DiagnosticsContext(cwd=tmp_path, config=None, paths=paths)
         assert context.cwd == tmp_path
@@ -100,7 +98,6 @@ class DiagnosticsModelsTests:
             DiagnosticsContext.model_validate({"cwd": str(tmp_path), "paths": paths, "unknown_field": "disallowed"})
 
     def test_doctor_context_with_config(self, tmp_path: Path, workspace_paths_factory: WorkspacePathsFactory) -> None:
-        """[tier-1/unit] DiagnosticsContext: correctly holds DovoConfig when provided."""
         config = DovoConfig(version=1, project=ProjectConfig(name="test-project"))
         context = DiagnosticsContext(cwd=tmp_path, config=config, paths=workspace_paths_factory(tmp_path, None))
 
@@ -108,7 +105,6 @@ class DiagnosticsModelsTests:
         assert context.config == config
 
     def test_diagnostic_check_protocol_runtime_checkable(self) -> None:
-        """[tier-1/unit] DiagnosticCheck: verifies runtime_checkable identifies classes conforming to protocol attributes and methods."""
         conforming = ConformingCheck()
         non_conforming = NonConformingCheck()
 
@@ -120,7 +116,6 @@ class DiagnosticsReportModelsTests:
     """Unit tests for DiagnosticsReport model and aggregate properties."""
 
     def test_report_ok_true_when_checks_ok_or_skipped(self, tmp_path: Path) -> None:
-        """[tier-1/unit] DiagnosticsReport.ok: returns True when all executed checks have status OK or SKIPPED."""
         check1 = DiagnosticCheckResult(
             check_id="check.one",
             name="Check One",
@@ -161,7 +156,6 @@ class DiagnosticsReportModelsTests:
         assert report.warning_checks == []
 
     def test_report_ok_false_when_any_check_failed(self, tmp_path: Path) -> None:
-        """[tier-1/unit] DiagnosticsReport.ok: returns False when any executed check has status FAILED."""
         check_ok = DiagnosticCheckResult(
             check_id="check.ok",
             name="Check OK",
@@ -201,7 +195,6 @@ class DiagnosticsReportModelsTests:
         assert report.warning_checks == []
 
     def test_report_has_warnings_true_when_warning_present(self, tmp_path: Path) -> None:
-        """[tier-1/unit] DiagnosticsReport.has_warnings: returns True when a check has status WARNING while ok remains True."""
         check_warn = DiagnosticCheckResult(
             check_id="check.warn",
             name="Check Warning",
@@ -228,7 +221,6 @@ class DiagnosticsReportModelsTests:
         assert report.failed_checks == []
 
     def test_report_filtering_accessors(self, tmp_path: Path) -> None:
-        """[tier-1/unit] DiagnosticsReport.failed_checks and warning_checks: return matching DiagnosticCheckResult subsets."""
         check_ok = DiagnosticCheckResult(
             check_id="c.ok",
             name="OK",

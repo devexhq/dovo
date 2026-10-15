@@ -26,15 +26,12 @@ def workspace_paths_no_config(tmp_path: Path, workspace_paths_factory: Workspace
 
 
 class ConfigLoadTests:
-    """[tier-1/unit] Config.load() routing contract."""
-
     def test_load_reflects_user_tier_override(
         self,
         isolated_workspace: Path,
         write_tier_config: Callable[[ConfigTier, dict[str, Any] | str], Path],
         workspace_paths_factory: WorkspacePathsFactory,
     ) -> None:
-        """[tier-1/unit] Config.load: User tier agent.models override is present on the returned ConfigLoadResult.config."""
         write_tier_config(ConfigTier.USER, {"agent": {"models": {"copilot": "user-tier-model"}}})
         paths = workspace_paths_factory(isolated_workspace, None)
         Filesystem.atomic_write_json(paths.config_file, {"version": 1, "project": {"name": "demo-workspace"}})
@@ -49,21 +46,17 @@ class ConfigLoadRequiredTests:
     def test_load_required_raises_config_load_error_on_missing_config(
         self, workspace_paths_no_config: WorkspacePaths
     ) -> None:
-        """[tier-1/unit] Config.load_required: missing config.json raises ConfigLoadError with CONFIG_NOT_FOUND."""
         with pytest.raises(ConfigLoadError, match="CONFIG_NOT_FOUND"):
             Config.load_required(workspace_paths_no_config)
 
 
 class ConfigLoadedConfigAccessorTests:
-    """[tier-1/unit] Config._loaded_config exception contract (NFR-2)."""
-
     def test_loaded_config_raises_config_load_error_for_tier_invalid_status(
         self,
         isolated_workspace: Path,
         write_tier_config: Callable[[ConfigTier, dict[str, Any] | str], Path],
         workspace_paths_factory: WorkspacePathsFactory,
     ) -> None:
-        """[tier-1/unit] Config._loaded_config: malformed User tier → raises ConfigLoadError whose message contains the tier-attributed detail text."""
         write_tier_config(ConfigTier.USER, "{not valid json")
         paths = workspace_paths_factory(isolated_workspace, None)
         Filesystem.atomic_write_json(paths.config_file, build_default_config("demo-workspace"))
@@ -74,7 +67,6 @@ class ConfigLoadedConfigAccessorTests:
     def test_loaded_config_raises_with_path_errors_and_fix_bullets_for_missing_config(
         self, isolated_workspace: Path, workspace_paths_factory: WorkspacePathsFactory
     ) -> None:
-        """[tier-1/unit] Config._loaded_config: no config.json at all -> ConfigLoadError message includes the config path, the CONFIG_NOT_FOUND error text, and a 'Fix:' section listing the load result's fixes."""
         paths = workspace_paths_factory(isolated_workspace, None)
 
         with pytest.raises(ConfigLoadError) as exc_info:
@@ -88,7 +80,6 @@ class ConfigLoadedConfigAccessorTests:
     def test_loaded_config_is_cached_after_first_successful_load(
         self, isolated_workspace: Path, workspace_paths_factory: WorkspacePathsFactory
     ) -> None:
-        """[tier-1/unit] Config._loaded_config: a second access after a successful load does not re-read config.json from disk."""
         paths = workspace_paths_factory(isolated_workspace, None)
         Filesystem.atomic_write_json(paths.config_file, build_default_config("cached-project"))
         config = Config(paths)
@@ -101,12 +92,9 @@ class ConfigLoadedConfigAccessorTests:
 
 
 class ConfigAccessorPropertyTests:
-    """[tier-1/unit] Config's typed section accessor properties."""
-
     def test_version_project_and_agent_properties_expose_loaded_config_sections(
         self, isolated_workspace: Path, workspace_paths_factory: WorkspacePathsFactory
     ) -> None:
-        """[tier-1/unit] Config.version/.project/.agent: each returns the matching section of the loaded DovoConfig."""
         paths = workspace_paths_factory(isolated_workspace, None)
         Filesystem.atomic_write_json(paths.config_file, build_default_config("prop-project"))
         config = Config(paths)
@@ -119,7 +107,6 @@ class ConfigAccessorPropertyTests:
     def test_worktree_history_doctor_prune_telemetry_concurrency_properties_expose_loaded_config_sections(
         self, isolated_workspace: Path, workspace_paths_factory: WorkspacePathsFactory
     ) -> None:
-        """[tier-1/unit] Config.worktree/.history/.doctor/.prune/.telemetry/.concurrency: each returns the matching section of the loaded DovoConfig."""
         paths = workspace_paths_factory(isolated_workspace, None)
         Filesystem.atomic_write_json(paths.config_file, build_default_config("prop-project"))
         config = Config(paths)
@@ -135,7 +122,6 @@ class ConfigAccessorPropertyTests:
     def test_environment_property_exposes_loaded_config_section(
         self, isolated_workspace: Path, workspace_paths_factory: WorkspacePathsFactory
     ) -> None:
-        """[tier-1/unit] Config.environment: returns the loaded DovoConfig.environment and raises ConfigLoadError when config.json is missing."""
         paths = workspace_paths_factory(isolated_workspace, None)
         with pytest.raises(ConfigLoadError):
             _ = Config(paths).environment
@@ -150,7 +136,6 @@ class ConfigAccessorPropertyTests:
     def test_accessor_property_raises_config_load_error_when_config_missing(
         self, isolated_workspace: Path, workspace_paths_factory: WorkspacePathsFactory
     ) -> None:
-        """[tier-1/unit] Config.agent: accessed with no config.json present -> raises ConfigLoadError, same as ._loaded_config directly."""
         paths = workspace_paths_factory(isolated_workspace, None)
 
         with pytest.raises(ConfigLoadError):
@@ -158,12 +143,9 @@ class ConfigAccessorPropertyTests:
 
 
 class ConfigGenerateTests:
-    """[tier-1/integration] Config.generate: config.json creation, skip, and overwrite policy."""
-
     def test_generate_creates_config_file_with_project_name_from_root_dir(
         self, isolated_workspace: Path, workspace_paths_factory: WorkspacePathsFactory
     ) -> None:
-        """[tier-1/integration] Config.generate: no project_name given -> created config.json's project.name defaults to the workspace root directory name."""
         paths = workspace_paths_factory(isolated_workspace, None)
 
         result = Config(paths).generate()
@@ -177,7 +159,6 @@ class ConfigGenerateTests:
     def test_generate_without_overwrite_or_repair_skips_an_existing_config(
         self, isolated_workspace: Path, workspace_paths_factory: WorkspacePathsFactory
     ) -> None:
-        """[tier-1/integration] Config.generate: config.json already exists, overwrite=False, repair=False -> skipped_existing=True, file left untouched."""
         paths = workspace_paths_factory(isolated_workspace, None)
         Filesystem.atomic_write_json(paths.config_file, build_default_config("original-name"))
 
@@ -191,7 +172,6 @@ class ConfigGenerateTests:
     def test_generate_with_overwrite_replaces_existing_config_and_clears_cache(
         self, isolated_workspace: Path, workspace_paths_factory: WorkspacePathsFactory
     ) -> None:
-        """[tier-1/integration] Config.generate: overwrite=True on an existing config.json replaces it with the new project name and invalidates the instance's cached config."""
         paths = workspace_paths_factory(isolated_workspace, None)
         Filesystem.atomic_write_json(paths.config_file, build_default_config("original-name"))
         config = Config(paths)
@@ -205,6 +185,5 @@ class ConfigGenerateTests:
 
 class AgentConfigMcpServersTests:
     def test_config_with_invalid_server_name_fails_validation(self) -> None:
-        """[tier-1/unit] AgentConfig: mcp_servers {'a__b': <valid stdio definition>} raises ValidationError naming 'a__b'."""
         with pytest.raises(ValidationError, match="'a__b'"):
             AgentConfig(mcp_servers={"a__b": McpServerDefinition(command="npx")})

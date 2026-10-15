@@ -50,7 +50,6 @@ class WorktreeRefsCheckTests:
     def test_execute_missing_database_returns_ok_with_zero_verified_count(
         self, tmp_path: Path, workspace_paths_factory: WorkspacePathsFactory
     ) -> None:
-        """[tier-1/unit] WorktreeRefsCheck.execute: no centralized database file on disk -> OK, message='0 worktree(es) verified against database and Git worktree state.', details={'verified_count': 0}, error_code=None, and no database file is created as a side effect."""
         check = WorktreeRefsCheck()
         paths = workspace_paths_factory(tmp_path, None)
         context = DiagnosticsContext(cwd=tmp_path, paths=paths)
@@ -67,7 +66,6 @@ class WorktreeRefsCheckTests:
     def test_execute_clean_workspace_returns_ok_with_verified_count(
         self, worktree_refs_workspace: Path, worktree_refs_workspace_paths: WorkspacePaths
     ) -> None:
-        """[tier-1/unit] WorktreeRefsCheck.execute: git+db workspace with zero worktrees -> OK, message='0 worktree(es) verified against database and Git worktree state.', details={'verified_count': 0}, error_code=None."""
         check = WorktreeRefsCheck()
         context = DiagnosticsContext(cwd=worktree_refs_workspace, paths=worktree_refs_workspace_paths)
 
@@ -82,7 +80,6 @@ class WorktreeRefsCheckTests:
     def test_execute_stale_worktree_ref_returns_warning_stale(
         self, worktree_refs_workspace: Path, worktree_refs_workspace_paths: WorkspacePaths
     ) -> None:
-        """[tier-1/unit] WorktreeRefsCheck.execute: registered git worktree whose directory was removed -> WARNING, error_code='DOCTOR_WORKTREE_STALE', details={'stale_ids': [str(target_path)]}."""
         target = worktree_refs_workspace / ".dovo" / "worktrees" / "dovo_stale1"
         GitRunner.worktree_add(
             worktree_refs_workspace,
@@ -109,7 +106,6 @@ class WorktreeRefsCheckTests:
         worktree_refs_workspace_paths: WorkspacePaths,
         worktree_refs_repository: WorktreesRepository,
     ) -> None:
-        """[tier-1/unit] WorktreeRefsCheck.execute: active WorktreesRepository record 'dovo_missing' whose worktree_path is absent on disk -> WARNING, error_code='DOCTOR_WORKTREE_STALE', details={'stale_ids': ['dovo_missing']}."""
         missing_path = worktree_refs_workspace / ".dovo" / "worktrees" / "dovo_missing"
         worktree_refs_repository.create(
             id="dovo_missing",
@@ -132,7 +128,6 @@ class WorktreeRefsCheckTests:
     def test_execute_orphaned_directory_returns_warning_orphan(
         self, worktree_refs_workspace: Path, worktree_refs_workspace_paths: WorkspacePaths
     ) -> None:
-        """[tier-1/unit] WorktreeRefsCheck.execute: untracked directory 'dovo_clean' under .dovo/worktrees -> WARNING, error_code='DOCTOR_WORKTREE_ORPHAN', details={'orphan_directories': ['dovo_clean']}."""
         worktrees_dir = worktree_refs_workspace / ".dovo" / "worktrees"
         worktrees_dir.mkdir(parents=True, exist_ok=True)
         (worktrees_dir / "dovo_clean").mkdir()
@@ -154,7 +149,6 @@ class WorktreeRefsCheckTests:
         worktree_refs_workspace_paths: WorkspacePaths,
         worktree_refs_repository: WorktreesRepository,
     ) -> None:
-        """[tier-1/unit] WorktreeRefsCheck.execute: both a stale DB record 'dovo_missing' and an orphaned directory 'dovo_clean' exist -> WARNING, error_code='DOCTOR_WORKTREE_STALE', details=={'stale_ids': ['dovo_missing']} only (no 'orphan_directories' key)."""
         worktrees_dir = worktree_refs_workspace / ".dovo" / "worktrees"
         worktrees_dir.mkdir(parents=True, exist_ok=True)
         (worktrees_dir / "dovo_clean").mkdir()
@@ -183,7 +177,6 @@ class WorktreeRefsCheckTests:
         worktree_refs_workspace_paths: WorkspacePaths,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """[tier-1/unit] WorktreeRefsCheck.execute: GitRunner.worktree_list raises GitCommandError -> WARNING, error_code=None, details={'detection_status': 'git_failed'}."""
 
         def _raise_command_error(_path: Path) -> list[object]:
             raise GitCommandError(["git", "worktree", "list"], 1, "", "fatal error")
@@ -203,12 +196,9 @@ class WorktreeRefsCheckTests:
 
 
 class WorktreeRefsCheckRepositoryConstructionTests:
-    """[tier-1/unit] WorktreeRefsCheck.execute: explicit db_path/project_id repository construction."""
-
     def test_execute_constructs_worktrees_repository_with_explicit_db_path_and_project_id(
         self, worktree_refs_workspace: Path, worktree_refs_workspace_paths: WorkspacePaths
     ) -> None:
-        """[tier-1/unit] WorktreeRefsCheck.execute: WorktreesRepository is constructed with db_path=context.paths.database_file and project_id=context.paths.project_id (not the removed resolve_db_path()/lazy BaseRepository resolution); accessing .project_id does not raise ValueError."""
         check = WorktreeRefsCheck()
         context = DiagnosticsContext(cwd=worktree_refs_workspace, paths=worktree_refs_workspace_paths)
 

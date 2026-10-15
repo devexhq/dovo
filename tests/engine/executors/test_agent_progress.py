@@ -61,7 +61,6 @@ class AgentProgressReporterTests:
     def test_report_prints_the_kind_format_with_the_step_id(
         self, kind: AgentProgressKind, target: str, expected: str
     ) -> None:
-        """[tier-1/unit] AgentProgressReporter.report: step_id 'code' and one item of the given kind and target call on_output once with ('stdout', expected)."""
         printed: list[tuple[str, str]] = []
 
         _reporter(on_output=printed).report(AgentProgress(kind=kind, target=target))
@@ -69,7 +68,6 @@ class AgentProgressReporterTests:
         assert printed == [("stdout", expected)]
 
     def test_consecutive_identical_items_print_once(self) -> None:
-        """[tier-1/unit] AgentProgressReporter.report: reporting READ src/x.py twice then EDIT src/x.py then READ src/x.py prints three lines, the repeat collapsed."""
         printed: list[tuple[str, str]] = []
         reporter = _reporter(on_output=printed)
         read = AgentProgress(kind=AgentProgressKind.READ, target="src/x.py")
@@ -85,14 +83,12 @@ class AgentProgressReporterTests:
         ]
 
     def test_on_output_failure_does_not_raise(self, tmp_path: Path) -> None:
-        """[tier-1/unit] AgentProgressReporter.report: an on_output that raises RuntimeError makes report return None and still appends the session-log event."""
         reporter = _reporter(raising=True, session_log_dir=tmp_path)
 
         assert reporter.report(AgentProgress(kind=AgentProgressKind.READ, target="x")) is None
         assert [event.target for event in _logged_events(tmp_path)] == ["x"]
 
     def test_seconds_since_last_report_is_none_until_the_first_item(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """[tier-1/unit] AgentProgressReporter.seconds_since_last_report: returns None before any report and 10 after a report with the module clock advanced 10.4 seconds."""
         readings = itertools.chain([100.0, 110.4], itertools.repeat(110.4))
         monkeypatch.setattr("dovo.engine.executors.agent_progress.monotonic", lambda: next(readings))
         reporter = _reporter()
@@ -106,7 +102,6 @@ class AgentProgressReporterTests:
 
 class AgentProgressSessionLogTests:
     def test_report_appends_one_event_per_item_with_step_and_loop_fields(self, tmp_path: Path) -> None:
-        """[tier-1/unit] AgentProgressReporter.report: with step_id 'code', step_index 2, attempt 1, loop_id 'code-loop', iteration 2, two identical items append two session.log lines whose events are agent_progress with those fields plus kind 'read' and the target."""
         reporter = _reporter(session_log_dir=tmp_path, loop_id="code-loop", iteration=2)
         item = AgentProgress(kind=AgentProgressKind.READ, target="src/x.py")
 
@@ -128,7 +123,6 @@ class AgentProgressSessionLogTests:
         ] * 2
 
     def test_report_masks_the_target_with_the_step_redactor(self, tmp_path: Path) -> None:
-        """[tier-1/unit] AgentProgressReporter.report: an item whose target holds a secret known only to the reporter's redactor writes a session.log target containing '[REDACTED' and not the secret."""
         secret = "hunter2-hunter2"
         reporter = _reporter(session_log_dir=tmp_path, redactor=SecretRedactor([("TOKEN", secret)]))
 
@@ -140,7 +134,6 @@ class AgentProgressSessionLogTests:
         assert secret not in event.target
 
     def test_report_without_a_session_log_dir_writes_no_event(self) -> None:
-        """[tier-1/unit] AgentProgressReporter.report: session_log_dir None returns None, prints the line."""
         printed: list[tuple[str, str]] = []
 
         result = _reporter(on_output=printed).report(AgentProgress(kind=AgentProgressKind.READ, target="x"))
@@ -149,7 +142,6 @@ class AgentProgressSessionLogTests:
         assert printed == [("stdout", "[code] Reading x\n")]
 
     def test_report_masks_a_step_only_secret_before_truncating_the_target(self, tmp_path: Path) -> None:
-        """[tier-1/unit] AgentProgressReporter.report: a 300-character shell target holding a secret known only to the reporter's redactor, starting at index 110, prints and logs a target of exactly the masked text cut to 119 characters plus '…', with no character of the secret."""
         secret = "QWERTYUIOPASDFGHJKLZ"
         redactor = SecretRedactor([("TOKEN", secret)])
         printed: list[tuple[str, str]] = []
@@ -165,7 +157,6 @@ class AgentProgressSessionLogTests:
         assert printed == [("stdout", f"[code] Running {expected}\n")]
 
     def test_report_truncates_a_long_target_to_119_characters_plus_ellipsis(self, tmp_path: Path) -> None:
-        """[tier-1/unit] AgentProgressReporter.report: a 300-character target without secrets logs a target of length 120 ending in '…'."""
         reporter = _reporter(session_log_dir=tmp_path)
 
         reporter.report(AgentProgress(kind=AgentProgressKind.SHELL, target="x" * 300))

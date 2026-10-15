@@ -12,7 +12,6 @@ class StepRetryExecutionTests:
     """Integration tests verifying step execution retry loops and environment propagation."""
 
     def test_step_command_adapts_behavior_based_on_attempt_counter(self, tmp_path: Path) -> None:
-        """Verify step command receives incremented DOVO_STEP_ATTEMPT and succeeds on retry."""
         script_file = tmp_path / "retry_script.py"
         script_file.write_text(
             "import os\n"
@@ -48,7 +47,6 @@ class StepRunnerRobustnessTests:
     """Integration tests verifying runner resilience against stream observer callback exceptions."""
 
     def test_observer_callback_exception_does_not_halt_step_execution(self, tmp_path: Path) -> None:
-        """Verify observer callback exceptions do not prematurely abort subprocess execution."""
         cmd = (
             f"{sys.executable} -c "
             '"import sys, pathlib; '

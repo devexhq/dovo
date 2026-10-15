@@ -28,7 +28,6 @@ class BlueprintValidateCliIntegrationTests:
     def test_blueprint_validate_cli_valid_blueprint_exits_zero(
         self, cli_runner: CliRunner, isolated_workspace: Path
     ) -> None:
-        """dovo blueprint validate <name>: a freshly scaffolded blueprint passes schema validation; exit 0."""
         Catalog(_paths_for(isolated_workspace)).create(CatalogItemType.BLUEPRINT, "valid-blueprint")
 
         result = cli_runner.invoke(app, ["-p", str(isolated_workspace), "blueprint", "validate", "valid-blueprint"])
@@ -37,7 +36,6 @@ class BlueprintValidateCliIntegrationTests:
         assert "PASSED" in result.stdout
 
     def test_blueprint_validate_cli_renders_json(self, cli_runner: CliRunner, isolated_workspace: Path) -> None:
-        """dovo blueprint validate <name> --format json: envelope reports valid=true."""
         Catalog(_paths_for(isolated_workspace)).create(CatalogItemType.BLUEPRINT, "json-valid-blueprint")
 
         result = cli_runner.invoke(
@@ -50,7 +48,6 @@ class BlueprintValidateCliIntegrationTests:
         assert payload["payload"]["valid"] is True
 
     def test_blueprint_validate_cli_missing_exits_two(self, cli_runner: CliRunner, isolated_workspace: Path) -> None:
-        """dovo blueprint validate missing-blueprint: exits 2 (CATALOG_ITEM_NOT_FOUND)."""
         result = cli_runner.invoke(app, ["-p", str(isolated_workspace), "blueprint", "validate", "missing-blueprint"])
 
         assert result.exit_code == 2
@@ -71,7 +68,6 @@ class BlueprintValidateAskCliIntegrationTests:
     def test_worked_ask_blueprints_validate_with_exit_zero(
         self, cli_runner: CliRunner, isolated_workspace: Path, document: dict[str, object]
     ) -> None:
-        """[tier-3/integration] dovo blueprint validate: each of the approval-gate, revise-loop and review-triage blueprints from the issue exits 0."""
         target = isolated_workspace / "worked.yml"
         target.write_text(yaml.safe_dump(document, sort_keys=False), encoding="utf-8")
 

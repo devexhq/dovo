@@ -42,7 +42,6 @@ class PublishDeclaredArtifactsTests:
     def test_required_spec_matching_nothing_returns_not_produced_message(
         self, tmp_path: Path, engine_paths: WorkspacePaths, artifacts_repository: ArtifactsRepository
     ) -> None:
-        """[tier-1/unit] publish_declared_artifacts: required spec path 'PLAN.md' with an empty worktree -> error_message is the ARTIFACT_NOT_PRODUCED text and warnings == []."""
         outcome = publish_declared_artifacts(
             _step(ArtifactPublishSpec(name="plan", path="PLAN.md")),
             worktree_path=_worktree(tmp_path),
@@ -56,7 +55,6 @@ class PublishDeclaredArtifactsTests:
     def test_optional_spec_matching_nothing_returns_warning_and_no_error(
         self, tmp_path: Path, engine_paths: WorkspacePaths, artifacts_repository: ArtifactsRepository
     ) -> None:
-        """[tier-1/unit] publish_declared_artifacts: required=False spec with no match -> error_message is None and a 'Failed to publish artifact' warning carrying the not-produced text."""
         outcome = publish_declared_artifacts(
             _step(ArtifactPublishSpec(name="plan", path="PLAN.md", required=False)),
             worktree_path=_worktree(tmp_path),
@@ -95,7 +93,6 @@ class PublishDeclaredArtifactsTests:
         artifacts_repository: ArtifactsRepository,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """[tier-1/unit] publish_declared_artifacts: publish raising ValueError('boom') -> required gives the ARTIFACT_PUBLISH_FAILED error; optional gives that text without the code as a warning."""
 
         def _raising_publish(*_args: object, **_kwargs: object) -> ArtifactUploadResult:
             raise ValueError("boom")
@@ -119,7 +116,6 @@ class PublishDeclaredArtifactsTests:
         artifacts_repository: ArtifactsRepository,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """[tier-1/unit] publish_declared_artifacts: a failed publish result carrying no errors -> detail 'publish failed'."""
         monkeypatch.setattr(
             "dovo.core.artifacts.artifacts.publish_artifact",
             lambda *_args, **_kwargs: ArtifactUploadResult(status=ArtifactUploadStatus.ERROR),
@@ -136,7 +132,6 @@ class PublishDeclaredArtifactsTests:
         assert outcome.error_message == "Failed to publish artifact 'plan': publish failed (ARTIFACT_PUBLISH_FAILED)"
 
     def test_no_session_returns_empty_outcome(self, tmp_path: Path) -> None:
-        """[tier-1/unit] publish_declared_artifacts: store=None -> empty ArtifactPublishOutcome and nothing written."""
         outcome = publish_declared_artifacts(
             _step(ArtifactPublishSpec(name="plan", path="PLAN.md")),
             worktree_path=_worktree(tmp_path, "PLAN.md"),
@@ -151,7 +146,6 @@ class PublishDeclaredArtifactsTests:
     def test_stops_at_first_required_failure_keeping_earlier_revision(
         self, tmp_path: Path, engine_paths: WorkspacePaths, artifacts_repository: ArtifactsRepository
     ) -> None:
-        """[tier-1/unit] publish_declared_artifacts: specs [ok, missing-required, ok] -> error_message names the second spec, the first has revision 1 in the DB, the third has no row."""
         step = _step(
             ArtifactPublishSpec(name="first", path="a.txt"),
             ArtifactPublishSpec(name="second", path="missing.txt"),

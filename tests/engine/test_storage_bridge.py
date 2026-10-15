@@ -18,12 +18,9 @@ def _bridge_path(worktree_path: Path) -> Path:
 
 
 class CreateStorageBridgeTests:
-    """[tier-1/unit] create_storage_bridge: linking a worktree's .dovo/run to its session directory."""
-
     def test_create_links_run_to_missing_session_directory_and_creates_it(
         self, engine_paths: WorkspacePaths, tmp_path: Path
     ) -> None:
-        """[tier-1/unit] create_storage_bridge: a missing paths.session_dir(id) and a worktree without .dovo return None with warnings == [], <worktree>/.dovo/run is a symlink resolving to paths.session_dir(id), and that directory exists."""
         worktree_path = tmp_path / "worktree"
         worktree_path.mkdir()
         warnings: list[str] = []
@@ -39,7 +36,6 @@ class CreateStorageBridgeTests:
     def test_create_with_symlink_to_other_directory_replaces_link_and_preserves_old_target(
         self, engine_paths: WorkspacePaths, tmp_path: Path
     ) -> None:
-        """[tier-1/unit] create_storage_bridge: an existing .dovo/run symlink to another directory holding sentinel.txt returns None, now resolves to paths.session_dir(id), and sentinel.txt in the old target still reads its original content."""
         worktree_path = tmp_path / "worktree"
         old_target = tmp_path / "old-target"
         old_target.mkdir()
@@ -57,7 +53,6 @@ class CreateStorageBridgeTests:
     def test_create_with_regular_directory_returns_not_a_symlink_message_and_preserves_content(
         self, engine_paths: WorkspacePaths, tmp_path: Path
     ) -> None:
-        """[tier-1/unit] create_storage_bridge: a regular directory at .dovo/run holding sentinel.txt returns exactly "Worktree storage bridge path '<bridge>' is not a symlink.", leaves sentinel.txt and any file already in the session directory unchanged, and leaves warnings == []."""
         worktree_path = tmp_path / "worktree"
         bridge_path = _bridge_path(worktree_path)
         bridge_path.mkdir(parents=True)
@@ -98,7 +93,6 @@ class CreateStorageBridgeTests:
         fault: str,
         message_prefix: str,
     ) -> None:
-        """[tier-1/unit] create_storage_bridge: <worktree>/.dovo being a regular file, Path.unlink raising OSError on an existing symlink, or Path.symlink_to raising OSError("storage device I/O failure") returns a message starting with the matching pre-determined text for '<worktree>/.dovo/run', with warnings == []."""
         worktree_path = tmp_path / "worktree"
         worktree_path.mkdir()
         bridge_path = _bridge_path(worktree_path)
@@ -143,7 +137,6 @@ class CreateStorageBridgeTests:
         error_code: int,
         is_warning: bool,
     ) -> None:
-        """[tier-1/unit] create_storage_bridge: Path.symlink_to raising OSError(error_code, ...) returns None and appends "Unable to create worktree storage bridge at '<bridge>': <error>" to warnings when platform.system() is Windows and the code is 50 or 1314, and otherwise returns that same text with warnings == []; no link exists in both cases."""
         worktree_path = tmp_path / "worktree"
         worktree_path.mkdir()
         bridge_path = _bridge_path(worktree_path)
@@ -164,10 +157,7 @@ class CreateStorageBridgeTests:
 
 
 class RemoveStorageBridgeTests:
-    """[tier-1/unit] remove_storage_bridge: unlinking a worktree's .dovo/run without touching its target."""
-
     def test_remove_unlinks_symlink_and_preserves_target_contents(self, tmp_path: Path) -> None:
-        """[tier-1/unit] remove_storage_bridge: a .dovo/run symlink to a directory holding sentinel.txt returns None, the link no longer exists, and sentinel.txt still reads its original content."""
         worktree_path = tmp_path / "worktree"
         target_dir = tmp_path / "target"
         target_dir.mkdir()
@@ -187,7 +177,6 @@ class RemoveStorageBridgeTests:
         [pytest.param("absent", id="absent"), pytest.param("regular-directory", id="regular-directory")],
     )
     def test_remove_without_symlink_returns_none_and_leaves_path_untouched(self, tmp_path: Path, existing: str) -> None:
-        """[tier-1/unit] remove_storage_bridge: a missing .dovo/run, or a regular directory holding sentinel.txt there, returns None and the directory and its file are unchanged."""
         worktree_path = tmp_path / "worktree"
         bridge_path = _bridge_path(worktree_path)
         sentinel_path = bridge_path / "sentinel.txt"
@@ -205,7 +194,6 @@ class RemoveStorageBridgeTests:
     def test_remove_unlink_failure_returns_failed_to_unlink_message(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """[tier-1/unit] remove_storage_bridge: Path.unlink raising OSError("busy") on an existing symlink returns "Failed to unlink worktree storage bridge at '<bridge>': busy"."""
         worktree_path = tmp_path / "worktree"
         bridge_path = _bridge_path(worktree_path)
         bridge_path.parent.mkdir(parents=True)

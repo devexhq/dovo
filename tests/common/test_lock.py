@@ -23,7 +23,6 @@ class WorkspaceLockTests:
     """Integration tests verifying cross-process advisory lock contracts."""
 
     def test_lock_supports_nested_acquisition_in_same_process(self, tmp_path: Path) -> None:
-        """Verify WorkspaceLock supports reentrant nested acquisition within the same process."""
         lock = WorkspaceLock(tmp_path / ".lock")
         assert not lock.is_locked
 
@@ -53,7 +52,6 @@ class WorkspaceLockTests:
         assert not lock_b.is_locked
 
     def test_release_when_not_locked_leaves_state_unchanged(self, tmp_path: Path) -> None:
-        """Verify calling release on an unacquired or already released lock does not corrupt registry state."""
         lock_a = WorkspaceLock(resolve_lock_file_path(tmp_path))
         lock_a.release()
         assert not lock_a.is_locked
@@ -69,7 +67,6 @@ class WorkspaceLockTests:
         assert not lock_a.is_locked
 
     def test_lock_dispatches_on_wait_callback_on_contention(self, tmp_path: Path) -> None:
-        """Verify on_wait callback is dispatched after 200ms when lock is contested and timeout raises LockTimeoutError."""
         lock_file = (tmp_path / ".dovo" / ".lock").resolve()
         lock_file.parent.mkdir(parents=True, exist_ok=True)
         file_descriptor = os.open(str(lock_file), os.O_RDWR | os.O_CREAT, 0o644)
@@ -105,7 +102,6 @@ class WorkspaceLockTests:
             os.close(file_descriptor)
 
     def test_lock_queueing_acquires_cleanly_when_holder_exits(self, tmp_path: Path) -> None:
-        """Verify a waiting WorkspaceLock queues during contention and acquires cleanly when the holding process exits."""
         child_code = f"""
 import time
 from pathlib import Path

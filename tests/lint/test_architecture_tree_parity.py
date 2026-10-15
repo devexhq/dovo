@@ -46,7 +46,6 @@ class ArchitectureTreeParityTests:
 
     @pytest.mark.parametrize("layer", [pytest.param(layer, id=layer) for layer in LAYERS])
     def test_layer_lists_exactly_the_packages_on_disk(self, layer: str) -> None:
-        """Documented package names for a layer equal its package directories."""
         documented = _documented_packages()[layer]
 
         assert documented == _packages_on_disk(layer)

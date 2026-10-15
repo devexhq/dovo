@@ -539,7 +539,6 @@ class SessionShowFormatterTests:
 
     @pytest.mark.parametrize("case", HISTORY_SHOW_CASES)
     def test_transform_derives_expected_view(self, case: FormatterCase[HistoryShowResult, SessionShowView]) -> None:
-        """Verify transform derives the expected SessionShowView."""
         assert_transform_derives_expected_view(SessionShowFormatter, case.data, case.view)
 
     @pytest.mark.parametrize(("case", "expected_payload"), HISTORY_SHOW_PAYLOAD_CASES)
@@ -548,10 +547,8 @@ class SessionShowFormatterTests:
         case: FormatterCase[HistoryShowResult, SessionShowView],
         expected_payload: dict[str, Any],
     ) -> None:
-        """Verify to_json_serializable matches the published wire format dict."""
         assert_json_payload_matches_published_shape(SessionShowFormatter, case.data, expected_payload)
 
     @pytest.mark.parametrize("case", HISTORY_SHOW_CASES)
     def test_rich_render_shows_every_view_value(self, case: FormatterCase[HistoryShowResult, SessionShowView]) -> None:
-        """Verify that all non-null semantic view model values reach the Rich renderable output."""
         assert_rich_render_shows_every_view_value(SessionShowFormatter, case.data, case.render_expectations)

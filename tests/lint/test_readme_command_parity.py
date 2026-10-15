@@ -66,14 +66,12 @@ class ReadmeCommandParityTests:
     """README must list exactly the commands the CLI registers."""
 
     def test_every_documented_command_is_registered(self) -> None:
-        """No README command path is missing from the CLI app."""
         registered = _registered_paths()
         registered_prefixes = {path[:depth] for path in registered for depth in range(1, len(path) + 1)}
 
         assert sorted(_documented_paths() - registered_prefixes) == []
 
     def test_every_registered_command_is_documented(self) -> None:
-        """No registered leaf command is absent from the README."""
         documented = _documented_paths()
 
         undocumented = {

@@ -27,7 +27,6 @@ class ConfigSetRootTests:
     """Direct handler unit tests for config_set_command."""
 
     def test_config_set_updates_scalar_value_returns_ok(self, isolated_workspace: Path) -> None:
-        """Handler returns OK ConfigSetResult and mutates config atomically."""
         config_path = isolated_workspace / ".dovo" / "config.json"
         payload = build_default_config("demo-workspace")
         Filesystem.atomic_write_json(config_path, payload)
@@ -46,7 +45,6 @@ class ConfigSetRootTests:
         assert json.loads(config_path.read_text())["agent"]["models"]["copilot"] == "qwen2.5-coder"
 
     def test_config_set_schema_violation_returns_error(self, isolated_workspace: Path) -> None:
-        """Handler returns SCHEMA_INVALID ConfigSetResult on bad schema key."""
         config_path = isolated_workspace / ".dovo" / "config.json"
         payload = build_default_config("demo-workspace")
         Filesystem.atomic_write_json(config_path, payload)
@@ -74,7 +72,6 @@ class ConfigSetCliIntegrationTests:
     """Typer runner integration tests for dovo config set."""
 
     def test_config_set_cli_mutates_value_and_exits_zero(self, cli_runner: CliRunner, isolated_workspace: Path) -> None:
-        """dovo config set updates value and displays confirmation."""
         config_path = isolated_workspace / ".dovo" / "config.json"
         payload = build_default_config("demo-workspace")
         Filesystem.atomic_write_json(config_path, payload)
@@ -91,7 +88,6 @@ class ConfigSetCliIntegrationTests:
     def test_config_set_agent_provider_claude_persists_value(
         self, cli_runner: CliRunner, isolated_workspace: Path
     ) -> None:
-        """[tier-3/integration] dovo config set agent.provider claude: exits 0, prints 'Config updated: agent.provider', and .dovo/config.json holds agent.provider 'claude'."""
         config_path = isolated_workspace / ".dovo" / "config.json"
         Filesystem.atomic_write_json(config_path, build_default_config("demo-workspace"))
 
@@ -104,7 +100,6 @@ class ConfigSetCliIntegrationTests:
     def test_config_set_cli_stores_boolean_true_from_string(
         self, cli_runner: CliRunner, isolated_workspace: Path
     ) -> None:
-        """dovo config set converts "true" to boolean True and stores True in config.json."""
         config_path = isolated_workspace / ".dovo" / "config.json"
         payload = build_default_config("demo-workspace")
         Filesystem.atomic_write_json(config_path, payload)
@@ -119,7 +114,6 @@ class ConfigSetCliIntegrationTests:
         assert json.loads(config_path.read_text())["telemetry"]["enabled"] is True
 
     def test_config_set_cli_schema_violation_exits_one(self, cli_runner: CliRunner, isolated_workspace: Path) -> None:
-        """dovo config set exits with error panel on schema violation."""
         config_path = isolated_workspace / ".dovo" / "config.json"
         payload = build_default_config("demo-workspace")
         Filesystem.atomic_write_json(config_path, payload)
@@ -142,7 +136,6 @@ class ConfigSetCliIntegrationTests:
         assert "CONFIG_SCHEMA_INVALID" in res.stdout
 
     def test_config_set_cli_format_json_emits_event(self, cli_runner: CliRunner, isolated_workspace: Path) -> None:
-        """dovo config set --format json emits NDJSON ConfigSetResult event."""
         config_path = isolated_workspace / ".dovo" / "config.json"
         payload = build_default_config("demo-workspace")
         Filesystem.atomic_write_json(config_path, payload)

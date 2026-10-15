@@ -23,7 +23,6 @@ class LiveDisplayManagerLoopTests:
     """Contract tests for LiveDisplayManager's loop lifecycle handling."""
 
     def test_iteration_start_clears_steps_table(self) -> None:
-        """LiveDisplayManager.handle_loop_lifecycle: iteration_start clears self.steps before the new iteration's StepStartEvents arrive."""
         manager = _manager()
         manager.handle_step_start(
             StepStartEvent(idx=1, total=2, step_id="run-tests", name="run-tests", command="pytest")
@@ -38,7 +37,6 @@ class LiveDisplayManagerLoopTests:
         assert manager.steps == []
 
     def test_loop_panel_included_in_single_renderable(self) -> None:
-        """LiveDisplayManager._build_renderable: after a start event, the Group contains the loop panel alongside the step table."""
         manager = _manager()
 
         manager.handle_loop_lifecycle(LoopLifecycleEvent(loop_id="dev-cycle", action="start", max_iterations=5))
@@ -50,7 +48,6 @@ class LiveDisplayManagerLoopTests:
         assert Table in renderable_types
 
     def test_no_loop_active_omits_panel(self) -> None:
-        """LiveDisplayManager._build_renderable: with no loop lifecycle event received, the renderable is the bare step table."""
         manager = _manager()
 
         renderable = manager._build_renderable()
@@ -58,7 +55,6 @@ class LiveDisplayManagerLoopTests:
         assert isinstance(renderable, Table)
 
     def test_dispatch_live_routes_loop_lifecycle_events(self) -> None:
-        """UiDispatcher._dispatch_live: a LoopLifecycleEvent dispatched during an active Live session updates loop state via handle_loop_lifecycle."""
         console = Console(force_terminal=True, color_system=None, width=100, file=io.StringIO())
         dispatcher = UiDispatcher(console=console)
         dispatcher.start_live()
@@ -76,7 +72,6 @@ class BuildLoopStatusPanelTests:
     """Contract tests for the build_loop_status_panel renderable builder."""
 
     def test_iteration_history_marks_pass_fail_current_and_pending(self) -> None:
-        """build_loop_status_panel: iteration_results={1: False, 2: False}, iteration=3, max_iterations=5 renders 5 iteration markers."""
         panel = build_loop_status_panel(
             "dev-cycle",
             3,

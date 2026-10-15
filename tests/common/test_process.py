@@ -32,12 +32,10 @@ class ProcessIsolationPlatformTests:
         platform_name: str,
         expected_kwargs: dict[str, object],
     ) -> None:
-        """Verify get_isolated_process_kwargs returns correct session/creation flags per platform."""
         monkeypatch.setattr(sys, "platform", platform_name)
         assert get_isolated_process_kwargs() == expected_kwargs
 
     def test_ambient_platform_isolation_flags_match_system(self) -> None:
-        """Verify get_isolated_process_kwargs returns valid flags for the ambient host platform without monkeypatching."""
         expected = {"creationflags": WINDOWS_CREATION_FLAGS} if sys.platform == "win32" else {"start_new_session": True}
         assert get_isolated_process_kwargs() == expected
 
@@ -82,7 +80,6 @@ class StreamIsolatedProcessTests:
     """Tier-1 tests for the line-streaming isolated process runner."""
 
     def test_lines_reach_their_stream_callbacks_in_order_and_bytes_are_complete(self) -> None:
-        """[tier-1/integration] stream_isolated_process: a child printing out1,out2 on stdout and err1 on stderr gives on_stdout_line ['out1','out2'], on_stderr_line ['err1'], and CompletedProcess(returncode=0, stdout=b'out1\\nout2\\n', stderr=b'err1\\n')."""
         stdout_lines: list[str] = []
         stderr_lines: list[str] = []
 
@@ -95,7 +92,6 @@ class StreamIsolatedProcessTests:
         assert (completed.returncode, completed.stdout, completed.stderr) == (0, b"out1\nout2\n", b"err1\n")
 
     def test_line_is_delivered_before_the_child_exits(self, tmp_path: Path) -> None:
-        """[tier-1/integration] stream_isolated_process: a child that prints 'first', then blocks reading a FIFO until the on_stdout_line callback for 'first' writes to it, then prints 'second', completes with stdout b'first\\nsecond\\n' instead of timing out."""
         if sys.platform == "win32":
             pytest.skip("POSIX FIFOs required")
         fifo = tmp_path / "release.fifo"
@@ -125,7 +121,7 @@ class StreamIsolatedProcessTests:
     def test_final_and_malformed_records_reach_the_callback_once_with_exact_bytes_kept(
         self, emitted: bytes, expected_lines: list[str]
     ) -> None:
-        """[tier-1/integration] stream_isolated_process: each emitted byte string yields exactly expected_lines on on_stdout_line, decoded with replacement characters and newline-stripped, while CompletedProcess.stdout == emitted."""
+        """Pass each emitted byte string to on_stdout_line decoded with replacement characters and newline-stripped."""
         stdout_lines: list[str] = []
 
         completed = stream_isolated_process(
@@ -136,7 +132,6 @@ class StreamIsolatedProcessTests:
         assert completed.stdout == emitted
 
     def test_callback_that_raises_loses_only_its_own_line(self) -> None:
-        """[tier-1/integration] stream_isolated_process: an on_stdout_line callback raising on 'first' still receives 'second' and 'third', and the result has returncode 0 and the full three-line stdout bytes."""
         received: list[str] = []
 
         def failing_callback(line: str) -> None:
@@ -150,7 +145,6 @@ class StreamIsolatedProcessTests:
         assert (completed.returncode, completed.stdout) == (0, b"first\nsecond\nthird\n")
 
     def test_timeout_terminates_the_child_and_error_carries_pre_kill_output(self) -> None:
-        """[tier-1/integration] stream_isolated_process: a child that prints 'ready' then sleeps past timeout_seconds raises TimeoutExpired with output == b'ready\\n' and on_stdout_line having received ['ready'], and len(process_registry) is 0 afterwards."""
         stdout_lines: list[str] = []
         registered_before = len(process_registry)
 
@@ -169,7 +163,6 @@ class StreamIsolatedProcessTests:
         assert len(process_registry) == registered_before
 
     def test_large_input_to_child_that_never_reads_stdin_times_out(self) -> None:
-        """[tier-1/integration] stream_isolated_process: 1 MiB of input_data to a child that sleeps without reading stdin raises TimeoutExpired within the deadline rather than blocking on the stdin write."""
         outcome = _run_bounded(
             lambda: stream_isolated_process(
                 _python(SLEEP_SCRIPT), input_data=b"x" * (1024 * 1024), timeout_seconds=1.0, grace_seconds=0.5
@@ -179,7 +172,6 @@ class StreamIsolatedProcessTests:
         assert isinstance(outcome, subprocess.TimeoutExpired)
 
     def test_large_input_to_child_that_exits_early_returns_its_exit_code(self) -> None:
-        """[tier-1/integration] stream_isolated_process: 1 MiB of input_data to a child that exits with code 3 without reading it returns CompletedProcess(returncode=3) and raises no BrokenPipeError."""
         outcome = _run_bounded(
             lambda: stream_isolated_process(
                 _python(EXIT_WITHOUT_READING_SCRIPT), input_data=b"x" * (1024 * 1024), timeout_seconds=20.0
@@ -190,7 +182,6 @@ class StreamIsolatedProcessTests:
         assert outcome.returncode == 3
 
     def test_missing_executable_raises_file_not_found(self, tmp_path: Path) -> None:
-        """[tier-1/unit] stream_isolated_process: a cmd naming a nonexistent executable raises FileNotFoundError and leaves len(process_registry) at its prior value."""
         registered_before = len(process_registry)
 
         with pytest.raises(FileNotFoundError):

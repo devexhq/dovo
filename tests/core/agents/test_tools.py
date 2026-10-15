@@ -23,7 +23,6 @@ from dovo.core.agents.tools import (
 
 class DefaultToolPolicyTests:
     def test_default_policy_grants_read_write_on_both_roots_only(self) -> None:
-        """[tier-1/unit] default_tool_policy: allow == the four read/write '**' rules for roots worktree and scratch; deny == []; allow_all is False; no shell/network/mcp rule."""
         policy = default_tool_policy()
 
         assert policy == ToolPolicy(
@@ -38,7 +37,6 @@ class DefaultToolPolicyTests:
         )
 
     def test_default_policy_returns_a_fresh_object_per_call(self) -> None:
-        """[tier-1/unit] default_tool_policy: mutating one returned policy's allow list leaves the next call's policy unchanged."""
         first = default_tool_policy()
         first.allow.clear()
 
@@ -61,7 +59,6 @@ class ResolveToolPolicyTests:
     def test_step_policy_replaces_config_without_accumulating_denies(
         self, step_policy: ToolPolicy | None, expected: str
     ) -> None:
-        """[tier-1/unit] resolve_tool_policy: omitted -> configured object; explicit -> that exact object with no config allow/deny added."""
         configured = ToolPolicy(
             allow=[ToolRule(capability=ToolCapability.READ, pattern="src/**")],
             deny=[ToolRule(capability=ToolCapability.WRITE, pattern=".dovo/**")],
@@ -110,13 +107,11 @@ class CheckPolicySupportTests:
     def test_incapable_provider_accepts_only_unrestricted_allow_all(
         self, supports: bool, policy: ToolPolicy, rejected: bool
     ) -> None:
-        """[tier-1/unit] check_policy_support: returns the fixed unsupported message for the token when the spec cannot enforce a restrictive policy, else None."""
         result = check_policy_support(_spec(supports_tool_policy=supports), policy)
 
         assert result == (tool_policy_unsupported_message("unit-test") if rejected else None)
 
     def test_message_names_the_provider_token_and_code(self) -> None:
-        """[tier-1/unit] tool_policy_unsupported_message: embeds the token and AGENT_TOOL_POLICY_UNSUPPORTED."""
         message = tool_policy_unsupported_message("copilot")
 
         assert message.startswith("Agent provider 'copilot' cannot enforce the requested tool policy")
@@ -125,7 +120,6 @@ class CheckPolicySupportTests:
 
 class PolicyRuleHelpersTests:
     def test_rules_list_allows_before_denies_and_scratch_is_detected_in_either(self) -> None:
-        """[tier-1/unit] policy_rules / requests_scratch: allow rules precede deny rules and a scratch root in either list counts as requesting scratch."""
         allow = ToolRule(capability=ToolCapability.READ)
         deny = ToolRule(capability=ToolCapability.WRITE, root="scratch")
 
@@ -147,7 +141,6 @@ def _context(scratch: Path, control: Path) -> AgentInvocationContext:
 
 class ResolvePolicyRootsTests:
     def test_default_policy_with_invocation_returns_canonical_worktree_and_scratch(self, tmp_path: Path) -> None:
-        """[tier-1/unit] resolve_policy_roots: returns PolicyRoots(worktree=resolved worktree, scratch=resolved scratch, control=resolved control)."""
         worktree, scratch, control = _dirs(tmp_path)
 
         roots = resolve_policy_roots(default_tool_policy(), worktree, _context(scratch, control))
@@ -155,7 +148,6 @@ class ResolvePolicyRootsTests:
         assert roots == PolicyRoots(worktree=worktree, scratch=scratch, control=control)
 
     def test_worktree_only_policy_needs_no_invocation(self, tmp_path: Path) -> None:
-        """[tier-1/unit] resolve_policy_roots: worktree-only policy with invocation=None returns PolicyRoots(scratch=None, control=None)."""
         worktree, _, _ = _dirs(tmp_path)
         policy = ToolPolicy(allow=[ToolRule(capability=ToolCapability.READ)])
 
@@ -176,7 +168,6 @@ class ResolvePolicyRootsTests:
         ],
     )
     def test_unsafe_or_missing_scratch_returns_error_string(self, tmp_path: Path, case: str) -> None:
-        """[tier-1/unit] resolve_policy_roots: each case returns a non-empty str and never creates a directory."""
         worktree, scratch, control = _dirs(tmp_path)
         invocation: AgentInvocationContext | None = _context(scratch, control)
         if case == "missing-context":

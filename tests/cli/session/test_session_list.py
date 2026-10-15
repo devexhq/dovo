@@ -32,7 +32,6 @@ class SessionListCliIntegrationTests:
     def test_session_cli_bare_lists_recent_runs_exits_zero(
         self, cli_runner: CliRunner, session_workspace: Path
     ) -> None:
-        """dovo session: bare invocation lists seeded COMPLETED and FAILED sessions, exit 0, both session IDs in stdout."""
         db = _db_for(session_workspace)
         db.sessions.create(
             session_id="session-completed",
@@ -53,7 +52,6 @@ class SessionListCliIntegrationTests:
     def test_session_list_cli_json_emits_literal_wire_payload(
         self, cli_runner: CliRunner, session_workspace: Path
     ) -> None:
-        """dovo session list --format json: stdout equals the literal HistoryListResult envelope for the two seeded sessions."""
         db = _db_for(session_workspace)
         db.sessions.create(
             session_id="session-completed",
@@ -107,7 +105,6 @@ class SessionListCliIntegrationTests:
         }
 
     def test_bare_session_and_ls_alias_equal_session_list(self, cli_runner: CliRunner, session_workspace: Path) -> None:
-        """[tier-3/integration] dovo session / dovo session ls vs dovo session list: two seeded sessions -> equal stdout and exit_code 0 for all three."""
         db = _db_for(session_workspace)
         db.sessions.create(
             session_id="session-one", blueprint_name="task-a", blueprint_key="task-a", status=SessionStatus.COMPLETED
@@ -128,7 +125,6 @@ class SessionListCliIntegrationTests:
     def test_bare_session_forwards_limit_status_and_format(
         self, cli_runner: CliRunner, session_workspace: Path
     ) -> None:
-        """[tier-3/integration] dovo session --status failed --limit 1 --format json: stdout equals the HistoryListResult envelope holding only the newest failed session."""
         db = _db_for(session_workspace)
         db.sessions.create(
             session_id="failed-old", blueprint_name="task-a", blueprint_key="task-a", status=SessionStatus.FAILED
@@ -169,7 +165,6 @@ class SessionListCliIntegrationTests:
         names: list[str],
         expected_text: str,
     ) -> None:
-        """[tier-3/integration] dovo session list: config environment.sensitive_variables ["DB_PIN"], DB_PIN="1234", row error_message "1234" prints "[REDACTED:DB_PIN]", exit 0; with the name removed from config it prints "1234"."""
         monkeypatch.setenv("DB_PIN", "1234")
         paths = _paths_for(session_workspace)
         db = DovoDb(database_file=paths.database_file, project_id=paths.project_id)

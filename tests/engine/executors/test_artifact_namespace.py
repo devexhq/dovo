@@ -34,13 +34,10 @@ def _store(paths: WorkspacePaths, repository: ArtifactsRepository) -> ArtifactSt
 
 
 class ArtifactNamespaceProviderTests:
-    """[tier-1/integration] ArtifactNamespaceProvider.resolve: lazy artifacts.<name>.<field> rendering."""
-
     @pytest.mark.parametrize("field_name", ["revision", "dir"])
     def test_known_field_resolves_from_latest_revision(
         self, field_name: str, tmp_path: Path, engine_paths: WorkspacePaths, artifacts_repository: ArtifactsRepository
     ) -> None:
-        """[tier-1/integration] ArtifactNamespaceProvider.resolve: 'plan' at revision 2 -> 'artifacts.plan.<field>' returns the revision-2 value."""
         store = _store(engine_paths, artifacts_repository)
         _publish(store, tmp_path, {"PLAN.md": "plan"}, times=2)
         record = artifacts_repository.get("wf_1", "plan")
@@ -59,7 +56,6 @@ class ArtifactNamespaceProviderTests:
     def test_unknown_artifact_or_field_resolves_to_empty_string(
         self, path: str, tmp_path: Path, engine_paths: WorkspacePaths, artifacts_repository: ArtifactsRepository
     ) -> None:
-        """[tier-1/integration] ArtifactNamespaceProvider.resolve: unknown artifact name or field -> ''."""
         store = _store(engine_paths, artifacts_repository)
         _publish(store, tmp_path, {"PLAN.md": "plan"})
 
@@ -68,7 +64,6 @@ class ArtifactNamespaceProviderTests:
     def test_dotted_artifact_name_uses_last_segment_as_field(
         self, tmp_path: Path, engine_paths: WorkspacePaths, artifacts_repository: ArtifactsRepository
     ) -> None:
-        """[tier-1/integration] ArtifactNamespaceProvider.resolve: 'artifacts.team.plan.digest' -> digest of artifact 'team.plan'."""
         store = _store(engine_paths, artifacts_repository)
         _publish(store, tmp_path, {"PLAN.md": "plan"}, name="team.plan")
         record = artifacts_repository.get("wf_1", "team.plan")
@@ -79,17 +74,14 @@ class ArtifactNamespaceProviderTests:
 
     @pytest.mark.parametrize("path", ["inputs.x", "artifacts.plan"])
     def test_non_artifact_path_returns_none(self, path: str) -> None:
-        """[tier-1/unit] ArtifactNamespaceProvider.resolve: 'inputs.x' and 'artifacts.plan' -> None."""
         assert ArtifactNamespaceProvider(None).resolve(path) is None
 
     def test_missing_store_resolves_well_formed_key_to_empty_string(self) -> None:
-        """[tier-1/unit] ArtifactNamespaceProvider.resolve: store=None, 'artifacts.plan.revision' -> ''."""
         assert ArtifactNamespaceProvider(None).resolve("artifacts.plan.revision") == ""
 
     def test_content_of_multi_file_artifact_raises_with_classified_message(
         self, tmp_path: Path, engine_paths: WorkspacePaths, artifacts_repository: ArtifactsRepository
     ) -> None:
-        """[tier-1/integration] ArtifactNamespaceProvider.resolve: 'artifacts.plan.content' for a two-file artifact -> NamespaceResolutionError('Artifact 'plan' cannot be inlined (ARTIFACT_CONTENT_UNAVAILABLE): artifact has 2 files, content needs exactly one')."""
         store = _store(engine_paths, artifacts_repository)
         _publish(store, tmp_path, {"a.md": "a", "b.md": "b"})
 
@@ -104,7 +96,6 @@ class ArtifactNamespaceProviderTests:
     def test_revision_of_multi_file_artifact_never_reads_content(
         self, tmp_path: Path, engine_paths: WorkspacePaths, artifacts_repository: ArtifactsRepository
     ) -> None:
-        """[tier-1/integration] ArtifactNamespaceProvider.resolve: 'artifacts.plan.revision' for a two-file artifact -> '1' with no error."""
         store = _store(engine_paths, artifacts_repository)
         _publish(store, tmp_path, {"a.md": "a", "b.md": "b"})
 

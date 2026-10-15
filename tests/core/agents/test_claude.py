@@ -27,7 +27,6 @@ from tests.harness import AgentRequestBuilder, FakeAgentRunner
 
 class ClaudeDescriptorTests:
     def test_descriptor_matches_pre_determined_data(self) -> None:
-        """[tier-1/unit] PROVIDERS['claude']: token 'claude', credential_envs ('ANTHROPIC_API_KEY',), requires_model False, supports_tool_policy True, supports_os_sandbox False, binary 'claude', progress_mapper None, control_envs equal to the eight FR-1 names in order, build is ClaudeAgentAdapter."""
         spec = PROVIDERS["claude"]
 
         assert (spec.token, spec.credential_envs, spec.requires_model) == ("claude", ("ANTHROPIC_API_KEY",), False)
@@ -47,7 +46,6 @@ class ClaudeDescriptorTests:
 
 class ClaudeDefaultRunTests:
     def test_default_run_returns_not_available_error_outcome(self, tmp_path: Path) -> None:
-        """[tier-1/unit] default_claude_run: any CliMutationRunRequest returns CliMutationOutcome(status='error', error_detail='Claude Code invocation is not available') with result_text None and denials []."""
         outcome = default_claude_run(
             CliMutationRunRequest(
                 worktree_path=tmp_path, prompt="hi", timeout_seconds=3, tools=ToolPolicy(allow_all=True)
@@ -59,7 +57,6 @@ class ClaudeDefaultRunTests:
     def test_invoke_with_key_returns_provider_error_and_starts_no_process(
         self, git_repo: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """[tier-1/integration] ClaudeAgentAdapter.invoke: ANTHROPIC_API_KEY set returns PROVIDER_ERROR whose errors contain 'Claude Code invocation is not available', and a stream_isolated_process spy is never called."""
         monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test")
         runner = FakeAgentRunner()
         monkeypatch.setattr("dovo.core.agents.cli_mutation.stream_isolated_process", runner)
@@ -88,7 +85,6 @@ class ClaudePolicyPreflightTests:
     def test_mcp_policy_is_rejected_before_spawn(
         self, git_repo: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """[tier-1/integration] ClaudeAgentAdapter.invoke: an mcp allow for a server defined in neither agent.mcp_servers nor the user's Claude config returns PROVIDER_ERROR with errors == [tool_policy_unsupported_message('claude')] and FakeAgentRunner.calls == []."""
         monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test")
         monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path / "claude-home"))
         runner = FakeAgentRunner()
@@ -123,7 +119,6 @@ class ClaudePolicyPreflightTests:
         configured: dict[str, McpServerDefinition],
         user_config: dict[str, object] | None,
     ) -> None:
-        """[tier-1/integration] ClaudeAgentAdapter.invoke: an mcp allow for a server in request.mcp_servers or in the user's Claude config returns PROVIDER_ERROR whose errors contain 'Claude Code invocation is not available', not the unsupported message."""
         claude_home = tmp_path / "claude-home"
         claude_home.mkdir()
         if user_config is not None:
@@ -149,7 +144,6 @@ class ClaudePolicyPreflightTests:
     def test_narrowed_read_with_read_deny_passes_preflight(
         self, git_repo: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """[tier-1/integration] ClaudeAgentAdapter.invoke: read allow 'src/**' plus read deny 'secrets/**' with a real invocation returns PROVIDER_ERROR whose errors contain 'Claude Code invocation is not available', not the unsupported message."""
         monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test")
         policy = ToolPolicy(
             allow=[ToolRule(capability=ToolCapability.READ, pattern="src/**")],
@@ -171,7 +165,6 @@ class ClaudePolicyPreflightTests:
     def test_default_policy_with_a_real_invocation_passes_preflight(
         self, git_repo: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """[tier-1/integration] ClaudeAgentAdapter.invoke: default_tool_policy() with an invocation whose scratch and control directories exist returns PROVIDER_ERROR whose errors contain 'Claude Code invocation is not available', not the unsupported message."""
         monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test")
         request = (
             AgentRequestBuilder()
@@ -189,7 +182,6 @@ class ClaudePolicyPreflightTests:
     def test_default_policy_without_an_invocation_is_rejected_before_spawn(
         self, git_repo: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """[tier-1/integration] ClaudeAgentAdapter.invoke: default_tool_policy() with no invocation returns PROVIDER_ERROR with errors == [tool_policy_unsupported_message('claude')] and FakeAgentRunner.calls == []."""
         monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test")
         runner = FakeAgentRunner()
         monkeypatch.setattr("dovo.core.agents.cli_mutation.stream_isolated_process", runner)
@@ -204,7 +196,6 @@ class ClaudePolicyPreflightTests:
     def test_supported_policy_passes_preflight_and_reaches_not_available_error(
         self, git_repo: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """[tier-1/integration] ClaudeAgentAdapter.invoke: a shell allow 'git *' request returns PROVIDER_ERROR whose errors contain 'Claude Code invocation is not available', not the unsupported message."""
         monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test")
         policy = ToolPolicy(allow=[ToolRule(capability=ToolCapability.SHELL, pattern="git *")])
         request = AgentRequestBuilder().with_worktree_path(git_repo).with_tools(policy).build()
@@ -228,7 +219,6 @@ class ClaudeCredentialTests:
     def test_resolve_claude_api_key_returns_stripped_value_or_none(
         self, value: str | None, expected: str | None, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """[tier-1/unit] resolve_claude_api_key: ANTHROPIC_API_KEY '  sk-test \\n' returns 'sk-test'; empty, whitespace, or unset returns None."""
         if value is None:
             monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
         else:
@@ -237,7 +227,6 @@ class ClaudeCredentialTests:
         assert resolve_claude_api_key() == expected
 
     def test_resolve_claude_api_key_observes_changes_between_calls(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """[tier-1/unit] resolve_claude_api_key: unset returns None, then 'k' set returns 'k', in one process with no module reload."""
         monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
         before = resolve_claude_api_key()
 

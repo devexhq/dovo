@@ -21,7 +21,7 @@ WorkspacePathsFactory = Callable[[Path, Path | None], WorkspacePaths]
 
 @pytest.fixture
 def artifacts_integrity_paths(tmp_path: Path, workspace_paths_factory: WorkspacePathsFactory) -> WorkspacePaths:
-    """WorkspacePaths for a workspace with an initialized database and no artifacts."""
+    """Return WorkspacePaths for a workspace with an initialized database and no artifacts."""
     workspace = WorkspaceBuilder(tmp_path / "artifacts_integrity_ws").with_database().build()
     return workspace_paths_factory(workspace, None)
 
@@ -59,7 +59,6 @@ class ArtifactsIntegrityCheckTests:
     def test_execute_clean_workspace_returns_ok_with_verified_count(
         self, artifacts_integrity_paths: WorkspacePaths, artifacts_repository: ArtifactsRepository, tmp_path: Path
     ) -> None:
-        """[tier-1/integration] ArtifactsIntegrityCheck.execute: two published revisions with matching rows -> OK, verified_count 2, no error_code."""
         _publish_plan(artifacts_integrity_paths, artifacts_repository, tmp_path, b"one")
         _publish_plan(artifacts_integrity_paths, artifacts_repository, tmp_path, b"two")
 
@@ -75,7 +74,6 @@ class ArtifactsIntegrityCheckTests:
     def test_execute_directory_without_row_returns_orphan_warning(
         self, artifacts_integrity_paths: WorkspacePaths, artifacts_repository: ArtifactsRepository, tmp_path: Path
     ) -> None:
-        """[tier-1/integration] ArtifactsIntegrityCheck.execute: a <name>/3 directory with manifest.json and no row -> WARNING DOCTOR_ARTIFACT_ORPHAN_DIR naming that directory."""
         revision_dir = _publish_plan(artifacts_integrity_paths, artifacts_repository, tmp_path, b"one")
         orphan_dir = revision_dir.parent / "3"
         shutil.copytree(revision_dir, orphan_dir)
@@ -91,7 +89,6 @@ class ArtifactsIntegrityCheckTests:
     def test_execute_row_without_directory_returns_missing_warning(
         self, artifacts_integrity_paths: WorkspacePaths, artifacts_repository: ArtifactsRepository, tmp_path: Path
     ) -> None:
-        """[tier-1/integration] ArtifactsIntegrityCheck.execute: a row whose directory was deleted -> WARNING DOCTOR_ARTIFACT_MISSING_DIR naming '<session>/<name>@<revision>'; the row still exists afterwards."""
         revision_dir = _publish_plan(artifacts_integrity_paths, artifacts_repository, tmp_path, b"one")
         shutil.rmtree(revision_dir)
 
@@ -107,7 +104,6 @@ class ArtifactsIntegrityCheckTests:
     def test_execute_both_drifts_prioritizes_missing_directory(
         self, artifacts_integrity_paths: WorkspacePaths, artifacts_repository: ArtifactsRepository, tmp_path: Path
     ) -> None:
-        """[tier-1/integration] ArtifactsIntegrityCheck.execute: orphan directory and missing directory together -> error_code DOCTOR_ARTIFACT_MISSING_DIR."""
         first_dir = _publish_plan(artifacts_integrity_paths, artifacts_repository, tmp_path, b"one")
         second_dir = _publish_plan(artifacts_integrity_paths, artifacts_repository, tmp_path, b"two")
         shutil.rmtree(first_dir)
@@ -122,7 +118,6 @@ class ArtifactsIntegrityCheckTests:
     def test_execute_missing_database_returns_ok_with_zero_verified_count(
         self, tmp_path: Path, workspace_paths_factory: WorkspacePathsFactory
     ) -> None:
-        """[tier-1/unit] ArtifactsIntegrityCheck.execute: no database file -> OK, verified_count 0, nothing created on disk."""
         paths = workspace_paths_factory(tmp_path, None)
 
         result = ArtifactsIntegrityCheck().execute(DiagnosticsContext(cwd=tmp_path, paths=paths))
@@ -134,7 +129,6 @@ class ArtifactsIntegrityCheckTests:
     def test_execute_ignores_staging_directories(
         self, artifacts_integrity_paths: WorkspacePaths, artifacts_repository: ArtifactsRepository, tmp_path: Path
     ) -> None:
-        """[tier-1/integration] ArtifactsIntegrityCheck.execute: a .tmp-plan-<hex> directory containing manifest.json is not reported."""
         revision_dir = _publish_plan(artifacts_integrity_paths, artifacts_repository, tmp_path, b"one")
         shutil.copytree(revision_dir, revision_dir.parent.parent / ".tmp-plan-abc123")
 
@@ -147,7 +141,6 @@ class ArtifactsIntegrityCheckTests:
     def test_execute_bundle_containing_nested_manifest_json_is_not_orphan(
         self, artifacts_integrity_paths: WorkspacePaths, artifacts_repository: ArtifactsRepository, tmp_path: Path
     ) -> None:
-        """[tier-1/integration] ArtifactsIntegrityCheck.execute: a published bundle holding build/manifest.json -> OK, only the revision directory is verified."""
         worktree_path = tmp_path / "worktree-nested"
         (worktree_path / "build").mkdir(parents=True)
         (worktree_path / "build" / "manifest.json").write_text("{}", encoding="utf-8")

@@ -26,7 +26,7 @@ def engine_workspace(tmp_path: Path) -> Path:
 
 @pytest.fixture
 def engine_paths(engine_workspace: Path) -> WorkspacePaths:
-    """WorkspacePaths resolved for engine_workspace."""
+    """Return WorkspacePaths resolved for engine_workspace."""
     return _paths_for(engine_workspace)
 
 

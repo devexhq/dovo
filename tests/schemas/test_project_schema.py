@@ -13,7 +13,6 @@ class ProjectSchemaTests:
     def test_project_validator_accepts_complete_utc_identity_without_network(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """PROJECT_VALIDATOR accepts a complete UTC identity without socket creation."""
         monkeypatch.delattr(socket, "create_connection")
 
         result = PROJECT_VALIDATOR.validate(
@@ -66,7 +65,6 @@ class ProjectSchemaTests:
         ],
     )
     def test_project_validator_rejects_invalid_payloads(self, payload: dict[str, object]) -> None:
-        """PROJECT_VALIDATOR rejects missing, malformed, and extra properties."""
         result = PROJECT_VALIDATOR.validate(payload)
 
         assert result.errors

@@ -34,7 +34,6 @@ class WorktreeDeleteCliIntegrationTests:
     def test_worktree_delete_cli_declined_confirmation_exits_one(
         self, cli_runner: CliRunner, worktree_workspace: Path, dispatch_spy: list[Any]
     ) -> None:
-        """dovo worktree delete <id> with input='n\\n' exits 1, leaves the worktree dir on disk, and dispatches the exact ABORTED DTO."""
         session = _create_worktree(worktree_workspace)
 
         result = cli_runner.invoke(
@@ -69,7 +68,6 @@ class WorktreeDeleteCliIntegrationTests:
         extra_args: list[str],
         invoke_input: str | None,
     ) -> None:
-        """dovo worktree delete <id>, confirmed via stdin or --force, exits 0, removes the worktree dir, and dispatches the exact DELETED DTO."""
         session = _create_worktree(worktree_workspace)
 
         result = cli_runner.invoke(
@@ -94,7 +92,6 @@ class WorktreeDeleteCliIntegrationTests:
     def test_worktree_delete_cli_missing_worktree_exits_one(
         self, cli_runner: CliRunner, worktree_workspace: Path, dispatch_spy: list[Any]
     ) -> None:
-        """dovo worktree delete missing-id --force exits 1, reports not found, and dispatches the exact NOT_FOUND DTO."""
         result = cli_runner.invoke(app, ["-p", str(worktree_workspace), "worktree", "delete", "missing-id", "--force"])
 
         assert result.exit_code == 1
@@ -109,7 +106,6 @@ class WorktreeDeleteCliIntegrationTests:
         assert payload.errors == ["Worktree 'missing-id' not found."]
 
     def test_worktree_delete_cli_renders_json(self, cli_runner: CliRunner, worktree_workspace: Path) -> None:
-        """dovo worktree delete <id> --force --format json emits the 'deleted' WorktreeDeleteResult envelope."""
         session = _create_worktree(worktree_workspace)
 
         result = cli_runner.invoke(
@@ -160,7 +156,6 @@ class WorktreeDeleteCliIntegrationTests:
     def test_worktree_delete_cli_declined_confirmation_renders_json(
         self, cli_runner: CliRunner, worktree_workspace: Path
     ) -> None:
-        """dovo worktree delete <id> --format json with input='n\\n' emits the 'aborted' WorktreeDeleteResult envelope."""
         session = _create_worktree(worktree_workspace)
 
         result = cli_runner.invoke(
@@ -204,7 +199,6 @@ class WorktreeDeleteCliIntegrationTests:
     def test_worktree_delete_cli_missing_worktree_renders_json(
         self, cli_runner: CliRunner, worktree_workspace: Path
     ) -> None:
-        """dovo worktree delete missing-id --force --format json emits the 'not_found' WorktreeDeleteResult envelope."""
         result = cli_runner.invoke(
             app,
             ["-p", str(worktree_workspace), "worktree", "delete", "missing-id", "--force", "--format", "json"],

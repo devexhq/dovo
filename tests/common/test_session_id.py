@@ -19,5 +19,4 @@ class NewSessionIdTests:
         ],
     )
     def test_new_session_id_returns_kind_prefix_and_eight_lowercase_hex(self, kind: str, pattern: str) -> None:
-        """[tier-1/unit] new_session_id: returns a string fully matching `<kind>_<8 lowercase hex>` for plain and underscore-containing kinds."""
         assert re.fullmatch(pattern, new_session_id(kind))

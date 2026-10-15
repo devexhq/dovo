@@ -24,7 +24,6 @@ class CollapsingTailDisplayTests:
     """Contract tests for CollapsingTailDisplay."""
 
     def test_handle_step_output_bounds_tail_to_capacity(self) -> None:
-        """CollapsingTailDisplay.handle_step_output: a 3rd line at tail_size=2 drops the oldest line from the final _stream reprint."""
         display, _, stream = _display(tail_size=2)
 
         display.handle_step_output(StepOutputEvent(step_id="s1", line="L1"))
@@ -35,7 +34,6 @@ class CollapsingTailDisplayTests:
         assert "L1" not in stream.getvalue().rsplit("L2\nL3\n", maxsplit=1)[-1]
 
     def test_handle_step_start_erases_prior_tail_and_prints_banner(self) -> None:
-        """CollapsingTailDisplay.handle_step_start: erases the prior tail via _CURSOR_UP+_ERASE_LINE on _stream and prints '[idx/total] name (command)' to console."""
         display, console_buffer, stream = _display(tail_size=2)
         display.handle_step_output(StepOutputEvent(step_id="s1", line="L1"))
         display.handle_step_output(StepOutputEvent(step_id="s1", line="L2"))
@@ -53,7 +51,6 @@ class CollapsingTailDisplayTests:
         ],
     )
     def test_handle_step_done_erases_tail_and_prints_summary(self, ok: bool, expected_glyph: str) -> None:
-        """CollapsingTailDisplay.handle_step_done: prints a ✔/✖ summary line to console matching event.ok, erasing the tail on _stream."""
         display, console_buffer, stream = _display(tail_size=2)
         display.handle_step_output(StepOutputEvent(step_id="s1", line="L1"))
 
@@ -67,7 +64,6 @@ class CollapsingTailDisplayTests:
         assert "[1/1] s1" in rendered
 
     def test_print_above_prints_renderable_and_reprints_tail(self) -> None:
-        """CollapsingTailDisplay.print_above: prints the renderable to console and erases-then-reprints the active tail on _stream."""
         display, console_buffer, stream = _display(tail_size=2)
         display.handle_step_output(StepOutputEvent(step_id="s1", line="L1"))
         display.handle_step_output(StepOutputEvent(step_id="s1", line="L2"))

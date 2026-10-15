@@ -30,7 +30,6 @@ class ConfigValidateRootTests:
     """Direct handler unit tests for config_validate_command."""
 
     def test_config_validate_clean_returns_valid(self, isolated_workspace: Path) -> None:
-        """Handler returns VALID ConfigValidationResult for clean config."""
         config_path = isolated_workspace / ".dovo" / "config.json"
         payload = build_default_config("demo-workspace")
         Filesystem.atomic_write_json(config_path, payload)
@@ -50,7 +49,7 @@ class ConfigValidateRootTests:
     def test_config_validate_with_warnings_returns_valid_status(
         self, isolated_workspace: Path, model_required_provider: None
     ) -> None:
-        """Handler returns VALID status with warnings for a provider that requires a model and has none."""
+        """Return VALID with warnings for a provider that requires a model and has none."""
         config_path = isolated_workspace / ".dovo" / "config.json"
         payload = build_default_config("demo-workspace")
         payload["agent"]["models"] = {}
@@ -71,7 +70,6 @@ class ConfigValidateRootTests:
         assert result.fixes == ["Set agent.models.copilot"]
 
     def test_config_validate_error_returns_invalid_status(self, isolated_workspace: Path) -> None:
-        """Handler returns INVALID status for schema-invalid config."""
         config_path = isolated_workspace / ".dovo" / "config.json"
         invalid_payload = {"version": 1}
         Filesystem.atomic_write_json(config_path, invalid_payload)
@@ -98,7 +96,6 @@ class ConfigValidateCliIntegrationTests:
     """Typer runner integration tests for dovo config validate."""
 
     def test_config_validate_cli_clean_exits_zero(self, cli_runner: CliRunner, isolated_workspace: Path) -> None:
-        """dovo config validate prints valid status on clean config."""
         config_path = isolated_workspace / ".dovo" / "config.json"
         payload = build_default_config("demo-workspace")
         Filesystem.atomic_write_json(config_path, payload)
@@ -112,7 +109,6 @@ class ConfigValidateCliIntegrationTests:
     def test_config_validate_cli_warnings_exits_zero(
         self, cli_runner: CliRunner, isolated_workspace: Path, model_required_provider: None
     ) -> None:
-        """dovo config validate prints warnings for non-blocking issues."""
         config_path = isolated_workspace / ".dovo" / "config.json"
         payload = build_default_config("demo-workspace")
         payload["agent"]["models"] = {}
@@ -125,7 +121,6 @@ class ConfigValidateCliIntegrationTests:
         assert "Warnings:" in res.stdout
 
     def test_config_validate_cli_schema_error_exits_one(self, cli_runner: CliRunner, isolated_workspace: Path) -> None:
-        """dovo config validate exits with error panel on schema violation."""
         config_path = isolated_workspace / ".dovo" / "config.json"
         invalid_payload = {"version": 1}
         Filesystem.atomic_write_json(config_path, invalid_payload)
@@ -137,7 +132,6 @@ class ConfigValidateCliIntegrationTests:
         assert "CONFIG_SCHEMA_INVALID" in res.stdout
 
     def test_config_validate_cli_format_json_emits_event(self, cli_runner: CliRunner, isolated_workspace: Path) -> None:
-        """dovo config validate --format json emits NDJSON ConfigValidationResult event."""
         config_path = isolated_workspace / ".dovo" / "config.json"
         payload = build_default_config("demo-workspace")
         Filesystem.atomic_write_json(config_path, payload)

@@ -13,10 +13,7 @@ from tests.harness.builders import StepBuilder
 
 
 class StepExecutionResolutionTests:
-    """[tier-1/unit] StepExecution.run: uses/run shorthand resolution before dispatch."""
-
     def test_unresolvable_uses_step_returns_failed_result_with_could_not_resolve_message(self, tmp_path: Path) -> None:
-        """[tier-1/unit] StepExecution.run: a uses: step with no workspace paths returns status == "failed" and error_message == "Could not resolve step 's1'."."""
         step = StepDefinition(id="s1", uses="base-step")
 
         result = StepExecution(StepExecutionContext(step=step, worktree_path=tmp_path)).run()
@@ -25,7 +22,6 @@ class StepExecutionResolutionTests:
         assert result.error_message == "Could not resolve step 's1'."
 
     def test_run_shorthand_step_executes_as_command(self, tmp_path: Path) -> None:
-        """[tier-1/integration] StepExecution.run: StepDefinition(id="s1", run="echo ok") returns status == "completed" with "ok" in stdout."""
         step = StepDefinition(id="s1", run="echo ok")
 
         result = StepExecution(StepExecutionContext(step=step, worktree_path=tmp_path)).run()
@@ -39,7 +35,6 @@ class CommandScriptEnvironmentPreservedTests:
     def test_command_and_script_children_still_inherit_ambient_and_keep_precedence(
         self, step_type: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """[tier-1/integration] StepExecution.run: a child sees ambient UNRELATED=1, and step env X beats a DOVO_* value beats an ambient value of the same name, exactly as before this change."""
         monkeypatch.setenv("UNRELATED", "1")
         monkeypatch.setenv("DOVO_STEP_ID", "ambient-id")
         monkeypatch.setenv("DOVO_STEP_NAME", "ambient-name")

@@ -26,7 +26,6 @@ class DoctorCliIntegrationTests:
         dispatch_spy: list[Any],
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """dovo doctor: healthy git+config workspace with the default provider's registry-declared binary and credential present exits 0, dispatches the exact DiagnosticsReport, and renders the checks table."""
         monkeypatch.setattr("dovo.core.diagnostics.checks.env_binaries.shutil.which", lambda _name: "/usr/bin/tool")
         credential_envs = PROVIDERS[AgentConfig().provider].credential_envs
         for env_name in credential_envs:
@@ -64,7 +63,6 @@ class DoctorCliIntegrationTests:
     def test_doctor_cli_category_filter_runs_only_matching_check(
         self, cli_runner: CliRunner, doctor_workspace: Path, dispatch_spy: list[Any]
     ) -> None:
-        """dovo doctor --category git: dispatched DiagnosticsReport.checks has exactly the git.repo OK check."""
         result = cli_runner.invoke(app, ["-p", str(doctor_workspace), "doctor", "--category", "git"])
 
         assert result.exit_code == 0
@@ -79,7 +77,6 @@ class DoctorCliIntegrationTests:
     def test_doctor_cli_invalid_category_exits_two_without_dispatch(
         self, cli_runner: CliRunner, doctor_workspace: Path, dispatch_spy: list[Any]
     ) -> None:
-        """dovo doctor --category bogus: exit code 2 from Typer choice validation; dispatch_spy captures nothing."""
         result = cli_runner.invoke(app, ["-p", str(doctor_workspace), "doctor", "--category", "bogus"])
 
         assert result.exit_code == 2
@@ -88,7 +85,6 @@ class DoctorCliIntegrationTests:
     def test_doctor_cli_non_git_workspace_with_category_git_exits_one(
         self, cli_runner: CliRunner, tmp_path: Path, dispatch_spy: list[Any]
     ) -> None:
-        """dovo doctor --category git on a non-git directory: exit 1; dispatches the exact FAILED DiagnosticsReport naming the 'git init' fix."""
         initialized_workspace_paths(tmp_path)
 
         result = cli_runner.invoke(app, ["-p", str(tmp_path), "doctor", "--category", "git"])
@@ -112,7 +108,7 @@ class DoctorCliIntegrationTests:
     def test_doctor_cli_renders_json_wire_payload_for_category_git(
         self, cli_runner: CliRunner, doctor_workspace: Path
     ) -> None:
-        """dovo doctor --category git --format json: envelope event_type == 'DiagnosticsReport'; payload matches the literal FR-5 shape for the single git.repo check, excluding duration_ms/total_duration_ms which are asserted as non-negative floats."""
+        """Match the literal FR-5 payload for the single git.repo check, with durations as non-negative floats."""
         result = cli_runner.invoke(
             app, ["-p", str(doctor_workspace), "doctor", "--category", "git", "--format", "json"]
         )

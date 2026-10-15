@@ -13,7 +13,6 @@ class ManifestServiceTests:
     """Contract tests for compute_file_checksum and build_manifest."""
 
     def test_compute_file_checksum_matches_known_sha256(self, tmp_path: Path) -> None:
-        """[tier-1/unit] compute_file_checksum: a file containing b'hello' returns its known SHA256 hex digest."""
         target = tmp_path / "hello.txt"
         target.write_bytes(b"hello")
 
@@ -22,7 +21,6 @@ class ManifestServiceTests:
         assert checksum == hashlib.sha256(b"hello").hexdigest()
 
     def test_build_manifest_zero_retention_days_yields_null_expires_at(self, tmp_path: Path) -> None:
-        """[tier-1/unit] build_manifest: retention_days=0 sets ArtifactManifest.expires_at to None."""
         files = [ArtifactManifestFile(path="dist/pkg.whl", sha256="abc123", size_bytes=10)]
 
         manifest = build_manifest(
@@ -34,7 +32,6 @@ class ManifestServiceTests:
         assert manifest.file_count == 1
 
     def test_build_manifest_positive_retention_days_yields_future_expires_at(self, tmp_path: Path) -> None:
-        """[tier-1/unit] build_manifest: retention_days=30 sets expires_at to created_at + 30 days."""
         files = [ArtifactManifestFile(path="dist/pkg.whl", sha256="abc123", size_bytes=10)]
 
         manifest = build_manifest(
@@ -45,7 +42,6 @@ class ManifestServiceTests:
         assert manifest.expires_at > manifest.created_at
 
     def test_compute_bundle_digest_matches_spec_formula_for_unsorted_input(self) -> None:
-        """[tier-1/unit] compute_bundle_digest: files given as [b.txt, a.txt] -> sha256 of 'a.txt\\0<sha_a>\\nb.txt\\0<sha_b>\\n'."""
         sha_a = hashlib.sha256(b"a").hexdigest()
         sha_b = hashlib.sha256(b"b").hexdigest()
         files = [
@@ -58,7 +54,6 @@ class ManifestServiceTests:
         assert digest == hashlib.sha256(f"a.txt\0{sha_a}\nb.txt\0{sha_b}\n".encode()).hexdigest()
 
     def test_build_manifest_carries_revision_digest_and_provenance(self) -> None:
-        """[tier-1/unit] build_manifest: revision=3 and provenance(step_id='plan', attempt=2, loop_iteration=None) -> manifest carries them plus compute_bundle_digest(files)."""
         files = [ArtifactManifestFile(path="a.txt", sha256="abc123", size_bytes=1)]
 
         manifest = build_manifest(

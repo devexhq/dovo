@@ -10,10 +10,7 @@ from dovo.engine.executors.models import AgentStepSummary
 
 
 class AgentStepSummaryTests:
-    """[tier-1/unit] AgentStepSummary: stdout wire shape of an agent step."""
-
     def test_defaults_and_field_order_serialize_to_exact_json(self) -> None:
-        """[tier-1/unit] AgentStepSummary: only status given serializes to the exact compact JSON with null summary and unfixable_reason and an empty touched_files, in declared field order."""
         summary = AgentStepSummary(status=AgentResponseStatus.NO_OP)
 
         assert (
@@ -21,6 +18,5 @@ class AgentStepSummaryTests:
         )
 
     def test_unknown_field_raises_validation_error(self) -> None:
-        """[tier-1/unit] AgentStepSummary: an unknown field raises a pydantic ValidationError."""
         with pytest.raises(ValidationError):
             AgentStepSummary.model_validate({"status": "no_op", "extra": 1})

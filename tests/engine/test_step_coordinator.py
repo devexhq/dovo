@@ -85,10 +85,7 @@ def _run_context(tmp_path: Path, *, session_log_dir: Path | None = None) -> RunC
 
 
 class BuildStepContextTests:
-    """[tier-1/unit] StepCoordinator.build_step_context: per-step execution context assembly."""
-
     def test_no_agent_or_inputs_returns_none(self, tmp_path: Path) -> None:
-        """[tier-1/unit] build_step_context: context.agent and context.inputs both unset returns None."""
         context = RunSettings(cwd=tmp_path, use_worktree=False, paths=_paths_for(tmp_path))
 
         step_context = StepCoordinator(context).build_step_context()
@@ -96,21 +93,17 @@ class BuildStepContextTests:
         assert step_context is None
 
     def test_agent_set_without_inputs_returns_none(self, tmp_path: Path) -> None:
-        """[tier-1/unit] StepCoordinator.build_step_context: RunSettings(agent=ResolvedAgentSettings(...), inputs=None) returns None."""
         context = RunSettings(cwd=tmp_path, use_worktree=False, agent=_AGENT_SETTINGS, paths=_paths_for(tmp_path))
 
         assert StepCoordinator(context).build_step_context() is None
 
     def test_inputs_set_returns_inputs_only_dict(self, tmp_path: Path) -> None:
-        """[tier-1/unit] StepCoordinator.build_step_context: RunSettings(inputs={'branch': 'main'}) returns {'inputs': {'branch': 'main'}}."""
         context = RunSettings(cwd=tmp_path, use_worktree=False, inputs={"branch": "main"}, paths=_paths_for(tmp_path))
 
         assert StepCoordinator(context).build_step_context() == {"inputs": {"branch": "main"}}
 
 
 class StepCoordinatorAgentRunnerTests:
-    """[tier-1/unit] StepCoordinator.run_attempt: the agent runner is built from the run's agent identity and worktree state."""
-
     @staticmethod
     def _spy(monkeypatch: pytest.MonkeyPatch) -> tuple[list[tuple[ResolvedAgentSettings | None, bool]], list[Any]]:
         """Record build_agent_step_runner calls and the agent_runner each StepExecutionContext receives."""
@@ -150,7 +143,6 @@ class StepCoordinatorAgentRunnerTests:
     def test_run_attempt_builds_runner_from_resolved_agent_identity(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """[tier-1/unit] StepCoordinator.run_attempt: RunSettings(agent=_AGENT_SETTINGS) calls build_agent_step_runner once with the identical _AGENT_SETTINGS object and passes its return value as StepExecutionContext.agent_runner."""
         builds, runners = self._spy(monkeypatch)
         context = RunSettings(cwd=tmp_path, use_worktree=False, agent=_AGENT_SETTINGS, paths=_paths_for(tmp_path))
         step = StepBuilder.command("echo ok").with_id("ok").build()
@@ -169,7 +161,6 @@ class StepCoordinatorAgentRunnerTests:
     def test_run_attempt_binds_worktree_active_from_run_context(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, has_worktree: bool, expected: bool
     ) -> None:
-        """[tier-1/unit] StepCoordinator.run_attempt: RunContext.worktree set to a WorktreeSession calls build_agent_step_runner with worktree_active True; None calls it with False."""
         builds, _ = self._spy(monkeypatch)
         session = WorktreeSession(
             session_id="s",
@@ -191,7 +182,6 @@ class StepCoordinatorRunnerWiringTests:
     def test_runner_is_built_with_run_context_session_dirs_and_main_checkout(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """[tier-1/unit] StepCoordinator.run_attempt: build_agent_step_runner is called with session_tmp_dir == run_context.session_tmp_dir, session_log_dir == run_context.session_log_dir, and main_checkout == paths.root_dir."""
         scratch_roots: list[tuple[Path | None, Path | None, Path]] = []
 
         def _recording_build(
@@ -233,7 +223,6 @@ class StepCoordinatorRunnerWiringTests:
     def test_runner_session_dir_is_the_session_storage_directory_or_none(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, session_id: str | None
     ) -> None:
-        """[tier-1/unit] StepCoordinator.run_attempt: build_agent_step_runner receives session_dir == paths.session_dir(session_id) for a session id and None without one."""
         session_dirs: list[Path | None] = []
 
         def _recording_build(
@@ -266,8 +255,6 @@ class StepCoordinatorRunnerWiringTests:
 
 
 class StepCoordinatorLoopIterationForwardingTests:
-    """[tier-1/unit] StepCoordinator.run_attempt: loop_iteration forwards to StepExecutionContext unchanged for top-level and loop callers."""
-
     @pytest.mark.parametrize(
         ("loop_iteration", "expected_filename"),
         [
@@ -281,7 +268,6 @@ class StepCoordinatorLoopIterationForwardingTests:
         loop_iteration: int | None,
         expected_filename: str,
     ) -> None:
-        """[tier-1/unit] StepCoordinator.run_attempt: loop_iteration=2 with session_log_dir set writes '01_check_iter_2_attempt_1.stdout.log'; the default loop_iteration=None keeps the '_iter_' segment absent."""
         context = RunSettings(cwd=tmp_path, use_worktree=False, paths=_paths_for(tmp_path))
         step = StepBuilder.command("echo ok").with_id("check").build()
         run_context = _run_context(tmp_path, session_log_dir=tmp_path)
@@ -301,7 +287,6 @@ class StepCoordinatorLoopIdTests:
     def test_loop_step_context_carries_the_loop_id(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, loop_id: str | None, expected: str | None
     ) -> None:
-        """[tier-1/unit] StepCoordinator.run_attempt: a loop sub-step run with loop_id 'code-loop' builds a StepExecutionContext whose loop_id is 'code-loop'; a top-level step's loop_id is None."""
         seen: list[str | None] = []
 
         class _CapturingStepExecution(StepExecution):
@@ -336,10 +321,7 @@ class _RecordingRunObserver(NoOpRunObserver):
 
 
 class StepCoordinatorPrimitiveTests:
-    """[tier-1/integration] StepCoordinator primitives RunCoordinator composes: run_attempt, prompt_decision, apply_prompt_decision."""
-
     def test_run_attempt_returns_completed_result_and_notifies_observer(self, tmp_path: Path) -> None:
-        """[tier-1/integration] StepCoordinator.run_attempt: a passing echo step returns a StepResult with status "completed" and attempts 1 and the observer receives on_step_start then on_step_done."""
         observer = _RecordingRunObserver()
         context = RunSettings(cwd=tmp_path, use_worktree=False, observer=observer, paths=_paths_for(tmp_path))
         step = StepBuilder.command("echo ok").with_id("ok").build()
@@ -352,7 +334,6 @@ class StepCoordinatorPrimitiveTests:
         assert observer.events == ["start:ok", "done:ok"]
 
     def test_run_attempt_returns_failed_result_without_applying_policy(self, tmp_path: Path) -> None:
-        """[tier-1/integration] StepCoordinator.run_attempt: an exit-1 step under prompt_user returns a StepResult with status "failed" and the prompter is never consulted."""
         prompter = _RefusingFailurePrompter()
         context = RunSettings(cwd=tmp_path, use_worktree=False, failure_prompter=prompter, paths=_paths_for(tmp_path))
         step = StepBuilder.command("exit 1").with_id("fail").with_on_failure(FailurePolicy.PROMPT_USER).build()
@@ -367,7 +348,6 @@ class StepCoordinatorPrimitiveTests:
     def test_run_step_forwards_sensitive_variables_to_step_execution_context(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """[tier-1/unit] StepCoordinator step run: RunSettings(sensitive_variables=("PIN",)) builds StepExecutionContext with sensitive_variables == ("PIN",)."""
         captured: list[StepExecutionContext] = []
 
         class _CapturingStepExecution(StepExecution):
@@ -388,7 +368,6 @@ class StepCoordinatorPrimitiveTests:
     def test_run_attempt_forwards_result_warnings_to_run_warnings(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """[tier-1/unit] StepCoordinator.run_attempt: a StepResult carrying warnings ['w1'] -> the caller's warnings list contains 'w1'."""
 
         class _WarningStepExecution(StepExecution):
             def run(self) -> StepResult:
@@ -425,7 +404,6 @@ class StepCoordinatorPrimitiveTests:
         prompter: _RefusingFailurePrompter | None,
         warning_substr: str,
     ) -> None:
-        """[tier-1/unit] StepCoordinator.prompt_decision: no_tty=True or a missing prompter returns (ABORT, "Warning: step '<id>' requested prompt_user but ... aborting.")."""
         context = RunSettings(
             cwd=tmp_path,
             use_worktree=False,
@@ -446,7 +424,6 @@ class StepCoordinatorPrimitiveTests:
         assert coordinator.is_interactive is False
 
     def test_prompt_decision_interactive_returns_prompter_decision(self, tmp_path: Path) -> None:
-        """[tier-1/unit] StepCoordinator.prompt_decision: an interactive run returns the prompter's decision with no warning."""
         prompter = _ScriptedFailurePrompter([FailurePromptDecision.RETRY])
         context = RunSettings(cwd=tmp_path, use_worktree=False, failure_prompter=prompter, paths=_paths_for(tmp_path))
         step = StepBuilder.command("exit 1").with_id("fail").with_on_failure(FailurePolicy.PROMPT_USER).build()
@@ -473,7 +450,6 @@ class StepCoordinatorPrimitiveTests:
         expected_status: str | None,
         expected_error: str | None,
     ) -> None:
-        """[tier-1/unit] StepCoordinator.apply_prompt_decision: RETRY returns (StepAction.RETRY, None, None), CONTINUE (StepAction.CONTINUE, an ignored result with the user-continued marker, None), ABORT (StepAction.ABORT, the failed result, "Step '<id>' failed: <detail>")."""
         failed = StepResult(
             step_id="fail",
             status="failed",

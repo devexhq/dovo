@@ -22,5 +22,4 @@ class FormatStepDurationTests:
         ],
     )
     def test_format_step_duration(self, seconds: float | None, expected: str) -> None:
-        """[tier-1/unit] format_step_duration: 33.5 -> '33.5s', 0.1 -> '0.1s', 0.04 and 0.0 -> '<0.1s', negative and None -> '-'."""
         assert format_step_duration(seconds) == expected

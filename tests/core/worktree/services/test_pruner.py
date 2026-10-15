@@ -49,7 +49,6 @@ class WorktreePrunerBaselineTests:
     def test_prune_clean_workspace_is_a_noop(
         self, pruner_workspace: Path, pruner_workspace_paths: WorkspacePaths
     ) -> None:
-        """Pruning a clean workspace should return OK with 0 items."""
         db = _repo(pruner_workspace_paths)
         pruner = WorktreePruner(pruner_workspace, db)
 
@@ -66,7 +65,6 @@ class WorktreePrunerBaselineTests:
         pruner_workspace: Path,
         pruner_workspace_paths: WorkspacePaths,
     ) -> None:
-        """Dry-run reports planned actions across categories without mutating disk, DB, or git."""
         db = _repo(pruner_workspace_paths)
         worktrees_dir = pruner_workspace / ".dovo" / "worktrees"
         worktrees_dir.mkdir(parents=True, exist_ok=True)
@@ -153,7 +151,6 @@ class WorktreePrunerSafetyTests:
     def test_dirty_orphan_skipped_without_force(
         self, pruner_workspace: Path, pruner_workspace_paths: WorkspacePaths
     ) -> None:
-        """Dirty orphan directory must be preserved with SKIPPED status when force=False."""
         db = _repo(pruner_workspace_paths)
         worktrees_dir = pruner_workspace / ".dovo" / "worktrees"
         worktrees_dir.mkdir(parents=True, exist_ok=True)
@@ -187,7 +184,6 @@ class WorktreePrunerSafetyTests:
     def test_dirty_orphan_deleted_with_force(
         self, pruner_workspace: Path, pruner_workspace_paths: WorkspacePaths
     ) -> None:
-        """Dirty orphan directory must be removed when force=True."""
         db = _repo(pruner_workspace_paths)
         worktrees_dir = pruner_workspace / ".dovo" / "worktrees"
         worktrees_dir.mkdir(parents=True, exist_ok=True)
@@ -220,7 +216,6 @@ class WorktreePrunerSafetyTests:
     def test_clean_orphan_deleted_without_force(
         self, pruner_workspace: Path, pruner_workspace_paths: WorkspacePaths
     ) -> None:
-        """Clean orphan directory must be deleted even with force=False."""
         db = _repo(pruner_workspace_paths)
         worktrees_dir = pruner_workspace / ".dovo" / "worktrees"
         worktrees_dir.mkdir(parents=True, exist_ok=True)
@@ -248,7 +243,6 @@ class WorktreePrunerCategoryTests:
     """Category-specific tests for worktree refs, DB records, and branches."""
 
     def test_stale_worktree_ref_is_pruned(self, pruner_workspace: Path, pruner_workspace_paths: WorkspacePaths) -> None:
-        """Stale worktree administrative entries should be pruned."""
         db = _repo(pruner_workspace_paths)
         target = pruner_workspace / ".dovo" / "worktrees" / "dovo_stale"
         GitRunner.worktree_add(
@@ -282,7 +276,6 @@ class WorktreePrunerCategoryTests:
     def test_stale_db_record_is_reconciled_to_cleaned(
         self, pruner_workspace: Path, pruner_workspace_paths: WorkspacePaths
     ) -> None:
-        """Active DB records with missing paths must be updated to CLEANED."""
         db = _repo(pruner_workspace_paths)
         missing_path = pruner_workspace / ".dovo" / "worktrees" / "dovo_db_stale"
         db.create(
@@ -318,7 +311,6 @@ class WorktreePrunerCategoryTests:
         assert record.status == WorktreeStatus.CLEANED
 
     def test_stale_branch_is_deleted(self, pruner_workspace: Path, pruner_workspace_paths: WorkspacePaths) -> None:
-        """Stale worktree temporary branches must be deleted."""
         db = _repo(pruner_workspace_paths)
         branch_name = "dovo/dovo_stale_branch"
         subprocess.run(
@@ -351,7 +343,6 @@ class WorktreePrunerIdempotencyTests:
     def test_combined_prune_then_idempotent_rerun(
         self, pruner_workspace: Path, pruner_workspace_paths: WorkspacePaths
     ) -> None:
-        """Pruning multiple categories followed by a second run must be clean and idempotent."""
         db = _repo(pruner_workspace_paths)
         worktrees_dir = pruner_workspace / ".dovo" / "worktrees"
         worktrees_dir.mkdir(parents=True, exist_ok=True)
@@ -415,7 +406,6 @@ class WorktreePrunerEntrypointTests:
         pruner_workspace: Path,
         pruner_workspace_paths: WorkspacePaths,
     ) -> None:
-        """Helper and entrypoint methods return equivalent results on clean workspace."""
         db = _repo(pruner_workspace_paths)
         manager = Worktree(pruner_workspace_paths, db)
 
@@ -439,7 +429,6 @@ class WorktreePrunerFailureTests:
         pruner_workspace: Path,
         pruner_workspace_paths: WorkspacePaths,
     ) -> None:
-        """When detector returns GIT_FAILED, prune should abort with GIT_FAILED status."""
         db = _repo(pruner_workspace_paths)
         pruner = WorktreePruner(pruner_workspace, db)
 
@@ -465,7 +454,6 @@ class WorktreePrunerFailureTests:
         pruner_workspace: Path,
         pruner_workspace_paths: WorkspacePaths,
     ) -> None:
-        """Workspace lock timeouts should return LOCKED status without crashing."""
         db = _repo(pruner_workspace_paths)
         pruner = WorktreePruner(pruner_workspace, db)
 
@@ -483,7 +471,6 @@ class WorktreePrunerFailureTests:
         pruner_workspace: Path,
         pruner_workspace_paths: WorkspacePaths,
     ) -> None:
-        """Errors during individual item pruning should produce PARTIAL_SUCCESS."""
         db = _repo(pruner_workspace_paths)
         branch_name = "dovo/dovo_fail_branch"
         subprocess.run(

@@ -15,8 +15,6 @@ type CaptureSpec = tuple[int | None, int, str, str]
 
 
 class ReadStepLogsTests:
-    """[tier-1/unit] read_step_logs: attempt selection and line ordering over capture filenames."""
-
     @pytest.mark.parametrize(
         ("captures", "stream", "expected_lines", "expected_attempts"),
         [
@@ -51,7 +49,6 @@ class ReadStepLogsTests:
         expected_lines: list[str],
         expected_attempts: list[int],
     ) -> None:
-        """[tier-1/unit] read_step_logs: files named by resolve_step_log_paths yield the latest attempt's lines in iteration then stream order."""
         for iteration, attempt, stdout_text, stderr_text in captures:
             stdout_path, stderr_path = resolve_step_log_paths(
                 tmp_path, step_index=1, step_id="build", attempt=attempt, iteration=iteration

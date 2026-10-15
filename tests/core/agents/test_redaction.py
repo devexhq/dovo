@@ -13,7 +13,6 @@ from dovo.core.agents.redaction import build_response_redactor, redact_agent_res
 
 class AgentResponseRedactionTests:
     def test_redact_agent_response_masks_diagnostic_fields_and_preserves_the_rest(self) -> None:
-        """[tier-1/unit] redact_agent_response: errors ["a s3cr3t-value","b"], raw_text, and summary containing "s3cr3t-value" are masked in order, while status, duration_ms, mutation_baseline_ref, fixes, unfixable_reason, and a unified_diff containing "s3cr3t-value" are equal to the input."""
         redactor = SecretRedactor([("SVC_TOKEN", "s3cr3t-value")])
         response = AgentResponse(
             status=AgentResponseStatus.PROPOSED_PATCH,
@@ -40,7 +39,6 @@ class AgentResponseRedactionTests:
         assert masked.unified_diff == "+s3cr3t-value\n"
 
     def test_redact_agent_response_preserves_none_fields(self) -> None:
-        """[tier-1/unit] redact_agent_response: raw_text=None and summary=None stay None and errors=[] stays []."""
         redactor = SecretRedactor([("SVC_TOKEN", "s3cr3t-value")])
         response = AgentResponse(status=AgentResponseStatus.NO_OP)
 
@@ -53,7 +51,6 @@ class ResponseRedactorTests:
     def test_build_response_redactor_masks_all_alternatives_below_the_floor(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """[tier-1/unit] build_response_redactor: credential_envs ("GH_TOKEN","GITHUB_TOKEN") with values "abc" and " xyz " mask "abc" and "xyz" as [REDACTED:GH_TOKEN] and [REDACTED:GITHUB_TOKEN]."""
         monkeypatch.setenv("GH_TOKEN", "abc")
         monkeypatch.setenv("GITHUB_TOKEN", " xyz ")
 
@@ -62,7 +59,6 @@ class ResponseRedactorTests:
         assert redactor.redact_text("abc xyz") == "[REDACTED:GH_TOKEN] [REDACTED:GITHUB_TOKEN]"
 
     def test_build_response_redactor_masks_worktree_env_file_values(self, tmp_path: Path) -> None:
-        """[tier-1/unit] build_response_redactor: tmp_path/.env with DB_PASSWORD=hunter2-long masks that value as [REDACTED:DB_PASSWORD]."""
         (tmp_path / ".env").write_text("DB_PASSWORD=hunter2-long\n", encoding="utf-8")
 
         redactor = build_response_redactor((), tmp_path)
@@ -72,7 +68,6 @@ class ResponseRedactorTests:
     def test_build_response_redactor_masks_extra_secrets_alongside_environment_secrets(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """[tier-1/unit] build_response_redactor: extra_secrets [('PROXY','s3cret')] masks 's3cret' as '[REDACTED:PROXY]' while an environment credential is still masked."""
         monkeypatch.setenv("GH_TOKEN", "abc")
 
         redactor = build_response_redactor(("GH_TOKEN",), tmp_path, [("PROXY", "s3cret")])

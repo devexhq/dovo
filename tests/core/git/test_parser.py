@@ -12,7 +12,6 @@ class GitWorktreeOutputParserTests:
     """Unit tests for porcelain git worktree list parsing."""
 
     def test_parse_worktree_machine_output_parses_detached_and_locked_states(self) -> None:
-        """Parse multi-stanza porcelain output containing detached and locked states."""
         raw = (
             "worktree /path/to/worktree\n"
             "HEAD 1234abc\n"
@@ -40,7 +39,6 @@ class GitWorktreeOutputParserTests:
         ]
 
     def test_parse_worktree_machine_output_parses_bare_and_prunable_states(self) -> None:
-        """Parse multi-stanza porcelain output containing bare and prunable states."""
         raw = (
             "worktree /repo/bare\n"
             "bare\n"
@@ -74,7 +72,6 @@ class GitWorktreeOutputParserTests:
         ]
 
     def test_parse_worktree_machine_output_returns_empty_list_for_empty_input(self) -> None:
-        """Parse empty or blank string returning empty list."""
         entries = parse_worktree_porcelain("")
 
         assert entries == []

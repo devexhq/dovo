@@ -30,7 +30,6 @@ class WorktreesRepositoryTests:
     """Contract tests proving WorktreesRepository queries never cross project_id boundaries."""
 
     def test_list_scopes_to_repository_project_id(self, db_path: Path, db_engine: Engine) -> None:
-        """[tier-1/integration] WorktreesRepository.list: worktree created under project_id='proj-a' is absent from a project_id='proj-b' repository's list()."""
         repo_a = WorktreesRepository(db_path=db_path, db_engine=db_engine, project_id="proj-a")
         repo_b = WorktreesRepository(db_path=db_path, db_engine=db_engine, project_id="proj-b")
         repo_a.create(id="dovo_a", branch_name="dovo/dovo_a", base_commit="deadbeef", worktree_path="/tmp/dovo_a")
@@ -40,7 +39,6 @@ class WorktreesRepositoryTests:
         assert [record.id for record in repo_b.list()] == ["dovo_b"]
 
     def test_get_returns_none_for_worktree_in_different_project(self, db_path: Path, db_engine: Engine) -> None:
-        """[tier-1/integration] WorktreesRepository.get: worktree created under project_id='proj-a' returns None when fetched by a project_id='proj-b' repository."""
         repo_a = WorktreesRepository(db_path=db_path, db_engine=db_engine, project_id="proj-a")
         repo_b = WorktreesRepository(db_path=db_path, db_engine=db_engine, project_id="proj-b")
         repo_a.create(id="dovo_a", branch_name="dovo/dovo_a", base_commit="deadbeef", worktree_path="/tmp/dovo_a")

@@ -203,7 +203,6 @@ class ConfigSetFormatterTests:
 
     @pytest.mark.parametrize("case", SET_CASES)
     def test_transform_derives_expected_view(self, case: FormatterCase[ConfigSetResult, ConfigSetView]) -> None:
-        """Verify transform derives the exact ConfigSetView model representation."""
         assert_transform_derives_expected_view(ConfigSetFormatter, case.data, case.view)
 
     @pytest.mark.parametrize(("case", "expected_payload"), SET_PAYLOAD_CASES)
@@ -212,10 +211,8 @@ class ConfigSetFormatterTests:
         case: FormatterCase[ConfigSetResult, ConfigSetView],
         expected_payload: dict[str, Any],
     ) -> None:
-        """Verify to_json_serializable matches the exact published wire-format literal dict."""
         assert_json_payload_matches_published_shape(ConfigSetFormatter, case.data, expected_payload)
 
     @pytest.mark.parametrize("case", SET_CASES)
     def test_rich_render_shows_every_view_value(self, case: FormatterCase[ConfigSetResult, ConfigSetView]) -> None:
-        """Verify that all non-null semantic view model values reach the Rich renderable output."""
         assert_rich_render_shows_every_view_value(ConfigSetFormatter, case.data, case.render_expectations)

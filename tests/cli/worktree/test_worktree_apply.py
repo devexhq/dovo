@@ -40,7 +40,6 @@ class WorktreeApplyCliIntegrationTests:
     def test_worktree_apply_cli_patch_strategy_exits_zero(
         self, cli_runner: CliRunner, worktree_workspace: Path, dispatch_spy: list[Any]
     ) -> None:
-        """dovo worktree apply <id> (patch strategy) writes the change to the main tree, exits 0, and dispatches the exact WorktreeApplyResult DTO."""
         session = _create_worktree_with_committed_change(worktree_workspace)
 
         result = cli_runner.invoke(app, ["-p", str(worktree_workspace), "worktree", "apply", session.session_id])
@@ -63,7 +62,6 @@ class WorktreeApplyCliIntegrationTests:
     def test_worktree_apply_cli_missing_worktree_exits_one(
         self, cli_runner: CliRunner, worktree_workspace: Path, dispatch_spy: list[Any]
     ) -> None:
-        """dovo worktree apply on a missing id exits 1, reports not found, and dispatches the exact NOT_FOUND DTO."""
         result = cli_runner.invoke(app, ["-p", str(worktree_workspace), "worktree", "apply", "missing-id"])
 
         assert result.exit_code == 1
@@ -81,7 +79,6 @@ class WorktreeApplyCliIntegrationTests:
         assert dispatch_spy[0].fixes == ["Run `dovo worktree list` to see known worktrees"]
 
     def test_worktree_apply_cli_renders_json(self, cli_runner: CliRunner, worktree_workspace: Path) -> None:
-        """dovo worktree apply <id> --format json emits a WorktreeApplyResult envelope."""
         session = _create_worktree_with_committed_change(worktree_workspace)
 
         result = cli_runner.invoke(

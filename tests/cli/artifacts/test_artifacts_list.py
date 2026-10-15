@@ -44,7 +44,6 @@ class ArtifactsListCliIntegrationTests:
     def test_artifacts_list_cli_empty_workspace_prints_no_artifacts_found(
         self, cli_runner: CliRunner, artifacts_workspace: Path
     ) -> None:
-        """dovo artifacts list: no artifacts published yet -> exit 0, 'No artifacts found.' in stdout."""
         result = cli_runner.invoke(app, ["-p", str(artifacts_workspace), "artifacts", "list"])
 
         assert result.exit_code == 0
@@ -53,7 +52,6 @@ class ArtifactsListCliIntegrationTests:
     def test_artifacts_list_cli_session_flag_filters_rows(
         self, cli_runner: CliRunner, artifacts_workspace: Path
     ) -> None:
-        """dovo artifacts list --session <id>: only rows matching <id> appear in the rendered table."""
         _publish_artifact(artifacts_workspace, session_id="wf_one", name="dist-one")
         _publish_artifact(artifacts_workspace, session_id="wf_two", name="dist-two")
 
@@ -66,7 +64,6 @@ class ArtifactsListCliIntegrationTests:
     def test_artifacts_list_cli_format_json_emits_wire_schema(
         self, cli_runner: CliRunner, artifacts_workspace: Path
     ) -> None:
-        """dovo artifacts list --format json: no artifacts published -> stdout equals the literal empty-list wire payload."""
         result = cli_runner.invoke(app, ["-p", str(artifacts_workspace), "artifacts", "list", "--format", "json"])
 
         assert result.exit_code == 0
@@ -78,7 +75,7 @@ class ArtifactsListCliIntegrationTests:
     def test_artifacts_list_cli_format_json_emits_one_row_per_revision_with_provenance(
         self, cli_runner: CliRunner, artifacts_workspace: Path
     ) -> None:
-        """[tier-3/integration] dovo artifacts list --format json: revisions 1 and 2 of 'plan' -> two rows (newest first) each with a 64-char digest, step_id, attempt and loop_iteration."""
+        """Emit one JSON row per revision, newest first, with a 64-char digest, step_id, attempt and loop_iteration."""
         for iteration in (1, 2):
             _publish_artifact(
                 artifacts_workspace,

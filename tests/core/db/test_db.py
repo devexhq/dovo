@@ -18,7 +18,6 @@ class DovoDbTests:
     """Contract tests for DovoDb's construction, lazy engine, and repository wiring."""
 
     def test_init_stores_database_file_and_project_id(self, tmp_path: Path) -> None:
-        """[tier-1/unit] DovoDb.__init__: database_file and project_id are stored as given."""
         database_file = tmp_path / "dovo.db"
 
         db = DovoDb(database_file, project_id="proj-1")
@@ -27,7 +26,6 @@ class DovoDbTests:
         assert db.project_id == "proj-1"
 
     def test_db_engine_binds_to_database_file_and_caches(self, tmp_path: Path) -> None:
-        """[tier-1/unit] DovoDb.db_engine: lazily binds to database_file and returns the same instance on repeat access, creating the parent directory."""
         database_file = tmp_path / "nested" / "dovo.db"
         db = DovoDb(database_file)
 
@@ -49,7 +47,6 @@ class DovoDbTests:
     def test_repository_properties_share_entrypoint_state_and_cache(
         self, tmp_path: Path, attribute: str, repo_type: type
     ) -> None:
-        """[tier-1/unit] DovoDb repository properties: return the correct repository type scoped to the entrypoint's database_file/project_id/db_engine, and are cached across repeat access."""
         db = DovoDb(tmp_path / "dovo.db", project_id="proj-1")
 
         repo = getattr(db, attribute)
@@ -61,7 +58,6 @@ class DovoDbTests:
         assert getattr(db, attribute) is repo
 
     def test_init_db_migrates_and_returns_existing_file_path(self, tmp_path: Path) -> None:
-        """[tier-1/integration] DovoDb.init_db: runs migrations against database_file and returns a path that exists on disk."""
         database_file = tmp_path / "dovo.db"
         db = DovoDb(database_file)
 
@@ -73,7 +69,6 @@ class DovoDbTests:
     def test_init_db_marks_repositories_initialized_so_first_query_skips_remigration(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """[tier-1/integration] DovoDb.init_db: migrates once and marks all four repositories initialized, so the first subsequent repository query does not re-run migrations."""
         db = DovoDb(tmp_path / "dovo.db", project_id="proj-1")
         call_count = 0
         original_init_database = init_database

@@ -34,11 +34,9 @@ class ExtractConflictsTests:
     def test_extracts_conflicting_paths_from_known_git_apply_stderr_patterns(
         self, stderr: str, expected: list[str]
     ) -> None:
-        """[tier-1/unit] extract_conflicts: recognizes each documented git apply failure line format and extracts its file path."""
         assert extract_conflicts(stderr) == expected
 
     def test_deduplicates_and_sorts_multiple_conflicting_paths(self) -> None:
-        """[tier-1/unit] extract_conflicts: repeated and out-of-order conflict lines collapse into a sorted, deduplicated list."""
         stderr = "error: patch failed: zeta.py\nerror: patch failed: alpha.py\nerror: patch failed: zeta.py\n"
         assert extract_conflicts(stderr) == ["alpha.py", "zeta.py"]
 
@@ -77,7 +75,6 @@ class WorktreePatchDiffTests:
     def test_unknown_worktree_id_returns_not_found(
         self, worktree_workspace: Path, worktree_workspace_paths: WorkspacePaths
     ) -> None:
-        """[tier-1/integration] WorktreePatch.diff: no matching DB record -> NOT_FOUND with the worktree id in errors."""
         patch = WorktreePatch(worktree_workspace_paths, _repo(worktree_workspace_paths))
 
         result = patch.diff("missing_worktree")
@@ -88,7 +85,6 @@ class WorktreePatchDiffTests:
     def test_worktree_directory_missing_on_disk_returns_not_found(
         self, worktree_workspace: Path, worktree_workspace_paths: WorkspacePaths
     ) -> None:
-        """[tier-1/integration] WorktreePatch.diff: DB record exists but its worktree_path directory was deleted -> NOT_FOUND."""
         db = _repo(worktree_workspace_paths)
         _create_worktree_with_change(worktree_workspace_paths, "dovo_gone")
         record = db.get("dovo_gone")
@@ -105,7 +101,6 @@ class WorktreePatchDiffTests:
     def test_worktree_with_no_changes_returns_empty_diff(
         self, worktree_workspace: Path, worktree_workspace_paths: WorkspacePaths
     ) -> None:
-        """[tier-1/integration] WorktreePatch.diff: worktree created with no further commits -> EMPTY_DIFF."""
         db = _repo(worktree_workspace_paths)
         lifecycle = WorktreeLifecycle(worktree_workspace_paths, db)
         create_result = lifecycle.create(session_id="dovo_empty")
@@ -119,7 +114,6 @@ class WorktreePatchDiffTests:
     def test_worktree_with_committed_change_returns_ok_with_touched_files(
         self, worktree_workspace: Path, worktree_workspace_paths: WorkspacePaths
     ) -> None:
-        """[tier-1/integration] WorktreePatch.diff: worktree with one committed file change -> OK, files_changed lists it, diff_text is non-empty."""
         db = _repo(worktree_workspace_paths)
         _create_worktree_with_change(worktree_workspace_paths, "dovo_diffme")
         patch = WorktreePatch(worktree_workspace_paths, db)
@@ -144,7 +138,6 @@ class WorktreePatchDiffTests:
         stat: bool,
         expect_stat_text: bool,
     ) -> None:
-        """[tier-1/integration] WorktreePatch.diff: stat_text is populated only when stat=True; the unified diff is always present."""
         db = _repo(worktree_workspace_paths)
         _create_worktree_with_change(worktree_workspace_paths, "dovo_stat")
         patch = WorktreePatch(worktree_workspace_paths, db)
@@ -162,7 +155,6 @@ class WorktreePatchApplyTests:
     def test_unknown_worktree_id_returns_not_found(
         self, worktree_workspace: Path, worktree_workspace_paths: WorkspacePaths
     ) -> None:
-        """[tier-1/integration] WorktreePatch.apply: no matching DB record -> NOT_FOUND."""
         patch = WorktreePatch(worktree_workspace_paths, _repo(worktree_workspace_paths))
 
         result = patch.apply("missing_worktree")
@@ -172,7 +164,6 @@ class WorktreePatchApplyTests:
     def test_already_merged_worktree_returns_already_merged_without_reapplying(
         self, worktree_workspace: Path, worktree_workspace_paths: WorkspacePaths
     ) -> None:
-        """[tier-1/integration] WorktreePatch.apply: DB record status is MERGED -> ALREADY_MERGED, no git apply attempted."""
         db = _repo(worktree_workspace_paths)
         _create_worktree_with_change(worktree_workspace_paths, "dovo_merged")
         db.update_status("dovo_merged", WorktreeStatus.MERGED)
@@ -185,7 +176,6 @@ class WorktreePatchApplyTests:
     def test_dirty_main_repo_without_allow_dirty_returns_main_repo_dirty(
         self, worktree_workspace: Path, worktree_workspace_paths: WorkspacePaths
     ) -> None:
-        """[tier-1/integration] WorktreePatch.apply: uncommitted changes in the main workspace and allow_dirty=False -> MAIN_REPO_DIRTY, apply is refused."""
         db = _repo(worktree_workspace_paths)
         _create_worktree_with_change(worktree_workspace_paths, "dovo_dirty_main")
         (worktree_workspace / "uncommitted.txt").write_text("wip", encoding="utf-8")
@@ -198,7 +188,6 @@ class WorktreePatchApplyTests:
     def test_worktree_with_no_changes_returns_empty_diff(
         self, worktree_workspace: Path, worktree_workspace_paths: WorkspacePaths
     ) -> None:
-        """[tier-1/integration] WorktreePatch.apply: worktree has no commits beyond base -> EMPTY_DIFF, nothing applied."""
         db = _repo(worktree_workspace_paths)
         lifecycle = WorktreeLifecycle(worktree_workspace_paths, db)
         create_result = lifecycle.create(session_id="dovo_empty_apply")
@@ -212,7 +201,6 @@ class WorktreePatchApplyTests:
     def test_dry_run_reports_ok_without_modifying_main_workspace(
         self, worktree_workspace: Path, worktree_workspace_paths: WorkspacePaths
     ) -> None:
-        """[tier-1/integration] WorktreePatch.apply: dry_run=True -> OK with a dry-run warning, and the target file is not created in the main workspace."""
         db = _repo(worktree_workspace_paths)
         _create_worktree_with_change(worktree_workspace_paths, "dovo_dry_run")
         patch = WorktreePatch(worktree_workspace_paths, db)
@@ -226,7 +214,6 @@ class WorktreePatchApplyTests:
     def test_patch_strategy_applies_changes_and_marks_worktree_merged(
         self, worktree_workspace: Path, worktree_workspace_paths: WorkspacePaths
     ) -> None:
-        """[tier-1/integration] WorktreePatch.apply: PATCH strategy applies the worktree's file change into the main workspace and updates DB status to MERGED."""
         db = _repo(worktree_workspace_paths)
         _create_worktree_with_change(worktree_workspace_paths, "dovo_apply_patch")
         patch = WorktreePatch(worktree_workspace_paths, db)
@@ -242,7 +229,6 @@ class WorktreePatchApplyTests:
     def test_squash_strategy_creates_single_commit_with_default_message(
         self, worktree_workspace: Path, worktree_workspace_paths: WorkspacePaths
     ) -> None:
-        """[tier-1/integration] WorktreePatch.apply: SQUASH strategy without an explicit message commits with the default 'dovo: apply changes from worktree <id>' message and returns the new commit sha."""
         db = _repo(worktree_workspace_paths)
         _create_worktree_with_change(worktree_workspace_paths, "dovo_squash")
         patch = WorktreePatch(worktree_workspace_paths, db)

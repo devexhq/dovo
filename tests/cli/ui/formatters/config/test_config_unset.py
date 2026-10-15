@@ -149,12 +149,12 @@ class ConfigUnsetFormatterTests:
         case: FormatterCase[ConfigUnsetResult, ConfigUnsetResult],
         expected_payload: dict[str, Any],
     ) -> None:
-        """[tier-2/presentation] ConfigUnsetFormatter.to_json_serializable: matches the exact published wire-format literal dict, identity view (no derived fields)."""
+        """Match the exact published wire-format literal dict; the view is an identity with no derived fields."""
         assert_json_payload_matches_published_shape(ConfigUnsetFormatter, case.data, expected_payload)
 
     @pytest.mark.parametrize("case", CONFIG_UNSET_CASES)
     def test_rich_render_shows_every_view_value(
         self, case: FormatterCase[ConfigUnsetResult, ConfigUnsetResult]
     ) -> None:
-        """[tier-2/presentation] ConfigUnsetFormatter.to_rich: semantic view values (key or error message) reach the rendered output."""
+        """Show the key or error message from the view in the rendered output."""
         assert_rich_render_shows_every_view_value(ConfigUnsetFormatter, case.data, case.render_expectations)

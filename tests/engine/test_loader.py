@@ -65,7 +65,7 @@ def _break_state(paths: WorkspacePaths, sessions: SessionsRepository, fault: str
 
 
 def _seed_paused_loop(paths: WorkspacePaths, sessions: SessionsRepository) -> SessionStateStore:
-    """Seed a paused run whose loop `fix` has completed body step `edit` and PAUSED body step `verify` on a failed attempt."""
+    """Seed a paused run: loop `fix` has completed step `edit` and a PAUSED `verify` on a failed attempt."""
     seed_new_session(paths, sessions, session_id="paused-1", steps=_LOOP_STEPS)
     row = sessions.get("paused-1")
     assert row is not None
@@ -100,12 +100,9 @@ def _seed_paused_loop(paths: WorkspacePaths, sessions: SessionsRepository) -> Se
 
 
 class EngineLoaderTests:
-    """[tier-1/integration] EngineLoader.load_for_resume: classify and validate a paused run before dispatch."""
-
     def test_paused_run_returns_row_state_and_manifest(
         self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository
     ) -> None:
-        """[tier-1/integration] EngineLoader.load_for_resume: a paused row with a PAUSED leaf and intact snapshots returns (row, state, state.manifest) with row.session_id equal to the argument."""
         _seed(engine_paths, sessions_repo)
 
         row, state, manifest = EngineLoader.load_for_resume(sessions_repo, engine_paths, "paused-1")
@@ -134,7 +131,6 @@ class EngineLoaderTests:
         fault: str,
         expected_status: EngineResumeStatus,
     ) -> None:
-        """[tier-1/integration] EngineLoader.load_for_resume: each seeded fault raises EngineResumeError whose .status equals expected_status and whose message starts "Cannot resume session" (or "Session '<id>' not found." for NOT_FOUND)."""
         if fault == "no-state":
             sessions_repo.create("paused-1", blueprint_name="x", blueprint_key="x", status=SessionStatus.PAUSED)
         elif fault != "no-row":
@@ -162,7 +158,6 @@ class EngineLoaderTests:
     def test_worktree_run_with_existing_directory_loads(
         self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository
     ) -> None:
-        """[tier-1/integration] EngineLoader.load_for_resume: use_worktree=True with worktree_id set and paths.worktree_dir(worktree_id) present returns the row with that worktree_id unchanged."""
         _seed(engine_paths, sessions_repo, use_worktree=True, worktree_id="dovo_1")
         engine_paths.worktree_dir("dovo_1").mkdir(parents=True)
 
@@ -176,7 +171,6 @@ class EngineLoaderTests:
     def test_worktree_run_without_retained_directory_raises_missing_worktree_and_keeps_row(
         self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository, worktree_id: str | None
     ) -> None:
-        """[tier-1/integration] EngineLoader.load_for_resume: use_worktree=True with worktree_id None or a missing directory raises EngineResumeError(MISSING_WORKTREE) and sessions_repo.get(session_id) still returns the row."""
         _seed(engine_paths, sessions_repo, use_worktree=True, worktree_id=worktree_id)
 
         with pytest.raises(EngineResumeError) as exc_info:
@@ -188,12 +182,9 @@ class EngineLoaderTests:
 
 
 class EngineLoaderPausedBodyLeafTests:
-    """[tier-1/integration] EngineLoader.load_for_resume: paused loop-body leaves are validated like top-level leaves."""
-
     def test_paused_body_leaf_with_recorded_result_loads(
         self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository
     ) -> None:
-        """[tier-1/integration] EngineLoader.load_for_resume: a paused run whose loop body leaf is PAUSED with a recorded failed result returns the state with that leaf paused."""
         _seed_paused_loop(engine_paths, sessions_repo)
 
         _, state, _ = EngineLoader.load_for_resume(sessions_repo, engine_paths, "paused-1")
@@ -205,7 +196,6 @@ class EngineLoaderPausedBodyLeafTests:
     def test_paused_body_leaf_without_recorded_result_is_corrupt_state(
         self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository
     ) -> None:
-        """[tier-1/integration] EngineLoader.load_for_resume: a paused body leaf whose last attempt has no result raises EngineResumeError with status CORRUPT_STATE naming the leaf id."""
         store = _seed_paused_loop(engine_paths, sessions_repo)
         state = store.load().state
         assert state is not None
@@ -223,12 +213,10 @@ class EngineLoaderPausedBodyLeafTests:
 
 
 class EngineLoaderCorruptLoopStateTests:
-    """[tier-1/integration] EngineLoader.load_for_resume: loop structure must match the run snapshot."""
-
     def test_structurally_corrupt_loop_state_is_corrupt_state_on_resume(
         self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository
     ) -> None:
-        """[tier-1/integration] EngineLoader.load_for_resume: a paused run whose loop iteration children differ from the snapshot body raises EngineResumeError with status CORRUPT_STATE and a message ending with the validator's text."""
+        """Raise CORRUPT_STATE with the validator's text when loop iteration children differ from the snapshot body."""
         store = _seed_paused_loop(engine_paths, sessions_repo)
         state = store.load().state
         assert state is not None
@@ -264,15 +252,12 @@ _ASK_STEPS: list[dict[str, object]] = [
 
 
 class EngineLoaderPausedAskTests:
-    """[tier-1/integration] EngineLoader.load_for_resume: a paused ask leaf is resumable through its pending_ask."""
-
     def test_paused_ask_leaf_without_attempt_result_is_resumable(
         self,
         engine_paths: WorkspacePaths,
         sessions_repo: SessionsRepository,
         artifacts_repository: ArtifactsRepository,
     ) -> None:
-        """[tier-1/integration] EngineLoader.load_for_resume: a PAUSED leaf with pending_ask and an attempt without a result returns row, state and manifest."""
         seed_paused_ask_session(
             engine_paths, sessions_repo, artifacts_repository, session_id="paused-1", steps=_ASK_STEPS
         )
@@ -290,7 +275,6 @@ class EngineLoaderPausedAskTests:
         sessions_repo: SessionsRepository,
         artifacts_repository: ArtifactsRepository,
     ) -> None:
-        """[tier-1/integration] EngineLoader.load_for_resume: a PAUSED leaf with neither pending_ask nor a last-attempt result raises EngineResumeError(CORRUPT_STATE)."""
         seed_paused_ask_session(
             engine_paths, sessions_repo, artifacts_repository, session_id="paused-1", steps=_ASK_STEPS
         )
@@ -309,15 +293,12 @@ class EngineLoaderPausedAskTests:
 
 
 class EngineLoaderResolveAnswersTests:
-    """[tier-1/integration] EngineLoader.resolve_answers: validate supplied answers against the pending ask."""
-
     def test_valid_input_maps_to_normalized_answer_by_step_id(
         self,
         engine_paths: WorkspacePaths,
         sessions_repo: SessionsRepository,
         artifacts_repository: ArtifactsRepository,
     ) -> None:
-        """[tier-1/integration] EngineLoader.resolve_answers: input approve=revise + comment returns {"approve": InteractionAnswer(selected=["revise"], comment=...)}."""
         seed_paused_ask_session(
             engine_paths, sessions_repo, artifacts_repository, session_id="paused-1", steps=_ASK_STEPS
         )
@@ -365,7 +346,6 @@ class EngineLoaderResolveAnswersTests:
         supplied: HeadlessAnswerInput,
         expected_message: str,
     ) -> None:
-        """[tier-1/integration] EngineLoader.resolve_answers: unknown step id, unknown value, missing required comment and an 8001-character comment raise INVALID_ANSWER listing the valid choices."""
         seed_paused_ask_session(
             engine_paths, sessions_repo, artifacts_repository, session_id="paused-1", steps=_ASK_STEPS
         )
@@ -380,7 +360,6 @@ class EngineLoaderResolveAnswersTests:
     def test_state_without_pending_ask_raises_no_pending_prompt(
         self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository
     ) -> None:
-        """[tier-1/integration] EngineLoader.resolve_answers: a state whose paused leaf is a failed step raises NO_PENDING_PROMPT "No prompt is pending for session '<id>'."."""
         _seed(engine_paths, sessions_repo)
         _, state, _ = EngineLoader.load_for_resume(sessions_repo, engine_paths, "paused-1")
 
@@ -396,7 +375,6 @@ class EngineLoaderResolveAnswersTests:
         sessions_repo: SessionsRepository,
         artifacts_repository: ArtifactsRepository,
     ) -> None:
-        """[tier-1/integration] EngineLoader.resolve_answers: a comment for an option whose policy is disabled is dropped and reported in warnings."""
         seed_paused_ask_session(
             engine_paths, sessions_repo, artifacts_repository, session_id="paused-1", steps=_ASK_STEPS
         )

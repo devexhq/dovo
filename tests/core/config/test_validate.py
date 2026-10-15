@@ -86,8 +86,6 @@ class ConfigSemanticValidationTests:
 
 
 class ConfigProviderRegistryValidationTests:
-    """[tier-1/unit] validate_config_result: agent.provider must be registered in PROVIDERS."""
-
     @staticmethod
     def _write_config(tmp_path: Path, provider: str) -> Path:
         payload = build_default_config("demo")
@@ -99,7 +97,6 @@ class ConfigProviderRegistryValidationTests:
     def test_schema_valid_unregistered_provider_is_semantically_invalid(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """[tier-1/unit] validate_config_result: with 'copilot' removed from PROVIDERS and a fake token registered, agent.provider 'copilot' returns INVALID, ok False, the AGENT_PROVIDER_UNSUPPORTED error listing the remaining registered tokens, and no warnings."""
         monkeypatch.setitem(PROVIDERS, "fake", dataclasses.replace(PROVIDERS["copilot"], token="fake"))
         monkeypatch.delitem(PROVIDERS, "copilot")
 
@@ -114,7 +111,6 @@ class ConfigProviderRegistryValidationTests:
 
     @pytest.mark.parametrize("token", list(PROVIDERS))
     def test_registered_provider_with_model_is_valid(self, token: str, tmp_path: Path) -> None:
-        """[tier-1/unit] validate_config_result: agent.provider token with agent.models {token: 'm'} returns VALID, ok True, errors [] and warnings []."""
         config_path = self._write_config(tmp_path, token)
         payload = json.loads(config_path.read_text(encoding="utf-8"))
         payload["agent"]["models"] = {token: "m"}
@@ -128,7 +124,6 @@ class ConfigProviderRegistryValidationTests:
         assert result.warnings == []
 
     def test_schema_invalid_token_keeps_structural_failure(self, tmp_path: Path) -> None:
-        """[tier-1/unit] validate_config_result: agent.provider 'bogus' returns INVALID with CONFIG_SCHEMA_INVALID first and no AGENT_PROVIDER_UNSUPPORTED error."""
         result = validate_config_result(self._write_config(tmp_path, "bogus"))
 
         assert result.status == ConfigValidationStatus.INVALID
@@ -138,7 +133,6 @@ class ConfigProviderRegistryValidationTests:
 
 class ProviderVocabularyAgreementTests:
     def test_registry_model_and_schema_agree_on_provider_set(self) -> None:
-        """[tier-1/unit] PROVIDERS vs AgentProvider vs schemas/v1/config.json agent.provider enum: all three token sets equal {'copilot', 'claude'}, the schema default is 'copilot', and the agent.models schema keys equal the registered tokens."""
         schema = json.loads(files("dovo.schemas.v1").joinpath("config.json").read_text(encoding="utf-8"))
         provider_schema = schema["properties"]["agent"]["properties"]["provider"]
 
@@ -151,12 +145,10 @@ class AgentModelsValidatorTests:
     """Direct construction contract for AgentConfig.models."""
 
     def test_unknown_provider_key_raises_validation_error_naming_it(self) -> None:
-        """[tier-1/unit] AgentConfig: models with a key that is not a registered provider token raises ValidationError naming the unknown key."""
         with pytest.raises(ValidationError, match=r"unknown agent provider\(s\) in models: other"):
             AgentConfig(models={"copilot": "gpt-4.1", "other": "x"})
 
     def test_active_model_reads_active_provider_entry_or_none(self) -> None:
-        """[tier-1/unit] AgentConfig.active_model: returns the active provider's entry, and None when models is empty."""
         assert AgentConfig(models={"copilot": "gpt-4.1"}).active_model == "gpt-4.1"
         assert AgentConfig().active_model is None
 
@@ -171,7 +163,6 @@ class AgentConfigEnvTests:
         ],
     )
     def test_invalid_env_keys_fail_schema_and_model_validation(self, payload: dict[str, object]) -> None:
-        """[tier-1/unit] CONFIG_VALIDATOR and DovoConfig: each invalid agent env payload is rejected by both."""
         document = build_default_config("demo")
         document["agent"].update(payload)
 

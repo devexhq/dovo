@@ -63,10 +63,8 @@ class RunSuccessFormatterTests:
         case: FormatterCase[RunSuccessEvent, RunSuccessEvent],
         expected_payload: dict[str, Any],
     ) -> None:
-        """Verify to_json_serializable matches the published wire format dict."""
         assert_json_payload_matches_published_shape(RunSuccessFormatter, case.data, expected_payload)
 
     @pytest.mark.parametrize("case", RUN_SUCCESS_CASES)
     def test_rich_render_shows_every_view_value(self, case: FormatterCase[RunSuccessEvent, RunSuccessEvent]) -> None:
-        """Verify that all non-null semantic view model values reach the Rich renderable output."""
         assert_rich_render_shows_every_view_value(RunSuccessFormatter, case.data, case.render_expectations)

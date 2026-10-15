@@ -52,7 +52,6 @@ class CheckRegistryTests:
     """Unit tests for CheckRegistry lifecycle operations."""
 
     def test_register_check_adds_to_registry(self) -> None:
-        """[tier-1/unit] CheckRegistry.register: registering a check makes it retrievable by check_id via get()."""
         registry = CheckRegistry()
         check = DummyCheck(check_id="git.repo", name="Git Repo Check", category=CheckCategory.GIT)
 
@@ -62,7 +61,6 @@ class CheckRegistryTests:
         assert retrieved is check
 
     def test_register_duplicate_raises_check_registration_error(self) -> None:
-        """[tier-1/unit] CheckRegistry.register: registering a duplicate check_id raises CheckRegistrationError without mutating registry."""
         registry = CheckRegistry()
         check1 = DummyCheck(check_id="duplicate.id", name="First", category=CheckCategory.GIT)
         check2 = DummyCheck(check_id="duplicate.id", name="Second", category=CheckCategory.CONFIG)
@@ -76,12 +74,10 @@ class CheckRegistryTests:
         assert registry.get("duplicate.id") is check1
 
     def test_get_missing_check_returns_none(self) -> None:
-        """[tier-1/unit] CheckRegistry.get: requesting unregistered check_id returns None."""
         registry = CheckRegistry()
         assert registry.get("nonexistent.check") is None
 
     def test_list_by_category_returns_matching_checks(self) -> None:
-        """[tier-1/unit] CheckRegistry.list_by_category: returns only checks whose category equals the specified CheckCategory."""
         registry = CheckRegistry()
         git_check1 = DummyCheck(check_id="git.repo", category=CheckCategory.GIT)
         git_check2 = DummyCheck(check_id="git.status", category=CheckCategory.GIT)
@@ -101,7 +97,6 @@ class CheckRegistryTests:
         assert env_checks == []
 
     def test_all_returns_all_registered_checks(self) -> None:
-        """[tier-1/unit] CheckRegistry.all: returns list of all registered DiagnosticCheck instances."""
         registry = CheckRegistry()
         assert registry.all() == []
 
@@ -118,7 +113,6 @@ class DefaultRegistryTests:
     """Unit tests for get_default_registry factory wiring."""
 
     def test_get_default_registry_registers_all_seven_builtin_checks(self) -> None:
-        """[tier-1/unit] get_default_registry: returns a registry with exactly the 7 built-in checks by check_id."""
         registry = get_default_registry()
 
         assert len(registry.all()) == 7

@@ -16,7 +16,6 @@ class SeedCatalogTemplatesTests:
     def test_fresh_repository_creates_every_packaged_dovo_step_file(
         self, tmp_path: Path, workspace_paths_factory: WorkspacePathsFactory
     ) -> None:
-        """[tier-1/integration] seed_catalog_templates: no existing files -> every packaged steps/dovo/*.yml is copied and listed in created_files, none skipped or overwritten."""
         result = seed_catalog_templates(CatalogItemType.STEP, workspace_paths_factory(tmp_path, None))
 
         assert result.ok
@@ -30,7 +29,6 @@ class SeedCatalogTemplatesTests:
     def test_existing_file_without_force_is_skipped_not_overwritten(
         self, tmp_path: Path, workspace_paths_factory: WorkspacePathsFactory
     ) -> None:
-        """[tier-1/integration] seed_catalog_templates: force=False and a target file already exists -> file is recorded in skipped_existing_files, its on-disk content is left untouched."""
         target = tmp_path / ".dovo" / "catalog" / "steps" / "dovo" / "run-tests.yml"
         target.parent.mkdir(parents=True)
         target.write_text("custom: content\n", encoding="utf-8")
@@ -44,7 +42,6 @@ class SeedCatalogTemplatesTests:
     def test_existing_file_with_force_is_overwritten(
         self, tmp_path: Path, workspace_paths_factory: WorkspacePathsFactory
     ) -> None:
-        """[tier-1/integration] seed_catalog_templates: force=True and a target file already exists -> file is recorded in overwritten_files and its content is replaced with the packaged template."""
         target = tmp_path / ".dovo" / "catalog" / "steps" / "dovo" / "run-tests.yml"
         target.parent.mkdir(parents=True)
         target.write_text("custom: content\n", encoding="utf-8")
@@ -57,7 +54,6 @@ class SeedCatalogTemplatesTests:
     def test_target_path_existing_as_directory_records_error_and_skips_file(
         self, tmp_path: Path, workspace_paths_factory: WorkspacePathsFactory
     ) -> None:
-        """[tier-1/integration] seed_catalog_templates: a target path that already exists as a directory records an error for that file and is not treated as created/skipped/overwritten."""
         target = tmp_path / ".dovo" / "catalog" / "steps" / "dovo" / "run-tests.yml"
         target.mkdir(parents=True)
 
@@ -73,7 +69,6 @@ class SeedAllCatalogTemplatesTests:
     def test_aggregates_created_files_across_blueprint_and_step_types(
         self, tmp_path: Path, workspace_paths_factory: WorkspacePathsFactory
     ) -> None:
-        """[tier-1/integration] seed_all_catalog_templates: aggregate result's created_files includes packaged dovo/ templates from both BLUEPRINT and STEP item types."""
         result = seed_all_catalog_templates(workspace_paths_factory(tmp_path, None))
 
         assert result.ok
@@ -87,7 +82,6 @@ class SeedAllCatalogTemplatesTests:
     def test_second_call_without_force_skips_everything_already_seeded(
         self, tmp_path: Path, workspace_paths_factory: WorkspacePathsFactory
     ) -> None:
-        """[tier-1/integration] seed_all_catalog_templates: calling twice without force -> the second call's created_files is empty and skipped_existing_files covers every previously created file."""
         paths = workspace_paths_factory(tmp_path, None)
         first = seed_all_catalog_templates(paths)
         second = seed_all_catalog_templates(paths, force=False)

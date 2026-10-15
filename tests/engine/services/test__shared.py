@@ -21,7 +21,6 @@ def _repo(tmp_path: Path) -> SessionsRepository:
 
 class SharedFailTests:
     def test_fail_returns_result_with_message_and_passed_warnings(self) -> None:
-        """[tier-1/domain] fail: returns BlueprintRunResult(session_record=None, errors=[message], warnings=warnings) for the exact warnings list passed in."""
         warnings = ["prior warning"]
 
         result = fail(warnings, "boom")
@@ -31,7 +30,6 @@ class SharedFailTests:
 
 class SharedLoadRecordTests:
     def test_load_record_returns_repository_record_on_success(self, tmp_path: Path) -> None:
-        """[tier-1/domain] load_record: returns the SessionRecord SessionsRepository.get() returns for an existing session_id, appending no warning."""
         repo = _repo(tmp_path)
         created = repo.create(session_id="sess-1", blueprint_name="lint", blueprint_key="lint")
         warnings: list[str] = []
@@ -44,7 +42,6 @@ class SharedLoadRecordTests:
     def test_load_record_appends_warning_and_returns_none_on_repository_error(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """[tier-1/domain] load_record: SessionsRepository.get() raising appends "Failed to load session record for '<session_id>': <exc>" to warnings and returns None."""
         repo = _repo(tmp_path)
 
         def raise_error(session_id: str) -> None:
@@ -61,7 +58,6 @@ class SharedLoadRecordTests:
 
 class SharedFinalizeTests:
     def test_finalize_with_missing_record_leaves_run_record_none(self, tmp_path: Path) -> None:
-        """[tier-1/domain] finalize: no DB record for session_id returns BlueprintRunResult.session_record is None, with no fallback record ever substituted, for the same input shape both BlueprintRunService and BlueprintResumeService pass."""
         repo = _repo(tmp_path)
         outcome = RunOutcome(status=SessionStatus.FAILED, worktree_path=tmp_path, errors=["step failed"])
         warnings: list[str] = []
@@ -72,7 +68,6 @@ class SharedFinalizeTests:
         assert result.errors == ["step failed"]
 
     def test_finalize_with_existing_record_returns_it(self, tmp_path: Path) -> None:
-        """[tier-1/domain] finalize: an existing SessionsRepository record for session_id is returned unchanged as BlueprintRunResult.session_record."""
         repo = _repo(tmp_path)
         created = repo.create(session_id="sess-3", blueprint_name="lint", blueprint_key="lint")
         outcome = RunOutcome(status=SessionStatus.COMPLETED, worktree_path=tmp_path)
@@ -83,7 +78,6 @@ class SharedFinalizeTests:
         assert result.session_record == created
 
     def test_finalize_extends_passed_warnings_list_in_place(self, tmp_path: Path) -> None:
-        """[tier-1/domain] finalize: mutates the caller's warnings list object with run_outcome.warnings rather than returning a new list, so the caller's own field reflects the extension after the call."""
         repo = _repo(tmp_path)
         outcome = RunOutcome(status=SessionStatus.COMPLETED, worktree_path=tmp_path, warnings=["outcome warning"])
         warnings: list[str] = ["caller warning"]
@@ -95,7 +89,6 @@ class SharedFinalizeTests:
 
 class FinalizePausedPromptTests:
     def test_finalize_copies_paused_prompt_id(self, tmp_path: Path) -> None:
-        """[tier-1/unit] finalize: a RunOutcome with paused_prompt_id "approve" yields BlueprintRunResult.paused_prompt_id "approve"; a normal outcome yields None."""
         repo = _repo(tmp_path)
         paused = RunOutcome(status=SessionStatus.PAUSED, worktree_path=tmp_path, paused_prompt_id="approve")
         completed = RunOutcome(status=SessionStatus.COMPLETED, worktree_path=tmp_path)

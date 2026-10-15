@@ -129,7 +129,7 @@ class PreflightAdapter(UnitTestAdapter):
 
 
 class CredentialedAdapter(UnitTestAdapter):
-    """Adapter double declaring credential_envs ("TEST_CREDENTIAL_PRIMARY","TEST_CREDENTIAL_FALLBACK") with an additive provider-specific preflight."""
+    """Adapter double declaring both credential envs with an additive provider-specific preflight."""
 
     def _provider_spec(self) -> ProviderSpec:
         return ProviderSpec(
@@ -189,7 +189,6 @@ class BuildMutationPromptTests:
     def test_remediation_mode_prompt_carries_repair_header_instruction_and_payload(
         self, git_repo: Path, mode: Literal["fix_failure", "review_remediation"]
     ) -> None:
-        """[tier-1/unit] build_mutation_prompt: fix_failure/review_remediation returns the repair header plus an exact JSON body with mode, worktree_path, instruction, payload."""
         built = AgentRequestBuilder().with_worktree_path(git_repo).build()
         request = built.model_copy(update={"mode": mode})
         assert request.payload is not None
@@ -213,7 +212,6 @@ class BuildMutationPromptTests:
         assert build_mutation_prompt(request) == expected
 
     def test_direct_mode_prompt_carries_instruction_without_repair_directive_or_payload(self, git_repo: Path) -> None:
-        """[tier-1/unit] build_mutation_prompt: a direct request returns the direct header plus a JSON body with exactly mode, worktree_path, instruction; no 'Fix the failure' text and no payload key."""
         request = AgentRequest(
             mode="direct",
             instruction="Plan the change",
@@ -238,7 +236,6 @@ class BuildMutationPromptTests:
 
 class ScratchPromptTests:
     def test_prompt_with_scratch_adds_lines_and_exact_path_field(self, git_repo: Path, tmp_path: Path) -> None:
-        """[tier-1/unit] build_mutation_prompt: a direct request with agent_scratch_path P returns the direct header + the scratch lines + a JSON body with keys mode, worktree_path, agent_scratch_path (str(P)), instruction, in that order."""
         invocation = _invocation(tmp_path)
         expected_body = {
             "mode": "direct",
@@ -262,7 +259,6 @@ class ScratchPromptTests:
         assert list(json.loads(prompt[prompt.index("{") :])) == list(expected_body)
 
     def test_prompt_never_contains_control_path_or_invocation_id(self, git_repo: Path, tmp_path: Path) -> None:
-        """[tier-1/unit] build_mutation_prompt: with a full AgentInvocationContext on the request, the prompt text contains neither str(control_path) nor invocation_id."""
         invocation = _invocation(tmp_path)
 
         prompt = build_mutation_prompt(_request_with_invocation(git_repo, invocation))
@@ -273,7 +269,6 @@ class ScratchPromptTests:
 
 class CliMutationInvocationPropagationTests:
     def test_invoke_forwards_invocation_to_the_runner_request(self, git_repo: Path, tmp_path: Path) -> None:
-        """[tier-1/unit] CliDirectMutationAdapter._invoke: the CliMutationRunRequest passed to _default_run has invocation == the AgentRequest's invocation."""
         invocation = _invocation(tmp_path)
         received: list[CliMutationRunRequest] = []
 
@@ -289,7 +284,6 @@ class CliMutationInvocationPropagationTests:
 class CliMutationOnLinePropagationTests:
     @pytest.mark.parametrize("with_callback", [pytest.param(True, id="with-callback"), pytest.param(False, id="none")])
     def test_invoke_forwards_on_line_to_the_runner_request(self, git_repo: Path, with_callback: bool) -> None:
-        """[tier-1/unit] CliDirectMutationAdapter._invoke: the CliMutationRunRequest passed to _default_run has on_line equal to the AgentRequest's on_line, and None when the request has none."""
 
         def on_line(stream_name: str, line: str) -> None:
             """Line callback used only as a distinguishable callable value."""
@@ -309,7 +303,6 @@ class CliMutationOnLinePropagationTests:
 
     @pytest.mark.parametrize("with_callback", [pytest.param(True, id="with-callback"), pytest.param(False, id="none")])
     def test_invoke_forwards_on_progress_to_the_runner_request(self, git_repo: Path, with_callback: bool) -> None:
-        """[tier-1/unit] CliDirectMutationAdapter._invoke: the CliMutationRunRequest passed to _default_run has on_progress equal to the AgentRequest's on_progress, and None when the request has none."""
 
         def on_progress(progress: AgentProgress) -> None:
             """Progress callback used only as a distinguishable callable value."""
@@ -331,7 +324,6 @@ class CliMutationOnLinePropagationTests:
 class CliMutationProgressMapperPropagationTests:
     @pytest.mark.parametrize("with_descriptor", [pytest.param(True, id="descriptor"), pytest.param(False, id="none")])
     def test_descriptor_progress_mapper_reaches_the_run_request(self, git_repo: Path, with_descriptor: bool) -> None:
-        """[tier-1/integration] CliDirectMutationAdapter.invoke: a double whose descriptor sets progress_mapper=M gives _default_run a CliMutationRunRequest with progress_mapper is M; a double with no descriptor gets None."""
         mapper = _mapped("a")
         received: list[CliMutationRunRequest] = []
 
@@ -348,7 +340,6 @@ class CliMutationProgressMapperPropagationTests:
 
 class ScratchDiffIsolationTests:
     def test_scratch_file_never_appears_in_the_captured_diff(self, git_repo: Path, tmp_path: Path) -> None:
-        """[tier-1/integration] CliDirectMutationAdapter.invoke: a real git_repo adapter writing 'notes.py' into scratch_path and 'src/a.py' into the worktree returns a PROPOSED_PATCH whose unified_diff names only src/a.py and whose capture_diff_since(baseline) paths == ['src/a.py']."""
         invocation = _invocation(tmp_path)
         baseline = resolve_pre_agent_baseline(git_repo)
 
@@ -368,7 +359,6 @@ class ScratchDiffIsolationTests:
         assert capture_diff_since(git_repo, baseline)[1] == ["src/a.py"]
 
     def test_control_directory_content_never_appears_in_worktree_status(self, git_repo: Path, tmp_path: Path) -> None:
-        """[tier-1/integration] CliDirectMutationAdapter.invoke: a file written under control_path leaves 'git status --porcelain' in the worktree empty."""
         invocation = _invocation(tmp_path)
 
         def _write(request: CliMutationRunRequest) -> CliMutationOutcome:
@@ -383,7 +373,6 @@ class ScratchDiffIsolationTests:
         assert _porcelain(git_repo) == ""
 
     def test_scratch_survives_discard_since(self, git_repo: Path, tmp_path: Path) -> None:
-        """[tier-1/integration] discard_since: after discarding worktree edits to the baseline, files under scratch_path and control_path still exist with unchanged contents."""
         invocation = _invocation(tmp_path)
         baseline = resolve_pre_agent_baseline(git_repo)
         (invocation.scratch_path / "notes.txt").write_text("scratch", encoding="utf-8")
@@ -399,7 +388,6 @@ class ScratchDiffIsolationTests:
 
 class ValidateRequestPatchTests:
     def test_absent_bounds_apply_no_limits_to_a_large_binary_multi_file_diff(self, git_repo: Path) -> None:
-        """[tier-1/unit] validate_request_patch: a request with max_files/max_patch_kb/reject_binary_changes all None and a diff of 31 files, over 1 MiB, with a binary marker returns CHECKED_OK with all 32 files touched."""
         request = AgentRequest(
             mode="direct", instruction="go", worktree_path=git_repo, timeout_seconds=10, tools=default_tool_policy()
         )
@@ -435,7 +423,6 @@ class ValidateRequestPatchTests:
         diff: str,
         status: PatchApplyStatus,
     ) -> None:
-        """[tier-1/unit] validate_request_patch: an explicit max_patch_kb=1 with a 2 KiB diff returns TOO_LARGE, and reject_binary_changes=True with a binary marker returns BINARY_REJECTED."""
         request = AgentRequest(
             mode="direct",
             instruction="go",
@@ -451,7 +438,6 @@ class ValidateRequestPatchTests:
         assert result.status == status
 
     def test_explicit_step_bound_rejects_diff_over_limit_with_agent_step_fix(self, git_repo: Path) -> None:
-        """[tier-1/unit] validate_request_patch: max_files=1 and a two-file diff returns TOO_MANY_FILES with fixes == ['Set max_files on the agent step.']."""
         request = AgentRequest(
             mode="direct",
             instruction="go",
@@ -470,7 +456,6 @@ class ValidateRequestPatchTests:
 
 class SharedMutationAdapterTests:
     def test_proposed_patch(self, git_repo: Path) -> None:
-        """A finished run whose diff clears the patch gate returns PROPOSED_PATCH."""
         adapter = UnitTestAdapter(run_fn=_fake_run(edits={"a.txt": "fixed\n"}))
 
         resp = adapter.invoke(AgentRequestBuilder().with_worktree_path(git_repo).build())
@@ -482,7 +467,6 @@ class SharedMutationAdapterTests:
         assert (git_repo / "a.txt").read_text(encoding="utf-8") == "fixed\n"
 
     def test_no_op_when_no_edits(self, git_repo: Path) -> None:
-        """A finished run with an empty diff (no edits) returns NO_OP."""
         adapter = UnitTestAdapter(run_fn=_fake_run())
 
         resp = adapter.invoke(AgentRequestBuilder().with_worktree_path(git_repo).build())
@@ -494,7 +478,6 @@ class SharedMutationAdapterTests:
         assert resp.errors == []
 
     def test_timeout_labels_provider_name(self, git_repo: Path) -> None:
-        """A timed-out run returns TIMEOUT with the concrete provider name in the fix hint."""
         adapter = UnitTestAdapter(run_fn=_fake_run(status="timeout"))
 
         resp = adapter.invoke(AgentRequestBuilder().with_worktree_path(git_repo).build())
@@ -506,7 +489,6 @@ class SharedMutationAdapterTests:
         assert resp.fixes == ["Raise timeout_seconds on the agent step"]
 
     def test_provider_error(self, git_repo: Path) -> None:
-        """A run that errors returns PROVIDER_ERROR carrying the runner's error detail."""
         adapter = UnitTestAdapter(run_fn=_fake_run(status="error", error_detail="boom"))
 
         resp = adapter.invoke(AgentRequestBuilder().with_worktree_path(git_repo).build())
@@ -517,7 +499,6 @@ class SharedMutationAdapterTests:
         assert resp.errors == ["Agent provider error (AGENT_PROVIDER_ERROR): boom"]
 
     def test_gate_violation_discards_edits(self, git_repo: Path, tmp_path: Path) -> None:
-        """Edits touching more files than max_files are discarded back to baseline."""
         adapter = UnitTestAdapter(run_fn=_fake_run(edits={"README.md": "edit one\n", "b.txt": "edit two\n"}))
         destination = tmp_path / "rejected" / "code_attempt_1.patch"
 
@@ -533,7 +514,6 @@ class SharedMutationAdapterTests:
     def test_gate_violation_discard_git_error_precedes_gate_errors(
         self, git_repo: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """A discard() failure after a gate violation leads the errors, followed by the gate errors."""
         adapter = UnitTestAdapter(run_fn=_fake_run(edits={"a.txt": "1\n", "b.txt": "2\n"}))
 
         def _fail_discard(*a: object, **k: object) -> None:
@@ -573,7 +553,6 @@ class SharedMutationAdapterTests:
     def test_git_failure_before_proposal_returns_provider_error(
         self, git_repo: Path, monkeypatch: pytest.MonkeyPatch, patched_name: str, expected_error: str
     ) -> None:
-        """[tier-1/integration] CliDirectMutationAdapter.invoke: MutationGitError("git broke") raised by the patched dovo.core.agents.cli_mutation function returns PROVIDER_ERROR with errors == [expected_error]."""
 
         def _fail_git(*a: object, **k: object) -> None:
             raise MutationGitError("git broke")
@@ -587,7 +566,6 @@ class SharedMutationAdapterTests:
         assert resp.errors == [expected_error]
 
     def test_gate_violation_preserves_wip(self, git_repo: Path, tmp_path: Path) -> None:
-        """Discard restores pre-existing uncommitted WIP, not the last committed tip."""
         (git_repo / "a.txt").write_text("wip content\n", encoding="utf-8")
         adapter = UnitTestAdapter(run_fn=_fake_run(edits={"a.txt": "edit 1\n", "b.txt": "edit 2\n"}))
 
@@ -603,7 +581,6 @@ class SharedMutationAdapterTests:
         assert not (git_repo / "b.txt").exists()
 
     def test_preflight_blocks_before_baseline(self, git_repo: Path) -> None:
-        """A failing _preflight short-circuits before baseline resolution or the runner call."""
         run_function_called = False
 
         def run_fn(request: CliMutationRunRequest) -> CliMutationOutcome:
@@ -649,7 +626,6 @@ class BlockedClassificationTests:
         expected: AgentResponseStatus,
         expected_errors: list[str],
     ) -> None:
-        """[tier-1/unit] CliDirectMutationAdapter.invoke: a runner outcome with denials yields BLOCKED only for an empty diff; otherwise PROPOSED_PATCH or NO_OP as before."""
         adapter = UnitTestAdapter(
             run_fn=_fake_run(edits={"a.txt": "fixed\n"} if writes_file else None, denials=denials)
         )
@@ -681,7 +657,6 @@ class PreflightOrderingTests:
     def test_preflight_override_is_additive_to_credential_check(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, credential_set: bool, expected_errors: list[str]
     ) -> None:
-        """[tier-1/unit] CliDirectMutationAdapter.invoke: a declared-credential double whose _preflight returns "extra" never replaces the credential error, and surfaces only when a credential is usable; the run function is never called in either case."""
         for name in ("TEST_CREDENTIAL_PRIMARY", "TEST_CREDENTIAL_FALLBACK"):
             monkeypatch.delenv(name, raising=False)
         if credential_set:
@@ -703,7 +678,6 @@ class PreflightOrderingTests:
     def test_missing_credential_skips_baseline_resolution(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """[tier-1/unit] CliDirectMutationAdapter.invoke: with credentials missing and resolve_pre_agent_baseline patched, the baseline function is never called."""
         for name in ("TEST_CREDENTIAL_PRIMARY", "TEST_CREDENTIAL_FALLBACK"):
             monkeypatch.delenv(name, raising=False)
         baseline_calls: list[Path] = []
@@ -723,7 +697,6 @@ class MutationEnvReportTests:
     def test_withheld_names_prefix_the_prompt_and_return_on_the_response(
         self, git_repo: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """[tier-1/integration] CliDirectMutationAdapter.invoke: host-only names make the runner prompt start with ENV_FILTERED_PROMPT_LINE + '\\n' and response.env_withheld equal the sorted names."""
         monkeypatch.setattr(os, "environ", {"PATH": os.environ["PATH"], "ZED_HOST": "1", "FOO_HOST": "2"})
         received: list[CliMutationRunRequest] = []
 
@@ -738,7 +711,6 @@ class MutationEnvReportTests:
         assert received[0].env["DOVO_ENV_WITHHELD"] == "FOO_HOST,ZED_HOST"
 
     def test_nothing_withheld_leaves_prompt_and_response_unchanged(self, git_repo: Path) -> None:
-        """[tier-1/integration] CliDirectMutationAdapter.invoke: an env with no withheld names yields a prompt starting with the normal header and response.env_withheld == []."""
         received: list[CliMutationRunRequest] = []
 
         def _record(request: CliMutationRunRequest) -> CliMutationOutcome:
@@ -754,7 +726,6 @@ class MutationEnvReportTests:
     def test_adapter_without_descriptor_receives_an_empty_env_and_reports_nothing_withheld(
         self, git_repo: Path
     ) -> None:
-        """[tier-1/integration] CliDirectMutationAdapter.invoke: a double with no descriptor gets env == {} and env_withheld == []."""
         received: list[CliMutationRunRequest] = []
 
         def _record(request: CliMutationRunRequest) -> CliMutationOutcome:
@@ -766,7 +737,6 @@ class MutationEnvReportTests:
         assert (received[0].env, response.env_withheld) == ({}, [])
 
     def test_run_request_dump_excludes_env(self, tmp_path: Path) -> None:
-        """[tier-1/unit] CliMutationRunRequest.model_dump: key 'env' is absent."""
         request = CliMutationRunRequest(
             worktree_path=tmp_path,
             prompt="p",
@@ -782,7 +752,7 @@ class RejectedPatchSaveTests:
     def test_too_many_files_rejection_leaves_patch_that_applies_to_baseline(
         self, git_repo: Path, tmp_path: Path
     ) -> None:
-        """[tier-1/integration] CliDirectMutationAdapter.invoke: max_files=1 with a tracked edit, an untracked file and a binary file saves destination, resets the worktree to baseline, and 'git apply' of the patch recreates all three."""
+        """Save the patch, reset to baseline and make git apply recreate the tracked, untracked and binary edits."""
         expected = {"README.md": b"# Test Repo\nagent edit\n", "new.txt": b"fresh\n", "image.png": bytes(range(256))}
 
         def _write(request: CliMutationRunRequest) -> CliMutationOutcome:
@@ -813,7 +783,6 @@ class RejectedPatchSaveTests:
     def test_every_gate_status_saves_then_discards(
         self, git_repo: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, status: PatchApplyStatus
     ) -> None:
-        """[tier-1/unit] CliDirectMutationAdapter.invoke: validate_request_patch patched to return each non-CHECKED_OK status yields PROVIDER_ERROR, response.rejected_patch_path == str(destination), destination exists, and the agent's file is gone from the worktree."""
         monkeypatch.setattr(
             "dovo.core.agents.cli_mutation.validate_request_patch",
             lambda request, diff: PatchApplyResult(status=status, errors=["gate said no"]),
@@ -830,7 +799,6 @@ class RejectedPatchSaveTests:
         assert not (git_repo / "agent.txt").exists()
 
     def test_saved_rejection_errors_are_gate_error_then_discarded_line(self, git_repo: Path, tmp_path: Path) -> None:
-        """[tier-1/integration] CliDirectMutationAdapter.invoke: a 2-file edit with max_files=1 returns errors == ['Patch touches 2 files; max_files is 1.', f'Discarded edit saved to {destination}.']."""
         destination = tmp_path / "rejected" / "code_attempt_1.patch"
 
         response = UnitTestAdapter(run_fn=_fake_run(edits={"a.txt": "1\n", "b.txt": "2\n"})).invoke(
@@ -844,7 +812,6 @@ class RejectedPatchCaptureFailureTests:
     def test_unwritable_destination_keeps_edits_and_reports_could_not_save(
         self, git_repo: Path, tmp_path: Path
     ) -> None:
-        """[tier-1/integration] CliDirectMutationAdapter.invoke: a destination under a regular file with max_files=1 and a 2-file edit returns PROVIDER_ERROR, both files still contain the agent's text, rejected_patch_path is None, and errors == ['Patch touches 2 files; max_files is 1.', 'Could not save the rejected edit (<reason>); the worktree was left unchanged.']."""
         blocker = tmp_path / "blocker"
         blocker.write_text("file", encoding="utf-8")
         destination = blocker / "code_attempt_1.patch"
@@ -863,7 +830,6 @@ class RejectedPatchCaptureFailureTests:
         assert (git_repo / "b.txt").read_text(encoding="utf-8") == "2\n"
 
     def test_missing_destination_reports_no_session_storage_and_keeps_edits(self, git_repo: Path) -> None:
-        """[tier-1/integration] CliDirectMutationAdapter.invoke: an AgentRequest with rejected_patch_destination None and a gate rejection returns errors ending 'Could not save the rejected edit (no session storage directory is available); the worktree was left unchanged.' and the edited files remain."""
         response = UnitTestAdapter(run_fn=_fake_run(edits={"a.txt": "1\n", "b.txt": "2\n"})).invoke(
             _gated_request(git_repo, None)
         )
@@ -880,7 +846,6 @@ class RejectedPatchContentTests:
     def test_saved_patch_keeps_secret_looking_text_unredacted_and_response_never_contains_it(
         self, git_repo: Path, tmp_path: Path
     ) -> None:
-        """[tier-1/integration] CliDirectMutationAdapter.invoke: an edit writing 'API_KEY=sk-test-123' rejected by max_files=1 leaves that exact text in the saved patch, and the response's errors, raw_text and rejected_patch_path do not contain it."""
         destination = tmp_path / "rejected" / "code_attempt_1.patch"
 
         response = UnitTestAdapter(run_fn=_fake_run(edits={"a.txt": "API_KEY=sk-test-123\n", "b.txt": "2\n"})).invoke(
@@ -896,7 +861,6 @@ class RejectedPatchDiscardOrderTests:
     def test_empty_capture_discards_without_a_patch_or_path(
         self, git_repo: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """[tier-1/unit] CliDirectMutationAdapter.invoke: save_rejected_patch patched to return None yields errors == ['Patch touches 2 files; max_files is 1.'], rejected_patch_path None, and the worktree reset to baseline."""
         monkeypatch.setattr("dovo.core.agents.cli_mutation.save_rejected_patch", lambda *args, **kwargs: None)
         destination = tmp_path / "rejected" / "code_attempt_1.patch"
 
@@ -912,7 +876,6 @@ class RejectedPatchDiscardOrderTests:
     def test_discard_failure_after_save_reports_rejected_line_and_keeps_path(
         self, git_repo: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """[tier-1/integration] CliDirectMutationAdapter.invoke: discard_since patched to raise MutationGitError('git reset failed: index locked') returns errors == ['Agent provider error (AGENT_PROVIDER_ERROR): Failed to discard rejected worktree edit: git reset failed: index locked', 'Patch touches 2 files; max_files is 1.', f'Rejected edit saved to {destination}.'] and rejected_patch_path == str(destination)."""
 
         def _fail_discard(*args: object, **kwargs: object) -> None:
             raise MutationGitError("git reset failed: index locked")
@@ -961,7 +924,6 @@ def _mapped(*targets: str) -> ProgressMapper:
 class ForwardLineTests:
     @pytest.mark.parametrize("stream_name", [pytest.param("stdout", id="stdout"), pytest.param("stderr", id="stderr")])
     def test_callback_tags_each_line_with_stream_name(self, stream_name: str) -> None:
-        """[tier-1/unit] forward_line: with an on_line recorder, the returned callback delivers 'a' then 'b' as [(stream_name, 'a'), (stream_name, 'b')]."""
         received: list[tuple[str, str]] = []
         callback = forward_line(stream_name, lambda name, line: received.append((name, line)))
         assert callback is not None
@@ -972,19 +934,16 @@ class ForwardLineTests:
         assert received == [(stream_name, "a"), (stream_name, "b")]
 
     def test_none_on_line_returns_none(self) -> None:
-        """[tier-1/unit] forward_line: on_line None returns None."""
         assert forward_line("stdout", None) is None
 
 
 class ForwardStdoutTests:
     def test_neither_callback_set_returns_none(self, tmp_path: Path) -> None:
-        """[tier-1/unit] forward_stdout: request with on_line None and on_progress None returns None."""
         request = _request(tmp_path)
 
         assert forward_stdout(request) is None
 
     def test_on_line_only_tags_stdout_and_never_calls_mapper(self, tmp_path: Path) -> None:
-        """[tier-1/unit] forward_stdout: on_line set and on_progress None delivers [('stdout', 'o1')] and the mapper recorder has zero calls."""
         received: list[tuple[str, str]] = []
         mapper_calls: list[str] = []
 
@@ -1006,7 +965,6 @@ class ForwardStdoutTests:
         assert mapper_calls == []
 
     def test_on_progress_only_delivers_mapped_items_in_order(self, tmp_path: Path) -> None:
-        """[tier-1/unit] forward_stdout: on_progress set and on_line None returns a callback, and a mapper returning (AgentProgress(kind=READ, target='a'), AgentProgress(kind=READ, target='b')) makes on_progress receive exactly those two in order, with the mapper called as mapper(line, worktree_path=tmp_path)."""
         progress: list[AgentProgress] = []
         mapper_calls: list[tuple[str, Path]] = []
 
@@ -1027,7 +985,6 @@ class ForwardStdoutTests:
         assert mapper_calls == [("line", tmp_path)]
 
     def test_none_progress_mapper_delivers_lines_without_progress(self, tmp_path: Path) -> None:
-        """[tier-1/unit] forward_stdout: a request with on_line and on_progress set and progress_mapper None returns a callback; one line yields on_line [('stdout', line)], zero on_progress calls and no exception."""
         received: list[tuple[str, str]] = []
         progress: list[AgentProgress] = []
         request = _request(
@@ -1044,7 +1001,6 @@ class ForwardStdoutTests:
         assert progress == []
 
     def test_both_callbacks_deliver_raw_line_and_progress(self, tmp_path: Path) -> None:
-        """[tier-1/unit] forward_stdout: with both set, one line yields on_line [('stdout', line)] and on_progress [mapped item]."""
         received: list[tuple[str, str]] = []
         progress: list[AgentProgress] = []
         request = _request(
@@ -1066,7 +1022,6 @@ class ForwardStdoutTests:
         [pytest.param("mapper", id="mapper-raises"), pytest.param("on_progress", id="on-progress-raises")],
     )
     def test_callback_failure_is_dropped_and_raw_line_still_delivered(self, tmp_path: Path, failing: str) -> None:
-        """[tier-1/unit] forward_stdout: a mapper or on_progress raising RuntimeError does not propagate from the callback, and on_line still receives [('stdout', line)]."""
         received: list[tuple[str, str]] = []
 
         def raising_mapper(line: str, *, worktree_path: Path) -> tuple[AgentProgress, ...]:
@@ -1093,7 +1048,6 @@ class RunCliProcessTests:
     def test_completed_process_is_returned_with_request_derived_spawn_arguments(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """[tier-1/unit] run_cli_process: FakeAgentRunner at dovo.core.agents.cli_mutation.stream_isolated_process returning stdout b'out' makes the call return a CompletedProcess with stdout b'out', and runner.last_call equals cmd, cwd=worktree_path, the passed env, input_data=b'hi', timeout_seconds=3."""
         runner = FakeAgentRunner().returning(stdout=b"out")
         monkeypatch.setattr("dovo.core.agents.cli_mutation.stream_isolated_process", runner)
         request = _request(tmp_path)
@@ -1109,7 +1063,6 @@ class RunCliProcessTests:
         )
 
     def test_stream_callbacks_reach_the_runner(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        """[tier-1/unit] run_cli_process: StreamingAgentRunner replaying stdout 'o1' and stderr 'e1' makes request.on_line receive [('stdout', 'o1'), ('stderr', 'e1')] and the mapper's item reach request.on_progress."""
         runner = StreamingAgentRunner(stdout_lines=["o1"], stderr_lines=["e1"], completed_stdout=b"")
         monkeypatch.setattr("dovo.core.agents.cli_mutation.stream_isolated_process", runner)
         received: list[tuple[str, str]] = []
@@ -1129,7 +1082,6 @@ class RunCliProcessTests:
     def test_request_without_callbacks_passes_no_stream_callbacks(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """[tier-1/unit] run_cli_process: a request with no callbacks gives the runner on_stdout_line None and on_stderr_line None."""
         runner = StreamingAgentRunner(stdout_lines=[], stderr_lines=[], completed_stdout=b"")
         monkeypatch.setattr("dovo.core.agents.cli_mutation.stream_isolated_process", runner)
 
@@ -1160,7 +1112,6 @@ class RunCliProcessTests:
     def test_spawn_failure_returns_terminal_outcome(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, raised: Exception, expected: CliMutationOutcome
     ) -> None:
-        """[tier-1/unit] run_cli_process: a runner raising TimeoutExpired returns status 'timeout'; FileNotFoundError('tool') with binary='tool' and install_hint='install tool' returns the not-installed error naming both; any other OSError returns its text."""
         monkeypatch.setattr("dovo.core.agents.cli_mutation.stream_isolated_process", FakeAgentRunner().raising(raised))
         request = _request(tmp_path)
 
@@ -1171,7 +1122,6 @@ class RunCliProcessTests:
 
 class DecodeOutputTests:
     def test_valid_bytes_decode_to_text(self) -> None:
-        """[tier-1/unit] decode_output: CompletedProcess(stdout=b'out', stderr=b'err') returns ('out', 'err')."""
         completed = subprocess.CompletedProcess(args=["x"], returncode=0, stdout=b"out", stderr=b"err")
 
         assert decode_output(completed) == ("out", "err")
@@ -1186,7 +1136,6 @@ class DecodeOutputTests:
     def test_undecodable_or_missing_streams_never_raise(
         self, stdout: bytes | None, stderr: bytes | None, expected: tuple[str, str]
     ) -> None:
-        """[tier-1/unit] decode_output: invalid UTF-8 bytes become U+FFFD and None streams become '', without raising."""
         completed = subprocess.CompletedProcess(args=["x"], returncode=0, stdout=stdout, stderr=stderr)
 
         assert decode_output(completed) == expected
@@ -1201,9 +1150,7 @@ class UnknownOptionDetailTests:
         ],
     )
     def test_unknown_option_stderr_returns_adapter_detail(self, stderr_text: str) -> None:
-        """[tier-1/unit] unknown_option_detail: stderr containing 'unknown option' in any case returns the passed detail unchanged."""
         assert unknown_option_detail(stderr_text, "update it") == "update it"
 
     def test_unrelated_stderr_returns_none(self) -> None:
-        """[tier-1/unit] unknown_option_detail: stderr 'some other failure' returns None."""
         assert unknown_option_detail("some other failure", "update it") is None

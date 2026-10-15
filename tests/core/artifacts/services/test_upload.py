@@ -48,7 +48,6 @@ class UploadServiceTests:
     def test_publish_artifact_no_matching_files_returns_no_matching_files_status(
         self, tmp_path: Path, artifacts_repository: ArtifactsRepository
     ) -> None:
-        """[tier-1/unit] publish_artifact: glob matching zero files returns NO_MATCHING_FILES with the ARTIFACT_NOT_PRODUCED text and creates no directory or DB row."""
         worktree_path = tmp_path / "worktree"
         worktree_path.mkdir()
         artifacts_dir = tmp_path / "artifacts"
@@ -63,7 +62,6 @@ class UploadServiceTests:
     def test_publish_artifact_writes_manifest_and_db_row(
         self, tmp_path: Path, artifacts_repository: ArtifactsRepository
     ) -> None:
-        """[tier-1/unit] publish_artifact: matching files are copied to <session_id>/<name>/1/, manifest.json lists each file's size, and an ArtifactRecord row points at that directory."""
         worktree_path = _worktree_with_wheel(tmp_path)
         artifacts_dir = tmp_path / "artifacts"
 
@@ -90,7 +88,6 @@ class UploadServiceTests:
     def test_publish_artifact_copy_failure_returns_error_status(
         self, tmp_path: Path, artifacts_repository: ArtifactsRepository, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """[tier-1/unit] publish_artifact: an OSError raised while copying a matched file returns ArtifactUploadStatus.ERROR with the OSError message in errors, and creates no DB row."""
         worktree_path = _worktree_with_wheel(tmp_path)
         artifacts_dir = tmp_path / "artifacts"
 
@@ -108,7 +105,6 @@ class UploadServiceTests:
     def test_publish_artifact_twice_creates_revisions_one_and_two_leaving_first_untouched(
         self, tmp_path: Path, artifacts_repository: ArtifactsRepository
     ) -> None:
-        """[tier-1/integration] publish_artifact: two publishes yield revision 1 then 2, each directory has its own manifest.json, and revision 1's bytes are unchanged by the second publish."""
         worktree_path = _worktree_with_wheel(tmp_path, b"first")
         artifacts_dir = tmp_path / "artifacts"
         first = _publish(worktree_path, artifacts_dir, artifacts_repository)
@@ -130,7 +126,6 @@ class UploadServiceTests:
     def test_publish_artifact_lost_revision_race_takes_next_revision(
         self, tmp_path: Path, artifacts_repository: ArtifactsRepository, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """[tier-1/integration] publish_artifact: a competing row for revision 1 inserted after next_revision() was read makes this publish land as revision 2 with both rows present."""
         worktree_path = _worktree_with_wheel(tmp_path)
         artifacts_dir = tmp_path / "artifacts"
         real_next_revision = artifacts_repository.next_revision
@@ -165,7 +160,6 @@ class UploadServiceTests:
     def test_publish_artifact_exhausted_revision_claims_returns_error_status(
         self, tmp_path: Path, artifacts_repository: ArtifactsRepository, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """[tier-1/unit] publish_artifact: every claim colliding with an existing row returns ERROR 'Could not allocate a revision' and leaves no staging directory."""
         worktree_path = _worktree_with_wheel(tmp_path)
         artifacts_dir = tmp_path / "artifacts"
         _publish(worktree_path, artifacts_dir, artifacts_repository)
@@ -180,7 +174,6 @@ class UploadServiceTests:
     def test_publish_artifact_move_failure_removes_claimed_row(
         self, tmp_path: Path, artifacts_repository: ArtifactsRepository, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """[tier-1/integration] publish_artifact: a rename raising OSError returns ERROR, leaves no DB row and no .tmp-* directory."""
         worktree_path = _worktree_with_wheel(tmp_path)
         artifacts_dir = tmp_path / "artifacts"
 
@@ -199,7 +192,6 @@ class UploadServiceTests:
     def test_publish_artifact_records_digest_and_provenance_in_row_and_manifest(
         self, tmp_path: Path, artifacts_repository: ArtifactsRepository
     ) -> None:
-        """[tier-1/integration] publish_artifact: provenance(step_id='plan', attempt=3, loop_iteration=2) lands identically in the ArtifactRecord and the on-disk manifest.json, with revision 1 and the same digest."""
         worktree_path = _worktree_with_wheel(tmp_path)
         artifacts_dir = tmp_path / "artifacts"
         provenance = ArtifactProvenance(step_id="plan", attempt=3, loop_iteration=2)

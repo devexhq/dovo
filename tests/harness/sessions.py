@@ -126,7 +126,7 @@ def seed_paused_session(
     auto_apply: bool = False,
     agent: str | None = None,
 ) -> SessionRecord:
-    """Write and snapshot a catalog blueprint, initialize its state, complete steps before paused_step_id, and PAUSE that leaf on a failed attempt."""
+    """Seed a session whose earlier steps completed and whose paused_step_id leaf is PAUSED on a failed attempt."""
     seed_new_session(
         paths,
         sessions,
@@ -187,7 +187,11 @@ def seed_failed_session(
     failed_step_id: str,
     rejected_patch_path: str | None = None,
 ) -> SessionRecord:
-    """Seed a session whose steps before failed_step_id completed and whose failed_step_id attempt failed (exit 1, error_message SEEDED_FAILURE, followed by a 'Discarded edit saved to' line when rejected_patch_path is given), saved with run_status=FAILED."""
+    """Seed a session whose earlier steps completed and whose failed_step_id attempt failed, saved FAILED.
+
+    The failed attempt has exit 1 and error_message SEEDED_FAILURE,
+    followed by a 'Discarded edit saved to' line when rejected_patch_path is given.
+    """
     seed_new_session(paths, sessions, session_id=session_id, steps=steps)
     store = SessionStateStore(sessions, paths, session_id)
     state = store.load().state
@@ -231,7 +235,7 @@ def seed_paused_ask_session(
     session_id: str,
     steps: list[dict[str, object]],
 ) -> SessionRecord:
-    """Seed a session and run it with no interaction prompter, leaving it PAUSED at its first ask step with a stored pending_ask."""
+    """Seed and run a session with no prompter, leaving it PAUSED at its first ask with a stored pending_ask."""
     seed_new_session(paths, sessions, session_id=session_id, steps=steps)
     session_tmp_dir = paths.tmp_dir / session_id
     (session_tmp_dir / "steps").mkdir(parents=True, exist_ok=True)

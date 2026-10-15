@@ -57,7 +57,6 @@ class ArtifactsRepositoryTests:
     """Contract tests for ArtifactsRepository CRUD and project scoping."""
 
     def test_create_duplicate_revision_raises_value_error(self, db_path: Path, db_engine: Engine) -> None:
-        """[tier-1/unit] ArtifactsRepository.create: a second create() for the same (session_id, name, revision) raises ValueError and the first row is unchanged."""
         repo = ArtifactsRepository(db_path=db_path, db_engine=db_engine, project_id="proj-a")
         _create(repo, "wf_1", "dist", "/tmp/artifacts/wf_1/dist/1", digest="first")
 
@@ -69,7 +68,6 @@ class ArtifactsRepositoryTests:
         assert (stored.path, stored.digest) == (Path("/tmp/artifacts/wf_1/dist/1"), "first")
 
     def test_next_revision_and_get_resolve_latest(self, db_path: Path, db_engine: Engine) -> None:
-        """[tier-1/unit] ArtifactsRepository.next_revision/get: empty -> 1; after revisions 1 and 2, next_revision == 3, get(name) is revision 2, get(name, revision=1) is revision 1, get(name, revision=9) is None."""
         repo = ArtifactsRepository(db_path=db_path, db_engine=db_engine, project_id="proj-a")
         assert repo.next_revision("wf_1", "dist") == 1
         _create(repo, "wf_1", "dist", "/tmp/dist/1", revision=1)
@@ -84,7 +82,6 @@ class ArtifactsRepositoryTests:
         assert repo.get("wf_1", "dist", revision=9) is None
 
     def test_list_returns_one_row_per_revision_newest_first(self, db_path: Path, db_engine: Engine) -> None:
-        """[tier-1/unit] ArtifactsRepository.list: revisions 1 and 2 of one name come back as two rows, revision 2 first; delete(..., revision=1) removes only that row."""
         repo = ArtifactsRepository(db_path=db_path, db_engine=db_engine, project_id="proj-a")
         _create(repo, "wf_1", "dist", "/tmp/dist/1", revision=1)
         _create(repo, "wf_1", "dist", "/tmp/dist/2", revision=2)
@@ -95,7 +92,6 @@ class ArtifactsRepositoryTests:
         assert repo.delete("wf_1", "dist", 1) is False
 
     def test_list_filters_by_session_and_scopes_to_project_id(self, db_path: Path, db_engine: Engine) -> None:
-        """[tier-1/unit] ArtifactsRepository.list: passing session_id returns only that session's rows; rows from a different project_id are never returned."""
         repo_a = ArtifactsRepository(db_path=db_path, db_engine=db_engine, project_id="proj-a")
         repo_b = ArtifactsRepository(db_path=db_path, db_engine=db_engine, project_id="proj-b")
         _create(repo_a, "wf_1", "dist", "/tmp/a/dist")
@@ -106,7 +102,6 @@ class ArtifactsRepositoryTests:
         assert {record.session_id for record in repo_b.list()} == {"wf_1"}
 
     def test_list_expired_excludes_null_and_future_expires_at(self, db_path: Path, db_engine: Engine) -> None:
-        """[tier-1/unit] ArtifactsRepository.list_expired: a row with expires_at=None and a row with a future expires_at are both excluded; only past-expires_at rows are returned."""
         repo = ArtifactsRepository(db_path=db_path, db_engine=db_engine, project_id="proj-a")
         _create(repo, "wf_1", "never-expires", "/tmp/a")
         _create(repo, "wf_1", "future", "/tmp/b", expires_at="2999-01-01 00:00:00")

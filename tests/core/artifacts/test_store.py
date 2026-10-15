@@ -35,7 +35,6 @@ class ArtifactStoreTests:
     def test_publish_records_the_bundle_under_the_store_session(
         self, tmp_path: Path, artifacts_paths: WorkspacePaths, artifacts_repository: ArtifactsRepository
     ) -> None:
-        """[tier-1/integration] ArtifactStore.publish: store bound to 'wf_1' publishing 'plan' -> artifacts_repository.get('wf_1', 'plan') has revision 1 and no row exists for any other session."""
         store = ArtifactStore(Artifacts(artifacts_paths, artifacts_repository), "wf_1")
 
         _publish(store, _worktree(tmp_path, "plan"))
@@ -48,7 +47,6 @@ class ArtifactStoreTests:
     def test_publish_with_no_matching_files_returns_no_matching_files_status(
         self, tmp_path: Path, artifacts_paths: WorkspacePaths, artifacts_repository: ArtifactsRepository
     ) -> None:
-        """[tier-1/unit] ArtifactStore.publish: a glob matching nothing -> ArtifactUploadStatus.NO_MATCHING_FILES and no row for 'wf_1'."""
         store = ArtifactStore(Artifacts(artifacts_paths, artifacts_repository), "wf_1")
 
         result = store.publish(
@@ -74,7 +72,6 @@ class ArtifactStoreTests:
         artifacts_paths: WorkspacePaths,
         artifacts_repository: ArtifactsRepository,
     ) -> None:
-        """[tier-1/integration] ArtifactStore.download: store bound to 'wf_1'; session_id=None extracts the 'wf_1' bundle, session_id='wf_other' extracts the 'wf_other' bundle into dest."""
         artifacts = Artifacts(artifacts_paths, artifacts_repository)
         _publish(ArtifactStore(artifacts, "wf_1"), _worktree(tmp_path, "mine"))
         _publish(ArtifactStore(artifacts, "wf_other"), _worktree(tmp_path, "other"))
@@ -88,7 +85,6 @@ class ArtifactStoreTests:
     def test_download_from_session_without_artifact_returns_not_found_for_that_session(
         self, tmp_path: Path, artifacts_paths: WorkspacePaths, artifacts_repository: ArtifactsRepository
     ) -> None:
-        """[tier-1/unit] ArtifactStore.download: session_id='wf_other' with nothing published -> ArtifactDownloadResult.status == NOT_FOUND and session_id == 'wf_other'."""
         store = ArtifactStore(Artifacts(artifacts_paths, artifacts_repository), "wf_1")
 
         result = store.download(name="plan", dest=tmp_path / "out", session_id="wf_other")
@@ -99,7 +95,6 @@ class ArtifactStoreTests:
     def test_resolve_references_sees_only_the_store_session(
         self, tmp_path: Path, artifacts_paths: WorkspacePaths, artifacts_repository: ArtifactsRepository
     ) -> None:
-        """[tier-1/integration] ArtifactStore.resolve_references: 'plan' published in 'wf_1' (rev 2) and 'wf_other' (rev 5); store 'wf_1' resolving {'plan': {'revision'}} -> references == {'plan': {'revision': '2'}}; {'ghost': {'revision'}} -> references == {}."""
         artifacts = Artifacts(artifacts_paths, artifacts_repository)
         store = ArtifactStore(artifacts, "wf_1")
         other = ArtifactStore(artifacts, "wf_other")

@@ -13,7 +13,6 @@ class BlueprintDocumentNormalizationTests:
     """Unit tests verifying blueprint document default normalization contracts."""
 
     def test_blueprint_defaults_missing_name_from_file_stem(self, tmp_path: Path) -> None:
-        """Blueprint loaded without explicit 'name' inherits catalog key / file stem."""
         blueprints_dir = tmp_path / ".dovo" / "catalog" / "blueprints"
         blueprints_dir.mkdir(parents=True, exist_ok=True)
         save_project_identity(tmp_path / ".dovo" / "project.json", generate_project_identity())
@@ -31,7 +30,6 @@ class BlueprintDocumentNormalizationTests:
         assert step.run == "ruff check ."
 
     def test_blueprint_normalizes_null_description_and_summary_to_empty(self) -> None:
-        """Blueprint normalizes JSON/YAML null description and summary to empty strings."""
         definition = BlueprintDefinition.from_document(
             {"name": "ship", "description": None, "summary": None},
             key="ship",

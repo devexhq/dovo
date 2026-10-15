@@ -90,10 +90,8 @@ class StepStartFormatterTests:
         case: FormatterCase[StepStartEvent, StepStartEvent],
         expected_payload: dict[str, Any],
     ) -> None:
-        """Verify to_json_serializable matches the published wire format dict."""
         assert_json_payload_matches_published_shape(StepStartFormatter, case.data, expected_payload)
 
     @pytest.mark.parametrize("case", STEP_START_CASES)
     def test_rich_render_shows_every_view_value(self, case: FormatterCase[StepStartEvent, StepStartEvent]) -> None:
-        """Verify that all non-null semantic view model values reach the Rich renderable output."""
         assert_rich_render_shows_every_view_value(StepStartFormatter, case.data, case.render_expectations)

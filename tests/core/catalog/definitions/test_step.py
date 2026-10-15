@@ -17,10 +17,7 @@ from dovo.core.catalog.exceptions import AskStepInvalidError
 
 
 class StepDefinitionArtifactsFieldTests:
-    """[tier-1/unit] StepDefinition.artifacts: default, validation, and type=internal shape."""
-
     def test_artifacts_field_defaults_to_empty_list(self) -> None:
-        """[tier-1/unit] StepDefinition: a step with no artifacts: key parses with artifacts == []."""
         step = StepDefinition(id="s1", type=StepType.COMMAND, command="echo hi")
 
         assert step.artifacts == []
@@ -33,7 +30,6 @@ class StepDefinitionArtifactsFieldTests:
         ],
     )
     def test_artifacts_field_rejects_missing_name_or_path(self, artifacts_payload: list[dict[str, str]]) -> None:
-        """[tier-1/unit] StepDefinition: an artifacts: entry missing name or path raises a pydantic ValidationError."""
         with pytest.raises(ValidationError):
             StepDefinition(
                 id="s1",
@@ -43,14 +39,12 @@ class StepDefinitionArtifactsFieldTests:
             )
 
     def test_internal_type_without_command_raises_validation_error(self) -> None:
-        """[tier-1/unit] StepDefinition: type=internal with no command string raises a pydantic ValidationError."""
         with pytest.raises(ValidationError):
             StepDefinition(id="s1", type=StepType.INTERNAL)
 
 
 class StepDefinitionMaxFilesTests:
     def test_agent_max_files_accepts_positive_integer(self) -> None:
-        """[tier-1/unit] StepDefinition: type=agent with max_files=1 validates and preserves max_files == 1."""
         step = StepDefinition(id="s1", type=StepType.AGENT, prompt="go", max_files=1)
 
         assert step.max_files == 1
@@ -66,20 +60,16 @@ class StepDefinitionMaxFilesTests:
         ],
     )
     def test_non_agent_max_files_raises_validation_error(self, payload: dict[str, object]) -> None:
-        """[tier-1/unit] StepDefinition: run, ask, command, script, and internal max_files each raise ValidationError naming max_files."""
         with pytest.raises(ValidationError, match="max_files"):
             StepDefinition.model_validate({"id": "s1", "max_files": 3, **payload})
 
     @pytest.mark.parametrize("value", [pytest.param(0, id="zero"), pytest.param(-1, id="negative")])
     def test_non_positive_max_files_raises_validation_error(self, value: int) -> None:
-        """[tier-1/unit] StepDefinition: agent max_files of 0 or -1 raises ValidationError naming max_files."""
         with pytest.raises(ValidationError, match="max_files"):
             StepDefinition.model_validate({"id": "s1", "type": "agent", "prompt": "go", "max_files": value})
 
 
 class ArtifactPublishSpecTests:
-    """[tier-1/unit] ArtifactPublishSpec: the required flag."""
-
     @pytest.mark.parametrize(
         ("payload", "expected"),
         [
@@ -88,25 +78,21 @@ class ArtifactPublishSpecTests:
         ],
     )
     def test_required_flag_value(self, payload: dict[str, bool], expected: bool) -> None:
-        """[tier-1/unit] ArtifactPublishSpec: required defaults to True and accepts False."""
         spec = ArtifactPublishSpec.model_validate({"name": "plan", "path": "PLAN.md", **payload})
 
         assert spec.required is expected
 
     def test_required_rejects_non_boolean_in_strict_mode(self) -> None:
-        """[tier-1/unit] ArtifactPublishSpec: required='no' raises ValidationError (strict)."""
         with pytest.raises(ValidationError):
             ArtifactPublishSpec.model_validate({"name": "plan", "path": "PLAN.md", "required": "no"})
 
 
 class StepToolsContractTests:
     def test_legacy_string_list_raises_with_migration_message(self) -> None:
-        """[tier-1/unit] StepDefinition.model_validate: tools=['shell'] raises ValidationError containing LEGACY_TOOLS_MESSAGE."""
         with pytest.raises(ValidationError, match=LEGACY_TOOLS_MESSAGE):
             StepDefinition.model_validate({"id": "s", "type": "agent", "prompt": "p", "tools": ["shell"]})
 
     def test_omitted_tools_is_none_and_unset_while_empty_object_is_set_empty_policy(self) -> None:
-        """[tier-1/unit] StepDefinition: omitted -> tools is None and 'tools' not in model_fields_set; tools={} -> ToolPolicy() and 'tools' in model_fields_set."""
         omitted = StepDefinition.model_validate({"id": "s", "type": "agent", "prompt": "p"})
         explicit = StepDefinition.model_validate({"id": "s", "type": "agent", "prompt": "p", "tools": {}})
 
@@ -114,7 +100,6 @@ class StepToolsContractTests:
         assert (explicit.tools, "tools" in explicit.model_fields_set) == (ToolPolicy(), True)
 
     def test_run_step_with_empty_tools_object_is_rejected_but_omitted_is_accepted(self) -> None:
-        """[tier-1/unit] StepDefinition: run with tools={} raises ValidationError naming 'tools'; run without tools validates."""
         assert StepDefinition.model_validate({"id": "s", "run": "r"}).run == "r"
         with pytest.raises(ValidationError, match="tools"):
             StepDefinition.model_validate({"id": "s", "run": "r", "tools": {}})
@@ -140,10 +125,7 @@ def _option(value: str, **overrides: object) -> dict[str, object]:
 
 
 class StepAskShapeTests:
-    """[tier-1/unit] StepDefinition: `type: ask` shape rules."""
-
     def test_ask_without_interaction_is_rejected(self) -> None:
-        """[tier-1/unit] StepDefinition: {id: a, type: ask} raises AskStepInvalidError "Step 'a': 'type: ask' requires 'interaction'."."""
         assert _ask_error({"id": "a", "type": "ask"}) == "Step 'a': 'type: ask' requires 'interaction'."
 
     @pytest.mark.parametrize(
@@ -163,7 +145,6 @@ class StepAskShapeTests:
     def test_ask_with_incompatible_fields_names_them_in_declaration_order(
         self, fields: dict[str, object], expected: str
     ) -> None:
-        """[tier-1/unit] StepDefinition: run/uses/command/prompt/script_path/tools/artifacts/assert combinations name the conflicting fields in that order."""
         message = _ask_error({"id": "a", "type": "ask", "interaction": _confirm(), **fields})
 
         assert message == f"Step 'a': 'type: ask' cannot be combined with {expected}."
@@ -178,7 +159,6 @@ class StepAskShapeTests:
         ],
     )
     def test_interaction_on_non_ask_step_is_rejected(self, step_fields: dict[str, object]) -> None:
-        """[tier-1/unit] StepDefinition: command, agent, script and run steps carrying `interaction` are rejected."""
         message = _ask_error({"id": "a", "interaction": _confirm(), **step_fields})
 
         assert message == "Step 'a': 'interaction' is only valid with 'type: ask'."
@@ -255,7 +235,6 @@ class StepAskShapeTests:
     def test_option_count_and_source_rules_reject_invalid_modes(
         self, interaction: dict[str, object], expected_error: str
     ) -> None:
-        """[tier-1/unit] interaction_spec_errors: option counts, source exclusivity and text-mode rules each yield their exact message."""
         spec = InteractionSpec.model_validate(interaction)
 
         assert interaction_spec_errors(spec) == [expected_error]
@@ -290,7 +269,6 @@ class StepAskShapeTests:
     def test_option_field_rules_reject_invalid_options(
         self, mode: str, option: dict[str, object], expected_error: str
     ) -> None:
-        """[tier-1/unit] interaction_spec_errors: bad value pattern, duplicate value, empty label and `fail` on multiselect each yield their exact message."""
         spec = InteractionSpec.model_validate({"mode": mode, "message": "m", "options": [_option("dup"), option]})
 
         assert expected_error in interaction_spec_errors(spec)
@@ -305,7 +283,6 @@ class StepAskShapeTests:
         ],
     )
     def test_unsafe_options_from_file_is_rejected(self, file_path: str) -> None:
-        """[tier-1/unit] interaction_spec_errors: absolute, `..` and drive-letter options_from files yield the unsafe-path message."""
         spec = InteractionSpec.model_validate(
             {
                 "mode": "multiselect",
@@ -348,7 +325,6 @@ class StepAskShapeTests:
         ],
     )
     def test_valid_interactions_load_without_normalizing_options(self, interaction: dict[str, object]) -> None:
-        """[tier-1/unit] StepDefinition: valid interactions of every mode load and leave an omitted confirm `options` as None."""
         step = StepDefinition.model_validate({"id": "a", "type": "ask", "interaction": interaction})
 
         assert step.interaction is not None

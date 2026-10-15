@@ -70,7 +70,6 @@ class WorktreeConflictExtractionTests:
         stderr_input: str,
         expected_conflicts: list[str],
     ) -> None:
-        """Extract conflicting file paths from varied git apply stderr output lines."""
         assert extract_conflicts(stderr_input) == expected_conflicts
 
 
@@ -82,7 +81,6 @@ class WorktreeApplyRollbackTests:
         worktree_workspace: Path,
         worktree_workspace_paths: WorkspacePaths,
     ) -> None:
-        """Conflict during patch application rolls back partial changes and preserves working tree."""
         db = WorktreesRepository(
             db_path=worktree_workspace_paths.database_file, project_id=worktree_workspace_paths.project_id
         )

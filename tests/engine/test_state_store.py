@@ -107,10 +107,7 @@ class _Fixture:
 
 
 class NewIterationTests:
-    """[tier-1/unit] new_iteration: the single builder for seeded and repeated loop iterations."""
-
     def test_new_iteration_is_pending_with_pending_leaf_per_body_step(self) -> None:
-        """[tier-1/unit] new_iteration: loop.do [edit, verify], number 2 -> ExecutionIterationRecord(number=2, state=PENDING, steps=[ExecutionLeafNode(id="edit"), ExecutionLeafNode(id="verify")], until_passed=None)."""
         loop = _blueprint().steps[1]
         assert isinstance(loop, LoopStepBlock)
 
@@ -124,7 +121,6 @@ class NewIterationTests:
         )
 
     def test_new_iteration_number_below_one_raises_validation_error(self) -> None:
-        """[tier-1/unit] new_iteration: number 0 raises pydantic.ValidationError."""
         loop = _blueprint().steps[1]
         assert isinstance(loop, LoopStepBlock)
 
@@ -136,7 +132,6 @@ class SessionStateStoreInitializeTests:
     """Contract tests for SessionStateStore.initialize."""
 
     def test_initialize_linear_and_loop_blueprint_builds_ordered_pending_tree(self, tmp_path: Path) -> None:
-        """[tier-1/integration] SessionStateStore.initialize: steps [setup, loop fix(do=[edit, verify], max_iterations=3, until=[...], on_max_iterations=prompt_user)] yield revision 0, nodes [setup, fix] all PENDING, and fix carries the loop config plus one iteration numbered 1 with steps [edit, verify]."""
         fixture = _Fixture(tmp_path)
 
         result = fixture.store.initialize(_blueprint(), fixture.manifest)
@@ -169,7 +164,6 @@ class SessionStateStoreInitializeTests:
         assert all(node.state == NodeState.PENDING for node in expected.nodes)
 
     def test_initialize_missing_row_returns_not_found(self, tmp_path: Path) -> None:
-        """[tier-1/integration] SessionStateStore.initialize: a session id with no session row returns NOT_FOUND with state None and writes no session.json."""
         fixture = _Fixture(tmp_path)
         store = SessionStateStore(fixture.sessions, fixture.paths, "unknown")
 
@@ -184,7 +178,6 @@ class SessionStateStoreSaveTests:
     """Contract tests for SessionStateStore.save."""
 
     def test_save_loaded_state_persists_next_revision_in_row_and_projection(self, tmp_path: Path) -> None:
-        """[tier-1/integration] SessionStateStore.save: a state loaded at revision 4 saves to revision 5 — row.execution_state_revision == 5, session.json carries revision 5, result.status is OK, result.state.revision == 5."""
         fixture = _Fixture(tmp_path)
         fixture.initialized_at(4)
         loaded = fixture.store.load()
@@ -201,7 +194,6 @@ class SessionStateStoreSaveTests:
         assert fixture.projection().revision == 5
 
     def test_save_stale_revision_returns_conflict_and_leaves_row_and_projection(self, tmp_path: Path) -> None:
-        """[tier-1/integration] SessionStateStore.save: a state at revision 4 when the row holds 5 returns REVISION_CONFLICT with state None; row JSON and session.json still carry revision 5."""
         fixture = _Fixture(tmp_path)
         stale = fixture.initialized_at(4)
         assert fixture.store.save(stale).ok
@@ -219,7 +211,6 @@ class SessionStateStoreSaveTests:
         assert fixture.projection().revision == 5
 
     def test_save_missing_row_returns_not_found(self, tmp_path: Path) -> None:
-        """[tier-1/integration] SessionStateStore.save: a session id with no session row returns NOT_FOUND and writes no session.json."""
         fixture = _Fixture(tmp_path)
         state = ExecutionStateTree(manifest=fixture.manifest)
         store = SessionStateStore(fixture.sessions, fixture.paths, "unknown")
@@ -232,7 +223,6 @@ class SessionStateStoreSaveTests:
     def test_save_projection_write_failure_keeps_database_state_and_warns(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """[tier-1/integration] SessionStateStore.save: Filesystem.atomic_write_text raising OSError still returns OK, row.execution_state_revision advanced, and result.warnings has one entry containing 'will be regenerated on the next load'."""
         fixture = _Fixture(tmp_path)
         state = fixture.initialized_at(0)
 
@@ -255,7 +245,6 @@ class SessionStateStoreSaveTests:
         assert fixture.projection().revision == 1
 
     def test_save_with_run_status_updates_lifecycle_in_same_commit(self, tmp_path: Path) -> None:
-        """[tier-1/integration] SessionStateStore.save: run_status=COMPLETED and error_message=None leaves the row COMPLETED with completed_at set alongside the new revision."""
         fixture = _Fixture(tmp_path)
         state = fixture.initialized_at(0)
 
@@ -268,7 +257,6 @@ class SessionStateStoreSaveTests:
         assert row.execution_state_revision == 1
 
     def test_save_terminal_status_writes_row_equal_lifecycle_to_session_json(self, tmp_path: Path) -> None:
-        """[tier-1/integration] SessionStateStore.save: run_status=FAILED, error_message='boom', worktree_id='dovo_1', worktree_kept=True leaves session.json.lifecycle equal to the row's status, error_message, started_at, completed_at, worktree_id, and worktree_kept, and session.json.revision == row.execution_state_revision."""
         fixture = _Fixture(tmp_path)
         state = fixture.initialized_at(0)
 
@@ -293,7 +281,6 @@ class SessionStateStoreLoadTests:
 
     @pytest.mark.parametrize("projection", ["missing", "corrupt", "older"])
     def test_load_recovers_projection_from_database(self, tmp_path: Path, projection: str) -> None:
-        """[tier-1/integration] SessionStateStore.load: a database state at revision 2 with session.json missing, containing '{not json', or carrying revision 1 returns OK and rewrites session.json to the revision 2 state."""
         fixture = _Fixture(tmp_path)
         state = fixture.initialized_at(2)
         if projection == "missing":
@@ -311,7 +298,6 @@ class SessionStateStoreLoadTests:
         assert fixture.projection() == build_session_json_payload(state, fixture.row())
 
     def test_load_newer_projection_returns_inconsistent_and_leaves_row(self, tmp_path: Path) -> None:
-        """[tier-1/integration] SessionStateStore.load: session.json at revision 3 over a row at revision 2 returns INCONSISTENT_PROJECTION with state None; the row's JSON and revision are unchanged."""
         fixture = _Fixture(tmp_path)
         state = fixture.initialized_at(2)
         before = fixture.sessions.get(SESSION_ID)
@@ -329,7 +315,6 @@ class SessionStateStoreLoadTests:
         assert after.execution_state_revision == 2
 
     def test_load_rewrites_projection_when_row_lifecycle_changed_without_revision_bump(self, tmp_path: Path) -> None:
-        """[tier-1/integration] SessionStateStore.load: after sessions.update_status(FAILED, error_message='stale') at an unchanged revision, load returns OK and session.json.lifecycle.status == FAILED with error_message 'stale'."""
         fixture = _Fixture(tmp_path)
         fixture.initialized_at(2)
         fixture.sessions.update_status(SESSION_ID, SessionStatus.FAILED, error_message="stale")
@@ -342,7 +327,6 @@ class SessionStateStoreLoadTests:
         assert lifecycle.error_message == "stale"
 
     def test_load_returns_validated_state_when_projection_matches(self, tmp_path: Path) -> None:
-        """[tier-1/integration] SessionStateStore.load: a row at revision 2 with a matching session.json returns OK with state equal to the saved tree and no warnings."""
         fixture = _Fixture(tmp_path)
         state = fixture.initialized_at(2)
 
@@ -356,7 +340,6 @@ class SessionStateStoreLoadTests:
     def test_load_corrupt_state_returns_corrupt_state_without_writing_projection(
         self, tmp_path: Path, corruption: str
     ) -> None:
-        """[tier-1/integration] SessionStateStore.load: unparseable execution_state_json, or a document whose revision differs from the column, returns CORRUPT_STATE with state None and creates no session.json."""
         fixture = _Fixture(tmp_path)
         document = (
             "{not json"
@@ -372,7 +355,6 @@ class SessionStateStoreLoadTests:
         assert not fixture.session_json.exists()
 
     def test_load_missing_snapshot_returns_missing_snapshot_naming_path(self, tmp_path: Path) -> None:
-        """[tier-1/integration] SessionStateStore.load: a manifest step whose definitions/steps/<key>.yml was deleted returns MISSING_SNAPSHOT with state None and errors[0] containing that path."""
         fixture = _Fixture(tmp_path)
         fixture.initialized_at(0)
         step_snapshot = fixture.paths.session_dir(SESSION_ID) / "definitions" / "steps" / "st.yml"
@@ -385,7 +367,6 @@ class SessionStateStoreLoadTests:
         assert str(step_snapshot) in result.errors[0]
 
     def test_load_row_without_state_returns_missing_state(self, tmp_path: Path) -> None:
-        """[tier-1/integration] SessionStateStore.load: a row whose execution_state_json is None returns MISSING_STATE with state None."""
         fixture = _Fixture(tmp_path)
 
         result = fixture.store.load()
@@ -394,7 +375,6 @@ class SessionStateStoreLoadTests:
         assert result.state is None
 
     def test_load_unknown_session_returns_not_found(self, tmp_path: Path) -> None:
-        """[tier-1/integration] SessionStateStore.load: a session id with no row returns NOT_FOUND."""
         fixture = _Fixture(tmp_path)
 
         result = SessionStateStore(fixture.sessions, fixture.paths, "unknown").load()
@@ -404,7 +384,6 @@ class SessionStateStoreLoadTests:
 
 class SessionStateStoreAgentAttemptTests:
     def test_failed_agent_attempt_roundtrips_code_and_summary_stdout(self, tmp_path: Path) -> None:
-        """[tier-1/integration] SessionStateStore.save/load: a saved failed agent attempt with exit_code 202 and stdout '{"status":"timeout","summary":null,"unfixable_reason":null,"touched_files":[]}\\n' loads with the same exit_code, byte-identical stdout, and error_message."""
         fixture = _Fixture(tmp_path)
         state = fixture.initialized_at(0)
         leaf = state.nodes[0]
@@ -439,7 +418,6 @@ class SessionStateStoreRegenerateProjectionTests:
     """Contract tests for SessionStateStore.regenerate_projection."""
 
     def test_regenerate_projection_writes_payload_json_and_returns_path(self, tmp_path: Path) -> None:
-        """[tier-1/integration] SessionStateStore.regenerate_projection: returns <session-dir>/session.json whose contents equal build_session_json_payload(state, row).model_dump_json(indent=2)."""
         fixture = _Fixture(tmp_path)
         state = ExecutionStateTree(revision=3, manifest=fixture.manifest, nodes=[ExecutionLeafNode(id="setup")])
 
@@ -453,7 +431,6 @@ class SessionStateStoreRegenerateProjectionTests:
     def test_regenerate_projection_unwritable_directory_raises_oserror(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """[tier-1/integration] SessionStateStore.regenerate_projection: Filesystem.atomic_write_text raising OSError propagates OSError to the caller."""
         fixture = _Fixture(tmp_path)
 
         def fail_write(_path: Path, _text: str) -> None:

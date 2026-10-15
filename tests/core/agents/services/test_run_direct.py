@@ -99,7 +99,6 @@ class RunDirectAttemptRequestTests:
     def test_request_carries_instruction_settings_worktree_and_timeout(
         self, git_repo: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """[tier-1/unit] run_direct_attempt: copilot settings and timeout_seconds 45 ask the factory for 'copilot' once and invoke receives the exact direct AgentRequest."""
         provider = FakeAgentProvider(_no_op())
         requested = _use_provider(monkeypatch, provider)
 
@@ -127,7 +126,6 @@ class RunDirectAttemptRequestTests:
     def test_request_carries_configured_mcp_servers_to_provider(
         self, git_repo: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """[tier-1/unit] run_direct_attempt: settings.mcp_servers {'github': stdio npx} produce a direct AgentRequest whose mcp_servers equals that mapping."""
         provider = FakeAgentProvider(_no_op())
         _use_provider(monkeypatch, provider)
         servers = {"github": McpServerDefinition(command="npx")}
@@ -143,7 +141,6 @@ class RunDirectAttemptRequestTests:
         assert [request.mcp_servers for request in provider.requests] == [servers]
 
     def test_request_carries_step_max_files_to_provider(self, git_repo: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        """[tier-1/unit] run_direct_attempt: max_files=100 produces a direct AgentRequest whose max_files is 100."""
         provider = FakeAgentProvider(_no_op())
         _use_provider(monkeypatch, provider)
 
@@ -159,7 +156,6 @@ class RunDirectAttemptRequestTests:
         assert [request.max_files for request in provider.requests] == [100]
 
     def test_unregistered_provider_returns_provider_error_attempt(self, git_repo: Path) -> None:
-        """[tier-1/unit] run_direct_attempt: provider 'unregistered' returns PROVIDER_ERROR with a diagnostic containing "Unsupported agent provider 'unregistered' (AGENT_PROVIDER_UNSUPPORTED)"."""
         attempt = _attempt(git_repo, "unregistered")
 
         assert attempt.status == AgentResponseStatus.PROVIDER_ERROR
@@ -168,7 +164,6 @@ class RunDirectAttemptRequestTests:
     def test_provider_exception_returns_provider_error_attempt(
         self, git_repo: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """[tier-1/unit] run_direct_attempt: invoke raising RuntimeError('boom') returns PROVIDER_ERROR with diagnostics == ['Agent provider error: boom']."""
 
         class _Exploding(BaseAgentProvider):
             def _invoke(self, request: AgentRequest) -> AgentResponse:
@@ -184,7 +179,6 @@ class RunDirectAttemptRequestTests:
 
 class RunDirectToolsTests:
     def test_tools_argument_lands_on_agent_request(self, git_repo: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        """[tier-2/integration] run_direct_attempt: the adapter's invoke receives AgentRequest.tools == the tools argument."""
         provider = FakeAgentProvider(_no_op())
         _use_provider(monkeypatch, provider)
         policy = ToolPolicy(allow=[ToolRule(capability=ToolCapability.SHELL, pattern="git status")])
@@ -210,7 +204,6 @@ class RunDirectAttemptSettleTests:
         raw_text: str | None,
         expected_summary: str,
     ) -> None:
-        """[tier-1/unit] run_direct_attempt: a NO_OP response returns NO_OP with summary == summary or the raw_text fallback, an unchanged working tree, and zero apply_check/apply calls."""
         _use_provider(monkeypatch, FakeAgentProvider(_no_op(summary=summary, raw_text=raw_text)))
         apply_calls = _forbid_git_apply(monkeypatch)
         before = _porcelain(git_repo)
@@ -225,7 +218,6 @@ class RunDirectAttemptSettleTests:
     def test_response_fixes_render_as_trailing_fix_diagnostic(
         self, git_repo: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """[tier-1/unit] run_direct_attempt: a TIMEOUT response with errors ["e"] and fixes ["f1", "f2"] returns TIMEOUT with diagnostics == ["e", "Fix:\n- f1\n- f2"]."""
         response = AgentResponse(status=AgentResponseStatus.TIMEOUT, errors=["e"], fixes=["f1", "f2"])
         _use_provider(monkeypatch, FakeAgentProvider(response))
 
@@ -251,7 +243,6 @@ class RunDirectAttemptDirectMutationTests:
     def test_accepted_mutation_records_sorted_touched_paths_without_reapplying(
         self, git_repo: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """[tier-1/unit] run_direct_attempt: a 'copilot'-token fake that writes b.txt and a.txt then returns PROPOSED_PATCH returns touched_files == ['a.txt', 'b.txt'] and never calls apply or apply_check."""
 
         def _write_files(request: AgentRequest) -> None:
             (request.worktree_path / "b.txt").write_text("hello\n", encoding="utf-8")
@@ -274,7 +265,6 @@ class RunDirectAttemptDirectMutationTests:
     def test_mutation_over_step_max_files_returns_provider_error_and_rolls_back(
         self, git_repo: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """[tier-1/unit] run_direct_attempt: a real CliDirectMutationAdapter subclass writing 2 files with max_files=1 returns PROVIDER_ERROR and leaves git status --porcelain empty."""
         _use_provider(monkeypatch, _EditingAdapter({"a.txt": "x\n", "b.txt": "x\n"}))
 
         context = AgentAttemptContext(rejected_patch_destination=tmp_path / "rejected" / "code_attempt_1.patch")
@@ -287,7 +277,6 @@ class RunDirectAttemptDirectMutationTests:
     def test_mutation_without_step_max_files_is_not_limited(
         self, git_repo: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """[tier-1/unit] run_direct_attempt: a real CliDirectMutationAdapter subclass writing 31 files with no max_files returns PROPOSED_PATCH with 31 touched files."""
         files = {f"f{index}.txt": "x\n" for index in range(31)}
         _use_provider(monkeypatch, _EditingAdapter(files))
 
@@ -307,7 +296,6 @@ class RunDirectAttemptDirectMutationTests:
     def test_failed_statuses_with_partial_edits_map_straight_through(
         self, git_repo: Path, monkeypatch: pytest.MonkeyPatch, status: AgentResponseStatus
     ) -> None:
-        """[tier-1/unit] run_direct_attempt: a 'copilot'-token fake leaving an edit then returning TIMEOUT/UNFIXABLE/PROVIDER_ERROR returns that status with touched_files == [] and the edit still on disk."""
 
         def _leave_edit(request: AgentRequest) -> None:
             (request.worktree_path / "partial.txt").write_text("partial\n", encoding="utf-8")
@@ -328,7 +316,6 @@ class RunDirectAttemptInvocationTests:
     def test_request_carries_invocation_and_scratch_path_only_when_supplied(
         self, git_repo: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, with_invocation: bool
     ) -> None:
-        """[tier-1/unit] run_direct_attempt: the adapter receives AgentRequest.invocation == the passed context and agent_scratch_path == context.scratch_path; invocation None yields both fields None."""
         provider = FakeAgentProvider(AgentResponse(status=AgentResponseStatus.NO_OP))
         _use_provider(monkeypatch, provider)
         invocation = AgentInvocationContext(
@@ -354,7 +341,6 @@ class RunDirectAttemptCallbackTests:
     def test_request_carries_the_context_callback_only_when_supplied(
         self, git_repo: Path, monkeypatch: pytest.MonkeyPatch, with_callback: bool
     ) -> None:
-        """[tier-1/unit] run_direct_attempt: the provider's AgentRequest.on_line is the AgentAttemptContext.on_line callable when supplied, and None when the context has none."""
         provider = FakeAgentProvider(_no_op())
         _use_provider(monkeypatch, provider)
 
@@ -369,7 +355,6 @@ class RunDirectAttemptCallbackTests:
     def test_request_carries_the_progress_callback_only_when_supplied(
         self, git_repo: Path, monkeypatch: pytest.MonkeyPatch, with_callback: bool
     ) -> None:
-        """[tier-1/unit] run_direct_attempt: the provider's AgentRequest.on_progress is the AgentAttemptContext.on_progress callable when supplied, and None when the context has none."""
         provider = FakeAgentProvider(_no_op())
         _use_provider(monkeypatch, provider)
 
@@ -385,7 +370,6 @@ class RunDirectAttemptEnvTests:
     def test_settings_env_fields_and_step_env_reach_the_agent_request(
         self, git_repo: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """[tier-1/integration] run_direct_attempt: the AgentRequest given to the adapter has env_passthrough, env_mode from settings and env, metadata_env from the arguments."""
         provider = FakeAgentProvider(_no_op())
         _use_provider(monkeypatch, provider)
         settings = _settings().model_copy(update={"env_passthrough": ["DOCKER_*"], "env_mode": "inherit"})
@@ -413,7 +397,6 @@ class RunDirectAttemptEnvTests:
     def test_response_env_withheld_is_copied_onto_the_attempt(
         self, status: AgentResponseStatus, git_repo: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """[tier-1/integration] run_direct_attempt: a NO_OP and a TIMEOUT response with env_withheld ['A'] both return an AgentAttempt with env_withheld == ['A']."""
         _use_provider(monkeypatch, FakeAgentProvider(AgentResponse(status=status, env_withheld=["A"])))
 
         assert _attempt(git_repo).env_withheld == ["A"]
@@ -421,7 +404,6 @@ class RunDirectAttemptEnvTests:
     def test_proposed_patch_response_env_withheld_is_copied_onto_the_attempt(
         self, git_repo: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """[tier-1/integration] run_direct_attempt: a PROPOSED_PATCH response with env_withheld ['A'] returns an AgentAttempt with env_withheld == ['A']."""
         response = AgentResponse(
             status=AgentResponseStatus.PROPOSED_PATCH, unified_diff=new_file_diff("a.txt", "x\n"), env_withheld=["A"]
         )
@@ -434,7 +416,6 @@ class RunDirectRejectedPatchTests:
     def test_provider_error_response_path_is_carried_onto_the_attempt(
         self, git_repo: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """[tier-1/unit] run_direct_attempt: an adapter returning PROVIDER_ERROR with rejected_patch_path '/s/rejected/code_attempt_1.patch' yields an AgentAttempt with that rejected_patch_path."""
         _use_provider(
             monkeypatch,
             FakeAgentProvider(
@@ -454,7 +435,6 @@ class RunDirectRejectedPatchTests:
     def test_context_destination_reaches_the_agent_request(
         self, git_repo: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """[tier-1/unit] run_direct_attempt: AgentAttemptContext(rejected_patch_destination=Path('/s/rejected/code_attempt_1.patch')) produces an AgentRequest with the same rejected_patch_destination."""
         provider = FakeAgentProvider(_no_op())
         _use_provider(monkeypatch, provider)
         destination = Path("/s/rejected/code_attempt_1.patch")

@@ -118,7 +118,6 @@ class RemediationTextTests:
     """Tier 4 remediation-capitalization invariant tests."""
 
     def test_all_emitted_remediation_fixes_are_capitalized(self) -> None:
-        """Ensure all remediation suggestions and fixes begin with a capital letter."""
         files = collect_python_files(SRC_ROOT)
         violations: list[str] = []
         for file_path in files:

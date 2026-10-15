@@ -1,4 +1,7 @@
-"""Tier 4 invariant: tests.core never imports cli, the sessions package layout stays flat, and retired core packages stay gone. Layer direction lives in test_layer_direction.py."""
+"""Invariants: tests.core never imports cli, the sessions layout stays flat and retired core packages stay gone.
+
+Layer direction lives in test_layer_direction.py.
+"""
 
 from __future__ import annotations
 
@@ -69,7 +72,6 @@ class ImportBoundariesTests:
     """Tier 4 layer-isolation invariant tests."""
 
     def test_tests_core_never_imports_dovo_cli(self) -> None:
-        """Ensure core tests never import from dovo.cli."""
         files = collect_python_files(CORE_TESTS_ROOT)
         violations: list[str] = []
         for file_path in files:
@@ -78,7 +80,6 @@ class ImportBoundariesTests:
         assert not violations, "Found prohibited dovo.cli imports in tests/core:\n" + "\n".join(violations)
 
     def test_banned_prefix_matches_only_on_dotted_boundary(self) -> None:
-        """[tier-4/unit] check_import_from_node: "from dovo.engine import X" is flagged for prefix "dovo.engine", while "from dovo.engineering import Y" yields no violation for the same prefix."""
         banned = ast.parse("from dovo.engine import X").body[0]
         sibling = ast.parse("from dovo.engineering import Y").body[0]
         assert isinstance(banned, ast.ImportFrom)
@@ -88,7 +89,6 @@ class ImportBoundariesTests:
         assert not check_import_from_node(sibling, "dovo.engine", Path("x.py"))
 
     def test_sessions_package_layout_is_flat(self) -> None:
-        """[tier-4/unit] src/dovo/core/sessions: direct entries are exactly __init__.py, models.py, sessions.py, services; services/ holds exactly __init__.py, read_diff.py, read_logs.py, reconcile.py; unexpected-entry list is empty."""
         assert collect_python_files(SESSIONS_ROOT)
 
         unexpected = _unexpected_entries(SESSIONS_ROOT, SESSIONS_ALLOWED_ENTRIES)
@@ -100,7 +100,6 @@ class ImportBoundariesTests:
         )
 
     def test_unexpected_entries_flags_subpackage_and_ignores_pycache(self, tmp_path: Path) -> None:
-        """[tier-4/unit] _unexpected_entries: a tmp tree containing diff/, entrypoint.py, and __pycache__/ beside allowed names -> returns exactly ['diff', 'entrypoint.py']."""
         for name in ("diff", "__pycache__", "services"):
             (tmp_path / name).mkdir()
         for name in ("entrypoint.py", "models.py"):
@@ -109,7 +108,6 @@ class ImportBoundariesTests:
         assert _unexpected_entries(tmp_path, SESSIONS_ALLOWED_ENTRIES) == ["diff", "entrypoint.py"]
 
     def test_retired_core_packages_are_gone(self) -> None:
-        """[tier-4/unit] src/dovo/core and tests/core: no directory named patch, diff, history, logs, or doctor exists; and no import under src/ or tests/ targets dovo.core.{patch,diff,history,logs,doctor}."""
         assert CORE_ROOT.is_dir()
         assert CORE_TESTS_ROOT.is_dir()
         source_files = collect_python_files(SRC_ROOT) + collect_python_files(TESTS_ROOT)

@@ -42,14 +42,10 @@ def _tree(loop_id: str = "fix", persisted_ids: list[str] | None = None) -> Execu
 
 
 class ValidateLoopStructureTests:
-    """[tier-1/unit] validate_loop_structure: report every loop id or iteration body that differs from the snapshot."""
-
     def test_matching_tree_reports_no_errors(self) -> None:
-        """[tier-1/unit] validate_loop_structure: a tree built by SessionStateStore.initialize plus one iteration matching loop.do returns []."""
         assert validate_loop_structure(_tree(), _blueprint()) == []
 
     def test_loop_node_without_loop_definition_reports_id_mismatch(self) -> None:
-        """[tier-1/unit] validate_loop_structure: a loop node id absent from the blueprint's loop definitions returns ["Loop 'ghost' does not match a loop in the run snapshot."]."""
         errors = validate_loop_structure(_tree(loop_id="ghost"), _blueprint())
 
         assert errors == ["Loop 'ghost' does not match a loop in the run snapshot."]
@@ -64,7 +60,6 @@ class ValidateLoopStructureTests:
         ],
     )
     def test_iteration_children_differing_from_body_report_step_mismatch(self, persisted_ids: list[str]) -> None:
-        """[tier-1/unit] validate_loop_structure: iteration 1 leaf ids swapped, renamed, short, or long against do [edit, verify] return ["Loop 'fix' iteration 1 steps [...] do not match the loop body ['edit', 'verify']."]."""
         errors = validate_loop_structure(_tree(persisted_ids=persisted_ids), _blueprint())
 
         assert errors == [

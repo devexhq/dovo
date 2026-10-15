@@ -18,7 +18,6 @@ class ConfigUnsetCliIntegrationTests:
     def test_config_unset_cli_removes_value_and_exits_zero(
         self, cli_runner: CliRunner, isolated_workspace: Path
     ) -> None:
-        """[tier-3/integration] dovo config unset: removing an existing value exits 0, prints the confirmation line, and deletes the key from config.json."""
         config_path = isolated_workspace / ".dovo" / "config.json"
         payload = build_default_config("demo-workspace")
         payload["agent"]["models"] = {"copilot": "gpt-4.1"}
@@ -36,7 +35,6 @@ class ConfigUnsetCliIntegrationTests:
     def test_config_unset_cli_missing_key_exits_zero_without_write(
         self, cli_runner: CliRunner, isolated_workspace: Path
     ) -> None:
-        """[tier-3/integration] dovo config unset: a non-existent key exits 0 and leaves config.json's bytes unchanged on disk."""
         config_path = isolated_workspace / ".dovo" / "config.json"
         payload = build_default_config("demo-workspace")
         Filesystem.atomic_write_json(config_path, payload)
@@ -51,7 +49,6 @@ class ConfigUnsetCliIntegrationTests:
         assert config_path.read_bytes() == before
 
     def test_config_unset_cli_schema_violation_exits_one(self, cli_runner: CliRunner, isolated_workspace: Path) -> None:
-        """[tier-3/integration] dovo config unset: removing a required key exits 1 with a Config Error panel naming CONFIG_SCHEMA_INVALID."""
         config_path = isolated_workspace / ".dovo" / "config.json"
         payload = build_default_config("demo-workspace")
         Filesystem.atomic_write_json(config_path, payload)
@@ -66,7 +63,6 @@ class ConfigUnsetCliIntegrationTests:
         assert "CONFIG_SCHEMA_INVALID" in res.stdout
 
     def test_config_unset_cli_format_json_emits_event(self, cli_runner: CliRunner, isolated_workspace: Path) -> None:
-        """[tier-3/integration] dovo config unset --format json: emits the exact ConfigUnsetResult NDJSON envelope literal."""
         config_path = isolated_workspace / ".dovo" / "config.json"
         payload = build_default_config("demo-workspace")
         payload["agent"]["models"] = {"copilot": "gpt-4.1"}

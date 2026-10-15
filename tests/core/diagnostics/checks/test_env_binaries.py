@@ -39,7 +39,6 @@ class EnvBinariesCheckTests:
     def test_execute_missing_git_binary_returns_warning(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, workspace_paths_factory: WorkspacePathsFactory
     ) -> None:
-        """[tier-1/unit] EnvBinariesCheck.execute: git absent, provider binary present, config=None -> WARNING, error_code 'DOCTOR_BINARY_MISSING', details {'missing_binaries': ['git']}."""
         provider_binary = PROVIDERS[DEFAULT_TOKEN].binary
         assert provider_binary is not None
         monkeypatch.setattr("dovo.core.diagnostics.checks.env_binaries.shutil.which", _which_only(provider_binary))
@@ -62,7 +61,6 @@ class EnvBinariesCheckTests:
         monkeypatch: pytest.MonkeyPatch,
         workspace_paths_factory: WorkspacePathsFactory,
     ) -> None:
-        """[tier-1/unit] EnvBinariesCheck.execute: provider=token, shutil.which finds everything -> OK, details {'verified_binaries': ['git'] + ([binary] if PROVIDERS[token].binary else [])}, error_code None."""
         monkeypatch.setattr("dovo.core.diagnostics.checks.env_binaries.shutil.which", lambda _name: "/usr/bin/tool")
         binary = PROVIDERS[token].binary
         context = _context_with_provider(tmp_path, token, workspace_paths_factory)
@@ -83,7 +81,6 @@ class EnvBinariesCheckTests:
         monkeypatch: pytest.MonkeyPatch,
         workspace_paths_factory: WorkspacePathsFactory,
     ) -> None:
-        """[tier-1/unit] EnvBinariesCheck.execute: provider=token with a non-None PROVIDERS[token].binary absent and git present -> WARNING, error_code 'DOCTOR_BINARY_MISSING', details {'missing_binaries': [binary]}, warnings [f"1 required binary(s) not found on PATH: {binary}."]."""
         binary = PROVIDERS[token].binary
         monkeypatch.setattr("dovo.core.diagnostics.checks.env_binaries.shutil.which", _which_only("git"))
         context = _context_with_provider(tmp_path, token, workspace_paths_factory)
@@ -100,7 +97,6 @@ class EnvBinariesCheckTests:
     def test_execute_provider_without_binary_requires_only_git(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, workspace_paths_factory: WorkspacePathsFactory
     ) -> None:
-        """[tier-1/unit] EnvBinariesCheck.execute: PROVIDERS[default] replaced via dataclasses.replace(binary=None), which() finds all -> OK, details {'verified_binaries': ['git']}."""
         monkeypatch.setitem(PROVIDERS, DEFAULT_TOKEN, dataclasses.replace(PROVIDERS[DEFAULT_TOKEN], binary=None))
         monkeypatch.setattr("dovo.core.diagnostics.checks.env_binaries.shutil.which", lambda _name: "/usr/bin/tool")
         context = _context_with_provider(tmp_path, DEFAULT_TOKEN, workspace_paths_factory)
@@ -113,7 +109,6 @@ class EnvBinariesCheckTests:
     def test_execute_provider_absent_from_registry_requires_only_git(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, workspace_paths_factory: WorkspacePathsFactory
     ) -> None:
-        """[tier-1/unit] EnvBinariesCheck.execute: default provider token deleted from PROVIDERS via monkeypatch.delitem -> OK, details {'verified_binaries': ['git']}."""
         monkeypatch.delitem(PROVIDERS, DEFAULT_TOKEN)
         monkeypatch.setattr("dovo.core.diagnostics.checks.env_binaries.shutil.which", lambda _name: "/usr/bin/tool")
         context = _context_with_provider(tmp_path, DEFAULT_TOKEN, workspace_paths_factory)

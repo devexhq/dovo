@@ -39,7 +39,6 @@ class ArtifactsTests:
     def test_publish_stores_bundle_under_given_session(
         self, tmp_path: Path, artifacts_paths: WorkspacePaths, artifacts_repository: ArtifactsRepository
     ) -> None:
-        """[tier-1/integration] Artifacts.publish: session 'wf_1', name 'plan', glob 'PLAN.md' -> ArtifactUploadResult.ok and list(session_id='wf_1') holds one 'plan' record."""
         artifacts = Artifacts(artifacts_paths, artifacts_repository)
 
         _publish_plan(artifacts, _worktree(tmp_path, {"PLAN.md": "plan"}))
@@ -49,7 +48,6 @@ class ArtifactsTests:
     def test_publish_with_no_matching_files_returns_no_matching_files_status(
         self, tmp_path: Path, artifacts_paths: WorkspacePaths, artifacts_repository: ArtifactsRepository
     ) -> None:
-        """[tier-1/unit] Artifacts.publish: glob 'PLAN.md' against an empty worktree -> ArtifactUploadResult.status == ArtifactUploadStatus.NO_MATCHING_FILES."""
         result = Artifacts(artifacts_paths, artifacts_repository).publish(
             "wf_1", "plan", "PLAN.md", worktree_path=_worktree(tmp_path, {}), provenance=ArtifactProvenance()
         )
@@ -59,7 +57,6 @@ class ArtifactsTests:
     def test_resolve_references_returns_latest_revision_fields(
         self, tmp_path: Path, artifacts_paths: WorkspacePaths, artifacts_repository: ArtifactsRepository
     ) -> None:
-        """[tier-1/integration] Artifacts.resolve_references: two publishes of 'plan' in 'wf_1' -> {'plan': {'revision'}} resolves to {'plan': {'revision': '2'}}."""
         artifacts = Artifacts(artifacts_paths, artifacts_repository)
         worktree_path = _worktree(tmp_path, {"PLAN.md": "plan"})
         _publish_plan(artifacts, worktree_path)
@@ -72,7 +69,6 @@ class ArtifactsTests:
     def test_resolve_references_content_of_multi_file_artifact_is_unavailable(
         self, tmp_path: Path, artifacts_paths: WorkspacePaths, artifacts_repository: ArtifactsRepository
     ) -> None:
-        """[tier-1/integration] Artifacts.resolve_references: {'plan': {'content'}} for a two-file artifact -> status == ArtifactReferencesStatus.CONTENT_UNAVAILABLE."""
         artifacts = Artifacts(artifacts_paths, artifacts_repository)
         _publish_plan(artifacts, _worktree(tmp_path, {"a.md": "a", "b.md": "b"}), glob="*.md")
 
@@ -94,7 +90,6 @@ class ArtifactsTests:
         artifacts_paths: WorkspacePaths,
         artifacts_repository: ArtifactsRepository,
     ) -> None:
-        """[tier-1/unit] Artifacts.prune: config=None -> status DISABLED; config.prune.remove_expired_artifacts=True -> status OK."""
         config = (
             None
             if remove_expired is None

@@ -33,7 +33,6 @@ class CatalogTemplateScaffoldingTests:
         name: str,
         expected_rel_path: Path,
     ) -> None:
-        """Create scaffolds YAML templates under .dovo/catalog/blueprints and steps."""
         catalog = Catalog(workspace_paths)
         result = catalog.create(item_type, name)
 
@@ -70,7 +69,6 @@ class CatalogProtectionTests:
     def test_catalog_delete_rejects_deletion_of_bundled_packaged_templates(
         self, workspace_paths: WorkspacePaths, template_name: str
     ) -> None:
-        """catalog.delete rejects deleting templates in the dovo/ namespace with ok=False."""
         catalog = Catalog(workspace_paths)
         result = catalog.delete(template_name)
 
@@ -95,7 +93,6 @@ class CatalogDiscoveryFallbackTests:
     def test_catalog_show_falls_back_to_bundled_template(
         self, workspace_paths: WorkspacePaths, template_name: str
     ) -> None:
-        """catalog.show falls back to bundled templates via importlib.resources."""
         catalog = Catalog(workspace_paths)
         result = catalog.show(template_name)
 
@@ -138,7 +135,6 @@ class CatalogCollisionTests:
         name: str,
         expected_rel_path: Path,
     ) -> None:
-        """catalog.create returns an error when target template already exists."""
         catalog = Catalog(workspace_paths)
         result_first = catalog.create(item_type, name)
         assert result_first.item is not None
@@ -157,7 +153,6 @@ class CatalogNamespaceSplittingTests:
     """Tests verifying namespaced identifiers split on the literal '/' boundary, not by character set."""
 
     def test_name_sharing_trailing_characters_with_namespace_resolves(self, workspace_paths: WorkspacePaths) -> None:
-        """catalog.get resolves 'dovo/run-test', whose name ends in characters ('t') also present in its 'dovo' namespace."""
         catalog = Catalog(workspace_paths)
         catalog.save(
             "dovo/run-test",
@@ -177,7 +172,6 @@ class CatalogGetTests:
     """Tests verifying multi-tier resolution precedence and duplicate-tier warnings for Catalog.get."""
 
     def test_get_returns_repo_tier_match_over_user_tier_duplicate(self, workspace_paths: WorkspacePaths) -> None:
-        """Catalog.get: same key indexed at REPO and USER tier resolves to the REPO-tagged CatalogRecord with no warning."""
         catalog = Catalog(workspace_paths)
         catalog.create(CatalogItemType.BLUEPRINT, "shared-name")
 
@@ -195,7 +189,6 @@ class CatalogGetTests:
         assert result.warnings == []
 
     def test_get_returns_user_tier_match_when_no_repo_tier_entry_exists(self, workspace_paths: WorkspacePaths) -> None:
-        """Catalog.get: key present only at USER tier resolves to that CatalogRecord tagged tier=user."""
         user_catalog_dir = resolve_global_paths(None).user_catalog_dir
         (user_catalog_dir / "steps").mkdir(parents=True, exist_ok=True)
         (user_catalog_dir / "steps" / "user-only.yml").write_text(
@@ -214,7 +207,6 @@ class CatalogDeleteTierGuardTests:
     """Tests verifying delete refuses to remove a match resolved from a non-REPO tier."""
 
     def test_delete_user_tier_match_returns_not_deletable_error(self, workspace_paths: WorkspacePaths) -> None:
-        """Catalog.delete: a USER-tier-only match returns deleted=False with a tier-specific error, and the file remains on disk."""
         user_catalog_dir = resolve_global_paths(None).user_catalog_dir
         (user_catalog_dir / "blueprints").mkdir(parents=True, exist_ok=True)
         user_file = user_catalog_dir / "blueprints" / "user-only.yml"

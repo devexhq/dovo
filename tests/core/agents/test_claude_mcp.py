@@ -30,7 +30,6 @@ class LoadUserClaudeMcpServersTests:
         content: str | None,
         expected: dict[str, dict[str, object]],
     ) -> None:
-        """[tier-1/unit] load_user_claude_mcp_servers: with CLAUDE_CONFIG_DIR at tmp_path, returns exactly the expected dict for each file content, {} for an absent or unparseable file."""
         monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path))
         if content is not None:
             (tmp_path / ".claude.json").write_text(content, encoding="utf-8")
@@ -38,7 +37,6 @@ class LoadUserClaudeMcpServersTests:
         assert load_user_claude_mcp_servers() == expected
 
     def test_load_uses_home_when_config_dir_unset(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        """[tier-1/unit] load_user_claude_mcp_servers: with CLAUDE_CONFIG_DIR unset and Path.home() at tmp_path, reads tmp_path/.claude.json."""
         monkeypatch.delenv("CLAUDE_CONFIG_DIR", raising=False)
         monkeypatch.setattr(Path, "home", lambda: tmp_path)
         (tmp_path / ".claude.json").write_text('{"mcpServers": {"github": {"command": "uvx"}}}', encoding="utf-8")

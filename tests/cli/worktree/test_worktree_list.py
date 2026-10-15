@@ -27,7 +27,6 @@ class WorktreeListCliIntegrationTests:
     def test_worktree_list_cli_empty_workspace_renders_no_worktrees(
         self, cli_runner: CliRunner, worktree_workspace: Path, dispatch_spy: list[Any]
     ) -> None:
-        """dovo worktree list against an empty workspace exits 0, reports no worktrees, and dispatches the exact empty DTO."""
         result = cli_runner.invoke(app, ["-p", str(worktree_workspace), "worktree", "list"])
 
         assert result.exit_code == 0
@@ -40,7 +39,6 @@ class WorktreeListCliIntegrationTests:
     def test_worktree_list_cli_renders_created_worktree_in_table(
         self, cli_runner: CliRunner, worktree_workspace: Path, dispatch_spy: list[Any]
     ) -> None:
-        """dovo worktree list renders a entrypoint-created worktree's session_id in the terminal table and dispatches its exact record."""
         create_result = Worktree(paths=_paths_for(worktree_workspace)).create(name="listed")
         assert create_result.session is not None
         session = create_result.session
@@ -65,7 +63,6 @@ class WorktreeListCliIntegrationTests:
     def test_worktree_list_cli_status_filter_excludes_non_matching(
         self, cli_runner: CliRunner, worktree_workspace: Path, dispatch_spy: list[Any]
     ) -> None:
-        """dovo worktree list --status merged excludes an active worktree, reports no worktrees, and dispatches an empty DTO."""
         Worktree(paths=_paths_for(worktree_workspace)).create(name="listed")
 
         result = cli_runner.invoke(app, ["-p", str(worktree_workspace), "worktree", "list", "--status", "merged"])
@@ -78,7 +75,6 @@ class WorktreeListCliIntegrationTests:
         assert len(payload.worktrees) == 0
 
     def test_worktree_list_cli_renders_json(self, cli_runner: CliRunner, worktree_workspace: Path) -> None:
-        """dovo worktree list --format json against an empty workspace emits a WorktreeListResult envelope."""
         result = cli_runner.invoke(app, ["-p", str(worktree_workspace), "worktree", "list", "--format", "json"])
 
         assert result.exit_code == 0

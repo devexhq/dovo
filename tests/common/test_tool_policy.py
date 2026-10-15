@@ -59,7 +59,6 @@ class ToolRuleContractTests:
         ],
     )
     def test_invalid_rule_raises_validation_error(self, rule: dict[str, object]) -> None:
-        """[tier-1/unit] ToolRule: each invalid rule shape raises ValidationError."""
         with pytest.raises(ValidationError):
             ToolRule.model_validate(rule)
 
@@ -82,13 +81,11 @@ class ToolRuleContractTests:
     def test_valid_string_token_rule_constructs_with_capability_enum(
         self, rule: dict[str, object], capability: ToolCapability
     ) -> None:
-        """[tier-1/unit] ToolRule.model_validate: YAML-style string tokens yield a ToolCapability member."""
         assert ToolRule.model_validate(rule).capability is capability
 
 
 class ToolPolicyContractTests:
     def test_default_policy_is_empty_and_not_allow_all(self) -> None:
-        """[tier-1/unit] ToolPolicy(): allow == [], deny == [], allow_all is False."""
         policy = ToolPolicy()
 
         assert (policy.allow, policy.deny, policy.allow_all) == ([], [], False)
@@ -101,14 +98,12 @@ class ToolPolicyContractTests:
         ],
     )
     def test_invalid_policy_raises_validation_error(self, payload: dict[str, object]) -> None:
-        """[tier-1/unit] ToolPolicy.model_validate: a non-bool allow_all or an unknown field raises ValidationError."""
         with pytest.raises(ValidationError):
             ToolPolicy.model_validate(payload)
 
 
 class ToolPolicySchemaParityTests:
     def test_workflow_and_config_schemas_share_one_tool_policy_definition(self) -> None:
-        """[tier-1/unit] workflow.json and config.json: $defs.toolPolicy and $defs.toolRule are equal dicts."""
         workflow_defs = _schema_defs("workflow.json")
         config_defs = _schema_defs("config.json")
 
@@ -116,7 +111,6 @@ class ToolPolicySchemaParityTests:
         assert workflow_defs["toolRule"] == config_defs["toolRule"]
 
     def test_schemas_accept_policy_example(self) -> None:
-        """[tier-1/unit] WORKFLOW_VALIDATOR / CONFIG_VALIDATOR: the policy example validates for step tools and agent.tools."""
         workflow = {
             "version": 1,
             "name": "w",
@@ -128,7 +122,6 @@ class ToolPolicySchemaParityTests:
         assert (_WORKFLOW_VALIDATOR.validate(workflow).errors, CONFIG_VALIDATOR.validate(config).errors) == ([], [])
 
     def test_schemas_reject_legacy_list_and_unknown_capability(self) -> None:
-        """[tier-1/unit] WORKFLOW_VALIDATOR / CONFIG_VALIDATOR: ['shell'] and an unknown capability each fail for step tools and agent.tools."""
         bad_values: list[object] = [["shell"], {"allow": [{"capability": "bogus"}]}]
         for bad in bad_values:
             workflow = {"version": 1, "name": "w", "id": "w", "steps": [{"id": "s", "uses": "x", "tools": bad}]}

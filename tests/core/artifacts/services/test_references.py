@@ -42,7 +42,6 @@ class ResolveArtifactReferencesTests:
     def test_latest_revision_values_for_requested_fields(
         self, artifacts_repository: ArtifactsRepository, tmp_path: Path
     ) -> None:
-        """[tier-1/integration] resolve_artifact_references: plan has revisions 1 and 2 -> all four fields resolve to revision 2's values."""
         _publish_plan(tmp_path, artifacts_repository, {"PLAN.md": b"first"})
         revision_dir, digest = _publish_plan(tmp_path, artifacts_repository, {"PLAN.md": b"second"})
 
@@ -58,7 +57,6 @@ class ResolveArtifactReferencesTests:
         }
 
     def test_unknown_artifact_is_absent_from_references(self, artifacts_repository: ArtifactsRepository) -> None:
-        """[tier-1/unit] resolve_artifact_references: requested {'ghost': {'digest'}} -> status OK, references == {}."""
         result = resolve_artifact_references(
             artifacts_repository, session_id=_SESSION_ID, requested={"ghost": {"digest"}}
         )
@@ -79,7 +77,6 @@ class ResolveArtifactReferencesTests:
     def test_content_unavailable_returns_classified_error(
         self, files: dict[str, bytes], reason: str, artifacts_repository: ArtifactsRepository, tmp_path: Path
     ) -> None:
-        """[tier-1/integration] resolve_artifact_references: content requested for two files / non-UTF-8 bytes / 65537 bytes -> CONTENT_UNAVAILABLE with the scenario's reason."""
         _publish_plan(tmp_path, artifacts_repository, files)
 
         result = resolve_artifact_references(
@@ -92,7 +89,6 @@ class ResolveArtifactReferencesTests:
     def test_file_exactly_65536_bytes_is_inlined(
         self, artifacts_repository: ArtifactsRepository, tmp_path: Path
     ) -> None:
-        """[tier-1/integration] resolve_artifact_references: a single 65536-byte UTF-8 file -> status OK and content equals the file text."""
         _publish_plan(tmp_path, artifacts_repository, {"big.txt": b"x" * 65536})
 
         result = resolve_artifact_references(
@@ -105,7 +101,6 @@ class ResolveArtifactReferencesTests:
     def test_unreadable_manifest_returns_classified_error(
         self, artifacts_repository: ArtifactsRepository, tmp_path: Path
     ) -> None:
-        """[tier-1/integration] resolve_artifact_references: content requested after the revision's manifest.json was deleted -> CONTENT_UNAVAILABLE with a 'cannot read file' reason."""
         revision_dir = _publish_plan(tmp_path, artifacts_repository, {"PLAN.md": b"text"})[0]
         (revision_dir / "manifest.json").unlink()
 
@@ -119,7 +114,6 @@ class ResolveArtifactReferencesTests:
         )
 
     def test_legacy_row_without_digest_renders_empty_digest(self, artifacts_repository: ArtifactsRepository) -> None:
-        """[tier-1/unit] resolve_artifact_references: a row with digest=None and digest requested -> references['plan']['digest'] == ''."""
         artifacts_repository.create(
             _SESSION_ID,
             "plan",
@@ -143,7 +137,7 @@ class ResolveArtifactReferencesTests:
     def test_dir_and_revision_resolve_even_when_content_would_fail(
         self, artifacts_repository: ArtifactsRepository, tmp_path: Path
     ) -> None:
-        """[tier-1/integration] resolve_artifact_references: a two-file artifact with only {'dir','revision'} requested -> status OK (content is not evaluated unless requested)."""
+        """Resolve only the requested 'dir' and 'revision' fields; content is not evaluated unless requested."""
         revision_dir = _publish_plan(tmp_path, artifacts_repository, {"a.md": b"a", "b.md": b"b"})[0]
 
         result = resolve_artifact_references(

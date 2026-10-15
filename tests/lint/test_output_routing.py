@@ -85,7 +85,6 @@ class OutputRoutingTests:
     """Tier 4 output-routing invariant tests."""
 
     def test_zero_direct_terminal_output_outside_dispatcher(self) -> None:
-        """Ensure print(), typer.echo(), and click.echo() only exist inside dispatcher.py."""
         all_files = collect_python_files(SRC_ROOT)
         files = [p for p in all_files if p.resolve() != DISPATCHER_PATH.resolve()]
         violations: list[str] = []

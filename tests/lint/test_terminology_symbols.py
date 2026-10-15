@@ -33,10 +33,9 @@ class TerminologySymbolTests:
     """The Terminology table may only name types that exist."""
 
     def test_terminology_table_names_at_least_one_type(self) -> None:
-        """The parser finds types in the table, so the per-type test cannot pass vacuously."""
+        """Find types in the table, so the per-type test cannot pass vacuously."""
         assert "BlueprintDefinition" in _documented_types()
 
     @pytest.mark.parametrize("type_name", [pytest.param(name, id=name) for name in _documented_types()])
     def test_documented_type_is_defined_in_source(self, type_name: str) -> None:
-        """Each backticked type in the Terminology table is a class under src/dovo."""
         assert type_name in _defined_classes()

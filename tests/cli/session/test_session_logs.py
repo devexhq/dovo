@@ -44,7 +44,6 @@ class SessionLogsCliIntegrationTests:
     def test_logs_command_exit_0_prints_run_log_events_for_valid_session(
         self, cli_runner: CliRunner, session_workspace: Path
     ) -> None:
-        """dovo session logs <session_id>: exit 0 and stdout renders every session.log event."""
         _seed_session(session_workspace)
 
         result = cli_runner.invoke(app, ["-p", str(session_workspace), "session", "logs", "sess-logs"])
@@ -57,7 +56,6 @@ class SessionLogsCliIntegrationTests:
     def test_logs_command_step_attempt_stream_tail_options_bind_to_service_call(
         self, cli_runner: CliRunner, session_workspace: Path, dispatch_spy: list[Any]
     ) -> None:
-        """dovo session logs <session_id> --step build --attempt 2 --stream stderr --tail 5: the result holds attempt 2's last five stderr lines."""
         _seed_session(session_workspace)
 
         result = cli_runner.invoke(
@@ -89,7 +87,6 @@ class SessionLogsCliIntegrationTests:
     def test_logs_command_unknown_session_exits_1_with_not_found_message(
         self, cli_runner: CliRunner, session_workspace: Path
     ) -> None:
-        """dovo session logs ghost-session: exit 1 with the not-found message."""
         result = cli_runner.invoke(app, ["-p", str(session_workspace), "session", "logs", "ghost-session"])
 
         assert result.exit_code == 1
@@ -98,7 +95,6 @@ class SessionLogsCliIntegrationTests:
         assert "Run `dovo session list`" in result.stdout
 
     def test_logs_command_format_json_matches_wire_schema(self, cli_runner: CliRunner, session_workspace: Path) -> None:
-        """dovo session logs <session_id> --format json: stdout equals the literal LogsShowResult envelope."""
         _seed_session(session_workspace)
 
         result = cli_runner.invoke(
@@ -181,7 +177,6 @@ class SessionLogsCliIntegrationTests:
         names: list[str],
         expected_line: str,
     ) -> None:
-        """[tier-3/integration] dovo session logs --step build: config environment.sensitive_variables ["DB_PIN"], DB_PIN="1234", log line "pin 1234" prints "[REDACTED:DB_PIN]", exit 0; with the name removed from config it prints "1234"."""
         monkeypatch.setenv("DB_PIN", "1234")
         session_log_dir = _seed_session(session_workspace)
         (session_log_dir / "02_pin_attempt_1.stdout.log").write_text("pin 1234\n", encoding="utf-8")
@@ -202,7 +197,6 @@ class SessionLogsLatestCliIntegrationTests:
     def test_logs_without_id_uses_latest_and_prints_latest_line(
         self, cli_runner: CliRunner, session_workspace: Path
     ) -> None:
-        """[tier-3/integration] dovo session logs --step build: two sessions -> exit 0; stdout begins "Session: <newest id> (latest)" followed by the newest session's build lines."""
         paths = initialized_workspace_paths(session_workspace)
         DovoDb(database_file=paths.database_file, project_id=paths.project_id).sessions.create(
             session_id="sess-older", blueprint_name="bp", blueprint_key="bp", status=SessionStatus.COMPLETED
@@ -216,7 +210,6 @@ class SessionLogsLatestCliIntegrationTests:
         assert "stdout-line" in result.stdout
 
     def test_logs_without_id_json_omits_latest_line(self, cli_runner: CliRunner, session_workspace: Path) -> None:
-        """[tier-3/integration] dovo session logs --format json: stdout is one LogsShowResult envelope with payload.session_id == latest id; no "(latest)" text."""
         _seed_session(session_workspace)
 
         result = cli_runner.invoke(app, ["-p", str(session_workspace), "session", "logs", "--format", "json"])
@@ -230,7 +223,6 @@ class SessionLogsLatestCliIntegrationTests:
     def test_logs_without_sessions_exits_one_with_create_session_fix(
         self, cli_runner: CliRunner, session_workspace: Path
     ) -> None:
-        """[tier-3/integration] dovo session logs: empty project -> exit 1; stdout contains "Session Not Found" and "Run `dovo run <blueprint>` to create a session"."""
         result = cli_runner.invoke(app, ["-p", str(session_workspace), "session", "logs"])
 
         assert result.exit_code == 1

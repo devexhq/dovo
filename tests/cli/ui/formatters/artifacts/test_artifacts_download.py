@@ -100,12 +100,10 @@ class ArtifactDownloadFormatterTests:
         case: FormatterCase[ArtifactDownloadResult, ArtifactDownloadResult],
         expected_payload: dict[str, Any],
     ) -> None:
-        """Verify to_json_serializable matches the published wire format dict."""
         assert_json_payload_matches_published_shape(ArtifactDownloadFormatter, case, expected_payload)
 
     @pytest.mark.parametrize("case", ARTIFACT_DOWNLOAD_CASES)
     def test_rich_render_shows_every_view_value(
         self, case: FormatterCase[ArtifactDownloadResult, ArtifactDownloadResult]
     ) -> None:
-        """Verify that all non-null semantic view model values reach the Rich renderable output."""
         assert_rich_render_shows_every_view_value(ArtifactDownloadFormatter, case, case.render_expectations)

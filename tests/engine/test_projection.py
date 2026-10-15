@@ -55,10 +55,7 @@ def _tree(*nodes: ExecutionLeafNode | ExecutionLoopNode) -> ExecutionStateTree:
 
 
 class ProjectionTests:
-    """[tier-1/unit] flatten_step_results and terminal_step_metadata: ordered projections of terminal leaves."""
-
     def test_flatten_returns_terminal_leaf_results_in_tree_order_including_loop_iterations(self) -> None:
-        """[tier-1/unit] flatten_step_results: a tree of completed leaf a, a loop with two iterations of two leaves, and ignored leaf z returns those results in that exact order."""
         loop = ExecutionLoopNode(
             id="loop",
             max_iterations=2,
@@ -93,7 +90,6 @@ class ProjectionTests:
         ]
 
     def test_flatten_excludes_pending_running_paused_and_cancelled_leaves(self) -> None:
-        """[tier-1/unit] flatten_step_results: leaves in PENDING, RUNNING, PAUSED, and CANCELLED states contribute no result; a FAILED leaf contributes its last attempt's result."""
         failed_first = _result("f", "failed", attempts=1)
         failed_last = _result("f", "failed", attempts=2)
         tree = _tree(
@@ -107,7 +103,6 @@ class ProjectionTests:
         assert flatten_step_results(tree) == [failed_last]
 
     def test_terminal_step_metadata_indexes_from_one_with_leaf_names(self) -> None:
-        """[tier-1/unit] terminal_step_metadata: two terminal leaves named "Build" and None return PreviousStepMetadata with index "1"/"2" and name "Build"/"" and their statuses."""
         tree = _tree(
             _leaf("build", NodeState.COMPLETED, [_result("build")], name="Build"),
             _leaf("lint", NodeState.FAILED, [_result("lint", "failed")]),
@@ -121,17 +116,13 @@ class ProjectionTests:
         ]
 
     def test_terminal_step_metadata_returns_empty_list_when_no_leaf_is_terminal(self) -> None:
-        """[tier-1/unit] terminal_step_metadata: a tree whose leaves are all PENDING returns []."""
         tree = _tree(_leaf("a", NodeState.PENDING), _leaf("b", NodeState.PENDING))
 
         assert terminal_step_metadata(tree) == []
 
 
 class ProjectionIterLeavesTests:
-    """[tier-1/unit] iter_leaves: every leaf in tree order, descending through loop iterations."""
-
     def test_iter_leaves_yields_top_level_and_loop_body_leaves_in_tree_order(self) -> None:
-        """[tier-1/unit] iter_leaves: tree [a, loop(iter1=[s1, s2], iter2=[s1, s2]), z] yields ids [a, s1, s2, s1, s2, z]."""
         loop = ExecutionLoopNode(
             id="loop",
             max_iterations=2,
@@ -148,10 +139,7 @@ class ProjectionIterLeavesTests:
 
 
 class IterationResultsTests:
-    """[tier-1/unit] iteration_results: terminal body results of one iteration keyed by step id."""
-
     def test_only_terminal_leaves_with_results_are_mapped_in_body_order(self) -> None:
-        """[tier-1/unit] iteration_results: leaves [completed a, ignored b, pending c, running-without-result d] return {a: result_a, b: result_b} in that order."""
         result_a = _result("a")
         result_b = _result("b", "ignored")
         iteration = ExecutionIterationRecord(
@@ -170,12 +158,9 @@ class IterationResultsTests:
 
 
 class BuildSessionJsonPayloadTests:
-    """[tier-1/unit] build_session_json_payload: the session.json projection of a state and its row."""
-
     def test_build_session_json_payload_copies_revision_manifest_nodes_and_row_lifecycle_with_flattened_results(
         self,
     ) -> None:
-        """[tier-1/unit] build_session_json_payload: a state at revision 3 with one completed leaf and a COMPLETED row yields revision 3, the same manifest and nodes, lifecycle equal to the row's status/error_message/started_at/completed_at/worktree_id/worktree_kept, and results == flatten_step_results(state)."""
         state = _tree(_leaf("a", NodeState.COMPLETED, [_result("a")])).model_copy(update={"revision": 3})
         row = SessionRecord(
             project_id="proj",

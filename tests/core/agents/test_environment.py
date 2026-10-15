@@ -78,7 +78,6 @@ class BuildAgentEnvTests:
     def test_allowlist_mode_omits_unrelated_host_name(
         self, name: str, host_env: dict[str, str], builder: AgentRequestBuilder
     ) -> None:
-        """[tier-1/unit] build_agent_env: allowlist mode with the host name set returns an env lacking it and containing PATH."""
         host_env[name] = "host-value"
 
         env = build_agent_env(COPILOT_PROVIDER_SPEC, builder.build())
@@ -89,7 +88,6 @@ class BuildAgentEnvTests:
     def test_inherit_mode_keeps_host_names_and_metadata_overrides_ambient(
         self, host_env: dict[str, str], builder: AgentRequestBuilder
     ) -> None:
-        """[tier-1/unit] build_agent_env: inherit mode keeps AWS_SECRET_ACCESS_KEY and metadata_env DOVO_STEP_ID overrides an ambient DOVO_STEP_ID."""
         host_env.update({"AWS_SECRET_ACCESS_KEY": "aws", "DOVO_STEP_ID": "ambient"})
         request = builder.with_env_mode("inherit").with_metadata_env({"DOVO_STEP_ID": "generated"}).build()
 
@@ -110,7 +108,6 @@ class BuildAgentEnvTests:
         builder: AgentRequestBuilder,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """[tier-1/unit] build_agent_env: SYSTEMROOT, WINDIR, COMSPEC, PATHEXT, USERPROFILE are in env exactly when sys.platform starts with 'win'."""
         names = ("SYSTEMROOT", "WINDIR", "COMSPEC", "PATHEXT", "USERPROFILE")
         host_env.update(dict.fromkeys(names, "win-value"))
         monkeypatch.setattr(sys, "platform", platform)
@@ -123,7 +120,6 @@ class BuildAgentEnvTests:
     def test_network_tls_tier_name_is_forwarded_in_allowlist_mode(
         self, name: str, host_env: dict[str, str], builder: AgentRequestBuilder
     ) -> None:
-        """[tier-1/unit] build_agent_env: each FR-6 name set on the host appears in env with its value."""
         host_env[name] = "network-value"
 
         env = build_agent_env(COPILOT_PROVIDER_SPEC, builder.build())
@@ -138,7 +134,6 @@ class BuildAgentEnvTests:
         builder: AgentRequestBuilder,
         invocation: AgentInvocationContext,
     ) -> None:
-        """[tier-1/unit] build_agent_env: DOVO_AGENT_SCRATCH, TMPDIR, TMP, TEMP all equal str(invocation.scratch_path) in both modes and no value equals str(control_path) or its parent."""
         host_env.update({"TMPDIR": "/ambient/tmp", "TMP": "/ambient/tmp", "TEMP": "/ambient/tmp"})
         request = builder.with_invocation(invocation).with_env_mode(mode)
 
@@ -152,7 +147,6 @@ class BuildAgentEnvTests:
     def test_request_without_invocation_keeps_ambient_tmpdir_and_no_scratch_key(
         self, host_env: dict[str, str], builder: AgentRequestBuilder
     ) -> None:
-        """[tier-1/unit] build_agent_env: with invocation None, TMPDIR is the ambient value and DOVO_AGENT_SCRATCH is absent."""
         host_env["TMPDIR"] = "/ambient/tmp"
 
         env = build_agent_env(COPILOT_PROVIDER_SPEC, builder.build())
@@ -163,7 +157,6 @@ class BuildAgentEnvTests:
     def test_literal_passthrough_forwards_present_and_omits_absent_names(
         self, host_env: dict[str, str], builder: AgentRequestBuilder
     ) -> None:
-        """[tier-1/unit] build_agent_env: ['DOCKER_CONFIG','MISSING_NAME'] forwards DOCKER_CONFIG and has no MISSING_NAME key."""
         host_env["DOCKER_CONFIG"] = "/docker"
 
         env = build_agent_env(
@@ -176,7 +169,6 @@ class BuildAgentEnvTests:
     def test_prefix_passthrough_forwards_matches_and_skips_reserved_names(
         self, host_env: dict[str, str], builder: AgentRequestBuilder
     ) -> None:
-        """[tier-1/unit] build_agent_env: ['DOCKER_*','COPILOT_*'] forwards DOCKER_HOST and DOCKER_CONTEXT and omits COPILOT_ALLOW_ALL without raising."""
         host_env.update({"DOCKER_HOST": "unix:///d.sock", "DOCKER_CONTEXT": "ctx", "COPILOT_ALLOW_ALL": "1"})
 
         env = build_agent_env(COPILOT_PROVIDER_SPEC, builder.with_env_passthrough(["DOCKER_*", "COPILOT_*"]).build())
@@ -187,7 +179,6 @@ class BuildAgentEnvTests:
     def test_step_env_overrides_base_and_passthrough_and_adds_outside_allowlist_names(
         self, host_env: dict[str, str], builder: AgentRequestBuilder
     ) -> None:
-        """[tier-1/unit] build_agent_env: step env PATH='/custom', passthrough value overridden, MY_VAR forwarded, all taking the step value."""
         host_env["DOCKER_CONFIG"] = "/host-docker"
         request = (
             builder.with_env_passthrough(["DOCKER_CONFIG"])
@@ -203,7 +194,6 @@ class BuildAgentEnvTests:
     def test_only_active_provider_credential_is_forwarded_under_winning_name(
         self, mode: AgentEnvMode, host_env: dict[str, str], builder: AgentRequestBuilder
     ) -> None:
-        """[tier-1/unit] build_agent_env: GH_TOKEN=a, GITHUB_TOKEN=b, ANTHROPIC_API_KEY=z yields GH_TOKEN == 'a' and neither GITHUB_TOKEN nor ANTHROPIC_API_KEY, in both modes."""
         host_env.update({"GH_TOKEN": "a", "GITHUB_TOKEN": "b", "ANTHROPIC_API_KEY": "z"})
         request = builder.with_env_mode(mode).build()
 
@@ -218,7 +208,6 @@ class BuildAgentEnvTests:
     def test_adapter_controls_are_stripped_in_both_modes(
         self, token: str, mode: AgentEnvMode, host_env: dict[str, str], builder: AgentRequestBuilder
     ) -> None:
-        """[tier-1/unit] build_agent_env: with every PROVIDERS[token].control_envs name set ambiently, the returned env contains none of them in allowlist and inherit modes."""
         spec = PROVIDERS[token]
         host_env.update(dict.fromkeys(spec.control_envs, "ambient"))
 
@@ -229,7 +218,6 @@ class BuildAgentEnvTests:
     def test_withheld_names_are_sorted_and_reported_in_allowlist_mode(
         self, host_env: dict[str, str], builder: AgentRequestBuilder
     ) -> None:
-        """[tier-1/unit] build_agent_env: host-only names ZED, FOO, AWS_KEY_X give env['DOVO_ENV_WITHHELD'] == 'AWS_KEY_X,FOO,ZED'."""
         host_env.update({"ZED": "1", "FOO": "2", "AWS_KEY_X": "3"})
 
         env = build_agent_env(COPILOT_PROVIDER_SPEC, builder.build())
@@ -242,7 +230,6 @@ class BuildAgentEnvTests:
     def test_no_withheld_report_when_inherit_or_nothing_withheld(
         self, mode: AgentEnvMode, host_env: dict[str, str], builder: AgentRequestBuilder
     ) -> None:
-        """[tier-1/unit] build_agent_env: DOVO_ENV_WITHHELD is absent from env, including when the host exports its own in inherit mode."""
         if mode == "inherit":
             host_env["DOVO_ENV_WITHHELD"] = "ambient"
 
@@ -253,7 +240,6 @@ class BuildAgentEnvTests:
     def test_changed_credential_passthrough_and_mode_are_seen_on_the_next_call(
         self, host_env: dict[str, str], tmp_path: Path
     ) -> None:
-        """[tier-1/unit] build_agent_env: two calls with GH_TOKEN, a passthrough value, and env_mode changed between them return the new values from the second call (NFR-2)."""
         host_env.update({"GH_TOKEN": "first", "DOCKER_CONFIG": "/one", "UNRELATED": "u"})
         first = build_agent_env(
             COPILOT_PROVIDER_SPEC,
@@ -278,19 +264,16 @@ class WithheldEnvNamesTests:
     def test_allowlist_mode_returns_sorted_host_names_missing_from_env(
         self, host_env: dict[str, str], builder: AgentRequestBuilder
     ) -> None:
-        """[tier-1/unit] withheld_env_names: allowlist mode returns the sorted host names absent from the built env."""
         host_env.update({"ZED": "1", "ALPHA": "2"})
 
         assert withheld_env_names(builder.build(), {"PATH": "/usr/bin"}) == ["ALPHA", "GH_TOKEN", "HOME", "ZED"]
 
     def test_inherit_mode_returns_no_names(self, host_env: dict[str, str], builder: AgentRequestBuilder) -> None:
-        """[tier-1/unit] withheld_env_names: inherit mode returns [] even when the env is empty."""
         assert withheld_env_names(builder.with_env_mode("inherit").build(), {}) == []
 
 
 class FormatWithheldReportTests:
     def test_report_over_limit_is_at_most_4096_characters_and_ends_with_dropped_count(self) -> None:
-        """[tier-1/unit] format_withheld_report: 1000 names of 12 characters give len(result) <= 4096 and a final ',+N more' where N equals the dropped count."""
         names = [f"NAME_{index:07d}" for index in range(1000)]
 
         report = format_withheld_report(names)
@@ -300,7 +283,6 @@ class FormatWithheldReportTests:
         assert tail == f"+{1000 - len(kept.split(','))} more"
 
     def test_report_within_limit_is_the_plain_comma_join(self) -> None:
-        """[tier-1/unit] format_withheld_report: ['A','B'] returns 'A,B'."""
         assert format_withheld_report(["A", "B"]) == "A,B"
 
 
@@ -320,7 +302,6 @@ class ValidateAgentEnvRequestTests:
     def test_reserved_name_returns_the_fixed_override_message(
         self, source: str, name: str, builder: AgentRequestBuilder, invocation: AgentInvocationContext
     ) -> None:
-        """[tier-1/unit] validate_agent_env_request: an authored invocation naming a reserved name returns "Agent environment override '<name>' conflicts with provider or Dovo controls (AGENT_ENV_OVERRIDE_INVALID). Fix: remove it from agent.env_passthrough or the agent step's env."."""
         request = builder.with_invocation(invocation).with_metadata_env({"DOVO_STEP_ID": "s"})
         request = request.with_env_passthrough([name]) if source == "passthrough" else request.with_env({name: "x"})
 
@@ -333,7 +314,6 @@ class ValidateAgentEnvRequestTests:
     def test_control_name_returns_the_fixed_override_message(
         self, source: str, spec: ProviderSpec, name: str, builder: AgentRequestBuilder
     ) -> None:
-        """[tier-1/unit] validate_agent_env_request: literal env_passthrough [name] or step env {name: 'x'} for each control name returns "Agent environment override '<name>' conflicts with provider or Dovo controls (AGENT_ENV_OVERRIDE_INVALID). Fix: remove it from agent.env_passthrough or the agent step's env."."""
         request = builder.with_env_passthrough([name]) if source == "passthrough" else builder.with_env({name: "x"})
 
         assert validate_agent_env_request(spec, request.build()) == _OVERRIDE_MESSAGE.format(name=name)
@@ -341,7 +321,6 @@ class ValidateAgentEnvRequestTests:
     def test_step_env_credential_name_is_rejected_but_passthrough_credential_name_is_allowed(
         self, builder: AgentRequestBuilder, tmp_path: Path
     ) -> None:
-        """[tier-1/unit] validate_agent_env_request: step env {'GH_TOKEN': 'x'} returns the message; env_passthrough ['GH_TOKEN'] returns None."""
         rejected = builder.with_env({"GH_TOKEN": "x"}).build()
         allowed = AgentRequestBuilder().with_worktree_path(tmp_path).with_env_passthrough(["GH_TOKEN"]).build()
 
@@ -349,11 +328,9 @@ class ValidateAgentEnvRequestTests:
         assert validate_agent_env_request(COPILOT_PROVIDER_SPEC, allowed) is None
 
     def test_scratch_names_are_not_reserved_without_an_invocation(self, builder: AgentRequestBuilder) -> None:
-        """[tier-1/unit] validate_agent_env_request: invocation None with step env TMPDIR returns None."""
         assert validate_agent_env_request(COPILOT_PROVIDER_SPEC, builder.with_env({"TMPDIR": "/t"}).build()) is None
 
     def test_prefix_pattern_matching_a_reserved_name_is_not_an_error(self, builder: AgentRequestBuilder) -> None:
-        """[tier-1/unit] validate_agent_env_request: env_passthrough ['COPILOT_*'] returns None."""
         assert (
             validate_agent_env_request(COPILOT_PROVIDER_SPEC, builder.with_env_passthrough(["COPILOT_*"]).build())
             is None
@@ -365,7 +342,6 @@ class EnvPassthroughFlagErrorTests:
         "entry", [pytest.param("DOCKER_HOST", id="literal"), pytest.param("DOCKER_*", id="prefix")]
     )
     def test_valid_entry_returns_none(self, entry: str) -> None:
-        """[tier-1/unit] env_passthrough_flag_error: a literal or single-trailing-star entry returns None."""
         assert env_passthrough_flag_error([entry]) is None
 
     @pytest.mark.parametrize(
@@ -379,7 +355,6 @@ class EnvPassthroughFlagErrorTests:
         ],
     )
     def test_invalid_entry_returns_the_fixed_message(self, entry: str) -> None:
-        """[tier-1/unit] env_passthrough_flag_error: returns "Invalid --env-passthrough value '<entry>': use a variable name or a prefix ending in a single '*'. Fix: for example --env-passthrough DOCKER_HOST or --env-passthrough 'DOCKER_*'."."""
         assert env_passthrough_flag_error(["OK", entry]) == (
             f"Invalid --env-passthrough value '{entry}': use a variable name or a prefix ending in a single '*'. "
             "Fix: for example --env-passthrough DOCKER_HOST or --env-passthrough 'DOCKER_*'."
@@ -390,7 +365,6 @@ class ForwardedEnvSecretsTests:
     def test_suffix_named_step_env_value_and_proxy_password_are_returned_with_labels(
         self, host_env: dict[str, str], builder: AgentRequestBuilder
     ) -> None:
-        """[tier-1/unit] forwarded_env_secrets: step env MY_API_KEY='abcdef123' and HTTPS_PROXY='http://u:p4ss@proxy:8080' return [('MY_API_KEY','abcdef123'), ('HTTPS_PROXY','p4ss')]."""
         host_env["HTTPS_PROXY"] = "http://u:p4ss@proxy:8080"
 
         secrets = forwarded_env_secrets(builder.with_env({"MY_API_KEY": "abcdef123"}).build())
@@ -404,7 +378,6 @@ class ForwardedEnvSecretsTests:
     def test_proxy_url_without_a_password_registers_no_secret(
         self, proxy: str, host_env: dict[str, str], builder: AgentRequestBuilder
     ) -> None:
-        """[tier-1/unit] forwarded_env_secrets: HTTPS_PROXY='http://proxy:8080' and an unparsable proxy value return []."""
         host_env["HTTPS_PROXY"] = proxy
 
         assert forwarded_env_secrets(builder.build()) == []

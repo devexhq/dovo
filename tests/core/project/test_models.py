@@ -32,7 +32,6 @@ class ProjectIdentityModelsTests:
         ],
     )
     def test_valid_slug_boundaries_create_strict_identity(self, project_id: str, display_name: str | None) -> None:
-        """ProjectIdentity retains valid boundary identifiers and UTC values."""
         identity = ProjectIdentity(
             id=project_id,
             display_name=display_name,
@@ -53,7 +52,6 @@ class ProjectIdentityModelsTests:
         ],
     )
     def test_malformed_slugs_raise_validation_error(self, project_id: str) -> None:
-        """ProjectIdentity rejects malformed length, uppercase, and spaced IDs."""
         with pytest.raises(ValidationError):
             ProjectIdentity(id=project_id, created_at=UTC_TIMESTAMP)
 
@@ -68,12 +66,10 @@ class ProjectIdentityModelsTests:
     def test_blank_display_name_or_non_utc_timestamp_raises_validation_error(
         self, display_name: str | None, created_at: datetime
     ) -> None:
-        """ProjectIdentity rejects blank display names and non-UTC timestamps."""
         with pytest.raises(ValidationError):
             ProjectIdentity(id="project-623", display_name=display_name, created_at=created_at)
 
     def test_unknown_field_raises_validation_error(self) -> None:
-        """ProjectIdentity rejects unknown fields under strict validation."""
         with pytest.raises(ValidationError):
             ProjectIdentity.model_validate(
                 {
@@ -116,7 +112,6 @@ class ProjectIdentityModelsTests:
     def test_persistence_dtos_reject_unknown_fields(
         self, dto_type: type[BaseModel], payload: dict[str, object]
     ) -> None:
-        """Persistence DTOs reject fields outside their strict schemas."""
         with pytest.raises(ValidationError):
             dto_type.model_validate({**payload, "unknown_field": "disallowed"})
 
@@ -136,6 +131,5 @@ class ProjectIdentityModelsTests:
     def test_persistence_results_inherit_empty_base_result_envelope(
         self, result: ProjectIdentityLoadResult | ProjectIdentitySaveResult
     ) -> None:
-        """Persistence result DTOs retain BaseResult's empty success envelope."""
         assert (result.errors, result.warnings, result.fixes, result.error_code) == ([], [], [], None)
         assert result.ok

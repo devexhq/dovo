@@ -57,7 +57,6 @@ class ConditionExpressionParserTests:
         expression: str,
         expected: ParsedCondition,
     ) -> None:
-        """Verify each registered operator is recognized into a ParsedCondition structure."""
         assert parse_condition_expression(expression) == expected
 
 
@@ -65,7 +64,6 @@ class ConditionExpressionValidatorTests:
     """Unit tests verifying semantic validation of until condition expressions."""
 
     def test_validate_condition_expression_detects_unknown_step_ids(self) -> None:
-        """Validation returns error diagnostic when condition references step not in known steps."""
         expression = "steps.unknown_step.exit_code == 0"
         errors = validate_condition_expression(expression, known_step_ids={"build"})
         assert errors == [

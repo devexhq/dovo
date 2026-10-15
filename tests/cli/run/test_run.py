@@ -52,7 +52,6 @@ class RunCliIntegrationTests:
     def test_run_cli_no_worktree_completes_in_place_exits_zero(
         self, cli_runner: CliRunner, run_workspace: Path
     ) -> None:
-        """dovo run --no-worktree: single-step blueprint completes in place, exit 0, 'Worktree: In-place (workspace)' in stdout."""
         write_runnable_blueprint(run_workspace, key="noop-task", steps=[{"id": "s1", "run": "true"}])
 
         result = cli_runner.invoke(app, ["-p", str(run_workspace), "run", "noop-task", "--no-worktree"])
@@ -64,7 +63,6 @@ class RunCliIntegrationTests:
     def test_run_cli_worktree_enabled_completes_in_active_worktree_exits_zero(
         self, cli_runner: CliRunner, run_workspace: Path
     ) -> None:
-        """dovo run (worktree default on): single-step blueprint completes, exit 0, 'Worktree: Active (' in stdout."""
         write_runnable_blueprint(run_workspace, key="worktree-task", steps=[{"id": "s1", "run": "true"}])
 
         result = cli_runner.invoke(app, ["-p", str(run_workspace), "run", "worktree-task"])
@@ -82,7 +80,6 @@ class RunCliIntegrationTests:
     def test_run_cli_keep_with_existing_worktree_creates_separate_worktree_exits_zero(
         self, cli_runner: CliRunner, run_workspace: Path, earlier_worktree: str
     ) -> None:
-        """[tier-3/integration] dovo run keep-task --keep: with an earlier worktree present (a prior --keep run, or one created under session id 'keep-task'), the run exits 0, its session row has worktree_id == session_id, .dovo/worktrees/<session_id> exists, branch dovo/<session_id> exists, and the earlier worktree directory is still present and distinct."""
         write_runnable_blueprint(run_workspace, key="keep-task", steps=[{"id": "s1", "run": "true"}])
         paths = _paths_for(run_workspace)
         db = DovoDb(database_file=paths.database_file, project_id=paths.project_id)
@@ -106,7 +103,6 @@ class RunCliIntegrationTests:
     def test_run_cli_keep_links_worktree_run_symlink_to_session_directory_exits_zero(
         self, cli_runner: CliRunner, run_workspace: Path
     ) -> None:
-        """[tier-3/integration] dovo run keep-task --keep: exits 0, and <paths.worktree_dir(session_id)>/.dovo/run is a symlink whose resolve() equals paths.session_dir(session_id).resolve() and contains session.json."""
         write_runnable_blueprint(run_workspace, key="keep-task", steps=[{"id": "s1", "run": "true"}])
         paths = _paths_for(run_workspace)
 
@@ -123,7 +119,6 @@ class RunCliIntegrationTests:
     def test_run_cli_no_worktree_agent_step_exits_one_with_worktree_diagnostic(
         self, cli_runner: CliRunner, run_workspace: Path
     ) -> None:
-        """[tier-3/integration] dovo run --no-worktree: a blueprint with one type: agent step exits 1 and stdout contains 'Agent steps require an active git worktree.'."""
         write_runnable_blueprint(
             run_workspace, key="agent-task", steps=[{"id": "plan", "type": "agent", "prompt": "Plan the change"}]
         )
@@ -136,7 +131,6 @@ class RunCliIntegrationTests:
     def test_run_cli_prompt_user_retry_then_succeeds_exits_zero(
         self, monkeypatch: pytest.MonkeyPatch, cli_runner: CliRunner, run_workspace: Path
     ) -> None:
-        """dovo run: on_failure=prompt_user step fed input='r\\n' retries and completes, exit 0."""
         _force_interactive(monkeypatch)
         write_runnable_blueprint(
             run_workspace,
@@ -158,7 +152,6 @@ class RunCliIntegrationTests:
     def test_run_cli_prompt_user_abort_exits_one(
         self, monkeypatch: pytest.MonkeyPatch, cli_runner: CliRunner, run_workspace: Path
     ) -> None:
-        """dovo run: on_failure=prompt_user step fed input='a\\n' aborts the run, exit 1."""
         _force_interactive(monkeypatch)
         write_runnable_blueprint(
             run_workspace,
@@ -174,7 +167,6 @@ class RunCliIntegrationTests:
     def test_run_cli_prompt_user_continue_exits_zero(
         self, monkeypatch: pytest.MonkeyPatch, cli_runner: CliRunner, run_workspace: Path
     ) -> None:
-        """dovo run: on_failure=prompt_user step fed input='c\\n' ignores the failure and completes, exit 0."""
         _force_interactive(monkeypatch)
         write_runnable_blueprint(
             run_workspace,
@@ -195,11 +187,9 @@ class RunCliIntegrationTests:
     def test_run_cli_prompt_user_keyboard_interrupt_persists_paused_state(
         self, monkeypatch: pytest.MonkeyPatch, cli_runner: CliRunner, run_workspace: Path
     ) -> None:
-        """dovo run: a KeyboardInterrupt raised from the interactive prompter after the paused state is saved sets the session record's status to PAUSED.
+        """Persist PAUSED when the interactive prompter raises KeyboardInterrupt after the paused state is saved.
 
-        `--no-tty` short-circuits to ABORT before the prompter is ever called, so PAUSED
-        is only reachable via a KeyboardInterrupt from inside an interactive prompter
-        call; the run still exits 1 since the failed-step diagnostic populates `errors`.
+        `--no-tty` aborts before any prompter call, so PAUSED is reachable only this way; the run still exits 1.
         """
         _force_interactive(monkeypatch)
         monkeypatch.setattr("builtins.input", _raise_keyboard_interrupt)
@@ -223,7 +213,6 @@ class RunCliIntegrationTests:
         assert record.status == SessionStatus.PAUSED
 
     def test_run_cli_json_format_emits_run_success_event(self, cli_runner: CliRunner, run_workspace: Path) -> None:
-        """dovo run --format json: NDJSON stream includes a RunSuccessEvent with payload.status == 'completed'."""
         write_runnable_blueprint(run_workspace, key="json-task", steps=[{"id": "s1", "run": "true"}])
 
         result = cli_runner.invoke(
@@ -239,7 +228,6 @@ class RunCliIntegrationTests:
     def test_run_cli_uninitialized_git_repo_auto_initializes_and_proceeds(
         self, cli_runner: CliRunner, git_repo: Path
     ) -> None:
-        """dovo run: git repo with no .dovo/ auto-initializes (project.json + config.json written) instead of raising ConfigLoadError."""
         result = cli_runner.invoke(app, ["-p", str(git_repo), "run", "missing-workflow", "--no-worktree"])
 
         assert "CONFIG_NOT_FOUND" not in result.stdout
@@ -252,11 +240,10 @@ class RunCliIntegrationTests:
         run_workspace: Path,
         write_tier_config: Callable[[ConfigTier, dict[str, Any] | str], Path],
     ) -> None:
-        """[tier-3/integration] dovo run: malformed User tier config.json → exit 1, tier-attributed message in stdout, no unhandled exception.
+        """Exit 1 with a tier-attributed Config Error panel when the User tier config.json is malformed.
 
-        The top-level callback resolves config before the run handler ever runs, so a
-        tier failure here renders a "Config Error" panel, not "Run Failed" — the blueprint
-        is never resolved and no session row is ever inserted.
+        The top-level callback resolves config before the run handler runs,
+        so no blueprint is resolved and no session row is inserted.
         """
         ui_dispatcher.set_output_format("terminal")
         write_tier_config(ConfigTier.USER, "{not valid json")
@@ -273,7 +260,6 @@ class RunCliIntegrationTests:
         run_workspace: Path,
         write_tier_config: Callable[[ConfigTier, dict[str, Any] | str], Path],
     ) -> None:
-        """[tier-3/integration] dovo config show --format json's merged history.save_attempt_logs equals the value dovo run applies: with the User tier disabling it, config show reports false and the run writes no attempt logs."""
         write_runnable_blueprint(run_workspace, key="identical-config-task", steps=[{"id": "s1", "run": "true"}])
         write_tier_config(ConfigTier.USER, {"history": {"save_attempt_logs": False}})
         Filesystem.atomic_write_json(
@@ -297,7 +283,6 @@ class RunCliIntegrationTests:
     def test_run_cli_writes_definitions_snapshot_for_uses_step(
         self, cli_runner: CliRunner, run_workspace: Path
     ) -> None:
-        """dovo run --no-worktree --session-id snap-1: a blueprint with one uses: step writes .../sessions/snap-1/definitions/{key}.yml and .../definitions/steps/{step_key}.yml, and SessionStateStore.load().state.manifest.steps has one entry."""
         write_runnable_step(run_workspace, key="lint-check", definition={"id": "lint-check", "run": "true"})
         write_runnable_blueprint(run_workspace, key="snapshot-task", steps=[{"id": "s1", "uses": "lint-check"}])
 
@@ -348,7 +333,6 @@ class RunCliRetentionIntegrationTests:
     """Typer runner integration tests for worktree retention flags on dovo run."""
 
     def test_run_cli_keep_and_discard_together_exits_two(self, cli_runner: CliRunner, run_workspace: Path) -> None:
-        """[tier-3/integration] dovo run keep-task --keep --discard: exit 2, output contains "mutually exclusive", and no session row exists."""
         write_runnable_blueprint(run_workspace, key="keep-task", steps=[{"id": "s1", "run": "true"}])
         paths = _paths_for(run_workspace)
 
@@ -362,7 +346,6 @@ class RunCliRetentionIntegrationTests:
     def test_run_cli_failed_run_without_flags_keeps_worktree_exits_one(
         self, cli_runner: CliRunner, run_workspace: Path
     ) -> None:
-        """[tier-3/integration] dovo run failing-task: exit 1, .dovo/worktrees/<session_id> is a directory, branch dovo/<session_id> exists, and the session row has worktree_kept == True."""
         write_runnable_blueprint(run_workspace, key="failing-task", steps=[{"id": "s1", "run": "exit 1"}])
         paths = _paths_for(run_workspace)
 
@@ -377,7 +360,6 @@ class RunCliRetentionIntegrationTests:
     def test_run_cli_failed_run_with_discard_removes_worktree_exits_one(
         self, cli_runner: CliRunner, run_workspace: Path
     ) -> None:
-        """[tier-3/integration] dovo run failing-task --discard: exit 1, .dovo/worktrees/<session_id> does not exist, and the session row has worktree_kept == False and discard == True."""
         write_runnable_blueprint(run_workspace, key="failing-task", steps=[{"id": "s1", "run": "exit 1"}])
         paths = _paths_for(run_workspace)
 
@@ -390,7 +372,6 @@ class RunCliRetentionIntegrationTests:
         assert row.discard is True
 
     def test_run_cli_failed_run_prints_kept_summary_and_fix(self, cli_runner: CliRunner, run_workspace: Path) -> None:
-        """[tier-3/integration] dovo run failing-task: stdout contains "Worktree: Kept at " ending in ".dovo/worktrees/<session_id> (branch dovo/<session_id>)" and "remove it with `dovo worktree delete <session_id>`"."""
         write_runnable_blueprint(run_workspace, key="failing-task", steps=[{"id": "s1", "run": "exit 1"}])
         paths = _paths_for(run_workspace)
 
@@ -408,7 +389,6 @@ class RunCliRetentionIntegrationTests:
     def test_run_cli_second_run_after_kept_failure_hits_capacity_with_fix(
         self, cli_runner: CliRunner, tmp_path: Path
     ) -> None:
-        """[tier-3/integration] dovo run failing-task twice with worktree.max_active_worktrees == 1: the second run exits 1 and its output contains "Maximum active worktrees reached (1/1)." and "dovo worktree delete <worktree-id>"."""
         workspace = (
             WorkspaceBuilder(tmp_path / "capacity-workspace")
             .with_git()
@@ -439,7 +419,6 @@ class RunEnvFlagsCliIntegrationTests:
     def test_run_cli_env_flags_reach_the_agent_subprocess_env_and_leave_config_untouched(
         self, cli_runner: CliRunner, run_workspace: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """[tier-3/integration] dovo run: '--env-mode inherit --env-passthrough DOCKER_CONFIG' exits 0, the FakeAgentRunner env contains DOVO_TEST_UNRELATED_SECRET and DOCKER_CONFIG, and .dovo/config.json bytes are unchanged."""
         runner = _fake_copilot(monkeypatch)
         monkeypatch.setenv(_UNRELATED, "host-value")
         monkeypatch.setenv("DOCKER_CONFIG", "/docker")
@@ -473,7 +452,6 @@ class RunEnvFlagsCliIntegrationTests:
     def test_run_cli_repeated_passthrough_flags_append_to_config_entries(
         self, cli_runner: CliRunner, run_workspace: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """[tier-3/integration] dovo run: config env_passthrough ['A_HOST'] plus '--env-passthrough B_HOST --env-passthrough C_*' forwards A_HOST, B_HOST, and every C_-prefixed host name."""
         runner = _fake_copilot(monkeypatch)
         for name in ("A_HOST", "B_HOST", "C_ONE", "C_TWO", "D_HOST"):
             monkeypatch.setenv(name, "host-value")
@@ -495,7 +473,6 @@ class RunEnvFlagsCliIntegrationTests:
     def test_run_cli_config_env_mode_inherit_reaches_the_subprocess_without_flags(
         self, cli_runner: CliRunner, run_workspace: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """[tier-3/integration] dovo run: config agent.env_mode 'inherit' makes the recorded env contain DOVO_TEST_UNRELATED_SECRET."""
         runner = _fake_copilot(monkeypatch)
         monkeypatch.setenv(_UNRELATED, "host-value")
         _write_agent_blueprint(run_workspace)
@@ -516,7 +493,6 @@ class RunEnvFlagsCliIntegrationTests:
     def test_run_cli_invalid_flag_value_exits_non_zero_before_any_step_starts(
         self, flags: list[str], cli_runner: CliRunner, run_workspace: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """[tier-3/integration] dovo run: '--env-passthrough A*B' exits 1 with the fixed message and '--env-mode bogus' exits non-zero, each with no session row and no agent subprocess."""
         runner = _fake_copilot(monkeypatch)
         _write_agent_blueprint(run_workspace)
 
@@ -533,7 +509,6 @@ class RunEnvFlagsCliIntegrationTests:
     def test_run_cli_override_conflict_fails_the_agent_step_with_the_fixed_message(
         self, cli_runner: CliRunner, run_workspace: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """[tier-3/integration] dovo run: an agent step env of COPILOT_MODEL exits 1 with the AGENT_ENV_OVERRIDE_INVALID message and the FakeAgentRunner records zero calls."""
         runner = _fake_copilot(monkeypatch)
         _write_agent_blueprint(run_workspace, env={"COPILOT_MODEL": "x"})
 
@@ -547,7 +522,6 @@ class RunEnvFlagsCliIntegrationTests:
     def test_run_cli_withheld_names_emit_the_operator_line_and_session_log_event(
         self, cli_runner: CliRunner, run_workspace: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """[tier-3/integration] dovo run: an allowlist agent step prints 'Agent environment filtered: <N> variables withheld.' with N equal to the count of withheld host names and session.log holds one agent_env_filtered line."""
         runner = _fake_copilot(monkeypatch)
         monkeypatch.setenv(_UNRELATED, "host-value")
         _write_agent_blueprint(run_workspace)
@@ -572,7 +546,6 @@ class RunAgentFlagCliIntegrationTests:
     def test_run_agent_claude_reaches_the_claude_adapter_stub(
         self, cli_runner: CliRunner, run_workspace: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """[tier-3/integration] dovo run agent-task --agent claude: with ANTHROPIC_API_KEY set the step fails with output containing 'Claude Code invocation is not available' and no 'AGENT_PROVIDER_UNSUPPORTED'."""
         monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test")
         _write_agent_blueprint(run_workspace)
 
@@ -621,7 +594,6 @@ class RunAskCliIntegrationTests:
     def test_no_tty_run_pauses_at_ask_exit_zero_with_answer_hint(
         self, cli_runner: CliRunner, run_workspace: Path
     ) -> None:
-        """[tier-3/integration] dovo run ask-feature --no-tty: exits 0, prints the answer hint for prompt 'approve', and the session row is PAUSED."""
         _ask_blueprint(run_workspace)
 
         result = cli_runner.invoke(app, ["-p", str(run_workspace), "run", "ask-feature", "--no-tty", "--no-worktree"])
@@ -637,7 +609,6 @@ class RunAskCliIntegrationTests:
         assert not (run_workspace / "done.marker").exists()
 
     def test_json_format_emits_the_prompt_event_envelope(self, cli_runner: CliRunner, run_workspace: Path) -> None:
-        """[tier-3/integration] dovo run ask-feature --format json: stdout contains the PromptEvent envelope equal to the literal payload (artifact with short digest) and the run exits 0."""
         _ask_blueprint(run_workspace)
 
         result = cli_runner.invoke(

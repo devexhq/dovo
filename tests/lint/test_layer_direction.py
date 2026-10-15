@@ -100,7 +100,6 @@ class LayerDirectionTests:
 
     @pytest.mark.parametrize("rule", [pytest.param(rule, id=name) for name, rule in LAYER_RULES.items()])
     def test_package_imports_no_banned_prefix(self, rule: LayerRule) -> None:
-        """No module under the rule's root imports any of its banned prefixes."""
         files = collect_python_files(rule.root)
         assert files, f"{rule.root} contains no Python files, so the rule would pass vacuously"
 
@@ -116,7 +115,7 @@ class LayerDirectionTests:
 
     @pytest.mark.parametrize("exception", [pytest.param(item, id=item[0]) for item in sorted(LAYER_EXCEPTIONS)])
     def test_layer_exception_still_occurs(self, exception: tuple[str, str]) -> None:
-        """Every allowlisted violation still exists, so a fixed one must be removed from the list."""
+        """Require every allowlisted violation to still exist, so a fixed one is removed from the list."""
         file_path, module = exception
         found = {
             _violation_key(violation)
@@ -135,14 +134,12 @@ class LayerDirectionTests:
         ],
     )
     def test_other_core_packages_lists_siblings_but_not_itself(self, keep: str, expected: str) -> None:
-        """The derived ban list names sibling packages and excludes the package being checked."""
         banned = _other_core_packages(keep)
 
         assert expected in banned
         assert f"dovo.core.{keep}" not in banned
 
     def test_engine_modules_outside_executors_excludes_executors_itself(self) -> None:
-        """The executors ban list names engine modules but never the executors package."""
         banned = _engine_modules_outside_executors()
 
         assert "dovo.engine.coordinator" in banned

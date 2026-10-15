@@ -72,7 +72,6 @@ class DiagnosticsCoordinatorTests:
     """Unit tests for Diagnostics entrypoint coordinator."""
 
     def test_run_diagnostics_delegates_to_runner_with_registered_checks(self, tmp_path: Path) -> None:
-        """[tier-2/unit] Diagnostics.run_diagnostics: initializes context with self.path and executes checks registered in self.registry."""
         doctor = Diagnostics(_paths_for(tmp_path), registry=CheckRegistry())
         check = DummyDiagnosticCheck(check_id="test.delegation", category=CheckCategory.GIT)
         doctor.registry.register(check)
@@ -88,7 +87,6 @@ class DiagnosticsCoordinatorTests:
         assert check.captured_context.cwd == tmp_path.resolve()
 
     def test_run_diagnostics_resolves_config_when_none_provided(self, tmp_path: Path) -> None:
-        """[tier-2/unit] Diagnostics.run_diagnostics: when config is None, attempts loading config from path and attaches to DiagnosticsContext."""
         config_dir = tmp_path / ".dovo"
         config_dir.mkdir(parents=True, exist_ok=True)
         config = DovoConfig(
@@ -113,7 +111,7 @@ class DiagnosticsCoordinatorTests:
     def test_run_diagnostics_observes_user_tier_config_override(
         self, tmp_path: Path, write_tier_config: Callable[[ConfigTier, dict[str, Any] | str], Path]
     ) -> None:
-        """[tier-2/unit] Diagnostics.run_diagnostics: User tier doctor.check_git=False (absent from repo config) skips the git.repo check, proving a non-config-domain Config consumer observes a Global/User tier override."""
+        """Skip git.repo when the User tier sets doctor.check_git=False, which the repo config lacks."""
         write_tier_config(ConfigTier.USER, {"doctor": {"check_git": False}})
 
         config_dir = tmp_path / ".dovo"
@@ -133,7 +131,6 @@ class DiagnosticsCoordinatorTests:
         assert report.checks[0].message == "Check 'git.repo' skipped by configuration."
 
     def test_run_diagnostics_uses_explicit_config_when_provided(self, tmp_path: Path) -> None:
-        """[tier-2/unit] Diagnostics.run_diagnostics: when config is provided explicitly, uses it directly in DiagnosticsContext."""
         explicit_config = DovoConfig(
             version=1,
             project=ProjectConfig(name="explicit-project"),
@@ -152,7 +149,6 @@ class DiagnosticsCoordinatorTests:
         assert report.checks[0].status == CheckStatus.SKIPPED
 
     def test_run_diagnostics_propagates_category_filter(self, tmp_path: Path) -> None:
-        """[tier-2/unit] Diagnostics.run_diagnostics: category filter argument is passed to DiagnosticRunner and filters report checks."""
         doctor = Diagnostics(_paths_for(tmp_path), registry=CheckRegistry())
         git_check = DummyDiagnosticCheck(check_id="git.repo", category=CheckCategory.GIT)
         config_check = DummyDiagnosticCheck(check_id="config.schema", category=CheckCategory.CONFIG)
@@ -171,7 +167,6 @@ class DiagnosticsDefaultRegistryTests:
     """Unit tests for Diagnostics.__init__ registry default-wiring."""
 
     def test_init_without_registry_uses_default_registry_with_all_builtin_checks(self, tmp_path: Path) -> None:
-        """[tier-1/unit] Diagnostics.__init__: called with no registry argument -> self.registry has the 7 built-in checks."""
         doctor = Diagnostics(_paths_for(tmp_path))
 
         checks = doctor.registry.all()
@@ -186,7 +181,6 @@ class DiagnosticsDefaultRegistryTests:
         assert isinstance(doctor.registry.get("artifacts.integrity"), ArtifactsIntegrityCheck)
 
     def test_init_with_explicit_registry_does_not_use_default_registry(self, tmp_path: Path) -> None:
-        """[tier-1/unit] Diagnostics.__init__: called with registry=CheckRegistry() -> self.registry stays that empty instance."""
         explicit_registry = CheckRegistry()
 
         doctor = Diagnostics(_paths_for(tmp_path), registry=explicit_registry)

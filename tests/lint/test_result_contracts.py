@@ -68,7 +68,6 @@ class ResultContractsTests:
     """Tier 4 result-hierarchy invariant tests."""
 
     def test_all_result_dtos_inherit_from_base_result(self) -> None:
-        """Ensure all *Result DTO classes across src/dovo inherit from BaseResult."""
         files = collect_python_files(SRC_ROOT)
         violations: list[str] = []
         for file_path in files:

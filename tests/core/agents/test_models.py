@@ -41,7 +41,6 @@ class AgentRequestContractTests:
         ],
     )
     def test_valid_mode_payload_pairing_constructs_request(self, tmp_path: Path, mode: str, with_payload: bool) -> None:
-        """[tier-1/unit] AgentRequest: direct without payload and fix_failure/review_remediation with payload construct, keeping mode, instruction, and payload exactly as given."""
         payload = _PAYLOAD if with_payload else None
 
         request = AgentRequest.model_validate(
@@ -89,7 +88,6 @@ class AgentRequestContractTests:
     def test_invalid_pairing_or_blank_instruction_raises_validation_error(
         self, tmp_path: Path, mode: str, instruction: str, with_payload: bool, message: str
     ) -> None:
-        """[tier-1/unit] AgentRequest: blank instruction, direct with payload, and remediation modes without payload each raise ValidationError whose text contains the matching literal message."""
         with pytest.raises(ValidationError, match=message.replace(".", r"\.")):
             AgentRequest.model_validate(
                 {
@@ -105,7 +103,6 @@ class AgentRequestContractTests:
 
 class AgentDenialContractTests:
     def test_defaults_when_only_required_fields_given(self) -> None:
-        """[tier-1/unit] AgentDenial: capability defaults to None and by_rule to False."""
         denial = AgentDenial(tool="bash", message="denied")
 
         assert (denial.capability, denial.by_rule) == (None, False)
@@ -119,14 +116,12 @@ class AgentDenialContractTests:
         ],
     )
     def test_invalid_input_is_rejected(self, kwargs: dict[str, object]) -> None:
-        """[tier-1/unit] AgentDenial: unknown fields and wrongly typed values raise ValidationError."""
         with pytest.raises(ValidationError):
             AgentDenial.model_validate(kwargs)
 
 
 class AgentEnvSettingsContractTests:
     def test_resolved_settings_default_to_empty_passthrough_and_allowlist_mode(self) -> None:
-        """[tier-1/unit] ResolvedAgentSettings: omitting env fields yields env_passthrough == [] and env_mode == 'allowlist'."""
         settings = ResolvedAgentSettings(
             provider="copilot",
             model=None,
@@ -150,12 +145,10 @@ class AgentEnvSettingsContractTests:
         ],
     )
     def test_invalid_passthrough_entry_raises_validation_error(self, entry: str) -> None:
-        """[tier-1/unit] AgentEnvOverrides: each invalid entry raises pydantic.ValidationError on env_passthrough."""
         with pytest.raises(ValidationError, match="env_passthrough"):
             AgentEnvOverrides(env_passthrough=[entry])
 
     def test_request_dump_excludes_env_and_metadata_env(self, tmp_path: Path) -> None:
-        """[tier-1/unit] AgentRequest.model_dump: keys 'env' and 'metadata_env' are absent while env_passthrough and env_mode are present."""
         request = AgentRequest(
             mode="direct",
             instruction="Do it.",
@@ -178,7 +171,6 @@ class AgentEnvSettingsContractTests:
 class AgentAttemptContractTests:
     @pytest.mark.parametrize("status", list(AgentResponseStatus))
     def test_completed_is_true_only_for_proposed_patch_and_no_op(self, status: AgentResponseStatus) -> None:
-        """[tier-1/unit] AgentAttempt.completed: True for PROPOSED_PATCH and NO_OP; False for UNFIXABLE, TIMEOUT, and PROVIDER_ERROR."""
         expected = status in {AgentResponseStatus.PROPOSED_PATCH, AgentResponseStatus.NO_OP}
 
         assert AgentAttempt(status=status).completed is expected
@@ -199,7 +191,6 @@ class InvocationContextModelTests:
         ],
     )
     def test_invalid_context_fields_raise_validation_error(self, tmp_path: Path, overrides: dict[str, object]) -> None:
-        """[tier-1/unit] AgentInvocationContext: a short id, an uppercase id, a str path, or an extra field raises ValidationError."""
         fields: dict[str, object] = {
             "invocation_id": "a" * 32,
             "scratch_path": tmp_path / "scratch",
@@ -210,7 +201,6 @@ class InvocationContextModelTests:
             AgentInvocationContext.model_validate({**fields, **overrides})
 
     def test_context_is_frozen(self, tmp_path: Path) -> None:
-        """[tier-1/unit] AgentInvocationContext: assigning invocation_id on a constructed context raises ValidationError."""
         context = _context(tmp_path)
 
         with pytest.raises(ValidationError):
@@ -220,7 +210,6 @@ class InvocationContextModelTests:
         "request_kind", [pytest.param("agent", id="agent-request"), pytest.param("run", id="run-request")]
     )
     def test_invocation_is_excluded_from_both_request_dumps(self, tmp_path: Path, request_kind: str) -> None:
-        """[tier-1/unit] AgentRequest / CliMutationRunRequest: with invocation set, model_dump() and model_dump_json() contain no 'invocation' key while request.invocation is still the context."""
         context = _context(tmp_path)
         request: AgentRequest | CliMutationRunRequest
         if request_kind == "agent":
@@ -246,7 +235,6 @@ class InvocationContextModelTests:
         assert request.invocation == context
 
     def test_agent_scratch_path_must_match_the_invocation_scratch_path(self, tmp_path: Path) -> None:
-        """[tier-1/unit] AgentRequest: agent_scratch_path equal to invocation.scratch_path or None constructs; a different path raises ValidationError."""
         context = _context(tmp_path)
         base = {
             "mode": "direct",
@@ -269,7 +257,6 @@ class InvocationContextModelTests:
 
 class AgentScratchResultTests:
     def test_ok_requires_a_context(self, tmp_path: Path) -> None:
-        """[tier-1/unit] AgentScratchResult: ok is True only when a context is present; a failure result keeps its invocation_id."""
         success = AgentScratchResult(invocation_id="a" * 32, context=_context(tmp_path))
         failure = AgentScratchResult(invocation_id="a" * 32, errors=["x"], error_code="AGENT_SCRATCH_UNAVAILABLE")
 
@@ -280,7 +267,6 @@ class AgentScratchResultTests:
 
 class AgentRequestToolsContractTests:
     def test_request_requires_tools_and_resolved_settings_require_tools(self, tmp_path: Path) -> None:
-        """[tier-1/unit] AgentRequest / ResolvedAgentSettings: omitting tools raises ValidationError; a ToolPolicy round-trips through model_dump."""
         policy = ToolPolicy(allow=[ToolRule(capability=ToolCapability.SHELL, pattern="git status")])
         settings_fields: dict[str, object] = {
             "provider": "copilot",
@@ -325,7 +311,6 @@ class OnLineCallbackModelTests:
         ],
     )
     def test_on_line_is_excluded_from_dumps_but_kept_on_the_instance(self, tmp_path: Path, model_kind: str) -> None:
-        """[tier-1/unit] AgentRequest / AgentAttemptContext / CliMutationRunRequest: with on_line set, model_dump() and json.loads(model_dump_json()) contain no 'on_line' key while the instance's on_line is still the callable."""
         model: AgentRequest | AgentAttemptContext | CliMutationRunRequest
         if model_kind == "agent-request":
             model = AgentRequest(

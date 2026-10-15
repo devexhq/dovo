@@ -17,7 +17,6 @@ class ConfigSchemaCheckTests:
     def test_execute_missing_config_file_returns_not_found_failure(
         self, isolated_workspace: Path, workspace_paths_factory: WorkspacePathsFactory
     ) -> None:
-        """[tier-1/unit] ConfigSchemaCheck.execute: no .dovo/config.json -> FAILED with DOCTOR_CONFIG_NOT_FOUND."""
         check = ConfigSchemaCheck()
         context = DiagnosticsContext(cwd=isolated_workspace, paths=workspace_paths_factory(isolated_workspace, None))
 
@@ -34,7 +33,6 @@ class ConfigSchemaCheckTests:
     def test_execute_malformed_json_returns_malformed_failure(
         self, isolated_workspace: Path, workspace_paths_factory: WorkspacePathsFactory
     ) -> None:
-        """[tier-1/unit] ConfigSchemaCheck.execute: invalid JSON syntax -> FAILED with DOCTOR_CONFIG_MALFORMED."""
         config_path = isolated_workspace / ".dovo" / "config.json"
         config_path.write_text("{not valid json", encoding="utf-8")
         check = ConfigSchemaCheck()
@@ -52,7 +50,6 @@ class ConfigSchemaCheckTests:
     def test_execute_schema_invalid_payload_returns_schema_invalid_failure(
         self, isolated_workspace: Path, workspace_paths_factory: WorkspacePathsFactory
     ) -> None:
-        """[tier-1/unit] ConfigSchemaCheck.execute: valid JSON missing required sections -> FAILED with DOCTOR_CONFIG_SCHEMA_INVALID."""
         config_path = isolated_workspace / ".dovo" / "config.json"
         Filesystem.atomic_write_json(config_path, {})
         check = ConfigSchemaCheck()
@@ -71,7 +68,6 @@ class ConfigSchemaCheckTests:
     def test_execute_valid_config_returns_ok(
         self, isolated_workspace: Path, workspace_paths_factory: WorkspacePathsFactory
     ) -> None:
-        """[tier-1/unit] ConfigSchemaCheck.execute: schema-valid config.json -> OK with no errors."""
         config_path = isolated_workspace / ".dovo" / "config.json"
         Filesystem.atomic_write_json(config_path, build_default_config("demo-workspace"))
         check = ConfigSchemaCheck()
