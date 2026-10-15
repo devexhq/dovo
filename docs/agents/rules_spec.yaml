@@ -1022,12 +1022,12 @@ rules:
   category: Documentation
   domain: all
   scope: docs/, src/
-  guideline: Adhere strictly to the Terminology table in docs/agents/architecture.md. Do not conflate Task (convention - linear
-    steps only) vs Workflow (convention - also uses loop steps), Blueprint (unified document), Step, Run, Session, Worktree,
-    Checkpoint.
-  evaluation_criteria: Check doc prose and code comments for misuse of terms (e.g. calling a workflow with loops a 'task').
-  positive_example: '''Task blueprint containing only linear step definitions.'''
-  negative_example: '''Task blueprint containing a loop block.''  # by convention a task has only linear steps'
+  guideline: Adhere strictly to the Terminology table in docs/agents/architecture.md. Use only the terms it defines (Blueprint,
+    Step, Loop step, Catalog, Run, Session, Worktree, Checkpoint), and keep each to its stated meaning.
+  evaluation_criteria: Check doc prose and code comments for terms the Terminology table does not define, or defined terms used
+    outside their meaning (e.g. calling a session a 'run').
+  positive_example: '''A blueprint containing a loop step.'''
+  negative_example: '''A session executes the blueprint.''  # the act of executing is a run; the session is what it leaves behind'
   citation: docs/agents/architecture.md#terminology
 - id: DOC-008
   title: Verifiable Doc and Rule Claims

@@ -45,8 +45,7 @@ class CatalogStatusInfo(BaseModel):
     exists: bool
     catalog_dir: Path
     total_items: int
-    workflows_count: int
-    tasks_count: int
+    blueprints_count: int
     steps_count: int
     invalid_items: int
     item_names: list[str] = Field(default_factory=list)

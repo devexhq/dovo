@@ -228,7 +228,7 @@ class RunCliIntegrationTests:
     def test_run_cli_uninitialized_git_repo_auto_initializes_and_proceeds(
         self, cli_runner: CliRunner, git_repo: Path
     ) -> None:
-        result = cli_runner.invoke(app, ["-p", str(git_repo), "run", "missing-workflow", "--no-worktree"])
+        result = cli_runner.invoke(app, ["-p", str(git_repo), "run", "missing-blueprint", "--no-worktree"])
 
         assert "CONFIG_NOT_FOUND" not in result.stdout
         assert (git_repo / ".dovo" / "project.json").exists()

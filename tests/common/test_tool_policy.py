@@ -13,7 +13,7 @@ from dovo.common.schema_validation import CONFIG_VALIDATOR, SchemaValidator
 from dovo.common.tool_policy import ToolCapability, ToolPolicy, ToolRule
 
 _SCHEMA_PACKAGE = files("dovo.schemas.v1")
-_WORKFLOW_VALIDATOR = SchemaValidator(_SCHEMA_PACKAGE / "workflow.json")
+_BLUEPRINT_VALIDATOR = SchemaValidator(_SCHEMA_PACKAGE / "blueprint.json")
 
 _POLICY_EXAMPLE: dict[str, Any] = {
     "allow": [
@@ -103,15 +103,15 @@ class ToolPolicyContractTests:
 
 
 class ToolPolicySchemaParityTests:
-    def test_workflow_and_config_schemas_share_one_tool_policy_definition(self) -> None:
-        workflow_defs = _schema_defs("workflow.json")
+    def test_blueprint_and_config_schemas_share_one_tool_policy_definition(self) -> None:
+        blueprint_defs = _schema_defs("blueprint.json")
         config_defs = _schema_defs("config.json")
 
-        assert workflow_defs["toolPolicy"] == config_defs["toolPolicy"]
-        assert workflow_defs["toolRule"] == config_defs["toolRule"]
+        assert blueprint_defs["toolPolicy"] == config_defs["toolPolicy"]
+        assert blueprint_defs["toolRule"] == config_defs["toolRule"]
 
     def test_schemas_accept_policy_example(self) -> None:
-        workflow = {
+        blueprint = {
             "version": 1,
             "name": "w",
             "id": "w",
@@ -119,13 +119,13 @@ class ToolPolicySchemaParityTests:
         }
         config = {"version": 1, "project": {"name": "p"}, "agent": {"tools": _POLICY_EXAMPLE}}
 
-        assert (_WORKFLOW_VALIDATOR.validate(workflow).errors, CONFIG_VALIDATOR.validate(config).errors) == ([], [])
+        assert (_BLUEPRINT_VALIDATOR.validate(blueprint).errors, CONFIG_VALIDATOR.validate(config).errors) == ([], [])
 
     def test_schemas_reject_legacy_list_and_unknown_capability(self) -> None:
         bad_values: list[object] = [["shell"], {"allow": [{"capability": "bogus"}]}]
         for bad in bad_values:
-            workflow = {"version": 1, "name": "w", "id": "w", "steps": [{"id": "s", "uses": "x", "tools": bad}]}
+            blueprint = {"version": 1, "name": "w", "id": "w", "steps": [{"id": "s", "uses": "x", "tools": bad}]}
             config = {"version": 1, "project": {"name": "p"}, "agent": {"tools": bad}}
 
-            assert _WORKFLOW_VALIDATOR.validate(workflow).errors
+            assert _BLUEPRINT_VALIDATOR.validate(blueprint).errors
             assert CONFIG_VALIDATOR.validate(config).errors

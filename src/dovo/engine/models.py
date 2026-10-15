@@ -285,7 +285,7 @@ class RunOutcome(BaseModel):
 
 
 class BlueprintRunResult(BaseResult):
-    """Unified result for task and blueprint execution."""
+    """Result of executing a blueprint."""
 
     session_record: SessionRecord | None = None
     paused_prompt_id: str | None = None

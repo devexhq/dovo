@@ -608,8 +608,8 @@
       "severity": "SUGGESTION",
       "domain": "all",
       "scope": "docs/, src/",
-      "evaluation_criteria": "Check doc prose and code comments for misuse of terms (e.g. calling a workflow with loops a 'task').",
-      "bad_pattern": "'Task blueprint containing a loop block.'  # by convention a task has only linear steps"
+      "evaluation_criteria": "Check doc prose and code comments for terms the Terminology table does not define, or defined terms used outside their meaning (e.g. calling a session a 'run').",
+      "bad_pattern": "'A session executes the blueprint.'  # the act of executing is a run; the session is what it leaves behind"
     },
     {
       "id": "DOC-008",

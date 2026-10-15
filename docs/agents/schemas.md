@@ -21,7 +21,7 @@ Update this doc only when a contract below changes. Adding a field, enum member,
 | Registered CLI commands | `src/dovo/cli/cli.py`; user behavior in [docs/cli/](../cli/) |
 | Agent providers | `core/agents/registry.py` (`PROVIDERS`) |
 | Doctor checks | `core/diagnostics/services/registry.py` (`get_default_registry`) |
-| JSON Schemas | `src/dovo/schemas/v1/` (`config.json`, `project.json`, `workflow.json`), validated by `common/schema_validation.py` |
+| JSON Schemas | `src/dovo/schemas/v1/` (`config.json`, `project.json`, `blueprint.json`), validated by `common/schema_validation.py` |
 
 ---
 
@@ -137,6 +137,6 @@ The Copilot adapter maps each `tool.execution_start` stdout event through `map_c
 
 ## 12. JSON Schemas
 
-- `config.json` validates `.dovo/config.json` with `additionalProperties: false` throughout; `project.json` validates the project identity; `workflow.json` validates blueprint YAML.
+- `config.json` validates `.dovo/config.json` with `additionalProperties: false` throughout; `project.json` validates the project identity; `blueprint.json` validates blueprint YAML.
 - `SchemaValidator` wraps `jsonschema.Draft202012Validator` and returns a non-raising `ValidationResult(ok, errors)`.
 - Parity tests: config keys against the models in [`tests/lint/test_config_schema_parity.py`](../../tests/lint/test_config_schema_parity.py); the README command list against `cli.py` in [`tests/lint/test_readme_command_parity.py`](../../tests/lint/test_readme_command_parity.py).

@@ -231,7 +231,7 @@ Typical contents:
 | Config keys / defaults | JSON paths, default values |
 | Templates | full YAML/JSON bodies or paths to package templates |
 | Constants | filenames, workflow `name` values, error codes |
-| Paths | `.dovo/workflows/fix-tests.yml`, etc. |
+| Paths | `.dovo/catalog/blueprints/fix-tests.yml`, etc. |
 | APIs | function signatures, helper responsibilities |
 
 Use fenced code blocks for schemas, templates, and APIs. Keep template content

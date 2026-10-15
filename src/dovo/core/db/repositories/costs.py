@@ -1,4 +1,4 @@
-"""Repository managing workflow token usage and cost tracking using SQLModel."""
+"""Repository managing blueprint token usage and cost tracking using SQLModel."""
 
 from sqlalchemy import func
 from sqlmodel import select
@@ -8,7 +8,7 @@ from dovo.core.db.repositories.base import BaseRepository
 
 
 class CostsRepository(BaseRepository):
-    """Repository managing workflow token usage and cost tracking in SQLite."""
+    """Repository managing blueprint token usage and cost tracking in SQLite."""
 
     def record_token_usage(
         self,
@@ -35,7 +35,7 @@ class CostsRepository(BaseRepository):
             estimated_usd_cost=estimated_usd_cost,
         )
         with self.session() as session:
-            self._commit(session, record, "Failed to record workflow token usage")
+            self._commit(session, record, "Failed to record blueprint token usage")
             if record.id is None:
                 raise RuntimeError("Failed to retrieve generated id for CostRecord.")
             return record.id

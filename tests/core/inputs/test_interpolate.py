@@ -149,8 +149,6 @@ class InterpolateProvidersTests:
         assert [provider.namespace for provider in providers] == [
             "step",
             "blueprint",
-            "task",
-            "workflow",
             "previous_step",
             "iteration",
             "steps",

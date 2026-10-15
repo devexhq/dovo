@@ -22,16 +22,6 @@ class BlueprintBuilder:
         self._defaults: BlueprintDefaults = BlueprintDefaults()
         self._steps: list[StepDefinition | StepBuilder | LoopStepBlock] = []
 
-    @classmethod
-    def workflow(cls, name: str = "test-workflow") -> BlueprintBuilder:
-        """Create a BlueprintBuilder initialized for workflow blueprints."""
-        return cls(name=name)
-
-    @classmethod
-    def task(cls, name: str = "test-task") -> BlueprintBuilder:
-        """Create a BlueprintBuilder initialized for task blueprints."""
-        return cls(name=name)
-
     def with_name(self, name: str) -> BlueprintBuilder:
         """Set the blueprint name."""
         self._name = name

@@ -35,7 +35,7 @@ class CatalogTierDeleteError(CatalogError):
 
 
 class BlueprintNotFoundError(DefinitionNotFoundError):
-    """Raised when a blueprint name/SHA is not in the task/blueprint catalog."""
+    """Raised when a blueprint name/SHA is not in the blueprint catalog."""
 
 
 class BlueprintLoadError(DefinitionLoadError):

@@ -266,7 +266,7 @@ class ArtifactPublishSpec(BaseModel):
 
 
 class StepDefinition(BaseModel):
-    """Single model for catalog step blueprints, workflow steps, and task steps."""
+    """Single model for a step in a blueprint or in the step catalog."""
 
     model_config = {"extra": "forbid", "strict": True, "populate_by_name": True}
 
