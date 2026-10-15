@@ -13,7 +13,7 @@ The step's stdout is one JSON object with a `status` (see [Agent step outcomes](
 | Identifier | Requirements |
 |---|---|
 | `copilot` | Default. Requires `gh` on `PATH` and `GH_TOKEN` or `GITHUB_TOKEN`. |
-| `claude` | Requires `claude` on `PATH` and `ANTHROPIC_API_KEY`. Runs headless with `--bare`, so a `claude auth login` subscription session alone does not authenticate a Dovo invocation. |
+| `claude` | Requires `claude` on `PATH` and one of a `CLAUDE_CODE_OAUTH_TOKEN`, a `claude auth login` session or `ANTHROPIC_API_KEY`, used in that order. |
 
 Selecting any provider not listed fails `dovo config validate` with a schema error on `agent.provider`.
 
@@ -110,9 +110,14 @@ The seeded `dovo/ai-planner`, `dovo/ai-reviewer` and `dovo/ai-code-patcher` step
 
 ### Claude Code behavior
 
-- **Setup:** install Claude Code so `claude` is on `PATH`, then export `ANTHROPIC_API_KEY`. Each step runs `claude -p --output-format stream-json --verbose --bare --no-session-persistence`, with `--model <model>` when the agent settings name one and the rendered tool policy flags after it. The prompt is sent on stdin, never on the command line.
-- **API-key authentication:** `--bare` skips cached OAuth and keychain credentials, so a `claude auth login` subscription session alone does not authenticate a Dovo invocation. `ANTHROPIC_API_KEY` is required, and a missing or blank key fails the step with `missing ANTHROPIC_API_KEY` before `claude` starts.
-- **Subprocess environment:** only `ANTHROPIC_API_KEY` is forwarded as a credential. Inherited `CLAUDE_*` variables are removed and reported as withheld, while `CLAUDE_*` names you list in `agent.env_passthrough`, `--env-passthrough` or a step `env` are kept, except the reserved control names, which are rejected.
+- **Setup:** install Claude Code so `claude` is on `PATH`, then authenticate it one of the three ways below. Each step runs `claude -p --output-format stream-json --verbose --no-session-persistence`, with `--bare` added in `key` mode, `--model <model>` when the agent settings name one and the rendered tool policy flags after it. The prompt is sent on stdin, never on the command line.
+- **Authentication:** Dovo picks the first mode that applies at call time.
+    1. `oauth`: a non-blank `CLAUDE_CODE_OAUTH_TOKEN` (create one with `claude setup-token`). Only the token is forwarded, and no login check runs.
+    2. `cli`: `claude auth status --json` reports `loggedIn: true` (run `claude auth login`). Neither credential variable is forwarded, so the login session is the credential.
+    3. `key`: a non-blank `ANTHROPIC_API_KEY`. Only the key is forwarded, and `--bare` is added.
+- **Host configuration:** `cli` and `oauth` modes load your host Claude Code configuration (hooks, plugins, skills, `CLAUDE.md`, MCP servers) beyond the tool policy Dovo renders, which `key` mode skips through `--bare`.
+- **Missing authentication:** with none of the three, the step fails with `Claude Code is not authenticated` before `claude` starts, naming `claude auth login`, `CLAUDE_CODE_OAUTH_TOKEN` and `ANTHROPIC_API_KEY`. `dovo doctor` reports the mode in use on its `agent.setup` row.
+- **Subprocess environment:** only the credential of the mode in use is forwarded. Inherited `CLAUDE_*` variables are removed and reported as withheld, while `CLAUDE_*` names you list in `agent.env_passthrough`, `--env-passthrough` or a step `env` are kept, except the reserved control names, which are rejected. A credential name (`CLAUDE_CODE_OAUTH_TOKEN` or `ANTHROPIC_API_KEY`) listed in `agent.env_passthrough` or `--env-passthrough` is ignored, and one set in a step `env` is rejected; the mode in use decides which credential is forwarded.
 - **Missing flag:** if the installed Claude Code does not know a flag Dovo passes, the step fails with `Installed Claude Code lacks a required flag` and tells you to run `claude update`.
 - These policies are rejected with `AGENT_TOOL_POLICY_UNSUPPORTED`: an `mcp` allow or deny rule without a pattern, an `mcp` pattern containing a comma, an `mcp` allow for a server defined in neither `agent.mcp_servers` nor your Claude config, an `mcp` allow without an invocation, a `*.host` network pattern in an `allow` or `deny`, a read or write pattern that escapes its root, a read or write path containing a comma, and a scratch rule without an invocation.
 - `read` and `write` rules accept the `worktree` and `scratch` roots, glob patterns, and both `allow` and `deny`. They are rendered as `Read(//<root>/<pattern>)` and `Edit(//<root>/<pattern>)`, anchored to the root's absolute path; an absent pattern is `**`. A `scratch` allow adds the attempt's scratch directory. `shell` and `network` rules are accepted, including the default policy. Under `allow_all: true`, `allow` rules other than `mcp` are not checked; `deny` rules are. With `allow_all: true` and `deny` rules, the attempt's scratch directory is not added.

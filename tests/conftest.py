@@ -5,7 +5,7 @@ from __future__ import annotations
 import dataclasses
 import json
 import subprocess
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import Any
 
@@ -18,7 +18,7 @@ from dovo.common.filesystem.services.global_root import resolve_global_paths
 from dovo.core.agents.registry import PROVIDERS
 from dovo.core.config.models import ConfigTier
 from dovo.core.project.services.identity import generate_project_identity, save_project_identity
-from tests.harness import initialized_workspace_paths
+from tests.harness import initialized_workspace_paths, patch_claude_probe
 
 
 @pytest.fixture(autouse=True)
@@ -30,6 +30,16 @@ def _isolated_dovo_home(tmp_path_factory: pytest.TempPathFactory, monkeypatch: p
     read and write the real machine's global Dovo directory.
     """
     monkeypatch.setenv("DOVO_HOME", str(tmp_path_factory.mktemp("dovo_home")))
+
+
+@pytest.fixture(autouse=True)
+def _logged_out_claude_probe(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Stub the Claude login probe subprocess as logged out so no test spawns a real `claude`."""
+
+    def _logged_out(argv: Sequence[str], **_kwargs: object) -> subprocess.CompletedProcess[bytes]:
+        return subprocess.CompletedProcess(argv, 1, stdout=b"", stderr=b"")
+
+    patch_claude_probe(monkeypatch, _logged_out)
 
 
 @pytest.fixture

@@ -24,11 +24,11 @@ Direct-mutation adapter shelling out to GitHub CLI `gh copilot`.
 ## 2. Claude Code (`claude`)
 
 **Relevant sources:** [`src/dovo/core/agents/claude.py`](../../src/dovo/core/agents/claude.py), [`src/dovo/core/agents/claude_stream.py`](../../src/dovo/core/agents/claude_stream.py)
-Direct-mutation adapter that runs `claude -p --bare` headlessly and classifies its stream-json output.
+Direct-mutation adapter that runs `claude -p` headlessly (with `--bare` only when authenticating by API key) and classifies its stream-json output.
 
 | Symptom | Cause | Resolution |
 |:---|:---|:---|
-| `status=provider_error`, `"missing ANTHROPIC_API_KEY"` | Key not set or blank; `--bare` ignores a `claude auth login` session | Export `ANTHROPIC_API_KEY=...` |
+| `status=provider_error`, `"Claude Code is not authenticated"` | No non-blank `CLAUDE_CODE_OAUTH_TOKEN`, no `claude auth login` session and no non-blank `ANTHROPIC_API_KEY` | Run `claude auth login`, export `CLAUDE_CODE_OAUTH_TOKEN=...` (from `claude setup-token`) or export `ANTHROPIC_API_KEY=...` |
 | `status=provider_error`, `"claude is not installed or not on PATH"` | Claude Code missing | Install Claude Code (https://code.claude.com/docs) |
 | `status=timeout` | Claude Code did not finish in time | Raise `timeout_seconds` on the agent step |
 | `status=provider_error`, `"Failed to write MCP config"` | The MCP config file could not be written to the attempt's control directory | Check disk space and permissions on that path |

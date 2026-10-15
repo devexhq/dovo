@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import json
+import shutil
+import subprocess
 from collections.abc import Mapping
 from pathlib import Path
 from typing import Final, Literal
@@ -20,46 +23,117 @@ from dovo.core.agents.cli_mutation import (
     decode_output,
     run_cli_process,
 )
-from dovo.core.agents.credentials import missing_credential_error, resolve_credential
-from dovo.core.agents.environment import WITHHELD_ENV_NAME, format_withheld_report
+from dovo.core.agents.credentials import resolve_credential_entry
+from dovo.core.agents.environment import WITHHELD_ENV_NAME, build_probe_env, format_withheld_report
 from dovo.core.agents.models import AgentInvocationContext, AgentRequest
 from dovo.core.agents.tools import resolve_policy_roots, tool_policy_unsupported_message
 
-CLAUDE_API_KEY_ENVS = ("ANTHROPIC_API_KEY",)
+CLAUDE_CREDENTIAL_ENVS = ("CLAUDE_CODE_OAUTH_TOKEN", "ANTHROPIC_API_KEY")
 CLAUDE_CONTROL_ENVS = (
     "ANTHROPIC_BASE_URL",
     "ANTHROPIC_AUTH_TOKEN",
     "ANTHROPIC_MODEL",
     "CLAUDE_CONFIG_DIR",
-    "CLAUDE_CODE_OAUTH_TOKEN",
     "CLAUDE_CODE_USE_BEDROCK",
     "CLAUDE_CODE_USE_VERTEX",
     "CLAUDE_CODE_USE_FOUNDRY",
 )
-ClaudeAuthMode = Literal["key"]
+ClaudeAuthMode = Literal["cli", "oauth", "key"]
+CLAUDE_AUTH_FIX = (
+    "run `claude auth login`, export CLAUDE_CODE_OAUTH_TOKEN=... (from `claude setup-token`) "
+    "or export ANTHROPIC_API_KEY=..."
+)
+CLAUDE_AUTH_MISSING_DETAIL = f"Claude Code is not authenticated. Fix: {CLAUDE_AUTH_FIX}"
 
 _INSTALL_HINT = "install Claude Code (https://code.claude.com/docs)"
 _BASE_ARGV: Final = ("claude", "-p", "--output-format", "stream-json", "--verbose")
-_AUTH_FLAGS: Final[Mapping[ClaudeAuthMode, tuple[str, ...]]] = {"key": ("--bare",)}
+_AUTH_FLAGS: Final[Mapping[ClaudeAuthMode, tuple[str, ...]]] = {"cli": (), "oauth": (), "key": ("--bare",)}
+_MODE_CREDENTIALS: Final[Mapping[ClaudeAuthMode, tuple[str, ...]]] = {
+    "cli": (),
+    "oauth": ("CLAUDE_CODE_OAUTH_TOKEN",),
+    "key": ("ANTHROPIC_API_KEY",),
+}
+_AUTH_LABELS: Final[Mapping[ClaudeAuthMode, str]] = {
+    "cli": "cli session",
+    "oauth": "CLAUDE_CODE_OAUTH_TOKEN",
+    "key": "ANTHROPIC_API_KEY",
+}
+_PROBE_ARGV: Final = ("claude", "auth", "status", "--json")
+_PROBE_TIMEOUT_SECONDS: Final = 10
 
 
-def resolve_claude_api_key() -> str | None:
-    """Resolve the Anthropic API key from the environment at call time."""
-    return resolve_credential(CLAUDE_API_KEY_ENVS)
+def resolve_claude_credential() -> tuple[str, str] | None:
+    """Return (name, stripped value) of the first non-blank Claude credential in precedence order, or None."""
+    return resolve_credential_entry(CLAUDE_CREDENTIAL_ENVS)
+
+
+def _auth_status_stdout() -> bytes | None:
+    """Return stdout of `claude auth status --json` on exit 0, else None."""
+    try:
+        completed = subprocess.run(
+            _PROBE_ARGV,
+            env=build_probe_env(CLAUDE_PROVIDER_SPEC),
+            stdin=subprocess.DEVNULL,
+            capture_output=True,
+            timeout=_PROBE_TIMEOUT_SECONDS,
+            check=False,
+            shell=False,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+
+    return completed.stdout if completed.returncode == 0 else None
+
+
+def claude_cli_logged_in() -> bool:
+    """Return True only when the auth status output is a JSON object whose loggedIn is true."""
+    stdout = _auth_status_stdout()
+    if stdout is None:
+        return False
+
+    try:
+        payload = json.loads(stdout)
+    except ValueError:
+        return False
+
+    return isinstance(payload, dict) and payload.get("loggedIn") is True
 
 
 def resolve_claude_auth_mode() -> ClaudeAuthMode | None:
-    """Return "key" when ANTHROPIC_API_KEY holds a non-blank value at call time, else None."""
-    return "key" if resolve_claude_api_key() is not None else None
+    """Return "oauth", "cli" or "key" by the credential precedence, or None when none is usable."""
+    credential = resolve_claude_credential()
+    if credential is not None and credential[0] == "CLAUDE_CODE_OAUTH_TOKEN":
+        return "oauth"
+
+    if claude_cli_logged_in():
+        return "cli"
+
+    return "key" if credential is not None else None
+
+
+def claude_auth_label() -> str | None:
+    """Return the label of the authentication in use, or None when none is usable."""
+    mode = resolve_claude_auth_mode()
+
+    return None if mode is None else _AUTH_LABELS[mode]
+
+
+def claude_missing_auth_detail() -> str:
+    """Return the diagnostic for a Claude Code that cannot authenticate.
+
+    A `claude` missing from PATH reports the install fix instead of the authentication fix.
+    """
+    if shutil.which("claude") is None:
+        return f"claude is not installed or not on PATH. Fix: {_INSTALL_HINT}"
+
+    return CLAUDE_AUTH_MISSING_DETAIL
 
 
 def _env_for_mode(env: Mapping[str, str], mode: ClaudeAuthMode) -> dict[str, str]:
-    """Return env reduced to the credential the mode passes: ANTHROPIC_API_KEY for "key", with CLAUDE_CODE_OAUTH_TOKEN removed."""
-    reduced = dict(env)
-    if mode == "key":
-        reduced.pop("CLAUDE_CODE_OAUTH_TOKEN", None)
+    """Return env without the credential names the mode does not pass."""
+    passed = _MODE_CREDENTIALS[mode]
 
-    return reduced
+    return {name: value for name, value in env.items() if name not in CLAUDE_CREDENTIAL_ENVS or name in passed}
 
 
 def _build_argv(model: str | None, mode: ClaudeAuthMode, policy_flags: tuple[str, ...]) -> list[str]:
@@ -82,10 +156,10 @@ def _write_mcp_config(config: McpConfigFile) -> str | None:
 
 
 def default_claude_run(request: CliMutationRunRequest) -> CliMutationOutcome:
-    """Invoke Claude Code headlessly in bare mode with request.env and map its stream-json output into an outcome."""
+    """Invoke Claude Code headlessly under the resolved authentication mode, mapping its stream-json output."""
     mode = resolve_claude_auth_mode()
     if mode is None:
-        return CliMutationOutcome(status="error", error_detail=missing_credential_error(CLAUDE_PROVIDER_SPEC))
+        return CliMutationOutcome(status="error", error_detail=claude_missing_auth_detail())
 
     rendered = _render_for_request(request.tools, request.worktree_path, request.invocation, request.mcp_servers)
     if isinstance(rendered, str):
@@ -167,6 +241,10 @@ class ClaudeAgentAdapter(CliDirectMutationAdapter):
         """Return the Claude descriptor."""
         return CLAUDE_PROVIDER_SPEC
 
+    def _missing_credential_detail(self, spec: ProviderSpec) -> str:
+        """Return the install or authentication diagnostic for a missing Claude login."""
+        return claude_missing_auth_detail()
+
     def _provider_name(self) -> str:
         """Return the provider identifier string."""
         return "claude"
@@ -178,11 +256,13 @@ class ClaudeAgentAdapter(CliDirectMutationAdapter):
 
 CLAUDE_PROVIDER_SPEC = ProviderSpec(
     token="claude",
-    credential_envs=CLAUDE_API_KEY_ENVS,
+    credential_envs=CLAUDE_CREDENTIAL_ENVS,
     requires_model=False,
     supports_tool_policy=True,
     supports_os_sandbox=False,
     build=ClaudeAgentAdapter,
     binary="claude",
     control_envs=CLAUDE_CONTROL_ENVS,
+    auth_label=claude_auth_label,
+    auth_fix=CLAUDE_AUTH_FIX,
 )

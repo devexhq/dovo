@@ -14,6 +14,7 @@ from dovo.core.agents.environment import (
     NETWORK_TLS_ENV_NAMES,
     WITHHELD_REPORT_LIMIT,
     build_agent_env,
+    build_probe_env,
     env_passthrough_flag_error,
     format_withheld_report,
     forwarded_env_secrets,
@@ -258,6 +259,19 @@ class BuildAgentEnvTests:
 
         assert (first["GH_TOKEN"], first["DOCKER_CONFIG"], "UNRELATED" in first) == ("first", "/one", False)
         assert (second["GH_TOKEN"], second["DOCKER_CONFIG"], "UNRELATED" in second) == ("second", "/two", True)
+
+
+class ProbeEnvTests:
+    def test_build_probe_env_keeps_allowlist_and_drops_credentials_and_controls(self, host_env: dict[str, str]) -> None:
+        """Return only the allowlisted host names, without the descriptor's credential or control names."""
+        spec = PROVIDERS["claude"]
+        host_env.update({"HTTPS_PROXY": "http://proxy.invalid", "UNLISTED_NAME": "x"})
+        for name in (*spec.credential_envs, *spec.control_envs):
+            host_env[name] = "secret"
+
+        env = build_probe_env(spec)
+
+        assert env == {"PATH": "/usr/bin", "HOME": "/home/tester", "HTTPS_PROXY": "http://proxy.invalid"}
 
 
 class WithheldEnvNamesTests:

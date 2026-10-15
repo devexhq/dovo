@@ -49,7 +49,7 @@ Dovo Doctor Report
 
 `artifacts.integrity` warns when an artifact revision directory has no database row (`DOCTOR_ARTIFACT_ORPHAN_DIR`) or a row's directory is missing (`DOCTOR_ARTIFACT_MISSING_DIR`); it never repairs either.
 
-The default provider (`copilot`) requires `gh` on `PATH` and a `GH_TOKEN` or `GITHUB_TOKEN` credential; without them `env.binaries` warns and `agent.setup` fails.
+The default provider (`copilot`) requires `gh` on `PATH` and a `GH_TOKEN` or `GITHUB_TOKEN` credential; without them `env.binaries` warns and `agent.setup` fails. For `claude`, `agent.setup` passes with a `CLAUDE_CODE_OAUTH_TOKEN`, a `claude auth login` session or `ANTHROPIC_API_KEY`, and its message and `details.auth` name the mode in use (`cli session`, `CLAUDE_CODE_OAUTH_TOKEN` or `ANTHROPIC_API_KEY`).
 
 ### Warnings present output
 
@@ -94,5 +94,5 @@ dovo doctor --format json
 Emits one JSON payload for automation:
 
 ```json
-{"event_type": "DiagnosticsReport", "payload": {"ok": false, "has_warnings": true, "workspace_root": "/abs/path/to/repo", "total_duration_ms": 12.4, "checks": [{"check_id": "git.repo", "name": "Git Repository Check", "category": "git", "status": "ok", "message": "Git repository detected at '/abs/path/to/repo' on branch 'main'.", "details": {"root": "/abs/path/to/repo", "branch": "main"}, "duration_ms": 2.1, "error_code": null, "errors": [], "warnings": [], "remediations": []}, {"check_id": "agent.setup", "name": "Agent Setup Check", "category": "agent", "status": "failed", "message": "Missing required credential for agent provider 'copilot': GH_TOKEN or GITHUB_TOKEN.", "details": {"provider": "copilot", "missing_env_var": "GH_TOKEN or GITHUB_TOKEN"}, "duration_ms": 0.3, "error_code": "DOCTOR_AGENT_KEY_MISSING", "errors": ["Missing required credential for agent provider 'copilot': GH_TOKEN or GITHUB_TOKEN."], "warnings": [], "remediations": ["Export GH_TOKEN or GITHUB_TOKEN"]}]}}
+{"event_type": "DiagnosticsReport", "payload": {"ok": false, "has_warnings": true, "workspace_root": "/abs/path/to/repo", "total_duration_ms": 12.4, "checks": [{"check_id": "git.repo", "name": "Git Repository Check", "category": "git", "status": "ok", "message": "Git repository detected at '/abs/path/to/repo' on branch 'main'.", "details": {"root": "/abs/path/to/repo", "branch": "main"}, "duration_ms": 2.1, "error_code": null, "errors": [], "warnings": [], "remediations": []}, {"check_id": "agent.setup", "name": "Agent Setup Check", "category": "agent", "status": "failed", "message": "Missing required credential for agent provider 'copilot': GH_TOKEN or GITHUB_TOKEN.", "details": {"provider": "copilot", "missing_env_var": "GH_TOKEN or GITHUB_TOKEN", "credential_envs": ["GH_TOKEN", "GITHUB_TOKEN"]}, "duration_ms": 0.3, "error_code": "DOCTOR_AGENT_KEY_MISSING", "errors": ["Missing required credential for agent provider 'copilot': GH_TOKEN or GITHUB_TOKEN."], "warnings": [], "remediations": ["Export GH_TOKEN", "Export GITHUB_TOKEN"]}]}}
 ```

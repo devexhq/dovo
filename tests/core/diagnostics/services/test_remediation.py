@@ -13,6 +13,20 @@ from dovo.core.diagnostics.models import (
 )
 from dovo.core.diagnostics.services.remediation import format_remediation_summary, resolve_remediations
 
+
+def _export_remediation(env_var: str) -> Remediation:
+    """Return the DOCTOR_AGENT_KEY_MISSING export remediation for one credential name."""
+    return Remediation(
+        code="DOCTOR_AGENT_KEY_MISSING",
+        title="Export agent API key",
+        action_type=RemediationType.COMMAND,
+        command=f'export {env_var}="<your-api-key>"',
+        description=f"Set the {env_var} environment variable in your active shell or `.env` file so the configured agent provider can authenticate.",
+        doc_path="docs/guides/agent-providers.md",
+        is_automated=False,
+    )
+
+
 REMEDIATION_RESOLUTION_CASES = [
     pytest.param(
         DiagnosticCheckResult(
@@ -333,6 +347,65 @@ REMEDIATION_RESOLUTION_CASES = [
             )
         ],
         id="agent_key_missing_missing_details_fallback",
+    ),
+    pytest.param(
+        DiagnosticCheckResult(
+            check_id="agent.setup",
+            name="Agent Setup Check",
+            category=CheckCategory.AGENT,
+            status=CheckStatus.FAILED,
+            message="Agent provider 'claude' is missing required credential 'CLAUDE_CODE_OAUTH_TOKEN or ANTHROPIC_API_KEY'.",
+            details={
+                "provider": "claude",
+                "missing_env_var": "CLAUDE_CODE_OAUTH_TOKEN or ANTHROPIC_API_KEY",
+                "credential_envs": ["CLAUDE_CODE_OAUTH_TOKEN", "ANTHROPIC_API_KEY"],
+            },
+            error_code="DOCTOR_AGENT_KEY_MISSING",
+        ),
+        [
+            _export_remediation("CLAUDE_CODE_OAUTH_TOKEN"),
+            _export_remediation("ANTHROPIC_API_KEY"),
+            Remediation(
+                code="DOCTOR_AGENT_KEY_MISSING",
+                title="Log in to Claude Code",
+                action_type=RemediationType.MANUAL,
+                command=None,
+                description="Run `claude auth login`, or export CLAUDE_CODE_OAUTH_TOKEN from `claude setup-token`, so Claude Code authenticates without an API key.",
+                doc_path="docs/guides/agent-providers.md",
+                is_automated=False,
+            ),
+        ],
+        id="agent_key_missing_claude_exports_each_name_then_login",
+    ),
+    pytest.param(
+        DiagnosticCheckResult(
+            check_id="agent.setup",
+            name="Agent Setup Check",
+            category=CheckCategory.AGENT,
+            status=CheckStatus.FAILED,
+            message="Agent provider 'copilot' is missing required credential 'GH_TOKEN or GITHUB_TOKEN'.",
+            details={
+                "provider": "copilot",
+                "missing_env_var": "GH_TOKEN or GITHUB_TOKEN",
+                "credential_envs": ["GH_TOKEN", "GITHUB_TOKEN"],
+            },
+            error_code="DOCTOR_AGENT_KEY_MISSING",
+        ),
+        [_export_remediation("GH_TOKEN"), _export_remediation("GITHUB_TOKEN")],
+        id="agent_key_missing_two_names_emit_one_export_each",
+    ),
+    pytest.param(
+        DiagnosticCheckResult(
+            check_id="agent.setup",
+            name="Agent Setup Check",
+            category=CheckCategory.AGENT,
+            status=CheckStatus.FAILED,
+            message="Agent provider 'copilot' is missing required credential 'GH_TOKEN'.",
+            details={"provider": "copilot", "missing_env_var": "GH_TOKEN", "credential_envs": "GH_TOKEN"},
+            error_code="DOCTOR_AGENT_KEY_MISSING",
+        ),
+        [_export_remediation("GH_TOKEN")],
+        id="agent_key_missing_non_list_credential_envs_falls_back_to_missing_env_var",
     ),
     pytest.param(
         DiagnosticCheckResult(

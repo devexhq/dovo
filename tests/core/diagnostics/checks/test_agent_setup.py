@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import dataclasses
-from collections.abc import Callable
+import subprocess
+from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import cast
 
@@ -14,11 +15,17 @@ from dovo.core.agents.registry import PROVIDERS
 from dovo.core.config.models import AgentConfig, AgentProvider, DovoConfig, ProjectConfig
 from dovo.core.diagnostics.checks.agent_setup import AgentSetupCheck
 from dovo.core.diagnostics.models import CheckCategory, CheckStatus, DiagnosticsContext
+from tests.harness import patch_claude_probe
 
 WorkspacePathsFactory = Callable[[Path, Path | None], WorkspacePaths]
 
 CREDENTIALED_TOKENS = sorted(token for token, spec in PROVIDERS.items() if spec.credential_envs)
 DEFAULT_TOKEN = AgentConfig().provider
+_EXPECTED_AUTH_DETAILS = {"claude": {"auth": "ANTHROPIC_API_KEY"}}
+_CLAUDE_AUTH_FIX = (
+    "run `claude auth login`, export CLAUDE_CODE_OAUTH_TOKEN=... (from `claude setup-token`) "
+    "or export ANTHROPIC_API_KEY=..."
+)
 
 
 def _context_with_agent(
@@ -26,6 +33,17 @@ def _context_with_agent(
 ) -> DiagnosticsContext:
     config = DovoConfig(version=1, project=ProjectConfig(name="demo"), agent=agent)
     return DiagnosticsContext(cwd=cwd, config=config, paths=workspace_paths_factory(cwd, None))
+
+
+def _stub_logged_in(monkeypatch: pytest.MonkeyPatch, *, logged_in: bool) -> None:
+    """Make the Claude login probe report the given login state."""
+
+    def _run(argv: Sequence[str], **_kwargs: object) -> subprocess.CompletedProcess[bytes]:
+        stdout = b'{"loggedIn": true}' if logged_in else b'{"loggedIn": false}'
+
+        return subprocess.CompletedProcess(argv, 0, stdout=stdout, stderr=b"")
+
+    patch_claude_probe(monkeypatch, _run)
 
 
 def _clear_credential_envs(monkeypatch: pytest.MonkeyPatch, token: str) -> None:
@@ -72,7 +90,11 @@ class AgentSetupCheckTests:
         assert result.category == CheckCategory.AGENT
         assert result.status == CheckStatus.FAILED
         assert result.error_code == "DOCTOR_AGENT_KEY_MISSING"
-        assert result.details == {"provider": token, "missing_env_var": joined}
+        assert result.details == {
+            "provider": token,
+            "missing_env_var": joined,
+            "credential_envs": list(PROVIDERS[token].credential_envs),
+        }
         assert result.errors == [f"Agent provider '{token}' is missing required credential '{joined}'."]
 
     @pytest.mark.parametrize("token", CREDENTIALED_TOKENS)
@@ -94,7 +116,7 @@ class AgentSetupCheckTests:
         assert result.category == CheckCategory.AGENT
         assert result.status == CheckStatus.OK
         assert result.error_code is None
-        assert result.details == {"provider": token, "model": "test-model"}
+        assert result.details == {"provider": token, "model": "test-model", **_EXPECTED_AUTH_DETAILS.get(token, {})}
 
     def test_execute_blank_credential_returns_failed_key_missing(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, workspace_paths_factory: WorkspacePathsFactory
@@ -154,3 +176,80 @@ class AgentSetupCheckTests:
 
         assert result.status == CheckStatus.FAILED
         assert result.details["missing_env_var"] == "ALPHA_KEY or BETA_KEY"
+
+    def test_execute_probe_true_with_no_credential_env_is_not_failed(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, workspace_paths_factory: WorkspacePathsFactory
+    ) -> None:
+        """Return OK with auth 'cli session' when the probe reports loggedIn true and no credential env is set."""
+        _clear_credential_envs(monkeypatch, "claude")
+        _stub_logged_in(monkeypatch, logged_in=True)
+        context = _context_with_agent(
+            tmp_path, AgentConfig(provider="claude", models={"claude": "m"}), workspace_paths_factory
+        )
+
+        result = AgentSetupCheck().execute(context)
+
+        assert result.status == CheckStatus.OK
+        assert result.details == {"provider": "claude", "model": "m", "auth": "cli session"}
+
+    @pytest.mark.parametrize(
+        ("env", "logged_in", "label"),
+        [
+            pytest.param(
+                {"CLAUDE_CODE_OAUTH_TOKEN": "t", "ANTHROPIC_API_KEY": "k"}, True, "CLAUDE_CODE_OAUTH_TOKEN", id="token"
+            ),
+            pytest.param({"ANTHROPIC_API_KEY": "k"}, True, "cli session", id="login-with-key"),
+            pytest.param({"ANTHROPIC_API_KEY": "k"}, False, "ANTHROPIC_API_KEY", id="key-alone"),
+        ],
+    )
+    def test_execute_names_the_mode_in_use(
+        self,
+        env: dict[str, str],
+        logged_in: bool,
+        label: str,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        workspace_paths_factory: WorkspacePathsFactory,
+    ) -> None:
+        """Return details['auth'] naming the token, the CLI session or the key, in that precedence."""
+        _clear_credential_envs(monkeypatch, "claude")
+        for name, value in env.items():
+            monkeypatch.setenv(name, value)
+        _stub_logged_in(monkeypatch, logged_in=logged_in)
+        context = _context_with_agent(
+            tmp_path, AgentConfig(provider="claude", models={"claude": "m"}), workspace_paths_factory
+        )
+
+        result = AgentSetupCheck().execute(context)
+
+        assert (result.status, result.details["auth"]) == (CheckStatus.OK, label)
+        assert result.message == f"Agent provider 'claude' is configured with model 'm' (authentication: {label})."
+
+    def test_execute_nothing_to_authenticate_returns_failed_with_fix_text(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, workspace_paths_factory: WorkspacePathsFactory
+    ) -> None:
+        """Return FAILED DOCTOR_AGENT_KEY_MISSING with fixes == [the Claude authentication fix] for a logged-out CLI."""
+        _clear_credential_envs(monkeypatch, "claude")
+        _stub_logged_in(monkeypatch, logged_in=False)
+        context = _context_with_agent(
+            tmp_path, AgentConfig(provider="claude", models={"claude": "m"}), workspace_paths_factory
+        )
+
+        result = AgentSetupCheck().execute(context)
+
+        assert (result.status, result.error_code) == (CheckStatus.FAILED, "DOCTOR_AGENT_KEY_MISSING")
+        assert result.fixes == [_CLAUDE_AUTH_FIX]
+
+    def test_execute_provider_without_probe_is_unchanged(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, workspace_paths_factory: WorkspacePathsFactory
+    ) -> None:
+        """Return FAILED with empty fixes and no auth detail for a credentialed spec without auth_label or auth_fix."""
+        _clear_credential_envs(monkeypatch, DEFAULT_TOKEN)
+        spec = dataclasses.replace(PROVIDERS[DEFAULT_TOKEN], auth_label=None, auth_fix=None)
+        monkeypatch.setitem(PROVIDERS, DEFAULT_TOKEN, spec)
+        context = _context_with_agent(tmp_path, AgentConfig(models={DEFAULT_TOKEN: "m"}), workspace_paths_factory)
+
+        result = AgentSetupCheck().execute(context)
+
+        assert (result.status, result.fixes) == (CheckStatus.FAILED, [])
+        assert "auth" not in result.details

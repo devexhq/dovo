@@ -52,7 +52,10 @@ class ProviderRegistryContractTests:
         envs = {token: spec.credential_envs for token, spec in PROVIDERS.items()}
         adapter_types = {token: type(get_agent_adapter(token)) for token in PROVIDERS}
 
-        assert envs == {"claude": ("ANTHROPIC_API_KEY",), "copilot": ("GH_TOKEN", "GITHUB_TOKEN")}
+        assert envs == {
+            "claude": ("CLAUDE_CODE_OAUTH_TOKEN", "ANTHROPIC_API_KEY"),
+            "copilot": ("GH_TOKEN", "GITHUB_TOKEN"),
+        }
         assert adapter_types == {"claude": ClaudeAgentAdapter, "copilot": CopilotAgentAdapter}
 
     def test_registered_tokens_match_registry(self) -> None:

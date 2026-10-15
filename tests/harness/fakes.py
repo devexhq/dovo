@@ -15,9 +15,25 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Self
 
+import pytest
 from pydantic import BaseModel
 
 from dovo.core.agents import AgentProgress, AgentRequest, AgentResponse, BaseAgentProvider
+
+
+class _ClaudeSubprocess:
+    """Stand-in for the subprocess module inside dovo.core.agents.claude: run is replaced, every other name delegates."""
+
+    def __init__(self, run: Callable[..., subprocess.CompletedProcess[bytes]]) -> None:
+        self.run = run
+
+    def __getattr__(self, name: str) -> object:
+        return getattr(subprocess, name)
+
+
+def patch_claude_probe(monkeypatch: pytest.MonkeyPatch, run: Callable[..., subprocess.CompletedProcess[bytes]]) -> None:
+    """Replace the Claude login probe's subprocess.run with run, leaving subprocess.run untouched for every other module."""
+    monkeypatch.setattr("dovo.core.agents.claude.subprocess", _ClaudeSubprocess(run))
 
 
 class FakeAgentRunnerCall(BaseModel):
