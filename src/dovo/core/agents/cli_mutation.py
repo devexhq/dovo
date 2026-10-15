@@ -11,6 +11,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
+from dovo.common.mcp_servers import McpServerDefinition
 from dovo.common.process import stream_isolated_process
 from dovo.common.tool_policy import ToolPolicy
 from dovo.core.agents.base import BaseAgentProvider, ProgressMapper, ProviderSpec, elapsed_ms
@@ -48,6 +49,7 @@ class CliMutationRunRequest(BaseModel):
     tools: ToolPolicy
     invocation: AgentInvocationContext | None = Field(default=None, exclude=True)
     env: dict[str, str] = Field(default_factory=dict, exclude=True)
+    mcp_servers: dict[str, McpServerDefinition] = Field(default_factory=dict, exclude=True)
     on_line: Callable[[str, str], None] | None = Field(default=None, exclude=True)
     on_progress: Callable[[AgentProgress], None] | None = Field(default=None, exclude=True)
     progress_mapper: ProgressMapper | None = Field(default=None, exclude=True)
@@ -250,6 +252,7 @@ class CliDirectMutationAdapter(BaseAgentProvider):
                 tools=request.tools,
                 invocation=request.invocation,
                 env=env,
+                mcp_servers=request.mcp_servers,
                 on_line=request.on_line,
                 on_progress=request.on_progress,
                 progress_mapper=_progress_mapper_for(self._provider_spec()),

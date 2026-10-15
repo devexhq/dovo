@@ -24,12 +24,14 @@ Direct-mutation adapter shelling out to GitHub CLI `gh copilot`.
 ## 2. Claude Code (`claude`)
 
 **Relevant sources:** [`src/dovo/core/agents/claude.py`](../../src/dovo/core/agents/claude.py), [`src/dovo/core/agents/claude_stream.py`](../../src/dovo/core/agents/claude_stream.py)
-Direct-mutation adapter registered for Claude Code; the invocation itself has not landed. The stream-json rows below are produced once the invocation slice wires in the classifier.
+Direct-mutation adapter that runs `claude -p --bare` headlessly and classifies its stream-json output.
 
 | Symptom | Cause | Resolution |
 |:---|:---|:---|
-| `status=provider_error`, `"missing ANTHROPIC_API_KEY"` | Key not set or blank | Export `ANTHROPIC_API_KEY=...` |
-| `status=provider_error`, `"Claude Code invocation is not available"` | Registration only; the invocation slice has not landed | None yet; use another provider |
+| `status=provider_error`, `"missing ANTHROPIC_API_KEY"` | Key not set or blank; `--bare` ignores a `claude auth login` session | Export `ANTHROPIC_API_KEY=...` |
+| `status=provider_error`, `"claude is not installed or not on PATH"` | Claude Code missing | Install Claude Code (https://code.claude.com/docs) |
+| `status=timeout` | Claude Code did not finish in time | Raise `timeout_seconds` on the agent step |
+| `status=provider_error`, `"Failed to write MCP config"` | The MCP config file could not be written to the attempt's control directory | Check disk space and permissions on that path |
 | `status=provider_error`, `"invalid stream-json from Claude Code"` | A stdout line was not a JSON object | Check the installed `claude` version |
 | `status=provider_error`, `"Claude Code stream ended without a result"` or `"... (exit <code>)"` | The stream was cut off before a result, with exit 0 or with the shown non-zero exit code | Re-run the step |
 | `status=provider_error`, `"Claude Code result error (<subtype>)"` | Claude Code reported an error result, such as a bad model or an API failure | Read the quoted result text after the colon |
