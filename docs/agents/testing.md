@@ -33,7 +33,9 @@ Rules: every source module has a test file, no exemption list; every test direct
   `should` prefix is filler, not an outcome.
 - Docstrings are optional and must not restate the name; write one only for a constraint the
   identifier can't carry. It is one imperative sentence with no `[tier-N/type]` tag and no
-  `<symbol>:` prefix, within 120 columns (TEST-020).
+  `<symbol>:` prefix, within 120 columns (TEST-020). A docstring on a helper, fixture, double,
+  class, or module is a one-line title of what it is or does, plus a description only for a hidden
+  contract (TEST-020).
 
 ## The Four Execution Tiers
 

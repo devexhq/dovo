@@ -1,3 +1,19 @@
+# Rule shapes accepted by scripts/compile_rules.py.
+#
+# Legacy rule:   id, title, severity, category, domain, scope, guideline, evaluation_criteria,
+#                positive_example, negative_example, citation.
+#
+# Migrated rule: the same identity fields plus `intent` and `criteria`, and none of guideline,
+#                evaluation_criteria, positive_example or negative_example (those move into the criteria).
+#   intent:      one or two sentences, 40 words or fewer, saying what the rule protects.
+#   criteria:    a non-empty list; ids are <rule id>.Q01, .Q02, ... in order. Each item has
+#     question:  one yes/no sentence ending in '?', starting with Does, Do, Is, Are, Was, Were, Has or Have,
+#                phrased so that YES means compliant.
+#     kind:      mechanical or judgment. A mechanical criterion names `enforced_by`, a repo path that exists.
+#     na_when:   optional condition under which the criterion does not apply.
+#     positive_example, negative_example: both keys on the criterion, or instead the single key
+#                example_not_applicable holding a reason specific to that criterion.
+# A rule is migrated when it has `criteria`; validation errors fail the compile. See DRY-001 for a worked example.
 rules:
 - id: ARCH-001
   title: Strict Layered Import Flow
@@ -360,17 +376,25 @@ rules:
   citation: docs/agents/code-conventions.md#type-checker-suppressions
 - id: ENCAP-001
   title: Expose Public Query Properties
-  severity: SUGGESTION
+  severity: BLOCKER
   category: Encapsulation
   domain: all
   scope: src/dovo/
-  guideline: Expose public boolean query properties (e.g. is_interactive, is_enabled, has_*) on classes rather than referencing
-    private members from external callers.
-  evaluation_criteria: Flag external callers inspecting internal private state; suggest adding a query property.
-  positive_example: '@property
-
-    def is_running(self) -> bool: return self._proc is not None and self._proc.poll() is None'
-  negative_example: 'if runner._process is not None: ...  # caller inspecting private state'
+  intent: Protects a class's freedom to change its internal representation. Callers learn its state through a public
+    interface, so a refactor stays local instead of breaking every caller that reached inside.
+  criteria:
+  - id: ENCAP-001.Q01
+    question: Is every access to an underscore-prefixed, non-dunder member in src/dovo/ made on self, cls or mcs rather than on another object?
+    kind: mechanical
+    enforced_by: pyproject.toml
+    positive_example: 'if runner.is_running: ...  # caller uses the public query property'
+    negative_example: 'if runner._process is not None: ...  # caller inspecting private state'
+  - id: ENCAP-001.Q02
+    question: Does each class that callers query for boolean state expose that state as a public property?
+    kind: judgment
+    na_when: No new or modified code in src/dovo/ checks the boolean state of another class.
+    positive_example: 'if runner.is_running: ...  # public @property on the class, backed by self._proc'
+    negative_example: 'if runner.get_process() is not None: ...  # caller re-derives boolean state from an exposed internal handle'
   citation: docs/agents/code-conventions.md#encapsulation-and-private-members
 - id: ENCAP-002
   title: No Test Seams in Production Signatures
@@ -378,12 +402,15 @@ rules:
   category: Encapsulation
   domain: all
   scope: src/dovo/
-  guideline: Never add a parameter, kwarg, or callback solely for test injection. A parameter production never reads is dead
-    code with a test attached. Monkeypatch collaborators at module boundaries instead.
-  evaluation_criteria: Inspect parameters of touched functions. If a parameter has a default and is only ever passed in tests,
-    flag it.
-  positive_example: 'def run(self, cwd: Path) -> RunOutcome: ...  # tests monkeypatch at boundary'
-  negative_example: 'def run(self, cwd: Path, _runner: GitRunner | None = None) -> RunOutcome: ...'
+  intent: Keeps production signatures free of dead code written for tests. Every parameter exists because a production
+    caller needs it, so the public surface reflects real behavior and tests do not shape production APIs.
+  criteria:
+  - id: ENCAP-002.Q01
+    question: Is every parameter, kwarg or callback with a default value in a new or modified function in src/dovo/ passed by at least one production caller?
+    kind: judgment
+    na_when: No new or modified function in src/dovo/ has a parameter with a default value.
+    positive_example: 'def run(self, cwd: Path) -> RunOutcome: ...  # tests monkeypatch at boundary'
+    negative_example: 'def run(self, cwd: Path, _runner: GitRunner | None = None) -> RunOutcome: ...  # only tests pass _runner'
   citation: docs/agents/testing.md#core-testing-rules
 - id: PERF-001
   title: No Ad-Hoc DB Instantiations in Loops
@@ -431,24 +458,73 @@ rules:
   category: Architecture
   domain: core
   scope: src/dovo/core/db/repositories/
-  guideline: Maintain consistent method naming across sibling repositories. Standardize on canonical CRUD verbs (create(),
-    get(), list(), delete(), save()). Avoid ad-hoc verb variants like insert(), add(), or upsert() unless explicitly justified.
-  evaluation_criteria: Inspect repository public methods. Flag divergence in verb naming across sibling repository classes.
-  positive_example: repo.create(record)
-  negative_example: 'repo.insert(record)  # sibling repositories use .create()'
-  citation: docs/agents/code-conventions.md#variable-naming
+  intent: Sibling repositories name the same operation with the same verb, so a caller who knows one repository can use the
+    others without reading each class, and a divergent name reads as a different behavior.
+  criteria:
+  - id: API-001.Q01
+    question: Does every repository class that inserts a new record expose that operation as a public create() method?
+    kind: judgment
+    na_when: The repository class has no method that inserts a new record.
+    positive_example: 'WorktreesRepository.create(...) and SessionsRepository.create(...)'
+    negative_example: 'CostsRepository.record_token_usage(...) inserting a CostRecord while sibling repositories use create()'
+  - id: API-001.Q02
+    question: Does every repository method that returns at most one record looked up by its identifying key have the name get?
+    kind: judgment
+    na_when: The repository class has no method that looks up a single record by its identifying key.
+    positive_example: 'def get(self, id: str) -> WorktreeRecord | None:'
+    negative_example: 'def find(self, id: str) -> WorktreeRecord | None:  # siblings use get()'
+  - id: API-001.Q03
+    question: Does every repository method that returns a collection of records of one entity have the name list?
+    kind: judgment
+    na_when: The repository class has no method that returns a collection of records.
+    positive_example: 'def list(self, status: WorktreeStatus | None = None) -> list[WorktreeRecord]:'
+    negative_example: 'def all(self) -> list[WorktreeRecord]:  # siblings use list()'
+  - id: API-001.Q04
+    question: Does every repository method that removes a record have the name delete?
+    kind: judgment
+    na_when: The repository class has no method that removes a record.
+    positive_example: 'def delete(self, id: str) -> bool:'
+    negative_example: 'def remove(self, id: str) -> bool:  # siblings use delete()'
+  - id: API-001.Q05
+    question: Does every repository method that persists changes to a whole existing record have the name save?
+    kind: judgment
+    na_when: No repository method persists changes to a whole existing record; partial updates such as update_status do not count.
+    positive_example: 'def save(self, record: SessionRecord) -> SessionRecord:'
+    negative_example: 'def store(self, record: SessionRecord) -> SessionRecord:  # whole-record persist not named save()'
+  - id: API-001.Q06
+    question: Does every repository method named insert, add or upsert have a docstring or comment stating why a canonical verb does not fit?
+    kind: judgment
+    na_when: No repository method is named insert, add or upsert.
+    positive_example: 'def upsert(self, ...) -> ...:  with the docstring "Not save(): replaces the row only when the revision matches."'
+    negative_example: 'def insert(self, record: WorktreeRecord) -> WorktreeRecord:  # no stated reason; siblings use create()'
+  - id: API-001.Q07
+    question: Do all repository classes that expose the same non-CRUD operation give it the same method name?
+    kind: judgment
+    na_when: No two repository classes expose the same non-CRUD operation.
+    positive_example: 'WorktreesRepository.update_status(...) and SessionsRepository.update_status(...)'
+    negative_example: 'WorktreesRepository.update_status(...) next to SessionsRepository.set_state(...) for the same status change'
+  citation: docs/agents/schemas.md#7-database
 - id: API-002
   title: Consistent Error Semantics Across Queries
   severity: WARNING
   category: Architecture
   domain: [core, engine]
   scope: src/dovo/core/db/, src/dovo/core/*/services/, src/dovo/engine/services/
-  guideline: Maintain consistent error handling semantics across identical query paths. Do not swallow invalid enums or corrupt
-    rows in one repository method while raising or returning BaseResult errors in another.
-  evaluation_criteria: Audit repository query methods for divergent exception handling (e.g. bare except returning None vs
-    structured Result error capture).
-  positive_example: 'except ValidationError as error: return RecordResult.from_error(error)'
-  negative_example: 'except ValidationError: return None  # inconsistently swallows error'
+  intent: Query paths that read the same data report bad rows the same way, so a caller never mistakes a silently swallowed
+    failure in one path for an empty result while a sibling path reports it.
+  criteria:
+  - id: API-002.Q01
+    question: Does every query method that reads an entity report an invalid enum value or corrupt row, by raising or by returning a BaseResult error, whenever a sibling query method that reads that entity reports it?
+    kind: judgment
+    na_when: No two query methods read the same entity.
+    positive_example: 'get() and list() both raise ValueError for a row with an invalid status'
+    negative_example: 'list() raises on a row with an invalid status while get() returns None for the same row'
+  - id: API-002.Q02
+    question: Does every except block in a query method re-raise or convert the caught error into a BaseResult error, instead of returning None or an empty value?
+    kind: judgment
+    na_when: The query method contains no except block.
+    positive_example: 'except ValidationError as error: return RecordResult.from_error(error)'
+    negative_example: 'except ValidationError: return None  # swallows the error'
   citation: docs/agents/code-conventions.md#resultoutcome-pattern
 - id: DRY-001
   title: Shared Repository Transaction Logic in BaseRepository
@@ -456,12 +532,35 @@ rules:
   category: Code Conventions
   domain: core
   scope: src/dovo/core/db/repositories/
-  guideline: Repetitive database transaction boilerplate (_commit, _delete_one_where, rollback handling, session lifecycle)
-    should be consolidated into BaseRepository rather than duplicated across individual repository classes.
-  evaluation_criteria: Flag identical session commit/rollback and single-record deletion boilerplate repeated across sibling
-    repositories.
-  positive_example: self._delete_one_where(WorktreeRecord.session_id == session_id)
-  negative_example: 'with self.session() as s: s.query(...).delete(); s.commit()  # duplicated across repos'
+  intent: Transaction handling for repository writes lives once in BaseRepository, so commit, rollback, deletion and session
+    behavior stay identical across repositories and a fix is made in one place instead of in every sibling.
+  criteria:
+  - id: DRY-001.Q01
+    question: Does every repository method that persists a record commit through BaseRepository._commit?
+    kind: judgment
+    positive_example: return self._commit(session, record, f"Worktree with id '{id}' already exists")
+    negative_example: 'session.add(record); session.commit()  # in a repository subclass'
+  - id: DRY-001.Q02
+    question: Does every repository method that deletes a single record delete it through BaseRepository._delete_where?
+    kind: judgment
+    positive_example: return self._delete_where(session, select(WorktreeRecord).where(WorktreeRecord.id == id))
+    negative_example: 'session.delete(record); session.commit()  # in a repository subclass'
+  - id: DRY-001.Q03
+    question: Is the rollback after a failed commit written only in BaseRepository?
+    kind: judgment
+    positive_example: 'No try/except IntegrityError and no session.rollback() in worktrees.py, sessions.py, artifacts.py or costs.py'
+    negative_example: 'except IntegrityError: session.rollback(); raise ValueError(...)  # in a repository subclass'
+  - id: DRY-001.Q04
+    question: Does every repository method obtain its session from BaseRepository.session()?
+    kind: judgment
+    positive_example: 'with self.session() as session:'
+    negative_example: 'with get_session(self.db_engine) as session:  # in a repository subclass'
+  - id: DRY-001.Q05
+    question: Is every other transaction block shared by two or more repository classes defined once in BaseRepository?
+    kind: judgment
+    na_when: No repository class other than BaseRepository contains transaction-handling code beyond calls to BaseRepository helpers.
+    positive_example: 'Two repositories both call self._delete_where(...) for single-record deletes'
+    negative_example: 'The same try/commit/rollback/refresh block copied into both SessionsRepository and WorktreesRepository'
   citation: docs/agents/code-conventions.md#structure-and-complexity
 - id: DB-001
   title: Redundant Index Declaration on Unique Columns
@@ -919,19 +1018,32 @@ rules:
   negative_example: 'assert isinstance(dispatch_spy[-1], MessageEvent)  # asserting an incidental progress event through the result spy'
   citation: docs/agents/testing.md#tier-3---cli-wiring-runner-required-root-tests-when-earned
 - id: TEST-020
-  title: Test Docstrings Are Imperative Contracts Without Tags
+  title: Test-Layer Docstrings Are Terse Contracts Without Tags
   severity: WARNING
   category: Testing
   domain: tests
   scope: tests/
-  guideline: A test docstring exists only when it adds a fact the test name and assertions do not, such as an exact literal,
+  guideline: >-
+    A test method docstring exists only when it adds a fact the test name and assertions do not, such as an exact literal,
     an ordering contract, or the inputs behind a parametrized case. It is one imperative sentence stating the outcome, with
-    no `[tier-N/type]` tag, no `<symbol>:` or `dovo <command>:` prefix, and every line within 120 columns. The execution tier
-    follows from the test file path.
-  evaluation_criteria: Inspect new or modified test docstrings. Flag a docstring that carries a tier tag, opens with a
-    non-imperative word, exceeds 120 columns, or only rewords the test name.
-  positive_example: '"""Exit 1 with ''Maximum active worktrees reached'' in stdout when 3 worktrees already exist."""'
-  negative_example: '"""[tier-3/integration] dovo worktree create: 3 prior worktrees exist -> exit 1, ''Maximum active worktrees reached'' in stdout."""'
+    no `[tier-N/type]` tag, no `<symbol>:` or `dovo <command>:` prefix, and every line within 120 columns. The execution
+    tier follows from the test file path. A docstring on any other unit under tests/ (helper, fixture, test double, class,
+    module) opens with a one-line title stating what the unit is or does, with no outcome clause and no list of steps. It
+    adds a description only for a hidden contract, a safety behavior, or a non-obvious ordering constraint. It does not
+    retell the body, restate parameters, types, or the return annotation, or describe how another module or caller
+    behaves. Every unit carries exactly one docstring, so a bare string statement after it is dead code.
+  evaluation_criteria: >-
+    Inspect new or modified docstrings under tests/. On a test method, flag a docstring that carries a tier tag, opens
+    with a non-imperative word, exceeds 120 columns, or only rewords the test name. On any other unit, flag a title that
+    carries an outcome clause or lists steps, a description that retells the body, restates the signature, or adds no
+    fact the title lacks, a sentence describing another unit's behavior, and a bare string statement after the
+    docstring.
+  positive_example: |-
+    """Exit 1 with 'Maximum active worktrees reached' in stdout when 3 worktrees already exist."""
+    """Build the registered provider with its winning credential set and a fake finished-stream runner."""  # helper
+  negative_example: |-
+    """[tier-3/integration] dovo worktree create: 3 prior worktrees exist -> exit 1, 'Maximum active worktrees reached' in stdout."""
+    """Give the provider's winning credential 'test-token', patch a finished-stream runner, and return both."""  # helper: lists steps and restates the return type
   citation: docs/agents/testing.md#naming-conventions
 - id: DOC-001
   title: Architecture Doc Structural Gate

@@ -176,23 +176,33 @@ def _val(cls, v: Any) -> Any: ...
 # ❌ DO NOT: queue: Queue = mock_queue  # type: ignore  # bare ignore, suppresses nothing and hides a fixable fixture type
 ```
 
-- **[ENCAP-001] Expose Public Query Properties (SUGGESTION):**
-  Expose public boolean query properties (e.g. is_interactive, is_enabled, has_*) on classes rather than referencing private members from external callers.
+- **[ENCAP-001] Expose Public Query Properties (BLOCKER):**
+  Protects a class's freedom to change its internal representation. Callers learn its state through a public interface, so a refactor stays local instead of breaking every caller that reached inside.
 
-```python
-# ✅ DO:
-@property
-def is_running(self) -> bool: return self._proc is not None and self._proc.poll() is None
-# ❌ DO NOT: if runner._process is not None: ...  # caller inspecting private state
-```
+  Answer yes to every criterion:
+  - `ENCAP-001.Q01` (mechanical) Is every access to an underscore-prefixed, non-dunder member in src/dovo/ made on self, cls or mcs rather than on another object?
+
+    ```python
+    # ✅ DO: if runner.is_running: ...  # caller uses the public query property
+    # ❌ DO NOT: if runner._process is not None: ...  # caller inspecting private state
+    ```
+  - `ENCAP-001.Q02` (judgment) Does each class that callers query for boolean state expose that state as a public property?
+
+    ```python
+    # ✅ DO: if runner.is_running: ...  # public @property on the class, backed by self._proc
+    # ❌ DO NOT: if runner.get_process() is not None: ...  # caller re-derives boolean state from an exposed internal handle
+    ```
 
 - **[ENCAP-002] No Test Seams in Production Signatures (BLOCKER):**
-  Never add a parameter, kwarg, or callback solely for test injection. A parameter production never reads is dead code with a test attached. Monkeypatch collaborators at module boundaries instead.
+  Keeps production signatures free of dead code written for tests. Every parameter exists because a production caller needs it, so the public surface reflects real behavior and tests do not shape production APIs.
 
-```python
-# ✅ DO: def run(self, cwd: Path) -> RunOutcome: ...  # tests monkeypatch at boundary
-# ❌ DO NOT: def run(self, cwd: Path, _runner: GitRunner | None = None) -> RunOutcome: ...
-```
+  Answer yes to every criterion:
+  - `ENCAP-002.Q01` (judgment) Is every parameter, kwarg or callback with a default value in a new or modified function in src/dovo/ passed by at least one production caller?
+
+    ```python
+    # ✅ DO: def run(self, cwd: Path) -> RunOutcome: ...  # tests monkeypatch at boundary
+    # ❌ DO NOT: def run(self, cwd: Path, _runner: GitRunner | None = None) -> RunOutcome: ...  # only tests pass _runner
+    ```
 
 - **[PERF-001] No Ad-Hoc DB Instantiations in Loops (BLOCKER):**
   Never instantiate a repository or DovoDb inside loops or test helpers. Inject pre-initialized instances to prevent N+1 SQLite connection/migration checks.
@@ -221,28 +231,103 @@ for item in items: repo.create(item)
 ```
 
 - **[API-001] Sibling Repository CRUD Method Naming Consistency (WARNING):**
-  Maintain consistent method naming across sibling repositories. Standardize on canonical CRUD verbs (create(), get(), list(), delete(), save()). Avoid ad-hoc verb variants like insert(), add(), or upsert() unless explicitly justified.
+  Sibling repositories name the same operation with the same verb, so a caller who knows one repository can use the others without reading each class, and a divergent name reads as a different behavior.
 
-```python
-# ✅ DO: repo.create(record)
-# ❌ DO NOT: repo.insert(record)  # sibling repositories use .create()
-```
+  Answer yes to every criterion:
+  - `API-001.Q01` (judgment) Does every repository class that inserts a new record expose that operation as a public create() method?
+
+    ```python
+    # ✅ DO: WorktreesRepository.create(...) and SessionsRepository.create(...)
+    # ❌ DO NOT: CostsRepository.record_token_usage(...) inserting a CostRecord while sibling repositories use create()
+    ```
+  - `API-001.Q02` (judgment) Does every repository method that returns at most one record looked up by its identifying key have the name get?
+
+    ```python
+    # ✅ DO: def get(self, id: str) -> WorktreeRecord | None:
+    # ❌ DO NOT: def find(self, id: str) -> WorktreeRecord | None:  # siblings use get()
+    ```
+  - `API-001.Q03` (judgment) Does every repository method that returns a collection of records of one entity have the name list?
+
+    ```python
+    # ✅ DO: def list(self, status: WorktreeStatus | None = None) -> list[WorktreeRecord]:
+    # ❌ DO NOT: def all(self) -> list[WorktreeRecord]:  # siblings use list()
+    ```
+  - `API-001.Q04` (judgment) Does every repository method that removes a record have the name delete?
+
+    ```python
+    # ✅ DO: def delete(self, id: str) -> bool:
+    # ❌ DO NOT: def remove(self, id: str) -> bool:  # siblings use delete()
+    ```
+  - `API-001.Q05` (judgment) Does every repository method that persists changes to a whole existing record have the name save?
+
+    ```python
+    # ✅ DO: def save(self, record: SessionRecord) -> SessionRecord:
+    # ❌ DO NOT: def store(self, record: SessionRecord) -> SessionRecord:  # whole-record persist not named save()
+    ```
+  - `API-001.Q06` (judgment) Does every repository method named insert, add or upsert have a docstring or comment stating why a canonical verb does not fit?
+
+    ```python
+    # ✅ DO: def upsert(self, ...) -> ...:  with the docstring "Not save(): replaces the row only when the revision matches."
+    # ❌ DO NOT: def insert(self, record: WorktreeRecord) -> WorktreeRecord:  # no stated reason; siblings use create()
+    ```
+  - `API-001.Q07` (judgment) Do all repository classes that expose the same non-CRUD operation give it the same method name?
+
+    ```python
+    # ✅ DO: WorktreesRepository.update_status(...) and SessionsRepository.update_status(...)
+    # ❌ DO NOT: WorktreesRepository.update_status(...) next to SessionsRepository.set_state(...) for the same status change
+    ```
 
 - **[API-002] Consistent Error Semantics Across Queries (WARNING):**
-  Maintain consistent error handling semantics across identical query paths. Do not swallow invalid enums or corrupt rows in one repository method while raising or returning BaseResult errors in another.
+  Query paths that read the same data report bad rows the same way, so a caller never mistakes a silently swallowed failure in one path for an empty result while a sibling path reports it.
 
-```python
-# ✅ DO: except ValidationError as error: return RecordResult.from_error(error)
-# ❌ DO NOT: except ValidationError: return None  # inconsistently swallows error
-```
+  Answer yes to every criterion:
+  - `API-002.Q01` (judgment) Does every query method that reads an entity report an invalid enum value or corrupt row, by raising or by returning a BaseResult error, whenever a sibling query method that reads that entity reports it?
+
+    ```python
+    # ✅ DO: get() and list() both raise ValueError for a row with an invalid status
+    # ❌ DO NOT: list() raises on a row with an invalid status while get() returns None for the same row
+    ```
+  - `API-002.Q02` (judgment) Does every except block in a query method re-raise or convert the caught error into a BaseResult error, instead of returning None or an empty value?
+
+    ```python
+    # ✅ DO: except ValidationError as error: return RecordResult.from_error(error)
+    # ❌ DO NOT: except ValidationError: return None  # swallows the error
+    ```
 
 - **[DRY-001] Shared Repository Transaction Logic in BaseRepository (SUGGESTION):**
-  Repetitive database transaction boilerplate (_commit, _delete_one_where, rollback handling, session lifecycle) should be consolidated into BaseRepository rather than duplicated across individual repository classes.
+  Transaction handling for repository writes lives once in BaseRepository, so commit, rollback, deletion and session behavior stay identical across repositories and a fix is made in one place instead of in every sibling.
 
-```python
-# ✅ DO: self._delete_one_where(WorktreeRecord.session_id == session_id)
-# ❌ DO NOT: with self.session() as s: s.query(...).delete(); s.commit()  # duplicated across repos
-```
+  Answer yes to every criterion:
+  - `DRY-001.Q01` (judgment) Does every repository method that persists a record commit through BaseRepository._commit?
+
+    ```python
+    # ✅ DO: return self._commit(session, record, f"Worktree with id '{id}' already exists")
+    # ❌ DO NOT: session.add(record); session.commit()  # in a repository subclass
+    ```
+  - `DRY-001.Q02` (judgment) Does every repository method that deletes a single record delete it through BaseRepository._delete_where?
+
+    ```python
+    # ✅ DO: return self._delete_where(session, select(WorktreeRecord).where(WorktreeRecord.id == id))
+    # ❌ DO NOT: session.delete(record); session.commit()  # in a repository subclass
+    ```
+  - `DRY-001.Q03` (judgment) Is the rollback after a failed commit written only in BaseRepository?
+
+    ```python
+    # ✅ DO: No try/except IntegrityError and no session.rollback() in worktrees.py, sessions.py, artifacts.py or costs.py
+    # ❌ DO NOT: except IntegrityError: session.rollback(); raise ValueError(...)  # in a repository subclass
+    ```
+  - `DRY-001.Q04` (judgment) Does every repository method obtain its session from BaseRepository.session()?
+
+    ```python
+    # ✅ DO: with self.session() as session:
+    # ❌ DO NOT: with get_session(self.db_engine) as session:  # in a repository subclass
+    ```
+  - `DRY-001.Q05` (judgment) Is every other transaction block shared by two or more repository classes defined once in BaseRepository?
+
+    ```python
+    # ✅ DO: Two repositories both call self._delete_where(...) for single-record deletes
+    # ❌ DO NOT: The same try/commit/rollback/refresh block copied into both SessionsRepository and WorktreesRepository
+    ```
 
 - **[DB-001] Redundant Index Declaration on Unique Columns (NIT):**
   Declaring index=True on a column that already declares unique=True creates redundant SQLite B-tree indexes. A unique constraint already creates a backing index automatically.

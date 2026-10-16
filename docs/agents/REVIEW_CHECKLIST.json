@@ -230,10 +230,23 @@
     {
       "id": "ENCAP-001",
       "name": "Expose Public Query Properties",
-      "severity": "SUGGESTION",
+      "severity": "BLOCKER",
       "domain": "all",
       "scope": "src/dovo/",
-      "evaluation_criteria": "Flag external callers inspecting internal private state; suggest adding a query property.",
+      "intent": "Protects a class's freedom to change its internal representation. Callers learn its state through a public interface, so a refactor stays local instead of breaking every caller that reached inside.",
+      "criteria": [
+        {
+          "id": "ENCAP-001.Q01",
+          "question": "Is every access to an underscore-prefixed, non-dunder member in src/dovo/ made on self, cls or mcs rather than on another object?",
+          "kind": "mechanical"
+        },
+        {
+          "id": "ENCAP-001.Q02",
+          "question": "Does each class that callers query for boolean state expose that state as a public property?",
+          "kind": "judgment"
+        }
+      ],
+      "evaluation_criteria": "1. Is every access to an underscore-prefixed, non-dunder member in src/dovo/ made on self, cls or mcs rather than on another object? 2. Does each class that callers query for boolean state expose that state as a public property?",
       "bad_pattern": "if runner._process is not None: ...  # caller inspecting private state"
     },
     {
@@ -242,8 +255,16 @@
       "severity": "BLOCKER",
       "domain": "all",
       "scope": "src/dovo/",
-      "evaluation_criteria": "Inspect parameters of touched functions. If a parameter has a default and is only ever passed in tests, flag it.",
-      "bad_pattern": "def run(self, cwd: Path, _runner: GitRunner | None = None) -> RunOutcome: ..."
+      "intent": "Keeps production signatures free of dead code written for tests. Every parameter exists because a production caller needs it, so the public surface reflects real behavior and tests do not shape production APIs.",
+      "criteria": [
+        {
+          "id": "ENCAP-002.Q01",
+          "question": "Is every parameter, kwarg or callback with a default value in a new or modified function in src/dovo/ passed by at least one production caller?",
+          "kind": "judgment"
+        }
+      ],
+      "evaluation_criteria": "1. Is every parameter, kwarg or callback with a default value in a new or modified function in src/dovo/ passed by at least one production caller?",
+      "bad_pattern": "def run(self, cwd: Path, _runner: GitRunner | None = None) -> RunOutcome: ...  # only tests pass _runner"
     },
     {
       "id": "PERF-001",
@@ -281,8 +302,46 @@
       "severity": "WARNING",
       "domain": "core",
       "scope": "src/dovo/core/db/repositories/",
-      "evaluation_criteria": "Inspect repository public methods. Flag divergence in verb naming across sibling repository classes.",
-      "bad_pattern": "repo.insert(record)  # sibling repositories use .create()"
+      "intent": "Sibling repositories name the same operation with the same verb, so a caller who knows one repository can use the others without reading each class, and a divergent name reads as a different behavior.",
+      "criteria": [
+        {
+          "id": "API-001.Q01",
+          "question": "Does every repository class that inserts a new record expose that operation as a public create() method?",
+          "kind": "judgment"
+        },
+        {
+          "id": "API-001.Q02",
+          "question": "Does every repository method that returns at most one record looked up by its identifying key have the name get?",
+          "kind": "judgment"
+        },
+        {
+          "id": "API-001.Q03",
+          "question": "Does every repository method that returns a collection of records of one entity have the name list?",
+          "kind": "judgment"
+        },
+        {
+          "id": "API-001.Q04",
+          "question": "Does every repository method that removes a record have the name delete?",
+          "kind": "judgment"
+        },
+        {
+          "id": "API-001.Q05",
+          "question": "Does every repository method that persists changes to a whole existing record have the name save?",
+          "kind": "judgment"
+        },
+        {
+          "id": "API-001.Q06",
+          "question": "Does every repository method named insert, add or upsert have a docstring or comment stating why a canonical verb does not fit?",
+          "kind": "judgment"
+        },
+        {
+          "id": "API-001.Q07",
+          "question": "Do all repository classes that expose the same non-CRUD operation give it the same method name?",
+          "kind": "judgment"
+        }
+      ],
+      "evaluation_criteria": "1. Does every repository class that inserts a new record expose that operation as a public create() method? 2. Does every repository method that returns at most one record looked up by its identifying key have the name get? 3. Does every repository method that returns a collection of records of one entity have the name list? 4. Does every repository method that removes a record have the name delete? 5. Does every repository method that persists changes to a whole existing record have the name save? 6. Does every repository method named insert, add or upsert have a docstring or comment stating why a canonical verb does not fit? 7. Do all repository classes that expose the same non-CRUD operation give it the same method name?",
+      "bad_pattern": "CostsRepository.record_token_usage(...) inserting a CostRecord while sibling repositories use create()"
     },
     {
       "id": "API-002",
@@ -293,8 +352,21 @@
         "engine"
       ],
       "scope": "src/dovo/core/db/, src/dovo/core/*/services/, src/dovo/engine/services/",
-      "evaluation_criteria": "Audit repository query methods for divergent exception handling (e.g. bare except returning None vs structured Result error capture).",
-      "bad_pattern": "except ValidationError: return None  # inconsistently swallows error"
+      "intent": "Query paths that read the same data report bad rows the same way, so a caller never mistakes a silently swallowed failure in one path for an empty result while a sibling path reports it.",
+      "criteria": [
+        {
+          "id": "API-002.Q01",
+          "question": "Does every query method that reads an entity report an invalid enum value or corrupt row, by raising or by returning a BaseResult error, whenever a sibling query method that reads that entity reports it?",
+          "kind": "judgment"
+        },
+        {
+          "id": "API-002.Q02",
+          "question": "Does every except block in a query method re-raise or convert the caught error into a BaseResult error, instead of returning None or an empty value?",
+          "kind": "judgment"
+        }
+      ],
+      "evaluation_criteria": "1. Does every query method that reads an entity report an invalid enum value or corrupt row, by raising or by returning a BaseResult error, whenever a sibling query method that reads that entity reports it? 2. Does every except block in a query method re-raise or convert the caught error into a BaseResult error, instead of returning None or an empty value?",
+      "bad_pattern": "list() raises on a row with an invalid status while get() returns None for the same row"
     },
     {
       "id": "DRY-001",
@@ -302,8 +374,36 @@
       "severity": "SUGGESTION",
       "domain": "core",
       "scope": "src/dovo/core/db/repositories/",
-      "evaluation_criteria": "Flag identical session commit/rollback and single-record deletion boilerplate repeated across sibling repositories.",
-      "bad_pattern": "with self.session() as s: s.query(...).delete(); s.commit()  # duplicated across repos"
+      "intent": "Transaction handling for repository writes lives once in BaseRepository, so commit, rollback, deletion and session behavior stay identical across repositories and a fix is made in one place instead of in every sibling.",
+      "criteria": [
+        {
+          "id": "DRY-001.Q01",
+          "question": "Does every repository method that persists a record commit through BaseRepository._commit?",
+          "kind": "judgment"
+        },
+        {
+          "id": "DRY-001.Q02",
+          "question": "Does every repository method that deletes a single record delete it through BaseRepository._delete_where?",
+          "kind": "judgment"
+        },
+        {
+          "id": "DRY-001.Q03",
+          "question": "Is the rollback after a failed commit written only in BaseRepository?",
+          "kind": "judgment"
+        },
+        {
+          "id": "DRY-001.Q04",
+          "question": "Does every repository method obtain its session from BaseRepository.session()?",
+          "kind": "judgment"
+        },
+        {
+          "id": "DRY-001.Q05",
+          "question": "Is every other transaction block shared by two or more repository classes defined once in BaseRepository?",
+          "kind": "judgment"
+        }
+      ],
+      "evaluation_criteria": "1. Does every repository method that persists a record commit through BaseRepository._commit? 2. Does every repository method that deletes a single record delete it through BaseRepository._delete_where? 3. Is the rollback after a failed commit written only in BaseRepository? 4. Does every repository method obtain its session from BaseRepository.session()? 5. Is every other transaction block shared by two or more repository classes defined once in BaseRepository?",
+      "bad_pattern": "session.add(record); session.commit()  # in a repository subclass"
     },
     {
       "id": "DB-001",
@@ -541,12 +641,12 @@
     },
     {
       "id": "TEST-020",
-      "name": "Test Docstrings Are Imperative Contracts Without Tags",
+      "name": "Test-Layer Docstrings Are Terse Contracts Without Tags",
       "severity": "WARNING",
       "domain": "tests",
       "scope": "tests/",
-      "evaluation_criteria": "Inspect new or modified test docstrings. Flag a docstring that carries a tier tag, opens with a non-imperative word, exceeds 120 columns, or only rewords the test name.",
-      "bad_pattern": "\"\"\"[tier-3/integration] dovo worktree create: 3 prior worktrees exist -> exit 1, 'Maximum active worktrees reached' in stdout.\"\"\""
+      "evaluation_criteria": "Inspect new or modified docstrings under tests/. On a test method, flag a docstring that carries a tier tag, opens with a non-imperative word, exceeds 120 columns, or only rewords the test name. On any other unit, flag a title that carries an outcome clause or lists steps, a description that retells the body, restates the signature, or adds no fact the title lacks, a sentence describing another unit's behavior, and a bare string statement after the docstring.",
+      "bad_pattern": "\"\"\"[tier-3/integration] dovo worktree create: 3 prior worktrees exist -> exit 1, 'Maximum active worktrees reached' in stdout.\"\"\"\n\"\"\"Give the provider's winning credential 'test-token', patch a finished-stream runner, and return both.\"\"\"  # helper: lists steps and restates the return type"
     },
     {
       "id": "DOC-001",

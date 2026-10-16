@@ -128,23 +128,33 @@ def _val(cls, v: Any) -> Any: ...
 # ❌ DO NOT: queue: Queue = mock_queue  # type: ignore  # bare ignore, suppresses nothing and hides a fixable fixture type
 ```
 
-- **[ENCAP-001] Expose Public Query Properties (SUGGESTION):**
-  Expose public boolean query properties (e.g. is_interactive, is_enabled, has_*) on classes rather than referencing private members from external callers.
+- **[ENCAP-001] Expose Public Query Properties (BLOCKER):**
+  Protects a class's freedom to change its internal representation. Callers learn its state through a public interface, so a refactor stays local instead of breaking every caller that reached inside.
 
-```python
-# ✅ DO:
-@property
-def is_running(self) -> bool: return self._proc is not None and self._proc.poll() is None
-# ❌ DO NOT: if runner._process is not None: ...  # caller inspecting private state
-```
+  Answer yes to every criterion:
+  - `ENCAP-001.Q01` (mechanical) Is every access to an underscore-prefixed, non-dunder member in src/dovo/ made on self, cls or mcs rather than on another object?
+
+    ```python
+    # ✅ DO: if runner.is_running: ...  # caller uses the public query property
+    # ❌ DO NOT: if runner._process is not None: ...  # caller inspecting private state
+    ```
+  - `ENCAP-001.Q02` (judgment) Does each class that callers query for boolean state expose that state as a public property?
+
+    ```python
+    # ✅ DO: if runner.is_running: ...  # public @property on the class, backed by self._proc
+    # ❌ DO NOT: if runner.get_process() is not None: ...  # caller re-derives boolean state from an exposed internal handle
+    ```
 
 - **[ENCAP-002] No Test Seams in Production Signatures (BLOCKER):**
-  Never add a parameter, kwarg, or callback solely for test injection. A parameter production never reads is dead code with a test attached. Monkeypatch collaborators at module boundaries instead.
+  Keeps production signatures free of dead code written for tests. Every parameter exists because a production caller needs it, so the public surface reflects real behavior and tests do not shape production APIs.
 
-```python
-# ✅ DO: def run(self, cwd: Path) -> RunOutcome: ...  # tests monkeypatch at boundary
-# ❌ DO NOT: def run(self, cwd: Path, _runner: GitRunner | None = None) -> RunOutcome: ...
-```
+  Answer yes to every criterion:
+  - `ENCAP-002.Q01` (judgment) Is every parameter, kwarg or callback with a default value in a new or modified function in src/dovo/ passed by at least one production caller?
+
+    ```python
+    # ✅ DO: def run(self, cwd: Path) -> RunOutcome: ...  # tests monkeypatch at boundary
+    # ❌ DO NOT: def run(self, cwd: Path, _runner: GitRunner | None = None) -> RunOutcome: ...  # only tests pass _runner
+    ```
 
 - **[PERF-001] No Ad-Hoc DB Instantiations in Loops (BLOCKER):**
   Never instantiate a repository or DovoDb inside loops or test helpers. Inject pre-initialized instances to prevent N+1 SQLite connection/migration checks.
