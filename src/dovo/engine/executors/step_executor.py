@@ -140,6 +140,7 @@ class StepExecution:
             credential_envs=self._sensitive_variables, env_file_dir=self._env_file_dir
         )
         self.on_output = self._masked_output_callback(metadata.on_output)
+        self.on_progress = metadata.on_progress
         self.step_index = _int_from_context_or_default(self.context, "step_index", metadata.step_index)
         self.initial_attempt = _int_from_context_or_default(self.context, "initial_attempt", metadata.initial_attempt)
         self.iteration_index = _int_from_context_or_default(self.context, "iteration_index", metadata.iteration_index)
@@ -361,7 +362,7 @@ class StepExecution:
             attempt=metadata.step.attempt,
             loop_id=self.loop_id,
             iteration=self.loop_iteration,
-            on_output=self.on_output,
+            on_progress=self.on_progress,
             session_log_dir=self.session_log_dir,
             redactor=self.redactor,
         )

@@ -45,6 +45,7 @@ FORMATTER_REGISTRY: Final[dict[type[BaseModel], type[ComponentFormatter[Any, Any
     event_models.StepStartEvent: event_formatters.StepStartFormatter,
     event_models.StepDoneEvent: event_formatters.StepDoneFormatter,
     event_models.StepOutputEvent: event_formatters.StepOutputFormatter,
+    event_models.AgentProgressEvent: event_formatters.AgentProgressFormatter,
     event_models.WorktreeLifecycleEvent: event_formatters.WorktreeLifecycleFormatter,
     event_models.LoopLifecycleEvent: event_formatters.LoopLifecycleFormatter,
     event_models.PromptEvent: event_formatters.PromptFormatter,

@@ -168,7 +168,7 @@ class MapCopilotFixtureCoverageTests:
                 kinds.update(progress.kind for progress in _map(line))
 
         assert tool_names >= set(COPILOT_TOOL_KINDS)
-        assert kinds == set(AgentProgressKind)
+        assert kinds == set(COPILOT_TOOL_KINDS.values())
 
 
 class CopilotProgressContractTests:

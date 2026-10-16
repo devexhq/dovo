@@ -161,7 +161,7 @@ Secret values among forwarded variables (step `env:` values with a secret-style 
 In `allowlist` mode, when host variables were not forwarded:
 
 - the agent sees their names (never values) in `DOVO_ENV_WITHHELD`, and its prompt starts with a line telling it to ask for `agent.env_passthrough`;
-- the console prints `Agent environment filtered: <N> variables withheld.`;
+- before the agent starts, the console prints `! Agent environment filtered: <N> variables withheld.`; when the attempt does not succeed it also prints a `! Fix:` line saying how to pass names through (`agent.env_passthrough` or `--env-passthrough`);
 - `session.log` records an `agent_env_filtered` event with the full list (see [`dovo session logs`](../cli/session.md#dovo-session-logs)).
 
 `inherit` mode reports nothing.
@@ -215,7 +215,7 @@ When an agent edits the worktree and the result trips a patch limit (`max_files`
 
 ## Attempt Logs and Heartbeat
 
-An agent attempt streams the provider's output while it runs. Each stdout and stderr line is masked and appended to the attempt's capture files, so a run in progress can be inspected on disk with `dovo session logs --step <step_id>`. Capture follows `history.save_attempt_logs`. The terminal is not given the provider's raw lines. For a provider that reports progress (today, Copilot) it shows one `[<step id>] Reading|Searching for|Editing|Running <target>` line per action the agent takes, and each action is also recorded as an `agent_progress` event in `session.log`; when 30 seconds pass without progress it shows `[<step id>] agent running (<elapsed>s)` until the attempt ends. A provider that reports no progress shows only the heartbeat line. The step's own output remains the single JSON summary line.
+An agent attempt streams the provider's output while it runs. Each stdout and stderr line is masked and appended to the attempt's capture files, so a run in progress can be inspected on disk with `dovo session logs --step <step_id>`. Capture follows `history.save_attempt_logs`. The terminal is not given the provider's raw lines. For a provider that reports progress (today, Copilot and Claude Code) it shows one bullet entry per action the agent takes (`● Read|Ran|Edited|Searched <target>`, with shell commands syntax-highlighted), and each action is also recorded as an `agent_progress` event in `session.log`. Claude Code additionally shows the first line of any text the agent wrote before an action as its own bullet, and the first lines of each tool's output under the action behind a `⎿` connector: a read shows its line count, an edit its first line, and longer output ends with `… +<N> lines`. Text still pending when the attempt ends, such as the closing message, is not shown. When 30 seconds pass without progress it shows `agent running (<elapsed>s)` until the attempt ends. A provider that reports no progress shows only the heartbeat line. With `--format json` each entry is an `AgentProgressEvent` envelope whose payload carries `step_id`, `kind` (`edit`, `read`, `search`, `shell`, `note` or `result`), `target`, `call_kind`, `line_count` and `is_error`. The step's own stdout remains the single JSON summary line; the terminal renders it as a `Result: <status>` block with the summary text and any touched files, while `--format json` carries the raw line.
 
 ---
 

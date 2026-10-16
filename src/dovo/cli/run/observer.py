@@ -6,8 +6,12 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from pydantic import ValidationError
+
 from dovo.cli.ui.dispatcher import UiDispatcher
 from dovo.cli.ui.events import (
+    AgentProgressEvent,
+    AgentSummaryView,
     LoopConditionView,
     LoopLifecycleEvent,
     StepDoneEvent,
@@ -17,12 +21,31 @@ from dovo.cli.ui.events import (
 )
 from dovo.common.models import DisplayFormatOptions, OutputFormatOptions
 from dovo.common.utils import display_path
-from dovo.core.catalog.definitions import LoopStepBlock, StepDefinition
+from dovo.core.catalog.definitions import LoopStepBlock, StepDefinition, StepType
 from dovo.engine import RunObserver, RunOutcome
-from dovo.engine.executors.models import ConditionEvaluationResult, StepResult
+from dovo.engine.executors.models import AgentProgressUpdate, AgentStepSummary, ConditionEvaluationResult, StepResult
 
 if TYPE_CHECKING:
     from types import TracebackType
+
+
+def _agent_summary_view(step: StepDefinition, line: str) -> AgentSummaryView | None:
+    """Return the summary view when an agent step's stdout line is its JSON summary, else None."""
+    if step.type is not StepType.AGENT or not line.startswith("{"):
+        return None
+
+    try:
+        summary = AgentStepSummary.model_validate_json(line)
+    except ValidationError:
+        return None
+
+    return AgentSummaryView(
+        status=summary.status.value,
+        succeeded=summary.succeeded,
+        summary=summary.summary,
+        unfixable_reason=summary.unfixable_reason,
+        touched_files=summary.touched_files,
+    )
 
 
 class DispatcherRunObserver(RunObserver):
@@ -79,11 +102,26 @@ class DispatcherRunObserver(RunObserver):
         stream: str = "stdout",
     ) -> None:
         """Dispatch live step output event."""
+        text = line.rstrip("\r\n")
         self._dispatcher.dispatch(
             StepOutputEvent(
                 step_id=step.id,
-                line=line.rstrip("\r\n"),
+                line=text,
                 stream=stream,
+                agent_summary=_agent_summary_view(step, text) if stream == "stdout" else None,
+            )
+        )
+
+    def on_step_progress(self, idx: int, total: int, step: StepDefinition, update: AgentProgressUpdate) -> None:
+        """Dispatch an agent action, note or tool result event."""
+        self._dispatcher.dispatch(
+            AgentProgressEvent(
+                step_id=step.id,
+                kind=update.kind,
+                target=update.target,
+                call_kind=update.call_kind,
+                line_count=update.line_count,
+                is_error=update.is_error,
             )
         )
 

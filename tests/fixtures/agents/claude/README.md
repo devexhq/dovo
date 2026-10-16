@@ -24,6 +24,7 @@ no hooks, skills, plugins or MCP servers. Re-capture with `--bare` if the init s
 | `permission_denied_by_rule` | `Bash` refused by a deny rule; exits 0, listed in `permission_denials` | `success` |
 | `tool_failure` | `Read` of a missing file, `tool_result.is_error` true | `success` |
 | `provider_error` | invalid model; CLI exits 1 | `is_error: true`, `terminal_reason: api_error` |
+| `unmapped_tool` | unmapped `ToolSearch` and `WebFetch` calls (both `WebFetch` calls failed with `getaddrinfo ENOTFOUND`); captured with CLI 2.1.300 | `success` |
 | `truncated_no_result` | copy of `planning` with the final `result` event removed | none |
 
 `provider_error` stderr was `[claude-code:unrecognized_model] {"model":"not-a-real-model","query_source":"sdk"}`; the

@@ -103,9 +103,11 @@ Hierarchical resolution merges four tiers, lowest to highest precedence: **Packa
 - Environment inputs are names-only for reporting: `env_withheld` carries the names the allowlist withheld, never values.
 - A runner outcome with denials and an empty worktree diff becomes a `blocked` response (built by `blocked_response`).
 
-### Copilot progress mapping
+### Agent progress mapping
 
 A provider reports live progress when its `ProviderSpec.progress_mapper` ([`core/agents/base.py`](../../src/dovo/core/agents/base.py)) is set; `None` means it reports none. Each such provider documents its mapping under its own `### <Provider> progress mapping` heading, and [`tests/lint/test_progress_mapping_parity.py`](../../tests/lint/test_progress_mapping_parity.py) fails when a table disagrees with that provider's tool-kind or target-field constants.
+
+### Copilot progress mapping
 
 The Copilot adapter maps each `tool.execution_start` stdout event through `map_copilot_line` ([`core/agents/copilot_progress.py`](../../src/dovo/core/agents/copilot_progress.py)); other event types and unlisted tools such as `skill` are skipped. The table below is the mapping specification.
 
@@ -115,6 +117,17 @@ The Copilot adapter maps each `tool.execution_start` stdout event through `map_c
 | `search` | `rg`, `grep`, `glob` | `arguments.pattern` |
 | `edit` | `create`, `edit`, `apply_patch` | `arguments.path`; for `apply_patch`, each `*** Add File:`, `*** Update File:` or `*** Delete File:` path in the `arguments` string |
 | `shell` | `bash` | `arguments.command` |
+
+### Claude progress mapping
+
+The Claude Code adapter maps each `tool_use` block of an `assistant` stdout event through `map_claude_line` ([`core/agents/claude_progress.py`](../../src/dovo/core/agents/claude_progress.py)); other events and unlisted tools such as `WebFetch` are skipped. Each `text` block also yields a `note` item carrying the first non-blank line of its text, and each `tool_result` block of a `user` event yields a `result` item carrying the output and the id of the call it answers; neither is a tool call, so the table below, the tool mapping specification, has no row for them.
+
+| Kind | Tool names | Target |
+| --- | --- | --- |
+| `read` | `Read` | `input.file_path` |
+| `search` | `Grep`, `Glob` | `input.pattern` |
+| `edit` | `Edit`, `Write`, `NotebookEdit` | `input.file_path` (`input.notebook_path` for `NotebookEdit`) |
+| `shell` | `Bash` | `input.command` |
 
 ---
 

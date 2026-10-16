@@ -6,7 +6,7 @@ from collections.abc import Sequence
 from pathlib import Path
 
 from dovo.core.catalog.definitions import LoopStepBlock, StepDefinition
-from dovo.engine.executors.models import ConditionEvaluationResult, StepResult
+from dovo.engine.executors.models import AgentProgressUpdate, ConditionEvaluationResult, StepResult
 from dovo.engine.models import RunObserver, RunOutcome
 from dovo.engine.notify import safe_notify
 from tests.harness.builders import StepBuilder
@@ -22,6 +22,9 @@ class _NoOpRunObserver(RunObserver):
         pass
 
     def on_step_output(self, idx: int, total: int, step: StepDefinition, line: str, stream: str = "stdout") -> None:
+        pass
+
+    def on_step_progress(self, idx: int, total: int, step: StepDefinition, update: AgentProgressUpdate) -> None:
         pass
 
     def on_step_done(self, idx: int, total: int, step: StepDefinition, result: StepResult) -> None:

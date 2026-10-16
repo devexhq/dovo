@@ -22,6 +22,7 @@ from dovo.core.sessions import SessionLogEvent, SessionLogEventType
 from dovo.engine.executors.agent_step import MISSING_SETTINGS_MESSAGE, build_agent_step_runner
 from dovo.engine.executors.models import (
     AgentProgressSink,
+    AgentProgressUpdate,
     AgentStepRunner,
     ExecutionMetadata,
     OutputCallback,
@@ -282,14 +283,14 @@ class StepExecutorAgentProgressTests:
         return _runner
 
     def test_runner_receives_a_reporter_bound_to_the_step_identity(self, git_repo: Path, tmp_path: Path) -> None:
-        streamed: list[tuple[str, str]] = []
+        streamed: list[AgentProgressUpdate] = []
         log_dir = tmp_path / "logs"
         log_dir.mkdir()
         context = StepExecutionContext(
             step=StepBuilder.agent("plan").with_id("code").build(),
             worktree_path=git_repo,
             agent_runner=self._reporting_runner([]),
-            on_output=lambda stream_name, line: streamed.append((stream_name, line)),
+            on_progress=streamed.append,
             loop_id="code-loop",
             loop_iteration=2,
             session_log_dir=log_dir,
@@ -297,7 +298,7 @@ class StepExecutorAgentProgressTests:
 
         StepExecution(context).run()
 
-        assert streamed == [("stdout", "[code] Reading x\n")]
+        assert streamed == [AgentProgressUpdate(kind=AgentProgressKind.READ, target="x")]
         (event,) = [
             SessionLogEvent.model_validate_json(line)
             for line in (log_dir / SESSION_LOG_FILENAME).read_text(encoding="utf-8").splitlines()
@@ -313,16 +314,16 @@ class StepExecutorAgentProgressTests:
 
     def test_progress_works_when_attempt_logs_are_disabled(self, git_repo: Path) -> None:
         received: list[OutputCallback | None] = []
-        streamed: list[tuple[str, str]] = []
+        streamed: list[AgentProgressUpdate] = []
         context = StepExecutionContext(
             step=StepBuilder.agent("plan").with_id("code").build(),
             worktree_path=git_repo,
             agent_runner=self._reporting_runner(received),
-            on_output=lambda stream_name, line: streamed.append((stream_name, line)),
+            on_progress=streamed.append,
             save_attempt_logs=False,
         )
 
         StepExecution(context).run()
 
         assert received == [None]
-        assert streamed == [("stdout", "[code] Reading x\n")]
+        assert streamed == [AgentProgressUpdate(kind=AgentProgressKind.READ, target="x")]

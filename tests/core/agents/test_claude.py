@@ -26,6 +26,7 @@ from dovo.core.agents.claude import (
     resolve_claude_auth_mode,
     resolve_claude_credential,
 )
+from dovo.core.agents.claude_progress import map_claude_line
 from dovo.core.agents.cli_mutation import CliMutationOutcome, CliMutationRunRequest
 from dovo.core.agents.registry import PROVIDERS
 from tests.harness import AgentRequestBuilder, FakeAgentRunner, FakeAgentRunnerCall, patch_claude_probe
@@ -41,7 +42,7 @@ class ClaudeDescriptorTests:
             False,
         )
         assert (spec.supports_tool_policy, spec.supports_os_sandbox) == (True, False)
-        assert (spec.binary, spec.progress_mapper, spec.build) == ("claude", None, ClaudeAgentAdapter)
+        assert (spec.binary, spec.progress_mapper, spec.build) == ("claude", map_claude_line, ClaudeAgentAdapter)
         assert (spec.auth_label, spec.auth_fix) == (claude_auth_label, CLAUDE_AUTH_FIX)
         assert spec.control_envs == (
             "ANTHROPIC_BASE_URL",

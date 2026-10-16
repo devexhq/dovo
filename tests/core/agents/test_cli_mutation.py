@@ -710,6 +710,38 @@ class MutationEnvReportTests:
         assert received[0].prompt.startswith(ENV_FILTERED_PROMPT_LINE + "\n")
         assert received[0].env["DOVO_ENV_WITHHELD"] == "FOO_HOST,ZED_HOST"
 
+    def test_withheld_names_reach_the_callback_before_the_runner_starts(
+        self, git_repo: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(os, "environ", {"PATH": os.environ["PATH"], "ZED_HOST": "1", "FOO_HOST": "2"})
+        events: list[object] = []
+
+        def _record(request: CliMutationRunRequest) -> CliMutationOutcome:
+            events.append("run")
+            return CliMutationOutcome(status="finished")
+
+        request = AgentRequestBuilder().with_worktree_path(git_repo).build()
+        request = request.model_copy(update={"on_env_withheld": events.append})
+
+        EnvironmentAdapter(run_fn=_record).invoke(request)
+
+        assert events == [["FOO_HOST", "ZED_HOST"], "run"]
+
+    def test_failing_withheld_callback_does_not_stop_the_run(
+        self, git_repo: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(os, "environ", {"PATH": os.environ["PATH"], "ZED_HOST": "1"})
+
+        def _explode(names: list[str]) -> None:
+            raise RuntimeError(names)
+
+        request = AgentRequestBuilder().with_worktree_path(git_repo).build()
+        request = request.model_copy(update={"on_env_withheld": _explode})
+
+        response = EnvironmentAdapter(run_fn=lambda _request: CliMutationOutcome(status="finished")).invoke(request)
+
+        assert response.env_withheld == ["ZED_HOST"]
+
     def test_nothing_withheld_leaves_prompt_and_response_unchanged(self, git_repo: Path) -> None:
         received: list[CliMutationRunRequest] = []
 

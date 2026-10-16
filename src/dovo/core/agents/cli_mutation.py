@@ -242,6 +242,7 @@ class CliDirectMutationAdapter(BaseAgentProvider):
         prompt = build_mutation_prompt(request)
         if withheld:
             prompt = f"{ENV_FILTERED_PROMPT_LINE}\n{prompt}"
+            _notify_env_withheld(request.on_env_withheld, withheld)
 
         outcome = self._default_run(
             CliMutationRunRequest(
@@ -368,6 +369,17 @@ class CliDirectMutationAdapter(BaseAgentProvider):
         )
 
         return response.model_copy(update={"rejected_patch_path": str(saved) if saved is not None else None})
+
+
+def _notify_env_withheld(callback: Callable[[list[str]], None] | None, names: list[str]) -> None:
+    """Report the withheld host names to the callback before the provider runs, dropping any callback failure."""
+    if callback is None:
+        return
+
+    try:
+        callback(names)
+    except Exception:
+        return
 
 
 def _progress_mapper_for(spec: ProviderSpec | None) -> ProgressMapper | None:
