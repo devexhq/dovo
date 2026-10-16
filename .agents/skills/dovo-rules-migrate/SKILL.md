@@ -51,25 +51,8 @@ authors may run in parallel), proves no other rule changed, then archives the pr
 
 ## Author prompt
 
-Give the author the rule id, the path `.agentic/rules-audit/fragments/<RULE-ID>.yaml`, and this brief:
-
-- Rewrite the rule into the migrated shape. Read the schema comment at the top of `docs/agents/rules_spec.yaml` and one
-  already-migrated rule as a worked example. Write the whole rule as a one-item YAML list starting with `- id:` to the
-  fragment path, then run `uv run python scripts/rules_audit.py merge <RULE-ID>` and fix any error it prints.
-- Preserve the rule. Every sentence of the old `guideline` and every clause of the old `evaluation_criteria` must end up
-  in the `intent`, a criterion or an example. Report anything dropped, weakened or added, and why.
-- Keep permissions as permissions and preferences as preferences. Do not turn "allowed" or "preferred" into a pass/fail
-  obligation, and do not add requirements.
-- `intent`: one or two sentences, 40 words or fewer, saying what the rule protects, with no checkable details.
-- Each criterion is one yes/no question about one fact, starting with Does, Do, Is, Are, Was, Were, Has or Have, phrased
-  so that YES means compliant, with an `na_when` if it can be inapplicable and its own example pair.
-- **Verify every example against the repo before writing it.** Every symbol, field, enum value, path and test name an
-  example mentions must exist, and every statement it makes about existing code must be true. If an example would
-  describe something hypothetical, say so in the example text.
-- Leave `severity`, `scope`, `domain`, `category` and `citation` unchanged unless you report it as a policy change.
-- Do not open `.agentic/rules-audit/rules/`. Do not edit any other rule, `scripts/` or `tests/`.
-- Report: what changed, every dropped/weakened/added item, every policy change, and anything a stricter reviewer
-  might reject.
+Tell the author its rule id and to read and follow `.agents/skills/dovo-rules-migrate/author-brief.md`, nothing else. The
+brief is a separate file so the author never sees the audit questions or this driver loop.
 
 ## Reviewer prompt
 

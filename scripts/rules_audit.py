@@ -28,6 +28,9 @@ DEFAULT_OUT_DIR = Path(".agentic") / "rules-audit"
 FRAGMENTS_DIR = "fragments"
 INTENT_WORD_LIMIT = 40
 IDENTITY_POLICY_FIELDS: tuple[str, ...] = ("severity", "scope", "domain")
+VOLATILE_PATHS: frozenset[str] = frozenset(
+    {"docs/agents/rules_spec.yaml", "docs/agents/REVIEW_CHECKLIST.json", "docs/agents/PLANNER_RULES.md"}
+)
 PATH_LINE = re.compile(r"(?P<path>[\w./\-]+\.[A-Za-z0-9]+):(?P<line>\d+)(?: `(?P<quote>[^`]+)`)?")
 AUDIT_REF = re.compile(r"@(?P<ref>[A-Za-z][\w\-]*(?:\.[\w\-]+)+)")
 
@@ -80,7 +83,7 @@ INSTRUCTIONS: list[str] = [
     "`source` lists the ids it comes from, for example `G2, K1`, using the keys of `old.guideline_sentences` and `old.criteria_clauses`.",
     "Set each `verdict` to PASS (the answer is yes), FAIL (no), N/A (does not apply) or BLOCKED. No verdict may stay null.",
     "FAIL means the author must fix the rule text. BLOCKED means the answer is no but the fix lies outside the rule text, such as a doc section, a skill or a citation target; leave the citation unchanged, and name the file, line and owner in the evidence.",
-    "Every verdict needs `evidence`. For a line in the repo write `path:line`, and put any quoted text in backticks immediately after it, for example ``docs/agents/testing.md:115 `## Core Testing Rules` ``; a checker re-reads that line.",
+    "Every verdict needs `evidence`. For a line in the repo write `path:line` with the full repo path, and put any quoted text in backticks immediately after it, for example ``docs/agents/testing.md:115 `## Core Testing Rules` ``; a checker re-reads that line. For docs/agents/rules_spec.yaml and the generated rule files, whose lines shift during a run, the checker only confirms the quoted text appears somewhere in the file, so cite them with a quote or by rule id.",
     "For a search write `ran: <command> -> <result>`; for 'none found' write `ran: <command> -> no matches`. To cite a field of an audit file write `@<audit id>.<field>`, for example `@ENCAP-001.Q01.method`, never a line number.",
     f"A word is a whitespace-separated token, so `intent` is {INTENT_WORD_LIMIT} words or fewer when `wc -w` says so.",
     "A question starts with Does, Do, Is, Are, Was, Were, Has or Have, is one sentence ending in '?', and is phrased so that YES means compliant.",
@@ -417,18 +420,35 @@ def slot_errors(slots: dict[str, Any], expected: dict[str, str]) -> list[str]:
 
 def citation_errors(label: str, evidence: str, root: Path) -> list[str]:
     """Return the `path:line` citations in evidence that point at a missing file, a missing line or an absent quote."""
-    errors: list[str] = []
-    for match in PATH_LINE.finditer(evidence):
-        path, line = root / match["path"], int(match["line"])
-        if not path.is_file():
-            errors.append(f"{label}: cites {match['path']}, which does not exist")
-            continue
-        lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
-        if not 1 <= line <= len(lines):
-            errors.append(f"{label}: {match['path']} has no line {line}")
-        elif match["quote"] and " ".join(match["quote"].split()) not in " ".join(lines[line - 1].split()):
-            errors.append(f"{label}: line {line} of {match['path']} does not contain the quoted text")
-    return errors
+    problems = (citation_error(label, match, root) for match in PATH_LINE.finditer(evidence))
+    return [problem for problem in problems if problem]
+
+
+def citation_error(label: str, match: re.Match[str], root: Path) -> str | None:
+    """Return what is wrong with one `path:line` citation, or None when it holds."""
+    path = root / match["path"]
+    if not path.is_file():
+        return f"{label}: cites {match['path']}, which does not exist"
+    text = path.read_text(encoding="utf-8", errors="replace")
+    quote = " ".join(match["quote"].split()) if match["quote"] else ""
+    if is_volatile(match["path"]):
+        absent = bool(quote) and quote not in " ".join(text.split())
+        return f"{label}: {match['path']} does not contain the quoted text" if absent else None
+    return line_error(label, match["path"], int(match["line"]), text.splitlines(), quote)
+
+
+def line_error(label: str, path: str, line: int, lines: list[str], quote: str) -> str | None:
+    """Return an error if a cited line does not exist or does not contain the quoted text."""
+    if not 1 <= line <= len(lines):
+        return f"{label}: {path} has no line {line}"
+    if quote and quote not in " ".join(lines[line - 1].split()):
+        return f"{label}: line {line} of {path} does not contain the quoted text"
+    return None
+
+
+def is_volatile(path: str) -> bool:
+    """Return True for a file whose line numbers change during a migration run: the spec and its generated outputs."""
+    return path in VOLATILE_PATHS or path.endswith("/RULES.md")
 
 
 def resolve_reference(reference: str, doc: dict[str, Any], shared: dict[str, Any]) -> bool:

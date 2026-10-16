@@ -387,3 +387,30 @@ class RulesAuditReferenceTests:
         doc = _filled_doc(generator)
 
         assert generator.resolve_reference(reference, doc, generator.build_shared()) is resolves
+
+
+class RulesAuditCitationTests:
+    @pytest.mark.parametrize(
+        ("evidence", "expected_errors"),
+        [
+            pytest.param(
+                "scripts/rules_audit.py:2 `Generates blank per-rule audit files`", 0, id="stable-file-quote-on-its-line"
+            ),
+            pytest.param(
+                "scripts/rules_audit.py:99 `Generates blank per-rule audit files`",
+                1,
+                id="stable-file-quote-on-another-line",
+            ),
+            pytest.param("docs/agents/rules_spec.yaml:1 `id: TEST-007`", 0, id="volatile-file-quote-anywhere"),
+            pytest.param(
+                "docs/agents/rules_spec.yaml:1 `no such text anywhere in the spec`", 1, id="volatile-file-quote-absent"
+            ),
+            pytest.param("docs/agents/rules_spec.yaml:99999", 0, id="volatile-file-line-not-checked"),
+        ],
+    )
+    def test_line_numbers_are_checked_only_for_files_that_do_not_shift_during_a_run(
+        self, evidence: str, expected_errors: int
+    ) -> None:
+        generator = _load_generator()
+
+        assert len(generator.citation_errors("slot", evidence, REPO_ROOT)) == expected_errors
