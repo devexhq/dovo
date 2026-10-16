@@ -93,11 +93,10 @@ Merge, revert, `fixup!` and `squash!` titles pass.
 
 **Relevant sources:** `.github/workflows/ci.yml`
 
-Four CI jobs run on pushes to `main` and on pull requests:
+Three CI jobs run on pushes to `main` and on pull requests:
 - **test**: `uv sync --all-extras` and `dovo run quality --no-tty` (the quality blueprint, including the strict docs build and coverage with `fail_under = 80` in `pyproject.toml`).
 - **prek**: `prek` run against the PR base ref (`origin/${GITHUB_BASE_REF}`) on pull requests, or `--all-files` on `main`.
-- **rules**: `compile_rules.py --check` verifying generated agent rules and checklists match `rules_spec.yaml`.
-- **ci**: Gate job requiring `test`, `prek`, and `rules` to succeed.
+- **ci**: Gate job requiring `test` and `prek` to succeed.
 
 ---
 

@@ -19,7 +19,7 @@ from tests.lint.astlib import (
 
 CORE_ROOT: Final[Path] = SRC_ROOT / "core"
 ENGINE_ROOT: Final[Path] = SRC_ROOT / "engine"
-NON_PACKAGE_DIRS: Final[frozenset[str]] = frozenset({"__pycache__", "docs"})
+NON_PACKAGE_DIRS: Final[frozenset[str]] = frozenset({"__pycache__"})
 
 
 @dataclass(frozen=True)
