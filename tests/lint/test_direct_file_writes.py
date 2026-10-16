@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import ast
+from collections import Counter
 from pathlib import Path
 from typing import Final
 
@@ -13,20 +14,19 @@ from tests.lint.astlib import REPO_ROOT, SRC_ROOT, collect_python_files
 FILESYSTEM_ROOT: Final[Path] = SRC_ROOT / "common" / "filesystem"
 WRITE_METHODS: Final[frozenset[str]] = frozenset({"write_text", "write_bytes"})
 
-# Direct writes of files that are not .dovo state: (file, call). Entries are only ever removed, never added.
-WRITE_EXCEPTIONS: Final[frozenset[tuple[str, str]]] = frozenset(
-    {
-        # Scratch buffer handed to the user's editor inside a TemporaryDirectory.
-        ("src/dovo/cli/run/prompter.py", ".write_text"),
-        # Probe file that only tests whether a directory is writable.
-        ("src/dovo/core/diagnostics/checks/filesystem_writable.py", ".write_text"),
-        # Attempt log streamed while a subprocess runs, and the step output file the step itself fills.
-        ("src/dovo/engine/executors/step_executor.py", "open"),
-        ("src/dovo/engine/executors/step_executor.py", ".write_text"),
-        # Append-only session log, written line by line while a session runs.
-        ("src/dovo/engine/executors/session_log.py", ".open"),
-    }
-)
+# Direct writes of files that are not .dovo state: (file, call) -> how many such calls the file makes.
+# Counts are matched exactly, so a new write in a listed file fails too. Entries only shrink, never grow.
+WRITE_EXCEPTIONS: Final[dict[tuple[str, str], int]] = {
+    # Scratch buffer handed to the user's editor inside a TemporaryDirectory.
+    ("src/dovo/cli/run/prompter.py", ".write_text"): 1,
+    # Probe file that only tests whether a directory is writable.
+    ("src/dovo/core/diagnostics/checks/filesystem_writable.py", ".write_text"): 1,
+    # Attempt log streamed while a subprocess runs, and the step output file the step itself fills.
+    ("src/dovo/engine/executors/step_executor.py", "open"): 1,
+    ("src/dovo/engine/executors/step_executor.py", ".write_text"): 1,
+    # Append-only session log, written line by line while a session runs.
+    ("src/dovo/engine/executors/session_log.py", ".open"): 1,
+}
 
 
 def _write_mode(node: ast.Call, mode_index: int) -> str | None:
@@ -46,20 +46,20 @@ def _opens_for_writing(node: ast.Call, mode_index: int) -> bool:
     return bool(set(_write_mode(node, mode_index) or "") & set("wax+"))
 
 
-def _direct_writes(file_path: Path) -> set[tuple[str, str]]:
-    """Return (file, call) for each direct file write in one module."""
+def _direct_writes(file_path: Path) -> Counter[tuple[str, str]]:
+    """Return how many direct file writes one module makes, keyed by (file, call)."""
     tree = ast.parse(file_path.read_text(encoding="utf-8"), filename=str(file_path))
     rel_path = str(file_path.relative_to(REPO_ROOT))
-    found: set[tuple[str, str]] = set()
+    found: Counter[tuple[str, str]] = Counter()
     for node in ast.walk(tree):
         if not isinstance(node, ast.Call):
             continue
         if isinstance(node.func, ast.Attribute) and node.func.attr in WRITE_METHODS:
-            found.add((rel_path, f".{node.func.attr}"))
+            found[rel_path, f".{node.func.attr}"] += 1
         elif isinstance(node.func, ast.Attribute) and node.func.attr == "open" and _opens_for_writing(node, 0):
-            found.add((rel_path, ".open"))
+            found[rel_path, ".open"] += 1
         elif isinstance(node.func, ast.Name) and node.func.id == "open" and _opens_for_writing(node, 1):
-            found.add((rel_path, "open"))
+            found[rel_path, "open"] += 1
     return found
 
 
@@ -68,13 +68,15 @@ class DirectFileWriteTests:
         files = [path for path in collect_python_files(SRC_ROOT) if not path.is_relative_to(FILESYSTEM_ROOT)]
         assert files, f"{SRC_ROOT} contains no Python files, so the rule would pass vacuously"
 
-        violations = sorted(write for path in files for write in _direct_writes(path) - WRITE_EXCEPTIONS)
+        allowed = Counter(WRITE_EXCEPTIONS)
+        violations = sorted(write for path in files for write in (_direct_writes(path) - allowed).elements())
 
         assert violations == [], "write through Filesystem.atomic_write_* instead"
 
     @pytest.mark.parametrize(
-        "exception", [pytest.param(item, id=f"{item[0]}{item[1]}") for item in sorted(WRITE_EXCEPTIONS)]
+        ("exception", "count"),
+        [pytest.param(item, count, id=f"{item[0]}{item[1]}") for item, count in sorted(WRITE_EXCEPTIONS.items())],
     )
-    def test_write_exception_still_occurs(self, exception: tuple[str, str]) -> None:
-        """Require every allowlisted write to still exist, so a fixed one is removed from the list."""
-        assert exception in _direct_writes(REPO_ROOT / exception[0]), "delete it from WRITE_EXCEPTIONS"
+    def test_write_exception_still_occurs(self, exception: tuple[str, str], count: int) -> None:
+        """Require each allowlisted count to match the tree, so a removed write lowers or deletes its entry."""
+        assert _direct_writes(REPO_ROOT / exception[0])[exception] == count, "lower or delete it in WRITE_EXCEPTIONS"
