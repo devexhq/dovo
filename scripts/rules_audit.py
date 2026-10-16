@@ -24,7 +24,7 @@ import yaml
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 SPEC_RELATIVE = Path("docs") / "agents" / "rules_spec.yaml"
-DEFAULT_OUT_DIR = Path(".agentic") / "rules-audit"
+DEFAULT_OUT_DIR = Path("scratch") / "rules-audit"
 FRAGMENTS_DIR = "fragments"
 INTENT_WORD_LIMIT = 40
 REPORT_CELL_LIMIT = 300

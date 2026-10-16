@@ -237,7 +237,7 @@
     },
     {
       "id": "RENDER-001",
-      "name": "Stateful Builder Pattern for RichOutput",
+      "name": "Single Dispatcher Route for Terminal Output",
       "severity": "BLOCKER",
       "domain": "cli",
       "scope": "src/dovo/cli/, src/dovo/core/",
@@ -592,11 +592,11 @@
       "criteria": [
         {
           "id": "TYPE-001.Q01",
-          "statement": "The return annotation of every public function (a module-level function or a method whose name does not start with an underscore) is not Any.",
+          "statement": "The return annotation of every public function (a module-level function or a method whose name does not start with an underscore) is not Any, except on a Pydantic mode=\"before\" validator permitted by TYPE-002.Q01.",
           "kind": "judgment"
         }
       ],
-      "evaluation_criteria": "1. The return annotation of every public function (a module-level function or a method whose name does not start with an underscore) is not Any.",
+      "evaluation_criteria": "1. The return annotation of every public function (a module-level function or a method whose name does not start with an underscore) is not Any, except on a Pydantic mode=\"before\" validator permitted by TYPE-002.Q01.",
       "bad_pattern": "def to_rich(self, data: T) -> Any:  # public abstract method of the formatter base class in src/dovo/common/types.py"
     },
     {
@@ -685,19 +685,19 @@
       "criteria": [
         {
           "id": "TYPE-005.Q01",
-          "statement": "Every Generator[...] annotation specifies all three parameters, yield, send and return, as in Generator[YieldType, SendType, ReturnType].",
+          "statement": "Every Generator[...] annotation names the yield type, the send type when it is not None and the return type when it is not None, and drops trailing None defaults as ruff UP043 requires.",
           "kind": "judgment"
         }
       ],
-      "evaluation_criteria": "1. Every Generator[...] annotation specifies all three parameters, yield, send and return, as in Generator[YieldType, SendType, ReturnType].",
-      "bad_pattern": "def get_session(engine: Engine) -> Generator[Session]: ...  # in core/db/connection.py"
+      "evaluation_criteria": "1. Every Generator[...] annotation names the yield type, the send type when it is not None and the return type when it is not None, and drops trailing None defaults as ruff UP043 requires.",
+      "bad_pattern": "def read_lines(path: Path) -> Generator[str]: ...  # hypothetical: the generator returns a line count, so the return type must be named as Generator[str, None, int]"
     },
     {
       "id": "TYPE-006",
       "name": "Scoped Pyright Suppressions With Reason",
       "severity": "BLOCKER",
       "domain": "all",
-      "scope": "src/, tests/",
+      "scope": "src/, tests/, e2e/",
       "intent": "A type error is silenced only where the code is correct and the checker cannot express it, never to hide a defect, so every suppression is one the checker honors, is narrow, and says why it exists.",
       "criteria": [
         {
@@ -902,7 +902,7 @@
       "criteria": [
         {
           "id": "API-002.Q01",
-          "statement": "Every query method that reads an entity reports an invalid enum value or corrupt row, by raising or by returning a BaseResult error, whenever a sibling query method that reads that entity reports it.",
+          "statement": "Every query method that reads an entity reports an invalid enum value or corrupt row as a BaseResult error, whenever a sibling query method that reads that entity reports it.",
           "kind": "judgment"
         },
         {
@@ -911,7 +911,7 @@
           "kind": "judgment"
         }
       ],
-      "evaluation_criteria": "1. Every query method that reads an entity reports an invalid enum value or corrupt row, by raising or by returning a BaseResult error, whenever a sibling query method that reads that entity reports it. 2. Every except block in a query method re-raises or converts the caught error into a BaseResult error, instead of returning None or an empty value.",
+      "evaluation_criteria": "1. Every query method that reads an entity reports an invalid enum value or corrupt row as a BaseResult error, whenever a sibling query method that reads that entity reports it. 2. Every except block in a query method re-raises or converts the caught error into a BaseResult error, instead of returning None or an empty value.",
       "bad_pattern": "list() raises on a row with an invalid status while get() returns None for the same row"
     },
     {
@@ -1198,7 +1198,7 @@
       "severity": "BLOCKER",
       "domain": "tests",
       "scope": "tests/",
-      "intent": "A test's location is predictable from the source module it covers, so tests are easy to find and no source module goes untested or hides inside a shared catch-all file.",
+      "intent": "A test's location is predictable from the source module it covers, so no module goes untested or hides in a catch-all file. No exemption list excuses a module, and tests may split into files named for the behavior.",
       "criteria": [
         {
           "id": "TEST-002.Q01",
@@ -1244,14 +1244,9 @@
           "id": "TEST-002.Q09",
           "statement": "Each per-domain conftest.py holds only fixtures that its own domain's test files share, and none that another domain needs.",
           "kind": "judgment"
-        },
-        {
-          "id": "TEST-002.Q10",
-          "statement": "Every source module has a corresponding test file at its mirrored path, with no exemption list.",
-          "kind": "judgment"
         }
       ],
-      "evaluation_criteria": "1. Each src/dovo/common/<m>.py module has its tests in tests/common/test_<m>.py. 2. Each src/dovo/core/<domain>/<m>.py module has its tests in tests/core/<domain>/test_<m>.py. 3. Each src/dovo/engine/<m>.py module has its tests in tests/engine/test_<m>.py, with the executors/ and services/ subpackages mirrored as tests/engine/executors/ and tests/engine/services/. 4. Each src/dovo/cli/ui/formatters/<domain>/<name>.py module has its tests in tests/cli/ui/formatters/<domain>/test_<name>.py. 5. Each src/dovo/cli/<command>/commands/<action>.py module has its tests in tests/cli/<command>/test_<command>_<action>.py, nested under its own tests/cli/<command>/ subdirectory with the commands/ level collapsed. 6. There is one test file per CLI command action, rather than one file per command domain. 7. No test file groups several formatters or several domains into one part-numbered or collapsed file. 8. Every test directory carries an __init__.py. 9. Each per-domain conftest.py holds only fixtures that its own domain's test files share, and none that another domain needs. 10. Every source module has a corresponding test file at its mirrored path, with no exemption list.",
+      "evaluation_criteria": "1. Each src/dovo/common/<m>.py module has its tests in tests/common/test_<m>.py. 2. Each src/dovo/core/<domain>/<m>.py module has its tests in tests/core/<domain>/test_<m>.py. 3. Each src/dovo/engine/<m>.py module has its tests in tests/engine/test_<m>.py, with the executors/ and services/ subpackages mirrored as tests/engine/executors/ and tests/engine/services/. 4. Each src/dovo/cli/ui/formatters/<domain>/<name>.py module has its tests in tests/cli/ui/formatters/<domain>/test_<name>.py. 5. Each src/dovo/cli/<command>/commands/<action>.py module has its tests in tests/cli/<command>/test_<command>_<action>.py, nested under its own tests/cli/<command>/ subdirectory with the commands/ level collapsed. 6. There is one test file per CLI command action, rather than one file per command domain. 7. No test file groups several formatters or several domains into one part-numbered or collapsed file. 8. Every test directory carries an __init__.py. 9. Each per-domain conftest.py holds only fixtures that its own domain's test files share, and none that another domain needs.",
       "bad_pattern": "tests/common/test_locking_helpers.py  # hypothetical: covers src/dovo/common/lock.py under a name that does not mirror the module"
     },
     {
@@ -1743,7 +1738,7 @@
       "severity": "BLOCKER",
       "domain": "tests",
       "scope": "tests/cli/",
-      "intent": "CLI runner tests should pin wiring and observable behavior, not help prose, so that help text can be reworded freely without breaking the suite.",
+      "intent": "CLI runner tests pin wiring and observable behavior, not help prose. They may assert a literal status line or rendered string of the command's own output.",
       "criteria": [
         {
           "id": "TEST-017.Q01",
@@ -1801,7 +1796,7 @@
         }
       ],
       "evaluation_criteria": "1. Every dispatch spy used in a *CliIntegrationTests suite calls through to the real ui_dispatcher.dispatch, instead of replacing it with a stub. 2. Every assertion made against an item captured by the dispatch spy is an assertion on an instance of that command action's own terminal BaseResult type. 3. A spy assertion avoids relying on spy[0], spy[-1] or len(spy) == 1 unless the command action dispatches only its own terminal result per invocation, and otherwise isolates the instance of the command action's own Result type.",
-      "bad_pattern": "monkeypatch.setattr(ui_dispatcher, \"dispatch\", lambda data, **kwargs: None)  # replacement stub; the real formatter never runs, which TEST-008 forbids (hypothetical)"
+      "bad_pattern": "monkeypatch.setattr(ui_dispatcher, \"dispatch\", lambda data, **kwargs: None)  # replacement stub; the real formatter never runs (hypothetical)"
     },
     {
       "id": "TEST-020",
@@ -1922,7 +1917,7 @@
       "name": "User-Visible Behavior Documentation Scope",
       "severity": "BLOCKER",
       "domain": "cli",
-      "scope": "docs/cli/",
+      "scope": "docs/cli/, docs/agents/architecture.md, src/dovo/cli/",
       "intent": "Users look up commands, subcommands and flags in one place, so the reference for user-visible CLI behavior lives with the per-command docs and stays out of the architecture overview.",
       "criteria": [
         {
@@ -1993,7 +1988,7 @@
       "name": "Unavoidable Spec Tables Require Parity Tests",
       "severity": "BLOCKER",
       "domain": "tests",
-      "scope": "tests/lint/",
+      "scope": "tests/lint/, docs/",
       "intent": "A specification table that cannot be avoided must not drift from the source it describes, so an automated test that exists when the claim is made keeps the two in agreement.",
       "criteria": [
         {
@@ -2173,11 +2168,11 @@
         },
         {
           "id": "CI-002.Q08",
-          "statement": "The pull request description has a Linkage section with an issue cross-reference such as Fixes #N or Closes #N.",
+          "statement": "The pull request description has a Linkage section with an issue cross-reference such as Fixes #N or Closes #N, or a statement that no tracking issue exists.",
           "kind": "judgment"
         }
       ],
-      "evaluation_criteria": "1. The commit title starts with a semantic prefix of the form type(scope) or type, followed by a colon, as in \"docs(rules): ...\" in the commit history. 2. The commit title is written in the imperative mood. 3. The commit message is free of AI trailers such as \"Co-authored-by: Cursor\". 4. The pull request description is free of AI or tool attribution lines. 5. The pull request addresses a single responsibility. 6. The pull request description has a Why section of 2-3 sentences giving the context and motivation. 7. The pull request description has an Approach section made of bullets of 1-2 sentences each. 8. The pull request description has a Linkage section with an issue cross-reference such as Fixes #N or Closes #N.",
+      "evaluation_criteria": "1. The commit title starts with a semantic prefix of the form type(scope) or type, followed by a colon, as in \"docs(rules): ...\" in the commit history. 2. The commit title is written in the imperative mood. 3. The commit message is free of AI trailers such as \"Co-authored-by: Cursor\". 4. The pull request description is free of AI or tool attribution lines. 5. The pull request addresses a single responsibility. 6. The pull request description has a Why section of 2-3 sentences giving the context and motivation. 7. The pull request description has an Approach section made of bullets of 1-2 sentences each. 8. The pull request description has a Linkage section with an issue cross-reference such as Fixes #N or Closes #N, or a statement that no tracking issue exists.",
       "bad_pattern": "Updated stuff and fixed things (hypothetical message)"
     },
     {
@@ -2207,7 +2202,7 @@
       "name": "Mechanical Enforcement Parity",
       "severity": "BLOCKER",
       "domain": "all",
-      "scope": "tests/lint/, prek.toml, .github/workflows/, pyproject.toml",
+      "scope": "tests/lint/, prek.toml, .github/workflows/, pyproject.toml, docs/agents/rules_spec.yaml",
       "intent": "A BLOCKER rule that can be checked by a machine is actually checked by one, so a declared gate cannot silently stop protecting the codebase and an allowlist cannot quietly grow.",
       "criteria": [
         {

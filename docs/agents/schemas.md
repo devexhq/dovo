@@ -78,6 +78,8 @@ Hierarchical resolution merges four tiers, lowest to highest precedence: **Packa
 
 - One centralized SQLite database is shared across projects (`resolve_db_path` in `core/db/connection.py`).
 - Every record carries `project_id`, and every `BaseRepository` query scopes on it (`core/db/repositories/base.py`).
+- Create one `DovoDb` or repository per command invocation and pass it down; never construct one inside a loop or a helper (PERF-001).
+- Fetch a subset of records with a filtered repository query on an indexed column, not by filtering a full fetch in Python (PERF-003).
 - Schema or migration changes follow [ci-and-tooling.md](ci-and-tooling.md#database-migration-hygiene).
 
 ---

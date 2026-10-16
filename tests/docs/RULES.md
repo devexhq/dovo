@@ -127,7 +127,7 @@
   - `CODE-001.Q03` (judgment) Every shortened name that remains in new or modified code is either an initialism that is itself the domain term (db, cwd, ctx, id, url, cli, sha, ttl) or a framework-dictated name.
 
     ```python
-    # ✅ DO: def invoke(self, ctx: Any) -> Any:  # in cli/cli.py, ctx dictated by Click; likewise tmp_path and monkeypatch dictated by pytest
+    # ✅ DO: def invoke(self, ctx: click.Context) -> object: ...  # hypothetical Click override, ctx dictated by Click; likewise tmp_path and monkeypatch dictated by pytest
     # ❌ DO NOT: cfg = load_config(path)  # hypothetical: cfg is not a domain-term initialism and no framework dictates it
     ```
 
@@ -250,7 +250,7 @@
   A public function's return type keeps type checking intact at every call site instead of switching it off for each caller. Where a value is only stored, compared or passed through, object is preferred to Any.
 
   Every statement below must hold:
-  - `TYPE-001.Q01` (judgment) The return annotation of every public function (a module-level function or a method whose name does not start with an underscore) is not Any.
+  - `TYPE-001.Q01` (judgment) The return annotation of every public function (a module-level function or a method whose name does not start with an underscore) is not Any, except on a Pydantic mode="before" validator permitted by TYPE-002.Q01.
 
     ```python
     # ✅ DO: def get_payload(self) -> object: ...  # hypothetical: callers must narrow the value before using it
@@ -307,11 +307,11 @@
   Generator annotations state the full contract of what a generator yields, accepts and returns, so readers and the type checker never have to infer the omitted parts.
 
   Every statement below must hold:
-  - `TYPE-005.Q01` (judgment) Every Generator[...] annotation specifies all three parameters, yield, send and return, as in Generator[YieldType, SendType, ReturnType].
+  - `TYPE-005.Q01` (judgment) Every Generator[...] annotation names the yield type, the send type when it is not None and the return type when it is not None, and drops trailing None defaults as ruff UP043 requires.
 
     ```python
-    # ✅ DO: def get_session(engine: Engine) -> Generator[Session, None, None]: ...  # hypothetical: the full three-parameter form of the real function in core/db/connection.py
-    # ❌ DO NOT: def get_session(engine: Engine) -> Generator[Session]: ...  # in core/db/connection.py
+    # ✅ DO: def get_session(engine: Engine) -> Generator[Session]: ...  # in core/db/connection.py, send and return are None, so ruff UP043 requires the short form
+    # ❌ DO NOT: def read_lines(path: Path) -> Generator[str]: ...  # hypothetical: the generator returns a line count, so the return type must be named as Generator[str, None, int]
     ```
 
 - **[TYPE-006] Scoped Pyright Suppressions With Reason (BLOCKER):**
@@ -571,7 +571,7 @@
     ```
 
 - **[TEST-002] 1:1 Source Parity Layout (BLOCKER):**
-  A test's location is predictable from the source module it covers, so tests are easy to find and no source module goes untested or hides inside a shared catch-all file.
+  A test's location is predictable from the source module it covers, so no module goes untested or hides in a catch-all file. No exemption list excuses a module, and tests may split into files named for the behavior.
 
   Every statement below must hold:
   - `TEST-002.Q01` (judgment) Each src/dovo/common/<m>.py module has its tests in tests/common/test_<m>.py.
@@ -627,12 +627,6 @@
     ```python
     # ✅ DO: tests/cli/worktree/conftest.py holds fixtures shared by the worktree command tests
     # ❌ DO NOT: A fixture in tests/cli/worktree/conftest.py that tests/cli/session/ also imports  # hypothetical: a fixture another domain needs belongs in a shared conftest
-    ```
-  - `TEST-002.Q10` (judgment) Every source module has a corresponding test file at its mirrored path, with no exemption list.
-
-    ```python
-    # ✅ DO: src/dovo/core/git/runner.py is covered by tests/core/git/test_runner.py
-    # ❌ DO NOT: A new source module added with no test file and an entry in a skip or exemption list  # hypothetical
     ```
 
 - **[TEST-003] Standardized Test Naming and Vague Name Ban (BLOCKER):**
@@ -1086,7 +1080,7 @@
     ```
 
 - **[TEST-017] CLI Runner Assertion Boundary (BLOCKER):**
-  CLI runner tests should pin wiring and observable behavior, not help prose, so that help text can be reworded freely without breaking the suite.
+  CLI runner tests pin wiring and observable behavior, not help prose. They may assert a literal status line or rendered string of the command's own output.
 
   Every statement below must hold:
   - `TEST-017.Q01` (judgment) The CLI runner tests under tests/cli/ avoid asserting help text wording in stdout or rendered output.
@@ -1094,7 +1088,7 @@
     ```python
     # ✅ DO:
     assert result.exit_code == 0
-    assert "Status: valid with warnings" in result.stdout  # permitted: asserting a literal status label, panel line, or full rendered string is allowed, ideally pinned via snapshot testing so the assertion cannot drift silently; not restricted to a published error code token; from tests/cli/config/test_config_validate.py
+    assert "Status: valid with warnings" in result.stdout  # a literal status line of the command's own output, not help text; from tests/cli/config/test_config_validate.py
     # ❌ DO NOT: assert "Show the current configuration value" in result.output  # hypothetical help text wording; assert Click metadata instead
     ```
   - `TEST-017.Q02` (judgment) A CLI test that checks command registration or option names reads them from Click metadata rather than from rendered help output.
@@ -1123,7 +1117,7 @@
 
     ```python
     # ✅ DO: The dispatch_spy fixture in tests/cli/conftest.py appends each DTO to a list and then calls original_dispatch(data, **kwargs), so a test may pin the exact DTO beyond what the --format json payload proves
-    # ❌ DO NOT: monkeypatch.setattr(ui_dispatcher, "dispatch", lambda data, **kwargs: None)  # replacement stub; the real formatter never runs, which TEST-008 forbids (hypothetical)
+    # ❌ DO NOT: monkeypatch.setattr(ui_dispatcher, "dispatch", lambda data, **kwargs: None)  # replacement stub; the real formatter never runs (hypothetical)
     ```
   - `TEST-019.Q02` (judgment) Every assertion made against an item captured by the dispatch spy is an assertion on an instance of that command action's own terminal BaseResult type.
 
@@ -1468,10 +1462,10 @@
     # ✅ DO: An "Approach" section with three bullets, each one or two sentences (hypothetical description)
     # ❌ DO NOT: An "Approach" section written as one long unbroken paragraph (hypothetical description)
     ```
-  - `CI-002.Q08` (judgment) The pull request description has a Linkage section with an issue cross-reference such as Fixes #N or Closes #N.
+  - `CI-002.Q08` (judgment) The pull request description has a Linkage section with an issue cross-reference such as Fixes #N or Closes #N, or a statement that no tracking issue exists.
 
     ```python
-    # ✅ DO: A "Linkage" section reading "Closes #123" (hypothetical description)
+    # ✅ DO: A "Linkage" section reading "Closes #123", or "Fixes: none (no tracking issue)" (hypothetical description)
     # ❌ DO NOT: A description with no Linkage section (hypothetical description)
     ```
 

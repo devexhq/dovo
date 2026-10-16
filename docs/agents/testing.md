@@ -15,13 +15,18 @@ must not be asserted on.
 Test structure mirrors `src/dovo/` 1:1 under `tests/`. Fixed mappings:
 - `src/dovo/common/<m>.py` -> `tests/common/test_<m>.py`
 - `src/dovo/core/<domain>/<m>.py` -> `tests/core/<domain>/test_<m>.py`
+- `src/dovo/engine/<m>.py` -> `tests/engine/test_<m>.py` (the `executors/` and `services/`
+  subpackages mirror as `tests/engine/executors/` and `tests/engine/services/`)
 - `src/dovo/cli/ui/formatters/<domain>/<name>.py` -> `tests/cli/ui/formatters/<domain>/test_<name>.py`
 - `src/dovo/cli/<command>/commands/<action>.py` -> `tests/cli/<command>/test_<command>_<action>.py`
   (one subdirectory per CLI command domain, `commands/` collapses, one file per action)
 
 Rules: every source module has a test file, no exemption list; every test directory gets an
-`__init__.py`; one test file per source module unless a stated architectural rule says otherwise;
-`tests/core/**` never imports `dovo.cli.*`; no part-numbered or grab-bag files.
+`__init__.py`; one test file per source module unless a stated architectural rule says otherwise or the module's
+tests split into files named for the behavior (`test_step_executor_<behavior>.py`);
+`tests/core/**` never imports `dovo.cli.*`; no part-numbered or grab-bag files. A per-domain
+`conftest.py` holds only fixtures that its own domain's test files share, never one another domain
+needs (TEST-002).
 
 ## Naming Conventions
 
@@ -48,14 +53,16 @@ real `tmp_path`, SQLite, `GitWorkspaceHarness`.
 
 ### Tier 2 - Presentation Contracts (Three Tests Per Formatter, Never One)
 Every formatter under `src/dovo/cli/ui/formatters/<domain>/` gets three tests in
-`tests/cli/ui/formatters/<domain>/test_<name>.py`, built on `tests.harness.formatter.FormatterCase`:
+`tests/cli/ui/formatters/<domain>/test_<name>.py`, built on `tests.harness.formatter.FormatterCase`
+(an identity formatter with no derived view model omits the Transform test and keeps the other two;
+never add an alias like `SomeView = SomeEvent` to manufacture a third):
 1. **Transform:** `transform(model) == ExpectedView(...)`.
 2. **JSON wire:** `to_json_serializable(model)` as an exact literal dict, pinned at
    fully-populated and empty/sparse states. Never `== transform(model).model_dump(...)`.
 3. **Rich render:** pinned width, assert only values sourced from the view model via `case.view`.
    Never assert a label, border, glyph, padding, or full sentence.
 
-No subclass overrides `to_json_serializable` (enforced by `tests/lint/test_formatter_contracts.py`).
+No subclass overrides `to_json_serializable`.
 
 ### Tier 3 - CLI Wiring (Runner Required, Root Tests When Earned)
 Every command action gets a real `*CliIntegrationTests` suite (`runner.invoke(app, [...])`)
@@ -88,7 +95,12 @@ Static AST analysis and architectural boundary enforcement: layer isolation, out
   do not reference or extend them.
 
 ### Determinism & Process Isolation Strategy
-No hardcoded sleeps: inject `VirtualClock` or monkeypatch `time.monotonic`/`asyncio.sleep`.
+No hardcoded sleeps in a test body: monkeypatch the clock at the module boundary
+(`time.monotonic`, `asyncio.sleep`) and assert the resulting schedule, not only that a retry
+happened. Inject the clock and id generators wherever their output reaches a result field, so
+tests assert literal timestamps and ids. A wait on an OS event with no virtual equivalent (a
+process group reaped after `SIGKILL`) goes through one shared harness poll helper that owns the
+interval and deadline; the only sleep allowed is inside that helper (TEST-011).
 Subprocess tests register handles with `process_registry`; teardown sends `SIGKILL` to spawned
 process groups. Secrets/env-dependent tests use `monkeypatch` to isolate environment variables.
 
@@ -123,17 +135,28 @@ Always `pytest.param(..., id="descriptive_case_id")`, no broad `Any` in signatur
 - No test seams in production code; monkeypatch collaborators at module boundaries instead.
 - A seam is not tested until a test proves a real caller uses it from the production path.
 - Test doubles must be types production actually passes, or a Protocol production is typed against.
+  Never build a double's interface as the union of attributes from every branch of a `hasattr`
+  chain (TEST-008).
 - No test may be the sole consumer of a production symbol — if deleting the test makes the code
-  unreachable, delete both.
+  unreachable, delete both. The same holds for harness symbols (builder method, fixture,
+  assertion helper): each needs a caller outside `tests/harness/` (TEST-013).
+- Every public function or method (no leading underscore) in a changed production module gets at
+  least one success test and one failure/boundary test in its mirrored test file; private helpers
+  are covered only through their public callers (TEST-016).
+- A modified command routing or multi-step orchestration path gets a test that exercises the
+  updated branch (TEST-015).
 - Never write negative existence tests for deleted symbols (`assert not hasattr(mod, "old_fn")`).
 - No reaching into private state: no `obj._attr`, no importing underscore-prefixed symbols.
 - Machine-readable output byte-exact; human-readable output by data presence — never scraped for
-  exactness, never substring-matched when it needs to be exact.
+  exactness, never substring-matched when it needs to be exact. The exception is a CLI runner test
+  under `tests/cli/`, which may assert a literal status line of the command's own output (TEST-017).
 - The name and docstring are part of the assertion — a reviewer must be able to point at the line
   that proves the claim.
 - `is not None` is not a complete assertion; `isinstance` only when it distinguishes two real code paths.
 - Annotate test helpers as tightly as production; `Any` rules in `code-conventions.md` apply unchanged.
-- Never `# pyright: ignore` a test-tree error — fix the fixture. Exception: `pytest.raises(TypeError)`.
+- Never `# pyright: ignore` a test-tree error — fix the fixture. Exception: an intentional ill-typed
+  input whose subject is a runtime `TypeError` or `ValidationError`; see
+  [code-conventions.md](code-conventions.md#type-checker-suppressions) (TYPE-006).
 - Never assert help text wording — assert Click metadata instead. Exception: the `dovo --help` vs
   `README.md` check in `tests/lint/`.
 - Cover every branch of a factory, dispatcher, or `elif` chain.

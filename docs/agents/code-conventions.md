@@ -101,10 +101,11 @@ Operations that can fail never raise for business or operational failures. When 
 
 **Relevant sources:** `src/dovo/cli/ui/`
 
+- All terminal output from `cli/` and `core/` leaves through `ui_dispatcher.dispatch(result)`. `print()`, `typer.echo`, `rich` imports and `Console.print()` live only under `cli/ui/`; `core/` imports nothing from `rich` and never instantiates a `Console` (RENDER-001; `tests/lint/test_output_routing.py` enforces the `print` ban).
 - `to_rich` derives nothing. It reads `transform(data)` and lays it out into Rich renderables.
 - `to_raw` bypasses the view entirely and returns bytes the caller asked for; `DiffResultFormatter` is the only implementation.
 - Domain shared table builders reside in `src/dovo/cli/ui/formatters/<domain>/common.py`.
-- Construct `errors` and `warnings` messages using inline f-strings or literals at call sites. Do not create private single-message formatting wrappers (domain lookup tables of constant remediation strings, such as `REMEDIATION_MAP` in `core/status/services/collector.py`, are permitted as tables of literals).
+- Construct `errors` and `warnings` messages using inline f-strings or literals at call sites. Do not create private single-message formatting wrappers (domain lookup tables of constant remediation strings, such as `CONFIG_REMEDIATION_MAP` in `core/status/services/collector.py`, are permitted as tables of literals).
 
 ---
 
@@ -158,6 +159,13 @@ through. `object` forces a narrow before use; `Any` forces nothing.
    `subprocess.Popen[Any]` should be `Popen[bytes]` or `Popen[str]`; the code
    already knows which.
 
+### Generator annotations
+
+Name the yield type, the send type when it is not `None` and the return type when it is not
+`None`, dropping trailing `None` defaults as ruff `UP043` requires: `Generator[Session]` for a
+generator that sends and returns `None`, `Generator[str, None, int]` when it returns an `int`
+(TYPE-005).
+
 ### Rule of thumb
 
 If you cannot say in one sentence what values can arrive, `Any` is honest. If
@@ -181,7 +189,9 @@ you can, name them.
 2. **Third-party stub conflicts** that our code cannot name correctly.
    SQLModel's `__tablename__: ClassVar[str]` versus SQLAlchemy's mapped type
    (`reportIncompatibleVariableOverride` in `core/db/models.py`) is the
-   current instance.
+   current instance. Every SQLModel `__tablename__` and every other class-level SQL
+   string constant in `core/db/models.py` is annotated `ClassVar[str]`, not `Any` or a
+   bare `str` (TYPE-004).
 3. **Platform-gated imports.** `msvcrt` does not exist when
    `pythonPlatform = "Linux"` (`reportMissingImports`,
    `reportConstantRedefinition` in `common/lock.py`).

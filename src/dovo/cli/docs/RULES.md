@@ -156,7 +156,7 @@
     # ❌ DO NOT: A view field populated from a check that cli/ui/ runs itself, such as probing the filesystem
     ```
 
-- **[RENDER-001] Stateful Builder Pattern for RichOutput (BLOCKER):**
+- **[RENDER-001] Single Dispatcher Route for Terminal Output (BLOCKER):**
   Terminal output has one route through the CLI's UI layer, so core services stay free of presentation concerns and every output format is rendered in one place.
 
   Every statement below must hold:
@@ -290,7 +290,7 @@
   - `CODE-001.Q03` (judgment) Every shortened name that remains in new or modified code is either an initialism that is itself the domain term (db, cwd, ctx, id, url, cli, sha, ttl) or a framework-dictated name.
 
     ```python
-    # ✅ DO: def invoke(self, ctx: Any) -> Any:  # in cli/cli.py, ctx dictated by Click; likewise tmp_path and monkeypatch dictated by pytest
+    # ✅ DO: def invoke(self, ctx: click.Context) -> object: ...  # hypothetical Click override, ctx dictated by Click; likewise tmp_path and monkeypatch dictated by pytest
     # ❌ DO NOT: cfg = load_config(path)  # hypothetical: cfg is not a domain-term initialism and no framework dictates it
     ```
 
@@ -413,7 +413,7 @@
   A public function's return type keeps type checking intact at every call site instead of switching it off for each caller. Where a value is only stored, compared or passed through, object is preferred to Any.
 
   Every statement below must hold:
-  - `TYPE-001.Q01` (judgment) The return annotation of every public function (a module-level function or a method whose name does not start with an underscore) is not Any.
+  - `TYPE-001.Q01` (judgment) The return annotation of every public function (a module-level function or a method whose name does not start with an underscore) is not Any, except on a Pydantic mode="before" validator permitted by TYPE-002.Q01.
 
     ```python
     # ✅ DO: def get_payload(self) -> object: ...  # hypothetical: callers must narrow the value before using it
@@ -470,11 +470,11 @@
   Generator annotations state the full contract of what a generator yields, accepts and returns, so readers and the type checker never have to infer the omitted parts.
 
   Every statement below must hold:
-  - `TYPE-005.Q01` (judgment) Every Generator[...] annotation specifies all three parameters, yield, send and return, as in Generator[YieldType, SendType, ReturnType].
+  - `TYPE-005.Q01` (judgment) Every Generator[...] annotation names the yield type, the send type when it is not None and the return type when it is not None, and drops trailing None defaults as ruff UP043 requires.
 
     ```python
-    # ✅ DO: def get_session(engine: Engine) -> Generator[Session, None, None]: ...  # hypothetical: the full three-parameter form of the real function in core/db/connection.py
-    # ❌ DO NOT: def get_session(engine: Engine) -> Generator[Session]: ...  # in core/db/connection.py
+    # ✅ DO: def get_session(engine: Engine) -> Generator[Session]: ...  # in core/db/connection.py, send and return are None, so ruff UP043 requires the short form
+    # ❌ DO NOT: def read_lines(path: Path) -> Generator[str]: ...  # hypothetical: the generator returns a line count, so the return type must be named as Generator[str, None, int]
     ```
 
 - **[TYPE-006] Scoped Pyright Suppressions With Reason (BLOCKER):**
@@ -933,10 +933,10 @@
     # ✅ DO: An "Approach" section with three bullets, each one or two sentences (hypothetical description)
     # ❌ DO NOT: An "Approach" section written as one long unbroken paragraph (hypothetical description)
     ```
-  - `CI-002.Q08` (judgment) The pull request description has a Linkage section with an issue cross-reference such as Fixes #N or Closes #N.
+  - `CI-002.Q08` (judgment) The pull request description has a Linkage section with an issue cross-reference such as Fixes #N or Closes #N, or a statement that no tracking issue exists.
 
     ```python
-    # ✅ DO: A "Linkage" section reading "Closes #123" (hypothetical description)
+    # ✅ DO: A "Linkage" section reading "Closes #123", or "Fixes: none (no tracking issue)" (hypothetical description)
     # ❌ DO NOT: A description with no Linkage section (hypothetical description)
     ```
 

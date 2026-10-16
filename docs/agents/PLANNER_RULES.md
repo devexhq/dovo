@@ -159,7 +159,7 @@ def config_set_command(context: CliContext, key: str, value: str) -> ConfigSetRe
 ## [PLAN-009] Complete Artifact Inventory and Deletion Ledger
 - **Phase:** `Artifact Inventory`
 - **Scope:** `## Artifact inventory section in .agentic/plan.md`
-- **Requirement:** Produce an inventory (Artifact | Kind | Path | New or changed | Requirement), one row per touched file, writing 'none' explicitly for every untouched kind. Follow it with a deletion ledger (Path or symbol | Why it goes | Replaced by) covering superseded paths (COMPAT-002), duplicate tests (TEST-004), and dead harness symbols (TEST-013), executed in the same change set — or state 'Deletes nothing: greenfield'.
+- **Requirement:** Produce an inventory (Artifact | Kind | Path | New or changed | Requirement), one row per touched file, writing 'none' explicitly for every untouched kind. Follow it with a deletion ledger (Path or symbol | Why it goes | Replaced by) covering superseded paths (COMPAT-003), duplicate tests (TEST-004), and dead harness symbols (TEST-013), executed in the same change set — or state 'Deletes nothing: greenfield'.
 - **Deliverable Contract:** Markdown inventory table followed by 'Not needed for this issue: <kinds>', then a deletion ledger table or the explicit 'Deletes nothing: greenfield' line.
 - **Validation Check:** Check every touched file maps to a requirement, every unused artifact kind is listed under 'Not needed', and the deletion ledger has rows or the explicit greenfield line.
 

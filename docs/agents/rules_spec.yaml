@@ -226,7 +226,7 @@ rules:
     na_when: The change adds no code to a domain package that predates the standard layout.
     positive_example: 'New domain code gets its own package laid out like src/dovo/core/worktree/ (models.py, exceptions.py, worktree.py, services/)'
     negative_example: 'New domain logic appended to an existing flat module that has no models.py, exceptions.py or services/  # hypothetical'
-  citation: docs/agents/architecture.md#adding-a-new-catalog-backed-domain
+  citation: docs/agents/code-conventions.md#core-package-layout
 - id: ARCH-006
   title: Secrets Environment Resolution
   severity: BLOCKER
@@ -259,7 +259,7 @@ rules:
     negative_example: 'build_prompt(task, api_key=resolve_credential(envs))  # hypothetical: a secret passed into a prompt builder'
   citation: docs/agents/architecture.md#secrets-handling
 - id: RENDER-001
-  title: Stateful Builder Pattern for RichOutput
+  title: Single Dispatcher Route for Terminal Output
   severity: BLOCKER
   category: Rendering
   domain: cli
@@ -471,7 +471,7 @@ rules:
     na_when: The change adds or modifies no exception class in src/dovo/core/catalog/exceptions.py.
     positive_example: 'class BlueprintLoadError(DefinitionLoadError): """Raised when blueprint YAML syntax is invalid or unreadable."""  # in core/catalog/exceptions.py; an intermediate base such as CatalogError(DefinitionError) also counts, and an extra base is fine as in AskStepInvalidError(DefinitionValidationError, ValueError)'
     negative_example: 'class BlueprintLoadError(Exception): """Raised when blueprint YAML syntax is invalid or unreadable."""  # hypothetical: inherits directly from Exception; class StepValidationError(ValueError) would fail the same way'
-  citation: docs/agents/schemas.md#1-exception-hierarchy-and-domain-errors
+  citation: docs/agents/architecture.md#adding-a-new-catalog-backed-domain
 - id: CODE-001
   title: Full-Word Identifiers
   severity: BLOCKER
@@ -496,7 +496,7 @@ rules:
     statement: Every shortened name that remains in new or modified code is either an initialism that is itself the domain term (db, cwd, ctx, id, url, cli, sha, ttl) or a framework-dictated name.
     kind: judgment
     na_when: The change adds or modifies no shortened name.
-    positive_example: 'def invoke(self, ctx: Any) -> Any:  # in cli/cli.py, ctx dictated by Click; likewise tmp_path and monkeypatch dictated by pytest'
+    positive_example: 'def invoke(self, ctx: click.Context) -> object: ...  # hypothetical Click override, ctx dictated by Click; likewise tmp_path and monkeypatch dictated by pytest'
     negative_example: 'cfg = load_config(path)  # hypothetical: cfg is not a domain-term initialism and no framework dictates it'
   citation: docs/agents/code-conventions.md#variable-naming
 - id: CODE-002
@@ -640,7 +640,7 @@ rules:
     each caller. Where a value is only stored, compared or passed through, object is preferred to Any.
   criteria:
   - id: TYPE-001.Q01
-    statement: The return annotation of every public function (a module-level function or a method whose name does not start with an underscore) is not Any.
+    statement: The return annotation of every public function (a module-level function or a method whose name does not start with an underscore) is not Any, except on a Pydantic mode="before" validator permitted by TYPE-002.Q01.
     kind: judgment
     na_when: The code under review contains no public function.
     positive_example: 'def get_payload(self) -> object: ...  # hypothetical: callers must narrow the value before using it'
@@ -730,18 +730,18 @@ rules:
   intent: Generator annotations state the full contract of what a generator yields, accepts and returns, so readers and the type checker never have to infer the omitted parts.
   criteria:
   - id: TYPE-005.Q01
-    statement: Every Generator[...] annotation specifies all three parameters, yield, send and return, as in Generator[YieldType, SendType, ReturnType].
+    statement: Every Generator[...] annotation names the yield type, the send type when it is not None and the return type when it is not None, and drops trailing None defaults as ruff UP043 requires.
     kind: judgment
     na_when: The change adds or modifies no Generator[...] annotation.
-    positive_example: 'def get_session(engine: Engine) -> Generator[Session, None, None]: ...  # hypothetical: the full three-parameter form of the real function in core/db/connection.py'
-    negative_example: 'def get_session(engine: Engine) -> Generator[Session]: ...  # in core/db/connection.py'
+    positive_example: 'def get_session(engine: Engine) -> Generator[Session]: ...  # in core/db/connection.py, send and return are None, so ruff UP043 requires the short form'
+    negative_example: 'def read_lines(path: Path) -> Generator[str]: ...  # hypothetical: the generator returns a line count, so the return type must be named as Generator[str, None, int]'
   citation: docs/agents/code-conventions.md#type-annotations-and-any
 - id: TYPE-006
   title: Scoped Pyright Suppressions With Reason
   severity: BLOCKER
   category: Typing
   domain: all
-  scope: src/, tests/
+  scope: src/, tests/, e2e/
   intent: A type error is silenced only where the code is correct and the checker cannot express it, never to hide a defect,
     so every suppression is one the checker honors, is narrow, and says why it exists.
   criteria:
@@ -971,10 +971,10 @@ rules:
     failure in one path for an empty result while a sibling path reports it.
   criteria:
   - id: API-002.Q01
-    statement: Every query method that reads an entity reports an invalid enum value or corrupt row, by raising or by returning a BaseResult error, whenever a sibling query method that reads that entity reports it.
+    statement: Every query method that reads an entity reports an invalid enum value or corrupt row as a BaseResult error, whenever a sibling query method that reads that entity reports it.
     kind: judgment
     na_when: No two query methods read the same entity.
-    positive_example: 'get() and list() both raise ValueError for a row with an invalid status'
+    positive_example: 'get() and list() both return a BaseResult error for a row with an invalid status'
     negative_example: 'list() raises on a row with an invalid status while get() returns None for the same row'
   - id: API-002.Q02
     statement: Every except block in a query method re-raises or converts the caught error into a BaseResult error, instead of returning None or an empty value.
@@ -1204,13 +1204,13 @@ rules:
   - id: COMPAT-003.Q01
     statement: The change leaves a single implementation of the behavior it replaces, with no superseded implementation kept alongside the new one.
     kind: judgment
-    na_when: The change replaces no existing behavior, or the issue explicitly demands a dual code path.
+    na_when: The change replaces no existing behavior, or the issue explicitly demands a dual code path, or the superseded path is a public surface that COMPAT-001 protects (a CLI command or flag, a config key, a machine-readable output field).
     positive_example: '# hypothetical: the legacy loader is deleted and its callers now use the new unified loader'
     negative_example: '# hypothetical: LegacyLoader stays in the tree beside UnifiedLoader and both remain reachable'
   - id: COMPAT-003.Q02
     statement: The change avoids adding a fallback branch or fallback adapter that routes to a superseded path.
     kind: judgment
-    na_when: The issue explicitly demands a fallback adapter or branch.
+    na_when: The issue explicitly demands a fallback adapter or branch, or the superseded path is a public surface that COMPAT-001 protects (a CLI command or flag, a config key, a machine-readable output field).
     positive_example: '# hypothetical: return UnifiedLoader().load()  # directly replaces the legacy loader'
     negative_example: 'if config.use_legacy: return LegacyLoader().load()  # hypothetical: unnecessary compatibility branch'
   - id: COMPAT-003.Q03
@@ -1256,7 +1256,7 @@ rules:
   - id: TEST-001.Q04
     statement: The assertions avoid pinning rendered layout, such as exact spacing, column widths or box-drawing.
     kind: judgment
-    na_when: The change adds or modifies no assertions on rendered output.
+    na_when: The change adds or modifies no assertions on rendered output, or only CLI runner tests under tests/cli/ that TEST-017 governs.
     positive_example: 'assert "iteration 3/5" in rendered  # in tests/cli/ui/test_live.py: checks a fact in the rendered panel, not its layout'
     negative_example: 'assert output == "| name  | status |\n|-------|--------|"  # hypothetical: pins table layout'
   - id: TEST-001.Q05
@@ -1272,7 +1272,7 @@ rules:
   category: Testing
   domain: tests
   scope: tests/
-  intent: A test's location is predictable from the source module it covers, so tests are easy to find and no source module goes untested or hides inside a shared catch-all file.
+  intent: A test's location is predictable from the source module it covers, so no module goes untested or hides in a catch-all file. No exemption list excuses a module, and tests may split into files named for the behavior.
   criteria:
   - id: TEST-002.Q01
     statement: Each src/dovo/common/<m>.py module has its tests in tests/common/test_<m>.py.
@@ -1328,12 +1328,6 @@ rules:
     na_when: The change adds or edits no per-domain conftest.py under tests/cli/<command>/.
     positive_example: 'tests/cli/worktree/conftest.py holds fixtures shared by the worktree command tests'
     negative_example: 'A fixture in tests/cli/worktree/conftest.py that tests/cli/session/ also imports  # hypothetical: a fixture another domain needs belongs in a shared conftest'
-  - id: TEST-002.Q10
-    statement: Every source module has a corresponding test file at its mirrored path, with no exemption list.
-    kind: judgment
-    na_when: The change adds no source module and removes no test file.
-    positive_example: 'src/dovo/core/git/runner.py is covered by tests/core/git/test_runner.py'
-    negative_example: 'A new source module added with no test file and an entry in a skip or exemption list  # hypothetical'
   citation: docs/agents/testing.md#11-source-parity-layout
 - id: TEST-003
   title: Standardized Test Naming and Vague Name Ban
@@ -1727,7 +1721,7 @@ rules:
   - id: TEST-012.Q04
     statement: Every render assertion checks a semantic value carried by the view model, such as an identifier, count or status token, rather than a panel title, field caption, border glyph, padding or prose sentence.
     kind: judgment
-    na_when: The test makes no assertion on rendered output.
+    na_when: The test makes no assertion on rendered output, or is a CLI runner test under tests/cli/ that TEST-017 governs.
     positive_example: 'rendered = render_rich(formatter.to_rich(data)); assert "wf_abcdef12" in rendered  # hypothetical: a view value, not a caption'
     negative_example: 'assert "Session ID" in rendered  # hypothetical: a panel caption, changes with layout and pins no contract'
   citation: docs/agents/testing.md#rich-render-assertions
@@ -1805,7 +1799,7 @@ rules:
     na_when: The change modifies no command routing and no multi-step orchestration or dispatch workflow.
     positive_example: 'class SessionResumeCliIntegrationTests: def test_resume_cli_from_paused_state_completes_remaining_steps_exits_zero(self, ...): ...  # in tests/cli/session/test_session_resume.py, covering the resume path'
     negative_example: '# hypothetical: a change to Engine.resume() in engine/engine.py that skips steps already completed, merged with no test that resumes a paused run and checks the remaining steps execute'
-  citation: docs/agents/testing.md#pr-review-hygiene-and-testing-documentation-review-rule
+  citation: docs/agents/testing.md#core-testing-rules
 - id: TEST-016
   title: Public Function Happy and Unhappy Path Coverage
   severity: BLOCKER
@@ -1845,13 +1839,13 @@ rules:
   category: Testing
   domain: tests
   scope: tests/cli/
-  intent: CLI runner tests should pin wiring and observable behavior, not help prose, so that help text can be reworded freely without breaking the suite.
+  intent: CLI runner tests pin wiring and observable behavior, not help prose. They may assert a literal status line or rendered string of the command's own output.
   criteria:
   - id: TEST-017.Q01
     statement: The CLI runner tests under tests/cli/ avoid asserting help text wording in stdout or rendered output.
     kind: judgment
     na_when: The change adds or modifies no CLI runner test that asserts against stdout or rendered output.
-    positive_example: "assert result.exit_code == 0\nassert \"Status: valid with warnings\" in result.stdout  # permitted: asserting a literal status label, panel line, or full rendered string is allowed, ideally pinned via snapshot testing so the assertion cannot drift silently; not restricted to a published error code token; from tests/cli/config/test_config_validate.py"
+    positive_example: "assert result.exit_code == 0\nassert \"Status: valid with warnings\" in result.stdout  # a literal status line of the command's own output, not help text; from tests/cli/config/test_config_validate.py"
     negative_example: 'assert "Show the current configuration value" in result.output  # hypothetical help text wording; assert Click metadata instead'
   - id: TEST-017.Q02
     statement: A CLI test that checks command registration or option names reads them from Click metadata rather than from rendered help output.
@@ -1888,7 +1882,7 @@ rules:
     kind: judgment
     na_when: The change adds or edits no use of a dispatch spy under tests/cli/.
     positive_example: 'The dispatch_spy fixture in tests/cli/conftest.py appends each DTO to a list and then calls original_dispatch(data, **kwargs), so a test may pin the exact DTO beyond what the --format json payload proves'
-    negative_example: 'monkeypatch.setattr(ui_dispatcher, "dispatch", lambda data, **kwargs: None)  # replacement stub; the real formatter never runs, which TEST-008 forbids (hypothetical)'
+    negative_example: 'monkeypatch.setattr(ui_dispatcher, "dispatch", lambda data, **kwargs: None)  # replacement stub; the real formatter never runs (hypothetical)'
   - id: TEST-019.Q02
     statement: Every assertion made against an item captured by the dispatch spy is an assertion on an instance of that command action's own terminal BaseResult type.
     kind: judgment
@@ -2033,7 +2027,7 @@ rules:
   severity: BLOCKER
   category: Documentation
   domain: cli
-  scope: docs/cli/
+  scope: docs/cli/, docs/agents/architecture.md, src/dovo/cli/
   intent: Users look up commands, subcommands and flags in one place, so the reference for user-visible CLI behavior lives with the per-command docs and stays out of the architecture overview.
   criteria:
   - id: DOC-002.Q01
@@ -2105,7 +2099,7 @@ rules:
   severity: BLOCKER
   category: Documentation
   domain: tests
-  scope: tests/lint/
+  scope: tests/lint/, docs/
   intent: A specification table that cannot be avoided must not drift from the source it describes, so an automated test that exists when the claim is made keeps the two in agreement.
   criteria:
   - id: DOC-005.Q01
@@ -2290,12 +2284,12 @@ rules:
     positive_example: 'An "Approach" section with three bullets, each one or two sentences (hypothetical description)'
     negative_example: 'An "Approach" section written as one long unbroken paragraph (hypothetical description)'
   - id: CI-002.Q08
-    statement: 'The pull request description has a Linkage section with an issue cross-reference such as Fixes #N or Closes #N.'
+    statement: 'The pull request description has a Linkage section with an issue cross-reference such as Fixes #N or Closes #N, or a statement that no tracking issue exists.'
     kind: judgment
     na_when: The change is not submitted as a pull request.
-    positive_example: 'A "Linkage" section reading "Closes #123" (hypothetical description)'
+    positive_example: 'A "Linkage" section reading "Closes #123", or "Fixes: none (no tracking issue)" (hypothetical description)'
     negative_example: 'A description with no Linkage section (hypothetical description)'
-  citation: docs/agents/git-and-pr-conventions.md#commit-and-pr-attribution
+  citation: docs/agents/git-and-pr-conventions.md
 - id: CI-003
   title: Agentic Process State Declaration
   severity: WARNING
@@ -2322,7 +2316,7 @@ rules:
   severity: BLOCKER
   category: CI/Tooling
   domain: all
-  scope: tests/lint/, prek.toml, .github/workflows/, pyproject.toml
+  scope: tests/lint/, prek.toml, .github/workflows/, pyproject.toml, docs/agents/rules_spec.yaml
   intent: A BLOCKER rule that can be checked by a machine is actually checked by one, so a declared gate cannot silently stop protecting the codebase and an allowlist cannot quietly grow.
   criteria:
   - id: CI-004.Q01
@@ -2539,7 +2533,7 @@ planner_rules:
   requirement: >-
     Produce an inventory (Artifact | Kind | Path | New or changed | Requirement), one row per touched file, writing
     'none' explicitly for every untouched kind. Follow it with a deletion ledger (Path or symbol | Why it goes |
-    Replaced by) covering superseded paths (COMPAT-002), duplicate tests (TEST-004), and dead harness symbols
+    Replaced by) covering superseded paths (COMPAT-003), duplicate tests (TEST-004), and dead harness symbols
     (TEST-013), executed in the same change set — or state 'Deletes nothing: greenfield'.
   deliverable_contract: >-
     Markdown inventory table followed by 'Not needed for this issue: <kinds>', then a deletion ledger table or

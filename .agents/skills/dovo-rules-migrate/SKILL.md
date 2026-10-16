@@ -26,14 +26,14 @@ file is the receipt, and `scripts/rules_audit.py check` rejects an incomplete or
 ## Commands
 
 ```bash
-uv run python scripts/rules_audit.py generate --prefix <PREFIX>   # blank audit files under .agentic/rules-audit/
+uv run python scripts/rules_audit.py generate --prefix <PREFIX>   # blank audit files under scratch/rules-audit/
 uv run python scripts/rules_audit.py merge <RULE-ID>              # splice fragments/<RULE-ID>.yaml into the spec
 uv run python scripts/rules_audit.py check <RULE-ID>              # validate a filled audit file
 ```
 
 `merge` validates the fragment against the schema, replaces only that rule's text in `rules_spec.yaml` (under a lock, so
 authors may run in parallel), proves no other rule changed, then archives the previous review under
-`.agentic/rules-audit/history/` and prefills the rule's audit file from the merged spec.
+`scratch/rules-audit/history/` and prefills the rule's audit file from the merged spec.
 
 ## Driver loop
 
@@ -56,7 +56,7 @@ brief is a separate file so the author never sees the audit questions or this dr
 
 ## Reviewer prompt
 
-Give the reviewer the rule id and the path `.agentic/rules-audit/rules/<PREFIX>/<RULE-ID>.json`, and say: you are the
+Give the reviewer the rule id and the path `scratch/rules-audit/rules/<PREFIX>/<RULE-ID>.json`, and say: you are the
 reviewer, read `shared.json` and follow its `instructions` exactly, fill in the audit file, then run
 `uv run python scripts/rules_audit.py check <RULE-ID>` and fix any structural error it reports. Do not edit the rule or
 the fragment. Reply with the FAIL and BLOCKED slots, their evidence, and the policy changes you listed.

@@ -7,7 +7,7 @@ Conventions for git commits, branches, and pull requests.
 ## Commit and PR Attribution
 
 - **No AI trailers**: Do not add `Co-authored-by: Cursor`, `Co-authored-by: ...`, or tool attribution lines to commits or PR descriptions.
-- **Semantic messages**: Use human-readable, imperative commit titles and descriptive bodies.
+- **Semantic messages**: Use human-readable, imperative commit titles and descriptive bodies. Start the title with a semantic prefix, `type(scope): ...` or `type: ...` (e.g. `docs(rules): sync agent docs`).
 
 ---
 
@@ -31,7 +31,7 @@ Conventions for git commits, branches, and pull requests.
 Write intent-focused PR descriptions with three concise sections:
 - **Why**: Context and motivation in 2-3 short sentences.
 - **Approach**: Bulleted list of key technical decisions and implementation details (1-2 sentences per bullet).
-- **Linkage**: Issue cross-reference (`Fixes #N` or `Closes #N`).
+- **Linkage**: Issue cross-reference (`Fixes #N` or `Closes #N`), or `Fixes: none (no tracking issue)` when no issue exists.
 
 ---
 

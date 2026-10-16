@@ -91,7 +91,7 @@ Three sections, intent-focused, per `docs/agents/git-and-pr-conventions.md`:
 Fixes #<n>
 ```
 
-Use `Fixes #N` (or `Closes #N`) when the work resolves an issue, with `N` from the header captured in Step 2; omit the line entirely when Step 2 found no issue number rather than inventing a reference. Keep the title in the same imperative, semantic style as the commit titles.
+Use `Fixes #N` (or `Closes #N`) when the work resolves an issue, with `N` from the header captured in Step 2; when Step 2 found no issue number, keep the Linkage section and write `Fixes: none (no tracking issue)` rather than inventing a reference (CI-002). Keep the title in the same imperative, semantic style as the commit titles.
 
 Write the body to a temp file outside the repo (`mktemp`), never into `.agentic/` or the working tree, so nothing is left behind for the next `git status` to pick up.
 

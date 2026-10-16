@@ -6,7 +6,7 @@ afterwards; you will not see its checklist.
 1. Read the schema comment at the top of `docs/agents/rules_spec.yaml` and one already-migrated rule there (for example
    `DRY-001` or `FS-002`) as a worked example.
 2. Write the whole rule as a one-item YAML list starting with `- id: <RULE-ID>` to
-   `.agentic/rules-audit/fragments/<RULE-ID>.yaml` (create the directory if needed).
+   `scratch/rules-audit/fragments/<RULE-ID>.yaml` (create the directory if needed).
 3. Run `uv run python scripts/rules_audit.py merge <RULE-ID>`. It validates the fragment and splices it into the spec;
    fix any error it prints and run it again until it succeeds. The spec changes only through this command.
 
@@ -29,7 +29,7 @@ afterwards; you will not see its checklist.
 
 ## Constraints
 
-- Do not open anything under `.agentic/rules-audit/rules/` or `.agentic/rules-audit/shared.json`.
+- Do not open anything under `scratch/rules-audit/rules/` or `scratch/rules-audit/shared.json`.
 - Edit no other rule, nothing under `scripts/` or `tests/`, and do not edit the spec directly.
 - Use the Edit or Write tool for files; never sed, awk or inline Python to modify files.
 - Never run `scripts/compile_rules.py` without `--check`. Do not commit, push, stash, checkout, reset or otherwise change
