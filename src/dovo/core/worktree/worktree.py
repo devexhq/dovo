@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
 from dovo.common.filesystem import WorkspacePaths
 from dovo.common.lock import WorkspaceLock
 from dovo.core.db import SessionsRepository, WorktreeRecord, WorktreesRepository, WorktreeStatus
@@ -46,11 +44,6 @@ class Worktree:
         self.sessions_db = sessions_db
         self.lifecycle = WorktreeLifecycle(self.paths, self.db)
         self.patch = WorktreePatch(self.paths, self.db, lifecycle=self.lifecycle)
-
-    @property
-    def worktree_base_dir(self) -> Path:
-        """Base storage directory for created worktrees."""
-        return self.lifecycle.worktree_base_dir
 
     def list(self, status: WorktreeStatus | str | None = None) -> WorktreeListResult:
         """List tracked worktrees with lifecycle status, reconciling stale directories."""
@@ -100,15 +93,6 @@ class Worktree:
         """Safely prune stale worktrees, orphaned directories, and temporary branches."""
         pruner = WorktreePruner(self.path, self.db, sessions_db=self.sessions_db)
         return pruner.prune(dry_run=dry_run, force=force)
-
-    def prune_git_worktrees(self) -> None:
-        """Prune stale Git worktree registrations."""
-        with WorkspaceLock(self.paths.lock_file):
-            self.lifecycle.prune()
-
-    def get_active(self) -> list[Path]:
-        """List active worktree directories."""
-        return self.lifecycle.get_active()
 
     def apply(
         self,

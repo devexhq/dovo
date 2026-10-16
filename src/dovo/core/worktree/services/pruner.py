@@ -322,27 +322,3 @@ class WorktreePruner:
                 force=force,
                 errors=[f"Failed to acquire workspace lock: {exc}"],
             )
-
-
-def prune_stale_worktrees(
-    path: Path,
-    db: WorktreesRepository,
-    *,
-    dry_run: bool = False,
-    force: bool = False,
-    sessions_db: SessionsRepository | None = None,
-) -> WorktreePruneResult:
-    """Non-raising helper to execute safe worktree pruning.
-
-    Args:
-        path: Repository root directory.
-        db: WorktreesRepository instance.
-        dry_run: When True, simulate without mutations.
-        force: When True, delete dirty orphaned directories.
-        sessions_db: Optional SessionsRepository instance for run liveness checks.
-
-    Returns:
-        Structured WorktreePruneResult.
-    """
-    pruner = WorktreePruner(path, db, sessions_db=sessions_db)
-    return pruner.prune(dry_run=dry_run, force=force)
