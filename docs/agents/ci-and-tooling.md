@@ -55,6 +55,12 @@ Both blueprints run against the working tree (`use_worktree: false`) and need `u
 - **Suppression comments:** Must use `# pyright: ignore[reportRuleName]` with a
   reason. Bare `# type: ignore` is not honored. Which rules may be suppressed
   is in [code-conventions.md](code-conventions.md#type-checker-suppressions).
+  `tests/lint/test_pyright_ignores.py` fails any ignore without a trailing reason.
+- **Explicit `Any` is an error** (`reportExplicitAny`). The sites that predate the setting are
+  recorded in `.basedpyright/baseline.json`, which basedpyright reads automatically, so only new
+  ones fail. Never add to the baseline. After removing an `Any`, run
+  `uv run python scripts/update_any_baseline.py` to prune its entry; the script refuses to grow
+  the baseline.
 
 ---
 
@@ -70,6 +76,16 @@ Both blueprints run against the working tree (`use_worktree: false`) and need `u
   uv run complexipy src/dovo/cli/run/app.py --max-complexity-allowed 10 --plain --failed   # scoped, failures only
   ```
 - `dovo run quality` checks the files changed against `origin/main`, so touched files are gated before committing.
+
+---
+
+## Commit Message Hook
+
+**Relevant sources:** `prek.toml`, `scripts/check_commit_msg.py`
+
+`prek install` installs a `commit-msg` hook alongside `pre-commit`. It rejects a title without a
+`type(scope): ` or `type: ` prefix (see [git-and-pr-conventions.md](git-and-pr-conventions.md)).
+Merge, revert, `fixup!` and `squash!` titles pass.
 
 ---
 

@@ -67,7 +67,7 @@ def _documented_resume_flags() -> set[str]:
 def _resume_command_flags() -> set[str]:
     """Return every long option declared on the `resume` command, without `--help`."""
     command = typer.main.get_command(session_app)
-    resume = command.commands["resume"]  # pyright: ignore[reportAttributeAccessIssue]
+    resume = command.commands["resume"]  # pyright: ignore[reportAttributeAccessIssue]  # get_command is typed as Command; session_app builds a Group
     return {opt for param in resume.params for opt in param.opts if opt.startswith("--")} - {"--help"}
 
 
