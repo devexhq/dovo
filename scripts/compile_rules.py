@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 from pathlib import Path
 from typing import Any
@@ -38,6 +39,113 @@ def _validate_rule_domains(rules: list[dict[str, Any]]) -> None:
         domains = _rule_domains(rule)
         if not domains or not set(domains) <= VALID_DOMAINS:
             raise ValueError(f"Rule '{rule.get('id')}' has invalid or missing domain: {rule.get('domain')}")
+
+
+INTENT_WORD_LIMIT = 40
+QUESTION_WORD_LIMIT = 40
+INTERROGATIVES: tuple[str, ...] = ("Does", "Do", "Is", "Are", "Was", "Were", "Has", "Have")
+CRITERION_KINDS: tuple[str, ...] = ("mechanical", "judgment")
+LEGACY_RULE_FIELDS: tuple[str, ...] = ("guideline", "evaluation_criteria", "positive_example", "negative_example")
+CRITERION_KEYS: frozenset[str] = frozenset(
+    {
+        "id",
+        "question",
+        "kind",
+        "enforced_by",
+        "na_when",
+        "positive_example",
+        "negative_example",
+        "example_not_applicable",
+    }
+)
+EMBEDDED_NUMBERING = re.compile(r"(?:^|\s)\d+[.)]\s")
+
+
+def is_migrated(rule: dict[str, Any]) -> bool:
+    """Return True when the rule is written as an intent plus a list of yes/no criteria."""
+    return "criteria" in rule
+
+
+def _question_errors(question: object) -> list[str]:
+    """Return what is wrong with a criterion question: it must be one yes/no sentence, not prose or an enumeration."""
+    if not isinstance(question, str) or not question.strip():
+        return ["question must be a non-empty string"]
+    errors: list[str] = []
+    if "\n" in question or question.count("?") != 1 or not question.rstrip().endswith("?"):
+        errors.append("question must be a single line that ends with its only '?'")
+    if ";" in question or EMBEDDED_NUMBERING.search(question):
+        errors.append("question must not contain ';' or an embedded numbered list")
+    if question.split()[0] not in INTERROGATIVES:
+        errors.append(f"question must start with one of {', '.join(INTERROGATIVES)}")
+    if len(question.split()) > QUESTION_WORD_LIMIT:
+        errors.append(f"question must be {QUESTION_WORD_LIMIT} words or fewer")
+    return errors
+
+
+def _example_errors(criterion: dict[str, Any]) -> list[str]:
+    """Return what is wrong with a criterion's examples: a positive/negative pair, or one reason it has none."""
+    pair = [criterion.get("positive_example"), criterion.get("negative_example")]
+    reason = criterion.get("example_not_applicable")
+    if reason and any(pair):
+        return ["give either an example pair or example_not_applicable, not both"]
+    if reason:
+        return []
+    if not all(pair):
+        return ["give both positive_example and negative_example, or example_not_applicable with a reason"]
+    return []
+
+
+def _enforcer_errors(criterion: dict[str, Any], root: Path) -> list[str]:
+    """Return what is wrong with a criterion's kind and its enforcing check."""
+    kind = criterion.get("kind")
+    if kind not in CRITERION_KINDS:
+        return [f"kind must be one of {', '.join(CRITERION_KINDS)}"]
+    enforced_by = criterion.get("enforced_by")
+    if kind == "judgment":
+        return ["enforced_by is only for a mechanical criterion"] if enforced_by else []
+    if not isinstance(enforced_by, str) or not (root / enforced_by.split("::")[0]).exists():
+        return ["a mechanical criterion needs enforced_by naming a path that exists in the repo"]
+    return []
+
+
+def _criterion_errors(rule_id: str, number: int, criterion: object, root: Path) -> list[str]:
+    """Return the errors of one criterion, each prefixed with the criterion id."""
+    expected_id = f"{rule_id}.Q{number:02d}"
+    if not isinstance(criterion, dict):
+        return [f"{expected_id}: must be a mapping"]
+    errors: list[str] = []
+    if criterion.get("id") != expected_id:
+        errors.append(f"id must be {expected_id}")
+    if unknown := sorted(set(criterion) - CRITERION_KEYS):
+        errors.append(f"unknown keys {unknown}")
+    errors += _question_errors(criterion.get("question"))
+    errors += _enforcer_errors(criterion, root)
+    errors += _example_errors(criterion)
+    return [f"{expected_id}: {error}" for error in errors]
+
+
+def _migrated_rule_errors(rule: dict[str, Any], root: Path) -> list[str]:
+    """Return every schema error of a rule written as an intent plus criteria."""
+    rule_id = rule.get("id")
+    errors = [f"{rule_id}: migrated rules must not keep '{field}'" for field in LEGACY_RULE_FIELDS if field in rule]
+    intent = rule.get("intent")
+    if not isinstance(intent, str) or not intent.strip():
+        errors.append(f"{rule_id}: intent must be a non-empty string")
+    elif len(intent.split()) > INTENT_WORD_LIMIT:
+        errors.append(f"{rule_id}: intent must be {INTENT_WORD_LIMIT} words or fewer")
+    criteria = rule.get("criteria")
+    if not isinstance(criteria, list) or not criteria:
+        return [*errors, f"{rule_id}: criteria must be a non-empty list"]
+    for number, criterion in enumerate(criteria, start=1):
+        errors += _criterion_errors(str(rule_id), number, criterion, root)
+    return errors
+
+
+def validate_migrated_rules(rules: list[dict[str, Any]], root: Path) -> None:
+    """Raise ValueError listing every schema error across all migrated rules."""
+    errors = [error for rule in rules if is_migrated(rule) for error in _migrated_rule_errors(rule, root)]
+    if errors:
+        raise ValueError("Invalid migrated rules:\n  " + "\n  ".join(errors))
 
 
 def _format_example_block(rule: dict[str, Any]) -> list[str]:
@@ -79,11 +187,52 @@ def generate_coding_rules_md(rules: list[dict[str, Any]], title_suffix: str = ""
     ]
     for rule in rules:
         md_lines.append(f"- **[{rule['id']}] {rule['title']} ({rule['severity']}):**")
-        md_lines.append(f"  {rule['guideline']}")
-        md_lines.extend(_format_example_block(rule))
+        if is_migrated(rule):
+            md_lines.extend(_migrated_rule_lines(rule))
+        else:
+            md_lines.append(f"  {rule['guideline']}")
+            md_lines.extend(_format_example_block(rule))
         md_lines.append("")
 
     return "\n".join(md_lines).strip() + "\n"
+
+
+def _migrated_rule_lines(rule: dict[str, Any]) -> list[str]:
+    """Render a migrated rule as its intent followed by its numbered criteria, each with its examples."""
+    lines = [f"  {rule['intent']}", "", "  Answer yes to every criterion:"]
+    for criterion in rule["criteria"]:
+        lines.append(f"  - `{criterion['id']}` ({criterion['kind']}) {criterion['question']}")
+        example_text = "\n".join(_format_example_block(criterion))
+        lines.extend(f"    {line}" if line else "" for line in example_text.split("\n"))
+    return lines
+
+
+def _migrated_checklist_entry(rule: dict[str, Any]) -> dict[str, Any]:
+    """Return the review-checklist fields of a migrated rule, with its questions also joined for older readers."""
+    questions = [criterion["question"] for criterion in rule["criteria"]]
+    return {
+        "intent": rule["intent"],
+        "criteria": [
+            {"id": criterion["id"], "question": criterion["question"], "kind": criterion["kind"]}
+            for criterion in rule["criteria"]
+        ],
+        "evaluation_criteria": " ".join(f"{number}. {question}" for number, question in enumerate(questions, start=1)),
+        "bad_pattern": next((c["negative_example"] for c in rule["criteria"] if c.get("negative_example")), None),
+    }
+
+
+def _checklist_entry(rule: dict[str, Any]) -> dict[str, Any]:
+    """Return one rule's entry for REVIEW_CHECKLIST.json."""
+    entry = {
+        "id": rule["id"],
+        "name": rule["title"],
+        "severity": rule["severity"],
+        "domain": rule.get("domain", "all"),
+        "scope": rule["scope"],
+    }
+    if is_migrated(rule):
+        return {**entry, **_migrated_checklist_entry(rule)}
+    return {**entry, "evaluation_criteria": rule["evaluation_criteria"], "bad_pattern": rule.get("negative_example")}
 
 
 def generate_review_checklist_json(rules: list[dict[str, Any]]) -> str:
@@ -98,18 +247,7 @@ def generate_review_checklist_json(rules: list[dict[str, Any]]) -> str:
     audit_data = {
         "$schema": "http://json-schema.org/draft-07/schema#",
         "description": "AUTO-GENERATED FROM rules_spec.yaml. Static checklist for Review Agent.",
-        "rules": [
-            {
-                "id": rule["id"],
-                "name": rule["title"],
-                "severity": rule["severity"],
-                "domain": rule.get("domain", "all"),
-                "scope": rule["scope"],
-                "evaluation_criteria": rule["evaluation_criteria"],
-                "bad_pattern": rule.get("negative_example"),
-            }
-            for rule in rules
-        ],
+        "rules": [_checklist_entry(rule) for rule in rules],
     }
     return json.dumps(audit_data, indent=2) + "\n"
 
@@ -189,6 +327,7 @@ def build_artifacts(spec_path: Path, root: Path | None = None) -> dict[Path, str
     planner_rules: list[dict[str, Any]] = data.get("planner_rules", [])
 
     _validate_rule_domains(rules)
+    validate_migrated_rules(rules, resolved_root)
 
     artifacts: dict[Path, str] = {
         resolved_root / "docs" / "agents" / "REVIEW_CHECKLIST.json": generate_review_checklist_json(rules),
