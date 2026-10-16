@@ -19,7 +19,7 @@ Review a change set in `Dovo CLI` on five axes:
 4. **Redundancy and subtraction**: does anything here duplicate a contract already pinned, or survive with no consumer.
 5. **Enforcement integrity**: can every check this change adds or relies on actually fail.
 
-Output goes to `.agentic/review.md`, which `/dovo-code review` consumes, paired with `.agentic/review.json` and `.agentic/verdict.txt`.
+Output goes to `.agentic/review.md`, which `/dovo-code review` consumes, paired with `.agentic/review.json` and `.agentic/verdict.txt`. The checklist sweep is recorded in `.agentic/review-audit.json`, which `scripts/change_audit.py` generates and validates.
 
 ## Hard boundaries
 
@@ -28,6 +28,8 @@ Output goes to `.agentic/review.md`, which `/dovo-code review` consumes, paired 
 - **Never approve on absence of evidence.** A rule you did not check is not a rule that passed.
 - **Never treat a passing suite as a verified invariant.** The checks most likely to be broken are the ones reporting success, because a scanner that inspects nothing is indistinguishable from a clean tree.
 - **Re-read from disk.** Every file you reason about is read fresh in this session, never recalled from earlier context.
+- **Never open `.agentic/coding-audit.json` until your own audit validates.** The author's self-audit is a claim to compare against, never an input to your verdicts. Read it only through `change_audit.py compare` and `validate --role coding` in section 8, after `validate --role review` has exited 0, and never to decide a verdict you have not yet recorded.
+- **Write the audit only through the script.** `.agentic/review-audit.json` is created by `change_audit.py generate` and filled by `change_audit.py answer`; do not hand-edit it.
 
 ## 1. Resolve the diff scope
 
@@ -43,7 +45,7 @@ Record the changed-file list and the diff size (`git diff --stat`). If the scope
 
 In a single-agent setup, the author and reviewer share one context, so the review inherits the author's assumptions and blind spots. **A same-session review is a weak control and must declare itself**: if this session planned or wrote the code, set `provenance` to `same_session` in the eventual report, re-derive every finding from the diff and the docs, and discard in-session claims that something was already verified or intentional. The quoted-evidence requirement in section 5 exists precisely for this case: in same-session mode, treat any clause you cannot support with a quoted line as `FAIL`, not `PASS`.
 
-**If this session wrote any of the code under review, delegate the audit to a fresh subagent** instead of reviewing it yourself. Give it a strong reasoning model, preferably a different family than the one that wrote the code. A spawned subagent has no read-only switch of its own, so restate the Hard boundaries above verbatim in its instructions and make them the first thing it reads. Hand it the resolved scope from section 1, the standards to load in section 3, and nothing else: no rationale, no "I already verified X". Let it read the standards and run the sweep itself, and have it set `provenance` to `fresh_session` in its report.
+**If this session wrote any of the code under review, delegate the audit to a fresh subagent** instead of reviewing it yourself. Give it a strong reasoning model, preferably a different family than the one that wrote the code. A spawned subagent has no read-only switch of its own, so restate the Hard boundaries above verbatim in its instructions and make them the first thing it reads. Hand it the resolved scope from section 1, the standards to load in section 3, and nothing else: no rationale, no "I already verified X". Let it read the standards and run the sweep itself, and have it set `provenance` to `fresh_session` in its report. Tell it, in the same first lines, never to open `.agentic/coding-audit.json` before its own audit validates; it generates, answers and validates `.agentic/review-audit.json` itself and returns the comparison from section 8 with its findings.
 
 If a subagent cannot be launched, say so and do not self-approve. Fail closed unless the user explicitly overrides.
 
@@ -51,7 +53,7 @@ When this review is already running in a fresh session with no author bias to co
 
 ## 3. Load the standards yourself
 
-Do not review from memory of this repo. Read [AGENTS.md](../../../AGENTS.md) — the authority and the doc index for what governs what — the docs it names for the areas the diff touches, the domain-scoped `RULES.md` files, and [REVIEW_CHECKLIST.json](../../../docs/agents/REVIEW_CHECKLIST.json). Read `.agentic/plan.md` if it exists, as the change's contract. Also read `.agentic/implementation-report.md` if it exists: its **Plan deviations** section is the author's declared list of departures from the plan. It is a claim to verify against the diff, never evidence that the code is correct.
+Do not review from memory of this repo. Read [AGENTS.md](../../../AGENTS.md) — the authority and the doc index for what governs what — the docs it names for the areas the diff touches, the domain-scoped `RULES.md` files, and [REVIEW_CHECKLIST.json](../../../docs/agents/REVIEW_CHECKLIST.json). Read `.agentic/plan.md` if it exists, as the change's contract. Also read `.agentic/implementation-report.md` if it exists: its **Plan deviations** section is the author's declared list of departures from the plan. It is a claim to verify against the diff, never evidence that the code is correct. It gives only counts for the author's self-audit; the audit file itself stays closed until section 8.
 
 When a doc's claim about a model, field list, or enum drives a finding, spot-check the source first. Source wins. **A stale doc is a finding, not a condition to route around**: a "enforced by" claim naming a file that doesn't exist, a documented helper that was never written, or a rule example that teaches the violation it forbids. Resolve every such claim that bears on this change (`rg --files -g '<name>'`) rather than working around a wrong sentence and leaving it for the next agent to trust.
 
@@ -77,9 +79,24 @@ Skip this axis only when `.agentic/plan.md` is absent, and say so in the report.
 
 The rules that get missed are the ones no linter enforces, and they are missed because reviewers read for design and skim identifiers. Do this as an explicit pass, not a byproduct.
 
-1. **Match rule scope.** For each changed path, filter [REVIEW_CHECKLIST.json](../../../docs/agents/REVIEW_CHECKLIST.json) for rules whose `scope` encompasses it (`src/dovo/core/` matches `ARCH-*`, formatters match `RENDER-*`, `**/models.py` matches `MODEL-*`, `tests/` matches `TEST-*`, and `domain: all` match everything).
-2. **Audit item by item** against each rule's evaluation_criteria, line by line, and record PASS, FAIL, or N/A .
-3. **Audit each clause line by line** against the rule's `evaluation_criteria`.
+1. **Generate your own audit.** Start every round from a fresh file, so no answer from an earlier round survives into a diff it was not made against, then generate it for the scope from section 1. The script matches each changed path to the rules whose `scope` encompasses it (`src/dovo/core/` matches `ARCH-*`, formatters match `RENDER-*`, `**/models.py` matches `MODEL-*`, `tests/` matches `TEST-*`) and writes one unanswered entry per criterion:
+
+   ```bash
+   rm -f .agentic/review-audit.json
+   uv run python scripts/change_audit.py generate --role review                       # uncommitted work, or the branch when the tree is clean
+   uv run python scripts/change_audit.py generate --role review --range origin/<base>...origin/<head>   # a PR scope
+   ```
+
+   Rules whose scope names no path (commit and PR process rules) are listed under `skipped_rules`; check those by hand where they bear on the change.
+2. **Answer every criterion** against the diff and the code, line by line. `verdict` is `PASS`, `FAIL` or `N/A`. `evidence` is never empty: quote the `path:line` you read. A `FAIL` must cite a `path:line`, and an `N/A` states why the entry's `na_when` holds. Record answers in batches; `answer` keeps every answer you did not name:
+
+   ```bash
+   uv run python scripts/change_audit.py answer --role review --from - <<'JSON'
+   {"TEST-011.Q01": {"verdict": "FAIL", "evidence": "tests/engine/executors/test_process_group.py:27 `time.sleep(0.05)`"}}
+   JSON
+   ```
+
+3. **Validate before you write anything else.** `uv run python scripts/change_audit.py validate --role review` must exit 0: no criterion unanswered, none missing, none reworded. An unanswered criterion is a rule you did not check, and the report cannot say `APPROVE` over it.
 4. **Classify severity:**
     - `BLOCKER` (architectural drift, concurrency risk, boundary leaks, runtime crashes, `assert` in `src/`, assertions on human-rendered output, an enforcement check that cannot fail, a breached plan contract, a missing required doc update),
     - `WARNING` (high-impact convention or type degradation),
@@ -88,7 +105,7 @@ The rules that get missed are the ones no linter enforces, and they are missed b
 
 Every naming, model, placement, typing, and test convention a reviewer must check by eye — because no linter here enforces it — is a rule in `REVIEW_CHECKLIST.json`: step 1 of this pass is what puts them in scope, there is no separate checklist to consult.
 
-Each finding names the rule ID and the doc it comes from. If you cannot cite a rule, it is a Suggestion or a Nit, not Blocking.
+Each `FAIL` in your audit becomes a finding at its criterion's `severity`, and each finding names the rule ID and the doc it comes from. If you cannot cite a rule, it is a Suggestion or a Nit, not Blocking.
 
 ## 6. Check doc adherence
 
@@ -108,7 +125,27 @@ You are not running the gates, so reason about them from the diff and mark each 
 
 Say `not run by this skill` for anything you are inferring, and keep it distinct from `not enforced by this repo`, which is a finding from section 7. Never report an inference as a gate result.
 
-## 8. Write the report
+## 8. Compare with the coding audit
+
+Only now, with every other axis done and `validate --role review` passing, open the author's self-audit:
+
+```bash
+uv run python scripts/change_audit.py compare        # exits 2 unless the review audit validates; lists every criterion where the two differ
+uv run python scripts/change_audit.py validate --role coding
+```
+
+`compare` prints each criterion where the verdicts differ or only one audit has the entry, with the start of each side's evidence. Treat the coding audit as a second opinion, not a source of truth:
+
+- **Coding `PASS`, review `FAIL`**: your finding stands. Note it in the report as a self-audit miss.
+- **Coding `FAIL`, review `PASS`**: re-inspect the cited `path:line` in the coding evidence. If the defect is real, correct your answer with `answer --role review`, re-run `validate --role review` and raise the finding. If your `PASS` holds, say why in the comparison.
+- **`N/A` against anything else**: re-read the criterion's `na_when` and the diff, and settle which side is right.
+- **A criterion in only one audit**: the two audits scoped the change differently; check the changed-file list and say which side was wrong.
+
+Never lower a verdict you recorded to agree with the author without a quoted line that shows it was wrong.
+
+The coding audit being absent, or `validate --role coding` failing, is a Warning with rule `-`: the author did not complete the self-audit (`/dovo-code` requires it). It never changes a verdict you recorded.
+
+## 9. Write the report
 
 Write this to `.agentic/review.md` (create `.agentic/` if needed), overwriting the previous round, and echo the verdict plus the Blocking list in chat:
 
@@ -169,6 +206,11 @@ Write this to `.agentic/review.md` (create `.agentic/` if needed), overwriting t
 - <gate tripped> - satisfied | missing update to <doc> | not applicable
 - Unresolved enforcement claims: <doc:line naming a nonexistent file, or "none">
 
+### Audit comparison
+- Review audit: `.agentic/review-audit.json` validated, <k> criteria, <f> FAIL
+- Coding audit: validated | invalid: <why> | absent
+- <criterion id> - coding <verdict>, review <verdict>: <resolution, with the quoted line that settled it> | none
+
 ### Unverified
 - Gates were not run by this skill. Risks read from the diff: <complexity, coverage, typing risks, or "none">
 
@@ -176,7 +218,7 @@ Write this to `.agentic/review.md` (create `.agentic/` if needed), overwriting t
 - <finding> - unresolved after round 3, handed to the human
 ```
 
-Say `APPROVE` only with zero Blocking items. An empty section keeps its heading with the line `none` in place of the table. Each finding is one table row: `Location` is `path:line` (or `path` for a file-level finding) and `Rule` is `-` when no rule applies.
+Say `APPROVE` only with zero Blocking items and a review audit that `validate --role review` accepted. An empty section keeps its heading with the line `none` in place of the table. Each finding is one table row: `Location` is `path:line` (or `path` for a file-level finding) and `Rule` is `-` when no rule applies.
 
 IDs are the tier letter plus a number starting at 1 within the tier, in the order the rows appear: `B#` for Blocking, `W#` for Warnings, `S#` for Suggestions, `N#` for Nits. They are reassigned every round, and `/dovo-code review --fix` consumes them.
 
@@ -184,7 +226,7 @@ With `--post` and a PR scope, post the same content as a comment review: `gh pr 
 
 On `CHANGES REQUIRED`, hand off to `/dovo-code review`, then re-run this skill as round n+1 against the updated scope. **Cap at 3 rounds.** At the cap, every unresolved finding goes in the `Residual` section, in `review.json` under `residual`, and, when the scope is a PR, into a posted comment.
 
-## 11. Emit the machine-readable verdict
+## 10. Emit the machine-readable verdict
 
 Write `.agentic/review.json` and `.agentic/verdict.txt` alongside the markdown and print the same object as the last line of stdout, minified onto one line. A caller decides the next step from these files alone.
 
@@ -200,6 +242,7 @@ Write `.agentic/review.json` and `.agentic/verdict.txt` alongside the markdown a
     { "id": "B1", "severity": "BLOCKER", "path": "src/dovo/core/sessions/sessions.py", "line": 42, "rule": "ARCH-001", "summary": "Core service imports CliContext directly." }
   ],
   "unenforced_gates": ["coverage fail_under=0 in pyproject.toml"],
+  "audit": { "file": ".agentic/review-audit.json", "criteria": 182, "fail": 2, "coding": "validated", "disagreements": 3 },
   "residual": []
 }
 ```
@@ -213,5 +256,6 @@ Field contracts, since this is what a loop branches on:
 - Each finding's `id` is the one in the `review.md` table row it comes from (`B#`, `W#`, `S#` or `N#`) and is unique within the file, so a caller can offer the findings for selection and pass the chosen ids to `/dovo-code review --fix`.
 - `.agentic/verdict.txt` holds exactly the `verdict` value (`APPROVE` or `CHANGES_REQUIRED`) and a trailing newline, overwritten every round, so a shell condition can test it without parsing JSON.
 - `unenforced_gates` and `residual` stay `[]` when there are none.
+- `audit` summarises the two audits: `criteria` and `fail` count the review audit, `coding` is `validated`, `invalid` or `absent`, and `disagreements` is the number `compare` listed (`null` when the coding audit is absent or invalid).
 
 Changes to this shape are additive only. It is the contract a driver script consumes today, and the `outputs` condition a `dovo` blueprint will branch on later, so a renamed field breaks both.

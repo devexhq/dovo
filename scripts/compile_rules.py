@@ -208,15 +208,20 @@ def _migrated_rule_lines(rule: dict[str, Any]) -> list[str]:
     return lines
 
 
+def _checklist_criterion(criterion: dict[str, Any]) -> dict[str, Any]:
+    """Return one criterion's checklist entry, carrying na_when only when the rule states one."""
+    entry = {"id": criterion["id"], "statement": criterion["statement"], "kind": criterion["kind"]}
+    if criterion.get("na_when"):
+        entry["na_when"] = criterion["na_when"]
+    return entry
+
+
 def _migrated_checklist_entry(rule: dict[str, Any]) -> dict[str, Any]:
     """Return the review-checklist fields of a migrated rule, with its statements also joined for older readers."""
     statements = [criterion["statement"] for criterion in rule["criteria"]]
     return {
         "intent": rule["intent"],
-        "criteria": [
-            {"id": criterion["id"], "statement": criterion["statement"], "kind": criterion["kind"]}
-            for criterion in rule["criteria"]
-        ],
+        "criteria": [_checklist_criterion(criterion) for criterion in rule["criteria"]],
         "evaluation_criteria": " ".join(
             f"{number}. {statement}" for number, statement in enumerate(statements, start=1)
         ),

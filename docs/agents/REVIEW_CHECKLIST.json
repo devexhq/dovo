@@ -80,32 +80,38 @@
         {
           "id": "ARCH-002.Q01",
           "statement": "Each CLI command handler takes a CliContext as its context parameter.",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "The change adds or modifies no CLI command handler."
         },
         {
           "id": "ARCH-002.Q02",
           "statement": "Each CLI command handler invokes an underlying domain service or domain entrypoint to do its work.",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "The change adds or modifies no CLI command handler."
         },
         {
           "id": "ARCH-002.Q03",
           "statement": "Each CLI command handler returns a BaseResult model.",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "The change adds or modifies no CLI command handler."
         },
         {
           "id": "ARCH-002.Q04",
           "statement": "The CLI package is free of business logic and domain orchestration, so that handlers only delegate to the domain layer and dispatch the result.",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "The change adds or modifies no code under src/dovo/cli/."
         },
         {
           "id": "ARCH-002.Q05",
           "statement": "The CLI package is free of direct SQLite queries or SQL execution.",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "The change adds or modifies no code under src/dovo/cli/."
         },
         {
           "id": "ARCH-002.Q06",
           "statement": "The CLI package is free of direct filesystem scans.",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "The change adds or modifies no code under src/dovo/cli/."
         }
       ],
       "evaluation_criteria": "1. Each CLI command handler takes a CliContext as its context parameter. 2. Each CLI command handler invokes an underlying domain service or domain entrypoint to do its work. 3. Each CLI command handler returns a BaseResult model. 4. The CLI package is free of business logic and domain orchestration, so that handlers only delegate to the domain layer and dispatch the result. 5. The CLI package is free of direct SQLite queries or SQL execution. 6. The CLI package is free of direct filesystem scans.",
@@ -142,7 +148,8 @@
         {
           "id": "ARCH-003.Q05",
           "statement": "Every domain rule that formatters apply (for example deciding what counts as healthy or failed) is defined in core/ or common/ rather than in cli/ui/.",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "The formatter only maps or copies existing domain fields and applies no condition of its own."
         },
         {
           "id": "ARCH-003.Q06",
@@ -167,37 +174,44 @@
         {
           "id": "ARCH-004.Q01",
           "statement": "Each new domain package under core/ defines its types in a models.py module.",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "The change adds no new domain package under core/."
         },
         {
           "id": "ARCH-004.Q02",
           "statement": "Each new domain package under core/ that raises its own errors defines them in an exceptions.py module.",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "The change adds no new domain package under core/, or the new domain raises no errors of its own."
         },
         {
           "id": "ARCH-004.Q03",
           "statement": "The entrypoint coordinator or service of each new domain package is named after the domain rather than generically.",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "The change adds no new domain package under core/."
         },
         {
           "id": "ARCH-004.Q04",
           "statement": "Each new domain package under core/ keeps its imperative operations in a services/ package.",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "The change adds no new domain package under core/, or the new domain has no imperative operations."
         },
         {
           "id": "ARCH-004.Q05",
           "statement": "Each new imperative operation of a domain is placed in its own services/<verb>.py module rather than directly in the package root.",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "The change adds no new imperative operation to a domain package."
         },
         {
           "id": "ARCH-004.Q06",
           "statement": "All public models of a new domain package are defined in its models.py rather than in services/.",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "The change adds no public model to a domain package."
         },
         {
           "id": "ARCH-004.Q07",
           "statement": "New domain code avoids extending a legacy flat layout (a domain package or module that lacks the standard structure).",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "The change adds no code to a domain package that predates the standard layout."
         }
       ],
       "evaluation_criteria": "1. Each new domain package under core/ defines its types in a models.py module. 2. Each new domain package under core/ that raises its own errors defines them in an exceptions.py module. 3. The entrypoint coordinator or service of each new domain package is named after the domain rather than generically. 4. Each new domain package under core/ keeps its imperative operations in a services/ package. 5. Each new imperative operation of a domain is placed in its own services/<verb>.py module rather than directly in the package root. 6. All public models of a new domain package are defined in its models.py rather than in services/. 7. New domain code avoids extending a legacy flat layout (a domain package or module that lacks the standard structure).",
@@ -229,7 +243,8 @@
         {
           "id": "ARCH-006.Q04",
           "statement": "Every secret is kept out of the arguments passed into prompt builders.",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "The change adds or modifies no prompt builder and no call to one."
         }
       ],
       "evaluation_criteria": "1. Every API key or secret is read from environment variables at call time through a module-level resolve helper. 2. Every secret is absent from config.json, including the fields of DovoConfig. 3. Every secret is absent from data.db, including the SQLite record models. 4. Every secret is kept out of the arguments passed into prompt builders.",
@@ -246,32 +261,38 @@
         {
           "id": "RENDER-001.Q01",
           "statement": "All terminal output from src/dovo/cli/ and src/dovo/core/ leaves the program through ui_dispatcher.dispatch(result).",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "The change adds or modifies no code that produces terminal output."
         },
         {
           "id": "RENDER-001.Q02",
           "statement": "Direct print() and typer.echo calls are absent from src/dovo/cli/ and src/dovo/core/ outside src/dovo/cli/ui/.",
-          "kind": "mechanical"
+          "kind": "mechanical",
+          "na_when": "The change adds or modifies no print() or typer.echo call."
         },
         {
           "id": "RENDER-001.Q03",
           "statement": "rich imports in src/dovo/cli/ are confined to files under src/dovo/cli/ui/.",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "The change adds or modifies no import in src/dovo/cli/."
         },
         {
           "id": "RENDER-001.Q04",
           "statement": "Console .print() calls in src/dovo/cli/ and src/dovo/core/ are made only in files under src/dovo/cli/ui/ (check with grep -rn \"\\.print(\" src/dovo/cli src/dovo/core).",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "The change adds or modifies no .print() call."
         },
         {
           "id": "RENDER-001.Q05",
           "statement": "The files under src/dovo/core/ import nothing from rich.",
-          "kind": "mechanical"
+          "kind": "mechanical",
+          "na_when": "The change adds or modifies no import in src/dovo/core/."
         },
         {
           "id": "RENDER-001.Q06",
           "statement": "Every core service is free of Console instantiation.",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "The change adds or modifies no code under src/dovo/core/."
         }
       ],
       "evaluation_criteria": "1. All terminal output from src/dovo/cli/ and src/dovo/core/ leaves the program through ui_dispatcher.dispatch(result). 2. Direct print() and typer.echo calls are absent from src/dovo/cli/ and src/dovo/core/ outside src/dovo/cli/ui/. 3. rich imports in src/dovo/cli/ are confined to files under src/dovo/cli/ui/. 4. Console .print() calls in src/dovo/cli/ and src/dovo/core/ are made only in files under src/dovo/cli/ui/ (check with grep -rn \"\\.print(\" src/dovo/cli src/dovo/core). 5. The files under src/dovo/core/ import nothing from rich. 6. Every core service is free of Console instantiation.",
@@ -288,17 +309,20 @@
         {
           "id": "RENDER-002.Q01",
           "statement": "Every to_rich() implementation gets its presentation data by calling transform(data).",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "The change adds or modifies no to_rich() implementation."
         },
         {
           "id": "RENDER-002.Q02",
           "statement": "Every business rule and status calculation that decides what to show is performed in transform() rather than in to_rich().",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "The change adds or modifies no to_rich() implementation."
         },
         {
           "id": "RENDER-002.Q03",
           "statement": "Every string that to_rich() renders comes directly from the view model, without string manipulation inside to_rich().",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "The change adds or modifies no to_rich() implementation."
         }
       ],
       "evaluation_criteria": "1. Every to_rich() implementation gets its presentation data by calling transform(data). 2. Every business rule and status calculation that decides what to show is performed in transform() rather than in to_rich(). 3. Every string that to_rich() renders comes directly from the view model, without string manipulation inside to_rich().",
@@ -315,7 +339,8 @@
         {
           "id": "RENDER-003.Q01",
           "statement": "Error, warning and fix strings are built inline with f-strings or literals at their call sites, with no private helper whose sole purpose is formatting a single error or warning string.",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "The change builds no error, warning or fix strings."
         }
       ],
       "evaluation_criteria": "1. Error, warning and fix strings are built inline with f-strings or literals at their call sites, with no private helper whose sole purpose is formatting a single error or warning string.",
@@ -332,12 +357,14 @@
         {
           "id": "RENDER-004.Q01",
           "statement": "Every table-building helper that more than one formatter in a domain needs is defined once in that domain's cli/ui/formatters/<domain>/common.py rather than duplicated across sibling formatter modules.",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "The change adds or modifies no table-building helper in a formatter module."
         },
         {
           "id": "RENDER-004.Q02",
           "statement": "A table-building helper is placed in the package-wide cli/ui/formatters/common.py only when it is genuinely shared across domains.",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "The change adds or moves no table-building helper into the package-wide cli/ui/formatters/common.py."
         }
       ],
       "evaluation_criteria": "1. Every table-building helper that more than one formatter in a domain needs is defined once in that domain's cli/ui/formatters/<domain>/common.py rather than duplicated across sibling formatter modules. 2. A table-building helper is placed in the package-wide cli/ui/formatters/common.py only when it is genuinely shared across domains.",
@@ -354,17 +381,20 @@
         {
           "id": "MODEL-001.Q01",
           "statement": "extra='ignore' is used only by the approved hand-authored YAML models, BlueprintDefinition and LoopStepBlock.",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "The change adds or modifies no model configuration."
         },
         {
           "id": "MODEL-001.Q02",
           "statement": "Every model that uses extra='ignore' carries a comment justifying it.",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "The change adds or modifies no model that uses extra='ignore'."
         },
         {
           "id": "MODEL-001.Q03",
           "statement": "Every model outside the approved list sets strict=True in its configuration.",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "The change adds or modifies no model configuration."
         }
       ],
       "evaluation_criteria": "1. extra='ignore' is used only by the approved hand-authored YAML models, BlueprintDefinition and LoopStepBlock. 2. Every model that uses extra='ignore' carries a comment justifying it. 3. Every model outside the approved list sets strict=True in its configuration.",
@@ -384,27 +414,32 @@
         {
           "id": "MODEL-002.Q01",
           "statement": "The operation reports a business or operational failure by returning a result instead of raising an exception.",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "The change adds or modifies no operation that can fail for business or operational reasons."
         },
         {
           "id": "MODEL-002.Q02",
           "statement": "An operation whose outcome reaches a domain entrypoint, a command handler, a formatter or the wire format returns a Pydantic result object subclassing BaseResult.",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "The change adds or modifies no operation whose outcome reaches a domain entrypoint, command handler, formatter or the wire format."
         },
         {
           "id": "MODEL-002.Q03",
           "statement": "Callers of a result-returning operation check .ok rather than catching exceptions to learn the outcome.",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "The change adds or modifies no caller of a result-returning operation."
         },
         {
           "id": "MODEL-002.Q04",
           "statement": "Callers that report a failure to the user render the result .errors and .warnings rather than the text of a caught exception.",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "The change adds or modifies no caller that reports a result-returning operation's failure to the user."
         },
         {
           "id": "MODEL-002.Q05",
           "statement": "An internal helper that returns a plain value or an error message (str | None) serves a single in-layer caller that only branches on success.",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "The change adds or modifies no internal helper that returns a plain value or str | None."
         }
       ],
       "evaluation_criteria": "1. The operation reports a business or operational failure by returning a result instead of raising an exception. 2. An operation whose outcome reaches a domain entrypoint, a command handler, a formatter or the wire format returns a Pydantic result object subclassing BaseResult. 3. Callers of a result-returning operation check .ok rather than catching exceptions to learn the outcome. 4. Callers that report a failure to the user render the result .errors and .warnings rather than the text of a caught exception. 5. An internal helper that returns a plain value or an error message (str | None) serves a single in-layer caller that only branches on success.",
@@ -424,12 +459,14 @@
         {
           "id": "MODEL-003.Q01",
           "statement": "For each status StrEnum defined in a core/*/models.py or engine/**/models.py file and used by a BaseResult model, every variant is emitted by production code in src/.",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "The change adds or modifies no status StrEnum, used by a BaseResult model, in a core/*/models.py or engine/**/models.py file."
         },
         {
           "id": "MODEL-003.Q02",
           "statement": "For each status StrEnum defined in a core/*/models.py or engine/**/models.py file and used by a BaseResult model, every variant is asserted in a test under tests/.",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "The change adds or modifies no status StrEnum, used by a BaseResult model, in a core/*/models.py or engine/**/models.py file."
         }
       ],
       "evaluation_criteria": "1. For each status StrEnum defined in a core/*/models.py or engine/**/models.py file and used by a BaseResult model, every variant is emitted by production code in src/. 2. For each status StrEnum defined in a core/*/models.py or engine/**/models.py file and used by a BaseResult model, every variant is asserted in a test under tests/.",
@@ -446,7 +483,8 @@
         {
           "id": "MODEL-004.Q01",
           "statement": "Every exception class in src/dovo/core/catalog/exceptions.py, which covers locating, loading, validating and writing catalog definitions, descends from DefinitionError, DefinitionNotFoundError, DefinitionLoadError or DefinitionValidationError in common/exceptions.py, rather than having Exception or ValueError as its only base.",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "The change adds or modifies no exception class in src/dovo/core/catalog/exceptions.py."
         }
       ],
       "evaluation_criteria": "1. Every exception class in src/dovo/core/catalog/exceptions.py, which covers locating, loading, validating and writing catalog definitions, descends from DefinitionError, DefinitionNotFoundError, DefinitionLoadError or DefinitionValidationError in common/exceptions.py, rather than having Exception or ValueError as its only base.",
@@ -463,17 +501,20 @@
         {
           "id": "CODE-001.Q01",
           "statement": "Every new or modified variable, parameter, attribute and function name is spelled in full rather than shortened by dropping letters, even for familiar shortenings (exceptions are checked by Q02 and Q03).",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "The change adds or modifies no variable, parameter, attribute or function name."
         },
         {
           "id": "CODE-001.Q02",
           "statement": "Every new or modified single-letter name is confined to a comprehension, a generator expression or a one-line loop.",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "The change adds or modifies no single-letter name."
         },
         {
           "id": "CODE-001.Q03",
           "statement": "Every shortened name that remains in new or modified code is either an initialism that is itself the domain term (db, cwd, ctx, id, url, cli, sha, ttl) or a framework-dictated name.",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "The change adds or modifies no shortened name."
         }
       ],
       "evaluation_criteria": "1. Every new or modified variable, parameter, attribute and function name is spelled in full rather than shortened by dropping letters, even for familiar shortenings (exceptions are checked by Q02 and Q03). 2. Every new or modified single-letter name is confined to a comprehension, a generator expression or a one-line loop. 3. Every shortened name that remains in new or modified code is either an initialism that is itself the domain term (db, cwd, ctx, id, url, cli, sha, ttl) or a framework-dictated name.",
@@ -490,12 +531,14 @@
         {
           "id": "CODE-002.Q01",
           "statement": "Distinct logical phases of a function body (setup, validate, persist, return) are separated by a blank line.",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "The function body is a single phase or too short to contain more than one phase."
         },
         {
           "id": "CODE-002.Q02",
           "statement": "No blank line in a function body separates two adjacent lines that work on the same value within one phase.",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "The function body contains no blank lines."
         }
       ],
       "evaluation_criteria": "1. Distinct logical phases of a function body (setup, validate, persist, return) are separated by a blank line. 2. No blank line in a function body separates two adjacent lines that work on the same value within one phase.",
@@ -512,32 +555,38 @@
         {
           "id": "CODE-003.Q01",
           "statement": "The docstring opens with a one-line title stating what the thing is or does.",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "The change adds or modifies no docstring."
         },
         {
           "id": "CODE-003.Q02",
           "statement": "The title is free of outcome, failure-path and side-effect clauses, with a comma used only to enumerate a distinct list.",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "The change adds or modifies no docstring."
         },
         {
           "id": "CODE-003.Q03",
           "statement": "A unit with a hidden contract, a data-loss or safety behavior, a non-obvious ordering constraint or a deliberate oddity carries a description stating it.",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "The change adds or modifies no unit with a hidden contract, safety behavior, non-obvious ordering constraint or deliberate oddity."
         },
         {
           "id": "CODE-003.Q04",
           "statement": "Every description states a fact the code cannot show, rather than something a reader can already see in the code.",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "The change adds or modifies no docstring with a description."
         },
         {
           "id": "CODE-003.Q05",
           "statement": "Every description is free of step-by-step narration of the body.",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "The change adds or modifies no docstring with a description."
         },
         {
           "id": "CODE-003.Q06",
           "statement": "Every description is free of text that restates the parameters, types or return annotation, or repeats the title in other words.",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "The change adds or modifies no docstring with a description."
         }
       ],
       "evaluation_criteria": "1. The docstring opens with a one-line title stating what the thing is or does. 2. The title is free of outcome, failure-path and side-effect clauses, with a comma used only to enumerate a distinct list. 3. A unit with a hidden contract, a data-loss or safety behavior, a non-obvious ordering constraint or a deliberate oddity carries a description stating it. 4. Every description states a fact the code cannot show, rather than something a reader can already see in the code. 5. Every description is free of step-by-step narration of the body. 6. Every description is free of text that restates the parameters, types or return annotation, or repeats the title in other words.",
@@ -554,12 +603,14 @@
         {
           "id": "CODE-004.Q01",
           "statement": "Each new or modified docstring avoids describing what a caller does with the unit's result.",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "The change adds or modifies no docstring."
         },
         {
           "id": "CODE-004.Q02",
           "statement": "Each new or modified docstring avoids describing logic that lives in another module or class, other than a reference to a sibling in the same module.",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "The change adds or modifies no docstring."
         }
       ],
       "evaluation_criteria": "1. Each new or modified docstring avoids describing what a caller does with the unit's result. 2. Each new or modified docstring avoids describing logic that lives in another module or class, other than a reference to a sibling in the same module.",
@@ -576,7 +627,8 @@
         {
           "id": "CODE-005.Q01",
           "statement": "Every new or modified module, class and function body is free of a bare string statement after its first statement.",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "The change adds or modifies no module, class or function."
         }
       ],
       "evaluation_criteria": "1. Every new or modified module, class and function body is free of a bare string statement after its first statement.",
@@ -593,7 +645,8 @@
         {
           "id": "TYPE-001.Q01",
           "statement": "The return annotation of every public function (a module-level function or a method whose name does not start with an underscore) is not Any, except on a Pydantic mode=\"before\" validator permitted by TYPE-002.Q01.",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "The code under review contains no public function."
         }
       ],
       "evaluation_criteria": "1. The return annotation of every public function (a module-level function or a method whose name does not start with an underscore) is not Any, except on a Pydantic mode=\"before\" validator permitted by TYPE-002.Q01.",
@@ -610,7 +663,8 @@
         {
           "id": "TYPE-002.Q01",
           "statement": "Every use of Any in the change is confined to one of four boundaries, namely a Pydantic mode=\"before\" validator, a dict[str, Any] at a serialization boundary, a value read from a user document and compared, or a **kwargs: Any pass-through.",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "The change adds or modifies no use of Any."
         }
       ],
       "evaluation_criteria": "1. Every use of Any in the change is confined to one of four boundaries, namely a Pydantic mode=\"before\" validator, a dict[str, Any] at a serialization boundary, a value read from a user document and compared, or a **kwargs: Any pass-through.",
@@ -627,27 +681,32 @@
         {
           "id": "TYPE-003.Q01",
           "statement": "Every annotation is free of Any that exists only because the real type cannot be imported from the current package.",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "The change adds or modifies no Any annotation."
         },
         {
           "id": "TYPE-003.Q02",
           "statement": "Every parameter is free of an Any annotation that exists only so a test can pass a stub.",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "The change adds or modifies no Any annotation."
         },
         {
           "id": "TYPE-003.Q03",
           "statement": "Every annotation is free of Any where a model that describes the value already exists.",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "The change adds or modifies no Any annotation."
         },
         {
           "id": "TYPE-003.Q04",
           "statement": "Every override of a third-party method names the third-party type instead of Any.",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "The change adds or modifies no override of a third-party method."
         },
         {
           "id": "TYPE-003.Q05",
           "statement": "Every generic type is parameterized with the concrete type the code already knows, rather than Any.",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "The change adds or modifies no generic type annotation."
         }
       ],
       "evaluation_criteria": "1. Every annotation is free of Any that exists only because the real type cannot be imported from the current package. 2. Every parameter is free of an Any annotation that exists only so a test can pass a stub. 3. Every annotation is free of Any where a model that describes the value already exists. 4. Every override of a third-party method names the third-party type instead of Any. 5. Every generic type is parameterized with the concrete type the code already knows, rather than Any.",
@@ -664,12 +723,14 @@
         {
           "id": "TYPE-004.Q01",
           "statement": "Every SQLModel __tablename__ is annotated as ClassVar[str].",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "The change defines no SQLModel table class."
         },
         {
           "id": "TYPE-004.Q02",
           "statement": "Every other class-level SQL string constant is annotated explicitly as ClassVar[str] rather than Any or a bare str.",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "The change adds no class-level SQL string constant besides __tablename__."
         }
       ],
       "evaluation_criteria": "1. Every SQLModel __tablename__ is annotated as ClassVar[str]. 2. Every other class-level SQL string constant is annotated explicitly as ClassVar[str] rather than Any or a bare str.",
@@ -686,7 +747,8 @@
         {
           "id": "TYPE-005.Q01",
           "statement": "Every Generator[...] annotation names the yield type, the send type when it is not None and the return type when it is not None, and drops trailing None defaults as ruff UP043 requires.",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "The change adds or modifies no Generator[...] annotation."
         }
       ],
       "evaluation_criteria": "1. Every Generator[...] annotation names the yield type, the send type when it is not None and the return type when it is not None, and drops trailing None defaults as ruff UP043 requires.",
@@ -708,27 +770,32 @@
         {
           "id": "TYPE-006.Q02",
           "statement": "Every `# pyright: ignore[reportRuleName]` names the specific rule it silences in brackets.",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "The change adds no `# pyright: ignore` comment."
         },
         {
           "id": "TYPE-006.Q03",
           "statement": "Every `# pyright: ignore[...]` carries a one-line reason that names which permitted case applies.",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "The change adds no `# pyright: ignore` comment."
         },
         {
           "id": "TYPE-006.Q04",
           "statement": "Every `# pyright: ignore[...]` is one of the three permitted cases: an intentional ill-typed test input whose subject is the raised error, a third-party stub conflict our code cannot name correctly, or a platform-gated import.",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "The change adds no `# pyright: ignore` comment."
         },
         {
           "id": "TYPE-006.Q05",
           "statement": "`reportCallIssue` or `reportArgumentType` is never suppressed to silence a wrong-shaped test double or fixture.",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "The change adds no ignore of `reportCallIssue` or `reportArgumentType`."
         },
         {
           "id": "TYPE-006.Q06",
           "statement": "`reportIncompatibleVariableOverride` is suppressed only on the SQLModel `__tablename__` stub conflict.",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "The change adds no ignore of `reportIncompatibleVariableOverride`."
         }
       ],
       "evaluation_criteria": "1. The code uses no bare `# type: ignore`, which this repo's basedpyright config does not honor and which suppresses nothing. 2. Every `# pyright: ignore[reportRuleName]` names the specific rule it silences in brackets. 3. Every `# pyright: ignore[...]` carries a one-line reason that names which permitted case applies. 4. Every `# pyright: ignore[...]` is one of the three permitted cases: an intentional ill-typed test input whose subject is the raised error, a third-party stub conflict our code cannot name correctly, or a platform-gated import. 5. `reportCallIssue` or `reportArgumentType` is never suppressed to silence a wrong-shaped test double or fixture. 6. `reportIncompatibleVariableOverride` is suppressed only on the SQLModel `__tablename__` stub conflict.",
@@ -750,7 +817,8 @@
         {
           "id": "ENCAP-001.Q02",
           "statement": "Each class that callers query for boolean state exposes that state as a public property.",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "No new or modified code in src/dovo/ checks the boolean state of another class."
         }
       ],
       "evaluation_criteria": "1. Every access to an underscore-prefixed, non-dunder member in src/dovo/ is made on self, cls or mcs rather than on another object. 2. Each class that callers query for boolean state exposes that state as a public property.",
@@ -767,7 +835,8 @@
         {
           "id": "ENCAP-002.Q01",
           "statement": "Every parameter, kwarg or callback with a default value in a new or modified function in src/dovo/ is passed by at least one production caller.",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "No new or modified function in src/dovo/ has a parameter with a default value."
         }
       ],
       "evaluation_criteria": "1. Every parameter, kwarg or callback with a default value in a new or modified function in src/dovo/ is passed by at least one production caller.",
@@ -784,12 +853,14 @@
         {
           "id": "PERF-001.Q01",
           "statement": "Every repository or DovoDb used inside a for or while loop is created outside that loop.",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "No for or while loop in the changed code uses a repository or DovoDb."
         },
         {
           "id": "PERF-001.Q02",
           "statement": "Every helper function, including every test helper, receives its repository or DovoDb as an argument instead of instantiating one.",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "No helper function in the changed code uses a repository or DovoDb."
         }
       ],
       "evaluation_criteria": "1. Every repository or DovoDb used inside a for or while loop is created outside that loop. 2. Every helper function, including every test helper, receives its repository or DovoDb as an argument instead of instantiating one.",
@@ -806,17 +877,20 @@
         {
           "id": "PERF-002.Q01",
           "statement": "Every table or column added by a migration in the change is written by production code in src/ in the same PR.",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "The change adds no table or column."
         },
         {
           "id": "PERF-002.Q02",
           "statement": "Every table or column added by a migration in the change is queried by production code in src/ in the same PR.",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "The change adds no table or column."
         },
         {
           "id": "PERF-002.Q03",
           "statement": "Every one-time data backfill is shipped as a versioned Alembic revision that runs it with op.execute().",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "The change performs no one-time data backfill."
         }
       ],
       "evaluation_criteria": "1. Every table or column added by a migration in the change is written by production code in src/ in the same PR. 2. Every table or column added by a migration in the change is queried by production code in src/ in the same PR. 3. Every one-time data backfill is shipped as a versioned Alembic revision that runs it with op.execute().",
@@ -836,7 +910,8 @@
         {
           "id": "PERF-003.Q01",
           "statement": "Code that needs a subset of repository records gets it with a filtered repository query instead of filtering a full fetch in memory, whenever an indexed query method or column exists.",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "The changed code does not select records from a repository, or no indexed query method or column exists for the lookup."
         }
       ],
       "evaluation_criteria": "1. Code that needs a subset of repository records gets it with a filtered repository query instead of filtering a full fetch in memory, whenever an indexed query method or column exists.",
@@ -853,37 +928,44 @@
         {
           "id": "API-001.Q01",
           "statement": "Every repository class that inserts a new record exposes that operation as a public create() method.",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "The repository class has no method that inserts a new record."
         },
         {
           "id": "API-001.Q02",
           "statement": "Every repository method that returns at most one record looked up by its identifying key has the name get.",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "The repository class has no method that looks up a single record by its identifying key."
         },
         {
           "id": "API-001.Q03",
           "statement": "Every repository method that returns a collection of records of one entity has the name list.",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "The repository class has no method that returns a collection of records."
         },
         {
           "id": "API-001.Q04",
           "statement": "Every repository method that removes a record has the name delete.",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "The repository class has no method that removes a record."
         },
         {
           "id": "API-001.Q05",
           "statement": "Every repository method that persists changes to a whole existing record has the name save.",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "No repository method persists changes to a whole existing record; partial updates such as update_status do not count."
         },
         {
           "id": "API-001.Q06",
           "statement": "Every repository method named insert, add or upsert has a docstring or comment stating why a canonical verb does not fit.",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "No repository method is named insert, add or upsert."
         },
         {
           "id": "API-001.Q07",
           "statement": "All repository classes that expose the same non-CRUD operation give it the same method name.",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "No two repository classes expose the same non-CRUD operation."
         }
       ],
       "evaluation_criteria": "1. Every repository class that inserts a new record exposes that operation as a public create() method. 2. Every repository method that returns at most one record looked up by its identifying key has the name get. 3. Every repository method that returns a collection of records of one entity has the name list. 4. Every repository method that removes a record has the name delete. 5. Every repository method that persists changes to a whole existing record has the name save. 6. Every repository method named insert, add or upsert has a docstring or comment stating why a canonical verb does not fit. 7. All repository classes that expose the same non-CRUD operation give it the same method name.",
@@ -903,12 +985,14 @@
         {
           "id": "API-002.Q01",
           "statement": "Every query method that reads an entity reports an invalid enum value or corrupt row as a BaseResult error, whenever a sibling query method that reads that entity reports it.",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "No two query methods read the same entity."
         },
         {
           "id": "API-002.Q02",
           "statement": "Every except block in a query method re-raises or converts the caught error into a BaseResult error, instead of returning None or an empty value.",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "The query method contains no except block."
         }
       ],
       "evaluation_criteria": "1. Every query method that reads an entity reports an invalid enum value or corrupt row as a BaseResult error, whenever a sibling query method that reads that entity reports it. 2. Every except block in a query method re-raises or converts the caught error into a BaseResult error, instead of returning None or an empty value.",
@@ -945,7 +1029,8 @@
         {
           "id": "DRY-001.Q05",
           "statement": "Every other transaction block shared by two or more repository classes is defined once in BaseRepository.",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "No repository class other than BaseRepository contains transaction-handling code beyond calls to BaseRepository helpers."
         }
       ],
       "evaluation_criteria": "1. Every repository method that persists a record commits through BaseRepository._commit. 2. Every repository method that deletes a single record deletes it through BaseRepository._delete_where. 3. The rollback after a failed commit is written only in BaseRepository. 4. Every repository method obtains its session from BaseRepository.session(). 5. Every other transaction block shared by two or more repository classes is defined once in BaseRepository.",
@@ -962,7 +1047,8 @@
         {
           "id": "DB-001.Q01",
           "statement": "Every SQLModel Field that declares unique=True is free of an index=True declaration.",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "The change adds or modifies no SQLModel Field in src/dovo/core/db/models.py."
         }
       ],
       "evaluation_criteria": "1. Every SQLModel Field that declares unique=True is free of an index=True declaration.",
@@ -979,27 +1065,32 @@
         {
           "id": "DB-002.Q01",
           "statement": "Every revision file that exists in the latest v* tag is left unedited, unrenamed and undeleted.",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "The change touches no revision file that exists in the latest v* tag."
         },
         {
           "id": "DB-002.Q02",
           "statement": "Every new revision defines both upgrade() and a downgrade() that has a real body rather than a bare `pass`.",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "The change adds no new revision."
         },
         {
           "id": "DB-002.Q03",
           "statement": "Every new revision avoids PRAGMA and sqlite_master.",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "The change adds no new revision."
         },
         {
           "id": "DB-002.Q04",
           "statement": "Every new revision makes its column and constraint changes through op.batch_alter_table.",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "The new revision makes no column or constraint changes."
         },
         {
           "id": "DB-002.Q05",
           "statement": "Every new revision has both an upgrade test and a downgrade test in tests/core/db/test_migrations.py.",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "The change adds no new revision."
         }
       ],
       "evaluation_criteria": "1. Every revision file that exists in the latest v* tag is left unedited, unrenamed and undeleted. 2. Every new revision defines both upgrade() and a downgrade() that has a real body rather than a bare `pass`. 3. Every new revision avoids PRAGMA and sqlite_master. 4. Every new revision makes its column and constraint changes through op.batch_alter_table. 5. Every new revision has both an upgrade test and a downgrade test in tests/core/db/test_migrations.py.",
@@ -1021,22 +1112,26 @@
         {
           "id": "FS-001.Q02",
           "statement": "Every config or state file write is free of a direct open(..., 'w') call.",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "The code writes no config or state file."
         },
         {
           "id": "FS-001.Q03",
           "statement": "Every config or state file write is free of a direct Path.write_text call.",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "The code writes no config or state file."
         },
         {
           "id": "FS-001.Q04",
           "statement": "Each atomic write helper writes to a .tmp sibling of the target and swaps it into place with Path.replace.",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "The change adds or modifies no atomic write helper."
         },
         {
           "id": "FS-001.Q05",
           "statement": "Each atomic write helper flushes and calls os.fsync on the temporary file before swapping it into place.",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "The change adds or modifies no atomic write helper."
         }
       ],
       "evaluation_criteria": "1. Every write to a config or state file is made through Filesystem.atomic_write_json or Filesystem.atomic_write_text. 2. Every config or state file write is free of a direct open(..., 'w') call. 3. Every config or state file write is free of a direct Path.write_text call. 4. Each atomic write helper writes to a .tmp sibling of the target and swaps it into place with Path.replace. 5. Each atomic write helper flushes and calls os.fsync on the temporary file before swapping it into place.",
@@ -1053,17 +1148,20 @@
         {
           "id": "FS-002.Q01",
           "statement": "Every worktree, catalog or state mutation that can run in more than one process at once is performed while holding the .dovo/.lock advisory lock.",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "The change does not mutate worktree, catalog or state data that more than one process can touch."
         },
         {
           "id": "FS-002.Q02",
           "statement": "The lock is acquired through WorkspaceLock from common/lock.py.",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "The change acquires no workspace lock."
         },
         {
           "id": "FS-002.Q03",
           "statement": "LockTimeoutError is handled where the lock is acquired or by a caller that reports it.",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "The change acquires no workspace lock."
         }
       ],
       "evaluation_criteria": "1. Every worktree, catalog or state mutation that can run in more than one process at once is performed while holding the .dovo/.lock advisory lock. 2. The lock is acquired through WorkspaceLock from common/lock.py. 3. LockTimeoutError is handled where the lock is acquired or by a caller that reports it.",
@@ -1080,17 +1178,20 @@
         {
           "id": "COMPAT-001.Q01",
           "statement": "The change leaves every existing CLI command, subcommand, argument and flag usable as before, with no breaking rename or removal.",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "The change does not touch the CLI command surface (commands, subcommands, arguments or flags)."
         },
         {
           "id": "COMPAT-001.Q02",
           "statement": "The change leaves existing configuration files and blueprint YAML definitions (such as config.json keys and values) readable with the same meaning as before.",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "The change does not touch configuration keys or values, or the blueprint YAML schema."
         },
         {
           "id": "COMPAT-001.Q03",
           "statement": "The change leaves the stable machine-readable output formats, such as the JSON event envelope, with the same field names and meaning as before.",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "The change does not touch machine-readable output formats."
         }
       ],
       "evaluation_criteria": "1. The change leaves every existing CLI command, subcommand, argument and flag usable as before, with no breaking rename or removal. 2. The change leaves existing configuration files and blueprint YAML definitions (such as config.json keys and values) readable with the same meaning as before. 3. The change leaves the stable machine-readable output formats, such as the JSON event envelope, with the same field names and meaning as before.",
@@ -1107,17 +1208,20 @@
         {
           "id": "COMPAT-002.Q01",
           "statement": "The change is free of backwards-compatibility aliases that keep an old internal name pointing at a renamed symbol.",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "The change renames no internal symbol in common/, core/ or internal CLI modules."
         },
         {
           "id": "COMPAT-002.Q02",
           "statement": "The change is free of deprecated or compatibility properties, wrapper methods and shim layers that exist only to keep an old internal interface working.",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "The change renames or restructures no internal class, method or module in common/, core/ or internal CLI modules."
         },
         {
           "id": "COMPAT-002.Q03",
           "statement": "All internal callers and tests were updated directly to the new name when an internal symbol was renamed.",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "The change renames no internal symbol in common/, core/ or internal CLI modules."
         }
       ],
       "evaluation_criteria": "1. The change is free of backwards-compatibility aliases that keep an old internal name pointing at a renamed symbol. 2. The change is free of deprecated or compatibility properties, wrapper methods and shim layers that exist only to keep an old internal interface working. 3. All internal callers and tests were updated directly to the new name when an internal symbol was renamed.",
@@ -1134,22 +1238,26 @@
         {
           "id": "COMPAT-003.Q01",
           "statement": "The change leaves a single implementation of the behavior it replaces, with no superseded implementation kept alongside the new one.",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "The change replaces no existing behavior, or the issue explicitly demands a dual code path, or the superseded path is a public surface that COMPAT-001 protects (a CLI command or flag, a config key, a machine-readable output field)."
         },
         {
           "id": "COMPAT-003.Q02",
           "statement": "The change avoids adding a fallback branch or fallback adapter that routes to a superseded path.",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "The issue explicitly demands a fallback adapter or branch, or the superseded path is a public surface that COMPAT-001 protects (a CLI command or flag, a config key, a machine-readable output field)."
         },
         {
           "id": "COMPAT-003.Q03",
           "statement": "The change avoids planning a deprecation window for a superseded path.",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "The issue explicitly demands a deprecation window."
         },
         {
           "id": "COMPAT-003.Q04",
           "statement": "All callers of a superseded path are updated in the same change set that replaces it.",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "The change supersedes no existing path."
         }
       ],
       "evaluation_criteria": "1. The change leaves a single implementation of the behavior it replaces, with no superseded implementation kept alongside the new one. 2. The change avoids adding a fallback branch or fallback adapter that routes to a superseded path. 3. The change avoids planning a deprecation window for a superseded path. 4. All callers of a superseded path are updated in the same change set that replaces it.",
@@ -1166,27 +1274,32 @@
         {
           "id": "TEST-001.Q01",
           "statement": "Every assertion checks a deliberate contract, such as a BaseResult object, an exact JSON dict, an exit code, a file on disk or a git ref.",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "The change adds or modifies no assertions."
         },
         {
           "id": "TEST-001.Q02",
           "statement": "The assertions avoid reading private helpers and private attributes of the code under test.",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "The change adds or modifies no assertions."
         },
         {
           "id": "TEST-001.Q03",
           "statement": "The assertions avoid asserting mock call counts and call ordering.",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "The change adds or modifies no assertions."
         },
         {
           "id": "TEST-001.Q04",
           "statement": "The assertions avoid pinning rendered layout, such as exact spacing, column widths or box-drawing.",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "The change adds or modifies no assertions on rendered output, or only CLI runner tests under tests/cli/ that TEST-017 governs."
         },
         {
           "id": "TEST-001.Q05",
           "statement": "The assertions avoid checking how a constructor assigned its arguments to attributes.",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "The change adds or modifies no assertions."
         }
       ],
       "evaluation_criteria": "1. Every assertion checks a deliberate contract, such as a BaseResult object, an exact JSON dict, an exit code, a file on disk or a git ref. 2. The assertions avoid reading private helpers and private attributes of the code under test. 3. The assertions avoid asserting mock call counts and call ordering. 4. The assertions avoid pinning rendered layout, such as exact spacing, column widths or box-drawing. 5. The assertions avoid checking how a constructor assigned its arguments to attributes.",
@@ -1203,47 +1316,56 @@
         {
           "id": "TEST-002.Q01",
           "statement": "Each src/dovo/common/<m>.py module has its tests in tests/common/test_<m>.py.",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "The change adds, moves or renames no module under src/dovo/common/ and no test file under tests/common/."
         },
         {
           "id": "TEST-002.Q02",
           "statement": "Each src/dovo/core/<domain>/<m>.py module has its tests in tests/core/<domain>/test_<m>.py.",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "The change adds, moves or renames no module under src/dovo/core/ and no test file under tests/core/."
         },
         {
           "id": "TEST-002.Q03",
           "statement": "Each src/dovo/engine/<m>.py module has its tests in tests/engine/test_<m>.py, with the executors/ and services/ subpackages mirrored as tests/engine/executors/ and tests/engine/services/.",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "The change adds, moves or renames no module under src/dovo/engine/ and no test file under tests/engine/."
         },
         {
           "id": "TEST-002.Q04",
           "statement": "Each src/dovo/cli/ui/formatters/<domain>/<name>.py module has its tests in tests/cli/ui/formatters/<domain>/test_<name>.py.",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "The change adds, moves or renames no formatter module under src/dovo/cli/ui/formatters/ and no test file under tests/cli/ui/formatters/."
         },
         {
           "id": "TEST-002.Q05",
           "statement": "Each src/dovo/cli/<command>/commands/<action>.py module has its tests in tests/cli/<command>/test_<command>_<action>.py, nested under its own tests/cli/<command>/ subdirectory with the commands/ level collapsed.",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "The change adds, moves or renames no command module under src/dovo/cli/<command>/commands/ and no test file under tests/cli/."
         },
         {
           "id": "TEST-002.Q06",
           "statement": "There is one test file per CLI command action, rather than one file per command domain.",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "The change adds or edits no tests for CLI command actions."
         },
         {
           "id": "TEST-002.Q07",
           "statement": "No test file groups several formatters or several domains into one part-numbered or collapsed file.",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "The change adds or edits no formatter or cross-domain test files."
         },
         {
           "id": "TEST-002.Q08",
           "statement": "Every test directory carries an __init__.py.",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "The change adds no test directory."
         },
         {
           "id": "TEST-002.Q09",
           "statement": "Each per-domain conftest.py holds only fixtures that its own domain's test files share, and none that another domain needs.",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "The change adds or edits no per-domain conftest.py under tests/cli/<command>/."
         }
       ],
       "evaluation_criteria": "1. Each src/dovo/common/<m>.py module has its tests in tests/common/test_<m>.py. 2. Each src/dovo/core/<domain>/<m>.py module has its tests in tests/core/<domain>/test_<m>.py. 3. Each src/dovo/engine/<m>.py module has its tests in tests/engine/test_<m>.py, with the executors/ and services/ subpackages mirrored as tests/engine/executors/ and tests/engine/services/. 4. Each src/dovo/cli/ui/formatters/<domain>/<name>.py module has its tests in tests/cli/ui/formatters/<domain>/test_<name>.py. 5. Each src/dovo/cli/<command>/commands/<action>.py module has its tests in tests/cli/<command>/test_<command>_<action>.py, nested under its own tests/cli/<command>/ subdirectory with the commands/ level collapsed. 6. There is one test file per CLI command action, rather than one file per command domain. 7. No test file groups several formatters or several domains into one part-numbered or collapsed file. 8. Every test directory carries an __init__.py. 9. Each per-domain conftest.py holds only fixtures that its own domain's test files share, and none that another domain needs.",
@@ -1260,22 +1382,26 @@
         {
           "id": "TEST-003.Q01",
           "statement": "Every test class is named with the suffix Tests.",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "The change adds or renames no test class."
         },
         {
           "id": "TEST-003.Q02",
           "statement": "Every test method follows the test_<condition>_<outcome> pattern, naming both the condition and the expected outcome.",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "The change adds or renames no test method."
         },
         {
           "id": "TEST-003.Q03",
           "statement": "Every test method name is free of the banned vague names test_ok, test_success, test_present, test_missing, test_blank, test_basic, test_default, test_works, test_timeout, test_no_op and test_help.",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "The change adds or renames no test method."
         },
         {
           "id": "TEST-003.Q04",
           "statement": "Every test method name is free of a should prefix.",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "The change adds or renames no test method."
         }
       ],
       "evaluation_criteria": "1. Every test class is named with the suffix Tests. 2. Every test method follows the test_<condition>_<outcome> pattern, naming both the condition and the expected outcome. 3. Every test method name is free of the banned vague names test_ok, test_success, test_present, test_missing, test_blank, test_basic, test_default, test_works, test_timeout, test_no_op and test_help. 4. Every test method name is free of a should prefix.",
@@ -1292,47 +1418,56 @@
         {
           "id": "TEST-004.Q01",
           "statement": "Every CLI command action has at least one *CliIntegrationTests suite that invokes the command through runner.invoke.",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "The change adds or modifies no CLI command action."
         },
         {
           "id": "TEST-004.Q02",
           "statement": "The integration suite includes a happy-path test with default arguments that asserts exit code 0.",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "The change adds or modifies no CLI command action."
         },
         {
           "id": "TEST-004.Q03",
           "statement": "Every declared Typer option, flag and argument of the command is exercised in at least one invocation, verifying input binding and propagation to the domain layer.",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "The command declares no options, flags or arguments."
         },
         {
           "id": "TEST-004.Q04",
           "statement": "The integration suite avoids duplicating domain branch matrices, limiting its binding checks to what the CLI layer adds.",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "The change adds or modifies no CLI command action."
         },
         {
           "id": "TEST-004.Q05",
           "statement": "The integration suite includes a failure-path test that asserts the expected non-zero exit code when the domain returns a non-ok result.",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "The command's domain call cannot return a non-ok result."
         },
         {
           "id": "TEST-004.Q06",
           "statement": "The integration suite includes a test invoking the command with --format json that asserts the emitted payload matches the wire schema.",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "The command does not support --format json."
         },
         {
           "id": "TEST-004.Q07",
           "statement": "Every interactive confirmation or abort branch of the command is exercised by the integration suite.",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "The command has no interactive confirmation or abort branch."
         },
         {
           "id": "TEST-004.Q08",
           "statement": "Every *RootTests suite is written for a handler that owns logic the domain layer does not, such as input coercion, branch selection across services, result composition from more than one call, or an interactive abort path.",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "The command action has no *RootTests suite; a pass-through handler with zero root tests is fully compliant and a root test is never required per action."
         },
         {
           "id": "TEST-004.Q09",
           "statement": "Every *RootTests suite avoids restating a contract already asserted under tests/core/ for the same result type.",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "The command action has no *RootTests suite."
         }
       ],
       "evaluation_criteria": "1. Every CLI command action has at least one *CliIntegrationTests suite that invokes the command through runner.invoke. 2. The integration suite includes a happy-path test with default arguments that asserts exit code 0. 3. Every declared Typer option, flag and argument of the command is exercised in at least one invocation, verifying input binding and propagation to the domain layer. 4. The integration suite avoids duplicating domain branch matrices, limiting its binding checks to what the CLI layer adds. 5. The integration suite includes a failure-path test that asserts the expected non-zero exit code when the domain returns a non-ok result. 6. The integration suite includes a test invoking the command with --format json that asserts the emitted payload matches the wire schema. 7. Every interactive confirmation or abort branch of the command is exercised by the integration suite. 8. Every *RootTests suite is written for a handler that owns logic the domain layer does not, such as input coercion, branch selection across services, result composition from more than one call, or an interactive abort path. 9. Every *RootTests suite avoids restating a contract already asserted under tests/core/ for the same result type.",
@@ -1349,52 +1484,62 @@
         {
           "id": "TEST-005.Q01",
           "statement": "Every formatter under cli/ui/formatters/<domain>/ is tested in its own file at tests/cli/ui/formatters/<domain>/test_<name>.py.",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "The change adds or modifies no formatter under cli/ui/formatters/."
         },
         {
           "id": "TEST-005.Q02",
           "statement": "The formatter is tested through cases built from FormatterCase, each holding the input data, the expected view and the render expectations.",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "The change adds or modifies no formatter under cli/ui/formatters/."
         },
         {
           "id": "TEST-005.Q03",
           "statement": "A test asserts that transform equals the expected view for a formatter that derives a view model from its input.",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "The formatter has no derived view model, meaning transform is provably the identity and the declared view type is the input event type."
         },
         {
           "id": "TEST-005.Q04",
           "statement": "The JSON wire format is asserted as an exact literal dict.",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "The change adds or modifies no formatter under cli/ui/formatters/."
         },
         {
           "id": "TEST-005.Q05",
           "statement": "The JSON wire format is pinned at both a fully populated state and an empty or sparse boundary state.",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "The change adds or modifies no formatter under cli/ui/formatters/."
         },
         {
           "id": "TEST-005.Q06",
           "statement": "The Rich render is asserted at the pinned width of 160 columns.",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "The change adds or modifies no formatter under cli/ui/formatters/."
         },
         {
           "id": "TEST-005.Q07",
           "statement": "Every expected string in the render test is a semantic value taken from case.view, and never a label, border, glyph, padding or full sentence.",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "The change adds or modifies no formatter under cli/ui/formatters/."
         },
         {
           "id": "TEST-005.Q08",
           "statement": "A formatter with no derived view model omits the transform test while keeping both the JSON and the render test.",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "The formatter has a derived view model, so transform is not the identity."
         },
         {
           "id": "TEST-005.Q09",
           "statement": "The change is free of an alias such as SomeView = SomeEvent introduced to manufacture a third test for an identity formatter.",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "The change adds or modifies no formatter under cli/ui/formatters/."
         },
         {
           "id": "TEST-005.Q10",
           "statement": "The change is free of an assertion that to_json_serializable(data) equals transform(data).model_dump().",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "The change adds or modifies no formatter under cli/ui/formatters/."
         }
       ],
       "evaluation_criteria": "1. Every formatter under cli/ui/formatters/<domain>/ is tested in its own file at tests/cli/ui/formatters/<domain>/test_<name>.py. 2. The formatter is tested through cases built from FormatterCase, each holding the input data, the expected view and the render expectations. 3. A test asserts that transform equals the expected view for a formatter that derives a view model from its input. 4. The JSON wire format is asserted as an exact literal dict. 5. The JSON wire format is pinned at both a fully populated state and an empty or sparse boundary state. 6. The Rich render is asserted at the pinned width of 160 columns. 7. Every expected string in the render test is a semantic value taken from case.view, and never a label, border, glyph, padding or full sentence. 8. A formatter with no derived view model omits the transform test while keeping both the JSON and the render test. 9. The change is free of an alias such as SomeView = SomeEvent introduced to manufacture a third test for an identity formatter. 10. The change is free of an assertion that to_json_serializable(data) equals transform(data).model_dump().",
@@ -1411,22 +1556,26 @@
         {
           "id": "TEST-006.Q01",
           "statement": "Variations of the same contract or function (input variants, polymorphic target types, invalid payload permutations) are covered by one parameterized test rather than by copy-pasted or near-identical sibling test methods.",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "The change adds or modifies no tests that exercise more than one variation of the same contract."
         },
         {
           "id": "TEST-006.Q02",
           "statement": "Each test is free of `for` loops and stacked assertions that iterate over scenarios.",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "The change adds or modifies no tests."
         },
         {
           "id": "TEST-006.Q03",
           "statement": "Every parameterized case uses pytest.param with an explicit, readable id label.",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "The change adds or modifies no parameterized tests."
         },
         {
           "id": "TEST-006.Q04",
           "statement": "Separate test methods are used only where the cases have fundamentally distinct lifecycles, differing fixture requirements or divergent assertion contracts.",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "The change adds or modifies no tests that sit next to a sibling test of the same function."
         }
       ],
       "evaluation_criteria": "1. Variations of the same contract or function (input variants, polymorphic target types, invalid payload permutations) are covered by one parameterized test rather than by copy-pasted or near-identical sibling test methods. 2. Each test is free of `for` loops and stacked assertions that iterate over scenarios. 3. Every parameterized case uses pytest.param with an explicit, readable id label. 4. Separate test methods are used only where the cases have fundamentally distinct lifecycles, differing fixture requirements or divergent assertion contracts.",
@@ -1443,37 +1592,44 @@
         {
           "id": "TEST-007.Q01",
           "statement": "Every field assertion in a scenario test checks a field that carries the scenario's domain outcome rather than an incidental envelope field or default.",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "The test is a dedicated model contract test or a wire payload test."
         },
         {
           "id": "TEST-007.Q02",
           "statement": "Each scenario or integration test of a specific behavior or error condition uses targeted field assertions instead of whole-model equality.",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "The test is a wire payload test, or the entire entity is the subject under test (its expected model may then rely on schema defaults instead of naming every field in kwargs)."
         },
         {
           "id": "TEST-007.Q03",
           "statement": "Each new or modified model with defaults or a serialization contract has a dedicated contract test in tests/common/ or tests/core/*/test_models.py that asserts them.",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "The change adds or modifies no model that has defaults or a serialization contract."
         },
         {
           "id": "TEST-007.Q04",
           "statement": "Model shape, default values and serialization are asserted only in dedicated contract tests rather than in scenario or integration tests.",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "No new or modified scenario or integration test asserts a model's shape, default values or serialization."
         },
         {
           "id": "TEST-007.Q05",
           "statement": "Each model has at most two dedicated contract tests.",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "The change adds or modifies no dedicated model contract test."
         },
         {
           "id": "TEST-007.Q06",
           "statement": "Each test of a wire payload with a published schema contract, such as a CLI JSON formatter, verifies the exact wire payload.",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "No new or modified test covers a wire payload with a published schema contract."
         },
         {
           "id": "TEST-007.Q07",
           "statement": "Each test avoids faux-matchers such as ANY_TIMESTAMP and ANY_UUID where their only purpose is to satisfy whole-object matching on database records or unowned system state.",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "The test uses no faux-matcher."
         }
       ],
       "evaluation_criteria": "1. Every field assertion in a scenario test checks a field that carries the scenario's domain outcome rather than an incidental envelope field or default. 2. Each scenario or integration test of a specific behavior or error condition uses targeted field assertions instead of whole-model equality. 3. Each new or modified model with defaults or a serialization contract has a dedicated contract test in tests/common/ or tests/core/*/test_models.py that asserts them. 4. Model shape, default values and serialization are asserted only in dedicated contract tests rather than in scenario or integration tests. 5. Each model has at most two dedicated contract tests. 6. Each test of a wire payload with a published schema contract, such as a CLI JSON formatter, verifies the exact wire payload. 7. Each test avoids faux-matchers such as ANY_TIMESTAMP and ANY_UUID where their only purpose is to satisfy whole-object matching on database records or unowned system state.",
@@ -1490,12 +1646,14 @@
         {
           "id": "TEST-008.Q01",
           "statement": "Every test double or stub inherits from a type production actually passes or satisfies a typing.Protocol production is typed against.",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "The change adds or edits no test double or stub."
         },
         {
           "id": "TEST-008.Q02",
           "statement": "Every test double is free of an interface built as the union of the attributes from every branch of a hasattr chain.",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "The change adds or edits no test double or stub."
         }
       ],
       "evaluation_criteria": "1. Every test double or stub inherits from a type production actually passes or satisfies a typing.Protocol production is typed against. 2. Every test double is free of an interface built as the union of the attributes from every branch of a hasattr chain.",
@@ -1517,7 +1675,8 @@
         {
           "id": "TEST-009.Q02",
           "statement": "The tests that called a function, class or alias were deleted in the same change that removed it from production.",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "The change removes no function, class or alias from production."
         }
       ],
       "evaluation_criteria": "1. The test suite is free of negative existence assertions such as assert not hasattr(module, name). 2. The tests that called a function, class or alias were deleted in the same change that removed it from production.",
@@ -1534,12 +1693,14 @@
         {
           "id": "TEST-010.Q01",
           "statement": "Every test checks a concrete value or effect beyond `assert x is not None`, so that `assert x is not None` is never its only assertion.",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "The test contains no assertions on a returned object, for example a test that only checks that a call raises."
         },
         {
           "id": "TEST-010.Q02",
           "statement": "isinstance is used in a test only where it distinguishes two real code paths, rather than repeating what basedpyright already proves.",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "The test uses no isinstance check."
         }
       ],
       "evaluation_criteria": "1. Every test checks a concrete value or effect beyond `assert x is not None`, so that `assert x is not None` is never its only assertion. 2. isinstance is used in a test only where it distinguishes two real code paths, rather than repeating what basedpyright already proves.",
@@ -1556,37 +1717,44 @@
         {
           "id": "TEST-011.Q01",
           "statement": "Every test body is free of hardcoded sleeps, other than a sleep inside the shared harness poll helper.",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "The change adds or edits no test code."
         },
         {
           "id": "TEST-011.Q02",
           "statement": "Tests of retry or backoff intervals drive time through VirtualClock or a monkeypatched clock at the module boundary (time.monotonic, asyncio.sleep).",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "The change adds or edits no test of a retry or backoff interval."
         },
         {
           "id": "TEST-011.Q03",
           "statement": "A retry test asserts the resulting schedule rather than only that a retry eventually happened.",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "The change adds or edits no retry test."
         },
         {
           "id": "TEST-011.Q04",
           "statement": "The clock is injected anywhere its output reaches a result field, so a time-dependent test asserts literal timestamps.",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "The code under test has no timestamp that reaches a result field."
         },
         {
           "id": "TEST-011.Q05",
           "statement": "Generated ids are injected anywhere their output reaches a result field, so a test asserts literal ids.",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "The code under test has no generated id that reaches a result field."
         },
         {
           "id": "TEST-011.Q06",
           "statement": "Every wait on an operating system event with no virtual equivalent, such as a process group reaped after SIGKILL, is done through a shared harness helper owning the poll interval and deadline, with no open-coded poll loop.",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "The change waits on no operating system event."
         },
         {
           "id": "TEST-011.Q07",
           "statement": "Every test that spawns a process registers it with the harness process registry, so a failing test cannot leak a process group.",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "The change adds or edits no test that spawns a process."
         }
       ],
       "evaluation_criteria": "1. Every test body is free of hardcoded sleeps, other than a sleep inside the shared harness poll helper. 2. Tests of retry or backoff intervals drive time through VirtualClock or a monkeypatched clock at the module boundary (time.monotonic, asyncio.sleep). 3. A retry test asserts the resulting schedule rather than only that a retry eventually happened. 4. The clock is injected anywhere its output reaches a result field, so a time-dependent test asserts literal timestamps. 5. Generated ids are injected anywhere their output reaches a result field, so a test asserts literal ids. 6. Every wait on an operating system event with no virtual equivalent, such as a process group reaped after SIGKILL, is done through a shared harness helper owning the poll interval and deadline, with no open-coded poll loop. 7. Every test that spawns a process registers it with the harness process registry, so a failing test cannot leak a process group.",
@@ -1603,22 +1771,26 @@
         {
           "id": "TEST-012.Q01",
           "statement": "Every capture of rendered Rich output in a test is made through render_rich from tests/harness/formatter.py.",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "The test does not capture rendered Rich output."
         },
         {
           "id": "TEST-012.Q02",
           "statement": "The console width used for a rendered assertion is the pinned width of 160, with no other width passed to render_rich.",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "The test does not capture rendered Rich output."
         },
         {
           "id": "TEST-012.Q03",
           "statement": "The test avoids relying on the ambient terminal size and on in-process os.environ[\"COLUMNS\"] mutations.",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "The test does not capture rendered Rich output."
         },
         {
           "id": "TEST-012.Q04",
           "statement": "Every render assertion checks a semantic value carried by the view model, such as an identifier, count or status token, rather than a panel title, field caption, border glyph, padding or prose sentence.",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "The test makes no assertion on rendered output, or is a CLI runner test under tests/cli/ that TEST-017 governs."
         }
       ],
       "evaluation_criteria": "1. Every capture of rendered Rich output in a test is made through render_rich from tests/harness/formatter.py. 2. The console width used for a rendered assertion is the pinned width of 160, with no other width passed to render_rich. 3. The test avoids relying on the ambient terminal size and on in-process os.environ[\"COLUMNS\"] mutations. 4. Every render assertion checks a semantic value carried by the view model, such as an identifier, count or status token, rather than a panel title, field caption, border glyph, padding or prose sentence.",
@@ -1635,17 +1807,20 @@
         {
           "id": "TEST-013.Q01",
           "statement": "Every touched production function has a real caller in src/, so that deleting its tests would not leave it unreachable.",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "The change touches no production function in src/."
         },
         {
           "id": "TEST-013.Q02",
           "statement": "Every harness symbol (builder method, fixture or assertion helper) has at least one caller outside tests/harness/.",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "The change adds or touches no symbol under tests/harness/."
         },
         {
           "id": "TEST-013.Q03",
           "statement": "Harness behavior is proven through the first domain test that needs it, rather than through a harness verification suite that exhaustively permutes options no domain test uses.",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "The change adds or touches no harness verification test."
         }
       ],
       "evaluation_criteria": "1. Every touched production function has a real caller in src/, so that deleting its tests would not leave it unreachable. 2. Every harness symbol (builder method, fixture or assertion helper) has at least one caller outside tests/harness/. 3. Harness behavior is proven through the first domain test that needs it, rather than through a harness verification suite that exhaustively permutes options no domain test uses.",
@@ -1662,22 +1837,26 @@
         {
           "id": "TEST-014.Q01",
           "statement": "Every test helper and fixture function is free of missing type annotations.",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "The change adds or modifies no test helper or fixture function."
         },
         {
           "id": "TEST-014.Q02",
           "statement": "Fixtures declare a real return type rather than Any.",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "The change adds or modifies no fixture."
         },
         {
           "id": "TEST-014.Q03",
           "statement": "Helper parameters are typed against the types production code passes, such as DovoDb or SessionRecord, rather than Any.",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "The change adds or modifies no test helper that takes parameters."
         },
         {
           "id": "TEST-014.Q04",
           "statement": "MagicMock is absent from the signatures of test helpers and fixtures, both their parameters and their return types.",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "The change adds or modifies no test helper or fixture function."
         }
       ],
       "evaluation_criteria": "1. Every test helper and fixture function is free of missing type annotations. 2. Fixtures declare a real return type rather than Any. 3. Helper parameters are typed against the types production code passes, such as DovoDb or SessionRecord, rather than Any. 4. MagicMock is absent from the signatures of test helpers and fixtures, both their parameters and their return types.",
@@ -1694,7 +1873,8 @@
         {
           "id": "TEST-015.Q01",
           "statement": "A test exercises the updated execution branch of every modified command routing or multi-step orchestration path.",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "The change modifies no command routing and no multi-step orchestration or dispatch workflow."
         }
       ],
       "evaluation_criteria": "1. A test exercises the updated execution branch of every modified command routing or multi-step orchestration path.",
@@ -1711,22 +1891,26 @@
         {
           "id": "TEST-016.Q01",
           "statement": "Every public function or method (no leading underscore) in a changed production module has at least one test of a valid input producing the expected successful outcome, in its corresponding test file per TEST-002.",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "The change adds or modifies no public function or method in a production module."
         },
         {
           "id": "TEST-016.Q02",
           "statement": "Every public function or method in a changed production module has, in its TEST-002 test file, at least one test of an invalid input, missing dependency, boundary or failure state producing the expected error or non-ok outcome.",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "The member is a property with no branching logic beyond a single field return, or a dunder method with no domain validation (such as a __init__ that neither coerces nor rejects values), or the change touches no public function or method."
         },
         {
           "id": "TEST-016.Q03",
           "statement": "Private functions and methods (leading underscore) are covered only as byproducts of their public callers, with no dedicated test method targeting them.",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "The change adds or modifies no test."
         },
         {
           "id": "TEST-016.Q04",
           "statement": "The independent failure modes of a public method are covered by TEST-006 parameterization, with a separate test method per failure mode used only when the fixture requirements diverge.",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "No public method in the change has more than one independent failure mode."
         }
       ],
       "evaluation_criteria": "1. Every public function or method (no leading underscore) in a changed production module has at least one test of a valid input producing the expected successful outcome, in its corresponding test file per TEST-002. 2. Every public function or method in a changed production module has, in its TEST-002 test file, at least one test of an invalid input, missing dependency, boundary or failure state producing the expected error or non-ok outcome. 3. Private functions and methods (leading underscore) are covered only as byproducts of their public callers, with no dedicated test method targeting them. 4. The independent failure modes of a public method are covered by TEST-006 parameterization, with a separate test method per failure mode used only when the fixture requirements diverge.",
@@ -1743,12 +1927,14 @@
         {
           "id": "TEST-017.Q01",
           "statement": "The CLI runner tests under tests/cli/ avoid asserting help text wording in stdout or rendered output.",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "The change adds or modifies no CLI runner test that asserts against stdout or rendered output."
         },
         {
           "id": "TEST-017.Q02",
           "statement": "A CLI test that checks command registration or option names reads them from Click metadata rather than from rendered help output.",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "The change adds or modifies no CLI test that checks command registration or option names."
         }
       ],
       "evaluation_criteria": "1. The CLI runner tests under tests/cli/ avoid asserting help text wording in stdout or rendered output. 2. A CLI test that checks command registration or option names reads them from Click metadata rather than from rendered help output.",
@@ -1782,17 +1968,20 @@
         {
           "id": "TEST-019.Q01",
           "statement": "Every dispatch spy used in a *CliIntegrationTests suite calls through to the real ui_dispatcher.dispatch, instead of replacing it with a stub.",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "The change adds or edits no use of a dispatch spy under tests/cli/."
         },
         {
           "id": "TEST-019.Q02",
           "statement": "Every assertion made against an item captured by the dispatch spy is an assertion on an instance of that command action's own terminal BaseResult type.",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "The change adds or edits no use of a dispatch spy under tests/cli/."
         },
         {
           "id": "TEST-019.Q03",
           "statement": "A spy assertion avoids relying on spy[0], spy[-1] or len(spy) == 1 unless the command action dispatches only its own terminal result per invocation, and otherwise isolates the instance of the command action's own Result type.",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "The change adds or edits no spy assertion that reads the spy by position or length."
         }
       ],
       "evaluation_criteria": "1. Every dispatch spy used in a *CliIntegrationTests suite calls through to the real ui_dispatcher.dispatch, instead of replacing it with a stub. 2. Every assertion made against an item captured by the dispatch spy is an assertion on an instance of that command action's own terminal BaseResult type. 3. A spy assertion avoids relying on spy[0], spy[-1] or len(spy) == 1 unless the command action dispatches only its own terminal result per invocation, and otherwise isolates the instance of the command action's own Result type.",
@@ -1809,72 +1998,86 @@
         {
           "id": "TEST-020.Q01",
           "statement": "Every test method docstring adds a fact that the test name and assertions do not, such as an exact literal, an ordering contract, or the inputs behind a parametrized case.",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "The change adds or modifies no test method docstring under tests/."
         },
         {
           "id": "TEST-020.Q02",
           "statement": "Every test method docstring is a single sentence.",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "The change adds or modifies no test method docstring under tests/."
         },
         {
           "id": "TEST-020.Q03",
           "statement": "Every test method docstring opens with an imperative verb.",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "The change adds or modifies no test method docstring under tests/."
         },
         {
           "id": "TEST-020.Q04",
           "statement": "Every test method docstring is free of a `[tier-N/type]` tag.",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "The change adds or modifies no test method docstring under tests/."
         },
         {
           "id": "TEST-020.Q05",
           "statement": "Every test method docstring is free of a `<symbol>:` or `dovo <command>:` prefix.",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "The change adds or modifies no test method docstring under tests/."
         },
         {
           "id": "TEST-020.Q06",
           "statement": "Every line of every test method docstring is within 120 columns.",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "The change adds or modifies no test method docstring under tests/."
         },
         {
           "id": "TEST-020.Q07",
           "statement": "Every docstring on a non-test unit under tests/ (helper, fixture, test double, class, module) opens with a one-line title.",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "The change adds or modifies no docstring on a helper, fixture, test double, class or module under tests/."
         },
         {
           "id": "TEST-020.Q08",
           "statement": "The title of a non-test unit is free of any outcome clause.",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "The change adds or modifies no docstring on a helper, fixture, test double, class or module under tests/."
         },
         {
           "id": "TEST-020.Q09",
           "statement": "The title of a non-test unit is a single description of the unit rather than a list of steps.",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "The change adds or modifies no docstring on a helper, fixture, test double, class or module under tests/."
         },
         {
           "id": "TEST-020.Q10",
           "statement": "A non-test unit's docstring includes a description beyond its title only to record a hidden contract, a safety behavior, or a non-obvious ordering constraint.",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "No docstring on a non-test unit under tests/ is added or modified, or none has a description beyond its title."
         },
         {
           "id": "TEST-020.Q11",
           "statement": "Every docstring on a non-test unit under tests/ is free of text that retells the body.",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "The change adds or modifies no docstring on a helper, fixture, test double, class or module under tests/."
         },
         {
           "id": "TEST-020.Q12",
           "statement": "Every docstring on a non-test unit under tests/ is free of text that restates parameters, types, or the return annotation.",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "The change adds or modifies no docstring on a helper, fixture, test double, class or module under tests/."
         },
         {
           "id": "TEST-020.Q13",
           "statement": "Every docstring on a non-test unit under tests/ is free of sentences describing how another module or caller behaves.",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "The change adds or modifies no docstring on a helper, fixture, test double, class or module under tests/."
         },
         {
           "id": "TEST-020.Q14",
           "statement": "Every unit under tests/ carries exactly one docstring, with no bare string statement after it.",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "The change adds or modifies no unit with a docstring under tests/."
         }
       ],
       "evaluation_criteria": "1. Every test method docstring adds a fact that the test name and assertions do not, such as an exact literal, an ordering contract, or the inputs behind a parametrized case. 2. Every test method docstring is a single sentence. 3. Every test method docstring opens with an imperative verb. 4. Every test method docstring is free of a `[tier-N/type]` tag. 5. Every test method docstring is free of a `<symbol>:` or `dovo <command>:` prefix. 6. Every line of every test method docstring is within 120 columns. 7. Every docstring on a non-test unit under tests/ (helper, fixture, test double, class, module) opens with a one-line title. 8. The title of a non-test unit is free of any outcome clause. 9. The title of a non-test unit is a single description of the unit rather than a list of steps. 10. A non-test unit's docstring includes a description beyond its title only to record a hidden contract, a safety behavior, or a non-obvious ordering constraint. 11. Every docstring on a non-test unit under tests/ is free of text that retells the body. 12. Every docstring on a non-test unit under tests/ is free of text that restates parameters, types, or the return annotation. 13. Every docstring on a non-test unit under tests/ is free of sentences describing how another module or caller behaves. 14. Every unit under tests/ carries exactly one docstring, with no bare string statement after it.",
@@ -1891,22 +2094,26 @@
         {
           "id": "DOC-001.Q01",
           "statement": "The diff to docs/agents/architecture.md modifies only structure sections (the layers tree and the package boundaries).",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "The change does not touch docs/agents/architecture.md."
         },
         {
           "id": "DOC-001.Q02",
           "statement": "Each structure-section edit to docs/agents/architecture.md is made because a package was added, removed or moved, domain ownership changed, or an import boundary changed.",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "The change does not touch docs/agents/architecture.md."
         },
         {
           "id": "DOC-001.Q03",
           "statement": "The diff to docs/agents/architecture.md is free of feature behavior essays.",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "The change does not touch docs/agents/architecture.md."
         },
         {
           "id": "DOC-001.Q04",
           "statement": "Each new import boundary described in docs/agents/architecture.md also has a row in LAYER_RULES in tests/lint/test_layer_direction.py.",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "The change adds no new import boundary."
         }
       ],
       "evaluation_criteria": "1. The diff to docs/agents/architecture.md modifies only structure sections (the layers tree and the package boundaries). 2. Each structure-section edit to docs/agents/architecture.md is made because a package was added, removed or moved, domain ownership changed, or an import boundary changed. 3. The diff to docs/agents/architecture.md is free of feature behavior essays. 4. Each new import boundary described in docs/agents/architecture.md also has a row in LAYER_RULES in tests/lint/test_layer_direction.py.",
@@ -1923,12 +2130,14 @@
         {
           "id": "DOC-002.Q01",
           "statement": "Every new or changed CLI subcommand, option or user-visible behavior is documented in the matching docs/cli/<command>.md.",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "The change adds or alters no user-visible CLI subcommand, option or behavior."
         },
         {
           "id": "DOC-002.Q02",
           "statement": "User-visible CLI behavior, subcommand and flag documentation is kept out of docs/agents/architecture.md.",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "The change does not touch docs/agents/architecture.md."
         }
       ],
       "evaluation_criteria": "1. Every new or changed CLI subcommand, option or user-visible behavior is documented in the matching docs/cli/<command>.md. 2. User-visible CLI behavior, subcommand and flag documentation is kept out of docs/agents/architecture.md.",
@@ -1945,12 +2154,14 @@
         {
           "id": "DOC-003.Q01",
           "statement": "Every edit to docs/agents/schemas.md follows a change to a cross-cutting contract (config tier merge rules, path ownership, persistence authority, secrets handling, or catalog or database scoping).",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "The change does not edit docs/agents/schemas.md."
         },
         {
           "id": "DOC-003.Q02",
           "statement": "The edits to schemas.md are free of added field lists, enum members, exception names and method lists.",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "The change does not edit docs/agents/schemas.md."
         }
       ],
       "evaluation_criteria": "1. Every edit to docs/agents/schemas.md follows a change to a cross-cutting contract (config tier merge rules, path ownership, persistence authority, secrets handling, or catalog or database scoping). 2. The edits to schemas.md are free of added field lists, enum members, exception names and method lists.",
@@ -1972,12 +2183,14 @@
         {
           "id": "DOC-004.Q02",
           "statement": "Every doc that refers to a specific Pydantic model links to the file that defines it.",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "The doc does not refer to any specific Pydantic model."
         },
         {
           "id": "DOC-004.Q03",
           "statement": "A doc that describes a model adds only behavior the source does not express, such as validators or resolution order, rather than field lists or enum members copied without added context.",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "The doc does not describe any model."
         }
       ],
       "evaluation_criteria": "1. The docs avoid hand-copying Pydantic model signatures, field tables or enum lists that a read of the source already gives unambiguously. 2. Every doc that refers to a specific Pydantic model links to the file that defines it. 3. A doc that describes a model adds only behavior the source does not express, such as validators or resolution order, rather than field lists or enum members copied without added context.",
@@ -1994,17 +2207,20 @@
         {
           "id": "DOC-005.Q01",
           "statement": "Every unavoidable field table (the specification for an external JSON Schema or a stable CLI output format) has an automated test under tests/lint/ that fails when the table and the source disagree.",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "The change adds or edits no field table that specifies an external JSON Schema or a stable CLI output format."
         },
         {
           "id": "DOC-005.Q02",
           "statement": "The parity test was already in the tree when the doc claim landed.",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "The change adds no doc claim that relies on a parity test."
         },
         {
           "id": "DOC-005.Q03",
           "statement": "The doc names the parity test by a path that resolves to a file in the tree.",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "The change adds or edits no doc claim that names a parity test."
         }
       ],
       "evaluation_criteria": "1. Every unavoidable field table (the specification for an external JSON Schema or a stable CLI output format) has an automated test under tests/lint/ that fails when the table and the source disagree. 2. The parity test was already in the tree when the doc claim landed. 3. The doc names the parity test by a path that resolves to a file in the tree.",
@@ -2021,12 +2237,14 @@
         {
           "id": "DOC-006.Q01",
           "statement": "Every doc edit that changes a statement replaces or deletes the stale text instead of appending a new bullet beside it.",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "The doc edit adds only statements that no existing text in docs/ covers."
         },
         {
           "id": "DOC-006.Q02",
           "statement": "Every statement the change adds or edits is free of contradiction with other statements in docs/ about the same rule or fact, found by searching docs/ for what it names.",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "The change adds or edits no doc statement."
         }
       ],
       "evaluation_criteria": "1. Every doc edit that changes a statement replaces or deletes the stale text instead of appending a new bullet beside it. 2. Every statement the change adds or edits is free of contradiction with other statements in docs/ about the same rule or fact, found by searching docs/ for what it names.",
@@ -2043,12 +2261,14 @@
         {
           "id": "DOC-007.Q01",
           "statement": "Doc prose and every code comment name Blueprint, Step, Loop step, Catalog, Run, Session, Worktree and Checkpoint concepts by the term the Terminology table in docs/agents/architecture.md defines, rather than by a term the table does not define.",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "The change adds or edits no doc prose and no code comment that refers to these concepts."
         },
         {
           "id": "DOC-007.Q02",
           "statement": "Doc prose and every code comment use each defined term only within its stated meaning in the Terminology table.",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "The change adds or edits no doc prose and no code comment that uses a defined term."
         }
       ],
       "evaluation_criteria": "1. Doc prose and every code comment name Blueprint, Step, Loop step, Catalog, Run, Session, Worktree and Checkpoint concepts by the term the Terminology table in docs/agents/architecture.md defines, rather than by a term the table does not define. 2. Doc prose and every code comment use each defined term only within its stated meaning in the Terminology table.",
@@ -2065,32 +2285,38 @@
         {
           "id": "DOC-008.Q01",
           "statement": "Every doc, skill, rule or docstring sentence that asserts something is enforced, gated or checked names the enforcing artifact by path.",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "The change adds or edits no sentence claiming that something is enforced, gated or checked."
         },
         {
           "id": "DOC-008.Q02",
           "statement": "Every path named as an enforcing artifact, or in a \"see <path>\" claim, resolves to a file in the tree.",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "The change adds or edits no sentence that names a path as an enforcing artifact or a reference."
         },
         {
           "id": "DOC-008.Q03",
           "statement": "Every helper, fixture, builder or assertion function that a doc instructs an implementer to use exists in the tree before the instruction ships.",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "The change adds or edits no doc instruction that tells an implementer to use a named helper, fixture, builder or assertion function."
         },
         {
           "id": "DOC-008.Q04",
           "statement": "The change documents only behavior that is already built, in prose and in rule examples alike.",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "The change adds or edits no documentation, rule text or rule example describing behavior."
         },
         {
           "id": "DOC-008.Q05",
           "statement": "The change deletes or corrects, rather than leaves as aspiration, every doc, skill or rule sentence that it makes false.",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "The change makes no existing doc, skill or rule claim false."
         },
         {
           "id": "DOC-008.Q06",
           "statement": "Every docstring of a function whose behavior the change alters, or that appears in the diff, is free of sentences the new code makes false.",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "The change alters the behavior of no function that has a docstring and adds or edits no docstring."
         }
       ],
       "evaluation_criteria": "1. Every doc, skill, rule or docstring sentence that asserts something is enforced, gated or checked names the enforcing artifact by path. 2. Every path named as an enforcing artifact, or in a \"see <path>\" claim, resolves to a file in the tree. 3. Every helper, fixture, builder or assertion function that a doc instructs an implementer to use exists in the tree before the instruction ships. 4. The change documents only behavior that is already built, in prose and in rule examples alike. 5. The change deletes or corrects, rather than leaves as aspiration, every doc, skill or rule sentence that it makes false. 6. Every docstring of a function whose behavior the change alters, or that appears in the diff, is free of sentences the new code makes false.",
@@ -2112,12 +2338,14 @@
         {
           "id": "CI-001.Q02",
           "statement": "The fail_under value in pyproject.toml under [tool.coverage.report] is greater than or equal to its previous committed value.",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "The change does not touch pyproject.toml."
         },
         {
           "id": "CI-001.Q03",
           "statement": "The stated justification for each added test is a reason other than raising the coverage percentage.",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "The change adds no tests."
         }
       ],
       "evaluation_criteria": "1. `dovo run quality` has passed (ruff format, ruff check, basedpyright src tests --level error with zero errors, mkdocs build --strict, complexity at or under 10 on changed files, and the test suite meeting the coverage floor) before the commit. 2. The fail_under value in pyproject.toml under [tool.coverage.report] is greater than or equal to its previous committed value. 3. The stated justification for each added test is a reason other than raising the coverage percentage.",
@@ -2149,27 +2377,32 @@
         {
           "id": "CI-002.Q04",
           "statement": "The pull request description is free of AI or tool attribution lines.",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "The change is not submitted as a pull request."
         },
         {
           "id": "CI-002.Q05",
           "statement": "The pull request addresses a single responsibility.",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "The change is not submitted as a pull request."
         },
         {
           "id": "CI-002.Q06",
           "statement": "The pull request description has a Why section of 2-3 sentences giving the context and motivation.",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "The change is not submitted as a pull request."
         },
         {
           "id": "CI-002.Q07",
           "statement": "The pull request description has an Approach section made of bullets of 1-2 sentences each.",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "The change is not submitted as a pull request."
         },
         {
           "id": "CI-002.Q08",
           "statement": "The pull request description has a Linkage section with an issue cross-reference such as Fixes #N or Closes #N, or a statement that no tracking issue exists.",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "The change is not submitted as a pull request."
         }
       ],
       "evaluation_criteria": "1. The commit title starts with a semantic prefix of the form type(scope) or type, followed by a colon, as in \"docs(rules): ...\" in the commit history. 2. The commit title is written in the imperative mood. 3. The commit message is free of AI trailers such as \"Co-authored-by: Cursor\". 4. The pull request description is free of AI or tool attribution lines. 5. The pull request addresses a single responsibility. 6. The pull request description has a Why section of 2-3 sentences giving the context and motivation. 7. The pull request description has an Approach section made of bullets of 1-2 sentences each. 8. The pull request description has a Linkage section with an issue cross-reference such as Fixes #N or Closes #N, or a statement that no tracking issue exists.",
@@ -2186,12 +2419,14 @@
         {
           "id": "CI-003.Q01",
           "statement": "The agent states the specific directive or doc governing an action before executing commands or editing files.",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "The agent turn runs no commands and edits no files."
         },
         {
           "id": "CI-003.Q02",
           "statement": "The agent states the target scope of an action, such as a specific test package or module, before executing commands or editing files.",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "The agent turn runs no commands and edits no files."
         }
       ],
       "evaluation_criteria": "1. The agent states the specific directive or doc governing an action before executing commands or editing files. 2. The agent states the target scope of an action, such as a specific test package or module, before executing commands or editing files.",
@@ -2208,32 +2443,38 @@
         {
           "id": "CI-004.Q01",
           "statement": "Every BLOCKER rule that can be checked mechanically has an executing check (an invariant test under tests/lint/, a prek hook or a CI step) or an explicit review-only classification.",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "The change adds or alters no BLOCKER rule and removes no enforcing check."
         },
         {
           "id": "CI-004.Q02",
           "statement": "Every declared gate is configured so that it can fail, with no setting that disables it, such as a coverage floor of zero or a type checker present in no hook and no workflow.",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "The change touches no gate configuration in prek.toml, .github/workflows/ or pyproject.toml."
         },
         {
           "id": "CI-004.Q03",
           "statement": "A gate whose configuration disables it is either wired up or downgraded to a review-time WARNING, rather than left declared as an enforced BLOCKER.",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "No declared gate is found to be disabled."
         },
         {
           "id": "CI-004.Q04",
           "statement": "Every invariant check includes a regression test shaped like the code it polices, such as assertions inside a *Tests class rather than a module-level function.",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "The change adds or alters no invariant check under tests/lint/."
         },
         {
           "id": "CI-004.Q05",
           "statement": "An invariant check that lands green carries an explicit burn-down allowlist of known violators, rather than being merged red or left disabled.",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "The invariant check lands with no existing violators."
         },
         {
           "id": "CI-004.Q06",
           "statement": "Every allowlist of known violators has only shrunk, with no entry added.",
-          "kind": "judgment"
+          "kind": "judgment",
+          "na_when": "The change touches no allowlist."
         }
       ],
       "evaluation_criteria": "1. Every BLOCKER rule that can be checked mechanically has an executing check (an invariant test under tests/lint/, a prek hook or a CI step) or an explicit review-only classification. 2. Every declared gate is configured so that it can fail, with no setting that disables it, such as a coverage floor of zero or a type checker present in no hook and no workflow. 3. A gate whose configuration disables it is either wired up or downgraded to a review-time WARNING, rather than left declared as an enforced BLOCKER. 4. Every invariant check includes a regression test shaped like the code it polices, such as assertions inside a *Tests class rather than a module-level function. 5. An invariant check that lands green carries an explicit burn-down allowlist of known violators, rather than being merged red or left disabled. 6. Every allowlist of known violators has only shrunk, with no entry added.",

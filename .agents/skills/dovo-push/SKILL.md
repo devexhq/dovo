@@ -45,7 +45,7 @@ head -1 .agentic/plan.md 2>/dev/null
 Then delete the handoff files **before staging anything**, so no path under `.agentic/` can reach the index even if the ignore rule is missing or a stale copy was tracked:
 
 ```bash
-rm -f .agentic/plan.md .agentic/review.md .agentic/review.json .agentic/verdict.txt
+rm -f .agentic/plan.md .agentic/review.md .agentic/review.json .agentic/verdict.txt .agentic/coding-audit.json .agentic/review-audit.json
 git ls-files .agentic
 ```
 
