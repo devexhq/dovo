@@ -3574,41 +3574,7 @@
                 }
             }
         ],
-        "./tests/harness/builders/workspace.py": [
-            {
-                "code": "reportExplicitAny",
-                "range": {
-                    "startColumn": 37,
-                    "endColumn": 40,
-                    "lineCount": 1
-                }
-            },
-            {
-                "code": "reportExplicitAny",
-                "range": {
-                    "startColumn": 24,
-                    "endColumn": 27,
-                    "lineCount": 1
-                }
-            }
-        ],
         "./tests/harness/formatter.py": [
-            {
-                "code": "reportExplicitAny",
-                "range": {
-                    "startColumn": 34,
-                    "endColumn": 37,
-                    "lineCount": 1
-                }
-            },
-            {
-                "code": "reportExplicitAny",
-                "range": {
-                    "startColumn": 39,
-                    "endColumn": 42,
-                    "lineCount": 1
-                }
-            },
             {
                 "code": "reportExplicitAny",
                 "range": {
@@ -3638,14 +3604,6 @@
                 "range": {
                     "startColumn": 80,
                     "endColumn": 83,
-                    "lineCount": 1
-                }
-            },
-            {
-                "code": "reportExplicitAny",
-                "range": {
-                    "startColumn": 57,
-                    "endColumn": 60,
                     "lineCount": 1
                 }
             },

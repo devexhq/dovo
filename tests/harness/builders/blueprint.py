@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dovo.core.catalog.definitions import BlueprintDefaults, BlueprintDefinition, LoopStepBlock, StepDefinition
+from dovo.core.catalog.definitions import BlueprintDefinition, LoopStepBlock, StepDefinition
 from dovo.core.inputs.models import InputType, ParameterInput
 from tests.harness.builders.step import StepBuilder
 
@@ -12,34 +12,15 @@ class BlueprintBuilder:
 
     def __init__(self, name: str = "test-blueprint") -> None:
         self._name: str = name
-        self._description: str = ""
-        self._summary: str = ""
-        self._version: int | str = 1
         self._use_worktree: bool = True
         self._timeout_seconds: int | None = None
         self._env: dict[str, str] = {}
         self._inputs: dict[str, ParameterInput] = {}
-        self._defaults: BlueprintDefaults = BlueprintDefaults()
         self._steps: list[StepDefinition | StepBuilder | LoopStepBlock] = []
 
     def with_name(self, name: str) -> BlueprintBuilder:
         """Set the blueprint name."""
         self._name = name
-        return self
-
-    def with_description(self, description: str) -> BlueprintBuilder:
-        """Set the blueprint description."""
-        self._description = description
-        return self
-
-    def with_summary(self, summary: str) -> BlueprintBuilder:
-        """Set the blueprint summary."""
-        self._summary = summary
-        return self
-
-    def with_version(self, version: int | str) -> BlueprintBuilder:
-        """Set the blueprint version."""
-        self._version = version
         return self
 
     def with_use_worktree(self, use_worktree: bool) -> BlueprintBuilder:
@@ -55,11 +36,6 @@ class BlueprintBuilder:
     def with_env(self, key: str, value: str) -> BlueprintBuilder:
         """Add an environment variable key-value pair."""
         self._env[key] = value
-        return self
-
-    def with_env_vars(self, env: dict[str, str]) -> BlueprintBuilder:
-        """Merge multiple environment variables."""
-        self._env.update(env)
         return self
 
     def with_input(
@@ -88,15 +64,6 @@ class BlueprintBuilder:
         self._steps.append(step)
         return self
 
-    def add_step(self, step: StepDefinition | StepBuilder | LoopStepBlock) -> BlueprintBuilder:
-        """Add a step; an alias of with_step."""
-        return self.with_step(step)
-
-    def with_defaults(self, defaults: BlueprintDefaults) -> BlueprintBuilder:
-        """Configure blueprint defaults."""
-        self._defaults = defaults
-        return self
-
     def build(self) -> BlueprintDefinition:
         """Build and validate the BlueprintDefinition model."""
         resolved_steps: list[StepDefinition | LoopStepBlock] = []
@@ -108,13 +75,9 @@ class BlueprintBuilder:
 
         return BlueprintDefinition(
             name=self._name,
-            description=self._description,
-            summary=self._summary,
-            version=self._version,
             use_worktree=self._use_worktree,
             timeout_seconds=self._timeout_seconds,
             env=dict(self._env),
             inputs=dict(self._inputs),
-            defaults=self._defaults,
             steps=resolved_steps,
         )
