@@ -171,7 +171,7 @@ _FRAGMENT_TEXT = """- id: A-001
   intent: Protects something.
   criteria:
   - id: A-001.Q01
-    question: Does the thing hold?
+    statement: The thing holds.
     kind: judgment
     example_not_applicable: nothing to show
 """
@@ -189,7 +189,7 @@ def _migrated_a001() -> dict[str, Any]:
         "criteria": [
             {
                 "id": "A-001.Q01",
-                "question": "Does the thing hold?",
+                "statement": "The thing holds.",
                 "kind": "judgment",
                 "example_not_applicable": "nothing to show",
             }
@@ -230,7 +230,9 @@ class RulesAuditMergeTests:
         [
             pytest.param(_FRAGMENT_TEXT.replace("- id: A-001\n", "- id: B-001\n", 1), "is not 'A-001'", id="wrong-id"),
             pytest.param(
-                _FRAGMENT_TEXT.replace("Does the thing hold?", "Check the thing."), "must start with", id="bad-question"
+                _FRAGMENT_TEXT.replace("The thing holds.", "Does the thing hold?"),
+                "must not start with",
+                id="bad-statement",
             ),
             pytest.param("- id: A-001\n  guideline: Old prose.\n", "migrated shape", id="legacy-shape"),
             pytest.param("id: A-001\n", "YAML list with exactly one rule", id="not-a-list"),

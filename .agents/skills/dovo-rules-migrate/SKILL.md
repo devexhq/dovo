@@ -2,14 +2,14 @@
 name: dovo-rules-migrate
 description: >-
   Migrate rules in docs/agents/rules_spec.yaml from prose (guideline plus evaluation_criteria) to an intent plus
-  yes/no criteria, one rule at a time, with a Sonnet author agent and an independent Sonnet reviewer agent.
+  assertion criteria, one rule at a time, with a Sonnet author agent and an independent Sonnet reviewer agent.
   Invoked as /dovo-rules-migrate <PREFIX|RULE-ID>...
 disable-model-invocation: true
 ---
 
 # dovo-rules-migrate
 
-Rewrite each rule as an `intent` plus a list of yes/no `criteria` (the shape is documented at the top of
+Rewrite each rule as an `intent` plus a list of assertion `criteria` (the shape is documented at the top of
 `docs/agents/rules_spec.yaml`). An author agent rewrites it; a different agent audits the result from the diff. The audit
 file is the receipt, and `scripts/rules_audit.py check` rejects an incomplete or tampered one.
 

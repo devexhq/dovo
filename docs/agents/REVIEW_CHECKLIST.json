@@ -12,61 +12,61 @@
       "criteria": [
         {
           "id": "ARCH-001.Q01",
-          "question": "Does common/ import nothing from core/, engine/ or cli/, other than the imports listed in LAYER_EXCEPTIONS in tests/lint/test_layer_direction.py?",
+          "statement": "common/ imports nothing from core/, engine/ or cli/, other than the imports listed in LAYER_EXCEPTIONS in tests/lint/test_layer_direction.py.",
           "kind": "mechanical"
         },
         {
           "id": "ARCH-001.Q02",
-          "question": "Does core/ import nothing from engine/ or cli/?",
+          "statement": "core/ imports nothing from engine/ or cli/.",
           "kind": "mechanical"
         },
         {
           "id": "ARCH-001.Q03",
-          "question": "Does core/ import nothing from rich?",
+          "statement": "core/ imports nothing from rich.",
           "kind": "mechanical"
         },
         {
           "id": "ARCH-001.Q04",
-          "question": "Does engine/ import nothing from cli/?",
+          "statement": "engine/ imports nothing from cli/.",
           "kind": "mechanical"
         },
         {
           "id": "ARCH-001.Q05",
-          "question": "Does git/ import nothing from any other core/ package?",
+          "statement": "git/ imports nothing from any other core/ package.",
           "kind": "mechanical"
         },
         {
           "id": "ARCH-001.Q06",
-          "question": "Does inputs/ import nothing from catalog or agents?",
+          "statement": "inputs/ imports nothing from catalog or agents.",
           "kind": "mechanical"
         },
         {
           "id": "ARCH-001.Q07",
-          "question": "Does catalog/ import nothing from agents, sessions, engine or cli?",
+          "statement": "catalog/ imports nothing from agents, sessions, engine or cli.",
           "kind": "mechanical"
         },
         {
           "id": "ARCH-001.Q08",
-          "question": "Does artifacts/ import nothing from engine?",
+          "statement": "artifacts/ imports nothing from engine.",
           "kind": "mechanical"
         },
         {
           "id": "ARCH-001.Q09",
-          "question": "Does agents/ import nothing from engine?",
+          "statement": "agents/ imports nothing from engine.",
           "kind": "mechanical"
         },
         {
           "id": "ARCH-001.Q10",
-          "question": "Does sessions/ import nothing from agents, worktree, catalog, engine or cli?",
+          "statement": "sessions/ imports nothing from agents, worktree, catalog, engine or cli.",
           "kind": "mechanical"
         },
         {
           "id": "ARCH-001.Q11",
-          "question": "Does each core/ package named in the chain project/ -> {db, git, worktree, catalog, inputs, sessions, status, artifacts, interaction}/ -> agents/ -> diagnostics/ import only from packages at or before its own position in that chain?",
+          "statement": "Each core/ package named in the chain project/ -> {db, git, worktree, catalog, inputs, sessions, status, artifacts, interaction}/ -> agents/ -> diagnostics/ imports only from packages at or before its own position in that chain.",
           "kind": "judgment"
         }
       ],
-      "evaluation_criteria": "1. Does common/ import nothing from core/, engine/ or cli/, other than the imports listed in LAYER_EXCEPTIONS in tests/lint/test_layer_direction.py? 2. Does core/ import nothing from engine/ or cli/? 3. Does core/ import nothing from rich? 4. Does engine/ import nothing from cli/? 5. Does git/ import nothing from any other core/ package? 6. Does inputs/ import nothing from catalog or agents? 7. Does catalog/ import nothing from agents, sessions, engine or cli? 8. Does artifacts/ import nothing from engine? 9. Does agents/ import nothing from engine? 10. Does sessions/ import nothing from agents, worktree, catalog, engine or cli? 11. Does each core/ package named in the chain project/ -> {db, git, worktree, catalog, inputs, sessions, status, artifacts, interaction}/ -> agents/ -> diagnostics/ import only from packages at or before its own position in that chain?",
+      "evaluation_criteria": "1. common/ imports nothing from core/, engine/ or cli/, other than the imports listed in LAYER_EXCEPTIONS in tests/lint/test_layer_direction.py. 2. core/ imports nothing from engine/ or cli/. 3. core/ imports nothing from rich. 4. engine/ imports nothing from cli/. 5. git/ imports nothing from any other core/ package. 6. inputs/ imports nothing from catalog or agents. 7. catalog/ imports nothing from agents, sessions, engine or cli. 8. artifacts/ imports nothing from engine. 9. agents/ imports nothing from engine. 10. sessions/ imports nothing from agents, worktree, catalog, engine or cli. 11. Each core/ package named in the chain project/ -> {db, git, worktree, catalog, inputs, sessions, status, artifacts, interaction}/ -> agents/ -> diagnostics/ imports only from packages at or before its own position in that chain.",
       "bad_pattern": "from dovo.core.catalog.models import CatalogTier  # at runtime in common/ (hypothetical; the one real import of it, under TYPE_CHECKING in common/filesystem/models.py, is allowlisted)"
     },
     {
@@ -79,36 +79,36 @@
       "criteria": [
         {
           "id": "ARCH-002.Q01",
-          "question": "Does each CLI command handler take a CliContext as its context parameter?",
+          "statement": "Each CLI command handler takes a CliContext as its context parameter.",
           "kind": "judgment"
         },
         {
           "id": "ARCH-002.Q02",
-          "question": "Does each CLI command handler invoke an underlying domain service or domain entrypoint to do its work?",
+          "statement": "Each CLI command handler invokes an underlying domain service or domain entrypoint to do its work.",
           "kind": "judgment"
         },
         {
           "id": "ARCH-002.Q03",
-          "question": "Does each CLI command handler return a BaseResult model?",
+          "statement": "Each CLI command handler returns a BaseResult model.",
           "kind": "judgment"
         },
         {
           "id": "ARCH-002.Q04",
-          "question": "Is the CLI package free of business logic and domain orchestration, so that handlers only delegate to the domain layer and dispatch the result?",
+          "statement": "The CLI package is free of business logic and domain orchestration, so that handlers only delegate to the domain layer and dispatch the result.",
           "kind": "judgment"
         },
         {
           "id": "ARCH-002.Q05",
-          "question": "Is the CLI package free of direct SQLite queries or SQL execution?",
+          "statement": "The CLI package is free of direct SQLite queries or SQL execution.",
           "kind": "judgment"
         },
         {
           "id": "ARCH-002.Q06",
-          "question": "Is the CLI package free of direct filesystem scans?",
+          "statement": "The CLI package is free of direct filesystem scans.",
           "kind": "judgment"
         }
       ],
-      "evaluation_criteria": "1. Does each CLI command handler take a CliContext as its context parameter? 2. Does each CLI command handler invoke an underlying domain service or domain entrypoint to do its work? 3. Does each CLI command handler return a BaseResult model? 4. Is the CLI package free of business logic and domain orchestration, so that handlers only delegate to the domain layer and dispatch the result? 5. Is the CLI package free of direct SQLite queries or SQL execution? 6. Is the CLI package free of direct filesystem scans?",
+      "evaluation_criteria": "1. Each CLI command handler takes a CliContext as its context parameter. 2. Each CLI command handler invokes an underlying domain service or domain entrypoint to do its work. 3. Each CLI command handler returns a BaseResult model. 4. The CLI package is free of business logic and domain orchestration, so that handlers only delegate to the domain layer and dispatch the result. 5. The CLI package is free of direct SQLite queries or SQL execution. 6. The CLI package is free of direct filesystem scans.",
       "bad_pattern": "# hypothetical: def status_command(path: Path) -> DovoStatusResult that rebuilds its own paths and database handle instead of receiving a CliContext"
     },
     {
@@ -121,36 +121,36 @@
       "criteria": [
         {
           "id": "ARCH-003.Q01",
-          "question": "Does every status or outcome that cli/ui/ displays come from a field of a core/ or common/ model, rather than being invented in cli/ui/?",
+          "statement": "Every status or outcome that cli/ui/ displays comes from a field of a core/ or common/ model, rather than being invented in cli/ui/.",
           "kind": "judgment"
         },
         {
           "id": "ARCH-003.Q02",
-          "question": "Does every error category that cli/ui/ displays come from a core/ or common/ model, rather than being invented in cli/ui/?",
+          "statement": "Every error category that cli/ui/ displays comes from a core/ or common/ model, rather than being invented in cli/ui/.",
           "kind": "judgment"
         },
         {
           "id": "ARCH-003.Q03",
-          "question": "Does every warning that cli/ui/ displays come from a core/ or common/ model, rather than being appended in cli/ui/?",
+          "statement": "Every warning that cli/ui/ displays comes from a core/ or common/ model, rather than being appended in cli/ui/.",
           "kind": "judgment"
         },
         {
           "id": "ARCH-003.Q04",
-          "question": "Does every remediation that cli/ui/ displays come from a core/ or common/ model, rather than being written in cli/ui/?",
+          "statement": "Every remediation that cli/ui/ displays comes from a core/ or common/ model, rather than being written in cli/ui/.",
           "kind": "judgment"
         },
         {
           "id": "ARCH-003.Q05",
-          "question": "Is every domain rule that formatters apply (for example deciding what counts as healthy or failed) defined in core/ or common/ rather than in cli/ui/?",
+          "statement": "Every domain rule that formatters apply (for example deciding what counts as healthy or failed) is defined in core/ or common/ rather than in cli/ui/.",
           "kind": "judgment"
         },
         {
           "id": "ARCH-003.Q06",
-          "question": "Does cli/ui/ limit itself to deriving presentation views from existing domain fields, without adding new domain facts?",
+          "statement": "cli/ui/ limits itself to deriving presentation views from existing domain fields, without adding new domain facts.",
           "kind": "judgment"
         }
       ],
-      "evaluation_criteria": "1. Does every status or outcome that cli/ui/ displays come from a field of a core/ or common/ model, rather than being invented in cli/ui/? 2. Does every error category that cli/ui/ displays come from a core/ or common/ model, rather than being invented in cli/ui/? 3. Does every warning that cli/ui/ displays come from a core/ or common/ model, rather than being appended in cli/ui/? 4. Does every remediation that cli/ui/ displays come from a core/ or common/ model, rather than being written in cli/ui/? 5. Is every domain rule that formatters apply (for example deciding what counts as healthy or failed) defined in core/ or common/ rather than in cli/ui/? 6. Does cli/ui/ limit itself to deriving presentation views from existing domain fields, without adding new domain facts?",
+      "evaluation_criteria": "1. Every status or outcome that cli/ui/ displays comes from a field of a core/ or common/ model, rather than being invented in cli/ui/. 2. Every error category that cli/ui/ displays comes from a core/ or common/ model, rather than being invented in cli/ui/. 3. Every warning that cli/ui/ displays comes from a core/ or common/ model, rather than being appended in cli/ui/. 4. Every remediation that cli/ui/ displays comes from a core/ or common/ model, rather than being written in cli/ui/. 5. Every domain rule that formatters apply (for example deciding what counts as healthy or failed) is defined in core/ or common/ rather than in cli/ui/. 6. cli/ui/ limits itself to deriving presentation views from existing domain fields, without adding new domain facts.",
       "bad_pattern": "view.status = \"partially_initialized\"  # hypothetical: a new status value that no core/ or common/ model defines"
     },
     {
@@ -166,41 +166,41 @@
       "criteria": [
         {
           "id": "ARCH-004.Q01",
-          "question": "Does each new domain package under core/ define its types in a models.py module?",
+          "statement": "Each new domain package under core/ defines its types in a models.py module.",
           "kind": "judgment"
         },
         {
           "id": "ARCH-004.Q02",
-          "question": "Does each new domain package under core/ that raises its own errors define them in an exceptions.py module?",
+          "statement": "Each new domain package under core/ that raises its own errors defines them in an exceptions.py module.",
           "kind": "judgment"
         },
         {
           "id": "ARCH-004.Q03",
-          "question": "Is the entrypoint coordinator or service of each new domain package named after the domain rather than generically?",
+          "statement": "The entrypoint coordinator or service of each new domain package is named after the domain rather than generically.",
           "kind": "judgment"
         },
         {
           "id": "ARCH-004.Q04",
-          "question": "Does each new domain package under core/ keep its imperative operations in a services/ package?",
+          "statement": "Each new domain package under core/ keeps its imperative operations in a services/ package.",
           "kind": "judgment"
         },
         {
           "id": "ARCH-004.Q05",
-          "question": "Is each new imperative operation of a domain placed in its own services/<verb>.py module rather than directly in the package root?",
+          "statement": "Each new imperative operation of a domain is placed in its own services/<verb>.py module rather than directly in the package root.",
           "kind": "judgment"
         },
         {
           "id": "ARCH-004.Q06",
-          "question": "Are all public models of a new domain package defined in its models.py rather than in services/?",
+          "statement": "All public models of a new domain package are defined in its models.py rather than in services/.",
           "kind": "judgment"
         },
         {
           "id": "ARCH-004.Q07",
-          "question": "Does new domain code avoid extending a legacy flat layout (a domain package or module that lacks the standard structure)?",
+          "statement": "New domain code avoids extending a legacy flat layout (a domain package or module that lacks the standard structure).",
           "kind": "judgment"
         }
       ],
-      "evaluation_criteria": "1. Does each new domain package under core/ define its types in a models.py module? 2. Does each new domain package under core/ that raises its own errors define them in an exceptions.py module? 3. Is the entrypoint coordinator or service of each new domain package named after the domain rather than generically? 4. Does each new domain package under core/ keep its imperative operations in a services/ package? 5. Is each new imperative operation of a domain placed in its own services/<verb>.py module rather than directly in the package root? 6. Are all public models of a new domain package defined in its models.py rather than in services/? 7. Does new domain code avoid extending a legacy flat layout (a domain package or module that lacks the standard structure)?",
+      "evaluation_criteria": "1. Each new domain package under core/ defines its types in a models.py module. 2. Each new domain package under core/ that raises its own errors defines them in an exceptions.py module. 3. The entrypoint coordinator or service of each new domain package is named after the domain rather than generically. 4. Each new domain package under core/ keeps its imperative operations in a services/ package. 5. Each new imperative operation of a domain is placed in its own services/<verb>.py module rather than directly in the package root. 6. All public models of a new domain package are defined in its models.py rather than in services/. 7. New domain code avoids extending a legacy flat layout (a domain package or module that lacks the standard structure).",
       "bad_pattern": "src/dovo/core/prune/ holds a single prune.py mixing types and logic  # hypothetical: no prune/ package exists today"
     },
     {
@@ -213,26 +213,26 @@
       "criteria": [
         {
           "id": "ARCH-006.Q01",
-          "question": "Is every API key or secret read from environment variables at call time through a module-level resolve helper?",
+          "statement": "Every API key or secret is read from environment variables at call time through a module-level resolve helper.",
           "kind": "judgment"
         },
         {
           "id": "ARCH-006.Q02",
-          "question": "Is every secret absent from config.json, including the fields of DovoConfig?",
+          "statement": "Every secret is absent from config.json, including the fields of DovoConfig.",
           "kind": "judgment"
         },
         {
           "id": "ARCH-006.Q03",
-          "question": "Is every secret absent from data.db, including the SQLite record models?",
+          "statement": "Every secret is absent from data.db, including the SQLite record models.",
           "kind": "judgment"
         },
         {
           "id": "ARCH-006.Q04",
-          "question": "Is every secret kept out of the arguments passed into prompt builders?",
+          "statement": "Every secret is kept out of the arguments passed into prompt builders.",
           "kind": "judgment"
         }
       ],
-      "evaluation_criteria": "1. Is every API key or secret read from environment variables at call time through a module-level resolve helper? 2. Is every secret absent from config.json, including the fields of DovoConfig? 3. Is every secret absent from data.db, including the SQLite record models? 4. Is every secret kept out of the arguments passed into prompt builders?",
+      "evaluation_criteria": "1. Every API key or secret is read from environment variables at call time through a module-level resolve helper. 2. Every secret is absent from config.json, including the fields of DovoConfig. 3. Every secret is absent from data.db, including the SQLite record models. 4. Every secret is kept out of the arguments passed into prompt builders.",
       "bad_pattern": "TOKEN = os.environ[\"COPILOT_TOKEN\"]  # hypothetical: captured once at import time instead of resolved at call time"
     },
     {
@@ -245,36 +245,36 @@
       "criteria": [
         {
           "id": "RENDER-001.Q01",
-          "question": "Does all terminal output from src/dovo/cli/ and src/dovo/core/ leave the program through ui_dispatcher.dispatch(result)?",
+          "statement": "All terminal output from src/dovo/cli/ and src/dovo/core/ leaves the program through ui_dispatcher.dispatch(result).",
           "kind": "judgment"
         },
         {
           "id": "RENDER-001.Q02",
-          "question": "Are direct print() and typer.echo calls absent from src/dovo/cli/ and src/dovo/core/ outside src/dovo/cli/ui/?",
+          "statement": "Direct print() and typer.echo calls are absent from src/dovo/cli/ and src/dovo/core/ outside src/dovo/cli/ui/.",
           "kind": "mechanical"
         },
         {
           "id": "RENDER-001.Q03",
-          "question": "Are rich imports in src/dovo/cli/ confined to files under src/dovo/cli/ui/?",
+          "statement": "rich imports in src/dovo/cli/ are confined to files under src/dovo/cli/ui/.",
           "kind": "judgment"
         },
         {
           "id": "RENDER-001.Q04",
-          "question": "Are console .print() calls in src/dovo/cli/ and src/dovo/core/ made only in files under src/dovo/cli/ui/ (check with grep -rn \"\\.print(\" src/dovo/cli src/dovo/core)?",
+          "statement": "Console .print() calls in src/dovo/cli/ and src/dovo/core/ are made only in files under src/dovo/cli/ui/ (check with grep -rn \"\\.print(\" src/dovo/cli src/dovo/core).",
           "kind": "judgment"
         },
         {
           "id": "RENDER-001.Q05",
-          "question": "Do the files under src/dovo/core/ import nothing from rich?",
+          "statement": "The files under src/dovo/core/ import nothing from rich.",
           "kind": "mechanical"
         },
         {
           "id": "RENDER-001.Q06",
-          "question": "Is every core service free of Console instantiation?",
+          "statement": "Every core service is free of Console instantiation.",
           "kind": "judgment"
         }
       ],
-      "evaluation_criteria": "1. Does all terminal output from src/dovo/cli/ and src/dovo/core/ leave the program through ui_dispatcher.dispatch(result)? 2. Are direct print() and typer.echo calls absent from src/dovo/cli/ and src/dovo/core/ outside src/dovo/cli/ui/? 3. Are rich imports in src/dovo/cli/ confined to files under src/dovo/cli/ui/? 4. Are console .print() calls in src/dovo/cli/ and src/dovo/core/ made only in files under src/dovo/cli/ui/ (check with grep -rn \"\\.print(\" src/dovo/cli src/dovo/core)? 5. Do the files under src/dovo/core/ import nothing from rich? 6. Is every core service free of Console instantiation?",
+      "evaluation_criteria": "1. All terminal output from src/dovo/cli/ and src/dovo/core/ leaves the program through ui_dispatcher.dispatch(result). 2. Direct print() and typer.echo calls are absent from src/dovo/cli/ and src/dovo/core/ outside src/dovo/cli/ui/. 3. rich imports in src/dovo/cli/ are confined to files under src/dovo/cli/ui/. 4. Console .print() calls in src/dovo/cli/ and src/dovo/core/ are made only in files under src/dovo/cli/ui/ (check with grep -rn \"\\.print(\" src/dovo/cli src/dovo/core). 5. The files under src/dovo/core/ import nothing from rich. 6. Every core service is free of Console instantiation.",
       "bad_pattern": "print(result.session_id)  # hypothetical: in a command module, bypassing the dispatcher"
     },
     {
@@ -287,21 +287,21 @@
       "criteria": [
         {
           "id": "RENDER-002.Q01",
-          "question": "Does every to_rich() implementation get its presentation data by calling transform(data)?",
+          "statement": "Every to_rich() implementation gets its presentation data by calling transform(data).",
           "kind": "judgment"
         },
         {
           "id": "RENDER-002.Q02",
-          "question": "Is every business rule and status calculation that decides what to show performed in transform() rather than in to_rich()?",
+          "statement": "Every business rule and status calculation that decides what to show is performed in transform() rather than in to_rich().",
           "kind": "judgment"
         },
         {
           "id": "RENDER-002.Q03",
-          "question": "Does every string that to_rich() renders come directly from the view model, without string manipulation inside to_rich()?",
+          "statement": "Every string that to_rich() renders comes directly from the view model, without string manipulation inside to_rich().",
           "kind": "judgment"
         }
       ],
-      "evaluation_criteria": "1. Does every to_rich() implementation get its presentation data by calling transform(data)? 2. Is every business rule and status calculation that decides what to show performed in transform() rather than in to_rich()? 3. Does every string that to_rich() renders come directly from the view model, without string manipulation inside to_rich()?",
+      "evaluation_criteria": "1. Every to_rich() implementation gets its presentation data by calling transform(data). 2. Every business rule and status calculation that decides what to show is performed in transform() rather than in to_rich(). 3. Every string that to_rich() renders comes directly from the view model, without string manipulation inside to_rich().",
       "bad_pattern": "def to_rich(self, data): return Panel(Text(data.project_name))  # hypothetical: lays out the raw result without calling transform"
     },
     {
@@ -314,11 +314,11 @@
       "criteria": [
         {
           "id": "RENDER-003.Q01",
-          "question": "Are error, warning and fix strings built inline with f-strings or literals at their call sites, with no private helper whose sole purpose is formatting a single error or warning string?",
+          "statement": "Error, warning and fix strings are built inline with f-strings or literals at their call sites, with no private helper whose sole purpose is formatting a single error or warning string.",
           "kind": "judgment"
         }
       ],
-      "evaluation_criteria": "1. Are error, warning and fix strings built inline with f-strings or literals at their call sites, with no private helper whose sole purpose is formatting a single error or warning string?",
+      "evaluation_criteria": "1. Error, warning and fix strings are built inline with f-strings or literals at their call sites, with no private helper whose sole purpose is formatting a single error or warning string.",
       "bad_pattern": "errors.append(self._format_validation_error(path, err))  # hypothetical: a private wrapper that only formats one message"
     },
     {
@@ -331,16 +331,16 @@
       "criteria": [
         {
           "id": "RENDER-004.Q01",
-          "question": "Is every table-building helper that more than one formatter in a domain needs defined once in that domain's cli/ui/formatters/<domain>/common.py rather than duplicated across sibling formatter modules?",
+          "statement": "Every table-building helper that more than one formatter in a domain needs is defined once in that domain's cli/ui/formatters/<domain>/common.py rather than duplicated across sibling formatter modules.",
           "kind": "judgment"
         },
         {
           "id": "RENDER-004.Q02",
-          "question": "Is a table-building helper placed in the package-wide cli/ui/formatters/common.py only when it is genuinely shared across domains?",
+          "statement": "A table-building helper is placed in the package-wide cli/ui/formatters/common.py only when it is genuinely shared across domains.",
           "kind": "judgment"
         }
       ],
-      "evaluation_criteria": "1. Is every table-building helper that more than one formatter in a domain needs defined once in that domain's cli/ui/formatters/<domain>/common.py rather than duplicated across sibling formatter modules? 2. Is a table-building helper placed in the package-wide cli/ui/formatters/common.py only when it is genuinely shared across domains?",
+      "evaluation_criteria": "1. Every table-building helper that more than one formatter in a domain needs is defined once in that domain's cli/ui/formatters/<domain>/common.py rather than duplicated across sibling formatter modules. 2. A table-building helper is placed in the package-wide cli/ui/formatters/common.py only when it is genuinely shared across domains.",
       "bad_pattern": "A nearly identical build_table() defined in both worktree/worktree_list.py and worktree/worktree_show.py (hypothetical; the real worktree builders live in worktree/common.py)"
     },
     {
@@ -353,21 +353,21 @@
       "criteria": [
         {
           "id": "MODEL-001.Q01",
-          "question": "Is extra='ignore' used only by the approved hand-authored YAML models, BlueprintDefinition and LoopStepBlock?",
+          "statement": "extra='ignore' is used only by the approved hand-authored YAML models, BlueprintDefinition and LoopStepBlock.",
           "kind": "judgment"
         },
         {
           "id": "MODEL-001.Q02",
-          "question": "Does every model that uses extra='ignore' carry a comment justifying it?",
+          "statement": "Every model that uses extra='ignore' carries a comment justifying it.",
           "kind": "judgment"
         },
         {
           "id": "MODEL-001.Q03",
-          "question": "Does every model outside the approved list set strict=True in its configuration?",
+          "statement": "Every model outside the approved list sets strict=True in its configuration.",
           "kind": "judgment"
         }
       ],
-      "evaluation_criteria": "1. Is extra='ignore' used only by the approved hand-authored YAML models, BlueprintDefinition and LoopStepBlock? 2. Does every model that uses extra='ignore' carry a comment justifying it? 3. Does every model outside the approved list set strict=True in its configuration?",
+      "evaluation_criteria": "1. extra='ignore' is used only by the approved hand-authored YAML models, BlueprintDefinition and LoopStepBlock. 2. Every model that uses extra='ignore' carries a comment justifying it. 3. Every model outside the approved list sets strict=True in its configuration.",
       "bad_pattern": "model_config = {\"extra\": \"ignore\"}  # hypothetical: on a result model such as a BaseResult subclass, which is not an approved model"
     },
     {
@@ -383,31 +383,31 @@
       "criteria": [
         {
           "id": "MODEL-002.Q01",
-          "question": "Does the operation report a business or operational failure by returning a result instead of raising an exception?",
+          "statement": "The operation reports a business or operational failure by returning a result instead of raising an exception.",
           "kind": "judgment"
         },
         {
           "id": "MODEL-002.Q02",
-          "question": "Does an operation whose outcome reaches a domain entrypoint, a command handler, a formatter or the wire format return a Pydantic result object subclassing BaseResult?",
+          "statement": "An operation whose outcome reaches a domain entrypoint, a command handler, a formatter or the wire format returns a Pydantic result object subclassing BaseResult.",
           "kind": "judgment"
         },
         {
           "id": "MODEL-002.Q03",
-          "question": "Do callers of a result-returning operation check .ok rather than catching exceptions to learn the outcome?",
+          "statement": "Callers of a result-returning operation check .ok rather than catching exceptions to learn the outcome.",
           "kind": "judgment"
         },
         {
           "id": "MODEL-002.Q04",
-          "question": "Do callers that report a failure to the user render the result .errors and .warnings rather than the text of a caught exception?",
+          "statement": "Callers that report a failure to the user render the result .errors and .warnings rather than the text of a caught exception.",
           "kind": "judgment"
         },
         {
           "id": "MODEL-002.Q05",
-          "question": "Does an internal helper that returns a plain value or an error message (str | None) serve a single in-layer caller that only branches on success?",
+          "statement": "An internal helper that returns a plain value or an error message (str | None) serves a single in-layer caller that only branches on success.",
           "kind": "judgment"
         }
       ],
-      "evaluation_criteria": "1. Does the operation report a business or operational failure by returning a result instead of raising an exception? 2. Does an operation whose outcome reaches a domain entrypoint, a command handler, a formatter or the wire format return a Pydantic result object subclassing BaseResult? 3. Do callers of a result-returning operation check .ok rather than catching exceptions to learn the outcome? 4. Do callers that report a failure to the user render the result .errors and .warnings rather than the text of a caught exception? 5. Does an internal helper that returns a plain value or an error message (str | None) serve a single in-layer caller that only branches on success?",
+      "evaluation_criteria": "1. The operation reports a business or operational failure by returning a result instead of raising an exception. 2. An operation whose outcome reaches a domain entrypoint, a command handler, a formatter or the wire format returns a Pydantic result object subclassing BaseResult. 3. Callers of a result-returning operation check .ok rather than catching exceptions to learn the outcome. 4. Callers that report a failure to the user render the result .errors and .warnings rather than the text of a caught exception. 5. An internal helper that returns a plain value or an error message (str | None) serves a single in-layer caller that only branches on success.",
       "bad_pattern": "raise WorktreeNotFoundError('Worktree does not exist')  # hypothetical: no such exception exists in src/"
     },
     {
@@ -423,16 +423,16 @@
       "criteria": [
         {
           "id": "MODEL-003.Q01",
-          "question": "Is every variant emitted by production code in src/, for each status StrEnum defined in a core/*/models.py or engine/**/models.py file and used by a BaseResult model?",
+          "statement": "For each status StrEnum defined in a core/*/models.py or engine/**/models.py file and used by a BaseResult model, every variant is emitted by production code in src/.",
           "kind": "judgment"
         },
         {
           "id": "MODEL-003.Q02",
-          "question": "Is every variant asserted in a test under tests/, for each status StrEnum defined in a core/*/models.py or engine/**/models.py file and used by a BaseResult model?",
+          "statement": "For each status StrEnum defined in a core/*/models.py or engine/**/models.py file and used by a BaseResult model, every variant is asserted in a test under tests/.",
           "kind": "judgment"
         }
       ],
-      "evaluation_criteria": "1. Is every variant emitted by production code in src/, for each status StrEnum defined in a core/*/models.py or engine/**/models.py file and used by a BaseResult model? 2. Is every variant asserted in a test under tests/, for each status StrEnum defined in a core/*/models.py or engine/**/models.py file and used by a BaseResult model?",
+      "evaluation_criteria": "1. For each status StrEnum defined in a core/*/models.py or engine/**/models.py file and used by a BaseResult model, every variant is emitted by production code in src/. 2. For each status StrEnum defined in a core/*/models.py or engine/**/models.py file and used by a BaseResult model, every variant is asserted in a test under tests/.",
       "bad_pattern": "class PruneStatus(StrEnum): UNKNOWN = \"unknown\"  # hypothetical: no code in src/ ever assigns PruneStatus.UNKNOWN to a result"
     },
     {
@@ -445,11 +445,11 @@
       "criteria": [
         {
           "id": "MODEL-004.Q01",
-          "question": "Does every exception class in src/dovo/core/catalog/exceptions.py, which covers locating, loading, validating and writing catalog definitions, descend from DefinitionError, DefinitionNotFoundError, DefinitionLoadError or DefinitionValidationError in common/exceptions.py, rather than having Exception or ValueError as its only base?",
+          "statement": "Every exception class in src/dovo/core/catalog/exceptions.py, which covers locating, loading, validating and writing catalog definitions, descends from DefinitionError, DefinitionNotFoundError, DefinitionLoadError or DefinitionValidationError in common/exceptions.py, rather than having Exception or ValueError as its only base.",
           "kind": "judgment"
         }
       ],
-      "evaluation_criteria": "1. Does every exception class in src/dovo/core/catalog/exceptions.py, which covers locating, loading, validating and writing catalog definitions, descend from DefinitionError, DefinitionNotFoundError, DefinitionLoadError or DefinitionValidationError in common/exceptions.py, rather than having Exception or ValueError as its only base?",
+      "evaluation_criteria": "1. Every exception class in src/dovo/core/catalog/exceptions.py, which covers locating, loading, validating and writing catalog definitions, descends from DefinitionError, DefinitionNotFoundError, DefinitionLoadError or DefinitionValidationError in common/exceptions.py, rather than having Exception or ValueError as its only base.",
       "bad_pattern": "class BlueprintLoadError(Exception): \"\"\"Raised when blueprint YAML syntax is invalid or unreadable.\"\"\"  # hypothetical: inherits directly from Exception; class StepValidationError(ValueError) would fail the same way"
     },
     {
@@ -462,21 +462,21 @@
       "criteria": [
         {
           "id": "CODE-001.Q01",
-          "question": "Is every new or modified variable, parameter, attribute and function name spelled in full rather than shortened by dropping letters, even for familiar shortenings (exceptions are checked by Q02 and Q03)?",
+          "statement": "Every new or modified variable, parameter, attribute and function name is spelled in full rather than shortened by dropping letters, even for familiar shortenings (exceptions are checked by Q02 and Q03).",
           "kind": "judgment"
         },
         {
           "id": "CODE-001.Q02",
-          "question": "Is every new or modified single-letter name confined to a comprehension, a generator expression or a one-line loop?",
+          "statement": "Every new or modified single-letter name is confined to a comprehension, a generator expression or a one-line loop.",
           "kind": "judgment"
         },
         {
           "id": "CODE-001.Q03",
-          "question": "Is every shortened name that remains in new or modified code either an initialism that is itself the domain term (db, cwd, ctx, id, url, cli, sha, ttl) or a framework-dictated name?",
+          "statement": "Every shortened name that remains in new or modified code is either an initialism that is itself the domain term (db, cwd, ctx, id, url, cli, sha, ttl) or a framework-dictated name.",
           "kind": "judgment"
         }
       ],
-      "evaluation_criteria": "1. Is every new or modified variable, parameter, attribute and function name spelled in full rather than shortened by dropping letters, even for familiar shortenings (exceptions are checked by Q02 and Q03)? 2. Is every new or modified single-letter name confined to a comprehension, a generator expression or a one-line loop? 3. Is every shortened name that remains in new or modified code either an initialism that is itself the domain term (db, cwd, ctx, id, url, cli, sha, ttl) or a framework-dictated name?",
+      "evaluation_criteria": "1. Every new or modified variable, parameter, attribute and function name is spelled in full rather than shortened by dropping letters, even for familiar shortenings (exceptions are checked by Q02 and Q03). 2. Every new or modified single-letter name is confined to a comprehension, a generator expression or a one-line loop. 3. Every shortened name that remains in new or modified code is either an initialism that is itself the domain term (db, cwd, ctx, id, url, cli, sha, ttl) or a framework-dictated name.",
       "bad_pattern": "val_res = validator.validate(document); acc = []  # hypothetical: val_res and acc drop letters; other shortenings to flag include res, req, msg, val, idx, tmp, rel_path, fs, exc, err, cfg, resp"
     },
     {
@@ -489,16 +489,16 @@
       "criteria": [
         {
           "id": "CODE-002.Q01",
-          "question": "Are distinct logical phases of a function body (setup, validate, persist, return) separated by a blank line?",
+          "statement": "Distinct logical phases of a function body (setup, validate, persist, return) are separated by a blank line.",
           "kind": "judgment"
         },
         {
           "id": "CODE-002.Q02",
-          "question": "Is every blank line in a function body free of separating two adjacent lines that work on the same value within one phase?",
+          "statement": "No blank line in a function body separates two adjacent lines that work on the same value within one phase.",
           "kind": "judgment"
         }
       ],
-      "evaluation_criteria": "1. Are distinct logical phases of a function body (setup, validate, persist, return) separated by a blank line? 2. Is every blank line in a function body free of separating two adjacent lines that work on the same value within one phase?",
+      "evaluation_criteria": "1. Distinct logical phases of a function body (setup, validate, persist, return) are separated by a blank line. 2. No blank line in a function body separates two adjacent lines that work on the same value within one phase.",
       "bad_pattern": "record = WorktreeRecord(...), a save call and \"return result\" on consecutive lines with no blank line between them (hypothetical: building, persisting and returning run together as one dense block)"
     },
     {
@@ -511,36 +511,36 @@
       "criteria": [
         {
           "id": "CODE-003.Q01",
-          "question": "Does the docstring open with a one-line title stating what the thing is or does?",
+          "statement": "The docstring opens with a one-line title stating what the thing is or does.",
           "kind": "judgment"
         },
         {
           "id": "CODE-003.Q02",
-          "question": "Is the title free of outcome, failure-path and side-effect clauses, with a comma used only to enumerate a distinct list?",
+          "statement": "The title is free of outcome, failure-path and side-effect clauses, with a comma used only to enumerate a distinct list.",
           "kind": "judgment"
         },
         {
           "id": "CODE-003.Q03",
-          "question": "Does a unit with a hidden contract, a data-loss or safety behavior, a non-obvious ordering constraint or a deliberate oddity carry a description stating it?",
+          "statement": "A unit with a hidden contract, a data-loss or safety behavior, a non-obvious ordering constraint or a deliberate oddity carries a description stating it.",
           "kind": "judgment"
         },
         {
           "id": "CODE-003.Q04",
-          "question": "Does every description state a fact the code cannot show, rather than something a reader can already see in the code?",
+          "statement": "Every description states a fact the code cannot show, rather than something a reader can already see in the code.",
           "kind": "judgment"
         },
         {
           "id": "CODE-003.Q05",
-          "question": "Is every description free of step-by-step narration of the body?",
+          "statement": "Every description is free of step-by-step narration of the body.",
           "kind": "judgment"
         },
         {
           "id": "CODE-003.Q06",
-          "question": "Is every description free of text that restates the parameters, types or return annotation, or repeats the title in other words?",
+          "statement": "Every description is free of text that restates the parameters, types or return annotation, or repeats the title in other words.",
           "kind": "judgment"
         }
       ],
-      "evaluation_criteria": "1. Does the docstring open with a one-line title stating what the thing is or does? 2. Is the title free of outcome, failure-path and side-effect clauses, with a comma used only to enumerate a distinct list? 3. Does a unit with a hidden contract, a data-loss or safety behavior, a non-obvious ordering constraint or a deliberate oddity carry a description stating it? 4. Does every description state a fact the code cannot show, rather than something a reader can already see in the code? 5. Is every description free of step-by-step narration of the body? 6. Is every description free of text that restates the parameters, types or return annotation, or repeats the title in other words?",
+      "evaluation_criteria": "1. The docstring opens with a one-line title stating what the thing is or does. 2. The title is free of outcome, failure-path and side-effect clauses, with a comma used only to enumerate a distinct list. 3. A unit with a hidden contract, a data-loss or safety behavior, a non-obvious ordering constraint or a deliberate oddity carries a description stating it. 4. Every description states a fact the code cannot show, rather than something a reader can already see in the code. 5. Every description is free of step-by-step narration of the body. 6. Every description is free of text that restates the parameters, types or return annotation, or repeats the title in other words.",
       "bad_pattern": "\"\"\"Run the provider. Then resolve the baseline\nand build the prompt before diffing the worktree.\"\"\"  # hypothetical: the opening wraps over two lines and holds two sentences, so there is no one-line title"
     },
     {
@@ -553,16 +553,16 @@
       "criteria": [
         {
           "id": "CODE-004.Q01",
-          "question": "Does each new or modified docstring avoid describing what a caller does with the unit's result?",
+          "statement": "Each new or modified docstring avoids describing what a caller does with the unit's result.",
           "kind": "judgment"
         },
         {
           "id": "CODE-004.Q02",
-          "question": "Does each new or modified docstring avoid describing logic that lives in another module or class, other than a reference to a sibling in the same module?",
+          "statement": "Each new or modified docstring avoids describing logic that lives in another module or class, other than a reference to a sibling in the same module.",
           "kind": "judgment"
         }
       ],
-      "evaluation_criteria": "1. Does each new or modified docstring avoid describing what a caller does with the unit's result? 2. Does each new or modified docstring avoid describing logic that lives in another module or class, other than a reference to a sibling in the same module?",
+      "evaluation_criteria": "1. Each new or modified docstring avoids describing what a caller does with the unit's result. 2. Each new or modified docstring avoids describing logic that lives in another module or class, other than a reference to a sibling in the same module.",
       "bad_pattern": "\"\"\"Render a restricted policy's allow and deny rules as dontAsk flags.\n\nThe adapter surfaces a returned reason as an unsupported-policy error before the process is spawned.\"\"\"  # hypothetical: describes what the caller does with the returned reason"
     },
     {
@@ -575,11 +575,11 @@
       "criteria": [
         {
           "id": "CODE-005.Q01",
-          "question": "Is every new or modified module, class and function body free of a bare string statement after its first statement?",
+          "statement": "Every new or modified module, class and function body is free of a bare string statement after its first statement.",
           "kind": "judgment"
         }
       ],
-      "evaluation_criteria": "1. Is every new or modified module, class and function body free of a bare string statement after its first statement?",
+      "evaluation_criteria": "1. Every new or modified module, class and function body is free of a bare string statement after its first statement.",
       "bad_pattern": "\"\"\"Return dontAsk flags for the rules.\"\"\"  # hypothetical: followed by a second \"\"\"...\"\"\" string statement that should be merged into the docstring or deleted"
     },
     {
@@ -592,11 +592,11 @@
       "criteria": [
         {
           "id": "TYPE-001.Q01",
-          "question": "Is the return annotation of every public function (a module-level function or a method whose name does not start with an underscore) something other than Any?",
+          "statement": "The return annotation of every public function (a module-level function or a method whose name does not start with an underscore) is not Any.",
           "kind": "judgment"
         }
       ],
-      "evaluation_criteria": "1. Is the return annotation of every public function (a module-level function or a method whose name does not start with an underscore) something other than Any?",
+      "evaluation_criteria": "1. The return annotation of every public function (a module-level function or a method whose name does not start with an underscore) is not Any.",
       "bad_pattern": "def to_rich(self, data: T) -> Any:  # public abstract method of the formatter base class in src/dovo/common/types.py"
     },
     {
@@ -609,11 +609,11 @@
       "criteria": [
         {
           "id": "TYPE-002.Q01",
-          "question": "Is every use of Any in the change confined to one of four boundaries, namely a Pydantic mode=\"before\" validator, a dict[str, Any] at a serialization boundary, a value read from a user document and compared, or a **kwargs: Any pass-through?",
+          "statement": "Every use of Any in the change is confined to one of four boundaries, namely a Pydantic mode=\"before\" validator, a dict[str, Any] at a serialization boundary, a value read from a user document and compared, or a **kwargs: Any pass-through.",
           "kind": "judgment"
         }
       ],
-      "evaluation_criteria": "1. Is every use of Any in the change confined to one of four boundaries, namely a Pydantic mode=\"before\" validator, a dict[str, Any] at a serialization boundary, a value read from a user document and compared, or a **kwargs: Any pass-through?",
+      "evaluation_criteria": "1. Every use of Any in the change is confined to one of four boundaries, namely a Pydantic mode=\"before\" validator, a dict[str, Any] at a serialization boundary, a value read from a user document and compared, or a **kwargs: Any pass-through.",
       "bad_pattern": "def execute_step(step: Any) -> StepResult: ...  # hypothetical: step is not a permitted boundary, so it should be typed as the step model"
     },
     {
@@ -626,31 +626,31 @@
       "criteria": [
         {
           "id": "TYPE-003.Q01",
-          "question": "Is every annotation free of Any that exists only because the real type cannot be imported from the current package?",
+          "statement": "Every annotation is free of Any that exists only because the real type cannot be imported from the current package.",
           "kind": "judgment"
         },
         {
           "id": "TYPE-003.Q02",
-          "question": "Is every parameter free of an Any annotation that exists only so a test can pass a stub?",
+          "statement": "Every parameter is free of an Any annotation that exists only so a test can pass a stub.",
           "kind": "judgment"
         },
         {
           "id": "TYPE-003.Q03",
-          "question": "Is every annotation free of Any where a model that describes the value already exists?",
+          "statement": "Every annotation is free of Any where a model that describes the value already exists.",
           "kind": "judgment"
         },
         {
           "id": "TYPE-003.Q04",
-          "question": "Does every override of a third-party method name the third-party type instead of Any?",
+          "statement": "Every override of a third-party method names the third-party type instead of Any.",
           "kind": "judgment"
         },
         {
           "id": "TYPE-003.Q05",
-          "question": "Is every generic type parameterized with the concrete type the code already knows, rather than Any?",
+          "statement": "Every generic type is parameterized with the concrete type the code already knows, rather than Any.",
           "kind": "judgment"
         }
       ],
-      "evaluation_criteria": "1. Is every annotation free of Any that exists only because the real type cannot be imported from the current package? 2. Is every parameter free of an Any annotation that exists only so a test can pass a stub? 3. Is every annotation free of Any where a model that describes the value already exists? 4. Does every override of a third-party method name the third-party type instead of Any? 5. Is every generic type parameterized with the concrete type the code already knows, rather than Any?",
+      "evaluation_criteria": "1. Every annotation is free of Any that exists only because the real type cannot be imported from the current package. 2. Every parameter is free of an Any annotation that exists only so a test can pass a stub. 3. Every annotation is free of Any where a model that describes the value already exists. 4. Every override of a third-party method names the third-party type instead of Any. 5. Every generic type is parameterized with the concrete type the code already knows, rather than Any.",
       "bad_pattern": "def run(step: Any) -> None: ...  # hypothetical: Any used because StepDefinition cannot be imported from this package"
     },
     {
@@ -663,16 +663,16 @@
       "criteria": [
         {
           "id": "TYPE-004.Q01",
-          "question": "Is every SQLModel __tablename__ annotated as ClassVar[str]?",
+          "statement": "Every SQLModel __tablename__ is annotated as ClassVar[str].",
           "kind": "judgment"
         },
         {
           "id": "TYPE-004.Q02",
-          "question": "Is every other class-level SQL string constant annotated explicitly as ClassVar[str] rather than Any or a bare str?",
+          "statement": "Every other class-level SQL string constant is annotated explicitly as ClassVar[str] rather than Any or a bare str.",
           "kind": "judgment"
         }
       ],
-      "evaluation_criteria": "1. Is every SQLModel __tablename__ annotated as ClassVar[str]? 2. Is every other class-level SQL string constant annotated explicitly as ClassVar[str] rather than Any or a bare str?",
+      "evaluation_criteria": "1. Every SQLModel __tablename__ is annotated as ClassVar[str]. 2. Every other class-level SQL string constant is annotated explicitly as ClassVar[str] rather than Any or a bare str.",
       "bad_pattern": "__tablename__ = \"worktrees\"  # hypothetical: unannotated, so the type checker has to infer it"
     },
     {
@@ -685,11 +685,11 @@
       "criteria": [
         {
           "id": "TYPE-005.Q01",
-          "question": "Does every Generator[...] annotation specify all three parameters, yield, send and return, as in Generator[YieldType, SendType, ReturnType]?",
+          "statement": "Every Generator[...] annotation specifies all three parameters, yield, send and return, as in Generator[YieldType, SendType, ReturnType].",
           "kind": "judgment"
         }
       ],
-      "evaluation_criteria": "1. Does every Generator[...] annotation specify all three parameters, yield, send and return, as in Generator[YieldType, SendType, ReturnType]?",
+      "evaluation_criteria": "1. Every Generator[...] annotation specifies all three parameters, yield, send and return, as in Generator[YieldType, SendType, ReturnType].",
       "bad_pattern": "def get_session(engine: Engine) -> Generator[Session]: ...  # in core/db/connection.py"
     },
     {
@@ -702,36 +702,36 @@
       "criteria": [
         {
           "id": "TYPE-006.Q01",
-          "question": "Does the code use no bare `# type: ignore`, which this repo's basedpyright config does not honor and which suppresses nothing?",
+          "statement": "The code uses no bare `# type: ignore`, which this repo's basedpyright config does not honor and which suppresses nothing.",
           "kind": "judgment"
         },
         {
           "id": "TYPE-006.Q02",
-          "question": "Does every `# pyright: ignore[reportRuleName]` name the specific rule it silences in brackets?",
+          "statement": "Every `# pyright: ignore[reportRuleName]` names the specific rule it silences in brackets.",
           "kind": "judgment"
         },
         {
           "id": "TYPE-006.Q03",
-          "question": "Does every `# pyright: ignore[...]` carry a one-line reason that names which permitted case applies?",
+          "statement": "Every `# pyright: ignore[...]` carries a one-line reason that names which permitted case applies.",
           "kind": "judgment"
         },
         {
           "id": "TYPE-006.Q04",
-          "question": "Is every `# pyright: ignore[...]` one of the three permitted cases: an intentional ill-typed test input whose subject is the raised error, a third-party stub conflict our code cannot name correctly, or a platform-gated import?",
+          "statement": "Every `# pyright: ignore[...]` is one of the three permitted cases: an intentional ill-typed test input whose subject is the raised error, a third-party stub conflict our code cannot name correctly, or a platform-gated import.",
           "kind": "judgment"
         },
         {
           "id": "TYPE-006.Q05",
-          "question": "Is `reportCallIssue` or `reportArgumentType` never suppressed to silence a wrong-shaped test double or fixture?",
+          "statement": "`reportCallIssue` or `reportArgumentType` is never suppressed to silence a wrong-shaped test double or fixture.",
           "kind": "judgment"
         },
         {
           "id": "TYPE-006.Q06",
-          "question": "Is `reportIncompatibleVariableOverride` suppressed only on the SQLModel `__tablename__` stub conflict?",
+          "statement": "`reportIncompatibleVariableOverride` is suppressed only on the SQLModel `__tablename__` stub conflict.",
           "kind": "judgment"
         }
       ],
-      "evaluation_criteria": "1. Does the code use no bare `# type: ignore`, which this repo's basedpyright config does not honor and which suppresses nothing? 2. Does every `# pyright: ignore[reportRuleName]` name the specific rule it silences in brackets? 3. Does every `# pyright: ignore[...]` carry a one-line reason that names which permitted case applies? 4. Is every `# pyright: ignore[...]` one of the three permitted cases: an intentional ill-typed test input whose subject is the raised error, a third-party stub conflict our code cannot name correctly, or a platform-gated import? 5. Is `reportCallIssue` or `reportArgumentType` never suppressed to silence a wrong-shaped test double or fixture? 6. Is `reportIncompatibleVariableOverride` suppressed only on the SQLModel `__tablename__` stub conflict?",
+      "evaluation_criteria": "1. The code uses no bare `# type: ignore`, which this repo's basedpyright config does not honor and which suppresses nothing. 2. Every `# pyright: ignore[reportRuleName]` names the specific rule it silences in brackets. 3. Every `# pyright: ignore[...]` carries a one-line reason that names which permitted case applies. 4. Every `# pyright: ignore[...]` is one of the three permitted cases: an intentional ill-typed test input whose subject is the raised error, a third-party stub conflict our code cannot name correctly, or a platform-gated import. 5. `reportCallIssue` or `reportArgumentType` is never suppressed to silence a wrong-shaped test double or fixture. 6. `reportIncompatibleVariableOverride` is suppressed only on the SQLModel `__tablename__` stub conflict.",
       "bad_pattern": "queue: Queue = mock_queue  # type: ignore  # bare ignore, suppresses nothing and hides a fixable fixture type (hypothetical line)"
     },
     {
@@ -744,16 +744,16 @@
       "criteria": [
         {
           "id": "ENCAP-001.Q01",
-          "question": "Is every access to an underscore-prefixed, non-dunder member in src/dovo/ made on self, cls or mcs rather than on another object?",
+          "statement": "Every access to an underscore-prefixed, non-dunder member in src/dovo/ is made on self, cls or mcs rather than on another object.",
           "kind": "mechanical"
         },
         {
           "id": "ENCAP-001.Q02",
-          "question": "Does each class that callers query for boolean state expose that state as a public property?",
+          "statement": "Each class that callers query for boolean state exposes that state as a public property.",
           "kind": "judgment"
         }
       ],
-      "evaluation_criteria": "1. Is every access to an underscore-prefixed, non-dunder member in src/dovo/ made on self, cls or mcs rather than on another object? 2. Does each class that callers query for boolean state expose that state as a public property?",
+      "evaluation_criteria": "1. Every access to an underscore-prefixed, non-dunder member in src/dovo/ is made on self, cls or mcs rather than on another object. 2. Each class that callers query for boolean state exposes that state as a public property.",
       "bad_pattern": "if runner._process is not None: ...  # caller inspecting private state"
     },
     {
@@ -766,11 +766,11 @@
       "criteria": [
         {
           "id": "ENCAP-002.Q01",
-          "question": "Is every parameter, kwarg or callback with a default value in a new or modified function in src/dovo/ passed by at least one production caller?",
+          "statement": "Every parameter, kwarg or callback with a default value in a new or modified function in src/dovo/ is passed by at least one production caller.",
           "kind": "judgment"
         }
       ],
-      "evaluation_criteria": "1. Is every parameter, kwarg or callback with a default value in a new or modified function in src/dovo/ passed by at least one production caller?",
+      "evaluation_criteria": "1. Every parameter, kwarg or callback with a default value in a new or modified function in src/dovo/ is passed by at least one production caller.",
       "bad_pattern": "def run(self, cwd: Path, _runner: GitRunner | None = None) -> RunOutcome: ...  # only tests pass _runner"
     },
     {
@@ -783,16 +783,16 @@
       "criteria": [
         {
           "id": "PERF-001.Q01",
-          "question": "Is every repository or DovoDb used inside a for or while loop created outside that loop?",
+          "statement": "Every repository or DovoDb used inside a for or while loop is created outside that loop.",
           "kind": "judgment"
         },
         {
           "id": "PERF-001.Q02",
-          "question": "Does every helper function, including every test helper, receive its repository or DovoDb as an argument instead of instantiating one?",
+          "statement": "Every helper function, including every test helper, receives its repository or DovoDb as an argument instead of instantiating one.",
           "kind": "judgment"
         }
       ],
-      "evaluation_criteria": "1. Is every repository or DovoDb used inside a for or while loop created outside that loop? 2. Does every helper function, including every test helper, receive its repository or DovoDb as an argument instead of instantiating one?",
+      "evaluation_criteria": "1. Every repository or DovoDb used inside a for or while loop is created outside that loop. 2. Every helper function, including every test helper, receives its repository or DovoDb as an argument instead of instantiating one.",
       "bad_pattern": "for item in items: db = DovoDb(paths.database_file, project_id=paths.project_id); db.sessions.create(...)  # illustrative; create() takes more arguments"
     },
     {
@@ -805,21 +805,21 @@
       "criteria": [
         {
           "id": "PERF-002.Q01",
-          "question": "Is every table or column added by a migration in the change written by production code in src/ in the same PR?",
+          "statement": "Every table or column added by a migration in the change is written by production code in src/ in the same PR.",
           "kind": "judgment"
         },
         {
           "id": "PERF-002.Q02",
-          "question": "Is every table or column added by a migration in the change queried by production code in src/ in the same PR?",
+          "statement": "Every table or column added by a migration in the change is queried by production code in src/ in the same PR.",
           "kind": "judgment"
         },
         {
           "id": "PERF-002.Q03",
-          "question": "Is every one-time data backfill shipped as a versioned Alembic revision that runs it with op.execute()?",
+          "statement": "Every one-time data backfill is shipped as a versioned Alembic revision that runs it with op.execute().",
           "kind": "judgment"
         }
       ],
-      "evaluation_criteria": "1. Is every table or column added by a migration in the change written by production code in src/ in the same PR? 2. Is every table or column added by a migration in the change queried by production code in src/ in the same PR? 3. Is every one-time data backfill shipped as a versioned Alembic revision that runs it with op.execute()?",
+      "evaluation_criteria": "1. Every table or column added by a migration in the change is written by production code in src/ in the same PR. 2. Every table or column added by a migration in the change is queried by production code in src/ in the same PR. 3. Every one-time data backfill is shipped as a versioned Alembic revision that runs it with op.execute().",
       "bad_pattern": "# Hypothetical: a migration adds column future_flag to sessions and no code under src/ ever sets it"
     },
     {
@@ -835,11 +835,11 @@
       "criteria": [
         {
           "id": "PERF-003.Q01",
-          "question": "Does code that needs a subset of repository records get it with a filtered repository query instead of filtering a full fetch in memory, whenever an indexed query method or column exists?",
+          "statement": "Code that needs a subset of repository records gets it with a filtered repository query instead of filtering a full fetch in memory, whenever an indexed query method or column exists.",
           "kind": "judgment"
         }
       ],
-      "evaluation_criteria": "1. Does code that needs a subset of repository records get it with a filtered repository query instead of filtering a full fetch in memory, whenever an indexed query method or column exists?",
+      "evaluation_criteria": "1. Code that needs a subset of repository records gets it with a filtered repository query instead of filtering a full fetch in memory, whenever an indexed query method or column exists.",
       "bad_pattern": "paused = [s for s in db.sessions.list() if s.status == SessionStatus.PAUSED]  # fetches every session, then filters in Python although list(status=...) exists"
     },
     {
@@ -852,41 +852,41 @@
       "criteria": [
         {
           "id": "API-001.Q01",
-          "question": "Does every repository class that inserts a new record expose that operation as a public create() method?",
+          "statement": "Every repository class that inserts a new record exposes that operation as a public create() method.",
           "kind": "judgment"
         },
         {
           "id": "API-001.Q02",
-          "question": "Does every repository method that returns at most one record looked up by its identifying key have the name get?",
+          "statement": "Every repository method that returns at most one record looked up by its identifying key has the name get.",
           "kind": "judgment"
         },
         {
           "id": "API-001.Q03",
-          "question": "Does every repository method that returns a collection of records of one entity have the name list?",
+          "statement": "Every repository method that returns a collection of records of one entity has the name list.",
           "kind": "judgment"
         },
         {
           "id": "API-001.Q04",
-          "question": "Does every repository method that removes a record have the name delete?",
+          "statement": "Every repository method that removes a record has the name delete.",
           "kind": "judgment"
         },
         {
           "id": "API-001.Q05",
-          "question": "Does every repository method that persists changes to a whole existing record have the name save?",
+          "statement": "Every repository method that persists changes to a whole existing record has the name save.",
           "kind": "judgment"
         },
         {
           "id": "API-001.Q06",
-          "question": "Does every repository method named insert, add or upsert have a docstring or comment stating why a canonical verb does not fit?",
+          "statement": "Every repository method named insert, add or upsert has a docstring or comment stating why a canonical verb does not fit.",
           "kind": "judgment"
         },
         {
           "id": "API-001.Q07",
-          "question": "Do all repository classes that expose the same non-CRUD operation give it the same method name?",
+          "statement": "All repository classes that expose the same non-CRUD operation give it the same method name.",
           "kind": "judgment"
         }
       ],
-      "evaluation_criteria": "1. Does every repository class that inserts a new record expose that operation as a public create() method? 2. Does every repository method that returns at most one record looked up by its identifying key have the name get? 3. Does every repository method that returns a collection of records of one entity have the name list? 4. Does every repository method that removes a record have the name delete? 5. Does every repository method that persists changes to a whole existing record have the name save? 6. Does every repository method named insert, add or upsert have a docstring or comment stating why a canonical verb does not fit? 7. Do all repository classes that expose the same non-CRUD operation give it the same method name?",
+      "evaluation_criteria": "1. Every repository class that inserts a new record exposes that operation as a public create() method. 2. Every repository method that returns at most one record looked up by its identifying key has the name get. 3. Every repository method that returns a collection of records of one entity has the name list. 4. Every repository method that removes a record has the name delete. 5. Every repository method that persists changes to a whole existing record has the name save. 6. Every repository method named insert, add or upsert has a docstring or comment stating why a canonical verb does not fit. 7. All repository classes that expose the same non-CRUD operation give it the same method name.",
       "bad_pattern": "CostsRepository.record_token_usage(...) inserting a CostRecord while sibling repositories use create()"
     },
     {
@@ -902,16 +902,16 @@
       "criteria": [
         {
           "id": "API-002.Q01",
-          "question": "Does every query method that reads an entity report an invalid enum value or corrupt row, by raising or by returning a BaseResult error, whenever a sibling query method that reads that entity reports it?",
+          "statement": "Every query method that reads an entity reports an invalid enum value or corrupt row, by raising or by returning a BaseResult error, whenever a sibling query method that reads that entity reports it.",
           "kind": "judgment"
         },
         {
           "id": "API-002.Q02",
-          "question": "Does every except block in a query method re-raise or convert the caught error into a BaseResult error, instead of returning None or an empty value?",
+          "statement": "Every except block in a query method re-raises or converts the caught error into a BaseResult error, instead of returning None or an empty value.",
           "kind": "judgment"
         }
       ],
-      "evaluation_criteria": "1. Does every query method that reads an entity report an invalid enum value or corrupt row, by raising or by returning a BaseResult error, whenever a sibling query method that reads that entity reports it? 2. Does every except block in a query method re-raise or convert the caught error into a BaseResult error, instead of returning None or an empty value?",
+      "evaluation_criteria": "1. Every query method that reads an entity reports an invalid enum value or corrupt row, by raising or by returning a BaseResult error, whenever a sibling query method that reads that entity reports it. 2. Every except block in a query method re-raises or converts the caught error into a BaseResult error, instead of returning None or an empty value.",
       "bad_pattern": "list() raises on a row with an invalid status while get() returns None for the same row"
     },
     {
@@ -924,31 +924,31 @@
       "criteria": [
         {
           "id": "DRY-001.Q01",
-          "question": "Does every repository method that persists a record commit through BaseRepository._commit?",
+          "statement": "Every repository method that persists a record commits through BaseRepository._commit.",
           "kind": "judgment"
         },
         {
           "id": "DRY-001.Q02",
-          "question": "Does every repository method that deletes a single record delete it through BaseRepository._delete_where?",
+          "statement": "Every repository method that deletes a single record deletes it through BaseRepository._delete_where.",
           "kind": "judgment"
         },
         {
           "id": "DRY-001.Q03",
-          "question": "Is the rollback after a failed commit written only in BaseRepository?",
+          "statement": "The rollback after a failed commit is written only in BaseRepository.",
           "kind": "judgment"
         },
         {
           "id": "DRY-001.Q04",
-          "question": "Does every repository method obtain its session from BaseRepository.session()?",
+          "statement": "Every repository method obtains its session from BaseRepository.session().",
           "kind": "judgment"
         },
         {
           "id": "DRY-001.Q05",
-          "question": "Is every other transaction block shared by two or more repository classes defined once in BaseRepository?",
+          "statement": "Every other transaction block shared by two or more repository classes is defined once in BaseRepository.",
           "kind": "judgment"
         }
       ],
-      "evaluation_criteria": "1. Does every repository method that persists a record commit through BaseRepository._commit? 2. Does every repository method that deletes a single record delete it through BaseRepository._delete_where? 3. Is the rollback after a failed commit written only in BaseRepository? 4. Does every repository method obtain its session from BaseRepository.session()? 5. Is every other transaction block shared by two or more repository classes defined once in BaseRepository?",
+      "evaluation_criteria": "1. Every repository method that persists a record commits through BaseRepository._commit. 2. Every repository method that deletes a single record deletes it through BaseRepository._delete_where. 3. The rollback after a failed commit is written only in BaseRepository. 4. Every repository method obtains its session from BaseRepository.session(). 5. Every other transaction block shared by two or more repository classes is defined once in BaseRepository.",
       "bad_pattern": "session.add(record); session.commit()  # in a repository subclass"
     },
     {
@@ -961,11 +961,11 @@
       "criteria": [
         {
           "id": "DB-001.Q01",
-          "question": "Is every SQLModel Field that declares unique=True free of an index=True declaration?",
+          "statement": "Every SQLModel Field that declares unique=True is free of an index=True declaration.",
           "kind": "judgment"
         }
       ],
-      "evaluation_criteria": "1. Is every SQLModel Field that declares unique=True free of an index=True declaration?",
+      "evaluation_criteria": "1. Every SQLModel Field that declares unique=True is free of an index=True declaration.",
       "bad_pattern": "session_id: str = Field(unique=True, index=True)  # hypothetical: no field in models.py declares both"
     },
     {
@@ -978,31 +978,31 @@
       "criteria": [
         {
           "id": "DB-002.Q01",
-          "question": "Is every revision file that exists in the latest v* tag left unedited, unrenamed and undeleted?",
+          "statement": "Every revision file that exists in the latest v* tag is left unedited, unrenamed and undeleted.",
           "kind": "judgment"
         },
         {
           "id": "DB-002.Q02",
-          "question": "Does every new revision define both upgrade() and a downgrade() that has a real body rather than a bare `pass`?",
+          "statement": "Every new revision defines both upgrade() and a downgrade() that has a real body rather than a bare `pass`.",
           "kind": "judgment"
         },
         {
           "id": "DB-002.Q03",
-          "question": "Does every new revision avoid PRAGMA and sqlite_master?",
+          "statement": "Every new revision avoids PRAGMA and sqlite_master.",
           "kind": "judgment"
         },
         {
           "id": "DB-002.Q04",
-          "question": "Does every new revision make its column and constraint changes through op.batch_alter_table?",
+          "statement": "Every new revision makes its column and constraint changes through op.batch_alter_table.",
           "kind": "judgment"
         },
         {
           "id": "DB-002.Q05",
-          "question": "Does every new revision have both an upgrade test and a downgrade test in tests/core/db/test_migrations.py?",
+          "statement": "Every new revision has both an upgrade test and a downgrade test in tests/core/db/test_migrations.py.",
           "kind": "judgment"
         }
       ],
-      "evaluation_criteria": "1. Is every revision file that exists in the latest v* tag left unedited, unrenamed and undeleted? 2. Does every new revision define both upgrade() and a downgrade() that has a real body rather than a bare `pass`? 3. Does every new revision avoid PRAGMA and sqlite_master? 4. Does every new revision make its column and constraint changes through op.batch_alter_table? 5. Does every new revision have both an upgrade test and a downgrade test in tests/core/db/test_migrations.py?",
+      "evaluation_criteria": "1. Every revision file that exists in the latest v* tag is left unedited, unrenamed and undeleted. 2. Every new revision defines both upgrade() and a downgrade() that has a real body rather than a bare `pass`. 3. Every new revision avoids PRAGMA and sqlite_master. 4. Every new revision makes its column and constraint changes through op.batch_alter_table. 5. Every new revision has both an upgrade test and a downgrade test in tests/core/db/test_migrations.py.",
       "bad_pattern": "Editing 0001_initial_schema.py, which exists in the v0.6.0 tag, to change a column definition"
     },
     {
@@ -1015,31 +1015,31 @@
       "criteria": [
         {
           "id": "FS-001.Q01",
-          "question": "Is every write to a config or state file made through Filesystem.atomic_write_json or Filesystem.atomic_write_text?",
+          "statement": "Every write to a config or state file is made through Filesystem.atomic_write_json or Filesystem.atomic_write_text.",
           "kind": "judgment"
         },
         {
           "id": "FS-001.Q02",
-          "question": "Is every config or state file write free of a direct open(..., 'w') call?",
+          "statement": "Every config or state file write is free of a direct open(..., 'w') call.",
           "kind": "judgment"
         },
         {
           "id": "FS-001.Q03",
-          "question": "Is every config or state file write free of a direct Path.write_text call?",
+          "statement": "Every config or state file write is free of a direct Path.write_text call.",
           "kind": "judgment"
         },
         {
           "id": "FS-001.Q04",
-          "question": "Does each atomic write helper write to a .tmp sibling of the target and swap it into place with Path.replace?",
+          "statement": "Each atomic write helper writes to a .tmp sibling of the target and swaps it into place with Path.replace.",
           "kind": "judgment"
         },
         {
           "id": "FS-001.Q05",
-          "question": "Does each atomic write helper flush and call os.fsync on the temporary file before swapping it into place?",
+          "statement": "Each atomic write helper flushes and calls os.fsync on the temporary file before swapping it into place.",
           "kind": "judgment"
         }
       ],
-      "evaluation_criteria": "1. Is every write to a config or state file made through Filesystem.atomic_write_json or Filesystem.atomic_write_text? 2. Is every config or state file write free of a direct open(..., 'w') call? 3. Is every config or state file write free of a direct Path.write_text call? 4. Does each atomic write helper write to a .tmp sibling of the target and swap it into place with Path.replace? 5. Does each atomic write helper flush and call os.fsync on the temporary file before swapping it into place?",
+      "evaluation_criteria": "1. Every write to a config or state file is made through Filesystem.atomic_write_json or Filesystem.atomic_write_text. 2. Every config or state file write is free of a direct open(..., 'w') call. 3. Every config or state file write is free of a direct Path.write_text call. 4. Each atomic write helper writes to a .tmp sibling of the target and swaps it into place with Path.replace. 5. Each atomic write helper flushes and calls os.fsync on the temporary file before swapping it into place.",
       "bad_pattern": "with open(config_path, 'w') as f: json.dump(data, f)  # hypothetical in-place write"
     },
     {
@@ -1052,21 +1052,21 @@
       "criteria": [
         {
           "id": "FS-002.Q01",
-          "question": "Is every worktree, catalog or state mutation that can run in more than one process at once performed while holding the .dovo/.lock advisory lock?",
+          "statement": "Every worktree, catalog or state mutation that can run in more than one process at once is performed while holding the .dovo/.lock advisory lock.",
           "kind": "judgment"
         },
         {
           "id": "FS-002.Q02",
-          "question": "Is the lock acquired through WorkspaceLock from common/lock.py?",
+          "statement": "The lock is acquired through WorkspaceLock from common/lock.py.",
           "kind": "judgment"
         },
         {
           "id": "FS-002.Q03",
-          "question": "Is LockTimeoutError handled where the lock is acquired or by a caller that reports it?",
+          "statement": "LockTimeoutError is handled where the lock is acquired or by a caller that reports it.",
           "kind": "judgment"
         }
       ],
-      "evaluation_criteria": "1. Is every worktree, catalog or state mutation that can run in more than one process at once performed while holding the .dovo/.lock advisory lock? 2. Is the lock acquired through WorkspaceLock from common/lock.py? 3. Is LockTimeoutError handled where the lock is acquired or by a caller that reports it?",
+      "evaluation_criteria": "1. Every worktree, catalog or state mutation that can run in more than one process at once is performed while holding the .dovo/.lock advisory lock. 2. The lock is acquired through WorkspaceLock from common/lock.py. 3. LockTimeoutError is handled where the lock is acquired or by a caller that reports it.",
       "bad_pattern": "self.lifecycle.create(...)  # hypothetical: mutates the shared .dovo directory without acquiring the lock"
     },
     {
@@ -1079,21 +1079,21 @@
       "criteria": [
         {
           "id": "COMPAT-001.Q01",
-          "question": "Does the change leave every existing CLI command, subcommand, argument and flag usable as before, with no breaking rename or removal?",
+          "statement": "The change leaves every existing CLI command, subcommand, argument and flag usable as before, with no breaking rename or removal.",
           "kind": "judgment"
         },
         {
           "id": "COMPAT-001.Q02",
-          "question": "Does the change leave existing configuration files and blueprint YAML definitions (such as config.json keys and values) readable with the same meaning as before?",
+          "statement": "The change leaves existing configuration files and blueprint YAML definitions (such as config.json keys and values) readable with the same meaning as before.",
           "kind": "judgment"
         },
         {
           "id": "COMPAT-001.Q03",
-          "question": "Does the change leave the stable machine-readable output formats, such as the JSON event envelope, with the same field names and meaning as before?",
+          "statement": "The change leaves the stable machine-readable output formats, such as the JSON event envelope, with the same field names and meaning as before.",
           "kind": "judgment"
         }
       ],
-      "evaluation_criteria": "1. Does the change leave every existing CLI command, subcommand, argument and flag usable as before, with no breaking rename or removal? 2. Does the change leave existing configuration files and blueprint YAML definitions (such as config.json keys and values) readable with the same meaning as before? 3. Does the change leave the stable machine-readable output formats, such as the JSON event envelope, with the same field names and meaning as before?",
+      "evaluation_criteria": "1. The change leaves every existing CLI command, subcommand, argument and flag usable as before, with no breaking rename or removal. 2. The change leaves existing configuration files and blueprint YAML definitions (such as config.json keys and values) readable with the same meaning as before. 3. The change leaves the stable machine-readable output formats, such as the JSON event envelope, with the same field names and meaning as before.",
       "bad_pattern": "# hypothetical: renaming the --path option to --workspace without keeping --path as an alias"
     },
     {
@@ -1106,21 +1106,21 @@
       "criteria": [
         {
           "id": "COMPAT-002.Q01",
-          "question": "Is the change free of backwards-compatibility aliases that keep an old internal name pointing at a renamed symbol?",
+          "statement": "The change is free of backwards-compatibility aliases that keep an old internal name pointing at a renamed symbol.",
           "kind": "judgment"
         },
         {
           "id": "COMPAT-002.Q02",
-          "question": "Is the change free of deprecated or compatibility properties, wrapper methods and shim layers that exist only to keep an old internal interface working?",
+          "statement": "The change is free of deprecated or compatibility properties, wrapper methods and shim layers that exist only to keep an old internal interface working.",
           "kind": "judgment"
         },
         {
           "id": "COMPAT-002.Q03",
-          "question": "Were all internal callers and tests updated directly to the new name when an internal symbol was renamed?",
+          "statement": "All internal callers and tests were updated directly to the new name when an internal symbol was renamed.",
           "kind": "judgment"
         }
       ],
-      "evaluation_criteria": "1. Is the change free of backwards-compatibility aliases that keep an old internal name pointing at a renamed symbol? 2. Is the change free of deprecated or compatibility properties, wrapper methods and shim layers that exist only to keep an old internal interface working? 3. Were all internal callers and tests updated directly to the new name when an internal symbol was renamed?",
+      "evaluation_criteria": "1. The change is free of backwards-compatibility aliases that keep an old internal name pointing at a renamed symbol. 2. The change is free of deprecated or compatibility properties, wrapper methods and shim layers that exist only to keep an old internal interface working. 3. All internal callers and tests were updated directly to the new name when an internal symbol was renamed.",
       "bad_pattern": "Hypothetical: after renaming _unlock_fd, the module keeps the line \"_unlock = _unlock_fd  # internal shim alias\"."
     },
     {
@@ -1133,26 +1133,26 @@
       "criteria": [
         {
           "id": "COMPAT-003.Q01",
-          "question": "Does the change leave a single implementation of the behavior it replaces, with no superseded implementation kept alongside the new one?",
+          "statement": "The change leaves a single implementation of the behavior it replaces, with no superseded implementation kept alongside the new one.",
           "kind": "judgment"
         },
         {
           "id": "COMPAT-003.Q02",
-          "question": "Does the change avoid adding a fallback branch or fallback adapter that routes to a superseded path?",
+          "statement": "The change avoids adding a fallback branch or fallback adapter that routes to a superseded path.",
           "kind": "judgment"
         },
         {
           "id": "COMPAT-003.Q03",
-          "question": "Does the change avoid planning a deprecation window for a superseded path?",
+          "statement": "The change avoids planning a deprecation window for a superseded path.",
           "kind": "judgment"
         },
         {
           "id": "COMPAT-003.Q04",
-          "question": "Are all callers of a superseded path updated in the same change set that replaces it?",
+          "statement": "All callers of a superseded path are updated in the same change set that replaces it.",
           "kind": "judgment"
         }
       ],
-      "evaluation_criteria": "1. Does the change leave a single implementation of the behavior it replaces, with no superseded implementation kept alongside the new one? 2. Does the change avoid adding a fallback branch or fallback adapter that routes to a superseded path? 3. Does the change avoid planning a deprecation window for a superseded path? 4. Are all callers of a superseded path updated in the same change set that replaces it?",
+      "evaluation_criteria": "1. The change leaves a single implementation of the behavior it replaces, with no superseded implementation kept alongside the new one. 2. The change avoids adding a fallback branch or fallback adapter that routes to a superseded path. 3. The change avoids planning a deprecation window for a superseded path. 4. All callers of a superseded path are updated in the same change set that replaces it.",
       "bad_pattern": "# hypothetical: LegacyLoader stays in the tree beside UnifiedLoader and both remain reachable"
     },
     {
@@ -1165,31 +1165,31 @@
       "criteria": [
         {
           "id": "TEST-001.Q01",
-          "question": "Does every assertion check a deliberate contract, such as a BaseResult object, an exact JSON dict, an exit code, a file on disk or a git ref?",
+          "statement": "Every assertion checks a deliberate contract, such as a BaseResult object, an exact JSON dict, an exit code, a file on disk or a git ref.",
           "kind": "judgment"
         },
         {
           "id": "TEST-001.Q02",
-          "question": "Do the assertions avoid reading private helpers and private attributes of the code under test?",
+          "statement": "The assertions avoid reading private helpers and private attributes of the code under test.",
           "kind": "judgment"
         },
         {
           "id": "TEST-001.Q03",
-          "question": "Do the assertions avoid asserting mock call counts and call ordering?",
+          "statement": "The assertions avoid asserting mock call counts and call ordering.",
           "kind": "judgment"
         },
         {
           "id": "TEST-001.Q04",
-          "question": "Do the assertions avoid pinning rendered layout, such as exact spacing, column widths or box-drawing?",
+          "statement": "The assertions avoid pinning rendered layout, such as exact spacing, column widths or box-drawing.",
           "kind": "judgment"
         },
         {
           "id": "TEST-001.Q05",
-          "question": "Do the assertions avoid checking how a constructor assigned its arguments to attributes?",
+          "statement": "The assertions avoid checking how a constructor assigned its arguments to attributes.",
           "kind": "judgment"
         }
       ],
-      "evaluation_criteria": "1. Does every assertion check a deliberate contract, such as a BaseResult object, an exact JSON dict, an exit code, a file on disk or a git ref? 2. Do the assertions avoid reading private helpers and private attributes of the code under test? 3. Do the assertions avoid asserting mock call counts and call ordering? 4. Do the assertions avoid pinning rendered layout, such as exact spacing, column widths or box-drawing? 5. Do the assertions avoid checking how a constructor assigned its arguments to attributes?",
+      "evaluation_criteria": "1. Every assertion checks a deliberate contract, such as a BaseResult object, an exact JSON dict, an exit code, a file on disk or a git ref. 2. The assertions avoid reading private helpers and private attributes of the code under test. 3. The assertions avoid asserting mock call counts and call ordering. 4. The assertions avoid pinning rendered layout, such as exact spacing, column widths or box-drawing. 5. The assertions avoid checking how a constructor assigned its arguments to attributes.",
       "bad_pattern": "assert service._internal_cache_size == 1  # hypothetical: an internal cache is not a contract"
     },
     {
@@ -1202,56 +1202,56 @@
       "criteria": [
         {
           "id": "TEST-002.Q01",
-          "question": "Does each src/dovo/common/<m>.py module have its tests in tests/common/test_<m>.py?",
+          "statement": "Each src/dovo/common/<m>.py module has its tests in tests/common/test_<m>.py.",
           "kind": "judgment"
         },
         {
           "id": "TEST-002.Q02",
-          "question": "Does each src/dovo/core/<domain>/<m>.py module have its tests in tests/core/<domain>/test_<m>.py?",
+          "statement": "Each src/dovo/core/<domain>/<m>.py module has its tests in tests/core/<domain>/test_<m>.py.",
           "kind": "judgment"
         },
         {
           "id": "TEST-002.Q03",
-          "question": "Does each src/dovo/engine/<m>.py module have its tests in tests/engine/test_<m>.py, with the executors/ and services/ subpackages mirrored as tests/engine/executors/ and tests/engine/services/?",
+          "statement": "Each src/dovo/engine/<m>.py module has its tests in tests/engine/test_<m>.py, with the executors/ and services/ subpackages mirrored as tests/engine/executors/ and tests/engine/services/.",
           "kind": "judgment"
         },
         {
           "id": "TEST-002.Q04",
-          "question": "Does each src/dovo/cli/ui/formatters/<domain>/<name>.py module have its tests in tests/cli/ui/formatters/<domain>/test_<name>.py?",
+          "statement": "Each src/dovo/cli/ui/formatters/<domain>/<name>.py module has its tests in tests/cli/ui/formatters/<domain>/test_<name>.py.",
           "kind": "judgment"
         },
         {
           "id": "TEST-002.Q05",
-          "question": "Does each src/dovo/cli/<command>/commands/<action>.py module have its tests in tests/cli/<command>/test_<command>_<action>.py, nested under its own tests/cli/<command>/ subdirectory with the commands/ level collapsed?",
+          "statement": "Each src/dovo/cli/<command>/commands/<action>.py module has its tests in tests/cli/<command>/test_<command>_<action>.py, nested under its own tests/cli/<command>/ subdirectory with the commands/ level collapsed.",
           "kind": "judgment"
         },
         {
           "id": "TEST-002.Q06",
-          "question": "Is there one test file per CLI command action, rather than one file per command domain?",
+          "statement": "There is one test file per CLI command action, rather than one file per command domain.",
           "kind": "judgment"
         },
         {
           "id": "TEST-002.Q07",
-          "question": "Is every test file free of grouping several formatters or several domains into one part-numbered or collapsed file?",
+          "statement": "No test file groups several formatters or several domains into one part-numbered or collapsed file.",
           "kind": "judgment"
         },
         {
           "id": "TEST-002.Q08",
-          "question": "Does every test directory carry an __init__.py?",
+          "statement": "Every test directory carries an __init__.py.",
           "kind": "judgment"
         },
         {
           "id": "TEST-002.Q09",
-          "question": "Does each per-domain conftest.py hold only fixtures that its own domain's test files share, and none that another domain needs?",
+          "statement": "Each per-domain conftest.py holds only fixtures that its own domain's test files share, and none that another domain needs.",
           "kind": "judgment"
         },
         {
           "id": "TEST-002.Q10",
-          "question": "Does every source module have a corresponding test file at its mirrored path, with no exemption list?",
+          "statement": "Every source module has a corresponding test file at its mirrored path, with no exemption list.",
           "kind": "judgment"
         }
       ],
-      "evaluation_criteria": "1. Does each src/dovo/common/<m>.py module have its tests in tests/common/test_<m>.py? 2. Does each src/dovo/core/<domain>/<m>.py module have its tests in tests/core/<domain>/test_<m>.py? 3. Does each src/dovo/engine/<m>.py module have its tests in tests/engine/test_<m>.py, with the executors/ and services/ subpackages mirrored as tests/engine/executors/ and tests/engine/services/? 4. Does each src/dovo/cli/ui/formatters/<domain>/<name>.py module have its tests in tests/cli/ui/formatters/<domain>/test_<name>.py? 5. Does each src/dovo/cli/<command>/commands/<action>.py module have its tests in tests/cli/<command>/test_<command>_<action>.py, nested under its own tests/cli/<command>/ subdirectory with the commands/ level collapsed? 6. Is there one test file per CLI command action, rather than one file per command domain? 7. Is every test file free of grouping several formatters or several domains into one part-numbered or collapsed file? 8. Does every test directory carry an __init__.py? 9. Does each per-domain conftest.py hold only fixtures that its own domain's test files share, and none that another domain needs? 10. Does every source module have a corresponding test file at its mirrored path, with no exemption list?",
+      "evaluation_criteria": "1. Each src/dovo/common/<m>.py module has its tests in tests/common/test_<m>.py. 2. Each src/dovo/core/<domain>/<m>.py module has its tests in tests/core/<domain>/test_<m>.py. 3. Each src/dovo/engine/<m>.py module has its tests in tests/engine/test_<m>.py, with the executors/ and services/ subpackages mirrored as tests/engine/executors/ and tests/engine/services/. 4. Each src/dovo/cli/ui/formatters/<domain>/<name>.py module has its tests in tests/cli/ui/formatters/<domain>/test_<name>.py. 5. Each src/dovo/cli/<command>/commands/<action>.py module has its tests in tests/cli/<command>/test_<command>_<action>.py, nested under its own tests/cli/<command>/ subdirectory with the commands/ level collapsed. 6. There is one test file per CLI command action, rather than one file per command domain. 7. No test file groups several formatters or several domains into one part-numbered or collapsed file. 8. Every test directory carries an __init__.py. 9. Each per-domain conftest.py holds only fixtures that its own domain's test files share, and none that another domain needs. 10. Every source module has a corresponding test file at its mirrored path, with no exemption list.",
       "bad_pattern": "tests/common/test_locking_helpers.py  # hypothetical: covers src/dovo/common/lock.py under a name that does not mirror the module"
     },
     {
@@ -1264,26 +1264,26 @@
       "criteria": [
         {
           "id": "TEST-003.Q01",
-          "question": "Is every test class named with the suffix Tests?",
+          "statement": "Every test class is named with the suffix Tests.",
           "kind": "judgment"
         },
         {
           "id": "TEST-003.Q02",
-          "question": "Does every test method follow the test_<condition>_<outcome> pattern, naming both the condition and the expected outcome?",
+          "statement": "Every test method follows the test_<condition>_<outcome> pattern, naming both the condition and the expected outcome.",
           "kind": "judgment"
         },
         {
           "id": "TEST-003.Q03",
-          "question": "Is every test method name free of the banned vague names test_ok, test_success, test_present, test_missing, test_blank, test_basic, test_default, test_works, test_timeout, test_no_op and test_help?",
+          "statement": "Every test method name is free of the banned vague names test_ok, test_success, test_present, test_missing, test_blank, test_basic, test_default, test_works, test_timeout, test_no_op and test_help.",
           "kind": "judgment"
         },
         {
           "id": "TEST-003.Q04",
-          "question": "Is every test method name free of a should prefix?",
+          "statement": "Every test method name is free of a should prefix.",
           "kind": "judgment"
         }
       ],
-      "evaluation_criteria": "1. Is every test class named with the suffix Tests? 2. Does every test method follow the test_<condition>_<outcome> pattern, naming both the condition and the expected outcome? 3. Is every test method name free of the banned vague names test_ok, test_success, test_present, test_missing, test_blank, test_basic, test_default, test_works, test_timeout, test_no_op and test_help? 4. Is every test method name free of a should prefix?",
+      "evaluation_criteria": "1. Every test class is named with the suffix Tests. 2. Every test method follows the test_<condition>_<outcome> pattern, naming both the condition and the expected outcome. 3. Every test method name is free of the banned vague names test_ok, test_success, test_present, test_missing, test_blank, test_basic, test_default, test_works, test_timeout, test_no_op and test_help. 4. Every test method name is free of a should prefix.",
       "bad_pattern": "class TestConfig:  # hypothetical: prefix naming instead of the *Tests suffix"
     },
     {
@@ -1296,51 +1296,51 @@
       "criteria": [
         {
           "id": "TEST-004.Q01",
-          "question": "Does every CLI command action have at least one *CliIntegrationTests suite that invokes the command through runner.invoke?",
+          "statement": "Every CLI command action has at least one *CliIntegrationTests suite that invokes the command through runner.invoke.",
           "kind": "judgment"
         },
         {
           "id": "TEST-004.Q02",
-          "question": "Does the integration suite include a happy-path test with default arguments that asserts exit code 0?",
+          "statement": "The integration suite includes a happy-path test with default arguments that asserts exit code 0.",
           "kind": "judgment"
         },
         {
           "id": "TEST-004.Q03",
-          "question": "Is every declared Typer option, flag and argument of the command exercised in at least one invocation, verifying input binding and propagation to the domain layer?",
+          "statement": "Every declared Typer option, flag and argument of the command is exercised in at least one invocation, verifying input binding and propagation to the domain layer.",
           "kind": "judgment"
         },
         {
           "id": "TEST-004.Q04",
-          "question": "Does the integration suite avoid duplicating domain branch matrices, limiting its binding checks to what the CLI layer adds?",
+          "statement": "The integration suite avoids duplicating domain branch matrices, limiting its binding checks to what the CLI layer adds.",
           "kind": "judgment"
         },
         {
           "id": "TEST-004.Q05",
-          "question": "Does the integration suite include a failure-path test that asserts the expected non-zero exit code when the domain returns a non-ok result?",
+          "statement": "The integration suite includes a failure-path test that asserts the expected non-zero exit code when the domain returns a non-ok result.",
           "kind": "judgment"
         },
         {
           "id": "TEST-004.Q06",
-          "question": "Does the integration suite include a test invoking the command with --format json that asserts the emitted payload matches the wire schema?",
+          "statement": "The integration suite includes a test invoking the command with --format json that asserts the emitted payload matches the wire schema.",
           "kind": "judgment"
         },
         {
           "id": "TEST-004.Q07",
-          "question": "Is every interactive confirmation or abort branch of the command exercised by the integration suite?",
+          "statement": "Every interactive confirmation or abort branch of the command is exercised by the integration suite.",
           "kind": "judgment"
         },
         {
           "id": "TEST-004.Q08",
-          "question": "Is every *RootTests suite written for a handler that owns logic the domain layer does not, such as input coercion, branch selection across services, result composition from more than one call, or an interactive abort path?",
+          "statement": "Every *RootTests suite is written for a handler that owns logic the domain layer does not, such as input coercion, branch selection across services, result composition from more than one call, or an interactive abort path.",
           "kind": "judgment"
         },
         {
           "id": "TEST-004.Q09",
-          "question": "Does every *RootTests suite avoid restating a contract already asserted under tests/core/ for the same result type?",
+          "statement": "Every *RootTests suite avoids restating a contract already asserted under tests/core/ for the same result type.",
           "kind": "judgment"
         }
       ],
-      "evaluation_criteria": "1. Does every CLI command action have at least one *CliIntegrationTests suite that invokes the command through runner.invoke? 2. Does the integration suite include a happy-path test with default arguments that asserts exit code 0? 3. Is every declared Typer option, flag and argument of the command exercised in at least one invocation, verifying input binding and propagation to the domain layer? 4. Does the integration suite avoid duplicating domain branch matrices, limiting its binding checks to what the CLI layer adds? 5. Does the integration suite include a failure-path test that asserts the expected non-zero exit code when the domain returns a non-ok result? 6. Does the integration suite include a test invoking the command with --format json that asserts the emitted payload matches the wire schema? 7. Is every interactive confirmation or abort branch of the command exercised by the integration suite? 8. Is every *RootTests suite written for a handler that owns logic the domain layer does not, such as input coercion, branch selection across services, result composition from more than one call, or an interactive abort path? 9. Does every *RootTests suite avoid restating a contract already asserted under tests/core/ for the same result type?",
+      "evaluation_criteria": "1. Every CLI command action has at least one *CliIntegrationTests suite that invokes the command through runner.invoke. 2. The integration suite includes a happy-path test with default arguments that asserts exit code 0. 3. Every declared Typer option, flag and argument of the command is exercised in at least one invocation, verifying input binding and propagation to the domain layer. 4. The integration suite avoids duplicating domain branch matrices, limiting its binding checks to what the CLI layer adds. 5. The integration suite includes a failure-path test that asserts the expected non-zero exit code when the domain returns a non-ok result. 6. The integration suite includes a test invoking the command with --format json that asserts the emitted payload matches the wire schema. 7. Every interactive confirmation or abort branch of the command is exercised by the integration suite. 8. Every *RootTests suite is written for a handler that owns logic the domain layer does not, such as input coercion, branch selection across services, result composition from more than one call, or an interactive abort path. 9. Every *RootTests suite avoids restating a contract already asserted under tests/core/ for the same result type.",
       "bad_pattern": "A command action whose only tests are a *RootTests suite calling the handler directly (hypothetical: no runner.invoke suite exists for it)"
     },
     {
@@ -1353,56 +1353,56 @@
       "criteria": [
         {
           "id": "TEST-005.Q01",
-          "question": "Is every formatter under cli/ui/formatters/<domain>/ tested in its own file at tests/cli/ui/formatters/<domain>/test_<name>.py?",
+          "statement": "Every formatter under cli/ui/formatters/<domain>/ is tested in its own file at tests/cli/ui/formatters/<domain>/test_<name>.py.",
           "kind": "judgment"
         },
         {
           "id": "TEST-005.Q02",
-          "question": "Is the formatter tested through cases built from FormatterCase, each holding the input data, the expected view and the render expectations?",
+          "statement": "The formatter is tested through cases built from FormatterCase, each holding the input data, the expected view and the render expectations.",
           "kind": "judgment"
         },
         {
           "id": "TEST-005.Q03",
-          "question": "Does a test assert that transform equals the expected view for a formatter that derives a view model from its input?",
+          "statement": "A test asserts that transform equals the expected view for a formatter that derives a view model from its input.",
           "kind": "judgment"
         },
         {
           "id": "TEST-005.Q04",
-          "question": "Is the JSON wire format asserted as an exact literal dict?",
+          "statement": "The JSON wire format is asserted as an exact literal dict.",
           "kind": "judgment"
         },
         {
           "id": "TEST-005.Q05",
-          "question": "Is the JSON wire format pinned at both a fully populated state and an empty or sparse boundary state?",
+          "statement": "The JSON wire format is pinned at both a fully populated state and an empty or sparse boundary state.",
           "kind": "judgment"
         },
         {
           "id": "TEST-005.Q06",
-          "question": "Is the Rich render asserted at the pinned width of 160 columns?",
+          "statement": "The Rich render is asserted at the pinned width of 160 columns.",
           "kind": "judgment"
         },
         {
           "id": "TEST-005.Q07",
-          "question": "Is every expected string in the render test a semantic value taken from case.view, and never a label, border, glyph, padding or full sentence?",
+          "statement": "Every expected string in the render test is a semantic value taken from case.view, and never a label, border, glyph, padding or full sentence.",
           "kind": "judgment"
         },
         {
           "id": "TEST-005.Q08",
-          "question": "Does a formatter with no derived view model omit the transform test while keeping both the JSON and the render test?",
+          "statement": "A formatter with no derived view model omits the transform test while keeping both the JSON and the render test.",
           "kind": "judgment"
         },
         {
           "id": "TEST-005.Q09",
-          "question": "Is the change free of an alias such as SomeView = SomeEvent introduced to manufacture a third test for an identity formatter?",
+          "statement": "The change is free of an alias such as SomeView = SomeEvent introduced to manufacture a third test for an identity formatter.",
           "kind": "judgment"
         },
         {
           "id": "TEST-005.Q10",
-          "question": "Is the change free of an assertion that to_json_serializable(data) equals transform(data).model_dump()?",
+          "statement": "The change is free of an assertion that to_json_serializable(data) equals transform(data).model_dump().",
           "kind": "judgment"
         }
       ],
-      "evaluation_criteria": "1. Is every formatter under cli/ui/formatters/<domain>/ tested in its own file at tests/cli/ui/formatters/<domain>/test_<name>.py? 2. Is the formatter tested through cases built from FormatterCase, each holding the input data, the expected view and the render expectations? 3. Does a test assert that transform equals the expected view for a formatter that derives a view model from its input? 4. Is the JSON wire format asserted as an exact literal dict? 5. Is the JSON wire format pinned at both a fully populated state and an empty or sparse boundary state? 6. Is the Rich render asserted at the pinned width of 160 columns? 7. Is every expected string in the render test a semantic value taken from case.view, and never a label, border, glyph, padding or full sentence? 8. Does a formatter with no derived view model omit the transform test while keeping both the JSON and the render test? 9. Is the change free of an alias such as SomeView = SomeEvent introduced to manufacture a third test for an identity formatter? 10. Is the change free of an assertion that to_json_serializable(data) equals transform(data).model_dump()?",
+      "evaluation_criteria": "1. Every formatter under cli/ui/formatters/<domain>/ is tested in its own file at tests/cli/ui/formatters/<domain>/test_<name>.py. 2. The formatter is tested through cases built from FormatterCase, each holding the input data, the expected view and the render expectations. 3. A test asserts that transform equals the expected view for a formatter that derives a view model from its input. 4. The JSON wire format is asserted as an exact literal dict. 5. The JSON wire format is pinned at both a fully populated state and an empty or sparse boundary state. 6. The Rich render is asserted at the pinned width of 160 columns. 7. Every expected string in the render test is a semantic value taken from case.view, and never a label, border, glyph, padding or full sentence. 8. A formatter with no derived view model omits the transform test while keeping both the JSON and the render test. 9. The change is free of an alias such as SomeView = SomeEvent introduced to manufacture a third test for an identity formatter. 10. The change is free of an assertion that to_json_serializable(data) equals transform(data).model_dump().",
       "bad_pattern": "DovoStatusFormatter tested only inside a shared tests/cli/ui/formatters/test_all_formatters.py (hypothetical file)"
     },
     {
@@ -1415,26 +1415,26 @@
       "criteria": [
         {
           "id": "TEST-006.Q01",
-          "question": "Are variations of the same contract or function (input variants, polymorphic target types, invalid payload permutations) covered by one parameterized test rather than by copy-pasted or near-identical sibling test methods?",
+          "statement": "Variations of the same contract or function (input variants, polymorphic target types, invalid payload permutations) are covered by one parameterized test rather than by copy-pasted or near-identical sibling test methods.",
           "kind": "judgment"
         },
         {
           "id": "TEST-006.Q02",
-          "question": "Is each test free of `for` loops and stacked assertions that iterate over scenarios?",
+          "statement": "Each test is free of `for` loops and stacked assertions that iterate over scenarios.",
           "kind": "judgment"
         },
         {
           "id": "TEST-006.Q03",
-          "question": "Does every parameterized case use pytest.param with an explicit, readable id label?",
+          "statement": "Every parameterized case uses pytest.param with an explicit, readable id label.",
           "kind": "judgment"
         },
         {
           "id": "TEST-006.Q04",
-          "question": "Are separate test methods used only where the cases have fundamentally distinct lifecycles, differing fixture requirements or divergent assertion contracts?",
+          "statement": "Separate test methods are used only where the cases have fundamentally distinct lifecycles, differing fixture requirements or divergent assertion contracts.",
           "kind": "judgment"
         }
       ],
-      "evaluation_criteria": "1. Are variations of the same contract or function (input variants, polymorphic target types, invalid payload permutations) covered by one parameterized test rather than by copy-pasted or near-identical sibling test methods? 2. Is each test free of `for` loops and stacked assertions that iterate over scenarios? 3. Does every parameterized case use pytest.param with an explicit, readable id label? 4. Are separate test methods used only where the cases have fundamentally distinct lifecycles, differing fixture requirements or divergent assertion contracts?",
+      "evaluation_criteria": "1. Variations of the same contract or function (input variants, polymorphic target types, invalid payload permutations) are covered by one parameterized test rather than by copy-pasted or near-identical sibling test methods. 2. Each test is free of `for` loops and stacked assertions that iterate over scenarios. 3. Every parameterized case uses pytest.param with an explicit, readable id label. 4. Separate test methods are used only where the cases have fundamentally distinct lifecycles, differing fixture requirements or divergent assertion contracts.",
       "bad_pattern": "def test_eval_model(self): ...; def test_eval_dict(self): ...  # hypothetical: duplicate sibling methods that differ only by target type"
     },
     {
@@ -1447,41 +1447,41 @@
       "criteria": [
         {
           "id": "TEST-007.Q01",
-          "question": "Does every field assertion in a scenario test check a field that carries the scenario's domain outcome rather than an incidental envelope field or default?",
+          "statement": "Every field assertion in a scenario test checks a field that carries the scenario's domain outcome rather than an incidental envelope field or default.",
           "kind": "judgment"
         },
         {
           "id": "TEST-007.Q02",
-          "question": "Does each scenario or integration test of a specific behavior or error condition use targeted field assertions instead of whole-model equality?",
+          "statement": "Each scenario or integration test of a specific behavior or error condition uses targeted field assertions instead of whole-model equality.",
           "kind": "judgment"
         },
         {
           "id": "TEST-007.Q03",
-          "question": "Does each new or modified model with defaults or a serialization contract have a dedicated contract test in tests/common/ or tests/core/*/test_models.py that asserts them?",
+          "statement": "Each new or modified model with defaults or a serialization contract has a dedicated contract test in tests/common/ or tests/core/*/test_models.py that asserts them.",
           "kind": "judgment"
         },
         {
           "id": "TEST-007.Q04",
-          "question": "Are model shape, default values and serialization asserted only in dedicated contract tests rather than in scenario or integration tests?",
+          "statement": "Model shape, default values and serialization are asserted only in dedicated contract tests rather than in scenario or integration tests.",
           "kind": "judgment"
         },
         {
           "id": "TEST-007.Q05",
-          "question": "Does each model have at most two dedicated contract tests?",
+          "statement": "Each model has at most two dedicated contract tests.",
           "kind": "judgment"
         },
         {
           "id": "TEST-007.Q06",
-          "question": "Does each test of a wire payload with a published schema contract, such as a CLI JSON formatter, verify the exact wire payload?",
+          "statement": "Each test of a wire payload with a published schema contract, such as a CLI JSON formatter, verifies the exact wire payload.",
           "kind": "judgment"
         },
         {
           "id": "TEST-007.Q07",
-          "question": "Does each test avoid faux-matchers such as ANY_TIMESTAMP and ANY_UUID where their only purpose is to satisfy whole-object matching on database records or unowned system state?",
+          "statement": "Each test avoids faux-matchers such as ANY_TIMESTAMP and ANY_UUID where their only purpose is to satisfy whole-object matching on database records or unowned system state.",
           "kind": "judgment"
         }
       ],
-      "evaluation_criteria": "1. Does every field assertion in a scenario test check a field that carries the scenario's domain outcome rather than an incidental envelope field or default? 2. Does each scenario or integration test of a specific behavior or error condition use targeted field assertions instead of whole-model equality? 3. Does each new or modified model with defaults or a serialization contract have a dedicated contract test in tests/common/ or tests/core/*/test_models.py that asserts them? 4. Are model shape, default values and serialization asserted only in dedicated contract tests rather than in scenario or integration tests? 5. Does each model have at most two dedicated contract tests? 6. Does each test of a wire payload with a published schema contract, such as a CLI JSON formatter, verify the exact wire payload? 7. Does each test avoid faux-matchers such as ANY_TIMESTAMP and ANY_UUID where their only purpose is to satisfy whole-object matching on database records or unowned system state?",
+      "evaluation_criteria": "1. Every field assertion in a scenario test checks a field that carries the scenario's domain outcome rather than an incidental envelope field or default. 2. Each scenario or integration test of a specific behavior or error condition uses targeted field assertions instead of whole-model equality. 3. Each new or modified model with defaults or a serialization contract has a dedicated contract test in tests/common/ or tests/core/*/test_models.py that asserts them. 4. Model shape, default values and serialization are asserted only in dedicated contract tests rather than in scenario or integration tests. 5. Each model has at most two dedicated contract tests. 6. Each test of a wire payload with a published schema contract, such as a CLI JSON formatter, verifies the exact wire payload. 7. Each test avoids faux-matchers such as ANY_TIMESTAMP and ANY_UUID where their only purpose is to satisfy whole-object matching on database records or unowned system state.",
       "bad_pattern": "assert result.status == WorktreeDiffStatus.NOT_FOUND; assert result.error_code is None; assert result.warnings == []; assert result.fixes == []  # incidental defaults in a not-found scenario"
     },
     {
@@ -1494,16 +1494,16 @@
       "criteria": [
         {
           "id": "TEST-008.Q01",
-          "question": "Does every test double or stub inherit from a type production actually passes or satisfy a typing.Protocol production is typed against?",
+          "statement": "Every test double or stub inherits from a type production actually passes or satisfies a typing.Protocol production is typed against.",
           "kind": "judgment"
         },
         {
           "id": "TEST-008.Q02",
-          "question": "Is every test double free of an interface built as the union of the attributes from every branch of a hasattr chain?",
+          "statement": "Every test double is free of an interface built as the union of the attributes from every branch of a hasattr chain.",
           "kind": "judgment"
         }
       ],
-      "evaluation_criteria": "1. Does every test double or stub inherit from a type production actually passes or satisfy a typing.Protocol production is typed against? 2. Is every test double free of an interface built as the union of the attributes from every branch of a hasattr chain?",
+      "evaluation_criteria": "1. Every test double or stub inherits from a type production actually passes or satisfies a typing.Protocol production is typed against. 2. Every test double is free of an interface built as the union of the attributes from every branch of a hasattr chain.",
       "bad_pattern": "class MockAdapter: def __getattr__(self, name): return MagicMock()  # hypothetical: matches no production type or Protocol"
     },
     {
@@ -1516,16 +1516,16 @@
       "criteria": [
         {
           "id": "TEST-009.Q01",
-          "question": "Is the test suite free of negative existence assertions such as assert not hasattr(module, name)?",
+          "statement": "The test suite is free of negative existence assertions such as assert not hasattr(module, name).",
           "kind": "judgment"
         },
         {
           "id": "TEST-009.Q02",
-          "question": "Were the tests that called a function, class or alias deleted in the same change that removed it from production?",
+          "statement": "The tests that called a function, class or alias were deleted in the same change that removed it from production.",
           "kind": "judgment"
         }
       ],
-      "evaluation_criteria": "1. Is the test suite free of negative existence assertions such as assert not hasattr(module, name)? 2. Were the tests that called a function, class or alias deleted in the same change that removed it from production?",
+      "evaluation_criteria": "1. The test suite is free of negative existence assertions such as assert not hasattr(module, name). 2. The tests that called a function, class or alias were deleted in the same change that removed it from production.",
       "bad_pattern": "assert not hasattr(filesystem, \"old_helper\")  # hypothetical: proves a removed helper stays removed"
     },
     {
@@ -1538,16 +1538,16 @@
       "criteria": [
         {
           "id": "TEST-010.Q01",
-          "question": "Does every test check a concrete value or effect beyond `assert x is not None`, so that `assert x is not None` is never its only assertion?",
+          "statement": "Every test checks a concrete value or effect beyond `assert x is not None`, so that `assert x is not None` is never its only assertion.",
           "kind": "judgment"
         },
         {
           "id": "TEST-010.Q02",
-          "question": "Is isinstance used in a test only where it distinguishes two real code paths, rather than repeating what basedpyright already proves?",
+          "statement": "isinstance is used in a test only where it distinguishes two real code paths, rather than repeating what basedpyright already proves.",
           "kind": "judgment"
         }
       ],
-      "evaluation_criteria": "1. Does every test check a concrete value or effect beyond `assert x is not None`, so that `assert x is not None` is never its only assertion? 2. Is isinstance used in a test only where it distinguishes two real code paths, rather than repeating what basedpyright already proves?",
+      "evaluation_criteria": "1. Every test checks a concrete value or effect beyond `assert x is not None`, so that `assert x is not None` is never its only assertion. 2. isinstance is used in a test only where it distinguishes two real code paths, rather than repeating what basedpyright already proves.",
       "bad_pattern": "assert outcome is not None  # hypothetical: the only assertion in the test, so the test is unfinished"
     },
     {
@@ -1560,41 +1560,41 @@
       "criteria": [
         {
           "id": "TEST-011.Q01",
-          "question": "Is every test body free of hardcoded sleeps, other than a sleep inside the shared harness poll helper?",
+          "statement": "Every test body is free of hardcoded sleeps, other than a sleep inside the shared harness poll helper.",
           "kind": "judgment"
         },
         {
           "id": "TEST-011.Q02",
-          "question": "Do tests of retry or backoff intervals drive time through VirtualClock or a monkeypatched clock at the module boundary (time.monotonic, asyncio.sleep)?",
+          "statement": "Tests of retry or backoff intervals drive time through VirtualClock or a monkeypatched clock at the module boundary (time.monotonic, asyncio.sleep).",
           "kind": "judgment"
         },
         {
           "id": "TEST-011.Q03",
-          "question": "Does a retry test assert the resulting schedule rather than only that a retry eventually happened?",
+          "statement": "A retry test asserts the resulting schedule rather than only that a retry eventually happened.",
           "kind": "judgment"
         },
         {
           "id": "TEST-011.Q04",
-          "question": "Is the clock injected anywhere its output reaches a result field, so a time-dependent test asserts literal timestamps?",
+          "statement": "The clock is injected anywhere its output reaches a result field, so a time-dependent test asserts literal timestamps.",
           "kind": "judgment"
         },
         {
           "id": "TEST-011.Q05",
-          "question": "Are generated ids injected anywhere their output reaches a result field, so a test asserts literal ids?",
+          "statement": "Generated ids are injected anywhere their output reaches a result field, so a test asserts literal ids.",
           "kind": "judgment"
         },
         {
           "id": "TEST-011.Q06",
-          "question": "Is every wait on an operating system event with no virtual equivalent, such as a process group reaped after SIGKILL, done through a shared harness helper owning the poll interval and deadline, with no open-coded poll loop?",
+          "statement": "Every wait on an operating system event with no virtual equivalent, such as a process group reaped after SIGKILL, is done through a shared harness helper owning the poll interval and deadline, with no open-coded poll loop.",
           "kind": "judgment"
         },
         {
           "id": "TEST-011.Q07",
-          "question": "Does every test that spawns a process register it with the harness process registry, so a failing test cannot leak a process group?",
+          "statement": "Every test that spawns a process registers it with the harness process registry, so a failing test cannot leak a process group.",
           "kind": "judgment"
         }
       ],
-      "evaluation_criteria": "1. Is every test body free of hardcoded sleeps, other than a sleep inside the shared harness poll helper? 2. Do tests of retry or backoff intervals drive time through VirtualClock or a monkeypatched clock at the module boundary (time.monotonic, asyncio.sleep)? 3. Does a retry test assert the resulting schedule rather than only that a retry eventually happened? 4. Is the clock injected anywhere its output reaches a result field, so a time-dependent test asserts literal timestamps? 5. Are generated ids injected anywhere their output reaches a result field, so a test asserts literal ids? 6. Is every wait on an operating system event with no virtual equivalent, such as a process group reaped after SIGKILL, done through a shared harness helper owning the poll interval and deadline, with no open-coded poll loop? 7. Does every test that spawns a process register it with the harness process registry, so a failing test cannot leak a process group?",
+      "evaluation_criteria": "1. Every test body is free of hardcoded sleeps, other than a sleep inside the shared harness poll helper. 2. Tests of retry or backoff intervals drive time through VirtualClock or a monkeypatched clock at the module boundary (time.monotonic, asyncio.sleep). 3. A retry test asserts the resulting schedule rather than only that a retry eventually happened. 4. The clock is injected anywhere its output reaches a result field, so a time-dependent test asserts literal timestamps. 5. Generated ids are injected anywhere their output reaches a result field, so a test asserts literal ids. 6. Every wait on an operating system event with no virtual equivalent, such as a process group reaped after SIGKILL, is done through a shared harness helper owning the poll interval and deadline, with no open-coded poll loop. 7. Every test that spawns a process registers it with the harness process registry, so a failing test cannot leak a process group.",
       "bad_pattern": "time.sleep(0.05)  # bare sleep in a test body, as in _sync_and_interrupt in tests/engine/executors/test_process_group.py"
     },
     {
@@ -1607,26 +1607,26 @@
       "criteria": [
         {
           "id": "TEST-012.Q01",
-          "question": "Is every capture of rendered Rich output in a test made through render_rich from tests/harness/formatter.py?",
+          "statement": "Every capture of rendered Rich output in a test is made through render_rich from tests/harness/formatter.py.",
           "kind": "judgment"
         },
         {
           "id": "TEST-012.Q02",
-          "question": "Is the console width used for a rendered assertion the pinned width of 160, with no other width passed to render_rich?",
+          "statement": "The console width used for a rendered assertion is the pinned width of 160, with no other width passed to render_rich.",
           "kind": "judgment"
         },
         {
           "id": "TEST-012.Q03",
-          "question": "Does the test avoid relying on the ambient terminal size and on in-process os.environ[\"COLUMNS\"] mutations?",
+          "statement": "The test avoids relying on the ambient terminal size and on in-process os.environ[\"COLUMNS\"] mutations.",
           "kind": "judgment"
         },
         {
           "id": "TEST-012.Q04",
-          "question": "Does every render assertion check a semantic value carried by the view model, such as an identifier, count or status token, rather than a panel title, field caption, border glyph, padding or prose sentence?",
+          "statement": "Every render assertion checks a semantic value carried by the view model, such as an identifier, count or status token, rather than a panel title, field caption, border glyph, padding or prose sentence.",
           "kind": "judgment"
         }
       ],
-      "evaluation_criteria": "1. Is every capture of rendered Rich output in a test made through render_rich from tests/harness/formatter.py? 2. Is the console width used for a rendered assertion the pinned width of 160, with no other width passed to render_rich? 3. Does the test avoid relying on the ambient terminal size and on in-process os.environ[\"COLUMNS\"] mutations? 4. Does every render assertion check a semantic value carried by the view model, such as an identifier, count or status token, rather than a panel title, field caption, border glyph, padding or prose sentence?",
+      "evaluation_criteria": "1. Every capture of rendered Rich output in a test is made through render_rich from tests/harness/formatter.py. 2. The console width used for a rendered assertion is the pinned width of 160, with no other width passed to render_rich. 3. The test avoids relying on the ambient terminal size and on in-process os.environ[\"COLUMNS\"] mutations. 4. Every render assertion checks a semantic value carried by the view model, such as an identifier, count or status token, rather than a panel title, field caption, border glyph, padding or prose sentence.",
       "bad_pattern": "console = Console(record=True); console.print(panel); rendered = console.export_text()  # hypothetical: hand-built console instead of render_rich"
     },
     {
@@ -1639,21 +1639,21 @@
       "criteria": [
         {
           "id": "TEST-013.Q01",
-          "question": "Does every touched production function have a real caller in src/, so that deleting its tests would not leave it unreachable?",
+          "statement": "Every touched production function has a real caller in src/, so that deleting its tests would not leave it unreachable.",
           "kind": "judgment"
         },
         {
           "id": "TEST-013.Q02",
-          "question": "Does every harness symbol (builder method, fixture or assertion helper) have at least one caller outside tests/harness/?",
+          "statement": "Every harness symbol (builder method, fixture or assertion helper) has at least one caller outside tests/harness/.",
           "kind": "judgment"
         },
         {
           "id": "TEST-013.Q03",
-          "question": "Is harness behavior proven through the first domain test that needs it, rather than through a harness verification suite that exhaustively permutes options no domain test uses?",
+          "statement": "Harness behavior is proven through the first domain test that needs it, rather than through a harness verification suite that exhaustively permutes options no domain test uses.",
           "kind": "judgment"
         }
       ],
-      "evaluation_criteria": "1. Does every touched production function have a real caller in src/, so that deleting its tests would not leave it unreachable? 2. Does every harness symbol (builder method, fixture or assertion helper) have at least one caller outside tests/harness/? 3. Is harness behavior proven through the first domain test that needs it, rather than through a harness verification suite that exhaustively permutes options no domain test uses?",
+      "evaluation_criteria": "1. Every touched production function has a real caller in src/, so that deleting its tests would not leave it unreachable. 2. Every harness symbol (builder method, fixture or assertion helper) has at least one caller outside tests/harness/. 3. Harness behavior is proven through the first domain test that needs it, rather than through a harness verification suite that exhaustively permutes options no domain test uses.",
       "bad_pattern": "A function in src/ whose only caller is its own unit test; the function is dead, so the function and the test are both deleted (hypothetical example)"
     },
     {
@@ -1666,26 +1666,26 @@
       "criteria": [
         {
           "id": "TEST-014.Q01",
-          "question": "Is every test helper and fixture function free of missing type annotations?",
+          "statement": "Every test helper and fixture function is free of missing type annotations.",
           "kind": "judgment"
         },
         {
           "id": "TEST-014.Q02",
-          "question": "Do fixtures declare a real return type rather than Any?",
+          "statement": "Fixtures declare a real return type rather than Any.",
           "kind": "judgment"
         },
         {
           "id": "TEST-014.Q03",
-          "question": "Are helper parameters typed against the types production code passes, such as DovoDb or SessionRecord, rather than Any?",
+          "statement": "Helper parameters are typed against the types production code passes, such as DovoDb or SessionRecord, rather than Any.",
           "kind": "judgment"
         },
         {
           "id": "TEST-014.Q04",
-          "question": "Is MagicMock absent from the signatures of test helpers and fixtures, both their parameters and their return types?",
+          "statement": "MagicMock is absent from the signatures of test helpers and fixtures, both their parameters and their return types.",
           "kind": "judgment"
         }
       ],
-      "evaluation_criteria": "1. Is every test helper and fixture function free of missing type annotations? 2. Do fixtures declare a real return type rather than Any? 3. Are helper parameters typed against the types production code passes, such as DovoDb or SessionRecord, rather than Any? 4. Is MagicMock absent from the signatures of test helpers and fixtures, both their parameters and their return types?",
+      "evaluation_criteria": "1. Every test helper and fixture function is free of missing type annotations. 2. Fixtures declare a real return type rather than Any. 3. Helper parameters are typed against the types production code passes, such as DovoDb or SessionRecord, rather than Any. 4. MagicMock is absent from the signatures of test helpers and fixtures, both their parameters and their return types.",
       "bad_pattern": "def make_session(db, session_id): ...  # hypothetical: helper with no parameter or return annotations"
     },
     {
@@ -1698,11 +1698,11 @@
       "criteria": [
         {
           "id": "TEST-015.Q01",
-          "question": "Does a test exercise the updated execution branch of every modified command routing or multi-step orchestration path?",
+          "statement": "A test exercises the updated execution branch of every modified command routing or multi-step orchestration path.",
           "kind": "judgment"
         }
       ],
-      "evaluation_criteria": "1. Does a test exercise the updated execution branch of every modified command routing or multi-step orchestration path?",
+      "evaluation_criteria": "1. A test exercises the updated execution branch of every modified command routing or multi-step orchestration path.",
       "bad_pattern": "# hypothetical: a change to Engine.resume() in engine/engine.py that skips steps already completed, merged with no test that resumes a paused run and checks the remaining steps execute"
     },
     {
@@ -1715,26 +1715,26 @@
       "criteria": [
         {
           "id": "TEST-016.Q01",
-          "question": "Does every public function or method (no leading underscore) in a changed production module have at least one test of a valid input producing the expected successful outcome, in its corresponding test file per TEST-002?",
+          "statement": "Every public function or method (no leading underscore) in a changed production module has at least one test of a valid input producing the expected successful outcome, in its corresponding test file per TEST-002.",
           "kind": "judgment"
         },
         {
           "id": "TEST-016.Q02",
-          "question": "Does every public function or method in a changed production module have, in its TEST-002 test file, at least one test of an invalid input, missing dependency, boundary or failure state producing the expected error or non-ok outcome?",
+          "statement": "Every public function or method in a changed production module has, in its TEST-002 test file, at least one test of an invalid input, missing dependency, boundary or failure state producing the expected error or non-ok outcome.",
           "kind": "judgment"
         },
         {
           "id": "TEST-016.Q03",
-          "question": "Are private functions and methods (leading underscore) covered only as byproducts of their public callers, with no dedicated test method targeting them?",
+          "statement": "Private functions and methods (leading underscore) are covered only as byproducts of their public callers, with no dedicated test method targeting them.",
           "kind": "judgment"
         },
         {
           "id": "TEST-016.Q04",
-          "question": "Are the independent failure modes of a public method covered by TEST-006 parameterization, with a separate test method per failure mode used only when the fixture requirements diverge?",
+          "statement": "The independent failure modes of a public method are covered by TEST-006 parameterization, with a separate test method per failure mode used only when the fixture requirements diverge.",
           "kind": "judgment"
         }
       ],
-      "evaluation_criteria": "1. Does every public function or method (no leading underscore) in a changed production module have at least one test of a valid input producing the expected successful outcome, in its corresponding test file per TEST-002? 2. Does every public function or method in a changed production module have, in its TEST-002 test file, at least one test of an invalid input, missing dependency, boundary or failure state producing the expected error or non-ok outcome? 3. Are private functions and methods (leading underscore) covered only as byproducts of their public callers, with no dedicated test method targeting them? 4. Are the independent failure modes of a public method covered by TEST-006 parameterization, with a separate test method per failure mode used only when the fixture requirements diverge?",
+      "evaluation_criteria": "1. Every public function or method (no leading underscore) in a changed production module has at least one test of a valid input producing the expected successful outcome, in its corresponding test file per TEST-002. 2. Every public function or method in a changed production module has, in its TEST-002 test file, at least one test of an invalid input, missing dependency, boundary or failure state producing the expected error or non-ok outcome. 3. Private functions and methods (leading underscore) are covered only as byproducts of their public callers, with no dedicated test method targeting them. 4. The independent failure modes of a public method are covered by TEST-006 parameterization, with a separate test method per failure mode used only when the fixture requirements diverge.",
       "bad_pattern": "SessionStateStore.regenerate_projection() is added to src/dovo/engine/state_store.py with no test calling it (hypothetical: the real method is covered by test_regenerate_projection_writes_payload_json_and_returns_path)"
     },
     {
@@ -1747,16 +1747,16 @@
       "criteria": [
         {
           "id": "TEST-017.Q01",
-          "question": "Do the CLI runner tests under tests/cli/ avoid asserting help text wording in stdout or rendered output?",
+          "statement": "The CLI runner tests under tests/cli/ avoid asserting help text wording in stdout or rendered output.",
           "kind": "judgment"
         },
         {
           "id": "TEST-017.Q02",
-          "question": "Does a CLI test that checks command registration or option names read them from Click metadata rather than from rendered help output?",
+          "statement": "A CLI test that checks command registration or option names reads them from Click metadata rather than from rendered help output.",
           "kind": "judgment"
         }
       ],
-      "evaluation_criteria": "1. Do the CLI runner tests under tests/cli/ avoid asserting help text wording in stdout or rendered output? 2. Does a CLI test that checks command registration or option names read them from Click metadata rather than from rendered help output?",
+      "evaluation_criteria": "1. The CLI runner tests under tests/cli/ avoid asserting help text wording in stdout or rendered output. 2. A CLI test that checks command registration or option names reads them from Click metadata rather than from rendered help output.",
       "bad_pattern": "assert \"Show the current configuration value\" in result.output  # hypothetical help text wording; assert Click metadata instead"
     },
     {
@@ -1769,11 +1769,11 @@
       "criteria": [
         {
           "id": "TEST-018.Q01",
-          "question": "Do the files under tests/core/ import nothing from dovo.cli or any submodule of it?",
+          "statement": "The files under tests/core/ import nothing from dovo.cli or any submodule of it.",
           "kind": "mechanical"
         }
       ],
-      "evaluation_criteria": "1. Do the files under tests/core/ import nothing from dovo.cli or any submodule of it?",
+      "evaluation_criteria": "1. The files under tests/core/ import nothing from dovo.cli or any submodule of it.",
       "bad_pattern": "from dovo.cli.worktree.commands.worktree_prune import worktree_prune_command  # hypothetical: a CLI import in tests/core/worktree/test_services.py"
     },
     {
@@ -1786,21 +1786,21 @@
       "criteria": [
         {
           "id": "TEST-019.Q01",
-          "question": "Does every dispatch spy used in a *CliIntegrationTests suite call through to the real ui_dispatcher.dispatch, instead of replacing it with a stub?",
+          "statement": "Every dispatch spy used in a *CliIntegrationTests suite calls through to the real ui_dispatcher.dispatch, instead of replacing it with a stub.",
           "kind": "judgment"
         },
         {
           "id": "TEST-019.Q02",
-          "question": "Is every assertion made against an item captured by the dispatch spy an assertion on an instance of that command action's own terminal BaseResult type?",
+          "statement": "Every assertion made against an item captured by the dispatch spy is an assertion on an instance of that command action's own terminal BaseResult type.",
           "kind": "judgment"
         },
         {
           "id": "TEST-019.Q03",
-          "question": "Does a spy assertion avoid relying on spy[0], spy[-1] or len(spy) == 1 unless the command action dispatches only its own terminal result per invocation, isolating the instance of its own Result type otherwise?",
+          "statement": "A spy assertion avoids relying on spy[0], spy[-1] or len(spy) == 1 unless the command action dispatches only its own terminal result per invocation, and otherwise isolates the instance of the command action's own Result type.",
           "kind": "judgment"
         }
       ],
-      "evaluation_criteria": "1. Does every dispatch spy used in a *CliIntegrationTests suite call through to the real ui_dispatcher.dispatch, instead of replacing it with a stub? 2. Is every assertion made against an item captured by the dispatch spy an assertion on an instance of that command action's own terminal BaseResult type? 3. Does a spy assertion avoid relying on spy[0], spy[-1] or len(spy) == 1 unless the command action dispatches only its own terminal result per invocation, isolating the instance of its own Result type otherwise?",
+      "evaluation_criteria": "1. Every dispatch spy used in a *CliIntegrationTests suite calls through to the real ui_dispatcher.dispatch, instead of replacing it with a stub. 2. Every assertion made against an item captured by the dispatch spy is an assertion on an instance of that command action's own terminal BaseResult type. 3. A spy assertion avoids relying on spy[0], spy[-1] or len(spy) == 1 unless the command action dispatches only its own terminal result per invocation, and otherwise isolates the instance of the command action's own Result type.",
       "bad_pattern": "monkeypatch.setattr(ui_dispatcher, \"dispatch\", lambda data, **kwargs: None)  # replacement stub; the real formatter never runs, which TEST-008 forbids (hypothetical)"
     },
     {
@@ -1813,76 +1813,76 @@
       "criteria": [
         {
           "id": "TEST-020.Q01",
-          "question": "Does every test method docstring add a fact that the test name and assertions do not, such as an exact literal, an ordering contract, or the inputs behind a parametrized case?",
+          "statement": "Every test method docstring adds a fact that the test name and assertions do not, such as an exact literal, an ordering contract, or the inputs behind a parametrized case.",
           "kind": "judgment"
         },
         {
           "id": "TEST-020.Q02",
-          "question": "Is every test method docstring a single sentence?",
+          "statement": "Every test method docstring is a single sentence.",
           "kind": "judgment"
         },
         {
           "id": "TEST-020.Q03",
-          "question": "Does every test method docstring open with an imperative verb?",
+          "statement": "Every test method docstring opens with an imperative verb.",
           "kind": "judgment"
         },
         {
           "id": "TEST-020.Q04",
-          "question": "Is every test method docstring free of a `[tier-N/type]` tag?",
+          "statement": "Every test method docstring is free of a `[tier-N/type]` tag.",
           "kind": "judgment"
         },
         {
           "id": "TEST-020.Q05",
-          "question": "Is every test method docstring free of a `<symbol>:` or `dovo <command>:` prefix?",
+          "statement": "Every test method docstring is free of a `<symbol>:` or `dovo <command>:` prefix.",
           "kind": "judgment"
         },
         {
           "id": "TEST-020.Q06",
-          "question": "Is every line of every test method docstring within 120 columns?",
+          "statement": "Every line of every test method docstring is within 120 columns.",
           "kind": "judgment"
         },
         {
           "id": "TEST-020.Q07",
-          "question": "Does every docstring on a non-test unit under tests/ (helper, fixture, test double, class, module) open with a one-line title?",
+          "statement": "Every docstring on a non-test unit under tests/ (helper, fixture, test double, class, module) opens with a one-line title.",
           "kind": "judgment"
         },
         {
           "id": "TEST-020.Q08",
-          "question": "Is the title of a non-test unit free of any outcome clause?",
+          "statement": "The title of a non-test unit is free of any outcome clause.",
           "kind": "judgment"
         },
         {
           "id": "TEST-020.Q09",
-          "question": "Is the title of a non-test unit a single description of the unit rather than a list of steps?",
+          "statement": "The title of a non-test unit is a single description of the unit rather than a list of steps.",
           "kind": "judgment"
         },
         {
           "id": "TEST-020.Q10",
-          "question": "Does a non-test unit's docstring include a description beyond its title only to record a hidden contract, a safety behavior, or a non-obvious ordering constraint?",
+          "statement": "A non-test unit's docstring includes a description beyond its title only to record a hidden contract, a safety behavior, or a non-obvious ordering constraint.",
           "kind": "judgment"
         },
         {
           "id": "TEST-020.Q11",
-          "question": "Is every docstring on a non-test unit under tests/ free of text that retells the body?",
+          "statement": "Every docstring on a non-test unit under tests/ is free of text that retells the body.",
           "kind": "judgment"
         },
         {
           "id": "TEST-020.Q12",
-          "question": "Is every docstring on a non-test unit under tests/ free of text that restates parameters, types, or the return annotation?",
+          "statement": "Every docstring on a non-test unit under tests/ is free of text that restates parameters, types, or the return annotation.",
           "kind": "judgment"
         },
         {
           "id": "TEST-020.Q13",
-          "question": "Is every docstring on a non-test unit under tests/ free of sentences describing how another module or caller behaves?",
+          "statement": "Every docstring on a non-test unit under tests/ is free of sentences describing how another module or caller behaves.",
           "kind": "judgment"
         },
         {
           "id": "TEST-020.Q14",
-          "question": "Does every unit under tests/ carry exactly one docstring, with no bare string statement after it?",
+          "statement": "Every unit under tests/ carries exactly one docstring, with no bare string statement after it.",
           "kind": "judgment"
         }
       ],
-      "evaluation_criteria": "1. Does every test method docstring add a fact that the test name and assertions do not, such as an exact literal, an ordering contract, or the inputs behind a parametrized case? 2. Is every test method docstring a single sentence? 3. Does every test method docstring open with an imperative verb? 4. Is every test method docstring free of a `[tier-N/type]` tag? 5. Is every test method docstring free of a `<symbol>:` or `dovo <command>:` prefix? 6. Is every line of every test method docstring within 120 columns? 7. Does every docstring on a non-test unit under tests/ (helper, fixture, test double, class, module) open with a one-line title? 8. Is the title of a non-test unit free of any outcome clause? 9. Is the title of a non-test unit a single description of the unit rather than a list of steps? 10. Does a non-test unit's docstring include a description beyond its title only to record a hidden contract, a safety behavior, or a non-obvious ordering constraint? 11. Is every docstring on a non-test unit under tests/ free of text that retells the body? 12. Is every docstring on a non-test unit under tests/ free of text that restates parameters, types, or the return annotation? 13. Is every docstring on a non-test unit under tests/ free of sentences describing how another module or caller behaves? 14. Does every unit under tests/ carry exactly one docstring, with no bare string statement after it?",
+      "evaluation_criteria": "1. Every test method docstring adds a fact that the test name and assertions do not, such as an exact literal, an ordering contract, or the inputs behind a parametrized case. 2. Every test method docstring is a single sentence. 3. Every test method docstring opens with an imperative verb. 4. Every test method docstring is free of a `[tier-N/type]` tag. 5. Every test method docstring is free of a `<symbol>:` or `dovo <command>:` prefix. 6. Every line of every test method docstring is within 120 columns. 7. Every docstring on a non-test unit under tests/ (helper, fixture, test double, class, module) opens with a one-line title. 8. The title of a non-test unit is free of any outcome clause. 9. The title of a non-test unit is a single description of the unit rather than a list of steps. 10. A non-test unit's docstring includes a description beyond its title only to record a hidden contract, a safety behavior, or a non-obvious ordering constraint. 11. Every docstring on a non-test unit under tests/ is free of text that retells the body. 12. Every docstring on a non-test unit under tests/ is free of text that restates parameters, types, or the return annotation. 13. Every docstring on a non-test unit under tests/ is free of sentences describing how another module or caller behaves. 14. Every unit under tests/ carries exactly one docstring, with no bare string statement after it.",
       "bad_pattern": "Hypothetical: \"\"\"Exit 1 when capacity is exceeded.\"\"\" on test_worktree_create_cli_capacity_exceeded_exits_one in tests/cli/worktree/test_worktree_create.py only rewords the test name."
     },
     {
@@ -1895,26 +1895,26 @@
       "criteria": [
         {
           "id": "DOC-001.Q01",
-          "question": "Does the diff to docs/agents/architecture.md modify only structure sections (the layers tree and the package boundaries)?",
+          "statement": "The diff to docs/agents/architecture.md modifies only structure sections (the layers tree and the package boundaries).",
           "kind": "judgment"
         },
         {
           "id": "DOC-001.Q02",
-          "question": "Is each structure-section edit to docs/agents/architecture.md made because a package was added, removed or moved, domain ownership changed, or an import boundary changed?",
+          "statement": "Each structure-section edit to docs/agents/architecture.md is made because a package was added, removed or moved, domain ownership changed, or an import boundary changed.",
           "kind": "judgment"
         },
         {
           "id": "DOC-001.Q03",
-          "question": "Is the diff to docs/agents/architecture.md free of feature behavior essays?",
+          "statement": "The diff to docs/agents/architecture.md is free of feature behavior essays.",
           "kind": "judgment"
         },
         {
           "id": "DOC-001.Q04",
-          "question": "Does each new import boundary described in docs/agents/architecture.md also have a row in LAYER_RULES in tests/lint/test_layer_direction.py?",
+          "statement": "Each new import boundary described in docs/agents/architecture.md also has a row in LAYER_RULES in tests/lint/test_layer_direction.py.",
           "kind": "judgment"
         }
       ],
-      "evaluation_criteria": "1. Does the diff to docs/agents/architecture.md modify only structure sections (the layers tree and the package boundaries)? 2. Is each structure-section edit to docs/agents/architecture.md made because a package was added, removed or moved, domain ownership changed, or an import boundary changed? 3. Is the diff to docs/agents/architecture.md free of feature behavior essays? 4. Does each new import boundary described in docs/agents/architecture.md also have a row in LAYER_RULES in tests/lint/test_layer_direction.py?",
+      "evaluation_criteria": "1. The diff to docs/agents/architecture.md modifies only structure sections (the layers tree and the package boundaries). 2. Each structure-section edit to docs/agents/architecture.md is made because a package was added, removed or moved, domain ownership changed, or an import boundary changed. 3. The diff to docs/agents/architecture.md is free of feature behavior essays. 4. Each new import boundary described in docs/agents/architecture.md also has a row in LAYER_RULES in tests/lint/test_layer_direction.py.",
       "bad_pattern": "# Hypothetical: adding a new section to architecture.md that explains how pruning picks which sessions to remove"
     },
     {
@@ -1927,16 +1927,16 @@
       "criteria": [
         {
           "id": "DOC-002.Q01",
-          "question": "Is every new or changed CLI subcommand, option or user-visible behavior documented in the matching docs/cli/<command>.md?",
+          "statement": "Every new or changed CLI subcommand, option or user-visible behavior is documented in the matching docs/cli/<command>.md.",
           "kind": "judgment"
         },
         {
           "id": "DOC-002.Q02",
-          "question": "Is user-visible CLI behavior, subcommand and flag documentation kept out of docs/agents/architecture.md?",
+          "statement": "User-visible CLI behavior, subcommand and flag documentation is kept out of docs/agents/architecture.md.",
           "kind": "judgment"
         }
       ],
-      "evaluation_criteria": "1. Is every new or changed CLI subcommand, option or user-visible behavior documented in the matching docs/cli/<command>.md? 2. Is user-visible CLI behavior, subcommand and flag documentation kept out of docs/agents/architecture.md?",
+      "evaluation_criteria": "1. Every new or changed CLI subcommand, option or user-visible behavior is documented in the matching docs/cli/<command>.md. 2. User-visible CLI behavior, subcommand and flag documentation is kept out of docs/agents/architecture.md.",
       "bad_pattern": "# Hypothetical: a new flag is added to dovo run, and docs/cli/run.md is left unchanged"
     },
     {
@@ -1949,16 +1949,16 @@
       "criteria": [
         {
           "id": "DOC-003.Q01",
-          "question": "Does every edit to docs/agents/schemas.md follow a change to a cross-cutting contract (config tier merge rules, path ownership, persistence authority, secrets handling, or catalog or database scoping)?",
+          "statement": "Every edit to docs/agents/schemas.md follows a change to a cross-cutting contract (config tier merge rules, path ownership, persistence authority, secrets handling, or catalog or database scoping).",
           "kind": "judgment"
         },
         {
           "id": "DOC-003.Q02",
-          "question": "Are the edits to schemas.md free of added field lists, enum members, exception names and method lists?",
+          "statement": "The edits to schemas.md are free of added field lists, enum members, exception names and method lists.",
           "kind": "judgment"
         }
       ],
-      "evaluation_criteria": "1. Does every edit to docs/agents/schemas.md follow a change to a cross-cutting contract (config tier merge rules, path ownership, persistence authority, secrets handling, or catalog or database scoping)? 2. Are the edits to schemas.md free of added field lists, enum members, exception names and method lists?",
+      "evaluation_criteria": "1. Every edit to docs/agents/schemas.md follows a change to a cross-cutting contract (config tier merge rules, path ownership, persistence authority, secrets handling, or catalog or database scoping). 2. The edits to schemas.md are free of added field lists, enum members, exception names and method lists.",
       "bad_pattern": "# Editing schemas.md for a change that alters no cross-cutting contract, such as reflowing a section while adding a new config key (hypothetical)"
     },
     {
@@ -1971,21 +1971,21 @@
       "criteria": [
         {
           "id": "DOC-004.Q01",
-          "question": "Do the docs avoid hand-copying Pydantic model signatures, field tables or enum lists that a read of the source already gives unambiguously?",
+          "statement": "The docs avoid hand-copying Pydantic model signatures, field tables or enum lists that a read of the source already gives unambiguously.",
           "kind": "judgment"
         },
         {
           "id": "DOC-004.Q02",
-          "question": "Does every doc that refers to a specific Pydantic model link to the file that defines it?",
+          "statement": "Every doc that refers to a specific Pydantic model links to the file that defines it.",
           "kind": "judgment"
         },
         {
           "id": "DOC-004.Q03",
-          "question": "Does a doc that describes a model add only behavior the source does not express, such as validators or resolution order, rather than field lists or enum members copied without added context?",
+          "statement": "A doc that describes a model adds only behavior the source does not express, such as validators or resolution order, rather than field lists or enum members copied without added context.",
           "kind": "judgment"
         }
       ],
-      "evaluation_criteria": "1. Do the docs avoid hand-copying Pydantic model signatures, field tables or enum lists that a read of the source already gives unambiguously? 2. Does every doc that refers to a specific Pydantic model link to the file that defines it? 3. Does a doc that describes a model add only behavior the source does not express, such as validators or resolution order, rather than field lists or enum members copied without added context?",
+      "evaluation_criteria": "1. The docs avoid hand-copying Pydantic model signatures, field tables or enum lists that a read of the source already gives unambiguously. 2. Every doc that refers to a specific Pydantic model links to the file that defines it. 3. A doc that describes a model adds only behavior the source does not express, such as validators or resolution order, rather than field lists or enum members copied without added context.",
       "bad_pattern": "| Field | Type | Default |\n| session_id | str | required |  (a table copying the fields of WorktreeSession)"
     },
     {
@@ -1998,21 +1998,21 @@
       "criteria": [
         {
           "id": "DOC-005.Q01",
-          "question": "Does every unavoidable field table (the specification for an external JSON Schema or a stable CLI output format) have an automated test under tests/lint/ that fails when the table and the source disagree?",
+          "statement": "Every unavoidable field table (the specification for an external JSON Schema or a stable CLI output format) has an automated test under tests/lint/ that fails when the table and the source disagree.",
           "kind": "judgment"
         },
         {
           "id": "DOC-005.Q02",
-          "question": "Was the parity test already in the tree when the doc claim landed?",
+          "statement": "The parity test was already in the tree when the doc claim landed.",
           "kind": "judgment"
         },
         {
           "id": "DOC-005.Q03",
-          "question": "Does the doc name the parity test by a path that resolves to a file in the tree?",
+          "statement": "The doc names the parity test by a path that resolves to a file in the tree.",
           "kind": "judgment"
         }
       ],
-      "evaluation_criteria": "1. Does every unavoidable field table (the specification for an external JSON Schema or a stable CLI output format) have an automated test under tests/lint/ that fails when the table and the source disagree? 2. Was the parity test already in the tree when the doc claim landed? 3. Does the doc name the parity test by a path that resolves to a file in the tree?",
+      "evaluation_criteria": "1. Every unavoidable field table (the specification for an external JSON Schema or a stable CLI output format) has an automated test under tests/lint/ that fails when the table and the source disagree. 2. The parity test was already in the tree when the doc claim landed. 3. The doc names the parity test by a path that resolves to a file in the tree.",
       "bad_pattern": "A hypothetical field table of a stable CLI output format is added to docs/ and no test under tests/lint/ compares it with the source"
     },
     {
@@ -2025,16 +2025,16 @@
       "criteria": [
         {
           "id": "DOC-006.Q01",
-          "question": "Does every doc edit that changes a statement replace or delete the stale text instead of appending a new bullet beside it?",
+          "statement": "Every doc edit that changes a statement replaces or deletes the stale text instead of appending a new bullet beside it.",
           "kind": "judgment"
         },
         {
           "id": "DOC-006.Q02",
-          "question": "Is every statement the change adds or edits free of contradiction with other statements in docs/ about the same rule or fact, found by searching docs/ for what it names?",
+          "statement": "Every statement the change adds or edits is free of contradiction with other statements in docs/ about the same rule or fact, found by searching docs/ for what it names.",
           "kind": "judgment"
         }
       ],
-      "evaluation_criteria": "1. Does every doc edit that changes a statement replace or delete the stale text instead of appending a new bullet beside it? 2. Is every statement the change adds or edits free of contradiction with other statements in docs/ about the same rule or fact, found by searching docs/ for what it names?",
+      "evaluation_criteria": "1. Every doc edit that changes a statement replaces or deletes the stale text instead of appending a new bullet beside it. 2. Every statement the change adds or edits is free of contradiction with other statements in docs/ about the same rule or fact, found by searching docs/ for what it names.",
       "bad_pattern": "Hypothetical edit: a new bullet citing cli/ui/formatters/ is appended while the old bullet citing formatters.py stays"
     },
     {
@@ -2047,16 +2047,16 @@
       "criteria": [
         {
           "id": "DOC-007.Q01",
-          "question": "Does doc prose and every code comment name Blueprint, Step, Loop step, Catalog, Run, Session, Worktree and Checkpoint concepts by the term the Terminology table in docs/agents/architecture.md defines, rather than by a term the table does not define?",
+          "statement": "Doc prose and every code comment name Blueprint, Step, Loop step, Catalog, Run, Session, Worktree and Checkpoint concepts by the term the Terminology table in docs/agents/architecture.md defines, rather than by a term the table does not define.",
           "kind": "judgment"
         },
         {
           "id": "DOC-007.Q02",
-          "question": "Does doc prose and every code comment use each defined term only within its stated meaning in the Terminology table?",
+          "statement": "Doc prose and every code comment use each defined term only within its stated meaning in the Terminology table.",
           "kind": "judgment"
         }
       ],
-      "evaluation_criteria": "1. Does doc prose and every code comment name Blueprint, Step, Loop step, Catalog, Run, Session, Worktree and Checkpoint concepts by the term the Terminology table in docs/agents/architecture.md defines, rather than by a term the table does not define? 2. Does doc prose and every code comment use each defined term only within its stated meaning in the Terminology table?",
+      "evaluation_criteria": "1. Doc prose and every code comment name Blueprint, Step, Loop step, Catalog, Run, Session, Worktree and Checkpoint concepts by the term the Terminology table in docs/agents/architecture.md defines, rather than by a term the table does not define. 2. Doc prose and every code comment use each defined term only within its stated meaning in the Terminology table.",
       "bad_pattern": "'A workflow containing a repeat block.'  # hypothetical: the table defines blueprint and loop step, not workflow or repeat block"
     },
     {
@@ -2069,36 +2069,36 @@
       "criteria": [
         {
           "id": "DOC-008.Q01",
-          "question": "Does every doc, skill, rule or docstring sentence that asserts something is enforced, gated or checked name the enforcing artifact by path?",
+          "statement": "Every doc, skill, rule or docstring sentence that asserts something is enforced, gated or checked names the enforcing artifact by path.",
           "kind": "judgment"
         },
         {
           "id": "DOC-008.Q02",
-          "question": "Does every path named as an enforcing artifact, or in a \"see <path>\" claim, resolve to a file in the tree?",
+          "statement": "Every path named as an enforcing artifact, or in a \"see <path>\" claim, resolves to a file in the tree.",
           "kind": "judgment"
         },
         {
           "id": "DOC-008.Q03",
-          "question": "Does every helper, fixture, builder or assertion function that a doc instructs an implementer to use exist in the tree before the instruction ships?",
+          "statement": "Every helper, fixture, builder or assertion function that a doc instructs an implementer to use exists in the tree before the instruction ships.",
           "kind": "judgment"
         },
         {
           "id": "DOC-008.Q04",
-          "question": "Does the change document only behavior that is already built, in prose and in rule examples alike?",
+          "statement": "The change documents only behavior that is already built, in prose and in rule examples alike.",
           "kind": "judgment"
         },
         {
           "id": "DOC-008.Q05",
-          "question": "Does the change delete or correct, rather than leave as aspiration, every doc, skill or rule sentence that it makes false?",
+          "statement": "The change deletes or corrects, rather than leaves as aspiration, every doc, skill or rule sentence that it makes false.",
           "kind": "judgment"
         },
         {
           "id": "DOC-008.Q06",
-          "question": "Is every docstring of a function whose behavior the change alters, or that appears in the diff, free of sentences the new code makes false?",
+          "statement": "Every docstring of a function whose behavior the change alters, or that appears in the diff, is free of sentences the new code makes false.",
           "kind": "judgment"
         }
       ],
-      "evaluation_criteria": "1. Does every doc, skill, rule or docstring sentence that asserts something is enforced, gated or checked name the enforcing artifact by path? 2. Does every path named as an enforcing artifact, or in a \"see <path>\" claim, resolve to a file in the tree? 3. Does every helper, fixture, builder or assertion function that a doc instructs an implementer to use exist in the tree before the instruction ships? 4. Does the change document only behavior that is already built, in prose and in rule examples alike? 5. Does the change delete or correct, rather than leave as aspiration, every doc, skill or rule sentence that it makes false? 6. Is every docstring of a function whose behavior the change alters, or that appears in the diff, free of sentences the new code makes false?",
+      "evaluation_criteria": "1. Every doc, skill, rule or docstring sentence that asserts something is enforced, gated or checked names the enforcing artifact by path. 2. Every path named as an enforcing artifact, or in a \"see <path>\" claim, resolves to a file in the tree. 3. Every helper, fixture, builder or assertion function that a doc instructs an implementer to use exists in the tree before the instruction ships. 4. The change documents only behavior that is already built, in prose and in rule examples alike. 5. The change deletes or corrects, rather than leaves as aspiration, every doc, skill or rule sentence that it makes false. 6. Every docstring of a function whose behavior the change alters, or that appears in the diff, is free of sentences the new code makes false.",
       "bad_pattern": "# \"Command output width is always pinned in tests.\" (hypothetical sentence) - claims enforcement and names no artifact"
     },
     {
@@ -2111,21 +2111,21 @@
       "criteria": [
         {
           "id": "CI-001.Q01",
-          "question": "Has `dovo run quality` passed (ruff format, ruff check, basedpyright src tests --level error with zero errors, mkdocs build --strict, complexity at or under 10 on changed files, and the test suite meeting the coverage floor) before the commit?",
+          "statement": "`dovo run quality` has passed (ruff format, ruff check, basedpyright src tests --level error with zero errors, mkdocs build --strict, complexity at or under 10 on changed files, and the test suite meeting the coverage floor) before the commit.",
           "kind": "judgment"
         },
         {
           "id": "CI-001.Q02",
-          "question": "Is the fail_under value in pyproject.toml under [tool.coverage.report] greater than or equal to its previous committed value?",
+          "statement": "The fail_under value in pyproject.toml under [tool.coverage.report] is greater than or equal to its previous committed value.",
           "kind": "judgment"
         },
         {
           "id": "CI-001.Q03",
-          "question": "Is the stated justification for each added test something other than raising the coverage percentage?",
+          "statement": "The stated justification for each added test is a reason other than raising the coverage percentage.",
           "kind": "judgment"
         }
       ],
-      "evaluation_criteria": "1. Has `dovo run quality` passed (ruff format, ruff check, basedpyright src tests --level error with zero errors, mkdocs build --strict, complexity at or under 10 on changed files, and the test suite meeting the coverage floor) before the commit? 2. Is the fail_under value in pyproject.toml under [tool.coverage.report] greater than or equal to its previous committed value? 3. Is the stated justification for each added test something other than raising the coverage percentage?",
+      "evaluation_criteria": "1. `dovo run quality` has passed (ruff format, ruff check, basedpyright src tests --level error with zero errors, mkdocs build --strict, complexity at or under 10 on changed files, and the test suite meeting the coverage floor) before the commit. 2. The fail_under value in pyproject.toml under [tool.coverage.report] is greater than or equal to its previous committed value. 3. The stated justification for each added test is a reason other than raising the coverage percentage.",
       "bad_pattern": "git commit after only running a scoped `uv run dovo run tests --path tests/core/` (hypothetical: the full quality gate was never run)"
     },
     {
@@ -2138,46 +2138,46 @@
       "criteria": [
         {
           "id": "CI-002.Q01",
-          "question": "Does the commit title start with a semantic prefix of the form type(scope) or type, followed by a colon, as in \"docs(rules): ...\" in the commit history?",
+          "statement": "The commit title starts with a semantic prefix of the form type(scope) or type, followed by a colon, as in \"docs(rules): ...\" in the commit history.",
           "kind": "judgment"
         },
         {
           "id": "CI-002.Q02",
-          "question": "Is the commit title written in the imperative mood?",
+          "statement": "The commit title is written in the imperative mood.",
           "kind": "judgment"
         },
         {
           "id": "CI-002.Q03",
-          "question": "Is the commit message free of AI trailers such as \"Co-authored-by: Cursor\"?",
+          "statement": "The commit message is free of AI trailers such as \"Co-authored-by: Cursor\".",
           "kind": "judgment"
         },
         {
           "id": "CI-002.Q04",
-          "question": "Is the pull request description free of AI or tool attribution lines?",
+          "statement": "The pull request description is free of AI or tool attribution lines.",
           "kind": "judgment"
         },
         {
           "id": "CI-002.Q05",
-          "question": "Does the pull request address a single responsibility?",
+          "statement": "The pull request addresses a single responsibility.",
           "kind": "judgment"
         },
         {
           "id": "CI-002.Q06",
-          "question": "Does the pull request description have a Why section of 2-3 sentences giving the context and motivation?",
+          "statement": "The pull request description has a Why section of 2-3 sentences giving the context and motivation.",
           "kind": "judgment"
         },
         {
           "id": "CI-002.Q07",
-          "question": "Does the pull request description have an Approach section made of bullets of 1-2 sentences each?",
+          "statement": "The pull request description has an Approach section made of bullets of 1-2 sentences each.",
           "kind": "judgment"
         },
         {
           "id": "CI-002.Q08",
-          "question": "Does the pull request description have a Linkage section with an issue cross-reference such as Fixes #N or Closes #N?",
+          "statement": "The pull request description has a Linkage section with an issue cross-reference such as Fixes #N or Closes #N.",
           "kind": "judgment"
         }
       ],
-      "evaluation_criteria": "1. Does the commit title start with a semantic prefix of the form type(scope) or type, followed by a colon, as in \"docs(rules): ...\" in the commit history? 2. Is the commit title written in the imperative mood? 3. Is the commit message free of AI trailers such as \"Co-authored-by: Cursor\"? 4. Is the pull request description free of AI or tool attribution lines? 5. Does the pull request address a single responsibility? 6. Does the pull request description have a Why section of 2-3 sentences giving the context and motivation? 7. Does the pull request description have an Approach section made of bullets of 1-2 sentences each? 8. Does the pull request description have a Linkage section with an issue cross-reference such as Fixes #N or Closes #N?",
+      "evaluation_criteria": "1. The commit title starts with a semantic prefix of the form type(scope) or type, followed by a colon, as in \"docs(rules): ...\" in the commit history. 2. The commit title is written in the imperative mood. 3. The commit message is free of AI trailers such as \"Co-authored-by: Cursor\". 4. The pull request description is free of AI or tool attribution lines. 5. The pull request addresses a single responsibility. 6. The pull request description has a Why section of 2-3 sentences giving the context and motivation. 7. The pull request description has an Approach section made of bullets of 1-2 sentences each. 8. The pull request description has a Linkage section with an issue cross-reference such as Fixes #N or Closes #N.",
       "bad_pattern": "Updated stuff and fixed things (hypothetical message)"
     },
     {
@@ -2190,16 +2190,16 @@
       "criteria": [
         {
           "id": "CI-003.Q01",
-          "question": "Does the agent state the specific directive or doc governing an action before executing commands or editing files?",
+          "statement": "The agent states the specific directive or doc governing an action before executing commands or editing files.",
           "kind": "judgment"
         },
         {
           "id": "CI-003.Q02",
-          "question": "Does the agent state the target scope of an action, such as a specific test package or module, before executing commands or editing files?",
+          "statement": "The agent states the target scope of an action, such as a specific test package or module, before executing commands or editing files.",
           "kind": "judgment"
         }
       ],
-      "evaluation_criteria": "1. Does the agent state the specific directive or doc governing an action before executing commands or editing files? 2. Does the agent state the target scope of an action, such as a specific test package or module, before executing commands or editing files?",
+      "evaluation_criteria": "1. The agent states the specific directive or doc governing an action before executing commands or editing files. 2. The agent states the target scope of an action, such as a specific test package or module, before executing commands or editing files.",
       "bad_pattern": "Running write_to_file without stating the governing directive (hypothetical agent turn)"
     },
     {
@@ -2212,36 +2212,36 @@
       "criteria": [
         {
           "id": "CI-004.Q01",
-          "question": "Does every BLOCKER rule that can be checked mechanically have an executing check (an invariant test under tests/lint/, a prek hook or a CI step) or an explicit review-only classification?",
+          "statement": "Every BLOCKER rule that can be checked mechanically has an executing check (an invariant test under tests/lint/, a prek hook or a CI step) or an explicit review-only classification.",
           "kind": "judgment"
         },
         {
           "id": "CI-004.Q02",
-          "question": "Is every declared gate configured so that it can fail, with no setting that disables it, such as a coverage floor of zero or a type checker present in no hook and no workflow?",
+          "statement": "Every declared gate is configured so that it can fail, with no setting that disables it, such as a coverage floor of zero or a type checker present in no hook and no workflow.",
           "kind": "judgment"
         },
         {
           "id": "CI-004.Q03",
-          "question": "Is a gate whose configuration disables it either wired up or downgraded to a review-time WARNING, rather than left declared as an enforced BLOCKER?",
+          "statement": "A gate whose configuration disables it is either wired up or downgraded to a review-time WARNING, rather than left declared as an enforced BLOCKER.",
           "kind": "judgment"
         },
         {
           "id": "CI-004.Q04",
-          "question": "Does every invariant check include a regression test shaped like the code it polices, such as assertions inside a *Tests class rather than a module-level function?",
+          "statement": "Every invariant check includes a regression test shaped like the code it polices, such as assertions inside a *Tests class rather than a module-level function.",
           "kind": "judgment"
         },
         {
           "id": "CI-004.Q05",
-          "question": "Does an invariant check that lands green carry an explicit burn-down allowlist of known violators, rather than being merged red or left disabled?",
+          "statement": "An invariant check that lands green carries an explicit burn-down allowlist of known violators, rather than being merged red or left disabled.",
           "kind": "judgment"
         },
         {
           "id": "CI-004.Q06",
-          "question": "Has every allowlist of known violators only shrunk, with no entry added?",
+          "statement": "Every allowlist of known violators has only shrunk, with no entry added.",
           "kind": "judgment"
         }
       ],
-      "evaluation_criteria": "1. Does every BLOCKER rule that can be checked mechanically have an executing check (an invariant test under tests/lint/, a prek hook or a CI step) or an explicit review-only classification? 2. Is every declared gate configured so that it can fail, with no setting that disables it, such as a coverage floor of zero or a type checker present in no hook and no workflow? 3. Is a gate whose configuration disables it either wired up or downgraded to a review-time WARNING, rather than left declared as an enforced BLOCKER? 4. Does every invariant check include a regression test shaped like the code it polices, such as assertions inside a *Tests class rather than a module-level function? 5. Does an invariant check that lands green carry an explicit burn-down allowlist of known violators, rather than being merged red or left disabled? 6. Has every allowlist of known violators only shrunk, with no entry added?",
+      "evaluation_criteria": "1. Every BLOCKER rule that can be checked mechanically has an executing check (an invariant test under tests/lint/, a prek hook or a CI step) or an explicit review-only classification. 2. Every declared gate is configured so that it can fail, with no setting that disables it, such as a coverage floor of zero or a type checker present in no hook and no workflow. 3. A gate whose configuration disables it is either wired up or downgraded to a review-time WARNING, rather than left declared as an enforced BLOCKER. 4. Every invariant check includes a regression test shaped like the code it polices, such as assertions inside a *Tests class rather than a module-level function. 5. An invariant check that lands green carries an explicit burn-down allowlist of known violators, rather than being merged red or left disabled. 6. Every allowlist of known violators has only shrunk, with no entry added.",
       "bad_pattern": "A new BLOCKER rule about import order is added to rules_spec.yaml with no test, hook or CI step behind it (hypothetical)"
     }
   ]

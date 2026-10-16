@@ -92,14 +92,14 @@ def _migrated_rule(**overrides: Any) -> dict[str, Any]:
         "criteria": [
             {
                 "id": "NEW-001.Q01",
-                "question": "Does every caller avoid reading private members?",
+                "statement": "Every caller avoids reading private members.",
                 "kind": "judgment",
                 "positive_example": "caller.is_ready",
                 "negative_example": "caller._ready",
             },
             {
                 "id": "NEW-001.Q02",
-                "question": "Is the layer check green?",
+                "statement": "The layer check is green.",
                 "kind": "mechanical",
                 "enforced_by": "scripts/check.py::layers",
                 "example_not_applicable": "the check itself is the example",
@@ -122,14 +122,14 @@ def _with_criterion(**overrides: Any) -> dict[str, Any]:
 
 
 class MigratedRuleSchemaTests:
-    def test_migrated_rule_renders_intent_and_every_question_in_rules_md(self, tmp_path: Path) -> None:
+    def test_migrated_rule_renders_intent_and_every_statement_in_rules_md(self, tmp_path: Path) -> None:
         artifacts = _build_with_enforcer(tmp_path, _migrated_rule())
 
         rules_md = artifacts[tmp_path / "src" / "dovo" / "core" / "docs" / "RULES.md"]
 
         assert "Keeps callers on the public surface." in rules_md
-        assert "`NEW-001.Q01` (judgment) Does every caller avoid reading private members?" in rules_md
-        assert "`NEW-001.Q02` (mechanical) Is the layer check green?" in rules_md
+        assert "`NEW-001.Q01` (judgment) Every caller avoids reading private members." in rules_md
+        assert "`NEW-001.Q02` (mechanical) The layer check is green." in rules_md
 
     def test_migrated_rule_lists_its_criteria_as_objects_in_the_review_checklist(self, tmp_path: Path) -> None:
         artifacts = _build_with_enforcer(tmp_path, _migrated_rule())
@@ -137,8 +137,8 @@ class MigratedRuleSchemaTests:
         entry = json.loads(artifacts[tmp_path / "docs" / "agents" / "REVIEW_CHECKLIST.json"])["rules"][0]
 
         assert entry["criteria"] == [
-            {"id": "NEW-001.Q01", "question": "Does every caller avoid reading private members?", "kind": "judgment"},
-            {"id": "NEW-001.Q02", "question": "Is the layer check green?", "kind": "mechanical"},
+            {"id": "NEW-001.Q01", "statement": "Every caller avoids reading private members.", "kind": "judgment"},
+            {"id": "NEW-001.Q02", "statement": "The layer check is green.", "kind": "mechanical"},
         ]
         assert entry["bad_pattern"] == "caller._ready"
 
@@ -154,18 +154,34 @@ class MigratedRuleSchemaTests:
             ),
             pytest.param(_migrated_rule(guideline="Old prose."), "must not keep 'guideline'", id="legacy-guideline"),
             pytest.param(
-                _with_criterion(question="Flag any caller reading private members?"),
-                "must start with one of",
-                id="imperative",
+                _with_criterion(statement="Every caller avoids private members?"),
+                "ends with",
+                id="question-mark",
             ),
             pytest.param(
-                _with_criterion(question="Does every caller avoid private members."), "only '?'", id="no-question-mark"
+                _with_criterion(statement="Every caller avoids private members"), "ends with", id="no-final-period"
             ),
-            pytest.param(_with_criterion(question="Does a? Does b?"), "only '?'", id="two-questions"),
             pytest.param(
-                _with_criterion(question="Does x avoid 1. y 2. z?"), "embedded numbered list", id="embedded-numbering"
+                _with_criterion(statement="Does every caller avoid private members."),
+                "must not start with",
+                id="interrogative-opening",
             ),
-            pytest.param(_with_criterion(question="Does x avoid y; or z?"), "embedded numbered list", id="semicolon"),
+            pytest.param(
+                _with_criterion(statement="Every caller avoids x. Every caller avoids y."),
+                "one sentence",
+                id="two-sentences",
+            ),
+            pytest.param(
+                _with_criterion(statement="Every caller avoids 1. x 2. y."),
+                "embedded numbered list",
+                id="embedded-numbering",
+            ),
+            pytest.param(
+                _with_criterion(statement="Every caller avoids x; and y."), "embedded numbered list", id="semicolon"
+            ),
+            pytest.param(
+                _with_criterion(statement=" ".join(["word"] * 41) + "."), "words or fewer", id="long-statement"
+            ),
             pytest.param(_with_criterion(id="NEW-001.Q09"), "id must be NEW-001.Q01", id="wrong-id"),
             pytest.param(_with_criterion(owner="me"), "unknown keys", id="unknown-key"),
             pytest.param(_with_criterion(kind="maybe"), "kind must be one of", id="bad-kind"),

@@ -42,14 +42,14 @@ def _validate_rule_domains(rules: list[dict[str, Any]]) -> None:
 
 
 INTENT_WORD_LIMIT = 40
-QUESTION_WORD_LIMIT = 40
+STATEMENT_WORD_LIMIT = 40
 INTERROGATIVES: tuple[str, ...] = ("Does", "Do", "Is", "Are", "Was", "Were", "Has", "Have")
 CRITERION_KINDS: tuple[str, ...] = ("mechanical", "judgment")
 LEGACY_RULE_FIELDS: tuple[str, ...] = ("guideline", "evaluation_criteria", "positive_example", "negative_example")
 CRITERION_KEYS: frozenset[str] = frozenset(
     {
         "id",
-        "question",
+        "statement",
         "kind",
         "enforced_by",
         "na_when",
@@ -59,6 +59,7 @@ CRITERION_KEYS: frozenset[str] = frozenset(
     }
 )
 EMBEDDED_NUMBERING = re.compile(r"(?:^|\s)\d+[.)]\s")
+SENTENCE_BREAK = re.compile(r"(?<!e\.g)(?<!i\.e)\.\s+[A-Z`\"(]")
 
 
 def is_migrated(rule: dict[str, Any]) -> bool:
@@ -66,19 +67,19 @@ def is_migrated(rule: dict[str, Any]) -> bool:
     return "criteria" in rule
 
 
-def _question_errors(question: object) -> list[str]:
-    """Return what is wrong with a criterion question: it must be one yes/no sentence, not prose or an enumeration."""
-    if not isinstance(question, str) or not question.strip():
-        return ["question must be a non-empty string"]
+def _statement_errors(statement: object) -> list[str]:
+    """Return what is wrong with a criterion statement: it must be one declarative sentence, not a question or list."""
+    if not isinstance(statement, str) or not statement.strip():
+        return ["statement must be a non-empty string"]
     errors: list[str] = []
-    if "\n" in question or question.count("?") != 1 or not question.rstrip().endswith("?"):
-        errors.append("question must be a single line that ends with its only '?'")
-    if ";" in question or EMBEDDED_NUMBERING.search(question):
-        errors.append("question must not contain ';' or an embedded numbered list")
-    if question.split()[0] not in INTERROGATIVES:
-        errors.append(f"question must start with one of {', '.join(INTERROGATIVES)}")
-    if len(question.split()) > QUESTION_WORD_LIMIT:
-        errors.append(f"question must be {QUESTION_WORD_LIMIT} words or fewer")
+    if "\n" in statement or "?" in statement or not statement.rstrip().endswith("."):
+        errors.append("statement must be a single line that ends with '.' and contains no '?'")
+    if ";" in statement or EMBEDDED_NUMBERING.search(statement) or SENTENCE_BREAK.search(statement):
+        errors.append("statement must be one sentence: no ';', embedded numbered list or second sentence")
+    if statement.split()[0] in INTERROGATIVES:
+        errors.append(f"statement must not start with {', '.join(INTERROGATIVES)}")
+    if len(statement.split()) > STATEMENT_WORD_LIMIT:
+        errors.append(f"statement must be {STATEMENT_WORD_LIMIT} words or fewer")
     return errors
 
 
@@ -118,7 +119,7 @@ def _criterion_errors(rule_id: str, number: int, criterion: object, root: Path) 
         errors.append(f"id must be {expected_id}")
     if unknown := sorted(set(criterion) - CRITERION_KEYS):
         errors.append(f"unknown keys {unknown}")
-    errors += _question_errors(criterion.get("question"))
+    errors += _statement_errors(criterion.get("statement"))
     errors += _enforcer_errors(criterion, root)
     errors += _example_errors(criterion)
     return [f"{expected_id}: {error}" for error in errors]
@@ -199,24 +200,26 @@ def generate_coding_rules_md(rules: list[dict[str, Any]], title_suffix: str = ""
 
 def _migrated_rule_lines(rule: dict[str, Any]) -> list[str]:
     """Render a migrated rule as its intent followed by its numbered criteria, each with its examples."""
-    lines = [f"  {rule['intent']}", "", "  Answer yes to every criterion:"]
+    lines = [f"  {rule['intent']}", "", "  Every statement below must hold:"]
     for criterion in rule["criteria"]:
-        lines.append(f"  - `{criterion['id']}` ({criterion['kind']}) {criterion['question']}")
+        lines.append(f"  - `{criterion['id']}` ({criterion['kind']}) {criterion['statement']}")
         example_text = "\n".join(_format_example_block(criterion))
         lines.extend(f"    {line}" if line else "" for line in example_text.split("\n"))
     return lines
 
 
 def _migrated_checklist_entry(rule: dict[str, Any]) -> dict[str, Any]:
-    """Return the review-checklist fields of a migrated rule, with its questions also joined for older readers."""
-    questions = [criterion["question"] for criterion in rule["criteria"]]
+    """Return the review-checklist fields of a migrated rule, with its statements also joined for older readers."""
+    statements = [criterion["statement"] for criterion in rule["criteria"]]
     return {
         "intent": rule["intent"],
         "criteria": [
-            {"id": criterion["id"], "question": criterion["question"], "kind": criterion["kind"]}
+            {"id": criterion["id"], "statement": criterion["statement"], "kind": criterion["kind"]}
             for criterion in rule["criteria"]
         ],
-        "evaluation_criteria": " ".join(f"{number}. {question}" for number, question in enumerate(questions, start=1)),
+        "evaluation_criteria": " ".join(
+            f"{number}. {statement}" for number, statement in enumerate(statements, start=1)
+        ),
         "bad_pattern": next((c["negative_example"] for c in rule["criteria"] if c.get("negative_example")), None),
     }
 

@@ -3,12 +3,12 @@
 # Legacy rule:   id, title, severity, category, domain, scope, guideline, evaluation_criteria,
 #                positive_example, negative_example, citation.
 #
-# Migrated rule: the same identity fields plus `intent` and `criteria`, and none of guideline,
+# Migrated rule: the same identity fields plus `intent` and `criteria` (assertions), and none of guideline,
 #                evaluation_criteria, positive_example or negative_example (those move into the criteria).
 #   intent:      one or two sentences, 40 words or fewer, saying what the rule protects.
 #   criteria:    a non-empty list; ids are <rule id>.Q01, .Q02, ... in order. Each item has
-#     question:  one yes/no sentence ending in '?', starting with Does, Do, Is, Are, Was, Were, Has or Have,
-#                phrased so that YES means compliant.
+#     statement: one declarative sentence ending in '.', not starting with Does, Do, Is, Are, Was, Were, Has or
+#                Have, that is true when the change is compliant. A reviewer records PASS, FAIL or N/A.
 #     kind:      mechanical or judgment. A mechanical criterion names `enforced_by`, a repo path that exists.
 #     na_when:   optional condition under which the criterion does not apply.
 #     positive_example, negative_example: both keys on the criterion, or instead the single key
@@ -25,68 +25,67 @@ rules:
     understood, tested and changed without pulling in the code that sits above it.
   criteria:
   - id: ARCH-001.Q01
-    question: Does common/ import nothing from core/, engine/ or cli/, other than the imports listed in LAYER_EXCEPTIONS in tests/lint/test_layer_direction.py?
+    statement: common/ imports nothing from core/, engine/ or cli/, other than the imports listed in LAYER_EXCEPTIONS in tests/lint/test_layer_direction.py.
     kind: mechanical
     enforced_by: tests/lint/test_layer_direction.py
     positive_example: 'from dovo.common.exceptions import DefinitionError  # in core/catalog/'
     negative_example: 'from dovo.core.catalog.models import CatalogTier  # at runtime in common/ (hypothetical; the one real import of it, under TYPE_CHECKING in common/filesystem/models.py, is allowlisted)'
   - id: ARCH-001.Q02
-    question: Does core/ import nothing from engine/ or cli/?
+    statement: core/ imports nothing from engine/ or cli/.
     kind: mechanical
     enforced_by: tests/lint/test_layer_direction.py
     positive_example: 'from dovo.core.sessions import SessionLogEvent  # in engine/'
     negative_example: 'from dovo.engine.engine import Engine  # upward import in core/sessions/'
   - id: ARCH-001.Q03
-    question: Does core/ import nothing from rich?
+    statement: core/ imports nothing from rich.
     kind: mechanical
     enforced_by: tests/lint/test_layer_direction.py
     positive_example: core/ returns models and leaves rendering to cli/ui/
     negative_example: 'from rich.console import Console  # in core/status/'
   - id: ARCH-001.Q04
-    question: Does engine/ import nothing from cli/?
+    statement: engine/ imports nothing from cli/.
     kind: mechanical
     enforced_by: tests/lint/test_layer_direction.py
     positive_example: 'from dovo.core.sessions import SessionLogEvent  # in engine/'
     negative_example: 'from dovo.cli.context import CliContext  # in engine/ (hypothetical module path)'
   - id: ARCH-001.Q05
-    question: Does git/ import nothing from any other core/ package?
+    statement: git/ imports nothing from any other core/ package.
     kind: mechanical
     enforced_by: tests/lint/test_layer_direction.py
     positive_example: 'from dovo.common.process import is_process_group_alive  # in core/git/ (hypothetical import)'
     negative_example: 'from dovo.core.project import ProjectIdentity  # in core/git/ (hypothetical import)'
   - id: ARCH-001.Q06
-    question: Does inputs/ import nothing from catalog or agents?
+    statement: inputs/ imports nothing from catalog or agents.
     kind: mechanical
     enforced_by: tests/lint/test_layer_direction.py
     positive_example: 'from dovo.core.project import ProjectIdentity  # in core/inputs/ (hypothetical import)'
     negative_example: 'from dovo.core.catalog.models import CatalogTier  # in core/inputs/ (hypothetical import)'
   - id: ARCH-001.Q07
-    question: Does catalog/ import nothing from agents, sessions, engine or cli?
+    statement: catalog/ imports nothing from agents, sessions, engine or cli.
     kind: mechanical
     enforced_by: tests/lint/test_layer_direction.py
     positive_example: 'from dovo.core.inputs import ParameterInput  # in core/catalog/ (hypothetical import)'
     negative_example: 'from dovo.core.sessions import SessionLogEvent  # in core/catalog/'
   - id: ARCH-001.Q08
-    question: Does artifacts/ import nothing from engine?
+    statement: artifacts/ imports nothing from engine.
     kind: mechanical
     enforced_by: tests/lint/test_layer_direction.py
     positive_example: 'from dovo.core.sessions import SessionLogEvent  # in core/artifacts/ (hypothetical import)'
     negative_example: 'from dovo.engine.engine import Engine  # in core/artifacts/'
   - id: ARCH-001.Q09
-    question: Does agents/ import nothing from engine?
+    statement: agents/ imports nothing from engine.
     kind: mechanical
     enforced_by: tests/lint/test_layer_direction.py
     positive_example: 'from dovo.core.sessions import SessionLogEvent  # in core/agents/ (hypothetical import)'
     negative_example: 'from dovo.engine.engine import Engine  # in core/agents/'
   - id: ARCH-001.Q10
-    question: Does sessions/ import nothing from agents, worktree, catalog, engine or cli?
+    statement: sessions/ imports nothing from agents, worktree, catalog, engine or cli.
     kind: mechanical
     enforced_by: tests/lint/test_layer_direction.py
     positive_example: 'from dovo.core.db import get_session  # in core/sessions/ (hypothetical import)'
     negative_example: 'from dovo.core.agents import BaseAgentProvider  # in core/sessions/ (hypothetical import)'
   - id: ARCH-001.Q11
-    question: Does each core/ package named in the chain project/ -> {db, git, worktree, catalog, inputs, sessions, status,
-      artifacts, interaction}/ -> agents/ -> diagnostics/ import only from packages at or before its own position in that chain?
+    statement: Each core/ package named in the chain project/ -> {db, git, worktree, catalog, inputs, sessions, status, artifacts, interaction}/ -> agents/ -> diagnostics/ imports only from packages at or before its own position in that chain.
     kind: judgment
     positive_example: 'from dovo.core.sessions import SessionLogEvent  # in core/diagnostics/ (hypothetical import)'
     negative_example: 'from dovo.core.diagnostics import DiagnosticsReport  # in core/project/ (hypothetical import)'
@@ -100,37 +99,37 @@ rules:
   intent: Command handlers stay thin adapters over the domain layer, so business behavior lives in one place where it can be reused and tested without the CLI.
   criteria:
   - id: ARCH-002.Q01
-    question: Does each CLI command handler take a CliContext as its context parameter?
+    statement: Each CLI command handler takes a CliContext as its context parameter.
     kind: judgment
     na_when: The change adds or modifies no CLI command handler.
     positive_example: 'def status_command(context: CliContext, output_format: str = "terminal") -> DovoStatusResult  # in cli/status/commands/root.py'
     negative_example: '# hypothetical: def status_command(path: Path) -> DovoStatusResult that rebuilds its own paths and database handle instead of receiving a CliContext'
   - id: ARCH-002.Q02
-    question: Does each CLI command handler invoke an underlying domain service or domain entrypoint to do its work?
+    statement: Each CLI command handler invokes an underlying domain service or domain entrypoint to do its work.
     kind: judgment
     na_when: The change adds or modifies no CLI command handler.
     positive_example: 'result = Status(context.paths).collect()  # in cli/status/commands/root.py'
     negative_example: '# hypothetical: a handler computes the status fields itself from raw git and config reads instead of calling Status(...).collect()'
   - id: ARCH-002.Q03
-    question: Does each CLI command handler return a BaseResult model?
+    statement: Each CLI command handler returns a BaseResult model.
     kind: judgment
     na_when: The change adds or modifies no CLI command handler.
     positive_example: 'return result  # DovoStatusResult, a BaseResult subclass (core/status/models.py), in cli/status/commands/root.py'
     negative_example: '# hypothetical: a handler returns a plain dict or tuple assembled from several domain calls instead of a BaseResult model'
   - id: ARCH-002.Q04
-    question: Is the CLI package free of business logic and domain orchestration, so that handlers only delegate to the domain layer and dispatch the result?
+    statement: The CLI package is free of business logic and domain orchestration, so that handlers only delegate to the domain layer and dispatch the result.
     kind: judgment
     na_when: The change adds or modifies no code under src/dovo/cli/.
     positive_example: 'result = Status(context.paths).collect(); ui_dispatcher.dispatch(result)'
     negative_example: '# hypothetical: a handler loops over worktrees, decides which to prune and calls several core services in a sequence it owns'
   - id: ARCH-002.Q05
-    question: Is the CLI package free of direct SQLite queries or SQL execution?
+    statement: The CLI package is free of direct SQLite queries or SQL execution.
     kind: judgment
     na_when: The change adds or modifies no code under src/dovo/cli/.
     positive_example: 'reconcile_stale_sessions(context.db.sessions, path=context.paths.root_dir)  # in cli/status/commands/root.py, goes through a core service'
     negative_example: "# hypothetical: rows = context.db.connection.execute('SELECT * FROM worktrees').fetchall() in a command handler"
   - id: ARCH-002.Q06
-    question: Is the CLI package free of direct filesystem scans?
+    statement: The CLI package is free of direct filesystem scans.
     kind: judgment
     na_when: The change adds or modifies no code under src/dovo/cli/.
     positive_example: 'Status(context.paths).collect()  # the domain layer inspects the filesystem, the handler does not'
@@ -146,33 +145,33 @@ rules:
     or contradict what the domain actually determined.
   criteria:
   - id: ARCH-003.Q01
-    question: Does every status or outcome that cli/ui/ displays come from a field of a core/ or common/ model, rather than being invented in cli/ui/?
+    statement: Every status or outcome that cli/ui/ displays comes from a field of a core/ or common/ model, rather than being invented in cli/ui/.
     kind: judgment
     positive_example: 'config_status=data.config.status  # in DovoStatusFormatter.transform, a ConfigLoadStatus copied unchanged from the domain result'
     negative_example: 'view.status = "partially_initialized"  # hypothetical: a new status value that no core/ or common/ model defines'
   - id: ARCH-003.Q02
-    question: Does every error category that cli/ui/ displays come from a core/ or common/ model, rather than being invented in cli/ui/?
+    statement: Every error category that cli/ui/ displays comes from a core/ or common/ model, rather than being invented in cli/ui/.
     kind: judgment
     positive_example: 'errors=list(data.errors)  # in StatusView construction, copied from the domain result'
     negative_example: 'errors.append("GitUnavailableError")  # hypothetical: cli/ui/ coins an error category the domain never reported'
   - id: ARCH-003.Q03
-    question: Does every warning that cli/ui/ displays come from a core/ or common/ model, rather than being appended in cli/ui/?
+    statement: Every warning that cli/ui/ displays comes from a core/ or common/ model, rather than being appended in cli/ui/.
     kind: judgment
     positive_example: 'warnings=list(data.warnings)  # in DovoStatusFormatter.transform, copied from the domain result'
     negative_example: 'if not result.git_status: result.warnings.append(''Git not found'')  # hypothetical: cli/ui/ originates the fact'
   - id: ARCH-003.Q04
-    question: Does every remediation that cli/ui/ displays come from a core/ or common/ model, rather than being written in cli/ui/?
+    statement: Every remediation that cli/ui/ displays comes from a core/ or common/ model, rather than being written in cli/ui/.
     kind: judgment
     positive_example: 'remediations=list(data.fixes)  # in DovoStatusFormatter.transform, copied from the domain result'
     negative_example: 'view.remediations.append("Run git init")  # hypothetical: cli/ui/ writes a remediation the domain never supplied'
   - id: ARCH-003.Q05
-    question: Is every domain rule that formatters apply (for example deciding what counts as healthy or failed) defined in core/ or common/ rather than in cli/ui/?
+    statement: Every domain rule that formatters apply (for example deciding what counts as healthy or failed) is defined in core/ or common/ rather than in cli/ui/.
     kind: judgment
     na_when: The formatter only maps or copies existing domain fields and applies no condition of its own.
     positive_example: 'A formatter renders result.ok as supplied by the domain result'
     negative_example: 'A formatter decides that more than three uncommitted files makes the workspace unhealthy'
   - id: ARCH-003.Q06
-    question: Does cli/ui/ limit itself to deriving presentation views from existing domain fields, without adding new domain facts?
+    statement: cli/ui/ limits itself to deriving presentation views from existing domain fields, without adding new domain facts.
     kind: judgment
     positive_example: 'A view field such as project_name or git_branch that is read from existing DovoStatusResult fields and reformatted only for display'
     negative_example: 'A view field populated from a check that cli/ui/ runs itself, such as probing the filesystem'
@@ -186,43 +185,43 @@ rules:
   intent: New domain code follows one predictable package layout with a domain-named entrypoint, so a reader finds types, errors, coordination and operations in the same places in every domain.
   criteria:
   - id: ARCH-004.Q01
-    question: Does each new domain package under core/ define its types in a models.py module?
+    statement: Each new domain package under core/ defines its types in a models.py module.
     kind: judgment
     na_when: The change adds no new domain package under core/.
     positive_example: 'src/dovo/core/worktree/models.py holds WorktreeListResult and the other worktree types'
     negative_example: 'src/dovo/core/prune/ holds a single prune.py mixing types and logic  # hypothetical: no prune/ package exists today'
   - id: ARCH-004.Q02
-    question: Does each new domain package under core/ that raises its own errors define them in an exceptions.py module?
+    statement: Each new domain package under core/ that raises its own errors defines them in an exceptions.py module.
     kind: judgment
     na_when: The change adds no new domain package under core/, or the new domain raises no errors of its own.
     positive_example: 'src/dovo/core/worktree/exceptions.py'
     negative_example: 'class PruneError(Exception) defined inside src/dovo/core/prune/prune.py  # hypothetical: no prune/ package exists today'
   - id: ARCH-004.Q03
-    question: Is the entrypoint coordinator or service of each new domain package named after the domain rather than generically?
+    statement: The entrypoint coordinator or service of each new domain package is named after the domain rather than generically.
     kind: judgment
     na_when: The change adds no new domain package under core/.
     positive_example: 'src/dovo/core/sessions/sessions.py  # entrypoint named after the sessions domain'
     negative_example: 'src/dovo/core/prune/facade.py  # hypothetical: generic facade.py instead of prune.py; no facade.py exists in src/ today'
   - id: ARCH-004.Q04
-    question: Does each new domain package under core/ keep its imperative operations in a services/ package?
+    statement: Each new domain package under core/ keeps its imperative operations in a services/ package.
     kind: judgment
     na_when: The change adds no new domain package under core/, or the new domain has no imperative operations.
     positive_example: 'src/dovo/core/worktree/services/ contains list.py, delete.py and show.py'
     negative_example: 'src/dovo/core/prune/ with its operations written in prune.py and no services/ directory  # hypothetical'
   - id: ARCH-004.Q05
-    question: Is each new imperative operation of a domain placed in its own services/<verb>.py module rather than directly in the package root?
+    statement: Each new imperative operation of a domain is placed in its own services/<verb>.py module rather than directly in the package root.
     kind: judgment
     na_when: The change adds no new imperative operation to a domain package.
     positive_example: 'src/dovo/core/sessions/services/read_logs.py'
     negative_example: 'A new archive() function defined in src/dovo/core/sessions/__init__.py  # hypothetical: no archive operation exists; logic in the package root without a structured module'
   - id: ARCH-004.Q06
-    question: Are all public models of a new domain package defined in its models.py rather than in services/?
+    statement: All public models of a new domain package are defined in its models.py rather than in services/.
     kind: judgment
     na_when: The change adds no public model to a domain package.
     positive_example: 'class WorktreeListResult(BaseResult) defined in src/dovo/core/worktree/models.py'
     negative_example: 'A public result model class defined inside services/prune.py  # hypothetical: public models belong in models.py'
   - id: ARCH-004.Q07
-    question: Does new domain code avoid extending a legacy flat layout (a domain package or module that lacks the standard structure)?
+    statement: New domain code avoids extending a legacy flat layout (a domain package or module that lacks the standard structure).
     kind: judgment
     na_when: The change adds no code to a domain package that predates the standard layout.
     positive_example: 'New domain code gets its own package laid out like src/dovo/core/worktree/ (models.py, exceptions.py, worktree.py, services/)'
@@ -238,22 +237,22 @@ rules:
     configuration, the database or prompts.
   criteria:
   - id: ARCH-006.Q01
-    question: Is every API key or secret read from environment variables at call time through a module-level resolve helper?
+    statement: Every API key or secret is read from environment variables at call time through a module-level resolve helper.
     kind: judgment
     positive_example: 'def resolve_copilot_token() -> str | None: return resolve_credential(COPILOT_TOKEN_ENVS)  # in core/agents/copilot.py, reads os.environ on each call'
     negative_example: 'TOKEN = os.environ["COPILOT_TOKEN"]  # hypothetical: captured once at import time instead of resolved at call time'
   - id: ARCH-006.Q02
-    question: Is every secret absent from config.json, including the fields of DovoConfig?
+    statement: Every secret is absent from config.json, including the fields of DovoConfig.
     kind: judgment
     positive_example: DovoConfig in core/config/models.py declares no api_key, token or secret field
     negative_example: 'copilot_token: str = ""  # hypothetical: a secret-bearing field added to DovoConfig'
   - id: ARCH-006.Q03
-    question: Is every secret absent from data.db, including the SQLite record models?
+    statement: Every secret is absent from data.db, including the SQLite record models.
     kind: judgment
     positive_example: The SQLModel record classes in core/db/models.py declare no credential column
     negative_example: 'api_key: str  # hypothetical: a credential column added to a SQLModel record class'
   - id: ARCH-006.Q04
-    question: Is every secret kept out of the arguments passed into prompt builders?
+    statement: Every secret is kept out of the arguments passed into prompt builders.
     kind: judgment
     na_when: The change adds or modifies no prompt builder and no call to one.
     positive_example: 'build_mutation_prompt(request: AgentRequest) in core/agents/cli_mutation.py receives the whole request, but _prompt_body copies only mode, worktree_path, agent_scratch_path, instruction and payload and never reads request.env'
@@ -269,39 +268,39 @@ rules:
     and every output format is rendered in one place.
   criteria:
   - id: RENDER-001.Q01
-    question: Does all terminal output from src/dovo/cli/ and src/dovo/core/ leave the program through ui_dispatcher.dispatch(result)?
+    statement: All terminal output from src/dovo/cli/ and src/dovo/core/ leaves the program through ui_dispatcher.dispatch(result).
     kind: judgment
     na_when: The change adds or modifies no code that produces terminal output.
     positive_example: 'ui_dispatcher.dispatch(result, output_format=output_format)  # in cli/session/commands/show.py'
     negative_example: 'print(result.session_id)  # hypothetical: in a command module, bypassing the dispatcher'
   - id: RENDER-001.Q02
-    question: Are direct print() and typer.echo calls absent from src/dovo/cli/ and src/dovo/core/ outside src/dovo/cli/ui/?
+    statement: Direct print() and typer.echo calls are absent from src/dovo/cli/ and src/dovo/core/ outside src/dovo/cli/ui/.
     kind: mechanical
     enforced_by: tests/lint/test_output_routing.py
     na_when: The change adds or modifies no print() or typer.echo call.
     positive_example: 'ui_dispatcher.dispatch(MessageEvent(message=ctx.get_help()))  # in cli/cli.py. The test is stricter than the question: it scans all of src/dovo/ and allows these calls only in cli/ui/dispatcher.py'
     negative_example: 'typer.echo("failed")  # hypothetical: in a command module'
   - id: RENDER-001.Q03
-    question: Are rich imports in src/dovo/cli/ confined to files under src/dovo/cli/ui/?
+    statement: rich imports in src/dovo/cli/ are confined to files under src/dovo/cli/ui/.
     kind: judgment
     na_when: The change adds or modifies no import in src/dovo/cli/.
     positive_example: 'cli/session/commands/show.py imports ui_dispatcher from dovo.cli.ui.dispatcher and imports nothing from rich'
     negative_example: 'from rich.table import Table  # hypothetical: in cli/session/commands/show.py'
   - id: RENDER-001.Q04
-    question: Are console .print() calls in src/dovo/cli/ and src/dovo/core/ made only in files under src/dovo/cli/ui/ (check with grep -rn "\.print(" src/dovo/cli src/dovo/core)?
+    statement: Console .print() calls in src/dovo/cli/ and src/dovo/core/ are made only in files under src/dovo/cli/ui/ (check with grep -rn "\.print(" src/dovo/cli src/dovo/core).
     kind: judgment
     na_when: The change adds or modifies no .print() call.
     positive_example: 'self._console.print(rich_renderable)  # in cli/ui/dispatcher.py'
     negative_example: 'self.console.print("failed")  # hypothetical: in a core service method or a command module'
   - id: RENDER-001.Q05
-    question: Do the files under src/dovo/core/ import nothing from rich?
+    statement: The files under src/dovo/core/ import nothing from rich.
     kind: mechanical
     enforced_by: tests/lint/test_layer_direction.py
     na_when: The change adds or modifies no import in src/dovo/core/.
     positive_example: 'A core service returns its result model, and the CLI command passes it to ui_dispatcher.dispatch (hypothetical service)'
     negative_example: 'from rich.console import Console  # hypothetical: in core/status/'
   - id: RENDER-001.Q06
-    question: Is every core service free of Console instantiation?
+    statement: Every core service is free of Console instantiation.
     kind: judgment
     na_when: The change adds or modifies no code under src/dovo/core/.
     positive_example: 'A core service returns a model and holds no console attribute (hypothetical service)'
@@ -317,19 +316,19 @@ rules:
     presentation logic can be tested without rendering anything.
   criteria:
   - id: RENDER-002.Q01
-    question: Does every to_rich() implementation get its presentation data by calling transform(data)?
+    statement: Every to_rich() implementation gets its presentation data by calling transform(data).
     kind: judgment
     na_when: The change adds or modifies no to_rich() implementation.
     positive_example: 'SessionListFormatter.to_rich in session/session_list.py starts with view = self.transform(data) and then reads only view.errors, view.fixes and the view passed to _render_list_runs'
     negative_example: 'def to_rich(self, data): return Panel(Text(data.project_name))  # hypothetical: lays out the raw result without calling transform'
   - id: RENDER-002.Q02
-    question: Is every business rule and status calculation that decides what to show performed in transform() rather than in to_rich()?
+    statement: Every business rule and status calculation that decides what to show is performed in transform() rather than in to_rich().
     kind: judgment
     na_when: The change adds or modifies no to_rich() implementation.
     positive_example: 'SessionListFormatter.transform in session/session_list.py computes total_sessions and the session summaries, and to_rich only reads them from the view'
     negative_example: color = 'green' if len(data.errors) == 0 else 'red'; return Panel(Text(color))
   - id: RENDER-002.Q03
-    question: Does every string that to_rich() renders come directly from the view model, without string manipulation inside to_rich()?
+    statement: Every string that to_rich() renders comes directly from the view model, without string manipulation inside to_rich().
     kind: judgment
     na_when: The change adds or modifies no to_rich() implementation.
     positive_example: view = self.transform(data); return Panel(Text(view.project_name))
@@ -344,7 +343,7 @@ rules:
   intent: Error, warning and fix messages stay readable where they are raised, so a reader sees the whole message at the call site instead of chasing a one-use wrapper.
   criteria:
   - id: RENDER-003.Q01
-    question: Are error, warning and fix strings built inline with f-strings or literals at their call sites, with no private helper whose sole purpose is formatting a single error or warning string?
+    statement: Error, warning and fix strings are built inline with f-strings or literals at their call sites, with no private helper whose sole purpose is formatting a single error or warning string.
     kind: judgment
     na_when: The change builds no error, warning or fix strings.
     positive_example: 'message = f"Project identity at ''{path}'' is invalid: {exc} (PROJECT_IDENTITY_INVALID_SCHEMA)."  # in core/project/services/identity.py'
@@ -359,13 +358,13 @@ rules:
   intent: Table layouts stay consistent and are fixed in one place, so a helper that several formatters of one domain need has a single home next to them, and the package-wide module holds only what every domain shares.
   criteria:
   - id: RENDER-004.Q01
-    question: Is every table-building helper that more than one formatter in a domain needs defined once in that domain's cli/ui/formatters/<domain>/common.py rather than duplicated across sibling formatter modules?
+    statement: Every table-building helper that more than one formatter in a domain needs is defined once in that domain's cli/ui/formatters/<domain>/common.py rather than duplicated across sibling formatter modules.
     kind: judgment
     na_when: The change adds or modifies no table-building helper in a formatter module.
     positive_example: 'build_session_table() defined once in cli/ui/formatters/session/common.py and imported by session_list.py'
     negative_example: 'A nearly identical build_table() defined in both worktree/worktree_list.py and worktree/worktree_show.py (hypothetical; the real worktree builders live in worktree/common.py)'
   - id: RENDER-004.Q02
-    question: Is a table-building helper placed in the package-wide cli/ui/formatters/common.py only when it is genuinely shared across domains?
+    statement: A table-building helper is placed in the package-wide cli/ui/formatters/common.py only when it is genuinely shared across domains.
     kind: judgment
     na_when: The change adds or moves no table-building helper into the package-wide cli/ui/formatters/common.py.
     positive_example: 'A table-building helper placed in cli/ui/formatters/common.py because formatters in both the session and worktree domains need it (hypothetical; that module currently contains no table builder)'
@@ -380,19 +379,19 @@ rules:
   intent: Models are strict by default so unexpected data is rejected early; the few hand-authored YAML models that tolerate unknown keys are a named exception, and each explains why in a comment so the leniency stays deliberate.
   criteria:
   - id: MODEL-001.Q01
-    question: Is extra='ignore' used only by the approved hand-authored YAML models, BlueprintDefinition and LoopStepBlock?
+    statement: extra='ignore' is used only by the approved hand-authored YAML models, BlueprintDefinition and LoopStepBlock.
     kind: judgment
     na_when: The change adds or modifies no model configuration.
     positive_example: 'model_config = {"extra": "ignore", "populate_by_name": True}  # in BlueprintDefinition, core/catalog/definitions/blueprint.py'
     negative_example: 'model_config = {"extra": "ignore"}  # hypothetical: on a result model such as a BaseResult subclass, which is not an approved model'
   - id: MODEL-001.Q02
-    question: Does every model that uses extra='ignore' carry a comment justifying it?
+    statement: Every model that uses extra='ignore' carries a comment justifying it.
     kind: judgment
     na_when: The change adds or modifies no model that uses extra='ignore'.
     positive_example: '# Hand-authored YAML loop blocks permit forward-compatible extra keys.  (directly above model_config in LoopStepBlock, core/catalog/definitions/step.py)'
     negative_example: 'model_config = {"extra": "ignore"}  # hypothetical: no justifying comment above or beside it'
   - id: MODEL-001.Q03
-    question: Does every model outside the approved list set strict=True in its configuration?
+    statement: Every model outside the approved list sets strict=True in its configuration.
     kind: judgment
     na_when: The change adds or modifies no model configuration.
     positive_example: 'model_config = {"extra": "forbid", "strict": True}  # in common/mcp_servers.py'
@@ -407,31 +406,31 @@ rules:
   intent: Callers must learn about business and operational failures from a result they can inspect and render, not from exceptions they must remember to catch.
   criteria:
   - id: MODEL-002.Q01
-    question: Does the operation report a business or operational failure by returning a result instead of raising an exception?
+    statement: The operation reports a business or operational failure by returning a result instead of raising an exception.
     kind: judgment
     na_when: The change adds or modifies no operation that can fail for business or operational reasons.
     positive_example: 'return WorktreeDeleteResult(status=WorktreeDeleteStatus.NOT_FOUND, errors=[...])  # in core/worktree/services/delete.py'
     negative_example: "raise WorktreeNotFoundError('Worktree does not exist')  # hypothetical: no such exception exists in src/"
   - id: MODEL-002.Q02
-    question: Does an operation whose outcome reaches a domain entrypoint, a command handler, a formatter or the wire format return a Pydantic result object subclassing BaseResult?
+    statement: An operation whose outcome reaches a domain entrypoint, a command handler, a formatter or the wire format returns a Pydantic result object subclassing BaseResult.
     kind: judgment
     na_when: The change adds or modifies no operation whose outcome reaches a domain entrypoint, command handler, formatter or the wire format.
     positive_example: 'def delete(self, worktree_id: str) -> WorktreeDeleteResult  # in core/worktree/worktree.py; WorktreeDeleteResult subclasses BaseResult'
     negative_example: 'def delete(...) -> bool  # hypothetical: a domain-entrypoint operation returning a plain value'
   - id: MODEL-002.Q03
-    question: Do callers of a result-returning operation check .ok rather than catching exceptions to learn the outcome?
+    statement: Callers of a result-returning operation check .ok rather than catching exceptions to learn the outcome.
     kind: judgment
     na_when: The change adds or modifies no caller of a result-returning operation.
     positive_example: 'if not result.ok: ...  # hypothetical caller that inspects the result'
     negative_example: 'try: service.delete(...) except WorktreeNotFoundError: ...  # hypothetical: caller catches an exception to learn the outcome'
   - id: MODEL-002.Q04
-    question: Do callers that report a failure to the user render the result .errors and .warnings rather than the text of a caught exception?
+    statement: Callers that report a failure to the user render the result .errors and .warnings rather than the text of a caught exception.
     kind: judgment
     na_when: The change adds or modifies no caller that reports a result-returning operation's failure to the user.
     positive_example: 'for message in result.errors: render(message)  # hypothetical caller that renders the result'
     negative_example: 'except Exception as exc: render(str(exc))  # hypothetical: failure text taken from a caught exception'
   - id: MODEL-002.Q05
-    question: Does an internal helper that returns a plain value or an error message (str | None) serve a single in-layer caller that only branches on success?
+    statement: An internal helper that returns a plain value or an error message (str | None) serves a single in-layer caller that only branches on success.
     kind: judgment
     na_when: The change adds or modifies no internal helper that returns a plain value or str | None.
     positive_example: 'BaseAgentProvider._tool_policy_preflight returns str | None; its only caller in core/agents/base.py wraps a non-None message in provider_error_response(...)'
@@ -446,13 +445,13 @@ rules:
   intent: A status a result can report must be one the program really produces and the tests really check, so callers never branch on outcomes that cannot happen or that nobody has verified.
   criteria:
   - id: MODEL-003.Q01
-    question: Is every variant emitted by production code in src/, for each status StrEnum defined in a core/*/models.py or engine/**/models.py file and used by a BaseResult model?
+    statement: For each status StrEnum defined in a core/*/models.py or engine/**/models.py file and used by a BaseResult model, every variant is emitted by production code in src/.
     kind: judgment
     na_when: The change adds or modifies no status StrEnum, used by a BaseResult model, in a core/*/models.py or engine/**/models.py file.
     positive_example: 'ArtifactsPruneStatus.LOCKED is returned by `status=ArtifactsPruneStatus.LOCKED` in src/dovo/core/artifacts/services/prune.py'
     negative_example: 'class PruneStatus(StrEnum): UNKNOWN = "unknown"  # hypothetical: no code in src/ ever assigns PruneStatus.UNKNOWN to a result'
   - id: MODEL-003.Q02
-    question: Is every variant asserted in a test under tests/, for each status StrEnum defined in a core/*/models.py or engine/**/models.py file and used by a BaseResult model?
+    statement: For each status StrEnum defined in a core/*/models.py or engine/**/models.py file and used by a BaseResult model, every variant is asserted in a test under tests/.
     kind: judgment
     na_when: The change adds or modifies no status StrEnum, used by a BaseResult model, in a core/*/models.py or engine/**/models.py file.
     positive_example: 'ArtifactsPruneStatus.LOCKED is asserted by `assert result.status == ArtifactsPruneStatus.LOCKED` in tests/core/artifacts/services/test_prune.py'
@@ -467,7 +466,7 @@ rules:
   intent: Failures about catalog definitions must be catchable through one shared error family, so callers can handle any definition problem uniformly instead of chasing unrelated base types.
   criteria:
   - id: MODEL-004.Q01
-    question: Does every exception class in src/dovo/core/catalog/exceptions.py, which covers locating, loading, validating and writing catalog definitions, descend from DefinitionError, DefinitionNotFoundError, DefinitionLoadError or DefinitionValidationError in common/exceptions.py, rather than having Exception or ValueError as its only base?
+    statement: Every exception class in src/dovo/core/catalog/exceptions.py, which covers locating, loading, validating and writing catalog definitions, descends from DefinitionError, DefinitionNotFoundError, DefinitionLoadError or DefinitionValidationError in common/exceptions.py, rather than having Exception or ValueError as its only base.
     kind: judgment
     na_when: The change adds or modifies no exception class in src/dovo/core/catalog/exceptions.py.
     positive_example: 'class BlueprintLoadError(DefinitionLoadError): """Raised when blueprint YAML syntax is invalid or unreadable."""  # in core/catalog/exceptions.py; an intermediate base such as CatalogError(DefinitionError) also counts, and an extra base is fine as in AskStepInvalidError(DefinitionValidationError, ValueError)'
@@ -482,19 +481,19 @@ rules:
   intent: Identifiers read as plain words so a reader never has to decode an invented abbreviation.
   criteria:
   - id: CODE-001.Q01
-    question: Is every new or modified variable, parameter, attribute and function name spelled in full rather than shortened by dropping letters, even for familiar shortenings (exceptions are checked by Q02 and Q03)?
+    statement: Every new or modified variable, parameter, attribute and function name is spelled in full rather than shortened by dropping letters, even for familiar shortenings (exceptions are checked by Q02 and Q03).
     kind: judgment
     na_when: The change adds or modifies no variable, parameter, attribute or function name.
     positive_example: 'validation_result = validator.validate(document)  # hypothetical: every word spelled out'
     negative_example: 'val_res = validator.validate(document); acc = []  # hypothetical: val_res and acc drop letters; other shortenings to flag include res, req, msg, val, idx, tmp, rel_path, fs, exc, err, cfg, resp'
   - id: CODE-001.Q02
-    question: Is every new or modified single-letter name confined to a comprehension, a generator expression or a one-line loop?
+    statement: Every new or modified single-letter name is confined to a comprehension, a generator expression or a one-line loop.
     kind: judgment
     na_when: The change adds or modifies no single-letter name.
     positive_example: 'any(a in ("--help", "-h") for a in raw_args)  # in cli/cli.py'
     negative_example: 'e = load_entry(path); return e.name  # hypothetical: single-letter variable outside a comprehension, generator expression or one-line loop'
   - id: CODE-001.Q03
-    question: Is every shortened name that remains in new or modified code either an initialism that is itself the domain term (db, cwd, ctx, id, url, cli, sha, ttl) or a framework-dictated name?
+    statement: Every shortened name that remains in new or modified code is either an initialism that is itself the domain term (db, cwd, ctx, id, url, cli, sha, ttl) or a framework-dictated name.
     kind: judgment
     na_when: The change adds or modifies no shortened name.
     positive_example: 'def invoke(self, ctx: Any) -> Any:  # in cli/cli.py, ctx dictated by Click; likewise tmp_path and monkeypatch dictated by pytest'
@@ -509,13 +508,13 @@ rules:
   intent: Blank lines mark where a function moves from one phase to the next, so a reader can see its structure at a glance; spacing that does not follow the logic hides that structure.
   criteria:
   - id: CODE-002.Q01
-    question: Are distinct logical phases of a function body (setup, validate, persist, return) separated by a blank line?
+    statement: Distinct logical phases of a function body (setup, validate, persist, return) are separated by a blank line.
     kind: judgment
     na_when: The function body is a single phase or too short to contain more than one phase.
     positive_example: 'In Engine._finalize_row (src/dovo/engine/engine.py), the load phase and its early-return branch are followed by a blank line before the "saved = store.save(...)" phase.'
     negative_example: 'record = WorktreeRecord(...), a save call and "return result" on consecutive lines with no blank line between them (hypothetical: building, persisting and returning run together as one dense block)'
   - id: CODE-002.Q02
-    question: Is every blank line in a function body free of separating two adjacent lines that work on the same value within one phase?
+    statement: No blank line in a function body separates two adjacent lines that work on the same value within one phase.
     kind: judgment
     na_when: The function body contains no blank lines.
     positive_example: 'In Engine._finalize_row (src/dovo/engine/engine.py), the blank line at line 211 sits between the early "return" at line 210 and "saved = store.save(" at line 212, which starts a new phase and does not work on the value the "return" line ended, so the blank line is correctly placed.'
@@ -530,7 +529,7 @@ rules:
   intent: Docstrings stay short so a reader gets the title at a glance and finds a description only where it carries a fact the code cannot show and whose absence would cause wrong code.
   criteria:
   - id: CODE-003.Q01
-    question: Does the docstring open with a one-line title stating what the thing is or does?
+    statement: The docstring opens with a one-line title stating what the thing is or does.
     kind: judgment
     na_when: The change adds or modifies no docstring.
     positive_example: '"""Base for providers that edit the worktree directly instead of returning a diff."""  # title of the class in core/agents/cli_mutation.py'
@@ -538,13 +537,13 @@ rules:
       """Run the provider. Then resolve the baseline
       and build the prompt before diffing the worktree."""  # hypothetical: the opening wraps over two lines and holds two sentences, so there is no one-line title
   - id: CODE-003.Q02
-    question: Is the title free of outcome, failure-path and side-effect clauses, with a comma used only to enumerate a distinct list?
+    statement: The title is free of outcome, failure-path and side-effect clauses, with a comma used only to enumerate a distinct list.
     kind: judgment
     na_when: The change adds or modifies no docstring.
     positive_example: '"""Base for providers that edit the worktree directly instead of returning a diff."""  # outcomes live in the description'
     negative_example: '"""Return the roots a whole-root read/write rule grants for read or write, or why a rule cannot be preserved."""  # outcome clause in the title, as in core/agents/copilot.py'
   - id: CODE-003.Q03
-    question: Does a unit with a hidden contract, a data-loss or safety behavior, a non-obvious ordering constraint or a deliberate oddity carry a description stating it?
+    statement: A unit with a hidden contract, a data-loss or safety behavior, a non-obvious ordering constraint or a deliberate oddity carries a description stating it.
     kind: judgment
     na_when: The change adds or modifies no unit with a hidden contract, safety behavior, non-obvious ordering constraint or deliberate oddity.
     positive_example: |-
@@ -553,7 +552,7 @@ rules:
       Edits that fail patch validation are discarded from the worktree; a failed discard is reported in the response errors."""  # CliDirectMutationAdapter in core/agents/cli_mutation.py: the discard is a safety behavior the code does not make obvious
     negative_example: '"""Base for providers that edit the worktree directly instead of returning a diff."""  # hypothetical: title only, although edits that fail validation are silently discarded from the worktree'
   - id: CODE-003.Q04
-    question: Does every description state a fact the code cannot show, rather than something a reader can already see in the code?
+    statement: Every description states a fact the code cannot show, rather than something a reader can already see in the code.
     kind: judgment
     na_when: The change adds or modifies no docstring with a description.
     positive_example: |-
@@ -565,7 +564,7 @@ rules:
 
       Uses a dict for lookup."""  # hypothetical: true, but the dict is plain to see in the body
   - id: CODE-003.Q05
-    question: Is every description free of step-by-step narration of the body?
+    statement: Every description is free of step-by-step narration of the body.
     kind: judgment
     na_when: The change adds or modifies no docstring with a description.
     positive_example: |-
@@ -577,7 +576,7 @@ rules:
 
       First resolve the baseline, then build the prompt, then run the tool."""  # hypothetical: the description retells the body step by step
   - id: CODE-003.Q06
-    question: Is every description free of text that restates the parameters, types or return annotation, or repeats the title in other words?
+    statement: Every description is free of text that restates the parameters, types or return annotation, or repeats the title in other words.
     kind: judgment
     na_when: The change adds or modifies no docstring with a description.
     positive_example: |-
@@ -598,7 +597,7 @@ rules:
   intent: A docstring states only behavior the documented unit itself implements, so it cannot go stale when other code changes without any sign in the diff.
   criteria:
   - id: CODE-004.Q01
-    question: Does each new or modified docstring avoid describing what a caller does with the unit's result?
+    statement: Each new or modified docstring avoids describing what a caller does with the unit's result.
     kind: judgment
     na_when: The change adds or modifies no docstring.
     positive_example: |-
@@ -610,7 +609,7 @@ rules:
 
       The adapter surfaces a returned reason as an unsupported-policy error before the process is spawned."""  # hypothetical: describes what the caller does with the returned reason
   - id: CODE-004.Q02
-    question: Does each new or modified docstring avoid describing logic that lives in another module or class, other than a reference to a sibling in the same module?
+    statement: Each new or modified docstring avoids describing logic that lives in another module or class, other than a reference to a sibling in the same module.
     kind: judgment
     na_when: The change adds or modifies no docstring.
     positive_example: '"""Return items without duplicates, in first-seen order."""  # _unique in core/agents/claude_policy.py, which describes only its own behavior'
@@ -625,7 +624,7 @@ rules:
   intent: A unit's documentation must be a single docstring, because a second bare string reads as documentation but is dead code. Extra text belongs in the docstring or nowhere.
   criteria:
   - id: CODE-005.Q01
-    question: Is every new or modified module, class and function body free of a bare string statement after its first statement?
+    statement: Every new or modified module, class and function body is free of a bare string statement after its first statement.
     kind: judgment
     na_when: The change adds or modifies no module, class or function.
     positive_example: '"""Render a restricted policy as dontAsk flags."""  # hypothetical: the only string statement in the function body'
@@ -641,7 +640,7 @@ rules:
     each caller. Where a value is only stored, compared or passed through, object is preferred to Any.
   criteria:
   - id: TYPE-001.Q01
-    question: Is the return annotation of every public function (a module-level function or a method whose name does not start with an underscore) something other than Any?
+    statement: The return annotation of every public function (a module-level function or a method whose name does not start with an underscore) is not Any.
     kind: judgment
     na_when: The code under review contains no public function.
     positive_example: 'def get_payload(self) -> object: ...  # hypothetical: callers must narrow the value before using it'
@@ -656,7 +655,7 @@ rules:
   intent: Any switches off type checking wherever it appears, so it is confined to the few boundaries where the value really is unconstrained, and everywhere else the type checker keeps working.
   criteria:
   - id: TYPE-002.Q01
-    question: 'Is every use of Any in the change confined to one of four boundaries, namely a Pydantic mode="before" validator, a dict[str, Any] at a serialization boundary, a value read from a user document and compared, or a **kwargs: Any pass-through?'
+    statement: 'Every use of Any in the change is confined to one of four boundaries, namely a Pydantic mode="before" validator, a dict[str, Any] at a serialization boundary, a value read from a user document and compared, or a **kwargs: Any pass-through.'
     kind: judgment
     na_when: The change adds or modifies no use of Any.
     positive_example: '@field_validator("capability", mode="before") then def coerce_capability(cls, val: Any) -> Any  # in common/tool_policy.py; a pre-validator receives whatever the user wrote'
@@ -671,31 +670,31 @@ rules:
   intent: Any switches off the type checker, so it is not used to hide misplaced code, a test seam, a type that already exists or a type the code already knows.
   criteria:
   - id: TYPE-003.Q01
-    question: Is every annotation free of Any that exists only because the real type cannot be imported from the current package?
+    statement: Every annotation is free of Any that exists only because the real type cannot be imported from the current package.
     kind: judgment
     na_when: The change adds or modifies no Any annotation.
     positive_example: 'def run(step: StepDefinition) -> None: ...  # hypothetical: the code that needs StepDefinition was moved to a package that can import it'
     negative_example: 'def run(step: Any) -> None: ...  # hypothetical: Any used because StepDefinition cannot be imported from this package'
   - id: TYPE-003.Q02
-    question: Is every parameter free of an Any annotation that exists only so a test can pass a stub?
+    statement: Every parameter is free of an Any annotation that exists only so a test can pass a stub.
     kind: judgment
     na_when: The change adds or modifies no Any annotation.
     positive_example: 'def run(self) -> None: ...  # hypothetical: no extra parameter, the test patches at the boundary instead'
     negative_example: 'def run(self, output: Any = None) -> None: ...  # hypothetical: output is never read in production and exists for tests'
   - id: TYPE-003.Q03
-    question: Is every annotation free of Any where a model that describes the value already exists?
+    statement: Every annotation is free of Any where a model that describes the value already exists.
     kind: judgment
     na_when: The change adds or modifies no Any annotation.
     positive_example: 'def render(step: StepDefinition) -> str: ...  # hypothetical signature naming the existing model'
     negative_example: 'def render(step: Any, metadata: Any) -> str: ...  # hypothetical: StepDefinition already describes step'
   - id: TYPE-003.Q04
-    question: Does every override of a third-party method name the third-party type instead of Any?
+    statement: Every override of a third-party method names the third-party type instead of Any.
     kind: judgment
     na_when: The change adds or modifies no override of a third-party method.
     positive_example: 'def invoke(self, ctx: click.Context) -> object: ...  # hypothetical override of a Click method'
     negative_example: 'def invoke(self, ctx: Any) -> Any: ...  # hypothetical override of a Click method'
   - id: TYPE-003.Q05
-    question: Is every generic type parameterized with the concrete type the code already knows, rather than Any?
+    statement: Every generic type is parameterized with the concrete type the code already knows, rather than Any.
     kind: judgment
     na_when: The change adds or modifies no generic type annotation.
     positive_example: 'proc: subprocess.Popen[str] = ...'
@@ -710,13 +709,13 @@ rules:
   intent: The type checker should see class-level SQL names and constants as exactly what they are, so it never has to guess between Any, a bare string and a class attribute.
   criteria:
   - id: TYPE-004.Q01
-    question: Is every SQLModel __tablename__ annotated as ClassVar[str]?
+    statement: Every SQLModel __tablename__ is annotated as ClassVar[str].
     kind: judgment
     na_when: The change defines no SQLModel table class.
     positive_example: '__tablename__: ClassVar[str] = "worktrees"  # in WorktreeRecord, core/db/models.py (the real line also carries a pyright ignore for the SQLModel stub conflict, omitted here)'
     negative_example: '__tablename__ = "worktrees"  # hypothetical: unannotated, so the type checker has to infer it'
   - id: TYPE-004.Q02
-    question: Is every other class-level SQL string constant annotated explicitly as ClassVar[str] rather than Any or a bare str?
+    statement: Every other class-level SQL string constant is annotated explicitly as ClassVar[str] rather than Any or a bare str.
     kind: judgment
     na_when: The change adds no class-level SQL string constant besides __tablename__.
     positive_example: 'INDEX_NAME: ClassVar[str] = "ix_worktrees_status"  # hypothetical constant on a table class'
@@ -731,7 +730,7 @@ rules:
   intent: Generator annotations state the full contract of what a generator yields, accepts and returns, so readers and the type checker never have to infer the omitted parts.
   criteria:
   - id: TYPE-005.Q01
-    question: Does every Generator[...] annotation specify all three parameters, yield, send and return, as in Generator[YieldType, SendType, ReturnType]?
+    statement: Every Generator[...] annotation specifies all three parameters, yield, send and return, as in Generator[YieldType, SendType, ReturnType].
     kind: judgment
     na_when: The change adds or modifies no Generator[...] annotation.
     positive_example: 'def get_session(engine: Engine) -> Generator[Session, None, None]: ...  # hypothetical: the full three-parameter form of the real function in core/db/connection.py'
@@ -747,9 +746,7 @@ rules:
     so every suppression is one the checker honors, is narrow, and says why it exists.
   criteria:
   - id: TYPE-006.Q01
-    question: >-
-      Does the code use no bare `# type: ignore`, which this repo's basedpyright config does not honor and which
-      suppresses nothing?
+    statement: 'The code uses no bare `# type: ignore`, which this repo''s basedpyright config does not honor and which suppresses nothing.'
     kind: judgment
     positive_example: >-
       self.value = compute()  # pyright: ignore[reportAttributeAccessIssue]  # stub conflict: third-party stub cannot
@@ -758,8 +755,7 @@ rules:
       queue: Queue = mock_queue  # type: ignore  # bare ignore, suppresses nothing and hides a fixable fixture type
       (hypothetical line)
   - id: TYPE-006.Q02
-    question: >-
-      Does every `# pyright: ignore[reportRuleName]` name the specific rule it silences in brackets?
+    statement: 'Every `# pyright: ignore[reportRuleName]` names the specific rule it silences in brackets.'
     kind: judgment
     na_when: "The change adds no `# pyright: ignore` comment."
     positive_example: >-
@@ -768,8 +764,7 @@ rules:
     negative_example: >-
       value = call()  # pyright: ignore  # silences every rule on the line (hypothetical line)
   - id: TYPE-006.Q03
-    question: >-
-      Does every `# pyright: ignore[...]` carry a one-line reason that names which permitted case applies?
+    statement: 'Every `# pyright: ignore[...]` carries a one-line reason that names which permitted case applies.'
     kind: judgment
     na_when: "The change adds no `# pyright: ignore` comment."
     positive_example: >-
@@ -779,9 +774,7 @@ rules:
       resume = command.commands["resume"]  # pyright: ignore[reportAttributeAccessIssue]  (tests/lint/test_step_schema_parity.py;
       an existing line with no reason after the ignore)
   - id: TYPE-006.Q04
-    question: >-
-      Is every `# pyright: ignore[...]` one of the three permitted cases: an intentional ill-typed test input whose
-      subject is the raised error, a third-party stub conflict our code cannot name correctly, or a platform-gated import?
+    statement: 'Every `# pyright: ignore[...]` is one of the three permitted cases: an intentional ill-typed test input whose subject is the raised error, a third-party stub conflict our code cannot name correctly, or a platform-gated import.'
     kind: judgment
     na_when: "The change adds no `# pyright: ignore` comment."
     positive_example: >-
@@ -791,8 +784,7 @@ rules:
       result = parse(raw)  # pyright: ignore[reportReturnType]  # inconvenient to annotate (hypothetical line; fix the
       annotation instead)
   - id: TYPE-006.Q05
-    question: >-
-      Is `reportCallIssue` or `reportArgumentType` never suppressed to silence a wrong-shaped test double or fixture?
+    statement: '`reportCallIssue` or `reportArgumentType` is never suppressed to silence a wrong-shaped test double or fixture.'
     kind: judgment
     na_when: The change adds no ignore of `reportCallIssue` or `reportArgumentType`.
     positive_example: >-
@@ -802,8 +794,7 @@ rules:
       service = Service(queue=fake_queue)  # pyright: ignore[reportArgumentType]  # the fake does not match the Queue
       type (hypothetical line; fix the fixture type instead)
   - id: TYPE-006.Q06
-    question: >-
-      Is `reportIncompatibleVariableOverride` suppressed only on the SQLModel `__tablename__` stub conflict?
+    statement: '`reportIncompatibleVariableOverride` is suppressed only on the SQLModel `__tablename__` stub conflict.'
     kind: judgment
     na_when: The change adds no ignore of `reportIncompatibleVariableOverride`.
     positive_example: >-
@@ -823,13 +814,13 @@ rules:
     interface, so a refactor stays local instead of breaking every caller that reached inside.
   criteria:
   - id: ENCAP-001.Q01
-    question: Is every access to an underscore-prefixed, non-dunder member in src/dovo/ made on self, cls or mcs rather than on another object?
+    statement: Every access to an underscore-prefixed, non-dunder member in src/dovo/ is made on self, cls or mcs rather than on another object.
     kind: mechanical
     enforced_by: pyproject.toml
     positive_example: 'if runner.is_running: ...  # caller uses the public query property'
     negative_example: 'if runner._process is not None: ...  # caller inspecting private state'
   - id: ENCAP-001.Q02
-    question: Does each class that callers query for boolean state expose that state as a public property?
+    statement: Each class that callers query for boolean state exposes that state as a public property.
     kind: judgment
     na_when: No new or modified code in src/dovo/ checks the boolean state of another class.
     positive_example: 'if runner.is_running: ...  # public @property on the class, backed by self._proc'
@@ -845,7 +836,7 @@ rules:
     caller needs it, so the public surface reflects real behavior and tests do not shape production APIs.
   criteria:
   - id: ENCAP-002.Q01
-    question: Is every parameter, kwarg or callback with a default value in a new or modified function in src/dovo/ passed by at least one production caller?
+    statement: Every parameter, kwarg or callback with a default value in a new or modified function in src/dovo/ is passed by at least one production caller.
     kind: judgment
     na_when: No new or modified function in src/dovo/ has a parameter with a default value.
     positive_example: 'def run(self, cwd: Path) -> RunOutcome: ...  # tests monkeypatch at boundary'
@@ -861,7 +852,7 @@ rules:
     and migration check each time.
   criteria:
   - id: PERF-001.Q01
-    question: Is every repository or DovoDb used inside a for or while loop created outside that loop?
+    statement: Every repository or DovoDb used inside a for or while loop is created outside that loop.
     kind: judgment
     na_when: No for or while loop in the changed code uses a repository or DovoDb.
     positive_example: 'db = DovoDb(paths.database_file, project_id=paths.project_id)
@@ -869,7 +860,7 @@ rules:
       for item in items: db.sessions.create(...)  # illustrative; create() takes more arguments'
     negative_example: 'for item in items: db = DovoDb(paths.database_file, project_id=paths.project_id); db.sessions.create(...)  # illustrative; create() takes more arguments'
   - id: PERF-001.Q02
-    question: Does every helper function, including every test helper, receive its repository or DovoDb as an argument instead of instantiating one?
+    statement: Every helper function, including every test helper, receives its repository or DovoDb as an argument instead of instantiating one.
     kind: judgment
     na_when: No helper function in the changed code uses a repository or DovoDb.
     positive_example: 'def seed_sessions(db: DovoDb, items: list[str]) -> None: ...  # illustrative helper that takes the instance'
@@ -885,19 +876,19 @@ rules:
     installed database upgrades the same way and no dead columns accumulate.
   criteria:
   - id: PERF-002.Q01
-    question: Is every table or column added by a migration in the change written by production code in src/ in the same PR?
+    statement: Every table or column added by a migration in the change is written by production code in src/ in the same PR.
     kind: judgment
     na_when: The change adds no table or column.
     positive_example: 'Migration 0003_artifact_revisions adds the digest column, and ArtifactsRepository.create() in src/dovo/core/db/repositories/artifacts.py accepts and stores digest'
     negative_example: '# Hypothetical: a migration adds column future_flag to sessions and no code under src/ ever sets it'
   - id: PERF-002.Q02
-    question: Is every table or column added by a migration in the change queried by production code in src/ in the same PR?
+    statement: Every table or column added by a migration in the change is queried by production code in src/ in the same PR.
     kind: judgment
     na_when: The change adds no table or column.
     positive_example: 'Migration 0004_session_discard adds sessions.discard, and the session settings builder in src/dovo/engine/session.py reads it back with discard=row.discard'
     negative_example: '# Hypothetical: a migration adds column future_flag to sessions and no code under src/ ever reads or filters on it'
   - id: PERF-002.Q03
-    question: Is every one-time data backfill shipped as a versioned Alembic revision that runs it with op.execute()?
+    statement: Every one-time data backfill is shipped as a versioned Alembic revision that runs it with op.execute().
     kind: judgment
     na_when: The change performs no one-time data backfill.
     positive_example: 'A new revision file under src/dovo/core/db/alembic/versions/ calls op.execute("UPDATE ...") to backfill existing rows (the existing op.execute call in 0003_artifact_revisions is a downgrade data cleanup, used here as the pattern)'
@@ -912,7 +903,7 @@ rules:
   intent: Lookups use the database's filtering and indexes, so the cost of finding a record does not grow with the number of rows fetched and scanned in Python.
   criteria:
   - id: PERF-003.Q01
-    question: Does code that needs a subset of repository records get it with a filtered repository query instead of filtering a full fetch in memory, whenever an indexed query method or column exists?
+    statement: Code that needs a subset of repository records gets it with a filtered repository query instead of filtering a full fetch in memory, whenever an indexed query method or column exists.
     kind: judgment
     na_when: The changed code does not select records from a repository, or no indexed query method or column exists for the lookup.
     positive_example: 'paused = db.sessions.list(status=SessionStatus.PAUSED)  # status is an indexed column; list() filters it in SQL'
@@ -928,43 +919,43 @@ rules:
     others without reading each class, and a divergent name reads as a different behavior.
   criteria:
   - id: API-001.Q01
-    question: Does every repository class that inserts a new record expose that operation as a public create() method?
+    statement: Every repository class that inserts a new record exposes that operation as a public create() method.
     kind: judgment
     na_when: The repository class has no method that inserts a new record.
     positive_example: 'WorktreesRepository.create(...) and SessionsRepository.create(...)'
     negative_example: 'CostsRepository.record_token_usage(...) inserting a CostRecord while sibling repositories use create()'
   - id: API-001.Q02
-    question: Does every repository method that returns at most one record looked up by its identifying key have the name get?
+    statement: Every repository method that returns at most one record looked up by its identifying key has the name get.
     kind: judgment
     na_when: The repository class has no method that looks up a single record by its identifying key.
     positive_example: 'def get(self, id: str) -> WorktreeRecord | None:'
     negative_example: 'def find(self, id: str) -> WorktreeRecord | None:  # siblings use get()'
   - id: API-001.Q03
-    question: Does every repository method that returns a collection of records of one entity have the name list?
+    statement: Every repository method that returns a collection of records of one entity has the name list.
     kind: judgment
     na_when: The repository class has no method that returns a collection of records.
     positive_example: 'def list(self, status: WorktreeStatus | None = None) -> list[WorktreeRecord]:'
     negative_example: 'def all(self) -> list[WorktreeRecord]:  # siblings use list()'
   - id: API-001.Q04
-    question: Does every repository method that removes a record have the name delete?
+    statement: Every repository method that removes a record has the name delete.
     kind: judgment
     na_when: The repository class has no method that removes a record.
     positive_example: 'def delete(self, id: str) -> bool:'
     negative_example: 'def remove(self, id: str) -> bool:  # siblings use delete()'
   - id: API-001.Q05
-    question: Does every repository method that persists changes to a whole existing record have the name save?
+    statement: Every repository method that persists changes to a whole existing record has the name save.
     kind: judgment
     na_when: No repository method persists changes to a whole existing record; partial updates such as update_status do not count.
     positive_example: 'def save(self, record: SessionRecord) -> SessionRecord:'
     negative_example: 'def store(self, record: SessionRecord) -> SessionRecord:  # whole-record persist not named save()'
   - id: API-001.Q06
-    question: Does every repository method named insert, add or upsert have a docstring or comment stating why a canonical verb does not fit?
+    statement: Every repository method named insert, add or upsert has a docstring or comment stating why a canonical verb does not fit.
     kind: judgment
     na_when: No repository method is named insert, add or upsert.
     positive_example: 'def upsert(self, ...) -> ...:  with the docstring "Not save(): replaces the row only when the revision matches."'
     negative_example: 'def insert(self, record: WorktreeRecord) -> WorktreeRecord:  # no stated reason; siblings use create()'
   - id: API-001.Q07
-    question: Do all repository classes that expose the same non-CRUD operation give it the same method name?
+    statement: All repository classes that expose the same non-CRUD operation give it the same method name.
     kind: judgment
     na_when: No two repository classes expose the same non-CRUD operation.
     positive_example: 'WorktreesRepository.update_status(...) and SessionsRepository.update_status(...)'
@@ -980,13 +971,13 @@ rules:
     failure in one path for an empty result while a sibling path reports it.
   criteria:
   - id: API-002.Q01
-    question: Does every query method that reads an entity report an invalid enum value or corrupt row, by raising or by returning a BaseResult error, whenever a sibling query method that reads that entity reports it?
+    statement: Every query method that reads an entity reports an invalid enum value or corrupt row, by raising or by returning a BaseResult error, whenever a sibling query method that reads that entity reports it.
     kind: judgment
     na_when: No two query methods read the same entity.
     positive_example: 'get() and list() both raise ValueError for a row with an invalid status'
     negative_example: 'list() raises on a row with an invalid status while get() returns None for the same row'
   - id: API-002.Q02
-    question: Does every except block in a query method re-raise or convert the caught error into a BaseResult error, instead of returning None or an empty value?
+    statement: Every except block in a query method re-raises or converts the caught error into a BaseResult error, instead of returning None or an empty value.
     kind: judgment
     na_when: The query method contains no except block.
     positive_example: 'except ValidationError as error: return RecordResult.from_error(error)'
@@ -1002,27 +993,27 @@ rules:
     behavior stay identical across repositories and a fix is made in one place instead of in every sibling.
   criteria:
   - id: DRY-001.Q01
-    question: Does every repository method that persists a record commit through BaseRepository._commit?
+    statement: Every repository method that persists a record commits through BaseRepository._commit.
     kind: judgment
     positive_example: return self._commit(session, record, f"Worktree with id '{id}' already exists")
     negative_example: 'session.add(record); session.commit()  # in a repository subclass'
   - id: DRY-001.Q02
-    question: Does every repository method that deletes a single record delete it through BaseRepository._delete_where?
+    statement: Every repository method that deletes a single record deletes it through BaseRepository._delete_where.
     kind: judgment
     positive_example: return self._delete_where(session, select(WorktreeRecord).where(WorktreeRecord.id == id))
     negative_example: 'session.delete(record); session.commit()  # in a repository subclass'
   - id: DRY-001.Q03
-    question: Is the rollback after a failed commit written only in BaseRepository?
+    statement: The rollback after a failed commit is written only in BaseRepository.
     kind: judgment
     positive_example: 'No try/except IntegrityError and no session.rollback() in worktrees.py, sessions.py, artifacts.py or costs.py'
     negative_example: 'except IntegrityError: session.rollback(); raise ValueError(...)  # in a repository subclass'
   - id: DRY-001.Q04
-    question: Does every repository method obtain its session from BaseRepository.session()?
+    statement: Every repository method obtains its session from BaseRepository.session().
     kind: judgment
     positive_example: 'with self.session() as session:'
     negative_example: 'with get_session(self.db_engine) as session:  # in a repository subclass'
   - id: DRY-001.Q05
-    question: Is every other transaction block shared by two or more repository classes defined once in BaseRepository?
+    statement: Every other transaction block shared by two or more repository classes is defined once in BaseRepository.
     kind: judgment
     na_when: No repository class other than BaseRepository contains transaction-handling code beyond calls to BaseRepository helpers.
     positive_example: 'Two repositories both call self._delete_where(...) for single-record deletes'
@@ -1037,7 +1028,7 @@ rules:
   intent: A unique constraint already gets a backing index in SQLite, so a column declares uniqueness or an extra index, never both, and the database does not carry a second index that does nothing.
   criteria:
   - id: DB-001.Q01
-    question: Is every SQLModel Field that declares unique=True free of an index=True declaration?
+    statement: Every SQLModel Field that declares unique=True is free of an index=True declaration.
     kind: judgment
     na_when: The change adds or modifies no SQLModel Field in src/dovo/core/db/models.py.
     positive_example: 'session_id: str = Field(unique=True)  # in SessionRecord, src/dovo/core/db/models.py'
@@ -1053,31 +1044,31 @@ rules:
     revision that shipped never changes and every revision can be undone on any supported database.
   criteria:
   - id: DB-002.Q01
-    question: Is every revision file that exists in the latest v* tag left unedited, unrenamed and undeleted?
+    statement: Every revision file that exists in the latest v* tag is left unedited, unrenamed and undeleted.
     kind: judgment
     na_when: The change touches no revision file that exists in the latest v* tag.
     positive_example: 'A schema fix for a released column ships as a new file, 0005_fix_discard_default.py (hypothetical), and 0001_initial_schema.py is untouched'
     negative_example: 'Editing 0001_initial_schema.py, which exists in the v0.6.0 tag, to change a column definition'
   - id: DB-002.Q02
-    question: Does every new revision define both upgrade() and a downgrade() that has a real body rather than a bare `pass`?
+    statement: Every new revision defines both upgrade() and a downgrade() that has a real body rather than a bare `pass`.
     kind: judgment
     na_when: The change adds no new revision.
     positive_example: '0004_session_discard.py defines downgrade() that drops the discard column from sessions inside op.batch_alter_table'
     negative_example: 'A revision whose downgrade() is `pass`'
   - id: DB-002.Q03
-    question: Does every new revision avoid PRAGMA and sqlite_master?
+    statement: Every new revision avoids PRAGMA and sqlite_master.
     kind: judgment
     na_when: The change adds no new revision.
     positive_example: '0004_session_discard.py contains no PRAGMA statement and no reference to sqlite_master'
     negative_example: 'op.execute("PRAGMA foreign_keys=OFF")  # or a query against sqlite_master, in a revision'
   - id: DB-002.Q04
-    question: Does every new revision make its column and constraint changes through op.batch_alter_table?
+    statement: Every new revision makes its column and constraint changes through op.batch_alter_table.
     kind: judgment
     na_when: The new revision makes no column or constraint changes.
     positive_example: 'with op.batch_alter_table("sessions") as batch_op: batch_op.drop_column("discard")'
     negative_example: 'op.add_column("sessions", sa.Column("discard", sa.Boolean()))  # outside a batch_alter_table block (hypothetical revision)'
   - id: DB-002.Q05
-    question: Does every new revision have both an upgrade test and a downgrade test in tests/core/db/test_migrations.py?
+    statement: Every new revision has both an upgrade test and a downgrade test in tests/core/db/test_migrations.py.
     kind: judgment
     na_when: The change adds no new revision.
     positive_example: 'SessionDiscardMigrationTests has test_upgrade_adds_discard_column_defaulting_existing_rows_false and test_downgrade_drops_discard_column_and_keeps_rows'
@@ -1092,30 +1083,30 @@ rules:
   intent: Config and state files are never left half-written, because they are written atomically instead of in-place.
   criteria:
   - id: FS-001.Q01
-    question: Is every write to a config or state file made through Filesystem.atomic_write_json or Filesystem.atomic_write_text?
+    statement: Every write to a config or state file is made through Filesystem.atomic_write_json or Filesystem.atomic_write_text.
     kind: judgment
     positive_example: Filesystem.atomic_write_json(config_path, data)
     negative_example: 'with open(config_path, ''w'') as f: json.dump(data, f)  # hypothetical in-place write'
   - id: FS-001.Q02
-    question: Is every config or state file write free of a direct open(..., 'w') call?
+    statement: Every config or state file write is free of a direct open(..., 'w') call.
     kind: judgment
     na_when: The code writes no config or state file.
     positive_example: 'Filesystem.atomic_write_text(state_path, text)  # hypothetical caller; no open() call at the call site'
     negative_example: 'with open(state_path, ''w'') as f: f.write(text)  # hypothetical in-place write'
   - id: FS-001.Q03
-    question: Is every config or state file write free of a direct Path.write_text call?
+    statement: Every config or state file write is free of a direct Path.write_text call.
     kind: judgment
     na_when: The code writes no config or state file.
     positive_example: 'Filesystem.atomic_write_text(config_path, text)  # hypothetical caller'
     negative_example: 'config_path.write_text(text)  # hypothetical in-place write'
   - id: FS-001.Q04
-    question: Does each atomic write helper write to a .tmp sibling of the target and swap it into place with Path.replace?
+    statement: Each atomic write helper writes to a .tmp sibling of the target and swaps it into place with Path.replace.
     kind: judgment
     na_when: The change adds or modifies no atomic write helper.
     positive_example: 'atomic_write_text in src/dovo/common/filesystem/services/operations.py writes to path.with_name(f"{path.name}.tmp") and then calls tmp_path.replace(path)'
     negative_example: 'A hypothetical helper that opens the target path directly in ''w'' mode and never calls Path.replace'
   - id: FS-001.Q05
-    question: Does each atomic write helper flush and call os.fsync on the temporary file before swapping it into place?
+    statement: Each atomic write helper flushes and calls os.fsync on the temporary file before swapping it into place.
     kind: judgment
     na_when: The change adds or modifies no atomic write helper.
     positive_example: 'atomic_write_text in src/dovo/common/filesystem/services/operations.py calls f.flush() and os.fsync(f.fileno()) before tmp_path.replace(path)'
@@ -1130,19 +1121,19 @@ rules:
   intent: Concurrent dovo processes must not corrupt shared worktree, catalog or state data, so mutations are serialized by the shared advisory workspace lock and a failure to obtain it is reported rather than ignored.
   criteria:
   - id: FS-002.Q01
-    question: Is every worktree, catalog or state mutation that can run in more than one process at once performed while holding the .dovo/.lock advisory lock?
+    statement: Every worktree, catalog or state mutation that can run in more than one process at once is performed while holding the .dovo/.lock advisory lock.
     kind: judgment
     na_when: The change does not mutate worktree, catalog or state data that more than one process can touch.
     positive_example: 'with WorkspaceLock(self.paths.lock_file): return self.lifecycle.create(...)  # in core/worktree/worktree.py'
     negative_example: 'self.lifecycle.create(...)  # hypothetical: mutates the shared .dovo directory without acquiring the lock'
   - id: FS-002.Q02
-    question: Is the lock acquired through WorkspaceLock from common/lock.py?
+    statement: The lock is acquired through WorkspaceLock from common/lock.py.
     kind: judgment
     na_when: The change acquires no workspace lock.
     positive_example: 'from dovo.common.lock import WorkspaceLock  # then: with WorkspaceLock(paths.lock_file):'
     negative_example: 'fcntl.flock(open(lock_path, "w"), fcntl.LOCK_EX)  # hypothetical: hand-rolled locking outside common/lock.py'
   - id: FS-002.Q03
-    question: Is LockTimeoutError handled where the lock is acquired or by a caller that reports it?
+    statement: LockTimeoutError is handled where the lock is acquired or by a caller that reports it.
     kind: judgment
     na_when: The change acquires no workspace lock.
     positive_example: 'except LockTimeoutError as exc: return ArtifactsPruneResult(status=ArtifactsPruneStatus.LOCKED, ..., errors=[f"Failed to acquire workspace lock: {exc}"])  # in core/artifacts/services/prune.py'
@@ -1157,19 +1148,19 @@ rules:
   intent: Users and scripts depend on the surfaces they interact with directly, so those surfaces keep working across changes. Compatibility is kept only for them, and nowhere else.
   criteria:
   - id: COMPAT-001.Q01
-    question: Does the change leave every existing CLI command, subcommand, argument and flag usable as before, with no breaking rename or removal?
+    statement: The change leaves every existing CLI command, subcommand, argument and flag usable as before, with no breaking rename or removal.
     kind: judgment
     na_when: The change does not touch the CLI command surface (commands, subcommands, arguments or flags).
     positive_example: '"--path", "-p" on the global callback in cli/cli.py  # option name and short form left unchanged'
     negative_example: '# hypothetical: renaming the --path option to --workspace without keeping --path as an alias'
   - id: COMPAT-001.Q02
-    question: Does the change leave existing configuration files and blueprint YAML definitions (such as config.json keys and values) readable with the same meaning as before?
+    statement: The change leaves existing configuration files and blueprint YAML definitions (such as config.json keys and values) readable with the same meaning as before.
     kind: judgment
     na_when: The change does not touch configuration keys or values, or the blueprint YAML schema.
     positive_example: '# hypothetical: a new optional config.json key added with a default, so existing config files load unchanged'
     negative_example: '# hypothetical: renaming an existing config.json key so that files written before the change no longer load'
   - id: COMPAT-001.Q03
-    question: Does the change leave the stable machine-readable output formats, such as the JSON event envelope, with the same field names and meaning as before?
+    statement: The change leaves the stable machine-readable output formats, such as the JSON event envelope, with the same field names and meaning as before.
     kind: judgment
     na_when: The change does not touch machine-readable output formats.
     positive_example: 'envelope = {"event_type": data_type.__name__, "payload": formatter.to_json_serializable(data)}  # in cli/ui/dispatcher.py, envelope keys unchanged'
@@ -1184,19 +1175,19 @@ rules:
   intent: Internal refactors must not leave old names behind, so internal code carries one name per symbol and no dead compatibility layers; callers and tests are updated to the new name instead.
   criteria:
   - id: COMPAT-002.Q01
-    question: Is the change free of backwards-compatibility aliases that keep an old internal name pointing at a renamed symbol?
+    statement: The change is free of backwards-compatibility aliases that keep an old internal name pointing at a renamed symbol.
     kind: judgment
     na_when: The change renames no internal symbol in common/, core/ or internal CLI modules.
     positive_example: 'Hypothetical: a helper is renamed from _unlock_fd to unlock_file_descriptor and the old name no longer exists anywhere in the module.'
     negative_example: 'Hypothetical: after renaming _unlock_fd, the module keeps the line "_unlock = _unlock_fd  # internal shim alias".'
   - id: COMPAT-002.Q02
-    question: Is the change free of deprecated or compatibility properties, wrapper methods and shim layers that exist only to keep an old internal interface working?
+    statement: The change is free of deprecated or compatibility properties, wrapper methods and shim layers that exist only to keep an old internal interface working.
     kind: judgment
     na_when: The change renames or restructures no internal class, method or module in common/, core/ or internal CLI modules.
     positive_example: 'Hypothetical: a renamed internal property replaces the old one outright, with no forwarding property left on the class.'
     negative_example: 'Hypothetical: a class keeps "@property def old_name(self): return self.new_name" only so existing internal callers keep working.'
   - id: COMPAT-002.Q03
-    question: Were all internal callers and tests updated directly to the new name when an internal symbol was renamed?
+    statement: All internal callers and tests were updated directly to the new name when an internal symbol was renamed.
     kind: judgment
     na_when: The change renames no internal symbol in common/, core/ or internal CLI modules.
     positive_example: 'Hypothetical: a rename of _unlock_fd comes with edits to every internal call site and test that referenced it.'
@@ -1211,25 +1202,25 @@ rules:
   intent: The repository is treated as greenfield, so superseded code is replaced rather than carried alongside its replacement, unless an issue explicitly demands otherwise. This keeps one implementation of each behavior.
   criteria:
   - id: COMPAT-003.Q01
-    question: Does the change leave a single implementation of the behavior it replaces, with no superseded implementation kept alongside the new one?
+    statement: The change leaves a single implementation of the behavior it replaces, with no superseded implementation kept alongside the new one.
     kind: judgment
     na_when: The change replaces no existing behavior, or the issue explicitly demands a dual code path.
     positive_example: '# hypothetical: the legacy loader is deleted and its callers now use the new unified loader'
     negative_example: '# hypothetical: LegacyLoader stays in the tree beside UnifiedLoader and both remain reachable'
   - id: COMPAT-003.Q02
-    question: Does the change avoid adding a fallback branch or fallback adapter that routes to a superseded path?
+    statement: The change avoids adding a fallback branch or fallback adapter that routes to a superseded path.
     kind: judgment
     na_when: The issue explicitly demands a fallback adapter or branch.
     positive_example: '# hypothetical: return UnifiedLoader().load()  # directly replaces the legacy loader'
     negative_example: 'if config.use_legacy: return LegacyLoader().load()  # hypothetical: unnecessary compatibility branch'
   - id: COMPAT-003.Q03
-    question: Does the change avoid planning a deprecation window for a superseded path?
+    statement: The change avoids planning a deprecation window for a superseded path.
     kind: judgment
     na_when: The issue explicitly demands a deprecation window.
     positive_example: '# hypothetical: the old path is removed in this change set, with no warning period'
     negative_example: '# hypothetical: warnings.warn("load_legacy is deprecated, removed in 2 releases"); the old path keeps working'
   - id: COMPAT-003.Q04
-    question: Are all callers of a superseded path updated in the same change set that replaces it?
+    statement: All callers of a superseded path are updated in the same change set that replaces it.
     kind: judgment
     na_when: The change supersedes no existing path.
     positive_example: '# hypothetical: the loader is replaced and every call site is switched to the new one in the same change set'
@@ -1245,31 +1236,31 @@ rules:
     and a test that fails always points at a real change in what the code promises.
   criteria:
   - id: TEST-001.Q01
-    question: Does every assertion check a deliberate contract, such as a BaseResult object, an exact JSON dict, an exit code, a file on disk or a git ref?
+    statement: Every assertion checks a deliberate contract, such as a BaseResult object, an exact JSON dict, an exit code, a file on disk or a git ref.
     kind: judgment
     na_when: The change adds or modifies no assertions.
     positive_example: 'assert result == ReconciliationResult(reconciled=[], warning=None)  # in tests/core/sessions/services/test_reconcile.py; ReconciliationResult is a BaseResult'
     negative_example: 'assert service._internal_cache_size == 1  # hypothetical: an internal cache is not a contract'
   - id: TEST-001.Q02
-    question: Do the assertions avoid reading private helpers and private attributes of the code under test?
+    statement: The assertions avoid reading private helpers and private attributes of the code under test.
     kind: judgment
     na_when: The change adds or modifies no assertions.
     positive_example: 'assert result.exit_code == 0  # in tests/cli/session/test_session_logs.py, observed through the CLI'
     negative_example: 'assert service._internal_cache_size == 1  # hypothetical: reads a private attribute'
   - id: TEST-001.Q03
-    question: Do the assertions avoid asserting mock call counts and call ordering?
+    statement: The assertions avoid asserting mock call counts and call ordering.
     kind: judgment
     na_when: The change adds or modifies no assertions.
     positive_example: 'assert result == ReconciliationResult(reconciled=[], warning=None)  # the outcome is asserted, not how it was reached'
     negative_example: 'assert mock_parser.call_count == 1  # hypothetical: counts calls on a mock'
   - id: TEST-001.Q04
-    question: Do the assertions avoid pinning rendered layout, such as exact spacing, column widths or box-drawing?
+    statement: The assertions avoid pinning rendered layout, such as exact spacing, column widths or box-drawing.
     kind: judgment
     na_when: The change adds or modifies no assertions on rendered output.
     positive_example: 'assert "iteration 3/5" in rendered  # in tests/cli/ui/test_live.py: checks a fact in the rendered panel, not its layout'
     negative_example: 'assert output == "| name  | status |\n|-------|--------|"  # hypothetical: pins table layout'
   - id: TEST-001.Q05
-    question: Do the assertions avoid checking how a constructor assigned its arguments to attributes?
+    statement: The assertions avoid checking how a constructor assigned its arguments to attributes.
     kind: judgment
     na_when: The change adds or modifies no assertions.
     positive_example: 'assert loader.load(path) == expected_config  # hypothetical: checks what the constructed object does'
@@ -1284,61 +1275,61 @@ rules:
   intent: A test's location is predictable from the source module it covers, so tests are easy to find and no source module goes untested or hides inside a shared catch-all file.
   criteria:
   - id: TEST-002.Q01
-    question: Does each src/dovo/common/<m>.py module have its tests in tests/common/test_<m>.py?
+    statement: Each src/dovo/common/<m>.py module has its tests in tests/common/test_<m>.py.
     kind: judgment
     na_when: The change adds, moves or renames no module under src/dovo/common/ and no test file under tests/common/.
     positive_example: src/dovo/common/lock.py -> tests/common/test_lock.py
     negative_example: 'tests/common/test_locking_helpers.py  # hypothetical: covers src/dovo/common/lock.py under a name that does not mirror the module'
   - id: TEST-002.Q02
-    question: Does each src/dovo/core/<domain>/<m>.py module have its tests in tests/core/<domain>/test_<m>.py?
+    statement: Each src/dovo/core/<domain>/<m>.py module has its tests in tests/core/<domain>/test_<m>.py.
     kind: judgment
     na_when: The change adds, moves or renames no module under src/dovo/core/ and no test file under tests/core/.
     positive_example: src/dovo/core/git/runner.py -> tests/core/git/test_runner.py
     negative_example: 'tests/core/test_runner.py  # hypothetical: covers src/dovo/core/git/runner.py but skips the git/ domain directory'
   - id: TEST-002.Q03
-    question: Does each src/dovo/engine/<m>.py module have its tests in tests/engine/test_<m>.py, with the executors/ and services/ subpackages mirrored as tests/engine/executors/ and tests/engine/services/?
+    statement: Each src/dovo/engine/<m>.py module has its tests in tests/engine/test_<m>.py, with the executors/ and services/ subpackages mirrored as tests/engine/executors/ and tests/engine/services/.
     kind: judgment
     na_when: The change adds, moves or renames no module under src/dovo/engine/ and no test file under tests/engine/.
     positive_example: src/dovo/engine/executors/conditions.py -> tests/engine/executors/test_conditions.py
     negative_example: 'tests/engine/test_conditions.py  # hypothetical: covers src/dovo/engine/executors/conditions.py but drops the executors/ subpackage level'
   - id: TEST-002.Q04
-    question: Does each src/dovo/cli/ui/formatters/<domain>/<name>.py module have its tests in tests/cli/ui/formatters/<domain>/test_<name>.py?
+    statement: Each src/dovo/cli/ui/formatters/<domain>/<name>.py module has its tests in tests/cli/ui/formatters/<domain>/test_<name>.py.
     kind: judgment
     na_when: The change adds, moves or renames no formatter module under src/dovo/cli/ui/formatters/ and no test file under tests/cli/ui/formatters/.
     positive_example: src/dovo/cli/ui/formatters/worktree/worktree_create.py -> tests/cli/ui/formatters/worktree/test_worktree_create.py
     negative_example: 'tests/cli/ui/formatters/test_worktree_create.py  # hypothetical: omits the worktree/ domain directory'
   - id: TEST-002.Q05
-    question: Does each src/dovo/cli/<command>/commands/<action>.py module have its tests in tests/cli/<command>/test_<command>_<action>.py, nested under its own tests/cli/<command>/ subdirectory with the commands/ level collapsed?
+    statement: Each src/dovo/cli/<command>/commands/<action>.py module has its tests in tests/cli/<command>/test_<command>_<action>.py, nested under its own tests/cli/<command>/ subdirectory with the commands/ level collapsed.
     kind: judgment
     na_when: The change adds, moves or renames no command module under src/dovo/cli/<command>/commands/ and no test file under tests/cli/.
     positive_example: src/dovo/cli/worktree/commands/worktree_create.py -> tests/cli/worktree/test_worktree_create.py
     negative_example: 'tests/cli/commands/test_worktree_create.py  # flat under tests/cli/commands/, not nested under tests/cli/worktree/'
   - id: TEST-002.Q06
-    question: Is there one test file per CLI command action, rather than one file per command domain?
+    statement: There is one test file per CLI command action, rather than one file per command domain.
     kind: judgment
     na_when: The change adds or edits no tests for CLI command actions.
     positive_example: 'tests/cli/worktree/ holds test_worktree_create.py, test_worktree_delete.py and test_worktree_list.py, one per action'
     negative_example: 'tests/cli/test_worktree.py  # hypothetical: a single file holding the tests for create, delete and list'
   - id: TEST-002.Q07
-    question: Is every test file free of grouping several formatters or several domains into one part-numbered or collapsed file?
+    statement: No test file groups several formatters or several domains into one part-numbered or collapsed file.
     kind: judgment
     na_when: The change adds or edits no formatter or cross-domain test files.
     positive_example: 'Each formatter has its own file, for example tests/cli/ui/formatters/worktree/test_worktree_apply.py and test_worktree_show.py.'
     negative_example: 'tests/cli/ui/test_command_formatters_part1.py  # hypothetical: part-numbered grab-bag covering several formatters'
   - id: TEST-002.Q08
-    question: Does every test directory carry an __init__.py?
+    statement: Every test directory carries an __init__.py.
     kind: judgment
     na_when: The change adds no test directory.
     positive_example: 'tests/cli/worktree/__init__.py exists next to tests/cli/worktree/test_worktree_create.py'
     negative_example: 'tests/cli/newcmd/test_newcmd_run.py with no tests/cli/newcmd/__init__.py  # hypothetical: basenames repeat across the tree, so the missing package file risks module-name collisions'
   - id: TEST-002.Q09
-    question: Does each per-domain conftest.py hold only fixtures that its own domain's test files share, and none that another domain needs?
+    statement: Each per-domain conftest.py holds only fixtures that its own domain's test files share, and none that another domain needs.
     kind: judgment
     na_when: The change adds or edits no per-domain conftest.py under tests/cli/<command>/.
     positive_example: 'tests/cli/worktree/conftest.py holds fixtures shared by the worktree command tests'
     negative_example: 'A fixture in tests/cli/worktree/conftest.py that tests/cli/session/ also imports  # hypothetical: a fixture another domain needs belongs in a shared conftest'
   - id: TEST-002.Q10
-    question: Does every source module have a corresponding test file at its mirrored path, with no exemption list?
+    statement: Every source module has a corresponding test file at its mirrored path, with no exemption list.
     kind: judgment
     na_when: The change adds no source module and removes no test file.
     positive_example: 'src/dovo/core/git/runner.py is covered by tests/core/git/test_runner.py'
@@ -1353,25 +1344,25 @@ rules:
   intent: A test's name alone should tell a reader which behavior it pins and what is expected, so failures are legible without opening the test.
   criteria:
   - id: TEST-003.Q01
-    question: Is every test class named with the suffix Tests?
+    statement: Every test class is named with the suffix Tests.
     kind: judgment
     na_when: The change adds or renames no test class.
     positive_example: 'class ConfigLoaderTests:  # in tests/core/config/test_loader.py'
     negative_example: 'class TestConfig:  # hypothetical: prefix naming instead of the *Tests suffix'
   - id: TEST-003.Q02
-    question: Does every test method follow the test_<condition>_<outcome> pattern, naming both the condition and the expected outcome?
+    statement: Every test method follows the test_<condition>_<outcome> pattern, naming both the condition and the expected outcome.
     kind: judgment
     na_when: The change adds or renames no test method.
     positive_example: 'def test_load_missing_config_returns_failure_result(self, workspace_paths): ...  # in ConfigLoaderTests, tests/core/config/test_loader.py'
     negative_example: 'def test_config(self): ...  # hypothetical: no outcome in the name'
   - id: TEST-003.Q03
-    question: Is every test method name free of the banned vague names test_ok, test_success, test_present, test_missing, test_blank, test_basic, test_default, test_works, test_timeout, test_no_op and test_help?
+    statement: Every test method name is free of the banned vague names test_ok, test_success, test_present, test_missing, test_blank, test_basic, test_default, test_works, test_timeout, test_no_op and test_help.
     kind: judgment
     na_when: The change adds or renames no test method.
     positive_example: 'def test_load_missing_config_returns_failure_result(self, workspace_paths): ...  # in ConfigLoaderTests, tests/core/config/test_loader.py'
     negative_example: 'def test_ok(self): ...  # hypothetical: banned name with no outcome'
   - id: TEST-003.Q04
-    question: Is every test method name free of a should prefix?
+    statement: Every test method name is free of a should prefix.
     kind: judgment
     na_when: The change adds or renames no test method.
     positive_example: 'def test_load_missing_config_returns_failure_result(self, workspace_paths): ...  # in ConfigLoaderTests, tests/core/config/test_loader.py'
@@ -1386,55 +1377,55 @@ rules:
   intent: CLI wiring is proven through the real runner, so option binding, exit codes and output cannot silently break. Handler-level tests exist only where the handler owns logic of its own, and never repeat what the domain tests pin.
   criteria:
   - id: TEST-004.Q01
-    question: Does every CLI command action have at least one *CliIntegrationTests suite that invokes the command through runner.invoke?
+    statement: Every CLI command action has at least one *CliIntegrationTests suite that invokes the command through runner.invoke.
     kind: judgment
     na_when: The change adds or modifies no CLI command action.
     positive_example: 'class ConfigShowCliIntegrationTests: ...  # in tests/cli/config/test_config_show.py, calls cli_runner.invoke(app, ["-p", ..., "config", "show"])'
     negative_example: 'A command action whose only tests are a *RootTests suite calling the handler directly (hypothetical: no runner.invoke suite exists for it)'
   - id: TEST-004.Q02
-    question: Does the integration suite include a happy-path test with default arguments that asserts exit code 0?
+    statement: The integration suite includes a happy-path test with default arguments that asserts exit code 0.
     kind: judgment
     na_when: The change adds or modifies no CLI command action.
     positive_example: 'res = cli_runner.invoke(app, ["-p", str(isolated_workspace), "config", "show"])  # then asserts res.exit_code == 0 (hypothetical assertion shown; the invocation is in test_config_show.py)'
     negative_example: 'A suite that only invokes the command with non-default options and never runs the plain command (hypothetical)'
   - id: TEST-004.Q03
-    question: Is every declared Typer option, flag and argument of the command exercised in at least one invocation, verifying input binding and propagation to the domain layer?
+    statement: Every declared Typer option, flag and argument of the command is exercised in at least one invocation, verifying input binding and propagation to the domain layer.
     kind: judgment
     na_when: The command declares no options, flags or arguments.
     positive_example: 'One invocation passes "--format", "json" and another passes the positional key and value of config set, so each declared parameter is bound at least once (hypothetical combination)'
     negative_example: 'A command that declares a --force flag where no invocation in its integration suite passes --force (hypothetical)'
   - id: TEST-004.Q04
-    question: Does the integration suite avoid duplicating domain branch matrices, limiting its binding checks to what the CLI layer adds?
+    statement: The integration suite avoids duplicating domain branch matrices, limiting its binding checks to what the CLI layer adds.
     kind: judgment
     na_when: The change adds or modifies no CLI command action.
     positive_example: 'The CLI suite checks that an option reaches the domain call; the branch outcomes of that option are asserted under tests/core/ (hypothetical)'
     negative_example: 'A CLI integration suite that re-runs every domain status branch of the result through runner.invoke (hypothetical)'
   - id: TEST-004.Q05
-    question: Does the integration suite include a failure-path test that asserts the expected non-zero exit code when the domain returns a non-ok result?
+    statement: The integration suite includes a failure-path test that asserts the expected non-zero exit code when the domain returns a non-ok result.
     kind: judgment
     na_when: The command's domain call cannot return a non-ok result.
     positive_example: 'A test invokes "config show" in a workspace with no config.json and asserts a non-zero exit code (hypothetical assertion; the NOT_FOUND status is real, ConfigLoadStatus.NOT_FOUND)'
     negative_example: 'A suite where every test asserts exit code 0 even though the domain can return an error status (hypothetical)'
   - id: TEST-004.Q06
-    question: Does the integration suite include a test invoking the command with --format json that asserts the emitted payload matches the wire schema?
+    statement: The integration suite includes a test invoking the command with --format json that asserts the emitted payload matches the wire schema.
     kind: judgment
     na_when: The command does not support --format json.
     positive_example: 'res = cli_runner.invoke(app, ["-p", str(isolated_workspace), "config", "show", "--format", "json"])  # in tests/cli/config/test_config_show.py'
     negative_example: 'A command that supports --format json whose suite never passes --format json (hypothetical)'
   - id: TEST-004.Q07
-    question: Is every interactive confirmation or abort branch of the command exercised by the integration suite?
+    statement: Every interactive confirmation or abort branch of the command is exercised by the integration suite.
     kind: judgment
     na_when: The command has no interactive confirmation or abort branch.
     positive_example: 'A test supplies "n" as input to the confirmation prompt and asserts the abort exit code and that nothing was changed (hypothetical)'
     negative_example: 'A command that prompts for confirmation where every test bypasses the prompt with a skip flag (hypothetical)'
   - id: TEST-004.Q08
-    question: Is every *RootTests suite written for a handler that owns logic the domain layer does not, such as input coercion, branch selection across services, result composition from more than one call, or an interactive abort path?
+    statement: Every *RootTests suite is written for a handler that owns logic the domain layer does not, such as input coercion, branch selection across services, result composition from more than one call, or an interactive abort path.
     kind: judgment
     na_when: The command action has no *RootTests suite; a pass-through handler with zero root tests is fully compliant and a root test is never required per action.
     positive_example: 'class DemoRootTests: ...  # hypothetical: the handler picks between two services depending on its arguments, so it earns a root test'
     negative_example: 'class ConfigShowRootTests: ...  # in tests/cli/config/test_config_show.py; config_show_command only calls the domain and dispatches the result'
   - id: TEST-004.Q09
-    question: Does every *RootTests suite avoid restating a contract already asserted under tests/core/ for the same result type?
+    statement: Every *RootTests suite avoids restating a contract already asserted under tests/core/ for the same result type.
     kind: judgment
     na_when: The command action has no *RootTests suite.
     positive_example: 'A root test asserts only what the handler itself decides, leaving the result fields to tests/core/ (hypothetical)'
@@ -1449,61 +1440,61 @@ rules:
   intent: A formatter's view model, JSON wire format and rendered content are separate published contracts, so each is tested independently and fails only when that contract changes, not when styling does.
   criteria:
   - id: TEST-005.Q01
-    question: Is every formatter under cli/ui/formatters/<domain>/ tested in its own file at tests/cli/ui/formatters/<domain>/test_<name>.py?
+    statement: Every formatter under cli/ui/formatters/<domain>/ is tested in its own file at tests/cli/ui/formatters/<domain>/test_<name>.py.
     kind: judgment
     na_when: The change adds or modifies no formatter under cli/ui/formatters/.
     positive_example: 'tests/cli/ui/formatters/status/test_dovo_status.py tests DovoStatusFormatter from src/dovo/cli/ui/formatters/status/dovo_status.py'
     negative_example: 'DovoStatusFormatter tested only inside a shared tests/cli/ui/formatters/test_all_formatters.py (hypothetical file)'
   - id: TEST-005.Q02
-    question: Is the formatter tested through cases built from FormatterCase, each holding the input data, the expected view and the render expectations?
+    statement: The formatter is tested through cases built from FormatterCase, each holding the input data, the expected view and the render expectations.
     kind: judgment
     na_when: The change adds or modifies no formatter under cli/ui/formatters/.
     positive_example: 'HEALTHY = FormatterCase(data=..., view=_make_status_view(...), render_expectations=[...])  # in tests/cli/ui/formatters/status/test_dovo_status.py'
     negative_example: 'a test that builds the formatter input and expected strings inline in the test body, bypassing FormatterCase (hypothetical)'
   - id: TEST-005.Q03
-    question: Does a test assert that transform equals the expected view for a formatter that derives a view model from its input?
+    statement: A test asserts that transform equals the expected view for a formatter that derives a view model from its input.
     kind: judgment
     na_when: The formatter has no derived view model, meaning transform is provably the identity and the declared view type is the input event type.
     positive_example: 'assert_transform_derives_expected_view(DovoStatusFormatter, case.data, case.view)  # in DovoStatusFormatterTests.test_transform_derives_expected_view'
     negative_example: 'a DovoStatusFormatter test file with only JSON and render tests, leaving StatusView derivation unpinned (hypothetical)'
   - id: TEST-005.Q04
-    question: Is the JSON wire format asserted as an exact literal dict?
+    statement: The JSON wire format is asserted as an exact literal dict.
     kind: judgment
     na_when: The change adds or modifies no formatter under cli/ui/formatters/.
     positive_example: 'assert_json_payload_matches_published_shape(DovoStatusFormatter, case.data, {"health": "ok", "root_dir": "/workspace/my-repo", ...})  # in tests/cli/ui/formatters/status/test_dovo_status.py'
     negative_example: 'assert formatter.to_json_serializable(data) == {...} replaced by a comparison against a value computed by the code under test (hypothetical)'
   - id: TEST-005.Q05
-    question: Is the JSON wire format pinned at both a fully populated state and an empty or sparse boundary state?
+    statement: The JSON wire format is pinned at both a fully populated state and an empty or sparse boundary state.
     kind: judgment
     na_when: The change adds or modifies no formatter under cli/ui/formatters/.
     positive_example: 'STATUS_PAYLOAD_CASES pins HEALTHY (fully populated) and UNINITIALIZED_NON_GIT (null fields, empty lists) in tests/cli/ui/formatters/status/test_dovo_status.py'
     negative_example: 'a payload test parametrized only with HEALTHY, so null and empty-list output is never pinned (hypothetical)'
   - id: TEST-005.Q06
-    question: Is the Rich render asserted at the pinned width of 160 columns?
+    statement: The Rich render is asserted at the pinned width of 160 columns.
     kind: judgment
     na_when: The change adds or modifies no formatter under cli/ui/formatters/.
     positive_example: 'assert_rich_render_shows_every_view_value(DovoStatusFormatter, case.data, case.render_expectations)  # renders through render_rich with width=160 from tests/harness/formatter.py'
     negative_example: 'rendering through a Console(width=80) built inside the test, so wrapping differs from the pinned width (hypothetical)'
   - id: TEST-005.Q07
-    question: Is every expected string in the render test a semantic value taken from case.view, and never a label, border, glyph, padding or full sentence?
+    statement: Every expected string in the render test is a semantic value taken from case.view, and never a label, border, glyph, padding or full sentence.
     kind: judgment
     na_when: The change adds or modifies no formatter under cli/ui/formatters/.
     positive_example: 'render_expectations=["raw-project", "feature/status-cmd", "Invalid schema"]  # view values only, in DEGRADED_RAW_CONFIG_PROJECT'
     negative_example: 'assert "Project:" in rendered and "╭" in rendered  # hypothetical: asserts a label and a border glyph'
   - id: TEST-005.Q08
-    question: Does a formatter with no derived view model omit the transform test while keeping both the JSON and the render test?
+    statement: A formatter with no derived view model omits the transform test while keeping both the JSON and the render test.
     kind: judgment
     na_when: The formatter has a derived view model, so transform is not the identity.
     positive_example: 'WarningFormatterTests in tests/cli/ui/formatters/events/test_warning.py has only test_json_payload_matches_published_shape and test_rich_render_shows_every_view_value'
     negative_example: 'a WarningFormatter test file with a transform test that only checks WarningEvent equals itself (hypothetical)'
   - id: TEST-005.Q09
-    question: Is the change free of an alias such as SomeView = SomeEvent introduced to manufacture a third test for an identity formatter?
+    statement: The change is free of an alias such as SomeView = SomeEvent introduced to manufacture a third test for an identity formatter.
     kind: judgment
     na_when: The change adds or modifies no formatter under cli/ui/formatters/.
     positive_example: 'WarningFormatter(ComponentFormatter[WarningEvent]) declares no separate view type'
     negative_example: 'ErrorPanelView = ErrorPanelEvent  # alias so an identity transform can be asserted (hypothetical)'
   - id: TEST-005.Q10
-    question: Is the change free of an assertion that to_json_serializable(data) equals transform(data).model_dump()?
+    statement: The change is free of an assertion that to_json_serializable(data) equals transform(data).model_dump().
     kind: judgment
     na_when: The change adds or modifies no formatter under cli/ui/formatters/.
     positive_example: 'assert_json_payload_matches_published_shape(DovoStatusFormatter, case.data, expected_payload)  # expected_payload is a literal dict'
@@ -1518,25 +1509,25 @@ rules:
   intent: Variations of one contract are tested through a single parameterized test, so each case is named and reported separately and a new case costs one line instead of a copied test.
   criteria:
   - id: TEST-006.Q01
-    question: Are variations of the same contract or function (input variants, polymorphic target types, invalid payload permutations) covered by one parameterized test rather than by copy-pasted or near-identical sibling test methods?
+    statement: Variations of the same contract or function (input variants, polymorphic target types, invalid payload permutations) are covered by one parameterized test rather than by copy-pasted or near-identical sibling test methods.
     kind: judgment
     na_when: The change adds or modifies no tests that exercise more than one variation of the same contract.
     positive_example: '@pytest.mark.parametrize("target", [pytest.param(model, id="model"), pytest.param(dict, id="dict")])  # hypothetical: one test covers both target types'
     negative_example: 'def test_eval_model(self): ...; def test_eval_dict(self): ...  # hypothetical: duplicate sibling methods that differ only by target type'
   - id: TEST-006.Q02
-    question: Is each test free of `for` loops and stacked assertions that iterate over scenarios?
+    statement: Each test is free of `for` loops and stacked assertions that iterate over scenarios.
     kind: judgment
     na_when: The change adds or modifies no tests.
     positive_example: '@pytest.mark.parametrize("pattern", [pytest.param("../x", id="dotdot"), pytest.param("/etc/**", id="absolute")])  # shape used in tests/common/test_tool_policy.py'
     negative_example: 'for pattern in ["../x", "/etc/**"]: assert not is_valid(pattern)  # hypothetical: the loop hides which scenario failed'
   - id: TEST-006.Q03
-    question: Does every parameterized case use pytest.param with an explicit, readable id label?
+    statement: Every parameterized case uses pytest.param with an explicit, readable id label.
     kind: judgment
     na_when: The change adds or modifies no parameterized tests.
     positive_example: 'pytest.param("ghp_" + "a" * 36, id="github-classic")  # in tests/common/test_redact.py'
     negative_example: '@pytest.mark.parametrize("token", ["ghp_aaa", "sk-ant-aaa"])  # hypothetical: bare values, so failures report auto-generated ids'
   - id: TEST-006.Q04
-    question: Are separate test methods used only where the cases have fundamentally distinct lifecycles, differing fixture requirements or divergent assertion contracts?
+    statement: Separate test methods are used only where the cases have fundamentally distinct lifecycles, differing fixture requirements or divergent assertion contracts.
     kind: judgment
     na_when: The change adds or modifies no tests that sit next to a sibling test of the same function.
     positive_example: 'def test_create_rolls_back_on_failure(self, failing_git): ...; def test_create_returns_path(self, tmp_repo): ...  # hypothetical: different fixtures and assertion contracts justify separate methods'
@@ -1552,43 +1543,43 @@ rules:
     model shapes and defaults are pinned once in contract tests, so unrelated changes do not break scenario tests.
   criteria:
   - id: TEST-007.Q01
-    question: Does every field assertion in a scenario test check a field that carries the scenario's domain outcome rather than an incidental envelope field or default?
+    statement: Every field assertion in a scenario test checks a field that carries the scenario's domain outcome rather than an incidental envelope field or default.
     kind: judgment
     na_when: The test is a dedicated model contract test or a wire payload test.
     positive_example: "assert result.status == WorktreeDiffStatus.NOT_FOUND; assert 'not found' in result.errors[0].lower()"
     negative_example: "assert result.status == WorktreeDiffStatus.NOT_FOUND; assert result.error_code is None; assert result.warnings == []; assert result.fixes == []  # incidental defaults in a not-found scenario"
   - id: TEST-007.Q02
-    question: Does each scenario or integration test of a specific behavior or error condition use targeted field assertions instead of whole-model equality?
+    statement: Each scenario or integration test of a specific behavior or error condition uses targeted field assertions instead of whole-model equality.
     kind: judgment
     na_when: The test is a wire payload test, or the entire entity is the subject under test (its expected model may then rely on schema defaults instead of naming every field in kwargs).
     positive_example: "assert result.status == WorktreeDiffStatus.NOT_FOUND; assert result.worktree_id == 'wt-1'"
     negative_example: "assert result == WorktreeDiffResult(status=WorktreeDiffStatus.NOT_FOUND, worktree_id='wt-1')  # whole-model equality for a status check"
   - id: TEST-007.Q03
-    question: Does each new or modified model with defaults or a serialization contract have a dedicated contract test in tests/common/ or tests/core/*/test_models.py that asserts them?
+    statement: Each new or modified model with defaults or a serialization contract has a dedicated contract test in tests/common/ or tests/core/*/test_models.py that asserts them.
     kind: judgment
     na_when: The change adds or modifies no model that has defaults or a serialization contract.
     positive_example: "tests/core/interaction/test_models.py::test_serialized_shape_and_defaults_are_pinned pins the shape and defaults of the interaction models"
     negative_example: "A new BaseResult subclass with default_factory fields and no test in tests/core/*/test_models.py asserting its defaults"
   - id: TEST-007.Q04
-    question: Are model shape, default values and serialization asserted only in dedicated contract tests rather than in scenario or integration tests?
+    statement: Model shape, default values and serialization are asserted only in dedicated contract tests rather than in scenario or integration tests.
     kind: judgment
     na_when: No new or modified scenario or integration test asserts a model's shape, default values or serialization.
     positive_example: "A diff scenario test in tests/core/worktree/test_worktree.py asserts only result.status, while defaults are pinned in a test_models.py contract test"
     negative_example: "A variant of that diff test that also asserts result.warnings == [] and result.fixes == [] to pin the model defaults"
   - id: TEST-007.Q05
-    question: Does each model have at most two dedicated contract tests?
+    statement: Each model has at most two dedicated contract tests.
     kind: judgment
     na_when: The change adds or modifies no dedicated model contract test.
     positive_example: "tests/core/interaction/test_models.py::test_serialized_shape_and_defaults_are_pinned is the single test pinning shape and defaults for its model"
     negative_example: "A test_models.py file with three or more separate tests that each re-pin the defaults of the same model"
   - id: TEST-007.Q06
-    question: Does each test of a wire payload with a published schema contract, such as a CLI JSON formatter, verify the exact wire payload?
+    statement: Each test of a wire payload with a published schema contract, such as a CLI JSON formatter, verifies the exact wire payload.
     kind: judgment
     na_when: No new or modified test covers a wire payload with a published schema contract.
     positive_example: "assert_json_payload_matches_published_shape(WorktreeDiffFormatter, case.data, expected_payload)  # tests/cli/ui/formatters/worktree/test_worktree_diff.py"
     negative_example: "assert json.loads(output)['status'] == 'not_found'  # the rest of the published payload goes unverified"
   - id: TEST-007.Q07
-    question: Does each test avoid faux-matchers such as ANY_TIMESTAMP and ANY_UUID where their only purpose is to satisfy whole-object matching on database records or unowned system state?
+    statement: Each test avoids faux-matchers such as ANY_TIMESTAMP and ANY_UUID where their only purpose is to satisfy whole-object matching on database records or unowned system state.
     kind: judgment
     na_when: The test uses no faux-matcher.
     positive_example: "assert record.branch_name == 'feature-x'; assert record.status == WorktreeStatus.ACTIVE  # deterministic business fields asserted directly"
@@ -1603,13 +1594,13 @@ rules:
   intent: A test double must stand in for something production really uses, so tests fail when production contracts change instead of passing against an invented interface.
   criteria:
   - id: TEST-008.Q01
-    question: Does every test double or stub inherit from a type production actually passes or satisfy a typing.Protocol production is typed against?
+    statement: Every test double or stub inherits from a type production actually passes or satisfies a typing.Protocol production is typed against.
     kind: judgment
     na_when: The change adds or edits no test double or stub.
     positive_example: 'class FakeAgentProvider(BaseAgentProvider): ...  # in tests/harness/fakes.py, subclassing the production base class'
     negative_example: 'class MockAdapter: def __getattr__(self, name): return MagicMock()  # hypothetical: matches no production type or Protocol'
   - id: TEST-008.Q02
-    question: Is every test double free of an interface built as the union of the attributes from every branch of a hasattr chain?
+    statement: Every test double is free of an interface built as the union of the attributes from every branch of a hasattr chain.
     kind: judgment
     na_when: The change adds or edits no test double or stub.
     positive_example: 'class FakeRunObserver: def on_worktree_ready(self, path, active): ...  # hypothetical: implements only the RunObserver Protocol in engine/models.py'
@@ -1624,12 +1615,12 @@ rules:
   intent: Tests prove what the live codebase does, never the historical outcome of a refactor, so a removed symbol leaves no trace in the test suite.
   criteria:
   - id: TEST-009.Q01
-    question: Is the test suite free of negative existence assertions such as assert not hasattr(module, name)?
+    statement: The test suite is free of negative existence assertions such as assert not hasattr(module, name).
     kind: judgment
     positive_example: 'assert result.session_id == "wf_abcdef12"  # asserts live behavior (hypothetical test)'
     negative_example: 'assert not hasattr(filesystem, "old_helper")  # hypothetical: proves a removed helper stays removed'
   - id: TEST-009.Q02
-    question: Were the tests that called a function, class or alias deleted in the same change that removed it from production?
+    statement: The tests that called a function, class or alias were deleted in the same change that removed it from production.
     kind: judgment
     na_when: The change removes no function, class or alias from production.
     positive_example: '# hypothetical: test_old_helper deleted when old_helper was removed from production'
@@ -1644,13 +1635,13 @@ rules:
   intent: A test must check the behavior it exists for, so a passing run shows the code did the right thing and not merely that it returned something.
   criteria:
   - id: TEST-010.Q01
-    question: Does every test check a concrete value or effect beyond `assert x is not None`, so that `assert x is not None` is never its only assertion?
+    statement: Every test checks a concrete value or effect beyond `assert x is not None`, so that `assert x is not None` is never its only assertion.
     kind: judgment
     na_when: The test contains no assertions on a returned object, for example a test that only checks that a call raises.
     positive_example: 'assert outcome.session_id == seen[0]  # in tests/engine/test_engine.py, RunOutcome.session_id is str | None'
     negative_example: 'assert outcome is not None  # hypothetical: the only assertion in the test, so the test is unfinished'
   - id: TEST-010.Q02
-    question: Is isinstance used in a test only where it distinguishes two real code paths, rather than repeating what basedpyright already proves?
+    statement: isinstance is used in a test only where it distinguishes two real code paths, rather than repeating what basedpyright already proves.
     kind: judgment
     na_when: The test uses no isinstance check.
     positive_example: 'assert isinstance(result, ErrorResult)  # hypothetical: the call can return either a success or an error model and the test must tell which'
@@ -1665,43 +1656,43 @@ rules:
   intent: Tests must give the same result on every run and every machine, so they do not depend on real elapsed time or on leftover processes, and a failing test cannot leak anything into later ones.
   criteria:
   - id: TEST-011.Q01
-    question: Is every test body free of hardcoded sleeps, other than a sleep inside the shared harness poll helper?
+    statement: Every test body is free of hardcoded sleeps, other than a sleep inside the shared harness poll helper.
     kind: judgment
     na_when: The change adds or edits no test code.
     positive_example: 'monkeypatch.setattr("dovo.common.lock.time.monotonic", fake_monotonic)  # hypothetical: the test advances a fake clock instead of waiting'
     negative_example: "time.sleep(0.05)  # bare sleep in a test body, as in _sync_and_interrupt in tests/engine/executors/test_process_group.py"
   - id: TEST-011.Q02
-    question: Do tests of retry or backoff intervals drive time through VirtualClock or a monkeypatched clock at the module boundary (time.monotonic, asyncio.sleep)?
+    statement: Tests of retry or backoff intervals drive time through VirtualClock or a monkeypatched clock at the module boundary (time.monotonic, asyncio.sleep).
     kind: judgment
     na_when: The change adds or edits no test of a retry or backoff interval.
     positive_example: 'monkeypatch.setattr("dovo.engine.executors.step_executor.time.monotonic", clock.now)  # hypothetical: VirtualClock does not exist in the repo yet; the patch targets time.monotonic as imported by step_executor'
     negative_example: 'time.sleep(backoff_seconds)  # hypothetical: the test waits out the real backoff interval'
   - id: TEST-011.Q03
-    question: Does a retry test assert the resulting schedule rather than only that a retry eventually happened?
+    statement: A retry test asserts the resulting schedule rather than only that a retry eventually happened.
     kind: judgment
     na_when: The change adds or edits no retry test.
     positive_example: 'assert sleeps == [1.0, 2.0, 4.0]  # hypothetical: the recorded backoff schedule'
     negative_example: 'assert attempts == 3  # hypothetical: proves a retry happened but not when'
   - id: TEST-011.Q04
-    question: Is the clock injected anywhere its output reaches a result field, so a time-dependent test asserts literal timestamps?
+    statement: The clock is injected anywhere its output reaches a result field, so a time-dependent test asserts literal timestamps.
     kind: judgment
     na_when: The code under test has no timestamp that reaches a result field.
     positive_example: 'service = Service(clock=lambda: datetime(2026, 1, 1, tzinfo=UTC)); assert result.started_at == datetime(2026, 1, 1, tzinfo=UTC)  # hypothetical constructor parameter'
     negative_example: 'assert result.started_at is not None  # hypothetical: the real clock fed the field, so the test cannot state the value'
   - id: TEST-011.Q05
-    question: Are generated ids injected anywhere their output reaches a result field, so a test asserts literal ids?
+    statement: Generated ids are injected anywhere their output reaches a result field, so a test asserts literal ids.
     kind: judgment
     na_when: The code under test has no generated id that reaches a result field.
     positive_example: 'assert result.run_id == "run-1"  # hypothetical: the test supplied the id source, so it states the literal'
     negative_example: 'assert len(result.run_id) == 32  # hypothetical: the id was generated internally, so the test can only check its shape'
   - id: TEST-011.Q06
-    question: Is every wait on an operating system event with no virtual equivalent, such as a process group reaped after SIGKILL, done through a shared harness helper owning the poll interval and deadline, with no open-coded poll loop?
+    statement: Every wait on an operating system event with no virtual equivalent, such as a process group reaped after SIGKILL, is done through a shared harness helper owning the poll interval and deadline, with no open-coded poll loop.
     kind: judgment
     na_when: The change waits on no operating system event.
     positive_example: 'assert wait_pid_dead(child_pid) is True  # harness helper owns the poll interval (hypothetical: today _wait_pid_dead is private to tests/engine/executors/test_process_group.py, not a shared helper in tests/harness/)'
     negative_example: "while not (pid_dir / 'child.pid').exists():\n    threading.Event().wait(0.05)  # hypothetical: poll loop written inside the test module"
   - id: TEST-011.Q07
-    question: Does every test that spawns a process register it with the harness process registry, so a failing test cannot leak a process group?
+    statement: Every test that spawns a process registers it with the harness process registry, so a failing test cannot leak a process group.
     kind: judgment
     na_when: The change adds or edits no test that spawns a process.
     positive_example: 'process_registry.register(proc, pgid=pgid)  # ProcessRegistry in src/dovo/common/process.py; stream_isolated_process registers its child this way'
@@ -1716,25 +1707,25 @@ rules:
   intent: Rendered-output tests must give the same result on every machine and keep failing only when a real contract changes, not when layout, terminal size or wording shifts.
   criteria:
   - id: TEST-012.Q01
-    question: Is every capture of rendered Rich output in a test made through render_rich from tests/harness/formatter.py?
+    statement: Every capture of rendered Rich output in a test is made through render_rich from tests/harness/formatter.py.
     kind: judgment
     na_when: The test does not capture rendered Rich output.
     positive_example: 'rendered = render_rich(LoopLifecycleFormatter().to_rich(CONDITIONS_EVALUATED.data))  # in tests/cli/ui/formatters/events/test_loop.py'
     negative_example: 'console = Console(record=True); console.print(panel); rendered = console.export_text()  # hypothetical: hand-built console instead of render_rich'
   - id: TEST-012.Q02
-    question: Is the console width used for a rendered assertion the pinned width of 160, with no other width passed to render_rich?
+    statement: The console width used for a rendered assertion is the pinned width of 160, with no other width passed to render_rich.
     kind: judgment
     na_when: The test does not capture rendered Rich output.
     positive_example: 'rendered = render_rich(formatter.to_rich(data))  # in tests/harness/formatter.py; the default width=160 applies'
     negative_example: 'rendered = render_rich(formatter.to_rich(data), width=80)  # hypothetical: width other than 160'
   - id: TEST-012.Q03
-    question: Does the test avoid relying on the ambient terminal size and on in-process os.environ["COLUMNS"] mutations?
+    statement: The test avoids relying on the ambient terminal size and on in-process os.environ["COLUMNS"] mutations.
     kind: judgment
     na_when: The test does not capture rendered Rich output.
     positive_example: 'render_rich(renderable)  # width is set explicitly on the Console, independent of the terminal'
     negative_example: 'os.environ["COLUMNS"] = "120"; rendered = Console(record=True)...  # hypothetical: width taken from the environment or ambient terminal'
   - id: TEST-012.Q04
-    question: Does every render assertion check a semantic value carried by the view model, such as an identifier, count or status token, rather than a panel title, field caption, border glyph, padding or prose sentence?
+    statement: Every render assertion checks a semantic value carried by the view model, such as an identifier, count or status token, rather than a panel title, field caption, border glyph, padding or prose sentence.
     kind: judgment
     na_when: The test makes no assertion on rendered output.
     positive_example: 'rendered = render_rich(formatter.to_rich(data)); assert "wf_abcdef12" in rendered  # hypothetical: a view value, not a caption'
@@ -1749,19 +1740,19 @@ rules:
   intent: Code exists to serve real behavior, so nothing stays alive only because a test exercises it. Unused production or harness code is deleted together with its test, not kept and verified.
   criteria:
   - id: TEST-013.Q01
-    question: Does every touched production function have a real caller in src/, so that deleting its tests would not leave it unreachable?
+    statement: Every touched production function has a real caller in src/, so that deleting its tests would not leave it unreachable.
     kind: judgment
     na_when: The change touches no production function in src/.
     positive_example: 'A function in src/ called by another production module, with tests that exercise it through that caller (hypothetical example)'
     negative_example: 'A function in src/ whose only caller is its own unit test; the function is dead, so the function and the test are both deleted (hypothetical example)'
   - id: TEST-013.Q02
-    question: Does every harness symbol (builder method, fixture or assertion helper) have at least one caller outside tests/harness/?
+    statement: Every harness symbol (builder method, fixture or assertion helper) has at least one caller outside tests/harness/.
     kind: judgment
     na_when: The change adds or touches no symbol under tests/harness/.
     positive_example: 'WorkspaceBuilder.with_git() in tests/harness/builders/workspace.py, called by tests/cli/session/conftest.py and other domain tests'
     negative_example: 'A builder method called only by its own test in tests/harness/test_builders.py (hypothetical; delete the method rather than test it)'
   - id: TEST-013.Q03
-    question: Is harness behavior proven through the first domain test that needs it, rather than through a harness verification suite that exhaustively permutes options no domain test uses?
+    statement: Harness behavior is proven through the first domain test that needs it, rather than through a harness verification suite that exhaustively permutes options no domain test uses.
     kind: judgment
     na_when: The change adds or touches no harness verification test.
     positive_example: 'A new builder option is introduced together with the domain test that needs it, and that test is what proves it works (hypothetical example)'
@@ -1776,25 +1767,25 @@ rules:
   intent: Test helpers and fixtures are code that every test leans on, so they are typed as tightly as production code and a wrong call is caught by the type checker instead of surfacing as a confusing test failure.
   criteria:
   - id: TEST-014.Q01
-    question: Is every test helper and fixture function free of missing type annotations?
+    statement: Every test helper and fixture function is free of missing type annotations.
     kind: judgment
     na_when: The change adds or modifies no test helper or fixture function.
     positive_example: 'def workspace_paths_factory() -> Callable[[Path, Path | None], WorkspacePaths]: ...  # fixture in tests/conftest.py'
     negative_example: 'def make_session(db, session_id): ...  # hypothetical: helper with no parameter or return annotations'
   - id: TEST-014.Q02
-    question: Do fixtures declare a real return type rather than Any?
+    statement: Fixtures declare a real return type rather than Any.
     kind: judgment
     na_when: The change adds or modifies no fixture.
     positive_example: 'def isolated_workspace(tmp_path: Path) -> Path: ...  # fixture in tests/conftest.py'
     negative_example: 'def db_fixture() -> Any: ...  # hypothetical: fixture whose return type says nothing about what it yields'
   - id: TEST-014.Q03
-    question: Are helper parameters typed against the types production code passes, such as DovoDb or SessionRecord, rather than Any?
+    statement: Helper parameters are typed against the types production code passes, such as DovoDb or SessionRecord, rather than Any.
     kind: judgment
     na_when: The change adds or modifies no test helper that takes parameters.
     positive_example: 'def create_test_session(db: DovoDb, session_id: str) -> SessionRecord: ...  # hypothetical helper; DovoDb and SessionRecord exist in dovo.core.db'
     negative_example: 'def create_test_session(db: Any, mock_obj: MagicMock) -> Any: ...  # hypothetical: untyped db parameter and a mock in the signature'
   - id: TEST-014.Q04
-    question: Is MagicMock absent from the signatures of test helpers and fixtures, both their parameters and their return types?
+    statement: MagicMock is absent from the signatures of test helpers and fixtures, both their parameters and their return types.
     kind: judgment
     na_when: The change adds or modifies no test helper or fixture function.
     positive_example: 'def build_workspace(root: Path) -> WorkspacePaths: ...  # hypothetical helper taking and returning real types'
@@ -1809,7 +1800,7 @@ rules:
   intent: Changes to command routing and multi-step dispatch are verified end to end, so a regression in an orchestration branch is caught by a test instead of reaching users.
   criteria:
   - id: TEST-015.Q01
-    question: Does a test exercise the updated execution branch of every modified command routing or multi-step orchestration path?
+    statement: A test exercises the updated execution branch of every modified command routing or multi-step orchestration path.
     kind: judgment
     na_when: The change modifies no command routing and no multi-step orchestration or dispatch workflow.
     positive_example: 'class SessionResumeCliIntegrationTests: def test_resume_cli_from_paused_state_completes_remaining_steps_exits_zero(self, ...): ...  # in tests/cli/session/test_session_resume.py, covering the resume path'
@@ -1824,25 +1815,25 @@ rules:
   intent: A public function's contract includes how it succeeds and how it fails, so both outcomes are tested directly. Private helpers are verified only through their public callers.
   criteria:
   - id: TEST-016.Q01
-    question: Does every public function or method (no leading underscore) in a changed production module have at least one test of a valid input producing the expected successful outcome, in its corresponding test file per TEST-002?
+    statement: Every public function or method (no leading underscore) in a changed production module has at least one test of a valid input producing the expected successful outcome, in its corresponding test file per TEST-002.
     kind: judgment
     na_when: The change adds or modifies no public function or method in a production module.
     positive_example: 'def test_load_returns_validated_state_when_projection_matches(self, tmp_path: Path) -> None  # in tests/engine/test_state_store.py, covering SessionStateStore.load'
     negative_example: 'SessionStateStore.regenerate_projection() is added to src/dovo/engine/state_store.py with no test calling it (hypothetical: the real method is covered by test_regenerate_projection_writes_payload_json_and_returns_path)'
   - id: TEST-016.Q02
-    question: Does every public function or method in a changed production module have, in its TEST-002 test file, at least one test of an invalid input, missing dependency, boundary or failure state producing the expected error or non-ok outcome?
+    statement: Every public function or method in a changed production module has, in its TEST-002 test file, at least one test of an invalid input, missing dependency, boundary or failure state producing the expected error or non-ok outcome.
     kind: judgment
     na_when: The member is a property with no branching logic beyond a single field return, or a dunder method with no domain validation (such as a __init__ that neither coerces nor rejects values), or the change touches no public function or method.
     positive_example: 'def test_save_stale_revision_returns_conflict_and_leaves_row_and_projection(self, tmp_path: Path) -> None  # in tests/engine/test_state_store.py, covering SessionStateStore.save'
     negative_example: 'Only test_save_loaded_state_persists_next_revision_in_row_and_projection exists for save() (hypothetical: the real suite also has stale-revision, missing-row and projection-failure tests), so no failure path is covered'
   - id: TEST-016.Q03
-    question: Are private functions and methods (leading underscore) covered only as byproducts of their public callers, with no dedicated test method targeting them?
+    statement: Private functions and methods (leading underscore) are covered only as byproducts of their public callers, with no dedicated test method targeting them.
     kind: judgment
     na_when: The change adds or modifies no test.
     positive_example: 'SessionStateStore._classify_write_failure has no dedicated test; it is reached through the public save() and initialize() by tests such as test_save_stale_revision_returns_conflict_and_leaves_row_and_projection and test_save_missing_row_returns_not_found; the coverage gate (CI-001) checks that private paths are reached'
     negative_example: 'def test__classify_write_failure(self): ...  # hypothetical: dedicated test calling a private method directly'
   - id: TEST-016.Q04
-    question: Are the independent failure modes of a public method covered by TEST-006 parameterization, with a separate test method per failure mode used only when the fixture requirements diverge?
+    statement: The independent failure modes of a public method are covered by TEST-006 parameterization, with a separate test method per failure mode used only when the fixture requirements diverge.
     kind: judgment
     na_when: No public method in the change has more than one independent failure mode.
     positive_example: 'One @pytest.mark.parametrize test over several invalid inputs (hypothetical), the failure modes sharing the same fixture'
@@ -1857,13 +1848,13 @@ rules:
   intent: CLI runner tests should pin wiring and observable behavior, not help prose, so that help text can be reworded freely without breaking the suite.
   criteria:
   - id: TEST-017.Q01
-    question: Do the CLI runner tests under tests/cli/ avoid asserting help text wording in stdout or rendered output?
+    statement: The CLI runner tests under tests/cli/ avoid asserting help text wording in stdout or rendered output.
     kind: judgment
     na_when: The change adds or modifies no CLI runner test that asserts against stdout or rendered output.
     positive_example: "assert result.exit_code == 0\nassert \"Status: valid with warnings\" in result.stdout  # permitted: asserting a literal status label, panel line, or full rendered string is allowed, ideally pinned via snapshot testing so the assertion cannot drift silently; not restricted to a published error code token; from tests/cli/config/test_config_validate.py"
     negative_example: 'assert "Show the current configuration value" in result.output  # hypothetical help text wording; assert Click metadata instead'
   - id: TEST-017.Q02
-    question: Does a CLI test that checks command registration or option names read them from Click metadata rather than from rendered help output?
+    statement: A CLI test that checks command registration or option names reads them from Click metadata rather than from rendered help output.
     kind: judgment
     na_when: The change adds or modifies no CLI test that checks command registration or option names.
     positive_example: 'root_callbacks = {command.name: command.callback for command in app.registered_commands}  # from tests/cli/test_cli.py'
@@ -1878,7 +1869,7 @@ rules:
   intent: A core test proves the domain layer's contract independent of any presentation concern. Importing the CLI package from a core test leaks a presentation dependency into the domain suite, or shows the test belongs under tests/cli/ instead.
   criteria:
   - id: TEST-018.Q01
-    question: Do the files under tests/core/ import nothing from dovo.cli or any submodule of it?
+    statement: The files under tests/core/ import nothing from dovo.cli or any submodule of it.
     kind: mechanical
     enforced_by: tests/lint/test_import_boundaries.py
     positive_example: 'from dovo.core.worktree.worktree import Worktree  # in tests/core/worktree/test_worktree.py'
@@ -1893,19 +1884,19 @@ rules:
   intent: Result assertions in CLI integration tests stay a genuine contract check on the command's own output, while the real formatting and rendering path keeps running so rendering regressions still surface.
   criteria:
   - id: TEST-019.Q01
-    question: Does every dispatch spy used in a *CliIntegrationTests suite call through to the real ui_dispatcher.dispatch, instead of replacing it with a stub?
+    statement: Every dispatch spy used in a *CliIntegrationTests suite calls through to the real ui_dispatcher.dispatch, instead of replacing it with a stub.
     kind: judgment
     na_when: The change adds or edits no use of a dispatch spy under tests/cli/.
     positive_example: 'The dispatch_spy fixture in tests/cli/conftest.py appends each DTO to a list and then calls original_dispatch(data, **kwargs), so a test may pin the exact DTO beyond what the --format json payload proves'
     negative_example: 'monkeypatch.setattr(ui_dispatcher, "dispatch", lambda data, **kwargs: None)  # replacement stub; the real formatter never runs, which TEST-008 forbids (hypothetical)'
   - id: TEST-019.Q02
-    question: Is every assertion made against an item captured by the dispatch spy an assertion on an instance of that command action's own terminal BaseResult type?
+    statement: Every assertion made against an item captured by the dispatch spy is an assertion on an instance of that command action's own terminal BaseResult type.
     kind: judgment
     na_when: The change adds or edits no use of a dispatch spy under tests/cli/.
     positive_example: 'prune_results = [item for item in dispatch_spy if isinstance(item, ArtifactsPruneResult)]; assert prune_results == [ArtifactsPruneResult(...)]  # compares the DTO''s own fields, a genuine contract comparison rather than a check that dispatch fired'
     negative_example: 'assert isinstance(dispatch_spy[-1], MessageEvent)  # asserting an incidental MessageEvent (or WarningEvent, PromptEvent, lifecycle or progress event) through the result spy'
   - id: TEST-019.Q03
-    question: Does a spy assertion avoid relying on spy[0], spy[-1] or len(spy) == 1 unless the command action dispatches only its own terminal result per invocation, isolating the instance of its own Result type otherwise?
+    statement: A spy assertion avoids relying on spy[0], spy[-1] or len(spy) == 1 unless the command action dispatches only its own terminal result per invocation, and otherwise isolates the instance of the command action's own Result type.
     kind: judgment
     na_when: The change adds or edits no spy assertion that reads the spy by position or length.
     positive_example: 'assert len(dispatch_spy) == 1; assert isinstance(dispatch_spy[0], WorktreeCreateResult)  # a command action known to dispatch only its own terminal result may assert the sole captured item directly (the isinstance line is illustrative; test_worktree_create.py reads payload = dispatch_spy[0] directly)'
@@ -1920,85 +1911,85 @@ rules:
   intent: Test docstrings stay short and carry only facts the code does not already show, so readers scan names and assertions first and the docstrings never go stale or duplicate the body.
   criteria:
   - id: TEST-020.Q01
-    question: Does every test method docstring add a fact that the test name and assertions do not, such as an exact literal, an ordering contract, or the inputs behind a parametrized case?
+    statement: Every test method docstring adds a fact that the test name and assertions do not, such as an exact literal, an ordering contract, or the inputs behind a parametrized case.
     kind: judgment
     na_when: The change adds or modifies no test method docstring under tests/.
     positive_example: 'Hypothetical: """Emit the start event before the first step log line, because the dispatcher streams them in order.""" on a test whose assertions only check that both events were emitted; the ordering contract is a fact the name and assertions do not show.'
     negative_example: 'Hypothetical: """Exit 1 when capacity is exceeded.""" on test_worktree_create_cli_capacity_exceeded_exits_one in tests/cli/worktree/test_worktree_create.py only rewords the test name.'
   - id: TEST-020.Q02
-    question: Is every test method docstring a single sentence?
+    statement: Every test method docstring is a single sentence.
     kind: judgment
     na_when: The change adds or modifies no test method docstring under tests/.
     positive_example: 'Hypothetical: """Exit 1 with ''Maximum active worktrees reached'' in stdout when 3 worktrees already exist."""'
     negative_example: 'Hypothetical: """Create three worktrees. Then create a fourth and expect exit 1."""  # two sentences'
   - id: TEST-020.Q03
-    question: Does every test method docstring open with an imperative verb?
+    statement: Every test method docstring opens with an imperative verb.
     kind: judgment
     na_when: The change adds or modifies no test method docstring under tests/.
     positive_example: 'Hypothetical: """Exit 1 with ''Maximum active worktrees reached'' in stdout when 3 worktrees already exist."""'
     negative_example: 'Hypothetical: """This test checks that the command exits 1 when capacity is exceeded."""  # opens with a non-imperative word'
   - id: TEST-020.Q04
-    question: Is every test method docstring free of a `[tier-N/type]` tag?
+    statement: Every test method docstring is free of a `[tier-N/type]` tag.
     kind: judgment
     na_when: The change adds or modifies no test method docstring under tests/.
     positive_example: 'Hypothetical: """Exit 1 with ''Maximum active worktrees reached'' in stdout when 3 worktrees already exist."""  # the tier follows from the file path under tests/cli/'
     negative_example: 'Hypothetical: """[tier-3/integration] Exit 1 with ''Maximum active worktrees reached'' in stdout."""'
   - id: TEST-020.Q05
-    question: Is every test method docstring free of a `<symbol>:` or `dovo <command>:` prefix?
+    statement: Every test method docstring is free of a `<symbol>:` or `dovo <command>:` prefix.
     kind: judgment
     na_when: The change adds or modifies no test method docstring under tests/.
     positive_example: 'Hypothetical: """Exit 1 with ''Maximum active worktrees reached'' in stdout when 3 worktrees already exist."""'
     negative_example: 'Hypothetical: """dovo worktree create: exit 1 with ''Maximum active worktrees reached'' in stdout."""'
   - id: TEST-020.Q06
-    question: Is every line of every test method docstring within 120 columns?
+    statement: Every line of every test method docstring is within 120 columns.
     kind: judgment
     na_when: The change adds or modifies no test method docstring under tests/.
     positive_example: 'Hypothetical: a one-line docstring of 100 characters including indentation and quotes.'
     negative_example: 'Hypothetical: a one-line docstring that runs to 140 columns.'
   - id: TEST-020.Q07
-    question: Does every docstring on a non-test unit under tests/ (helper, fixture, test double, class, module) open with a one-line title?
+    statement: Every docstring on a non-test unit under tests/ (helper, fixture, test double, class, module) opens with a one-line title.
     kind: judgment
     na_when: The change adds or modifies no docstring on a helper, fixture, test double, class or module under tests/.
     positive_example: '"""Build the registered provider with its winning credential set and a fake finished-stream runner."""  # on _provider_with_fake_runner in tests/core/agents/test_base.py'
     negative_example: 'Hypothetical: a fixture docstring that begins with a multi-line paragraph before any one-line title.'
   - id: TEST-020.Q08
-    question: Is the title of a non-test unit free of any outcome clause?
+    statement: The title of a non-test unit is free of any outcome clause.
     kind: judgment
     na_when: The change adds or modifies no docstring on a helper, fixture, test double, class or module under tests/.
     positive_example: '"""Build the registered provider with its winning credential set and a fake finished-stream runner."""  # states what the helper does; on _provider_with_fake_runner in tests/core/agents/test_base.py'
     negative_example: 'Hypothetical: """Build a provider, so that the test can assert the run finishes cleanly."""  # carries an outcome clause'
   - id: TEST-020.Q09
-    question: Is the title of a non-test unit a single description of the unit rather than a list of steps?
+    statement: The title of a non-test unit is a single description of the unit rather than a list of steps.
     kind: judgment
     na_when: The change adds or modifies no docstring on a helper, fixture, test double, class or module under tests/.
     positive_example: '"""Build the registered provider with its winning credential set and a fake finished-stream runner."""  # on _provider_with_fake_runner in tests/core/agents/test_base.py'
     negative_example: '"""Give the provider''s winning credential ''test-token'', patch a finished-stream runner, and return both."""  # hypothetical helper docstring: lists steps'
   - id: TEST-020.Q10
-    question: Does a non-test unit's docstring include a description beyond its title only to record a hidden contract, a safety behavior, or a non-obvious ordering constraint?
+    statement: A non-test unit's docstring includes a description beyond its title only to record a hidden contract, a safety behavior, or a non-obvious ordering constraint.
     kind: judgment
     na_when: No docstring on a non-test unit under tests/ is added or modified, or none has a description beyond its title.
     positive_example: 'Hypothetical: a fixture docstring whose second paragraph says the fixture must be requested before the monkeypatched environment, because ordering changes which credential wins.'
     negative_example: 'Hypothetical: a fixture docstring whose second paragraph repeats the title in other words.'
   - id: TEST-020.Q11
-    question: Is every docstring on a non-test unit under tests/ free of text that retells the body?
+    statement: Every docstring on a non-test unit under tests/ is free of text that retells the body.
     kind: judgment
     na_when: The change adds or modifies no docstring on a helper, fixture, test double, class or module under tests/.
     positive_example: 'Hypothetical: """Fake agent runner that replays a canned stdout stream."""'
     negative_example: 'Hypothetical: """Fake agent runner. It reads the canned stdout, splits it by line, and yields each line."""  # retells the body'
   - id: TEST-020.Q12
-    question: Is every docstring on a non-test unit under tests/ free of text that restates parameters, types, or the return annotation?
+    statement: Every docstring on a non-test unit under tests/ is free of text that restates parameters, types, or the return annotation.
     kind: judgment
     na_when: The change adds or modifies no docstring on a helper, fixture, test double, class or module under tests/.
     positive_example: 'Hypothetical: """Build a provider wired to a fake finished-stream runner."""  # the signature already shows the arguments and return type'
     negative_example: 'Hypothetical: """Build a provider. Args: token: the provider token. Returns: a tuple of the provider and the runner."""'
   - id: TEST-020.Q13
-    question: Is every docstring on a non-test unit under tests/ free of sentences describing how another module or caller behaves?
+    statement: Every docstring on a non-test unit under tests/ is free of sentences describing how another module or caller behaves.
     kind: judgment
     na_when: The change adds or modifies no docstring on a helper, fixture, test double, class or module under tests/.
     positive_example: 'Hypothetical: """Fake agent runner that replays a canned stdout stream."""'
     negative_example: 'Hypothetical: """Fake agent runner. The real engine calls it once per step and then parses the stream."""  # describes the engine, not the unit'
   - id: TEST-020.Q14
-    question: Does every unit under tests/ carry exactly one docstring, with no bare string statement after it?
+    statement: Every unit under tests/ carries exactly one docstring, with no bare string statement after it.
     kind: judgment
     na_when: The change adds or modifies no unit with a docstring under tests/.
     positive_example: 'Hypothetical: a helper whose body begins with its docstring and then goes straight to code.'
@@ -2013,25 +2004,25 @@ rules:
   intent: The architecture doc stays a short, trustworthy map of how the code is laid out, so readers find structure there and never have to dig it out from feature narrative or churn from refactors.
   criteria:
   - id: DOC-001.Q01
-    question: Does the diff to docs/agents/architecture.md modify only structure sections (the layers tree and the package boundaries)?
+    statement: The diff to docs/agents/architecture.md modifies only structure sections (the layers tree and the package boundaries).
     kind: judgment
     na_when: The change does not touch docs/agents/architecture.md.
     positive_example: '# Hypothetical: adding a core/prune/ line to the layers tree under "## Layers" in architecture.md'
     negative_example: '# Hypothetical: adding a new section to architecture.md that explains how pruning picks which sessions to remove'
   - id: DOC-001.Q02
-    question: Is each structure-section edit to docs/agents/architecture.md made because a package was added, removed or moved, domain ownership changed, or an import boundary changed?
+    statement: Each structure-section edit to docs/agents/architecture.md is made because a package was added, removed or moved, domain ownership changed, or an import boundary changed.
     kind: judgment
     na_when: The change does not touch docs/agents/architecture.md.
     positive_example: '# Hypothetical: a new core/prune/ package is added and the layers tree gains a core/prune/ entry'
     negative_example: '# Hypothetical: a pure refactor splits one module into two inside core/artifacts/ and architecture.md is edited to match'
   - id: DOC-001.Q03
-    question: Is the diff to docs/agents/architecture.md free of feature behavior essays?
+    statement: The diff to docs/agents/architecture.md is free of feature behavior essays.
     kind: judgment
     na_when: The change does not touch docs/agents/architecture.md.
     positive_example: '# Hypothetical: a one-line layers-tree entry "prune/   Session artifact pruning" for a new package'
     negative_example: '# Hypothetical: 100 lines of narrative prose explaining pruning heuristics in architecture.md'
   - id: DOC-001.Q04
-    question: Does each new import boundary described in docs/agents/architecture.md also have a row in LAYER_RULES in tests/lint/test_layer_direction.py?
+    statement: Each new import boundary described in docs/agents/architecture.md also has a row in LAYER_RULES in tests/lint/test_layer_direction.py.
     kind: judgment
     na_when: The change adds no new import boundary.
     positive_example: '# Hypothetical: a new boundary "prune/ imports nothing from engine/" is added to the package boundaries section and as a new entry in LAYER_RULES'
@@ -2046,13 +2037,13 @@ rules:
   intent: Users look up commands, subcommands and flags in one place, so the reference for user-visible CLI behavior lives with the per-command docs and stays out of the architecture overview.
   criteria:
   - id: DOC-002.Q01
-    question: Is every new or changed CLI subcommand, option or user-visible behavior documented in the matching docs/cli/<command>.md?
+    statement: Every new or changed CLI subcommand, option or user-visible behavior is documented in the matching docs/cli/<command>.md.
     kind: judgment
     na_when: The change adds or alters no user-visible CLI subcommand, option or behavior.
     positive_example: '# Adding a row for a new --auto-apply style flag to the options table in docs/cli/run.md (the flag is real, the change is illustrative)'
     negative_example: '# Hypothetical: a new flag is added to dovo run, and docs/cli/run.md is left unchanged'
   - id: DOC-002.Q02
-    question: Is user-visible CLI behavior, subcommand and flag documentation kept out of docs/agents/architecture.md?
+    statement: User-visible CLI behavior, subcommand and flag documentation is kept out of docs/agents/architecture.md.
     kind: judgment
     na_when: The change does not touch docs/agents/architecture.md.
     positive_example: '# Hypothetical: architecture.md only gains a layers-tree entry for a new package, and the flag description goes to docs/cli/run.md'
@@ -2068,13 +2059,13 @@ rules:
     of becoming a second copy of entity definitions that the source already holds.
   criteria:
   - id: DOC-003.Q01
-    question: Does every edit to docs/agents/schemas.md follow a change to a cross-cutting contract (config tier merge rules, path ownership, persistence authority, secrets handling, or catalog or database scoping)?
+    statement: Every edit to docs/agents/schemas.md follows a change to a cross-cutting contract (config tier merge rules, path ownership, persistence authority, secrets handling, or catalog or database scoping).
     kind: judgment
     na_when: The change does not edit docs/agents/schemas.md.
     positive_example: '# Updating schemas.md because a config key switched from replace to union merge across tiers (hypothetical). A change that only adds or changes config keys, blueprint fields, DTOs, enum members, exceptions, entrypoint methods or commands needs no schemas.md edit and correctly leaves it untouched.'
     negative_example: '# Editing schemas.md for a change that alters no cross-cutting contract, such as reflowing a section while adding a new config key (hypothetical)'
   - id: DOC-003.Q02
-    question: Are the edits to schemas.md free of added field lists, enum members, exception names and method lists?
+    statement: The edits to schemas.md are free of added field lists, enum members, exception names and method lists.
     kind: judgment
     na_when: The change does not edit docs/agents/schemas.md.
     positive_example: '# A schemas.md edit that states how config tiers merge, with no list of keys or fields (hypothetical)'
@@ -2090,20 +2081,20 @@ rules:
     and readers are sent to the one place that is always correct.
   criteria:
   - id: DOC-004.Q01
-    question: Do the docs avoid hand-copying Pydantic model signatures, field tables or enum lists that a read of the source already gives unambiguously?
+    statement: The docs avoid hand-copying Pydantic model signatures, field tables or enum lists that a read of the source already gives unambiguously.
     kind: judgment
     positive_example: See [`WorktreeSession`](src/dovo/core/worktree/models.py). Worktrees live under .dovo/worktrees/.
     negative_example: '| Field | Type | Default |
 
       | session_id | str | required |  (a table copying the fields of WorktreeSession)'
   - id: DOC-004.Q02
-    question: Does every doc that refers to a specific Pydantic model link to the file that defines it?
+    statement: Every doc that refers to a specific Pydantic model links to the file that defines it.
     kind: judgment
     na_when: The doc does not refer to any specific Pydantic model.
     positive_example: See [`WorktreeSession`](src/dovo/core/worktree/models.py).
     negative_example: 'WorktreeSession carries the session id and its paths.  (names the model with no link to src/dovo/core/worktree/models.py; hypothetical sentence)'
   - id: DOC-004.Q03
-    question: Does a doc that describes a model add only behavior the source does not express, such as validators or resolution order, rather than field lists or enum members copied without added context?
+    statement: A doc that describes a model adds only behavior the source does not express, such as validators or resolution order, rather than field lists or enum members copied without added context.
     kind: judgment
     na_when: The doc does not describe any model.
     positive_example: 'Worktrees live under .dovo/worktrees/.  (a placement fact beside the model link, not a copy of its fields)'
@@ -2118,19 +2109,19 @@ rules:
   intent: A specification table that cannot be avoided must not drift from the source it describes, so an automated test that exists when the claim is made keeps the two in agreement.
   criteria:
   - id: DOC-005.Q01
-    question: Does every unavoidable field table (the specification for an external JSON Schema or a stable CLI output format) have an automated test under tests/lint/ that fails when the table and the source disagree?
+    statement: Every unavoidable field table (the specification for an external JSON Schema or a stable CLI output format) has an automated test under tests/lint/ that fails when the table and the source disagree.
     kind: judgment
     na_when: The change adds or edits no field table that specifies an external JSON Schema or a stable CLI output format.
     positive_example: 'docs/reference/step-schema.md has a field table and states it is pinned to the models by tests/lint/test_step_schema_parity.py, which exists in the tree'
     negative_example: 'A hypothetical field table of a stable CLI output format is added to docs/ and no test under tests/lint/ compares it with the source'
   - id: DOC-005.Q02
-    question: Was the parity test already in the tree when the doc claim landed?
+    statement: The parity test was already in the tree when the doc claim landed.
     kind: judgment
     na_when: The change adds no doc claim that relies on a parity test.
     positive_example: 'The commit that adds a doc sentence naming tests/lint/test_config_schema_parity.py also adds that file, or the file already exists'
     negative_example: 'A doc sentence names a parity test as a follow-up to be written later (hypothetical), so the claim lands before the test'
   - id: DOC-005.Q03
-    question: Does the doc name the parity test by a path that resolves to a file in the tree?
+    statement: The doc names the parity test by a path that resolves to a file in the tree.
     kind: judgment
     na_when: The change adds or edits no doc claim that names a parity test.
     positive_example: 'docs/agents/schemas.md names tests/lint/test_config_schema_parity.py, and that file exists'
@@ -2146,13 +2137,13 @@ rules:
     current.
   criteria:
   - id: DOC-006.Q01
-    question: Does every doc edit that changes a statement replace or delete the stale text instead of appending a new bullet beside it?
+    statement: Every doc edit that changes a statement replaces or deletes the stale text instead of appending a new bullet beside it.
     kind: judgment
     na_when: The doc edit adds only statements that no existing text in docs/ covers.
     positive_example: 'Hypothetical edit: a bullet citing the removed formatters.py is replaced by one citing cli/ui/formatters/ (a package that exists in src/dovo/cli/ui/)'
     negative_example: 'Hypothetical edit: a new bullet citing cli/ui/formatters/ is appended while the old bullet citing formatters.py stays'
   - id: DOC-006.Q02
-    question: Is every statement the change adds or edits free of contradiction with other statements in docs/ about the same rule or fact, found by searching docs/ for what it names?
+    statement: Every statement the change adds or edits is free of contradiction with other statements in docs/ about the same rule or fact, found by searching docs/ for what it names.
     kind: judgment
     na_when: The change adds or edits no doc statement.
     positive_example: 'Hypothetical: an edit states formatters live in cli/ui/formatters/; searching docs/ for "formatters" finds no other doc naming a different location'
@@ -2167,13 +2158,13 @@ rules:
   intent: Docs and code comments name the core concepts the same way everywhere, so a reader never has to guess whether two words mean one thing or one word means two.
   criteria:
   - id: DOC-007.Q01
-    question: Does doc prose and every code comment name Blueprint, Step, Loop step, Catalog, Run, Session, Worktree and Checkpoint concepts by the term the Terminology table in docs/agents/architecture.md defines, rather than by a term the table does not define?
+    statement: Doc prose and every code comment name Blueprint, Step, Loop step, Catalog, Run, Session, Worktree and Checkpoint concepts by the term the Terminology table in docs/agents/architecture.md defines, rather than by a term the table does not define.
     kind: judgment
     na_when: The change adds or edits no doc prose and no code comment that refers to these concepts.
     positive_example: '''A blueprint containing a loop step.'''
     negative_example: '''A workflow containing a repeat block.''  # hypothetical: the table defines blueprint and loop step, not workflow or repeat block'
   - id: DOC-007.Q02
-    question: Does doc prose and every code comment use each defined term only within its stated meaning in the Terminology table?
+    statement: Doc prose and every code comment use each defined term only within its stated meaning in the Terminology table.
     kind: judgment
     na_when: The change adds or edits no doc prose and no code comment that uses a defined term.
     positive_example: '''A run executes the blueprint and leaves a session behind.''  # the run is the act of executing; the session is what it leaves behind'
@@ -2188,37 +2179,37 @@ rules:
   intent: Readers act on what docs, skills, rules and docstrings say, so every claim must be true and checkable today. False or aspirational statements mislead them, and an example is copied more often than the rule is read.
   criteria:
   - id: DOC-008.Q01
-    question: Does every doc, skill, rule or docstring sentence that asserts something is enforced, gated or checked name the enforcing artifact by path?
+    statement: Every doc, skill, rule or docstring sentence that asserts something is enforced, gated or checked names the enforcing artifact by path.
     kind: judgment
     na_when: The change adds or edits no sentence claiming that something is enforced, gated or checked.
     positive_example: '# "COLUMNS is pinned to 160 by [tool.pytest_env] in pyproject.toml" - names the enforcing file, and [tool.pytest_env] there sets COLUMNS = "160"'
     negative_example: '# "Command output width is always pinned in tests." (hypothetical sentence) - claims enforcement and names no artifact'
   - id: DOC-008.Q02
-    question: Does every path named as an enforcing artifact, or in a "see <path>" claim, resolve to a file in the tree?
+    statement: Every path named as an enforcing artifact, or in a "see <path>" claim, resolves to a file in the tree.
     kind: judgment
     na_when: The change adds or edits no sentence that names a path as an enforcing artifact or a reference.
     positive_example: '# "enforced by tests/lint/test_layer_direction.py" - that file exists in the tree'
     negative_example: '# "enforced by tests/lint/test_doc_parity.py" (hypothetical sentence) - no such file exists under tests/lint/'
   - id: DOC-008.Q03
-    question: Does every helper, fixture, builder or assertion function that a doc instructs an implementer to use exist in the tree before the instruction ships?
+    statement: Every helper, fixture, builder or assertion function that a doc instructs an implementer to use exists in the tree before the instruction ships.
     kind: judgment
     na_when: The change adds or edits no doc instruction that tells an implementer to use a named helper, fixture, builder or assertion function.
     positive_example: '# "Acquire the lock with WorkspaceLock" - WorkspaceLock is defined in src/dovo/common/lock.py'
     negative_example: '# "Build the input with make_session_fixture()" (hypothetical) - no function of that name is defined anywhere in the tree'
   - id: DOC-008.Q04
-    question: Does the change document only behavior that is already built, in prose and in rule examples alike?
+    statement: The change documents only behavior that is already built, in prose and in rule examples alike.
     kind: judgment
     na_when: The change adds or edits no documentation, rule text or rule example describing behavior.
     positive_example: '# A rule example that cites core/artifacts/services/prune.py, which exists and does what the example says'
     negative_example: '# A paragraph describing a "dovo sync --all" flag (hypothetical) that is planned but absent from the CLI'
   - id: DOC-008.Q05
-    question: Does the change delete or correct, rather than leave as aspiration, every doc, skill or rule sentence that it makes false?
+    statement: The change deletes or corrects, rather than leaves as aspiration, every doc, skill or rule sentence that it makes false.
     kind: judgment
     na_when: The change makes no existing doc, skill or rule claim false.
     positive_example: '# A change that removes a CLI flag also deletes the sentence in docs/cli/ that described it (hypothetical change)'
     negative_example: '# A change that removes a CLI flag leaves its docs sentence behind with "to be restored later" (hypothetical change)'
   - id: DOC-008.Q06
-    question: Is every docstring of a function whose behavior the change alters, or that appears in the diff, free of sentences the new code makes false?
+    statement: Every docstring of a function whose behavior the change alters, or that appears in the diff, is free of sentences the new code makes false.
     kind: judgment
     na_when: The change alters the behavior of no function that has a docstring and adds or edits no docstring.
     positive_example: '# A change makes a function raise on empty input and its docstring "returns an empty list" sentence is updated in the same diff (hypothetical)'
@@ -2233,18 +2224,18 @@ rules:
   intent: Every commit passes the full quality gate, and the coverage floor stays a regression backstop, never loosened or chased. A drop from deleting duplicated or dead tests is a success.
   criteria:
   - id: CI-001.Q01
-    question: Has `dovo run quality` passed (ruff format, ruff check, basedpyright src tests --level error with zero errors, mkdocs build --strict, complexity at or under 10 on changed files, and the test suite meeting the coverage floor) before the commit?
+    statement: '`dovo run quality` has passed (ruff format, ruff check, basedpyright src tests --level error with zero errors, mkdocs build --strict, complexity at or under 10 on changed files, and the test suite meeting the coverage floor) before the commit.'
     kind: judgment
     positive_example: uv run ruff format . && uv run dovo run quality
     negative_example: 'git commit after only running a scoped `uv run dovo run tests --path tests/core/` (hypothetical: the full quality gate was never run)'
   - id: CI-001.Q02
-    question: Is the fail_under value in pyproject.toml under [tool.coverage.report] greater than or equal to its previous committed value?
+    statement: The fail_under value in pyproject.toml under [tool.coverage.report] is greater than or equal to its previous committed value.
     kind: judgment
     na_when: The change does not touch pyproject.toml.
     positive_example: '# fail_under raised from 80 to 82 under [tool.coverage.report] in pyproject.toml in the same change (hypothetical numbers)'
     negative_example: '# fail_under lowered from 80 to 75 so a commit can pass (hypothetical)'
   - id: CI-001.Q03
-    question: Is the stated justification for each added test something other than raising the coverage percentage?
+    statement: The stated justification for each added test is a reason other than raising the coverage percentage.
     kind: judgment
     na_when: The change adds no tests.
     positive_example: 'A new test asserting a public result contract, with a PR description that names the contract'
@@ -2260,46 +2251,46 @@ rules:
     tool attribution and each pull request can be reviewed as one concern.
   criteria:
   - id: CI-002.Q01
-    question: 'Does the commit title start with a semantic prefix of the form type(scope) or type, followed by a colon, as in "docs(rules): ..." in the commit history?'
+    statement: 'The commit title starts with a semantic prefix of the form type(scope) or type, followed by a colon, as in "docs(rules): ..." in the commit history.'
     kind: judgment
     positive_example: 'feat(worktree): add prune subcommand for stale worktrees (hypothetical message; the dovo worktree prune command exists)'
     negative_example: 'Updated stuff and fixed things (hypothetical message)'
   - id: CI-002.Q02
-    question: Is the commit title written in the imperative mood?
+    statement: The commit title is written in the imperative mood.
     kind: judgment
     positive_example: 'feat(worktree): add prune subcommand (hypothetical message)'
     negative_example: 'feat(worktree): added prune subcommand (hypothetical message)'
   - id: CI-002.Q03
-    question: 'Is the commit message free of AI trailers such as "Co-authored-by: Cursor"?'
+    statement: 'The commit message is free of AI trailers such as "Co-authored-by: Cursor".'
     kind: judgment
     positive_example: 'feat: prune worktrees, with a body that ends after the description and has no trailer lines (hypothetical message)'
     negative_example: "feat: prune worktrees\n\nCo-authored-by: Cursor <cursor@cursor.sh>  (hypothetical message)"
   - id: CI-002.Q04
-    question: Is the pull request description free of AI or tool attribution lines?
+    statement: The pull request description is free of AI or tool attribution lines.
     kind: judgment
     na_when: The change is not submitted as a pull request.
     positive_example: 'A PR description whose last line is the Linkage entry "Closes #123" (hypothetical description)'
     negative_example: 'A PR description ending in a "Generated with <tool>" attribution line (hypothetical description)'
   - id: CI-002.Q05
-    question: Does the pull request address a single responsibility?
+    statement: The pull request addresses a single responsibility.
     kind: judgment
     na_when: The change is not submitted as a pull request.
     positive_example: 'One PR that adds the worktree prune subcommand and its tests (hypothetical PR)'
     negative_example: 'One PR that adds a subcommand and also fixes an unrelated config-loading bug (hypothetical PR)'
   - id: CI-002.Q06
-    question: Does the pull request description have a Why section of 2-3 sentences giving the context and motivation?
+    statement: The pull request description has a Why section of 2-3 sentences giving the context and motivation.
     kind: judgment
     na_when: The change is not submitted as a pull request.
     positive_example: 'A "Why" section of two sentences explaining the problem and why it matters now (hypothetical description)'
     negative_example: 'A description with no Why section, or a Why section of a full page of history (hypothetical description)'
   - id: CI-002.Q07
-    question: Does the pull request description have an Approach section made of bullets of 1-2 sentences each?
+    statement: The pull request description has an Approach section made of bullets of 1-2 sentences each.
     kind: judgment
     na_when: The change is not submitted as a pull request.
     positive_example: 'An "Approach" section with three bullets, each one or two sentences (hypothetical description)'
     negative_example: 'An "Approach" section written as one long unbroken paragraph (hypothetical description)'
   - id: CI-002.Q08
-    question: 'Does the pull request description have a Linkage section with an issue cross-reference such as Fixes #N or Closes #N?'
+    statement: 'The pull request description has a Linkage section with an issue cross-reference such as Fixes #N or Closes #N.'
     kind: judgment
     na_when: The change is not submitted as a pull request.
     positive_example: 'A "Linkage" section reading "Closes #123" (hypothetical description)'
@@ -2314,13 +2305,13 @@ rules:
   intent: Reviewers can tell what an agent is about to change and which project rule it is following, so each action is announced before it is taken.
   criteria:
   - id: CI-003.Q01
-    question: Does the agent state the specific directive or doc governing an action before executing commands or editing files?
+    statement: The agent states the specific directive or doc governing an action before executing commands or editing files.
     kind: judgment
     na_when: The agent turn runs no commands and edits no files.
     positive_example: 'Governing directive: docs/agents/testing.md'
     negative_example: 'Running write_to_file without stating the governing directive (hypothetical agent turn)'
   - id: CI-003.Q02
-    question: Does the agent state the target scope of an action, such as a specific test package or module, before executing commands or editing files?
+    statement: The agent states the target scope of an action, such as a specific test package or module, before executing commands or editing files.
     kind: judgment
     na_when: The agent turn runs no commands and edits no files.
     positive_example: 'Target scope: tests/core/worktree/test_worktree.py'
@@ -2335,37 +2326,37 @@ rules:
   intent: A BLOCKER rule that can be checked by a machine is actually checked by one, so a declared gate cannot silently stop protecting the codebase and an allowlist cannot quietly grow.
   criteria:
   - id: CI-004.Q01
-    question: Does every BLOCKER rule that can be checked mechanically have an executing check (an invariant test under tests/lint/, a prek hook or a CI step) or an explicit review-only classification?
+    statement: Every BLOCKER rule that can be checked mechanically has an executing check (an invariant test under tests/lint/, a prek hook or a CI step) or an explicit review-only classification.
     kind: judgment
     na_when: The change adds or alters no BLOCKER rule and removes no enforcing check.
     positive_example: 'ARCH-001 is enforced by tests/lint/test_layer_direction.py, which runs in the test suite'
     negative_example: 'A new BLOCKER rule about import order is added to rules_spec.yaml with no test, hook or CI step behind it (hypothetical)'
   - id: CI-004.Q02
-    question: Is every declared gate configured so that it can fail, with no setting that disables it, such as a coverage floor of zero or a type checker present in no hook and no workflow?
+    statement: Every declared gate is configured so that it can fail, with no setting that disables it, such as a coverage floor of zero or a type checker present in no hook and no workflow.
     kind: judgment
     na_when: The change touches no gate configuration in prek.toml, .github/workflows/ or pyproject.toml.
     positive_example: 'fail_under = 80 in pyproject.toml, so the coverage gate fails below 80 percent'
     negative_example: 'fail_under = 0 in pyproject.toml (hypothetical): the coverage gate is declared but can never fail'
   - id: CI-004.Q03
-    question: Is a gate whose configuration disables it either wired up or downgraded to a review-time WARNING, rather than left declared as an enforced BLOCKER?
+    statement: A gate whose configuration disables it is either wired up or downgraded to a review-time WARNING, rather than left declared as an enforced BLOCKER.
     kind: judgment
     na_when: No declared gate is found to be disabled.
     positive_example: 'A type-check step missing from every hook and workflow is added to .github/workflows/ci.yml, or its rule is downgraded to WARNING (hypothetical)'
     negative_example: 'basedpyright is declared as a BLOCKER gate but appears in no hook and no workflow, and the rule stays BLOCKER (hypothetical)'
   - id: CI-004.Q04
-    question: Does every invariant check include a regression test shaped like the code it polices, such as assertions inside a *Tests class rather than a module-level function?
+    statement: Every invariant check includes a regression test shaped like the code it polices, such as assertions inside a *Tests class rather than a module-level function.
     kind: judgment
     na_when: The change adds or alters no invariant check under tests/lint/.
     positive_example: 'ImportBoundariesTests.test_unexpected_entries_flags_subpackage_and_ignores_pycache in tests/lint/test_import_boundaries.py builds a sample directory in tmp_path with a stray subpackage and module, then asserts _unexpected_entries flags exactly those entries'
     negative_example: 'A scanner walks only tree.body functions, so test methods inside a *Tests class are never inspected (hypothetical)'
   - id: CI-004.Q05
-    question: Does an invariant check that lands green carry an explicit burn-down allowlist of known violators, rather than being merged red or left disabled?
+    statement: An invariant check that lands green carries an explicit burn-down allowlist of known violators, rather than being merged red or left disabled.
     kind: judgment
     na_when: The invariant check lands with no existing violators.
     positive_example: 'LAYER_EXCEPTIONS in tests/lint/test_layer_direction.py lists the known allowed violations, so the check passes today'
     negative_example: 'A new invariant is added with known violators and is skipped or marked xfail instead of carrying an allowlist (hypothetical)'
   - id: CI-004.Q06
-    question: Has every allowlist of known violators only shrunk, with no entry added?
+    statement: Every allowlist of known violators has only shrunk, with no entry added.
     kind: judgment
     na_when: The change touches no allowlist.
     positive_example: 'test_layer_exception_still_occurs in tests/lint/test_layer_direction.py fails when an allowlisted violation is fixed, forcing its entry to be deleted from LAYER_EXCEPTIONS'

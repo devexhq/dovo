@@ -18,8 +18,9 @@ afterwards; you will not see its checklist.
   obligation, and do not add requirements.
 - `intent`: one or two sentences, 40 words or fewer, saying what the rule protects. Say why, not how: no mechanism,
   paths, counts or names that a criterion checks.
-- Each criterion is one yes/no question about one fact, starting with Does, Do, Is, Are, Was, Were, Has or Have, phrased
-  so that YES means compliant. Give it an `na_when` if it can be inapplicable, and its own example pair.
+- Each criterion is one `statement`: a declarative sentence about one fact that is true when the change is compliant,
+  ending in a period and not starting with Does, Do, Is, Are, Was, Were, Has or Have. Give it an `na_when` if it can be
+  inapplicable, and its own example pair.
 - **Verify every example against the repo before writing it.** Every symbol, field, enum value, path and test name an
   example mentions must exist, and every statement it makes about existing code must be true. If an example describes
   something hypothetical, say so in the example text. An old example that is false should be replaced, and you should

@@ -59,7 +59,7 @@ RULE_QUESTIONS: dict[str, str] = {
 
 # Questions asked of every proposed criterion. YES means fine.
 CRITERION_QUESTIONS: dict[str, str] = {
-    "C01": "Is it one yes/no question about one fact, with YES meaning compliant, no double negative, and no vague word that lacks an operational test?",
+    "C01": "Is it one declarative sentence about one fact that is true when compliant, with no double negative and no vague word that lacks an operational test?",
     "C02": "Can it be answered from evidence a reviewer can produce by the stated `method`, over an explicit scope, with `na_when` stated if it is conditional?",
     "C03": "Do `positive_example` and `negative_example` show a concrete pass and a concrete fail, or does `example_not_applicable` give a reason specific to this criterion?",
 }
@@ -80,14 +80,14 @@ INSTRUCTIONS: list[str] = [
     "You are the reviewer. You did not write this rule's new text. Do not edit rules_spec.yaml or the author's fragment; edit only this rule's audit file and, for E01 and E02, cross-references.json.",
     "Judge the rule text, not the code's compliance with it. A violation that already exists in the repo is not a FAIL; it is useful as an example.",
     "`old` is a frozen snapshot of the rule before the rewrite, and `old_sha256` is its hash. Read it, do not change it.",
-    "`proposed.intent` and `proposed.criteria` are prefilled from the merged spec. Do not change them or any `question`; a checker compares them with the spec. Fill in each criterion's `source`, `method` and `audit`.",
+    "`proposed.intent` and `proposed.criteria` are prefilled from the merged spec. Do not change them or any `statement` or slot `question`; a checker compares them with the spec. Fill in each criterion's `source`, `method` and `audit`.",
     "`source` lists the ids it comes from, for example `G2, K1`, using the keys of `old.guideline_sentences` and `old.criteria_clauses`.",
-    "Set each `verdict` to PASS (the answer is yes), FAIL (no), N/A (does not apply) or BLOCKED. No verdict may stay null.",
+    "Set each `verdict` to PASS (the statement holds), FAIL (it does not), N/A (does not apply) or BLOCKED. No verdict may stay null.",
     "FAIL means the author must fix the rule text. BLOCKED means the answer is no but the fix lies outside the rule text, such as a doc section, a skill or a citation target; leave the citation unchanged, and name the file, line and owner in the evidence.",
     "Every verdict needs `evidence`. For a line in the repo write `path:line` with the full repo path, and put any quoted text in backticks immediately after it, for example ``docs/agents/testing.md:115 `## Core Testing Rules` ``; a checker re-reads that line. For docs/agents/rules_spec.yaml and the generated rule files, whose lines shift during a run, the checker only confirms the quoted text appears somewhere in the file, so cite them with a quote or by rule id.",
     "For a search write `ran: <command> -> <result>`; for 'none found' write `ran: <command> -> no matches`. To cite a field of an audit file write `@<audit id>.<field>`, for example `@ENCAP-001.Q01.method`, never a line number.",
     f"A word is a whitespace-separated token, so `intent` is {INTENT_WORD_LIMIT} words or fewer when `wc -w` says so.",
-    "A question starts with Does, Do, Is, Are, Was, Were, Has or Have, is one sentence ending in '?', and is phrased so that YES means compliant.",
+    "A criterion `statement` is one declarative sentence ending in '.', does not start with Does, Do, Is, Are, Was, Were, Has or Have, and is true when the change is compliant.",
     "For A01 the evidence lists every key in `old.guideline_sentences`, each with where it went (intent, a criterion id, an example) or the reason it was dropped.",
     "List every difference between `old` and the new rule in `proposed.policy_changes`, copying `policy_change_template`: a changed severity, scope or domain, an added exemption (`na_when`), a changed enforcement classification, and any requirement added, removed, tightened or loosened. A permission turned into an obligation counts. Leave `approved_by` null; only a human fills it.",
     "Check every symbol, path, field and enum value that an example names against the repo, and every statement it makes about existing code. An example that names something that does not exist, or says something false, is a FAIL on C03.",
@@ -122,7 +122,7 @@ def audit_slots(prefix: str, questions: dict[str, str]) -> dict[str, dict[str, A
 def criterion_template() -> dict[str, Any]:
     """Return the blank entry an agent copies for each proposed criterion."""
     return {
-        "question": None,
+        "statement": None,
         "source": None,
         "method": None,
         "na_when": None,
