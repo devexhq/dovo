@@ -8,8 +8,66 @@
       "severity": "BLOCKER",
       "domain": "all",
       "scope": "src/dovo/",
-      "evaluation_criteria": "Scan imports. Verify common/ imports no core/, engine/, or cli/; core/ imports no engine/, cli/, or rich; engine/ imports no cli/; git/ imports no other core/ package; inputs/ imports no catalog or agents; catalog/ imports no agents, sessions, engine, cli; artifacts/ imports no engine; agents/ imports no engine; sessions/ imports no agents, worktree, catalog, engine, cli. Enforced by LAYER_RULES in tests/lint/test_layer_direction.py.",
-      "bad_pattern": "from dovo.engine.engine import Engine  # upward import in core/sessions/"
+      "intent": "Imports flow one way through the layers, so a lower layer never depends on a higher one and each package can be understood, tested and changed without pulling in the code that sits above it.",
+      "criteria": [
+        {
+          "id": "ARCH-001.Q01",
+          "question": "Does common/ import nothing from core/, engine/ or cli/, other than the imports listed in LAYER_EXCEPTIONS in tests/lint/test_layer_direction.py?",
+          "kind": "mechanical"
+        },
+        {
+          "id": "ARCH-001.Q02",
+          "question": "Does core/ import nothing from engine/ or cli/?",
+          "kind": "mechanical"
+        },
+        {
+          "id": "ARCH-001.Q03",
+          "question": "Does core/ import nothing from rich?",
+          "kind": "mechanical"
+        },
+        {
+          "id": "ARCH-001.Q04",
+          "question": "Does engine/ import nothing from cli/?",
+          "kind": "mechanical"
+        },
+        {
+          "id": "ARCH-001.Q05",
+          "question": "Does git/ import nothing from any other core/ package?",
+          "kind": "mechanical"
+        },
+        {
+          "id": "ARCH-001.Q06",
+          "question": "Does inputs/ import nothing from catalog or agents?",
+          "kind": "mechanical"
+        },
+        {
+          "id": "ARCH-001.Q07",
+          "question": "Does catalog/ import nothing from agents, sessions, engine or cli?",
+          "kind": "mechanical"
+        },
+        {
+          "id": "ARCH-001.Q08",
+          "question": "Does artifacts/ import nothing from engine?",
+          "kind": "mechanical"
+        },
+        {
+          "id": "ARCH-001.Q09",
+          "question": "Does agents/ import nothing from engine?",
+          "kind": "mechanical"
+        },
+        {
+          "id": "ARCH-001.Q10",
+          "question": "Does sessions/ import nothing from agents, worktree, catalog, engine or cli?",
+          "kind": "mechanical"
+        },
+        {
+          "id": "ARCH-001.Q11",
+          "question": "Does each core/ package named in the chain project/ -> {db, git, worktree, catalog, inputs, sessions, status, artifacts, interaction}/ -> agents/ -> diagnostics/ import only from packages at or before its own position in that chain?",
+          "kind": "judgment"
+        }
+      ],
+      "evaluation_criteria": "1. Does common/ import nothing from core/, engine/ or cli/, other than the imports listed in LAYER_EXCEPTIONS in tests/lint/test_layer_direction.py? 2. Does core/ import nothing from engine/ or cli/? 3. Does core/ import nothing from rich? 4. Does engine/ import nothing from cli/? 5. Does git/ import nothing from any other core/ package? 6. Does inputs/ import nothing from catalog or agents? 7. Does catalog/ import nothing from agents, sessions, engine or cli? 8. Does artifacts/ import nothing from engine? 9. Does agents/ import nothing from engine? 10. Does sessions/ import nothing from agents, worktree, catalog, engine or cli? 11. Does each core/ package named in the chain project/ -> {db, git, worktree, catalog, inputs, sessions, status, artifacts, interaction}/ -> agents/ -> diagnostics/ import only from packages at or before its own position in that chain?",
+      "bad_pattern": "from dovo.core.catalog.models import CatalogTier  # at runtime in common/ (hypothetical; the one real import of it, under TYPE_CHECKING in common/filesystem/models.py, is allowlisted)"
     },
     {
       "id": "ARCH-002",
@@ -17,8 +75,41 @@
       "severity": "BLOCKER",
       "domain": "cli",
       "scope": "src/dovo/cli/",
-      "evaluation_criteria": "Inspect CLI command handlers in src/dovo/cli/*/commands/. Flag direct SQL execution, domain orchestration, or business logic.",
-      "bad_pattern": "rows = context.db.connection.execute('SELECT * FROM worktrees').fetchall()"
+      "intent": "Command handlers stay thin adapters over the domain layer, so business behavior lives in one place where it can be reused and tested without the CLI.",
+      "criteria": [
+        {
+          "id": "ARCH-002.Q01",
+          "question": "Does each CLI command handler take a CliContext as its context parameter?",
+          "kind": "judgment"
+        },
+        {
+          "id": "ARCH-002.Q02",
+          "question": "Does each CLI command handler invoke an underlying domain service or domain entrypoint to do its work?",
+          "kind": "judgment"
+        },
+        {
+          "id": "ARCH-002.Q03",
+          "question": "Does each CLI command handler return a BaseResult model?",
+          "kind": "judgment"
+        },
+        {
+          "id": "ARCH-002.Q04",
+          "question": "Is the CLI package free of business logic and domain orchestration, so that handlers only delegate to the domain layer and dispatch the result?",
+          "kind": "judgment"
+        },
+        {
+          "id": "ARCH-002.Q05",
+          "question": "Is the CLI package free of direct SQLite queries or SQL execution?",
+          "kind": "judgment"
+        },
+        {
+          "id": "ARCH-002.Q06",
+          "question": "Is the CLI package free of direct filesystem scans?",
+          "kind": "judgment"
+        }
+      ],
+      "evaluation_criteria": "1. Does each CLI command handler take a CliContext as its context parameter? 2. Does each CLI command handler invoke an underlying domain service or domain entrypoint to do its work? 3. Does each CLI command handler return a BaseResult model? 4. Is the CLI package free of business logic and domain orchestration, so that handlers only delegate to the domain layer and dispatch the result? 5. Is the CLI package free of direct SQLite queries or SQL execution? 6. Is the CLI package free of direct filesystem scans?",
+      "bad_pattern": "# hypothetical: def status_command(path: Path) -> DovoStatusResult that rebuilds its own paths and database handle instead of receiving a CliContext"
     },
     {
       "id": "ARCH-003",
@@ -26,8 +117,41 @@
       "severity": "BLOCKER",
       "domain": "cli",
       "scope": "src/dovo/cli/ui/",
-      "evaluation_criteria": "Verify formatters only map existing fields from domain models without inventing new statuses, error categories, or domain rules.",
-      "bad_pattern": "if not result.git_status: result.warnings.append('Git not found')  # originates fact"
+      "intent": "Every domain fact the user sees is decided in one place, core/ or common/, so the display layer cannot drift from or contradict what the domain actually determined.",
+      "criteria": [
+        {
+          "id": "ARCH-003.Q01",
+          "question": "Does every status or outcome that cli/ui/ displays come from a field of a core/ or common/ model, rather than being invented in cli/ui/?",
+          "kind": "judgment"
+        },
+        {
+          "id": "ARCH-003.Q02",
+          "question": "Does every error category that cli/ui/ displays come from a core/ or common/ model, rather than being invented in cli/ui/?",
+          "kind": "judgment"
+        },
+        {
+          "id": "ARCH-003.Q03",
+          "question": "Does every warning that cli/ui/ displays come from a core/ or common/ model, rather than being appended in cli/ui/?",
+          "kind": "judgment"
+        },
+        {
+          "id": "ARCH-003.Q04",
+          "question": "Does every remediation that cli/ui/ displays come from a core/ or common/ model, rather than being written in cli/ui/?",
+          "kind": "judgment"
+        },
+        {
+          "id": "ARCH-003.Q05",
+          "question": "Is every domain rule that formatters apply (for example deciding what counts as healthy or failed) defined in core/ or common/ rather than in cli/ui/?",
+          "kind": "judgment"
+        },
+        {
+          "id": "ARCH-003.Q06",
+          "question": "Does cli/ui/ limit itself to deriving presentation views from existing domain fields, without adding new domain facts?",
+          "kind": "judgment"
+        }
+      ],
+      "evaluation_criteria": "1. Does every status or outcome that cli/ui/ displays come from a field of a core/ or common/ model, rather than being invented in cli/ui/? 2. Does every error category that cli/ui/ displays come from a core/ or common/ model, rather than being invented in cli/ui/? 3. Does every warning that cli/ui/ displays come from a core/ or common/ model, rather than being appended in cli/ui/? 4. Does every remediation that cli/ui/ displays come from a core/ or common/ model, rather than being written in cli/ui/? 5. Is every domain rule that formatters apply (for example deciding what counts as healthy or failed) defined in core/ or common/ rather than in cli/ui/? 6. Does cli/ui/ limit itself to deriving presentation views from existing domain fields, without adding new domain facts?",
+      "bad_pattern": "view.status = \"partially_initialized\"  # hypothetical: a new status value that no core/ or common/ model defines"
     },
     {
       "id": "ARCH-004",
@@ -38,17 +162,78 @@
         "engine"
       ],
       "scope": "src/dovo/core/, src/dovo/engine/",
-      "evaluation_criteria": "Check package directory structure for new domains. Verify the entrypoint module is named after the domain (e.g. prune.py) rather than generic facade.py. Flag any monolithic single-file domain layout or public models defined in services/.",
-      "bad_pattern": "src/dovo/core/prune/ -> facade.py  # or monolithic prune.py mixing models & logic"
+      "intent": "New domain code follows one predictable package layout with a domain-named entrypoint, so a reader finds types, errors, coordination and operations in the same places in every domain.",
+      "criteria": [
+        {
+          "id": "ARCH-004.Q01",
+          "question": "Does each new domain package under core/ define its types in a models.py module?",
+          "kind": "judgment"
+        },
+        {
+          "id": "ARCH-004.Q02",
+          "question": "Does each new domain package under core/ that raises its own errors define them in an exceptions.py module?",
+          "kind": "judgment"
+        },
+        {
+          "id": "ARCH-004.Q03",
+          "question": "Is the entrypoint coordinator or service of each new domain package named after the domain rather than generically?",
+          "kind": "judgment"
+        },
+        {
+          "id": "ARCH-004.Q04",
+          "question": "Does each new domain package under core/ keep its imperative operations in a services/ package?",
+          "kind": "judgment"
+        },
+        {
+          "id": "ARCH-004.Q05",
+          "question": "Is each new imperative operation of a domain placed in its own services/<verb>.py module rather than directly in the package root?",
+          "kind": "judgment"
+        },
+        {
+          "id": "ARCH-004.Q06",
+          "question": "Are all public models of a new domain package defined in its models.py rather than in services/?",
+          "kind": "judgment"
+        },
+        {
+          "id": "ARCH-004.Q07",
+          "question": "Does new domain code avoid extending a legacy flat layout (a domain package or module that lacks the standard structure)?",
+          "kind": "judgment"
+        }
+      ],
+      "evaluation_criteria": "1. Does each new domain package under core/ define its types in a models.py module? 2. Does each new domain package under core/ that raises its own errors define them in an exceptions.py module? 3. Is the entrypoint coordinator or service of each new domain package named after the domain rather than generically? 4. Does each new domain package under core/ keep its imperative operations in a services/ package? 5. Is each new imperative operation of a domain placed in its own services/<verb>.py module rather than directly in the package root? 6. Are all public models of a new domain package defined in its models.py rather than in services/? 7. Does new domain code avoid extending a legacy flat layout (a domain package or module that lacks the standard structure)?",
+      "bad_pattern": "src/dovo/core/prune/ holds a single prune.py mixing types and logic  # hypothetical: no prune/ package exists today"
     },
     {
       "id": "ARCH-006",
       "name": "Secrets Environment Resolution",
       "severity": "BLOCKER",
       "domain": "core",
-      "scope": "src/dovo/core/agents/, src/dovo/core/config/",
-      "evaluation_criteria": "Search for API key field additions in DovoConfig or SQLite models. Ensure environment resolution helpers are used.",
-      "bad_pattern": "api_key = config.agent.copilot_token  # serializing secrets in static config"
+      "scope": "src/dovo/core/agents/, src/dovo/core/config/, src/dovo/core/db/",
+      "intent": "Secrets exist only in the process environment and only while a call needs them, so they never leak into stored configuration, the database or prompts.",
+      "criteria": [
+        {
+          "id": "ARCH-006.Q01",
+          "question": "Is every API key or secret read from environment variables at call time through a module-level resolve helper?",
+          "kind": "judgment"
+        },
+        {
+          "id": "ARCH-006.Q02",
+          "question": "Is every secret absent from config.json, including the fields of DovoConfig?",
+          "kind": "judgment"
+        },
+        {
+          "id": "ARCH-006.Q03",
+          "question": "Is every secret absent from data.db, including the SQLite record models?",
+          "kind": "judgment"
+        },
+        {
+          "id": "ARCH-006.Q04",
+          "question": "Is every secret kept out of the arguments passed into prompt builders?",
+          "kind": "judgment"
+        }
+      ],
+      "evaluation_criteria": "1. Is every API key or secret read from environment variables at call time through a module-level resolve helper? 2. Is every secret absent from config.json, including the fields of DovoConfig? 3. Is every secret absent from data.db, including the SQLite record models? 4. Is every secret kept out of the arguments passed into prompt builders?",
+      "bad_pattern": "TOKEN = os.environ[\"COPILOT_TOKEN\"]  # hypothetical: captured once at import time instead of resolved at call time"
     },
     {
       "id": "RENDER-001",
@@ -424,8 +609,21 @@
       "severity": "BLOCKER",
       "domain": "all",
       "scope": "All source and test files",
-      "evaluation_criteria": "Detect repository or DovoDb instantiations inside for/while loops or inside reusable helper functions.",
-      "bad_pattern": "for item in items: repo = SessionsRepository(path); repo.create(item)"
+      "intent": "Database access reuses one pre-initialized instance, so repeated work does not pay for a new SQLite connection and migration check each time.",
+      "criteria": [
+        {
+          "id": "PERF-001.Q01",
+          "question": "Is every repository or DovoDb used inside a for or while loop created outside that loop?",
+          "kind": "judgment"
+        },
+        {
+          "id": "PERF-001.Q02",
+          "question": "Does every helper function, including every test helper, receive its repository or DovoDb as an argument instead of instantiating one?",
+          "kind": "judgment"
+        }
+      ],
+      "evaluation_criteria": "1. Is every repository or DovoDb used inside a for or while loop created outside that loop? 2. Does every helper function, including every test helper, receive its repository or DovoDb as an argument instead of instantiating one?",
+      "bad_pattern": "for item in items: db = DovoDb(paths.database_file, project_id=paths.project_id); db.sessions.create(...)  # illustrative; create() takes more arguments"
     },
     {
       "id": "PERF-002",
@@ -563,8 +761,16 @@
       "severity": "NIT",
       "domain": "core",
       "scope": "src/dovo/core/db/models.py",
-      "evaluation_criteria": "Inspect SQLModel Field definitions. Flag fields specifying both `unique=True` and `index=True`.",
-      "bad_pattern": "session_id: str = Field(unique=True, index=True)"
+      "intent": "A unique constraint already gets a backing index in SQLite, so a column declares uniqueness or an extra index, never both, and the database does not carry a second index that does nothing.",
+      "criteria": [
+        {
+          "id": "DB-001.Q01",
+          "question": "Is every SQLModel Field that declares unique=True free of an index=True declaration?",
+          "kind": "judgment"
+        }
+      ],
+      "evaluation_criteria": "1. Is every SQLModel Field that declares unique=True free of an index=True declaration?",
+      "bad_pattern": "session_id: str = Field(unique=True, index=True)  # hypothetical: no field in models.py declares both"
     },
     {
       "id": "DB-002",
@@ -572,8 +778,36 @@
       "severity": "BLOCKER",
       "domain": "core",
       "scope": "src/dovo/core/db/alembic/versions/",
-      "evaluation_criteria": "Check the diff for changes to revision files that exist in the latest v* tag. Verify every new revision defines downgrade(), avoids PRAGMA and sqlite_master, and has upgrade and downgrade tests in tests/core/db/test_migrations.py.",
-      "bad_pattern": "# Editing 0001_initial_schema.py after v0.6.0, or a revision whose downgrade() is `pass`"
+      "intent": "Databases that users already upgraded can always be reached from, and returned to, a known schema, because a revision that shipped never changes and every revision can be undone on any supported database.",
+      "criteria": [
+        {
+          "id": "DB-002.Q01",
+          "question": "Is every revision file that exists in the latest v* tag left unedited, unrenamed and undeleted?",
+          "kind": "judgment"
+        },
+        {
+          "id": "DB-002.Q02",
+          "question": "Does every new revision define both upgrade() and a downgrade() that has a real body rather than a bare `pass`?",
+          "kind": "judgment"
+        },
+        {
+          "id": "DB-002.Q03",
+          "question": "Does every new revision avoid PRAGMA and sqlite_master?",
+          "kind": "judgment"
+        },
+        {
+          "id": "DB-002.Q04",
+          "question": "Does every new revision make its column and constraint changes through op.batch_alter_table?",
+          "kind": "judgment"
+        },
+        {
+          "id": "DB-002.Q05",
+          "question": "Does every new revision have both an upgrade test and a downgrade test in tests/core/db/test_migrations.py?",
+          "kind": "judgment"
+        }
+      ],
+      "evaluation_criteria": "1. Is every revision file that exists in the latest v* tag left unedited, unrenamed and undeleted? 2. Does every new revision define both upgrade() and a downgrade() that has a real body rather than a bare `pass`? 3. Does every new revision avoid PRAGMA and sqlite_master? 4. Does every new revision make its column and constraint changes through op.batch_alter_table? 5. Does every new revision have both an upgrade test and a downgrade test in tests/core/db/test_migrations.py?",
+      "bad_pattern": "Editing 0001_initial_schema.py, which exists in the v0.6.0 tag, to change a column definition"
     },
     {
       "id": "FS-001",

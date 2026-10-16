@@ -27,6 +27,7 @@ SPEC_RELATIVE = Path("docs") / "agents" / "rules_spec.yaml"
 DEFAULT_OUT_DIR = Path(".agentic") / "rules-audit"
 FRAGMENTS_DIR = "fragments"
 INTENT_WORD_LIMIT = 40
+REPORT_CELL_LIMIT = 300
 IDENTITY_POLICY_FIELDS: tuple[str, ...] = ("severity", "scope", "domain")
 VOLATILE_PATHS: frozenset[str] = frozenset(
     {"docs/agents/rules_spec.yaml", "docs/agents/REVIEW_CHECKLIST.json", "docs/agents/PLANNER_RULES.md"}
@@ -617,8 +618,102 @@ def print_result(rule_id: str, result: dict[str, Any], bad: bool) -> None:
 # ---------------------------------------------------------------------------------------------------------------
 
 
+def cell(text: object) -> str:
+    """Make text safe for a one-line markdown table cell: collapse whitespace, escape pipes, cap the length."""
+    flat = " ".join(str(text if text is not None else "").split()).replace("|", "\\|")
+    return flat if len(flat) <= REPORT_CELL_LIMIT else flat[: REPORT_CELL_LIMIT - 1].rstrip() + "…"
+
+
+def table(headers: list[str], rows: list[list[str]]) -> str:
+    """Render rows as a markdown table, or 'none' when there are no rows."""
+    if not rows:
+        return "none\n"
+    lines = ["| " + " | ".join(headers) + " |", "|" + "---|" * len(headers)]
+    lines += ["| " + " | ".join(row) + " |" for row in rows]
+    return "\n".join(lines) + "\n"
+
+
+def load_audit_docs(out_dir: Path, rule_ids: list[str], prefixes: list[str] | None) -> list[dict[str, Any]]:
+    """Load the audit files that exist for the selected rules, in rule id order."""
+    selected = audit_rule_ids(out_dir, rule_ids, prefixes)
+    paths = [out_dir / rule_path(rule_id) for rule_id in selected]
+    return [json.loads(path.read_text(encoding="utf-8")) for path in paths if path.exists()]
+
+
+def policy_rows(docs: list[dict[str, Any]]) -> list[list[str]]:
+    """Return one table row per policy change: rule, kind, change, reason and who approved it."""
+    return [
+        [
+            cell(doc["id"]),
+            cell(change.get("kind")),
+            cell(f"{change.get('from') or '(none)'} -> {change.get('to') or '(none)'}"),
+            cell(change.get("reason")),
+            cell(change.get("approved_by") or "**pending**"),
+        ]
+        for doc in docs
+        for change in doc["proposed"]["policy_changes"]
+    ]
+
+
+def slot_rows(docs: list[dict[str, Any]], verdict: str) -> list[list[str]]:
+    """Return one table row per audit slot with the given verdict: slot, question and evidence."""
+    return [
+        [cell(f"`{key}`"), cell(slot.get("question")), cell(slot.get("evidence"))]
+        for doc in docs
+        for key, slot in all_slots(doc).items()
+        if slot.get("verdict") == verdict
+    ]
+
+
+def cross_reference_rows(out_dir: Path, docs: list[dict[str, Any]]) -> list[list[str]]:
+    """Return one table row per cross-reference entry that names one of the reviewed rules."""
+    path = out_dir / "cross-references.json"
+    if not path.exists():
+        return []
+    reviewed = {doc["id"] for doc in docs}
+    entries = json.loads(path.read_text(encoding="utf-8")).get("entries", [])
+    return [
+        [
+            cell(", ".join(entry.get("rules") or [])),
+            cell(entry.get("kind")),
+            cell(entry.get("owner")),
+            cell(entry.get("decision")),
+        ]
+        for entry in entries
+        if reviewed & {name.split(".")[0] for name in entry.get("rules") or []}
+    ]
+
+
+def build_report(out_dir: Path, rule_ids: list[str], prefixes: list[str] | None) -> str:
+    """Render the migration report: what changed in meaning, what needs a human, and what is still failing."""
+    docs = load_audit_docs(out_dir, rule_ids, prefixes)
+    policy = policy_rows(docs)
+    pending = sum(1 for row in policy if row[-1] == "**pending**")
+    sections = [
+        f"# Rules migration report\n\n{len(docs)} rules reviewed, {len(policy)} policy changes ({pending} pending approval).\n",
+        "## Policy changes\n\n" + table(["Rule", "Kind", "Change", "Reason", "Approved by"], policy),
+        "## Blocked: needs a human\n\n" + table(["Slot", "Question", "Evidence"], slot_rows(docs, "BLOCKED")),
+        "## Open FAIL\n\n" + table(["Slot", "Question", "Evidence"], slot_rows(docs, "FAIL")),
+        "## Cross-rule findings\n\n"
+        + table(["Rules", "Kind", "Owner", "Decision"], cross_reference_rows(out_dir, docs)),
+    ]
+    return "\n".join(sections)
+
+
+def report_command(out_dir: Path, rule_ids: list[str], prefixes: list[str] | None, output: Path | None) -> int:
+    """Print the migration report, or write it to output when one is given."""
+    text = build_report(out_dir, rule_ids, prefixes)
+    if output is None:
+        sys.stdout.write(text)
+    else:
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_text(text, encoding="utf-8")
+        sys.stdout.write(f"Wrote {output}\n")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
-    """Build the command-line parser with the generate, merge and check commands."""
+    """Build the command-line parser with the generate, merge, check and report commands."""
     parser = argparse.ArgumentParser(description="Audit files for editing rules_spec.yaml one rule at a time")
     parser.add_argument("--out", type=Path, default=DEFAULT_OUT_DIR, help="Audit directory.")
     commands = parser.add_subparsers(dest="command", required=True)
@@ -630,6 +725,10 @@ def build_parser() -> argparse.ArgumentParser:
     check.add_argument("rule_ids", nargs="*")
     check.add_argument("--prefix", action="append")
     check.add_argument("--require-approval", action="store_true", help="Fail while any policy change is unapproved.")
+    report = commands.add_parser("report", help="Render policy changes, BLOCKED items and open FAILs as markdown.")
+    report.add_argument("rule_ids", nargs="*")
+    report.add_argument("--prefix", action="append")
+    report.add_argument("--output", type=Path, help="Write the report to this file instead of printing it.")
     return parser
 
 
@@ -665,6 +764,8 @@ def main() -> int:
         return generate_command(out_dir, REPO_ROOT, args.prefix)
     if args.command == "merge":
         return merge_command(out_dir, REPO_ROOT, args.rule_ids)
+    if args.command == "report":
+        return report_command(out_dir, args.rule_ids, args.prefix, args.output)
     return check_command(out_dir, REPO_ROOT, args.rule_ids, args.prefix, args.require_approval)
 
 

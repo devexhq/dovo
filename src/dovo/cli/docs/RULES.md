@@ -4,28 +4,157 @@
 > **Notice for Agents:** Code violating `BLOCKER` rules will fail verification.
 
 - **[ARCH-001] Strict Layered Import Flow (BLOCKER):**
-  Dependencies flow strictly one way: common/ -> core/ -> engine/ -> cli/. Within core/: project/ -> {db,git,worktree,catalog,inputs,sessions,status,artifacts,interaction}/ -> agents/ -> diagnostics/. Upward imports are strictly prohibited.
+  Imports flow one way through the layers, so a lower layer never depends on a higher one and each package can be understood, tested and changed without pulling in the code that sits above it.
 
-```python
-# ✅ DO: from dovo.core.sessions import SessionLogEvent  # in engine/
-# ❌ DO NOT: from dovo.engine.engine import Engine  # upward import in core/sessions/
-```
+  Answer yes to every criterion:
+  - `ARCH-001.Q01` (mechanical) Does common/ import nothing from core/, engine/ or cli/, other than the imports listed in LAYER_EXCEPTIONS in tests/lint/test_layer_direction.py?
+
+    ```python
+    # ✅ DO: from dovo.common.exceptions import DefinitionError  # in core/catalog/
+    # ❌ DO NOT: from dovo.core.catalog.models import CatalogTier  # at runtime in common/ (hypothetical; the one real import of it, under TYPE_CHECKING in common/filesystem/models.py, is allowlisted)
+    ```
+  - `ARCH-001.Q02` (mechanical) Does core/ import nothing from engine/ or cli/?
+
+    ```python
+    # ✅ DO: from dovo.core.sessions import SessionLogEvent  # in engine/
+    # ❌ DO NOT: from dovo.engine.engine import Engine  # upward import in core/sessions/
+    ```
+  - `ARCH-001.Q03` (mechanical) Does core/ import nothing from rich?
+
+    ```python
+    # ✅ DO: core/ returns models and leaves rendering to cli/ui/
+    # ❌ DO NOT: from rich.console import Console  # in core/status/
+    ```
+  - `ARCH-001.Q04` (mechanical) Does engine/ import nothing from cli/?
+
+    ```python
+    # ✅ DO: from dovo.core.sessions import SessionLogEvent  # in engine/
+    # ❌ DO NOT: from dovo.cli.context import CliContext  # in engine/ (hypothetical module path)
+    ```
+  - `ARCH-001.Q05` (mechanical) Does git/ import nothing from any other core/ package?
+
+    ```python
+    # ✅ DO: from dovo.common.process import is_process_group_alive  # in core/git/ (hypothetical import)
+    # ❌ DO NOT: from dovo.core.project import ProjectIdentity  # in core/git/ (hypothetical import)
+    ```
+  - `ARCH-001.Q06` (mechanical) Does inputs/ import nothing from catalog or agents?
+
+    ```python
+    # ✅ DO: from dovo.core.project import ProjectIdentity  # in core/inputs/ (hypothetical import)
+    # ❌ DO NOT: from dovo.core.catalog.models import CatalogTier  # in core/inputs/ (hypothetical import)
+    ```
+  - `ARCH-001.Q07` (mechanical) Does catalog/ import nothing from agents, sessions, engine or cli?
+
+    ```python
+    # ✅ DO: from dovo.core.inputs import ParameterInput  # in core/catalog/ (hypothetical import)
+    # ❌ DO NOT: from dovo.core.sessions import SessionLogEvent  # in core/catalog/
+    ```
+  - `ARCH-001.Q08` (mechanical) Does artifacts/ import nothing from engine?
+
+    ```python
+    # ✅ DO: from dovo.core.sessions import SessionLogEvent  # in core/artifacts/ (hypothetical import)
+    # ❌ DO NOT: from dovo.engine.engine import Engine  # in core/artifacts/
+    ```
+  - `ARCH-001.Q09` (mechanical) Does agents/ import nothing from engine?
+
+    ```python
+    # ✅ DO: from dovo.core.sessions import SessionLogEvent  # in core/agents/ (hypothetical import)
+    # ❌ DO NOT: from dovo.engine.engine import Engine  # in core/agents/
+    ```
+  - `ARCH-001.Q10` (mechanical) Does sessions/ import nothing from agents, worktree, catalog, engine or cli?
+
+    ```python
+    # ✅ DO: from dovo.core.db import get_session  # in core/sessions/ (hypothetical import)
+    # ❌ DO NOT: from dovo.core.agents import BaseAgentProvider  # in core/sessions/ (hypothetical import)
+    ```
+  - `ARCH-001.Q11` (judgment) Does each core/ package named in the chain project/ -> {db, git, worktree, catalog, inputs, sessions, status, artifacts, interaction}/ -> agents/ -> diagnostics/ import only from packages at or before its own position in that chain?
+
+    ```python
+    # ✅ DO: from dovo.core.sessions import SessionLogEvent  # in core/diagnostics/ (hypothetical import)
+    # ❌ DO NOT: from dovo.core.diagnostics import DiagnosticsReport  # in core/project/ (hypothetical import)
+    ```
 
 - **[ARCH-002] CLI Logic Purity (BLOCKER):**
-  CLI command handlers take CliContext, invoke underlying domain services or domain entrypoints, and return a BaseResult model. CLI packages must remain completely free of business logic, direct SQLite queries, or direct filesystem scans.
+  Command handlers stay thin adapters over the domain layer, so business behavior lives in one place where it can be reused and tested without the CLI.
 
-```python
-# ✅ DO: result = Status(context.paths).collect(); ui_dispatcher.dispatch(result)
-# ❌ DO NOT: rows = context.db.connection.execute('SELECT * FROM worktrees').fetchall()
-```
+  Answer yes to every criterion:
+  - `ARCH-002.Q01` (judgment) Does each CLI command handler take a CliContext as its context parameter?
+
+    ```python
+    # ✅ DO: def status_command(context: CliContext, output_format: str = "terminal") -> DovoStatusResult  # in cli/status/commands/root.py
+    # ❌ DO NOT: # hypothetical: def status_command(path: Path) -> DovoStatusResult that rebuilds its own paths and database handle instead of receiving a CliContext
+    ```
+  - `ARCH-002.Q02` (judgment) Does each CLI command handler invoke an underlying domain service or domain entrypoint to do its work?
+
+    ```python
+    # ✅ DO: result = Status(context.paths).collect()  # in cli/status/commands/root.py
+    # ❌ DO NOT: # hypothetical: a handler computes the status fields itself from raw git and config reads instead of calling Status(...).collect()
+    ```
+  - `ARCH-002.Q03` (judgment) Does each CLI command handler return a BaseResult model?
+
+    ```python
+    # ✅ DO: return result  # DovoStatusResult, a BaseResult subclass (core/status/models.py), in cli/status/commands/root.py
+    # ❌ DO NOT: # hypothetical: a handler returns a plain dict or tuple assembled from several domain calls instead of a BaseResult model
+    ```
+  - `ARCH-002.Q04` (judgment) Is the CLI package free of business logic and domain orchestration, so that handlers only delegate to the domain layer and dispatch the result?
+
+    ```python
+    # ✅ DO: result = Status(context.paths).collect(); ui_dispatcher.dispatch(result)
+    # ❌ DO NOT: # hypothetical: a handler loops over worktrees, decides which to prune and calls several core services in a sequence it owns
+    ```
+  - `ARCH-002.Q05` (judgment) Is the CLI package free of direct SQLite queries or SQL execution?
+
+    ```python
+    # ✅ DO: reconcile_stale_sessions(context.db.sessions, path=context.paths.root_dir)  # in cli/status/commands/root.py, goes through a core service
+    # ❌ DO NOT: # hypothetical: rows = context.db.connection.execute('SELECT * FROM worktrees').fetchall() in a command handler
+    ```
+  - `ARCH-002.Q06` (judgment) Is the CLI package free of direct filesystem scans?
+
+    ```python
+    # ✅ DO: Status(context.paths).collect()  # the domain layer inspects the filesystem, the handler does not
+    # ❌ DO NOT: # hypothetical: a handler calls context.paths.root_dir.rglob('*.yml') to discover blueprints itself
+    ```
 
 - **[ARCH-003] Domain Fact Origin Invariant (BLOCKER):**
-  cli/ui/ must not originate a domain fact. All domain facts, outcomes, warnings, and remediations originate in core/ or common/; cli/ui/ only derives presentation views.
+  Every domain fact the user sees is decided in one place, core/ or common/, so the display layer cannot drift from or contradict what the domain actually determined.
 
-```python
-# ✅ DO: view = StatusView(health=StatusHealth.OK if result.ok else StatusHealth.ERROR)
-# ❌ DO NOT: if not result.git_status: result.warnings.append('Git not found')  # originates fact
-```
+  Answer yes to every criterion:
+  - `ARCH-003.Q01` (judgment) Does every status or outcome that cli/ui/ displays come from a field of a core/ or common/ model, rather than being invented in cli/ui/?
+
+    ```python
+    # ✅ DO: config_status=data.config.status  # in DovoStatusFormatter.transform, a ConfigLoadStatus copied unchanged from the domain result
+    # ❌ DO NOT: view.status = "partially_initialized"  # hypothetical: a new status value that no core/ or common/ model defines
+    ```
+  - `ARCH-003.Q02` (judgment) Does every error category that cli/ui/ displays come from a core/ or common/ model, rather than being invented in cli/ui/?
+
+    ```python
+    # ✅ DO: errors=list(data.errors)  # in StatusView construction, copied from the domain result
+    # ❌ DO NOT: errors.append("GitUnavailableError")  # hypothetical: cli/ui/ coins an error category the domain never reported
+    ```
+  - `ARCH-003.Q03` (judgment) Does every warning that cli/ui/ displays come from a core/ or common/ model, rather than being appended in cli/ui/?
+
+    ```python
+    # ✅ DO: warnings=list(data.warnings)  # in DovoStatusFormatter.transform, copied from the domain result
+    # ❌ DO NOT: if not result.git_status: result.warnings.append('Git not found')  # hypothetical: cli/ui/ originates the fact
+    ```
+  - `ARCH-003.Q04` (judgment) Does every remediation that cli/ui/ displays come from a core/ or common/ model, rather than being written in cli/ui/?
+
+    ```python
+    # ✅ DO: remediations=list(data.fixes)  # in DovoStatusFormatter.transform, copied from the domain result
+    # ❌ DO NOT: view.remediations.append("Run git init")  # hypothetical: cli/ui/ writes a remediation the domain never supplied
+    ```
+  - `ARCH-003.Q05` (judgment) Is every domain rule that formatters apply (for example deciding what counts as healthy or failed) defined in core/ or common/ rather than in cli/ui/?
+
+    ```python
+    # ✅ DO: A formatter renders result.ok as supplied by the domain result
+    # ❌ DO NOT: A formatter decides that more than three uncommitted files makes the workspace unhealthy
+    ```
+  - `ARCH-003.Q06` (judgment) Does cli/ui/ limit itself to deriving presentation views from existing domain fields, without adding new domain facts?
+
+    ```python
+    # ✅ DO: A view field such as project_name or git_branch that is read from existing DovoStatusResult fields and reformatted only for display
+    # ❌ DO NOT: A view field populated from a check that cli/ui/ runs itself, such as probing the filesystem
+    ```
 
 - **[RENDER-001] Stateful Builder Pattern for RichOutput (BLOCKER):**
   Terminal output routes through ui_dispatcher.dispatch(result). Direct print(), rich imports, typer.echo, and console writes belong only in src/dovo/cli/ui/.
@@ -291,14 +420,23 @@ def _val(cls, v: Any) -> Any: ...
     ```
 
 - **[PERF-001] No Ad-Hoc DB Instantiations in Loops (BLOCKER):**
-  Never instantiate a repository or DovoDb inside loops or test helpers. Inject pre-initialized instances to prevent N+1 SQLite connection/migration checks.
+  Database access reuses one pre-initialized instance, so repeated work does not pay for a new SQLite connection and migration check each time.
 
-```python
-# ✅ DO:
-repo = SessionsRepository(path)
-for item in items: repo.create(item)
-# ❌ DO NOT: for item in items: repo = SessionsRepository(path); repo.create(item)
-```
+  Answer yes to every criterion:
+  - `PERF-001.Q01` (judgment) Is every repository or DovoDb used inside a for or while loop created outside that loop?
+
+    ```python
+    # ✅ DO:
+    db = DovoDb(paths.database_file, project_id=paths.project_id)
+    for item in items: db.sessions.create(...)  # illustrative; create() takes more arguments
+    # ❌ DO NOT: for item in items: db = DovoDb(paths.database_file, project_id=paths.project_id); db.sessions.create(...)  # illustrative; create() takes more arguments
+    ```
+  - `PERF-001.Q02` (judgment) Does every helper function, including every test helper, receive its repository or DovoDb as an argument instead of instantiating one?
+
+    ```python
+    # ✅ DO: def seed_sessions(db: DovoDb, items: list[str]) -> None: ...  # illustrative helper that takes the instance
+    # ❌ DO NOT: def seed_session(paths: WorkspacePaths) -> None: DovoDb(paths.database_file, project_id=paths.project_id).sessions.create(...)  # illustrative helper that builds its own instance on every call
+    ```
 
 - **[FS-001] Atomic File Writes via Temporary Sibling (BLOCKER):**
   Config and state files are never left half-written, because they are written atomically instead of in-place.

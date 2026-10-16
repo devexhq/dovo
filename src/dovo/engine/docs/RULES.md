@@ -4,20 +4,122 @@
 > **Notice for Agents:** Code violating `BLOCKER` rules will fail verification.
 
 - **[ARCH-001] Strict Layered Import Flow (BLOCKER):**
-  Dependencies flow strictly one way: common/ -> core/ -> engine/ -> cli/. Within core/: project/ -> {db,git,worktree,catalog,inputs,sessions,status,artifacts,interaction}/ -> agents/ -> diagnostics/. Upward imports are strictly prohibited.
+  Imports flow one way through the layers, so a lower layer never depends on a higher one and each package can be understood, tested and changed without pulling in the code that sits above it.
 
-```python
-# ✅ DO: from dovo.core.sessions import SessionLogEvent  # in engine/
-# ❌ DO NOT: from dovo.engine.engine import Engine  # upward import in core/sessions/
-```
+  Answer yes to every criterion:
+  - `ARCH-001.Q01` (mechanical) Does common/ import nothing from core/, engine/ or cli/, other than the imports listed in LAYER_EXCEPTIONS in tests/lint/test_layer_direction.py?
+
+    ```python
+    # ✅ DO: from dovo.common.exceptions import DefinitionError  # in core/catalog/
+    # ❌ DO NOT: from dovo.core.catalog.models import CatalogTier  # at runtime in common/ (hypothetical; the one real import of it, under TYPE_CHECKING in common/filesystem/models.py, is allowlisted)
+    ```
+  - `ARCH-001.Q02` (mechanical) Does core/ import nothing from engine/ or cli/?
+
+    ```python
+    # ✅ DO: from dovo.core.sessions import SessionLogEvent  # in engine/
+    # ❌ DO NOT: from dovo.engine.engine import Engine  # upward import in core/sessions/
+    ```
+  - `ARCH-001.Q03` (mechanical) Does core/ import nothing from rich?
+
+    ```python
+    # ✅ DO: core/ returns models and leaves rendering to cli/ui/
+    # ❌ DO NOT: from rich.console import Console  # in core/status/
+    ```
+  - `ARCH-001.Q04` (mechanical) Does engine/ import nothing from cli/?
+
+    ```python
+    # ✅ DO: from dovo.core.sessions import SessionLogEvent  # in engine/
+    # ❌ DO NOT: from dovo.cli.context import CliContext  # in engine/ (hypothetical module path)
+    ```
+  - `ARCH-001.Q05` (mechanical) Does git/ import nothing from any other core/ package?
+
+    ```python
+    # ✅ DO: from dovo.common.process import is_process_group_alive  # in core/git/ (hypothetical import)
+    # ❌ DO NOT: from dovo.core.project import ProjectIdentity  # in core/git/ (hypothetical import)
+    ```
+  - `ARCH-001.Q06` (mechanical) Does inputs/ import nothing from catalog or agents?
+
+    ```python
+    # ✅ DO: from dovo.core.project import ProjectIdentity  # in core/inputs/ (hypothetical import)
+    # ❌ DO NOT: from dovo.core.catalog.models import CatalogTier  # in core/inputs/ (hypothetical import)
+    ```
+  - `ARCH-001.Q07` (mechanical) Does catalog/ import nothing from agents, sessions, engine or cli?
+
+    ```python
+    # ✅ DO: from dovo.core.inputs import ParameterInput  # in core/catalog/ (hypothetical import)
+    # ❌ DO NOT: from dovo.core.sessions import SessionLogEvent  # in core/catalog/
+    ```
+  - `ARCH-001.Q08` (mechanical) Does artifacts/ import nothing from engine?
+
+    ```python
+    # ✅ DO: from dovo.core.sessions import SessionLogEvent  # in core/artifacts/ (hypothetical import)
+    # ❌ DO NOT: from dovo.engine.engine import Engine  # in core/artifacts/
+    ```
+  - `ARCH-001.Q09` (mechanical) Does agents/ import nothing from engine?
+
+    ```python
+    # ✅ DO: from dovo.core.sessions import SessionLogEvent  # in core/agents/ (hypothetical import)
+    # ❌ DO NOT: from dovo.engine.engine import Engine  # in core/agents/
+    ```
+  - `ARCH-001.Q10` (mechanical) Does sessions/ import nothing from agents, worktree, catalog, engine or cli?
+
+    ```python
+    # ✅ DO: from dovo.core.db import get_session  # in core/sessions/ (hypothetical import)
+    # ❌ DO NOT: from dovo.core.agents import BaseAgentProvider  # in core/sessions/ (hypothetical import)
+    ```
+  - `ARCH-001.Q11` (judgment) Does each core/ package named in the chain project/ -> {db, git, worktree, catalog, inputs, sessions, status, artifacts, interaction}/ -> agents/ -> diagnostics/ import only from packages at or before its own position in that chain?
+
+    ```python
+    # ✅ DO: from dovo.core.sessions import SessionLogEvent  # in core/diagnostics/ (hypothetical import)
+    # ❌ DO NOT: from dovo.core.diagnostics import DiagnosticsReport  # in core/project/ (hypothetical import)
+    ```
 
 - **[ARCH-004] Standard Core Package Layout (Domain-Named Entrypoint) (BLOCKER):**
-  Default layout for new domain code is core/<domain>/: models.py (types), exceptions.py (errors), <domain>.py (entrypoint coordinator/service, e.g. prune.py, moving away from generic facade.py), and services/<verb>.py (imperative operations). Do not use generic facade.py, do not put logic directly in package root without structured modules, do not define public models in services/, and do not extend legacy flat layouts.
+  New domain code follows one predictable package layout with a domain-named entrypoint, so a reader finds types, errors, coordination and operations in the same places in every domain.
 
-```python
-# ✅ DO: src/dovo/core/prune/ -> models.py, exceptions.py, prune.py, services/
-# ❌ DO NOT: src/dovo/core/prune/ -> facade.py  # or monolithic prune.py mixing models & logic
-```
+  Answer yes to every criterion:
+  - `ARCH-004.Q01` (judgment) Does each new domain package under core/ define its types in a models.py module?
+
+    ```python
+    # ✅ DO: src/dovo/core/worktree/models.py holds WorktreeListResult and the other worktree types
+    # ❌ DO NOT: src/dovo/core/prune/ holds a single prune.py mixing types and logic  # hypothetical: no prune/ package exists today
+    ```
+  - `ARCH-004.Q02` (judgment) Does each new domain package under core/ that raises its own errors define them in an exceptions.py module?
+
+    ```python
+    # ✅ DO: src/dovo/core/worktree/exceptions.py
+    # ❌ DO NOT: class PruneError(Exception) defined inside src/dovo/core/prune/prune.py  # hypothetical: no prune/ package exists today
+    ```
+  - `ARCH-004.Q03` (judgment) Is the entrypoint coordinator or service of each new domain package named after the domain rather than generically?
+
+    ```python
+    # ✅ DO: src/dovo/core/sessions/sessions.py  # entrypoint named after the sessions domain
+    # ❌ DO NOT: src/dovo/core/prune/facade.py  # hypothetical: generic facade.py instead of prune.py; no facade.py exists in src/ today
+    ```
+  - `ARCH-004.Q04` (judgment) Does each new domain package under core/ keep its imperative operations in a services/ package?
+
+    ```python
+    # ✅ DO: src/dovo/core/worktree/services/ contains list.py, delete.py and show.py
+    # ❌ DO NOT: src/dovo/core/prune/ with its operations written in prune.py and no services/ directory  # hypothetical
+    ```
+  - `ARCH-004.Q05` (judgment) Is each new imperative operation of a domain placed in its own services/<verb>.py module rather than directly in the package root?
+
+    ```python
+    # ✅ DO: src/dovo/core/sessions/services/read_logs.py
+    # ❌ DO NOT: A new archive() function defined in src/dovo/core/sessions/__init__.py  # hypothetical: no archive operation exists; logic in the package root without a structured module
+    ```
+  - `ARCH-004.Q06` (judgment) Are all public models of a new domain package defined in its models.py rather than in services/?
+
+    ```python
+    # ✅ DO: class WorktreeListResult(BaseResult) defined in src/dovo/core/worktree/models.py
+    # ❌ DO NOT: A public result model class defined inside services/prune.py  # hypothetical: public models belong in models.py
+    ```
+  - `ARCH-004.Q07` (judgment) Does new domain code avoid extending a legacy flat layout (a domain package or module that lacks the standard structure)?
+
+    ```python
+    # ✅ DO: New domain code gets its own package laid out like src/dovo/core/worktree/ (models.py, exceptions.py, worktree.py, services/)
+    # ❌ DO NOT: New domain logic appended to an existing flat module that has no models.py, exceptions.py or services/  # hypothetical
+    ```
 
 - **[RENDER-003] Inline Error and Warning String Construction (SUGGESTION):**
   Construct errors, warnings, and fixes strings using inline f-strings or literals at call sites. Do not create private single-message formatting wrappers.
@@ -311,14 +413,23 @@ def _val(cls, v: Any) -> Any: ...
     ```
 
 - **[PERF-001] No Ad-Hoc DB Instantiations in Loops (BLOCKER):**
-  Never instantiate a repository or DovoDb inside loops or test helpers. Inject pre-initialized instances to prevent N+1 SQLite connection/migration checks.
+  Database access reuses one pre-initialized instance, so repeated work does not pay for a new SQLite connection and migration check each time.
 
-```python
-# ✅ DO:
-repo = SessionsRepository(path)
-for item in items: repo.create(item)
-# ❌ DO NOT: for item in items: repo = SessionsRepository(path); repo.create(item)
-```
+  Answer yes to every criterion:
+  - `PERF-001.Q01` (judgment) Is every repository or DovoDb used inside a for or while loop created outside that loop?
+
+    ```python
+    # ✅ DO:
+    db = DovoDb(paths.database_file, project_id=paths.project_id)
+    for item in items: db.sessions.create(...)  # illustrative; create() takes more arguments
+    # ❌ DO NOT: for item in items: db = DovoDb(paths.database_file, project_id=paths.project_id); db.sessions.create(...)  # illustrative; create() takes more arguments
+    ```
+  - `PERF-001.Q02` (judgment) Does every helper function, including every test helper, receive its repository or DovoDb as an argument instead of instantiating one?
+
+    ```python
+    # ✅ DO: def seed_sessions(db: DovoDb, items: list[str]) -> None: ...  # illustrative helper that takes the instance
+    # ❌ DO NOT: def seed_session(paths: WorkspacePaths) -> None: DovoDb(paths.database_file, project_id=paths.project_id).sessions.create(...)  # illustrative helper that builds its own instance on every call
+    ```
 
 - **[PERF-003] Indexed Column Queries vs O(n) In-Memory Lookups (WARNING):**
   Do not perform O(n) in-memory list comprehensions or linear scans over repository records when an indexed database column exists (e.g., querying _record_for_rel_path). Query the repository slice directly with filtered SQL.

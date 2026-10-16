@@ -414,3 +414,84 @@ class RulesAuditCitationTests:
         generator = _load_generator()
 
         assert len(generator.citation_errors("slot", evidence, REPO_ROOT)) == expected_errors
+
+
+def _write_audit(generator: ModuleType, out_dir: Path, doc: dict[str, Any]) -> None:
+    generator.write_json(out_dir / generator.rule_path(doc["id"]), doc)
+
+
+class RulesAuditReportTests:
+    def test_report_lists_each_policy_change_with_its_approval_state(self, tmp_path: Path) -> None:
+        generator = _load_generator()
+        doc = _filled_doc(generator)
+        doc["proposed"]["policy_changes"] = [
+            {"kind": "exemption", "from": None, "to": "Q01 na_when added", "reason": "scoping", "approved_by": None},
+            {"kind": "scope", "from": "src/", "to": "src/dovo/", "reason": "narrower", "approved_by": "reviewer"},
+        ]
+        _write_audit(generator, tmp_path, doc)
+
+        report = generator.build_report(tmp_path, ["A-001"], None)
+
+        assert "1 rules reviewed, 2 policy changes (1 pending approval)." in report
+        assert "| A-001 | exemption | (none) -> Q01 na_when added | scoping | **pending** |" in report
+        assert "| A-001 | scope | src/ -> src/dovo/ | narrower | reviewer |" in report
+
+    def test_report_separates_blocked_slots_from_open_fail_slots(self, tmp_path: Path) -> None:
+        generator = _load_generator()
+        doc = _filled_doc(generator)
+        doc["audit"]["A-001.G01"].update(verdict="BLOCKED", evidence="docs/x.md:1 owner: docs team")
+        doc["audit"]["A-001.A01"].update(verdict="FAIL", evidence="the author must fix this")
+        _write_audit(generator, tmp_path, doc)
+
+        report = generator.build_report(tmp_path, ["A-001"], None)
+
+        blocked, open_fail = report.split("## Blocked: needs a human")[1].split("## Open FAIL")
+        assert "A-001.G01" in blocked and "owner: docs team" in blocked
+        assert "A-001.A01" in open_fail.split("## Cross-rule findings")[0]
+
+    def test_report_says_none_for_a_section_with_no_rows(self, tmp_path: Path) -> None:
+        generator = _load_generator()
+        _write_audit(generator, tmp_path, _filled_doc(generator))
+
+        report = generator.build_report(tmp_path, ["A-001"], None)
+
+        assert report.count("\nnone\n") == 4
+
+    def test_report_includes_only_cross_references_that_name_a_reviewed_rule(self, tmp_path: Path) -> None:
+        generator = _load_generator()
+        _write_audit(generator, tmp_path, _filled_doc(generator))
+        generator.write_json(
+            tmp_path / "cross-references.json",
+            {
+                "entries": [
+                    {"rules": ["A-001.Q01", "B-002"], "kind": "duplicate", "owner": "A-001", "decision": "keep both"},
+                    {"rules": ["C-003", "D-004"], "kind": "duplicate", "owner": "C-003", "decision": "unrelated"},
+                ]
+            },
+        )
+
+        report = generator.build_report(tmp_path, ["A-001"], None)
+
+        assert "keep both" in report
+        assert "unrelated" not in report
+
+    @pytest.mark.parametrize(
+        ("text", "expected"),
+        [
+            pytest.param("a | b", "a \\| b", id="pipe-is-escaped"),
+            pytest.param("line one\nline   two", "line one line two", id="whitespace-collapses"),
+            pytest.param(None, "", id="none-is-empty"),
+            pytest.param("x" * 400, "x" * 299 + "…", id="long-text-is-capped"),
+        ],
+    )
+    def test_cell_makes_text_safe_for_a_one_line_table_cell(self, text: str | None, expected: str) -> None:
+        assert _load_generator().cell(text) == expected
+
+    def test_report_command_writes_the_report_to_the_requested_file(self, tmp_path: Path) -> None:
+        generator = _load_generator()
+        _write_audit(generator, tmp_path, _filled_doc(generator))
+        output = tmp_path / "out" / "report.md"
+
+        generator.report_command(tmp_path, ["A-001"], None, output)
+
+        assert output.read_text(encoding="utf-8").startswith("# Rules migration report")

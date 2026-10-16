@@ -21,15 +21,75 @@ rules:
   category: Architecture
   domain: all
   scope: src/dovo/
-  guideline: 'Dependencies flow strictly one way: common/ -> core/ -> engine/ -> cli/. Within core/: project/ ->
-    {db,git,worktree,catalog,inputs,sessions,status,artifacts,interaction}/ -> agents/ -> diagnostics/. Upward imports are
-    strictly prohibited.'
-  evaluation_criteria: Scan imports. Verify common/ imports no core/, engine/, or cli/; core/ imports no engine/, cli/,
-    or rich; engine/ imports no cli/; git/ imports no other core/ package; inputs/ imports no catalog or agents;
-    catalog/ imports no agents, sessions, engine, cli; artifacts/ imports no engine; agents/ imports no engine;
-    sessions/ imports no agents, worktree, catalog, engine, cli. Enforced by LAYER_RULES in tests/lint/test_layer_direction.py.
-  positive_example: 'from dovo.core.sessions import SessionLogEvent  # in engine/'
-  negative_example: 'from dovo.engine.engine import Engine  # upward import in core/sessions/'
+  intent: Imports flow one way through the layers, so a lower layer never depends on a higher one and each package can be
+    understood, tested and changed without pulling in the code that sits above it.
+  criteria:
+  - id: ARCH-001.Q01
+    question: Does common/ import nothing from core/, engine/ or cli/, other than the imports listed in LAYER_EXCEPTIONS in tests/lint/test_layer_direction.py?
+    kind: mechanical
+    enforced_by: tests/lint/test_layer_direction.py
+    positive_example: 'from dovo.common.exceptions import DefinitionError  # in core/catalog/'
+    negative_example: 'from dovo.core.catalog.models import CatalogTier  # at runtime in common/ (hypothetical; the one real import of it, under TYPE_CHECKING in common/filesystem/models.py, is allowlisted)'
+  - id: ARCH-001.Q02
+    question: Does core/ import nothing from engine/ or cli/?
+    kind: mechanical
+    enforced_by: tests/lint/test_layer_direction.py
+    positive_example: 'from dovo.core.sessions import SessionLogEvent  # in engine/'
+    negative_example: 'from dovo.engine.engine import Engine  # upward import in core/sessions/'
+  - id: ARCH-001.Q03
+    question: Does core/ import nothing from rich?
+    kind: mechanical
+    enforced_by: tests/lint/test_layer_direction.py
+    positive_example: core/ returns models and leaves rendering to cli/ui/
+    negative_example: 'from rich.console import Console  # in core/status/'
+  - id: ARCH-001.Q04
+    question: Does engine/ import nothing from cli/?
+    kind: mechanical
+    enforced_by: tests/lint/test_layer_direction.py
+    positive_example: 'from dovo.core.sessions import SessionLogEvent  # in engine/'
+    negative_example: 'from dovo.cli.context import CliContext  # in engine/ (hypothetical module path)'
+  - id: ARCH-001.Q05
+    question: Does git/ import nothing from any other core/ package?
+    kind: mechanical
+    enforced_by: tests/lint/test_layer_direction.py
+    positive_example: 'from dovo.common.process import is_process_group_alive  # in core/git/ (hypothetical import)'
+    negative_example: 'from dovo.core.project import ProjectIdentity  # in core/git/ (hypothetical import)'
+  - id: ARCH-001.Q06
+    question: Does inputs/ import nothing from catalog or agents?
+    kind: mechanical
+    enforced_by: tests/lint/test_layer_direction.py
+    positive_example: 'from dovo.core.project import ProjectIdentity  # in core/inputs/ (hypothetical import)'
+    negative_example: 'from dovo.core.catalog.models import CatalogTier  # in core/inputs/ (hypothetical import)'
+  - id: ARCH-001.Q07
+    question: Does catalog/ import nothing from agents, sessions, engine or cli?
+    kind: mechanical
+    enforced_by: tests/lint/test_layer_direction.py
+    positive_example: 'from dovo.core.inputs import ParameterInput  # in core/catalog/ (hypothetical import)'
+    negative_example: 'from dovo.core.sessions import SessionLogEvent  # in core/catalog/'
+  - id: ARCH-001.Q08
+    question: Does artifacts/ import nothing from engine?
+    kind: mechanical
+    enforced_by: tests/lint/test_layer_direction.py
+    positive_example: 'from dovo.core.sessions import SessionLogEvent  # in core/artifacts/ (hypothetical import)'
+    negative_example: 'from dovo.engine.engine import Engine  # in core/artifacts/'
+  - id: ARCH-001.Q09
+    question: Does agents/ import nothing from engine?
+    kind: mechanical
+    enforced_by: tests/lint/test_layer_direction.py
+    positive_example: 'from dovo.core.sessions import SessionLogEvent  # in core/agents/ (hypothetical import)'
+    negative_example: 'from dovo.engine.engine import Engine  # in core/agents/'
+  - id: ARCH-001.Q10
+    question: Does sessions/ import nothing from agents, worktree, catalog, engine or cli?
+    kind: mechanical
+    enforced_by: tests/lint/test_layer_direction.py
+    positive_example: 'from dovo.core.db import get_session  # in core/sessions/ (hypothetical import)'
+    negative_example: 'from dovo.core.agents import BaseAgentProvider  # in core/sessions/ (hypothetical import)'
+  - id: ARCH-001.Q11
+    question: Does each core/ package named in the chain project/ -> {db, git, worktree, catalog, inputs, sessions, status,
+      artifacts, interaction}/ -> agents/ -> diagnostics/ import only from packages at or before its own position in that chain?
+    kind: judgment
+    positive_example: 'from dovo.core.sessions import SessionLogEvent  # in core/diagnostics/ (hypothetical import)'
+    negative_example: 'from dovo.core.diagnostics import DiagnosticsReport  # in core/project/ (hypothetical import)'
   citation: docs/agents/architecture.md#package-boundaries-import-direction
 - id: ARCH-002
   title: CLI Logic Purity
@@ -37,12 +97,44 @@ rules:
   category: Architecture
   domain: cli
   scope: src/dovo/cli/
-  guideline: CLI command handlers take CliContext, invoke underlying domain services or domain entrypoints, and return a BaseResult model.
-    CLI packages must remain completely free of business logic, direct SQLite queries, or direct filesystem scans.
-  evaluation_criteria: Inspect CLI command handlers in src/dovo/cli/*/commands/. Flag direct SQL execution, domain orchestration,
-    or business logic.
-  positive_example: result = Status(context.paths).collect(); ui_dispatcher.dispatch(result)
-  negative_example: rows = context.db.connection.execute('SELECT * FROM worktrees').fetchall()
+  intent: Command handlers stay thin adapters over the domain layer, so business behavior lives in one place where it can be reused and tested without the CLI.
+  criteria:
+  - id: ARCH-002.Q01
+    question: Does each CLI command handler take a CliContext as its context parameter?
+    kind: judgment
+    na_when: The change adds or modifies no CLI command handler.
+    positive_example: 'def status_command(context: CliContext, output_format: str = "terminal") -> DovoStatusResult  # in cli/status/commands/root.py'
+    negative_example: '# hypothetical: def status_command(path: Path) -> DovoStatusResult that rebuilds its own paths and database handle instead of receiving a CliContext'
+  - id: ARCH-002.Q02
+    question: Does each CLI command handler invoke an underlying domain service or domain entrypoint to do its work?
+    kind: judgment
+    na_when: The change adds or modifies no CLI command handler.
+    positive_example: 'result = Status(context.paths).collect()  # in cli/status/commands/root.py'
+    negative_example: '# hypothetical: a handler computes the status fields itself from raw git and config reads instead of calling Status(...).collect()'
+  - id: ARCH-002.Q03
+    question: Does each CLI command handler return a BaseResult model?
+    kind: judgment
+    na_when: The change adds or modifies no CLI command handler.
+    positive_example: 'return result  # DovoStatusResult, a BaseResult subclass (core/status/models.py), in cli/status/commands/root.py'
+    negative_example: '# hypothetical: a handler returns a plain dict or tuple assembled from several domain calls instead of a BaseResult model'
+  - id: ARCH-002.Q04
+    question: Is the CLI package free of business logic and domain orchestration, so that handlers only delegate to the domain layer and dispatch the result?
+    kind: judgment
+    na_when: The change adds or modifies no code under src/dovo/cli/.
+    positive_example: 'result = Status(context.paths).collect(); ui_dispatcher.dispatch(result)'
+    negative_example: '# hypothetical: a handler loops over worktrees, decides which to prune and calls several core services in a sequence it owns'
+  - id: ARCH-002.Q05
+    question: Is the CLI package free of direct SQLite queries or SQL execution?
+    kind: judgment
+    na_when: The change adds or modifies no code under src/dovo/cli/.
+    positive_example: 'reconcile_stale_sessions(context.db.sessions, path=context.paths.root_dir)  # in cli/status/commands/root.py, goes through a core service'
+    negative_example: "# hypothetical: rows = context.db.connection.execute('SELECT * FROM worktrees').fetchall() in a command handler"
+  - id: ARCH-002.Q06
+    question: Is the CLI package free of direct filesystem scans?
+    kind: judgment
+    na_when: The change adds or modifies no code under src/dovo/cli/.
+    positive_example: 'Status(context.paths).collect()  # the domain layer inspects the filesystem, the handler does not'
+    negative_example: "# hypothetical: a handler calls context.paths.root_dir.rglob('*.yml') to discover blueprints itself"
   citation: docs/agents/architecture.md#adding-a-new-command
 - id: ARCH-003
   title: Domain Fact Origin Invariant
@@ -50,12 +142,40 @@ rules:
   category: Architecture
   domain: cli
   scope: src/dovo/cli/ui/
-  guideline: cli/ui/ must not originate a domain fact. All domain facts, outcomes, warnings, and remediations originate in
-    core/ or common/; cli/ui/ only derives presentation views.
-  evaluation_criteria: Verify formatters only map existing fields from domain models without inventing new statuses, error
-    categories, or domain rules.
-  positive_example: view = StatusView(health=StatusHealth.OK if result.ok else StatusHealth.ERROR)
-  negative_example: 'if not result.git_status: result.warnings.append(''Git not found'')  # originates fact'
+  intent: Every domain fact the user sees is decided in one place, core/ or common/, so the display layer cannot drift from
+    or contradict what the domain actually determined.
+  criteria:
+  - id: ARCH-003.Q01
+    question: Does every status or outcome that cli/ui/ displays come from a field of a core/ or common/ model, rather than being invented in cli/ui/?
+    kind: judgment
+    positive_example: 'config_status=data.config.status  # in DovoStatusFormatter.transform, a ConfigLoadStatus copied unchanged from the domain result'
+    negative_example: 'view.status = "partially_initialized"  # hypothetical: a new status value that no core/ or common/ model defines'
+  - id: ARCH-003.Q02
+    question: Does every error category that cli/ui/ displays come from a core/ or common/ model, rather than being invented in cli/ui/?
+    kind: judgment
+    positive_example: 'errors=list(data.errors)  # in StatusView construction, copied from the domain result'
+    negative_example: 'errors.append("GitUnavailableError")  # hypothetical: cli/ui/ coins an error category the domain never reported'
+  - id: ARCH-003.Q03
+    question: Does every warning that cli/ui/ displays come from a core/ or common/ model, rather than being appended in cli/ui/?
+    kind: judgment
+    positive_example: 'warnings=list(data.warnings)  # in DovoStatusFormatter.transform, copied from the domain result'
+    negative_example: 'if not result.git_status: result.warnings.append(''Git not found'')  # hypothetical: cli/ui/ originates the fact'
+  - id: ARCH-003.Q04
+    question: Does every remediation that cli/ui/ displays come from a core/ or common/ model, rather than being written in cli/ui/?
+    kind: judgment
+    positive_example: 'remediations=list(data.fixes)  # in DovoStatusFormatter.transform, copied from the domain result'
+    negative_example: 'view.remediations.append("Run git init")  # hypothetical: cli/ui/ writes a remediation the domain never supplied'
+  - id: ARCH-003.Q05
+    question: Is every domain rule that formatters apply (for example deciding what counts as healthy or failed) defined in core/ or common/ rather than in cli/ui/?
+    kind: judgment
+    na_when: The formatter only maps or copies existing domain fields and applies no condition of its own.
+    positive_example: 'A formatter renders result.ok as supplied by the domain result'
+    negative_example: 'A formatter decides that more than three uncommitted files makes the workspace unhealthy'
+  - id: ARCH-003.Q06
+    question: Does cli/ui/ limit itself to deriving presentation views from existing domain fields, without adding new domain facts?
+    kind: judgment
+    positive_example: 'A view field such as project_name or git_branch that is read from existing DovoStatusResult fields and reformatted only for display'
+    negative_example: 'A view field populated from a check that cli/ui/ runs itself, such as probing the filesystem'
   citation: docs/agents/architecture.md#package-boundaries-import-direction
 - id: ARCH-004
   title: Standard Core Package Layout (Domain-Named Entrypoint)
@@ -63,28 +183,81 @@ rules:
   category: Architecture
   domain: [core, engine]
   scope: src/dovo/core/, src/dovo/engine/
-  guideline: 'Default layout for new domain code is core/<domain>/: models.py (types), exceptions.py (errors), <domain>.py
-    (entrypoint coordinator/service, e.g. prune.py, moving away from generic facade.py), and services/<verb>.py (imperative
-    operations). Do not use generic facade.py, do not put logic directly in package root without structured modules, do not
-    define public models in services/, and do not extend legacy flat layouts.'
-  evaluation_criteria: Check package directory structure for new domains. Verify the entrypoint module is named after the
-    domain (e.g. prune.py) rather than generic facade.py. Flag any monolithic single-file domain layout or public models defined
-    in services/.
-  positive_example: src/dovo/core/prune/ -> models.py, exceptions.py, prune.py, services/
-  negative_example: 'src/dovo/core/prune/ -> facade.py  # or monolithic prune.py mixing models & logic'
+  intent: New domain code follows one predictable package layout with a domain-named entrypoint, so a reader finds types, errors, coordination and operations in the same places in every domain.
+  criteria:
+  - id: ARCH-004.Q01
+    question: Does each new domain package under core/ define its types in a models.py module?
+    kind: judgment
+    na_when: The change adds no new domain package under core/.
+    positive_example: 'src/dovo/core/worktree/models.py holds WorktreeListResult and the other worktree types'
+    negative_example: 'src/dovo/core/prune/ holds a single prune.py mixing types and logic  # hypothetical: no prune/ package exists today'
+  - id: ARCH-004.Q02
+    question: Does each new domain package under core/ that raises its own errors define them in an exceptions.py module?
+    kind: judgment
+    na_when: The change adds no new domain package under core/, or the new domain raises no errors of its own.
+    positive_example: 'src/dovo/core/worktree/exceptions.py'
+    negative_example: 'class PruneError(Exception) defined inside src/dovo/core/prune/prune.py  # hypothetical: no prune/ package exists today'
+  - id: ARCH-004.Q03
+    question: Is the entrypoint coordinator or service of each new domain package named after the domain rather than generically?
+    kind: judgment
+    na_when: The change adds no new domain package under core/.
+    positive_example: 'src/dovo/core/sessions/sessions.py  # entrypoint named after the sessions domain'
+    negative_example: 'src/dovo/core/prune/facade.py  # hypothetical: generic facade.py instead of prune.py; no facade.py exists in src/ today'
+  - id: ARCH-004.Q04
+    question: Does each new domain package under core/ keep its imperative operations in a services/ package?
+    kind: judgment
+    na_when: The change adds no new domain package under core/, or the new domain has no imperative operations.
+    positive_example: 'src/dovo/core/worktree/services/ contains list.py, delete.py and show.py'
+    negative_example: 'src/dovo/core/prune/ with its operations written in prune.py and no services/ directory  # hypothetical'
+  - id: ARCH-004.Q05
+    question: Is each new imperative operation of a domain placed in its own services/<verb>.py module rather than directly in the package root?
+    kind: judgment
+    na_when: The change adds no new imperative operation to a domain package.
+    positive_example: 'src/dovo/core/sessions/services/read_logs.py'
+    negative_example: 'A new archive() function defined in src/dovo/core/sessions/__init__.py  # hypothetical: no archive operation exists; logic in the package root without a structured module'
+  - id: ARCH-004.Q06
+    question: Are all public models of a new domain package defined in its models.py rather than in services/?
+    kind: judgment
+    na_when: The change adds no public model to a domain package.
+    positive_example: 'class WorktreeListResult(BaseResult) defined in src/dovo/core/worktree/models.py'
+    negative_example: 'A public result model class defined inside services/prune.py  # hypothetical: public models belong in models.py'
+  - id: ARCH-004.Q07
+    question: Does new domain code avoid extending a legacy flat layout (a domain package or module that lacks the standard structure)?
+    kind: judgment
+    na_when: The change adds no code to a domain package that predates the standard layout.
+    positive_example: 'New domain code gets its own package laid out like src/dovo/core/worktree/ (models.py, exceptions.py, worktree.py, services/)'
+    negative_example: 'New domain logic appended to an existing flat module that has no models.py, exceptions.py or services/  # hypothetical'
   citation: docs/agents/architecture.md#adding-a-new-catalog-backed-domain
 - id: ARCH-006
   title: Secrets Environment Resolution
   severity: BLOCKER
   category: Architecture
   domain: core
-  scope: src/dovo/core/agents/, src/dovo/core/config/
-  guideline: API keys and secrets must be resolved from environment variables at call time via module-level resolve_<provider>_api_key().
-    Secrets must never be stored in config.json, persisted to data.db, or passed into prompt builders.
-  evaluation_criteria: Search for API key field additions in DovoConfig or SQLite models. Ensure environment resolution
-    helpers are used.
-  positive_example: 'api_key = resolve_credential(spec.credential_envs)  # reads environment dynamically'
-  negative_example: 'api_key = config.agent.copilot_token  # serializing secrets in static config'
+  scope: src/dovo/core/agents/, src/dovo/core/config/, src/dovo/core/db/
+  intent: Secrets exist only in the process environment and only while a call needs them, so they never leak into stored
+    configuration, the database or prompts.
+  criteria:
+  - id: ARCH-006.Q01
+    question: Is every API key or secret read from environment variables at call time through a module-level resolve helper?
+    kind: judgment
+    positive_example: 'def resolve_copilot_token() -> str | None: return resolve_credential(COPILOT_TOKEN_ENVS)  # in core/agents/copilot.py, reads os.environ on each call'
+    negative_example: 'TOKEN = os.environ["COPILOT_TOKEN"]  # hypothetical: captured once at import time instead of resolved at call time'
+  - id: ARCH-006.Q02
+    question: Is every secret absent from config.json, including the fields of DovoConfig?
+    kind: judgment
+    positive_example: DovoConfig in core/config/models.py declares no api_key, token or secret field
+    negative_example: 'copilot_token: str = ""  # hypothetical: a secret-bearing field added to DovoConfig'
+  - id: ARCH-006.Q03
+    question: Is every secret absent from data.db, including the SQLite record models?
+    kind: judgment
+    positive_example: The SQLModel record classes in core/db/models.py declare no credential column
+    negative_example: 'api_key: str  # hypothetical: a credential column added to a SQLModel record class'
+  - id: ARCH-006.Q04
+    question: Is every secret kept out of the arguments passed into prompt builders?
+    kind: judgment
+    na_when: The change adds or modifies no prompt builder and no call to one.
+    positive_example: 'build_mutation_prompt(request: AgentRequest) in core/agents/cli_mutation.py receives the whole request, but _prompt_body copies only mode, worktree_path, agent_scratch_path, instruction and payload and never reads request.env'
+    negative_example: 'build_prompt(task, api_key=resolve_credential(envs))  # hypothetical: a secret passed into a prompt builder'
   citation: docs/agents/architecture.md#secrets-handling
 - id: RENDER-001
   title: Stateful Builder Pattern for RichOutput
@@ -530,13 +703,23 @@ rules:
   category: Performance
   domain: all
   scope: All source and test files
-  guideline: Never instantiate a repository or DovoDb inside loops or test helpers. Inject pre-initialized instances to
-    prevent N+1 SQLite connection/migration checks.
-  evaluation_criteria: Detect repository or DovoDb instantiations inside for/while loops or inside reusable helper functions.
-  positive_example: 'repo = SessionsRepository(path)
+  intent: Database access reuses one pre-initialized instance, so repeated work does not pay for a new SQLite connection
+    and migration check each time.
+  criteria:
+  - id: PERF-001.Q01
+    question: Is every repository or DovoDb used inside a for or while loop created outside that loop?
+    kind: judgment
+    na_when: No for or while loop in the changed code uses a repository or DovoDb.
+    positive_example: 'db = DovoDb(paths.database_file, project_id=paths.project_id)
 
-    for item in items: repo.create(item)'
-  negative_example: 'for item in items: repo = SessionsRepository(path); repo.create(item)'
+      for item in items: db.sessions.create(...)  # illustrative; create() takes more arguments'
+    negative_example: 'for item in items: db = DovoDb(paths.database_file, project_id=paths.project_id); db.sessions.create(...)  # illustrative; create() takes more arguments'
+  - id: PERF-001.Q02
+    question: Does every helper function, including every test helper, receive its repository or DovoDb as an argument instead of instantiating one?
+    kind: judgment
+    na_when: No helper function in the changed code uses a repository or DovoDb.
+    positive_example: 'def seed_sessions(db: DovoDb, items: list[str]) -> None: ...  # illustrative helper that takes the instance'
+    negative_example: 'def seed_session(paths: WorkspacePaths) -> None: DovoDb(paths.database_file, project_id=paths.project_id).sessions.create(...)  # illustrative helper that builds its own instance on every call'
   citation: docs/agents/schemas.md#7-database
 - id: PERF-002
   title: Database Migration Hygiene and Consumer Call Sites
@@ -680,11 +863,14 @@ rules:
   category: Database
   domain: core
   scope: src/dovo/core/db/models.py
-  guideline: Declaring index=True on a column that already declares unique=True creates redundant SQLite B-tree indexes. A
-    unique constraint already creates a backing index automatically.
-  evaluation_criteria: Inspect SQLModel Field definitions. Flag fields specifying both `unique=True` and `index=True`.
-  positive_example: 'session_id: str = Field(unique=True)'
-  negative_example: 'session_id: str = Field(unique=True, index=True)'
+  intent: A unique constraint already gets a backing index in SQLite, so a column declares uniqueness or an extra index, never both, and the database does not carry a second index that does nothing.
+  criteria:
+  - id: DB-001.Q01
+    question: Is every SQLModel Field that declares unique=True free of an index=True declaration?
+    kind: judgment
+    na_when: The change adds or modifies no SQLModel Field in src/dovo/core/db/models.py.
+    positive_example: 'session_id: str = Field(unique=True)  # in SessionRecord, src/dovo/core/db/models.py'
+    negative_example: 'session_id: str = Field(unique=True, index=True)  # hypothetical: no field in models.py declares both'
   citation: docs/agents/ci-and-tooling.md#database-migration-hygiene
 - id: DB-002
   title: Released Migrations Are Immutable and Reversible
@@ -692,14 +878,39 @@ rules:
   category: Database
   domain: core
   scope: src/dovo/core/db/alembic/versions/
-  guideline: A migration revision that exists in a release tag must not be edited, renamed or deleted; fix it with a new
-    revision. Every revision must implement both upgrade() and downgrade() using dialect-neutral Alembic operations
-    (op.batch_alter_table for column and constraint changes, no SQLite-only SQL).
-  evaluation_criteria: Check the diff for changes to revision files that exist in the latest v* tag. Verify every new
-    revision defines downgrade(), avoids PRAGMA and sqlite_master, and has upgrade and downgrade tests in
-    tests/core/db/test_migrations.py.
-  positive_example: '# New revision 0003 with upgrade(), downgrade() and a row-preserving upgrade/downgrade test'
-  negative_example: '# Editing 0001_initial_schema.py after v0.6.0, or a revision whose downgrade() is `pass`'
+  intent: Databases that users already upgraded can always be reached from, and returned to, a known schema, because a
+    revision that shipped never changes and every revision can be undone on any supported database.
+  criteria:
+  - id: DB-002.Q01
+    question: Is every revision file that exists in the latest v* tag left unedited, unrenamed and undeleted?
+    kind: judgment
+    na_when: The change touches no revision file that exists in the latest v* tag.
+    positive_example: 'A schema fix for a released column ships as a new file, 0005_fix_discard_default.py (hypothetical), and 0001_initial_schema.py is untouched'
+    negative_example: 'Editing 0001_initial_schema.py, which exists in the v0.6.0 tag, to change a column definition'
+  - id: DB-002.Q02
+    question: Does every new revision define both upgrade() and a downgrade() that has a real body rather than a bare `pass`?
+    kind: judgment
+    na_when: The change adds no new revision.
+    positive_example: '0004_session_discard.py defines downgrade() that drops the discard column from sessions inside op.batch_alter_table'
+    negative_example: 'A revision whose downgrade() is `pass`'
+  - id: DB-002.Q03
+    question: Does every new revision avoid PRAGMA and sqlite_master?
+    kind: judgment
+    na_when: The change adds no new revision.
+    positive_example: '0004_session_discard.py contains no PRAGMA statement and no reference to sqlite_master'
+    negative_example: 'op.execute("PRAGMA foreign_keys=OFF")  # or a query against sqlite_master, in a revision'
+  - id: DB-002.Q04
+    question: Does every new revision make its column and constraint changes through op.batch_alter_table?
+    kind: judgment
+    na_when: The new revision makes no column or constraint changes.
+    positive_example: 'with op.batch_alter_table("sessions") as batch_op: batch_op.drop_column("discard")'
+    negative_example: 'op.add_column("sessions", sa.Column("discard", sa.Boolean()))  # outside a batch_alter_table block (hypothetical revision)'
+  - id: DB-002.Q05
+    question: Does every new revision have both an upgrade test and a downgrade test in tests/core/db/test_migrations.py?
+    kind: judgment
+    na_when: The change adds no new revision.
+    positive_example: 'SessionDiscardMigrationTests has test_upgrade_adds_discard_column_defaulting_existing_rows_false and test_downgrade_drops_discard_column_and_keeps_rows'
+    negative_example: 'A new revision 0005 (hypothetical) with no test class for it in test_migrations.py, or one that tests only the upgrade'
   citation: docs/agents/ci-and-tooling.md#migration-lifecycle
 - id: FS-001
   title: Atomic File Writes via Temporary Sibling

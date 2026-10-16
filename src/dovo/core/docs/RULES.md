@@ -4,28 +4,151 @@
 > **Notice for Agents:** Code violating `BLOCKER` rules will fail verification.
 
 - **[ARCH-001] Strict Layered Import Flow (BLOCKER):**
-  Dependencies flow strictly one way: common/ -> core/ -> engine/ -> cli/. Within core/: project/ -> {db,git,worktree,catalog,inputs,sessions,status,artifacts,interaction}/ -> agents/ -> diagnostics/. Upward imports are strictly prohibited.
+  Imports flow one way through the layers, so a lower layer never depends on a higher one and each package can be understood, tested and changed without pulling in the code that sits above it.
 
-```python
-# ✅ DO: from dovo.core.sessions import SessionLogEvent  # in engine/
-# ❌ DO NOT: from dovo.engine.engine import Engine  # upward import in core/sessions/
-```
+  Answer yes to every criterion:
+  - `ARCH-001.Q01` (mechanical) Does common/ import nothing from core/, engine/ or cli/, other than the imports listed in LAYER_EXCEPTIONS in tests/lint/test_layer_direction.py?
+
+    ```python
+    # ✅ DO: from dovo.common.exceptions import DefinitionError  # in core/catalog/
+    # ❌ DO NOT: from dovo.core.catalog.models import CatalogTier  # at runtime in common/ (hypothetical; the one real import of it, under TYPE_CHECKING in common/filesystem/models.py, is allowlisted)
+    ```
+  - `ARCH-001.Q02` (mechanical) Does core/ import nothing from engine/ or cli/?
+
+    ```python
+    # ✅ DO: from dovo.core.sessions import SessionLogEvent  # in engine/
+    # ❌ DO NOT: from dovo.engine.engine import Engine  # upward import in core/sessions/
+    ```
+  - `ARCH-001.Q03` (mechanical) Does core/ import nothing from rich?
+
+    ```python
+    # ✅ DO: core/ returns models and leaves rendering to cli/ui/
+    # ❌ DO NOT: from rich.console import Console  # in core/status/
+    ```
+  - `ARCH-001.Q04` (mechanical) Does engine/ import nothing from cli/?
+
+    ```python
+    # ✅ DO: from dovo.core.sessions import SessionLogEvent  # in engine/
+    # ❌ DO NOT: from dovo.cli.context import CliContext  # in engine/ (hypothetical module path)
+    ```
+  - `ARCH-001.Q05` (mechanical) Does git/ import nothing from any other core/ package?
+
+    ```python
+    # ✅ DO: from dovo.common.process import is_process_group_alive  # in core/git/ (hypothetical import)
+    # ❌ DO NOT: from dovo.core.project import ProjectIdentity  # in core/git/ (hypothetical import)
+    ```
+  - `ARCH-001.Q06` (mechanical) Does inputs/ import nothing from catalog or agents?
+
+    ```python
+    # ✅ DO: from dovo.core.project import ProjectIdentity  # in core/inputs/ (hypothetical import)
+    # ❌ DO NOT: from dovo.core.catalog.models import CatalogTier  # in core/inputs/ (hypothetical import)
+    ```
+  - `ARCH-001.Q07` (mechanical) Does catalog/ import nothing from agents, sessions, engine or cli?
+
+    ```python
+    # ✅ DO: from dovo.core.inputs import ParameterInput  # in core/catalog/ (hypothetical import)
+    # ❌ DO NOT: from dovo.core.sessions import SessionLogEvent  # in core/catalog/
+    ```
+  - `ARCH-001.Q08` (mechanical) Does artifacts/ import nothing from engine?
+
+    ```python
+    # ✅ DO: from dovo.core.sessions import SessionLogEvent  # in core/artifacts/ (hypothetical import)
+    # ❌ DO NOT: from dovo.engine.engine import Engine  # in core/artifacts/
+    ```
+  - `ARCH-001.Q09` (mechanical) Does agents/ import nothing from engine?
+
+    ```python
+    # ✅ DO: from dovo.core.sessions import SessionLogEvent  # in core/agents/ (hypothetical import)
+    # ❌ DO NOT: from dovo.engine.engine import Engine  # in core/agents/
+    ```
+  - `ARCH-001.Q10` (mechanical) Does sessions/ import nothing from agents, worktree, catalog, engine or cli?
+
+    ```python
+    # ✅ DO: from dovo.core.db import get_session  # in core/sessions/ (hypothetical import)
+    # ❌ DO NOT: from dovo.core.agents import BaseAgentProvider  # in core/sessions/ (hypothetical import)
+    ```
+  - `ARCH-001.Q11` (judgment) Does each core/ package named in the chain project/ -> {db, git, worktree, catalog, inputs, sessions, status, artifacts, interaction}/ -> agents/ -> diagnostics/ import only from packages at or before its own position in that chain?
+
+    ```python
+    # ✅ DO: from dovo.core.sessions import SessionLogEvent  # in core/diagnostics/ (hypothetical import)
+    # ❌ DO NOT: from dovo.core.diagnostics import DiagnosticsReport  # in core/project/ (hypothetical import)
+    ```
 
 - **[ARCH-004] Standard Core Package Layout (Domain-Named Entrypoint) (BLOCKER):**
-  Default layout for new domain code is core/<domain>/: models.py (types), exceptions.py (errors), <domain>.py (entrypoint coordinator/service, e.g. prune.py, moving away from generic facade.py), and services/<verb>.py (imperative operations). Do not use generic facade.py, do not put logic directly in package root without structured modules, do not define public models in services/, and do not extend legacy flat layouts.
+  New domain code follows one predictable package layout with a domain-named entrypoint, so a reader finds types, errors, coordination and operations in the same places in every domain.
 
-```python
-# ✅ DO: src/dovo/core/prune/ -> models.py, exceptions.py, prune.py, services/
-# ❌ DO NOT: src/dovo/core/prune/ -> facade.py  # or monolithic prune.py mixing models & logic
-```
+  Answer yes to every criterion:
+  - `ARCH-004.Q01` (judgment) Does each new domain package under core/ define its types in a models.py module?
+
+    ```python
+    # ✅ DO: src/dovo/core/worktree/models.py holds WorktreeListResult and the other worktree types
+    # ❌ DO NOT: src/dovo/core/prune/ holds a single prune.py mixing types and logic  # hypothetical: no prune/ package exists today
+    ```
+  - `ARCH-004.Q02` (judgment) Does each new domain package under core/ that raises its own errors define them in an exceptions.py module?
+
+    ```python
+    # ✅ DO: src/dovo/core/worktree/exceptions.py
+    # ❌ DO NOT: class PruneError(Exception) defined inside src/dovo/core/prune/prune.py  # hypothetical: no prune/ package exists today
+    ```
+  - `ARCH-004.Q03` (judgment) Is the entrypoint coordinator or service of each new domain package named after the domain rather than generically?
+
+    ```python
+    # ✅ DO: src/dovo/core/sessions/sessions.py  # entrypoint named after the sessions domain
+    # ❌ DO NOT: src/dovo/core/prune/facade.py  # hypothetical: generic facade.py instead of prune.py; no facade.py exists in src/ today
+    ```
+  - `ARCH-004.Q04` (judgment) Does each new domain package under core/ keep its imperative operations in a services/ package?
+
+    ```python
+    # ✅ DO: src/dovo/core/worktree/services/ contains list.py, delete.py and show.py
+    # ❌ DO NOT: src/dovo/core/prune/ with its operations written in prune.py and no services/ directory  # hypothetical
+    ```
+  - `ARCH-004.Q05` (judgment) Is each new imperative operation of a domain placed in its own services/<verb>.py module rather than directly in the package root?
+
+    ```python
+    # ✅ DO: src/dovo/core/sessions/services/read_logs.py
+    # ❌ DO NOT: A new archive() function defined in src/dovo/core/sessions/__init__.py  # hypothetical: no archive operation exists; logic in the package root without a structured module
+    ```
+  - `ARCH-004.Q06` (judgment) Are all public models of a new domain package defined in its models.py rather than in services/?
+
+    ```python
+    # ✅ DO: class WorktreeListResult(BaseResult) defined in src/dovo/core/worktree/models.py
+    # ❌ DO NOT: A public result model class defined inside services/prune.py  # hypothetical: public models belong in models.py
+    ```
+  - `ARCH-004.Q07` (judgment) Does new domain code avoid extending a legacy flat layout (a domain package or module that lacks the standard structure)?
+
+    ```python
+    # ✅ DO: New domain code gets its own package laid out like src/dovo/core/worktree/ (models.py, exceptions.py, worktree.py, services/)
+    # ❌ DO NOT: New domain logic appended to an existing flat module that has no models.py, exceptions.py or services/  # hypothetical
+    ```
 
 - **[ARCH-006] Secrets Environment Resolution (BLOCKER):**
-  API keys and secrets must be resolved from environment variables at call time via module-level resolve_<provider>_api_key(). Secrets must never be stored in config.json, persisted to data.db, or passed into prompt builders.
+  Secrets exist only in the process environment and only while a call needs them, so they never leak into stored configuration, the database or prompts.
 
-```python
-# ✅ DO: api_key = resolve_credential(spec.credential_envs)  # reads environment dynamically
-# ❌ DO NOT: api_key = config.agent.copilot_token  # serializing secrets in static config
-```
+  Answer yes to every criterion:
+  - `ARCH-006.Q01` (judgment) Is every API key or secret read from environment variables at call time through a module-level resolve helper?
+
+    ```python
+    # ✅ DO: def resolve_copilot_token() -> str | None: return resolve_credential(COPILOT_TOKEN_ENVS)  # in core/agents/copilot.py, reads os.environ on each call
+    # ❌ DO NOT: TOKEN = os.environ["COPILOT_TOKEN"]  # hypothetical: captured once at import time instead of resolved at call time
+    ```
+  - `ARCH-006.Q02` (judgment) Is every secret absent from config.json, including the fields of DovoConfig?
+
+    ```python
+    # ✅ DO: DovoConfig in core/config/models.py declares no api_key, token or secret field
+    # ❌ DO NOT: copilot_token: str = ""  # hypothetical: a secret-bearing field added to DovoConfig
+    ```
+  - `ARCH-006.Q03` (judgment) Is every secret absent from data.db, including the SQLite record models?
+
+    ```python
+    # ✅ DO: The SQLModel record classes in core/db/models.py declare no credential column
+    # ❌ DO NOT: api_key: str  # hypothetical: a credential column added to a SQLModel record class
+    ```
+  - `ARCH-006.Q04` (judgment) Is every secret kept out of the arguments passed into prompt builders?
+
+    ```python
+    # ✅ DO: build_mutation_prompt(request: AgentRequest) in core/agents/cli_mutation.py receives the whole request, but _prompt_body copies only mode, worktree_path, agent_scratch_path, instruction and payload and never reads request.env
+    # ❌ DO NOT: build_prompt(task, api_key=resolve_credential(envs))  # hypothetical: a secret passed into a prompt builder
+    ```
 
 - **[RENDER-003] Inline Error and Warning String Construction (SUGGESTION):**
   Construct errors, warnings, and fixes strings using inline f-strings or literals at call sites. Do not create private single-message formatting wrappers.
@@ -338,14 +461,23 @@ def _val(cls, v: Any) -> Any: ...
     ```
 
 - **[PERF-001] No Ad-Hoc DB Instantiations in Loops (BLOCKER):**
-  Never instantiate a repository or DovoDb inside loops or test helpers. Inject pre-initialized instances to prevent N+1 SQLite connection/migration checks.
+  Database access reuses one pre-initialized instance, so repeated work does not pay for a new SQLite connection and migration check each time.
 
-```python
-# ✅ DO:
-repo = SessionsRepository(path)
-for item in items: repo.create(item)
-# ❌ DO NOT: for item in items: repo = SessionsRepository(path); repo.create(item)
-```
+  Answer yes to every criterion:
+  - `PERF-001.Q01` (judgment) Is every repository or DovoDb used inside a for or while loop created outside that loop?
+
+    ```python
+    # ✅ DO:
+    db = DovoDb(paths.database_file, project_id=paths.project_id)
+    for item in items: db.sessions.create(...)  # illustrative; create() takes more arguments
+    # ❌ DO NOT: for item in items: db = DovoDb(paths.database_file, project_id=paths.project_id); db.sessions.create(...)  # illustrative; create() takes more arguments
+    ```
+  - `PERF-001.Q02` (judgment) Does every helper function, including every test helper, receive its repository or DovoDb as an argument instead of instantiating one?
+
+    ```python
+    # ✅ DO: def seed_sessions(db: DovoDb, items: list[str]) -> None: ...  # illustrative helper that takes the instance
+    # ❌ DO NOT: def seed_session(paths: WorkspacePaths) -> None: DovoDb(paths.database_file, project_id=paths.project_id).sessions.create(...)  # illustrative helper that builds its own instance on every call
+    ```
 
 - **[PERF-002] Database Migration Hygiene and Consumer Call Sites (BLOCKER):**
   Every new table or column must have real caller sites in src/ in the same PR. One-time data backfills must be versioned Alembic revisions (op.execute()), not ad-hoc raw SQL in models.
@@ -463,20 +595,50 @@ for item in items: repo.create(item)
     ```
 
 - **[DB-001] Redundant Index Declaration on Unique Columns (NIT):**
-  Declaring index=True on a column that already declares unique=True creates redundant SQLite B-tree indexes. A unique constraint already creates a backing index automatically.
+  A unique constraint already gets a backing index in SQLite, so a column declares uniqueness or an extra index, never both, and the database does not carry a second index that does nothing.
 
-```python
-# ✅ DO: session_id: str = Field(unique=True)
-# ❌ DO NOT: session_id: str = Field(unique=True, index=True)
-```
+  Answer yes to every criterion:
+  - `DB-001.Q01` (judgment) Is every SQLModel Field that declares unique=True free of an index=True declaration?
+
+    ```python
+    # ✅ DO: session_id: str = Field(unique=True)  # in SessionRecord, src/dovo/core/db/models.py
+    # ❌ DO NOT: session_id: str = Field(unique=True, index=True)  # hypothetical: no field in models.py declares both
+    ```
 
 - **[DB-002] Released Migrations Are Immutable and Reversible (BLOCKER):**
-  A migration revision that exists in a release tag must not be edited, renamed or deleted; fix it with a new revision. Every revision must implement both upgrade() and downgrade() using dialect-neutral Alembic operations (op.batch_alter_table for column and constraint changes, no SQLite-only SQL).
+  Databases that users already upgraded can always be reached from, and returned to, a known schema, because a revision that shipped never changes and every revision can be undone on any supported database.
 
-```python
-# ✅ DO: # New revision 0003 with upgrade(), downgrade() and a row-preserving upgrade/downgrade test
-# ❌ DO NOT: # Editing 0001_initial_schema.py after v0.6.0, or a revision whose downgrade() is `pass`
-```
+  Answer yes to every criterion:
+  - `DB-002.Q01` (judgment) Is every revision file that exists in the latest v* tag left unedited, unrenamed and undeleted?
+
+    ```python
+    # ✅ DO: A schema fix for a released column ships as a new file, 0005_fix_discard_default.py (hypothetical), and 0001_initial_schema.py is untouched
+    # ❌ DO NOT: Editing 0001_initial_schema.py, which exists in the v0.6.0 tag, to change a column definition
+    ```
+  - `DB-002.Q02` (judgment) Does every new revision define both upgrade() and a downgrade() that has a real body rather than a bare `pass`?
+
+    ```python
+    # ✅ DO: 0004_session_discard.py defines downgrade() that drops the discard column from sessions inside op.batch_alter_table
+    # ❌ DO NOT: A revision whose downgrade() is `pass`
+    ```
+  - `DB-002.Q03` (judgment) Does every new revision avoid PRAGMA and sqlite_master?
+
+    ```python
+    # ✅ DO: 0004_session_discard.py contains no PRAGMA statement and no reference to sqlite_master
+    # ❌ DO NOT: op.execute("PRAGMA foreign_keys=OFF")  # or a query against sqlite_master, in a revision
+    ```
+  - `DB-002.Q04` (judgment) Does every new revision make its column and constraint changes through op.batch_alter_table?
+
+    ```python
+    # ✅ DO: with op.batch_alter_table("sessions") as batch_op: batch_op.drop_column("discard")
+    # ❌ DO NOT: op.add_column("sessions", sa.Column("discard", sa.Boolean()))  # outside a batch_alter_table block (hypothetical revision)
+    ```
+  - `DB-002.Q05` (judgment) Does every new revision have both an upgrade test and a downgrade test in tests/core/db/test_migrations.py?
+
+    ```python
+    # ✅ DO: SessionDiscardMigrationTests has test_upgrade_adds_discard_column_defaulting_existing_rows_false and test_downgrade_drops_discard_column_and_keeps_rows
+    # ❌ DO NOT: A new revision 0005 (hypothetical) with no test class for it in test_migrations.py, or one that tests only the upgrade
+    ```
 
 - **[FS-001] Atomic File Writes via Temporary Sibling (BLOCKER):**
   Config and state files are never left half-written, because they are written atomically instead of in-place.

@@ -4,12 +4,75 @@
 > **Notice for Agents:** Code violating `BLOCKER` rules will fail verification.
 
 - **[ARCH-001] Strict Layered Import Flow (BLOCKER):**
-  Dependencies flow strictly one way: common/ -> core/ -> engine/ -> cli/. Within core/: project/ -> {db,git,worktree,catalog,inputs,sessions,status,artifacts,interaction}/ -> agents/ -> diagnostics/. Upward imports are strictly prohibited.
+  Imports flow one way through the layers, so a lower layer never depends on a higher one and each package can be understood, tested and changed without pulling in the code that sits above it.
 
-```python
-# ✅ DO: from dovo.core.sessions import SessionLogEvent  # in engine/
-# ❌ DO NOT: from dovo.engine.engine import Engine  # upward import in core/sessions/
-```
+  Answer yes to every criterion:
+  - `ARCH-001.Q01` (mechanical) Does common/ import nothing from core/, engine/ or cli/, other than the imports listed in LAYER_EXCEPTIONS in tests/lint/test_layer_direction.py?
+
+    ```python
+    # ✅ DO: from dovo.common.exceptions import DefinitionError  # in core/catalog/
+    # ❌ DO NOT: from dovo.core.catalog.models import CatalogTier  # at runtime in common/ (hypothetical; the one real import of it, under TYPE_CHECKING in common/filesystem/models.py, is allowlisted)
+    ```
+  - `ARCH-001.Q02` (mechanical) Does core/ import nothing from engine/ or cli/?
+
+    ```python
+    # ✅ DO: from dovo.core.sessions import SessionLogEvent  # in engine/
+    # ❌ DO NOT: from dovo.engine.engine import Engine  # upward import in core/sessions/
+    ```
+  - `ARCH-001.Q03` (mechanical) Does core/ import nothing from rich?
+
+    ```python
+    # ✅ DO: core/ returns models and leaves rendering to cli/ui/
+    # ❌ DO NOT: from rich.console import Console  # in core/status/
+    ```
+  - `ARCH-001.Q04` (mechanical) Does engine/ import nothing from cli/?
+
+    ```python
+    # ✅ DO: from dovo.core.sessions import SessionLogEvent  # in engine/
+    # ❌ DO NOT: from dovo.cli.context import CliContext  # in engine/ (hypothetical module path)
+    ```
+  - `ARCH-001.Q05` (mechanical) Does git/ import nothing from any other core/ package?
+
+    ```python
+    # ✅ DO: from dovo.common.process import is_process_group_alive  # in core/git/ (hypothetical import)
+    # ❌ DO NOT: from dovo.core.project import ProjectIdentity  # in core/git/ (hypothetical import)
+    ```
+  - `ARCH-001.Q06` (mechanical) Does inputs/ import nothing from catalog or agents?
+
+    ```python
+    # ✅ DO: from dovo.core.project import ProjectIdentity  # in core/inputs/ (hypothetical import)
+    # ❌ DO NOT: from dovo.core.catalog.models import CatalogTier  # in core/inputs/ (hypothetical import)
+    ```
+  - `ARCH-001.Q07` (mechanical) Does catalog/ import nothing from agents, sessions, engine or cli?
+
+    ```python
+    # ✅ DO: from dovo.core.inputs import ParameterInput  # in core/catalog/ (hypothetical import)
+    # ❌ DO NOT: from dovo.core.sessions import SessionLogEvent  # in core/catalog/
+    ```
+  - `ARCH-001.Q08` (mechanical) Does artifacts/ import nothing from engine?
+
+    ```python
+    # ✅ DO: from dovo.core.sessions import SessionLogEvent  # in core/artifacts/ (hypothetical import)
+    # ❌ DO NOT: from dovo.engine.engine import Engine  # in core/artifacts/
+    ```
+  - `ARCH-001.Q09` (mechanical) Does agents/ import nothing from engine?
+
+    ```python
+    # ✅ DO: from dovo.core.sessions import SessionLogEvent  # in core/agents/ (hypothetical import)
+    # ❌ DO NOT: from dovo.engine.engine import Engine  # in core/agents/
+    ```
+  - `ARCH-001.Q10` (mechanical) Does sessions/ import nothing from agents, worktree, catalog, engine or cli?
+
+    ```python
+    # ✅ DO: from dovo.core.db import get_session  # in core/sessions/ (hypothetical import)
+    # ❌ DO NOT: from dovo.core.agents import BaseAgentProvider  # in core/sessions/ (hypothetical import)
+    ```
+  - `ARCH-001.Q11` (judgment) Does each core/ package named in the chain project/ -> {db, git, worktree, catalog, inputs, sessions, status, artifacts, interaction}/ -> agents/ -> diagnostics/ import only from packages at or before its own position in that chain?
+
+    ```python
+    # ✅ DO: from dovo.core.sessions import SessionLogEvent  # in core/diagnostics/ (hypothetical import)
+    # ❌ DO NOT: from dovo.core.diagnostics import DiagnosticsReport  # in core/project/ (hypothetical import)
+    ```
 
 - **[RENDER-003] Inline Error and Warning String Construction (SUGGESTION):**
   Construct errors, warnings, and fixes strings using inline f-strings or literals at call sites. Do not create private single-message formatting wrappers.
@@ -251,14 +314,23 @@ def _val(cls, v: Any) -> Any: ...
     ```
 
 - **[PERF-001] No Ad-Hoc DB Instantiations in Loops (BLOCKER):**
-  Never instantiate a repository or DovoDb inside loops or test helpers. Inject pre-initialized instances to prevent N+1 SQLite connection/migration checks.
+  Database access reuses one pre-initialized instance, so repeated work does not pay for a new SQLite connection and migration check each time.
 
-```python
-# ✅ DO:
-repo = SessionsRepository(path)
-for item in items: repo.create(item)
-# ❌ DO NOT: for item in items: repo = SessionsRepository(path); repo.create(item)
-```
+  Answer yes to every criterion:
+  - `PERF-001.Q01` (judgment) Is every repository or DovoDb used inside a for or while loop created outside that loop?
+
+    ```python
+    # ✅ DO:
+    db = DovoDb(paths.database_file, project_id=paths.project_id)
+    for item in items: db.sessions.create(...)  # illustrative; create() takes more arguments
+    # ❌ DO NOT: for item in items: db = DovoDb(paths.database_file, project_id=paths.project_id); db.sessions.create(...)  # illustrative; create() takes more arguments
+    ```
+  - `PERF-001.Q02` (judgment) Does every helper function, including every test helper, receive its repository or DovoDb as an argument instead of instantiating one?
+
+    ```python
+    # ✅ DO: def seed_sessions(db: DovoDb, items: list[str]) -> None: ...  # illustrative helper that takes the instance
+    # ❌ DO NOT: def seed_session(paths: WorkspacePaths) -> None: DovoDb(paths.database_file, project_id=paths.project_id).sessions.create(...)  # illustrative helper that builds its own instance on every call
+    ```
 
 - **[FS-001] Atomic File Writes via Temporary Sibling (BLOCKER):**
   Config and state files are never left half-written, because they are written atomically instead of in-place.
