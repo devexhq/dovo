@@ -36,95 +36,228 @@
 ```
 
 - **[MODEL-001] Scoped Model Exceptions with Justifying Comment (BLOCKER):**
-  Scoped exceptions allowing extra='ignore' are restricted to hand-authored YAML models (BlueprintDefinition, LoopStepBlock) and MUST carry a justifying comment.
+  Models are strict by default so unexpected data is rejected early; the few hand-authored YAML models that tolerate unknown keys are a named exception, and each explains why in a comment so the leniency stays deliberate.
 
-```python
-# ✅ DO:
-# User YAML models permit forward-compatible extra keys
-model_config = {'extra': 'ignore'}
-# ❌ DO NOT: model_config = {'extra': 'ignore'}  # missing justifying comment
-```
+  Answer yes to every criterion:
+  - `MODEL-001.Q01` (judgment) Is extra='ignore' used only by the approved hand-authored YAML models, BlueprintDefinition and LoopStepBlock?
+
+    ```python
+    # ✅ DO: model_config = {"extra": "ignore", "populate_by_name": True}  # in BlueprintDefinition, core/catalog/definitions/blueprint.py
+    # ❌ DO NOT: model_config = {"extra": "ignore"}  # hypothetical: on a result model such as a BaseResult subclass, which is not an approved model
+    ```
+  - `MODEL-001.Q02` (judgment) Does every model that uses extra='ignore' carry a comment justifying it?
+
+    ```python
+    # ✅ DO: # Hand-authored YAML loop blocks permit forward-compatible extra keys.  (directly above model_config in LoopStepBlock, core/catalog/definitions/step.py)
+    # ❌ DO NOT: model_config = {"extra": "ignore"}  # hypothetical: no justifying comment above or beside it
+    ```
+  - `MODEL-001.Q03` (judgment) Does every model outside the approved list set strict=True in its configuration?
+
+    ```python
+    # ✅ DO: model_config = {"extra": "forbid", "strict": True}  # in common/mcp_servers.py
+    # ❌ DO NOT: model_config = {"extra": "forbid"}  # hypothetical for a new model: strict=True omitted
+    ```
 
 - **[MODEL-002] Result/Outcome Pattern over Exceptions (BLOCKER):**
-  Operations that can fail must not raise for business or operational failures. When the outcome reaches a domain entrypoint, a command handler, a formatter, or the wire format, return a Pydantic result object subclassing BaseResult; callers check .ok and render .errors/.warnings rather than catching exceptions. An internal helper with a single in-layer caller that only branches on success may instead return a plain value or an error message (str | None).
+  Callers must learn about business and operational failures from a result they can inspect and render, not from exceptions they must remember to catch.
 
-```python
-# ✅ DO: return WorktreeDeleteResult(status=WorktreeDeleteStatus.NOT_FOUND, errors=['not found'])
-# ❌ DO NOT: raise WorktreeNotFoundError('Worktree does not exist')
-```
+  Answer yes to every criterion:
+  - `MODEL-002.Q01` (judgment) Does the operation report a business or operational failure by returning a result instead of raising an exception?
+
+    ```python
+    # ✅ DO: return WorktreeDeleteResult(status=WorktreeDeleteStatus.NOT_FOUND, errors=[...])  # in core/worktree/services/delete.py
+    # ❌ DO NOT: raise WorktreeNotFoundError('Worktree does not exist')  # hypothetical: no such exception exists in src/
+    ```
+  - `MODEL-002.Q02` (judgment) Does an operation whose outcome reaches a domain entrypoint, a command handler, a formatter or the wire format return a Pydantic result object subclassing BaseResult?
+
+    ```python
+    # ✅ DO: def delete(self, worktree_id: str) -> WorktreeDeleteResult  # in core/worktree/worktree.py; WorktreeDeleteResult subclasses BaseResult
+    # ❌ DO NOT: def delete(...) -> bool  # hypothetical: a domain-entrypoint operation returning a plain value
+    ```
+  - `MODEL-002.Q03` (judgment) Do callers of a result-returning operation check .ok rather than catching exceptions to learn the outcome?
+
+    ```python
+    # ✅ DO: if not result.ok: ...  # hypothetical caller that inspects the result
+    # ❌ DO NOT: try: service.delete(...) except WorktreeNotFoundError: ...  # hypothetical: caller catches an exception to learn the outcome
+    ```
+  - `MODEL-002.Q04` (judgment) Do callers that report a failure to the user render the result .errors and .warnings rather than the text of a caught exception?
+
+    ```python
+    # ✅ DO: for message in result.errors: render(message)  # hypothetical caller that renders the result
+    # ❌ DO NOT: except Exception as exc: render(str(exc))  # hypothetical: failure text taken from a caught exception
+    ```
+  - `MODEL-002.Q05` (judgment) Does an internal helper that returns a plain value or an error message (str | None) serve a single in-layer caller that only branches on success?
+
+    ```python
+    # ✅ DO: BaseAgentProvider._tool_policy_preflight returns str | None; its only caller in core/agents/base.py wraps a non-None message in provider_error_response(...)
+    # ❌ DO NOT: A hypothetical helper returning str | None that is called from several modules, or whose result reaches a command handler or the wire format
+    ```
 
 - **[MODEL-003] Reachable and Tested Status Enums (BLOCKER):**
-  Every status StrEnum variant on a BaseResult model must be reachable from production code and covered by a test.
+  A status a result can report must be one the program really produces and the tests really check, so callers never branch on outcomes that cannot happen or that nobody has verified.
 
-```python
-# ✅ DO: class PruneStatus(StrEnum): OK = 'ok'; FAILED = 'failed'  # all values emitted and tested
-# ❌ DO NOT: class PruneStatus(StrEnum): UNKNOWN = 'unknown'  # never emitted in src/
-```
+  Answer yes to every criterion:
+  - `MODEL-003.Q01` (judgment) Is every variant emitted by production code in src/, for each status StrEnum defined in a core/*/models.py or engine/**/models.py file and used by a BaseResult model?
+
+    ```python
+    # ✅ DO: ArtifactsPruneStatus.LOCKED is returned by `status=ArtifactsPruneStatus.LOCKED` in src/dovo/core/artifacts/services/prune.py
+    # ❌ DO NOT: class PruneStatus(StrEnum): UNKNOWN = "unknown"  # hypothetical: no code in src/ ever assigns PruneStatus.UNKNOWN to a result
+    ```
+  - `MODEL-003.Q02` (judgment) Is every variant asserted in a test under tests/, for each status StrEnum defined in a core/*/models.py or engine/**/models.py file and used by a BaseResult model?
+
+    ```python
+    # ✅ DO: ArtifactsPruneStatus.LOCKED is asserted by `assert result.status == ArtifactsPruneStatus.LOCKED` in tests/core/artifacts/services/test_prune.py
+    # ❌ DO NOT: class PruneStatus(StrEnum): FAILED = "failed"  # hypothetical: emitted in src/ but no test under tests/ asserts PruneStatus.FAILED
+    ```
 
 - **[MODEL-004] Definition Exception Hierarchy (BLOCKER):**
-  Catalog-backed domain exceptions must subclass DefinitionError, DefinitionNotFoundError, DefinitionLoadError, or DefinitionValidationError from common/exceptions.py.
+  Failures about catalog definitions must be catchable through one shared error family, so callers can handle any definition problem uniformly instead of chasing unrelated base types.
 
-```python
-# ✅ DO: class BlueprintLoadError(DefinitionLoadError): """YAML syntax error."""
-# ❌ DO NOT: class BlueprintLoadError(Exception): """YAML syntax error."""
-```
+  Answer yes to every criterion:
+  - `MODEL-004.Q01` (judgment) Does every exception class in src/dovo/core/catalog/exceptions.py, which covers locating, loading, validating and writing catalog definitions, descend from DefinitionError, DefinitionNotFoundError, DefinitionLoadError or DefinitionValidationError in common/exceptions.py, rather than having Exception or ValueError as its only base?
+
+    ```python
+    # ✅ DO: class BlueprintLoadError(DefinitionLoadError): """Raised when blueprint YAML syntax is invalid or unreadable."""  # in core/catalog/exceptions.py; an intermediate base such as CatalogError(DefinitionError) also counts, and an extra base is fine as in AskStepInvalidError(DefinitionValidationError, ValueError)
+    # ❌ DO NOT: class BlueprintLoadError(Exception): """Raised when blueprint YAML syntax is invalid or unreadable."""  # hypothetical: inherits directly from Exception; class StepValidationError(ValueError) would fail the same way
+    ```
 
 - **[CODE-001] Full-Word Identifiers (BLOCKER):**
-  Write names as full words; do not shorten a word by dropping letters (res, req, msg, val, idx, tmp, rel_path, fs, exc, err, cfg, resp, acc, val_res). Allowed: single letters in comprehensions, generator expressions, and one-line loops; initialisms that are the domain term itself (db, cwd, ctx, id, url, cli, sha, ttl); and names a framework dictates (tmp_path, monkeypatch, ctx on a Click callback).
+  Identifiers read as plain words so a reader never has to decode an invented abbreviation.
 
-```python
-# ✅ DO: validation_result = validator.validate(document)
-# ❌ DO NOT: val_res = validator.validate(document); acc = []
-```
+  Answer yes to every criterion:
+  - `CODE-001.Q01` (judgment) Is every new or modified variable, parameter, attribute and function name spelled in full rather than shortened by dropping letters, even for familiar shortenings (exceptions are checked by Q02 and Q03)?
+
+    ```python
+    # ✅ DO: validation_result = validator.validate(document)  # hypothetical: every word spelled out
+    # ❌ DO NOT: val_res = validator.validate(document); acc = []  # hypothetical: val_res and acc drop letters; other shortenings to flag include res, req, msg, val, idx, tmp, rel_path, fs, exc, err, cfg, resp
+    ```
+  - `CODE-001.Q02` (judgment) Is every new or modified single-letter name confined to a comprehension, a generator expression or a one-line loop?
+
+    ```python
+    # ✅ DO: any(a in ("--help", "-h") for a in raw_args)  # in cli/cli.py
+    # ❌ DO NOT: e = load_entry(path); return e.name  # hypothetical: single-letter variable outside a comprehension, generator expression or one-line loop
+    ```
+  - `CODE-001.Q03` (judgment) Is every shortened name that remains in new or modified code either an initialism that is itself the domain term (db, cwd, ctx, id, url, cli, sha, ttl) or a framework-dictated name?
+
+    ```python
+    # ✅ DO: def invoke(self, ctx: Any) -> Any:  # in cli/cli.py, ctx dictated by Click; likewise tmp_path and monkeypatch dictated by pytest
+    # ❌ DO NOT: cfg = load_config(path)  # hypothetical: cfg is not a domain-term initialism and no framework dictates it
+    ```
 
 - **[CODE-002] Logical Blank Lines Separation (NIT):**
-  Separate distinct logical phases (setup, validate, persist, return) with a blank line. Keep cohesive, tightly coupled lines together.
+  Blank lines mark where a function moves from one phase to the next, so a reader can see its structure at a glance; spacing that does not follow the logic hides that structure.
 
-```python
-# ✅ DO:
-record = WorktreeRecord(...)
+  Answer yes to every criterion:
+  - `CODE-002.Q01` (judgment) Are distinct logical phases of a function body (setup, validate, persist, return) separated by a blank line?
 
-self.db.worktrees.save(record)
+    ```python
+    # ✅ DO: In Engine._finalize_row (src/dovo/engine/engine.py), the load phase and its early-return branch are followed by a blank line before the "saved = store.save(...)" phase.
+    # ❌ DO NOT: record = WorktreeRecord(...), a save call and "return result" on consecutive lines with no blank line between them (hypothetical: building, persisting and returning run together as one dense block)
+    ```
+  - `CODE-002.Q02` (judgment) Is every blank line in a function body free of separating two adjacent lines that work on the same value within one phase?
 
-return result
-# ❌ DO NOT:
-record = WorktreeRecord(...)
-self.db.worktrees.save(record)
-return result
-```
+    ```python
+    # ✅ DO: In Engine._finalize_row (src/dovo/engine/engine.py), the blank line at line 211 sits between the early "return" at line 210 and "saved = store.save(" at line 212, which starts a new phase and does not work on the value the "return" line ended, so the blank line is correctly placed.
+    # ❌ DO NOT: store = SessionStateStore(self.db, self.paths, session_id), then a blank line, then loaded = store.load(), then a blank line, then "if not loaded.ok" (hypothetical: blank lines inserted between tightly coupled lines of one step)
+    ```
 
 - **[CODE-003] Terse Docstrings, Description Only for Hidden Contracts (SUGGESTION):**
-  Every docstring opens with a one-line title stating what the thing is or does. A comma may enumerate a distinct list, but outcomes, failure paths, and side effects belong in the description, not the title. Add a description only for what the code cannot show a reader and whose absence would cause wrong code - a hidden contract, a data-loss or safety behavior, a non-obvious ordering constraint, or a deliberate oddity. Do not narrate steps, restate parameters, types, or the return annotation, or repeat the title in other words.
+  Docstrings stay short so a reader gets the title at a glance and finds a description only where it carries a fact the code cannot show and whose absence would cause wrong code.
 
-```python
-# ✅ DO:
-"""Base for providers that edit the worktree directly instead of returning a diff.
+  Answer yes to every criterion:
+  - `CODE-003.Q01` (judgment) Does the docstring open with a one-line title stating what the thing is or does?
 
-Edits that fail patch validation are discarded from the worktree; a failed discard is reported in the response errors."""
-# ❌ DO NOT: """Run the provider. First resolve the baseline, then build the prompt, then run the tool, then diff the worktree, then validate the patch."""  # or: """Return flags for the rules, or why a rule cannot be preserved."""  # outcome in the title
-```
+    ```python
+    # ✅ DO: """Base for providers that edit the worktree directly instead of returning a diff."""  # title of the class in core/agents/cli_mutation.py
+    # ❌ DO NOT:
+    """Run the provider. Then resolve the baseline
+    and build the prompt before diffing the worktree."""  # hypothetical: the opening wraps over two lines and holds two sentences, so there is no one-line title
+    ```
+  - `CODE-003.Q02` (judgment) Is the title free of outcome, failure-path and side-effect clauses, with a comma used only to enumerate a distinct list?
+
+    ```python
+    # ✅ DO: """Base for providers that edit the worktree directly instead of returning a diff."""  # outcomes live in the description
+    # ❌ DO NOT: """Return the roots a whole-root read/write rule grants for read or write, or why a rule cannot be preserved."""  # outcome clause in the title, as in core/agents/copilot.py
+    ```
+  - `CODE-003.Q03` (judgment) Does a unit with a hidden contract, a data-loss or safety behavior, a non-obvious ordering constraint or a deliberate oddity carry a description stating it?
+
+    ```python
+    # ✅ DO:
+    """Base for providers that edit the worktree directly instead of returning a diff.
+
+    Edits that fail patch validation are discarded from the worktree; a failed discard is reported in the response errors."""  # CliDirectMutationAdapter in core/agents/cli_mutation.py: the discard is a safety behavior the code does not make obvious
+    # ❌ DO NOT: """Base for providers that edit the worktree directly instead of returning a diff."""  # hypothetical: title only, although edits that fail validation are silently discarded from the worktree
+    ```
+  - `CODE-003.Q04` (judgment) Does every description state a fact the code cannot show, rather than something a reader can already see in the code?
+
+    ```python
+    # ✅ DO:
+    """Base for providers that edit the worktree directly instead of returning a diff.
+
+    Edits that fail patch validation are discarded from the worktree; a failed discard is reported in the response errors."""  # the discard behavior is not visible from the signature or the title
+    # ❌ DO NOT:
+    """Return the roots a rule grants.
+
+    Uses a dict for lookup."""  # hypothetical: true, but the dict is plain to see in the body
+    ```
+  - `CODE-003.Q05` (judgment) Is every description free of step-by-step narration of the body?
+
+    ```python
+    # ✅ DO:
+    """Base for providers that edit the worktree directly instead of returning a diff.
+
+    Edits that fail patch validation are discarded from the worktree; a failed discard is reported in the response errors."""  # states a consequence, not the steps
+    # ❌ DO NOT:
+    """Run the provider.
+
+    First resolve the baseline, then build the prompt, then run the tool."""  # hypothetical: the description retells the body step by step
+    ```
+  - `CODE-003.Q06` (judgment) Is every description free of text that restates the parameters, types or return annotation, or repeats the title in other words?
+
+    ```python
+    # ✅ DO:
+    """Base for providers that edit the worktree directly instead of returning a diff.
+
+    Edits that fail patch validation are discarded from the worktree; a failed discard is reported in the response errors."""  # adds a fact beyond the title and signature
+    # ❌ DO NOT:
+    """Return the session id.
+
+    This returns the identifier of the session."""  # hypothetical: the description repeats the title in other words
+    ```
 
 - **[CODE-004] Docstrings Describe Only the Documented Unit (WARNING):**
-  A docstring states only behavior the documented unit itself implements. Do not describe what a caller does with its result or logic that lives in another module, because that claim goes stale when the other module changes and nothing in the diff shows it. A reference to a sibling in the same module is acceptable.
+  A docstring states only behavior the documented unit itself implements, so it cannot go stale when other code changes without any sign in the diff.
 
-```python
-# ✅ DO:
-"""Render a restricted policy's allow and deny rules as dontAsk flags.
+  Answer yes to every criterion:
+  - `CODE-004.Q01` (judgment) Does each new or modified docstring avoid describing what a caller does with the unit's result?
 
-A rule Claude Code cannot express yields its reason as a string."""
-# ❌ DO NOT:
-"""Render a restricted policy's allow and deny rules as dontAsk flags.
+    ```python
+    # ✅ DO:
+    """Render a restricted policy's allow and deny rules as dontAsk flags.
 
-The adapter surfaces a returned reason as an unsupported-policy error before the process is spawned."""
-```
+    A rule Claude Code cannot express yields its reason as a string."""  # _render_restricted in core/agents/claude_policy.py
+    # ❌ DO NOT:
+    """Render a restricted policy's allow and deny rules as dontAsk flags.
+
+    The adapter surfaces a returned reason as an unsupported-policy error before the process is spawned."""  # hypothetical: describes what the caller does with the returned reason
+    ```
+  - `CODE-004.Q02` (judgment) Does each new or modified docstring avoid describing logic that lives in another module or class, other than a reference to a sibling in the same module?
+
+    ```python
+    # ✅ DO: """Return items without duplicates, in first-seen order."""  # _unique in core/agents/claude_policy.py, which describes only its own behavior
+    # ❌ DO NOT: """Return items without duplicates; the Copilot adapter relies on this to reject repeated flags."""  # hypothetical: states behavior of another module
+    ```
 
 - **[CODE-005] One Docstring per Unit (WARNING):**
-  A module, class, or function carries exactly one docstring. A bare string literal statement after the docstring is dead code that reads as documentation; merge it into the docstring or delete it.
+  A unit's documentation must be a single docstring, because a second bare string reads as documentation but is dead code. Extra text belongs in the docstring or nowhere.
 
-```python
-# ✅ DO: """Render a restricted policy as dontAsk flags."""
-# ❌ DO NOT: """Return dontAsk flags for the rules."""  # followed by a second """...""" string statement
-```
+  Answer yes to every criterion:
+  - `CODE-005.Q01` (judgment) Is every new or modified module, class and function body free of a bare string statement after its first statement?
+
+    ```python
+    # ✅ DO: """Render a restricted policy as dontAsk flags."""  # hypothetical: the only string statement in the function body
+    # ❌ DO NOT: """Return dontAsk flags for the rules."""  # hypothetical: followed by a second """...""" string statement that should be merged into the docstring or deleted
+    ```
 
 - **[TYPE-001] Ban on -> Any Return Annotations (BLOCKER):**
   -> Any on a public function is treated as a defect because it disables type checking transitively at every call site. Prefer object when values are only stored, compared, or passed through.
@@ -404,30 +537,79 @@ for item in items: repo.create(item)
     ```
 
 - **[COMPAT-001] Strict Public-Only Backwards Compatibility (BLOCKER):**
-  Maintain backwards compatibility ONLY for surfaces users interact with directly: CLI command surface (commands, subcommands, arguments, flags), configuration files and blueprint YAMLs (config.json), and stable machine-readable output formats (JSON event envelopes).
+  Users and scripts depend on the surfaces they interact with directly, so those surfaces keep working across changes. Compatibility is kept only for them, and nowhere else.
 
-```python
-# ✅ DO: output_format: OutputFormat = typer.Option(OutputFormat.RICH, '--output-format', '-o')
-# ❌ DO NOT: # Renaming user CLI option --timeout to --wait without alias
-```
+  Answer yes to every criterion:
+  - `COMPAT-001.Q01` (judgment) Does the change leave every existing CLI command, subcommand, argument and flag usable as before, with no breaking rename or removal?
+
+    ```python
+    # ✅ DO: "--path", "-p" on the global callback in cli/cli.py  # option name and short form left unchanged
+    # ❌ DO NOT: # hypothetical: renaming the --path option to --workspace without keeping --path as an alias
+    ```
+  - `COMPAT-001.Q02` (judgment) Does the change leave existing configuration files and blueprint YAML definitions (such as config.json keys and values) readable with the same meaning as before?
+
+    ```python
+    # ✅ DO: # hypothetical: a new optional config.json key added with a default, so existing config files load unchanged
+    # ❌ DO NOT: # hypothetical: renaming an existing config.json key so that files written before the change no longer load
+    ```
+  - `COMPAT-001.Q03` (judgment) Does the change leave the stable machine-readable output formats, such as the JSON event envelope, with the same field names and meaning as before?
+
+    ```python
+    # ✅ DO: envelope = {"event_type": data_type.__name__, "payload": formatter.to_json_serializable(data)}  # in cli/ui/dispatcher.py, envelope keys unchanged
+    # ❌ DO NOT: # hypothetical: renaming the envelope key "event_type" to "type" in the JSON output
+    ```
 
 - **[COMPAT-002] Ban on Internal Compatibility Shims and Aliases (BLOCKER):**
-  Do NOT preserve backwards compatibility aliases, compatibility properties, or shim layers for internal code (common/, core/, or internal CLI modules) when refactoring or renaming symbols. Update callers and tests directly.
+  Internal refactors must not leave old names behind, so internal code carries one name per symbol and no dead compatibility layers; callers and tests are updated to the new name instead.
 
-```python
-# ✅ DO: # Renamed _unlock_fd directly and updated all internal callers
-# ❌ DO NOT:
-def _unlock_fd(self): ...
-_unlock = _unlock_fd  # internal shim alias
-```
+  Answer yes to every criterion:
+  - `COMPAT-002.Q01` (judgment) Is the change free of backwards-compatibility aliases that keep an old internal name pointing at a renamed symbol?
+
+    ```python
+    # ✅ DO: Hypothetical: a helper is renamed from _unlock_fd to unlock_file_descriptor and the old name no longer exists anywhere in the module.
+    # ❌ DO NOT: Hypothetical: after renaming _unlock_fd, the module keeps the line "_unlock = _unlock_fd  # internal shim alias".
+    ```
+  - `COMPAT-002.Q02` (judgment) Is the change free of deprecated or compatibility properties, wrapper methods and shim layers that exist only to keep an old internal interface working?
+
+    ```python
+    # ✅ DO: Hypothetical: a renamed internal property replaces the old one outright, with no forwarding property left on the class.
+    # ❌ DO NOT: Hypothetical: a class keeps "@property def old_name(self): return self.new_name" only so existing internal callers keep working.
+    ```
+  - `COMPAT-002.Q03` (judgment) Were all internal callers and tests updated directly to the new name when an internal symbol was renamed?
+
+    ```python
+    # ✅ DO: Hypothetical: a rename of _unlock_fd comes with edits to every internal call site and test that referenced it.
+    # ❌ DO NOT: Hypothetical: a rename leaves internal callers on the old name and adds an alias so they keep working instead of editing them.
+    ```
 
 - **[COMPAT-003] Greenfield Architecture Default (BLOCKER):**
-  Treat the repository as greenfield by default: plan no dual code paths, fallback adapters, or deprecation windows unless an issue explicitly demands one. Replace superseded paths and update callers in the same change set.
+  The repository is treated as greenfield, so superseded code is replaced rather than carried alongside its replacement, unless an issue explicitly demands otherwise. This keeps one implementation of each behavior.
 
-```python
-# ✅ DO: # Directly replaces legacy loader with new unified loader
-# ❌ DO NOT: if config.use_legacy: return LegacyLoader().load()  # unnecessary compatibility branch
-```
+  Answer yes to every criterion:
+  - `COMPAT-003.Q01` (judgment) Does the change leave a single implementation of the behavior it replaces, with no superseded implementation kept alongside the new one?
+
+    ```python
+    # ✅ DO: # hypothetical: the legacy loader is deleted and its callers now use the new unified loader
+    # ❌ DO NOT: # hypothetical: LegacyLoader stays in the tree beside UnifiedLoader and both remain reachable
+    ```
+  - `COMPAT-003.Q02` (judgment) Does the change avoid adding a fallback branch or fallback adapter that routes to a superseded path?
+
+    ```python
+    # ✅ DO: # hypothetical: return UnifiedLoader().load()  # directly replaces the legacy loader
+    # ❌ DO NOT: if config.use_legacy: return LegacyLoader().load()  # hypothetical: unnecessary compatibility branch
+    ```
+  - `COMPAT-003.Q03` (judgment) Does the change avoid planning a deprecation window for a superseded path?
+
+    ```python
+    # ✅ DO: # hypothetical: the old path is removed in this change set, with no warning period
+    # ❌ DO NOT: # hypothetical: warnings.warn("load_legacy is deprecated, removed in 2 releases"); the old path keeps working
+    ```
+  - `COMPAT-003.Q04` (judgment) Are all callers of a superseded path updated in the same change set that replaces it?
+
+    ```python
+    # ✅ DO: # hypothetical: the loader is replaced and every call site is switched to the new one in the same change set
+    # ❌ DO NOT: # hypothetical: the new loader is added, and callers are left on the old one to migrate later
+    ```
 
 - **[DOC-001] Architecture Doc Structural Gate (BLOCKER):**
   Update docs/agents/architecture.md structure sections ONLY when package layout, domain ownership, or import boundaries change. Do not append feature behavior essays there. Pure refactors need no architecture diff.

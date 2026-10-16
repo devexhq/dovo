@@ -146,14 +146,26 @@ rules:
   category: Models
   domain: all
   scope: src/dovo/
-  guideline: Scoped exceptions allowing extra='ignore' are restricted to hand-authored YAML models (BlueprintDefinition,
-    LoopStepBlock) and MUST carry a justifying comment.
-  evaluation_criteria: Flag any model using extra='ignore' or omitting strict=True outside the approved list or without a
-    justifying comment.
-  positive_example: '# User YAML models permit forward-compatible extra keys
-
-    model_config = {''extra'': ''ignore''}'
-  negative_example: 'model_config = {''extra'': ''ignore''}  # missing justifying comment'
+  intent: Models are strict by default so unexpected data is rejected early; the few hand-authored YAML models that tolerate unknown keys are a named exception, and each explains why in a comment so the leniency stays deliberate.
+  criteria:
+  - id: MODEL-001.Q01
+    question: Is extra='ignore' used only by the approved hand-authored YAML models, BlueprintDefinition and LoopStepBlock?
+    kind: judgment
+    na_when: The change adds or modifies no model configuration.
+    positive_example: 'model_config = {"extra": "ignore", "populate_by_name": True}  # in BlueprintDefinition, core/catalog/definitions/blueprint.py'
+    negative_example: 'model_config = {"extra": "ignore"}  # hypothetical: on a result model such as a BaseResult subclass, which is not an approved model'
+  - id: MODEL-001.Q02
+    question: Does every model that uses extra='ignore' carry a comment justifying it?
+    kind: judgment
+    na_when: The change adds or modifies no model that uses extra='ignore'.
+    positive_example: '# Hand-authored YAML loop blocks permit forward-compatible extra keys.  (directly above model_config in LoopStepBlock, core/catalog/definitions/step.py)'
+    negative_example: 'model_config = {"extra": "ignore"}  # hypothetical: no justifying comment above or beside it'
+  - id: MODEL-001.Q03
+    question: Does every model outside the approved list set strict=True in its configuration?
+    kind: judgment
+    na_when: The change adds or modifies no model configuration.
+    positive_example: 'model_config = {"extra": "forbid", "strict": True}  # in common/mcp_servers.py'
+    negative_example: 'model_config = {"extra": "forbid"}  # hypothetical for a new model: strict=True omitted'
   citation: docs/agents/code-conventions.md#pydantic-models
 - id: MODEL-002
   title: Result/Outcome Pattern over Exceptions
@@ -161,15 +173,38 @@ rules:
   category: Models
   domain: [core, engine]
   scope: src/dovo/core/, src/dovo/engine/
-  guideline: Operations that can fail must not raise for business or operational failures. When the outcome reaches a domain
-    entrypoint, a command handler, a formatter, or the wire format, return a Pydantic result object subclassing BaseResult; callers check
-    .ok and render .errors/.warnings rather than catching exceptions. An internal helper with a single in-layer caller that only
-    branches on success may instead return a plain value or an error message (str | None).
-  evaluation_criteria: Inspect service methods. Flag methods that raise exceptions for business/operational failures, and
-    domain-entrypoint or command-level operations that return a plain value instead of a BaseResult. Do not flag an internal helper that
-    returns str | None to a single in-layer caller.
-  positive_example: return WorktreeDeleteResult(status=WorktreeDeleteStatus.NOT_FOUND, errors=['not found'])
-  negative_example: raise WorktreeNotFoundError('Worktree does not exist')
+  intent: Callers must learn about business and operational failures from a result they can inspect and render, not from exceptions they must remember to catch.
+  criteria:
+  - id: MODEL-002.Q01
+    question: Does the operation report a business or operational failure by returning a result instead of raising an exception?
+    kind: judgment
+    na_when: The change adds or modifies no operation that can fail for business or operational reasons.
+    positive_example: 'return WorktreeDeleteResult(status=WorktreeDeleteStatus.NOT_FOUND, errors=[...])  # in core/worktree/services/delete.py'
+    negative_example: "raise WorktreeNotFoundError('Worktree does not exist')  # hypothetical: no such exception exists in src/"
+  - id: MODEL-002.Q02
+    question: Does an operation whose outcome reaches a domain entrypoint, a command handler, a formatter or the wire format return a Pydantic result object subclassing BaseResult?
+    kind: judgment
+    na_when: The change adds or modifies no operation whose outcome reaches a domain entrypoint, command handler, formatter or the wire format.
+    positive_example: 'def delete(self, worktree_id: str) -> WorktreeDeleteResult  # in core/worktree/worktree.py; WorktreeDeleteResult subclasses BaseResult'
+    negative_example: 'def delete(...) -> bool  # hypothetical: a domain-entrypoint operation returning a plain value'
+  - id: MODEL-002.Q03
+    question: Do callers of a result-returning operation check .ok rather than catching exceptions to learn the outcome?
+    kind: judgment
+    na_when: The change adds or modifies no caller of a result-returning operation.
+    positive_example: 'if not result.ok: ...  # hypothetical caller that inspects the result'
+    negative_example: 'try: service.delete(...) except WorktreeNotFoundError: ...  # hypothetical: caller catches an exception to learn the outcome'
+  - id: MODEL-002.Q04
+    question: Do callers that report a failure to the user render the result .errors and .warnings rather than the text of a caught exception?
+    kind: judgment
+    na_when: The change adds or modifies no caller that reports a result-returning operation's failure to the user.
+    positive_example: 'for message in result.errors: render(message)  # hypothetical caller that renders the result'
+    negative_example: 'except Exception as exc: render(str(exc))  # hypothetical: failure text taken from a caught exception'
+  - id: MODEL-002.Q05
+    question: Does an internal helper that returns a plain value or an error message (str | None) serve a single in-layer caller that only branches on success?
+    kind: judgment
+    na_when: The change adds or modifies no internal helper that returns a plain value or str | None.
+    positive_example: 'BaseAgentProvider._tool_policy_preflight returns str | None; its only caller in core/agents/base.py wraps a non-None message in provider_error_response(...)'
+    negative_example: 'A hypothetical helper returning str | None that is called from several modules, or whose result reaches a command handler or the wire format'
   citation: docs/agents/code-conventions.md#resultoutcome-pattern
 - id: MODEL-003
   title: Reachable and Tested Status Enums
@@ -177,24 +212,35 @@ rules:
   category: Models
   domain: [core, engine]
   scope: src/dovo/core/*/models.py, src/dovo/engine/**/models.py
-  guideline: Every status StrEnum variant on a BaseResult model must be reachable from production code and covered by a test.
-  evaluation_criteria: Check all enum values of StrEnum classes in models.py. Ensure each variant is emitted in src/ and asserted
-    in tests/.
-  positive_example: 'class PruneStatus(StrEnum): OK = ''ok''; FAILED = ''failed''  # all values emitted and tested'
-  negative_example: 'class PruneStatus(StrEnum): UNKNOWN = ''unknown''  # never emitted in src/'
+  intent: A status a result can report must be one the program really produces and the tests really check, so callers never branch on outcomes that cannot happen or that nobody has verified.
+  criteria:
+  - id: MODEL-003.Q01
+    question: Is every variant emitted by production code in src/, for each status StrEnum defined in a core/*/models.py or engine/**/models.py file and used by a BaseResult model?
+    kind: judgment
+    na_when: The change adds or modifies no status StrEnum, used by a BaseResult model, in a core/*/models.py or engine/**/models.py file.
+    positive_example: 'ArtifactsPruneStatus.LOCKED is returned by `status=ArtifactsPruneStatus.LOCKED` in src/dovo/core/artifacts/services/prune.py'
+    negative_example: 'class PruneStatus(StrEnum): UNKNOWN = "unknown"  # hypothetical: no code in src/ ever assigns PruneStatus.UNKNOWN to a result'
+  - id: MODEL-003.Q02
+    question: Is every variant asserted in a test under tests/, for each status StrEnum defined in a core/*/models.py or engine/**/models.py file and used by a BaseResult model?
+    kind: judgment
+    na_when: The change adds or modifies no status StrEnum, used by a BaseResult model, in a core/*/models.py or engine/**/models.py file.
+    positive_example: 'ArtifactsPruneStatus.LOCKED is asserted by `assert result.status == ArtifactsPruneStatus.LOCKED` in tests/core/artifacts/services/test_prune.py'
+    negative_example: 'class PruneStatus(StrEnum): FAILED = "failed"  # hypothetical: emitted in src/ but no test under tests/ asserts PruneStatus.FAILED'
   citation: docs/agents/code-conventions.md#resultoutcome-pattern
 - id: MODEL-004
   title: Definition Exception Hierarchy
   severity: BLOCKER
   category: Models
   domain: core
-  scope: src/dovo/core/*/exceptions.py
-  guideline: Catalog-backed domain exceptions must subclass DefinitionError, DefinitionNotFoundError, DefinitionLoadError,
-    or DefinitionValidationError from common/exceptions.py.
-  evaluation_criteria: Inspect domain exception inheritance. Flag exceptions that inherit directly from Exception or ValueError
-    instead of the Definition base hierarchy.
-  positive_example: 'class BlueprintLoadError(DefinitionLoadError): """YAML syntax error."""'
-  negative_example: 'class BlueprintLoadError(Exception): """YAML syntax error."""'
+  scope: src/dovo/core/catalog/exceptions.py
+  intent: Failures about catalog definitions must be catchable through one shared error family, so callers can handle any definition problem uniformly instead of chasing unrelated base types.
+  criteria:
+  - id: MODEL-004.Q01
+    question: Does every exception class in src/dovo/core/catalog/exceptions.py, which covers locating, loading, validating and writing catalog definitions, descend from DefinitionError, DefinitionNotFoundError, DefinitionLoadError or DefinitionValidationError in common/exceptions.py, rather than having Exception or ValueError as its only base?
+    kind: judgment
+    na_when: The change adds or modifies no exception class in src/dovo/core/catalog/exceptions.py.
+    positive_example: 'class BlueprintLoadError(DefinitionLoadError): """Raised when blueprint YAML syntax is invalid or unreadable."""  # in core/catalog/exceptions.py; an intermediate base such as CatalogError(DefinitionError) also counts, and an extra base is fine as in AskStepInvalidError(DefinitionValidationError, ValueError)'
+    negative_example: 'class BlueprintLoadError(Exception): """Raised when blueprint YAML syntax is invalid or unreadable."""  # hypothetical: inherits directly from Exception; class StepValidationError(ValueError) would fail the same way'
   citation: docs/agents/schemas.md#1-exception-hierarchy-and-domain-errors
 - id: CODE-001
   title: Full-Word Identifiers
@@ -202,14 +248,26 @@ rules:
   category: Code Conventions
   domain: all
   scope: src/, tests/
-  guideline: 'Write names as full words; do not shorten a word by dropping letters (res, req, msg, val, idx, tmp, rel_path,
-    fs, exc, err, cfg, resp, acc, val_res). Allowed: single letters in comprehensions, generator expressions, and one-line
-    loops; initialisms that are the domain term itself (db, cwd, ctx, id, url, cli, sha, ttl); and names a framework dictates
-    (tmp_path, monkeypatch, ctx on a Click callback).'
-  evaluation_criteria: Inspect new or modified variable, parameter, attribute, and function names. Flag any name formed by
-    dropping letters from a word, whether or not it appears in an earlier list of examples. Do not flag unmodified code.
-  positive_example: validation_result = validator.validate(document)
-  negative_example: val_res = validator.validate(document); acc = []
+  intent: Identifiers read as plain words so a reader never has to decode an invented abbreviation.
+  criteria:
+  - id: CODE-001.Q01
+    question: Is every new or modified variable, parameter, attribute and function name spelled in full rather than shortened by dropping letters, even for familiar shortenings (exceptions are checked by Q02 and Q03)?
+    kind: judgment
+    na_when: The change adds or modifies no variable, parameter, attribute or function name.
+    positive_example: 'validation_result = validator.validate(document)  # hypothetical: every word spelled out'
+    negative_example: 'val_res = validator.validate(document); acc = []  # hypothetical: val_res and acc drop letters; other shortenings to flag include res, req, msg, val, idx, tmp, rel_path, fs, exc, err, cfg, resp'
+  - id: CODE-001.Q02
+    question: Is every new or modified single-letter name confined to a comprehension, a generator expression or a one-line loop?
+    kind: judgment
+    na_when: The change adds or modifies no single-letter name.
+    positive_example: 'any(a in ("--help", "-h") for a in raw_args)  # in cli/cli.py'
+    negative_example: 'e = load_entry(path); return e.name  # hypothetical: single-letter variable outside a comprehension, generator expression or one-line loop'
+  - id: CODE-001.Q03
+    question: Is every shortened name that remains in new or modified code either an initialism that is itself the domain term (db, cwd, ctx, id, url, cli, sha, ttl) or a framework-dictated name?
+    kind: judgment
+    na_when: The change adds or modifies no shortened name.
+    positive_example: 'def invoke(self, ctx: Any) -> Any:  # in cli/cli.py, ctx dictated by Click; likewise tmp_path and monkeypatch dictated by pytest'
+    negative_example: 'cfg = load_config(path)  # hypothetical: cfg is not a domain-term initialism and no framework dictates it'
   citation: docs/agents/code-conventions.md#variable-naming
 - id: CODE-002
   title: Logical Blank Lines Separation
@@ -217,21 +275,20 @@ rules:
   category: Code Conventions
   domain: all
   scope: src/
-  guideline: Separate distinct logical phases (setup, validate, persist, return) with a blank line. Keep cohesive, tightly
-    coupled lines together.
-  evaluation_criteria: Check function bodies. Flag dense unseparated blocks or excessive random spacing.
-  positive_example: 'record = WorktreeRecord(...)
-
-
-    self.db.worktrees.save(record)
-
-
-    return result'
-  negative_example: 'record = WorktreeRecord(...)
-
-    self.db.worktrees.save(record)
-
-    return result'
+  intent: Blank lines mark where a function moves from one phase to the next, so a reader can see its structure at a glance; spacing that does not follow the logic hides that structure.
+  criteria:
+  - id: CODE-002.Q01
+    question: Are distinct logical phases of a function body (setup, validate, persist, return) separated by a blank line?
+    kind: judgment
+    na_when: The function body is a single phase or too short to contain more than one phase.
+    positive_example: 'In Engine._finalize_row (src/dovo/engine/engine.py), the load phase and its early-return branch are followed by a blank line before the "saved = store.save(...)" phase.'
+    negative_example: 'record = WorktreeRecord(...), a save call and "return result" on consecutive lines with no blank line between them (hypothetical: building, persisting and returning run together as one dense block)'
+  - id: CODE-002.Q02
+    question: Is every blank line in a function body free of separating two adjacent lines that work on the same value within one phase?
+    kind: judgment
+    na_when: The function body contains no blank lines.
+    positive_example: 'In Engine._finalize_row (src/dovo/engine/engine.py), the blank line at line 211 sits between the early "return" at line 210 and "saved = store.save(" at line 212, which starts a new phase and does not work on the value the "return" line ended, so the blank line is correctly placed.'
+    negative_example: 'store = SessionStateStore(self.db, self.paths, session_id), then a blank line, then loaded = store.load(), then a blank line, then "if not loaded.ok" (hypothetical: blank lines inserted between tightly coupled lines of one step)'
   citation: docs/agents/code-conventions.md#blank-lines-in-function-bodies
 - id: CODE-003
   title: Terse Docstrings, Description Only for Hidden Contracts
@@ -239,21 +296,67 @@ rules:
   category: Code Conventions
   domain: all
   scope: src/
-  guideline: Every docstring opens with a one-line title stating what the thing is or does. A comma may enumerate a distinct
-    list, but outcomes, failure paths, and side effects belong in the description, not the title. Add a description only for
-    what the code cannot show a reader and whose absence would cause wrong code - a hidden contract, a data-loss or safety
-    behavior, a non-obvious ordering constraint, or a deliberate oddity. Do not narrate steps, restate parameters, types, or
-    the return annotation, or repeat the title in other words.
-  evaluation_criteria: Inspect new or modified docstrings. Flag a title that carries an outcome clause such as ", or why X
-    cannot be done". Flag a description that retells the body, lists what the signature already shows, or adds no fact the
-    title lacks. Flag a missing description where the code has a hidden contract or a safety behavior.
-  positive_example: '"""Base for providers that edit the worktree directly instead of returning a diff.
+  intent: Docstrings stay short so a reader gets the title at a glance and finds a description only where it carries a fact the code cannot show and whose absence would cause wrong code.
+  criteria:
+  - id: CODE-003.Q01
+    question: Does the docstring open with a one-line title stating what the thing is or does?
+    kind: judgment
+    na_when: The change adds or modifies no docstring.
+    positive_example: '"""Base for providers that edit the worktree directly instead of returning a diff."""  # title of the class in core/agents/cli_mutation.py'
+    negative_example: |-
+      """Run the provider. Then resolve the baseline
+      and build the prompt before diffing the worktree."""  # hypothetical: the opening wraps over two lines and holds two sentences, so there is no one-line title
+  - id: CODE-003.Q02
+    question: Is the title free of outcome, failure-path and side-effect clauses, with a comma used only to enumerate a distinct list?
+    kind: judgment
+    na_when: The change adds or modifies no docstring.
+    positive_example: '"""Base for providers that edit the worktree directly instead of returning a diff."""  # outcomes live in the description'
+    negative_example: '"""Return the roots a whole-root read/write rule grants for read or write, or why a rule cannot be preserved."""  # outcome clause in the title, as in core/agents/copilot.py'
+  - id: CODE-003.Q03
+    question: Does a unit with a hidden contract, a data-loss or safety behavior, a non-obvious ordering constraint or a deliberate oddity carry a description stating it?
+    kind: judgment
+    na_when: The change adds or modifies no unit with a hidden contract, safety behavior, non-obvious ordering constraint or deliberate oddity.
+    positive_example: |-
+      """Base for providers that edit the worktree directly instead of returning a diff.
 
+      Edits that fail patch validation are discarded from the worktree; a failed discard is reported in the response errors."""  # CliDirectMutationAdapter in core/agents/cli_mutation.py: the discard is a safety behavior the code does not make obvious
+    negative_example: '"""Base for providers that edit the worktree directly instead of returning a diff."""  # hypothetical: title only, although edits that fail validation are silently discarded from the worktree'
+  - id: CODE-003.Q04
+    question: Does every description state a fact the code cannot show, rather than something a reader can already see in the code?
+    kind: judgment
+    na_when: The change adds or modifies no docstring with a description.
+    positive_example: |-
+      """Base for providers that edit the worktree directly instead of returning a diff.
 
-    Edits that fail patch validation are discarded from the worktree; a failed discard is reported in the response errors."""'
-  negative_example: '"""Run the provider. First resolve the baseline, then build the prompt, then run the tool, then diff the
-    worktree, then validate the patch."""  # or: """Return flags for the rules, or why a rule cannot be preserved."""  # outcome
-    in the title'
+      Edits that fail patch validation are discarded from the worktree; a failed discard is reported in the response errors."""  # the discard behavior is not visible from the signature or the title
+    negative_example: |-
+      """Return the roots a rule grants.
+
+      Uses a dict for lookup."""  # hypothetical: true, but the dict is plain to see in the body
+  - id: CODE-003.Q05
+    question: Is every description free of step-by-step narration of the body?
+    kind: judgment
+    na_when: The change adds or modifies no docstring with a description.
+    positive_example: |-
+      """Base for providers that edit the worktree directly instead of returning a diff.
+
+      Edits that fail patch validation are discarded from the worktree; a failed discard is reported in the response errors."""  # states a consequence, not the steps
+    negative_example: |-
+      """Run the provider.
+
+      First resolve the baseline, then build the prompt, then run the tool."""  # hypothetical: the description retells the body step by step
+  - id: CODE-003.Q06
+    question: Is every description free of text that restates the parameters, types or return annotation, or repeats the title in other words?
+    kind: judgment
+    na_when: The change adds or modifies no docstring with a description.
+    positive_example: |-
+      """Base for providers that edit the worktree directly instead of returning a diff.
+
+      Edits that fail patch validation are discarded from the worktree; a failed discard is reported in the response errors."""  # adds a fact beyond the title and signature
+    negative_example: |-
+      """Return the session id.
+
+      This returns the identifier of the session."""  # hypothetical: the description repeats the title in other words
   citation: docs/agents/code-conventions.md#docstrings
 - id: CODE-004
   title: Docstrings Describe Only the Documented Unit
@@ -261,19 +364,26 @@ rules:
   category: Code Conventions
   domain: all
   scope: src/
-  guideline: A docstring states only behavior the documented unit itself implements. Do not describe what a caller does
-    with its result or logic that lives in another module, because that claim goes stale when the other module changes and
-    nothing in the diff shows it. A reference to a sibling in the same module is acceptable.
-  evaluation_criteria: Inspect new or modified docstrings. Flag a sentence that names another module's, class's, or caller's
-    behavior, such as how an adapter handles the returned value.
-  positive_example: '"""Render a restricted policy''s allow and deny rules as dontAsk flags.
+  intent: A docstring states only behavior the documented unit itself implements, so it cannot go stale when other code changes without any sign in the diff.
+  criteria:
+  - id: CODE-004.Q01
+    question: Does each new or modified docstring avoid describing what a caller does with the unit's result?
+    kind: judgment
+    na_when: The change adds or modifies no docstring.
+    positive_example: |-
+      """Render a restricted policy's allow and deny rules as dontAsk flags.
 
+      A rule Claude Code cannot express yields its reason as a string."""  # _render_restricted in core/agents/claude_policy.py
+    negative_example: |-
+      """Render a restricted policy's allow and deny rules as dontAsk flags.
 
-    A rule Claude Code cannot express yields its reason as a string."""'
-  negative_example: '"""Render a restricted policy''s allow and deny rules as dontAsk flags.
-
-
-    The adapter surfaces a returned reason as an unsupported-policy error before the process is spawned."""'
+      The adapter surfaces a returned reason as an unsupported-policy error before the process is spawned."""  # hypothetical: describes what the caller does with the returned reason
+  - id: CODE-004.Q02
+    question: Does each new or modified docstring avoid describing logic that lives in another module or class, other than a reference to a sibling in the same module?
+    kind: judgment
+    na_when: The change adds or modifies no docstring.
+    positive_example: '"""Return items without duplicates, in first-seen order."""  # _unique in core/agents/claude_policy.py, which describes only its own behavior'
+    negative_example: '"""Return items without duplicates; the Copilot adapter relies on this to reject repeated flags."""  # hypothetical: states behavior of another module'
   citation: docs/agents/code-conventions.md#docstrings
 - id: CODE-005
   title: One Docstring per Unit
@@ -281,12 +391,14 @@ rules:
   category: Code Conventions
   domain: all
   scope: src/
-  guideline: A module, class, or function carries exactly one docstring. A bare string literal statement after the docstring
-    is dead code that reads as documentation; merge it into the docstring or delete it.
-  evaluation_criteria: Inspect new or modified modules, classes, and functions. Flag any body with a bare string statement
-    after its first statement.
-  positive_example: '"""Render a restricted policy as dontAsk flags."""'
-  negative_example: '"""Return dontAsk flags for the rules."""  # followed by a second """...""" string statement'
+  intent: A unit's documentation must be a single docstring, because a second bare string reads as documentation but is dead code. Extra text belongs in the docstring or nowhere.
+  criteria:
+  - id: CODE-005.Q01
+    question: Is every new or modified module, class and function body free of a bare string statement after its first statement?
+    kind: judgment
+    na_when: The change adds or modifies no module, class or function.
+    positive_example: '"""Render a restricted policy as dontAsk flags."""  # hypothetical: the only string statement in the function body'
+    negative_example: '"""Return dontAsk flags for the rules."""  # hypothetical: followed by a second """...""" string statement that should be merged into the docstring or deleted'
   citation: docs/agents/code-conventions.md#docstrings
 - id: TYPE-001
   title: Ban on -> Any Return Annotations
@@ -660,12 +772,26 @@ rules:
   category: Compatibility
   domain: all
   scope: src/dovo/
-  guideline: 'Maintain backwards compatibility ONLY for surfaces users interact with directly: CLI command surface (commands,
-    subcommands, arguments, flags), configuration files and blueprint YAMLs (config.json), and stable machine-readable output
-    formats (JSON event envelopes).'
-  evaluation_criteria: Inspect PR diffs. Flag breaking renames to CLI options, config keys, or published JSON outputs.
-  positive_example: 'output_format: OutputFormat = typer.Option(OutputFormat.RICH, ''--output-format'', ''-o'')'
-  negative_example: '# Renaming user CLI option --timeout to --wait without alias'
+  intent: Users and scripts depend on the surfaces they interact with directly, so those surfaces keep working across changes. Compatibility is kept only for them, and nowhere else.
+  criteria:
+  - id: COMPAT-001.Q01
+    question: Does the change leave every existing CLI command, subcommand, argument and flag usable as before, with no breaking rename or removal?
+    kind: judgment
+    na_when: The change does not touch the CLI command surface (commands, subcommands, arguments or flags).
+    positive_example: '"--path", "-p" on the global callback in cli/cli.py  # option name and short form left unchanged'
+    negative_example: '# hypothetical: renaming the --path option to --workspace without keeping --path as an alias'
+  - id: COMPAT-001.Q02
+    question: Does the change leave existing configuration files and blueprint YAML definitions (such as config.json keys and values) readable with the same meaning as before?
+    kind: judgment
+    na_when: The change does not touch configuration keys or values, or the blueprint YAML schema.
+    positive_example: '# hypothetical: a new optional config.json key added with a default, so existing config files load unchanged'
+    negative_example: '# hypothetical: renaming an existing config.json key so that files written before the change no longer load'
+  - id: COMPAT-001.Q03
+    question: Does the change leave the stable machine-readable output formats, such as the JSON event envelope, with the same field names and meaning as before?
+    kind: judgment
+    na_when: The change does not touch machine-readable output formats.
+    positive_example: 'envelope = {"event_type": data_type.__name__, "payload": formatter.to_json_serializable(data)}  # in cli/ui/dispatcher.py, envelope keys unchanged'
+    negative_example: '# hypothetical: renaming the envelope key "event_type" to "type" in the JSON output'
   citation: docs/agents/code-conventions.md#backwards-compatibility
 - id: COMPAT-002
   title: Ban on Internal Compatibility Shims and Aliases
@@ -673,13 +799,26 @@ rules:
   category: Compatibility
   domain: all
   scope: src/dovo/common/, src/dovo/core/, internal src/dovo/cli/
-  guideline: Do NOT preserve backwards compatibility aliases, compatibility properties, or shim layers for internal code (common/,
-    core/, or internal CLI modules) when refactoring or renaming symbols. Update callers and tests directly.
-  evaluation_criteria: Scan internal classes for deprecated aliases or shim properties.
-  positive_example: '# Renamed _unlock_fd directly and updated all internal callers'
-  negative_example: 'def _unlock_fd(self): ...
-
-    _unlock = _unlock_fd  # internal shim alias'
+  intent: Internal refactors must not leave old names behind, so internal code carries one name per symbol and no dead compatibility layers; callers and tests are updated to the new name instead.
+  criteria:
+  - id: COMPAT-002.Q01
+    question: Is the change free of backwards-compatibility aliases that keep an old internal name pointing at a renamed symbol?
+    kind: judgment
+    na_when: The change renames no internal symbol in common/, core/ or internal CLI modules.
+    positive_example: 'Hypothetical: a helper is renamed from _unlock_fd to unlock_file_descriptor and the old name no longer exists anywhere in the module.'
+    negative_example: 'Hypothetical: after renaming _unlock_fd, the module keeps the line "_unlock = _unlock_fd  # internal shim alias".'
+  - id: COMPAT-002.Q02
+    question: Is the change free of deprecated or compatibility properties, wrapper methods and shim layers that exist only to keep an old internal interface working?
+    kind: judgment
+    na_when: The change renames or restructures no internal class, method or module in common/, core/ or internal CLI modules.
+    positive_example: 'Hypothetical: a renamed internal property replaces the old one outright, with no forwarding property left on the class.'
+    negative_example: 'Hypothetical: a class keeps "@property def old_name(self): return self.new_name" only so existing internal callers keep working.'
+  - id: COMPAT-002.Q03
+    question: Were all internal callers and tests updated directly to the new name when an internal symbol was renamed?
+    kind: judgment
+    na_when: The change renames no internal symbol in common/, core/ or internal CLI modules.
+    positive_example: 'Hypothetical: a rename of _unlock_fd comes with edits to every internal call site and test that referenced it.'
+    negative_example: 'Hypothetical: a rename leaves internal callers on the old name and adds an alias so they keep working instead of editing them.'
   citation: docs/agents/code-conventions.md#backwards-compatibility
 - id: COMPAT-003
   title: Greenfield Architecture Default
@@ -687,11 +826,32 @@ rules:
   category: Compatibility
   domain: all
   scope: src/dovo/
-  guideline: 'Treat the repository as greenfield by default: plan no dual code paths, fallback adapters, or deprecation windows
-    unless an issue explicitly demands one. Replace superseded paths and update callers in the same change set.'
-  evaluation_criteria: Flag dual implementations or fallback branches created without an explicit issue requirement.
-  positive_example: '# Directly replaces legacy loader with new unified loader'
-  negative_example: 'if config.use_legacy: return LegacyLoader().load()  # unnecessary compatibility branch'
+  intent: The repository is treated as greenfield, so superseded code is replaced rather than carried alongside its replacement, unless an issue explicitly demands otherwise. This keeps one implementation of each behavior.
+  criteria:
+  - id: COMPAT-003.Q01
+    question: Does the change leave a single implementation of the behavior it replaces, with no superseded implementation kept alongside the new one?
+    kind: judgment
+    na_when: The change replaces no existing behavior, or the issue explicitly demands a dual code path.
+    positive_example: '# hypothetical: the legacy loader is deleted and its callers now use the new unified loader'
+    negative_example: '# hypothetical: LegacyLoader stays in the tree beside UnifiedLoader and both remain reachable'
+  - id: COMPAT-003.Q02
+    question: Does the change avoid adding a fallback branch or fallback adapter that routes to a superseded path?
+    kind: judgment
+    na_when: The issue explicitly demands a fallback adapter or branch.
+    positive_example: '# hypothetical: return UnifiedLoader().load()  # directly replaces the legacy loader'
+    negative_example: 'if config.use_legacy: return LegacyLoader().load()  # hypothetical: unnecessary compatibility branch'
+  - id: COMPAT-003.Q03
+    question: Does the change avoid planning a deprecation window for a superseded path?
+    kind: judgment
+    na_when: The issue explicitly demands a deprecation window.
+    positive_example: '# hypothetical: the old path is removed in this change set, with no warning period'
+    negative_example: '# hypothetical: warnings.warn("load_legacy is deprecated, removed in 2 releases"); the old path keeps working'
+  - id: COMPAT-003.Q04
+    question: Are all callers of a superseded path updated in the same change set that replaces it?
+    kind: judgment
+    na_when: The change supersedes no existing path.
+    positive_example: '# hypothetical: the loader is replaced and every call site is switched to the new one in the same change set'
+    negative_example: '# hypothetical: the new loader is added, and callers are left on the old one to migrate later'
   citation: docs/agents/planning.md#step-1-extract-the-contract-from-the-issue
 - id: TEST-001
   title: Test at Contracts, Not Implementation

@@ -92,8 +92,26 @@
       "severity": "BLOCKER",
       "domain": "all",
       "scope": "src/dovo/",
-      "evaluation_criteria": "Flag any model using extra='ignore' or omitting strict=True outside the approved list or without a justifying comment.",
-      "bad_pattern": "model_config = {'extra': 'ignore'}  # missing justifying comment"
+      "intent": "Models are strict by default so unexpected data is rejected early; the few hand-authored YAML models that tolerate unknown keys are a named exception, and each explains why in a comment so the leniency stays deliberate.",
+      "criteria": [
+        {
+          "id": "MODEL-001.Q01",
+          "question": "Is extra='ignore' used only by the approved hand-authored YAML models, BlueprintDefinition and LoopStepBlock?",
+          "kind": "judgment"
+        },
+        {
+          "id": "MODEL-001.Q02",
+          "question": "Does every model that uses extra='ignore' carry a comment justifying it?",
+          "kind": "judgment"
+        },
+        {
+          "id": "MODEL-001.Q03",
+          "question": "Does every model outside the approved list set strict=True in its configuration?",
+          "kind": "judgment"
+        }
+      ],
+      "evaluation_criteria": "1. Is extra='ignore' used only by the approved hand-authored YAML models, BlueprintDefinition and LoopStepBlock? 2. Does every model that uses extra='ignore' carry a comment justifying it? 3. Does every model outside the approved list set strict=True in its configuration?",
+      "bad_pattern": "model_config = {\"extra\": \"ignore\"}  # hypothetical: on a result model such as a BaseResult subclass, which is not an approved model"
     },
     {
       "id": "MODEL-002",
@@ -104,8 +122,36 @@
         "engine"
       ],
       "scope": "src/dovo/core/, src/dovo/engine/",
-      "evaluation_criteria": "Inspect service methods. Flag methods that raise exceptions for business/operational failures, and domain-entrypoint or command-level operations that return a plain value instead of a BaseResult. Do not flag an internal helper that returns str | None to a single in-layer caller.",
-      "bad_pattern": "raise WorktreeNotFoundError('Worktree does not exist')"
+      "intent": "Callers must learn about business and operational failures from a result they can inspect and render, not from exceptions they must remember to catch.",
+      "criteria": [
+        {
+          "id": "MODEL-002.Q01",
+          "question": "Does the operation report a business or operational failure by returning a result instead of raising an exception?",
+          "kind": "judgment"
+        },
+        {
+          "id": "MODEL-002.Q02",
+          "question": "Does an operation whose outcome reaches a domain entrypoint, a command handler, a formatter or the wire format return a Pydantic result object subclassing BaseResult?",
+          "kind": "judgment"
+        },
+        {
+          "id": "MODEL-002.Q03",
+          "question": "Do callers of a result-returning operation check .ok rather than catching exceptions to learn the outcome?",
+          "kind": "judgment"
+        },
+        {
+          "id": "MODEL-002.Q04",
+          "question": "Do callers that report a failure to the user render the result .errors and .warnings rather than the text of a caught exception?",
+          "kind": "judgment"
+        },
+        {
+          "id": "MODEL-002.Q05",
+          "question": "Does an internal helper that returns a plain value or an error message (str | None) serve a single in-layer caller that only branches on success?",
+          "kind": "judgment"
+        }
+      ],
+      "evaluation_criteria": "1. Does the operation report a business or operational failure by returning a result instead of raising an exception? 2. Does an operation whose outcome reaches a domain entrypoint, a command handler, a formatter or the wire format return a Pydantic result object subclassing BaseResult? 3. Do callers of a result-returning operation check .ok rather than catching exceptions to learn the outcome? 4. Do callers that report a failure to the user render the result .errors and .warnings rather than the text of a caught exception? 5. Does an internal helper that returns a plain value or an error message (str | None) serve a single in-layer caller that only branches on success?",
+      "bad_pattern": "raise WorktreeNotFoundError('Worktree does not exist')  # hypothetical: no such exception exists in src/"
     },
     {
       "id": "MODEL-003",
@@ -116,17 +162,38 @@
         "engine"
       ],
       "scope": "src/dovo/core/*/models.py, src/dovo/engine/**/models.py",
-      "evaluation_criteria": "Check all enum values of StrEnum classes in models.py. Ensure each variant is emitted in src/ and asserted in tests/.",
-      "bad_pattern": "class PruneStatus(StrEnum): UNKNOWN = 'unknown'  # never emitted in src/"
+      "intent": "A status a result can report must be one the program really produces and the tests really check, so callers never branch on outcomes that cannot happen or that nobody has verified.",
+      "criteria": [
+        {
+          "id": "MODEL-003.Q01",
+          "question": "Is every variant emitted by production code in src/, for each status StrEnum defined in a core/*/models.py or engine/**/models.py file and used by a BaseResult model?",
+          "kind": "judgment"
+        },
+        {
+          "id": "MODEL-003.Q02",
+          "question": "Is every variant asserted in a test under tests/, for each status StrEnum defined in a core/*/models.py or engine/**/models.py file and used by a BaseResult model?",
+          "kind": "judgment"
+        }
+      ],
+      "evaluation_criteria": "1. Is every variant emitted by production code in src/, for each status StrEnum defined in a core/*/models.py or engine/**/models.py file and used by a BaseResult model? 2. Is every variant asserted in a test under tests/, for each status StrEnum defined in a core/*/models.py or engine/**/models.py file and used by a BaseResult model?",
+      "bad_pattern": "class PruneStatus(StrEnum): UNKNOWN = \"unknown\"  # hypothetical: no code in src/ ever assigns PruneStatus.UNKNOWN to a result"
     },
     {
       "id": "MODEL-004",
       "name": "Definition Exception Hierarchy",
       "severity": "BLOCKER",
       "domain": "core",
-      "scope": "src/dovo/core/*/exceptions.py",
-      "evaluation_criteria": "Inspect domain exception inheritance. Flag exceptions that inherit directly from Exception or ValueError instead of the Definition base hierarchy.",
-      "bad_pattern": "class BlueprintLoadError(Exception): \"\"\"YAML syntax error.\"\"\""
+      "scope": "src/dovo/core/catalog/exceptions.py",
+      "intent": "Failures about catalog definitions must be catchable through one shared error family, so callers can handle any definition problem uniformly instead of chasing unrelated base types.",
+      "criteria": [
+        {
+          "id": "MODEL-004.Q01",
+          "question": "Does every exception class in src/dovo/core/catalog/exceptions.py, which covers locating, loading, validating and writing catalog definitions, descend from DefinitionError, DefinitionNotFoundError, DefinitionLoadError or DefinitionValidationError in common/exceptions.py, rather than having Exception or ValueError as its only base?",
+          "kind": "judgment"
+        }
+      ],
+      "evaluation_criteria": "1. Does every exception class in src/dovo/core/catalog/exceptions.py, which covers locating, loading, validating and writing catalog definitions, descend from DefinitionError, DefinitionNotFoundError, DefinitionLoadError or DefinitionValidationError in common/exceptions.py, rather than having Exception or ValueError as its only base?",
+      "bad_pattern": "class BlueprintLoadError(Exception): \"\"\"Raised when blueprint YAML syntax is invalid or unreadable.\"\"\"  # hypothetical: inherits directly from Exception; class StepValidationError(ValueError) would fail the same way"
     },
     {
       "id": "CODE-001",
@@ -134,8 +201,26 @@
       "severity": "BLOCKER",
       "domain": "all",
       "scope": "src/, tests/",
-      "evaluation_criteria": "Inspect new or modified variable, parameter, attribute, and function names. Flag any name formed by dropping letters from a word, whether or not it appears in an earlier list of examples. Do not flag unmodified code.",
-      "bad_pattern": "val_res = validator.validate(document); acc = []"
+      "intent": "Identifiers read as plain words so a reader never has to decode an invented abbreviation.",
+      "criteria": [
+        {
+          "id": "CODE-001.Q01",
+          "question": "Is every new or modified variable, parameter, attribute and function name spelled in full rather than shortened by dropping letters, even for familiar shortenings (exceptions are checked by Q02 and Q03)?",
+          "kind": "judgment"
+        },
+        {
+          "id": "CODE-001.Q02",
+          "question": "Is every new or modified single-letter name confined to a comprehension, a generator expression or a one-line loop?",
+          "kind": "judgment"
+        },
+        {
+          "id": "CODE-001.Q03",
+          "question": "Is every shortened name that remains in new or modified code either an initialism that is itself the domain term (db, cwd, ctx, id, url, cli, sha, ttl) or a framework-dictated name?",
+          "kind": "judgment"
+        }
+      ],
+      "evaluation_criteria": "1. Is every new or modified variable, parameter, attribute and function name spelled in full rather than shortened by dropping letters, even for familiar shortenings (exceptions are checked by Q02 and Q03)? 2. Is every new or modified single-letter name confined to a comprehension, a generator expression or a one-line loop? 3. Is every shortened name that remains in new or modified code either an initialism that is itself the domain term (db, cwd, ctx, id, url, cli, sha, ttl) or a framework-dictated name?",
+      "bad_pattern": "val_res = validator.validate(document); acc = []  # hypothetical: val_res and acc drop letters; other shortenings to flag include res, req, msg, val, idx, tmp, rel_path, fs, exc, err, cfg, resp"
     },
     {
       "id": "CODE-002",
@@ -143,8 +228,21 @@
       "severity": "NIT",
       "domain": "all",
       "scope": "src/",
-      "evaluation_criteria": "Check function bodies. Flag dense unseparated blocks or excessive random spacing.",
-      "bad_pattern": "record = WorktreeRecord(...)\nself.db.worktrees.save(record)\nreturn result"
+      "intent": "Blank lines mark where a function moves from one phase to the next, so a reader can see its structure at a glance; spacing that does not follow the logic hides that structure.",
+      "criteria": [
+        {
+          "id": "CODE-002.Q01",
+          "question": "Are distinct logical phases of a function body (setup, validate, persist, return) separated by a blank line?",
+          "kind": "judgment"
+        },
+        {
+          "id": "CODE-002.Q02",
+          "question": "Is every blank line in a function body free of separating two adjacent lines that work on the same value within one phase?",
+          "kind": "judgment"
+        }
+      ],
+      "evaluation_criteria": "1. Are distinct logical phases of a function body (setup, validate, persist, return) separated by a blank line? 2. Is every blank line in a function body free of separating two adjacent lines that work on the same value within one phase?",
+      "bad_pattern": "record = WorktreeRecord(...), a save call and \"return result\" on consecutive lines with no blank line between them (hypothetical: building, persisting and returning run together as one dense block)"
     },
     {
       "id": "CODE-003",
@@ -152,8 +250,41 @@
       "severity": "SUGGESTION",
       "domain": "all",
       "scope": "src/",
-      "evaluation_criteria": "Inspect new or modified docstrings. Flag a title that carries an outcome clause such as \", or why X cannot be done\". Flag a description that retells the body, lists what the signature already shows, or adds no fact the title lacks. Flag a missing description where the code has a hidden contract or a safety behavior.",
-      "bad_pattern": "\"\"\"Run the provider. First resolve the baseline, then build the prompt, then run the tool, then diff the worktree, then validate the patch.\"\"\"  # or: \"\"\"Return flags for the rules, or why a rule cannot be preserved.\"\"\"  # outcome in the title"
+      "intent": "Docstrings stay short so a reader gets the title at a glance and finds a description only where it carries a fact the code cannot show and whose absence would cause wrong code.",
+      "criteria": [
+        {
+          "id": "CODE-003.Q01",
+          "question": "Does the docstring open with a one-line title stating what the thing is or does?",
+          "kind": "judgment"
+        },
+        {
+          "id": "CODE-003.Q02",
+          "question": "Is the title free of outcome, failure-path and side-effect clauses, with a comma used only to enumerate a distinct list?",
+          "kind": "judgment"
+        },
+        {
+          "id": "CODE-003.Q03",
+          "question": "Does a unit with a hidden contract, a data-loss or safety behavior, a non-obvious ordering constraint or a deliberate oddity carry a description stating it?",
+          "kind": "judgment"
+        },
+        {
+          "id": "CODE-003.Q04",
+          "question": "Does every description state a fact the code cannot show, rather than something a reader can already see in the code?",
+          "kind": "judgment"
+        },
+        {
+          "id": "CODE-003.Q05",
+          "question": "Is every description free of step-by-step narration of the body?",
+          "kind": "judgment"
+        },
+        {
+          "id": "CODE-003.Q06",
+          "question": "Is every description free of text that restates the parameters, types or return annotation, or repeats the title in other words?",
+          "kind": "judgment"
+        }
+      ],
+      "evaluation_criteria": "1. Does the docstring open with a one-line title stating what the thing is or does? 2. Is the title free of outcome, failure-path and side-effect clauses, with a comma used only to enumerate a distinct list? 3. Does a unit with a hidden contract, a data-loss or safety behavior, a non-obvious ordering constraint or a deliberate oddity carry a description stating it? 4. Does every description state a fact the code cannot show, rather than something a reader can already see in the code? 5. Is every description free of step-by-step narration of the body? 6. Is every description free of text that restates the parameters, types or return annotation, or repeats the title in other words?",
+      "bad_pattern": "\"\"\"Run the provider. Then resolve the baseline\nand build the prompt before diffing the worktree.\"\"\"  # hypothetical: the opening wraps over two lines and holds two sentences, so there is no one-line title"
     },
     {
       "id": "CODE-004",
@@ -161,8 +292,21 @@
       "severity": "WARNING",
       "domain": "all",
       "scope": "src/",
-      "evaluation_criteria": "Inspect new or modified docstrings. Flag a sentence that names another module's, class's, or caller's behavior, such as how an adapter handles the returned value.",
-      "bad_pattern": "\"\"\"Render a restricted policy's allow and deny rules as dontAsk flags.\n\nThe adapter surfaces a returned reason as an unsupported-policy error before the process is spawned.\"\"\""
+      "intent": "A docstring states only behavior the documented unit itself implements, so it cannot go stale when other code changes without any sign in the diff.",
+      "criteria": [
+        {
+          "id": "CODE-004.Q01",
+          "question": "Does each new or modified docstring avoid describing what a caller does with the unit's result?",
+          "kind": "judgment"
+        },
+        {
+          "id": "CODE-004.Q02",
+          "question": "Does each new or modified docstring avoid describing logic that lives in another module or class, other than a reference to a sibling in the same module?",
+          "kind": "judgment"
+        }
+      ],
+      "evaluation_criteria": "1. Does each new or modified docstring avoid describing what a caller does with the unit's result? 2. Does each new or modified docstring avoid describing logic that lives in another module or class, other than a reference to a sibling in the same module?",
+      "bad_pattern": "\"\"\"Render a restricted policy's allow and deny rules as dontAsk flags.\n\nThe adapter surfaces a returned reason as an unsupported-policy error before the process is spawned.\"\"\"  # hypothetical: describes what the caller does with the returned reason"
     },
     {
       "id": "CODE-005",
@@ -170,8 +314,16 @@
       "severity": "WARNING",
       "domain": "all",
       "scope": "src/",
-      "evaluation_criteria": "Inspect new or modified modules, classes, and functions. Flag any body with a bare string statement after its first statement.",
-      "bad_pattern": "\"\"\"Return dontAsk flags for the rules.\"\"\"  # followed by a second \"\"\"...\"\"\" string statement"
+      "intent": "A unit's documentation must be a single docstring, because a second bare string reads as documentation but is dead code. Extra text belongs in the docstring or nowhere.",
+      "criteria": [
+        {
+          "id": "CODE-005.Q01",
+          "question": "Is every new or modified module, class and function body free of a bare string statement after its first statement?",
+          "kind": "judgment"
+        }
+      ],
+      "evaluation_criteria": "1. Is every new or modified module, class and function body free of a bare string statement after its first statement?",
+      "bad_pattern": "\"\"\"Return dontAsk flags for the rules.\"\"\"  # hypothetical: followed by a second \"\"\"...\"\"\" string statement that should be merged into the docstring or deleted"
     },
     {
       "id": "TYPE-001",
@@ -493,8 +645,26 @@
       "severity": "BLOCKER",
       "domain": "all",
       "scope": "src/dovo/",
-      "evaluation_criteria": "Inspect PR diffs. Flag breaking renames to CLI options, config keys, or published JSON outputs.",
-      "bad_pattern": "# Renaming user CLI option --timeout to --wait without alias"
+      "intent": "Users and scripts depend on the surfaces they interact with directly, so those surfaces keep working across changes. Compatibility is kept only for them, and nowhere else.",
+      "criteria": [
+        {
+          "id": "COMPAT-001.Q01",
+          "question": "Does the change leave every existing CLI command, subcommand, argument and flag usable as before, with no breaking rename or removal?",
+          "kind": "judgment"
+        },
+        {
+          "id": "COMPAT-001.Q02",
+          "question": "Does the change leave existing configuration files and blueprint YAML definitions (such as config.json keys and values) readable with the same meaning as before?",
+          "kind": "judgment"
+        },
+        {
+          "id": "COMPAT-001.Q03",
+          "question": "Does the change leave the stable machine-readable output formats, such as the JSON event envelope, with the same field names and meaning as before?",
+          "kind": "judgment"
+        }
+      ],
+      "evaluation_criteria": "1. Does the change leave every existing CLI command, subcommand, argument and flag usable as before, with no breaking rename or removal? 2. Does the change leave existing configuration files and blueprint YAML definitions (such as config.json keys and values) readable with the same meaning as before? 3. Does the change leave the stable machine-readable output formats, such as the JSON event envelope, with the same field names and meaning as before?",
+      "bad_pattern": "# hypothetical: renaming the --path option to --workspace without keeping --path as an alias"
     },
     {
       "id": "COMPAT-002",
@@ -502,8 +672,26 @@
       "severity": "BLOCKER",
       "domain": "all",
       "scope": "src/dovo/common/, src/dovo/core/, internal src/dovo/cli/",
-      "evaluation_criteria": "Scan internal classes for deprecated aliases or shim properties.",
-      "bad_pattern": "def _unlock_fd(self): ...\n_unlock = _unlock_fd  # internal shim alias"
+      "intent": "Internal refactors must not leave old names behind, so internal code carries one name per symbol and no dead compatibility layers; callers and tests are updated to the new name instead.",
+      "criteria": [
+        {
+          "id": "COMPAT-002.Q01",
+          "question": "Is the change free of backwards-compatibility aliases that keep an old internal name pointing at a renamed symbol?",
+          "kind": "judgment"
+        },
+        {
+          "id": "COMPAT-002.Q02",
+          "question": "Is the change free of deprecated or compatibility properties, wrapper methods and shim layers that exist only to keep an old internal interface working?",
+          "kind": "judgment"
+        },
+        {
+          "id": "COMPAT-002.Q03",
+          "question": "Were all internal callers and tests updated directly to the new name when an internal symbol was renamed?",
+          "kind": "judgment"
+        }
+      ],
+      "evaluation_criteria": "1. Is the change free of backwards-compatibility aliases that keep an old internal name pointing at a renamed symbol? 2. Is the change free of deprecated or compatibility properties, wrapper methods and shim layers that exist only to keep an old internal interface working? 3. Were all internal callers and tests updated directly to the new name when an internal symbol was renamed?",
+      "bad_pattern": "Hypothetical: after renaming _unlock_fd, the module keeps the line \"_unlock = _unlock_fd  # internal shim alias\"."
     },
     {
       "id": "COMPAT-003",
@@ -511,8 +699,31 @@
       "severity": "BLOCKER",
       "domain": "all",
       "scope": "src/dovo/",
-      "evaluation_criteria": "Flag dual implementations or fallback branches created without an explicit issue requirement.",
-      "bad_pattern": "if config.use_legacy: return LegacyLoader().load()  # unnecessary compatibility branch"
+      "intent": "The repository is treated as greenfield, so superseded code is replaced rather than carried alongside its replacement, unless an issue explicitly demands otherwise. This keeps one implementation of each behavior.",
+      "criteria": [
+        {
+          "id": "COMPAT-003.Q01",
+          "question": "Does the change leave a single implementation of the behavior it replaces, with no superseded implementation kept alongside the new one?",
+          "kind": "judgment"
+        },
+        {
+          "id": "COMPAT-003.Q02",
+          "question": "Does the change avoid adding a fallback branch or fallback adapter that routes to a superseded path?",
+          "kind": "judgment"
+        },
+        {
+          "id": "COMPAT-003.Q03",
+          "question": "Does the change avoid planning a deprecation window for a superseded path?",
+          "kind": "judgment"
+        },
+        {
+          "id": "COMPAT-003.Q04",
+          "question": "Are all callers of a superseded path updated in the same change set that replaces it?",
+          "kind": "judgment"
+        }
+      ],
+      "evaluation_criteria": "1. Does the change leave a single implementation of the behavior it replaces, with no superseded implementation kept alongside the new one? 2. Does the change avoid adding a fallback branch or fallback adapter that routes to a superseded path? 3. Does the change avoid planning a deprecation window for a superseded path? 4. Are all callers of a superseded path updated in the same change set that replaces it?",
+      "bad_pattern": "# hypothetical: LegacyLoader stays in the tree beside UnifiedLoader and both remain reachable"
     },
     {
       "id": "TEST-001",
