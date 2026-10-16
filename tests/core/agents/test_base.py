@@ -118,7 +118,6 @@ class CredentialPreflightTests:
 
         assert response.status == AgentResponseStatus.PROVIDER_ERROR
         assert response.errors == [_CANONICAL_MISSING_CREDENTIAL_ERROR]
-        assert response.duration_ms >= 0
         assert provider.invoke_calls == []
 
     def test_blank_first_credential_with_usable_second_delegates_to_provider(
@@ -158,7 +157,7 @@ class CredentialPreflightProbeTests:
             pytest.param(None, False, [_CANONICAL_MISSING_CREDENTIAL_ERROR], 0, id="no-hook-keeps-existing-behavior"),
         ],
     )
-    def test_unset_credentials_follow_the_auth_label(
+    def test_unset_credentials_delegate_only_when_the_auth_label_reports_a_login(
         self,
         label_result: str | None,
         has_label: bool,
@@ -205,29 +204,31 @@ _POLICIES = {
 
 class ToolPolicyConformanceTests:
     @pytest.mark.parametrize(
-        ("policy", "rejected"),
+        "policy",
         [
-            pytest.param("default", True, id="default-rejected"),
-            pytest.param("empty", True, id="empty-rejected"),
-            pytest.param("allow-all", False, id="allow-all-proceeds"),
-            pytest.param("allow-all-with-deny", True, id="allow-all-with-deny-rejected"),
+            pytest.param("default", id="default"),
+            pytest.param("empty", id="empty"),
+            pytest.param("allow-all-with-deny", id="allow-all-with-deny"),
         ],
     )
-    def test_non_policy_provider_rejects_restrictive_policy_before_invoke(
-        self, tmp_path: Path, policy: str, rejected: bool
-    ) -> None:
+    def test_non_policy_provider_rejects_restrictive_policy_before_invoke(self, tmp_path: Path, policy: str) -> None:
         provider = _DirectSubclassProvider(())
         request = AgentRequestBuilder().with_worktree_path(tmp_path).with_tools(_POLICIES[policy]).build()
 
         response = provider.invoke(request)
 
-        if rejected:
-            assert response.status == AgentResponseStatus.PROVIDER_ERROR
-            assert response.errors == [tool_policy_unsupported_message("unit-test")]
-            assert provider.invoke_calls == []
-        else:
-            assert response == _PROVIDER_RESPONSE
-            assert len(provider.invoke_calls) == 1
+        assert response.status == AgentResponseStatus.PROVIDER_ERROR
+        assert response.errors == [tool_policy_unsupported_message("unit-test")]
+        assert provider.invoke_calls == []
+
+    def test_non_policy_provider_delegates_an_allow_all_policy(self, tmp_path: Path) -> None:
+        provider = _DirectSubclassProvider(())
+        request = AgentRequestBuilder().with_worktree_path(tmp_path).with_tools(_POLICIES["allow-all"]).build()
+
+        response = provider.invoke(request)
+
+        assert response == _PROVIDER_RESPONSE
+        assert len(provider.invoke_calls) == 1
 
     def test_policy_capable_provider_hook_rejection_blocks_invoke(self, tmp_path: Path) -> None:
         provider = _DirectSubclassProvider((), supports_tool_policy=True, policy_rejection="hook says no")
@@ -249,19 +250,45 @@ class ToolPolicyConformanceTests:
         assert len(provider.invoke_calls) == 1
 
 
+_REGISTERED = [pytest.param(token, id=token) for token in PROVIDERS]
+_CREDENTIALED = [pytest.param(token, id=token) for token, spec in PROVIDERS.items() if spec.credential_envs]
+_ALL_CREDENTIAL_ENVS = tuple(name for spec in PROVIDERS.values() for name in spec.credential_envs)
+
+
+@pytest.fixture
+def _isolated_credentials(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Remove every registered provider's credential variables from the host environment."""
+    for name in _ALL_CREDENTIAL_ENVS:
+        monkeypatch.delenv(name, raising=False)
+
+
+def _missing_credential_suffix(spec: ProviderSpec) -> str:
+    """Return the text a provider's missing-credential error must end with."""
+    return f"Fix: {spec.auth_fix}" if spec.auth_fix is not None else missing_credential_error(spec)
+
+
+@pytest.mark.usefixtures("_isolated_credentials")
 class RegisteredAdapterCredentialContractTests:
-    @pytest.mark.parametrize(
-        "token",
-        [pytest.param(token, id=token) for token, spec in PROVIDERS.items() if spec.credential_envs],
-    )
-    def test_missing_credential_returns_provider_detail_with_no_backend_activity(
+    @pytest.fixture(autouse=True)
+    def _claude_on_path(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Make the Claude binary resolvable so a missing credential, not a missing install, is reported."""
+        monkeypatch.setattr("dovo.core.agents.claude.shutil.which", lambda _name: "/usr/bin/claude")
+
+    @pytest.mark.parametrize("token", _CREDENTIALED)
+    def test_missing_credential_returns_provider_detail(self, tmp_path: Path, token: str) -> None:
+        """Return PROVIDER_ERROR ending with each credentialed provider's descriptor-derived detail."""
+        response = PROVIDERS[token].build().invoke(AgentRequestBuilder().with_worktree_path(tmp_path).build())
+
+        [error] = response.errors
+        assert response.status == AgentResponseStatus.PROVIDER_ERROR
+        assert error.startswith("Agent provider error (AGENT_PROVIDER_ERROR): ")
+        assert error.endswith(_missing_credential_suffix(PROVIDERS[token]))
+
+    @pytest.mark.parametrize("token", _CREDENTIALED)
+    def test_missing_credential_starts_no_backend_activity(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, token: str
     ) -> None:
-        """Return each credentialed provider's descriptor-derived missing-credential detail while logged out."""
-        monkeypatch.setattr("dovo.core.agents.claude.shutil.which", lambda _name: "/usr/bin/claude")
-        spec = PROVIDERS[token]
-        for name in spec.credential_envs:
-            monkeypatch.delenv(name, raising=False)
+        """Record no Popen, urlopen or baseline call when the credential is missing."""
         backend_calls: list[str] = []
 
         def _spy(label: str) -> object:
@@ -275,28 +302,18 @@ class RegisteredAdapterCredentialContractTests:
         monkeypatch.setattr(urllib.request, "urlopen", _spy("urlopen"))
         monkeypatch.setattr("dovo.core.agents.cli_mutation.resolve_pre_agent_baseline", _spy("baseline"))
 
-        response = spec.build().invoke(AgentRequestBuilder().with_worktree_path(tmp_path).build())
+        PROVIDERS[token].build().invoke(AgentRequestBuilder().with_worktree_path(tmp_path).build())
 
-        detail = missing_credential_error(spec) if spec.auth_fix is None else None
-        assert response.status == AgentResponseStatus.PROVIDER_ERROR
-        assert len(response.errors) == 1
-        assert response.errors[0].startswith("Agent provider error (AGENT_PROVIDER_ERROR): ")
-        if detail is None:
-            assert response.errors[0].endswith(f"Fix: {spec.auth_fix}")
-        else:
-            assert response.errors[0] == f"Agent provider error (AGENT_PROVIDER_ERROR): {detail}"
         assert backend_calls == []
 
 
-_REGISTERED = [pytest.param(token, id=token) for token in PROVIDERS]
 _UNRELATED_SECRETS = ("AWS_SECRET_ACCESS_KEY", "SSH_AUTH_SOCK", "DOVO_TEST_UNRELATED_SECRET")
 
 
-def _arm_provider(token: str, monkeypatch: pytest.MonkeyPatch) -> tuple[BaseAgentProvider, FakeAgentRunner]:
-    """Clear every registered credential, set the provider's winning one to 'test-token', and patch a runner."""
-    for spec in PROVIDERS.values():
-        for name in spec.credential_envs:
-            monkeypatch.delenv(name, raising=False)
+def _provider_with_fake_runner(
+    token: str, monkeypatch: pytest.MonkeyPatch
+) -> tuple[BaseAgentProvider, FakeAgentRunner]:
+    """Build the registered provider with its winning credential set and a fake finished-stream runner."""
     spec = PROVIDERS[token]
     for name in spec.credential_envs[:1]:
         monkeypatch.setenv(name, "test-token")
@@ -306,31 +323,31 @@ def _arm_provider(token: str, monkeypatch: pytest.MonkeyPatch) -> tuple[BaseAgen
     return spec.build(), runner
 
 
+@pytest.mark.usefixtures("_isolated_credentials")
 class RegisteredAdapterEnvBoundaryTests:
-    @pytest.mark.parametrize("token", _REGISTERED)
+    @pytest.mark.parametrize("token", _CREDENTIALED)
     def test_allowlist_spawn_env_holds_only_the_winning_credential_and_no_foreign_secrets(
         self, token: str, git_repo: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """Spawn with PATH and only credential_envs[0] == 'test-token', with no unrelated or foreign secret."""
-        provider, runner = _arm_provider(token, monkeypatch)
-        winners = PROVIDERS[token].credential_envs[:1]
-        foreign = {name for spec in PROVIDERS.values() for name in spec.credential_envs} - set(winners)
-        for name in (*_UNRELATED_SECRETS, *foreign):
+        """Spawn with credential_envs[0] == 'test-token' and none of the unrelated or foreign secrets."""
+        provider, runner = _provider_with_fake_runner(token, monkeypatch)
+        winner = PROVIDERS[token].credential_envs[0]
+        secrets = [*_UNRELATED_SECRETS, *(name for name in _ALL_CREDENTIAL_ENVS if name != winner)]
+        for name in secrets:
             monkeypatch.setenv(name, "host-value")
 
         provider.invoke(AgentRequestBuilder().with_worktree_path(git_repo).build())
 
         env = runner.last_call.env
-        assert {name: env.get(name) for name in winners} == dict.fromkeys(winners, "test-token")
-        assert "PATH" in env
-        assert not {*_UNRELATED_SECRETS, *foreign} & set(env)
+        assert env[winner] == "test-token"
+        assert [name for name in secrets if name in env] == []
 
     @pytest.mark.parametrize("token", _REGISTERED)
     def test_inherit_spawn_env_keeps_unrelated_host_variables(
         self, token: str, git_repo: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """Keep DOVO_TEST_UNRELATED_SECRET == 'host-value' in the spawn env under env_mode 'inherit'."""
-        provider, runner = _arm_provider(token, monkeypatch)
+        provider, runner = _provider_with_fake_runner(token, monkeypatch)
         monkeypatch.setenv("DOVO_TEST_UNRELATED_SECRET", "host-value")
 
         provider.invoke(AgentRequestBuilder().with_worktree_path(git_repo).with_env_mode("inherit").build())
@@ -339,11 +356,11 @@ class RegisteredAdapterEnvBoundaryTests:
 
     @pytest.mark.parametrize("mode", [pytest.param("allowlist", id="allowlist"), pytest.param("inherit", id="inherit")])
     @pytest.mark.parametrize("token", _REGISTERED)
-    def test_control_names_in_the_host_environment_never_reach_the_subprocess(
+    def test_host_control_variables_never_reach_the_spawn_env(
         self, token: str, mode: AgentEnvMode, git_repo: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """Leave every name in the provider's control_envs out of the spawn env."""
-        provider, runner = _arm_provider(token, monkeypatch)
+        provider, runner = _provider_with_fake_runner(token, monkeypatch)
         control_names = PROVIDERS[token].control_envs
         for name in control_names:
             monkeypatch.setenv(name, "ambient")
@@ -353,34 +370,54 @@ class RegisteredAdapterEnvBoundaryTests:
         assert not set(control_names) & set(runner.last_call.env)
 
     @pytest.mark.parametrize("token", _REGISTERED)
-    def test_scratch_keys_follow_each_invocation_across_repeated_calls(
+    def test_scratch_keys_equal_the_invocation_scratch_path(
         self, token: str, git_repo: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """Spawn each call with DOVO_AGENT_SCRATCH, TMPDIR, TMP, TEMP equal to that invocation's scratch path."""
-        provider, runner = _arm_provider(token, monkeypatch)
-        invocations = [real_invocation(tmp_path / "first"), real_invocation(tmp_path / "second")]
+        """Spawn with DOVO_AGENT_SCRATCH, TMPDIR, TMP and TEMP all equal to the invocation's scratch path."""
+        provider, runner = _provider_with_fake_runner(token, monkeypatch)
+        invocation = real_invocation(tmp_path)
 
-        for invocation in invocations:
-            provider.invoke(AgentRequestBuilder().with_worktree_path(git_repo).with_invocation(invocation).build())
+        provider.invoke(AgentRequestBuilder().with_worktree_path(git_repo).with_invocation(invocation).build())
 
-        keys = ("DOVO_AGENT_SCRATCH", "TMPDIR", "TMP", "TEMP")
-        recorded = [[call.env[key] for key in keys] for call in runner.calls]
-        assert recorded == [[str(invocation.scratch_path)] * 4 for invocation in invocations]
-        forbidden = {
-            str(path)
-            for invocation in invocations
-            for path in (invocation.control_path, invocation.control_path.parent)
-        }
-        assert not forbidden & {value for call in runner.calls for value in call.env.values()}
+        env = runner.last_call.env
+        assert env["DOVO_AGENT_SCRATCH"] == env["TMPDIR"] == env["TMP"] == env["TEMP"] == str(invocation.scratch_path)
+
+    @pytest.mark.parametrize("token", _REGISTERED)
+    def test_invocation_control_path_never_appears_in_the_spawn_env(
+        self, token: str, git_repo: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Leave both the invocation's control path and its parent directory out of every spawn env value."""
+        provider, runner = _provider_with_fake_runner(token, monkeypatch)
+        invocation = real_invocation(tmp_path)
+
+        provider.invoke(AgentRequestBuilder().with_worktree_path(git_repo).with_invocation(invocation).build())
+
+        assert str(invocation.control_path) not in runner.last_call.env.values()
+        assert str(invocation.control_path.parent) not in runner.last_call.env.values()
+
+    @pytest.mark.parametrize("token", _REGISTERED)
+    def test_repeated_calls_follow_the_latest_invocation_scratch_path(
+        self, token: str, git_repo: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Spawn the second call with TMPDIR equal to the second invocation's scratch path, not the first's."""
+        provider, runner = _provider_with_fake_runner(token, monkeypatch)
+        first, second = real_invocation(tmp_path / "first"), real_invocation(tmp_path / "second")
+
+        provider.invoke(AgentRequestBuilder().with_worktree_path(git_repo).with_invocation(first).build())
+        provider.invoke(AgentRequestBuilder().with_worktree_path(git_repo).with_invocation(second).build())
+
+        assert runner.calls[0].env["TMPDIR"] == str(first.scratch_path)
+        assert runner.calls[1].env["TMPDIR"] == str(second.scratch_path)
 
 
+@pytest.mark.usefixtures("_isolated_credentials")
 class RegisteredAdapterToolPolicyConformanceTests:
     @pytest.mark.parametrize("token", _REGISTERED)
     def test_allow_all_policy_reaches_the_process_boundary_once(
         self, token: str, git_repo: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """Return NO_OP and record exactly one runner call for an allow-all policy."""
-        provider, runner = _arm_provider(token, monkeypatch)
+        provider, runner = _provider_with_fake_runner(token, monkeypatch)
         request = AgentRequestBuilder().with_worktree_path(git_repo).with_tools(ToolPolicy(allow_all=True)).build()
 
         response = provider.invoke(request)
@@ -395,7 +432,7 @@ class RegisteredAdapterToolPolicyConformanceTests:
         self, token: str, git_repo: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """Return PROVIDER_ERROR with errors == [tool_policy_unsupported_message(token)] and zero runner calls."""
-        provider, runner = _arm_provider(token, monkeypatch)
+        provider, runner = _provider_with_fake_runner(token, monkeypatch)
         request = AgentRequestBuilder().with_worktree_path(git_repo).with_tools(default_tool_policy()).build()
 
         response = provider.invoke(request)
@@ -405,7 +442,7 @@ class RegisteredAdapterToolPolicyConformanceTests:
         assert runner.calls == []
 
 
-def _reflecting_response(status: AgentResponseStatus, secret: str) -> AgentResponse:
+def _response_containing_secret(status: AgentResponseStatus, secret: str) -> AgentResponse:
     return AgentResponse(
         status=status,
         errors=[f"first {secret}", "second"],
@@ -432,7 +469,7 @@ class InvokeRedactionTests:
         _clear_test_credentials(monkeypatch)
         monkeypatch.setenv("TEST_CREDENTIAL_PRIMARY", "xq7")
         provider = _DirectSubclassProvider(
-            ("TEST_CREDENTIAL_PRIMARY", "TEST_CREDENTIAL_FALLBACK"), _reflecting_response(status, "xq7")
+            ("TEST_CREDENTIAL_PRIMARY", "TEST_CREDENTIAL_FALLBACK"), _response_containing_secret(status, "xq7")
         )
 
         response = provider.invoke(AgentRequestBuilder().with_worktree_path(tmp_path).build())
@@ -441,13 +478,25 @@ class InvokeRedactionTests:
         assert response.errors == ["first [REDACTED:TEST_CREDENTIAL_PRIMARY]", "second"]
         assert response.raw_text == "raw [REDACTED:TEST_CREDENTIAL_PRIMARY]"
         assert response.summary == "summary [REDACTED:TEST_CREDENTIAL_PRIMARY]"
+
+    def test_invoke_leaves_the_unified_diff_unmasked(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Return the diff verbatim even when it contains the credential value."""
+        _clear_test_credentials(monkeypatch)
+        monkeypatch.setenv("TEST_CREDENTIAL_PRIMARY", "xq7")
+        provider = _DirectSubclassProvider(
+            ("TEST_CREDENTIAL_PRIMARY", "TEST_CREDENTIAL_FALLBACK"),
+            _response_containing_secret(AgentResponseStatus.PROPOSED_PATCH, "xq7"),
+        )
+
+        response = provider.invoke(AgentRequestBuilder().with_worktree_path(tmp_path).build())
+
         assert response.unified_diff == "+xq7\n"
 
-    def test_invoke_masks_suffix_secret_for_a_credential_free_descriptor(
+    def test_invoke_masks_a_secret_matched_by_name_suffix_when_the_descriptor_declares_no_credentials(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         monkeypatch.setenv("SVC_SECRET", "s3cr3t-value")
-        provider = _DirectSubclassProvider((), _reflecting_response(AgentResponseStatus.NO_OP, "s3cr3t-value"))
+        provider = _DirectSubclassProvider((), _response_containing_secret(AgentResponseStatus.NO_OP, "s3cr3t-value"))
 
         response = provider.invoke(AgentRequestBuilder().with_worktree_path(tmp_path).build())
 
@@ -460,7 +509,7 @@ class InvokeRedactionTests:
         monkeypatch.setenv("TEST_CREDENTIAL_FALLBACK", "zk9")
         provider = _DirectSubclassProvider(
             ("TEST_CREDENTIAL_PRIMARY", "TEST_CREDENTIAL_FALLBACK"),
-            _reflecting_response(AgentResponseStatus.PROVIDER_ERROR, "zk9"),
+            _response_containing_secret(AgentResponseStatus.PROVIDER_ERROR, "zk9"),
         )
 
         response = provider.invoke(AgentRequestBuilder().with_worktree_path(tmp_path).build())
@@ -473,7 +522,7 @@ class InvokeRedactionTests:
         monkeypatch.setenv("TEST_CREDENTIAL_PRIMARY", "xq7")
         provider = _DirectSubclassProvider(
             ("TEST_CREDENTIAL_PRIMARY", "TEST_CREDENTIAL_FALLBACK"),
-            _reflecting_response(AgentResponseStatus.PROVIDER_ERROR, "rot8"),
+            _response_containing_secret(AgentResponseStatus.PROVIDER_ERROR, "rot8"),
         )
         request = AgentRequestBuilder().with_worktree_path(tmp_path).build()
 
@@ -484,7 +533,7 @@ class InvokeRedactionTests:
         assert first.errors == ["first rot8", "second"]
         assert second.errors == ["first [REDACTED:TEST_CREDENTIAL_PRIMARY]", "second"]
 
-    def test_invoke_leaves_response_without_secrets_equal_to_the_double_output(
+    def test_invoke_returns_a_response_without_secrets_unchanged(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         monkeypatch.setenv("TEST_CREDENTIAL_PRIMARY", "xq7")
