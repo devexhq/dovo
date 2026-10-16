@@ -3,7 +3,7 @@ name: dovo-test-planner
 description: >-
   Given a source module (or --plan to read from an in-progress plan), produce a skeleton of test class(es) and test method stubs
   covering public observable contracts, interaction and ordering contracts, and conforming
-  to this repo's tests/docs/RULES.md (TEST-001 through TEST-018). Invoked as /dovo-test-planner <source-module> or
+  to this repo's tests/docs/RULES.md (TEST-001 through TEST-020). Invoked as /dovo-test-planner <source-module> or
   /dovo-test-planner --plan [<path>]. Use when planning, drafting, or structuring tests for a module or plan.
 ---
 
@@ -21,7 +21,7 @@ Given a source module or an in-progress plan, produce a skeleton of test class(e
   outcomes.
 - Flag every test that is parameterisable and prefer `@pytest.mark.parametrize` for sibling
   variations.
-- Conform to this repo's `tests/docs/RULES.md` (TEST-001 through TEST-018).
+- Conform to this repo's `tests/docs/RULES.md` (TEST-001 through TEST-020).
 
 ---
 
@@ -92,7 +92,7 @@ Check what existing tests already cover:
 - **Existing-code mode**: Search `tests/core/<domain>/` for tests asserting the same result fields.
 - **Planning mode (`--plan`)**: Check citations and test coverage in `## Ground truth`.
 
-Assert wiring at the CLI tier (TEST-004 exit codes, TEST-005 JSON wire schema dict, TEST-012 / TEST-017 rendered tokens). Do not re-assert domain service fields in CLI tests.
+Assert wiring at the CLI tier (TEST-004 exit codes, TEST-012 / TEST-017 rendered tokens; TEST-005 covers the JSON wire dict in formatter tests under `tests/cli/ui/formatters/`). Do not re-assert domain service fields in CLI tests.
 
 ---
 
@@ -161,7 +161,7 @@ def test_steps_execute_strictly_serially_never_concurrently(self): ...
 Follow `test_<condition>_<outcome>`.
 Banned names: `test_ok`, `test_success`, `test_basic`, `test_default`, `test_works`, `test_missing`, `test_blank`, `test_present`, `test_timeout`, `test_no_op`, `test_help`. No `should_` prefix.
 
-### Contract Docstring (CODE-003)
+### Contract Docstring (TEST-020)
 
 Give a method a one-line docstring only when it states a fact the test name does not: an exact literal, an ordering or interaction contract, or the inputs behind a parametrized case. Omit the docstring when the name and the assertion already say it. The execution tier follows from the test file path (`docs/agents/testing.md#the-four-execution-tiers`), so never write it into the docstring.
 
@@ -222,11 +222,11 @@ Verify before presenting output:
 
 | Check | Rule |
 |---|---|
-| Every test class maps 1:1 to a public symbol | TEST-002, TEST-003 |
-| No test class named after a private function | TEST-001 |
-| Every docstring is a single imperative line with the exact contract, and absent when the name already says it | PLAN-018, CODE-003 |
+| Every test class maps 1:1 to a public symbol | skill convention (no rule) |
+| No test class named after a private function | TEST-016 |
+| Every docstring is a single imperative line with the exact contract, and absent when the name already says it | PLAN-018, TEST-020 |
 | Planning mode (`--plan`) pairs each test with a row in `### Tests` summary table | PLAN-018 |
-| Private helpers verified through public caller tests | TEST-001 |
+| Private helpers verified through public caller tests | TEST-016 |
 | Interaction/ordering tests included where Step 5 identified sequences | (this skill) |
 | Test doubles injected at protocol boundaries only | ENCAP-002 |
 | Sibling contract variations parameterised | TEST-006 |

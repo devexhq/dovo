@@ -34,7 +34,8 @@ If the input file is missing, stop and say so. Do not reconstruct a plan from th
 - **Do not implement anything the plan marks out of scope or flags as a trap.**
 - **Never create a test file the plan's `### Tests` stubs do not list**, and never skip a deletion the deletion ledger lists (`PLAN-009`). Both directions are contract breaches, and the additive direction is the one that slips through unnoticed.
 - **A green gate is not evidence that a check ran.** Report what each gate observed, never what a doc says it enforces.
-- **Never edit `.agentic/plan.md`, `.agentic/evidence.md`, `.agentic/review.md`, `.agentic/review.json`, or `.agentic/verdict.txt`.** The only `.agentic/` file this skill writes is `.agentic/implementation-report.md`.
+- **Never edit `.agentic/plan.md`, `.agentic/evidence.md`, `.agentic/review.md`, `.agentic/review.json`, or `.agentic/verdict.txt`.** The only `.agentic/` files this skill writes are `.agentic/implementation-report.md` and `.agentic/coding-audit.json`, and the audit only through `scripts/change_audit.py`.
+- **Never read `.agentic/review-audit.json`.** It is the reviewer's independent audit. In review mode your input is `review.md` and `review.json`.
 
 ## Implementation loop
 
@@ -65,7 +66,7 @@ Work one FR (or one testable clause) at a time, in the plan's order. For each:
 5. Fix what fails before moving to the next FR. Do not accumulate red tests across FRs.
 6. Re-read the docstring of every function, class, and module you added or changed, and of any whose behavior your change altered, and keep each accurate (`CODE-003`): a one-line title, plus a description only for a hidden contract or safety behavior the code cannot show. A docstring your change made false is a defect, so fix or delete the sentence in the same change.
 
-Execute the deletion ledger as you go, in the same change set as the code that supersedes each entry. Do not leave a compatibility shim, alias, or dual path behind unless the plan demanded one (`COMPAT-002`, `COMPAT-003`), and never leave a negative existence test behind as the record of a removal (`TEST-009`).
+Execute the deletion ledger as you go, in the same change set as the code that supersedes each entry. Do not leave a compatibility shim or alias behind for an internal symbol (`COMPAT-002`), or a dual path unless the issue explicitly demands one (`COMPAT-003`). Never leave a negative existence test behind as the record of a removal (`TEST-009`).
 
 Apply the doc updates the plan's cross-cutting section lists, and only those.
 
@@ -83,6 +84,31 @@ Required by `CI-004`. A test whose assertion is "no violations found" passes whe
 The plan was reviewed by a human, so a contradiction is worth surfacing rather than silently resolving. If a contract cannot be implemented as written, or grounding turns out to be stale (a cited symbol moved or does not exist), stop that FR, report what the plan says versus what the tree shows, and flag it with 🚨. Implement the rest. Never redesign a contract on your own and never widen scope to make one fit.
 
 If the plan's ledger asks for a test whose contract you find already pinned elsewhere while implementing, say so with both paths and 🚨 rather than writing the duplicate.
+
+## Self-audit (`.agentic/coding-audit.json`)
+
+Run this once implementation is complete, before the completion gate. It makes you answer, in a file the reviewer can check, every checklist assertion that applies to the files you changed. [scripts/change_audit.py](../../../scripts/change_audit.py) builds the file from [REVIEW_CHECKLIST.json](../../../docs/agents/REVIEW_CHECKLIST.json) and the changed paths:
+
+```bash
+uv run python scripts/change_audit.py generate --role coding      # writes .agentic/coding-audit.json
+```
+
+Each entry carries `statement`, `kind`, `severity` and, when the rule has one, `na_when`; `verdict` and `evidence` start `null`. Answer every one, reading the code rather than recalling it:
+
+- `verdict` is `PASS`, `FAIL` or `N/A`. Use `N/A` only when the entry's `na_when` holds or the criterion does not touch this change, and say which in `evidence`.
+- `evidence` is never empty. Quote the `path:line` you read, or name what is absent. A `FAIL` must cite a `path:line`.
+- Write answers in batches, as a JSON object keyed by criterion id. `answer` merges them into the file and keeps every answer you did not name:
+
+  ```bash
+  uv run python scripts/change_audit.py answer --role coding --from - <<'JSON'
+  {"ARCH-001.Q02": {"verdict": "PASS", "evidence": "src/dovo/core/x.py:3 imports only dovo.common"}}
+  JSON
+  uv run python scripts/change_audit.py answer --role coding --id TYPE-006.Q01 --verdict N/A --evidence "no ignore comment added"
+  ```
+
+- Fix every `FAIL`, then re-answer it as `PASS` with the new evidence. A `FAIL` you cannot or should not fix stays `FAIL` and is listed under Plan deviations in the implementation report with the reason.
+- `uv run python scripts/change_audit.py generate --role coding` can be re-run after more edits: it keeps answers whose criterion is unchanged and names any it dropped. Re-answer anything your later edits could have changed.
+- `uv run python scripts/change_audit.py validate --role coding` must exit 0 (every criterion answered, none missing, none reworded) before you start the completion gate. Never edit the file by hand to get it past `validate`.
 
 ## Completion gate (`CI-001`)
 
@@ -114,7 +140,7 @@ Required sections, in this order:
 1. **Header**: issue or plan title, and one line stating nothing was committed or pushed.
 2. **Plan deviations**: every place the code differs from the plan, one numbered item each, with the reason. This includes judgement calls the plan left open, extra files or docs touched outside the plan's lists, renamed test classes, fixtures or helpers the plan did not name, and every 🚨 raised during the run (plan wrong, stale grounding, duplicate contract). Write `none` only if you checked. Also record how each plan Open Question was resolved in the code. A deviation not listed here counts as silent to the reviewer, so a missing entry is worse than a verbose one.
 3. **Implementation details**: what was built per package (production, tests, docs), and the deletions executed against the ledger.
-4. **Quality gates**: each command with the number it observed, the configured `fail_under`, and the `tests/` line delta against the plan's budget. State anything the repo does not enforce.
+4. **Quality gates**: each command with the number it observed, the configured `fail_under`, and the `tests/` line delta against the plan's budget. State anything the repo does not enforce. Add one line for the self-audit: the `validate` result, the number of criteria and the number left `FAIL`. Give counts only, never criterion ids or verdicts, because the reviewer reads this report before it runs its own audit.
 5. **Changed files**: modified and new, from `git status --short`.
 
 Deviations must be factual. Do not use the report to pre-justify a contract change the plan forbids: a deviation that alters a literal contract (field name, message, flag, exit code) is a 🚨 for the human, not an accepted variance.
@@ -131,7 +157,7 @@ Deviations must be factual. Do not use the report to pre-justify a contract chan
 4. A finding that says "delete this" is fixed by deleting it — redundant tests (`TEST-004`), dead harness symbols (`TEST-013`), and duplicated contracts are resolved by subtraction, never by adding a comment explaining why the duplicate is fine.
 5. Dispute rather than comply when a finding is wrong: state the finding, why it does not hold, and flag it 🚨 for the human.
 6. For a fix to an enforcement defect (a check that did not check), watch it fail before you call it fixed: reproduce the violation the check missed, confirm the repaired check flags it, then revert the reproduction.
-7. Run the same completion gate above once the fixes are in.
+7. Re-run the self-audit above once the fixes are in: `generate --role coding` keeps your earlier answers, so re-answer the criteria the fixes touched and make `validate --role coding` pass again. Then run the same completion gate above.
 8. Do not edit or delete `.agentic/review.md` or `.agentic/review.json`. They are the reviewer's artifacts, and the next round is compared against them.
 9. Edit `.agentic/implementation-report.md` in place after the gate is green; if it is absent, create it per the section above. Keep earlier content that is still true, and:
    - add a `### Review round <n>` subsection under Implementation details listing each finding by id as fixed, disputed, or deferred with the `path:line` changed;

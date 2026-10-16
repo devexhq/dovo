@@ -43,6 +43,7 @@ uv run ruff check .             # lint
 uv run ruff format .            # format
 uv run basedpyright src tests   # typecheck package and tests (errors must be 0)
 uv run python scripts/compile_rules.py   # recompile RULES.md after editing rules_spec.yaml
+uv run python scripts/change_audit.py generate --role coding   # also: answer, validate, compare (review agent); see .agents/skills/dovo-code
 ```
 
 ## Quality gates

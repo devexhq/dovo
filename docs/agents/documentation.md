@@ -32,8 +32,8 @@ Update docs in the same PR only when the change matches one of these gates:
 - **`core/db/` schema, tables, or migrations**: follow the migration hygiene
   checklist in
   [docs/agents/ci-and-tooling.md](ci-and-tooling.md#database-migration-hygiene)
-  before merging — a new table/column needs a real caller in the same PR or an
-  explicit note on why it's landing ahead of one.
+  before merging — a new table/column needs real producer and consumer call
+  sites in `src/` in the same PR, with no exemption (PERF-002).
 - **Adding an agent provider**: follow
   [docs/agents/architecture.md](architecture.md#adding-a-new-agent-provider)
   and add its setup failure modes to
@@ -53,6 +53,18 @@ Update docs in the same PR only when the change matches one of these gates:
 Keep docs lean: no update is better than busywork. Prefer **deleting stale
 bullets** over appending a parallel truth. Pure refactors that do not change
 public layout or ownership need no architecture.md diff.
+
+## Verifiable claims
+
+Readers act on what docs, skills, rules and docstrings say, so each claim must be true today
+(DOC-008):
+
+- A sentence that says something is enforced, gated or checked names the enforcing file by path.
+- Every path named as an enforcing artifact, and every helper, fixture or builder a doc tells
+  an implementer to use, exists in the tree before the instruction ships.
+- Document only behavior that is already built, in prose and in rule examples alike.
+- When a change makes a doc, skill, rule or docstring sentence false, correct or delete it in
+  the same PR rather than leaving it as aspiration.
 
 ## Keeping docs accurate
 

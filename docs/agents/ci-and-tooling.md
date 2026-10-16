@@ -90,6 +90,7 @@ Four CI jobs run on pushes to `main` and on pull requests:
 **Relevant sources:** `src/dovo/core/db/`, `src/dovo/core/db/alembic/`
 
 - Every new table or column must have real producer and consumer call sites in `src/` in the same PR.
+- A `SQLModel` `Field` that declares `unique=True` must not also declare `index=True`: the unique constraint already creates the index (DB-001).
 - One-time data backfills must be versioned Alembic revisions (`op.execute()`), not ad-hoc raw SQL in models.
 - Database repositories and domain entrypoints must be constructed once per command invocation rather than inside loops.
 
@@ -103,6 +104,22 @@ Migrations live in `src/dovo/core/db/alembic/versions/`, with revision constants
 - **Stay dialect-neutral.** Use Alembic operations and SQLAlchemy constructs. Use `op.batch_alter_table` for column and constraint changes. Do not use SQLite-only SQL (`PRAGMA`, `sqlite_master`) in a revision.
 - **Test every revision** in `tests/core/db/test_migrations.py`: an upgrade from the previous revision that preserves existing rows, and a downgrade that restores the previous schema and keeps rows written after the upgrade.
 - There is no automated check for edits to released revisions yet; reviewers enforce it.
+
+---
+
+## Enforcement Parity
+
+**Relevant sources:** `tests/lint/`, `prek.toml`, `.github/workflows/`, `pyproject.toml`
+
+A BLOCKER rule that a machine can check needs an executing check: an invariant test under
+`tests/lint/`, a prek hook or a CI step (CI-004). Otherwise classify it review-only.
+
+- A declared gate must be able to fail. No setting disables it (a coverage floor of zero, a type
+  checker in no hook and no workflow); wire it up or downgrade the rule to a WARNING.
+- Each invariant check ships a regression test shaped like the code it polices (assertions in a
+  `*Tests` class, not a module-level function).
+- A check that lands green over existing violations carries an explicit burn-down allowlist. The
+  allowlist only shrinks; adding an entry is a regression.
 
 ---
 

@@ -108,7 +108,7 @@ Use these terms precisely. A backticked type below must exist in `src/`, enforce
 ## Adding a new catalog-backed domain
 
 1. **Models**: `<X>Definition` in `core/catalog/definitions/<x>.py`.
-2. **Exceptions**: `<X>LoadError` / `<X>ValidationError` subclassing definition errors in `core/catalog/exceptions.py`.
+2. **Exceptions**: `<X>LoadError` / `<X>ValidationError` subclassing definition errors in `core/catalog/exceptions.py`. Every exception class there descends from `DefinitionError`, `DefinitionNotFoundError`, `DefinitionLoadError` or `DefinitionValidationError` (MODEL-004).
 3. **Handle**: `core/catalog/<x>.py` -> `Catalog.get(..., item_type=..., definition_cls=...)`.
 4. **Execution**: If executing steps, run them through `Engine.run` (via a run service); do not add a separate step loop.
 5. **CLI**: Thin `commands/root.py`, UI formatters in `cli/ui/formatters/<x>/`.
@@ -119,7 +119,7 @@ Use these terms precisely. A backticked type below must exist in `src/`, enforce
 
 1. Add the provider token to `AgentProvider` in `core/config/models.py` and to the `agent.provider` enum in `schemas/v1/config.json` ([`tests/lint/test_config_schema_parity.py`](../../tests/lint/test_config_schema_parity.py) fails if they differ).
 2. Direct-mutation providers (the provider CLI or SDK edits the worktree, like `copilot`) subclass `CliDirectMutationAdapter`; others subclass `BaseAgentProvider` and implement `_invoke`. Neither overrides `invoke`, which runs the credential check first. Declare every credential env var in `credential_envs`, including names without a secret suffix, because response redaction reads that list. A provider that can also authenticate without an env var sets `auth_label` and `auth_fix` on its `ProviderSpec`.
-3. Resolve secrets via a module-level `resolve_<provider>_api_key()` from environment variables, never from `config.json`.
+3. Resolve secrets via a module-level resolve helper in the provider module (`resolve_copilot_token` in `core/agents/copilot.py`, `resolve_claude_credential` in `core/agents/claude.py`) from environment variables, never from `config.json`.
 4. Declare the `ProviderSpec` in the provider module, import it in `core/agents/registry.py`, and add it to `PROVIDERS`.
 5. Add tests under `tests/core/agents/test_<provider>.py` with fake execution functions or transports, and the setup failure modes to [troubleshooting.md](troubleshooting.md). Register one finished-stream factory in `PROVIDER_FINISHED_STREAMS` (`tests/harness/fakes.py`); the registry contract, credential, env-boundary, redaction and tool-policy suites then cover the provider through `PROVIDERS`, so no other conformance test is edited.
 
