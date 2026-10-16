@@ -11,7 +11,7 @@ from tests.lint.astlib import REPO_ROOT, SRC_ROOT
 
 ARCHITECTURE_PATH: Final = REPO_ROOT / "docs" / "agents" / "architecture.md"
 LAYERS: Final[tuple[str, ...]] = ("cli", "core", "engine", "common")
-NON_PACKAGE_DIRS: Final[frozenset[str]] = frozenset({"__pycache__", "docs"})
+NON_PACKAGE_DIRS: Final[frozenset[str]] = frozenset({"__pycache__"})
 LAYER_HEADER: Final = re.compile(r"^src/dovo/(\w+)/")
 PACKAGE_NAMES: Final = re.compile(r"^  ((?:\w+/\s?)+)")
 

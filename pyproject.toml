@@ -111,8 +111,6 @@ exclude = [
     ".venv",
     "venv",
     "bin",
-    "docs/agents/PLANNER_RULES.md",
-    "**/docs/RULES.md",
 ]
 
 [tool.ruff.lint]
