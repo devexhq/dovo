@@ -121,7 +121,7 @@ Use these terms precisely. A backticked type below must exist in `src/`, enforce
 2. Direct-mutation providers (the provider CLI or SDK edits the worktree, like `copilot`) subclass `CliDirectMutationAdapter`; others subclass `BaseAgentProvider` and implement `_invoke`. Neither overrides `invoke`, which runs the credential check first. Declare every credential env var in `credential_envs`, including names without a secret suffix, because response redaction reads that list. A provider that can also authenticate without an env var sets `auth_label` and `auth_fix` on its `ProviderSpec`.
 3. Resolve secrets via a module-level `resolve_<provider>_api_key()` from environment variables, never from `config.json`.
 4. Declare the `ProviderSpec` in the provider module, import it in `core/agents/registry.py`, and add it to `PROVIDERS`.
-5. Add tests under `tests/core/agents/test_<provider>.py` with fake execution functions or transports, and the setup failure modes to [troubleshooting.md](troubleshooting.md).
+5. Add tests under `tests/core/agents/test_<provider>.py` with fake execution functions or transports, and the setup failure modes to [troubleshooting.md](troubleshooting.md). Register one finished-stream factory in `PROVIDER_FINISHED_STREAMS` (`tests/harness/fakes.py`); the registry contract, credential, env-boundary, redaction and tool-policy suites then cover the provider through `PROVIDERS`, so no other conformance test is edited.
 
 ## Secrets handling
 

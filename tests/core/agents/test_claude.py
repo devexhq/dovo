@@ -29,7 +29,14 @@ from dovo.core.agents.claude import (
 from dovo.core.agents.claude_progress import map_claude_line
 from dovo.core.agents.cli_mutation import CliMutationOutcome, CliMutationRunRequest
 from dovo.core.agents.registry import PROVIDERS
-from tests.harness import AgentRequestBuilder, FakeAgentRunner, FakeAgentRunnerCall, patch_claude_probe
+from tests.harness import (
+    AgentRequestBuilder,
+    EditingAgentRunner,
+    FakeAgentRunner,
+    FakeAgentRunnerCall,
+    patch_claude_probe,
+    real_invocation,
+)
 
 
 class ClaudeDescriptorTests:
@@ -72,12 +79,28 @@ _ALLOW_ALL_ARGV = [
 ]
 
 
-def _fake_claude(monkeypatch: pytest.MonkeyPatch) -> FakeAgentRunner:
-    """Install a FakeAgentRunner at the Claude process boundary with a usable ANTHROPIC_API_KEY and no OAuth token."""
+_DENIED_STDOUT = (
+    b'{"type":"result","subtype":"success","is_error":false,"result":"blocked",'
+    b'"permission_denials":[{"tool_name":"Bash","tool_use_id":"toolu_1"}]}\n'
+)
+
+
+def _porcelain(repo: Path) -> str:
+    """Return `git status --porcelain` output for repo."""
+    return subprocess.run(["git", "status", "--porcelain"], cwd=repo, check=True, capture_output=True, text=True).stdout
+
+
+def _arm_claude(monkeypatch: pytest.MonkeyPatch, runner: FakeAgentRunner) -> None:
+    """Set ANTHROPIC_API_KEY, unset CLAUDE_CODE_OAUTH_TOKEN, and install runner at the Claude process boundary."""
     monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test")
     monkeypatch.delenv("CLAUDE_CODE_OAUTH_TOKEN", raising=False)
-    runner = FakeAgentRunner().returning(stdout=_SUCCESS_STDOUT)
     monkeypatch.setattr("dovo.core.agents.cli_mutation.stream_isolated_process", runner)
+
+
+def _fake_claude(monkeypatch: pytest.MonkeyPatch) -> FakeAgentRunner:
+    """Install a FakeAgentRunner at the Claude process boundary with a usable ANTHROPIC_API_KEY and no OAuth token."""
+    runner = FakeAgentRunner().returning(stdout=_SUCCESS_STDOUT)
+    _arm_claude(monkeypatch, runner)
 
     return runner
 
@@ -330,7 +353,7 @@ class ClaudeRunTests:
     ) -> None:
         """Return status 'error' with a detail naming the config path and zero runner calls when the write raises OSError."""
         runner = _fake_claude(monkeypatch)
-        invocation = _real_invocation(tmp_path)
+        invocation = real_invocation(tmp_path / "invocation")
         worktree = tmp_path / "worktree"
         worktree.mkdir()
         monkeypatch.setattr(Filesystem, "atomic_write_text", _raise_disk_full)
@@ -354,13 +377,14 @@ def _raise_disk_full(path: Path, text: str) -> None:
 
 class ClaudeInvokeTests:
     def test_text_only_success_returns_no_op(self, git_repo: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        """Return NO_OP with raw_text 'done' when the stream succeeds and the worktree diff is empty."""
+        """Return NO_OP with no diff, raw_text 'done', and a clean worktree when the stream succeeds without edits."""
         _fake_claude(monkeypatch)
         request = AgentRequestBuilder().with_worktree_path(git_repo).build()
 
         response = ClaudeAgentAdapter().invoke(request)
 
-        assert (response.status, response.raw_text) == (AgentResponseStatus.NO_OP, "done")
+        assert (response.status, response.raw_text, response.unified_diff) == (AgentResponseStatus.NO_OP, "done", None)
+        assert _porcelain(git_repo) == ""
 
     def test_invoke_without_authentication_returns_provider_error_with_fr4_detail(
         self, git_repo: Path, monkeypatch: pytest.MonkeyPatch
@@ -452,7 +476,7 @@ class ClaudeInvokeTests:
         self, git_repo: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """Find <control>/mcp-config.json holding the configured server when the runner is called."""
-        invocation = _real_invocation(tmp_path)
+        invocation = real_invocation(tmp_path / "invocation")
         config_path = invocation.control_path / "mcp-config.json"
         runner = _ConfigSnapshotRunner(config_path).returning(stdout=_SUCCESS_STDOUT)
         monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test")
@@ -471,6 +495,63 @@ class ClaudeInvokeTests:
 
         assert runner.snapshot is not None
         assert json.loads(runner.snapshot) == {"mcpServers": {"github": {"command": "npx"}}}
+
+
+class ClaudeGitIntegrationTests:
+    def test_validated_edit_returns_proposed_patch_and_leaves_it_staged(
+        self, git_repo: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Return PROPOSED_PATCH with the edited.txt diff, porcelain 'A  edited.txt\\n', and no rejected patch path."""
+        _arm_claude(monkeypatch, EditingAgentRunner({"edited.txt": "edited\n"}).returning(stdout=_SUCCESS_STDOUT))
+
+        response = ClaudeAgentAdapter().invoke(AgentRequestBuilder().with_worktree_path(git_repo).build())
+
+        assert response.status == AgentResponseStatus.PROPOSED_PATCH
+        assert response.unified_diff is not None
+        assert "diff --git a/edited.txt b/edited.txt" in response.unified_diff
+        assert "+edited" in response.unified_diff
+        assert _porcelain(git_repo) == "A  edited.txt\n"
+        assert response.rejected_patch_path is None
+
+    def test_rejected_diff_is_saved_then_rolled_back(
+        self, git_repo: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Return PROVIDER_ERROR with the saved patch naming a.txt and b.txt and a clean worktree."""
+        _arm_claude(monkeypatch, EditingAgentRunner({"a.txt": "a\n", "b.txt": "b\n"}).returning(stdout=_SUCCESS_STDOUT))
+        destination = tmp_path / "rejected" / "code_attempt_1.patch"
+        request = (
+            AgentRequestBuilder()
+            .with_worktree_path(git_repo)
+            .with_max_files(1)
+            .with_rejected_patch_destination(destination)
+            .build()
+        )
+
+        response = ClaudeAgentAdapter().invoke(request)
+
+        assert response.status == AgentResponseStatus.PROVIDER_ERROR
+        assert _porcelain(git_repo) == ""
+        assert response.rejected_patch_path == str(destination)
+        patch_text = destination.read_text(encoding="utf-8")
+        assert "a.txt" in patch_text
+        assert "b.txt" in patch_text
+        assert response.errors[-1] == f"Discarded edit saved to {destination}."
+
+    def test_denied_run_with_empty_diff_is_blocked_and_leaves_worktree_clean(
+        self, git_repo: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Return BLOCKED with no diff, a clean worktree, and the Bash permission-denied error first."""
+        _arm_claude(monkeypatch, FakeAgentRunner().returning(stdout=_DENIED_STDOUT))
+
+        response = ClaudeAgentAdapter().invoke(AgentRequestBuilder().with_worktree_path(git_repo).build())
+
+        assert response.status == AgentResponseStatus.BLOCKED
+        assert response.unified_diff is None
+        assert _porcelain(git_repo) == ""
+        assert response.errors[0] == (
+            "Agent run was blocked by tool permissions (AGENT_PERMISSION_BLOCKED): "
+            "Bash: Permission to use Bash was denied"
+        )
 
 
 class _ConfigSnapshotRunner(FakeAgentRunner):
@@ -497,18 +578,6 @@ class _ConfigSnapshotRunner(FakeAgentRunner):
         return super().__call__(cmd, cwd=cwd, env=env, input_data=input_data, timeout_seconds=timeout_seconds, **kwargs)
 
 
-def _real_invocation(tmp_path: Path) -> AgentInvocationContext:
-    """Create real scratch and control directories outside the worktree."""
-    root = tmp_path / "invocation"
-    scratch, control = root / "scratch", root / "control"
-    scratch.mkdir(parents=True)
-    control.mkdir()
-
-    return AgentInvocationContext(
-        invocation_id="a" * 32, scratch_path=scratch.resolve(), control_path=control.resolve()
-    )
-
-
 class ClaudePolicyPreflightTests:
     def test_mcp_policy_is_rejected_before_spawn(
         self, git_repo: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -521,7 +590,7 @@ class ClaudePolicyPreflightTests:
         request = (
             AgentRequestBuilder()
             .with_worktree_path(git_repo)
-            .with_invocation(_real_invocation(tmp_path))
+            .with_invocation(real_invocation(tmp_path / "invocation"))
             .with_tools(policy)
             .build()
         )
@@ -558,7 +627,7 @@ class ClaudePolicyPreflightTests:
         request = (
             AgentRequestBuilder()
             .with_worktree_path(git_repo)
-            .with_invocation(_real_invocation(tmp_path))
+            .with_invocation(real_invocation(tmp_path / "invocation"))
             .with_tools(policy)
             .build()
             .model_copy(update={"mcp_servers": configured})
@@ -580,7 +649,7 @@ class ClaudePolicyPreflightTests:
         request = (
             AgentRequestBuilder()
             .with_worktree_path(git_repo)
-            .with_invocation(_real_invocation(tmp_path))
+            .with_invocation(real_invocation(tmp_path / "invocation"))
             .with_tools(policy)
             .build()
         )
@@ -597,7 +666,7 @@ class ClaudePolicyPreflightTests:
         request = (
             AgentRequestBuilder()
             .with_worktree_path(git_repo)
-            .with_invocation(_real_invocation(tmp_path))
+            .with_invocation(real_invocation(tmp_path / "invocation"))
             .with_tools(default_tool_policy())
             .build()
         )
