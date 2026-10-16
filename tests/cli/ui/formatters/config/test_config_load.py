@@ -75,16 +75,8 @@ CONFIG_LOAD_PAYLOAD_CASES = [
                     "max_active_worktrees": 3,
                     "default_timeout_seconds": 900,
                 },
-                "agent": {
-                    "provider": "copilot",
-                    "models": {},
-                    "endpoint": None,
-                    "temperature": 0.2,
-                    "max_tokens": 4096,
-                    "env_passthrough": [],
-                    "env_mode": "allowlist",
-                    "mcp_servers": {},
-                },
+                "default_agent": "copilot",
+                "agents": {},
                 "history": {
                     "save_attempt_logs": True,
                     "save_agent_payloads": True,

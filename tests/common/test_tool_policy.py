@@ -117,15 +117,20 @@ class ToolPolicySchemaParityTests:
             "id": "w",
             "steps": [{"id": "s", "uses": "catalog/x", "tools": _POLICY_EXAMPLE}],
         }
-        config = {"version": 1, "project": {"name": "p"}, "agent": {"tools": _POLICY_EXAMPLE}}
+        config = {"version": 1, "project": {"name": "p"}, "agents": {"copilot": {"tools": _POLICY_EXAMPLE}}}
 
         assert (_BLUEPRINT_VALIDATOR.validate(blueprint).errors, CONFIG_VALIDATOR.validate(config).errors) == ([], [])
 
-    def test_schemas_reject_legacy_list_and_unknown_capability(self) -> None:
-        bad_values: list[object] = [["shell"], {"allow": [{"capability": "bogus"}]}]
-        for bad in bad_values:
-            blueprint = {"version": 1, "name": "w", "id": "w", "steps": [{"id": "s", "uses": "x", "tools": bad}]}
-            config = {"version": 1, "project": {"name": "p"}, "agent": {"tools": bad}}
+    @pytest.mark.parametrize(
+        "bad",
+        [
+            pytest.param(["shell"], id="legacy-list"),
+            pytest.param({"allow": [{"capability": "bogus"}]}, id="unknown-capability"),
+        ],
+    )
+    def test_schemas_reject_legacy_list_and_unknown_capability(self, bad: object) -> None:
+        blueprint = {"version": 1, "name": "w", "id": "w", "steps": [{"id": "s", "uses": "x", "tools": bad}]}
+        config = {"version": 1, "project": {"name": "p"}, "agents": {"copilot": {"tools": bad}}}
 
-            assert _BLUEPRINT_VALIDATOR.validate(blueprint).errors
-            assert CONFIG_VALIDATOR.validate(config).errors
+        assert _BLUEPRINT_VALIDATOR.validate(blueprint).errors
+        assert CONFIG_VALIDATOR.validate(config).errors

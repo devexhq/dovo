@@ -10,7 +10,6 @@ from dovo.core.config.exceptions import ConfigLoadError
 from dovo.core.config.generator import ConfigGenerationResult, generate_default_config
 from dovo.core.config.loader import ConfigLoadResult
 from dovo.core.config.models import (
-    AgentConfig,
     ConcurrencyConfig,
     DoctorConfig,
     DovoConfig,
@@ -119,11 +118,6 @@ class Config:
     def project(self) -> ProjectConfig:
         """Return the project identity section of the loaded config."""
         return self._loaded_config.project
-
-    @property
-    def agent(self) -> AgentConfig:
-        """Return the agent provider section of the loaded config."""
-        return self._loaded_config.agent
 
     @property
     def worktree(self) -> WorktreeConfig:

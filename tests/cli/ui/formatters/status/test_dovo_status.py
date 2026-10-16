@@ -13,7 +13,7 @@ from dovo.cli.ui.formatters.status import (
     StatusView,
 )
 from dovo.core.config.loader import ConfigLoadStatus
-from dovo.core.config.models import AgentConfig, DovoConfig, ProjectConfig
+from dovo.core.config.models import AgentSettings, DovoConfig, ProjectConfig
 from dovo.core.status.models import (
     CatalogStatusInfo,
     ConfigStatusInfo,
@@ -66,7 +66,7 @@ def _make_status_result(
             config=DovoConfig(
                 version=1,
                 project=ProjectConfig(name="dovo"),
-                agent=AgentConfig(models={"copilot": "test-model"}),
+                agents={"copilot": AgentSettings(model="test-model")},
             ),
         ),
         catalog=catalog
@@ -177,7 +177,7 @@ DEGRADED_SCHEMA_INVALID = FormatterCase(
             config_path=CONFIG_PATH,
             is_valid=False,
             config=None,
-            errors=["Invalid value at 'agent.models.copilot': expected string"],
+            errors=["Invalid value at 'agents.copilot.model': expected string"],
         ),
         warnings=["Invalid value: expected string"],
         fixes=["Run 'dovo config validate' to inspect schema errors or 'dovo init --repair' to insert missing keys."],
@@ -376,7 +376,7 @@ UNNAMED_PROJECT = FormatterCase(
             config=DovoConfig(
                 version=1,
                 project=ProjectConfig(name=""),
-                agent=AgentConfig(models={"copilot": "test-model"}),
+                agents={"copilot": AgentSettings(model="test-model")},
             ),
         ),
     ),
@@ -396,7 +396,6 @@ AGENT_MODEL_UNSET = FormatterCase(
             config=DovoConfig(
                 version=1,
                 project=ProjectConfig(name="dovo"),
-                agent=AgentConfig(),
             ),
         ),
     ),

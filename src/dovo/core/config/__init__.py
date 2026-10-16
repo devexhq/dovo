@@ -17,6 +17,7 @@ from dovo.core.config.mutate import (
     ConfigUnsetResult,
     ConfigUnsetStatus,
 )
+from dovo.core.config.services.agent_settings import agent_settings
 from dovo.core.config.validate import (
     ConfigValidationResult,
     ConfigValidationStatus,
@@ -40,4 +41,5 @@ __all__ = [
     "DovoConfig",
     "HierarchicalConfigLoadResult",
     "HierarchicalConfigLoadStatus",
+    "agent_settings",
 ]

@@ -78,8 +78,8 @@ dovo config show
 Set a key or nested dot-path:
 
 ```bash
-dovo config set agent.provider copilot
-dovo config set agent.models.copilot gpt-4.1
+dovo config set default_agent copilot
+dovo config set agents.copilot.model gpt-4.1
 dovo config set worktree.base_ref main
 ```
 
@@ -110,16 +110,8 @@ The default `.dovo/config.json`:
     "max_active_worktrees": 3,
     "default_timeout_seconds": 900
   },
-  "agent": {
-    "provider": "copilot",
-    "models": {},
-    "endpoint": null,
-    "temperature": 0.2,
-    "max_tokens": 4096,
-    "env_passthrough": [],
-    "env_mode": "allowlist",
-    "mcp_servers": {}
-  },
+  "default_agent": "copilot",
+  "agents": {},
   "history": {
     "save_attempt_logs": true,
     "save_agent_payloads": true,

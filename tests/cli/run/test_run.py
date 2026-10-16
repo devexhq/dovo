@@ -333,10 +333,10 @@ def _write_agent_blueprint(workspace: Path, **step_extra: object) -> None:
     )
 
 
-def _set_agent_config(workspace: Path, **agent: object) -> None:
+def _set_agent_config(workspace: Path, **settings: object) -> None:
     config_path = workspace / ".dovo" / "config.json"
     data = json.loads(config_path.read_text(encoding="utf-8"))
-    data.setdefault("agent", {}).update(agent)
+    data.setdefault("agents", {}).setdefault("copilot", {}).update(settings)
     config_path.write_text(json.dumps(data), encoding="utf-8")
 
 

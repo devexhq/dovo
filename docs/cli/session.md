@@ -194,8 +194,8 @@ Continues a paused session, by ID or the latest paused one.
 | `--comment <text>` | Comment accompanying `--answer`. |
 | `--comment-file <path>` | Read the comment accompanying `--answer` from a file. |
 | `--answers-file <path>` | JSON object `{"step_id": "...", "selected": ["B1"], "comment": "...", "text": "..."}`; cannot be combined with `--answer`, `--comment` or `--comment-file`. |
-| `--env-mode <allowlist\|inherit>` | Override `agent.env_mode` for this invocation. |
-| `--env-passthrough <name-or-prefix*>` | Forward a host variable name or a prefix ending in a single `*` to agent steps for this invocation; repeatable and appended to `agent.env_passthrough`. |
+| `--env-mode <allowlist\|inherit>` | Override `agents.<provider>.env_mode` for this invocation. |
+| `--env-passthrough <name-or-prefix*>` | Forward a host variable name or a prefix ending in a single `*` to agent steps for this invocation; repeatable and appended to `agents.<provider>.env_passthrough`. |
 | `--format <terminal\|json>` | Presentation format (`terminal` or `json`). Defaults to `terminal`. |
 | `--display <ansi\|live>` | Display format (`ansi` or `live`). Defaults to `ansi`. |
 

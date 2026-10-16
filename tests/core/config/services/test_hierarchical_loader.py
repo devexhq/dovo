@@ -73,8 +73,8 @@ class ConfigLayerResolutionTests:
         user_config_path = global_paths.user_dir / "config.json"
         repo_config_path = repo_root / ".dovo" / "config.json"
 
-        global_data = {"agent": {"temperature": 0.5}}
-        user_data = {"agent": {"models": {"copilot": "local-llm"}}}
+        global_data = {"agents": {"copilot": {"temperature": 0.5}}}
+        user_data = {"agents": {"copilot": {"model": "local-llm"}}}
         repo_data = {"worktree": {"base_ref": "main"}}
         _write_tier_config(global_config_path, global_data)
         _write_tier_config(user_config_path, user_data)
@@ -105,7 +105,7 @@ class ConfigLayerResolutionTests:
         global_paths = resolve_global_paths(global_root)
         user_config_path = global_paths.user_dir / "config.json"
         repo_config_path = repo_root / ".dovo" / "config.json"
-        _write_tier_config(user_config_path, {"agent": {"models": {"copilot": "test-model"}}})
+        _write_tier_config(user_config_path, {"agents": {"copilot": {"model": "test-model"}}})
         _write_tier_config(repo_config_path, {"worktree": {"base_ref": "main"}})
 
         layers = resolve_config_layers(workspace_paths_factory(repo_root, global_root))
@@ -131,13 +131,13 @@ class HierarchicalConfigMergeTests:
     ) -> None:
         global_root = tmp_path / "global_home"
         global_paths = resolve_global_paths(global_root)
-        _write_tier_config(global_paths.user_dir / "config.json", {"agent": {"models": {"copilot": "test-model"}}})
+        _write_tier_config(global_paths.user_dir / "config.json", {"agents": {"copilot": {"model": "test-model"}}})
         _write_tier_config(isolated_workspace / ".dovo" / "config.json", {"worktree": {"base_ref": "main"}})
 
         result = load_hierarchical_config(workspace_paths_factory(isolated_workspace, global_root))
 
         assert result.config is not None
-        assert result.config.agent.models == {"copilot": "test-model"}
+        assert result.config.agents["copilot"].model == "test-model"
 
     def test_repo_tier_overrides_worktree_base_ref_over_user_default(
         self, isolated_workspace: Path, tmp_path: Path, workspace_paths_factory: WorkspacePathsFactory
@@ -159,14 +159,14 @@ class HierarchicalConfigMergeTests:
         # which pins FR-2 (a missing tier is non-fatal) using the same two-tier fixture shape.
         global_root = tmp_path / "global_home"
         global_paths = resolve_global_paths(global_root)
-        _write_tier_config(global_paths.global_dir / "config.json", {"agent": {"temperature": 0.5}})
-        _write_tier_config(global_paths.user_dir / "config.json", {"agent": {"models": {"copilot": "local-llm"}}})
+        _write_tier_config(global_paths.global_dir / "config.json", {"agents": {"copilot": {"temperature": 0.5}}})
+        _write_tier_config(global_paths.user_dir / "config.json", {"agents": {"copilot": {"model": "local-llm"}}})
 
         result = load_hierarchical_config(workspace_paths_factory(isolated_workspace, global_root))
 
         assert result.config is not None
-        assert result.config.agent.temperature == 0.5
-        assert result.config.agent.models == {"copilot": "local-llm"}
+        assert result.config.agents["copilot"].temperature == 0.5
+        assert result.config.agents["copilot"].model == "local-llm"
 
     def test_sensitive_variables_are_unioned_across_tiers_in_precedence_order(
         self, isolated_workspace: Path, tmp_path: Path, workspace_paths_factory: WorkspacePathsFactory
@@ -208,62 +208,70 @@ class HierarchicalConfigMergeTests:
     ) -> None:
         custom_home = tmp_path / "custom_home"
         monkeypatch.setenv("DOVO_HOME", str(custom_home))
-        _write_tier_config(custom_home / "global" / "config.json", {"agent": {"temperature": 0.7}})
-        _write_tier_config(custom_home / "user" / "config.json", {"agent": {"models": {"copilot": "dovo-home-model"}}})
+        _write_tier_config(custom_home / "global" / "config.json", {"agents": {"copilot": {"temperature": 0.7}}})
+        _write_tier_config(custom_home / "user" / "config.json", {"agents": {"copilot": {"model": "dovo-home-model"}}})
 
         result = load_hierarchical_config(workspace_paths_factory(isolated_workspace, None))
 
         assert result.config is not None
-        assert result.config.agent.temperature == 0.7
-        assert result.config.agent.models == {"copilot": "dovo-home-model"}
+        assert result.config.agents["copilot"].temperature == 0.7
+        assert result.config.agents["copilot"].model == "dovo-home-model"
 
 
-class AgentConfigEnvTests:
+class AgentSettingsEnvTests:
     def test_config_without_env_keys_loads_with_defaults(
         self, isolated_workspace: Path, tmp_path: Path, workspace_paths_factory: WorkspacePathsFactory
     ) -> None:
-        _write_tier_config(isolated_workspace / ".dovo" / "config.json", {"agent": {"provider": "copilot"}})
+        _write_tier_config(isolated_workspace / ".dovo" / "config.json", {"agents": {"copilot": {}}})
 
         result = load_hierarchical_config(workspace_paths_factory(isolated_workspace, tmp_path / "global_home"))
 
         assert result.config is not None
-        assert (result.config.agent.env_passthrough, result.config.agent.env_mode) == ([], "allowlist")
+        copilot = result.config.agents["copilot"]
+        assert (copilot.env_passthrough, copilot.env_mode) == ([], "allowlist")
 
     def test_repo_tier_passthrough_replaces_global_tier_passthrough(
         self, isolated_workspace: Path, tmp_path: Path, workspace_paths_factory: WorkspacePathsFactory
     ) -> None:
         global_root = tmp_path / "global_home"
         _write_tier_config(
-            resolve_global_paths(global_root).global_dir / "config.json", {"agent": {"env_passthrough": ["A"]}}
+            resolve_global_paths(global_root).global_dir / "config.json",
+            {"agents": {"copilot": {"env_passthrough": ["A"]}}},
         )
         _write_tier_config(
             isolated_workspace / ".dovo" / "config.json",
-            {"agent": {"env_passthrough": ["B"], "env_mode": "inherit"}},
+            {"agents": {"copilot": {"env_passthrough": ["B"], "env_mode": "inherit"}}},
         )
 
         result = load_hierarchical_config(workspace_paths_factory(isolated_workspace, global_root))
 
         assert result.config is not None
-        assert (result.config.agent.env_passthrough, result.config.agent.env_mode) == (["B"], "inherit")
+        copilot = result.config.agents["copilot"]
+        assert (copilot.env_passthrough, copilot.env_mode) == (["B"], "inherit")
 
 
-class AgentToolsTierMergeTests:
-    def test_higher_tier_tools_object_replaces_lower_tier_whole(
+class AgentsMergeTests:
+    def test_merge_replaces_provider_tools_whole_and_merges_other_fields(
         self, isolated_workspace: Path, tmp_path: Path, workspace_paths_factory: WorkspacePathsFactory
     ) -> None:
+        """Replace agents.claude.tools with the repo tier's object while keeping the user tier's agents.claude.model."""
         global_root = tmp_path / "global_home"
         read_rule = {"capability": "read", "pattern": "src/**"}
         deny_rule = {"capability": "write", "pattern": ".dovo/**"}
         _write_tier_config(
             resolve_global_paths(global_root).user_dir / "config.json",
-            {"agent": {"tools": {"allow": [read_rule], "allow_all": True}}},
+            {"agents": {"claude": {"model": "user-model", "tools": {"allow": [read_rule], "allow_all": True}}}},
         )
-        _write_tier_config(isolated_workspace / ".dovo" / "config.json", {"agent": {"tools": {"deny": [deny_rule]}}})
+        _write_tier_config(
+            isolated_workspace / ".dovo" / "config.json", {"agents": {"claude": {"tools": {"deny": [deny_rule]}}}}
+        )
 
         result = load_hierarchical_config(workspace_paths_factory(isolated_workspace, global_root))
 
         assert result.config is not None
-        assert result.config.agent.tools == ToolPolicy.model_validate({"deny": [deny_rule]})
+        claude = result.config.agents["claude"]
+        assert claude.tools == ToolPolicy.model_validate({"deny": [deny_rule]})
+        assert claude.model == "user-model"
 
 
 class HierarchicalConfigErrorTests:
@@ -354,15 +362,15 @@ class HierarchicalConfigErrorTests:
         # above, which pins FR-3 using the same two-tier fixture shape.
         global_root = tmp_path / "global_home"
         global_paths = resolve_global_paths(global_root)
-        _write_tier_config(global_paths.global_dir / "config.json", {"agent": {"temperature": 0.3}})
-        _write_tier_config(global_paths.user_dir / "config.json", {"agent": {"models": {"copilot": "user-model"}}})
+        _write_tier_config(global_paths.global_dir / "config.json", {"agents": {"copilot": {"temperature": 0.3}}})
+        _write_tier_config(global_paths.user_dir / "config.json", {"agents": {"copilot": {"model": "user-model"}}})
 
         result = load_hierarchical_config(workspace_paths_factory(isolated_workspace, global_root))
 
         assert result.status == HierarchicalConfigLoadStatus.OK
         assert result.config is not None
-        assert result.config.agent.temperature == 0.3
-        assert result.config.agent.models == {"copilot": "user-model"}
+        assert result.config.agents["copilot"].temperature == 0.3
+        assert result.config.agents["copilot"].model == "user-model"
 
 
 class HierarchicalMergePurityTests:
@@ -371,8 +379,8 @@ class HierarchicalMergePurityTests:
     ) -> None:
         global_root = tmp_path / "global_home"
         global_paths = resolve_global_paths(global_root)
-        _write_tier_config(global_paths.user_dir / "config.json", {"agent": {"models": {"copilot": "test-model"}}})
-        _write_tier_config(isolated_workspace / ".dovo" / "config.json", {"agent": {"temperature": 0.9}})
+        _write_tier_config(global_paths.user_dir / "config.json", {"agents": {"copilot": {"model": "test-model"}}})
+        _write_tier_config(isolated_workspace / ".dovo" / "config.json", {"agents": {"copilot": {"temperature": 0.9}}})
 
         paths = workspace_paths_factory(isolated_workspace, global_root)
         layers = resolve_config_layers(paths)
@@ -380,8 +388,7 @@ class HierarchicalMergePurityTests:
 
         load_hierarchical_config(paths)
 
-        for layer, before in zip(layers, snapshot, strict=True):
-            assert layer.data == before
+        assert [layer.data for layer in layers] == snapshot
 
     def test_merge_output_is_deterministic_regardless_of_json_key_order(
         self, tmp_path: Path, workspace_paths_factory: WorkspacePathsFactory
@@ -394,11 +401,11 @@ class HierarchicalMergePurityTests:
 
         (repo_root_a / ".dovo").mkdir()
         (repo_root_a / ".dovo" / "config.json").write_text(
-            '{"worktree": {"base_ref": "main"}, "agent": {"models": {"copilot": "x"}}}', encoding="utf-8"
+            '{"worktree": {"base_ref": "main"}, "agents": {"copilot": {"model": "x"}}}', encoding="utf-8"
         )
         (repo_root_b / ".dovo").mkdir()
         (repo_root_b / ".dovo" / "config.json").write_text(
-            '{"agent": {"models": {"copilot": "x"}}, "worktree": {"base_ref": "main"}}', encoding="utf-8"
+            '{"agents": {"copilot": {"model": "x"}}, "worktree": {"base_ref": "main"}}', encoding="utf-8"
         )
 
         result_a = load_hierarchical_config(workspace_paths_factory(repo_root_a, global_root))

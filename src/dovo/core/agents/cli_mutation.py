@@ -15,7 +15,7 @@ from dovo.common.mcp_servers import McpServerDefinition
 from dovo.common.process import stream_isolated_process
 from dovo.common.tool_policy import ToolPolicy
 from dovo.core.agents.base import BaseAgentProvider, ProgressMapper, ProviderSpec, elapsed_ms
-from dovo.core.agents.environment import ENV_FILTERED_PROMPT_LINE, build_agent_env, withheld_env_names
+from dovo.core.agents.environment import build_agent_env, env_filtered_prompt_line, withheld_env_names
 from dovo.core.agents.models import (
     AgentDenial,
     AgentInvocationContext,
@@ -238,10 +238,11 @@ class CliDirectMutationAdapter(BaseAgentProvider):
                 duration_ms=elapsed_ms(started), detail=f"Failed to resolve worktree baseline: {exc}"
             )
 
+        spec = self._provider_spec()
         env, withheld = self._build_run_env(request)
         prompt = build_mutation_prompt(request)
-        if withheld:
-            prompt = f"{ENV_FILTERED_PROMPT_LINE}\n{prompt}"
+        if withheld and spec is not None:
+            prompt = f"{env_filtered_prompt_line(spec.token)}\n{prompt}"
             _notify_env_withheld(request.on_env_withheld, withheld)
 
         outcome = self._default_run(
@@ -256,7 +257,7 @@ class CliDirectMutationAdapter(BaseAgentProvider):
                 mcp_servers=request.mcp_servers,
                 on_line=request.on_line,
                 on_progress=request.on_progress,
-                progress_mapper=_progress_mapper_for(self._provider_spec()),
+                progress_mapper=_progress_mapper_for(spec),
             )
         )
         duration_ms = elapsed_ms(started)
@@ -311,6 +312,7 @@ class CliDirectMutationAdapter(BaseAgentProvider):
 
         if not diff.strip() and outcome.denials:
             return blocked_response(
+                provider=self._provider_name(),
                 duration_ms=duration_ms,
                 denials=outcome.denials,
                 raw_text=outcome.result_text,

@@ -11,16 +11,7 @@ def config_unset_command(
     key: str,
     output_format: str = "terminal",
 ) -> ConfigUnsetResult:
-    """Remove a configuration value by top-level or nested dot-path key.
-
-    Falls back to the schema default for the removed key. Removing a key that is
-    already absent is a no-op that still exits successfully without writing to disk.
-
-    Args:
-        context: CLI context instance.
-        key: Dot-path key (e.g. ``agent.models.copilot`` or ``version``).
-        output_format: Presentation format ("terminal" or "json").
-    """
+    """Remove a configuration value by top-level or nested dot-path key."""
     result = Config(context.paths).unset(key)
     ui_dispatcher.dispatch(result, output_format=output_format)
     return result

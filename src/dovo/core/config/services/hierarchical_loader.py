@@ -55,14 +55,19 @@ def _read_tier_file(tier: ConfigTier, path: Path) -> dict[str, Any] | None:
     return data
 
 
-_ATOMIC_KEY_PATHS: Final[frozenset[tuple[str, ...]]] = frozenset({("agent", "tools")})
+_ATOMIC_KEY_SUFFIX: Final[str] = "tools"
+
+
+def _is_atomic_key_path(path: tuple[str, ...]) -> bool:
+    """Return True for ``agents.<provider>.tools``, which a higher tier replaces whole."""
+    return len(path) == 3 and path[0] == "agents" and path[2] == _ATOMIC_KEY_SUFFIX
 
 
 def _deep_merge(base: dict[str, Any], override: dict[str, Any], path: tuple[str, ...] = ()) -> dict[str, Any]:
     """Recursively merge override onto a copy of base, replacing values at atomic key paths whole."""
     result = copy.deepcopy(base)
     for key, value in override.items():
-        if (*path, key) not in _ATOMIC_KEY_PATHS and isinstance(value, dict) and isinstance(result.get(key), dict):
+        if not _is_atomic_key_path((*path, key)) and isinstance(value, dict) and isinstance(result.get(key), dict):
             result[key] = _deep_merge(result[key], value, (*path, key))
         else:
             result[key] = copy.deepcopy(value)

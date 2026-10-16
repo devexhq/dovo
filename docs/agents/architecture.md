@@ -117,7 +117,7 @@ Use these terms precisely. A backticked type below must exist in `src/`, enforce
 
 **Relevant sources:** `src/dovo/core/agents/`, `src/dovo/core/config/models.py`
 
-1. Add the provider token to `AgentProvider` in `core/config/models.py` and to the `agent.provider` enum in `schemas/v1/config.json` ([`tests/lint/test_config_schema_parity.py`](../../tests/lint/test_config_schema_parity.py) fails if they differ).
+1. Add the provider token to `AgentProvider` in `core/config/models.py` and to the `$defs.agentProvider` enum in `schemas/v1/config.json`, which both `default_agent` and the `agents` keys reference ([`tests/lint/test_config_schema_parity.py`](../../tests/lint/test_config_schema_parity.py) fails if they differ).
 2. Direct-mutation providers (the provider CLI or SDK edits the worktree, like `copilot`) subclass `CliDirectMutationAdapter`; others subclass `BaseAgentProvider` and implement `_invoke`. Neither overrides `invoke`, which runs the credential check first. Declare every credential env var in `credential_envs`, including names without a secret suffix, because response redaction reads that list. A provider that can also authenticate without an env var sets `auth_label` and `auth_fix` on its `ProviderSpec`.
 3. Resolve secrets via a module-level resolve helper in the provider module (`resolve_copilot_token` in `core/agents/copilot.py`, `resolve_claude_credential` in `core/agents/claude.py`) from environment variables, never from `config.json`.
 4. Declare the `ProviderSpec` in the provider module, import it in `core/agents/registry.py`, and add it to `PROVIDERS`.

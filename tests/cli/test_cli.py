@@ -276,7 +276,7 @@ class ConfigTolerantCommandsPostInitTests:
         workspace = WorkspaceBuilder(tmp_path / "workspace").without_config().build()
 
         result = cli_runner.invoke(
-            app, ["-p", str(workspace), "config", "set", "agent.models.copilot", "qwen2.5-coder"]
+            app, ["-p", str(workspace), "config", "set", "agents.copilot.model", "qwen2.5-coder"]
         )
 
         set_results = [item for item in dispatch_spy if isinstance(item, ConfigSetResult)]

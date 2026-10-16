@@ -34,7 +34,7 @@ from dovo.core.agents.cli_mutation import (
     unknown_option_detail,
     validate_request_patch,
 )
-from dovo.core.agents.environment import ENV_FILTERED_PROMPT_LINE
+from dovo.core.agents.environment import env_filtered_prompt_line
 from dovo.core.agents.models import AgentDenial
 from dovo.core.agents.mutation_git import (
     MutationGitError,
@@ -707,7 +707,7 @@ class MutationEnvReportTests:
         response = EnvironmentAdapter(run_fn=_record).invoke(AgentRequestBuilder().with_worktree_path(git_repo).build())
 
         assert response.env_withheld == ["FOO_HOST", "ZED_HOST"]
-        assert received[0].prompt.startswith(ENV_FILTERED_PROMPT_LINE + "\n")
+        assert received[0].prompt.startswith(env_filtered_prompt_line("unit-test") + "\n")
         assert received[0].env["DOVO_ENV_WITHHELD"] == "FOO_HOST,ZED_HOST"
 
     def test_withheld_names_reach_the_callback_before_the_runner_starts(

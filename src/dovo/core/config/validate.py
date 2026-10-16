@@ -11,6 +11,7 @@ from dovo.common.models import BaseResult
 from dovo.core.agents.registry import PROVIDERS, unsupported_provider_message
 from dovo.core.config.loader import ConfigLoadStatus
 from dovo.core.config.models import DovoConfig
+from dovo.core.config.services.agent_settings import agent_settings
 
 
 class ConfigValidationStatus(StrEnum):
@@ -101,7 +102,7 @@ def validate_config_result(config_path: Path) -> ConfigValidationResult:
             config=None,
             errors=[provider_error],
             warnings=[],
-            fixes=["Set agent.provider to one of the supported providers named in the error"],
+            fixes=["Set default_agent to one of the supported providers named in the error"],
         )
 
     warnings, warning_fixes = _semantic_warnings(loaded.config)
@@ -118,17 +119,61 @@ def validate_config_result(config_path: Path) -> ConfigValidationResult:
 
 
 def _unregistered_provider_error(config: DovoConfig) -> str | None:
-    """Return the unsupported-provider message if the configured provider isn't registered, else None."""
-    if config.agent.provider in PROVIDERS:
+    """Return the unsupported-provider message for an unregistered default_agent."""
+    if config.default_agent in PROVIDERS:
         return None
-    return unsupported_provider_message(config.agent.provider)
+    return f"default_agent: {unsupported_provider_message(config.default_agent)}"
 
 
 def _provider_requires_model(provider: str) -> bool:
-    """Return True when the registered provider descriptor requires agent.models.<provider>."""
+    """Return True when the registered provider descriptor requires agents.<provider>.model."""
     spec = PROVIDERS.get(provider)
 
     return spec is not None and spec.requires_model
+
+
+def _model_warnings(config: DovoConfig) -> tuple[list[str], list[str]]:
+    """Return the missing-model warning and fix for the default_agent block."""
+    provider = config.default_agent
+    if not _provider_requires_model(provider) or agent_settings(config).model is not None:
+        return [], []
+
+    return (
+        [
+            f"default_agent '{provider}' requires agents.{provider}.model but it is missing "
+            f"(CONFIG_WARN_AGENT_MODEL_MISSING)."
+        ],
+        [f"Set agents.{provider}.model"],
+    )
+
+
+def _endpoint_warnings(config: DovoConfig) -> tuple[list[str], list[str]]:
+    """Return one non-absolute-endpoint warning and fix per agents block, in config order."""
+    warnings: list[str] = []
+    fixes: list[str] = []
+
+    for provider, settings in config.agents.items():
+        endpoint = settings.endpoint
+        if endpoint is None or _is_absolute_http_url(endpoint):
+            continue
+        warnings.append(
+            f"agents.{provider}.endpoint is not an absolute http(s) URL: '{endpoint}' (CONFIG_WARN_AGENT_ENDPOINT)."
+        )
+        fixes.append(f"Set agents.{provider}.endpoint to an absolute http:// or https:// URL, or null")
+
+    return warnings, fixes
+
+
+def _worktree_warnings(config: DovoConfig) -> tuple[list[str], list[str]]:
+    """Return the worktree-limit warning and fix for a max_active_worktrees above 10."""
+    max_active = config.worktree.max_active_worktrees
+    if max_active <= 10:
+        return [], []
+
+    return (
+        [f"worktree.max_active_worktrees ({max_active}) exceeds 10 (CONFIG_WARN_WORKTREE_LIMIT)."],
+        ["Lower worktree.max_active_worktrees to 10 or fewer"],
+    )
 
 
 def _semantic_warnings(config: DovoConfig) -> tuple[list[str], list[str]]:
@@ -136,22 +181,9 @@ def _semantic_warnings(config: DovoConfig) -> tuple[list[str], list[str]]:
     warnings: list[str] = []
     fixes: list[str] = []
 
-    provider = config.agent.provider
-    if _provider_requires_model(provider) and config.agent.active_model is None:
-        warnings.append(
-            f"agent.provider '{provider}' requires agent.models.{provider} but it is missing (CONFIG_WARN_AGENT_MODEL_MISSING)."
-        )
-        fixes.append(f"Set agent.models.{provider}")
-
-    endpoint = config.agent.endpoint
-    if endpoint is not None and not _is_absolute_http_url(endpoint):
-        warnings.append(f"agent.endpoint is not an absolute http(s) URL: '{endpoint}' (CONFIG_WARN_AGENT_ENDPOINT).")
-        fixes.append("Set agent.endpoint to an absolute http:// or https:// URL, or null")
-
-    max_active = config.worktree.max_active_worktrees
-    if max_active > 10:
-        warnings.append(f"worktree.max_active_worktrees ({max_active}) exceeds 10 (CONFIG_WARN_WORKTREE_LIMIT).")
-        fixes.append("Lower worktree.max_active_worktrees to 10 or fewer")
+    for rule_warnings, rule_fixes in (_model_warnings(config), _endpoint_warnings(config), _worktree_warnings(config)):
+        warnings.extend(rule_warnings)
+        fixes.extend(rule_fixes)
 
     return warnings, fixes
 

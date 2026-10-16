@@ -146,43 +146,60 @@ class ConfigLoaderTests:
         assert result.fixes == ["Repair JSON syntax, or restore from backup"]
 
 
-class AgentModelsSchemaTests:
-    """Schema contract for the per-provider agent.models map."""
+class LoadConfigTests:
+    """Schema contract for the default_agent and per-provider agents keys."""
 
-    @pytest.mark.parametrize(
-        "agent",
-        [
-            pytest.param({"model": "gpt-4.1"}, id="legacy_model_key"),
-            pytest.param({"models": {"unknown": "x"}}, id="unknown_provider_key"),
-            pytest.param({"models": {"copilot": ""}}, id="empty_value"),
-            pytest.param({"models": {"copilot": 1}}, id="non_string_value"),
-        ],
-    )
-    def test_invalid_agent_models_fail_schema_validation(
-        self, workspace_paths: WorkspacePaths, agent: dict[str, object]
-    ) -> None:
-        payload = {**build_default_config("test-project"), "agent": agent}
+    def test_load_config_rejects_legacy_agent_key(self, workspace_paths: WorkspacePaths) -> None:
+        """Return the unexpected-property error for a top-level agent key and leave the file bytes unchanged."""
+        payload = {**build_default_config("test-project"), "agent": {"provider": "copilot"}}
+        Filesystem.atomic_write_json(workspace_paths.config_file, payload)
+        before = workspace_paths.config_file.read_bytes()
+
+        result = load_config(workspace_paths)
+
+        assert result.status == ConfigLoadStatus.SCHEMA_INVALID
+        assert "Additional properties are not allowed ('agent' was unexpected)" in result.errors[0]
+        assert workspace_paths.config_file.read_bytes() == before
+
+    def test_load_config_rejects_unregistered_agents_key(self, workspace_paths: WorkspacePaths) -> None:
+        """Name the gemini key and the registered tokens copilot and claude."""
+        payload = {**build_default_config("test-project"), "agents": {"gemini": {}}}
         Filesystem.atomic_write_json(workspace_paths.config_file, payload)
 
         result = load_config(workspace_paths)
 
         assert result.status == ConfigLoadStatus.SCHEMA_INVALID
-        assert "CONFIG_SCHEMA_INVALID" in result.errors[0]
+        assert "agents: 'gemini' is not one of ['copilot', 'claude']" in result.errors[0]
 
-    def test_models_defaults_to_empty_and_valid_entry_loads(self, workspace_paths: WorkspacePaths) -> None:
-        base = {"version": 1, "project": {"name": "test-project"}}
-        Filesystem.atomic_write_json(workspace_paths.config_file, {**base, "agent": {}})
+    @pytest.mark.parametrize(
+        "field",
+        [
+            pytest.param("models", id="legacy-models"),
+            pytest.param("provider", id="legacy-provider"),
+            pytest.param("bogus", id="unknown"),
+        ],
+    )
+    def test_load_config_rejects_unknown_provider_block_field(
+        self, workspace_paths: WorkspacePaths, field: str
+    ) -> None:
+        """Report the field as an unexpected property of agents.copilot."""
+        payload = {**build_default_config("test-project"), "agents": {"copilot": {field: "x"}}}
+        Filesystem.atomic_write_json(workspace_paths.config_file, payload)
+
+        result = load_config(workspace_paths)
+
+        assert result.status == ConfigLoadStatus.SCHEMA_INVALID
+        assert f"agents.copilot: Additional properties are not allowed ('{field}' was unexpected)" in result.errors[0]
+
+    def test_load_config_defaults_default_agent_and_agents(self, workspace_paths: WorkspacePaths) -> None:
+        """Load a config without either key as default_agent "copilot" and an empty agents map."""
+        Filesystem.atomic_write_json(workspace_paths.config_file, {"version": 1, "project": {"name": "test-project"}})
         clear_config_cache()
-        absent = load_config(workspace_paths)
 
-        Filesystem.atomic_write_json(workspace_paths.config_file, {**base, "agent": {"models": {"copilot": "gpt-4.1"}}})
-        clear_config_cache()
-        present = load_config(workspace_paths)
+        result = load_config(workspace_paths)
 
-        assert absent.config is not None
-        assert absent.config.agent.models == {}
-        assert present.config is not None
-        assert present.config.agent.models == {"copilot": "gpt-4.1"}
+        assert result.config is not None
+        assert (result.config.default_agent, result.config.agents) == ("copilot", {})
 
 
 class ConfigEnvironmentSectionTests:

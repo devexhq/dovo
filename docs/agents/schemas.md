@@ -48,9 +48,9 @@ Hierarchical resolution merges four tiers, lowest to highest precedence: **Packa
 
 - Default: a higher tier **replaces** a lower tier's value.
 - `environment.sensitive_variables` is **unioned** across the Global, User, and Repo tiers.
-- `agent.tools` is **atomic**: a higher tier replaces the whole policy (`_ATOMIC_KEY_PATHS` in `hierarchical_loader.py`).
-- `agent.models` merges per provider key across tiers: a higher tier overrides only the providers it names.
-- `agent.env_passthrough` and `agent.env_mode` use the default replace rule, so a repo list replaces a global one.
+- `agents.<provider>.tools` is **atomic**: a higher tier replaces the whole policy (`_is_atomic_key_path` in `hierarchical_loader.py`).
+- `agents` merges per provider and then per field across tiers: a higher tier overrides only the providers and fields it names.
+- `agents.<provider>.env_passthrough` and `agents.<provider>.env_mode` use the default replace rule, so a repo list replaces a global one.
 - `sensitive_variables` and `env_passthrough` hold variable **names only**, never values.
 - A Global or User tier that is unreadable, malformed, or invalid surfaces as `ConfigLoadStatus.TIER_INVALID` through `resolve_effective_config`. `Config.load()`, every `Config.<section>` accessor, `dovo config show`, and `dovo run`/`dovo resume` all route through it.
 
@@ -98,8 +98,8 @@ Hierarchical resolution merges four tiers, lowest to highest precedence: **Packa
 ## 9. Agent providers
 
 - Providers are listed once in `PROVIDERS` ([`core/agents/registry.py`](../../src/dovo/core/agents/registry.py)); the factory and config validation both read it.
-- `ResolvedAgentSettings` is resolved once per drive in `drive_run`. A non-empty run-row override replaces only `provider`; `--env-passthrough` entries append to the config list (de-duplicated) and `--env-mode` overrides the config value. `AgentEnvOverrides` carries those flags and is never persisted.
-- `ResolvedAgentSettings.tools` is always a concrete policy: `AgentConfig.tools` when set, else `default_tool_policy()`. A step's own `tools` wins over it. `BaseAgentProvider` rejects a policy the provider descriptor cannot enforce before invoking it.
+- `ResolvedAgentSettings` is resolved once per drive in `drive_run`. A non-empty run-row override replaces `default_agent` and selects the `agents.<provider>` block every setting is read from; `--env-passthrough` entries append to that block's list (de-duplicated) and `--env-mode` overrides its value. `AgentEnvOverrides` carries those flags and is never persisted.
+- `ResolvedAgentSettings.tools` is always a concrete policy: `AgentSettings.tools` of the selected provider when set, else `default_tool_policy()`. A step's own `tools` wins over it. `BaseAgentProvider` rejects a policy the provider descriptor cannot enforce before invoking it.
 - Each attempt gets an `AgentInvocationContext`. `control_path` is host-owned and must never reach prompts, environments, or grants; `AgentRequest.agent_scratch_path` is the only scratch path exposed to prompts and must equal `invocation.scratch_path`.
 - `invocation`, `env`, and `metadata_env` are excluded from serialized dumps.
 - Environment inputs are names-only for reporting: `env_withheld` carries the names the allowlist withheld, never values.

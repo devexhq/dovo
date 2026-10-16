@@ -52,10 +52,6 @@ SCRATCH_TEMP_ENV_NAMES: Final[tuple[str, ...]] = ("TMPDIR", "TMP", "TEMP")
 WITHHELD_ENV_NAME: Final[str] = "DOVO_ENV_WITHHELD"
 WITHHELD_REPORT_LIMIT: Final[int] = 4096
 ENV_OVERRIDE_INVALID_CODE: Final[str] = "AGENT_ENV_OVERRIDE_INVALID"
-ENV_FILTERED_PROMPT_LINE: Final[str] = (
-    "Environment is filtered. Variables withheld from this process are listed in $DOVO_ENV_WITHHELD. "
-    "If a needed variable is missing, tell the user to add it to agent.env_passthrough or pass --env-passthrough."
-)
 
 
 class _EnvDescriptor(Protocol):
@@ -110,8 +106,20 @@ def build_probe_env(spec: _EnvDescriptor) -> dict[str, str]:
     return env
 
 
-def validate_agent_env_request(spec: _EnvDescriptor, request: AgentRequest) -> str | None:
-    """Return the fixed AGENT_ENV_OVERRIDE_INVALID message for the first reserved name in literal passthrough or step env, else None."""
+def env_filtered_prompt_line(provider: str) -> str:
+    """Return the prompt line telling the agent to ask for agents.<provider>.env_passthrough."""
+    return (
+        "Environment is filtered. Variables withheld from this process are listed in $DOVO_ENV_WITHHELD. "
+        f"If a needed variable is missing, tell the user to add it to agents.{provider}.env_passthrough "
+        "or pass --env-passthrough."
+    )
+
+
+def validate_agent_env_request(spec: _EnvDescriptor, request: AgentRequest, provider: str) -> str | None:
+    """Return the AGENT_ENV_OVERRIDE_INVALID message for the first reserved name in literal passthrough or step env.
+
+    The message names agents.<provider>.env_passthrough; None means no entry is reserved.
+    """
     reserved = _reserved_names(spec, request)
     literal_passthrough = {entry for entry in request.env_passthrough if not entry.endswith("*")}
     conflicts = (literal_passthrough & reserved) | (set(request.env) & (reserved | frozenset(spec.credential_envs)))
@@ -122,7 +130,7 @@ def validate_agent_env_request(spec: _EnvDescriptor, request: AgentRequest) -> s
 
     return (
         f"Agent environment override '{name}' conflicts with provider or Dovo controls "
-        f"({ENV_OVERRIDE_INVALID_CODE}). Fix: remove it from agent.env_passthrough or the agent step's env."
+        f"({ENV_OVERRIDE_INVALID_CODE}). Fix: remove it from agents.{provider}.env_passthrough or the agent step's env."
     )
 
 

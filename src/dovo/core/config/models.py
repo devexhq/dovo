@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from enum import StrEnum
 from pathlib import Path
-from typing import Annotated, Any, Literal, get_args
+from typing import Annotated, Any, Final, Literal
 
 from pydantic import (
     BaseModel,
@@ -22,7 +22,7 @@ from dovo.common.tool_policy import ToolPolicy, coerce_tool_policy
 from dovo.core.agents.models import AgentEnvMode, EnvPassthroughEntry
 
 AgentProvider = Literal["copilot", "claude"]
-ModelName = Annotated[str, Field(min_length=1)]
+DEFAULT_AGENT: Final[AgentProvider] = "copilot"
 
 
 class ProjectConfig(BaseModel):
@@ -44,13 +44,12 @@ class WorktreeConfig(BaseModel):
     default_timeout_seconds: int = Field(default=900, ge=1)
 
 
-class AgentConfig(BaseModel):
-    """Agent provider settings."""
+class AgentSettings(BaseModel):
+    """Settings for one agent provider, stored under ``agents.<provider>``."""
 
     model_config = {"extra": "forbid", "strict": True}
 
-    provider: AgentProvider = "copilot"
-    models: dict[str, ModelName] = Field(default_factory=dict)
+    model: str | None = Field(default=None, min_length=1)
     endpoint: str | None = Field(default=None, min_length=1)
     temperature: float = Field(default=0.2, ge=0, le=2)
     max_tokens: int = Field(default=4096, ge=1)
@@ -69,20 +68,6 @@ class AgentConfig(BaseModel):
                 raise ValueError(reason)
 
         return servers
-
-    @field_validator("models")
-    @classmethod
-    def validate_model_provider_keys(cls, val: dict[str, str]) -> dict[str, str]:
-        """Reject a models key that is not a registered provider token."""
-        unknown = sorted(set(val) - set(get_args(AgentProvider)))
-        if unknown:
-            raise ValueError(f"unknown agent provider(s) in models: {', '.join(unknown)}")
-        return val
-
-    @property
-    def active_model(self) -> str | None:
-        """Return the model configured for the active provider, or None when it has no entry."""
-        return self.models.get(self.provider)
 
     @field_validator("tools", mode="before")
     @classmethod
@@ -169,7 +154,8 @@ class DovoConfig(BaseModel):
     project: ProjectConfig
     ignore_global_root_error: bool = False
     worktree: WorktreeConfig = Field(default_factory=WorktreeConfig)
-    agent: AgentConfig = Field(default_factory=AgentConfig)
+    default_agent: AgentProvider = DEFAULT_AGENT
+    agents: dict[AgentProvider, AgentSettings] = Field(default_factory=dict)
     history: HistoryConfig = Field(default_factory=HistoryConfig)
     doctor: DoctorConfig = Field(default_factory=DoctorConfig)
     prune: PruneConfig = Field(default_factory=PruneConfig)

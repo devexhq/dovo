@@ -14,7 +14,7 @@ import pytest
 from dovo.common.filesystem import Filesystem, WorkspacePaths
 from dovo.common.filesystem.services.global_root import resolve_global_paths
 from dovo.core.config.loader import ConfigLoadStatus
-from dovo.core.config.models import AgentConfig, DovoConfig, ProjectConfig, WorktreeConfig
+from dovo.core.config.models import AgentSettings, DovoConfig, ProjectConfig, WorktreeConfig
 from dovo.core.db import SessionsRepository, SessionStatus, WorktreesRepository
 from dovo.core.db.connection import resolve_db_path
 from dovo.core.git import GitNotFoundError, GitPlumbingTimeoutError, GitRunner
@@ -33,7 +33,7 @@ def _config_payload(*, model: str | None = "gpt-4o", max_active_worktrees: int =
     return DovoConfig(
         version=1,
         project=ProjectConfig(name="status-ws"),
-        agent=AgentConfig(models={"copilot": model} if model else {}),
+        agents={"copilot": AgentSettings(model=model)} if model else {},
         worktree=WorktreeConfig(max_active_worktrees=max_active_worktrees),
     ).model_dump(mode="json")
 
@@ -444,7 +444,7 @@ class StatusCollectorWarningsOrderingTests:
         assert result2.warnings == [
             "Active branch is 'main'. Automated workflows on primary branches are discouraged.",
             "Working tree has 1 uncommitted change(s).",
-            "Agent model is not configured (agent.models.copilot is unset).",
+            "Agent model is not configured (agents.copilot.model is unset).",
             "max_active_worktrees (8) is unusually high.",
             "1 invalid blueprint file(s) detected in catalog.",
         ]

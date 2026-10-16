@@ -5,7 +5,8 @@ from __future__ import annotations
 from dovo.core.agents.base import ProviderSpec
 from dovo.core.agents.credentials import resolve_credential
 from dovo.core.agents.registry import PROVIDERS
-from dovo.core.config.models import AgentConfig, AgentProvider
+from dovo.core.config import agent_settings
+from dovo.core.config.models import DEFAULT_AGENT, AgentProvider, AgentSettings
 from dovo.core.diagnostics.models import CheckCategory, CheckStatus, DiagnosticCheckResult, DiagnosticsContext
 
 
@@ -18,16 +19,15 @@ class AgentSetupCheck:
 
     def execute(self, context: DiagnosticsContext) -> DiagnosticCheckResult:
         """Validate the active provider's required credential, if any, and its configured model entry."""
-        agent_config = context.config.agent if context.config is not None else AgentConfig()
-
-        provider = agent_config.provider
+        provider = context.config.default_agent if context.config is not None else DEFAULT_AGENT
+        settings = agent_settings(context.config) if context.config is not None else AgentSettings()
         spec = PROVIDERS.get(provider)
         label = None if spec is None or spec.auth_label is None else spec.auth_label()
 
         if spec is not None and _credential_missing(spec, label):
             return _key_missing_result(self.check_id, self.name, self.category, provider, spec)
 
-        model = agent_config.active_model
+        model = settings.model
         if model is None:
             return _no_model_result(self.check_id, self.name, self.category, provider, label)
 

@@ -166,7 +166,9 @@ class ExecuteAgentStepBlockedTests:
         self, git_repo: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         response = blocked_response(
-            duration_ms=1, denials=[AgentDenial(tool="bash", message="denied", capability=ToolCapability.SHELL)]
+            provider="copilot",
+            duration_ms=1,
+            denials=[AgentDenial(tool="bash", message="denied", capability=ToolCapability.SHELL)],
         )
         _use_provider(monkeypatch, FakeAgentProvider(response))
 
@@ -566,7 +568,7 @@ def _stub_attempt(monkeypatch: pytest.MonkeyPatch, attempt: AgentAttempt) -> lis
 
 
 _FILTERED_LINE = "  ! Agent environment filtered: 3 variables withheld.\n"
-_FIX_LINE = "  ! Fix: add names to agent.env_passthrough or pass --env-passthrough NAME.\n"
+_FIX_LINE = "  ! Fix: add names to agents.copilot.env_passthrough or pass --env-passthrough NAME.\n"
 
 
 class ExecuteAgentStepToolsTests:

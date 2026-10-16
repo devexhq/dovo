@@ -15,6 +15,7 @@ from dovo.core.agents.environment import (
     WITHHELD_REPORT_LIMIT,
     build_agent_env,
     build_probe_env,
+    env_filtered_prompt_line,
     env_passthrough_flag_error,
     format_withheld_report,
     forwarded_env_secrets,
@@ -26,7 +27,7 @@ from tests.harness import AgentRequestBuilder
 
 _OVERRIDE_MESSAGE = (
     "Agent environment override '{name}' conflicts with provider or Dovo controls (AGENT_ENV_OVERRIDE_INVALID). "
-    "Fix: remove it from agent.env_passthrough or the agent step's env."
+    "Fix: remove it from agents.{provider}.env_passthrough or the agent step's env."
 )
 
 _CONTROL_CASES = [
@@ -300,6 +301,30 @@ class FormatWithheldReportTests:
         assert format_withheld_report(["A", "B"]) == "A,B"
 
 
+class EnvFilteredPromptLineTests:
+    @pytest.mark.parametrize(
+        ("provider", "expected"),
+        [
+            pytest.param(
+                "claude",
+                "Environment is filtered. Variables withheld from this process are listed in $DOVO_ENV_WITHHELD. "
+                "If a needed variable is missing, tell the user to add it to agents.claude.env_passthrough "
+                "or pass --env-passthrough.",
+                id="registered-token",
+            ),
+            pytest.param(
+                "unregistered",
+                "Environment is filtered. Variables withheld from this process are listed in $DOVO_ENV_WITHHELD. "
+                "If a needed variable is missing, tell the user to add it to agents.unregistered.env_passthrough "
+                "or pass --env-passthrough.",
+                id="unregistered-token",
+            ),
+        ],
+    )
+    def test_prompt_line_names_the_providers_env_passthrough_key(self, provider: str, expected: str) -> None:
+        assert env_filtered_prompt_line(provider) == expected
+
+
 class ValidateAgentEnvRequestTests:
     @pytest.mark.parametrize(
         "source", [pytest.param("passthrough", id="passthrough"), pytest.param("step-env", id="step-env")]
@@ -319,7 +344,9 @@ class ValidateAgentEnvRequestTests:
         request = builder.with_invocation(invocation).with_metadata_env({"DOVO_STEP_ID": "s"})
         request = request.with_env_passthrough([name]) if source == "passthrough" else request.with_env({name: "x"})
 
-        assert validate_agent_env_request(COPILOT_PROVIDER_SPEC, request.build()) == _OVERRIDE_MESSAGE.format(name=name)
+        assert validate_agent_env_request(
+            COPILOT_PROVIDER_SPEC, request.build(), "copilot"
+        ) == _OVERRIDE_MESSAGE.format(name=name, provider="copilot")
 
     @pytest.mark.parametrize(
         "source", [pytest.param("passthrough", id="passthrough"), pytest.param("step-env", id="step-env")]
@@ -330,7 +357,9 @@ class ValidateAgentEnvRequestTests:
     ) -> None:
         request = builder.with_env_passthrough([name]) if source == "passthrough" else builder.with_env({name: "x"})
 
-        assert validate_agent_env_request(spec, request.build()) == _OVERRIDE_MESSAGE.format(name=name)
+        assert validate_agent_env_request(spec, request.build(), spec.token) == _OVERRIDE_MESSAGE.format(
+            name=name, provider=spec.token
+        )
 
     def test_step_env_credential_name_is_rejected_but_passthrough_credential_name_is_allowed(
         self, builder: AgentRequestBuilder, tmp_path: Path
@@ -338,15 +367,22 @@ class ValidateAgentEnvRequestTests:
         rejected = builder.with_env({"GH_TOKEN": "x"}).build()
         allowed = AgentRequestBuilder().with_worktree_path(tmp_path).with_env_passthrough(["GH_TOKEN"]).build()
 
-        assert validate_agent_env_request(COPILOT_PROVIDER_SPEC, rejected) == _OVERRIDE_MESSAGE.format(name="GH_TOKEN")
-        assert validate_agent_env_request(COPILOT_PROVIDER_SPEC, allowed) is None
+        assert validate_agent_env_request(COPILOT_PROVIDER_SPEC, rejected, "copilot") == _OVERRIDE_MESSAGE.format(
+            name="GH_TOKEN", provider="copilot"
+        )
+        assert validate_agent_env_request(COPILOT_PROVIDER_SPEC, allowed, "copilot") is None
 
     def test_scratch_names_are_not_reserved_without_an_invocation(self, builder: AgentRequestBuilder) -> None:
-        assert validate_agent_env_request(COPILOT_PROVIDER_SPEC, builder.with_env({"TMPDIR": "/t"}).build()) is None
+        assert (
+            validate_agent_env_request(COPILOT_PROVIDER_SPEC, builder.with_env({"TMPDIR": "/t"}).build(), "copilot")
+            is None
+        )
 
     def test_prefix_pattern_matching_a_reserved_name_is_not_an_error(self, builder: AgentRequestBuilder) -> None:
         assert (
-            validate_agent_env_request(COPILOT_PROVIDER_SPEC, builder.with_env_passthrough(["COPILOT_*"]).build())
+            validate_agent_env_request(
+                COPILOT_PROVIDER_SPEC, builder.with_env_passthrough(["COPILOT_*"]).build(), "copilot"
+            )
             is None
         )
 

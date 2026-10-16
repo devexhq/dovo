@@ -12,19 +12,7 @@ def config_set_command(
     value: str,
     output_format: str = "terminal",
 ) -> ConfigSetResult:
-    """Set a configuration value by top-level or nested dot-path key.
-
-    String inputs are parsed into native types (bool, int, float, list, dict).
-    Missing intermediate objects are created. Type collisions, schema key errors,
-    and load/write failures abort without partial writes. Validates keys and values
-    against the V1 schema allow-list.
-
-    Args:
-        context: CLI context instance.
-        key: Dot-path key (e.g. ``agent.models.copilot`` or ``version``).
-        value: String value from CLI to parse and store at ``key``.
-        output_format: Presentation format ("terminal" or "json").
-    """
+    """Set a configuration value by top-level or nested dot-path key."""
     result = Config(context.paths).set(key, value)
     ui_dispatcher.dispatch(result, output_format=output_format)
     return result

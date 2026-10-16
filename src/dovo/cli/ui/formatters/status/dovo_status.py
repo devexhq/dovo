@@ -11,6 +11,7 @@ from dovo.cli.ui.formatters.status.common import build_status_table
 from dovo.cli.ui.formatters.status.status_view import StatusHealth, StatusView
 from dovo.common.types import ComponentFormatter
 from dovo.common.utils import display_path
+from dovo.core.config import agent_settings
 from dovo.core.config.loader import ConfigLoadStatus
 from dovo.core.status.models import DovoStatusResult
 
@@ -57,7 +58,7 @@ class DovoStatusFormatter(ComponentFormatter[DovoStatusResult, StatusView]):
         """Derive the presentation-ready view from workspace status domain data."""
         active_worktrees, max_worktrees = _derive_worktree_counts(data)
         valid_items, total_items = _derive_catalog_counts(data)
-        agent_model = data.config.config.agent.active_model if data.config.config is not None else None
+        agent_model = agent_settings(data.config.config).model if data.config.config is not None else None
         git_branch = data.git.branch if data.git.is_git_repo else None
 
         return StatusView(

@@ -26,24 +26,6 @@ def _paths_for(root: Path) -> WorkspacePaths:
 class ConfigSetRootTests:
     """Direct handler unit tests for config_set_command."""
 
-    def test_config_set_updates_scalar_value_returns_ok(self, isolated_workspace: Path) -> None:
-        config_path = isolated_workspace / ".dovo" / "config.json"
-        payload = build_default_config("demo-workspace")
-        Filesystem.atomic_write_json(config_path, payload)
-
-        paths = _paths_for(isolated_workspace)
-        context = CliContext(paths=paths, db=DovoDb(database_file=paths.database_file, project_id=paths.project_id))
-        result = config_set_command(context, "agent.models.copilot", "qwen2.5-coder")
-
-        assert result.status == ConfigSetStatus.OK
-        assert result.config_path == config_path
-        assert result.key == "agent.models.copilot"
-        assert result.value == "qwen2.5-coder"
-        assert result.errors == []
-        assert result.warnings == []
-        assert result.fixes == []
-        assert json.loads(config_path.read_text())["agent"]["models"]["copilot"] == "qwen2.5-coder"
-
     def test_config_set_schema_violation_returns_error(self, isolated_workspace: Path) -> None:
         config_path = isolated_workspace / ".dovo" / "config.json"
         payload = build_default_config("demo-workspace")
@@ -78,24 +60,24 @@ class ConfigSetCliIntegrationTests:
 
         res = cli_runner.invoke(
             app,
-            ["-p", str(isolated_workspace), "config", "set", "agent.models.copilot", "qwen2.5-coder"],
+            ["-p", str(isolated_workspace), "config", "set", "agents.copilot.model", "qwen2.5-coder"],
         )
 
         assert res.exit_code == 0
-        assert "Config updated: agent.models.copilot" in res.stdout
-        assert json.loads(config_path.read_text())["agent"]["models"]["copilot"] == "qwen2.5-coder"
+        assert "Config updated: agents.copilot.model" in res.stdout
+        assert json.loads(config_path.read_text())["agents"]["copilot"]["model"] == "qwen2.5-coder"
 
-    def test_config_set_agent_provider_claude_persists_value(
+    def test_config_set_default_agent_claude_persists_value(
         self, cli_runner: CliRunner, isolated_workspace: Path
     ) -> None:
         config_path = isolated_workspace / ".dovo" / "config.json"
         Filesystem.atomic_write_json(config_path, build_default_config("demo-workspace"))
 
-        result = cli_runner.invoke(app, ["-p", str(isolated_workspace), "config", "set", "agent.provider", "claude"])
+        result = cli_runner.invoke(app, ["-p", str(isolated_workspace), "config", "set", "default_agent", "claude"])
 
         assert result.exit_code == 0
-        assert "Config updated: agent.provider" in result.stdout
-        assert json.loads(config_path.read_text())["agent"]["provider"] == "claude"
+        assert "Config updated: default_agent" in result.stdout
+        assert json.loads(config_path.read_text())["default_agent"] == "claude"
 
     def test_config_set_cli_stores_boolean_true_from_string(
         self, cli_runner: CliRunner, isolated_workspace: Path
@@ -147,7 +129,7 @@ class ConfigSetCliIntegrationTests:
                 str(isolated_workspace),
                 "config",
                 "set",
-                "agent.models.copilot",
+                "agents.copilot.model",
                 "qwen2.5-coder",
                 "--format",
                 "json",
@@ -160,7 +142,7 @@ class ConfigSetCliIntegrationTests:
             "payload": {
                 "status": "ok",
                 "config_path": str(config_path),
-                "key": "agent.models.copilot",
+                "key": "agents.copilot.model",
                 "value": "qwen2.5-coder",
                 "value_str": "qwen2.5-coder",
                 "value_type": "str",

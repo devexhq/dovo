@@ -6,7 +6,7 @@ import shutil
 from typing import Final
 
 from dovo.core.agents.registry import PROVIDERS
-from dovo.core.config.models import AgentConfig
+from dovo.core.config.models import DEFAULT_AGENT
 from dovo.core.diagnostics.models import CheckCategory, CheckStatus, DiagnosticCheckResult, DiagnosticsContext
 
 REQUIRED_HOST_BINARIES: Final[tuple[str, ...]] = ("git",)
@@ -21,8 +21,8 @@ class EnvBinariesCheck:
 
     def execute(self, context: DiagnosticsContext) -> DiagnosticCheckResult:
         """Verify `git` and the active agent provider's CLI binary, if any, are present on PATH."""
-        agent_config = context.config.agent if context.config is not None else AgentConfig()
-        required = _required_binaries(agent_config)
+        provider = context.config.default_agent if context.config is not None else DEFAULT_AGENT
+        required = _required_binaries(provider)
 
         missing = [binary for binary in required if shutil.which(binary) is None]
 
@@ -32,10 +32,10 @@ class EnvBinariesCheck:
         return _ok_result(self.check_id, self.name, self.category, required)
 
 
-def _required_binaries(agent_config: AgentConfig) -> list[str]:
+def _required_binaries(provider: str) -> list[str]:
     """Return the ordered binaries required for the host plus the registry-declared binary of the active provider."""
     required: list[str] = list(REQUIRED_HOST_BINARIES)
-    spec = PROVIDERS.get(agent_config.provider)
+    spec = PROVIDERS.get(provider)
     if spec is not None and spec.binary is not None:
         required.append(spec.binary)
     return required
