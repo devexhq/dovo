@@ -75,12 +75,15 @@
     ```
 
 - **[RENDER-003] Inline Error and Warning String Construction (SUGGESTION):**
-  Construct errors, warnings, and fixes strings using inline f-strings or literals at call sites. Do not create private single-message formatting wrappers.
+  Error, warning and fix messages stay readable where they are raised, so a reader sees the whole message at the call site instead of chasing a one-use wrapper.
 
-```python
-# ✅ DO: errors.append(f"Blueprint '{path}' invalid: {err}")
-# ❌ DO NOT: errors.append(self._format_validation_error(path, err))
-```
+  Answer yes to every criterion:
+  - `RENDER-003.Q01` (judgment) Are error, warning and fix strings built inline with f-strings or literals at their call sites, with no private helper whose sole purpose is formatting a single error or warning string?
+
+    ```python
+    # ✅ DO: message = f"Project identity at '{path}' is invalid: {exc} (PROJECT_IDENTITY_INVALID_SCHEMA)."  # in core/project/services/identity.py
+    # ❌ DO NOT: errors.append(self._format_validation_error(path, err))  # hypothetical: a private wrapper that only formats one message
+    ```
 
 - **[MODEL-001] Scoped Model Exceptions with Justifying Comment (BLOCKER):**
   Models are strict by default so unexpected data is rejected early; the few hand-authored YAML models that tolerate unknown keys are a named exception, and each explains why in a comment so the leniency stays deliberate.
@@ -244,46 +247,113 @@
     ```
 
 - **[TYPE-001] Ban on -> Any Return Annotations (BLOCKER):**
-  -> Any on a public function is treated as a defect because it disables type checking transitively at every call site. Prefer object when values are only stored, compared, or passed through.
+  A public function's return type keeps type checking intact at every call site instead of switching it off for each caller. Where a value is only stored, compared or passed through, object is preferred to Any.
 
-```python
-# ✅ DO: def get_payload(self) -> object: ...
-# ❌ DO NOT: def get_payload(self) -> Any: ...
-```
+  Answer yes to every criterion:
+  - `TYPE-001.Q01` (judgment) Is the return annotation of every public function (a module-level function or a method whose name does not start with an underscore) something other than Any?
+
+    ```python
+    # ✅ DO: def get_payload(self) -> object: ...  # hypothetical: callers must narrow the value before using it
+    # ❌ DO NOT: def to_rich(self, data: T) -> Any:  # public abstract method of the formatter base class in src/dovo/common/types.py
+    ```
 
 - **[TYPE-002] Strict Scoping of Permitted Any (BLOCKER):**
-  Any is permitted strictly in: (1) Pydantic mode='before' validators, (2) dict[str, Any] at serialization boundaries, (3) values read from user documents and compared, and (4) **kwargs: Any pass-throughs.
+  Any switches off type checking wherever it appears, so it is confined to the few boundaries where the value really is unconstrained, and everywhere else the type checker keeps working.
 
-```python
-# ✅ DO:
-@field_validator('pattern', mode='before')
-def _val(cls, v: Any) -> Any: ...
-# ❌ DO NOT: def execute_step(step: Any) -> StepResult: ...
-```
+  Answer yes to every criterion:
+  - `TYPE-002.Q01` (judgment) Is every use of Any in the change confined to one of four boundaries, namely a Pydantic mode="before" validator, a dict[str, Any] at a serialization boundary, a value read from a user document and compared, or a **kwargs: Any pass-through?
+
+    ```python
+    # ✅ DO: @field_validator("capability", mode="before") then def coerce_capability(cls, val: Any) -> Any  # in common/tool_policy.py; a pre-validator receives whatever the user wrote
+    # ❌ DO NOT: def execute_step(step: Any) -> StepResult: ...  # hypothetical: step is not a permitted boundary, so it should be typed as the step model
+    ```
 
 - **[TYPE-003] Banned Uses of Any (BLOCKER):**
-  Banned: Any dodging import boundaries, Any as a test seam, Any where a model already exists, Any in third-party overrides (e.g. ctx: Any for click.Context), and Any filling a known generic (e.g. Popen[Any]).
+  Any switches off the type checker, so it is not used to hide misplaced code, a test seam, a type that already exists or a type the code already knows.
 
-```python
-# ✅ DO: proc: subprocess.Popen[str] = ...
-# ❌ DO NOT: proc: subprocess.Popen[Any] = ...
-```
+  Answer yes to every criterion:
+  - `TYPE-003.Q01` (judgment) Is every annotation free of Any that exists only because the real type cannot be imported from the current package?
+
+    ```python
+    # ✅ DO: def run(step: StepDefinition) -> None: ...  # hypothetical: the code that needs StepDefinition was moved to a package that can import it
+    # ❌ DO NOT: def run(step: Any) -> None: ...  # hypothetical: Any used because StepDefinition cannot be imported from this package
+    ```
+  - `TYPE-003.Q02` (judgment) Is every parameter free of an Any annotation that exists only so a test can pass a stub?
+
+    ```python
+    # ✅ DO: def run(self) -> None: ...  # hypothetical: no extra parameter, the test patches at the boundary instead
+    # ❌ DO NOT: def run(self, output: Any = None) -> None: ...  # hypothetical: output is never read in production and exists for tests
+    ```
+  - `TYPE-003.Q03` (judgment) Is every annotation free of Any where a model that describes the value already exists?
+
+    ```python
+    # ✅ DO: def render(step: StepDefinition) -> str: ...  # hypothetical signature naming the existing model
+    # ❌ DO NOT: def render(step: Any, metadata: Any) -> str: ...  # hypothetical: StepDefinition already describes step
+    ```
+  - `TYPE-003.Q04` (judgment) Does every override of a third-party method name the third-party type instead of Any?
+
+    ```python
+    # ✅ DO: def invoke(self, ctx: click.Context) -> object: ...  # hypothetical override of a Click method
+    # ❌ DO NOT: def invoke(self, ctx: Any) -> Any: ...  # hypothetical override of a Click method
+    ```
+  - `TYPE-003.Q05` (judgment) Is every generic type parameterized with the concrete type the code already knows, rather than Any?
+
+    ```python
+    # ✅ DO: proc: subprocess.Popen[str] = ...
+    # ❌ DO NOT: proc: subprocess.Popen[Any] = ...  # hypothetical: the process is started with text=True, so Popen[str] is known
+    ```
 
 - **[TYPE-005] Precise Parameterization for Generator Types (NIT):**
-  Avoid overly broad generic type annotations like Generator[Session] without complete yield/send/return parameterization. Specify all three generic parameters.
+  Generator annotations state the full contract of what a generator yields, accepts and returns, so readers and the type checker never have to infer the omitted parts.
 
-```python
-# ✅ DO: def get_session() -> Generator[Session, None, None]: ...
-# ❌ DO NOT: def get_session() -> Generator[Session]: ...
-```
+  Answer yes to every criterion:
+  - `TYPE-005.Q01` (judgment) Does every Generator[...] annotation specify all three parameters, yield, send and return, as in Generator[YieldType, SendType, ReturnType]?
+
+    ```python
+    # ✅ DO: def get_session(engine: Engine) -> Generator[Session, None, None]: ...  # hypothetical: the full three-parameter form of the real function in core/db/connection.py
+    # ❌ DO NOT: def get_session(engine: Engine) -> Generator[Session]: ...  # in core/db/connection.py
+    ```
 
 - **[TYPE-006] Scoped Pyright Suppressions With Reason (BLOCKER):**
-  A bare `# type: ignore` is not honored by this repo's basedpyright config and suppresses nothing. Only `# pyright: ignore[reportRuleName]` suppresses an error, and only for one of three permitted cases, each with a one-line reason naming which applies: an intentional ill-typed test input whose subject is the raised error, a third-party stub conflict our code cannot name correctly (the SQLModel `__tablename__` case), or a platform-gated import. `reportCallIssue` and `reportArgumentType` silencing a wrong-shaped test double or fixture, and `reportIncompatibleVariableOverride` outside the SQLModel `__tablename__` stub, are never permitted suppressions: the fixture, annotation, or override is the defect to fix, not the error to hide.
+  A type error is silenced only where the code is correct and the checker cannot express it, never to hide a defect, so every suppression is one the checker honors, is narrow, and says why it exists.
 
-```python
-# ✅ DO: import msvcrt  # pyright: ignore[reportMissingImports]  # platform-gated: msvcrt does not exist on Linux
-# ❌ DO NOT: queue: Queue = mock_queue  # type: ignore  # bare ignore, suppresses nothing and hides a fixable fixture type
-```
+  Answer yes to every criterion:
+  - `TYPE-006.Q01` (judgment) Does the code use no bare `# type: ignore`, which this repo's basedpyright config does not honor and which suppresses nothing?
+
+    ```python
+    # ✅ DO: self.value = compute()  # pyright: ignore[reportAttributeAccessIssue]  # stub conflict: third-party stub cannot name the attribute (hypothetical line)
+    # ❌ DO NOT: queue: Queue = mock_queue  # type: ignore  # bare ignore, suppresses nothing and hides a fixable fixture type (hypothetical line)
+    ```
+  - `TYPE-006.Q02` (judgment) Does every `# pyright: ignore[reportRuleName]` name the specific rule it silences in brackets?
+
+    ```python
+    # ✅ DO: _IncompleteProvider()  # pyright: ignore[reportAbstractUsage]  # intentional ill-typed input: the subject is the raised TypeError  (tests/core/agents/test_base.py)
+    # ❌ DO NOT: value = call()  # pyright: ignore  # silences every rule on the line (hypothetical line)
+    ```
+  - `TYPE-006.Q03` (judgment) Does every `# pyright: ignore[...]` carry a one-line reason that names which permitted case applies?
+
+    ```python
+    # ✅ DO: _IncompleteProvider()  # pyright: ignore[reportAbstractUsage]  # intentional ill-typed input: the subject is the raised TypeError  (tests/core/agents/test_base.py)
+    # ❌ DO NOT: resume = command.commands["resume"]  # pyright: ignore[reportAttributeAccessIssue]  (tests/lint/test_step_schema_parity.py; an existing line with no reason after the ignore)
+    ```
+  - `TYPE-006.Q04` (judgment) Is every `# pyright: ignore[...]` one of the three permitted cases: an intentional ill-typed test input whose subject is the raised error, a third-party stub conflict our code cannot name correctly, or a platform-gated import?
+
+    ```python
+    # ✅ DO: import msvcrt  # pyright: ignore[reportMissingImports]  # platform-gated: msvcrt does not exist on Linux (src/dovo/common/lock.py has this import and ignore; the reason text is a hypothetical addition)
+    # ❌ DO NOT: result = parse(raw)  # pyright: ignore[reportReturnType]  # inconvenient to annotate (hypothetical line; fix the annotation instead)
+    ```
+  - `TYPE-006.Q05` (judgment) Is `reportCallIssue` or `reportArgumentType` never suppressed to silence a wrong-shaped test double or fixture?
+
+    ```python
+    # ✅ DO: CostRecord(...)  # pyright: ignore[reportCallIssue] # intentional: omitted project_id is this test's subject (tests/core/db/test_models.py; the call is the ill-typed input under test)
+    # ❌ DO NOT: service = Service(queue=fake_queue)  # pyright: ignore[reportArgumentType]  # the fake does not match the Queue type (hypothetical line; fix the fixture type instead)
+    ```
+  - `TYPE-006.Q06` (judgment) Is `reportIncompatibleVariableOverride` suppressed only on the SQLModel `__tablename__` stub conflict?
+
+    ```python
+    # ✅ DO: __tablename__: ClassVar[str] = "worktrees"  # pyright: ignore[reportIncompatibleVariableOverride] (src/dovo/core/db/models.py, WorktreeRecord)
+    # ❌ DO NOT: name: str = "x"  # pyright: ignore[reportIncompatibleVariableOverride]  # in a subclass whose base declares name: int (hypothetical line; fix the override instead)
+    ```
 
 - **[ENCAP-001] Expose Public Query Properties (BLOCKER):**
   Protects a class's freedom to change its internal representation. Callers learn its state through a public interface, so a refactor stays local instead of breaking every caller that reached inside.

@@ -75,12 +75,15 @@
     ```
 
 - **[RENDER-003] Inline Error and Warning String Construction (SUGGESTION):**
-  Construct errors, warnings, and fixes strings using inline f-strings or literals at call sites. Do not create private single-message formatting wrappers.
+  Error, warning and fix messages stay readable where they are raised, so a reader sees the whole message at the call site instead of chasing a one-use wrapper.
 
-```python
-# ✅ DO: errors.append(f"Blueprint '{path}' invalid: {err}")
-# ❌ DO NOT: errors.append(self._format_validation_error(path, err))
-```
+  Answer yes to every criterion:
+  - `RENDER-003.Q01` (judgment) Are error, warning and fix strings built inline with f-strings or literals at their call sites, with no private helper whose sole purpose is formatting a single error or warning string?
+
+    ```python
+    # ✅ DO: message = f"Project identity at '{path}' is invalid: {exc} (PROJECT_IDENTITY_INVALID_SCHEMA)."  # in core/project/services/identity.py
+    # ❌ DO NOT: errors.append(self._format_validation_error(path, err))  # hypothetical: a private wrapper that only formats one message
+    ```
 
 - **[MODEL-001] Scoped Model Exceptions with Justifying Comment (BLOCKER):**
   Models are strict by default so unexpected data is rejected early; the few hand-authored YAML models that tolerate unknown keys are a named exception, and each explains why in a comment so the leniency stays deliberate.
@@ -244,46 +247,113 @@
     ```
 
 - **[TYPE-001] Ban on -> Any Return Annotations (BLOCKER):**
-  -> Any on a public function is treated as a defect because it disables type checking transitively at every call site. Prefer object when values are only stored, compared, or passed through.
+  A public function's return type keeps type checking intact at every call site instead of switching it off for each caller. Where a value is only stored, compared or passed through, object is preferred to Any.
 
-```python
-# ✅ DO: def get_payload(self) -> object: ...
-# ❌ DO NOT: def get_payload(self) -> Any: ...
-```
+  Answer yes to every criterion:
+  - `TYPE-001.Q01` (judgment) Is the return annotation of every public function (a module-level function or a method whose name does not start with an underscore) something other than Any?
+
+    ```python
+    # ✅ DO: def get_payload(self) -> object: ...  # hypothetical: callers must narrow the value before using it
+    # ❌ DO NOT: def to_rich(self, data: T) -> Any:  # public abstract method of the formatter base class in src/dovo/common/types.py
+    ```
 
 - **[TYPE-002] Strict Scoping of Permitted Any (BLOCKER):**
-  Any is permitted strictly in: (1) Pydantic mode='before' validators, (2) dict[str, Any] at serialization boundaries, (3) values read from user documents and compared, and (4) **kwargs: Any pass-throughs.
+  Any switches off type checking wherever it appears, so it is confined to the few boundaries where the value really is unconstrained, and everywhere else the type checker keeps working.
 
-```python
-# ✅ DO:
-@field_validator('pattern', mode='before')
-def _val(cls, v: Any) -> Any: ...
-# ❌ DO NOT: def execute_step(step: Any) -> StepResult: ...
-```
+  Answer yes to every criterion:
+  - `TYPE-002.Q01` (judgment) Is every use of Any in the change confined to one of four boundaries, namely a Pydantic mode="before" validator, a dict[str, Any] at a serialization boundary, a value read from a user document and compared, or a **kwargs: Any pass-through?
+
+    ```python
+    # ✅ DO: @field_validator("capability", mode="before") then def coerce_capability(cls, val: Any) -> Any  # in common/tool_policy.py; a pre-validator receives whatever the user wrote
+    # ❌ DO NOT: def execute_step(step: Any) -> StepResult: ...  # hypothetical: step is not a permitted boundary, so it should be typed as the step model
+    ```
 
 - **[TYPE-003] Banned Uses of Any (BLOCKER):**
-  Banned: Any dodging import boundaries, Any as a test seam, Any where a model already exists, Any in third-party overrides (e.g. ctx: Any for click.Context), and Any filling a known generic (e.g. Popen[Any]).
+  Any switches off the type checker, so it is not used to hide misplaced code, a test seam, a type that already exists or a type the code already knows.
 
-```python
-# ✅ DO: proc: subprocess.Popen[str] = ...
-# ❌ DO NOT: proc: subprocess.Popen[Any] = ...
-```
+  Answer yes to every criterion:
+  - `TYPE-003.Q01` (judgment) Is every annotation free of Any that exists only because the real type cannot be imported from the current package?
+
+    ```python
+    # ✅ DO: def run(step: StepDefinition) -> None: ...  # hypothetical: the code that needs StepDefinition was moved to a package that can import it
+    # ❌ DO NOT: def run(step: Any) -> None: ...  # hypothetical: Any used because StepDefinition cannot be imported from this package
+    ```
+  - `TYPE-003.Q02` (judgment) Is every parameter free of an Any annotation that exists only so a test can pass a stub?
+
+    ```python
+    # ✅ DO: def run(self) -> None: ...  # hypothetical: no extra parameter, the test patches at the boundary instead
+    # ❌ DO NOT: def run(self, output: Any = None) -> None: ...  # hypothetical: output is never read in production and exists for tests
+    ```
+  - `TYPE-003.Q03` (judgment) Is every annotation free of Any where a model that describes the value already exists?
+
+    ```python
+    # ✅ DO: def render(step: StepDefinition) -> str: ...  # hypothetical signature naming the existing model
+    # ❌ DO NOT: def render(step: Any, metadata: Any) -> str: ...  # hypothetical: StepDefinition already describes step
+    ```
+  - `TYPE-003.Q04` (judgment) Does every override of a third-party method name the third-party type instead of Any?
+
+    ```python
+    # ✅ DO: def invoke(self, ctx: click.Context) -> object: ...  # hypothetical override of a Click method
+    # ❌ DO NOT: def invoke(self, ctx: Any) -> Any: ...  # hypothetical override of a Click method
+    ```
+  - `TYPE-003.Q05` (judgment) Is every generic type parameterized with the concrete type the code already knows, rather than Any?
+
+    ```python
+    # ✅ DO: proc: subprocess.Popen[str] = ...
+    # ❌ DO NOT: proc: subprocess.Popen[Any] = ...  # hypothetical: the process is started with text=True, so Popen[str] is known
+    ```
 
 - **[TYPE-005] Precise Parameterization for Generator Types (NIT):**
-  Avoid overly broad generic type annotations like Generator[Session] without complete yield/send/return parameterization. Specify all three generic parameters.
+  Generator annotations state the full contract of what a generator yields, accepts and returns, so readers and the type checker never have to infer the omitted parts.
 
-```python
-# ✅ DO: def get_session() -> Generator[Session, None, None]: ...
-# ❌ DO NOT: def get_session() -> Generator[Session]: ...
-```
+  Answer yes to every criterion:
+  - `TYPE-005.Q01` (judgment) Does every Generator[...] annotation specify all three parameters, yield, send and return, as in Generator[YieldType, SendType, ReturnType]?
+
+    ```python
+    # ✅ DO: def get_session(engine: Engine) -> Generator[Session, None, None]: ...  # hypothetical: the full three-parameter form of the real function in core/db/connection.py
+    # ❌ DO NOT: def get_session(engine: Engine) -> Generator[Session]: ...  # in core/db/connection.py
+    ```
 
 - **[TYPE-006] Scoped Pyright Suppressions With Reason (BLOCKER):**
-  A bare `# type: ignore` is not honored by this repo's basedpyright config and suppresses nothing. Only `# pyright: ignore[reportRuleName]` suppresses an error, and only for one of three permitted cases, each with a one-line reason naming which applies: an intentional ill-typed test input whose subject is the raised error, a third-party stub conflict our code cannot name correctly (the SQLModel `__tablename__` case), or a platform-gated import. `reportCallIssue` and `reportArgumentType` silencing a wrong-shaped test double or fixture, and `reportIncompatibleVariableOverride` outside the SQLModel `__tablename__` stub, are never permitted suppressions: the fixture, annotation, or override is the defect to fix, not the error to hide.
+  A type error is silenced only where the code is correct and the checker cannot express it, never to hide a defect, so every suppression is one the checker honors, is narrow, and says why it exists.
 
-```python
-# ✅ DO: import msvcrt  # pyright: ignore[reportMissingImports]  # platform-gated: msvcrt does not exist on Linux
-# ❌ DO NOT: queue: Queue = mock_queue  # type: ignore  # bare ignore, suppresses nothing and hides a fixable fixture type
-```
+  Answer yes to every criterion:
+  - `TYPE-006.Q01` (judgment) Does the code use no bare `# type: ignore`, which this repo's basedpyright config does not honor and which suppresses nothing?
+
+    ```python
+    # ✅ DO: self.value = compute()  # pyright: ignore[reportAttributeAccessIssue]  # stub conflict: third-party stub cannot name the attribute (hypothetical line)
+    # ❌ DO NOT: queue: Queue = mock_queue  # type: ignore  # bare ignore, suppresses nothing and hides a fixable fixture type (hypothetical line)
+    ```
+  - `TYPE-006.Q02` (judgment) Does every `# pyright: ignore[reportRuleName]` name the specific rule it silences in brackets?
+
+    ```python
+    # ✅ DO: _IncompleteProvider()  # pyright: ignore[reportAbstractUsage]  # intentional ill-typed input: the subject is the raised TypeError  (tests/core/agents/test_base.py)
+    # ❌ DO NOT: value = call()  # pyright: ignore  # silences every rule on the line (hypothetical line)
+    ```
+  - `TYPE-006.Q03` (judgment) Does every `# pyright: ignore[...]` carry a one-line reason that names which permitted case applies?
+
+    ```python
+    # ✅ DO: _IncompleteProvider()  # pyright: ignore[reportAbstractUsage]  # intentional ill-typed input: the subject is the raised TypeError  (tests/core/agents/test_base.py)
+    # ❌ DO NOT: resume = command.commands["resume"]  # pyright: ignore[reportAttributeAccessIssue]  (tests/lint/test_step_schema_parity.py; an existing line with no reason after the ignore)
+    ```
+  - `TYPE-006.Q04` (judgment) Is every `# pyright: ignore[...]` one of the three permitted cases: an intentional ill-typed test input whose subject is the raised error, a third-party stub conflict our code cannot name correctly, or a platform-gated import?
+
+    ```python
+    # ✅ DO: import msvcrt  # pyright: ignore[reportMissingImports]  # platform-gated: msvcrt does not exist on Linux (src/dovo/common/lock.py has this import and ignore; the reason text is a hypothetical addition)
+    # ❌ DO NOT: result = parse(raw)  # pyright: ignore[reportReturnType]  # inconvenient to annotate (hypothetical line; fix the annotation instead)
+    ```
+  - `TYPE-006.Q05` (judgment) Is `reportCallIssue` or `reportArgumentType` never suppressed to silence a wrong-shaped test double or fixture?
+
+    ```python
+    # ✅ DO: CostRecord(...)  # pyright: ignore[reportCallIssue] # intentional: omitted project_id is this test's subject (tests/core/db/test_models.py; the call is the ill-typed input under test)
+    # ❌ DO NOT: service = Service(queue=fake_queue)  # pyright: ignore[reportArgumentType]  # the fake does not match the Queue type (hypothetical line; fix the fixture type instead)
+    ```
+  - `TYPE-006.Q06` (judgment) Is `reportIncompatibleVariableOverride` suppressed only on the SQLModel `__tablename__` stub conflict?
+
+    ```python
+    # ✅ DO: __tablename__: ClassVar[str] = "worktrees"  # pyright: ignore[reportIncompatibleVariableOverride] (src/dovo/core/db/models.py, WorktreeRecord)
+    # ❌ DO NOT: name: str = "x"  # pyright: ignore[reportIncompatibleVariableOverride]  # in a subclass whose base declares name: int (hypothetical line; fix the override instead)
+    ```
 
 - **[ENCAP-001] Expose Public Query Properties (BLOCKER):**
   Protects a class's freedom to change its internal representation. Callers learn its state through a public interface, so a refactor stays local instead of breaking every caller that reached inside.
@@ -466,57 +536,286 @@ def _val(cls, v: Any) -> Any: ...
     ```
 
 - **[TEST-001] Test at Contracts, Not Implementation (BLOCKER):**
-  Assert on deliberate contracts (BaseResult object, exact JSON dict, exit code, file on disk, git ref), never implementation details (rendered layout, private helpers, call ordering, constructor assignments).
+  Tests pin the behavior callers and users depend on, so a refactor that keeps that behavior never breaks a test and a test that fails always points at a real change in what the code promises.
 
-```python
-# ✅ DO: assert result == BlueprintLoadResult(status=BlueprintLoadStatus.OK, blueprint=expected_bp)
-# ❌ DO NOT: assert service._internal_cache_size == 1; assert mock_parser.call_count == 1
-```
+  Answer yes to every criterion:
+  - `TEST-001.Q01` (judgment) Does every assertion check a deliberate contract, such as a BaseResult object, an exact JSON dict, an exit code, a file on disk or a git ref?
+
+    ```python
+    # ✅ DO: assert result == ReconciliationResult(reconciled=[], warning=None)  # in tests/core/sessions/services/test_reconcile.py; ReconciliationResult is a BaseResult
+    # ❌ DO NOT: assert service._internal_cache_size == 1  # hypothetical: an internal cache is not a contract
+    ```
+  - `TEST-001.Q02` (judgment) Do the assertions avoid reading private helpers and private attributes of the code under test?
+
+    ```python
+    # ✅ DO: assert result.exit_code == 0  # in tests/cli/session/test_session_logs.py, observed through the CLI
+    # ❌ DO NOT: assert service._internal_cache_size == 1  # hypothetical: reads a private attribute
+    ```
+  - `TEST-001.Q03` (judgment) Do the assertions avoid asserting mock call counts and call ordering?
+
+    ```python
+    # ✅ DO: assert result == ReconciliationResult(reconciled=[], warning=None)  # the outcome is asserted, not how it was reached
+    # ❌ DO NOT: assert mock_parser.call_count == 1  # hypothetical: counts calls on a mock
+    ```
+  - `TEST-001.Q04` (judgment) Do the assertions avoid pinning rendered layout, such as exact spacing, column widths or box-drawing?
+
+    ```python
+    # ✅ DO: assert "iteration 3/5" in rendered  # in tests/cli/ui/test_live.py: checks a fact in the rendered panel, not its layout
+    # ❌ DO NOT: assert output == "| name  | status |\n|-------|--------|"  # hypothetical: pins table layout
+    ```
+  - `TEST-001.Q05` (judgment) Do the assertions avoid checking how a constructor assigned its arguments to attributes?
+
+    ```python
+    # ✅ DO: assert loader.load(path) == expected_config  # hypothetical: checks what the constructed object does
+    # ❌ DO NOT: assert loader.path == path  # hypothetical: only checks the constructor stored its argument
+    ```
 
 - **[TEST-002] 1:1 Source Parity Layout (BLOCKER):**
-  Test structure mirrors src/dovo/ 1:1 under tests/, one test file per source module, and every test directory carries an __init__.py because basenames repeat across the tree. Five mappings are fixed: src/dovo/common/<m>.py to tests/common/test_<m>.py, src/dovo/core/<domain>/<m>.py to tests/core/<domain>/test_<m>.py, src/dovo/cli/ui/formatters/<domain>/<name>.py to tests/cli/ui/formatters/<domain>/test_<name>.py, and src/dovo/cli/<command>/commands/<action>.py to tests/cli/<command>/test_<command>_<action>.py — a subdirectory per CLI command domain, mirroring src/dovo/cli/<command>/ (the commands/ subpackage level collapses; a per-domain conftest.py holds fixtures that domain's test files share, never fixtures another domain needs). The fifth is src/dovo/engine/<m>.py to tests/engine/test_<m>.py (executors/ and services/ subpackages mirror as tests/engine/executors/ and tests/engine/services/). One test file per CLI command action, not one file per command domain. Every source module must have a corresponding test file; there is no exemption list. Grouping several formatters, domains, or command actions into one part-numbered or collapsed file is prohibited.
+  A test's location is predictable from the source module it covers, so tests are easy to find and no source module goes untested or hides inside a shared catch-all file.
 
-```python
-# ✅ DO: src/dovo/cli/worktree/commands/worktree_create.py -> tests/cli/worktree/test_worktree_create.py
-# ❌ DO NOT: tests/cli/commands/test_worktree_create.py  # flat under tests/cli/commands/, not nested under tests/cli/worktree/
-```
+  Answer yes to every criterion:
+  - `TEST-002.Q01` (judgment) Does each src/dovo/common/<m>.py module have its tests in tests/common/test_<m>.py?
+
+    ```python
+    # ✅ DO: src/dovo/common/lock.py -> tests/common/test_lock.py
+    # ❌ DO NOT: tests/common/test_locking_helpers.py  # hypothetical: covers src/dovo/common/lock.py under a name that does not mirror the module
+    ```
+  - `TEST-002.Q02` (judgment) Does each src/dovo/core/<domain>/<m>.py module have its tests in tests/core/<domain>/test_<m>.py?
+
+    ```python
+    # ✅ DO: src/dovo/core/git/runner.py -> tests/core/git/test_runner.py
+    # ❌ DO NOT: tests/core/test_runner.py  # hypothetical: covers src/dovo/core/git/runner.py but skips the git/ domain directory
+    ```
+  - `TEST-002.Q03` (judgment) Does each src/dovo/engine/<m>.py module have its tests in tests/engine/test_<m>.py, with the executors/ and services/ subpackages mirrored as tests/engine/executors/ and tests/engine/services/?
+
+    ```python
+    # ✅ DO: src/dovo/engine/executors/conditions.py -> tests/engine/executors/test_conditions.py
+    # ❌ DO NOT: tests/engine/test_conditions.py  # hypothetical: covers src/dovo/engine/executors/conditions.py but drops the executors/ subpackage level
+    ```
+  - `TEST-002.Q04` (judgment) Does each src/dovo/cli/ui/formatters/<domain>/<name>.py module have its tests in tests/cli/ui/formatters/<domain>/test_<name>.py?
+
+    ```python
+    # ✅ DO: src/dovo/cli/ui/formatters/worktree/worktree_create.py -> tests/cli/ui/formatters/worktree/test_worktree_create.py
+    # ❌ DO NOT: tests/cli/ui/formatters/test_worktree_create.py  # hypothetical: omits the worktree/ domain directory
+    ```
+  - `TEST-002.Q05` (judgment) Does each src/dovo/cli/<command>/commands/<action>.py module have its tests in tests/cli/<command>/test_<command>_<action>.py, nested under its own tests/cli/<command>/ subdirectory with the commands/ level collapsed?
+
+    ```python
+    # ✅ DO: src/dovo/cli/worktree/commands/worktree_create.py -> tests/cli/worktree/test_worktree_create.py
+    # ❌ DO NOT: tests/cli/commands/test_worktree_create.py  # flat under tests/cli/commands/, not nested under tests/cli/worktree/
+    ```
+  - `TEST-002.Q06` (judgment) Is there one test file per CLI command action, rather than one file per command domain?
+
+    ```python
+    # ✅ DO: tests/cli/worktree/ holds test_worktree_create.py, test_worktree_delete.py and test_worktree_list.py, one per action
+    # ❌ DO NOT: tests/cli/test_worktree.py  # hypothetical: a single file holding the tests for create, delete and list
+    ```
+  - `TEST-002.Q07` (judgment) Is every test file free of grouping several formatters or several domains into one part-numbered or collapsed file?
+
+    ```python
+    # ✅ DO: Each formatter has its own file, for example tests/cli/ui/formatters/worktree/test_worktree_apply.py and test_worktree_show.py.
+    # ❌ DO NOT: tests/cli/ui/test_command_formatters_part1.py  # hypothetical: part-numbered grab-bag covering several formatters
+    ```
+  - `TEST-002.Q08` (judgment) Does every test directory carry an __init__.py?
+
+    ```python
+    # ✅ DO: tests/cli/worktree/__init__.py exists next to tests/cli/worktree/test_worktree_create.py
+    # ❌ DO NOT: tests/cli/newcmd/test_newcmd_run.py with no tests/cli/newcmd/__init__.py  # hypothetical: basenames repeat across the tree, so the missing package file risks module-name collisions
+    ```
+  - `TEST-002.Q09` (judgment) Does each per-domain conftest.py hold only fixtures that its own domain's test files share, and none that another domain needs?
+
+    ```python
+    # ✅ DO: tests/cli/worktree/conftest.py holds fixtures shared by the worktree command tests
+    # ❌ DO NOT: A fixture in tests/cli/worktree/conftest.py that tests/cli/session/ also imports  # hypothetical: a fixture another domain needs belongs in a shared conftest
+    ```
+  - `TEST-002.Q10` (judgment) Does every source module have a corresponding test file at its mirrored path, with no exemption list?
+
+    ```python
+    # ✅ DO: src/dovo/core/git/runner.py is covered by tests/core/git/test_runner.py
+    # ❌ DO NOT: A new source module added with no test file and an entry in a skip or exemption list  # hypothetical
+    ```
 
 - **[TEST-003] Standardized Test Naming and Vague Name Ban (BLOCKER):**
-  Test classes must be named *Tests. Methods must follow test_<condition>_<outcome>. Banned vague names with no outcome: test_ok, test_success, test_present, test_missing, test_blank, test_basic, test_default, test_works, test_timeout, test_no_op, test_help. No 'should' prefix.
+  A test's name alone should tell a reader which behavior it pins and what is expected, so failures are legible without opening the test.
 
-```python
-# ✅ DO:
-class ConfigLoaderTests:
-    def test_missing_config_returns_not_found_status(self): ...
-# ❌ DO NOT:
-class TestConfig:
-    def test_ok(self): ...
-    def test_should_timeout(self): ...
-```
+  Answer yes to every criterion:
+  - `TEST-003.Q01` (judgment) Is every test class named with the suffix Tests?
+
+    ```python
+    # ✅ DO: class ConfigLoaderTests:  # in tests/core/config/test_loader.py
+    # ❌ DO NOT: class TestConfig:  # hypothetical: prefix naming instead of the *Tests suffix
+    ```
+  - `TEST-003.Q02` (judgment) Does every test method follow the test_<condition>_<outcome> pattern, naming both the condition and the expected outcome?
+
+    ```python
+    # ✅ DO: def test_load_missing_config_returns_failure_result(self, workspace_paths): ...  # in ConfigLoaderTests, tests/core/config/test_loader.py
+    # ❌ DO NOT: def test_config(self): ...  # hypothetical: no outcome in the name
+    ```
+  - `TEST-003.Q03` (judgment) Is every test method name free of the banned vague names test_ok, test_success, test_present, test_missing, test_blank, test_basic, test_default, test_works, test_timeout, test_no_op and test_help?
+
+    ```python
+    # ✅ DO: def test_load_missing_config_returns_failure_result(self, workspace_paths): ...  # in ConfigLoaderTests, tests/core/config/test_loader.py
+    # ❌ DO NOT: def test_ok(self): ...  # hypothetical: banned name with no outcome
+    ```
+  - `TEST-003.Q04` (judgment) Is every test method name free of a should prefix?
+
+    ```python
+    # ✅ DO: def test_load_missing_config_returns_failure_result(self, workspace_paths): ...  # in ConfigLoaderTests, tests/core/config/test_loader.py
+    # ❌ DO NOT: def test_should_timeout(self): ...  # hypothetical: should prefix and no outcome
+    ```
 
 - **[TEST-004] CLI Tier Matrix and Handler Test Necessity (BLOCKER):**
-  Every CLI command action requires at least one real *CliIntegrationTests suite invoking runner.invoke to pin option and argument binding, exit codes, and dispatcher output. The suite must cover five scenario classes: (1) happy path exit 0 with default arguments, (2) option and argument binding, ensuring every declared Typer option, flag, and argument is exercised in at least one invocation to verify CLI input binding and propagation to the domain layer without duplicating domain branch matrices, (3) failure path with the expected non-zero exit code when the domain returns a non-ok result, (4) --format json emitting the wire schema, and (5) any interactive confirmation or abort branch. *RootTests calling the handler directly with a CliContext are added only when an author judges the handler owns logic the domain layer does not: input coercion, branch selection across services, result composition from more than one call, or an interactive abort path. A pass-through handler is fully compliant with zero root tests; a root test is never required per action. A root test may never restate a contract already asserted under tests/core/ for the same result type.
+  CLI wiring is proven through the real runner, so option binding, exit codes and output cannot silently break. Handler-level tests exist only where the handler owns logic of its own, and never repeat what the domain tests pin.
 
-```python
-# ✅ DO: class ConfigSetRootTests: ...  # handler owns string-to-bool coercion, so it earns a root test
-# ❌ DO NOT: class ConfigShowRootTests: ...  # pass-through handler re-asserting the ConfigLoadResult from tests/core/config/
-```
+  Answer yes to every criterion:
+  - `TEST-004.Q01` (judgment) Does every CLI command action have at least one *CliIntegrationTests suite that invokes the command through runner.invoke?
+
+    ```python
+    # ✅ DO: class ConfigShowCliIntegrationTests: ...  # in tests/cli/config/test_config_show.py, calls cli_runner.invoke(app, ["-p", ..., "config", "show"])
+    # ❌ DO NOT: A command action whose only tests are a *RootTests suite calling the handler directly (hypothetical: no runner.invoke suite exists for it)
+    ```
+  - `TEST-004.Q02` (judgment) Does the integration suite include a happy-path test with default arguments that asserts exit code 0?
+
+    ```python
+    # ✅ DO: res = cli_runner.invoke(app, ["-p", str(isolated_workspace), "config", "show"])  # then asserts res.exit_code == 0 (hypothetical assertion shown; the invocation is in test_config_show.py)
+    # ❌ DO NOT: A suite that only invokes the command with non-default options and never runs the plain command (hypothetical)
+    ```
+  - `TEST-004.Q03` (judgment) Is every declared Typer option, flag and argument of the command exercised in at least one invocation, verifying input binding and propagation to the domain layer?
+
+    ```python
+    # ✅ DO: One invocation passes "--format", "json" and another passes the positional key and value of config set, so each declared parameter is bound at least once (hypothetical combination)
+    # ❌ DO NOT: A command that declares a --force flag where no invocation in its integration suite passes --force (hypothetical)
+    ```
+  - `TEST-004.Q04` (judgment) Does the integration suite avoid duplicating domain branch matrices, limiting its binding checks to what the CLI layer adds?
+
+    ```python
+    # ✅ DO: The CLI suite checks that an option reaches the domain call; the branch outcomes of that option are asserted under tests/core/ (hypothetical)
+    # ❌ DO NOT: A CLI integration suite that re-runs every domain status branch of the result through runner.invoke (hypothetical)
+    ```
+  - `TEST-004.Q05` (judgment) Does the integration suite include a failure-path test that asserts the expected non-zero exit code when the domain returns a non-ok result?
+
+    ```python
+    # ✅ DO: A test invokes "config show" in a workspace with no config.json and asserts a non-zero exit code (hypothetical assertion; the NOT_FOUND status is real, ConfigLoadStatus.NOT_FOUND)
+    # ❌ DO NOT: A suite where every test asserts exit code 0 even though the domain can return an error status (hypothetical)
+    ```
+  - `TEST-004.Q06` (judgment) Does the integration suite include a test invoking the command with --format json that asserts the emitted payload matches the wire schema?
+
+    ```python
+    # ✅ DO: res = cli_runner.invoke(app, ["-p", str(isolated_workspace), "config", "show", "--format", "json"])  # in tests/cli/config/test_config_show.py
+    # ❌ DO NOT: A command that supports --format json whose suite never passes --format json (hypothetical)
+    ```
+  - `TEST-004.Q07` (judgment) Is every interactive confirmation or abort branch of the command exercised by the integration suite?
+
+    ```python
+    # ✅ DO: A test supplies "n" as input to the confirmation prompt and asserts the abort exit code and that nothing was changed (hypothetical)
+    # ❌ DO NOT: A command that prompts for confirmation where every test bypasses the prompt with a skip flag (hypothetical)
+    ```
+  - `TEST-004.Q08` (judgment) Is every *RootTests suite written for a handler that owns logic the domain layer does not, such as input coercion, branch selection across services, result composition from more than one call, or an interactive abort path?
+
+    ```python
+    # ✅ DO: class DemoRootTests: ...  # hypothetical: the handler picks between two services depending on its arguments, so it earns a root test
+    # ❌ DO NOT: class ConfigShowRootTests: ...  # in tests/cli/config/test_config_show.py; config_show_command only calls the domain and dispatches the result
+    ```
+  - `TEST-004.Q09` (judgment) Does every *RootTests suite avoid restating a contract already asserted under tests/core/ for the same result type?
+
+    ```python
+    # ✅ DO: A root test asserts only what the handler itself decides, leaving the result fields to tests/core/ (hypothetical)
+    # ❌ DO NOT: test_config_show_missing_config_returns_not_found in ConfigShowRootTests re-asserts the CONFIG_NOT_FOUND errors already asserted in tests/core/config/test_loader.py
+    ```
 
 - **[TEST-005] Formatter Presentation Contract Protocol (BLOCKER):**
-  Every formatter under cli/ui/formatters/<domain>/ is tested in its own file at tests/cli/ui/formatters/<domain>/test_<name>.py against three contracts built from FormatterCase: view model transform equality, JSON wire format as an exact literal dict pinned at both a fully populated and an empty or sparse boundary state, and a Rich render at pinned width 160 asserting only semantic values taken from case.view. Where the formatter has no derived view model, meaning transform is provably the identity and the declared view type is the input event type, the transform test is omitted and the remaining two contracts are mandatory; an alias such as SomeView = SomeEvent must not be introduced to manufacture a third test. Never assert to_json_serializable(data) == transform(data).model_dump(), and never assert a label, border, glyph, padding, or full sentence in the render test.
+  A formatter's view model, JSON wire format and rendered content are separate published contracts, so each is tested independently and fails only when that contract changes, not when styling does.
 
-```python
-# ✅ DO: assert formatter.to_json_serializable(data) == {"health": "ok", "warnings": []}  # exact literal
-# ❌ DO NOT: ErrorPanelView = ErrorPanelEvent  # alias so an identity transform can be asserted
-```
+  Answer yes to every criterion:
+  - `TEST-005.Q01` (judgment) Is every formatter under cli/ui/formatters/<domain>/ tested in its own file at tests/cli/ui/formatters/<domain>/test_<name>.py?
+
+    ```python
+    # ✅ DO: tests/cli/ui/formatters/status/test_dovo_status.py tests DovoStatusFormatter from src/dovo/cli/ui/formatters/status/dovo_status.py
+    # ❌ DO NOT: DovoStatusFormatter tested only inside a shared tests/cli/ui/formatters/test_all_formatters.py (hypothetical file)
+    ```
+  - `TEST-005.Q02` (judgment) Is the formatter tested through cases built from FormatterCase, each holding the input data, the expected view and the render expectations?
+
+    ```python
+    # ✅ DO: HEALTHY = FormatterCase(data=..., view=_make_status_view(...), render_expectations=[...])  # in tests/cli/ui/formatters/status/test_dovo_status.py
+    # ❌ DO NOT: a test that builds the formatter input and expected strings inline in the test body, bypassing FormatterCase (hypothetical)
+    ```
+  - `TEST-005.Q03` (judgment) Does a test assert that transform equals the expected view for a formatter that derives a view model from its input?
+
+    ```python
+    # ✅ DO: assert_transform_derives_expected_view(DovoStatusFormatter, case.data, case.view)  # in DovoStatusFormatterTests.test_transform_derives_expected_view
+    # ❌ DO NOT: a DovoStatusFormatter test file with only JSON and render tests, leaving StatusView derivation unpinned (hypothetical)
+    ```
+  - `TEST-005.Q04` (judgment) Is the JSON wire format asserted as an exact literal dict?
+
+    ```python
+    # ✅ DO: assert_json_payload_matches_published_shape(DovoStatusFormatter, case.data, {"health": "ok", "root_dir": "/workspace/my-repo", ...})  # in tests/cli/ui/formatters/status/test_dovo_status.py
+    # ❌ DO NOT: assert formatter.to_json_serializable(data) == {...} replaced by a comparison against a value computed by the code under test (hypothetical)
+    ```
+  - `TEST-005.Q05` (judgment) Is the JSON wire format pinned at both a fully populated state and an empty or sparse boundary state?
+
+    ```python
+    # ✅ DO: STATUS_PAYLOAD_CASES pins HEALTHY (fully populated) and UNINITIALIZED_NON_GIT (null fields, empty lists) in tests/cli/ui/formatters/status/test_dovo_status.py
+    # ❌ DO NOT: a payload test parametrized only with HEALTHY, so null and empty-list output is never pinned (hypothetical)
+    ```
+  - `TEST-005.Q06` (judgment) Is the Rich render asserted at the pinned width of 160 columns?
+
+    ```python
+    # ✅ DO: assert_rich_render_shows_every_view_value(DovoStatusFormatter, case.data, case.render_expectations)  # renders through render_rich with width=160 from tests/harness/formatter.py
+    # ❌ DO NOT: rendering through a Console(width=80) built inside the test, so wrapping differs from the pinned width (hypothetical)
+    ```
+  - `TEST-005.Q07` (judgment) Is every expected string in the render test a semantic value taken from case.view, and never a label, border, glyph, padding or full sentence?
+
+    ```python
+    # ✅ DO: render_expectations=["raw-project", "feature/status-cmd", "Invalid schema"]  # view values only, in DEGRADED_RAW_CONFIG_PROJECT
+    # ❌ DO NOT: assert "Project:" in rendered and "╭" in rendered  # hypothetical: asserts a label and a border glyph
+    ```
+  - `TEST-005.Q08` (judgment) Does a formatter with no derived view model omit the transform test while keeping both the JSON and the render test?
+
+    ```python
+    # ✅ DO: WarningFormatterTests in tests/cli/ui/formatters/events/test_warning.py has only test_json_payload_matches_published_shape and test_rich_render_shows_every_view_value
+    # ❌ DO NOT: a WarningFormatter test file with a transform test that only checks WarningEvent equals itself (hypothetical)
+    ```
+  - `TEST-005.Q09` (judgment) Is the change free of an alias such as SomeView = SomeEvent introduced to manufacture a third test for an identity formatter?
+
+    ```python
+    # ✅ DO: WarningFormatter(ComponentFormatter[WarningEvent]) declares no separate view type
+    # ❌ DO NOT: ErrorPanelView = ErrorPanelEvent  # alias so an identity transform can be asserted (hypothetical)
+    ```
+  - `TEST-005.Q10` (judgment) Is the change free of an assertion that to_json_serializable(data) equals transform(data).model_dump()?
+
+    ```python
+    # ✅ DO: assert_json_payload_matches_published_shape(DovoStatusFormatter, case.data, expected_payload)  # expected_payload is a literal dict
+    # ❌ DO NOT: assert formatter.to_json_serializable(data) == formatter.transform(data).model_dump()  # hypothetical: compares code to itself
+    ```
 
 - **[TEST-006] Parameterization-First for Sibling Variations (BLOCKER):**
-  Parameterization is the primary approach for testing variations of the same contract or function. Never duplicate test functions across input variants, polymorphic target types (e.g. BaseModel vs dict), or invalid payload permutations. Never use `for` loops or stacked assertions over scenarios. Use `@pytest.mark.parametrize` with explicit `pytest.param(..., id="...")` labels. Separate `def test_*` methods are reserved for fundamentally distinct lifecycles, differing fixture requirements, or divergent assertion contracts.
+  Variations of one contract are tested through a single parameterized test, so each case is named and reported separately and a new case costs one line instead of a copied test.
 
-```python
-# ✅ DO: @pytest.mark.parametrize("target", [pytest.param(model, id="model"), pytest.param(dict, id="dict")])
-# ❌ DO NOT: def test_eval_model(self): ...; def test_eval_dict(self): ...  # duplicate sibling methods
-```
+  Answer yes to every criterion:
+  - `TEST-006.Q01` (judgment) Are variations of the same contract or function (input variants, polymorphic target types, invalid payload permutations) covered by one parameterized test rather than by copy-pasted or near-identical sibling test methods?
+
+    ```python
+    # ✅ DO: @pytest.mark.parametrize("target", [pytest.param(model, id="model"), pytest.param(dict, id="dict")])  # hypothetical: one test covers both target types
+    # ❌ DO NOT: def test_eval_model(self): ...; def test_eval_dict(self): ...  # hypothetical: duplicate sibling methods that differ only by target type
+    ```
+  - `TEST-006.Q02` (judgment) Is each test free of `for` loops and stacked assertions that iterate over scenarios?
+
+    ```python
+    # ✅ DO: @pytest.mark.parametrize("pattern", [pytest.param("../x", id="dotdot"), pytest.param("/etc/**", id="absolute")])  # shape used in tests/common/test_tool_policy.py
+    # ❌ DO NOT: for pattern in ["../x", "/etc/**"]: assert not is_valid(pattern)  # hypothetical: the loop hides which scenario failed
+    ```
+  - `TEST-006.Q03` (judgment) Does every parameterized case use pytest.param with an explicit, readable id label?
+
+    ```python
+    # ✅ DO: pytest.param("ghp_" + "a" * 36, id="github-classic")  # in tests/common/test_redact.py
+    # ❌ DO NOT: @pytest.mark.parametrize("token", ["ghp_aaa", "sk-ant-aaa"])  # hypothetical: bare values, so failures report auto-generated ids
+    ```
+  - `TEST-006.Q04` (judgment) Are separate test methods used only where the cases have fundamentally distinct lifecycles, differing fixture requirements or divergent assertion contracts?
+
+    ```python
+    # ✅ DO: def test_create_rolls_back_on_failure(self, failing_git): ...; def test_create_returns_path(self, tmp_repo): ...  # hypothetical: different fixtures and assertion contracts justify separate methods
+    # ❌ DO NOT: def test_rejects_empty_name(self): ...; def test_rejects_blank_name(self): ...  # hypothetical: same fixtures and same assertion, split only by input
+    ```
 
 - **[TEST-007] Assert Domain Invariants on Results; Pin Schemas in Dedicated Contract Tests (SUGGESTION):**
   Protects tests that fail only when behavior breaks. Assertions target the domain outcome under test, and model shapes and defaults are pinned once in contract tests, so unrelated changes do not break scenario tests.
@@ -566,98 +865,244 @@ class TestConfig:
     ```
 
 - **[TEST-008] Test Double Realism and Production Types (BLOCKER):**
-  Test doubles must be types production actually passes or implement a Protocol production is typed against. Never build a stub whose interface is the union of every branch in a hasattr chain.
+  A test double must stand in for something production really uses, so tests fail when production contracts change instead of passing against an invented interface.
 
-```python
-# ✅ DO: class FakeBaseAgentProvider(BaseAgentProvider): def _invoke(self, request: AgentRequest) -> AgentResponse: ...
-# ❌ DO NOT: class MockAdapter: def __getattr__(self, name): return MagicMock()
-```
+  Answer yes to every criterion:
+  - `TEST-008.Q01` (judgment) Does every test double or stub inherit from a type production actually passes or satisfy a typing.Protocol production is typed against?
+
+    ```python
+    # ✅ DO: class FakeAgentProvider(BaseAgentProvider): ...  # in tests/harness/fakes.py, subclassing the production base class
+    # ❌ DO NOT: class MockAdapter: def __getattr__(self, name): return MagicMock()  # hypothetical: matches no production type or Protocol
+    ```
+  - `TEST-008.Q02` (judgment) Is every test double free of an interface built as the union of the attributes from every branch of a hasattr chain?
+
+    ```python
+    # ✅ DO: class FakeRunObserver: def on_worktree_ready(self, path, active): ...  # hypothetical: implements only the RunObserver Protocol in engine/models.py
+    # ❌ DO NOT: class StubTarget: ...  # hypothetical: defines every attribute that any branch of production hasattr(target, ...) checks, so it matches no single production type
+    ```
 
 - **[TEST-009] Ban on Negative Existence Tests for Deleted Symbols (BLOCKER):**
-  Tests prove what the live codebase does, never the historical outcome of a refactor. When dead or obsolete functions, classes, or aliases are removed from production, delete the tests that called them. Never write assert not hasattr(mod, 'old_fn').
+  Tests prove what the live codebase does, never the historical outcome of a refactor, so a removed symbol leaves no trace in the test suite.
 
-```python
-# ✅ DO: # Deleted test_old_helper when old_helper was removed from production
-# ❌ DO NOT: assert not hasattr(filesystem, 'old_helper')  # negative existence test
-```
+  Answer yes to every criterion:
+  - `TEST-009.Q01` (judgment) Is the test suite free of negative existence assertions such as assert not hasattr(module, name)?
+
+    ```python
+    # ✅ DO: assert result.session_id == "wf_abcdef12"  # asserts live behavior (hypothetical test)
+    # ❌ DO NOT: assert not hasattr(filesystem, "old_helper")  # hypothetical: proves a removed helper stays removed
+    ```
+  - `TEST-009.Q02` (judgment) Were the tests that called a function, class or alias deleted in the same change that removed it from production?
+
+    ```python
+    # ✅ DO: # hypothetical: test_old_helper deleted when old_helper was removed from production
+    # ❌ DO NOT: # hypothetical: test_old_helper kept after old_helper was removed, rewritten to expect AttributeError or a missing attribute
+    ```
 
 - **[TEST-010] Complete Assertions Invariant (BLOCKER):**
-  assert obj is not None is not an assertion; if it is the only assert, the test is unfinished. Use isinstance only when it distinguishes two real code paths (basedpyright already proves the rest).
+  A test must check the behavior it exists for, so a passing run shows the code did the right thing and not merely that it returned something.
 
-```python
-# ✅ DO: assert result.session_id == 'wf_abcdef12'
-# ❌ DO NOT: assert result is not None; assert isinstance(result, RunOutcome)
-```
+  Answer yes to every criterion:
+  - `TEST-010.Q01` (judgment) Does every test check a concrete value or effect beyond `assert x is not None`, so that `assert x is not None` is never its only assertion?
+
+    ```python
+    # ✅ DO: assert outcome.session_id == seen[0]  # in tests/engine/test_engine.py, RunOutcome.session_id is str | None
+    # ❌ DO NOT: assert outcome is not None  # hypothetical: the only assertion in the test, so the test is unfinished
+    ```
+  - `TEST-010.Q02` (judgment) Is isinstance used in a test only where it distinguishes two real code paths, rather than repeating what basedpyright already proves?
+
+    ```python
+    # ✅ DO: assert isinstance(result, ErrorResult)  # hypothetical: the call can return either a success or an error model and the test must tell which
+    # ❌ DO NOT: assert isinstance(outcome, RunOutcome)  # hypothetical: engine.run is already typed to return RunOutcome, so the check proves nothing
+    ```
 
 - **[TEST-011] Determinism and Clock Virtualization (BLOCKER):**
-  No hardcoded sleeps in test bodies. Retry and backoff intervals use VirtualClock or monkeypatch the clock at the module boundary (time.monotonic, asyncio.sleep), and a retry test asserts the resulting schedule rather than that a retry eventually happened. Inject the clock and the id factory anywhere their output reaches a result field, so timestamps and generated ids are literals a test can state when asserting time-dependent contracts. Waiting on an operating system event that has no virtual equivalent, such as a process group being reaped after SIGKILL, is permitted only through a shared harness helper that owns the poll interval and deadline; tests must not open-code a poll loop. Registering spawned processes with the harness process registry is mandatory so a failing test cannot leak a process group.
+  Tests must give the same result on every run and every machine, so they do not depend on real elapsed time or on leftover processes, and a failing test cannot leak anything into later ones.
 
-```python
-# ✅ DO: assert wait_pid_dead(child_pid) is True
-# ❌ DO NOT:
-while time.monotonic() < deadline:
-    time.sleep(0.05)  # open-coded poll loop in a test module
-```
+  Answer yes to every criterion:
+  - `TEST-011.Q01` (judgment) Is every test body free of hardcoded sleeps, other than a sleep inside the shared harness poll helper?
+
+    ```python
+    # ✅ DO: monkeypatch.setattr("dovo.common.lock.time.monotonic", fake_monotonic)  # hypothetical: the test advances a fake clock instead of waiting
+    # ❌ DO NOT: time.sleep(0.05)  # bare sleep in a test body, as in _sync_and_interrupt in tests/engine/executors/test_process_group.py
+    ```
+  - `TEST-011.Q02` (judgment) Do tests of retry or backoff intervals drive time through VirtualClock or a monkeypatched clock at the module boundary (time.monotonic, asyncio.sleep)?
+
+    ```python
+    # ✅ DO: monkeypatch.setattr("dovo.engine.executors.step_executor.time.monotonic", clock.now)  # hypothetical: VirtualClock does not exist in the repo yet; the patch targets time.monotonic as imported by step_executor
+    # ❌ DO NOT: time.sleep(backoff_seconds)  # hypothetical: the test waits out the real backoff interval
+    ```
+  - `TEST-011.Q03` (judgment) Does a retry test assert the resulting schedule rather than only that a retry eventually happened?
+
+    ```python
+    # ✅ DO: assert sleeps == [1.0, 2.0, 4.0]  # hypothetical: the recorded backoff schedule
+    # ❌ DO NOT: assert attempts == 3  # hypothetical: proves a retry happened but not when
+    ```
+  - `TEST-011.Q04` (judgment) Is the clock injected anywhere its output reaches a result field, so a time-dependent test asserts literal timestamps?
+
+    ```python
+    # ✅ DO: service = Service(clock=lambda: datetime(2026, 1, 1, tzinfo=UTC)); assert result.started_at == datetime(2026, 1, 1, tzinfo=UTC)  # hypothetical constructor parameter
+    # ❌ DO NOT: assert result.started_at is not None  # hypothetical: the real clock fed the field, so the test cannot state the value
+    ```
+  - `TEST-011.Q05` (judgment) Are generated ids injected anywhere their output reaches a result field, so a test asserts literal ids?
+
+    ```python
+    # ✅ DO: assert result.run_id == "run-1"  # hypothetical: the test supplied the id source, so it states the literal
+    # ❌ DO NOT: assert len(result.run_id) == 32  # hypothetical: the id was generated internally, so the test can only check its shape
+    ```
+  - `TEST-011.Q06` (judgment) Is every wait on an operating system event with no virtual equivalent, such as a process group reaped after SIGKILL, done through a shared harness helper owning the poll interval and deadline, with no open-coded poll loop?
+
+    ```python
+    # ✅ DO: assert wait_pid_dead(child_pid) is True  # harness helper owns the poll interval (hypothetical: today _wait_pid_dead is private to tests/engine/executors/test_process_group.py, not a shared helper in tests/harness/)
+    # ❌ DO NOT:
+    while not (pid_dir / 'child.pid').exists():
+        threading.Event().wait(0.05)  # hypothetical: poll loop written inside the test module
+    ```
+  - `TEST-011.Q07` (judgment) Does every test that spawns a process register it with the harness process registry, so a failing test cannot leak a process group?
+
+    ```python
+    # ✅ DO: process_registry.register(proc, pgid=pgid)  # ProcessRegistry in src/dovo/common/process.py; stream_isolated_process registers its child this way
+    # ❌ DO NOT: subprocess.Popen([sys.executable, "-c", script])  # hypothetical: spawned in a test and never registered, so a failure leaves it running
+    ```
 
 - **[TEST-012] Rich Render Width Pinning (BLOCKER):**
-  render_rich(renderable, width=160) is the only supported way to capture rendered output, and console width for rendered assertions is authoritatively pinned to 160. Tests must not rely on ambient terminal size or in-process os.environ['COLUMNS'] mutations. A render assertion checks semantic values carried by the view model, such as an identifier, count, or status token; it never checks a panel title, field caption, border glyph, padding, or prose sentence, because those are layout and change without any contract changing.
+  Rendered-output tests must give the same result on every machine and keep failing only when a real contract changes, not when layout, terminal size or wording shifts.
 
-```python
-# ✅ DO:
-rendered = render_rich(formatter.to_rich(data))
-assert 'wf_abcdef12' in rendered  # view value, not a caption
-# ❌ DO NOT: assert 'Session ID' in rendered  # panel caption, changes with layout and pins no contract
-```
+  Answer yes to every criterion:
+  - `TEST-012.Q01` (judgment) Is every capture of rendered Rich output in a test made through render_rich from tests/harness/formatter.py?
+
+    ```python
+    # ✅ DO: rendered = render_rich(LoopLifecycleFormatter().to_rich(CONDITIONS_EVALUATED.data))  # in tests/cli/ui/formatters/events/test_loop.py
+    # ❌ DO NOT: console = Console(record=True); console.print(panel); rendered = console.export_text()  # hypothetical: hand-built console instead of render_rich
+    ```
+  - `TEST-012.Q02` (judgment) Is the console width used for a rendered assertion the pinned width of 160, with no other width passed to render_rich?
+
+    ```python
+    # ✅ DO: rendered = render_rich(formatter.to_rich(data))  # in tests/harness/formatter.py; the default width=160 applies
+    # ❌ DO NOT: rendered = render_rich(formatter.to_rich(data), width=80)  # hypothetical: width other than 160
+    ```
+  - `TEST-012.Q03` (judgment) Does the test avoid relying on the ambient terminal size and on in-process os.environ["COLUMNS"] mutations?
+
+    ```python
+    # ✅ DO: render_rich(renderable)  # width is set explicitly on the Console, independent of the terminal
+    # ❌ DO NOT: os.environ["COLUMNS"] = "120"; rendered = Console(record=True)...  # hypothetical: width taken from the environment or ambient terminal
+    ```
+  - `TEST-012.Q04` (judgment) Does every render assertion check a semantic value carried by the view model, such as an identifier, count or status token, rather than a panel title, field caption, border glyph, padding or prose sentence?
+
+    ```python
+    # ✅ DO: rendered = render_rich(formatter.to_rich(data)); assert "wf_abcdef12" in rendered  # hypothetical: a view value, not a caption
+    # ❌ DO NOT: assert "Session ID" in rendered  # hypothetical: a panel caption, changes with layout and pins no contract
+    ```
 
 - **[TEST-013] No Sole Consumer Tests (BLOCKER):**
-  No test may be the sole consumer of a production symbol. If deleting the test would make production code unreachable, the production code is dead and both go. The same applies to the test harness: a builder method, fixture, or assertion helper whose only caller is its own verification test is dead harness. Delete the capability rather than testing it, and prove harness behavior through the first domain test that needs it.
+  Code exists to serve real behavior, so nothing stays alive only because a test exercises it. Unused production or harness code is deleted together with its test, not kept and verified.
 
-```python
-# ✅ DO: # WorkspaceBuilder.with_git() used by tests/core/worktree/test_services.py
-# ❌ DO NOT: # StepBuilder.with_retry() exercised only by tests/harness/test_builders.py
-```
+  Answer yes to every criterion:
+  - `TEST-013.Q01` (judgment) Does every touched production function have a real caller in src/, so that deleting its tests would not leave it unreachable?
+
+    ```python
+    # ✅ DO: A function in src/ called by another production module, with tests that exercise it through that caller (hypothetical example)
+    # ❌ DO NOT: A function in src/ whose only caller is its own unit test; the function is dead, so the function and the test are both deleted (hypothetical example)
+    ```
+  - `TEST-013.Q02` (judgment) Does every harness symbol (builder method, fixture or assertion helper) have at least one caller outside tests/harness/?
+
+    ```python
+    # ✅ DO: WorkspaceBuilder.with_git() in tests/harness/builders/workspace.py, called by tests/cli/session/conftest.py and other domain tests
+    # ❌ DO NOT: A builder method called only by its own test in tests/harness/test_builders.py (hypothetical; delete the method rather than test it)
+    ```
+  - `TEST-013.Q03` (judgment) Is harness behavior proven through the first domain test that needs it, rather than through a harness verification suite that exhaustively permutes options no domain test uses?
+
+    ```python
+    # ✅ DO: A new builder option is introduced together with the domain test that needs it, and that test is what proves it works (hypothetical example)
+    # ❌ DO NOT: A new parametrized case in tests/harness/test_builders.py for a builder option that no domain test calls (hypothetical example)
+    ```
 
 - **[TEST-014] Strict Typing on Test Helpers and Fixtures (BLOCKER):**
-  Annotate test helpers and fixtures as tightly as production code. Give fixtures real return types and type helper parameters against what production passes. No MagicMock in helper signatures.
+  Test helpers and fixtures are code that every test leans on, so they are typed as tightly as production code and a wrong call is caught by the type checker instead of surfacing as a confusing test failure.
 
-```python
-# ✅ DO: def create_test_session(db: DovoDb, session_id: str) -> SessionRecord: ...
-# ❌ DO NOT: def create_test_session(db: Any, mock_obj: MagicMock) -> Any: ...
-```
+  Answer yes to every criterion:
+  - `TEST-014.Q01` (judgment) Is every test helper and fixture function free of missing type annotations?
+
+    ```python
+    # ✅ DO: def workspace_paths_factory() -> Callable[[Path, Path | None], WorkspacePaths]: ...  # fixture in tests/conftest.py
+    # ❌ DO NOT: def make_session(db, session_id): ...  # hypothetical: helper with no parameter or return annotations
+    ```
+  - `TEST-014.Q02` (judgment) Do fixtures declare a real return type rather than Any?
+
+    ```python
+    # ✅ DO: def isolated_workspace(tmp_path: Path) -> Path: ...  # fixture in tests/conftest.py
+    # ❌ DO NOT: def db_fixture() -> Any: ...  # hypothetical: fixture whose return type says nothing about what it yields
+    ```
+  - `TEST-014.Q03` (judgment) Are helper parameters typed against the types production code passes, such as DovoDb or SessionRecord, rather than Any?
+
+    ```python
+    # ✅ DO: def create_test_session(db: DovoDb, session_id: str) -> SessionRecord: ...  # hypothetical helper; DovoDb and SessionRecord exist in dovo.core.db
+    # ❌ DO NOT: def create_test_session(db: Any, mock_obj: MagicMock) -> Any: ...  # hypothetical: untyped db parameter and a mock in the signature
+    ```
+  - `TEST-014.Q04` (judgment) Is MagicMock absent from the signatures of test helpers and fixtures, both their parameters and their return types?
+
+    ```python
+    # ✅ DO: def build_workspace(root: Path) -> WorkspacePaths: ...  # hypothetical helper taking and returning real types
+    # ❌ DO NOT: def build_workspace(root: MagicMock) -> MagicMock: ...  # hypothetical: mock type used in the signature
+    ```
 
 - **[TEST-015] Orchestration Path Test Coverage (WARNING):**
-  Modified command orchestration paths and multi-step dispatch workflows must include covering integration tests. Merging changes with gaps in end-to-end orchestration tests leaves regression risks.
+  Changes to command routing and multi-step dispatch are verified end to end, so a regression in an orchestration branch is caught by a test instead of reaching users.
 
-```python
-# ✅ DO: class ResumeCommandCliIntegrationTests: def test_resume_executes_remaining_steps(self): ...
-# ❌ DO NOT: # PR modifying Engine.resume() without integration tests for resumed step loop
-```
+  Answer yes to every criterion:
+  - `TEST-015.Q01` (judgment) Does a test exercise the updated execution branch of every modified command routing or multi-step orchestration path?
+
+    ```python
+    # ✅ DO: class SessionResumeCliIntegrationTests: def test_resume_cli_from_paused_state_completes_remaining_steps_exits_zero(self, ...): ...  # in tests/cli/session/test_session_resume.py, covering the resume path
+    # ❌ DO NOT: # hypothetical: a change to Engine.resume() in engine/engine.py that skips steps already completed, merged with no test that resumes a paused run and checks the remaining steps execute
+    ```
 
 - **[TEST-016] Public Function Happy and Unhappy Path Coverage (BLOCKER):**
-  Every public function and method (no leading underscore) in a production module requires at least one happy-path test (valid inputs producing the expected successful outcome) and at least one unhappy-path test (invalid input, missing dependency, boundary condition, or failure state producing the expected error result, exception, or classified non-ok outcome). Private functions and methods (leading underscore) are covered exclusively as byproducts of their public callers and never receive dedicated test methods. The coverage gate (CI-001) validates that private paths are reached. Properties containing no branching logic beyond a single field return are exempt from the unhappy-path requirement; their happy path is satisfied by any test that reads them. Dunder methods are exempt unless they contain domain validation (e.g. a __init__ that coerces or rejects values). When a public method has multiple independent failure modes, TEST-006 parameterization is the primary tool for covering them; a separate test method per failure mode is reserved for cases with divergent fixture requirements.
+  A public function's contract includes how it succeeds and how it fails, so both outcomes are tested directly. Private helpers are verified only through their public callers.
 
-```python
-# ✅ DO:
-class SessionStateStoreTests:
-    def test_save_persists_state_and_increments_revision(self): ...
-    def test_save_with_stale_revision_returns_conflict_error(self): ...
-    def test_load_returns_persisted_state(self): ...
-    def test_load_with_corrupt_json_returns_classified_failure(self): ...
-# ❌ DO NOT:
-class SessionStateStoreTests:
-    def test__validate_schema_version(self): ...  # dedicated test for private method
-    def test_save_persists_state(self): ...  # happy path only, no unhappy path for save()
-```
+  Answer yes to every criterion:
+  - `TEST-016.Q01` (judgment) Does every public function or method (no leading underscore) in a changed production module have at least one test of a valid input producing the expected successful outcome, in its corresponding test file per TEST-002?
+
+    ```python
+    # ✅ DO: def test_load_returns_validated_state_when_projection_matches(self, tmp_path: Path) -> None  # in tests/engine/test_state_store.py, covering SessionStateStore.load
+    # ❌ DO NOT: SessionStateStore.regenerate_projection() is added to src/dovo/engine/state_store.py with no test calling it (hypothetical: the real method is covered by test_regenerate_projection_writes_payload_json_and_returns_path)
+    ```
+  - `TEST-016.Q02` (judgment) Does every public function or method in a changed production module have, in its TEST-002 test file, at least one test of an invalid input, missing dependency, boundary or failure state producing the expected error or non-ok outcome?
+
+    ```python
+    # ✅ DO: def test_save_stale_revision_returns_conflict_and_leaves_row_and_projection(self, tmp_path: Path) -> None  # in tests/engine/test_state_store.py, covering SessionStateStore.save
+    # ❌ DO NOT: Only test_save_loaded_state_persists_next_revision_in_row_and_projection exists for save() (hypothetical: the real suite also has stale-revision, missing-row and projection-failure tests), so no failure path is covered
+    ```
+  - `TEST-016.Q03` (judgment) Are private functions and methods (leading underscore) covered only as byproducts of their public callers, with no dedicated test method targeting them?
+
+    ```python
+    # ✅ DO: SessionStateStore._classify_write_failure has no dedicated test; it is reached through the public save() and initialize() by tests such as test_save_stale_revision_returns_conflict_and_leaves_row_and_projection and test_save_missing_row_returns_not_found; the coverage gate (CI-001) checks that private paths are reached
+    # ❌ DO NOT: def test__classify_write_failure(self): ...  # hypothetical: dedicated test calling a private method directly
+    ```
+  - `TEST-016.Q04` (judgment) Are the independent failure modes of a public method covered by TEST-006 parameterization, with a separate test method per failure mode used only when the fixture requirements diverge?
+
+    ```python
+    # ✅ DO: One @pytest.mark.parametrize test over several invalid inputs (hypothetical), the failure modes sharing the same fixture
+    # ❌ DO NOT: Three near-identical test methods, one per invalid input, all built from the same fixture (hypothetical)
+    ```
 
 - **[TEST-017] CLI Runner Assertion Boundary (BLOCKER):**
-  CLI runner tests assert wiring and observable behavior: exit codes, --format json payloads as exact literal dicts, resulting disk or git state, and rendered CLI output. A rendered-output assertion is not restricted to a published error code token; asserting a literal status label, panel line, or full rendered string is permitted, ideally pinned via snapshot testing so the assertion cannot drift silently. Never assert help text wording; assert command registration and option names through Click metadata instead.
+  CLI runner tests should pin wiring and observable behavior, not help prose, so that help text can be reworded freely without breaking the suite.
 
-```python
-# ✅ DO:
-assert result.exit_code == 1
-assert "Status: valid with warnings" in result.stdout  # literal rendered output, not restricted to an error-code token
-# ❌ DO NOT: assert "Show the current configuration value" in result.output  # help text wording; assert Click metadata instead
-```
+  Answer yes to every criterion:
+  - `TEST-017.Q01` (judgment) Do the CLI runner tests under tests/cli/ avoid asserting help text wording in stdout or rendered output?
+
+    ```python
+    # ✅ DO:
+    assert result.exit_code == 0
+    assert "Status: valid with warnings" in result.stdout  # permitted: asserting a literal status label, panel line, or full rendered string is allowed, ideally pinned via snapshot testing so the assertion cannot drift silently; not restricted to a published error code token; from tests/cli/config/test_config_validate.py
+    # ❌ DO NOT: assert "Show the current configuration value" in result.output  # hypothetical help text wording; assert Click metadata instead
+    ```
+  - `TEST-017.Q02` (judgment) Does a CLI test that checks command registration or option names read them from Click metadata rather than from rendered help output?
+
+    ```python
+    # ✅ DO: root_callbacks = {command.name: command.callback for command in app.registered_commands}  # from tests/cli/test_cli.py
+    # ❌ DO NOT: assert "--format" in result.stdout  # hypothetical: option name checked by scanning --help output
+    ```
 
 - **[TEST-018] Test Layer Import Boundary (BLOCKER):**
   tests/core/** must never import dovo.cli.*. A core test proves the domain layer's contract independent of any presentation concern, and an import of the CLI package from a core test either leaks a presentation dependency into the domain suite or signals the test belongs under tests/cli/ instead.

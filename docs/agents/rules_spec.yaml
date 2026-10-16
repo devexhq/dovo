@@ -265,12 +265,47 @@ rules:
   category: Rendering
   domain: cli
   scope: src/dovo/cli/, src/dovo/core/
-  guideline: Terminal output routes through ui_dispatcher.dispatch(result). Direct print(), rich imports, typer.echo, and
-    console writes belong only in src/dovo/cli/ui/.
-  evaluation_criteria: Ensure core services never instantiate RichOutput or Console. Verify .print() is only called at the
-    CLI command/orchestrator level, not inside core services.
-  positive_example: 'self.output.add_error(''failed'')  # cli edge calls context.output.print()'
-  negative_example: output = RichOutput(); output.console.print('failed')
+  intent: Terminal output has one route through the CLI's UI layer, so core services stay free of presentation concerns
+    and every output format is rendered in one place.
+  criteria:
+  - id: RENDER-001.Q01
+    question: Does all terminal output from src/dovo/cli/ and src/dovo/core/ leave the program through ui_dispatcher.dispatch(result)?
+    kind: judgment
+    na_when: The change adds or modifies no code that produces terminal output.
+    positive_example: 'ui_dispatcher.dispatch(result, output_format=output_format)  # in cli/session/commands/show.py'
+    negative_example: 'print(result.session_id)  # hypothetical: in a command module, bypassing the dispatcher'
+  - id: RENDER-001.Q02
+    question: Are direct print() and typer.echo calls absent from src/dovo/cli/ and src/dovo/core/ outside src/dovo/cli/ui/?
+    kind: mechanical
+    enforced_by: tests/lint/test_output_routing.py
+    na_when: The change adds or modifies no print() or typer.echo call.
+    positive_example: 'ui_dispatcher.dispatch(MessageEvent(message=ctx.get_help()))  # in cli/cli.py. The test is stricter than the question: it scans all of src/dovo/ and allows these calls only in cli/ui/dispatcher.py'
+    negative_example: 'typer.echo("failed")  # hypothetical: in a command module'
+  - id: RENDER-001.Q03
+    question: Are rich imports in src/dovo/cli/ confined to files under src/dovo/cli/ui/?
+    kind: judgment
+    na_when: The change adds or modifies no import in src/dovo/cli/.
+    positive_example: 'cli/session/commands/show.py imports ui_dispatcher from dovo.cli.ui.dispatcher and imports nothing from rich'
+    negative_example: 'from rich.table import Table  # hypothetical: in cli/session/commands/show.py'
+  - id: RENDER-001.Q04
+    question: Are console .print() calls in src/dovo/cli/ and src/dovo/core/ made only in files under src/dovo/cli/ui/ (check with grep -rn "\.print(" src/dovo/cli src/dovo/core)?
+    kind: judgment
+    na_when: The change adds or modifies no .print() call.
+    positive_example: 'self._console.print(rich_renderable)  # in cli/ui/dispatcher.py'
+    negative_example: 'self.console.print("failed")  # hypothetical: in a core service method or a command module'
+  - id: RENDER-001.Q05
+    question: Do the files under src/dovo/core/ import nothing from rich?
+    kind: mechanical
+    enforced_by: tests/lint/test_layer_direction.py
+    na_when: The change adds or modifies no import in src/dovo/core/.
+    positive_example: 'A core service returns its result model, and the CLI command passes it to ui_dispatcher.dispatch (hypothetical service)'
+    negative_example: 'from rich.console import Console  # hypothetical: in core/status/'
+  - id: RENDER-001.Q06
+    question: Is every core service free of Console instantiation?
+    kind: judgment
+    na_when: The change adds or modifies no code under src/dovo/core/.
+    positive_example: 'A core service returns a model and holds no console attribute (hypothetical service)'
+    negative_example: 'console = Console(); console.print("failed")  # hypothetical: in a core service'
   citation: docs/agents/code-conventions.md#console-output-and-terminal-formatting
 - id: RENDER-002
   title: Pure Layout in to_rich
@@ -278,11 +313,27 @@ rules:
   category: Rendering
   domain: cli
   scope: src/dovo/cli/ui/formatters/
-  guideline: to_rich(data) derives nothing. It calls transform(data) and lays out the resulting view model into Rich renderables.
-  evaluation_criteria: Inspect to_rich() implementations. Flag any business logic, status calculations, or string manipulations
-    that do not come directly from the view model.
-  positive_example: view = self.transform(data); return Panel(Text(view.project_name))
-  negative_example: color = 'green' if len(data.errors) == 0 else 'red'; return Panel(Text(color))
+  intent: Deriving what to show happens in one place, transform(), so to_rich() only lays out a ready view model and the
+    presentation logic can be tested without rendering anything.
+  criteria:
+  - id: RENDER-002.Q01
+    question: Does every to_rich() implementation get its presentation data by calling transform(data)?
+    kind: judgment
+    na_when: The change adds or modifies no to_rich() implementation.
+    positive_example: 'SessionListFormatter.to_rich in session/session_list.py starts with view = self.transform(data) and then reads only view.errors, view.fixes and the view passed to _render_list_runs'
+    negative_example: 'def to_rich(self, data): return Panel(Text(data.project_name))  # hypothetical: lays out the raw result without calling transform'
+  - id: RENDER-002.Q02
+    question: Is every business rule and status calculation that decides what to show performed in transform() rather than in to_rich()?
+    kind: judgment
+    na_when: The change adds or modifies no to_rich() implementation.
+    positive_example: 'SessionListFormatter.transform in session/session_list.py computes total_sessions and the session summaries, and to_rich only reads them from the view'
+    negative_example: color = 'green' if len(data.errors) == 0 else 'red'; return Panel(Text(color))
+  - id: RENDER-002.Q03
+    question: Does every string that to_rich() renders come directly from the view model, without string manipulation inside to_rich()?
+    kind: judgment
+    na_when: The change adds or modifies no to_rich() implementation.
+    positive_example: view = self.transform(data); return Panel(Text(view.project_name))
+    negative_example: 'view = self.transform(data); return Panel(Text(view.project_name.upper() + " (" + str(len(view.items)) + ")"))  # hypothetical: derived text built inside to_rich'
   citation: docs/agents/code-conventions.md#console-output-and-terminal-formatting
 - id: RENDER-003
   title: Inline Error and Warning String Construction
@@ -290,11 +341,14 @@ rules:
   category: Rendering
   domain: all
   scope: src/dovo/
-  guideline: Construct errors, warnings, and fixes strings using inline f-strings or literals at call sites. Do not create
-    private single-message formatting wrappers.
-  evaluation_criteria: Flag private helper functions whose sole purpose is formatting a single error or warning string.
-  positive_example: 'errors.append(f"Blueprint ''{path}'' invalid: {err}")'
-  negative_example: errors.append(self._format_validation_error(path, err))
+  intent: Error, warning and fix messages stay readable where they are raised, so a reader sees the whole message at the call site instead of chasing a one-use wrapper.
+  criteria:
+  - id: RENDER-003.Q01
+    question: Are error, warning and fix strings built inline with f-strings or literals at their call sites, with no private helper whose sole purpose is formatting a single error or warning string?
+    kind: judgment
+    na_when: The change builds no error, warning or fix strings.
+    positive_example: 'message = f"Project identity at ''{path}'' is invalid: {exc} (PROJECT_IDENTITY_INVALID_SCHEMA)."  # in core/project/services/identity.py'
+    negative_example: 'errors.append(self._format_validation_error(path, err))  # hypothetical: a private wrapper that only formats one message'
   citation: docs/agents/code-conventions.md#console-output-and-terminal-formatting
 - id: RENDER-004
   title: Domain Shared Table Builders in common.py
@@ -302,16 +356,20 @@ rules:
   category: Rendering
   domain: cli
   scope: src/dovo/cli/ui/formatters/
-  guideline: A table-building helper shared by more than one formatter within a domain lives in that domain's
-    cli/ui/formatters/<domain>/common.py, not duplicated per formatter module and not hoisted into the
-    package-wide cli/ui/formatters/common.py unless it is genuinely shared across domains.
-  evaluation_criteria: When a new or changed formatter defines a table-construction helper, check whether another
-    formatter in the same domain needs the same table shape. Flag a helper duplicated across sibling formatter
-    modules instead of factored into that domain's common.py, and flag a domain-specific helper placed in the
-    package-wide common.py.
-  positive_example: 'src/dovo/cli/ui/formatters/worktree/common.py -> build_worktree_table(), reused by list.py
-    and status.py'
-  negative_example: '# Nearly identical build_table() duplicated in both worktree/list.py and worktree/status.py'
+  intent: Table layouts stay consistent and are fixed in one place, so a helper that several formatters of one domain need has a single home next to them, and the package-wide module holds only what every domain shares.
+  criteria:
+  - id: RENDER-004.Q01
+    question: Is every table-building helper that more than one formatter in a domain needs defined once in that domain's cli/ui/formatters/<domain>/common.py rather than duplicated across sibling formatter modules?
+    kind: judgment
+    na_when: The change adds or modifies no table-building helper in a formatter module.
+    positive_example: 'build_session_table() defined once in cli/ui/formatters/session/common.py and imported by session_list.py'
+    negative_example: 'A nearly identical build_table() defined in both worktree/worktree_list.py and worktree/worktree_show.py (hypothetical; the real worktree builders live in worktree/common.py)'
+  - id: RENDER-004.Q02
+    question: Is a table-building helper placed in the package-wide cli/ui/formatters/common.py only when it is genuinely shared across domains?
+    kind: judgment
+    na_when: The change adds or moves no table-building helper into the package-wide cli/ui/formatters/common.py.
+    positive_example: 'A table-building helper placed in cli/ui/formatters/common.py because formatters in both the session and worktree domains need it (hypothetical; that module currently contains no table builder)'
+    negative_example: 'build_worktree_table() moved into cli/ui/formatters/common.py (hypothetical; it is worktree-specific and really lives in worktree/common.py)'
   citation: docs/agents/code-conventions.md#console-output-and-terminal-formatting
 - id: MODEL-001
   title: Scoped Model Exceptions with Justifying Comment
@@ -579,11 +637,15 @@ rules:
   category: Typing
   domain: all
   scope: src/, tests/
-  guideline: -> Any on a public function is treated as a defect because it disables type checking transitively at every call
-    site. Prefer object when values are only stored, compared, or passed through.
-  evaluation_criteria: Scan function signatures for `-> Any`. Flag any occurrence on public functions.
-  positive_example: 'def get_payload(self) -> object: ...'
-  negative_example: 'def get_payload(self) -> Any: ...'
+  intent: A public function's return type keeps type checking intact at every call site instead of switching it off for
+    each caller. Where a value is only stored, compared or passed through, object is preferred to Any.
+  criteria:
+  - id: TYPE-001.Q01
+    question: Is the return annotation of every public function (a module-level function or a method whose name does not start with an underscore) something other than Any?
+    kind: judgment
+    na_when: The code under review contains no public function.
+    positive_example: 'def get_payload(self) -> object: ...  # hypothetical: callers must narrow the value before using it'
+    negative_example: 'def to_rich(self, data: T) -> Any:  # public abstract method of the formatter base class in src/dovo/common/types.py'
   citation: docs/agents/code-conventions.md#type-annotations-and-any
 - id: TYPE-002
   title: Strict Scoping of Permitted Any
@@ -591,13 +653,14 @@ rules:
   category: Typing
   domain: all
   scope: src/dovo/
-  guideline: 'Any is permitted strictly in: (1) Pydantic mode=''before'' validators, (2) dict[str, Any] at serialization boundaries,
-    (3) values read from user documents and compared, and (4) **kwargs: Any pass-throughs.'
-  evaluation_criteria: Audit Any occurrences. Flag any usage outside the four permitted boundaries.
-  positive_example: '@field_validator(''pattern'', mode=''before'')
-
-    def _val(cls, v: Any) -> Any: ...'
-  negative_example: 'def execute_step(step: Any) -> StepResult: ...'
+  intent: Any switches off type checking wherever it appears, so it is confined to the few boundaries where the value really is unconstrained, and everywhere else the type checker keeps working.
+  criteria:
+  - id: TYPE-002.Q01
+    question: 'Is every use of Any in the change confined to one of four boundaries, namely a Pydantic mode="before" validator, a dict[str, Any] at a serialization boundary, a value read from a user document and compared, or a **kwargs: Any pass-through?'
+    kind: judgment
+    na_when: The change adds or modifies no use of Any.
+    positive_example: '@field_validator("capability", mode="before") then def coerce_capability(cls, val: Any) -> Any  # in common/tool_policy.py; a pre-validator receives whatever the user wrote'
+    negative_example: 'def execute_step(step: Any) -> StepResult: ...  # hypothetical: step is not a permitted boundary, so it should be typed as the step model'
   citation: docs/agents/code-conventions.md#permitted-do-not-fix-these
 - id: TYPE-003
   title: Banned Uses of Any
@@ -605,11 +668,38 @@ rules:
   category: Typing
   domain: all
   scope: src/, tests/
-  guideline: 'Banned: Any dodging import boundaries, Any as a test seam, Any where a model already exists, Any in third-party
-    overrides (e.g. ctx: Any for click.Context), and Any filling a known generic (e.g. Popen[Any]).'
-  evaluation_criteria: Scan for Any annotations that match the five banned categories.
-  positive_example: 'proc: subprocess.Popen[str] = ...'
-  negative_example: 'proc: subprocess.Popen[Any] = ...'
+  intent: Any switches off the type checker, so it is not used to hide misplaced code, a test seam, a type that already exists or a type the code already knows.
+  criteria:
+  - id: TYPE-003.Q01
+    question: Is every annotation free of Any that exists only because the real type cannot be imported from the current package?
+    kind: judgment
+    na_when: The change adds or modifies no Any annotation.
+    positive_example: 'def run(step: StepDefinition) -> None: ...  # hypothetical: the code that needs StepDefinition was moved to a package that can import it'
+    negative_example: 'def run(step: Any) -> None: ...  # hypothetical: Any used because StepDefinition cannot be imported from this package'
+  - id: TYPE-003.Q02
+    question: Is every parameter free of an Any annotation that exists only so a test can pass a stub?
+    kind: judgment
+    na_when: The change adds or modifies no Any annotation.
+    positive_example: 'def run(self) -> None: ...  # hypothetical: no extra parameter, the test patches at the boundary instead'
+    negative_example: 'def run(self, output: Any = None) -> None: ...  # hypothetical: output is never read in production and exists for tests'
+  - id: TYPE-003.Q03
+    question: Is every annotation free of Any where a model that describes the value already exists?
+    kind: judgment
+    na_when: The change adds or modifies no Any annotation.
+    positive_example: 'def render(step: StepDefinition) -> str: ...  # hypothetical signature naming the existing model'
+    negative_example: 'def render(step: Any, metadata: Any) -> str: ...  # hypothetical: StepDefinition already describes step'
+  - id: TYPE-003.Q04
+    question: Does every override of a third-party method name the third-party type instead of Any?
+    kind: judgment
+    na_when: The change adds or modifies no override of a third-party method.
+    positive_example: 'def invoke(self, ctx: click.Context) -> object: ...  # hypothetical override of a Click method'
+    negative_example: 'def invoke(self, ctx: Any) -> Any: ...  # hypothetical override of a Click method'
+  - id: TYPE-003.Q05
+    question: Is every generic type parameterized with the concrete type the code already knows, rather than Any?
+    kind: judgment
+    na_when: The change adds or modifies no generic type annotation.
+    positive_example: 'proc: subprocess.Popen[str] = ...'
+    negative_example: 'proc: subprocess.Popen[Any] = ...  # hypothetical: the process is started with text=True, so Popen[str] is known'
   citation: docs/agents/code-conventions.md#banned
 - id: TYPE-004
   title: Explicit ClassVar Typing for Table Names and Constants
@@ -617,11 +707,20 @@ rules:
   category: Typing
   domain: core
   scope: src/dovo/core/db/models.py
-  guideline: Typing table names or string constants as Any or bare string instead of explicit ClassVar[str] causes type checker
-    ambiguity. Declare class-level SQL constants explicitly.
-  evaluation_criteria: Inspect SQLModel definitions. Verify __tablename__ and table constants are annotated as ClassVar[str].
-  positive_example: '__tablename__: ClassVar[str] = ''worktrees'''
-  negative_example: __tablename__ = 'worktrees'
+  intent: The type checker should see class-level SQL names and constants as exactly what they are, so it never has to guess between Any, a bare string and a class attribute.
+  criteria:
+  - id: TYPE-004.Q01
+    question: Is every SQLModel __tablename__ annotated as ClassVar[str]?
+    kind: judgment
+    na_when: The change defines no SQLModel table class.
+    positive_example: '__tablename__: ClassVar[str] = "worktrees"  # in WorktreeRecord, core/db/models.py (the real line also carries a pyright ignore for the SQLModel stub conflict, omitted here)'
+    negative_example: '__tablename__ = "worktrees"  # hypothetical: unannotated, so the type checker has to infer it'
+  - id: TYPE-004.Q02
+    question: Is every other class-level SQL string constant annotated explicitly as ClassVar[str] rather than Any or a bare str?
+    kind: judgment
+    na_when: The change adds no class-level SQL string constant besides __tablename__.
+    positive_example: 'INDEX_NAME: ClassVar[str] = "ix_worktrees_status"  # hypothetical constant on a table class'
+    negative_example: 'INDEX_NAME: Any = "ix_worktrees_status"  # hypothetical: Any leaves the constant ambiguous to the type checker'
   citation: docs/agents/code-conventions.md#type-checker-suppressions
 - id: TYPE-005
   title: Precise Parameterization for Generator Types
@@ -629,12 +728,14 @@ rules:
   category: Typing
   domain: all
   scope: src/, tests/
-  guideline: Avoid overly broad generic type annotations like Generator[Session] without complete yield/send/return parameterization.
-    Specify all three generic parameters.
-  evaluation_criteria: Scan typing annotations for `Generator[...]`. Verify all three parameters are specified (e.g. `Generator[YieldType,
-    SendType, ReturnType]`).
-  positive_example: 'def get_session() -> Generator[Session, None, None]: ...'
-  negative_example: 'def get_session() -> Generator[Session]: ...'
+  intent: Generator annotations state the full contract of what a generator yields, accepts and returns, so readers and the type checker never have to infer the omitted parts.
+  criteria:
+  - id: TYPE-005.Q01
+    question: Does every Generator[...] annotation specify all three parameters, yield, send and return, as in Generator[YieldType, SendType, ReturnType]?
+    kind: judgment
+    na_when: The change adds or modifies no Generator[...] annotation.
+    positive_example: 'def get_session(engine: Engine) -> Generator[Session, None, None]: ...  # hypothetical: the full three-parameter form of the real function in core/db/connection.py'
+    negative_example: 'def get_session(engine: Engine) -> Generator[Session]: ...  # in core/db/connection.py'
   citation: docs/agents/code-conventions.md#type-annotations-and-any
 - id: TYPE-006
   title: Scoped Pyright Suppressions With Reason
@@ -642,22 +743,75 @@ rules:
   category: Typing
   domain: all
   scope: src/, tests/
-  guideline: >-
-    A bare `# type: ignore` is not honored by this repo's basedpyright config and suppresses nothing. Only
-    `# pyright: ignore[reportRuleName]` suppresses an error, and only for one of three permitted cases, each
-    with a one-line reason naming which applies: an intentional ill-typed test input whose subject is the
-    raised error, a third-party stub conflict our code cannot name correctly (the SQLModel `__tablename__`
-    case), or a platform-gated import. `reportCallIssue` and `reportArgumentType` silencing a wrong-shaped
-    test double or fixture, and `reportIncompatibleVariableOverride` outside the SQLModel `__tablename__`
-    stub, are never permitted suppressions: the fixture, annotation, or override is the defect to fix, not
-    the error to hide.
-  evaluation_criteria: >-
-    Grep changed hunks for `# type: ignore` and `# pyright: ignore`. Flag every bare `# type: ignore`. For each
-    `# pyright: ignore[...]`, verify a one-line reason is present and that the case matches one of the three
-    permitted categories; flag any suppression of `reportCallIssue`, `reportArgumentType`, or
-    `reportIncompatibleVariableOverride` that does not match its named exception.
-  positive_example: 'import msvcrt  # pyright: ignore[reportMissingImports]  # platform-gated: msvcrt does not exist on Linux'
-  negative_example: 'queue: Queue = mock_queue  # type: ignore  # bare ignore, suppresses nothing and hides a fixable fixture type'
+  intent: A type error is silenced only where the code is correct and the checker cannot express it, never to hide a defect,
+    so every suppression is one the checker honors, is narrow, and says why it exists.
+  criteria:
+  - id: TYPE-006.Q01
+    question: >-
+      Does the code use no bare `# type: ignore`, which this repo's basedpyright config does not honor and which
+      suppresses nothing?
+    kind: judgment
+    positive_example: >-
+      self.value = compute()  # pyright: ignore[reportAttributeAccessIssue]  # stub conflict: third-party stub cannot
+      name the attribute (hypothetical line)
+    negative_example: >-
+      queue: Queue = mock_queue  # type: ignore  # bare ignore, suppresses nothing and hides a fixable fixture type
+      (hypothetical line)
+  - id: TYPE-006.Q02
+    question: >-
+      Does every `# pyright: ignore[reportRuleName]` name the specific rule it silences in brackets?
+    kind: judgment
+    na_when: "The change adds no `# pyright: ignore` comment."
+    positive_example: >-
+      _IncompleteProvider()  # pyright: ignore[reportAbstractUsage]  # intentional ill-typed input: the subject is the
+      raised TypeError  (tests/core/agents/test_base.py)
+    negative_example: >-
+      value = call()  # pyright: ignore  # silences every rule on the line (hypothetical line)
+  - id: TYPE-006.Q03
+    question: >-
+      Does every `# pyright: ignore[...]` carry a one-line reason that names which permitted case applies?
+    kind: judgment
+    na_when: "The change adds no `# pyright: ignore` comment."
+    positive_example: >-
+      _IncompleteProvider()  # pyright: ignore[reportAbstractUsage]  # intentional ill-typed input: the subject is the
+      raised TypeError  (tests/core/agents/test_base.py)
+    negative_example: >-
+      resume = command.commands["resume"]  # pyright: ignore[reportAttributeAccessIssue]  (tests/lint/test_step_schema_parity.py;
+      an existing line with no reason after the ignore)
+  - id: TYPE-006.Q04
+    question: >-
+      Is every `# pyright: ignore[...]` one of the three permitted cases: an intentional ill-typed test input whose
+      subject is the raised error, a third-party stub conflict our code cannot name correctly, or a platform-gated import?
+    kind: judgment
+    na_when: "The change adds no `# pyright: ignore` comment."
+    positive_example: >-
+      import msvcrt  # pyright: ignore[reportMissingImports]  # platform-gated: msvcrt does not exist on Linux
+      (src/dovo/common/lock.py has this import and ignore; the reason text is a hypothetical addition)
+    negative_example: >-
+      result = parse(raw)  # pyright: ignore[reportReturnType]  # inconvenient to annotate (hypothetical line; fix the
+      annotation instead)
+  - id: TYPE-006.Q05
+    question: >-
+      Is `reportCallIssue` or `reportArgumentType` never suppressed to silence a wrong-shaped test double or fixture?
+    kind: judgment
+    na_when: The change adds no ignore of `reportCallIssue` or `reportArgumentType`.
+    positive_example: >-
+      CostRecord(...)  # pyright: ignore[reportCallIssue] # intentional: omitted project_id is this test's subject
+      (tests/core/db/test_models.py; the call is the ill-typed input under test)
+    negative_example: >-
+      service = Service(queue=fake_queue)  # pyright: ignore[reportArgumentType]  # the fake does not match the Queue
+      type (hypothetical line; fix the fixture type instead)
+  - id: TYPE-006.Q06
+    question: >-
+      Is `reportIncompatibleVariableOverride` suppressed only on the SQLModel `__tablename__` stub conflict?
+    kind: judgment
+    na_when: The change adds no ignore of `reportIncompatibleVariableOverride`.
+    positive_example: >-
+      __tablename__: ClassVar[str] = "worktrees"  # pyright: ignore[reportIncompatibleVariableOverride]
+      (src/dovo/core/db/models.py, WorktreeRecord)
+    negative_example: >-
+      name: str = "x"  # pyright: ignore[reportIncompatibleVariableOverride]  # in a subclass whose base declares
+      name: int (hypothetical line; fix the override instead)
   citation: docs/agents/code-conventions.md#type-checker-suppressions
 - id: ENCAP-001
   title: Expose Public Query Properties
@@ -727,12 +881,27 @@ rules:
   category: Performance
   domain: core
   scope: src/dovo/core/db/
-  guideline: Every new table or column must have real caller sites in src/ in the same PR. One-time data backfills must be
-    versioned Alembic revisions (op.execute()), not ad-hoc raw SQL in models.
-  evaluation_criteria: Check Alembic migrations. Verify added columns/tables are actively queried and written by production
-    services in the same PR.
-  positive_example: '# Migration adds a column and a repository method reads and writes it'
-  negative_example: '# Migration adds column future_flag with zero callers in src/'
+  intent: The schema holds only what production code uses, and data changes ship as versioned revisions, so every
+    installed database upgrades the same way and no dead columns accumulate.
+  criteria:
+  - id: PERF-002.Q01
+    question: Is every table or column added by a migration in the change written by production code in src/ in the same PR?
+    kind: judgment
+    na_when: The change adds no table or column.
+    positive_example: 'Migration 0003_artifact_revisions adds the digest column, and ArtifactsRepository.create() in src/dovo/core/db/repositories/artifacts.py accepts and stores digest'
+    negative_example: '# Hypothetical: a migration adds column future_flag to sessions and no code under src/ ever sets it'
+  - id: PERF-002.Q02
+    question: Is every table or column added by a migration in the change queried by production code in src/ in the same PR?
+    kind: judgment
+    na_when: The change adds no table or column.
+    positive_example: 'Migration 0004_session_discard adds sessions.discard, and the session settings builder in src/dovo/engine/session.py reads it back with discard=row.discard'
+    negative_example: '# Hypothetical: a migration adds column future_flag to sessions and no code under src/ ever reads or filters on it'
+  - id: PERF-002.Q03
+    question: Is every one-time data backfill shipped as a versioned Alembic revision that runs it with op.execute()?
+    kind: judgment
+    na_when: The change performs no one-time data backfill.
+    positive_example: 'A new revision file under src/dovo/core/db/alembic/versions/ calls op.execute("UPDATE ...") to backfill existing rows (the existing op.execute call in 0003_artifact_revisions is a downgrade data cleanup, used here as the pattern)'
+    negative_example: '# Hypothetical: a model or repository in src/dovo/core/db/ runs a raw UPDATE at startup to backfill old rows, outside any Alembic revision'
   citation: docs/agents/ci-and-tooling.md#database-migration-hygiene
 - id: PERF-003
   title: Indexed Column Queries vs O(n) In-Memory Lookups
@@ -740,12 +909,14 @@ rules:
   category: Performance
   domain: [core, engine]
   scope: src/dovo/core/db/, src/dovo/core/*/services/, src/dovo/engine/services/
-  guideline: Do not perform O(n) in-memory list comprehensions or linear scans over repository records when an indexed database
-    column exists (e.g., querying _record_for_rel_path). Query the repository slice directly with filtered SQL.
-  evaluation_criteria: Scan for in-memory list comprehensions or filter loops over full table fetches when an indexed query
-    method could be used.
-  positive_example: record = repo.get_by_path(relative_path)
-  negative_example: record = next((r for r in repo.list() if r.path == relative_path), None)
+  intent: Lookups use the database's filtering and indexes, so the cost of finding a record does not grow with the number of rows fetched and scanned in Python.
+  criteria:
+  - id: PERF-003.Q01
+    question: Does code that needs a subset of repository records get it with a filtered repository query instead of filtering a full fetch in memory, whenever an indexed query method or column exists?
+    kind: judgment
+    na_when: The changed code does not select records from a repository, or no indexed query method or column exists for the lookup.
+    positive_example: 'paused = db.sessions.list(status=SessionStatus.PAUSED)  # status is an indexed column; list() filters it in SQL'
+    negative_example: 'paused = [s for s in db.sessions.list() if s.status == SessionStatus.PAUSED]  # fetches every session, then filters in Python although list(status=...) exists'
   citation: docs/agents/schemas.md#7-database
 - id: API-001
   title: Sibling Repository CRUD Method Naming Consistency
@@ -1070,11 +1241,39 @@ rules:
   category: Testing
   domain: tests
   scope: tests/
-  guideline: Assert on deliberate contracts (BaseResult object, exact JSON dict, exit code, file on disk, git ref), never
-    implementation details (rendered layout, private helpers, call ordering, constructor assignments).
-  evaluation_criteria: Inspect test assertions. Flag assertions checking internal mock call counts or private attributes.
-  positive_example: assert result == BlueprintLoadResult(status=BlueprintLoadStatus.OK, blueprint=expected_bp)
-  negative_example: assert service._internal_cache_size == 1; assert mock_parser.call_count == 1
+  intent: Tests pin the behavior callers and users depend on, so a refactor that keeps that behavior never breaks a test
+    and a test that fails always points at a real change in what the code promises.
+  criteria:
+  - id: TEST-001.Q01
+    question: Does every assertion check a deliberate contract, such as a BaseResult object, an exact JSON dict, an exit code, a file on disk or a git ref?
+    kind: judgment
+    na_when: The change adds or modifies no assertions.
+    positive_example: 'assert result == ReconciliationResult(reconciled=[], warning=None)  # in tests/core/sessions/services/test_reconcile.py; ReconciliationResult is a BaseResult'
+    negative_example: 'assert service._internal_cache_size == 1  # hypothetical: an internal cache is not a contract'
+  - id: TEST-001.Q02
+    question: Do the assertions avoid reading private helpers and private attributes of the code under test?
+    kind: judgment
+    na_when: The change adds or modifies no assertions.
+    positive_example: 'assert result.exit_code == 0  # in tests/cli/session/test_session_logs.py, observed through the CLI'
+    negative_example: 'assert service._internal_cache_size == 1  # hypothetical: reads a private attribute'
+  - id: TEST-001.Q03
+    question: Do the assertions avoid asserting mock call counts and call ordering?
+    kind: judgment
+    na_when: The change adds or modifies no assertions.
+    positive_example: 'assert result == ReconciliationResult(reconciled=[], warning=None)  # the outcome is asserted, not how it was reached'
+    negative_example: 'assert mock_parser.call_count == 1  # hypothetical: counts calls on a mock'
+  - id: TEST-001.Q04
+    question: Do the assertions avoid pinning rendered layout, such as exact spacing, column widths or box-drawing?
+    kind: judgment
+    na_when: The change adds or modifies no assertions on rendered output.
+    positive_example: 'assert "iteration 3/5" in rendered  # in tests/cli/ui/test_live.py: checks a fact in the rendered panel, not its layout'
+    negative_example: 'assert output == "| name  | status |\n|-------|--------|"  # hypothetical: pins table layout'
+  - id: TEST-001.Q05
+    question: Do the assertions avoid checking how a constructor assigned its arguments to attributes?
+    kind: judgment
+    na_when: The change adds or modifies no assertions.
+    positive_example: 'assert loader.load(path) == expected_config  # hypothetical: checks what the constructed object does'
+    negative_example: 'assert loader.path == path  # hypothetical: only checks the constructor stored its argument'
   citation: docs/agents/testing.md#the-rule-that-matters-most
 - id: TEST-002
   title: 1:1 Source Parity Layout
@@ -1082,26 +1281,68 @@ rules:
   category: Testing
   domain: tests
   scope: tests/
-  guideline: >-
-    Test structure mirrors src/dovo/ 1:1 under tests/, one test file per source module, and every test
-    directory carries an __init__.py because basenames repeat across the tree. Five mappings are fixed:
-    src/dovo/common/<m>.py to tests/common/test_<m>.py, src/dovo/core/<domain>/<m>.py to
-    tests/core/<domain>/test_<m>.py, src/dovo/cli/ui/formatters/<domain>/<name>.py to
-    tests/cli/ui/formatters/<domain>/test_<name>.py, and src/dovo/cli/<command>/commands/<action>.py to
-    tests/cli/<command>/test_<command>_<action>.py — a subdirectory per CLI command domain, mirroring
-    src/dovo/cli/<command>/ (the commands/ subpackage level collapses; a per-domain conftest.py holds
-    fixtures that domain's test files share, never fixtures another domain needs). The fifth is src/dovo/engine/<m>.py to tests/engine/test_<m>.py (executors/ and services/ subpackages mirror as tests/engine/executors/ and tests/engine/services/). One test file per CLI
-    command action, not one file per command domain. Every source module must have a corresponding test
-    file; there is no exemption list. Grouping several formatters, domains, or command actions into one part-numbered or collapsed file is
-    prohibited.
-  evaluation_criteria: >-
-    Check every test file path against its source module using the fixed mappings. Flag part-numbered or
-    grab-bag files (for example test_command_formatters_part1.py or a single test_<command>.py holding more
-    than one command action), a CLI command test file left flat under tests/cli/ instead of nested under its
-    own tests/cli/<command>/ subdirectory, missing __init__.py files, and source modules with no test
-    file.
-  positive_example: src/dovo/cli/worktree/commands/worktree_create.py -> tests/cli/worktree/test_worktree_create.py
-  negative_example: 'tests/cli/commands/test_worktree_create.py  # flat under tests/cli/commands/, not nested under tests/cli/worktree/'
+  intent: A test's location is predictable from the source module it covers, so tests are easy to find and no source module goes untested or hides inside a shared catch-all file.
+  criteria:
+  - id: TEST-002.Q01
+    question: Does each src/dovo/common/<m>.py module have its tests in tests/common/test_<m>.py?
+    kind: judgment
+    na_when: The change adds, moves or renames no module under src/dovo/common/ and no test file under tests/common/.
+    positive_example: src/dovo/common/lock.py -> tests/common/test_lock.py
+    negative_example: 'tests/common/test_locking_helpers.py  # hypothetical: covers src/dovo/common/lock.py under a name that does not mirror the module'
+  - id: TEST-002.Q02
+    question: Does each src/dovo/core/<domain>/<m>.py module have its tests in tests/core/<domain>/test_<m>.py?
+    kind: judgment
+    na_when: The change adds, moves or renames no module under src/dovo/core/ and no test file under tests/core/.
+    positive_example: src/dovo/core/git/runner.py -> tests/core/git/test_runner.py
+    negative_example: 'tests/core/test_runner.py  # hypothetical: covers src/dovo/core/git/runner.py but skips the git/ domain directory'
+  - id: TEST-002.Q03
+    question: Does each src/dovo/engine/<m>.py module have its tests in tests/engine/test_<m>.py, with the executors/ and services/ subpackages mirrored as tests/engine/executors/ and tests/engine/services/?
+    kind: judgment
+    na_when: The change adds, moves or renames no module under src/dovo/engine/ and no test file under tests/engine/.
+    positive_example: src/dovo/engine/executors/conditions.py -> tests/engine/executors/test_conditions.py
+    negative_example: 'tests/engine/test_conditions.py  # hypothetical: covers src/dovo/engine/executors/conditions.py but drops the executors/ subpackage level'
+  - id: TEST-002.Q04
+    question: Does each src/dovo/cli/ui/formatters/<domain>/<name>.py module have its tests in tests/cli/ui/formatters/<domain>/test_<name>.py?
+    kind: judgment
+    na_when: The change adds, moves or renames no formatter module under src/dovo/cli/ui/formatters/ and no test file under tests/cli/ui/formatters/.
+    positive_example: src/dovo/cli/ui/formatters/worktree/worktree_create.py -> tests/cli/ui/formatters/worktree/test_worktree_create.py
+    negative_example: 'tests/cli/ui/formatters/test_worktree_create.py  # hypothetical: omits the worktree/ domain directory'
+  - id: TEST-002.Q05
+    question: Does each src/dovo/cli/<command>/commands/<action>.py module have its tests in tests/cli/<command>/test_<command>_<action>.py, nested under its own tests/cli/<command>/ subdirectory with the commands/ level collapsed?
+    kind: judgment
+    na_when: The change adds, moves or renames no command module under src/dovo/cli/<command>/commands/ and no test file under tests/cli/.
+    positive_example: src/dovo/cli/worktree/commands/worktree_create.py -> tests/cli/worktree/test_worktree_create.py
+    negative_example: 'tests/cli/commands/test_worktree_create.py  # flat under tests/cli/commands/, not nested under tests/cli/worktree/'
+  - id: TEST-002.Q06
+    question: Is there one test file per CLI command action, rather than one file per command domain?
+    kind: judgment
+    na_when: The change adds or edits no tests for CLI command actions.
+    positive_example: 'tests/cli/worktree/ holds test_worktree_create.py, test_worktree_delete.py and test_worktree_list.py, one per action'
+    negative_example: 'tests/cli/test_worktree.py  # hypothetical: a single file holding the tests for create, delete and list'
+  - id: TEST-002.Q07
+    question: Is every test file free of grouping several formatters or several domains into one part-numbered or collapsed file?
+    kind: judgment
+    na_when: The change adds or edits no formatter or cross-domain test files.
+    positive_example: 'Each formatter has its own file, for example tests/cli/ui/formatters/worktree/test_worktree_apply.py and test_worktree_show.py.'
+    negative_example: 'tests/cli/ui/test_command_formatters_part1.py  # hypothetical: part-numbered grab-bag covering several formatters'
+  - id: TEST-002.Q08
+    question: Does every test directory carry an __init__.py?
+    kind: judgment
+    na_when: The change adds no test directory.
+    positive_example: 'tests/cli/worktree/__init__.py exists next to tests/cli/worktree/test_worktree_create.py'
+    negative_example: 'tests/cli/newcmd/test_newcmd_run.py with no tests/cli/newcmd/__init__.py  # hypothetical: basenames repeat across the tree, so the missing package file risks module-name collisions'
+  - id: TEST-002.Q09
+    question: Does each per-domain conftest.py hold only fixtures that its own domain's test files share, and none that another domain needs?
+    kind: judgment
+    na_when: The change adds or edits no per-domain conftest.py under tests/cli/<command>/.
+    positive_example: 'tests/cli/worktree/conftest.py holds fixtures shared by the worktree command tests'
+    negative_example: 'A fixture in tests/cli/worktree/conftest.py that tests/cli/session/ also imports  # hypothetical: a fixture another domain needs belongs in a shared conftest'
+  - id: TEST-002.Q10
+    question: Does every source module have a corresponding test file at its mirrored path, with no exemption list?
+    kind: judgment
+    na_when: The change adds no source module and removes no test file.
+    positive_example: 'src/dovo/core/git/runner.py is covered by tests/core/git/test_runner.py'
+    negative_example: 'A new source module added with no test file and an entry in a skip or exemption list  # hypothetical'
   citation: docs/agents/testing.md#11-source-parity-layout
 - id: TEST-003
   title: Standardized Test Naming and Vague Name Ban
@@ -1109,12 +1350,32 @@ rules:
   category: Testing
   domain: tests
   scope: tests/
-  guideline: 'Test classes must be named *Tests. Methods must follow test_<condition>_<outcome>. Banned vague names with no
-    outcome: test_ok, test_success, test_present, test_missing, test_blank, test_basic, test_default, test_works, test_timeout,
-    test_no_op, test_help. No ''should'' prefix.'
-  evaluation_criteria: Check test class and method names against the banned list and naming pattern.
-  positive_example: "class ConfigLoaderTests:\n    def test_missing_config_returns_not_found_status(self): ..."
-  negative_example: "class TestConfig:\n    def test_ok(self): ...\n    def test_should_timeout(self): ..."
+  intent: A test's name alone should tell a reader which behavior it pins and what is expected, so failures are legible without opening the test.
+  criteria:
+  - id: TEST-003.Q01
+    question: Is every test class named with the suffix Tests?
+    kind: judgment
+    na_when: The change adds or renames no test class.
+    positive_example: 'class ConfigLoaderTests:  # in tests/core/config/test_loader.py'
+    negative_example: 'class TestConfig:  # hypothetical: prefix naming instead of the *Tests suffix'
+  - id: TEST-003.Q02
+    question: Does every test method follow the test_<condition>_<outcome> pattern, naming both the condition and the expected outcome?
+    kind: judgment
+    na_when: The change adds or renames no test method.
+    positive_example: 'def test_load_missing_config_returns_failure_result(self, workspace_paths): ...  # in ConfigLoaderTests, tests/core/config/test_loader.py'
+    negative_example: 'def test_config(self): ...  # hypothetical: no outcome in the name'
+  - id: TEST-003.Q03
+    question: Is every test method name free of the banned vague names test_ok, test_success, test_present, test_missing, test_blank, test_basic, test_default, test_works, test_timeout, test_no_op and test_help?
+    kind: judgment
+    na_when: The change adds or renames no test method.
+    positive_example: 'def test_load_missing_config_returns_failure_result(self, workspace_paths): ...  # in ConfigLoaderTests, tests/core/config/test_loader.py'
+    negative_example: 'def test_ok(self): ...  # hypothetical: banned name with no outcome'
+  - id: TEST-003.Q04
+    question: Is every test method name free of a should prefix?
+    kind: judgment
+    na_when: The change adds or renames no test method.
+    positive_example: 'def test_load_missing_config_returns_failure_result(self, workspace_paths): ...  # in ConfigLoaderTests, tests/core/config/test_loader.py'
+    negative_example: 'def test_should_timeout(self): ...  # hypothetical: should prefix and no outcome'
   citation: docs/agents/testing.md#naming-conventions
 - id: TEST-004
   title: CLI Tier Matrix and Handler Test Necessity
@@ -1122,28 +1383,62 @@ rules:
   category: Testing
   domain: tests
   scope: tests/cli/
-  guideline: >-
-    Every CLI command action requires at least one real *CliIntegrationTests suite invoking
-    runner.invoke to pin option and argument binding, exit codes, and dispatcher output. The suite
-    must cover five scenario classes: (1) happy path exit 0 with default arguments, (2) option and
-    argument binding, ensuring every declared Typer option, flag, and argument is exercised in at
-    least one invocation to verify CLI input binding and propagation to the domain layer without
-    duplicating domain branch matrices, (3) failure path with the expected non-zero exit code when
-    the domain returns a non-ok result, (4) --format json emitting the wire schema, and (5) any
-    interactive confirmation or abort branch. *RootTests calling the handler directly with a
-    CliContext are added only when an author judges the handler owns logic the domain layer does
-    not: input coercion, branch selection across services, result composition from more than one
-    call, or an interactive abort path. A pass-through handler is fully compliant with zero root
-    tests; a root test is never required per action. A root test may never restate a contract
-    already asserted under tests/core/ for the same result type.
-  evaluation_criteria: >-
-    For each command action, verify at least one runner integration test exists and covers the
-    scenario classes: exit 0, option and argument binding for every declared option or flag,
-    non-zero exit, --format json, and interactive flows if present. A command action with no
-    *RootTests suite is not itself a violation. Flag *RootTests whose assertions duplicate an
-    expected result object already asserted in tests/core/.
-  positive_example: 'class ConfigSetRootTests: ...  # handler owns string-to-bool coercion, so it earns a root test'
-  negative_example: 'class ConfigShowRootTests: ...  # pass-through handler re-asserting the ConfigLoadResult from tests/core/config/'
+  intent: CLI wiring is proven through the real runner, so option binding, exit codes and output cannot silently break. Handler-level tests exist only where the handler owns logic of its own, and never repeat what the domain tests pin.
+  criteria:
+  - id: TEST-004.Q01
+    question: Does every CLI command action have at least one *CliIntegrationTests suite that invokes the command through runner.invoke?
+    kind: judgment
+    na_when: The change adds or modifies no CLI command action.
+    positive_example: 'class ConfigShowCliIntegrationTests: ...  # in tests/cli/config/test_config_show.py, calls cli_runner.invoke(app, ["-p", ..., "config", "show"])'
+    negative_example: 'A command action whose only tests are a *RootTests suite calling the handler directly (hypothetical: no runner.invoke suite exists for it)'
+  - id: TEST-004.Q02
+    question: Does the integration suite include a happy-path test with default arguments that asserts exit code 0?
+    kind: judgment
+    na_when: The change adds or modifies no CLI command action.
+    positive_example: 'res = cli_runner.invoke(app, ["-p", str(isolated_workspace), "config", "show"])  # then asserts res.exit_code == 0 (hypothetical assertion shown; the invocation is in test_config_show.py)'
+    negative_example: 'A suite that only invokes the command with non-default options and never runs the plain command (hypothetical)'
+  - id: TEST-004.Q03
+    question: Is every declared Typer option, flag and argument of the command exercised in at least one invocation, verifying input binding and propagation to the domain layer?
+    kind: judgment
+    na_when: The command declares no options, flags or arguments.
+    positive_example: 'One invocation passes "--format", "json" and another passes the positional key and value of config set, so each declared parameter is bound at least once (hypothetical combination)'
+    negative_example: 'A command that declares a --force flag where no invocation in its integration suite passes --force (hypothetical)'
+  - id: TEST-004.Q04
+    question: Does the integration suite avoid duplicating domain branch matrices, limiting its binding checks to what the CLI layer adds?
+    kind: judgment
+    na_when: The change adds or modifies no CLI command action.
+    positive_example: 'The CLI suite checks that an option reaches the domain call; the branch outcomes of that option are asserted under tests/core/ (hypothetical)'
+    negative_example: 'A CLI integration suite that re-runs every domain status branch of the result through runner.invoke (hypothetical)'
+  - id: TEST-004.Q05
+    question: Does the integration suite include a failure-path test that asserts the expected non-zero exit code when the domain returns a non-ok result?
+    kind: judgment
+    na_when: The command's domain call cannot return a non-ok result.
+    positive_example: 'A test invokes "config show" in a workspace with no config.json and asserts a non-zero exit code (hypothetical assertion; the NOT_FOUND status is real, ConfigLoadStatus.NOT_FOUND)'
+    negative_example: 'A suite where every test asserts exit code 0 even though the domain can return an error status (hypothetical)'
+  - id: TEST-004.Q06
+    question: Does the integration suite include a test invoking the command with --format json that asserts the emitted payload matches the wire schema?
+    kind: judgment
+    na_when: The command does not support --format json.
+    positive_example: 'res = cli_runner.invoke(app, ["-p", str(isolated_workspace), "config", "show", "--format", "json"])  # in tests/cli/config/test_config_show.py'
+    negative_example: 'A command that supports --format json whose suite never passes --format json (hypothetical)'
+  - id: TEST-004.Q07
+    question: Is every interactive confirmation or abort branch of the command exercised by the integration suite?
+    kind: judgment
+    na_when: The command has no interactive confirmation or abort branch.
+    positive_example: 'A test supplies "n" as input to the confirmation prompt and asserts the abort exit code and that nothing was changed (hypothetical)'
+    negative_example: 'A command that prompts for confirmation where every test bypasses the prompt with a skip flag (hypothetical)'
+  - id: TEST-004.Q08
+    question: Is every *RootTests suite written for a handler that owns logic the domain layer does not, such as input coercion, branch selection across services, result composition from more than one call, or an interactive abort path?
+    kind: judgment
+    na_when: The command action has no *RootTests suite; a pass-through handler with zero root tests is fully compliant and a root test is never required per action.
+    positive_example: 'class DemoRootTests: ...  # hypothetical: the handler picks between two services depending on its arguments, so it earns a root test'
+    negative_example: 'class ConfigShowRootTests: ...  # in tests/cli/config/test_config_show.py; config_show_command only calls the domain and dispatches the result'
+  - id: TEST-004.Q09
+    question: Does every *RootTests suite avoid restating a contract already asserted under tests/core/ for the same result type?
+    kind: judgment
+    na_when: The command action has no *RootTests suite.
+    positive_example: 'A root test asserts only what the handler itself decides, leaving the result fields to tests/core/ (hypothetical)'
+    negative_example: 'test_config_show_missing_config_returns_not_found in ConfigShowRootTests re-asserts the CONFIG_NOT_FOUND errors already asserted in tests/core/config/test_loader.py'
   citation: docs/agents/testing.md#tier-3---cli-wiring-runner-required-root-tests-when-earned
 - id: TEST-005
   title: Formatter Presentation Contract Protocol
@@ -1151,22 +1446,68 @@ rules:
   category: Testing
   domain: tests
   scope: tests/cli/ui/formatters/
-  guideline: >-
-    Every formatter under cli/ui/formatters/<domain>/ is tested in its own file at
-    tests/cli/ui/formatters/<domain>/test_<name>.py against three contracts built from FormatterCase: view model
-    transform equality, JSON wire format as an exact literal dict pinned at both a fully populated and an
-    empty or sparse boundary state, and a Rich render at pinned width 160 asserting only semantic values taken
-    from case.view. Where the formatter has no derived view model, meaning transform is provably the identity
-    and the declared view type is the input event type, the transform test is omitted and the remaining two
-    contracts are mandatory; an alias such as SomeView = SomeEvent must not be introduced to manufacture a third
-    test. Never assert to_json_serializable(data) == transform(data).model_dump(), and never assert a label,
-    border, glyph, padding, or full sentence in the render test.
-  evaluation_criteria: >-
-    Inspect each formatter test file. Flag missing wire-format boundary cases, model_dump comparisons standing in
-    for a literal dict, identity view aliases added to satisfy the count, and render assertions on labels or
-    layout rather than view values.
-  positive_example: 'assert formatter.to_json_serializable(data) == {"health": "ok", "warnings": []}  # exact literal'
-  negative_example: 'ErrorPanelView = ErrorPanelEvent  # alias so an identity transform can be asserted'
+  intent: A formatter's view model, JSON wire format and rendered content are separate published contracts, so each is tested independently and fails only when that contract changes, not when styling does.
+  criteria:
+  - id: TEST-005.Q01
+    question: Is every formatter under cli/ui/formatters/<domain>/ tested in its own file at tests/cli/ui/formatters/<domain>/test_<name>.py?
+    kind: judgment
+    na_when: The change adds or modifies no formatter under cli/ui/formatters/.
+    positive_example: 'tests/cli/ui/formatters/status/test_dovo_status.py tests DovoStatusFormatter from src/dovo/cli/ui/formatters/status/dovo_status.py'
+    negative_example: 'DovoStatusFormatter tested only inside a shared tests/cli/ui/formatters/test_all_formatters.py (hypothetical file)'
+  - id: TEST-005.Q02
+    question: Is the formatter tested through cases built from FormatterCase, each holding the input data, the expected view and the render expectations?
+    kind: judgment
+    na_when: The change adds or modifies no formatter under cli/ui/formatters/.
+    positive_example: 'HEALTHY = FormatterCase(data=..., view=_make_status_view(...), render_expectations=[...])  # in tests/cli/ui/formatters/status/test_dovo_status.py'
+    negative_example: 'a test that builds the formatter input and expected strings inline in the test body, bypassing FormatterCase (hypothetical)'
+  - id: TEST-005.Q03
+    question: Does a test assert that transform equals the expected view for a formatter that derives a view model from its input?
+    kind: judgment
+    na_when: The formatter has no derived view model, meaning transform is provably the identity and the declared view type is the input event type.
+    positive_example: 'assert_transform_derives_expected_view(DovoStatusFormatter, case.data, case.view)  # in DovoStatusFormatterTests.test_transform_derives_expected_view'
+    negative_example: 'a DovoStatusFormatter test file with only JSON and render tests, leaving StatusView derivation unpinned (hypothetical)'
+  - id: TEST-005.Q04
+    question: Is the JSON wire format asserted as an exact literal dict?
+    kind: judgment
+    na_when: The change adds or modifies no formatter under cli/ui/formatters/.
+    positive_example: 'assert_json_payload_matches_published_shape(DovoStatusFormatter, case.data, {"health": "ok", "root_dir": "/workspace/my-repo", ...})  # in tests/cli/ui/formatters/status/test_dovo_status.py'
+    negative_example: 'assert formatter.to_json_serializable(data) == {...} replaced by a comparison against a value computed by the code under test (hypothetical)'
+  - id: TEST-005.Q05
+    question: Is the JSON wire format pinned at both a fully populated state and an empty or sparse boundary state?
+    kind: judgment
+    na_when: The change adds or modifies no formatter under cli/ui/formatters/.
+    positive_example: 'STATUS_PAYLOAD_CASES pins HEALTHY (fully populated) and UNINITIALIZED_NON_GIT (null fields, empty lists) in tests/cli/ui/formatters/status/test_dovo_status.py'
+    negative_example: 'a payload test parametrized only with HEALTHY, so null and empty-list output is never pinned (hypothetical)'
+  - id: TEST-005.Q06
+    question: Is the Rich render asserted at the pinned width of 160 columns?
+    kind: judgment
+    na_when: The change adds or modifies no formatter under cli/ui/formatters/.
+    positive_example: 'assert_rich_render_shows_every_view_value(DovoStatusFormatter, case.data, case.render_expectations)  # renders through render_rich with width=160 from tests/harness/formatter.py'
+    negative_example: 'rendering through a Console(width=80) built inside the test, so wrapping differs from the pinned width (hypothetical)'
+  - id: TEST-005.Q07
+    question: Is every expected string in the render test a semantic value taken from case.view, and never a label, border, glyph, padding or full sentence?
+    kind: judgment
+    na_when: The change adds or modifies no formatter under cli/ui/formatters/.
+    positive_example: 'render_expectations=["raw-project", "feature/status-cmd", "Invalid schema"]  # view values only, in DEGRADED_RAW_CONFIG_PROJECT'
+    negative_example: 'assert "Project:" in rendered and "╭" in rendered  # hypothetical: asserts a label and a border glyph'
+  - id: TEST-005.Q08
+    question: Does a formatter with no derived view model omit the transform test while keeping both the JSON and the render test?
+    kind: judgment
+    na_when: The formatter has a derived view model, so transform is not the identity.
+    positive_example: 'WarningFormatterTests in tests/cli/ui/formatters/events/test_warning.py has only test_json_payload_matches_published_shape and test_rich_render_shows_every_view_value'
+    negative_example: 'a WarningFormatter test file with a transform test that only checks WarningEvent equals itself (hypothetical)'
+  - id: TEST-005.Q09
+    question: Is the change free of an alias such as SomeView = SomeEvent introduced to manufacture a third test for an identity formatter?
+    kind: judgment
+    na_when: The change adds or modifies no formatter under cli/ui/formatters/.
+    positive_example: 'WarningFormatter(ComponentFormatter[WarningEvent]) declares no separate view type'
+    negative_example: 'ErrorPanelView = ErrorPanelEvent  # alias so an identity transform can be asserted (hypothetical)'
+  - id: TEST-005.Q10
+    question: Is the change free of an assertion that to_json_serializable(data) equals transform(data).model_dump()?
+    kind: judgment
+    na_when: The change adds or modifies no formatter under cli/ui/formatters/.
+    positive_example: 'assert_json_payload_matches_published_shape(DovoStatusFormatter, case.data, expected_payload)  # expected_payload is a literal dict'
+    negative_example: 'assert formatter.to_json_serializable(data) == formatter.transform(data).model_dump()  # hypothetical: compares code to itself'
   citation: docs/agents/testing.md#tier-2---presentation-contracts-three-tests-per-formatter-never-one
 - id: TEST-006
   title: Parameterization-First for Sibling Variations
@@ -1174,10 +1515,32 @@ rules:
   category: Testing
   domain: tests
   scope: tests/
-  guideline: Parameterization is the primary approach for testing variations of the same contract or function. Never duplicate test functions across input variants, polymorphic target types (e.g. BaseModel vs dict), or invalid payload permutations. Never use `for` loops or stacked assertions over scenarios. Use `@pytest.mark.parametrize` with explicit `pytest.param(..., id="...")` labels. Separate `def test_*` methods are reserved for fundamentally distinct lifecycles, differing fixture requirements, or divergent assertion contracts.
-  evaluation_criteria: Flag copy-pasted or near-identical sibling test methods differing only by input parameters or expected outcomes. Scan test bodies for `for item in items:` loops over test cases.
-  positive_example: '@pytest.mark.parametrize("target", [pytest.param(model, id="model"), pytest.param(dict, id="dict")])'
-  negative_example: 'def test_eval_model(self): ...; def test_eval_dict(self): ...  # duplicate sibling methods'
+  intent: Variations of one contract are tested through a single parameterized test, so each case is named and reported separately and a new case costs one line instead of a copied test.
+  criteria:
+  - id: TEST-006.Q01
+    question: Are variations of the same contract or function (input variants, polymorphic target types, invalid payload permutations) covered by one parameterized test rather than by copy-pasted or near-identical sibling test methods?
+    kind: judgment
+    na_when: The change adds or modifies no tests that exercise more than one variation of the same contract.
+    positive_example: '@pytest.mark.parametrize("target", [pytest.param(model, id="model"), pytest.param(dict, id="dict")])  # hypothetical: one test covers both target types'
+    negative_example: 'def test_eval_model(self): ...; def test_eval_dict(self): ...  # hypothetical: duplicate sibling methods that differ only by target type'
+  - id: TEST-006.Q02
+    question: Is each test free of `for` loops and stacked assertions that iterate over scenarios?
+    kind: judgment
+    na_when: The change adds or modifies no tests.
+    positive_example: '@pytest.mark.parametrize("pattern", [pytest.param("../x", id="dotdot"), pytest.param("/etc/**", id="absolute")])  # shape used in tests/common/test_tool_policy.py'
+    negative_example: 'for pattern in ["../x", "/etc/**"]: assert not is_valid(pattern)  # hypothetical: the loop hides which scenario failed'
+  - id: TEST-006.Q03
+    question: Does every parameterized case use pytest.param with an explicit, readable id label?
+    kind: judgment
+    na_when: The change adds or modifies no parameterized tests.
+    positive_example: 'pytest.param("ghp_" + "a" * 36, id="github-classic")  # in tests/common/test_redact.py'
+    negative_example: '@pytest.mark.parametrize("token", ["ghp_aaa", "sk-ant-aaa"])  # hypothetical: bare values, so failures report auto-generated ids'
+  - id: TEST-006.Q04
+    question: Are separate test methods used only where the cases have fundamentally distinct lifecycles, differing fixture requirements or divergent assertion contracts?
+    kind: judgment
+    na_when: The change adds or modifies no tests that sit next to a sibling test of the same function.
+    positive_example: 'def test_create_rolls_back_on_failure(self, failing_git): ...; def test_create_returns_path(self, tmp_repo): ...  # hypothetical: different fixtures and assertion contracts justify separate methods'
+    negative_example: 'def test_rejects_empty_name(self): ...; def test_rejects_blank_name(self): ...  # hypothetical: same fixtures and same assertion, split only by input'
   citation: docs/agents/testing.md#parameterization-as-primary-approach
 - id: TEST-007
   title: Assert Domain Invariants on Results; Pin Schemas in Dedicated Contract Tests
@@ -1237,11 +1600,20 @@ rules:
   category: Testing
   domain: tests
   scope: tests/
-  guideline: Test doubles must be types production actually passes or implement a Protocol production is typed against. Never
-    build a stub whose interface is the union of every branch in a hasattr chain.
-  evaluation_criteria: Inspect test doubles and stubs. Verify they inherit from production types or satisfy typing.Protocol.
-  positive_example: 'class FakeBaseAgentProvider(BaseAgentProvider): def _invoke(self, request: AgentRequest) -> AgentResponse: ...'
-  negative_example: 'class MockAdapter: def __getattr__(self, name): return MagicMock()'
+  intent: A test double must stand in for something production really uses, so tests fail when production contracts change instead of passing against an invented interface.
+  criteria:
+  - id: TEST-008.Q01
+    question: Does every test double or stub inherit from a type production actually passes or satisfy a typing.Protocol production is typed against?
+    kind: judgment
+    na_when: The change adds or edits no test double or stub.
+    positive_example: 'class FakeAgentProvider(BaseAgentProvider): ...  # in tests/harness/fakes.py, subclassing the production base class'
+    negative_example: 'class MockAdapter: def __getattr__(self, name): return MagicMock()  # hypothetical: matches no production type or Protocol'
+  - id: TEST-008.Q02
+    question: Is every test double free of an interface built as the union of the attributes from every branch of a hasattr chain?
+    kind: judgment
+    na_when: The change adds or edits no test double or stub.
+    positive_example: 'class FakeRunObserver: def on_worktree_ready(self, path, active): ...  # hypothetical: implements only the RunObserver Protocol in engine/models.py'
+    negative_example: 'class StubTarget: ...  # hypothetical: defines every attribute that any branch of production hasattr(target, ...) checks, so it matches no single production type'
   citation: docs/agents/testing.md#core-testing-rules
 - id: TEST-009
   title: Ban on Negative Existence Tests for Deleted Symbols
@@ -1249,12 +1621,19 @@ rules:
   category: Testing
   domain: tests
   scope: tests/
-  guideline: Tests prove what the live codebase does, never the historical outcome of a refactor. When dead or obsolete functions,
-    classes, or aliases are removed from production, delete the tests that called them. Never write assert not hasattr(mod,
-    'old_fn').
-  evaluation_criteria: Grep for `assert not hasattr` in tests/. Flag any occurrence.
-  positive_example: '# Deleted test_old_helper when old_helper was removed from production'
-  negative_example: 'assert not hasattr(filesystem, ''old_helper'')  # negative existence test'
+  intent: Tests prove what the live codebase does, never the historical outcome of a refactor, so a removed symbol leaves no trace in the test suite.
+  criteria:
+  - id: TEST-009.Q01
+    question: Is the test suite free of negative existence assertions such as assert not hasattr(module, name)?
+    kind: judgment
+    positive_example: 'assert result.session_id == "wf_abcdef12"  # asserts live behavior (hypothetical test)'
+    negative_example: 'assert not hasattr(filesystem, "old_helper")  # hypothetical: proves a removed helper stays removed'
+  - id: TEST-009.Q02
+    question: Were the tests that called a function, class or alias deleted in the same change that removed it from production?
+    kind: judgment
+    na_when: The change removes no function, class or alias from production.
+    positive_example: '# hypothetical: test_old_helper deleted when old_helper was removed from production'
+    negative_example: '# hypothetical: test_old_helper kept after old_helper was removed, rewritten to expect AttributeError or a missing attribute'
   citation: docs/agents/testing.md#core-testing-rules
 - id: TEST-010
   title: Complete Assertions Invariant
@@ -1262,11 +1641,20 @@ rules:
   category: Testing
   domain: tests
   scope: tests/
-  guideline: assert obj is not None is not an assertion; if it is the only assert, the test is unfinished. Use isinstance
-    only when it distinguishes two real code paths (basedpyright already proves the rest).
-  evaluation_criteria: Flag tests where the sole check is `assert result is not None` or redundant `isinstance` checks.
-  positive_example: assert result.session_id == 'wf_abcdef12'
-  negative_example: assert result is not None; assert isinstance(result, RunOutcome)
+  intent: A test must check the behavior it exists for, so a passing run shows the code did the right thing and not merely that it returned something.
+  criteria:
+  - id: TEST-010.Q01
+    question: Does every test check a concrete value or effect beyond `assert x is not None`, so that `assert x is not None` is never its only assertion?
+    kind: judgment
+    na_when: The test contains no assertions on a returned object, for example a test that only checks that a call raises.
+    positive_example: 'assert outcome.session_id == seen[0]  # in tests/engine/test_engine.py, RunOutcome.session_id is str | None'
+    negative_example: 'assert outcome is not None  # hypothetical: the only assertion in the test, so the test is unfinished'
+  - id: TEST-010.Q02
+    question: Is isinstance used in a test only where it distinguishes two real code paths, rather than repeating what basedpyright already proves?
+    kind: judgment
+    na_when: The test uses no isinstance check.
+    positive_example: 'assert isinstance(result, ErrorResult)  # hypothetical: the call can return either a success or an error model and the test must tell which'
+    negative_example: 'assert isinstance(outcome, RunOutcome)  # hypothetical: engine.run is already typed to return RunOutcome, so the check proves nothing'
   citation: docs/agents/testing.md#core-testing-rules
 - id: TEST-011
   title: Determinism and Clock Virtualization
@@ -1274,20 +1662,50 @@ rules:
   category: Testing
   domain: tests
   scope: tests/
-  guideline: >-
-    No hardcoded sleeps in test bodies. Retry and backoff intervals use VirtualClock or monkeypatch the clock at
-    the module boundary (time.monotonic, asyncio.sleep), and a retry test asserts the resulting schedule rather
-    than that a retry eventually happened. Inject the clock and the id factory anywhere their output reaches a
-    result field, so timestamps and generated ids are literals a test can state when asserting time-dependent contracts. Waiting on an operating system event that has no virtual equivalent,
-    such as a process group being reaped after SIGKILL, is permitted only through a shared harness helper that
-    owns the poll interval and deadline; tests must not open-code a poll loop. Registering spawned processes with
-    the harness process registry is mandatory so a failing test cannot leak a process group.
-  evaluation_criteria: >-
-    Grep for time.sleep in tests/. Permit occurrences inside the shared harness poll helper only, and flag every
-    open-coded poll loop or bare sleep in a test module. Flag subprocess-spawning tests that do not register with
-    the process registry.
-  positive_example: assert wait_pid_dead(child_pid) is True  # harness helper owns the poll interval
-  negative_example: "while time.monotonic() < deadline:\n    time.sleep(0.05)  # open-coded poll loop in a test module"
+  intent: Tests must give the same result on every run and every machine, so they do not depend on real elapsed time or on leftover processes, and a failing test cannot leak anything into later ones.
+  criteria:
+  - id: TEST-011.Q01
+    question: Is every test body free of hardcoded sleeps, other than a sleep inside the shared harness poll helper?
+    kind: judgment
+    na_when: The change adds or edits no test code.
+    positive_example: 'monkeypatch.setattr("dovo.common.lock.time.monotonic", fake_monotonic)  # hypothetical: the test advances a fake clock instead of waiting'
+    negative_example: "time.sleep(0.05)  # bare sleep in a test body, as in _sync_and_interrupt in tests/engine/executors/test_process_group.py"
+  - id: TEST-011.Q02
+    question: Do tests of retry or backoff intervals drive time through VirtualClock or a monkeypatched clock at the module boundary (time.monotonic, asyncio.sleep)?
+    kind: judgment
+    na_when: The change adds or edits no test of a retry or backoff interval.
+    positive_example: 'monkeypatch.setattr("dovo.engine.executors.step_executor.time.monotonic", clock.now)  # hypothetical: VirtualClock does not exist in the repo yet; the patch targets time.monotonic as imported by step_executor'
+    negative_example: 'time.sleep(backoff_seconds)  # hypothetical: the test waits out the real backoff interval'
+  - id: TEST-011.Q03
+    question: Does a retry test assert the resulting schedule rather than only that a retry eventually happened?
+    kind: judgment
+    na_when: The change adds or edits no retry test.
+    positive_example: 'assert sleeps == [1.0, 2.0, 4.0]  # hypothetical: the recorded backoff schedule'
+    negative_example: 'assert attempts == 3  # hypothetical: proves a retry happened but not when'
+  - id: TEST-011.Q04
+    question: Is the clock injected anywhere its output reaches a result field, so a time-dependent test asserts literal timestamps?
+    kind: judgment
+    na_when: The code under test has no timestamp that reaches a result field.
+    positive_example: 'service = Service(clock=lambda: datetime(2026, 1, 1, tzinfo=UTC)); assert result.started_at == datetime(2026, 1, 1, tzinfo=UTC)  # hypothetical constructor parameter'
+    negative_example: 'assert result.started_at is not None  # hypothetical: the real clock fed the field, so the test cannot state the value'
+  - id: TEST-011.Q05
+    question: Are generated ids injected anywhere their output reaches a result field, so a test asserts literal ids?
+    kind: judgment
+    na_when: The code under test has no generated id that reaches a result field.
+    positive_example: 'assert result.run_id == "run-1"  # hypothetical: the test supplied the id source, so it states the literal'
+    negative_example: 'assert len(result.run_id) == 32  # hypothetical: the id was generated internally, so the test can only check its shape'
+  - id: TEST-011.Q06
+    question: Is every wait on an operating system event with no virtual equivalent, such as a process group reaped after SIGKILL, done through a shared harness helper owning the poll interval and deadline, with no open-coded poll loop?
+    kind: judgment
+    na_when: The change waits on no operating system event.
+    positive_example: 'assert wait_pid_dead(child_pid) is True  # harness helper owns the poll interval (hypothetical: today _wait_pid_dead is private to tests/engine/executors/test_process_group.py, not a shared helper in tests/harness/)'
+    negative_example: "while not (pid_dir / 'child.pid').exists():\n    threading.Event().wait(0.05)  # hypothetical: poll loop written inside the test module"
+  - id: TEST-011.Q07
+    question: Does every test that spawns a process register it with the harness process registry, so a failing test cannot leak a process group?
+    kind: judgment
+    na_when: The change adds or edits no test that spawns a process.
+    positive_example: 'process_registry.register(proc, pgid=pgid)  # ProcessRegistry in src/dovo/common/process.py; stream_isolated_process registers its child this way'
+    negative_example: 'subprocess.Popen([sys.executable, "-c", script])  # hypothetical: spawned in a test and never registered, so a failure leaves it running'
   citation: docs/agents/testing.md#determinism--process-isolation-strategy
 - id: TEST-012
   title: Rich Render Width Pinning
@@ -1295,18 +1713,32 @@ rules:
   category: Testing
   domain: tests
   scope: tests/
-  guideline: >-
-    render_rich(renderable, width=160) is the only supported way to capture rendered output, and console width for
-    rendered assertions is authoritatively pinned to 160. Tests must not rely on ambient terminal size or
-    in-process os.environ['COLUMNS'] mutations. A render assertion checks semantic values carried by the view
-    model, such as an identifier, count, or status token; it never checks a panel title, field caption, border
-    glyph, padding, or prose sentence, because those are layout and change without any contract changing.
-  evaluation_criteria: >-
-    Scan for console render captures and ensure render_rich with width=160 is used. Flag ambient-width captures,
-    and flag render assertions whose expected string is a caption or label rather than a value taken from
-    case.view.
-  positive_example: "rendered = render_rich(formatter.to_rich(data))\nassert 'wf_abcdef12' in rendered  # view value, not a caption"
-  negative_example: "assert 'Session ID' in rendered  # panel caption, changes with layout and pins no contract"
+  intent: Rendered-output tests must give the same result on every machine and keep failing only when a real contract changes, not when layout, terminal size or wording shifts.
+  criteria:
+  - id: TEST-012.Q01
+    question: Is every capture of rendered Rich output in a test made through render_rich from tests/harness/formatter.py?
+    kind: judgment
+    na_when: The test does not capture rendered Rich output.
+    positive_example: 'rendered = render_rich(LoopLifecycleFormatter().to_rich(CONDITIONS_EVALUATED.data))  # in tests/cli/ui/formatters/events/test_loop.py'
+    negative_example: 'console = Console(record=True); console.print(panel); rendered = console.export_text()  # hypothetical: hand-built console instead of render_rich'
+  - id: TEST-012.Q02
+    question: Is the console width used for a rendered assertion the pinned width of 160, with no other width passed to render_rich?
+    kind: judgment
+    na_when: The test does not capture rendered Rich output.
+    positive_example: 'rendered = render_rich(formatter.to_rich(data))  # in tests/harness/formatter.py; the default width=160 applies'
+    negative_example: 'rendered = render_rich(formatter.to_rich(data), width=80)  # hypothetical: width other than 160'
+  - id: TEST-012.Q03
+    question: Does the test avoid relying on the ambient terminal size and on in-process os.environ["COLUMNS"] mutations?
+    kind: judgment
+    na_when: The test does not capture rendered Rich output.
+    positive_example: 'render_rich(renderable)  # width is set explicitly on the Console, independent of the terminal'
+    negative_example: 'os.environ["COLUMNS"] = "120"; rendered = Console(record=True)...  # hypothetical: width taken from the environment or ambient terminal'
+  - id: TEST-012.Q04
+    question: Does every render assertion check a semantic value carried by the view model, such as an identifier, count or status token, rather than a panel title, field caption, border glyph, padding or prose sentence?
+    kind: judgment
+    na_when: The test makes no assertion on rendered output.
+    positive_example: 'rendered = render_rich(formatter.to_rich(data)); assert "wf_abcdef12" in rendered  # hypothetical: a view value, not a caption'
+    negative_example: 'assert "Session ID" in rendered  # hypothetical: a panel caption, changes with layout and pins no contract'
   citation: docs/agents/testing.md#rich-render-assertions
 - id: TEST-013
   title: No Sole Consumer Tests
@@ -1314,17 +1746,26 @@ rules:
   category: Testing
   domain: tests
   scope: src/, tests/harness/, tests/
-  guideline: >-
-    No test may be the sole consumer of a production symbol. If deleting the test would make production code
-    unreachable, the production code is dead and both go. The same applies to the test harness: a builder method,
-    fixture, or assertion helper whose only caller is its own verification test is dead harness. Delete the
-    capability rather than testing it, and prove harness behavior through the first domain test that needs it.
-  evaluation_criteria: >-
-    Verify every touched production function has a real caller in src/. Verify every harness symbol has at least
-    one caller outside tests/harness/. Flag harness verification suites that exhaustively permute options no
-    domain test uses.
-  positive_example: '# WorkspaceBuilder.with_git() used by tests/core/worktree/test_services.py'
-  negative_example: '# StepBuilder.with_retry() exercised only by tests/harness/test_builders.py'
+  intent: Code exists to serve real behavior, so nothing stays alive only because a test exercises it. Unused production or harness code is deleted together with its test, not kept and verified.
+  criteria:
+  - id: TEST-013.Q01
+    question: Does every touched production function have a real caller in src/, so that deleting its tests would not leave it unreachable?
+    kind: judgment
+    na_when: The change touches no production function in src/.
+    positive_example: 'A function in src/ called by another production module, with tests that exercise it through that caller (hypothetical example)'
+    negative_example: 'A function in src/ whose only caller is its own unit test; the function is dead, so the function and the test are both deleted (hypothetical example)'
+  - id: TEST-013.Q02
+    question: Does every harness symbol (builder method, fixture or assertion helper) have at least one caller outside tests/harness/?
+    kind: judgment
+    na_when: The change adds or touches no symbol under tests/harness/.
+    positive_example: 'WorkspaceBuilder.with_git() in tests/harness/builders/workspace.py, called by tests/cli/session/conftest.py and other domain tests'
+    negative_example: 'A builder method called only by its own test in tests/harness/test_builders.py (hypothetical; delete the method rather than test it)'
+  - id: TEST-013.Q03
+    question: Is harness behavior proven through the first domain test that needs it, rather than through a harness verification suite that exhaustively permutes options no domain test uses?
+    kind: judgment
+    na_when: The change adds or touches no harness verification test.
+    positive_example: 'A new builder option is introduced together with the domain test that needs it, and that test is what proves it works (hypothetical example)'
+    negative_example: 'A new parametrized case in tests/harness/test_builders.py for a builder option that no domain test calls (hypothetical example)'
   citation: docs/agents/testing.md#core-testing-rules
 - id: TEST-014
   title: Strict Typing on Test Helpers and Fixtures
@@ -1332,12 +1773,32 @@ rules:
   category: Testing
   domain: tests
   scope: tests/
-  guideline: Annotate test helpers and fixtures as tightly as production code. Give fixtures real return types and type helper
-    parameters against what production passes. No MagicMock in helper signatures.
-  evaluation_criteria: Inspect type annotations in tests/helpers/ and fixture functions. Flag missing types or MagicMock in
-    signatures.
-  positive_example: 'def create_test_session(db: DovoDb, session_id: str) -> SessionRecord: ...'
-  negative_example: 'def create_test_session(db: Any, mock_obj: MagicMock) -> Any: ...'
+  intent: Test helpers and fixtures are code that every test leans on, so they are typed as tightly as production code and a wrong call is caught by the type checker instead of surfacing as a confusing test failure.
+  criteria:
+  - id: TEST-014.Q01
+    question: Is every test helper and fixture function free of missing type annotations?
+    kind: judgment
+    na_when: The change adds or modifies no test helper or fixture function.
+    positive_example: 'def workspace_paths_factory() -> Callable[[Path, Path | None], WorkspacePaths]: ...  # fixture in tests/conftest.py'
+    negative_example: 'def make_session(db, session_id): ...  # hypothetical: helper with no parameter or return annotations'
+  - id: TEST-014.Q02
+    question: Do fixtures declare a real return type rather than Any?
+    kind: judgment
+    na_when: The change adds or modifies no fixture.
+    positive_example: 'def isolated_workspace(tmp_path: Path) -> Path: ...  # fixture in tests/conftest.py'
+    negative_example: 'def db_fixture() -> Any: ...  # hypothetical: fixture whose return type says nothing about what it yields'
+  - id: TEST-014.Q03
+    question: Are helper parameters typed against the types production code passes, such as DovoDb or SessionRecord, rather than Any?
+    kind: judgment
+    na_when: The change adds or modifies no test helper that takes parameters.
+    positive_example: 'def create_test_session(db: DovoDb, session_id: str) -> SessionRecord: ...  # hypothetical helper; DovoDb and SessionRecord exist in dovo.core.db'
+    negative_example: 'def create_test_session(db: Any, mock_obj: MagicMock) -> Any: ...  # hypothetical: untyped db parameter and a mock in the signature'
+  - id: TEST-014.Q04
+    question: Is MagicMock absent from the signatures of test helpers and fixtures, both their parameters and their return types?
+    kind: judgment
+    na_when: The change adds or modifies no test helper or fixture function.
+    positive_example: 'def build_workspace(root: Path) -> WorkspacePaths: ...  # hypothetical helper taking and returning real types'
+    negative_example: 'def build_workspace(root: MagicMock) -> MagicMock: ...  # hypothetical: mock type used in the signature'
   citation: docs/agents/testing.md#core-testing-rules
 - id: TEST-015
   title: Orchestration Path Test Coverage
@@ -1345,12 +1806,14 @@ rules:
   category: Testing
   domain: tests
   scope: tests/cli/, tests/engine/
-  guideline: Modified command orchestration paths and multi-step dispatch workflows must include covering integration tests.
-    Merging changes with gaps in end-to-end orchestration tests leaves regression risks.
-  evaluation_criteria: Verify that PRs modifying command routing or multi-step orchestration include a test exercising the
-    updated execution branch.
-  positive_example: 'class ResumeCommandCliIntegrationTests: def test_resume_executes_remaining_steps(self): ...'
-  negative_example: '# PR modifying Engine.resume() without integration tests for resumed step loop'
+  intent: Changes to command routing and multi-step dispatch are verified end to end, so a regression in an orchestration branch is caught by a test instead of reaching users.
+  criteria:
+  - id: TEST-015.Q01
+    question: Does a test exercise the updated execution branch of every modified command routing or multi-step orchestration path?
+    kind: judgment
+    na_when: The change modifies no command routing and no multi-step orchestration or dispatch workflow.
+    positive_example: 'class SessionResumeCliIntegrationTests: def test_resume_cli_from_paused_state_completes_remaining_steps_exits_zero(self, ...): ...  # in tests/cli/session/test_session_resume.py, covering the resume path'
+    negative_example: '# hypothetical: a change to Engine.resume() in engine/engine.py that skips steps already completed, merged with no test that resumes a paused run and checks the remaining steps execute'
   citation: docs/agents/testing.md#pr-review-hygiene-and-testing-documentation-review-rule
 - id: TEST-016
   title: Public Function Happy and Unhappy Path Coverage
@@ -1358,40 +1821,32 @@ rules:
   category: Testing
   domain: tests
   scope: tests/
-  guideline: >-
-    Every public function and method (no leading underscore) in a production module
-    requires at least one happy-path test (valid inputs producing the expected
-    successful outcome) and at least one unhappy-path test (invalid input, missing
-    dependency, boundary condition, or failure state producing the expected error
-    result, exception, or classified non-ok outcome). Private functions and methods
-    (leading underscore) are covered exclusively as byproducts of their public
-    callers and never receive dedicated test methods. The coverage gate (CI-001)
-    validates that private paths are reached. Properties containing no branching
-    logic beyond a single field return are exempt from the unhappy-path requirement;
-    their happy path is satisfied by any test that reads them. Dunder methods are
-    exempt unless they contain domain validation (e.g. a __init__ that coerces or
-    rejects values). When a public method has multiple independent failure modes,
-    TEST-006 parameterization is the primary tool for covering them; a separate
-    test method per failure mode is reserved for cases with divergent fixture
-    requirements.
-  evaluation_criteria: >-
-    For each public function or method in a changed production module, verify its
-    corresponding test file (per TEST-002) contains at least one test exercising a
-    success path and at least one test exercising a failure or boundary path. Flag
-    any public function with only happy-path tests, any dedicated test method
-    targeting a private (underscore-prefixed) function, and any public function
-    with zero covering tests. Trivial properties (single field return, no branch)
-    require only a happy-path read.
-  positive_example: |-
-    class SessionStateStoreTests:
-        def test_save_persists_state_and_increments_revision(self): ...
-        def test_save_with_stale_revision_returns_conflict_error(self): ...
-        def test_load_returns_persisted_state(self): ...
-        def test_load_with_corrupt_json_returns_classified_failure(self): ...
-  negative_example: |-
-    class SessionStateStoreTests:
-        def test__validate_schema_version(self): ...  # dedicated test for private method
-        def test_save_persists_state(self): ...  # happy path only, no unhappy path for save()
+  intent: A public function's contract includes how it succeeds and how it fails, so both outcomes are tested directly. Private helpers are verified only through their public callers.
+  criteria:
+  - id: TEST-016.Q01
+    question: Does every public function or method (no leading underscore) in a changed production module have at least one test of a valid input producing the expected successful outcome, in its corresponding test file per TEST-002?
+    kind: judgment
+    na_when: The change adds or modifies no public function or method in a production module.
+    positive_example: 'def test_load_returns_validated_state_when_projection_matches(self, tmp_path: Path) -> None  # in tests/engine/test_state_store.py, covering SessionStateStore.load'
+    negative_example: 'SessionStateStore.regenerate_projection() is added to src/dovo/engine/state_store.py with no test calling it (hypothetical: the real method is covered by test_regenerate_projection_writes_payload_json_and_returns_path)'
+  - id: TEST-016.Q02
+    question: Does every public function or method in a changed production module have, in its TEST-002 test file, at least one test of an invalid input, missing dependency, boundary or failure state producing the expected error or non-ok outcome?
+    kind: judgment
+    na_when: The member is a property with no branching logic beyond a single field return, or a dunder method with no domain validation (such as a __init__ that neither coerces nor rejects values), or the change touches no public function or method.
+    positive_example: 'def test_save_stale_revision_returns_conflict_and_leaves_row_and_projection(self, tmp_path: Path) -> None  # in tests/engine/test_state_store.py, covering SessionStateStore.save'
+    negative_example: 'Only test_save_loaded_state_persists_next_revision_in_row_and_projection exists for save() (hypothetical: the real suite also has stale-revision, missing-row and projection-failure tests), so no failure path is covered'
+  - id: TEST-016.Q03
+    question: Are private functions and methods (leading underscore) covered only as byproducts of their public callers, with no dedicated test method targeting them?
+    kind: judgment
+    na_when: The change adds or modifies no test.
+    positive_example: 'SessionStateStore._classify_write_failure has no dedicated test; it is reached through the public save() and initialize() by tests such as test_save_stale_revision_returns_conflict_and_leaves_row_and_projection and test_save_missing_row_returns_not_found; the coverage gate (CI-001) checks that private paths are reached'
+    negative_example: 'def test__classify_write_failure(self): ...  # hypothetical: dedicated test calling a private method directly'
+  - id: TEST-016.Q04
+    question: Are the independent failure modes of a public method covered by TEST-006 parameterization, with a separate test method per failure mode used only when the fixture requirements diverge?
+    kind: judgment
+    na_when: No public method in the change has more than one independent failure mode.
+    positive_example: 'One @pytest.mark.parametrize test over several invalid inputs (hypothetical), the failure modes sharing the same fixture'
+    negative_example: 'Three near-identical test methods, one per invalid input, all built from the same fixture (hypothetical)'
   citation: docs/agents/testing.md#core-testing-rules
 - id: TEST-017
   title: CLI Runner Assertion Boundary
@@ -1399,18 +1854,20 @@ rules:
   category: Testing
   domain: tests
   scope: tests/cli/
-  guideline: >-
-    CLI runner tests assert wiring and observable behavior: exit codes, --format json payloads as exact literal
-    dicts, resulting disk or git state, and rendered CLI output. A rendered-output assertion is not restricted to
-    a published error code token; asserting a literal status label, panel line, or full rendered string is
-    permitted, ideally pinned via snapshot testing so the assertion cannot drift silently. Never assert help text
-    wording; assert command registration and option names through Click metadata instead.
-  evaluation_criteria: >-
-    Scan each CLI command domain's test directory under tests/cli/<command>/ for containment or equality checks
-    against stdout or rendered output; any literal assertion, including a snapshot comparison, is permitted. Flag
-    only assertions against help text wording, and name the Click metadata check that should replace them.
-  positive_example: "assert result.exit_code == 1\nassert \"Status: valid with warnings\" in result.stdout  # literal rendered output, not restricted to an error-code token"
-  negative_example: 'assert "Show the current configuration value" in result.output  # help text wording; assert Click metadata instead'
+  intent: CLI runner tests should pin wiring and observable behavior, not help prose, so that help text can be reworded freely without breaking the suite.
+  criteria:
+  - id: TEST-017.Q01
+    question: Do the CLI runner tests under tests/cli/ avoid asserting help text wording in stdout or rendered output?
+    kind: judgment
+    na_when: The change adds or modifies no CLI runner test that asserts against stdout or rendered output.
+    positive_example: "assert result.exit_code == 0\nassert \"Status: valid with warnings\" in result.stdout  # permitted: asserting a literal status label, panel line, or full rendered string is allowed, ideally pinned via snapshot testing so the assertion cannot drift silently; not restricted to a published error code token; from tests/cli/config/test_config_validate.py"
+    negative_example: 'assert "Show the current configuration value" in result.output  # hypothetical help text wording; assert Click metadata instead'
+  - id: TEST-017.Q02
+    question: Does a CLI test that checks command registration or option names read them from Click metadata rather than from rendered help output?
+    kind: judgment
+    na_when: The change adds or modifies no CLI test that checks command registration or option names.
+    positive_example: 'root_callbacks = {command.name: command.callback for command in app.registered_commands}  # from tests/cli/test_cli.py'
+    negative_example: 'assert "--format" in result.stdout  # hypothetical: option name checked by scanning --help output'
   citation: docs/agents/testing.md#core-testing-rules
 - id: TEST-018
   title: Test Layer Import Boundary
