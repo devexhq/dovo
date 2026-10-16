@@ -13,6 +13,7 @@ from typer.testing import CliRunner
 
 from dovo.common.constants import REQUIRED_SUBDIRS
 from tests.harness import FakeAgentRunner, FakeAgentRunnerCall, initialized_workspace_paths
+from tests.harness.poll import wait_until
 
 
 class IsolatedWorkspaceFixtureTests:
@@ -165,3 +166,28 @@ class InitializedWorkspacePathsTests:
         paths = initialized_workspace_paths(tmp_path)
 
         assert paths.project_id == "other-project"
+
+
+class WaitUntilTests:
+    """Unit tests for the shared wait_until poll helper."""
+
+    def test_returns_true_once_the_predicate_holds(self) -> None:
+        """Return True on the first poll where the predicate is true."""
+        polls: list[int] = []
+
+        def predicate() -> bool:
+            polls.append(len(polls))
+            return True
+
+        assert wait_until(predicate) is True
+        assert polls == [0]
+
+    def test_returns_false_after_the_timeout(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Return False once a patched clock passes the deadline, without real sleeping."""
+        clock = iter([0.0, 0.0, 2.0, 3.0])
+        sleeps: list[float] = []
+        monkeypatch.setattr("tests.harness.poll.time.monotonic", lambda: next(clock))
+        monkeypatch.setattr("tests.harness.poll.time.sleep", sleeps.append)
+
+        assert wait_until(lambda: False, timeout=3.0, interval=0.05) is False
+        assert sleeps == [0.05, 0.05]

@@ -98,8 +98,9 @@ No hardcoded sleeps in a test body: monkeypatch the clock at the module boundary
 (`time.monotonic`, `asyncio.sleep`) and assert the resulting schedule, not only that a retry
 happened. Inject the clock and id generators wherever their output reaches a result field, so
 tests assert literal timestamps and ids. A wait on an OS event with no virtual equivalent (a
-process group reaped after `SIGKILL`) goes through one shared harness poll helper that owns the
-interval and deadline; the only sleep allowed is inside that helper (R16).
+process group reaped after `SIGKILL`) goes through one shared harness poll helper,
+`wait_until` in `tests/harness/poll.py`, that owns the interval and deadline; the only sleep
+allowed is inside that helper (R16).
 Subprocess tests register handles with `process_registry`; teardown sends `SIGKILL` to spawned
 process groups. Secrets/env-dependent tests use `monkeypatch` to isolate environment variables.
 

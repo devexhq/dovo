@@ -23,7 +23,7 @@ READY_ACTIVE = FormatterCase(
 READY_IN_PLACE = FormatterCase(
     data=WorktreeLifecycleEvent(action="ready", path="", active=False, kept=None),
     view=WorktreeLifecycleEvent(action="ready", path="", active=False, kept=None),
-    render_expectations=[],
+    render_expectations=["Worktree: In-place (workspace)"],
 )
 
 CLEANUP_RETAINED = FormatterCase(
@@ -35,7 +35,7 @@ CLEANUP_RETAINED = FormatterCase(
 CLEANUP_CLEANED = FormatterCase(
     data=WorktreeLifecycleEvent(action="cleanup", path="", active=None, kept=False),
     view=WorktreeLifecycleEvent(action="cleanup", path="", active=None, kept=False),
-    render_expectations=[],
+    render_expectations=["Worktree: Cleaned"],
 )
 
 CLEANUP_KEPT_WITH_FIX = FormatterCase(

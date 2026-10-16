@@ -71,13 +71,13 @@ class LiveDisplayManagerLoopTests:
 class BuildLoopStatusPanelTests:
     """Contract tests for the build_loop_status_panel renderable builder."""
 
-    def test_iteration_history_marks_pass_fail_current_and_pending(self) -> None:
+    def test_iteration_history_marks_pass_fail_and_pending(self) -> None:
         panel = build_loop_status_panel(
             "dev-cycle",
             3,
             5,
             [],
-            {1: False, 2: False},
+            {1: True, 2: False},
         )
 
         console = Console(width=100, color_system=None, record=True)
@@ -86,5 +86,4 @@ class BuildLoopStatusPanelTests:
 
         assert "dev-cycle" in rendered
         assert "iteration 3/5" in rendered
-        for iteration_number in range(1, 6):
-            assert str(iteration_number) in rendered
+        assert [marker for marker in ("1 ✔", "2 ✖", "3 ○", "4 ○", "5 ○") if marker not in rendered] == []

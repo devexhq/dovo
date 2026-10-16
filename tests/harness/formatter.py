@@ -138,7 +138,7 @@ def assert_rich_render_shows_every_view_value(
             If None, required non-null fields on the view model are verified.
 
     Raises:
-        AssertionError: If any required view field or expected value is missing.
+        AssertionError: If there are no values to check, or any required view field or expected value is missing.
     """
     formatter = formatter_cls() if isinstance(formatter_cls, type) else formatter_cls
     if isinstance(target, FormatterCase):
@@ -147,6 +147,8 @@ def assert_rich_render_shows_every_view_value(
     else:
         data = target
         values_to_check = _resolve_direct_search_values(formatter, target, expected_values)
+    if not values_to_check:
+        raise AssertionError("no render expectations: list the view values this case must render")
 
     rendered = render_rich(formatter.to_rich(data))
 

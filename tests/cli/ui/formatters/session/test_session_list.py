@@ -79,7 +79,7 @@ POPULATED_RUNS = FormatterCase(
 EMPTY_RUNS = FormatterCase(
     data=HistoryListResult(status=HistoryListStatus.OK, sessions=[]),
     view=_make_session_list_view(sessions=[], total_sessions=0),
-    render_expectations=[],
+    render_expectations=["No execution history found."],
 )
 
 WARNINGS_RUNS = FormatterCase(

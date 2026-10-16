@@ -287,3 +287,18 @@ class FormatterHarnessTests:
 
         with pytest.raises(TypeError, match="FormatterCase view must be an instance of BaseModel"):
             assert_json_payload_matches_published_shape(None, case, {})
+
+
+class RenderExpectationGuardTests:
+    """Unit tests for the empty-expectation guard in assert_rich_render_shows_every_view_value."""
+
+    def test_empty_expectations_raise(self) -> None:
+        """Raise AssertionError naming the missing expectations when the case lists none."""
+        case = FormatterCase(
+            data=DummyData(message="operational", count=42),
+            view=DummyView(message="operational", count=42),
+            render_expectations=[],
+        )
+
+        with pytest.raises(AssertionError, match="no render expectations"):
+            assert_rich_render_shows_every_view_value(DummyFormatter, case.data, case.render_expectations)

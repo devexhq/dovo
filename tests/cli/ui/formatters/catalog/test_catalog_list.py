@@ -82,7 +82,7 @@ EMPTY_ITEMS = FormatterCase(
         warnings=[],
         fixes=[],
     ),
-    render_expectations=[],
+    render_expectations=["No items found."],
 )
 
 WITH_STEP_ITEMS = FormatterCase(
@@ -147,7 +147,7 @@ EMPTY_TEMPLATES = FormatterCase(
         warnings=[],
         fixes=[],
     ),
-    render_expectations=[],
+    render_expectations=["No packaged templates found."],
 )
 
 WITH_ERRORS = FormatterCase(
