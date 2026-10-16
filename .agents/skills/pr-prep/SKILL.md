@@ -63,9 +63,6 @@ mkdir -p .agentic
   Omit the `Fixes #N` line entirely when there is no related issue — never
   invent one.
 
-No AI attribution or tool co-author trailers in any of these three files, per
-`docs/agents/git-and-pr-conventions.md`.
-
 Show the drafted contents to the user once done.
 
 ## Step 3: Hand off to the human
