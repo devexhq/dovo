@@ -13,13 +13,6 @@ from dovo.core.config.models import (
     ProjectConfig,
 )
 from dovo.core.config.serialize import serialize_config
-from dovo.core.diagnostics.checks.agent_setup import AgentSetupCheck
-from dovo.core.diagnostics.checks.artifacts_integrity import ArtifactsIntegrityCheck
-from dovo.core.diagnostics.checks.config_schema import ConfigSchemaCheck
-from dovo.core.diagnostics.checks.env_binaries import EnvBinariesCheck
-from dovo.core.diagnostics.checks.filesystem_writable import FilesystemWritableCheck
-from dovo.core.diagnostics.checks.git_repo import GitRepoCheck
-from dovo.core.diagnostics.checks.worktree_refs import WorktreeRefsCheck
 from dovo.core.diagnostics.diagnostics import Diagnostics
 from dovo.core.diagnostics.models import (
     CheckCategory,
@@ -27,7 +20,7 @@ from dovo.core.diagnostics.models import (
     DiagnosticCheckResult,
     DiagnosticsContext,
 )
-from dovo.core.diagnostics.services.registry import CheckRegistry
+from dovo.core.diagnostics.services.registry import CheckRegistry, get_default_registry
 from tests.harness.workspace_paths import initialized_workspace_paths
 
 
@@ -169,16 +162,9 @@ class DiagnosticsDefaultRegistryTests:
     def test_init_without_registry_uses_default_registry_with_all_builtin_checks(self, tmp_path: Path) -> None:
         doctor = Diagnostics(_paths_for(tmp_path))
 
-        checks = doctor.registry.all()
-
-        assert len(checks) == 7
-        assert isinstance(doctor.registry.get("git.repo"), GitRepoCheck)
-        assert isinstance(doctor.registry.get("config.schema"), ConfigSchemaCheck)
-        assert isinstance(doctor.registry.get("filesystem.writable"), FilesystemWritableCheck)
-        assert isinstance(doctor.registry.get("worktree.refs"), WorktreeRefsCheck)
-        assert isinstance(doctor.registry.get("env.binaries"), EnvBinariesCheck)
-        assert isinstance(doctor.registry.get("agent.setup"), AgentSetupCheck)
-        assert isinstance(doctor.registry.get("artifacts.integrity"), ArtifactsIntegrityCheck)
+        assert [(check.check_id, type(check)) for check in doctor.registry.all()] == [
+            (check.check_id, type(check)) for check in get_default_registry().all()
+        ]
 
     def test_init_with_explicit_registry_does_not_use_default_registry(self, tmp_path: Path) -> None:
         explicit_registry = CheckRegistry()

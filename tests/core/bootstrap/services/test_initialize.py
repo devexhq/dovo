@@ -10,7 +10,6 @@ import pytest
 from dovo.common.filesystem.services.global_root import resolve_global_paths
 from dovo.core.bootstrap.models import BootstrapOutcome, InitFailureMode
 from dovo.core.bootstrap.services.initialize import initialize_workspace
-from dovo.core.db.connection import resolve_db_path
 from dovo.core.project.models import ProjectIdentityProvisionStatus
 from tests.harness.builders import WorkspaceBuilder
 
@@ -118,4 +117,4 @@ class InitializeWorkspaceTests:
         result = initialize_workspace(git_repo)
 
         assert result.ok is True
-        assert resolve_db_path(resolve_global_paths(None)).is_file()
+        assert (resolve_global_paths(None).data_dir / "dovo.db").is_file()

@@ -67,6 +67,7 @@ class ResolveWorkspacePathsTests:
         assert paths.logs_dir == project_storage / "logs"
         assert paths.tmp_dir == project_storage / "tmp"
         assert paths.worktrees_dir == repository / ".dovo" / "worktrees"
+        assert paths.database_file == global_root / "data" / "dovo.db"
 
 
 class BuildWorkspacePathsTests:

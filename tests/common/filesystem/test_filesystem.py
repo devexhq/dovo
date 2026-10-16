@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
 
@@ -26,24 +27,6 @@ class FilesystemPathPropertiesTests:
         assert fs.lock_file == resolved.lock_file
         assert fs.gitignore_file == resolved.gitignore_file
 
-    def test_repository_paths_is_cached_across_repeated_access(self, tmp_path: Path) -> None:
-        fs = Filesystem(tmp_path)
-        first = fs.repository_paths
-        second = fs.repository_paths
-        assert first is second
-
-    def test_worktree_dir_joins_the_identifier_onto_worktrees_dir(self, tmp_path: Path) -> None:
-        fs = Filesystem(tmp_path)
-        assert fs.worktree_dir("dovo_1") == fs.worktrees_dir / "dovo_1"
-
-    def test_rel_to_root_returns_path_relative_to_workspace_root(self, tmp_path: Path) -> None:
-        fs = Filesystem(tmp_path)
-        inside = fs.root_dir / "sub" / "file.txt"
-        outside = tmp_path.parent / "elsewhere.txt"
-
-        assert fs.rel_to_root(inside) == Path("sub") / "file.txt"
-        assert fs.rel_to_root(outside) == outside
-
 
 class FilesystemDynamicAttributeLookupTests:
     def test_unknown_attribute_raises_attribute_error(self, tmp_path: Path) -> None:
@@ -60,48 +43,6 @@ class FilesystemReprTests:
 
 
 class FilesystemBoundIoHelperTests:
-    def test_write_text_creates_file_with_given_content(self, tmp_path: Path) -> None:
-        fs = Filesystem(tmp_path)
-        target = tmp_path / "note.txt"
-        fs.write_text(target, "hello")
-        assert target.read_text(encoding="utf-8") == "hello"
-
-    def test_write_json_creates_file_with_given_data(self, tmp_path: Path) -> None:
-        fs = Filesystem(tmp_path)
-        target = tmp_path / "data.json"
-        fs.write_json(target, {"key": "value"})
-        assert json.loads(target.read_text(encoding="utf-8")) == {"key": "value"}
-
-    def test_delete_file_returns_true_when_file_existed_and_false_otherwise(self, tmp_path: Path) -> None:
-        fs = Filesystem(tmp_path)
-        target = tmp_path / "to-delete.txt"
-        target.write_text("x", encoding="utf-8")
-
-        assert fs.delete_file(target) is True
-        assert not target.exists()
-        assert fs.delete_file(target) is False
-
-    def test_read_yaml_parses_file_into_yaml_file_model(self, tmp_path: Path) -> None:
-        fs = Filesystem(tmp_path)
-        target = tmp_path / "item.yml"
-        target.write_text("name: sample\n", encoding="utf-8")
-
-        result = fs.read_yaml(target)
-
-        assert isinstance(result, YamlFile)
-        assert result.parsed == {"name": "sample"}
-        assert result.error is None
-
-    def test_scan_yaml_returns_sorted_yaml_files_from_directory(self, tmp_path: Path) -> None:
-        fs = Filesystem(tmp_path)
-        (tmp_path / "b.yml").write_text("name: b\n", encoding="utf-8")
-        (tmp_path / "a.yaml").write_text("name: a\n", encoding="utf-8")
-        (tmp_path / "skip.txt").write_text("ignored", encoding="utf-8")
-
-        results = fs.scan_yaml(tmp_path)
-
-        assert [entry.path.name for entry in results] == ["a.yaml", "b.yml"]
-
     def test_is_git_repo_detects_dot_git_directory(self, tmp_path: Path) -> None:
         """Return True for a directory containing .git, False otherwise; default to root_dir when no path is given."""
         fs = Filesystem(tmp_path)
@@ -111,23 +52,8 @@ class FilesystemBoundIoHelperTests:
         assert fs.is_git_repo(tmp_path) is True
         assert fs.is_git_repo() is True
 
-    def test_checksum_returns_sha256_hex_digest(self, tmp_path: Path) -> None:
-        import hashlib
-
-        fs = Filesystem(tmp_path)
-        assert fs.checksum("payload") == hashlib.sha256(b"payload").hexdigest()
-
 
 class FilesystemStaticHelperTests:
-    def test_find_root_delegates_to_find_dovo_root(self, tmp_path: Path) -> None:
-        repo_root = tmp_path / "repo"
-        (repo_root / ".git").mkdir(parents=True)
-        assert Filesystem.find_root(repo_root) == Filesystem(repo_root).root_dir
-
-    def test_is_git_repository_static_matches_instance_method(self, tmp_path: Path) -> None:
-        (tmp_path / ".git").mkdir()
-        assert Filesystem.is_git_repository(tmp_path) is True
-
     def test_atomic_write_text_and_json_static_helpers_write_to_disk(self, tmp_path: Path) -> None:
         text_target = tmp_path / "static.txt"
         json_target = tmp_path / "static.json"
@@ -138,17 +64,27 @@ class FilesystemStaticHelperTests:
         assert text_target.read_text(encoding="utf-8") == "static-content"
         assert json.loads(json_target.read_text(encoding="utf-8")) == {"a": 1}
 
-    def test_compute_checksum_static_matches_instance_method(self, tmp_path: Path) -> None:
-        fs = Filesystem(tmp_path)
-        assert Filesystem.compute_checksum("payload") == fs.checksum("payload")
+    def test_compute_checksum_returns_sha256_hex_digest(self) -> None:
+        assert Filesystem.compute_checksum("payload") == hashlib.sha256(b"payload").hexdigest()
 
-    def test_read_yaml_file_and_scan_yaml_directory_static_helpers_match_instance_methods(self, tmp_path: Path) -> None:
+    def test_read_yaml_file_parses_file_into_yaml_file_model(self, tmp_path: Path) -> None:
         target = tmp_path / "item.yml"
         target.write_text("name: sample\n", encoding="utf-8")
 
-        fs = Filesystem(tmp_path)
-        assert Filesystem.read_yaml_file(target).parsed == fs.read_yaml(target).parsed
-        assert [f.name for f in Filesystem.scan_yaml_directory(tmp_path)] == [f.name for f in fs.scan_yaml(tmp_path)]
+        result = Filesystem.read_yaml_file(target)
+
+        assert isinstance(result, YamlFile)
+        assert result.parsed == {"name": "sample"}
+        assert result.error is None
+
+    def test_scan_yaml_directory_returns_sorted_yaml_files_from_directory(self, tmp_path: Path) -> None:
+        (tmp_path / "b.yml").write_text("name: b\n", encoding="utf-8")
+        (tmp_path / "a.yaml").write_text("name: a\n", encoding="utf-8")
+        (tmp_path / "skip.txt").write_text("ignored", encoding="utf-8")
+
+        results = Filesystem.scan_yaml_directory(tmp_path)
+
+        assert [entry.path.name for entry in results] == ["a.yaml", "b.yml"]
 
 
 class FilesystemAtomicWriteBytesTests:

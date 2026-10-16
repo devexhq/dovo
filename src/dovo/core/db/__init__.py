@@ -5,11 +5,9 @@ usage tracking, catalog indexing, and unified session tracking.
 """
 
 from dovo.core.db.connection import (
-    DEFAULT_DB_FILENAME,
     get_db_connection,
     get_engine,
     get_session,
-    resolve_db_path,
     sqlite_url,
 )
 from dovo.core.db.db import DovoDb
@@ -36,7 +34,6 @@ from dovo.core.db.repositories import (
 )
 
 __all__ = [
-    "DEFAULT_DB_FILENAME",
     "INITIAL_SCHEMA_REVISION",
     "LATEST_SCHEMA_REVISION",
     "ArtifactRecord",
@@ -56,6 +53,5 @@ __all__ = [
     "get_session",
     "init_database",
     "parse_timestamp",
-    "resolve_db_path",
     "sqlite_url",
 ]

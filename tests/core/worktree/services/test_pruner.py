@@ -21,7 +21,7 @@ from dovo.core.worktree.models import (
     WorktreeDetectionStatus,
     WorktreePruneStatus,
 )
-from dovo.core.worktree.services.pruner import WorktreePruner, prune_stale_worktrees
+from dovo.core.worktree.services.pruner import WorktreePruner
 from tests.harness import WorkspaceBuilder
 from tests.harness.workspace_paths import initialized_workspace_paths
 
@@ -396,29 +396,6 @@ class WorktreePrunerIdempotencyTests:
         assert result2.status == WorktreePruneStatus.OK
         assert len(result2.items) == 0
         assert len(result2.errors) == 0
-
-
-class WorktreePrunerEntrypointTests:
-    """Tests verifying helper function and Worktree entrypoint method agree."""
-
-    def test_prune_stale_worktrees_helper_and_worktree_entrypoint_agree(
-        self,
-        pruner_workspace: Path,
-        pruner_workspace_paths: WorkspacePaths,
-    ) -> None:
-        db = _repo(pruner_workspace_paths)
-        manager = Worktree(pruner_workspace_paths, db)
-
-        res_helper = prune_stale_worktrees(pruner_workspace, db, dry_run=True)
-        res_manager = manager.prune(dry_run=True)
-
-        assert res_helper.status == WorktreePruneStatus.OK
-        assert res_helper.dry_run is True
-        assert len(res_helper.items) == 0
-
-        assert res_manager.status == WorktreePruneStatus.OK
-        assert res_manager.dry_run is True
-        assert len(res_manager.items) == 0
 
 
 class WorktreePrunerFailureTests:

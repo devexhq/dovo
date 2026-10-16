@@ -11,7 +11,6 @@ from typer.testing import CliRunner
 from dovo.cli import app
 from dovo.common.filesystem.services.global_root import resolve_global_paths
 from dovo.core.config.loader import ConfigLoadStatus
-from dovo.core.db.connection import resolve_db_path
 from dovo.core.status.models import (
     DovoStatusResult,
 )
@@ -47,7 +46,7 @@ class StatusCliIntegrationTests:
         assert result_dto.catalog.exists is False
         assert result_dto.catalog.total_items == 0
         assert result_dto.database.exists is True
-        assert result_dto.database.db_path == resolve_db_path(resolve_global_paths(None))
+        assert result_dto.database.db_path == resolve_global_paths(None).data_dir / "dovo.db"
         assert result_dto.database.is_accessible is True
         assert result_dto.worktrees.active_worktrees == 0
         assert result_dto.worktrees.max_active_worktrees == 3
@@ -77,7 +76,7 @@ class StatusCliIntegrationTests:
         assert result_dto.catalog.exists is False
         assert result_dto.catalog.total_items == 0
         assert result_dto.database.exists is True
-        assert result_dto.database.db_path == resolve_db_path(resolve_global_paths(None))
+        assert result_dto.database.db_path == resolve_global_paths(None).data_dir / "dovo.db"
         assert result_dto.database.is_accessible is True
         assert result_dto.worktrees.active_worktrees == 0
         assert result_dto.worktrees.max_active_worktrees == 3

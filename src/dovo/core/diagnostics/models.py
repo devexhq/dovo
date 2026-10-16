@@ -102,16 +102,6 @@ class DiagnosticsReport(BaseModel):
         """Return True when at least one executed check has status WARNING."""
         return any(c.status == CheckStatus.WARNING for c in self.checks)
 
-    @property
-    def failed_checks(self) -> list[DiagnosticCheckResult]:
-        """Return list of executed checks with status FAILED."""
-        return [c for c in self.checks if c.status == CheckStatus.FAILED]
-
-    @property
-    def warning_checks(self) -> list[DiagnosticCheckResult]:
-        """Return list of executed checks with status WARNING."""
-        return [c for c in self.checks if c.status == CheckStatus.WARNING]
-
 
 @runtime_checkable
 class DiagnosticCheck(Protocol):

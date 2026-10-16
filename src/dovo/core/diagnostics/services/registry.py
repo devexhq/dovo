@@ -8,7 +8,7 @@ from dovo.core.diagnostics.checks.filesystem_writable import FilesystemWritableC
 from dovo.core.diagnostics.checks.git_repo import GitRepoCheck
 from dovo.core.diagnostics.checks.worktree_refs import WorktreeRefsCheck
 from dovo.core.diagnostics.exceptions import CheckRegistrationError
-from dovo.core.diagnostics.models import CheckCategory, DiagnosticCheck
+from dovo.core.diagnostics.models import DiagnosticCheck
 
 
 class CheckRegistry:
@@ -22,14 +22,6 @@ class CheckRegistry:
         if check.check_id in self._checks:
             raise CheckRegistrationError(f"Check with ID '{check.check_id}' is already registered.")
         self._checks[check.check_id] = check
-
-    def get(self, check_id: str) -> DiagnosticCheck | None:
-        """Retrieve a registered check by unique check_id, or None if not registered."""
-        return self._checks.get(check_id)
-
-    def list_by_category(self, category: CheckCategory) -> list[DiagnosticCheck]:
-        """Return registered checks matching the specified category."""
-        return [c for c in self._checks.values() if c.category == category]
 
     def all(self) -> list[DiagnosticCheck]:
         """Return all registered checks."""

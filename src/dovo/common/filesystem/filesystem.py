@@ -12,7 +12,6 @@ from dovo.common.filesystem.services.operations import (
     atomic_write_json as _atomic_write_json,
     atomic_write_text as _atomic_write_text,
     compute_content_checksum as _compute_content_checksum,
-    delete_file as _delete_file,
 )
 from dovo.common.filesystem.services.paths import (
     find_dovo_root as _find_dovo_root,
@@ -86,17 +85,6 @@ class Filesystem:
         """Traversable resource path to bundled catalog templates."""
         return _get_catalog_templates_dir()
 
-    def worktree_dir(self, worktree_id: str) -> Path:
-        """Return path to a specific worktree directory."""
-        return self.repository_paths.worktrees_dir / worktree_id
-
-    def rel_to_root(self, path: Path | str) -> Path:
-        """Return path relative to workspace root."""
-        try:
-            return Path(path).resolve().relative_to(self.repository_paths.root_dir)
-        except ValueError:
-            return Path(path)
-
     def __getattr__(self, name: str) -> Any:
         """Delegate fallback attribute lookups directly to self.repository_paths."""
         repository_paths = self.repository_paths
@@ -108,46 +96,12 @@ class Filesystem:
         return f"Filesystem(root={self.repository_paths.root_dir!r})"
 
     # Bound instance methods
-    def write_text(self, path: Path, text: str) -> None:
-        """Write text content atomically with UTF-8 encoding."""
-        _atomic_write_text(path, text)
-
-    def write_json(self, path: Path, data: dict[str, Any]) -> None:
-        """Write JSON content atomically with indent=2, UTF-8, and trailing newline."""
-        _atomic_write_json(path, data)
-
-    def delete_file(self, path: Path) -> bool:
-        """Delete a file if it exists. Returns True if the file existed before deletion."""
-        return _delete_file(path)
-
-    def read_yaml(self, path: Path) -> YamlFile:
-        """Read and parse a YAML file into a typed YamlFile model."""
-        return _read_yaml_file(path)
-
-    def scan_yaml(self, directory: Path, *, suffixes: tuple[str, ...] = (".yml", ".yaml")) -> list[YamlFile]:
-        """Scan a directory recursively for matching YAML files, sorted by path."""
-        return _scan_yaml_directory(directory, suffixes=suffixes)
-
     def is_git_repo(self, path: Path | None = None) -> bool:
         """Check whether the given directory contains a .git directory or file."""
         target = path if path is not None else self.repository_paths.root_dir
         return _is_git_repository(target)
 
-    def checksum(self, content: str) -> str:
-        """Compute SHA-256 hex digest of string content."""
-        return _compute_content_checksum(content)
-
     # Static helpers for standalone execution
-    @staticmethod
-    def find_root(start: Path | None = None) -> Path:
-        """Find the root directory of a Dovo workspace or git repository."""
-        return _find_dovo_root(start)
-
-    @staticmethod
-    def is_git_repository(path: Path) -> bool:
-        """Check whether the given directory contains a .git directory or file."""
-        return _is_git_repository(path)
-
     @staticmethod
     def atomic_write_text(path: Path, text: str) -> None:
         """Write text content atomically with UTF-8 encoding."""

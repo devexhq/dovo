@@ -152,8 +152,6 @@ class DiagnosticsReportModelsTests:
 
         assert report.ok is True
         assert report.has_warnings is False
-        assert report.failed_checks == []
-        assert report.warning_checks == []
 
     def test_report_ok_false_when_any_check_failed(self, tmp_path: Path) -> None:
         check_ok = DiagnosticCheckResult(
@@ -191,8 +189,6 @@ class DiagnosticsReportModelsTests:
         )
 
         assert report.ok is False
-        assert report.failed_checks == [check_failed]
-        assert report.warning_checks == []
 
     def test_report_has_warnings_true_when_warning_present(self, tmp_path: Path) -> None:
         check_warn = DiagnosticCheckResult(
@@ -217,10 +213,8 @@ class DiagnosticsReportModelsTests:
 
         assert report.ok is True
         assert report.has_warnings is True
-        assert report.warning_checks == [check_warn]
-        assert report.failed_checks == []
 
-    def test_report_filtering_accessors(self, tmp_path: Path) -> None:
+    def test_report_with_every_status_is_not_ok_and_has_warnings(self, tmp_path: Path) -> None:
         check_ok = DiagnosticCheckResult(
             check_id="c.ok",
             name="OK",
@@ -286,5 +280,3 @@ class DiagnosticsReportModelsTests:
 
         assert report.ok is False
         assert report.has_warnings is True
-        assert report.failed_checks == [check_fail]
-        assert report.warning_checks == [check_warn]

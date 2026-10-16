@@ -51,15 +51,6 @@ class DummyCheck:
 class CheckRegistryTests:
     """Unit tests for CheckRegistry lifecycle operations."""
 
-    def test_register_check_adds_to_registry(self) -> None:
-        registry = CheckRegistry()
-        check = DummyCheck(check_id="git.repo", name="Git Repo Check", category=CheckCategory.GIT)
-
-        registry.register(check)
-
-        retrieved = registry.get("git.repo")
-        assert retrieved is check
-
     def test_register_duplicate_raises_check_registration_error(self) -> None:
         registry = CheckRegistry()
         check1 = DummyCheck(check_id="duplicate.id", name="First", category=CheckCategory.GIT)
@@ -71,30 +62,7 @@ class CheckRegistryTests:
             registry.register(check2)
 
         assert "duplicate.id" in str(exc_info.value)
-        assert registry.get("duplicate.id") is check1
-
-    def test_get_missing_check_returns_none(self) -> None:
-        registry = CheckRegistry()
-        assert registry.get("nonexistent.check") is None
-
-    def test_list_by_category_returns_matching_checks(self) -> None:
-        registry = CheckRegistry()
-        git_check1 = DummyCheck(check_id="git.repo", category=CheckCategory.GIT)
-        git_check2 = DummyCheck(check_id="git.status", category=CheckCategory.GIT)
-        config_check = DummyCheck(check_id="config.schema", category=CheckCategory.CONFIG)
-
-        registry.register(git_check1)
-        registry.register(git_check2)
-        registry.register(config_check)
-
-        git_checks = registry.list_by_category(CheckCategory.GIT)
-        assert git_checks == [git_check1, git_check2]
-
-        config_checks = registry.list_by_category(CheckCategory.CONFIG)
-        assert config_checks == [config_check]
-
-        env_checks = registry.list_by_category(CheckCategory.ENVIRONMENT)
-        assert env_checks == []
+        assert registry.all() == [check1]
 
     def test_all_returns_all_registered_checks(self) -> None:
         registry = CheckRegistry()
@@ -115,11 +83,12 @@ class DefaultRegistryTests:
     def test_get_default_registry_registers_all_seven_builtin_checks(self) -> None:
         registry = get_default_registry()
 
-        assert len(registry.all()) == 7
-        assert isinstance(registry.get("git.repo"), GitRepoCheck)
-        assert isinstance(registry.get("config.schema"), ConfigSchemaCheck)
-        assert isinstance(registry.get("filesystem.writable"), FilesystemWritableCheck)
-        assert isinstance(registry.get("worktree.refs"), WorktreeRefsCheck)
-        assert isinstance(registry.get("env.binaries"), EnvBinariesCheck)
-        assert isinstance(registry.get("agent.setup"), AgentSetupCheck)
-        assert isinstance(registry.get("artifacts.integrity"), ArtifactsIntegrityCheck)
+        assert [(check.check_id, type(check)) for check in registry.all()] == [
+            ("git.repo", GitRepoCheck),
+            ("config.schema", ConfigSchemaCheck),
+            ("filesystem.writable", FilesystemWritableCheck),
+            ("worktree.refs", WorktreeRefsCheck),
+            ("env.binaries", EnvBinariesCheck),
+            ("agent.setup", AgentSetupCheck),
+            ("artifacts.integrity", ArtifactsIntegrityCheck),
+        ]
