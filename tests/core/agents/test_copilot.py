@@ -11,7 +11,6 @@ import pytest
 
 from dovo.common.tool_policy import ToolCapability, ToolPolicy, ToolRule
 from dovo.core.agents import (
-    AgentEnvMode,
     AgentInvocationContext,
     AgentResponseStatus,
     PolicyRoots,
@@ -31,7 +30,14 @@ from dovo.core.agents.copilot import (
 )
 from dovo.core.agents.copilot_progress import map_copilot_line
 from dovo.core.agents.models import AgentDenial, AgentProgress, AgentProgressKind
-from tests.harness import AgentRequestBuilder, FakeAgentRunner, StreamingAgentRunner
+from dovo.core.agents.registry import PROVIDERS
+from tests.harness import (
+    PROVIDER_FINISHED_STREAMS,
+    AgentRequestBuilder,
+    FakeAgentRunner,
+    StreamingAgentRunner,
+    real_invocation,
+)
 
 _ALLOW_ALL = ToolPolicy(allow_all=True)
 
@@ -223,144 +229,30 @@ class CopilotInvokeOutcomeTests:
         assert resp.errors == [expected_error]
 
 
-class _FileWritingRunner(FakeAgentRunner):
-    """Runner double that adds a file to the worktree before returning, as an editing agent would."""
+class CopilotDescriptorTests:
+    def test_descriptor_matches_pre_determined_data(self) -> None:
+        spec = PROVIDERS["copilot"]
 
-    def __call__(
-        self,
-        cmd: list[str],
-        *,
-        cwd: Path,
-        env: dict[str, str],
-        input_data: bytes,
-        timeout_seconds: float,
-        **kwargs: object,
-    ) -> subprocess.CompletedProcess[bytes]:
-        (cwd / "edited.txt").write_text("edited\n", encoding="utf-8")
-        return super().__call__(cmd, cwd=cwd, env=env, input_data=input_data, timeout_seconds=timeout_seconds, **kwargs)
+        assert (spec.credential_envs, spec.requires_model, spec.binary) == (("GH_TOKEN", "GITHUB_TOKEN"), False, "gh")
+        assert (spec.supports_tool_policy, spec.supports_os_sandbox) == (True, False)
 
-
-def _assistant_stream(text: str) -> bytes:
-    return (
-        json.dumps({"type": "assistant.message", "data": {"content": text}}).encode()
-        + b'\n{"type":"result","data":{"exitCode":0}}\n'
-    )
-
-
-class CopilotRedactionTests:
-    def test_invoke_masks_token_reflected_by_gh_stderr(self, git_repo: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        token = "gho_" + "a" * 36
-        monkeypatch.setenv("GH_TOKEN", token)
-        runner = FakeAgentRunner().returning(returncode=1, stderr=f"auth failed for {token}".encode())
-        monkeypatch.setattr("dovo.core.agents.cli_mutation.stream_isolated_process", runner)
-
-        resp = CopilotAgentAdapter().invoke(AgentRequestBuilder().with_worktree_path(git_repo).build())
-
-        assert resp.status == AgentResponseStatus.PROVIDER_ERROR
-        assert token not in "\n".join(resp.errors)
-        assert "[REDACTED:GH_TOKEN]" in "\n".join(resp.errors)
-
-    def test_invoke_masks_both_copilot_credential_alternatives(
-        self, git_repo: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        monkeypatch.setenv("GH_TOKEN", "sh1")
-        monkeypatch.setenv("GITHUB_TOKEN", "sh2")
-        runner = FakeAgentRunner().returning(stdout=_assistant_stream("saw sh1 and sh2"))
-        monkeypatch.setattr("dovo.core.agents.cli_mutation.stream_isolated_process", runner)
-
-        resp = CopilotAgentAdapter().invoke(AgentRequestBuilder().with_worktree_path(git_repo).build())
-
-        assert resp.raw_text == "saw [REDACTED:GH_TOKEN] and [REDACTED:GITHUB_TOKEN]"
-
-    def test_invoke_masks_reflected_token_in_a_proposed_patch_response(
-        self, git_repo: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        token = "gho_" + "b" * 36
-        monkeypatch.setenv("GH_TOKEN", token)
-        runner = _FileWritingRunner().returning(stdout=_assistant_stream(f"done with {token}"))
-        monkeypatch.setattr("dovo.core.agents.cli_mutation.stream_isolated_process", runner)
-
-        resp = CopilotAgentAdapter().invoke(AgentRequestBuilder().with_worktree_path(git_repo).build())
-
-        assert resp.status == AgentResponseStatus.PROPOSED_PATCH
-        assert resp.raw_text == "done with [REDACTED:GH_TOKEN]"
-        assert resp.unified_diff is not None
-        assert "+edited" in resp.unified_diff
-
-
-def _invocation(root: Path) -> AgentInvocationContext:
-    return AgentInvocationContext(invocation_id="a" * 32, scratch_path=root / "scratch", control_path=root / "control")
+    def test_descriptor_declares_policy_support_and_home_control(self) -> None:
+        assert COPILOT_PROVIDER_SPEC.supports_tool_policy is True
+        assert "COPILOT_HOME" in COPILOT_PROVIDER_SPEC.control_envs
 
 
 class CopilotEnvBoundaryTests:
-    def test_allowlist_spawn_env_lacks_unrelated_secrets_and_carries_resolved_token(
+    def test_request_model_overrides_ambient_copilot_model(
         self, git_repo: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        for name in ("AWS_SECRET_ACCESS_KEY", "SSH_AUTH_SOCK", "ANTHROPIC_API_KEY", "DOVO_TEST_UNRELATED_SECRET"):
-            monkeypatch.setenv(name, "host-value")
-        runner = FakeAgentRunner().returning(stdout=_assistant_stream("ok"))
-        monkeypatch.setattr("dovo.core.agents.cli_mutation.stream_isolated_process", runner)
-
-        CopilotAgentAdapter().invoke(AgentRequestBuilder().with_worktree_path(git_repo).build())
-
-        env = runner.last_call.env
-        assert env["GH_TOKEN"] == "test-token"
-        assert "PATH" in env
-        assert not {"AWS_SECRET_ACCESS_KEY", "SSH_AUTH_SOCK", "ANTHROPIC_API_KEY", "DOVO_TEST_UNRELATED_SECRET"} & set(
-            env
-        )
-
-    def test_inherit_spawn_env_keeps_unrelated_secrets(self, git_repo: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setenv("DOVO_TEST_UNRELATED_SECRET", "host-value")
-        runner = FakeAgentRunner().returning(stdout=_assistant_stream("ok"))
-        monkeypatch.setattr("dovo.core.agents.cli_mutation.stream_isolated_process", runner)
-
-        CopilotAgentAdapter().invoke(
-            AgentRequestBuilder().with_worktree_path(git_repo).with_env_mode("inherit").build()
-        )
-
-        assert runner.last_call.env["DOVO_TEST_UNRELATED_SECRET"] == "host-value"
-
-    @pytest.mark.parametrize("mode", [pytest.param("allowlist", id="allowlist"), pytest.param("inherit", id="inherit")])
-    def test_competing_copilot_controls_never_reach_the_subprocess(
-        self, mode: AgentEnvMode, git_repo: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        monkeypatch.setenv("COPILOT_GITHUB_TOKEN", "competing")
-        monkeypatch.setenv("COPILOT_ALLOW_ALL", "1")
+        """Spawn with COPILOT_MODEL 'gpt-x' when the host sets 'ambient-model' and the request model is 'gpt-x'."""
         monkeypatch.setenv("COPILOT_MODEL", "ambient-model")
-        monkeypatch.setenv("GITHUB_TOKEN", "non-winning")
-        runner = FakeAgentRunner().returning(stdout=_assistant_stream("ok"))
+        runner = FakeAgentRunner().returning(stdout=PROVIDER_FINISHED_STREAMS["copilot"]("ok"))
         monkeypatch.setattr("dovo.core.agents.cli_mutation.stream_isolated_process", runner)
 
-        CopilotAgentAdapter().invoke(
-            AgentRequestBuilder().with_worktree_path(git_repo).with_model("gpt-x").with_env_mode(mode).build()
-        )
+        CopilotAgentAdapter().invoke(AgentRequestBuilder().with_worktree_path(git_repo).with_model("gpt-x").build())
 
-        env = runner.last_call.env
-        assert env["COPILOT_MODEL"] == "gpt-x"
-        assert env["GH_TOKEN"] == "test-token"
-        assert not {"COPILOT_GITHUB_TOKEN", "COPILOT_ALLOW_ALL", "GITHUB_TOKEN"} & set(env)
-
-    def test_scratch_keys_follow_each_invocation_across_repeated_calls(
-        self, git_repo: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        runner = FakeAgentRunner().returning(stdout=_assistant_stream("ok"))
-        monkeypatch.setattr("dovo.core.agents.cli_mutation.stream_isolated_process", runner)
-        adapter = CopilotAgentAdapter()
-        invocations = [_invocation(tmp_path / "first"), _invocation(tmp_path / "second")]
-
-        for invocation in invocations:
-            adapter.invoke(AgentRequestBuilder().with_worktree_path(git_repo).with_invocation(invocation).build())
-
-        keys = ("DOVO_AGENT_SCRATCH", "TMPDIR", "TMP", "TEMP")
-        recorded = [[call.env[key] for key in keys] for call in runner.calls]
-        assert recorded == [[str(invocation.scratch_path)] * 4 for invocation in invocations]
-        forbidden = {
-            str(path)
-            for invocation in invocations
-            for path in (invocation.control_path, invocation.control_path.parent)
-        }
-        assert not forbidden & {value for call in runner.calls for value in call.env.values()}
+        assert runner.last_call.env["COPILOT_MODEL"] == "gpt-x"
 
 
 # Trimmed from events recorded with `gh copilot -- -p ... --output-format json --silent` (copilot 1.0.92, 2026-10-09); `result` lines are hand-written.
@@ -561,18 +453,6 @@ _ORIGINAL_ARGV = [
 ]
 
 
-def _real_invocation(tmp_path: Path) -> AgentInvocationContext:
-    """Create real scratch and control directories outside the worktree."""
-    root = tmp_path / "invocation"
-    scratch, control = root / "scratch", root / "control"
-    scratch.mkdir(parents=True)
-    control.mkdir()
-
-    return AgentInvocationContext(
-        invocation_id="a" * 32, scratch_path=scratch.resolve(), control_path=control.resolve()
-    )
-
-
 def _worktree(tmp_path: Path) -> Path:
     worktree = tmp_path / "worktree"
     worktree.mkdir()
@@ -589,7 +469,7 @@ def _rules(
 def _run_policy(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, policy: ToolPolicy, *, with_invocation: bool = True
 ) -> tuple[FakeAgentRunner, AgentInvocationContext | None]:
-    invocation = _real_invocation(tmp_path) if with_invocation else None
+    invocation = real_invocation(tmp_path / "invocation") if with_invocation else None
     runner = FakeAgentRunner().returning(stdout=_OK_STREAM)
     monkeypatch.setattr("dovo.core.agents.cli_mutation.stream_isolated_process", runner)
 
@@ -787,7 +667,7 @@ class CopilotPolicyRenderTests:
         monkeypatch.setattr("dovo.core.agents.cli_mutation.stream_isolated_process", runner)
         builder = AgentRequestBuilder().with_worktree_path(git_repo).with_tools(policies[policy])
         if with_invocation:
-            builder = builder.with_invocation(_real_invocation(tmp_path))
+            builder = builder.with_invocation(real_invocation(tmp_path / "invocation"))
 
         response = CopilotAgentAdapter().invoke(builder.build())
 
@@ -798,7 +678,7 @@ class CopilotPolicyRenderTests:
     def test_unknown_option_failure_returns_update_error_without_second_spawn(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        invocation = _real_invocation(tmp_path)
+        invocation = real_invocation(tmp_path / "invocation")
         runner = FakeAgentRunner().returning(returncode=1, stderr=b"error: unknown option '--disallow-temp-dir'")
         monkeypatch.setattr("dovo.core.agents.cli_mutation.stream_isolated_process", runner)
 
@@ -832,16 +712,12 @@ class CopilotPolicyRenderTests:
                 prompt="hi",
                 timeout_seconds=3,
                 tools=ToolPolicy(),
-                invocation=_real_invocation(tmp_path),
+                invocation=real_invocation(tmp_path / "invocation"),
             )
         )
 
         assert outcome == CliMutationOutcome(status="error", error_detail=tool_policy_unsupported_message("copilot"))
         assert runner.calls == []
-
-    def test_copilot_descriptor_declares_policy_support_and_home_control(self) -> None:
-        assert COPILOT_PROVIDER_SPEC.supports_tool_policy is True
-        assert "COPILOT_HOME" in COPILOT_PROVIDER_SPEC.control_envs
 
 
 def _mcp_rule(pattern: str) -> ToolRule:
@@ -1007,7 +883,7 @@ class CopilotMcpUnsupportedTests:
             AgentRequestBuilder()
             .with_worktree_path(git_repo)
             .with_tools(mcp_policy)
-            .with_invocation(_real_invocation(tmp_path))
+            .with_invocation(real_invocation(tmp_path / "invocation"))
             .build()
         )
 

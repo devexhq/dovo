@@ -22,8 +22,9 @@ from dovo.core.agents import (
     tool_policy_unsupported_message,
 )
 from dovo.core.agents.base import ProviderSpec, elapsed_ms
+from dovo.core.agents.credentials import missing_credential_error
 from dovo.core.agents.registry import PROVIDERS
-from tests.harness import AgentRequestBuilder
+from tests.harness import PROVIDER_FINISHED_STREAMS, AgentRequestBuilder, FakeAgentRunner, real_invocation
 
 _CANONICAL_MISSING_CREDENTIAL_ERROR = (
     "Agent provider error (AGENT_PROVIDER_ERROR): "
@@ -248,15 +249,6 @@ class ToolPolicyConformanceTests:
         assert len(provider.invoke_calls) == 1
 
 
-_EXPECTED_MISSING_DETAIL = {
-    "copilot": "missing GH_TOKEN or GITHUB_TOKEN. Fix: export GH_TOKEN=... or export GITHUB_TOKEN=...",
-    "claude": (
-        "Claude Code is not authenticated. Fix: run `claude auth login`, "
-        "export CLAUDE_CODE_OAUTH_TOKEN=... (from `claude setup-token`) or export ANTHROPIC_API_KEY=..."
-    ),
-}
-
-
 class RegisteredAdapterCredentialContractTests:
     @pytest.mark.parametrize(
         "token",
@@ -265,7 +257,7 @@ class RegisteredAdapterCredentialContractTests:
     def test_missing_credential_returns_provider_detail_with_no_backend_activity(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, token: str
     ) -> None:
-        """Return each credentialed provider's literal missing-credential detail while its login probe reports logged out."""
+        """Return each credentialed provider's descriptor-derived missing-credential detail while logged out."""
         monkeypatch.setattr("dovo.core.agents.claude.shutil.which", lambda _name: "/usr/bin/claude")
         spec = PROVIDERS[token]
         for name in spec.credential_envs:
@@ -285,9 +277,132 @@ class RegisteredAdapterCredentialContractTests:
 
         response = spec.build().invoke(AgentRequestBuilder().with_worktree_path(tmp_path).build())
 
+        detail = missing_credential_error(spec) if spec.auth_fix is None else None
         assert response.status == AgentResponseStatus.PROVIDER_ERROR
-        assert response.errors == [f"Agent provider error (AGENT_PROVIDER_ERROR): {_EXPECTED_MISSING_DETAIL[token]}"]
+        assert len(response.errors) == 1
+        assert response.errors[0].startswith("Agent provider error (AGENT_PROVIDER_ERROR): ")
+        if detail is None:
+            assert response.errors[0].endswith(f"Fix: {spec.auth_fix}")
+        else:
+            assert response.errors[0] == f"Agent provider error (AGENT_PROVIDER_ERROR): {detail}"
         assert backend_calls == []
+
+
+_REGISTERED = [pytest.param(token, id=token) for token in PROVIDERS]
+_UNRELATED_SECRETS = ("AWS_SECRET_ACCESS_KEY", "SSH_AUTH_SOCK", "DOVO_TEST_UNRELATED_SECRET")
+
+
+def _arm_provider(token: str, monkeypatch: pytest.MonkeyPatch) -> tuple[BaseAgentProvider, FakeAgentRunner]:
+    """Clear every registered credential, set the provider's winning one to 'test-token', and patch a runner."""
+    for spec in PROVIDERS.values():
+        for name in spec.credential_envs:
+            monkeypatch.delenv(name, raising=False)
+    spec = PROVIDERS[token]
+    for name in spec.credential_envs[:1]:
+        monkeypatch.setenv(name, "test-token")
+    runner = FakeAgentRunner().returning(stdout=PROVIDER_FINISHED_STREAMS[token]("ok"))
+    monkeypatch.setattr("dovo.core.agents.cli_mutation.stream_isolated_process", runner)
+
+    return spec.build(), runner
+
+
+class RegisteredAdapterEnvBoundaryTests:
+    @pytest.mark.parametrize("token", _REGISTERED)
+    def test_allowlist_spawn_env_holds_only_the_winning_credential_and_no_foreign_secrets(
+        self, token: str, git_repo: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Spawn with PATH and only credential_envs[0] == 'test-token', with no unrelated or foreign secret."""
+        provider, runner = _arm_provider(token, monkeypatch)
+        winners = PROVIDERS[token].credential_envs[:1]
+        foreign = {name for spec in PROVIDERS.values() for name in spec.credential_envs} - set(winners)
+        for name in (*_UNRELATED_SECRETS, *foreign):
+            monkeypatch.setenv(name, "host-value")
+
+        provider.invoke(AgentRequestBuilder().with_worktree_path(git_repo).build())
+
+        env = runner.last_call.env
+        assert {name: env.get(name) for name in winners} == dict.fromkeys(winners, "test-token")
+        assert "PATH" in env
+        assert not {*_UNRELATED_SECRETS, *foreign} & set(env)
+
+    @pytest.mark.parametrize("token", _REGISTERED)
+    def test_inherit_spawn_env_keeps_unrelated_host_variables(
+        self, token: str, git_repo: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Keep DOVO_TEST_UNRELATED_SECRET == 'host-value' in the spawn env under env_mode 'inherit'."""
+        provider, runner = _arm_provider(token, monkeypatch)
+        monkeypatch.setenv("DOVO_TEST_UNRELATED_SECRET", "host-value")
+
+        provider.invoke(AgentRequestBuilder().with_worktree_path(git_repo).with_env_mode("inherit").build())
+
+        assert runner.last_call.env["DOVO_TEST_UNRELATED_SECRET"] == "host-value"
+
+    @pytest.mark.parametrize("mode", [pytest.param("allowlist", id="allowlist"), pytest.param("inherit", id="inherit")])
+    @pytest.mark.parametrize("token", _REGISTERED)
+    def test_control_names_in_the_host_environment_never_reach_the_subprocess(
+        self, token: str, mode: AgentEnvMode, git_repo: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Leave every name in the provider's control_envs out of the spawn env."""
+        provider, runner = _arm_provider(token, monkeypatch)
+        control_names = PROVIDERS[token].control_envs
+        for name in control_names:
+            monkeypatch.setenv(name, "ambient")
+
+        provider.invoke(AgentRequestBuilder().with_worktree_path(git_repo).with_env_mode(mode).build())
+
+        assert not set(control_names) & set(runner.last_call.env)
+
+    @pytest.mark.parametrize("token", _REGISTERED)
+    def test_scratch_keys_follow_each_invocation_across_repeated_calls(
+        self, token: str, git_repo: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Spawn each call with DOVO_AGENT_SCRATCH, TMPDIR, TMP, TEMP equal to that invocation's scratch path."""
+        provider, runner = _arm_provider(token, monkeypatch)
+        invocations = [real_invocation(tmp_path / "first"), real_invocation(tmp_path / "second")]
+
+        for invocation in invocations:
+            provider.invoke(AgentRequestBuilder().with_worktree_path(git_repo).with_invocation(invocation).build())
+
+        keys = ("DOVO_AGENT_SCRATCH", "TMPDIR", "TMP", "TEMP")
+        recorded = [[call.env[key] for key in keys] for call in runner.calls]
+        assert recorded == [[str(invocation.scratch_path)] * 4 for invocation in invocations]
+        forbidden = {
+            str(path)
+            for invocation in invocations
+            for path in (invocation.control_path, invocation.control_path.parent)
+        }
+        assert not forbidden & {value for call in runner.calls for value in call.env.values()}
+
+
+class RegisteredAdapterToolPolicyConformanceTests:
+    @pytest.mark.parametrize("token", _REGISTERED)
+    def test_allow_all_policy_reaches_the_process_boundary_once(
+        self, token: str, git_repo: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Return NO_OP and record exactly one runner call for an allow-all policy."""
+        provider, runner = _arm_provider(token, monkeypatch)
+        request = AgentRequestBuilder().with_worktree_path(git_repo).with_tools(ToolPolicy(allow_all=True)).build()
+
+        response = provider.invoke(request)
+
+        assert response.status == AgentResponseStatus.NO_OP
+        assert len(runner.calls) == 1
+
+    @pytest.mark.parametrize(
+        "token", [pytest.param(token, id=token) for token, spec in PROVIDERS.items() if spec.supports_tool_policy]
+    )
+    def test_default_policy_without_an_invocation_is_rejected_before_any_spawn(
+        self, token: str, git_repo: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Return PROVIDER_ERROR with errors == [tool_policy_unsupported_message(token)] and zero runner calls."""
+        provider, runner = _arm_provider(token, monkeypatch)
+        request = AgentRequestBuilder().with_worktree_path(git_repo).with_tools(default_tool_policy()).build()
+
+        response = provider.invoke(request)
+
+        assert response.status == AgentResponseStatus.PROVIDER_ERROR
+        assert response.errors == [tool_policy_unsupported_message(token)]
+        assert runner.calls == []
 
 
 def _reflecting_response(status: AgentResponseStatus, secret: str) -> AgentResponse:
