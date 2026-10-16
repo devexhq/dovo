@@ -98,8 +98,10 @@ ID, with the `path:line` that breaks it.
   `FakeAgentProvider` in `tests/harness/fakes.py`. *Why:* an invented double
   keeps passing after the real interface changes.
 - **R16. Inject clocks, sleeps and ID generators, and assert literal values.**
-  No `time.sleep` or wall-clock waits. *Why:* flaky tests get ignored, and then
-  they hide real failures.
+  No `time.sleep` or wall-clock waits. The one exception is an OS event with no
+  virtual equivalent (a process group reaped after `SIGKILL`): wait for it with
+  `wait_until` in `tests/harness/poll.py`, which owns the only sleep. *Why:*
+  flaky tests get ignored, and then they hide real failures.
 
 ### Docs
 

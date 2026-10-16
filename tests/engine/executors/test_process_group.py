@@ -30,7 +30,9 @@ def _sync_and_interrupt(pid_dir: Path, timeout: float = 10.0) -> None:
     """Wait for child and grandchild PID files to appear, then raise KeyboardInterrupt."""
     child_pid_file = pid_dir / "child.pid"
     grandchild_pid_file = pid_dir / "grandchild.pid"
-    wait_until(lambda: child_pid_file.exists() and grandchild_pid_file.exists(), timeout=timeout)
+    assert wait_until(lambda: child_pid_file.exists() and grandchild_pid_file.exists(), timeout=timeout), (
+        "child and grandchild PID files did not appear before the timeout"
+    )
     raise KeyboardInterrupt
 
 
