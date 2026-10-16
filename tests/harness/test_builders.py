@@ -18,7 +18,6 @@ from dovo.core.catalog.definitions import (
     StepDefinition,
     StepType,
 )
-from dovo.core.db.connection import resolve_db_path
 from dovo.core.inputs.models import InputType, ParameterInput
 from tests.harness import (
     BlueprintBuilder,
@@ -454,7 +453,7 @@ class WorkspaceBuilderTests:
         try:
             assert workspace.is_dir()
             assert (workspace / ".dovo/config.json").is_file()
-            assert resolve_db_path(resolve_global_paths(None)).is_file()
+            assert (resolve_global_paths(None).data_dir / "dovo.db").is_file()
             assert (workspace / ".dovo/catalog").is_dir()
         finally:
             shutil.rmtree(workspace, ignore_errors=True)
@@ -462,7 +461,7 @@ class WorkspaceBuilderTests:
     def test_build_scaffolds_default_workspace_structure(self, tmp_path: Path) -> None:
         workspace = WorkspaceBuilder(tmp_path / "custom").build()
         assert (workspace / ".dovo/config.json").is_file()
-        assert resolve_db_path(resolve_global_paths(None)).is_file()
+        assert (resolve_global_paths(None).data_dir / "dovo.db").is_file()
         assert (workspace / ".dovo/catalog").is_dir()
 
     def test_with_project_name_sets_custom_name_in_config(self, tmp_path: Path) -> None:
@@ -473,7 +472,7 @@ class WorkspaceBuilderTests:
 
     def test_without_database_skips_sqlite_initialization(self, tmp_path: Path) -> None:
         WorkspaceBuilder(tmp_path / "no_db").without_database().build()
-        assert not resolve_db_path(resolve_global_paths(None)).is_file()
+        assert not (resolve_global_paths(None).data_dir / "dovo.db").is_file()
 
     def test_without_database_still_writes_identity_and_without_identity_omits_it(self, tmp_path: Path) -> None:
         with_identity = WorkspaceBuilder(tmp_path / "with_identity").without_database().build()

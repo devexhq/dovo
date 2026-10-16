@@ -16,7 +16,6 @@ from dovo.common.filesystem.services.global_root import resolve_global_paths
 from dovo.core.config.loader import ConfigLoadStatus
 from dovo.core.config.models import AgentSettings, DovoConfig, ProjectConfig, WorktreeConfig
 from dovo.core.db import SessionsRepository, SessionStatus, WorktreesRepository
-from dovo.core.db.connection import resolve_db_path
 from dovo.core.git import GitNotFoundError, GitPlumbingTimeoutError, GitRunner
 from dovo.core.status import DovoStatusResult, Status
 from dovo.core.status.services.collector import collect_status
@@ -342,7 +341,7 @@ class StatusCollectorDatabaseAndWorktreeTests:
         )
         fs = Filesystem(workspace)
         Filesystem.atomic_write_json(fs.config_file, _config_payload(model="gpt-4o"))
-        resolve_db_path(resolve_global_paths(None)).write_bytes(b"NOT A SQLITE DATABASE")
+        (resolve_global_paths(None).data_dir / "dovo.db").write_bytes(b"NOT A SQLITE DATABASE")
 
         result = collect_status(_status_paths(workspace))
 

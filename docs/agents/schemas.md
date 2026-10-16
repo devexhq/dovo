@@ -76,7 +76,7 @@ Hierarchical resolution merges four tiers, lowest to highest precedence: **Packa
 
 ## 7. Database
 
-- One centralized SQLite database is shared across projects (`resolve_db_path` in `core/db/connection.py`).
+- One centralized SQLite database is shared across projects at `<global data dir>/dovo.db` (`WorkspacePaths.database_file`, built in `core/project/services/storage.py`).
 - Every record carries `project_id`, and every `BaseRepository` query scopes on it (`core/db/repositories/base.py`).
 - Create one `DovoDb` or repository per command invocation and pass it down; never construct one inside a loop or a helper.
 - Fetch a subset of records with a filtered repository query on an indexed column, not by filtering a full fetch in Python.

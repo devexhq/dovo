@@ -1,4 +1,4 @@
-"""SQLite connection, engine factory, and path resolution helpers."""
+"""SQLite connection and engine factory helpers."""
 
 import sqlite3
 from collections.abc import Generator
@@ -9,15 +9,6 @@ from typing import Any
 from sqlalchemy import Engine, event
 from sqlalchemy.pool import NullPool
 from sqlmodel import Session, create_engine
-
-from dovo.common.filesystem.models import GlobalPaths
-
-DEFAULT_DB_FILENAME = "dovo.db"
-
-
-def resolve_db_path(global_paths: GlobalPaths, db_filename: str = DEFAULT_DB_FILENAME) -> Path:
-    """Resolve the centralized database file path under the global Dovo data directory."""
-    return global_paths.data_dir / db_filename
 
 
 def _set_sqlite_pragmas(dbapi_connection: Any, connection_record: Any) -> None:

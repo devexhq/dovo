@@ -14,7 +14,6 @@ from dovo.cli import app
 from dovo.common.constants import DOVO_GITIGNORE_CONTENT, DOVO_GITIGNORE_TRACKED_ENTRIES
 from dovo.common.filesystem.services.global_root import resolve_global_paths
 from dovo.core.bootstrap.models import BootstrapOutcome
-from dovo.core.db.connection import resolve_db_path
 from dovo.core.project.models import PROJECT_ID_REGEX, ProjectIdentityProvisionStatus
 
 _SEEDED_TEMPLATE_RELATIVE_PATHS = [
@@ -60,7 +59,7 @@ class InitCliIntegrationTests:
         assert result.exit_code == 0
         dovo_dir = _dovo_dir(tmp_path)
         assert (dovo_dir / "config.json").exists()
-        assert resolve_db_path(resolve_global_paths(None)).is_file()
+        assert (resolve_global_paths(None).data_dir / "dovo.db").is_file()
         assert len(dispatch_spy) == 1
         res = dispatch_spy[0]
         assert res.bootstrap_result.root_path == dovo_dir

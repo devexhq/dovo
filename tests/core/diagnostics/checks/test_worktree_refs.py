@@ -11,7 +11,6 @@ import pytest
 from dovo.common.filesystem import WorkspacePaths
 from dovo.common.filesystem.services.global_root import resolve_global_paths
 from dovo.core.db import WorktreesRepository
-from dovo.core.db.connection import resolve_db_path
 from dovo.core.diagnostics.checks.worktree_refs import WorktreeRefsCheck
 from dovo.core.diagnostics.models import CheckCategory, CheckStatus, DiagnosticsContext
 from dovo.core.git.exceptions import GitCommandError
@@ -61,7 +60,7 @@ class WorktreeRefsCheckTests:
         assert result.status == CheckStatus.OK
         assert result.error_code is None
         assert result.details == {"verified_count": 0}
-        assert not resolve_db_path(resolve_global_paths(None)).is_file()
+        assert not (resolve_global_paths(None).data_dir / "dovo.db").is_file()
 
     def test_execute_clean_workspace_returns_ok_with_verified_count(
         self, worktree_refs_workspace: Path, worktree_refs_workspace_paths: WorkspacePaths
