@@ -216,20 +216,62 @@ for item in items: repo.create(item)
     ```
 
 - **[FS-001] Atomic File Writes via Temporary Sibling (BLOCKER):**
-  Never write config or state files directly in-place. Write to a .tmp sibling, flush, os.fsync, and atomically swap via Path.replace using Filesystem.atomic_write_json and Filesystem.atomic_write_text.
+  Config and state files are never left half-written, because they are written atomically instead of in-place.
 
-```python
-# ✅ DO: Filesystem.atomic_write_json(config_path, data)
-# ❌ DO NOT: with open(config_path, 'w') as f: json.dump(data, f)
-```
+  Answer yes to every criterion:
+  - `FS-001.Q01` (judgment) Is every write to a config or state file made through Filesystem.atomic_write_json or Filesystem.atomic_write_text?
+
+    ```python
+    # ✅ DO: Filesystem.atomic_write_json(config_path, data)
+    # ❌ DO NOT: with open(config_path, 'w') as f: json.dump(data, f)  # hypothetical in-place write
+    ```
+  - `FS-001.Q02` (judgment) Is every config or state file write free of a direct open(..., 'w') call?
+
+    ```python
+    # ✅ DO: Filesystem.atomic_write_text(state_path, text)  # hypothetical caller; no open() call at the call site
+    # ❌ DO NOT: with open(state_path, 'w') as f: f.write(text)  # hypothetical in-place write
+    ```
+  - `FS-001.Q03` (judgment) Is every config or state file write free of a direct Path.write_text call?
+
+    ```python
+    # ✅ DO: Filesystem.atomic_write_text(config_path, text)  # hypothetical caller
+    # ❌ DO NOT: config_path.write_text(text)  # hypothetical in-place write
+    ```
+  - `FS-001.Q04` (judgment) Does each atomic write helper write to a .tmp sibling of the target and swap it into place with Path.replace?
+
+    ```python
+    # ✅ DO: atomic_write_text in src/dovo/common/filesystem/services/operations.py writes to path.with_name(f"{path.name}.tmp") and then calls tmp_path.replace(path)
+    # ❌ DO NOT: A hypothetical helper that opens the target path directly in 'w' mode and never calls Path.replace
+    ```
+  - `FS-001.Q05` (judgment) Does each atomic write helper flush and call os.fsync on the temporary file before swapping it into place?
+
+    ```python
+    # ✅ DO: atomic_write_text in src/dovo/common/filesystem/services/operations.py calls f.flush() and os.fsync(f.fileno()) before tmp_path.replace(path)
+    # ❌ DO NOT: A hypothetical helper that calls tmp_path.replace(path) without flushing or calling os.fsync first
+    ```
 
 - **[FS-002] Advisory Cross-Process Locking (BLOCKER):**
-  Multi-process worktree, catalog, or state mutations must acquire the .dovo/.lock advisory lock using common/lock.py and handle LockTimeoutError.
+  Concurrent dovo processes must not corrupt shared worktree, catalog or state data, so mutations are serialized by the shared advisory workspace lock and a failure to obtain it is reported rather than ignored.
 
-```python
-# ✅ DO: with file_lock(lock_path, timeout=10.0): worktree_service.create(...)
-# ❌ DO NOT: worktree_service.create(...)  # mutating shared dir without acquiring lock
-```
+  Answer yes to every criterion:
+  - `FS-002.Q01` (judgment) Is every worktree, catalog or state mutation that can run in more than one process at once performed while holding the .dovo/.lock advisory lock?
+
+    ```python
+    # ✅ DO: with WorkspaceLock(self.paths.lock_file): return self.lifecycle.create(...)  # in core/worktree/worktree.py
+    # ❌ DO NOT: self.lifecycle.create(...)  # hypothetical: mutates the shared .dovo directory without acquiring the lock
+    ```
+  - `FS-002.Q02` (judgment) Is the lock acquired through WorkspaceLock from common/lock.py?
+
+    ```python
+    # ✅ DO: from dovo.common.lock import WorkspaceLock  # then: with WorkspaceLock(paths.lock_file):
+    # ❌ DO NOT: fcntl.flock(open(lock_path, "w"), fcntl.LOCK_EX)  # hypothetical: hand-rolled locking outside common/lock.py
+    ```
+  - `FS-002.Q03` (judgment) Is LockTimeoutError handled where the lock is acquired or by a caller that reports it?
+
+    ```python
+    # ✅ DO: except LockTimeoutError as exc: return ArtifactsPruneResult(status=ArtifactsPruneStatus.LOCKED, ..., errors=[f"Failed to acquire workspace lock: {exc}"])  # in core/artifacts/services/prune.py
+    # ❌ DO NOT: except LockTimeoutError: pass  # hypothetical: timeout swallowed, caller sees no failure
+    ```
 
 - **[COMPAT-001] Strict Public-Only Backwards Compatibility (BLOCKER):**
   Maintain backwards compatibility ONLY for surfaces users interact with directly: CLI command surface (commands, subcommands, arguments, flags), configuration files and blueprint YAMLs (config.json), and stable machine-readable output formats (JSON event envelopes).

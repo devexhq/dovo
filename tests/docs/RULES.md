@@ -167,20 +167,62 @@ for item in items: repo.create(item)
 ```
 
 - **[FS-001] Atomic File Writes via Temporary Sibling (BLOCKER):**
-  Never write config or state files directly in-place. Write to a .tmp sibling, flush, os.fsync, and atomically swap via Path.replace using Filesystem.atomic_write_json and Filesystem.atomic_write_text.
+  Config and state files are never left half-written, because they are written atomically instead of in-place.
 
-```python
-# ✅ DO: Filesystem.atomic_write_json(config_path, data)
-# ❌ DO NOT: with open(config_path, 'w') as f: json.dump(data, f)
-```
+  Answer yes to every criterion:
+  - `FS-001.Q01` (judgment) Is every write to a config or state file made through Filesystem.atomic_write_json or Filesystem.atomic_write_text?
+
+    ```python
+    # ✅ DO: Filesystem.atomic_write_json(config_path, data)
+    # ❌ DO NOT: with open(config_path, 'w') as f: json.dump(data, f)  # hypothetical in-place write
+    ```
+  - `FS-001.Q02` (judgment) Is every config or state file write free of a direct open(..., 'w') call?
+
+    ```python
+    # ✅ DO: Filesystem.atomic_write_text(state_path, text)  # hypothetical caller; no open() call at the call site
+    # ❌ DO NOT: with open(state_path, 'w') as f: f.write(text)  # hypothetical in-place write
+    ```
+  - `FS-001.Q03` (judgment) Is every config or state file write free of a direct Path.write_text call?
+
+    ```python
+    # ✅ DO: Filesystem.atomic_write_text(config_path, text)  # hypothetical caller
+    # ❌ DO NOT: config_path.write_text(text)  # hypothetical in-place write
+    ```
+  - `FS-001.Q04` (judgment) Does each atomic write helper write to a .tmp sibling of the target and swap it into place with Path.replace?
+
+    ```python
+    # ✅ DO: atomic_write_text in src/dovo/common/filesystem/services/operations.py writes to path.with_name(f"{path.name}.tmp") and then calls tmp_path.replace(path)
+    # ❌ DO NOT: A hypothetical helper that opens the target path directly in 'w' mode and never calls Path.replace
+    ```
+  - `FS-001.Q05` (judgment) Does each atomic write helper flush and call os.fsync on the temporary file before swapping it into place?
+
+    ```python
+    # ✅ DO: atomic_write_text in src/dovo/common/filesystem/services/operations.py calls f.flush() and os.fsync(f.fileno()) before tmp_path.replace(path)
+    # ❌ DO NOT: A hypothetical helper that calls tmp_path.replace(path) without flushing or calling os.fsync first
+    ```
 
 - **[FS-002] Advisory Cross-Process Locking (BLOCKER):**
-  Multi-process worktree, catalog, or state mutations must acquire the .dovo/.lock advisory lock using common/lock.py and handle LockTimeoutError.
+  Concurrent dovo processes must not corrupt shared worktree, catalog or state data, so mutations are serialized by the shared advisory workspace lock and a failure to obtain it is reported rather than ignored.
 
-```python
-# ✅ DO: with file_lock(lock_path, timeout=10.0): worktree_service.create(...)
-# ❌ DO NOT: worktree_service.create(...)  # mutating shared dir without acquiring lock
-```
+  Answer yes to every criterion:
+  - `FS-002.Q01` (judgment) Is every worktree, catalog or state mutation that can run in more than one process at once performed while holding the .dovo/.lock advisory lock?
+
+    ```python
+    # ✅ DO: with WorkspaceLock(self.paths.lock_file): return self.lifecycle.create(...)  # in core/worktree/worktree.py
+    # ❌ DO NOT: self.lifecycle.create(...)  # hypothetical: mutates the shared .dovo directory without acquiring the lock
+    ```
+  - `FS-002.Q02` (judgment) Is the lock acquired through WorkspaceLock from common/lock.py?
+
+    ```python
+    # ✅ DO: from dovo.common.lock import WorkspaceLock  # then: with WorkspaceLock(paths.lock_file):
+    # ❌ DO NOT: fcntl.flock(open(lock_path, "w"), fcntl.LOCK_EX)  # hypothetical: hand-rolled locking outside common/lock.py
+    ```
+  - `FS-002.Q03` (judgment) Is LockTimeoutError handled where the lock is acquired or by a caller that reports it?
+
+    ```python
+    # ✅ DO: except LockTimeoutError as exc: return ArtifactsPruneResult(status=ArtifactsPruneStatus.LOCKED, ..., errors=[f"Failed to acquire workspace lock: {exc}"])  # in core/artifacts/services/prune.py
+    # ❌ DO NOT: except LockTimeoutError: pass  # hypothetical: timeout swallowed, caller sees no failure
+    ```
 
 - **[COMPAT-001] Strict Public-Only Backwards Compatibility (BLOCKER):**
   Maintain backwards compatibility ONLY for surfaces users interact with directly: CLI command surface (commands, subcommands, arguments, flags), configuration files and blueprint YAMLs (config.json), and stable machine-readable output formats (JSON event envelopes).
@@ -262,12 +304,51 @@ class TestConfig:
 ```
 
 - **[TEST-007] Assert Domain Invariants on Results; Pin Schemas in Dedicated Contract Tests (SUGGESTION):**
-  Tests must assert the specific domain invariants, state transitions, and outcomes relevant to the scenario under test. Do not write indiscriminate change-detector assertions that mechanically enumerate every incidental envelope field or default (e.g. forcing tests to redundantly assert error_code=None, warnings=[], fixes=[]). Model shapes, default values, and serialization contracts belong in dedicated contract tests (1–2 per model under tests/common/ or tests/core/*/test_models.py). For wire payloads (e.g. CLI JSON formatters with a published schema contract), exact wire payload verification is required. In scenario and integration tests, targeted assertions on the relevant fields (e.g. assert result.status == ...; assert result.item.name == ...) are preferred when testing specific behaviors or error conditions. When whole-model equality is used because the entire entity is the subject under test, expected models are allowed to rely on their schema defaults rather than forcing every field to be explicitly named in kwargs. Faux-matchers (ANY_TIMESTAMP, ANY_UUID) should not be used merely to satisfy whole-object matching on database records or unowned system state; assert the deterministic business fields directly instead.
+  Protects tests that fail only when behavior breaks. Assertions target the domain outcome under test, and model shapes and defaults are pinned once in contract tests, so unrelated changes do not break scenario tests.
 
-```python
-# ✅ DO: assert result.status == WorktreeDiffStatus.NOT_FOUND; assert 'not found' in result.errors[0].lower()
-# ❌ DO NOT: assert result == WorktreeDiffResult(status=NOT_FOUND, diff_text='', stat_text='', files_changed=[], errors=['...'], warnings=[], fixes=[], error_code=None)  # mechanical enumeration of incidental defaults
-```
+  Answer yes to every criterion:
+  - `TEST-007.Q01` (judgment) Does every field assertion in a scenario test check a field that carries the scenario's domain outcome rather than an incidental envelope field or default?
+
+    ```python
+    # ✅ DO: assert result.status == WorktreeDiffStatus.NOT_FOUND; assert 'not found' in result.errors[0].lower()
+    # ❌ DO NOT: assert result.status == WorktreeDiffStatus.NOT_FOUND; assert result.error_code is None; assert result.warnings == []; assert result.fixes == []  # incidental defaults in a not-found scenario
+    ```
+  - `TEST-007.Q02` (judgment) Does each scenario or integration test of a specific behavior or error condition use targeted field assertions instead of whole-model equality?
+
+    ```python
+    # ✅ DO: assert result.status == WorktreeDiffStatus.NOT_FOUND; assert result.worktree_id == 'wt-1'
+    # ❌ DO NOT: assert result == WorktreeDiffResult(status=WorktreeDiffStatus.NOT_FOUND, worktree_id='wt-1')  # whole-model equality for a status check
+    ```
+  - `TEST-007.Q03` (judgment) Does each new or modified model with defaults or a serialization contract have a dedicated contract test in tests/common/ or tests/core/*/test_models.py that asserts them?
+
+    ```python
+    # ✅ DO: tests/core/interaction/test_models.py::test_serialized_shape_and_defaults_are_pinned pins the shape and defaults of the interaction models
+    # ❌ DO NOT: A new BaseResult subclass with default_factory fields and no test in tests/core/*/test_models.py asserting its defaults
+    ```
+  - `TEST-007.Q04` (judgment) Are model shape, default values and serialization asserted only in dedicated contract tests rather than in scenario or integration tests?
+
+    ```python
+    # ✅ DO: A diff scenario test in tests/core/worktree/test_worktree.py asserts only result.status, while defaults are pinned in a test_models.py contract test
+    # ❌ DO NOT: A variant of that diff test that also asserts result.warnings == [] and result.fixes == [] to pin the model defaults
+    ```
+  - `TEST-007.Q05` (judgment) Does each model have at most two dedicated contract tests?
+
+    ```python
+    # ✅ DO: tests/core/interaction/test_models.py::test_serialized_shape_and_defaults_are_pinned is the single test pinning shape and defaults for its model
+    # ❌ DO NOT: A test_models.py file with three or more separate tests that each re-pin the defaults of the same model
+    ```
+  - `TEST-007.Q06` (judgment) Does each test of a wire payload with a published schema contract, such as a CLI JSON formatter, verify the exact wire payload?
+
+    ```python
+    # ✅ DO: assert_json_payload_matches_published_shape(WorktreeDiffFormatter, case.data, expected_payload)  # tests/cli/ui/formatters/worktree/test_worktree_diff.py
+    # ❌ DO NOT: assert json.loads(output)['status'] == 'not_found'  # the rest of the published payload goes unverified
+    ```
+  - `TEST-007.Q07` (judgment) Does each test avoid faux-matchers such as ANY_TIMESTAMP and ANY_UUID where their only purpose is to satisfy whole-object matching on database records or unowned system state?
+
+    ```python
+    # ✅ DO: assert record.branch_name == 'feature-x'; assert record.status == WorktreeStatus.ACTIVE  # deterministic business fields asserted directly
+    # ❌ DO NOT: assert record == expected  # expected substitutes the ANY_TIMESTAMP faux-matcher for created_at and updated_at only to allow whole-object matching
+    ```
 
 - **[TEST-008] Test Double Realism and Production Types (BLOCKER):**
   Test doubles must be types production actually passes or implement a Protocol production is typed against. Never build a stub whose interface is the union of every branch in a hasattr chain.

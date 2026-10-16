@@ -595,11 +595,37 @@ rules:
   category: Filesystem
   domain: all
   scope: src/dovo/
-  guideline: Never write config or state files directly in-place. Write to a .tmp sibling, flush, os.fsync, and atomically
-    swap via Path.replace using Filesystem.atomic_write_json and Filesystem.atomic_write_text.
-  evaluation_criteria: Scan for direct open(..., 'w') or Path.write_text on state or configuration files.
-  positive_example: Filesystem.atomic_write_json(config_path, data)
-  negative_example: 'with open(config_path, ''w'') as f: json.dump(data, f)'
+  intent: Config and state files are never left half-written, because they are written atomically instead of in-place.
+  criteria:
+  - id: FS-001.Q01
+    question: Is every write to a config or state file made through Filesystem.atomic_write_json or Filesystem.atomic_write_text?
+    kind: judgment
+    positive_example: Filesystem.atomic_write_json(config_path, data)
+    negative_example: 'with open(config_path, ''w'') as f: json.dump(data, f)  # hypothetical in-place write'
+  - id: FS-001.Q02
+    question: Is every config or state file write free of a direct open(..., 'w') call?
+    kind: judgment
+    na_when: The code writes no config or state file.
+    positive_example: 'Filesystem.atomic_write_text(state_path, text)  # hypothetical caller; no open() call at the call site'
+    negative_example: 'with open(state_path, ''w'') as f: f.write(text)  # hypothetical in-place write'
+  - id: FS-001.Q03
+    question: Is every config or state file write free of a direct Path.write_text call?
+    kind: judgment
+    na_when: The code writes no config or state file.
+    positive_example: 'Filesystem.atomic_write_text(config_path, text)  # hypothetical caller'
+    negative_example: 'config_path.write_text(text)  # hypothetical in-place write'
+  - id: FS-001.Q04
+    question: Does each atomic write helper write to a .tmp sibling of the target and swap it into place with Path.replace?
+    kind: judgment
+    na_when: The change adds or modifies no atomic write helper.
+    positive_example: 'atomic_write_text in src/dovo/common/filesystem/services/operations.py writes to path.with_name(f"{path.name}.tmp") and then calls tmp_path.replace(path)'
+    negative_example: 'A hypothetical helper that opens the target path directly in ''w'' mode and never calls Path.replace'
+  - id: FS-001.Q05
+    question: Does each atomic write helper flush and call os.fsync on the temporary file before swapping it into place?
+    kind: judgment
+    na_when: The change adds or modifies no atomic write helper.
+    positive_example: 'atomic_write_text in src/dovo/common/filesystem/services/operations.py calls f.flush() and os.fsync(f.fileno()) before tmp_path.replace(path)'
+    negative_example: 'A hypothetical helper that calls tmp_path.replace(path) without flushing or calling os.fsync first'
   citation: docs/agents/code-conventions.md#atomic-file-writes
 - id: FS-002
   title: Advisory Cross-Process Locking
@@ -607,11 +633,26 @@ rules:
   category: Filesystem
   domain: all
   scope: src/dovo/
-  guideline: Multi-process worktree, catalog, or state mutations must acquire the .dovo/.lock advisory lock using common/lock.py
-    and handle LockTimeoutError.
-  evaluation_criteria: Check concurrent operations for advisory lock wrapping.
-  positive_example: 'with file_lock(lock_path, timeout=10.0): worktree_service.create(...)'
-  negative_example: 'worktree_service.create(...)  # mutating shared dir without acquiring lock'
+  intent: Concurrent dovo processes must not corrupt shared worktree, catalog or state data, so mutations are serialized by the shared advisory workspace lock and a failure to obtain it is reported rather than ignored.
+  criteria:
+  - id: FS-002.Q01
+    question: Is every worktree, catalog or state mutation that can run in more than one process at once performed while holding the .dovo/.lock advisory lock?
+    kind: judgment
+    na_when: The change does not mutate worktree, catalog or state data that more than one process can touch.
+    positive_example: 'with WorkspaceLock(self.paths.lock_file): return self.lifecycle.create(...)  # in core/worktree/worktree.py'
+    negative_example: 'self.lifecycle.create(...)  # hypothetical: mutates the shared .dovo directory without acquiring the lock'
+  - id: FS-002.Q02
+    question: Is the lock acquired through WorkspaceLock from common/lock.py?
+    kind: judgment
+    na_when: The change acquires no workspace lock.
+    positive_example: 'from dovo.common.lock import WorkspaceLock  # then: with WorkspaceLock(paths.lock_file):'
+    negative_example: 'fcntl.flock(open(lock_path, "w"), fcntl.LOCK_EX)  # hypothetical: hand-rolled locking outside common/lock.py'
+  - id: FS-002.Q03
+    question: Is LockTimeoutError handled where the lock is acquired or by a caller that reports it?
+    kind: judgment
+    na_when: The change acquires no workspace lock.
+    positive_example: 'except LockTimeoutError as exc: return ArtifactsPruneResult(status=ArtifactsPruneStatus.LOCKED, ..., errors=[f"Failed to acquire workspace lock: {exc}"])  # in core/artifacts/services/prune.py'
+    negative_example: 'except LockTimeoutError: pass  # hypothetical: timeout swallowed, caller sees no failure'
   citation: docs/agents/architecture.md#the-dovo-directory
 - id: COMPAT-001
   title: Strict Public-Only Backwards Compatibility
@@ -773,25 +814,51 @@ rules:
   category: Testing
   domain: tests
   scope: tests/
-  guideline: >-
-    Tests must assert the specific domain invariants, state transitions, and outcomes relevant to the scenario
-    under test. Do not write indiscriminate change-detector assertions that mechanically enumerate every incidental
-    envelope field or default (e.g. forcing tests to redundantly assert error_code=None, warnings=[], fixes=[]).
-    Model shapes, default values, and serialization contracts belong in dedicated contract tests (1–2 per model
-    under tests/common/ or tests/core/*/test_models.py). For wire payloads (e.g. CLI JSON formatters with a
-    published schema contract), exact wire payload verification is required. In scenario and integration tests,
-    targeted assertions on the relevant fields (e.g. assert result.status == ...; assert result.item.name == ...)
-    are preferred when testing specific behaviors or error conditions. When whole-model equality is used because
-    the entire entity is the subject under test, expected models are allowed to rely on their schema defaults
-    rather than forcing every field to be explicitly named in kwargs. Faux-matchers (ANY_TIMESTAMP, ANY_UUID)
-    should not be used merely to satisfy whole-object matching on database records or unowned system state;
-    assert the deterministic business fields directly instead.
-  evaluation_criteria: >-
-    Flag tests that mechanically enumerate empty or default envelope fields (error_code=None, warnings=[], fixes=[])
-    when testing unrelated behavior. Verify that models have dedicated contract tests asserting their defaults and
-    schema. In scenario tests, verify assertions check meaningful domain contracts rather than incidental defaults.
-  positive_example: "assert result.status == WorktreeDiffStatus.NOT_FOUND; assert 'not found' in result.errors[0].lower()"
-  negative_example: "assert result == WorktreeDiffResult(status=NOT_FOUND, diff_text='', stat_text='', files_changed=[], errors=['...'], warnings=[], fixes=[], error_code=None)  # mechanical enumeration of incidental defaults"
+  intent: Protects tests that fail only when behavior breaks. Assertions target the domain outcome under test, and
+    model shapes and defaults are pinned once in contract tests, so unrelated changes do not break scenario tests.
+  criteria:
+  - id: TEST-007.Q01
+    question: Does every field assertion in a scenario test check a field that carries the scenario's domain outcome rather than an incidental envelope field or default?
+    kind: judgment
+    na_when: The test is a dedicated model contract test or a wire payload test.
+    positive_example: "assert result.status == WorktreeDiffStatus.NOT_FOUND; assert 'not found' in result.errors[0].lower()"
+    negative_example: "assert result.status == WorktreeDiffStatus.NOT_FOUND; assert result.error_code is None; assert result.warnings == []; assert result.fixes == []  # incidental defaults in a not-found scenario"
+  - id: TEST-007.Q02
+    question: Does each scenario or integration test of a specific behavior or error condition use targeted field assertions instead of whole-model equality?
+    kind: judgment
+    na_when: The test is a wire payload test, or the entire entity is the subject under test (its expected model may then rely on schema defaults instead of naming every field in kwargs).
+    positive_example: "assert result.status == WorktreeDiffStatus.NOT_FOUND; assert result.worktree_id == 'wt-1'"
+    negative_example: "assert result == WorktreeDiffResult(status=WorktreeDiffStatus.NOT_FOUND, worktree_id='wt-1')  # whole-model equality for a status check"
+  - id: TEST-007.Q03
+    question: Does each new or modified model with defaults or a serialization contract have a dedicated contract test in tests/common/ or tests/core/*/test_models.py that asserts them?
+    kind: judgment
+    na_when: The change adds or modifies no model that has defaults or a serialization contract.
+    positive_example: "tests/core/interaction/test_models.py::test_serialized_shape_and_defaults_are_pinned pins the shape and defaults of the interaction models"
+    negative_example: "A new BaseResult subclass with default_factory fields and no test in tests/core/*/test_models.py asserting its defaults"
+  - id: TEST-007.Q04
+    question: Are model shape, default values and serialization asserted only in dedicated contract tests rather than in scenario or integration tests?
+    kind: judgment
+    na_when: No new or modified scenario or integration test asserts a model's shape, default values or serialization.
+    positive_example: "A diff scenario test in tests/core/worktree/test_worktree.py asserts only result.status, while defaults are pinned in a test_models.py contract test"
+    negative_example: "A variant of that diff test that also asserts result.warnings == [] and result.fixes == [] to pin the model defaults"
+  - id: TEST-007.Q05
+    question: Does each model have at most two dedicated contract tests?
+    kind: judgment
+    na_when: The change adds or modifies no dedicated model contract test.
+    positive_example: "tests/core/interaction/test_models.py::test_serialized_shape_and_defaults_are_pinned is the single test pinning shape and defaults for its model"
+    negative_example: "A test_models.py file with three or more separate tests that each re-pin the defaults of the same model"
+  - id: TEST-007.Q06
+    question: Does each test of a wire payload with a published schema contract, such as a CLI JSON formatter, verify the exact wire payload?
+    kind: judgment
+    na_when: No new or modified test covers a wire payload with a published schema contract.
+    positive_example: "assert_json_payload_matches_published_shape(WorktreeDiffFormatter, case.data, expected_payload)  # tests/cli/ui/formatters/worktree/test_worktree_diff.py"
+    negative_example: "assert json.loads(output)['status'] == 'not_found'  # the rest of the published payload goes unverified"
+  - id: TEST-007.Q07
+    question: Does each test avoid faux-matchers such as ANY_TIMESTAMP and ANY_UUID where their only purpose is to satisfy whole-object matching on database records or unowned system state?
+    kind: judgment
+    na_when: The test uses no faux-matcher.
+    positive_example: "assert record.branch_name == 'feature-x'; assert record.status == WorktreeStatus.ACTIVE  # deterministic business fields asserted directly"
+    negative_example: "assert record == expected  # expected substitutes the ANY_TIMESTAMP faux-matcher for created_at and updated_at only to allow whole-object matching"
   citation: docs/agents/testing.md#core-testing-rules
 - id: TEST-008
   title: Test Double Realism and Production Types

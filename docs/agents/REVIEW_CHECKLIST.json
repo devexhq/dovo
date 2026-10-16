@@ -429,8 +429,36 @@
       "severity": "BLOCKER",
       "domain": "all",
       "scope": "src/dovo/",
-      "evaluation_criteria": "Scan for direct open(..., 'w') or Path.write_text on state or configuration files.",
-      "bad_pattern": "with open(config_path, 'w') as f: json.dump(data, f)"
+      "intent": "Config and state files are never left half-written, because they are written atomically instead of in-place.",
+      "criteria": [
+        {
+          "id": "FS-001.Q01",
+          "question": "Is every write to a config or state file made through Filesystem.atomic_write_json or Filesystem.atomic_write_text?",
+          "kind": "judgment"
+        },
+        {
+          "id": "FS-001.Q02",
+          "question": "Is every config or state file write free of a direct open(..., 'w') call?",
+          "kind": "judgment"
+        },
+        {
+          "id": "FS-001.Q03",
+          "question": "Is every config or state file write free of a direct Path.write_text call?",
+          "kind": "judgment"
+        },
+        {
+          "id": "FS-001.Q04",
+          "question": "Does each atomic write helper write to a .tmp sibling of the target and swap it into place with Path.replace?",
+          "kind": "judgment"
+        },
+        {
+          "id": "FS-001.Q05",
+          "question": "Does each atomic write helper flush and call os.fsync on the temporary file before swapping it into place?",
+          "kind": "judgment"
+        }
+      ],
+      "evaluation_criteria": "1. Is every write to a config or state file made through Filesystem.atomic_write_json or Filesystem.atomic_write_text? 2. Is every config or state file write free of a direct open(..., 'w') call? 3. Is every config or state file write free of a direct Path.write_text call? 4. Does each atomic write helper write to a .tmp sibling of the target and swap it into place with Path.replace? 5. Does each atomic write helper flush and call os.fsync on the temporary file before swapping it into place?",
+      "bad_pattern": "with open(config_path, 'w') as f: json.dump(data, f)  # hypothetical in-place write"
     },
     {
       "id": "FS-002",
@@ -438,8 +466,26 @@
       "severity": "BLOCKER",
       "domain": "all",
       "scope": "src/dovo/",
-      "evaluation_criteria": "Check concurrent operations for advisory lock wrapping.",
-      "bad_pattern": "worktree_service.create(...)  # mutating shared dir without acquiring lock"
+      "intent": "Concurrent dovo processes must not corrupt shared worktree, catalog or state data, so mutations are serialized by the shared advisory workspace lock and a failure to obtain it is reported rather than ignored.",
+      "criteria": [
+        {
+          "id": "FS-002.Q01",
+          "question": "Is every worktree, catalog or state mutation that can run in more than one process at once performed while holding the .dovo/.lock advisory lock?",
+          "kind": "judgment"
+        },
+        {
+          "id": "FS-002.Q02",
+          "question": "Is the lock acquired through WorkspaceLock from common/lock.py?",
+          "kind": "judgment"
+        },
+        {
+          "id": "FS-002.Q03",
+          "question": "Is LockTimeoutError handled where the lock is acquired or by a caller that reports it?",
+          "kind": "judgment"
+        }
+      ],
+      "evaluation_criteria": "1. Is every worktree, catalog or state mutation that can run in more than one process at once performed while holding the .dovo/.lock advisory lock? 2. Is the lock acquired through WorkspaceLock from common/lock.py? 3. Is LockTimeoutError handled where the lock is acquired or by a caller that reports it?",
+      "bad_pattern": "self.lifecycle.create(...)  # hypothetical: mutates the shared .dovo directory without acquiring the lock"
     },
     {
       "id": "COMPAT-001",
@@ -528,8 +574,46 @@
       "severity": "SUGGESTION",
       "domain": "tests",
       "scope": "tests/",
-      "evaluation_criteria": "Flag tests that mechanically enumerate empty or default envelope fields (error_code=None, warnings=[], fixes=[]) when testing unrelated behavior. Verify that models have dedicated contract tests asserting their defaults and schema. In scenario tests, verify assertions check meaningful domain contracts rather than incidental defaults.",
-      "bad_pattern": "assert result == WorktreeDiffResult(status=NOT_FOUND, diff_text='', stat_text='', files_changed=[], errors=['...'], warnings=[], fixes=[], error_code=None)  # mechanical enumeration of incidental defaults"
+      "intent": "Protects tests that fail only when behavior breaks. Assertions target the domain outcome under test, and model shapes and defaults are pinned once in contract tests, so unrelated changes do not break scenario tests.",
+      "criteria": [
+        {
+          "id": "TEST-007.Q01",
+          "question": "Does every field assertion in a scenario test check a field that carries the scenario's domain outcome rather than an incidental envelope field or default?",
+          "kind": "judgment"
+        },
+        {
+          "id": "TEST-007.Q02",
+          "question": "Does each scenario or integration test of a specific behavior or error condition use targeted field assertions instead of whole-model equality?",
+          "kind": "judgment"
+        },
+        {
+          "id": "TEST-007.Q03",
+          "question": "Does each new or modified model with defaults or a serialization contract have a dedicated contract test in tests/common/ or tests/core/*/test_models.py that asserts them?",
+          "kind": "judgment"
+        },
+        {
+          "id": "TEST-007.Q04",
+          "question": "Are model shape, default values and serialization asserted only in dedicated contract tests rather than in scenario or integration tests?",
+          "kind": "judgment"
+        },
+        {
+          "id": "TEST-007.Q05",
+          "question": "Does each model have at most two dedicated contract tests?",
+          "kind": "judgment"
+        },
+        {
+          "id": "TEST-007.Q06",
+          "question": "Does each test of a wire payload with a published schema contract, such as a CLI JSON formatter, verify the exact wire payload?",
+          "kind": "judgment"
+        },
+        {
+          "id": "TEST-007.Q07",
+          "question": "Does each test avoid faux-matchers such as ANY_TIMESTAMP and ANY_UUID where their only purpose is to satisfy whole-object matching on database records or unowned system state?",
+          "kind": "judgment"
+        }
+      ],
+      "evaluation_criteria": "1. Does every field assertion in a scenario test check a field that carries the scenario's domain outcome rather than an incidental envelope field or default? 2. Does each scenario or integration test of a specific behavior or error condition use targeted field assertions instead of whole-model equality? 3. Does each new or modified model with defaults or a serialization contract have a dedicated contract test in tests/common/ or tests/core/*/test_models.py that asserts them? 4. Are model shape, default values and serialization asserted only in dedicated contract tests rather than in scenario or integration tests? 5. Does each model have at most two dedicated contract tests? 6. Does each test of a wire payload with a published schema contract, such as a CLI JSON formatter, verify the exact wire payload? 7. Does each test avoid faux-matchers such as ANY_TIMESTAMP and ANY_UUID where their only purpose is to satisfy whole-object matching on database records or unowned system state?",
+      "bad_pattern": "assert result.status == WorktreeDiffStatus.NOT_FOUND; assert result.error_code is None; assert result.warnings == []; assert result.fixes == []  # incidental defaults in a not-found scenario"
     },
     {
       "id": "TEST-008",
