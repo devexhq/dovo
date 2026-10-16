@@ -36,7 +36,7 @@ The skill supports two data sources:
 - **Planning mode** (`--plan` provided):
   - **Invocation**: `/dovo-test-planner --plan [<path>]` (defaults to `.agentic/plan.md`).
   - **Data source**: An in-progress plan, specifically `## Ground truth`, `## Artifact inventory`, and `## FR-<n>`.
-  - **Output**: Generates the `### Tests` section (summary table + contract-bearing stubs) formatted to fold directly into the plan.
+  - **Output**: Generates the `### Tests` section (contract-bearing stubs, no index table) formatted to fold directly into the plan.
 
 ---
 
@@ -225,7 +225,7 @@ Verify before presenting output:
 | Every test class maps 1:1 to a public symbol | skill convention |
 | No test class named after a private function | skill convention |
 | Every docstring is a single imperative line with the exact contract, and absent when the name already says it | skill convention |
-| Planning mode (`--plan`) pairs each test with a row in `### Tests` summary table | skill convention |
+| Planning mode (`--plan`) emits stubs only, with no separate `Test \| Outcome` index table | `docs/agents/planning.md` |
 | Private helpers verified through public caller tests | skill convention |
 | Interaction/ordering tests included where Step 5 identified sequences | skill convention |
 | Test doubles injected at protocol boundaries only | R11, R15 |
@@ -241,18 +241,12 @@ Verify before presenting output:
 
 ### Planning mode (`--plan`)
 
-In planning mode, emit the `### Tests` section containing the summary table and companion stubs carrying imperative contract docstrings, explicitly qualified with the target test file path:
+In planning mode, emit the `### Tests` section containing contract-bearing stubs, explicitly qualified with the target test file path. A stub carries a single-line imperative docstring stating the exact outcome contract, omitted when the test name and assertion already state it. Do not add a separate `Test | Outcome` index table; it restates the docstrings and drifts from them (`docs/agents/planning.md`):
 
 ````markdown
 ### Tests
 
 #### Target file: `tests/engine/test_engine.py`
-
-| Test | Outcome |
-|---|---|
-| `RunStepsExecutionTests::test_two_sequential_steps_return_completed_outcome_with_both_results` | steps succeed → COMPLETED, both results |
-| `RunStepsExecutionTests::test_empty_step_list_returns_completed_outcome_with_no_results` | steps=[] → COMPLETED, empty results |
-| `RunStepsExecutionTests::test_observer_receives_lifecycle_callbacks_in_order` | observer receives callbacks in order |
 
 ```python
 # tests/engine/test_engine.py

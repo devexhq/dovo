@@ -32,7 +32,7 @@ Output goes to `.agentic/review.md`, which `/dovo-code review` consumes, paired 
 |---|---|---|
 | PR number given | that PR's range | `gh pr view <n> --json baseRefName,headRefName,title,body`, then `git fetch origin` and `git diff origin/<base>...origin/<head>` |
 | Working tree dirty | uncommitted work | `git status --porcelain`, `git diff`, `git diff --staged`, plus untracked files in scope |
-| Clean tree | commits on this branch | `git diff origin/<default>...HEAD` |
+| Clean tree | commits on this branch | `gh repo view --json defaultBranchRef --jq .defaultBranchRef.name` for `<default>`, then `git diff origin/<default>...HEAD` |
 
 Record the changed-file list and `git diff --stat`. If the scope is empty, say so and stop.
 
