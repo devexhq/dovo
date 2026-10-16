@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import os
 import subprocess
 import urllib.request
@@ -13,15 +12,16 @@ import pytest
 from pydantic import ValidationError
 
 from dovo.core.agents import (
-    ClaudeAgentAdapter,
-    CopilotAgentAdapter,
+    AgentResponseStatus,
+    BaseAgentProvider,
     ResolvedAgentSettings,
     default_tool_policy,
     get_agent_adapter,
 )
+from dovo.core.agents.base import ProviderSpec
 from dovo.core.agents.cli_mutation import CliDirectMutationAdapter, CliMutationOutcome, CliMutationRunRequest
 from dovo.core.agents.registry import PROVIDERS
-from tests.harness import AgentRequestBuilder, FakeAgentRunner
+from tests.harness import PROVIDER_FINISHED_STREAMS, AgentRequestBuilder, EditingAgentRunner, FakeAgentRunner
 
 
 class _UnreadableEnvironment(MutableMapping[str, str]):
@@ -49,34 +49,17 @@ class ProviderRegistryContractTests:
     ) -> None:
         monkeypatch.setattr(os, "environ", _UnreadableEnvironment())
 
-        envs = {token: spec.credential_envs for token, spec in PROVIDERS.items()}
-        adapter_types = {token: type(get_agent_adapter(token)) for token in PROVIDERS}
+        adapters = [get_agent_adapter(spec.token) for spec in PROVIDERS.values()]
 
-        assert envs == {
-            "claude": ("CLAUDE_CODE_OAUTH_TOKEN", "ANTHROPIC_API_KEY"),
-            "copilot": ("GH_TOKEN", "GITHUB_TOKEN"),
-        }
-        assert adapter_types == {"claude": ClaudeAgentAdapter, "copilot": CopilotAgentAdapter}
+        assert all(isinstance(adapter, BaseAgentProvider) for adapter in adapters)
 
-    def test_registered_tokens_match_registry(self) -> None:
-        assert set(PROVIDERS) == {"claude", "copilot"}
+    def test_stream_factory_covers_exactly_the_registered_providers(self) -> None:
+        assert set(PROVIDER_FINISHED_STREAMS) == set(PROVIDERS)
         assert all(key == spec.token for key, spec in PROVIDERS.items())
 
-    def test_copilot_descriptor_matches_pre_determined_data(self) -> None:
-        spec = PROVIDERS["copilot"]
-
-        assert (spec.credential_envs, spec.requires_model, spec.binary) == (("GH_TOKEN", "GITHUB_TOKEN"), False, "gh")
-        assert (spec.supports_tool_policy, spec.supports_os_sandbox) == (True, False)
-
-    @pytest.mark.parametrize(
-        ("token", "adapter_type"),
-        [
-            pytest.param("claude", ClaudeAgentAdapter, id="claude"),
-            pytest.param("copilot", CopilotAgentAdapter, id="copilot"),
-        ],
-    )
+    @pytest.mark.parametrize("token", [pytest.param(token, id=token) for token in PROVIDERS])
     def test_get_agent_adapter_builds_exact_adapter_without_side_effects(
-        self, token: str, adapter_type: type, monkeypatch: pytest.MonkeyPatch
+        self, token: str, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         for name in PROVIDERS[token].credential_envs:
             monkeypatch.delenv(name, raising=False)
@@ -87,15 +70,15 @@ class ProviderRegistryContractTests:
         monkeypatch.setattr(subprocess, "Popen", _forbidden)
         monkeypatch.setattr(urllib.request, "urlopen", _forbidden)
 
-        assert type(get_agent_adapter(token)) is adapter_type
+        assert type(get_agent_adapter(token)) is PROVIDERS[token].build
 
     def test_unregistered_token_raises_classified_value_error(self) -> None:
         with pytest.raises(ValueError) as exc:
             get_agent_adapter("unregistered")
 
-        assert (
-            str(exc.value)
-            == "Unsupported agent provider 'unregistered' (AGENT_PROVIDER_UNSUPPORTED). Supported: claude, copilot."
+        assert str(exc.value) == (
+            f"Unsupported agent provider 'unregistered' (AGENT_PROVIDER_UNSUPPORTED). "
+            f"Supported: {', '.join(sorted(PROVIDERS))}."
         )
 
 
@@ -106,7 +89,7 @@ class ResolvedAgentSettingsTests:
     )
     def test_out_of_range_values_are_rejected_and_instance_is_frozen(self, overrides: dict[str, float | int]) -> None:
         valid = {
-            "provider": "copilot",
+            "provider": "unit-test",
             "model": None,
             "endpoint": None,
             "temperature": 0.2,
@@ -119,7 +102,16 @@ class ResolvedAgentSettingsTests:
 
         settings = ResolvedAgentSettings.model_validate(valid)
         with pytest.raises(ValidationError):
-            settings.provider = "copilot"
+            settings.provider = "unit-test"
+
+
+def _reflect_credentials(spec: ProviderSpec, monkeypatch: pytest.MonkeyPatch) -> list[str]:
+    """Set each of spec's credential variables to a distinct value and return the values in order."""
+    values = [f"cr{index}x" for index, _ in enumerate(spec.credential_envs)]
+    for name, value in zip(spec.credential_envs, values, strict=True):
+        monkeypatch.setenv(name, value)
+
+    return values
 
 
 class RegisteredProviderRedactionTests:
@@ -155,13 +147,16 @@ class RegisteredProviderRedactionTests:
         assert reflecting_text.count("[REDACTED:") >= len(values)
         assert not any(value in reflecting_text for value in values)
 
-    def test_copilot_masks_reflected_credential_from_process_stderr_and_stream(
-        self, git_repo: Path, monkeypatch: pytest.MonkeyPatch
+    @pytest.mark.parametrize(
+        "token",
+        [pytest.param(token, id=token) for token, spec in PROVIDERS.items() if spec.credential_envs],
+    )
+    def test_registered_provider_masks_reflected_credential_at_the_process_boundary(
+        self, token: str, git_repo: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        spec = PROVIDERS["copilot"]
-        values = [f"cr{index}x" for index, _ in enumerate(spec.credential_envs)]
-        for name, value in zip(spec.credential_envs, values, strict=True):
-            monkeypatch.setenv(name, value)
+        """Mask every credential value from stderr and the finished stream, one label per name."""
+        spec = PROVIDERS[token]
+        values = _reflect_credentials(spec, monkeypatch)
         adapter = spec.build()
         runner = FakeAgentRunner()
         monkeypatch.setattr("dovo.core.agents.cli_mutation.stream_isolated_process", runner)
@@ -170,10 +165,33 @@ class RegisteredProviderRedactionTests:
 
         runner.returning(returncode=1, stderr=reflected.encode())
         failed = adapter.invoke(request)
-        stream = json.dumps({"type": "assistant.message", "data": {"content": reflected}})
-        runner.returning(stdout=f'{stream}\n{{"type":"result","data":{{"exitCode":0}}}}\n'.encode())
+        runner.returning(stdout=PROVIDER_FINISHED_STREAMS[token](reflected))
         finished = adapter.invoke(request)
 
-        reflecting_text = "\n".join([*failed.errors, finished.raw_text or ""])
-        assert reflecting_text.count("[REDACTED:") >= len(values)
-        assert not any(value in reflecting_text for value in values)
+        text = "\n".join([*failed.errors, finished.raw_text or ""])
+        assert not any(value in text for value in values)
+        assert all(f"[REDACTED:{name}]" in text for name in spec.credential_envs)
+
+    @pytest.mark.parametrize(
+        "token",
+        [pytest.param(token, id=token) for token, spec in PROVIDERS.items() if spec.credential_envs],
+    )
+    def test_registered_provider_masks_reflected_credential_in_a_proposed_patch_response(
+        self, token: str, git_repo: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Return PROPOSED_PATCH with the credential masked in raw_text and an unmasked '+edited' diff."""
+        spec = PROVIDERS[token]
+        values = _reflect_credentials(spec, monkeypatch)
+        runner = EditingAgentRunner({"edited.txt": "edited\n"}).returning(
+            stdout=PROVIDER_FINISHED_STREAMS[token](" ".join(values))
+        )
+        monkeypatch.setattr("dovo.core.agents.cli_mutation.stream_isolated_process", runner)
+
+        response = spec.build().invoke(AgentRequestBuilder().with_worktree_path(git_repo).build())
+
+        text = response.raw_text or ""
+        assert response.status == AgentResponseStatus.PROPOSED_PATCH
+        assert not any(value in text for value in values)
+        assert all(f"[REDACTED:{name}]" in text for name in spec.credential_envs)
+        assert response.unified_diff is not None
+        assert "+edited" in response.unified_diff

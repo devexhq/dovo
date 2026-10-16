@@ -10,15 +10,22 @@ a pydantic model for inspecting call arguments.
 
 from __future__ import annotations
 
+import json
 import subprocess
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from pathlib import Path
-from typing import Self
+from typing import Final, Self
 
 import pytest
 from pydantic import BaseModel
 
-from dovo.core.agents import AgentProgress, AgentRequest, AgentResponse, BaseAgentProvider
+from dovo.core.agents import (
+    AgentInvocationContext,
+    AgentProgress,
+    AgentRequest,
+    AgentResponse,
+    BaseAgentProvider,
+)
 
 
 class _ClaudeSubprocess:
@@ -99,6 +106,59 @@ class FakeAgentRunner:
         if not self.calls:
             raise AssertionError("FakeAgentRunner was never called")
         return self.calls[-1]
+
+
+def real_invocation(root: Path) -> AgentInvocationContext:
+    """Create real scratch and control directories under root and return the invocation naming them."""
+    scratch, control = root / "scratch", root / "control"
+    scratch.mkdir(parents=True)
+    control.mkdir()
+
+    return AgentInvocationContext(
+        invocation_id="a" * 32, scratch_path=scratch.resolve(), control_path=control.resolve()
+    )
+
+
+class EditingAgentRunner(FakeAgentRunner):
+    """FakeAgentRunner that writes files into the spawn cwd before returning, as an editing agent would."""
+
+    def __init__(self, edits: Mapping[str, str]) -> None:
+        super().__init__()
+        self._edits = dict(edits)
+
+    def __call__(
+        self,
+        cmd: list[str],
+        *,
+        cwd: Path,
+        env: dict[str, str],
+        input_data: bytes,
+        timeout_seconds: float,
+        **kwargs: object,
+    ) -> subprocess.CompletedProcess[bytes]:
+        """Write every edit under cwd, then delegate to FakeAgentRunner."""
+        for name, content in self._edits.items():
+            (cwd / name).write_text(content, encoding="utf-8")
+        return super().__call__(cmd, cwd=cwd, env=env, input_data=input_data, timeout_seconds=timeout_seconds, **kwargs)
+
+
+def _claude_finished_stream(text: str) -> bytes:
+    """Return a Claude Code stream-json run that finishes successfully with text as its result."""
+    return json.dumps({"type": "result", "subtype": "success", "is_error": False, "result": text}).encode() + b"\n"
+
+
+def _copilot_finished_stream(text: str) -> bytes:
+    """Return a Copilot JSONL run that finishes with exit code 0 after one assistant message carrying text."""
+    return (
+        json.dumps({"type": "assistant.message", "data": {"content": text}}).encode()
+        + b'\n{"type":"result","data":{"exitCode":0}}\n'
+    )
+
+
+PROVIDER_FINISHED_STREAMS: Final[dict[str, Callable[[str], bytes]]] = {
+    "claude": _claude_finished_stream,
+    "copilot": _copilot_finished_stream,
+}
 
 
 class StreamingAgentRunner:

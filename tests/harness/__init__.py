@@ -8,12 +8,15 @@ from tests.harness.builders import (
 )
 from tests.harness.diffs import AGENT_ADAPTER_FACTORY, new_file_diff
 from tests.harness.fakes import (
+    PROVIDER_FINISHED_STREAMS,
+    EditingAgentRunner,
     FakeAgentProvider,
     FakeAgentRunner,
     FakeAgentRunnerCall,
     RecordingProgressSink,
     StreamingAgentRunner,
     patch_claude_probe,
+    real_invocation,
 )
 from tests.harness.formatter import (
     FormatterCase,
@@ -26,8 +29,10 @@ from tests.harness.workspace_paths import initialized_workspace_paths
 
 __all__ = [
     "AGENT_ADAPTER_FACTORY",
+    "PROVIDER_FINISHED_STREAMS",
     "AgentRequestBuilder",
     "BlueprintBuilder",
+    "EditingAgentRunner",
     "FakeAgentProvider",
     "FakeAgentRunner",
     "FakeAgentRunnerCall",
@@ -42,5 +47,6 @@ __all__ = [
     "initialized_workspace_paths",
     "new_file_diff",
     "patch_claude_probe",
+    "real_invocation",
     "render_rich",
 ]
