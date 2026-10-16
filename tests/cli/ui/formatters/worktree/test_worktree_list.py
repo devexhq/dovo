@@ -38,7 +38,7 @@ WITH_WORKTREES = FormatterCase(
 EMPTY_WORKTREES = FormatterCase(
     data=WorktreeListResult(status=WorktreeListStatus.OK, worktrees=[]),
     view=WorktreeListResult(status=WorktreeListStatus.OK, worktrees=[]),
-    render_expectations=[],
+    render_expectations=["No worktrees found."],
 )
 
 WORKTREE_LIST_CASES = [

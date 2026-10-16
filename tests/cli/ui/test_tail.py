@@ -12,35 +12,34 @@ from dovo.cli.ui.events import StepDoneEvent, StepOutputEvent, StepStartEvent
 from dovo.cli.ui.tail import _CURSOR_UP, _ERASE_LINE, CollapsingTailDisplay
 
 
-def _display(*, tail_size: int = 2) -> tuple[CollapsingTailDisplay, io.StringIO, io.StringIO]:
-    """Build a CollapsingTailDisplay with inspectable console and stream buffers."""
+def _display(*, tail_size: int = 2) -> tuple[CollapsingTailDisplay, io.StringIO]:
+    """Build a CollapsingTailDisplay with an inspectable console buffer."""
     console_buffer = io.StringIO()
     console = Console(file=console_buffer, force_terminal=False, color_system=None, width=100)
-    stream = io.StringIO()
-    return CollapsingTailDisplay(console, tail_size=tail_size, _stream=stream), console_buffer, stream
+    return CollapsingTailDisplay(console, tail_size=tail_size), console_buffer
 
 
 class CollapsingTailDisplayTests:
     """Contract tests for CollapsingTailDisplay."""
 
-    def test_handle_step_output_bounds_tail_to_capacity(self) -> None:
-        display, _, stream = _display(tail_size=2)
+    def test_handle_step_output_bounds_tail_to_capacity(self, capsys: pytest.CaptureFixture[str]) -> None:
+        display, _ = _display(tail_size=2)
 
         display.handle_step_output(StepOutputEvent(step_id="s1", line="L1"))
         display.handle_step_output(StepOutputEvent(step_id="s1", line="L2"))
         display.handle_step_output(StepOutputEvent(step_id="s1", line="L3"))
 
-        assert stream.getvalue().endswith("L2\nL3\n")
-        assert "L1" not in stream.getvalue().rsplit("L2\nL3\n", maxsplit=1)[-1]
+        stderr = capsys.readouterr().err
+        assert stderr.rsplit(_CURSOR_UP + _ERASE_LINE, maxsplit=1)[-1] == "L2\nL3\n"
 
-    def test_handle_step_start_erases_prior_tail_and_prints_banner(self) -> None:
-        display, console_buffer, stream = _display(tail_size=2)
+    def test_handle_step_start_erases_prior_tail_and_prints_banner(self, capsys: pytest.CaptureFixture[str]) -> None:
+        display, console_buffer = _display(tail_size=2)
         display.handle_step_output(StepOutputEvent(step_id="s1", line="L1"))
         display.handle_step_output(StepOutputEvent(step_id="s1", line="L2"))
 
         display.handle_step_start(StepStartEvent(idx=1, total=3, step_id="s1", name="Build", command="make"))
 
-        assert stream.getvalue().endswith((_CURSOR_UP + _ERASE_LINE) * 2)
+        assert capsys.readouterr().err.endswith((_CURSOR_UP + _ERASE_LINE) * 2)
         assert "[1/3] Build (make)" in console_buffer.getvalue()
 
     @pytest.mark.parametrize(
@@ -50,25 +49,27 @@ class CollapsingTailDisplayTests:
             pytest.param(False, "✖", id="failed"),
         ],
     )
-    def test_handle_step_done_erases_tail_and_prints_summary(self, ok: bool, expected_glyph: str) -> None:
-        display, console_buffer, stream = _display(tail_size=2)
+    def test_handle_step_done_erases_tail_and_prints_summary(
+        self, ok: bool, expected_glyph: str, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        display, console_buffer = _display(tail_size=2)
         display.handle_step_output(StepOutputEvent(step_id="s1", line="L1"))
 
         display.handle_step_done(
             StepDoneEvent(idx=1, total=1, step_id="s1", ok=ok, exit_code=0 if ok else 1, duration_seconds=1.23)
         )
 
-        assert stream.getvalue().endswith((_CURSOR_UP + _ERASE_LINE) * 1)
+        assert capsys.readouterr().err.endswith((_CURSOR_UP + _ERASE_LINE) * 1)
         rendered = console_buffer.getvalue()
         assert expected_glyph in rendered
         assert "[1/1] s1" in rendered
 
-    def test_print_above_prints_renderable_and_reprints_tail(self) -> None:
-        display, console_buffer, stream = _display(tail_size=2)
+    def test_print_above_prints_renderable_and_reprints_tail(self, capsys: pytest.CaptureFixture[str]) -> None:
+        display, console_buffer = _display(tail_size=2)
         display.handle_step_output(StepOutputEvent(step_id="s1", line="L1"))
         display.handle_step_output(StepOutputEvent(step_id="s1", line="L2"))
 
         display.print_above(Text("Worktree: Active (/tmp/x)"))
 
         assert "Worktree: Active (/tmp/x)" in console_buffer.getvalue()
-        assert stream.getvalue().endswith("L1\nL2\n")
+        assert capsys.readouterr().err.endswith("L1\nL2\n")

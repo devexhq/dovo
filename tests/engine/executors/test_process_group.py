@@ -12,19 +12,17 @@ import pytest
 from dovo.engine.executors.models import StepExecutionContext
 from dovo.engine.executors.step_executor import StepExecution
 from tests.harness.builders import StepBuilder
+from tests.harness.poll import wait_until
 
 pytestmark = pytest.mark.slow
 
 
-def _wait_pid_dead(pid: int, timeout: float = 3.0) -> bool:
-    """Poll until the process with the given PID is no longer alive."""
-    deadline = time.monotonic() + timeout
-    while time.monotonic() < deadline:
-        try:
-            os.kill(pid, 0)
-        except ProcessLookupError:
-            return True
-        time.sleep(0.05)
+def _pid_dead(pid: int) -> bool:
+    """Return True when no process with the given PID is alive."""
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return True
     return False
 
 
@@ -32,11 +30,7 @@ def _sync_and_interrupt(pid_dir: Path, timeout: float = 10.0) -> None:
     """Wait for child and grandchild PID files to appear, then raise KeyboardInterrupt."""
     child_pid_file = pid_dir / "child.pid"
     grandchild_pid_file = pid_dir / "grandchild.pid"
-    deadline = time.monotonic() + timeout
-    while time.monotonic() < deadline:
-        if child_pid_file.exists() and grandchild_pid_file.exists():
-            break
-        time.sleep(0.05)
+    wait_until(lambda: child_pid_file.exists() and grandchild_pid_file.exists(), timeout=timeout)
     raise KeyboardInterrupt
 
 
@@ -79,7 +73,7 @@ class ProcessGroupEscalationTests:
         assert child_pid_file.exists()
         child_pid = int(child_pid_file.read_text().strip())
 
-        assert _wait_pid_dead(child_pid) is True
+        assert wait_until(lambda: _pid_dead(child_pid)) is True
 
     def test_keyboard_interrupt_terminates_child_process_tree(self, tmp_path: Path) -> None:
         if sys.platform == "win32":
@@ -119,5 +113,5 @@ time.sleep(30)
         child_pid = int(child_pid_file.read_text().strip())
         grandchild_pid = int(grandchild_pid_file.read_text().strip())
 
-        assert _wait_pid_dead(child_pid) is True
-        assert _wait_pid_dead(grandchild_pid) is True
+        assert wait_until(lambda: _pid_dead(child_pid)) is True
+        assert wait_until(lambda: _pid_dead(grandchild_pid)) is True

@@ -85,8 +85,9 @@ ID, with the `path:line` that breaks it.
 
 - **R12. Tests assert published contracts:** the result model, JSON output, exit
   code, files on disk and git state. Never private members, the call order of
-  internals or module layout. *Why:* contract tests survive refactors;
-  implementation tests block them.
+  internals or module layout. Pin each contract once, at the lowest tier that
+  can observe it, plus one wiring test above it. *Why:* contract tests survive
+  refactors; implementation tests block them.
 - **R13. Every command has runner tests for success, a failure path,
   `--format json` and each option it binds.** *Why:* the CLI runner is the only
   tier that proves a flag is wired through.

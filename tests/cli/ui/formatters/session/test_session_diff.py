@@ -226,6 +226,7 @@ TO_RAW_CASES = [
             raw=True,
         ),
         "diff --git a/a.txt b/a.txt\n+line\n",
+        [],
         id="raw_flag_returns_exact_diff_text",
     ),
     pytest.param(
@@ -237,6 +238,7 @@ TO_RAW_CASES = [
             diff_text="",
         ),
         "No changes recorded for session dovo_raw_empty.",
+        [],
         id="empty_diff_returns_notice",
     ),
     pytest.param(
@@ -247,6 +249,7 @@ TO_RAW_CASES = [
             errors=["Session 'dovo_missing_raw' not found."],
         ),
         "Session 'dovo_missing_raw' not found",
+        [],
         id="session_not_found_renders_error_panel_text",
     ),
     pytest.param(
@@ -259,6 +262,7 @@ TO_RAW_CASES = [
             raw=False,
         ),
         "line 1\nline 2",
+        ["line 3"],
         id="terminal_truncates_at_max_lines",
     ),
     pytest.param(
@@ -271,6 +275,7 @@ TO_RAW_CASES = [
             raw=False,
         ),
         "line 1\nline 2\nline 3\nline 4\n",
+        [],
         id="full_flag_bypasses_truncation",
     ),
     pytest.param(
@@ -283,6 +288,7 @@ TO_RAW_CASES = [
             raw=False,
         ),
         "line 1\nline 2\nline 3\nline 4\n",
+        [],
         id="non_terminal_bypasses_truncation",
     ),
 ]
@@ -309,12 +315,14 @@ class SessionDiffFormatterTests:
     def test_rich_render_shows_every_view_value(self, case: FormatterCase[DiffResult, SessionDiffView]) -> None:
         assert_rich_render_shows_every_view_value(_TERMINAL_FORMATTER, case.data, case.render_expectations)
 
-    @pytest.mark.parametrize(("formatter", "result", "expected"), TO_RAW_CASES)
+    @pytest.mark.parametrize(("formatter", "result", "expected", "absent"), TO_RAW_CASES)
     def test_to_raw_renders_expected_output(
         self,
         formatter: SessionDiffFormatter,
         result: DiffResult,
         expected: str,
+        absent: list[str],
     ) -> None:
         raw_output = formatter.to_raw(result)
         assert expected in raw_output
+        assert [text for text in absent if text in raw_output] == []

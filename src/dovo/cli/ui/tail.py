@@ -5,7 +5,6 @@ from __future__ import annotations
 
 import sys
 from collections import deque
-from typing import IO
 
 from rich.console import Console
 from rich.text import Text
@@ -26,24 +25,15 @@ class CollapsingTailDisplay:
     On step done: erases the tail block and prints a permanent summary line.
     """
 
-    def __init__(
-        self,
-        console: Console,
-        *,
-        tail_size: int = DEFAULT_TAIL_SIZE,
-        _stream: IO[str] | None = None,
-    ) -> None:
+    def __init__(self, console: Console, *, tail_size: int = DEFAULT_TAIL_SIZE) -> None:
         """Initialize the display.
 
         Args:
             console: Rich Console for permanent (non-erased) output.
             tail_size: Maximum number of tail lines shown during a step.
-            _stream: Output stream for ANSI erase/reprint sequences.
-                Defaults to sys.stderr. Tests inject a StringIO here.
         """
         self.console = console
         self.tail_size = tail_size
-        self._stream: IO[str] = _stream if _stream is not None else sys.stderr
         self._tail: deque[str] = deque(maxlen=tail_size)
         self._tail_height: int = 0
 
@@ -113,13 +103,13 @@ class CollapsingTailDisplay:
     def _erase_tail(self) -> None:
         """Erase self._tail_height lines from the terminal and reset the counter."""
         if self._tail_height > 0:
-            self._stream.write((_CURSOR_UP + _ERASE_LINE) * self._tail_height)
-            self._stream.flush()
+            sys.stderr.write((_CURSOR_UP + _ERASE_LINE) * self._tail_height)
+            sys.stderr.flush()
         self._tail_height = 0
 
     def _reprint_tail(self) -> None:
-        """Write every line in self._tail to self._stream and update self._tail_height."""
+        """Write every line in self._tail to stderr and update self._tail_height."""
         for line in self._tail:
-            self._stream.write(f"{line}\n")
-        self._stream.flush()
+            sys.stderr.write(f"{line}\n")
+        sys.stderr.flush()
         self._tail_height = len(self._tail)
