@@ -699,96 +699,301 @@
     ```
 
 - **[DOC-001] Architecture Doc Structural Gate (BLOCKER):**
-  Update docs/agents/architecture.md structure sections ONLY when package layout, domain ownership, or import boundaries change. Do not append feature behavior essays there. Pure refactors need no architecture diff.
+  The architecture doc stays a short, trustworthy map of how the code is laid out, so readers find structure there and never have to dig it out from feature narrative or churn from refactors.
 
-```python
-# ✅ DO: # Updating layers tree in architecture.md for new core/prune/ domain
-# ❌ DO NOT: # 100 lines of narrative prose explaining pruning heuristics in architecture.md
-```
+  Answer yes to every criterion:
+  - `DOC-001.Q01` (judgment) Does the diff to docs/agents/architecture.md modify only structure sections (the layers tree and the package boundaries)?
+
+    ```python
+    # ✅ DO: # Hypothetical: adding a core/prune/ line to the layers tree under "## Layers" in architecture.md
+    # ❌ DO NOT: # Hypothetical: adding a new section to architecture.md that explains how pruning picks which sessions to remove
+    ```
+  - `DOC-001.Q02` (judgment) Is each structure-section edit to docs/agents/architecture.md made because a package was added, removed or moved, domain ownership changed, or an import boundary changed?
+
+    ```python
+    # ✅ DO: # Hypothetical: a new core/prune/ package is added and the layers tree gains a core/prune/ entry
+    # ❌ DO NOT: # Hypothetical: a pure refactor splits one module into two inside core/artifacts/ and architecture.md is edited to match
+    ```
+  - `DOC-001.Q03` (judgment) Is the diff to docs/agents/architecture.md free of feature behavior essays?
+
+    ```python
+    # ✅ DO: # Hypothetical: a one-line layers-tree entry "prune/   Session artifact pruning" for a new package
+    # ❌ DO NOT: # Hypothetical: 100 lines of narrative prose explaining pruning heuristics in architecture.md
+    ```
+  - `DOC-001.Q04` (judgment) Does each new import boundary described in docs/agents/architecture.md also have a row in LAYER_RULES in tests/lint/test_layer_direction.py?
+
+    ```python
+    # ✅ DO: # Hypothetical: a new boundary "prune/ imports nothing from engine/" is added to the package boundaries section and as a new entry in LAYER_RULES
+    # ❌ DO NOT: # Hypothetical: the package boundaries section gains a new boundary but LAYER_RULES in tests/lint/test_layer_direction.py is left unchanged
+    ```
 
 - **[DOC-002] User-Visible Behavior Documentation Scope (BLOCKER):**
-  User-visible CLI behavior, subcommands, and flags belong in docs/cli/<command>.md, never in docs/agents/architecture.md.
+  Users look up commands, subcommands and flags in one place, so the reference for user-visible CLI behavior lives with the per-command docs and stays out of the architecture overview.
 
-```python
-# ✅ DO: # Updating docs/cli/run.md with new --keep-on-failure flag
-# ❌ DO NOT: # Documenting user CLI flag --keep-on-failure inside architecture.md
-```
+  Answer yes to every criterion:
+  - `DOC-002.Q01` (judgment) Is every new or changed CLI subcommand, option or user-visible behavior documented in the matching docs/cli/<command>.md?
+
+    ```python
+    # ✅ DO: # Adding a row for a new --auto-apply style flag to the options table in docs/cli/run.md (the flag is real, the change is illustrative)
+    # ❌ DO NOT: # Hypothetical: a new flag is added to dovo run, and docs/cli/run.md is left unchanged
+    ```
+  - `DOC-002.Q02` (judgment) Is user-visible CLI behavior, subcommand and flag documentation kept out of docs/agents/architecture.md?
+
+    ```python
+    # ✅ DO: # Hypothetical: architecture.md only gains a layers-tree entry for a new package, and the flag description goes to docs/cli/run.md
+    # ❌ DO NOT: # Hypothetical: documenting a user CLI flag such as a new --keep-on-failure option inside docs/agents/architecture.md
+    ```
 
 - **[DOC-003] Schema and Entity Documentation Gate (BLOCKER):**
-  Update docs/agents/schemas.md only when a cross-cutting contract changes (config tier merge rules, path ownership, persistence authority, secrets handling, catalog or database scoping). Adding or changing config keys, blueprint fields, DTOs, enum members, exceptions, entrypoint methods, or commands needs no schemas.md edit.
+  schemas.md records only the cross-cutting contracts that span the codebase, so it stays short and accurate instead of becoming a second copy of entity definitions that the source already holds.
 
-```python
-# ✅ DO: # Updating schemas.md because a config key switched from replace to union merge across tiers
-# ❌ DO NOT: # Listing a new Result model's fields in schemas.md
-```
+  Answer yes to every criterion:
+  - `DOC-003.Q01` (judgment) Does every edit to docs/agents/schemas.md follow a change to a cross-cutting contract (config tier merge rules, path ownership, persistence authority, secrets handling, or catalog or database scoping)?
+
+    ```python
+    # ✅ DO: # Updating schemas.md because a config key switched from replace to union merge across tiers (hypothetical). A change that only adds or changes config keys, blueprint fields, DTOs, enum members, exceptions, entrypoint methods or commands needs no schemas.md edit and correctly leaves it untouched.
+    # ❌ DO NOT: # Editing schemas.md for a change that alters no cross-cutting contract, such as reflowing a section while adding a new config key (hypothetical)
+    ```
+  - `DOC-003.Q02` (judgment) Are the edits to schemas.md free of added field lists, enum members, exception names and method lists?
+
+    ```python
+    # ✅ DO: # A schemas.md edit that states how config tiers merge, with no list of keys or fields (hypothetical)
+    # ❌ DO NOT: # Listing a new Result model's fields, a new enum's members or a new exception's name in schemas.md (hypothetical)
+    ```
 
 - **[DOC-004] Ban on Duplicating Source in Docs (SUGGESTION):**
-  Docs must not hand-copy Pydantic model signatures, field tables, or enum lists that a Read of the source already gives unambiguously. Link to the model file and document only unexpressed behavior (validators, resolution order).
+  Docs do not restate what the source already says unambiguously, so a model change cannot leave a stale copy behind and readers are sent to the one place that is always correct.
 
-```python
-# ✅ DO: See [`WorktreeSession`](src/dovo/core/worktree/models.py). Worktrees live under .dovo/worktrees/.
-# ❌ DO NOT:
-| Field | Type | Default |
-| session_id | str | required |
-```
+  Answer yes to every criterion:
+  - `DOC-004.Q01` (judgment) Do the docs avoid hand-copying Pydantic model signatures, field tables or enum lists that a read of the source already gives unambiguously?
+
+    ```python
+    # ✅ DO: See [`WorktreeSession`](src/dovo/core/worktree/models.py). Worktrees live under .dovo/worktrees/.
+    # ❌ DO NOT:
+    | Field | Type | Default |
+    | session_id | str | required |  (a table copying the fields of WorktreeSession)
+    ```
+  - `DOC-004.Q02` (judgment) Does every doc that refers to a specific Pydantic model link to the file that defines it?
+
+    ```python
+    # ✅ DO: See [`WorktreeSession`](src/dovo/core/worktree/models.py).
+    # ❌ DO NOT: WorktreeSession carries the session id and its paths.  (names the model with no link to src/dovo/core/worktree/models.py; hypothetical sentence)
+    ```
+  - `DOC-004.Q03` (judgment) Does a doc that describes a model add only behavior the source does not express, such as validators or resolution order, rather than field lists or enum members copied without added context?
+
+    ```python
+    # ✅ DO: Worktrees live under .dovo/worktrees/.  (a placement fact beside the model link, not a copy of its fields)
+    # ❌ DO NOT: A bullet list of every member of an enum, pasted from the source with no note on when each applies (hypothetical doc text)
+    ```
 
 - **[DOC-006] Prefer Deletion Over Accretion (SUGGESTION):**
-  When updating docs, replace or delete stale bullets rather than appending parallel conflicting truths. Flag any doc that states contradictory rules.
+  Docs stay a single consistent source of truth, so a reader never has to guess which of two conflicting statements is current.
 
-```python
-# ✅ DO: # Replaced outdated formatters.py reference with cli/ui/formatters/
-# ❌ DO NOT: # Appended new rule while leaving old formatters.py text intact
-```
+  Answer yes to every criterion:
+  - `DOC-006.Q01` (judgment) Does every doc edit that changes a statement replace or delete the stale text instead of appending a new bullet beside it?
+
+    ```python
+    # ✅ DO: Hypothetical edit: a bullet citing the removed formatters.py is replaced by one citing cli/ui/formatters/ (a package that exists in src/dovo/cli/ui/)
+    # ❌ DO NOT: Hypothetical edit: a new bullet citing cli/ui/formatters/ is appended while the old bullet citing formatters.py stays
+    ```
+  - `DOC-006.Q02` (judgment) Is every statement the change adds or edits free of contradiction with other statements in docs/ about the same rule or fact, found by searching docs/ for what it names?
+
+    ```python
+    # ✅ DO: Hypothetical: an edit states formatters live in cli/ui/formatters/; searching docs/ for "formatters" finds no other doc naming a different location
+    # ❌ DO NOT: Hypothetical: an edit states formatters live in cli/ui/formatters/; searching docs/ for "formatters" finds another doc still saying they live in formatters.py
+    ```
 
 - **[DOC-007] Canonical Terminology Invariant (SUGGESTION):**
-  Adhere strictly to the Terminology table in docs/agents/architecture.md. Use only the terms it defines (Blueprint, Step, Loop step, Catalog, Run, Session, Worktree, Checkpoint), and keep each to its stated meaning.
+  Docs and code comments name the core concepts the same way everywhere, so a reader never has to guess whether two words mean one thing or one word means two.
 
-```python
-# ✅ DO: 'A blueprint containing a loop step.'
-# ❌ DO NOT: 'A session executes the blueprint.'  # the act of executing is a run; the session is what it leaves behind
-```
+  Answer yes to every criterion:
+  - `DOC-007.Q01` (judgment) Does doc prose and every code comment name Blueprint, Step, Loop step, Catalog, Run, Session, Worktree and Checkpoint concepts by the term the Terminology table in docs/agents/architecture.md defines, rather than by a term the table does not define?
+
+    ```python
+    # ✅ DO: 'A blueprint containing a loop step.'
+    # ❌ DO NOT: 'A workflow containing a repeat block.'  # hypothetical: the table defines blueprint and loop step, not workflow or repeat block
+    ```
+  - `DOC-007.Q02` (judgment) Does doc prose and every code comment use each defined term only within its stated meaning in the Terminology table?
+
+    ```python
+    # ✅ DO: 'A run executes the blueprint and leaves a session behind.'  # the run is the act of executing; the session is what it leaves behind
+    # ❌ DO NOT: 'A session executes the blueprint.'  # the act of executing is a run; the session is what it leaves behind
+    ```
 
 - **[DOC-008] Verifiable Doc and Rule Claims (BLOCKER):**
-  A doc, skill, rule, or docstring sentence asserting that something is enforced, gated, or checked must name the enforcing artifact by path, and that path must resolve to a file in the tree. The same applies to any helper, fixture, builder, or assertion function a doc instructs an implementer to use: the symbol exists before the instruction ships. Documentation of behavior that is planned rather than built is prohibited, including in rule examples, because an exemplar is copied more often than the guideline is read. When a claim becomes false, the fix is to delete or correct the sentence in the same change, never to leave it as aspiration. A change that alters the behavior a docstring describes owns that docstring: it re-reads it against the new code and corrects or deletes any sentence the change made false.
+  Readers act on what docs, skills, rules and docstrings say, so every claim must be true and checkable today. False or aspirational statements mislead them, and an example is copied more often than the rule is read.
 
-```python
-# ✅ DO: # "COLUMNS is pinned to 160 by [tool.pytest_env] in pyproject.toml" - resolvable and true
-# ❌ DO NOT: # "enforced by tests/lint/test_doc_parity.py" in AGENTS.md, where the module does not exist
-```
+  Answer yes to every criterion:
+  - `DOC-008.Q01` (judgment) Does every doc, skill, rule or docstring sentence that asserts something is enforced, gated or checked name the enforcing artifact by path?
+
+    ```python
+    # ✅ DO: # "COLUMNS is pinned to 160 by [tool.pytest_env] in pyproject.toml" - names the enforcing file, and [tool.pytest_env] there sets COLUMNS = "160"
+    # ❌ DO NOT: # "Command output width is always pinned in tests." (hypothetical sentence) - claims enforcement and names no artifact
+    ```
+  - `DOC-008.Q02` (judgment) Does every path named as an enforcing artifact, or in a "see <path>" claim, resolve to a file in the tree?
+
+    ```python
+    # ✅ DO: # "enforced by tests/lint/test_layer_direction.py" - that file exists in the tree
+    # ❌ DO NOT: # "enforced by tests/lint/test_doc_parity.py" (hypothetical sentence) - no such file exists under tests/lint/
+    ```
+  - `DOC-008.Q03` (judgment) Does every helper, fixture, builder or assertion function that a doc instructs an implementer to use exist in the tree before the instruction ships?
+
+    ```python
+    # ✅ DO: # "Acquire the lock with WorkspaceLock" - WorkspaceLock is defined in src/dovo/common/lock.py
+    # ❌ DO NOT: # "Build the input with make_session_fixture()" (hypothetical) - no function of that name is defined anywhere in the tree
+    ```
+  - `DOC-008.Q04` (judgment) Does the change document only behavior that is already built, in prose and in rule examples alike?
+
+    ```python
+    # ✅ DO: # A rule example that cites core/artifacts/services/prune.py, which exists and does what the example says
+    # ❌ DO NOT: # A paragraph describing a "dovo sync --all" flag (hypothetical) that is planned but absent from the CLI
+    ```
+  - `DOC-008.Q05` (judgment) Does the change delete or correct, rather than leave as aspiration, every doc, skill or rule sentence that it makes false?
+
+    ```python
+    # ✅ DO: # A change that removes a CLI flag also deletes the sentence in docs/cli/ that described it (hypothetical change)
+    # ❌ DO NOT: # A change that removes a CLI flag leaves its docs sentence behind with "to be restored later" (hypothetical change)
+    ```
+  - `DOC-008.Q06` (judgment) Is every docstring of a function whose behavior the change alters, or that appears in the diff, free of sentences the new code makes false?
+
+    ```python
+    # ✅ DO: # A change makes a function raise on empty input and its docstring "returns an empty list" sentence is updated in the same diff (hypothetical)
+    # ❌ DO NOT: # A change makes a function raise on empty input but its docstring still says "returns an empty list" (hypothetical)
+    ```
 
 - **[CI-001] Pre-Commit Quality Suite Gate (BLOCKER):**
-  Before committing, `dovo run quality` must pass: ruff format, ruff check, basedpyright src tests --level error with zero errors, mkdocs build --strict, complexity at or under 10 on changed files, and the test suite meeting the coverage floor configured in pyproject.toml under [tool.coverage.report] fail_under. That floor is the contract, it ratchets upward only as real contract tests land, and it is never lowered to make a commit pass. Coverage is a regression backstop, not a target: do not add tests to raise the percentage, and read a coverage drop caused by deleting duplicated or dead tests as a success.
+  Every commit passes the full quality gate, and the coverage floor stays a regression backstop, never loosened or chased. A drop from deleting duplicated or dead tests is a success.
 
-```python
-# ✅ DO: uv run ruff format . && uv run dovo run quality
-# ❌ DO NOT: # fail_under lowered so a commit can pass, or tests added purely to reach a percentage
-```
+  Answer yes to every criterion:
+  - `CI-001.Q01` (judgment) Has `dovo run quality` passed (ruff format, ruff check, basedpyright src tests --level error with zero errors, mkdocs build --strict, complexity at or under 10 on changed files, and the test suite meeting the coverage floor) before the commit?
+
+    ```python
+    # ✅ DO: uv run ruff format . && uv run dovo run quality
+    # ❌ DO NOT: git commit after only running a scoped `uv run dovo run tests --path tests/core/` (hypothetical: the full quality gate was never run)
+    ```
+  - `CI-001.Q02` (judgment) Is the fail_under value in pyproject.toml under [tool.coverage.report] greater than or equal to its previous committed value?
+
+    ```python
+    # ✅ DO: # fail_under raised from 80 to 82 under [tool.coverage.report] in pyproject.toml in the same change (hypothetical numbers)
+    # ❌ DO NOT: # fail_under lowered from 80 to 75 so a commit can pass (hypothetical)
+    ```
+  - `CI-001.Q03` (judgment) Is the stated justification for each added test something other than raising the coverage percentage?
+
+    ```python
+    # ✅ DO: A new test asserting a public result contract, with a PR description that names the contract
+    # ❌ DO NOT: # tests added purely to reach a percentage, with a PR description that says "bump coverage to 85%" (hypothetical)
+    ```
 
 - **[CI-002] Git and Pull Request Attribution Hygiene (BLOCKER):**
-  Commit messages must be semantic, imperative, and contain NO AI trailers (Co-authored-by: Cursor, Co-authored-by: ...). PRs must have single responsibility and contain concise Why, Approach, and Linkage sections.
+  Commit history and pull requests describe the change in the author's own words and stay focused, so they carry no tool attribution and each pull request can be reviewed as one concern.
 
-```python
-# ✅ DO: feat(worktree): add prune subcommand for stale worktrees
-# ❌ DO NOT:
-feat: prune worktrees
+  Answer yes to every criterion:
+  - `CI-002.Q01` (judgment) Does the commit title start with a semantic prefix of the form type(scope) or type, followed by a colon, as in "docs(rules): ..." in the commit history?
 
-Co-authored-by: Cursor <cursor@cursor.sh>
-```
+    ```python
+    # ✅ DO: feat(worktree): add prune subcommand for stale worktrees (hypothetical message; the dovo worktree prune command exists)
+    # ❌ DO NOT: Updated stuff and fixed things (hypothetical message)
+    ```
+  - `CI-002.Q02` (judgment) Is the commit title written in the imperative mood?
+
+    ```python
+    # ✅ DO: feat(worktree): add prune subcommand (hypothetical message)
+    # ❌ DO NOT: feat(worktree): added prune subcommand (hypothetical message)
+    ```
+  - `CI-002.Q03` (judgment) Is the commit message free of AI trailers such as "Co-authored-by: Cursor"?
+
+    ```python
+    # ✅ DO: feat: prune worktrees, with a body that ends after the description and has no trailer lines (hypothetical message)
+    # ❌ DO NOT:
+    feat: prune worktrees
+
+    Co-authored-by: Cursor <cursor@cursor.sh>  (hypothetical message)
+    ```
+  - `CI-002.Q04` (judgment) Is the pull request description free of AI or tool attribution lines?
+
+    ```python
+    # ✅ DO: A PR description whose last line is the Linkage entry "Closes #123" (hypothetical description)
+    # ❌ DO NOT: A PR description ending in a "Generated with <tool>" attribution line (hypothetical description)
+    ```
+  - `CI-002.Q05` (judgment) Does the pull request address a single responsibility?
+
+    ```python
+    # ✅ DO: One PR that adds the worktree prune subcommand and its tests (hypothetical PR)
+    # ❌ DO NOT: One PR that adds a subcommand and also fixes an unrelated config-loading bug (hypothetical PR)
+    ```
+  - `CI-002.Q06` (judgment) Does the pull request description have a Why section of 2-3 sentences giving the context and motivation?
+
+    ```python
+    # ✅ DO: A "Why" section of two sentences explaining the problem and why it matters now (hypothetical description)
+    # ❌ DO NOT: A description with no Why section, or a Why section of a full page of history (hypothetical description)
+    ```
+  - `CI-002.Q07` (judgment) Does the pull request description have an Approach section made of bullets of 1-2 sentences each?
+
+    ```python
+    # ✅ DO: An "Approach" section with three bullets, each one or two sentences (hypothetical description)
+    # ❌ DO NOT: An "Approach" section written as one long unbroken paragraph (hypothetical description)
+    ```
+  - `CI-002.Q08` (judgment) Does the pull request description have a Linkage section with an issue cross-reference such as Fixes #N or Closes #N?
+
+    ```python
+    # ✅ DO: A "Linkage" section reading "Closes #123" (hypothetical description)
+    # ❌ DO NOT: A description with no Linkage section (hypothetical description)
+    ```
 
 - **[CI-003] Agentic Process State Declaration (WARNING):**
-  Before executing commands or editing files, the agent must state: (1) The specific directive/doc governing this action, and (2) The target scope (e.g. specific test package or module).
+  Reviewers can tell what an agent is about to change and which project rule it is following, so each action is announced before it is taken.
 
-```python
-# ✅ DO:
-Governing directive: docs/agents/testing.md
-Target scope: tests/core/worktree/test_lifecycle.py
-# ❌ DO NOT: Running write_to_file without stating governing directive or target scope
-```
+  Answer yes to every criterion:
+  - `CI-003.Q01` (judgment) Does the agent state the specific directive or doc governing an action before executing commands or editing files?
+
+    ```python
+    # ✅ DO: Governing directive: docs/agents/testing.md
+    # ❌ DO NOT: Running write_to_file without stating the governing directive (hypothetical agent turn)
+    ```
+  - `CI-003.Q02` (judgment) Does the agent state the target scope of an action, such as a specific test package or module, before executing commands or editing files?
+
+    ```python
+    # ✅ DO: Target scope: tests/core/worktree/test_worktree.py
+    # ❌ DO NOT: Running write_to_file without stating the target scope (hypothetical agent turn)
+    ```
 
 - **[CI-004] Mechanical Enforcement Parity (BLOCKER):**
-  A BLOCKER rule that can be checked mechanically must have an executing check: an invariant test under tests/lint/, a prek hook, or a CI step. A declared gate whose configuration disables it, such as a coverage floor of zero or a type checker present in no hook and no workflow, counts as unenforced and must be either wired up or downgraded to a review-time WARNING. An invariant check must prove its own scope with a regression test shaped like the code it polices, and lands green by carrying an explicit burn-down allowlist of known violators; allowlist entries shrink and are never added to.
+  A BLOCKER rule that can be checked by a machine is actually checked by one, so a declared gate cannot silently stop protecting the codebase and an allowlist cannot quietly grow.
 
-```python
-# ✅ DO: # ARCH-001 enforced by tests/lint/test_import_boundaries.py
-# ❌ DO NOT: # Scanner walks only tree.body functions, so class-based tests are never inspected
-```
+  Answer yes to every criterion:
+  - `CI-004.Q01` (judgment) Does every BLOCKER rule that can be checked mechanically have an executing check (an invariant test under tests/lint/, a prek hook or a CI step) or an explicit review-only classification?
+
+    ```python
+    # ✅ DO: ARCH-001 is enforced by tests/lint/test_layer_direction.py, which runs in the test suite
+    # ❌ DO NOT: A new BLOCKER rule about import order is added to rules_spec.yaml with no test, hook or CI step behind it (hypothetical)
+    ```
+  - `CI-004.Q02` (judgment) Is every declared gate configured so that it can fail, with no setting that disables it, such as a coverage floor of zero or a type checker present in no hook and no workflow?
+
+    ```python
+    # ✅ DO: fail_under = 80 in pyproject.toml, so the coverage gate fails below 80 percent
+    # ❌ DO NOT: fail_under = 0 in pyproject.toml (hypothetical): the coverage gate is declared but can never fail
+    ```
+  - `CI-004.Q03` (judgment) Is a gate whose configuration disables it either wired up or downgraded to a review-time WARNING, rather than left declared as an enforced BLOCKER?
+
+    ```python
+    # ✅ DO: A type-check step missing from every hook and workflow is added to .github/workflows/ci.yml, or its rule is downgraded to WARNING (hypothetical)
+    # ❌ DO NOT: basedpyright is declared as a BLOCKER gate but appears in no hook and no workflow, and the rule stays BLOCKER (hypothetical)
+    ```
+  - `CI-004.Q04` (judgment) Does every invariant check include a regression test shaped like the code it polices, such as assertions inside a *Tests class rather than a module-level function?
+
+    ```python
+    # ✅ DO: ImportBoundariesTests.test_unexpected_entries_flags_subpackage_and_ignores_pycache in tests/lint/test_import_boundaries.py builds a sample directory in tmp_path with a stray subpackage and module, then asserts _unexpected_entries flags exactly those entries
+    # ❌ DO NOT: A scanner walks only tree.body functions, so test methods inside a *Tests class are never inspected (hypothetical)
+    ```
+  - `CI-004.Q05` (judgment) Does an invariant check that lands green carry an explicit burn-down allowlist of known violators, rather than being merged red or left disabled?
+
+    ```python
+    # ✅ DO: LAYER_EXCEPTIONS in tests/lint/test_layer_direction.py lists the known allowed violations, so the check passes today
+    # ❌ DO NOT: A new invariant is added with known violators and is skipped or marked xfail instead of carrying an allowlist (hypothetical)
+    ```
+  - `CI-004.Q06` (judgment) Has every allowlist of known violators only shrunk, with no entry added?
+
+    ```python
+    # ✅ DO: test_layer_exception_still_occurs in tests/lint/test_layer_direction.py fails when an allowlisted violation is fixed, forcing its entry to be deleted from LAYER_EXCEPTIONS
+    # ❌ DO NOT: A new tuple is added to LAYER_EXCEPTIONS to make a fresh upward import pass (hypothetical)
+    ```

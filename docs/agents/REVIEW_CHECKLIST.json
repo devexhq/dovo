@@ -1765,8 +1765,16 @@
       "severity": "BLOCKER",
       "domain": "tests",
       "scope": "tests/core/",
-      "evaluation_criteria": "Scan import statements in changed files under tests/core/. Flag any import of dovo.cli or a submodule of it.",
-      "bad_pattern": "from dovo.cli.worktree.commands.prune import prune_command  # imported from tests/core/worktree/test_prune.py"
+      "intent": "A core test proves the domain layer's contract independent of any presentation concern. Importing the CLI package from a core test leaks a presentation dependency into the domain suite, or shows the test belongs under tests/cli/ instead.",
+      "criteria": [
+        {
+          "id": "TEST-018.Q01",
+          "question": "Do the files under tests/core/ import nothing from dovo.cli or any submodule of it?",
+          "kind": "mechanical"
+        }
+      ],
+      "evaluation_criteria": "1. Do the files under tests/core/ import nothing from dovo.cli or any submodule of it?",
+      "bad_pattern": "from dovo.cli.worktree.commands.worktree_prune import worktree_prune_command  # hypothetical: a CLI import in tests/core/worktree/test_services.py"
     },
     {
       "id": "TEST-019",
@@ -1774,8 +1782,26 @@
       "severity": "BLOCKER",
       "domain": "tests",
       "scope": "tests/cli/",
-      "evaluation_criteria": "Inspect any dispatch-spy fixture use under tests/cli/. Verify every assertion made against a captured item is an instance of that command action's own declared Result type. Flag an assertion against any other dispatched event type captured by the same spy, and flag spy[0]/len(spy) == 1 relied on without isolating the command's own Result type for a command action that can plausibly dispatch more than its terminal result in the same invocation.",
-      "bad_pattern": "assert isinstance(dispatch_spy[-1], MessageEvent)  # asserting an incidental progress event through the result spy"
+      "intent": "Result assertions in CLI integration tests stay a genuine contract check on the command's own output, while the real formatting and rendering path keeps running so rendering regressions still surface.",
+      "criteria": [
+        {
+          "id": "TEST-019.Q01",
+          "question": "Does every dispatch spy used in a *CliIntegrationTests suite call through to the real ui_dispatcher.dispatch, instead of replacing it with a stub?",
+          "kind": "judgment"
+        },
+        {
+          "id": "TEST-019.Q02",
+          "question": "Is every assertion made against an item captured by the dispatch spy an assertion on an instance of that command action's own terminal BaseResult type?",
+          "kind": "judgment"
+        },
+        {
+          "id": "TEST-019.Q03",
+          "question": "Does a spy assertion avoid relying on spy[0], spy[-1] or len(spy) == 1 unless the command action dispatches only its own terminal result per invocation, isolating the instance of its own Result type otherwise?",
+          "kind": "judgment"
+        }
+      ],
+      "evaluation_criteria": "1. Does every dispatch spy used in a *CliIntegrationTests suite call through to the real ui_dispatcher.dispatch, instead of replacing it with a stub? 2. Is every assertion made against an item captured by the dispatch spy an assertion on an instance of that command action's own terminal BaseResult type? 3. Does a spy assertion avoid relying on spy[0], spy[-1] or len(spy) == 1 unless the command action dispatches only its own terminal result per invocation, isolating the instance of its own Result type otherwise?",
+      "bad_pattern": "monkeypatch.setattr(ui_dispatcher, \"dispatch\", lambda data, **kwargs: None)  # replacement stub; the real formatter never runs, which TEST-008 forbids (hypothetical)"
     },
     {
       "id": "TEST-020",
@@ -1783,8 +1809,81 @@
       "severity": "WARNING",
       "domain": "tests",
       "scope": "tests/",
-      "evaluation_criteria": "Inspect new or modified docstrings under tests/. On a test method, flag a docstring that carries a tier tag, opens with a non-imperative word, exceeds 120 columns, or only rewords the test name. On any other unit, flag a title that carries an outcome clause or lists steps, a description that retells the body, restates the signature, or adds no fact the title lacks, a sentence describing another unit's behavior, and a bare string statement after the docstring.",
-      "bad_pattern": "\"\"\"[tier-3/integration] dovo worktree create: 3 prior worktrees exist -> exit 1, 'Maximum active worktrees reached' in stdout.\"\"\"\n\"\"\"Give the provider's winning credential 'test-token', patch a finished-stream runner, and return both.\"\"\"  # helper: lists steps and restates the return type"
+      "intent": "Test docstrings stay short and carry only facts the code does not already show, so readers scan names and assertions first and the docstrings never go stale or duplicate the body.",
+      "criteria": [
+        {
+          "id": "TEST-020.Q01",
+          "question": "Does every test method docstring add a fact that the test name and assertions do not, such as an exact literal, an ordering contract, or the inputs behind a parametrized case?",
+          "kind": "judgment"
+        },
+        {
+          "id": "TEST-020.Q02",
+          "question": "Is every test method docstring a single sentence?",
+          "kind": "judgment"
+        },
+        {
+          "id": "TEST-020.Q03",
+          "question": "Does every test method docstring open with an imperative verb?",
+          "kind": "judgment"
+        },
+        {
+          "id": "TEST-020.Q04",
+          "question": "Is every test method docstring free of a `[tier-N/type]` tag?",
+          "kind": "judgment"
+        },
+        {
+          "id": "TEST-020.Q05",
+          "question": "Is every test method docstring free of a `<symbol>:` or `dovo <command>:` prefix?",
+          "kind": "judgment"
+        },
+        {
+          "id": "TEST-020.Q06",
+          "question": "Is every line of every test method docstring within 120 columns?",
+          "kind": "judgment"
+        },
+        {
+          "id": "TEST-020.Q07",
+          "question": "Does every docstring on a non-test unit under tests/ (helper, fixture, test double, class, module) open with a one-line title?",
+          "kind": "judgment"
+        },
+        {
+          "id": "TEST-020.Q08",
+          "question": "Is the title of a non-test unit free of any outcome clause?",
+          "kind": "judgment"
+        },
+        {
+          "id": "TEST-020.Q09",
+          "question": "Is the title of a non-test unit a single description of the unit rather than a list of steps?",
+          "kind": "judgment"
+        },
+        {
+          "id": "TEST-020.Q10",
+          "question": "Does a non-test unit's docstring include a description beyond its title only to record a hidden contract, a safety behavior, or a non-obvious ordering constraint?",
+          "kind": "judgment"
+        },
+        {
+          "id": "TEST-020.Q11",
+          "question": "Is every docstring on a non-test unit under tests/ free of text that retells the body?",
+          "kind": "judgment"
+        },
+        {
+          "id": "TEST-020.Q12",
+          "question": "Is every docstring on a non-test unit under tests/ free of text that restates parameters, types, or the return annotation?",
+          "kind": "judgment"
+        },
+        {
+          "id": "TEST-020.Q13",
+          "question": "Is every docstring on a non-test unit under tests/ free of sentences describing how another module or caller behaves?",
+          "kind": "judgment"
+        },
+        {
+          "id": "TEST-020.Q14",
+          "question": "Does every unit under tests/ carry exactly one docstring, with no bare string statement after it?",
+          "kind": "judgment"
+        }
+      ],
+      "evaluation_criteria": "1. Does every test method docstring add a fact that the test name and assertions do not, such as an exact literal, an ordering contract, or the inputs behind a parametrized case? 2. Is every test method docstring a single sentence? 3. Does every test method docstring open with an imperative verb? 4. Is every test method docstring free of a `[tier-N/type]` tag? 5. Is every test method docstring free of a `<symbol>:` or `dovo <command>:` prefix? 6. Is every line of every test method docstring within 120 columns? 7. Does every docstring on a non-test unit under tests/ (helper, fixture, test double, class, module) open with a one-line title? 8. Is the title of a non-test unit free of any outcome clause? 9. Is the title of a non-test unit a single description of the unit rather than a list of steps? 10. Does a non-test unit's docstring include a description beyond its title only to record a hidden contract, a safety behavior, or a non-obvious ordering constraint? 11. Is every docstring on a non-test unit under tests/ free of text that retells the body? 12. Is every docstring on a non-test unit under tests/ free of text that restates parameters, types, or the return annotation? 13. Is every docstring on a non-test unit under tests/ free of sentences describing how another module or caller behaves? 14. Does every unit under tests/ carry exactly one docstring, with no bare string statement after it?",
+      "bad_pattern": "Hypothetical: \"\"\"Exit 1 when capacity is exceeded.\"\"\" on test_worktree_create_cli_capacity_exceeded_exits_one in tests/cli/worktree/test_worktree_create.py only rewords the test name."
     },
     {
       "id": "DOC-001",
@@ -1792,8 +1891,31 @@
       "severity": "BLOCKER",
       "domain": "all",
       "scope": "docs/agents/architecture.md",
-      "evaluation_criteria": "Verify diff in docs/agents/architecture.md only modifies structure sections (layers tree, package boundaries), and only when a package is added, removed, or moved or an import boundary changes. A new boundary also needs a row in LAYER_RULES in tests/lint/test_layer_direction.py.",
-      "bad_pattern": "# 100 lines of narrative prose explaining pruning heuristics in architecture.md"
+      "intent": "The architecture doc stays a short, trustworthy map of how the code is laid out, so readers find structure there and never have to dig it out from feature narrative or churn from refactors.",
+      "criteria": [
+        {
+          "id": "DOC-001.Q01",
+          "question": "Does the diff to docs/agents/architecture.md modify only structure sections (the layers tree and the package boundaries)?",
+          "kind": "judgment"
+        },
+        {
+          "id": "DOC-001.Q02",
+          "question": "Is each structure-section edit to docs/agents/architecture.md made because a package was added, removed or moved, domain ownership changed, or an import boundary changed?",
+          "kind": "judgment"
+        },
+        {
+          "id": "DOC-001.Q03",
+          "question": "Is the diff to docs/agents/architecture.md free of feature behavior essays?",
+          "kind": "judgment"
+        },
+        {
+          "id": "DOC-001.Q04",
+          "question": "Does each new import boundary described in docs/agents/architecture.md also have a row in LAYER_RULES in tests/lint/test_layer_direction.py?",
+          "kind": "judgment"
+        }
+      ],
+      "evaluation_criteria": "1. Does the diff to docs/agents/architecture.md modify only structure sections (the layers tree and the package boundaries)? 2. Is each structure-section edit to docs/agents/architecture.md made because a package was added, removed or moved, domain ownership changed, or an import boundary changed? 3. Is the diff to docs/agents/architecture.md free of feature behavior essays? 4. Does each new import boundary described in docs/agents/architecture.md also have a row in LAYER_RULES in tests/lint/test_layer_direction.py?",
+      "bad_pattern": "# Hypothetical: adding a new section to architecture.md that explains how pruning picks which sessions to remove"
     },
     {
       "id": "DOC-002",
@@ -1801,8 +1923,21 @@
       "severity": "BLOCKER",
       "domain": "cli",
       "scope": "docs/cli/",
-      "evaluation_criteria": "Verify new CLI options or behavioral changes are documented in docs/cli/.",
-      "bad_pattern": "# Documenting user CLI flag --keep-on-failure inside architecture.md"
+      "intent": "Users look up commands, subcommands and flags in one place, so the reference for user-visible CLI behavior lives with the per-command docs and stays out of the architecture overview.",
+      "criteria": [
+        {
+          "id": "DOC-002.Q01",
+          "question": "Is every new or changed CLI subcommand, option or user-visible behavior documented in the matching docs/cli/<command>.md?",
+          "kind": "judgment"
+        },
+        {
+          "id": "DOC-002.Q02",
+          "question": "Is user-visible CLI behavior, subcommand and flag documentation kept out of docs/agents/architecture.md?",
+          "kind": "judgment"
+        }
+      ],
+      "evaluation_criteria": "1. Is every new or changed CLI subcommand, option or user-visible behavior documented in the matching docs/cli/<command>.md? 2. Is user-visible CLI behavior, subcommand and flag documentation kept out of docs/agents/architecture.md?",
+      "bad_pattern": "# Hypothetical: a new flag is added to dovo run, and docs/cli/run.md is left unchanged"
     },
     {
       "id": "DOC-003",
@@ -1810,8 +1945,21 @@
       "severity": "BLOCKER",
       "domain": "all",
       "scope": "docs/agents/schemas.md",
-      "evaluation_criteria": "Verify schemas.md changes only when a stated contract changes, and flag schemas.md edits that add field lists, enum members, exception names, or method lists.",
-      "bad_pattern": "# Listing a new Result model's fields in schemas.md"
+      "intent": "schemas.md records only the cross-cutting contracts that span the codebase, so it stays short and accurate instead of becoming a second copy of entity definitions that the source already holds.",
+      "criteria": [
+        {
+          "id": "DOC-003.Q01",
+          "question": "Does every edit to docs/agents/schemas.md follow a change to a cross-cutting contract (config tier merge rules, path ownership, persistence authority, secrets handling, or catalog or database scoping)?",
+          "kind": "judgment"
+        },
+        {
+          "id": "DOC-003.Q02",
+          "question": "Are the edits to schemas.md free of added field lists, enum members, exception names and method lists?",
+          "kind": "judgment"
+        }
+      ],
+      "evaluation_criteria": "1. Does every edit to docs/agents/schemas.md follow a change to a cross-cutting contract (config tier merge rules, path ownership, persistence authority, secrets handling, or catalog or database scoping)? 2. Are the edits to schemas.md free of added field lists, enum members, exception names and method lists?",
+      "bad_pattern": "# Editing schemas.md for a change that alters no cross-cutting contract, such as reflowing a section while adding a new config key (hypothetical)"
     },
     {
       "id": "DOC-004",
@@ -1819,8 +1967,26 @@
       "severity": "SUGGESTION",
       "domain": "all",
       "scope": "docs/agents/",
-      "evaluation_criteria": "Flag doc changes that copy-paste field lists or enum members from source models without adding context.",
-      "bad_pattern": "| Field | Type | Default |\n| session_id | str | required |"
+      "intent": "Docs do not restate what the source already says unambiguously, so a model change cannot leave a stale copy behind and readers are sent to the one place that is always correct.",
+      "criteria": [
+        {
+          "id": "DOC-004.Q01",
+          "question": "Do the docs avoid hand-copying Pydantic model signatures, field tables or enum lists that a read of the source already gives unambiguously?",
+          "kind": "judgment"
+        },
+        {
+          "id": "DOC-004.Q02",
+          "question": "Does every doc that refers to a specific Pydantic model link to the file that defines it?",
+          "kind": "judgment"
+        },
+        {
+          "id": "DOC-004.Q03",
+          "question": "Does a doc that describes a model add only behavior the source does not express, such as validators or resolution order, rather than field lists or enum members copied without added context?",
+          "kind": "judgment"
+        }
+      ],
+      "evaluation_criteria": "1. Do the docs avoid hand-copying Pydantic model signatures, field tables or enum lists that a read of the source already gives unambiguously? 2. Does every doc that refers to a specific Pydantic model link to the file that defines it? 3. Does a doc that describes a model add only behavior the source does not express, such as validators or resolution order, rather than field lists or enum members copied without added context?",
+      "bad_pattern": "| Field | Type | Default |\n| session_id | str | required |  (a table copying the fields of WorktreeSession)"
     },
     {
       "id": "DOC-005",
@@ -1828,8 +1994,26 @@
       "severity": "BLOCKER",
       "domain": "tests",
       "scope": "tests/lint/",
-      "evaluation_criteria": "Verify every specification table in docs has a named automated test under tests/lint/ asserting parity, and resolve the named path to a file that exists. Flag manual tables of CLI flags or schema fields with no parity test, and flag doc sentences naming a parity test that is absent from the tree.",
-      "bad_pattern": "# \"enforced by tests/lint/test_doc_parity.py\" where that module is nowhere in the tree"
+      "intent": "A specification table that cannot be avoided must not drift from the source it describes, so an automated test that exists when the claim is made keeps the two in agreement.",
+      "criteria": [
+        {
+          "id": "DOC-005.Q01",
+          "question": "Does every unavoidable field table (the specification for an external JSON Schema or a stable CLI output format) have an automated test under tests/lint/ that fails when the table and the source disagree?",
+          "kind": "judgment"
+        },
+        {
+          "id": "DOC-005.Q02",
+          "question": "Was the parity test already in the tree when the doc claim landed?",
+          "kind": "judgment"
+        },
+        {
+          "id": "DOC-005.Q03",
+          "question": "Does the doc name the parity test by a path that resolves to a file in the tree?",
+          "kind": "judgment"
+        }
+      ],
+      "evaluation_criteria": "1. Does every unavoidable field table (the specification for an external JSON Schema or a stable CLI output format) have an automated test under tests/lint/ that fails when the table and the source disagree? 2. Was the parity test already in the tree when the doc claim landed? 3. Does the doc name the parity test by a path that resolves to a file in the tree?",
+      "bad_pattern": "A hypothetical field table of a stable CLI output format is added to docs/ and no test under tests/lint/ compares it with the source"
     },
     {
       "id": "DOC-006",
@@ -1837,8 +2021,21 @@
       "severity": "SUGGESTION",
       "domain": "all",
       "scope": "docs/",
-      "evaluation_criteria": "Review doc edits for conflicting old vs new statements.",
-      "bad_pattern": "# Appended new rule while leaving old formatters.py text intact"
+      "intent": "Docs stay a single consistent source of truth, so a reader never has to guess which of two conflicting statements is current.",
+      "criteria": [
+        {
+          "id": "DOC-006.Q01",
+          "question": "Does every doc edit that changes a statement replace or delete the stale text instead of appending a new bullet beside it?",
+          "kind": "judgment"
+        },
+        {
+          "id": "DOC-006.Q02",
+          "question": "Is every statement the change adds or edits free of contradiction with other statements in docs/ about the same rule or fact, found by searching docs/ for what it names?",
+          "kind": "judgment"
+        }
+      ],
+      "evaluation_criteria": "1. Does every doc edit that changes a statement replace or delete the stale text instead of appending a new bullet beside it? 2. Is every statement the change adds or edits free of contradiction with other statements in docs/ about the same rule or fact, found by searching docs/ for what it names?",
+      "bad_pattern": "Hypothetical edit: a new bullet citing cli/ui/formatters/ is appended while the old bullet citing formatters.py stays"
     },
     {
       "id": "DOC-007",
@@ -1846,8 +2043,21 @@
       "severity": "SUGGESTION",
       "domain": "all",
       "scope": "docs/, src/",
-      "evaluation_criteria": "Check doc prose and code comments for terms the Terminology table does not define, or defined terms used outside their meaning (e.g. calling a session a 'run').",
-      "bad_pattern": "'A session executes the blueprint.'  # the act of executing is a run; the session is what it leaves behind"
+      "intent": "Docs and code comments name the core concepts the same way everywhere, so a reader never has to guess whether two words mean one thing or one word means two.",
+      "criteria": [
+        {
+          "id": "DOC-007.Q01",
+          "question": "Does doc prose and every code comment name Blueprint, Step, Loop step, Catalog, Run, Session, Worktree and Checkpoint concepts by the term the Terminology table in docs/agents/architecture.md defines, rather than by a term the table does not define?",
+          "kind": "judgment"
+        },
+        {
+          "id": "DOC-007.Q02",
+          "question": "Does doc prose and every code comment use each defined term only within its stated meaning in the Terminology table?",
+          "kind": "judgment"
+        }
+      ],
+      "evaluation_criteria": "1. Does doc prose and every code comment name Blueprint, Step, Loop step, Catalog, Run, Session, Worktree and Checkpoint concepts by the term the Terminology table in docs/agents/architecture.md defines, rather than by a term the table does not define? 2. Does doc prose and every code comment use each defined term only within its stated meaning in the Terminology table?",
+      "bad_pattern": "'A workflow containing a repeat block.'  # hypothetical: the table defines blueprint and loop step, not workflow or repeat block"
     },
     {
       "id": "DOC-008",
@@ -1855,8 +2065,41 @@
       "severity": "BLOCKER",
       "domain": "all",
       "scope": "AGENTS.md, docs/, .agents/skills/, docs/agents/rules_spec.yaml, src/ docstrings",
-      "evaluation_criteria": "For each doc claim of the form \"enforced by\", \"gated by\", or \"see <path>\", resolve the path. For each documented helper or fixture name, resolve the symbol. Flag unresolvable claims, rule examples naming nonexistent modules, and doc paragraphs describing behavior absent from the tree. For each docstring in the diff, and each docstring of a function whose behavior the diff changes, re-read it against the code and flag any sentence the change made false.",
-      "bad_pattern": "# \"enforced by tests/lint/test_doc_parity.py\" in AGENTS.md, where the module does not exist"
+      "intent": "Readers act on what docs, skills, rules and docstrings say, so every claim must be true and checkable today. False or aspirational statements mislead them, and an example is copied more often than the rule is read.",
+      "criteria": [
+        {
+          "id": "DOC-008.Q01",
+          "question": "Does every doc, skill, rule or docstring sentence that asserts something is enforced, gated or checked name the enforcing artifact by path?",
+          "kind": "judgment"
+        },
+        {
+          "id": "DOC-008.Q02",
+          "question": "Does every path named as an enforcing artifact, or in a \"see <path>\" claim, resolve to a file in the tree?",
+          "kind": "judgment"
+        },
+        {
+          "id": "DOC-008.Q03",
+          "question": "Does every helper, fixture, builder or assertion function that a doc instructs an implementer to use exist in the tree before the instruction ships?",
+          "kind": "judgment"
+        },
+        {
+          "id": "DOC-008.Q04",
+          "question": "Does the change document only behavior that is already built, in prose and in rule examples alike?",
+          "kind": "judgment"
+        },
+        {
+          "id": "DOC-008.Q05",
+          "question": "Does the change delete or correct, rather than leave as aspiration, every doc, skill or rule sentence that it makes false?",
+          "kind": "judgment"
+        },
+        {
+          "id": "DOC-008.Q06",
+          "question": "Is every docstring of a function whose behavior the change alters, or that appears in the diff, free of sentences the new code makes false?",
+          "kind": "judgment"
+        }
+      ],
+      "evaluation_criteria": "1. Does every doc, skill, rule or docstring sentence that asserts something is enforced, gated or checked name the enforcing artifact by path? 2. Does every path named as an enforcing artifact, or in a \"see <path>\" claim, resolve to a file in the tree? 3. Does every helper, fixture, builder or assertion function that a doc instructs an implementer to use exist in the tree before the instruction ships? 4. Does the change document only behavior that is already built, in prose and in rule examples alike? 5. Does the change delete or correct, rather than leave as aspiration, every doc, skill or rule sentence that it makes false? 6. Is every docstring of a function whose behavior the change alters, or that appears in the diff, free of sentences the new code makes false?",
+      "bad_pattern": "# \"Command output width is always pinned in tests.\" (hypothetical sentence) - claims enforcement and names no artifact"
     },
     {
       "id": "CI-001",
@@ -1864,8 +2107,26 @@
       "severity": "BLOCKER",
       "domain": "all",
       "scope": "Whole repository",
-      "evaluation_criteria": "Verify `dovo run quality` succeeds before any commit. Verify the fail_under value in pyproject.toml is greater than or equal to the previous committed value. Flag any PR that lowers fail_under, and flag test additions whose stated justification is raising coverage.",
-      "bad_pattern": "# fail_under lowered so a commit can pass, or tests added purely to reach a percentage"
+      "intent": "Every commit passes the full quality gate, and the coverage floor stays a regression backstop, never loosened or chased. A drop from deleting duplicated or dead tests is a success.",
+      "criteria": [
+        {
+          "id": "CI-001.Q01",
+          "question": "Has `dovo run quality` passed (ruff format, ruff check, basedpyright src tests --level error with zero errors, mkdocs build --strict, complexity at or under 10 on changed files, and the test suite meeting the coverage floor) before the commit?",
+          "kind": "judgment"
+        },
+        {
+          "id": "CI-001.Q02",
+          "question": "Is the fail_under value in pyproject.toml under [tool.coverage.report] greater than or equal to its previous committed value?",
+          "kind": "judgment"
+        },
+        {
+          "id": "CI-001.Q03",
+          "question": "Is the stated justification for each added test something other than raising the coverage percentage?",
+          "kind": "judgment"
+        }
+      ],
+      "evaluation_criteria": "1. Has `dovo run quality` passed (ruff format, ruff check, basedpyright src tests --level error with zero errors, mkdocs build --strict, complexity at or under 10 on changed files, and the test suite meeting the coverage floor) before the commit? 2. Is the fail_under value in pyproject.toml under [tool.coverage.report] greater than or equal to its previous committed value? 3. Is the stated justification for each added test something other than raising the coverage percentage?",
+      "bad_pattern": "git commit after only running a scoped `uv run dovo run tests --path tests/core/` (hypothetical: the full quality gate was never run)"
     },
     {
       "id": "CI-002",
@@ -1873,8 +2134,51 @@
       "severity": "BLOCKER",
       "domain": "all",
       "scope": "Git commits & PRs",
-      "evaluation_criteria": "Inspect commit message trailers and PR descriptions. Flag AI co-author trailers.",
-      "bad_pattern": "feat: prune worktrees\n\nCo-authored-by: Cursor <cursor@cursor.sh>"
+      "intent": "Commit history and pull requests describe the change in the author's own words and stay focused, so they carry no tool attribution and each pull request can be reviewed as one concern.",
+      "criteria": [
+        {
+          "id": "CI-002.Q01",
+          "question": "Does the commit title start with a semantic prefix of the form type(scope) or type, followed by a colon, as in \"docs(rules): ...\" in the commit history?",
+          "kind": "judgment"
+        },
+        {
+          "id": "CI-002.Q02",
+          "question": "Is the commit title written in the imperative mood?",
+          "kind": "judgment"
+        },
+        {
+          "id": "CI-002.Q03",
+          "question": "Is the commit message free of AI trailers such as \"Co-authored-by: Cursor\"?",
+          "kind": "judgment"
+        },
+        {
+          "id": "CI-002.Q04",
+          "question": "Is the pull request description free of AI or tool attribution lines?",
+          "kind": "judgment"
+        },
+        {
+          "id": "CI-002.Q05",
+          "question": "Does the pull request address a single responsibility?",
+          "kind": "judgment"
+        },
+        {
+          "id": "CI-002.Q06",
+          "question": "Does the pull request description have a Why section of 2-3 sentences giving the context and motivation?",
+          "kind": "judgment"
+        },
+        {
+          "id": "CI-002.Q07",
+          "question": "Does the pull request description have an Approach section made of bullets of 1-2 sentences each?",
+          "kind": "judgment"
+        },
+        {
+          "id": "CI-002.Q08",
+          "question": "Does the pull request description have a Linkage section with an issue cross-reference such as Fixes #N or Closes #N?",
+          "kind": "judgment"
+        }
+      ],
+      "evaluation_criteria": "1. Does the commit title start with a semantic prefix of the form type(scope) or type, followed by a colon, as in \"docs(rules): ...\" in the commit history? 2. Is the commit title written in the imperative mood? 3. Is the commit message free of AI trailers such as \"Co-authored-by: Cursor\"? 4. Is the pull request description free of AI or tool attribution lines? 5. Does the pull request address a single responsibility? 6. Does the pull request description have a Why section of 2-3 sentences giving the context and motivation? 7. Does the pull request description have an Approach section made of bullets of 1-2 sentences each? 8. Does the pull request description have a Linkage section with an issue cross-reference such as Fixes #N or Closes #N?",
+      "bad_pattern": "Updated stuff and fixed things (hypothetical message)"
     },
     {
       "id": "CI-003",
@@ -1882,8 +2186,21 @@
       "severity": "WARNING",
       "domain": "all",
       "scope": "Agent interactions",
-      "evaluation_criteria": "Check agent turns prior to tool execution for stated directive and scope. Flag tool execution lacking state declaration as advisory warning.",
-      "bad_pattern": "Running write_to_file without stating governing directive or target scope"
+      "intent": "Reviewers can tell what an agent is about to change and which project rule it is following, so each action is announced before it is taken.",
+      "criteria": [
+        {
+          "id": "CI-003.Q01",
+          "question": "Does the agent state the specific directive or doc governing an action before executing commands or editing files?",
+          "kind": "judgment"
+        },
+        {
+          "id": "CI-003.Q02",
+          "question": "Does the agent state the target scope of an action, such as a specific test package or module, before executing commands or editing files?",
+          "kind": "judgment"
+        }
+      ],
+      "evaluation_criteria": "1. Does the agent state the specific directive or doc governing an action before executing commands or editing files? 2. Does the agent state the target scope of an action, such as a specific test package or module, before executing commands or editing files?",
+      "bad_pattern": "Running write_to_file without stating the governing directive (hypothetical agent turn)"
     },
     {
       "id": "CI-004",
@@ -1891,8 +2208,41 @@
       "severity": "BLOCKER",
       "domain": "all",
       "scope": "tests/lint/, prek.toml, .github/workflows/, pyproject.toml",
-      "evaluation_criteria": "For each BLOCKER rule, identify its executing check or its explicit review-only classification. Verify invariant checks include a regression test matching the suite's real shape, such as assertions inside a *Tests class rather than a module-level function. Flag configuration that disables a declared gate and allowlists that grew.",
-      "bad_pattern": "# Scanner walks only tree.body functions, so class-based tests are never inspected"
+      "intent": "A BLOCKER rule that can be checked by a machine is actually checked by one, so a declared gate cannot silently stop protecting the codebase and an allowlist cannot quietly grow.",
+      "criteria": [
+        {
+          "id": "CI-004.Q01",
+          "question": "Does every BLOCKER rule that can be checked mechanically have an executing check (an invariant test under tests/lint/, a prek hook or a CI step) or an explicit review-only classification?",
+          "kind": "judgment"
+        },
+        {
+          "id": "CI-004.Q02",
+          "question": "Is every declared gate configured so that it can fail, with no setting that disables it, such as a coverage floor of zero or a type checker present in no hook and no workflow?",
+          "kind": "judgment"
+        },
+        {
+          "id": "CI-004.Q03",
+          "question": "Is a gate whose configuration disables it either wired up or downgraded to a review-time WARNING, rather than left declared as an enforced BLOCKER?",
+          "kind": "judgment"
+        },
+        {
+          "id": "CI-004.Q04",
+          "question": "Does every invariant check include a regression test shaped like the code it polices, such as assertions inside a *Tests class rather than a module-level function?",
+          "kind": "judgment"
+        },
+        {
+          "id": "CI-004.Q05",
+          "question": "Does an invariant check that lands green carry an explicit burn-down allowlist of known violators, rather than being merged red or left disabled?",
+          "kind": "judgment"
+        },
+        {
+          "id": "CI-004.Q06",
+          "question": "Has every allowlist of known violators only shrunk, with no entry added?",
+          "kind": "judgment"
+        }
+      ],
+      "evaluation_criteria": "1. Does every BLOCKER rule that can be checked mechanically have an executing check (an invariant test under tests/lint/, a prek hook or a CI step) or an explicit review-only classification? 2. Is every declared gate configured so that it can fail, with no setting that disables it, such as a coverage floor of zero or a type checker present in no hook and no workflow? 3. Is a gate whose configuration disables it either wired up or downgraded to a review-time WARNING, rather than left declared as an enforced BLOCKER? 4. Does every invariant check include a regression test shaped like the code it polices, such as assertions inside a *Tests class rather than a module-level function? 5. Does an invariant check that lands green carry an explicit burn-down allowlist of known violators, rather than being merged red or left disabled? 6. Has every allowlist of known violators only shrunk, with no entry added?",
+      "bad_pattern": "A new BLOCKER rule about import order is added to rules_spec.yaml with no test, hook or CI step behind it (hypothetical)"
     }
   ]
 }
