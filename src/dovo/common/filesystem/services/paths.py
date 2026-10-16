@@ -28,21 +28,6 @@ def find_dovo_root(start: Path | None = None) -> Path:
     return current
 
 
-def get_dovo_dir(cwd: Path) -> Path:
-    """Return the Dovo root path, relative to the CWD."""
-    return cwd / ".dovo"
-
-
-def get_dovo_config_file(cwd: Path) -> Path:
-    """Return the Dovo config file path, relative to CWD."""
-    return get_dovo_dir(cwd) / "config.json"
-
-
-def get_gitignore_file(cwd: Path) -> Path:
-    """Return the .gitignore file path, relative to CWD."""
-    return cwd / ".gitignore"
-
-
 def get_catalog_templates_dir() -> Traversable:
     """Return the packaged catalog templates resource root."""
     return importlib.resources.files("dovo.core.catalog.templates")

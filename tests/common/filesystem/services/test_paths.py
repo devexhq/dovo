@@ -6,13 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from dovo.common.filesystem.services.paths import (
-    find_dovo_root,
-    get_catalog_templates_dir,
-    get_dovo_config_file,
-    get_dovo_dir,
-    get_gitignore_file,
-)
+from dovo.common.filesystem.services.paths import find_dovo_root, get_catalog_templates_dir
 
 
 class FindDovoRootTests:
@@ -65,17 +59,6 @@ class FindDovoRootTests:
         monkeypatch.chdir(root)
 
         assert find_dovo_root(None) == root.resolve()
-
-
-class DerivedPathHelperTests:
-    def test_get_dovo_dir_joins_dot_dovo_onto_cwd(self, tmp_path: Path) -> None:
-        assert get_dovo_dir(tmp_path) == tmp_path / ".dovo"
-
-    def test_get_dovo_config_file_joins_config_json_under_dovo_dir(self, tmp_path: Path) -> None:
-        assert get_dovo_config_file(tmp_path) == tmp_path / ".dovo" / "config.json"
-
-    def test_get_gitignore_file_joins_gitignore_onto_cwd(self, tmp_path: Path) -> None:
-        assert get_gitignore_file(tmp_path) == tmp_path / ".gitignore"
 
 
 class GetCatalogTemplatesDirTests:
