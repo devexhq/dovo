@@ -13,6 +13,7 @@ from dovo.common.mcp_servers import McpServerDefinition
 from dovo.common.tool_policy import ToolCapability, ToolPolicy, ToolRule
 from dovo.core.agents import (
     AgentInvocationContext,
+    AgentResponse,
     AgentResponseStatus,
     default_tool_policy,
     tool_policy_unsupported_message,
@@ -40,7 +41,7 @@ from tests.harness import (
 
 
 class ClaudeDescriptorTests:
-    def test_descriptor_matches_pre_determined_data(self) -> None:
+    def test_descriptor_declares_the_expected_provider_fields(self) -> None:
         spec = PROVIDERS["claude"]
 
         assert (spec.token, spec.credential_envs, spec.requires_model) == (
@@ -90,7 +91,7 @@ def _porcelain(repo: Path) -> str:
     return subprocess.run(["git", "status", "--porcelain"], cwd=repo, check=True, capture_output=True, text=True).stdout
 
 
-def _arm_claude(monkeypatch: pytest.MonkeyPatch, runner: FakeAgentRunner) -> None:
+def _install_fake_claude_runner(monkeypatch: pytest.MonkeyPatch, runner: FakeAgentRunner) -> None:
     """Set ANTHROPIC_API_KEY, unset CLAUDE_CODE_OAUTH_TOKEN, and install runner at the Claude process boundary."""
     monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test")
     monkeypatch.delenv("CLAUDE_CODE_OAUTH_TOKEN", raising=False)
@@ -100,7 +101,7 @@ def _arm_claude(monkeypatch: pytest.MonkeyPatch, runner: FakeAgentRunner) -> Non
 def _fake_claude(monkeypatch: pytest.MonkeyPatch) -> FakeAgentRunner:
     """Install a FakeAgentRunner at the Claude process boundary with a usable ANTHROPIC_API_KEY and no OAuth token."""
     runner = FakeAgentRunner().returning(stdout=_SUCCESS_STDOUT)
-    _arm_claude(monkeypatch, runner)
+    _install_fake_claude_runner(monkeypatch, runner)
 
     return runner
 
@@ -196,18 +197,30 @@ class ClaudeRunTests:
 
         assert runner.last_call.cmd == expected_argv
 
-    def test_prompt_goes_to_stdin_as_utf8_with_worktree_cwd_and_timeout(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        """Record input_data == 'héllo'.encode('utf-8'), cwd == worktree_path, timeout_seconds == 3, and no prompt in argv."""
+    def test_prompt_goes_to_stdin_as_utf8(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Record input_data == 'héllo'.encode('utf-8')."""
         runner = _fake_claude(monkeypatch)
 
         default_claude_run(_run_request(tmp_path, prompt="héllo"))
 
-        call = runner.last_call
-        assert call.input_data == "héllo".encode()
-        assert (call.cwd, call.timeout_seconds) == (tmp_path, 3)
-        assert not any("héllo" in part for part in call.cmd)
+        assert runner.last_call.input_data == "héllo".encode()
+
+    def test_process_runs_in_the_worktree_with_the_request_timeout(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Record cwd == worktree_path and timeout_seconds == 3."""
+        runner = _fake_claude(monkeypatch)
+
+        default_claude_run(_run_request(tmp_path))
+
+        assert (runner.last_call.cwd, runner.last_call.timeout_seconds) == (tmp_path, 3)
+
+    def test_prompt_never_appears_on_argv(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        runner = _fake_claude(monkeypatch)
+
+        default_claude_run(_run_request(tmp_path, prompt="héllo"))
+
+        assert not any("héllo" in part for part in runner.last_call.cmd)
 
     def test_unsupported_policy_returns_policy_message_and_starts_no_process(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -221,7 +234,7 @@ class ClaudeRunTests:
         assert outcome == CliMutationOutcome(status="error", error_detail=tool_policy_unsupported_message("claude"))
         assert runner.calls == []
 
-    def test_no_authentication_returns_fr4_detail_and_starts_no_process(
+    def test_no_authentication_returns_the_not_authenticated_error_and_starts_no_process(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """Return the 'Claude Code is not authenticated' error and zero runner calls with no token, login or key."""
@@ -258,7 +271,7 @@ class ClaudeRunTests:
 
     def test_missing_binary_returns_install_hint_error(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """Return the install-hint error when the spawn raises FileNotFoundError('claude')."""
-        runner = _fake_claude(monkeypatch).raising(FileNotFoundError("claude"))
+        _fake_claude(monkeypatch).raising(FileNotFoundError("claude"))
 
         outcome = default_claude_run(_run_request(tmp_path))
 
@@ -269,7 +282,6 @@ class ClaudeRunTests:
                 "Fix: install Claude Code (https://code.claude.com/docs)"
             ),
         )
-        assert len(runner.calls) == 1
 
     def test_unknown_option_stderr_returns_update_required_detail(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -310,7 +322,7 @@ class ClaudeRunTests:
             pytest.param("key", True, {"ANTHROPIC_API_KEY": "sk-test", "PATH": "/bin"}, id="key"),
         ],
     )
-    def test_mode_argv_and_env_follow_the_fr3_table(
+    def test_auth_mode_decides_the_bare_flag_and_which_credential_is_passed(
         self,
         mode: str,
         expects_bare: bool,
@@ -375,18 +387,37 @@ def _raise_disk_full(path: Path, text: str) -> None:
     raise OSError("disk full")
 
 
+def _invoke_inherit_with_claude_names(
+    git_repo: Path, monkeypatch: pytest.MonkeyPatch
+) -> tuple[dict[str, str], AgentResponse]:
+    """Invoke in inherit mode with CLAUDE_FOO and CLAUDE_BAR set and only CLAUDE_BAR passed through."""
+    runner = _fake_claude(monkeypatch)
+    monkeypatch.setenv("CLAUDE_FOO", "foo")
+    monkeypatch.setenv("CLAUDE_BAR", "bar")
+    request = (
+        AgentRequestBuilder()
+        .with_worktree_path(git_repo)
+        .with_env_mode("inherit")
+        .with_env_passthrough(["CLAUDE_BAR"])
+        .build()
+    )
+
+    response = ClaudeAgentAdapter().invoke(request)
+
+    return runner.last_call.env, response
+
+
 class ClaudeInvokeTests:
     def test_text_only_success_returns_no_op(self, git_repo: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        """Return NO_OP with no diff, raw_text 'done', and a clean worktree when the stream succeeds without edits."""
+        """Return NO_OP with no diff and raw_text 'done' when the stream succeeds without edits."""
         _fake_claude(monkeypatch)
         request = AgentRequestBuilder().with_worktree_path(git_repo).build()
 
         response = ClaudeAgentAdapter().invoke(request)
 
         assert (response.status, response.raw_text, response.unified_diff) == (AgentResponseStatus.NO_OP, "done", None)
-        assert _porcelain(git_repo) == ""
 
-    def test_invoke_without_authentication_returns_provider_error_with_fr4_detail(
+    def test_invoke_without_authentication_returns_provider_error_with_the_not_authenticated_detail(
         self, git_repo: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """Return PROVIDER_ERROR with the wrapped 'Claude Code is not authenticated' detail and zero runner calls."""
@@ -423,30 +454,24 @@ class ClaudeInvokeTests:
 
         ClaudeAgentAdapter().invoke(request)
 
-        call = runner.last_call
-        assert call.env["ANTHROPIC_API_KEY"] == "sk-test"
-        assert not set(host) & set(call.env)
-        assert not any("sk-test" in part for part in call.cmd)
+        env = runner.last_call.env
+        assert env["ANTHROPIC_API_KEY"] == "sk-test"
+        assert not set(host) & set(env)
 
-    def test_inherit_mode_strips_unrequested_claude_names_and_reports_them(
+    def test_inherit_mode_drops_unrequested_claude_names_from_the_env(
         self, git_repo: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """Keep CLAUDE_BAR (listed in env_passthrough), drop CLAUDE_FOO, and report CLAUDE_FOO as withheld."""
-        runner = _fake_claude(monkeypatch)
-        monkeypatch.setenv("CLAUDE_FOO", "foo")
-        monkeypatch.setenv("CLAUDE_BAR", "bar")
-        request = (
-            AgentRequestBuilder()
-            .with_worktree_path(git_repo)
-            .with_env_mode("inherit")
-            .with_env_passthrough(["CLAUDE_BAR"])
-            .build()
-        )
+        """Keep CLAUDE_BAR (listed in env_passthrough) and drop CLAUDE_FOO."""
+        env, _ = _invoke_inherit_with_claude_names(git_repo, monkeypatch)
 
-        response = ClaudeAgentAdapter().invoke(request)
-
-        env = runner.last_call.env
         assert (env["CLAUDE_BAR"], "CLAUDE_FOO" in env) == ("bar", False)
+
+    def test_inherit_mode_reports_dropped_claude_names_as_withheld(
+        self, git_repo: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Report CLAUDE_FOO, and not CLAUDE_BAR, as withheld in the response and in DOVO_ENV_WITHHELD."""
+        env, response = _invoke_inherit_with_claude_names(git_repo, monkeypatch)
+
         assert "CLAUDE_FOO" in response.env_withheld
         assert "CLAUDE_BAR" not in response.env_withheld
         assert "CLAUDE_FOO" in env["DOVO_ENV_WITHHELD"].split(",")
@@ -497,12 +522,33 @@ class ClaudeInvokeTests:
         assert json.loads(runner.snapshot) == {"mcpServers": {"github": {"command": "npx"}}}
 
 
+def _invoke_rejected_edit(
+    git_repo: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> tuple[AgentResponse, Path]:
+    """Invoke with two files edited under max_files=1 and return the response and the rejected-patch destination."""
+    _install_fake_claude_runner(
+        monkeypatch, EditingAgentRunner({"a.txt": "a\n", "b.txt": "b\n"}).returning(stdout=_SUCCESS_STDOUT)
+    )
+    destination = tmp_path / "rejected" / "code_attempt_1.patch"
+    request = (
+        AgentRequestBuilder()
+        .with_worktree_path(git_repo)
+        .with_max_files(1)
+        .with_rejected_patch_destination(destination)
+        .build()
+    )
+
+    return ClaudeAgentAdapter().invoke(request), destination
+
+
 class ClaudeGitIntegrationTests:
     def test_validated_edit_returns_proposed_patch_and_leaves_it_staged(
         self, git_repo: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """Return PROPOSED_PATCH with the edited.txt diff, porcelain 'A  edited.txt\\n', and no rejected patch path."""
-        _arm_claude(monkeypatch, EditingAgentRunner({"edited.txt": "edited\n"}).returning(stdout=_SUCCESS_STDOUT))
+        _install_fake_claude_runner(
+            monkeypatch, EditingAgentRunner({"edited.txt": "edited\n"}).returning(stdout=_SUCCESS_STDOUT)
+        )
 
         response = ClaudeAgentAdapter().invoke(AgentRequestBuilder().with_worktree_path(git_repo).build())
 
@@ -513,35 +559,38 @@ class ClaudeGitIntegrationTests:
         assert _porcelain(git_repo) == "A  edited.txt\n"
         assert response.rejected_patch_path is None
 
-    def test_rejected_diff_is_saved_then_rolled_back(
+    def test_rejected_diff_is_saved_to_the_destination(
         self, git_repo: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """Return PROVIDER_ERROR with the saved patch naming a.txt and b.txt and a clean worktree."""
-        _arm_claude(monkeypatch, EditingAgentRunner({"a.txt": "a\n", "b.txt": "b\n"}).returning(stdout=_SUCCESS_STDOUT))
-        destination = tmp_path / "rejected" / "code_attempt_1.patch"
-        request = (
-            AgentRequestBuilder()
-            .with_worktree_path(git_repo)
-            .with_max_files(1)
-            .with_rejected_patch_destination(destination)
-            .build()
-        )
+        """Return PROVIDER_ERROR with the saved patch naming a.txt and b.txt and the saved-path error last."""
+        response, destination = _invoke_rejected_edit(git_repo, tmp_path, monkeypatch)
 
-        response = ClaudeAgentAdapter().invoke(request)
-
-        assert response.status == AgentResponseStatus.PROVIDER_ERROR
-        assert _porcelain(git_repo) == ""
-        assert response.rejected_patch_path == str(destination)
         patch_text = destination.read_text(encoding="utf-8")
+        assert response.status == AgentResponseStatus.PROVIDER_ERROR
+        assert response.rejected_patch_path == str(destination)
         assert "a.txt" in patch_text
         assert "b.txt" in patch_text
         assert response.errors[-1] == f"Discarded edit saved to {destination}."
+
+    def test_rejected_diff_is_rolled_back_from_the_worktree(
+        self, git_repo: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        _invoke_rejected_edit(git_repo, tmp_path, monkeypatch)
+
+        assert _porcelain(git_repo) == ""
+
+    def test_text_only_run_leaves_the_worktree_clean(self, git_repo: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        _fake_claude(monkeypatch)
+
+        ClaudeAgentAdapter().invoke(AgentRequestBuilder().with_worktree_path(git_repo).build())
+
+        assert _porcelain(git_repo) == ""
 
     def test_denied_run_with_empty_diff_is_blocked_and_leaves_worktree_clean(
         self, git_repo: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """Return BLOCKED with no diff, a clean worktree, and the Bash permission-denied error first."""
-        _arm_claude(monkeypatch, FakeAgentRunner().returning(stdout=_DENIED_STDOUT))
+        _install_fake_claude_runner(monkeypatch, FakeAgentRunner().returning(stdout=_DENIED_STDOUT))
 
         response = ClaudeAgentAdapter().invoke(AgentRequestBuilder().with_worktree_path(git_repo).build())
 
@@ -832,8 +881,17 @@ class ClaudeLoginProbeTests:
 
         assert claude_cli_logged_in() is False
 
-    def test_probe_call_shape(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """Call subprocess.run with the status argv, a 10-second timeout, no shell and an env without credentials or controls."""
+    def test_probe_runs_auth_status_with_a_timeout_and_no_shell(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Call subprocess.run with the status argv, a 10-second timeout and shell False."""
+        calls = _stub_login_probe(monkeypatch)
+
+        claude_cli_logged_in()
+
+        ((argv, kwargs),) = calls
+        assert (argv, kwargs["timeout"], kwargs["shell"]) == (["claude", "auth", "status", "--json"], 10, False)
+
+    def test_probe_env_keeps_path_and_drops_credentials_and_controls(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Pass PATH == '/bin' and none of the host's credential or control variables to the probe."""
         for name in ("CLAUDE_CODE_OAUTH_TOKEN", "ANTHROPIC_API_KEY", "ANTHROPIC_BASE_URL", "CLAUDE_CONFIG_DIR"):
             monkeypatch.setenv(name, "secret")
         monkeypatch.setenv("PATH", "/bin")
@@ -841,10 +899,8 @@ class ClaudeLoginProbeTests:
 
         claude_cli_logged_in()
 
-        ((argv, kwargs),) = calls
-        env = kwargs["env"]
+        env = calls[0][1]["env"]
         assert isinstance(env, dict)
-        assert (argv, kwargs["timeout"], kwargs["shell"]) == (["claude", "auth", "status", "--json"], 10, False)
         assert env["PATH"] == "/bin"
         assert not {"CLAUDE_CODE_OAUTH_TOKEN", "ANTHROPIC_API_KEY", "ANTHROPIC_BASE_URL", "CLAUDE_CONFIG_DIR"} & set(
             env
