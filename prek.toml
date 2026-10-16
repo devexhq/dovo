@@ -2,6 +2,9 @@
 # See https://prek.j178.dev for more information.
 #:schema https://www.schemastore.org/prek.json
 
+default_install_hook_types = ["pre-commit", "commit-msg"]
+default_stages = ["pre-commit"]
+
 [[repos]]
 repo = "builtin"
 hooks = [
@@ -27,5 +30,6 @@ hooks = [
 [[repos]]
 repo = "local"
 hooks = [
+  { id = "check-commit-msg", name = "check-commit-msg", entry = "uv run python scripts/check_commit_msg.py", language = "system", stages = ["commit-msg"] },
   { id = "compile-rules", name = "compile-rules", entry = "uv run python scripts/compile_rules.py --check", language = "system", pass_filenames = false, files = "^(docs/agents/(rules_spec\\.yaml|PLANNER_RULES\\.md)|scripts/compile_rules\\.py|(.*/)?docs/RULES\\.md)$" },
 ]

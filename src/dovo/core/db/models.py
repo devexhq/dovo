@@ -111,7 +111,7 @@ class SessionStatusType(TypeDecorator[SessionStatus]):
 class WorktreeRecord(SQLModel, table=True):
     """Row shape for the centralized `worktrees` table."""
 
-    __tablename__: ClassVar[str] = "worktrees"  # pyright: ignore[reportIncompatibleVariableOverride]
+    __tablename__: ClassVar[str] = "worktrees"  # pyright: ignore[reportIncompatibleVariableOverride]  # SQLModel stub types it as a declared_attr
     model_config = {"extra": "forbid"}
 
     id: str = Field(primary_key=True)
@@ -134,7 +134,7 @@ class WorktreeRecord(SQLModel, table=True):
 class SessionRecord(SQLModel, table=True):
     """Row shape for the centralized `sessions` table."""
 
-    __tablename__: ClassVar[str] = "sessions"  # pyright: ignore[reportIncompatibleVariableOverride]
+    __tablename__: ClassVar[str] = "sessions"  # pyright: ignore[reportIncompatibleVariableOverride]  # SQLModel stub types it as a declared_attr
     model_config = {"extra": "forbid"}
 
     id: int | None = Field(default=None, primary_key=True)
@@ -184,7 +184,7 @@ class SessionRecord(SQLModel, table=True):
 class ArtifactRecord(SQLModel, table=True):
     """Row shape for the centralized `artifacts` table."""
 
-    __tablename__: ClassVar[str] = "artifacts"  # pyright: ignore[reportIncompatibleVariableOverride]
+    __tablename__: ClassVar[str] = "artifacts"  # pyright: ignore[reportIncompatibleVariableOverride]  # SQLModel stub types it as a declared_attr
     model_config = {"extra": "forbid"}
     __table_args__ = (
         UniqueConstraint(
@@ -217,7 +217,7 @@ class ArtifactRecord(SQLModel, table=True):
 class CostRecord(SQLModel, table=True):
     """Row shape for the centralized `costs` table."""
 
-    __tablename__: ClassVar[str] = "costs"  # pyright: ignore[reportIncompatibleVariableOverride]
+    __tablename__: ClassVar[str] = "costs"  # pyright: ignore[reportIncompatibleVariableOverride]  # SQLModel stub types it as a declared_attr
     model_config = {"extra": "forbid"}
 
     id: int | None = Field(default=None, primary_key=True)
