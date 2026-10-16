@@ -84,9 +84,8 @@ Both blueprints run against the working tree (`use_worktree: false`) and need `u
 **Relevant sources:** `prek.toml`, `scripts/check_commit_msg.py`
 
 `prek install` installs a `commit-msg` hook alongside `pre-commit`. It rejects a title without a
-`type(scope): ` or `type: ` prefix and any `Co-authored-by:` or "Generated with" attribution line
-(see [git-and-pr-conventions.md](git-and-pr-conventions.md)). Merge, revert, `fixup!` and `squash!`
-titles pass.
+`type(scope): ` or `type: ` prefix (see [git-and-pr-conventions.md](git-and-pr-conventions.md)).
+Merge, revert, `fixup!` and `squash!` titles pass.
 
 ---
 

@@ -1,4 +1,4 @@
-"""Tier 1 contract: scripts/check_commit_msg.py accepts semantic titles and rejects attribution trailers."""
+"""Tier 1 contract: scripts/check_commit_msg.py accepts semantic titles and rejects any other title."""
 
 from __future__ import annotations
 
@@ -35,31 +35,22 @@ class CommitMessageTests:
             pytest.param("Merge pull request #1 from devexhq/branch\n", id="merge"),
             pytest.param('Revert "feat: add thing"\n', id="revert"),
             pytest.param("fixup! feat: add thing\n", id="fixup"),
+            pytest.param("feat: add thing\n\nCo-Authored-By: Someone <a@b.c>\n", id="trailers-unchecked"),
         ],
     )
     def test_accepts(self, message: str) -> None:
         assert CHECKER.problems(message) == []
 
     @pytest.mark.parametrize(
-        ("message", "expected"),
+        "message",
         [
-            pytest.param("Update agent model\n", "title must start with", id="no-type"),
-            pytest.param("feature: add thing\n", "title must start with", id="unknown-type"),
-            pytest.param("feat:add thing\n", "title must start with", id="missing-space"),
-            pytest.param(
-                "feat: add thing\n\nCo-Authored-By: Someone <a@b.c>\n",
-                "remove the attribution line: Co-Authored-By: Someone <a@b.c>",
-                id="co-author",
-            ),
-            pytest.param(
-                "feat: add thing\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n",
-                "remove the attribution line: 🤖 Generated with [Claude Code](https://claude.com/claude-code)",
-                id="generated-with",
-            ),
+            pytest.param("Update agent model\n", id="no-type"),
+            pytest.param("feature: add thing\n", id="unknown-type"),
+            pytest.param("feat:add thing\n", id="missing-space"),
         ],
     )
-    def test_rejects(self, message: str, expected: str) -> None:
+    def test_rejects(self, message: str) -> None:
         found = CHECKER.problems(message)
 
         assert len(found) == 1
-        assert found[0].startswith(expected)
+        assert found[0].startswith("title must start with")
