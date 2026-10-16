@@ -23,16 +23,27 @@ WRITE_EXCEPTIONS: Final[frozenset[tuple[str, str]]] = frozenset(
         # Attempt log streamed while a subprocess runs, and the step output file the step itself fills.
         ("src/dovo/engine/executors/step_executor.py", "open"),
         ("src/dovo/engine/executors/step_executor.py", ".write_text"),
+        # Append-only session log, written line by line while a session runs.
+        ("src/dovo/engine/executors/session_log.py", ".open"),
     }
 )
 
 
-def _write_mode(node: ast.Call) -> str | None:
-    """Return the literal mode of an `open(...)` call, or None when it is not a literal."""
-    mode = node.args[1] if len(node.args) > 1 else next((kw.value for kw in node.keywords if kw.arg == "mode"), None)
+def _write_mode(node: ast.Call, mode_index: int) -> str | None:
+    """Return the literal mode of an open call, or None when it is not a literal.
+
+    `mode_index` is the positional slot of the mode: 1 for `open(path, mode)`, 0 for `path.open(mode)`.
+    """
+    positional = node.args[mode_index] if len(node.args) > mode_index else None
+    mode = positional or next((kw.value for kw in node.keywords if kw.arg == "mode"), None)
     if isinstance(mode, ast.Constant) and isinstance(mode.value, str):
         return mode.value
     return None
+
+
+def _opens_for_writing(node: ast.Call, mode_index: int) -> bool:
+    """Return whether an open call's literal mode writes, appends, creates or updates."""
+    return bool(set(_write_mode(node, mode_index) or "") & set("wax+"))
 
 
 def _direct_writes(file_path: Path) -> set[tuple[str, str]]:
@@ -45,7 +56,9 @@ def _direct_writes(file_path: Path) -> set[tuple[str, str]]:
             continue
         if isinstance(node.func, ast.Attribute) and node.func.attr in WRITE_METHODS:
             found.add((rel_path, f".{node.func.attr}"))
-        elif isinstance(node.func, ast.Name) and node.func.id == "open" and set(_write_mode(node) or "") & set("wax+"):
+        elif isinstance(node.func, ast.Attribute) and node.func.attr == "open" and _opens_for_writing(node, 0):
+            found.add((rel_path, ".open"))
+        elif isinstance(node.func, ast.Name) and node.func.id == "open" and _opens_for_writing(node, 1):
             found.add((rel_path, "open"))
     return found
 
