@@ -34,7 +34,7 @@ class DummyFormatter(ComponentFormatter[DummyData, DummyView]):
     def transform(self, data: DummyData) -> DummyView:
         return DummyView(message=data.message, count=data.count)
 
-    def to_rich(self, data: DummyData | DummyView) -> Panel:
+    def to_rich(self, data: DummyData) -> Panel:
         return Panel(f"{data.message}: {data.count}")
 
 
@@ -42,7 +42,7 @@ class DummyMissingFormatter(ComponentFormatter[DummyData, DummyView]):
     def transform(self, data: DummyData) -> DummyView:
         return DummyView(message=data.message, count=data.count)
 
-    def to_rich(self, data: DummyData | DummyView) -> Panel:
+    def to_rich(self, data: DummyData) -> Panel:
         return Panel("Incomplete content")
 
 
@@ -65,20 +65,20 @@ class FormatterHarnessTests:
         assert "test content" in output
 
     def test_assert_rich_render_shows_every_view_value_passes_when_present(self) -> None:
-        view = DummyView(message="operational", count=42)
+        data = DummyData(message="operational", count=42)
 
-        assert_rich_render_shows_every_view_value(DummyFormatter, view, ["operational", "42"])
+        assert_rich_render_shows_every_view_value(DummyFormatter, data, ["operational", "42"])
 
     def test_assert_rich_render_shows_every_view_value_fails_when_field_missing(self) -> None:
-        view = DummyView(message="operational", count=42)
+        data = DummyData(message="operational", count=42)
 
         with pytest.raises(AssertionError, match="missing from Rich renderable output"):
-            assert_rich_render_shows_every_view_value(DummyMissingFormatter, view, ["operational", "42"])
+            assert_rich_render_shows_every_view_value(DummyMissingFormatter, data, ["operational", "42"])
 
     def test_assert_rich_render_shows_every_view_value_supports_formatter_case(self) -> None:
         data = DummyData(message="operational", count=42)
         view = DummyView(message="operational", count=42)
-        case = FormatterCase(data=data, view=view, render_expectations=["operational", "42"])
+        case = FormatterCase(data=data, view=view, render_expectations=[view.message, str(view.count)])
 
         assert_rich_render_shows_every_view_value(DummyFormatter, case, case.render_expectations)
 
@@ -96,17 +96,17 @@ class FormatterHarnessTests:
             assert_transform_derives_expected_view(DummyFormatter, data, mismatched)
 
     def test_assert_json_payload_matches_published_shape_passes_on_exact_match(self) -> None:
-        view = DummyView(message="hello", count=1)
+        data = DummyData(message="hello", count=1)
         expected = {"message": "hello", "count": 1}
 
-        assert_json_payload_matches_published_shape(DummyFormatter, view, expected)
+        assert_json_payload_matches_published_shape(DummyFormatter, data, expected)
 
     def test_assert_json_payload_matches_published_shape_fails_on_wire_mismatch(self) -> None:
-        view = DummyView(message="hello", count=1)
+        data = DummyData(message="hello", count=1)
         wrong_payload = {"message": "hello", "count": 99, "extra": True}
 
         with pytest.raises(AssertionError, match="Wire format mismatch"):
-            assert_json_payload_matches_published_shape(DummyFormatter, view, wrong_payload)
+            assert_json_payload_matches_published_shape(DummyFormatter, data, wrong_payload)
 
     def test_assert_json_payload_matches_published_shape_supports_formatter_case_and_domain_data(self) -> None:
         data = DummyData(message="hello", count=1)
