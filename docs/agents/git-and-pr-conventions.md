@@ -4,9 +4,8 @@ Conventions for git commits, branches, and pull requests.
 
 ---
 
-## Commit and PR Attribution
+## Commit Messages
 
-- **No AI trailers**: Do not add `Co-authored-by: Cursor`, `Co-authored-by: ...`, or tool attribution lines to commits or PR descriptions.
 - **Semantic messages**: Use human-readable, imperative commit titles and descriptive bodies. Start the title with a semantic prefix, `type(scope): ...` or `type: ...` (e.g. `docs(rules): sync agent docs`).
 
 ---
