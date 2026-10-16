@@ -44,9 +44,9 @@ Write names as full words. Do not shorten a word by dropping letters.
 - All non-test public functions and methods must carry a docstring following Google docstring style.
 - When documenting parameters (`Args:`), all function parameters must be documented (enforced by `D417`).
 - Test functions under `tests/` are exempt from Ruff `D` rules per [testing.md](testing.md).
-- Keep docstrings terse: a one-line title, plus a description only for hidden contracts or safety behavior the code cannot show (CODE-003). Outcomes and failure paths go in the description, not the title.
-- Describe only the documented unit's own behavior, never what a caller or another module does with it (CODE-004).
-- One docstring per unit; a second bare string statement after it is dead code that reads as documentation (CODE-005).
+- Keep docstrings terse: a one-line title, plus a description only for hidden contracts or safety behavior the code cannot show. Outcomes and failure paths go in the description, not the title.
+- Describe only the documented unit's own behavior, never what a caller or another module does with it.
+- One docstring per unit; a second bare string statement after it is dead code that reads as documentation.
 
 ---
 
@@ -101,7 +101,7 @@ Operations that can fail never raise for business or operational failures. When 
 
 **Relevant sources:** `src/dovo/cli/ui/`
 
-- All terminal output from `cli/` and `core/` leaves through `ui_dispatcher.dispatch(result)`. `print()`, `typer.echo`, `rich` imports and `Console.print()` live only under `cli/ui/`; `core/` imports nothing from `rich` and never instantiates a `Console` (RENDER-001; `tests/lint/test_output_routing.py` enforces the `print` ban).
+- All terminal output from `cli/` and `core/` leaves through `ui_dispatcher.dispatch(result)`. `print()`, `typer.echo`, `rich` imports and `Console.print()` live only under `cli/ui/`; `core/` imports nothing from `rich` and never instantiates a `Console` (`tests/lint/test_output_routing.py` enforces the `print` ban).
 - `to_rich` derives nothing. It reads `transform(data)` and lays it out into Rich renderables.
 - `to_raw` bypasses the view entirely and returns bytes the caller asked for; `DiffResultFormatter` is the only implementation.
 - Domain shared table builders reside in `src/dovo/cli/ui/formatters/<domain>/common.py`.
@@ -163,8 +163,7 @@ through. `object` forces a narrow before use; `Any` forces nothing.
 
 Name the yield type, the send type when it is not `None` and the return type when it is not
 `None`, dropping trailing `None` defaults as ruff `UP043` requires: `Generator[Session]` for a
-generator that sends and returns `None`, `Generator[str, None, int]` when it returns an `int`
-(TYPE-005).
+generator that sends and returns `None`, `Generator[str, None, int]` when it returns an `int`.
 
 ### Rule of thumb
 
@@ -191,7 +190,7 @@ you can, name them.
    (`reportIncompatibleVariableOverride` in `core/db/models.py`) is the
    current instance. Every SQLModel `__tablename__` and every other class-level SQL
    string constant in `core/db/models.py` is annotated `ClassVar[str]`, not `Any` or a
-   bare `str` (TYPE-004).
+   bare `str`.
 3. **Platform-gated imports.** `msvcrt` does not exist when
    `pythonPlatform = "Linux"` (`reportMissingImports`,
    `reportConstantRedefinition` in `common/lock.py`).

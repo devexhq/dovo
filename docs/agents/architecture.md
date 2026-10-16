@@ -108,7 +108,7 @@ Use these terms precisely. A backticked type below must exist in `src/`, enforce
 ## Adding a new catalog-backed domain
 
 1. **Models**: `<X>Definition` in `core/catalog/definitions/<x>.py`.
-2. **Exceptions**: `<X>LoadError` / `<X>ValidationError` subclassing definition errors in `core/catalog/exceptions.py`. Every exception class there descends from `DefinitionError`, `DefinitionNotFoundError`, `DefinitionLoadError` or `DefinitionValidationError` (MODEL-004).
+2. **Exceptions**: `<X>LoadError` / `<X>ValidationError` subclassing definition errors in `core/catalog/exceptions.py`. Every exception class there descends from `DefinitionError`, `DefinitionNotFoundError`, `DefinitionLoadError` or `DefinitionValidationError`.
 3. **Handle**: `core/catalog/<x>.py` -> `Catalog.get(..., item_type=..., definition_cls=...)`.
 4. **Execution**: If executing steps, run them through `Engine.run` (via a run service); do not add a separate step loop.
 5. **CLI**: Thin `commands/root.py`, UI formatters in `cli/ui/formatters/<x>/`.

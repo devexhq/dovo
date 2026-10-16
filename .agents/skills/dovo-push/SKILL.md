@@ -17,8 +17,7 @@ Get the current branch's work committed and represented by an open PR. Nothing e
 - **Never run tests or tooling.** No `dovo run tests`, no `dovo run quality`, no `pytest`, no `ruff`, no `basedpyright`, no `uv sync`. `/dovo-code` already gated the change; re-running here is not this skill's job. If you believe the gates were never run, say so and let the human decide rather than running them.
 - **Never write code.** No fixes, no formatting, no "while I'm here" edits. If the diff looks wrong, report it and stop.
 - **Never commit to the default branch.** If `HEAD` is on it, update against origin, create a branch and continue.
-- **Never stage `.agentic/`.** The plan and review are working artifacts, not deliverables. Step 2 deletes them outright, which is the second guarantee behind the `/.agentic/` ignore rule. Leave `.dovo/` and `scratch/` alone.
-- **No AI attribution.** No `Co-authored-by:` trailers, no tool attribution lines, in commits or PR bodies.
+- **Never stage or delete `.agentic/`.** The plan and review are working artifacts, not deliverables. Later phases still need the plan, and only `/dovo-plan` clears the directory, at the start of the next cycle. Step 2 and Step 3 check that nothing under it reaches a commit, which is the second guarantee behind the `/.agentic/` ignore rule. Leave `.dovo/` and `scratch/` alone.
 - **Do not add reviewers** unless the user names them.
 
 ## Step 1: Read the state
@@ -34,28 +33,28 @@ gh pr view --json number,state,baseRefName,headRefName,title,body,url 2>/dev/nul
 
 Branch names follow `<username>/<short-description>`. If the current branch does not, mention it once and carry on; do not rename a branch that already has commits.
 
-## Step 2: Clear the agentic artifacts
+## Step 2: Check the agentic artifacts
 
-Before deleting anything, capture the issue number for later use in the PR description. `/dovo-plan` writes `.agentic/plan.md` with a `# Issue #<n>: <title>` header (see `docs/agents/planning.md`); read that header now, since it's the only place the number lives once the file is gone:
+Capture the issue number for later use in the PR description. `/dovo-plan` writes `.agentic/plan.md` with a `# Issue #<n>: <title>` header (see `docs/agents/planning.md`):
 
 ```bash
 head -1 .agentic/plan.md 2>/dev/null
 ```
 
-Then delete the handoff files **before staging anything**, so no path under `.agentic/` can reach the index even if the ignore rule is missing or a stale copy was tracked:
+Leave every file under `.agentic/` in place: `/dovo-code --phase <n>` reads the plan for later phases, and `/dovo-plan` clears the whole directory before it starts the next cycle. Before staging anything, confirm that git neither tracks nor stages any of it:
 
 ```bash
-rm -f .agentic/plan.md .agentic/review.md .agentic/review.json .agentic/verdict.txt .agentic/coding-audit.json .agentic/review-audit.json
 git ls-files .agentic
+git diff --staged --name-only -- .agentic
 ```
 
-The plan and review have served their purpose by push time, and `/dovo-plan` recreates both at the start of the next cycle. If `git ls-files .agentic` prints anything, the file was committed before the ignore rule landed: stop, report it, and let the human decide whether to untrack it (`git rm -r --cached .agentic`) rather than folding that into this change. 🚨
+Both commands must print nothing. If `git ls-files` prints a path, it was committed before the ignore rule landed. If `git diff --staged` prints a path, something staged it. In either case stop, report it, and let the human decide whether to untrack it (`git rm -r --cached .agentic`) rather than folding that into this change. 🚨
 
 ## Step 3: Commit
 
 Review the actual diff before writing a message: the message describes what the change does, not what the plan said it would do.
 
-- Stage deliberately (`git add <paths>`), never `git add -A` with an unread `git status`.
+- Stage deliberately (`git add <paths>`), never `git add -A` with an unread `git status`. Re-run `git diff --staged --name-only -- .agentic` before committing; it must still print nothing.
 - Prefer **one commit per coherent concern**. If the tree holds unrelated concerns, say so and ask before lumping them together, since this repo requires one fix or feature per PR. 🚨
 - Title: imperative, human-readable, semantic prefix (`feat(ui):`, `fix(config):`, `refactor(cli):`, `docs:`, `test:`). Body: what changed and why, wrapped prose, no file-by-file listing.
 - Nothing to commit and nothing unpushed means the work is already published: report that and stop.
@@ -91,10 +90,10 @@ Three sections, intent-focused, per `docs/agents/git-and-pr-conventions.md`:
 Fixes #<n>
 ```
 
-Use `Fixes #N` (or `Closes #N`) when the work resolves an issue, with `N` from the header captured in Step 2; when Step 2 found no issue number, keep the Linkage section and write `Fixes: none (no tracking issue)` rather than inventing a reference (CI-002). Keep the title in the same imperative, semantic style as the commit titles.
+Use `Fixes #N` (or `Closes #N`) when the work resolves an issue, with `N` from the header captured in Step 2; when Step 2 found no issue number, keep the Linkage section and write `Fixes: none (no tracking issue)` rather than inventing a reference. Keep the title in the same imperative, semantic style as the commit titles.
 
 Write the body to a temp file outside the repo (`mktemp`), never into `.agentic/` or the working tree, so nothing is left behind for the next `git status` to pick up.
 
 ## Report
 
-State the commits created (short sha and title), whether you pushed to an existing PR or opened a new one, the PR URL, whether the description was updated or left as-is, and that the `.agentic/` handoff files were removed. Close by noting that no tests or tooling were run, so CI is the first gate this change will meet.
+State the commits created (short sha and title), whether you pushed to an existing PR or opened a new one, the PR URL, whether the description was updated or left as-is, and that no `.agentic/` file was committed. Close by noting that no tests or tooling were run, so CI is the first gate this change will meet.

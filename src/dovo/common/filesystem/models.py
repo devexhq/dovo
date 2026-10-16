@@ -10,7 +10,7 @@ from dovo.common.lock import resolve_lock_file_path
 
 if TYPE_CHECKING:
     # Annotation-only: from __future__ import annotations means this is never evaluated
-    # at runtime, so it carries zero real common -> core coupling (ARCH-001).
+    # at runtime, so it carries zero real common -> core coupling (R1).
     from dovo.core.catalog.models import CatalogTier
 
 
