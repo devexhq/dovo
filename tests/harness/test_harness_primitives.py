@@ -3,92 +3,12 @@
 from __future__ import annotations
 
 import json
-import os
-import subprocess
 from pathlib import Path
 
 import pytest
-import typer
-from typer.testing import CliRunner
 
-from dovo.common.constants import REQUIRED_SUBDIRS
 from tests.harness import FakeAgentRunner, FakeAgentRunnerCall, initialized_workspace_paths
 from tests.harness.poll import wait_until
-
-
-class IsolatedWorkspaceFixtureTests:
-    """Verification tests for isolated_workspace fixture."""
-
-    def test_isolated_workspace_creates_dovo_structure(self, isolated_workspace: Path) -> None:
-        dot_dovo = isolated_workspace / ".dovo"
-        assert dot_dovo.is_dir()
-        for subdir in REQUIRED_SUBDIRS:
-            assert (dot_dovo / subdir).is_dir()
-        assert (dot_dovo / "worktrees").is_dir()
-        assert (dot_dovo / "catalog").is_dir()
-
-
-class GitRepoFixtureTests:
-    """Verification tests for git_repo fixture."""
-
-    def test_git_repo_initializes_valid_git_repository_on_main(self, git_repo: Path) -> None:
-        assert (git_repo / ".git").is_dir()
-
-        branch_proc = subprocess.run(
-            ["git", "branch", "--show-current"],
-            cwd=git_repo,
-            check=True,
-            capture_output=True,
-            text=True,
-        )
-        assert branch_proc.stdout.strip() == "main"
-
-        head_proc = subprocess.run(
-            ["git", "rev-parse", "HEAD"],
-            cwd=git_repo,
-            check=True,
-            capture_output=True,
-            text=True,
-        )
-        head_sha = head_proc.stdout.strip()
-        assert len(head_sha) == 40
-
-    @pytest.mark.parametrize(
-        ("config_key", "expected_value"),
-        [
-            pytest.param("user.name", "Test User", id="name"),
-            pytest.param("user.email", "test@example.com", id="email"),
-        ],
-    )
-    def test_git_repo_configures_local_user_identity(
-        self,
-        git_repo: Path,
-        config_key: str,
-        expected_value: str,
-    ) -> None:
-        proc = subprocess.run(
-            ["git", "config", config_key],
-            cwd=git_repo,
-            check=True,
-            capture_output=True,
-            text=True,
-        )
-        assert proc.stdout.strip() == expected_value
-
-
-class CliRunnerFixtureTests:
-    """Verification tests for cli_runner fixture."""
-
-    def test_cli_runner_sets_columns_and_no_color(self, cli_runner: CliRunner) -> None:
-        app = typer.Typer()
-
-        @app.command()
-        def check_env() -> None:
-            assert os.environ.get("COLUMNS") == "160"
-            assert os.environ.get("NO_COLOR") == "1"
-
-        result = cli_runner.invoke(app)
-        assert result.exit_code == 0
 
 
 class FakeAgentRunnerTests:

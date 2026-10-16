@@ -5,7 +5,6 @@ from __future__ import annotations
 import subprocess
 import tempfile
 from pathlib import Path
-from typing import Any
 
 from dovo.common.filesystem import Filesystem
 from dovo.common.filesystem.models import RepositoryPaths
@@ -23,34 +22,20 @@ class WorkspaceBuilder:
 
     def __init__(self, root: Path | None = None) -> None:
         self._root: Path | None = root
-        self._project_name: str | None = None
         self._scaffold_config: bool = True
-        self._config_overwrite: bool = True
         self._scaffold_database: bool = True
         self._scaffold_identity: bool = True
         self._scaffold_catalog: bool = True
-        self._catalog_force: bool = True
         self._init_git: bool = False
-        self._config_data: dict[str, Any] | None = None
+        self._config_data: dict[str, object] | None = None
         self._git_branch: str = "main"
         self._git_user_name: str = "Test User"
         self._git_user_email: str = "test@example.com"
 
-    def with_project_name(self, name: str) -> WorkspaceBuilder:
-        """Set project name for generated configuration."""
-        self._project_name = name
-        return self
-
-    def with_config(
-        self,
-        *,
-        data: dict[str, Any] | None = None,
-        overwrite: bool = True,
-    ) -> WorkspaceBuilder:
+    def with_config(self, *, data: dict[str, object] | None = None) -> WorkspaceBuilder:
         """Enable config generation with optional explicit payload."""
         self._scaffold_config = True
         self._config_data = data
-        self._config_overwrite = overwrite
         return self
 
     def without_config(self) -> WorkspaceBuilder:
@@ -71,12 +56,6 @@ class WorkspaceBuilder:
     def without_identity(self) -> WorkspaceBuilder:
         """Skip writing project.json so the built workspace is uninitialized."""
         self._scaffold_identity = False
-        return self
-
-    def with_catalog_templates(self, *, force: bool = True) -> WorkspaceBuilder:
-        """Enable catalog templates seeding."""
-        self._scaffold_catalog = True
-        self._catalog_force = force
         return self
 
     def without_catalog_templates(self) -> WorkspaceBuilder:
@@ -129,7 +108,7 @@ class WorkspaceBuilder:
             init_database(paths.database_file)
 
         if self._scaffold_catalog:
-            seed_all_catalog_templates(paths, force=self._catalog_force)
+            seed_all_catalog_templates(paths, force=True)
 
         return workspace_root
 
@@ -182,9 +161,6 @@ class WorkspaceBuilder:
     def _scaffold_workspace_config(self, workspace_root: Path, dot_dovo: Path) -> None:
         config_path = dot_dovo / "config.json"
         if self._config_data is not None:
-            if not self._config_overwrite and config_path.exists():
-                return
             Filesystem.atomic_write_json(config_path, self._config_data)
         else:
-            project_name = self._project_name or workspace_root.name
-            generate_default_config(config_path, project_name=project_name, overwrite=self._config_overwrite)
+            generate_default_config(config_path, project_name=workspace_root.name, overwrite=True)
