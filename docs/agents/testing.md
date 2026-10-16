@@ -1,7 +1,7 @@
 # Testing
 
 Testing conventions, taxonomy, and execution patterns for Dovo CLI. Narrative companion to
-`tests/docs/RULES.md` (auto-generated, TEST-001+); where the two disagree, RULES.md wins.
+rules R12-R16 in the root [AGENTS.md](../../AGENTS.md); where the two disagree, AGENTS.md wins.
 
 ## The rule that matters most
 
@@ -26,7 +26,7 @@ Rules: every source module has a test file, no exemption list; every test direct
 tests split into files named for the behavior (`test_step_executor_<behavior>.py`);
 `tests/core/**` never imports `dovo.cli.*`; no part-numbered or grab-bag files. A per-domain
 `conftest.py` holds only fixtures that its own domain's test files share, never one another domain
-needs (TEST-002).
+needs.
 
 ## Naming Conventions
 
@@ -38,9 +38,9 @@ needs (TEST-002).
   `should` prefix is filler, not an outcome.
 - Docstrings are optional and must not restate the name; write one only for a constraint the
   identifier can't carry. It is one imperative sentence with no `[tier-N/type]` tag and no
-  `<symbol>:` prefix, within 120 columns (TEST-020). A docstring on a helper, fixture, double,
+  `<symbol>:` prefix, within 120 columns. A docstring on a helper, fixture, double,
   class, or module is a one-line title of what it is or does, plus a description only for a hidden
-  contract (TEST-020).
+  contract.
 
 ## The Four Execution Tiers
 
@@ -77,9 +77,8 @@ contract for the same result type.
 
 A `*CliIntegrationTests` suite may pin the command's own result DTO via a dispatch spy that
 monkeypatches `ui_dispatcher.dispatch` while still calling through to the real dispatcher
-(TEST-008 still applies), scoped to the command's own terminal `BaseResult` only — never another
-dispatched object (`MessageEvent`, `WarningEvent`, `PromptEvent`, progress/lifecycle events). See
-TEST-019.
+(R15 still applies), scoped to the command's own terminal `BaseResult` only — never another
+dispatched object (`MessageEvent`, `WarningEvent`, `PromptEvent`, progress/lifecycle events).
 
 ### Tier 4 - Invariants (`tests/lint/`)
 Static AST analysis and architectural boundary enforcement: layer isolation, output routing
@@ -100,7 +99,7 @@ No hardcoded sleeps in a test body: monkeypatch the clock at the module boundary
 happened. Inject the clock and id generators wherever their output reaches a result field, so
 tests assert literal timestamps and ids. A wait on an OS event with no virtual equivalent (a
 process group reaped after `SIGKILL`) goes through one shared harness poll helper that owns the
-interval and deadline; the only sleep allowed is inside that helper (TEST-011).
+interval and deadline; the only sleep allowed is inside that helper (R16).
 Subprocess tests register handles with `process_registry`; teardown sends `SIGKILL` to spawned
 process groups. Secrets/env-dependent tests use `monkeypatch` to isolate environment variables.
 
@@ -136,27 +135,27 @@ Always `pytest.param(..., id="descriptive_case_id")`, no broad `Any` in signatur
 - A seam is not tested until a test proves a real caller uses it from the production path.
 - Test doubles must be types production actually passes, or a Protocol production is typed against.
   Never build a double's interface as the union of attributes from every branch of a `hasattr`
-  chain (TEST-008).
+  chain (R15).
 - No test may be the sole consumer of a production symbol — if deleting the test makes the code
   unreachable, delete both. The same holds for harness symbols (builder method, fixture,
-  assertion helper): each needs a caller outside `tests/harness/` (TEST-013).
+  assertion helper): each needs a caller outside `tests/harness/`.
 - Every public function or method (no leading underscore) in a changed production module gets at
   least one success test and one failure/boundary test in its mirrored test file; private helpers
-  are covered only through their public callers (TEST-016).
+  are covered only through their public callers.
 - A modified command routing or multi-step orchestration path gets a test that exercises the
-  updated branch (TEST-015).
+  updated branch.
 - Never write negative existence tests for deleted symbols (`assert not hasattr(mod, "old_fn")`).
 - No reaching into private state: no `obj._attr`, no importing underscore-prefixed symbols.
 - Machine-readable output byte-exact; human-readable output by data presence — never scraped for
   exactness, never substring-matched when it needs to be exact. The exception is a CLI runner test
-  under `tests/cli/`, which may assert a literal status line of the command's own output (TEST-017).
+  under `tests/cli/`, which may assert a literal status line of the command's own output.
 - The name and docstring are part of the assertion — a reviewer must be able to point at the line
   that proves the claim.
 - `is not None` is not a complete assertion; `isinstance` only when it distinguishes two real code paths.
 - Annotate test helpers as tightly as production; `Any` rules in `code-conventions.md` apply unchanged.
 - Never `# pyright: ignore` a test-tree error — fix the fixture. Exception: an intentional ill-typed
   input whose subject is a runtime `TypeError` or `ValidationError`; see
-  [code-conventions.md](code-conventions.md#type-checker-suppressions) (TYPE-006).
+  [code-conventions.md](code-conventions.md#type-checker-suppressions).
 - Never assert help text wording — assert Click metadata instead. Exception: the `dovo --help` vs
   `README.md` check in `tests/lint/`.
 - Cover every branch of a factory, dispatcher, or `elif` chain.

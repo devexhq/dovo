@@ -18,7 +18,7 @@ Skip planning only for a single-file, no-new-surface change (a typo, a message s
 gh issue view <number> --json number,title,body
 ```
 
-Extract the contract directly from the issue body (see [github-issues.md](github-issues.md); PLAN-003 through PLAN-006):
+Extract the contract directly from the issue body (see [github-issues.md](github-issues.md)):
 
 - Copy every `FR-*`/`NFR-*` verbatim with its ID, plus **Pre-determined data**, **Out of scope**, and **Definition of Done** verbatim. No paraphrasing, no "Goal" or "As a user" prose.
 - Do not open or consult sibling issues.
@@ -30,9 +30,9 @@ If a detail is unspecified, choose the option matching the nearest existing patt
 
 ## Step 2: Ground yourself in the current code
 
-Read the codebase directly before planning; never plan from memory (PLAN-007, PLAN-008):
+Read the codebase directly before planning; never plan from memory:
 
-1. Read the always-on docs listed in [AGENTS.md](../../AGENTS.md).
+1. Read [AGENTS.md](../../AGENTS.md): the rules R1–R17 every phase must satisfy, and the exemplars to mirror.
 2. Read the existing code for every domain touched: `core/<domain>/{models,exceptions,<domain>}.py`, `services/`, `cli/<name>/app.py` and `commands/`, `cli/ui/formatters/<domain>/`, and mirrored tests.
 3. **Name the closest existing implementation to mirror**, with `file:line` citations (e.g. `dovo config set` -> `Config.set` in `src/dovo/core/config/mutate.py` -> `ConfigSetResult` -> `config_set_command` -> `ConfigSetFormatter`). Quote a mirrored symbol as signature + docstring only, never its body.
 4. **Verify doc field lists against source code**; record stale doc claims as traps.
@@ -66,7 +66,20 @@ Write this table to `.agentic/evidence.md` under an `## Artifact inventory` head
 - **Tests** -> mirrored `tests/` path, tier named (see `docs/agents/testing.md#the-four-execution-tiers`)
 - **Docs** -> only docs matching [docs/agents/documentation.md](documentation.md) gates (`docs/cli/`, `schemas.md`, `architecture.md`, `README.md`)
 
-Decompose every planned function so it stays below cognitive complexity <= 10 (PLAN-012).
+Decompose every planned function so it stays below cognitive complexity <= 10.
+
+---
+
+## Step 3b: Size the work and split it into phases
+
+Each phase becomes one PR, implemented by one `/dovo-code` run and reviewed on its own, so small phases keep review cheap and keep a bad change out of `main`. Estimate the changed lines per FR from the artifact inventory, then group FRs into phases:
+
+- **One concern per phase**, reviewable in one sitting: roughly 400 changed lines or less, tests included.
+- **Each phase stands alone**: it passes `dovo run quality`, leaves no dead code, and ships something a reviewer can check (a model and its service with tests, then the command and formatter that use it).
+- **Replacing an internal** is phased as add the new path, switch the callers, delete the old one. Plan the deletion phase up front and list its deletions in the ledger, so the interim state never becomes a shim (R10).
+- **Order phases by dependency**, lower layers first (R1).
+
+A change that fits one phase gets a one-row Phases table. Do not pad a small change into phases.
 
 ---
 
@@ -81,7 +94,7 @@ Place these immediately after the intro line, before `## Contract`. They are the
 **Open Questions** — one numbered entry per genuinely unresolved judgment call, not a restatement of every `### Decisions` bullet in the plan:
 1. `> **Open Question N**: <one-line question>` as a blockquote.
 2. 2-3 sentences of plain prose below the blockquote (outside it, not inside): why it matters, what the plan currently assumes, what confirming or rejecting it changes.
-3. Every 🚨 elsewhere in the plan (PLAN-014) must have a matching numbered entry here — 🚨 on a `### Decisions` bullet marks *where* a judgment call was made; the Open Questions entry is *the* place a reviewer resolves it, not one of several places the same question is repeated.
+3. Every 🚨 elsewhere in the plan must have a matching numbered entry here — 🚨 on a `### Decisions` bullet marks *where* a judgment call was made; the Open Questions entry is *the* place a reviewer resolves it, not one of several places the same question is repeated.
 4. A short, unnumbered **Resolved during review** line (no blockquote) records anything settled during the planning conversation itself — kept for traceability, explicitly marked as needing no further sign-off. Do not give a resolved item the full blockquote treatment; that visual weight is reserved for what still needs an answer.
 5. If nothing is genuinely open, say so in one line rather than omitting the section.
 
@@ -109,7 +122,7 @@ Strictly imperative verbs ("Create `...`", "Assert `...`"). State what to do, no
 
 ### Code sample rules
 
-**Literal contracts:** write exact code for anything that is a contract — model/enum definitions with every field and default, full signatures with type hints and docstrings, Typer flags and help text, formatter shells, literal JSON dicts, error/warning strings, fixtures, regex patterns (PLAN-010).
+**Literal contracts:** write exact code for anything that is a contract — model/enum definitions with every field and default, full signatures with type hints and docstrings, Typer flags and help text, formatter shells, literal JSON dicts, error/warning strings, fixtures, regex patterns.
 
 ```python
 class WorktreePruneStatus(StrEnum):
@@ -129,7 +142,7 @@ class WorktreePruneResult(BaseResult):
     pruned_items: list[str] = []
 ```
 
-**Production stubs:** exact signature + one-line intent docstring + `raise NotImplementedError`. No numbered steps, no body code (PLAN-011).
+**Production stubs:** exact signature + one-line intent docstring + `raise NotImplementedError`. No numbered steps, no body code.
 
 ```python
 def prune_worktrees(context: CliContext, dry_run: bool = False) -> WorktreePruneResult:
@@ -137,7 +150,7 @@ def prune_worktrees(context: CliContext, dry_run: bool = False) -> WorktreePrune
     raise NotImplementedError
 ```
 
-**Test stubs:** signature + single-line imperative docstring stating the exact outcome contract, ending `raise NotImplementedError` (PLAN-018). Omit the docstring when the test name and the assertion already say it. The docstring alone is the assertion contract — no separate index table (see Tests below).
+**Test stubs:** signature + single-line imperative docstring stating the exact outcome contract, ending `raise NotImplementedError`. Omit the docstring when the test name and the assertion already say it. The docstring alone is the assertion contract — no separate index table (see Tests below).
 
 ```python
 class WorktreePruneCliIntegrationTests:
@@ -158,7 +171,7 @@ Non-obvious traps, execution gotchas, or sequencing constraints not already in G
 
 ### Tests: contract stubs only, no index table
 
-Just the stubs from Code sample rules — no separate index table alongside them. A stub's docstring already states the exact outcome contract in one line (PLAN-018); a `Test | Outcome` table next to it restates the same fact in a second place that can drift from the first when one is edited without the other. Assert exact contracts (literal JSON dict, exit code, filesystem state, or `*Result` fields) in the docstring. Ban vague phrasing (`"Verifies pruning works"`), piecewise assertions (`"Checks exit code is 0"`), and omitted fields.
+Just the stubs from Code sample rules — no separate index table alongside them. A stub's docstring already states the exact outcome contract in one line; a `Test | Outcome` table next to it restates the same fact in a second place that can drift from the first when one is edited without the other. Assert exact contracts (literal JSON dict, exit code, filesystem state, or `*Result` fields) in the docstring. Ban vague phrasing (`"Verifies pruning works"`), piecewise assertions (`"Checks exit code is 0"`), and omitted fields.
 
 ### Plan document template
 
@@ -197,6 +210,14 @@ Planning only. Grounded against `<base branch>` at `<short sha>`.
 
 ---
 
+## Phases
+
+| Phase | FRs | Ships | Deletes | Est. lines |
+|---|---|---|---|---|
+| 1 | FR-1, FR-2 | <what a reviewer can check after this PR> | <ledger entries, or "nothing"> | <n> |
+
+---
+
 ## Traps
 
 Explicitly not touched by this issue:
@@ -220,7 +241,7 @@ Full file-by-file manifest, including what's explicitly not needed for this issu
 
 ---
 
-## FR-<n>: <name>
+## FR-<n>: <name> (phase <p>)
 
 > <verbatim requirement text>
 
@@ -287,6 +308,6 @@ Supporting citations for `.agentic/plan.md`. Not build instructions — each FR'
 
 ## Step 5: Save and hand off
 
-1. Verify the plan against `docs/agents/REVIEW_CHECKLIST.json` and `docs/agents/PLANNER_RULES.md` for every rule matching touched paths or domains, ensuring zero BLOCKER violations. Reread the plan's actual paths, imports, and stubs against each clause — do not just restate the rule. No compliance table in the plan.
+1. Reread the plan's paths, imports, stubs and phases against the rules in [AGENTS.md](../../AGENTS.md) that the touched code can break, and fix any plan that would violate one. No compliance table in the plan.
 2. Write the plan to `.agentic/plan.md` and, when used, the evidence document to `.agentic/evidence.md` (overwriting any previous versions of both and deleting `.agentic/review.md`). A stale `evidence.md` left next to a freshly rewritten `plan.md` is a trap of its own — never leave one behind.
 3. Report the plan path and state that planning is complete (no code implemented, tested, committed, or pushed). Restate every numbered Open Questions entry in the handoff message — that list is now the single source for what needs sign-off; do not also enumerate every `🚨` `### Decisions` bullet separately.

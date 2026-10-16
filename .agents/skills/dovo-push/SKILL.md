@@ -42,14 +42,15 @@ Before deleting anything, capture the issue number for later use in the PR descr
 head -1 .agentic/plan.md 2>/dev/null
 ```
 
-Then delete the handoff files **before staging anything**, so no path under `.agentic/` can reach the index even if the ignore rule is missing or a stale copy was tracked:
+Then delete the handoff files **before staging anything**, so no path under `.agentic/` can reach the index even if the ignore rule is missing or a stale copy was tracked. The review and implementation report belong to this phase only. Keep the plan while its `## Phases` table lists a phase after the one being pushed, because `/dovo-code --phase <n>` needs it; delete it with the last phase:
 
 ```bash
-rm -f .agentic/plan.md .agentic/review.md .agentic/review.json .agentic/verdict.txt .agentic/coding-audit.json .agentic/review-audit.json
+rm -f .agentic/review.md .agentic/review.json .agentic/verdict.txt .agentic/implementation-report.md
+rm -f .agentic/plan.md .agentic/evidence.md    # last phase only
 git ls-files .agentic
 ```
 
-The plan and review have served their purpose by push time, and `/dovo-plan` recreates both at the start of the next cycle. If `git ls-files .agentic` prints anything, the file was committed before the ignore rule landed: stop, report it, and let the human decide whether to untrack it (`git rm -r --cached .agentic`) rather than folding that into this change. 🚨
+`/dovo-plan` recreates the plan at the start of the next cycle. If `git ls-files .agentic` prints anything, the file was committed before the ignore rule landed: stop, report it, and let the human decide whether to untrack it (`git rm -r --cached .agentic`) rather than folding that into this change. 🚨
 
 ## Step 3: Commit
 
@@ -91,7 +92,7 @@ Three sections, intent-focused, per `docs/agents/git-and-pr-conventions.md`:
 Fixes #<n>
 ```
 
-Use `Fixes #N` (or `Closes #N`) when the work resolves an issue, with `N` from the header captured in Step 2; when Step 2 found no issue number, keep the Linkage section and write `Fixes: none (no tracking issue)` rather than inventing a reference (CI-002). Keep the title in the same imperative, semantic style as the commit titles.
+Use `Fixes #N` (or `Closes #N`) when the work resolves an issue, with `N` from the header captured in Step 2; when Step 2 found no issue number, keep the Linkage section and write `Fixes: none (no tracking issue)` rather than inventing a reference. Keep the title in the same imperative, semantic style as the commit titles.
 
 Write the body to a temp file outside the repo (`mktemp`), never into `.agentic/` or the working tree, so nothing is left behind for the next `git status` to pick up.
 

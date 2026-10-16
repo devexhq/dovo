@@ -33,7 +33,7 @@ Update docs in the same PR only when the change matches one of these gates:
   checklist in
   [docs/agents/ci-and-tooling.md](ci-and-tooling.md#database-migration-hygiene)
   before merging — a new table/column needs real producer and consumer call
-  sites in `src/` in the same PR, with no exemption (PERF-002).
+  sites in `src/` in the same PR, with no exemption.
 - **Adding an agent provider**: follow
   [docs/agents/architecture.md](architecture.md#adding-a-new-agent-provider)
   and add its setup failure modes to
@@ -43,12 +43,9 @@ Update docs in the same PR only when the change matches one of these gates:
 - **Deleting a production symbol whose only caller was a test**: delete the test
   in the same PR and expect coverage to fall. Do not backfill tests to hold the
   percentage.
-- **Architectural invariants, domain rules, or planner constraints**: update
-  [`docs/agents/rules_spec.yaml`](rules_spec.yaml) only if needed.
-  Avoid useless churn: only relevant changes, deletions, and additions are
-  acceptable. When updating `rules_spec.yaml`, always run
-  `uv run python scripts/compile_rules.py` after to regenerate the compiled rule
-  artifacts (`**/docs/RULES.md` and `docs/agents/PLANNER_RULES.md`).
+- **Architectural invariants or domain rules**: update the rules in the root
+  [AGENTS.md](../../AGENTS.md) only if needed. Avoid useless churn: only
+  relevant changes, deletions, and additions are acceptable.
 
 Keep docs lean: no update is better than busywork. Prefer **deleting stale
 bullets** over appending a parallel truth. Pure refactors that do not change
@@ -57,7 +54,7 @@ public layout or ownership need no architecture.md diff.
 ## Verifiable claims
 
 Readers act on what docs, skills, rules and docstrings say, so each claim must be true today
-(DOC-008):
+(R17):
 
 - A sentence that says something is enforced, gated or checked names the enforcing file by path.
 - Every path named as an enforcing artifact, and every helper, fixture or builder a doc tells

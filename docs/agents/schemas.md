@@ -27,7 +27,7 @@ Update this doc only when a contract below changes. Adding a field, enum member,
 
 ## 2. Result/Outcome contract
 
-Operations that can fail return a Pydantic result subclassing `BaseResult` ([`common/models.py`](../../src/dovo/common/models.py)) instead of raising. `ok` is derived from `errors` (and `status`), never stored. `error_code` is `None` on success; the validator that requires it when `errors` are populated is short-circuited pending caller migration (#641), so do not rely on it being enforced. Models are `extra="forbid"` and strict by default; the only `extra="ignore"` exceptions are hand-authored YAML models, each with a justifying comment (MODEL-001).
+Operations that can fail return a Pydantic result subclassing `BaseResult` ([`common/models.py`](../../src/dovo/common/models.py)) instead of raising. `ok` is derived from `errors` (and `status`), never stored. `error_code` is `None` on success; the validator that requires it when `errors` are populated is short-circuited pending caller migration (#641), so do not rely on it being enforced. Models are `extra="forbid"` and strict by default; the only `extra="ignore"` exceptions are hand-authored YAML models, each with a justifying comment (`tests/lint/test_model_strictness.py` enforces this).
 
 ---
 
@@ -78,8 +78,8 @@ Hierarchical resolution merges four tiers, lowest to highest precedence: **Packa
 
 - One centralized SQLite database is shared across projects (`resolve_db_path` in `core/db/connection.py`).
 - Every record carries `project_id`, and every `BaseRepository` query scopes on it (`core/db/repositories/base.py`).
-- Create one `DovoDb` or repository per command invocation and pass it down; never construct one inside a loop or a helper (PERF-001).
-- Fetch a subset of records with a filtered repository query on an indexed column, not by filtering a full fetch in Python (PERF-003).
+- Create one `DovoDb` or repository per command invocation and pass it down; never construct one inside a loop or a helper.
+- Fetch a subset of records with a filtered repository query on an indexed column, not by filtering a full fetch in Python.
 - Schema or migration changes follow [ci-and-tooling.md](ci-and-tooling.md#database-migration-hygiene).
 
 ---
