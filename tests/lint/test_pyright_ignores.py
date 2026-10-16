@@ -9,6 +9,7 @@ from typing import Final
 from tests.lint.astlib import REPO_ROOT, SRC_ROOT, TESTS_ROOT, collect_python_files
 
 IGNORE: Final[re.Pattern[str]] = re.compile(r"#\s*pyright:\s*ignore\[[^\]]+\](?P<rest>.*)$")
+REASON: Final[re.Pattern[str]] = re.compile(r"\s*#\s*\S.*")
 
 
 def _ignores_without_reason(file_path: Path) -> list[str]:
@@ -17,7 +18,7 @@ def _ignores_without_reason(file_path: Path) -> list[str]:
     return [
         f"{rel_path}:{number}"
         for number, line in enumerate(file_path.read_text(encoding="utf-8").splitlines(), start=1)
-        if (match := IGNORE.search(line)) and not match.group("rest").strip().lstrip("#").strip()
+        if (match := IGNORE.search(line)) and not REASON.fullmatch(match.group("rest"))
     ]
 
 
