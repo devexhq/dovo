@@ -2,9 +2,7 @@ from __future__ import annotations
 
 import dataclasses
 import json
-from importlib.resources import files
 from pathlib import Path
-from typing import get_args
 
 import pytest
 from pydantic import ValidationError
@@ -13,7 +11,7 @@ from dovo.common.filesystem import Filesystem
 from dovo.common.schema_validation import CONFIG_VALIDATOR
 from dovo.core.agents.registry import PROVIDERS
 from dovo.core.config.generator import build_default_config
-from dovo.core.config.models import AgentConfig, AgentProvider, DovoConfig
+from dovo.core.config.models import DovoConfig
 from dovo.core.config.validate import (
     ConfigValidationStatus,
     validate_config_result,
@@ -27,7 +25,7 @@ class ConfigSemanticValidationTests:
         self, tmp_path: Path, model_required_provider: None
     ) -> None:
         payload = build_default_config("demo")
-        payload["agent"]["models"] = {}
+        payload["agents"] = {"copilot": {}}
         config_path = tmp_path / "config.json"
         Filesystem.atomic_write_json(config_path, payload)
 
@@ -36,9 +34,24 @@ class ConfigSemanticValidationTests:
         assert result.status == ConfigValidationStatus.VALID
         assert result.errors == []
         assert result.warnings == [
-            "agent.provider 'copilot' requires agent.models.copilot but it is missing (CONFIG_WARN_AGENT_MODEL_MISSING)."
+            "default_agent 'copilot' requires agents.copilot.model but it is missing (CONFIG_WARN_AGENT_MODEL_MISSING)."
         ]
-        assert result.fixes == ["Set agent.models.copilot"]
+        assert result.fixes == ["Set agents.copilot.model"]
+
+    def test_validate_does_not_warn_missing_model_for_non_default_provider(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Emit no warning when only claude, which requires a model, lacks one while default_agent is copilot."""
+        monkeypatch.setitem(PROVIDERS, "claude", dataclasses.replace(PROVIDERS["claude"], requires_model=True))
+        payload = build_default_config("demo")
+        payload["agents"] = {"copilot": {"model": "m"}, "claude": {}}
+        config_path = tmp_path / "config.json"
+        Filesystem.atomic_write_json(config_path, payload)
+
+        result = validate_config_result(config_path=config_path)
+
+        assert result.status == ConfigValidationStatus.VALID
+        assert result.warnings == []
 
     def test_validate_config_default_config_has_no_model_warning(self, tmp_path: Path) -> None:
         config_path = tmp_path / "config.json"
@@ -50,9 +63,15 @@ class ConfigSemanticValidationTests:
         assert result.warnings == []
         assert result.fixes == []
 
-    def test_validate_config_warns_when_agent_endpoint_is_not_absolute_url(self, tmp_path: Path) -> None:
+    @pytest.mark.parametrize(
+        "provider", [pytest.param("copilot", id="default-agent"), pytest.param("claude", id="non-default-agent")]
+    )
+    def test_validate_warns_for_every_agents_block_with_non_absolute_endpoint(
+        self, tmp_path: Path, provider: str
+    ) -> None:
+        """Warn for the block's ftp://x endpoint while default_agent stays copilot."""
         payload = build_default_config("demo")
-        payload["agent"]["endpoint"] = "ftp://example.com/api"
+        payload["agents"] = {provider: {"endpoint": "ftp://x"}}
         config_path = tmp_path / "config.json"
         Filesystem.atomic_write_json(config_path, payload)
 
@@ -64,9 +83,9 @@ class ConfigSemanticValidationTests:
         assert result.config == DovoConfig.model_validate(payload)
         assert result.errors == []
         assert result.warnings == [
-            "agent.endpoint is not an absolute http(s) URL: 'ftp://example.com/api' (CONFIG_WARN_AGENT_ENDPOINT)."
+            f"agents.{provider}.endpoint is not an absolute http(s) URL: 'ftp://x' (CONFIG_WARN_AGENT_ENDPOINT)."
         ]
-        assert result.fixes == ["Set agent.endpoint to an absolute http:// or https:// URL, or null"]
+        assert result.fixes == [f"Set agents.{provider}.endpoint to an absolute http:// or https:// URL, or null"]
 
     def test_validate_config_warns_when_worktree_limit_exceeds_threshold(self, tmp_path: Path) -> None:
         payload = build_default_config("demo")
@@ -89,12 +108,12 @@ class ConfigProviderRegistryValidationTests:
     @staticmethod
     def _write_config(tmp_path: Path, provider: str) -> Path:
         payload = build_default_config("demo")
-        payload["agent"]["provider"] = provider
+        payload["default_agent"] = provider
         config_path = tmp_path / "config.json"
         Filesystem.atomic_write_json(config_path, payload)
         return config_path
 
-    def test_schema_valid_unregistered_provider_is_semantically_invalid(
+    def test_validate_rejects_unregistered_default_agent_naming_default_agent(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         monkeypatch.setitem(PROVIDERS, "fake", dataclasses.replace(PROVIDERS["copilot"], token="fake"))
@@ -105,15 +124,16 @@ class ConfigProviderRegistryValidationTests:
         assert result.status == ConfigValidationStatus.INVALID
         assert result.ok is False
         assert result.errors == [
-            "Unsupported agent provider 'copilot' (AGENT_PROVIDER_UNSUPPORTED). Supported: claude, fake."
+            "default_agent: Unsupported agent provider 'copilot' (AGENT_PROVIDER_UNSUPPORTED). Supported: claude, fake."
         ]
+        assert result.fixes == ["Set default_agent to one of the supported providers named in the error"]
         assert result.warnings == []
 
     @pytest.mark.parametrize("token", list(PROVIDERS))
     def test_registered_provider_with_model_is_valid(self, token: str, tmp_path: Path) -> None:
         config_path = self._write_config(tmp_path, token)
         payload = json.loads(config_path.read_text(encoding="utf-8"))
-        payload["agent"]["models"] = {token: "m"}
+        payload["agents"] = {token: {"model": "m"}}
         Filesystem.atomic_write_json(config_path, payload)
 
         result = validate_config_result(config_path)
@@ -131,29 +151,7 @@ class ConfigProviderRegistryValidationTests:
         assert not any("AGENT_PROVIDER_UNSUPPORTED" in error for error in result.errors)
 
 
-class ProviderVocabularyAgreementTests:
-    def test_registry_model_and_schema_agree_on_provider_set(self) -> None:
-        schema = json.loads(files("dovo.schemas.v1").joinpath("config.json").read_text(encoding="utf-8"))
-        provider_schema = schema["properties"]["agent"]["properties"]["provider"]
-
-        assert set(PROVIDERS) == set(get_args(AgentProvider)) == set(provider_schema["enum"]) == {"copilot", "claude"}
-        assert provider_schema["default"] == "copilot"
-        assert set(schema["properties"]["agent"]["properties"]["models"]["properties"]) == set(PROVIDERS)
-
-
-class AgentModelsValidatorTests:
-    """Direct construction contract for AgentConfig.models."""
-
-    def test_unknown_provider_key_raises_validation_error_naming_it(self) -> None:
-        with pytest.raises(ValidationError, match=r"unknown agent provider\(s\) in models: other"):
-            AgentConfig(models={"copilot": "gpt-4.1", "other": "x"})
-
-    def test_active_model_reads_active_provider_entry_or_none(self) -> None:
-        assert AgentConfig(models={"copilot": "gpt-4.1"}).active_model == "gpt-4.1"
-        assert AgentConfig().active_model is None
-
-
-class AgentConfigEnvTests:
+class AgentSettingsEnvTests:
     @pytest.mark.parametrize(
         "payload",
         [
@@ -164,7 +162,7 @@ class AgentConfigEnvTests:
     )
     def test_invalid_env_keys_fail_schema_and_model_validation(self, payload: dict[str, object]) -> None:
         document = build_default_config("demo")
-        document["agent"].update(payload)
+        document["agents"] = {"copilot": payload}
 
         assert not CONFIG_VALIDATOR.validate(document).ok
         with pytest.raises(ValidationError):

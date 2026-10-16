@@ -32,37 +32,12 @@
         "default_timeout_seconds": { "type": "integer", "minimum": 1 }
       }
     },
-    "agent": {
+    "default_agent": { "$ref": "#/$defs/agentProvider", "default": "copilot" },
+    "agents": {
       "type": "object",
-      "additionalProperties": false,
-      "properties": {
-        "provider": { "type": "string", "enum": ["copilot", "claude"], "default": "copilot" },
-        "models": {
-          "type": "object",
-          "additionalProperties": false,
-          "properties": {
-            "copilot": { "type": "string", "minLength": 1 },
-            "claude": { "type": "string", "minLength": 1 }
-          },
-          "default": {}
-        },
-        "endpoint": { "type": ["string", "null"], "minLength": 1 },
-        "temperature": { "type": "number", "minimum": 0, "maximum": 2 },
-        "max_tokens": { "type": "integer", "minimum": 1 },
-        "env_passthrough": {
-          "type": "array",
-          "items": { "type": "string", "pattern": "^[^=\\u0000*\\s]+\\*?$" },
-          "default": []
-        },
-        "env_mode": { "type": "string", "enum": ["allowlist", "inherit"], "default": "allowlist" },
-        "mcp_servers": {
-          "type": "object",
-          "propertyNames": { "pattern": "^(?!.*__)[^/*\\s,]+$" },
-          "additionalProperties": { "$ref": "#/$defs/mcpServer" },
-          "default": {}
-        },
-        "tools": { "$ref": "#/$defs/toolPolicy" }
-      }
+      "propertyNames": { "$ref": "#/$defs/agentProvider" },
+      "additionalProperties": { "$ref": "#/$defs/agentSettings" },
+      "default": {}
     },
     "history": {
       "type": "object",
@@ -121,6 +96,30 @@
     }
   },
   "$defs": {
+    "agentProvider": { "type": "string", "enum": ["copilot", "claude"] },
+    "agentSettings": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "model": { "type": ["string", "null"], "minLength": 1 },
+        "endpoint": { "type": ["string", "null"], "minLength": 1 },
+        "temperature": { "type": "number", "minimum": 0, "maximum": 2 },
+        "max_tokens": { "type": "integer", "minimum": 1 },
+        "env_passthrough": {
+          "type": "array",
+          "items": { "type": "string", "pattern": "^[^=\\u0000*\\s]+\\*?$" },
+          "default": []
+        },
+        "env_mode": { "type": "string", "enum": ["allowlist", "inherit"], "default": "allowlist" },
+        "mcp_servers": {
+          "type": "object",
+          "propertyNames": { "pattern": "^(?!.*__)[^/*\\s,]+$" },
+          "additionalProperties": { "$ref": "#/$defs/mcpServer" },
+          "default": {}
+        },
+        "tools": { "$ref": "#/$defs/toolPolicy" }
+      }
+    },
     "mcpServer": {
       "type": "object",
       "additionalProperties": false,

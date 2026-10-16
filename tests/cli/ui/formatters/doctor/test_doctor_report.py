@@ -55,10 +55,10 @@ WARNING_CHECK = DiagnosticCheckResult(
             code="DOCTOR_AGENT_NO_MODEL",
             title="Configure agent model",
             action_type=RemediationType.COMMAND,
-            command='dovo config set agent.models.copilot "<model>"',
+            command='dovo config set agents.copilot.model "<model>"',
             description=(
-                "Set `agent.models.copilot` in `.dovo/config.json` to a model supported by that provider, "
-                "e.g. `dovo config set agent.models.copilot <model-name>`."
+                "Set `agents.copilot.model` in `.dovo/config.json` to a model supported by that provider, "
+                "e.g. `dovo config set agents.copilot.model <model-name>`."
             ),
             doc_path="docs/cli/config.md",
             is_automated=False,
@@ -146,7 +146,7 @@ MIXED_STATUS = FormatterCase(
         "SKIPPED",
         "4 checks: 1 ok, 1 warning, 1 failed (12.4ms)",
         "Configure agent model:",
-        'dovo config set agent.models.copilot "<model>"',
+        'dovo config set agents.copilot.model "<model>"',
         "Initialize Dovo workspace:",
         "dovo init",
     ],
@@ -201,10 +201,10 @@ DOCTOR_REPORT_PAYLOAD_CASES = [
                             "code": "DOCTOR_AGENT_NO_MODEL",
                             "title": "Configure agent model",
                             "action_type": "command",
-                            "command": 'dovo config set agent.models.copilot "<model>"',
+                            "command": 'dovo config set agents.copilot.model "<model>"',
                             "description": (
-                                "Set `agent.models.copilot` in `.dovo/config.json` to a model supported by that provider, "
-                                "e.g. `dovo config set agent.models.copilot <model-name>`."
+                                "Set `agents.copilot.model` in `.dovo/config.json` to a model supported by that provider, "
+                                "e.g. `dovo config set agents.copilot.model <model-name>`."
                             ),
                             "doc_path": "docs/cli/config.md",
                             "is_automated": False,

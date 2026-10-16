@@ -19,12 +19,14 @@ Schema for `.dovo/config.json` (version 1).
     "max_active_worktrees": 3,
     "default_timeout_seconds": 900
   },
-  "agent": {
-    "provider": "copilot",
-    "models": {},
-    "endpoint": null,
-    "temperature": 0.2,
-    "max_tokens": 4096
+  "default_agent": "copilot",
+  "agents": {
+    "copilot": {
+      "model": "claude-sonnet-5.5",
+      "endpoint": null,
+      "temperature": 0.2,
+      "max_tokens": 4096
+    }
   },
   "history": {
     "save_attempt_logs": true,
@@ -71,9 +73,12 @@ Schema for `.dovo/config.json` (version 1).
 * `max_active_worktrees` *(integer)*: Maximum allowed concurrent worktrees (default: `3`).
 * `default_timeout_seconds` *(integer)*: Currently has no effect (default: `900`).
 
-### 4. `agent`
-* `provider` *(string)*: Agent provider. `copilot` and `claude` are accepted (default: `"copilot"`); other values fail validation.
-* `models` *(object)*: Model name per provider, keyed by provider token (`copilot` or `claude`); each value is a non-empty string (default: `{}`). The run uses the entry of the provider it runs with.
+### 4. `default_agent` and `agents`
+* `default_agent` *(string)*: Provider a run uses when `--agent` is not given. `copilot` and `claude` are accepted (default: `"copilot"`); other values fail validation.
+* `agents` *(object)*: Settings per provider, keyed by provider token (`copilot` or `claude`); any other key fails validation (default: `{}`). A run reads only the block of the provider it runs with (`--agent`, else `default_agent`); a provider with no block uses the defaults below. The legacy top-level `agent` key is rejected and is not migrated.
+
+Each `agents.<provider>` block accepts these fields; any other field, including the legacy `provider` and `models`, fails validation:
+* `model` *(string \| null)*: Model name passed to the provider (default: `null`).
 * `endpoint` *(string \| null)*: Custom API endpoint URL (default: `null`).
 * `temperature` *(number)*: Sampling temperature (default: `0.2`).
 * `max_tokens` *(integer)*: Maximum generation tokens (default: `4096`).

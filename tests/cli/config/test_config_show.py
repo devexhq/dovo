@@ -114,7 +114,7 @@ class ConfigShowCliIntegrationTests:
         isolated_workspace: Path,
         write_tier_config: Callable[[ConfigTier, dict[str, Any] | str], Path],
     ) -> None:
-        write_tier_config(ConfigTier.USER, {"agent": {"models": {"copilot": "user-tier-model"}}})
+        write_tier_config(ConfigTier.USER, {"agents": {"copilot": {"model": "user-tier-model"}}})
 
         config_path = isolated_workspace / ".dovo" / "config.json"
         Filesystem.atomic_write_json(config_path, {"version": 1, "project": {"name": "demo-workspace"}})
@@ -123,7 +123,7 @@ class ConfigShowCliIntegrationTests:
 
         assert res.exit_code == 0
         payload = json.loads(res.stdout)
-        assert payload["payload"]["config"]["agent"]["models"] == {"copilot": "user-tier-model"}
+        assert payload["payload"]["config"]["agents"]["copilot"]["model"] == "user-tier-model"
 
     def test_config_show_cli_malformed_user_tier_exits_one_with_config_error_panel(
         self,

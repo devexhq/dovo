@@ -1,6 +1,6 @@
 """Registry of agent provider descriptors.
 
-A token in ``PROVIDERS`` is what the factory can build and what ``validate_config_result`` accepts as ``agent.provider``.
+``PROVIDERS`` is the single set of provider tokens; a ``default_agent`` or ``--agent`` value outside it is unsupported.
 """
 
 from __future__ import annotations

@@ -61,7 +61,7 @@ def run_callback(
     agent: str | None = typer.Option(
         None,
         "--agent",
-        help="Override default target agent adapter.",
+        help="Select the provider whose agents.<provider> settings the run uses.",
     ),
     session_id: str | None = typer.Option(
         None,
@@ -80,7 +80,9 @@ def run_callback(
     ),
     env_mode: Annotated[
         AgentEnvModeOptions | None,
-        typer.Option("--env-mode", help="Override agent.env_mode for this invocation: 'allowlist' or 'inherit'."),
+        typer.Option(
+            "--env-mode", help="Override agents.<provider>.env_mode for this invocation: 'allowlist' or 'inherit'."
+        ),
     ] = None,
     env_passthrough: Annotated[
         list[str] | None,

@@ -11,7 +11,7 @@ from typer.testing import CliRunner
 
 from dovo.cli import app
 from dovo.core.agents.registry import PROVIDERS
-from dovo.core.config.models import AgentConfig
+from dovo.core.config.models import DEFAULT_AGENT
 from dovo.core.diagnostics import CheckStatus, DiagnosticsReport
 from tests.harness.workspace_paths import initialized_workspace_paths
 
@@ -27,7 +27,7 @@ class DoctorCliIntegrationTests:
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         monkeypatch.setattr("dovo.core.diagnostics.checks.env_binaries.shutil.which", lambda _name: "/usr/bin/tool")
-        credential_envs = PROVIDERS[AgentConfig().provider].credential_envs
+        credential_envs = PROVIDERS[DEFAULT_AGENT].credential_envs
         for env_name in credential_envs:
             monkeypatch.delenv(env_name, raising=False)
         monkeypatch.setenv(credential_envs[0], "fake-token")

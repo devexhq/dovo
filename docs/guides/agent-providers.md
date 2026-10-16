@@ -15,24 +15,30 @@ The step's stdout is one JSON object with a `status` (see [Agent step outcomes](
 | `copilot` | Default. Requires `gh` on `PATH` and `GH_TOKEN` or `GITHUB_TOKEN`. |
 | `claude` | Requires `claude` on `PATH` and one of a `CLAUDE_CODE_OAUTH_TOKEN`, a `claude auth login` session or `ANTHROPIC_API_KEY`, used in that order. |
 
-Selecting any provider not listed fails `dovo config validate` with a schema error on `agent.provider`.
+Naming any provider not listed in `default_agent` or as an `agents` key fails `dovo config validate` with a schema error.
 
 ---
 
 ## Configuration
 
-Set the provider and optional model settings in `.dovo/config.json`:
+Select the default provider with `default_agent` and give each provider its own settings block under `agents` in `.dovo/config.json`:
 
 ```json
 {
-  "agent": {
-    "provider": "copilot",
-    "models": {},
-    "endpoint": null,
-    "temperature": 0.2,
-    "max_tokens": 4096,
-    "env_passthrough": [],
-    "env_mode": "allowlist"
+  "default_agent": "copilot",
+  "agents": {
+    "copilot": {
+      "model": "gpt-4.1",
+      "endpoint": null,
+      "temperature": 0.2,
+      "max_tokens": 4096,
+      "env_passthrough": [],
+      "env_mode": "allowlist"
+    },
+    "claude": {
+      "model": "claude-sonnet-5.5",
+      "temperature": 0.1
+    }
   }
 }
 ```
@@ -40,12 +46,12 @@ Set the provider and optional model settings in `.dovo/config.json`:
 Or with `dovo config set`:
 
 ```bash
-dovo config set agent.provider copilot
-dovo config set agent.models.copilot gpt-4.1
-dovo config set agent.temperature 0.1
+dovo config set default_agent copilot
+dovo config set agents.copilot.model gpt-4.1
+dovo config set agents.claude.temperature 0.1
 ```
 
-`dovo run <blueprint> --agent <identifier>` overrides the provider for one run. The run's model is `agent.models[<provider used>]`, so `--agent` also switches which entry is used; a provider with no entry runs with no model.
+`dovo run <blueprint> --agent <identifier>` overrides `default_agent` for one run. Every agent setting of that run, including `model`, `tools` and the environment settings, comes from `agents.<identifier>`; the other providers' blocks are not read. A provider with no block runs with the field defaults (no model). The legacy top-level `agent` key is rejected by validation and is not migrated; move its settings under `agents.<provider>`.
 
 `dovo doctor` checks provider credentials, for example `GH_TOKEN` or `GITHUB_TOKEN` for `copilot` and `ANTHROPIC_API_KEY` for `claude`. A passing check does not guarantee the provider will accept a request.
 
@@ -55,12 +61,12 @@ dovo config set agent.temperature 0.1
 
 A step's `tools` field controls what the agent may use. It has three keys: `allow`, `deny` and `allow_all`. Dovo enforces it through the provider's own controls; it is not OS-level containment.
 
-- **Default** (when `tools` and `agent.tools` are both omitted): read and write on the worktree and the attempt's private scratch directory. No shell, network or MCP.
+- **Default** (when `tools` and `agents.<provider>.tools` are both omitted): read and write on the worktree and the attempt's private scratch directory. No shell, network or MCP.
 - **Explicit `tools`** replaces any inherited policy entirely. `tools: {}` grants nothing.
-- **Config-wide**: set `agent.tools` in `.dovo/config.json` to apply the same object to every agent step.
+- **Config-wide**: set `agents.<provider>.tools` in `.dovo/config.json` to apply the same object to every agent step run with that provider.
 
 ```json
-{ "agent": { "tools": { "allow": [{ "capability": "read" }] } } }
+{ "agents": { "copilot": { "tools": { "allow": [{ "capability": "read" }] } } } }
 ```
 
 A provider that cannot enforce a restrictive policy rejects it before running, with `AGENT_TOOL_POLICY_UNSUPPORTED` and exit `203`. A tool call refused at run time ends the step as `blocked` (`204`) and names the grant that would allow it. Rule syntax is in the [Step Schema](../reference/step-schema.md).
@@ -117,12 +123,12 @@ The seeded `dovo/ai-planner`, `dovo/ai-reviewer` and `dovo/ai-code-patcher` step
     3. `key`: a non-blank `ANTHROPIC_API_KEY`. Only the key is forwarded, and `--bare` is added.
 - **Host configuration:** `cli` and `oauth` modes load your host Claude Code configuration (hooks, plugins, skills, `CLAUDE.md`, MCP servers) beyond the tool policy Dovo renders, which `key` mode skips through `--bare`.
 - **Missing authentication:** with none of the three, the step fails with `Claude Code is not authenticated` before `claude` starts, naming `claude auth login`, `CLAUDE_CODE_OAUTH_TOKEN` and `ANTHROPIC_API_KEY`. `dovo doctor` reports the mode in use on its `agent.setup` row.
-- **Subprocess environment:** only the credential of the mode in use is forwarded. Inherited `CLAUDE_*` variables are removed and reported as withheld, while `CLAUDE_*` names you list in `agent.env_passthrough`, `--env-passthrough` or a step `env` are kept, except the reserved control names, which are rejected. A credential name (`CLAUDE_CODE_OAUTH_TOKEN` or `ANTHROPIC_API_KEY`) listed in `agent.env_passthrough` or `--env-passthrough` is ignored, and one set in a step `env` is rejected; the mode in use decides which credential is forwarded.
+- **Subprocess environment:** only the credential of the mode in use is forwarded. Inherited `CLAUDE_*` variables are removed and reported as withheld, while `CLAUDE_*` names you list in `agents.claude.env_passthrough`, `--env-passthrough` or a step `env` are kept, except the reserved control names, which are rejected. A credential name (`CLAUDE_CODE_OAUTH_TOKEN` or `ANTHROPIC_API_KEY`) listed in `agents.claude.env_passthrough` or `--env-passthrough` is ignored, and one set in a step `env` is rejected; the mode in use decides which credential is forwarded.
 - **Missing flag:** if the installed Claude Code does not know a flag Dovo passes, the step fails with `Installed Claude Code lacks a required flag` and tells you to run `claude update`.
-- These policies are rejected with `AGENT_TOOL_POLICY_UNSUPPORTED`: an `mcp` allow or deny rule without a pattern, an `mcp` pattern containing a comma, an `mcp` allow for a server defined in neither `agent.mcp_servers` nor your Claude config, an `mcp` allow without an invocation, a `*.host` network pattern in an `allow` or `deny`, a read or write pattern that escapes its root, a read or write path containing a comma, and a scratch rule without an invocation.
+- These policies are rejected with `AGENT_TOOL_POLICY_UNSUPPORTED`: an `mcp` allow or deny rule without a pattern, an `mcp` pattern containing a comma, an `mcp` allow for a server defined in neither `agents.claude.mcp_servers` nor your Claude config, an `mcp` allow without an invocation, a `*.host` network pattern in an `allow` or `deny`, a read or write pattern that escapes its root, a read or write path containing a comma, and a scratch rule without an invocation.
 - `read` and `write` rules accept the `worktree` and `scratch` roots, glob patterns, and both `allow` and `deny`. They are rendered as `Read(//<root>/<pattern>)` and `Edit(//<root>/<pattern>)`, anchored to the root's absolute path; an absent pattern is `**`. A `scratch` allow adds the attempt's scratch directory. `shell` and `network` rules are accepted, including the default policy. Under `allow_all: true`, `allow` rules other than `mcp` are not checked; `deny` rules are. With `allow_all: true` and `deny` rules, the attempt's scratch directory is not added.
-- MCP servers are loaded only when an `mcp` allow rule names them, including under `allow_all`. Each rule `server/tool` or `server/*` resolves `server` from `agent.mcp_servers`, else from the top-level `mcpServers` of your Claude config (`$CLAUDE_CONFIG_DIR/.claude.json`, else `~/.claude.json`); a name in both takes the `agent.mcp_servers` entry. Entries from your Claude config are written as-is and are not checked for literal secrets. Only the named servers are written to a config file in the attempt's private control directory, and the grant is `mcp__<server>__<tool>` or `mcp__<server>`. Project `.mcp.json`, local-scope and plugin servers are never loaded, and Claude Code always runs with `--strict-mcp-config`. With no `mcp` allow rule it runs with no MCP servers. `mcp` `deny` rules `server/tool` and `server/*` are enforced. The config file is written before `claude` starts; a write failure fails the step and starts no process.
-- `agent.mcp_servers` maps a server name to a `stdio` (`command`, `args`, `env`) or `http`/`sse` (`url`, `headers`) definition, see [`McpServerDefinition`](https://github.com/devexhq/dovo/blob/main/src/dovo/common/mcp_servers.py). A name must not contain `/`, `*`, `,`, `__` or whitespace. Every `env` and `headers` value must contain a `${NAME}` reference, so the config never stores a secret; Claude Code expands it from the attempt's environment, so list the variable in `agent.env_passthrough`. Copilot does not read `agent.mcp_servers`.
+- MCP servers are loaded only when an `mcp` allow rule names them, including under `allow_all`. Each rule `server/tool` or `server/*` resolves `server` from `agents.claude.mcp_servers`, else from the top-level `mcpServers` of your Claude config (`$CLAUDE_CONFIG_DIR/.claude.json`, else `~/.claude.json`); a name in both takes the `agents.claude.mcp_servers` entry. Entries from your Claude config are written as-is and are not checked for literal secrets. Only the named servers are written to a config file in the attempt's private control directory, and the grant is `mcp__<server>__<tool>` or `mcp__<server>`. Project `.mcp.json`, local-scope and plugin servers are never loaded, and Claude Code always runs with `--strict-mcp-config`. With no `mcp` allow rule it runs with no MCP servers. `mcp` `deny` rules `server/tool` and `server/*` are enforced. The config file is written before `claude` starts; a write failure fails the step and starts no process.
+- `agents.claude.mcp_servers` maps a server name to a `stdio` (`command`, `args`, `env`) or `http`/`sse` (`url`, `headers`) definition, see [`McpServerDefinition`](https://github.com/devexhq/dovo/blob/main/src/dovo/common/mcp_servers.py). A name must not contain `/`, `*`, `,`, `__` or whitespace. Every `env` and `headers` value must contain a `${NAME}` reference, so the config never stores a secret; Claude Code expands it from the attempt's environment, so list the variable in `agents.claude.env_passthrough`. Copilot does not read `agents.copilot.mcp_servers`.
 
 !!! warning
     A `stdio` MCP server is a process Claude Code starts; it is not bound by the `read` and `write` path policy.
@@ -134,19 +140,19 @@ The seeded `dovo/ai-planner`, `dovo/ai-reviewer` and `dovo/ai-code-patcher` step
 
 ## Subprocess Environment
 
-By default (`agent.env_mode: "allowlist"`) the provider sees only:
+By default (`agents.<provider>.env_mode: "allowlist"`) the provider sees only:
 
 - Basic system variables (`PATH`, `HOME`, `USER`, `LANG`, `LC_ALL`, `TMPDIR`, `TERM`, the Windows system variables on Windows) and network/TLS variables (certificate bundles, proxies, `DOCKER_HOST`).
 - The generated `DOVO_*` step metadata.
 - The provider's own credential (for `copilot`, `GH_TOKEN`, else `GITHUB_TOKEN`). `COPILOT_GITHUB_TOKEN`, `COPILOT_ALLOW_ALL` and `COPILOT_MODEL` are never forwarded.
-- Variables you list in `agent.env_passthrough`.
+- Variables you list in `agents.<provider>.env_passthrough`.
 - The step's own `env:` entries.
 
-`agent.env_mode: "inherit"` starts from the full host environment instead and layers the same values on top.
+`agents.<provider>.env_mode: "inherit"` starts from the full host environment instead and layers the same values on top.
 
 ### Passing host variables through
 
-`agent.env_passthrough` is a list of host variable names. Each entry is a literal name or a prefix ending in a single `*` (for example `DOCKER_*`). `dovo config validate` rejects a bare `*`, a `*` anywhere else, `=`, whitespace and NUL. Names missing from the host are skipped, and a prefix never forwards a name Dovo reserves. A repo-level list replaces a global one; they are not merged.
+`agents.<provider>.env_passthrough` is a list of host variable names. Each entry is a literal name or a prefix ending in a single `*` (for example `DOCKER_*`). `dovo config validate` rejects a bare `*`, a `*` anywhere else, `=`, whitespace and NUL. Names missing from the host are skipped, and a prefix never forwards a name Dovo reserves. A repo-level list replaces a global one; they are not merged.
 
 ### Step `env:`
 
@@ -160,8 +166,8 @@ Secret values among forwarded variables (step `env:` values with a secret-style 
 
 In `allowlist` mode, when host variables were not forwarded:
 
-- the agent sees their names (never values) in `DOVO_ENV_WITHHELD`, and its prompt starts with a line telling it to ask for `agent.env_passthrough`;
-- before the agent starts, the console prints `! Agent environment filtered: <N> variables withheld.`; when the attempt does not succeed it also prints a `! Fix:` line saying how to pass names through (`agent.env_passthrough` or `--env-passthrough`);
+- the agent sees their names (never values) in `DOVO_ENV_WITHHELD`, and its prompt starts with a line telling it to ask for `agents.<provider>.env_passthrough`;
+- before the agent starts, the console prints `! Agent environment filtered: <N> variables withheld.`; when the attempt does not succeed it also prints a `! Fix:` line saying how to pass names through (`agents.<provider>.env_passthrough` or `--env-passthrough`);
 - `session.log` records an `agent_env_filtered` event with the full list (see [`dovo session logs`](../cli/session.md#dovo-session-logs)).
 
 `inherit` mode reports nothing.
@@ -178,7 +184,7 @@ The filter only controls the environment Dovo supplies. It does not stop an agen
 - reading any file it can open, including `.env` files in the checkout;
 - running tools that load their own `.env` files (dotenv-style loaders, `docker compose`).
 
-If your tests or tools rely on variables exported only in your host shell, add those names to `agent.env_passthrough`.
+If your tests or tools rely on variables exported only in your host shell, add those names to `agents.<provider>.env_passthrough`.
 
 ---
 

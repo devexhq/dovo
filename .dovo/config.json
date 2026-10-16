@@ -9,12 +9,14 @@
     "max_active_worktrees": 3,
     "default_timeout_seconds": 900
   },
-  "agent": {
-    "provider": "copilot",
-    "models": { "copilot": "claude-sonnet-5.5" },
-    "endpoint": null,
-    "temperature": 0.2,
-    "max_tokens": 4096
+  "default_agent": "copilot",
+  "agents": {
+    "copilot": {
+      "model": "claude-sonnet-5.5",
+      "endpoint": null,
+      "temperature": 0.2,
+      "max_tokens": 4096
+    }
   },
   "history": {
     "save_attempt_logs": true,

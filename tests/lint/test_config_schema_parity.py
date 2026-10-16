@@ -9,7 +9,8 @@ import pytest
 from pydantic import BaseModel, ValidationError
 
 from dovo.common.schema_validation import CONFIG_VALIDATOR
-from dovo.core.config.models import AgentConfig, AgentProvider, DovoConfig
+from dovo.core.agents.registry import PROVIDERS
+from dovo.core.config.models import AgentProvider, AgentSettings, DovoConfig
 from tests.lint.astlib import SRC_ROOT
 
 SCHEMA_PATH: Final = SRC_ROOT / "schemas" / "v1" / "config.json"
@@ -52,10 +53,23 @@ class ConfigSchemaParityTests:
 
         assert set(schema["properties"][section]["properties"]) == set(model.model_fields)
 
-    def test_agent_provider_enum_matches_agent_provider_literal(self) -> None:
+    def test_provider_enums_match_agent_provider_literal(self) -> None:
+        """Equate the $defs.agentProvider enum with get_args(AgentProvider) and with PROVIDERS keys."""
         schema = _load_schema()
 
-        assert set(schema["properties"]["agent"]["properties"]["provider"]["enum"]) == set(get_args(AgentProvider))
+        assert set(schema["$defs"]["agentProvider"]["enum"]) == set(get_args(AgentProvider)) == set(PROVIDERS)
+
+    def test_default_agent_and_agents_keys_reference_the_agent_provider_definition(self) -> None:
+        schema = _load_schema()
+        properties = schema["properties"]
+
+        assert properties["default_agent"]["$ref"] == "#/$defs/agentProvider"
+        assert properties["agents"]["propertyNames"]["$ref"] == "#/$defs/agentProvider"
+
+    def test_agent_settings_schema_keys_match_agent_settings_fields(self) -> None:
+        schema = _load_schema()
+
+        assert set(schema["$defs"]["agentSettings"]["properties"]) == set(AgentSettings.model_fields)
 
     @pytest.mark.parametrize(
         ("servers", "valid"),
@@ -98,13 +112,13 @@ class ConfigSchemaParityTests:
         self, servers: dict[str, dict[str, object]], valid: bool
     ) -> None:
         try:
-            AgentConfig.model_validate({"mcp_servers": servers})
+            AgentSettings.model_validate({"mcp_servers": servers})
             model_valid = True
         except ValidationError:
             model_valid = False
 
         schema_valid = CONFIG_VALIDATOR.validate(
-            {"version": 1, "project": {"name": "parity"}, "agent": {"mcp_servers": servers}}
+            {"version": 1, "project": {"name": "parity"}, "agents": {"copilot": {"mcp_servers": servers}}}
         ).ok
 
         assert (model_valid, schema_valid) == (valid, valid)

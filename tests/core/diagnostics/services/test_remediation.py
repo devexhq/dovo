@@ -422,8 +422,8 @@ REMEDIATION_RESOLUTION_CASES = [
                 code="DOCTOR_AGENT_NO_MODEL",
                 title="Configure agent model",
                 action_type=RemediationType.COMMAND,
-                command='dovo config set agent.models.copilot "<model>"',
-                description="Set `agent.models.copilot` in `.dovo/config.json` to a model supported by that provider, e.g. `dovo config set agent.models.copilot <model-name>`.",
+                command='dovo config set agents.copilot.model "<model>"',
+                description="Set `agents.copilot.model` in `.dovo/config.json` to a model supported by that provider, e.g. `dovo config set agents.copilot.model <model-name>`.",
                 doc_path="docs/cli/config.md",
                 is_automated=False,
             )
@@ -444,8 +444,8 @@ REMEDIATION_RESOLUTION_CASES = [
                 code="DOCTOR_AGENT_NO_MODEL",
                 title="Configure agent model",
                 action_type=RemediationType.COMMAND,
-                command='dovo config set agent.models.<provider> "<model>"',
-                description="Set `agent.models.<provider>` in `.dovo/config.json` to a model supported by that provider, e.g. `dovo config set agent.models.<provider> <model-name>`.",
+                command='dovo config set agents.<provider>.model "<model>"',
+                description="Set `agents.<provider>.model` in `.dovo/config.json` to a model supported by that provider, e.g. `dovo config set agents.<provider>.model <model-name>`.",
                 doc_path="docs/cli/config.md",
                 is_automated=False,
             )

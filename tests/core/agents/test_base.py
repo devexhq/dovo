@@ -549,7 +549,7 @@ class InvokeRedactionTests:
 
 _OVERRIDE_MESSAGE = (
     "Agent environment override '{name}' conflicts with provider or Dovo controls (AGENT_ENV_OVERRIDE_INVALID). "
-    "Fix: remove it from agent.env_passthrough or the agent step's env."
+    "Fix: remove it from agents.{provider}.env_passthrough or the agent step's env."
 )
 
 
@@ -567,7 +567,7 @@ class EnvPreflightConformanceTests:
         response = provider.invoke(request.build())
 
         assert response.status == AgentResponseStatus.PROVIDER_ERROR
-        assert response.errors == [_OVERRIDE_MESSAGE.format(name="TEST_CONTROL")]
+        assert response.errors == [_OVERRIDE_MESSAGE.format(name="TEST_CONTROL", provider="unit-test")]
         assert provider.invoke_calls == []
 
     def test_provider_without_descriptor_skips_the_env_preflight(self, tmp_path: Path) -> None:
@@ -603,7 +603,7 @@ class EnvPreflightConformanceTests:
         ]
 
         assert [response.errors for response in responses] == [
-            [_OVERRIDE_MESSAGE.format(name=name)] for name in spec.control_envs
+            [_OVERRIDE_MESSAGE.format(name=name, provider=token)] for name in spec.control_envs
         ]
         assert backend_calls == []
 

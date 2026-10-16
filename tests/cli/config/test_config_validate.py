@@ -46,29 +46,6 @@ class ConfigValidateRootTests:
         assert result.errors == []
         assert result.fixes == []
 
-    def test_config_validate_with_warnings_returns_valid_status(
-        self, isolated_workspace: Path, model_required_provider: None
-    ) -> None:
-        """Return VALID with warnings for a provider that requires a model and has none."""
-        config_path = isolated_workspace / ".dovo" / "config.json"
-        payload = build_default_config("demo-workspace")
-        payload["agent"]["models"] = {}
-        Filesystem.atomic_write_json(config_path, payload)
-
-        paths = _paths_for(isolated_workspace)
-        context = CliContext(paths=paths, db=DovoDb(database_file=paths.database_file, project_id=paths.project_id))
-        result = config_validate_command(context)
-
-        assert result.status == ConfigValidationStatus.VALID
-        assert result.config_path == config_path
-        assert result.config == DovoConfig.model_validate(payload)
-        assert result.raw == payload
-        assert result.warnings == [
-            "agent.provider 'copilot' requires agent.models.copilot but it is missing (CONFIG_WARN_AGENT_MODEL_MISSING)."
-        ]
-        assert result.errors == []
-        assert result.fixes == ["Set agent.models.copilot"]
-
     def test_config_validate_error_returns_invalid_status(self, isolated_workspace: Path) -> None:
         config_path = isolated_workspace / ".dovo" / "config.json"
         invalid_payload = {"version": 1}
@@ -111,7 +88,6 @@ class ConfigValidateCliIntegrationTests:
     ) -> None:
         config_path = isolated_workspace / ".dovo" / "config.json"
         payload = build_default_config("demo-workspace")
-        payload["agent"]["models"] = {}
         Filesystem.atomic_write_json(config_path, payload)
 
         res = cli_runner.invoke(app, ["-p", str(isolated_workspace), "config", "validate"])

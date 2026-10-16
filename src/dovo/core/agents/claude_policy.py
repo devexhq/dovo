@@ -201,7 +201,10 @@ def _resolve_mcp_servers(
         elif name in user:
             servers[name] = user[name]
         else:
-            return None, f"mcp server {name!r} is neither defined in agent.mcp_servers nor in the user's Claude config"
+            return (
+                None,
+                f"mcp server {name!r} is neither defined in agents.claude.mcp_servers nor in the user's Claude config",
+            )
 
     content = json.dumps({"mcpServers": servers}, separators=(",", ":"))
 

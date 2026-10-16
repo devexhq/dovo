@@ -38,7 +38,8 @@ WORKTREE_REQUIRED_MESSAGE = (
 )
 MISSING_SETTINGS_MESSAGE = (
     "Agent step has no resolved agent settings "
-    "(agent.provider, agent.models, agent.endpoint, agent.temperature, agent.max_tokens)."
+    "(default_agent, agents.<provider>.model, agents.<provider>.endpoint, agents.<provider>.temperature, "
+    "agents.<provider>.max_tokens)."
 )
 BLANK_PROMPT_MESSAGE = "Agent step prompt is blank after interpolation."
 AGENT_HEARTBEAT_INTERVAL_SECONDS: Final[int] = 30
@@ -104,7 +105,7 @@ def execute_agent_step(
             ),
         ),
     )
-    _report_withheld_fix(attempt, on_output)
+    _report_withheld_fix(attempt, agent.provider, on_output)
 
     return _to_outcome(attempt, on_output)
 
@@ -199,12 +200,16 @@ def _report_withheld_names(
     )
 
 
-def _report_withheld_fix(attempt: AgentAttempt, on_output: OutputCallback | None) -> None:
+def _report_withheld_fix(attempt: AgentAttempt, provider: str, on_output: OutputCallback | None) -> None:
     """Emit the passthrough fix line when names were withheld and the attempt did not succeed."""
     if not attempt.env_withheld or AGENT_OUTCOME_EXIT_CODES[attempt.status] == 0:
         return
 
-    _emit_output(on_output, "stderr", "  ! Fix: add names to agent.env_passthrough or pass --env-passthrough NAME.\n")
+    _emit_output(
+        on_output,
+        "stderr",
+        f"  ! Fix: add names to agents.{provider}.env_passthrough or pass --env-passthrough NAME.\n",
+    )
 
 
 def _provider_error(*diagnostics: str) -> AgentAttempt:

@@ -746,11 +746,17 @@ class DriveRunObserverContractTests:
 
 
 _AGENT_CONFIG: dict[str, object] = {
-    "provider": "copilot",
-    "models": {"copilot": "test-model"},
+    "model": "test-model",
     "endpoint": "http://127.0.0.1:9999",
     "temperature": 0.7,
     "max_tokens": 512,
+}
+_CLAUDE_CONFIG: dict[str, object] = {
+    "model": "claude-model",
+    "endpoint": "http://127.0.0.1:9998",
+    "temperature": 1.1,
+    "max_tokens": 256,
+    "tools": {"allow_all": True},
 }
 
 
@@ -758,12 +764,12 @@ def _agent_step(step_id: str, **extra: object) -> dict[str, object]:
     return {"id": step_id, "type": "agent", "prompt": "fix it", **extra}
 
 
-def _agent_workspace(tmp_path: Path, agent: dict[str, object]) -> tuple[WorkspacePaths, SessionsRepository]:
+def _agent_workspace(tmp_path: Path, agents: dict[str, object]) -> tuple[WorkspacePaths, SessionsRepository]:
     workspace = (
         WorkspaceBuilder(tmp_path / "agent-workspace")
         .with_git()
         .with_database()
-        .with_config(data={"version": 1, "project": {"name": "session"}, "agent": agent})
+        .with_config(data={"version": 1, "project": {"name": "session"}, "default_agent": "copilot", "agents": agents})
         .build()
     )
     paths = _paths_for(workspace)
@@ -827,7 +833,7 @@ class ResolveAgentSettingsEnvTests:
         captured_agent_args: list[ResolvedAgentSettings | None],
         noop_agent_provider: FakeAgentProvider,
     ) -> None:
-        paths, sessions = _agent_workspace(tmp_path, {**_AGENT_CONFIG, "env_passthrough": ["A", "B"]})
+        paths, sessions = _agent_workspace(tmp_path, {"copilot": {**_AGENT_CONFIG, "env_passthrough": ["A", "B"]}})
         seed_new_session(paths, sessions, session_id="flags", steps=[_agent_step("a")], use_worktree=True)
 
         _drive(paths, sessions, "flags", env_overrides=AgentEnvOverrides(env_passthrough=["B", "C"]))
@@ -842,7 +848,7 @@ class ResolveAgentSettingsEnvTests:
         captured_agent_args: list[ResolvedAgentSettings | None],
         noop_agent_provider: FakeAgentProvider,
     ) -> None:
-        paths, sessions = _agent_workspace(tmp_path, _AGENT_CONFIG)
+        paths, sessions = _agent_workspace(tmp_path, {"copilot": _AGENT_CONFIG})
         before = paths.config_file.read_bytes()
         seed_new_session(paths, sessions, session_id="mode", steps=[_agent_step("a")], use_worktree=True)
         seed_new_session(paths, sessions, session_id="plain", steps=[_agent_step("a")], use_worktree=True)
@@ -882,7 +888,7 @@ class ResolveAgentSettingsToolsTests:
         expected: ToolPolicy,
     ) -> None:
         agent_config = _AGENT_CONFIG if config_tools is None else {**_AGENT_CONFIG, "tools": config_tools}
-        paths, sessions = _agent_workspace(tmp_path, agent_config)
+        paths, sessions = _agent_workspace(tmp_path, {"copilot": agent_config})
         seed_new_session(paths, sessions, session_id="tools", steps=[_agent_step("a")], use_worktree=True)
 
         _drive(paths, sessions, "tools")
@@ -899,7 +905,7 @@ class ResolveAgentSettingsMcpServersTests:
         noop_agent_provider: FakeAgentProvider,
     ) -> None:
         agent_config = {**_AGENT_CONFIG, "mcp_servers": {"github": {"command": "npx"}}}
-        paths, sessions = _agent_workspace(tmp_path, agent_config)
+        paths, sessions = _agent_workspace(tmp_path, {"copilot": agent_config})
         seed_new_session(paths, sessions, session_id="mcp", steps=[_agent_step("a")], use_worktree=True)
 
         _drive(paths, sessions, "mcp")
@@ -916,7 +922,7 @@ class DriveRunAgentSettingsTests:
         captured_agent_args: list[ResolvedAgentSettings | None],
         noop_agent_provider: FakeAgentProvider,
     ) -> None:
-        paths, sessions = _agent_workspace(tmp_path, _AGENT_CONFIG)
+        paths, sessions = _agent_workspace(tmp_path, {"copilot": _AGENT_CONFIG, "claude": _CLAUDE_CONFIG})
         seed_new_session(paths, sessions, session_id="fresh", steps=[_agent_step("a")], use_worktree=True)
 
         outcome = _drive(paths, sessions, "fresh")
@@ -968,13 +974,13 @@ class DriveRunAgentSettingsTests:
         assert "+pin=[REDACTED:PIN]" in diff_text
         assert "1234" not in diff_text
 
-    def test_resumed_run_override_changes_only_the_provider(
+    def test_resumed_run_override_resolves_field_defaults_for_provider_without_block(
         self,
         tmp_path: Path,
         captured_agent_args: list[ResolvedAgentSettings | None],
         noop_agent_provider: FakeAgentProvider,
     ) -> None:
-        paths, sessions = _agent_workspace(tmp_path, _AGENT_CONFIG)
+        paths, sessions = _agent_workspace(tmp_path, {"copilot": _AGENT_CONFIG})
         seed_paused_session(
             paths,
             sessions,
@@ -992,9 +998,9 @@ class DriveRunAgentSettingsTests:
             ResolvedAgentSettings(
                 provider="fake-provider",
                 model=None,
-                endpoint="http://127.0.0.1:9999",
-                temperature=0.7,
-                max_tokens=512,
+                endpoint=None,
+                temperature=0.2,
+                max_tokens=4096,
                 tools=default_tool_policy(),
             )
         ]
@@ -1005,7 +1011,7 @@ class DriveRunAgentSettingsTests:
         captured_agent_args: list[ResolvedAgentSettings | None],
         noop_agent_provider: FakeAgentProvider,
     ) -> None:
-        paths, sessions = _agent_workspace(tmp_path, _AGENT_CONFIG)
+        paths, sessions = _agent_workspace(tmp_path, {"copilot": _AGENT_CONFIG})
         seed_new_session(
             paths, sessions, session_id="twice", steps=[_agent_step("a"), _agent_step("b")], use_worktree=True
         )
@@ -1029,6 +1035,56 @@ class DriveRunAgentSettingsTests:
         assert "CONFIG_MALFORMED_JSON" in outcome.errors[0]
         assert outcome.step_results == []
         assert [call[0] for call in observer.calls] == ["run_completed"]
+
+    def test_override_agent_uses_that_providers_model_temperature_and_tools(
+        self,
+        tmp_path: Path,
+        captured_agent_args: list[ResolvedAgentSettings | None],
+        noop_agent_provider: FakeAgentProvider,
+    ) -> None:
+        """Resolve every field from agents.claude for override "claude" while the copilot block sets its own tools."""
+        copilot = {**_AGENT_CONFIG, "tools": {"deny": [{"capability": "network"}]}}
+        paths, sessions = _agent_workspace(tmp_path, {"copilot": copilot, "claude": _CLAUDE_CONFIG})
+        seed_new_session(
+            paths, sessions, session_id="claude-run", steps=[_agent_step("a")], use_worktree=True, agent="claude"
+        )
+
+        _drive(paths, sessions, "claude-run")
+
+        assert captured_agent_args == [
+            ResolvedAgentSettings(
+                provider="claude",
+                model="claude-model",
+                endpoint="http://127.0.0.1:9998",
+                temperature=1.1,
+                max_tokens=256,
+                tools=ToolPolicy(allow_all=True),
+            )
+        ]
+
+    def test_registered_provider_without_entry_resolves_field_defaults(
+        self,
+        tmp_path: Path,
+        captured_agent_args: list[ResolvedAgentSettings | None],
+        noop_agent_provider: FakeAgentProvider,
+    ) -> None:
+        paths, sessions = _agent_workspace(tmp_path, {"copilot": _AGENT_CONFIG})
+        seed_new_session(
+            paths, sessions, session_id="no-block", steps=[_agent_step("a")], use_worktree=True, agent="claude"
+        )
+
+        _drive(paths, sessions, "no-block")
+
+        assert captured_agent_args == [
+            ResolvedAgentSettings(
+                provider="claude",
+                model=None,
+                endpoint=None,
+                temperature=0.2,
+                max_tokens=4096,
+                tools=default_tool_policy(),
+            )
+        ]
 
     def test_agent_step_with_unregistered_effective_provider_fails(self, tmp_path: Path) -> None:
         paths, sessions = _agent_workspace(tmp_path, {})
@@ -1061,7 +1117,7 @@ class DriveRunAgentWorktreeTests:
             return FakeAgentProvider(AgentResponse(status=AgentResponseStatus.NO_OP))
 
         monkeypatch.setattr(AGENT_ADAPTER_FACTORY, _spy)
-        paths, sessions = _agent_workspace(tmp_path, _AGENT_CONFIG)
+        paths, sessions = _agent_workspace(tmp_path, {"copilot": _AGENT_CONFIG})
         steps = [
             _step("before", "true"),
             _agent_step("agent", on_failure="prompt_user"),
@@ -1126,7 +1182,7 @@ class DriveRunAgentExecutionTests:
     def test_provider_override_and_tuning_reach_the_provider(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        paths, sessions = _agent_workspace(tmp_path, _AGENT_CONFIG)
+        paths, sessions = _agent_workspace(tmp_path, {"copilot": _AGENT_CONFIG, "claude": _CLAUDE_CONFIG})
         provider = FakeAgentProvider(AgentResponse(status=AgentResponseStatus.NO_OP))
         requested: list[str] = []
 
@@ -1141,19 +1197,14 @@ class DriveRunAgentExecutionTests:
             session_id="override",
             steps=[_agent_step("a", timeout_seconds=77)],
             use_worktree=True,
-            agent="fake-provider",
+            agent="claude",
         )
 
         outcome = _drive(paths, sessions, "override")
 
         assert outcome.status == SessionStatus.COMPLETED
-        assert requested == ["fake-provider"]
-        request = provider.requests[0]
-        assert request.model is None
-        assert request.endpoint == "http://127.0.0.1:9999"
-        assert request.temperature == 0.7
-        assert request.max_tokens == 512
-        assert request.timeout_seconds == 77
+        assert requested == ["claude"]
+        assert provider.requests[0].timeout_seconds == 77
 
     def test_no_op_planning_step_reports_summary_to_observer(
         self, git_paths: WorkspacePaths, git_runs: SessionsRepository, noop_agent_provider: FakeAgentProvider

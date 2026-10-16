@@ -12,7 +12,7 @@ from dovo.common.mcp_servers import McpServerDefinition
 from dovo.core.config.config import Config
 from dovo.core.config.exceptions import ConfigLoadError
 from dovo.core.config.generator import build_default_config
-from dovo.core.config.models import AgentConfig, ConfigTier
+from dovo.core.config.models import AgentSettings, ConfigTier
 
 WorkspacePathsFactory = Callable[[Path, Path | None], WorkspacePaths]
 
@@ -32,14 +32,14 @@ class ConfigLoadTests:
         write_tier_config: Callable[[ConfigTier, dict[str, Any] | str], Path],
         workspace_paths_factory: WorkspacePathsFactory,
     ) -> None:
-        write_tier_config(ConfigTier.USER, {"agent": {"models": {"copilot": "user-tier-model"}}})
+        write_tier_config(ConfigTier.USER, {"agents": {"copilot": {"model": "user-tier-model"}}})
         paths = workspace_paths_factory(isolated_workspace, None)
         Filesystem.atomic_write_json(paths.config_file, {"version": 1, "project": {"name": "demo-workspace"}})
 
         result = Config(paths).load()
 
         assert result.config is not None
-        assert result.config.agent.models == {"copilot": "user-tier-model"}
+        assert result.config.agents["copilot"].model == "user-tier-model"
 
 
 class ConfigLoadRequiredTests:
@@ -92,7 +92,7 @@ class ConfigLoadedConfigAccessorTests:
 
 
 class ConfigAccessorPropertyTests:
-    def test_version_project_and_agent_properties_expose_loaded_config_sections(
+    def test_version_and_project_properties_expose_loaded_config_sections(
         self, isolated_workspace: Path, workspace_paths_factory: WorkspacePathsFactory
     ) -> None:
         paths = workspace_paths_factory(isolated_workspace, None)
@@ -102,7 +102,6 @@ class ConfigAccessorPropertyTests:
 
         assert config.version == loaded.version
         assert config.project == loaded.project
-        assert config.agent == loaded.agent
 
     def test_worktree_history_doctor_prune_telemetry_concurrency_properties_expose_loaded_config_sections(
         self, isolated_workspace: Path, workspace_paths_factory: WorkspacePathsFactory
@@ -139,7 +138,7 @@ class ConfigAccessorPropertyTests:
         paths = workspace_paths_factory(isolated_workspace, None)
 
         with pytest.raises(ConfigLoadError):
-            _ = Config(paths).agent
+            _ = Config(paths).history
 
 
 class ConfigGenerateTests:
@@ -183,7 +182,7 @@ class ConfigGenerateTests:
         assert config._loaded_config.project.name == "replaced-name"
 
 
-class AgentConfigMcpServersTests:
+class AgentSettingsMcpServersTests:
     def test_config_with_invalid_server_name_fails_validation(self) -> None:
         with pytest.raises(ValidationError, match="'a__b'"):
-            AgentConfig(mcp_servers={"a__b": McpServerDefinition(command="npx")})
+            AgentSettings(mcp_servers={"a__b": McpServerDefinition(command="npx")})

@@ -12,7 +12,7 @@ import pytest
 
 from dovo.common.filesystem import WorkspacePaths
 from dovo.core.agents.registry import PROVIDERS
-from dovo.core.config.models import AgentConfig, AgentProvider, DovoConfig, ProjectConfig
+from dovo.core.config.models import DEFAULT_AGENT, AgentProvider, AgentSettings, DovoConfig, ProjectConfig
 from dovo.core.diagnostics.checks.agent_setup import AgentSetupCheck
 from dovo.core.diagnostics.models import CheckCategory, CheckStatus, DiagnosticsContext
 from tests.harness import patch_claude_probe
@@ -20,7 +20,7 @@ from tests.harness import patch_claude_probe
 WorkspacePathsFactory = Callable[[Path, Path | None], WorkspacePaths]
 
 CREDENTIALED_TOKENS = sorted(token for token, spec in PROVIDERS.items() if spec.credential_envs)
-DEFAULT_TOKEN = AgentConfig().provider
+DEFAULT_TOKEN = DEFAULT_AGENT
 _EXPECTED_AUTH_DETAILS = {"claude": {"auth": "ANTHROPIC_API_KEY"}}
 _CLAUDE_AUTH_FIX = (
     "run `claude auth login`, export CLAUDE_CODE_OAUTH_TOKEN=... (from `claude setup-token`) "
@@ -29,9 +29,15 @@ _CLAUDE_AUTH_FIX = (
 
 
 def _context_with_agent(
-    cwd: Path, agent: AgentConfig, workspace_paths_factory: WorkspacePathsFactory
+    cwd: Path, provider: str, model: str, workspace_paths_factory: WorkspacePathsFactory
 ) -> DiagnosticsContext:
-    config = DovoConfig(version=1, project=ProjectConfig(name="demo"), agent=agent)
+    token = cast(AgentProvider, provider)
+    config = DovoConfig(
+        version=1,
+        project=ProjectConfig(name="demo"),
+        default_agent=token,
+        agents={token: AgentSettings(model=model)},
+    )
     return DiagnosticsContext(cwd=cwd, config=config, paths=workspace_paths_factory(cwd, None))
 
 
@@ -81,8 +87,7 @@ class AgentSetupCheckTests:
     ) -> None:
         _clear_credential_envs(monkeypatch, token)
         joined = " or ".join(PROVIDERS[token].credential_envs)
-        agent = AgentConfig(provider=cast(AgentProvider, token), models={token: "some-model"})
-        context = _context_with_agent(tmp_path, agent, workspace_paths_factory)
+        context = _context_with_agent(tmp_path, token, "some-model", workspace_paths_factory)
 
         result = AgentSetupCheck().execute(context)
 
@@ -107,8 +112,7 @@ class AgentSetupCheckTests:
     ) -> None:
         _clear_credential_envs(monkeypatch, token)
         monkeypatch.setenv(PROVIDERS[token].credential_envs[-1], "x")
-        agent = AgentConfig(provider=cast(AgentProvider, token), models={token: "test-model"})
-        context = _context_with_agent(tmp_path, agent, workspace_paths_factory)
+        context = _context_with_agent(tmp_path, token, "test-model", workspace_paths_factory)
 
         result = AgentSetupCheck().execute(context)
 
@@ -123,9 +127,7 @@ class AgentSetupCheckTests:
     ) -> None:
         for env_name in PROVIDERS[DEFAULT_TOKEN].credential_envs:
             monkeypatch.setenv(env_name, "   ")
-        context = _context_with_agent(
-            tmp_path, AgentConfig(models={DEFAULT_TOKEN: "some-model"}), workspace_paths_factory
-        )
+        context = _context_with_agent(tmp_path, DEFAULT_TOKEN, "some-model", workspace_paths_factory)
 
         result = AgentSetupCheck().execute(context)
 
@@ -137,9 +139,7 @@ class AgentSetupCheckTests:
     ) -> None:
         _clear_credential_envs(monkeypatch, DEFAULT_TOKEN)
         monkeypatch.setitem(PROVIDERS, DEFAULT_TOKEN, dataclasses.replace(PROVIDERS[DEFAULT_TOKEN], credential_envs=()))
-        context = _context_with_agent(
-            tmp_path, AgentConfig(models={DEFAULT_TOKEN: "some-model"}), workspace_paths_factory
-        )
+        context = _context_with_agent(tmp_path, DEFAULT_TOKEN, "some-model", workspace_paths_factory)
 
         result = AgentSetupCheck().execute(context)
 
@@ -152,9 +152,7 @@ class AgentSetupCheckTests:
     ) -> None:
         _clear_credential_envs(monkeypatch, DEFAULT_TOKEN)
         monkeypatch.delitem(PROVIDERS, DEFAULT_TOKEN)
-        context = _context_with_agent(
-            tmp_path, AgentConfig(models={DEFAULT_TOKEN: "some-model"}), workspace_paths_factory
-        )
+        context = _context_with_agent(tmp_path, DEFAULT_TOKEN, "some-model", workspace_paths_factory)
 
         result = AgentSetupCheck().execute(context)
 
@@ -168,9 +166,7 @@ class AgentSetupCheckTests:
         monkeypatch.delenv("BETA_KEY", raising=False)
         spec = dataclasses.replace(PROVIDERS[DEFAULT_TOKEN], credential_envs=("ALPHA_KEY", "BETA_KEY"))
         monkeypatch.setitem(PROVIDERS, DEFAULT_TOKEN, spec)
-        context = _context_with_agent(
-            tmp_path, AgentConfig(models={DEFAULT_TOKEN: "some-model"}), workspace_paths_factory
-        )
+        context = _context_with_agent(tmp_path, DEFAULT_TOKEN, "some-model", workspace_paths_factory)
 
         result = AgentSetupCheck().execute(context)
 
@@ -183,9 +179,7 @@ class AgentSetupCheckTests:
         """Return OK with auth 'cli session' when the probe reports loggedIn true and no credential env is set."""
         _clear_credential_envs(monkeypatch, "claude")
         _stub_logged_in(monkeypatch, logged_in=True)
-        context = _context_with_agent(
-            tmp_path, AgentConfig(provider="claude", models={"claude": "m"}), workspace_paths_factory
-        )
+        context = _context_with_agent(tmp_path, "claude", "m", workspace_paths_factory)
 
         result = AgentSetupCheck().execute(context)
 
@@ -216,9 +210,7 @@ class AgentSetupCheckTests:
         for name, value in env.items():
             monkeypatch.setenv(name, value)
         _stub_logged_in(monkeypatch, logged_in=logged_in)
-        context = _context_with_agent(
-            tmp_path, AgentConfig(provider="claude", models={"claude": "m"}), workspace_paths_factory
-        )
+        context = _context_with_agent(tmp_path, "claude", "m", workspace_paths_factory)
 
         result = AgentSetupCheck().execute(context)
 
@@ -231,9 +223,7 @@ class AgentSetupCheckTests:
         """Return FAILED DOCTOR_AGENT_KEY_MISSING with fixes == [the Claude authentication fix] for a logged-out CLI."""
         _clear_credential_envs(monkeypatch, "claude")
         _stub_logged_in(monkeypatch, logged_in=False)
-        context = _context_with_agent(
-            tmp_path, AgentConfig(provider="claude", models={"claude": "m"}), workspace_paths_factory
-        )
+        context = _context_with_agent(tmp_path, "claude", "m", workspace_paths_factory)
 
         result = AgentSetupCheck().execute(context)
 
@@ -247,9 +237,28 @@ class AgentSetupCheckTests:
         _clear_credential_envs(monkeypatch, DEFAULT_TOKEN)
         spec = dataclasses.replace(PROVIDERS[DEFAULT_TOKEN], auth_label=None, auth_fix=None)
         monkeypatch.setitem(PROVIDERS, DEFAULT_TOKEN, spec)
-        context = _context_with_agent(tmp_path, AgentConfig(models={DEFAULT_TOKEN: "m"}), workspace_paths_factory)
+        context = _context_with_agent(tmp_path, DEFAULT_TOKEN, "m", workspace_paths_factory)
 
         result = AgentSetupCheck().execute(context)
 
         assert (result.status, result.fixes) == (CheckStatus.FAILED, [])
         assert "auth" not in result.details
+
+    def test_execute_reads_default_agent_block_model(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, workspace_paths_factory: WorkspacePathsFactory
+    ) -> None:
+        """Report claude's model "claude-model" for default_agent "claude" while the copilot block names another."""
+        _clear_credential_envs(monkeypatch, "claude")
+        _stub_logged_in(monkeypatch, logged_in=True)
+        config = DovoConfig(
+            version=1,
+            project=ProjectConfig(name="demo"),
+            default_agent="claude",
+            agents={"copilot": AgentSettings(model="copilot-model"), "claude": AgentSettings(model="claude-model")},
+        )
+        context = DiagnosticsContext(cwd=tmp_path, config=config, paths=workspace_paths_factory(tmp_path, None))
+
+        result = AgentSetupCheck().execute(context)
+
+        assert result.status == CheckStatus.OK
+        assert result.details == {"provider": "claude", "model": "claude-model", "auth": "cli session"}

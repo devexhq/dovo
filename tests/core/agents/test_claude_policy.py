@@ -607,7 +607,7 @@ class ClaudePolicyRenderTests:
             pytest.param(
                 ToolPolicy(allow=[_rule(ToolCapability.MCP, "github/*")]),
                 True,
-                "mcp server 'github' is neither defined in agent.mcp_servers nor in the user's Claude config",
+                "mcp server 'github' is neither defined in agents.claude.mcp_servers nor in the user's Claude config",
                 id="unknown-server",
             ),
             pytest.param(
@@ -625,7 +625,7 @@ class ClaudePolicyRenderTests:
             pytest.param(
                 ToolPolicy(allow_all=True, allow=[_rule(ToolCapability.MCP, "github/*")]),
                 True,
-                "mcp server 'github' is neither defined in agent.mcp_servers nor in the user's Claude config",
+                "mcp server 'github' is neither defined in agents.claude.mcp_servers nor in the user's Claude config",
                 id="allow-all-unknown-server",
             ),
         ],

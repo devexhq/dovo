@@ -64,7 +64,7 @@ Dovo Doctor Report
 2 checks: 1 ok, 1 warning, 0 failed (4.1ms)
 
 Fixes:
-  • agent.setup: Configure `agent.models.copilot` in `.dovo/config.json`
+  • agent.setup: Configure `agents.copilot.model` in `.dovo/config.json`
 ```
 
 ### Failures present output

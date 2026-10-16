@@ -204,7 +204,10 @@ def _render_for_request(
 
 
 def _explicit_claude_name(name: str, request: AgentRequest) -> bool:
-    """Return True when name is a declared credential or the user asked for it through step env or agent.env_passthrough (literal or prefix)."""
+    """Return whether the request names an environment variable explicitly.
+
+    Explicit means a declared credential, a step env key, or an agents.claude.env_passthrough entry, literal or prefix.
+    """
     if name in CLAUDE_PROVIDER_SPEC.credential_envs or name in request.env:
         return True
 

@@ -47,6 +47,7 @@ class TimeoutResponseTests:
 class BlockedResponseContractTests:
     def test_blocked_response_carries_denials_then_fix(self) -> None:
         response = blocked_response(
+            provider="claude",
             duration_ms=7,
             denials=[
                 AgentDenial(tool="bash", message="no interactive user response", capability=ToolCapability.SHELL),
@@ -72,7 +73,7 @@ class BlockedResponseContractTests:
             ],
             fixes=[
                 "Grant it in the step's tools policy, e.g. tools: {allow: [{capability: shell}]}, "
-                "or set it once under agent.tools in .dovo/config.json "
+                "or set it once under agents.claude.tools in .dovo/config.json "
                 "(see docs/guides/agent-providers.md#tool-policy-profiles)",
                 "Remove or narrow the deny rule that blocked 'edit': denied due to the following rules",
             ],
@@ -92,14 +93,14 @@ class BlockedResponseContractTests:
     def test_blocked_response_lists_one_fix_per_distinct_known_cause(
         self, denials: list[AgentDenial], expected_fix_count: int
     ) -> None:
-        response = blocked_response(duration_ms=1, denials=denials)
+        response = blocked_response(provider="copilot", duration_ms=1, denials=denials)
 
         assert len(response.fixes) == expected_fix_count
         assert len(response.errors) == len(denials)
 
     def test_blocked_response_requires_at_least_one_denial(self) -> None:
         with pytest.raises(ValueError):
-            blocked_response(duration_ms=1, denials=[])
+            blocked_response(provider="copilot", duration_ms=1, denials=[])
 
 
 class ProviderErrorResponseTests:

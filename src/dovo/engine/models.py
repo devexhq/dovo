@@ -160,10 +160,7 @@ class AgentSettingsResolution(BaseResult):
 
 @dataclass(frozen=True)
 class RunSettings:
-    """Settings and collaborators resolved from the session row, consumed by Workspace and StepCoordinator.
-
-    ``agent`` comes from effective config, not the row: the row only overrides its provider.
-    """
+    """Settings and collaborators resolved from the session row, consumed by Workspace and StepCoordinator."""
 
     cwd: Path
     use_worktree: bool = True

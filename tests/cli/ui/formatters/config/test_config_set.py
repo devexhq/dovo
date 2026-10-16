@@ -22,7 +22,7 @@ SUCCESS_STR_CASE = FormatterCase(
     data=ConfigSetResult(
         status=ConfigSetStatus.OK,
         config_path=CONFIG_PATH,
-        key="agent.models.copilot",
+        key="agents.copilot.model",
         value="qwen2.5-coder",
         errors=[],
         warnings=[],
@@ -31,7 +31,7 @@ SUCCESS_STR_CASE = FormatterCase(
     view=ConfigSetView(
         status=ConfigSetStatus.OK,
         config_path=CONFIG_PATH,
-        key="agent.models.copilot",
+        key="agents.copilot.model",
         value="qwen2.5-coder",
         value_str="qwen2.5-coder",
         value_type="str",
@@ -39,7 +39,7 @@ SUCCESS_STR_CASE = FormatterCase(
         warnings=[],
         fixes=[],
     ),
-    render_expectations=["agent.models.copilot", "qwen2.5-coder", "str"],
+    render_expectations=["agents.copilot.model", "qwen2.5-coder", "str"],
 )
 
 SUCCESS_BOOL_CASE = FormatterCase(
@@ -155,7 +155,7 @@ SET_PAYLOAD_CASES = [
         {
             "status": "ok",
             "config_path": "/workspace/.dovo/config.json",
-            "key": "agent.models.copilot",
+            "key": "agents.copilot.model",
             "value": "qwen2.5-coder",
             "value_str": "qwen2.5-coder",
             "value_type": "str",

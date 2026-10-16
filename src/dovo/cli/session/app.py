@@ -202,7 +202,9 @@ def session_resume(
     ),
     env_mode: Annotated[
         AgentEnvModeOptions | None,
-        typer.Option("--env-mode", help="Override agent.env_mode for this invocation: 'allowlist' or 'inherit'."),
+        typer.Option(
+            "--env-mode", help="Override agents.<provider>.env_mode for this invocation: 'allowlist' or 'inherit'."
+        ),
     ] = None,
     env_passthrough: Annotated[
         list[str] | None,

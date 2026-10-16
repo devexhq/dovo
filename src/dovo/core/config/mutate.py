@@ -83,11 +83,6 @@ def set_nested_value(config_dict: dict[str, Any], dot_path: str, value: Any) -> 
     Intermediate missing segments are created as empty dicts. If an intermediate
     segment exists and is not a dict, raise ``ValueError``.
 
-    Args:
-        config_dict: Mutable configuration object root.
-        dot_path: Dot-separated key path (e.g. ``agent.models.copilot``).
-        value: Value to assign at the final segment.
-
     Raises:
         ValueError: Empty/invalid path or scalar-vs-dict type collision.
     """
@@ -118,10 +113,6 @@ def unset_nested_value(config_dict: dict[str, Any], dot_path: str) -> bool:
     or an absent final segment, is a no-op. Intermediate dicts left empty by a removal
     are not pruned, since every section model other than ``project`` fills its own
     defaults for absent keys.
-
-    Args:
-        config_dict: Mutable configuration object root.
-        dot_path: Dot-separated key path (e.g. ``agent.models.copilot``).
 
     Returns:
         True if the key existed and was removed, False if it was a no-op.

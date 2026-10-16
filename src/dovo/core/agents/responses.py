@@ -68,14 +68,15 @@ def no_op_response(
 
 def blocked_response(
     *,
+    provider: str,
     duration_ms: int,
     denials: Sequence[AgentDenial],
     raw_text: str | None = None,
     mutation_baseline_ref: str | None = None,
 ) -> AgentResponse:
-    """Build the BLOCKED response carrying the permission denials and the grant-or-remove-deny fix.
+    """Build the BLOCKED response whose grant fix names agents.<provider>.tools.
 
-    ``denials`` must be non-empty; the caller checks before building the response.
+    ``denials`` must be non-empty.
     """
     first, *rest = denials
     errors = [
@@ -89,7 +90,7 @@ def blocked_response(
         elif denial.capability is not None:
             fix = (
                 f"Grant it in the step's tools policy, e.g. tools: {{allow: [{{capability: {denial.capability.value}}}]}}, "
-                "or set it once under agent.tools in .dovo/config.json "
+                f"or set it once under agents.{provider}.tools in .dovo/config.json "
                 "(see docs/guides/agent-providers.md#tool-policy-profiles)"
             )
         else:

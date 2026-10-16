@@ -33,17 +33,17 @@ dovo config set <key> <value>
 
 #### Arguments
 
-- `key`: Key or nested dot-path (e.g. `agent.provider`, `agent.models.copilot`, `worktree.base_ref`).
+- `key`: Key or nested dot-path (e.g. `default_agent`, `agents.copilot.model`, `worktree.base_ref`). Missing intermediate objects such as `agents` and `agents.copilot` are created.
 - `value`: New value to store.
 
 #### Examples
 
 ```bash
-# Select the agent provider
-dovo config set agent.provider copilot
+# Select the default agent provider
+dovo config set default_agent copilot
 
-# Set model name
-dovo config set agent.models.copilot gpt-4.1
+# Set the model for one provider
+dovo config set agents.copilot.model gpt-4.1
 
 # Configure the worktree base ref
 dovo config set worktree.base_ref main
@@ -69,19 +69,19 @@ dovo config unset <key>
 
 #### Arguments
 
-- `key`: Key or nested dot-path (e.g. `agent.models.copilot`, `telemetry.enabled`).
+- `key`: Key or nested dot-path (e.g. `agents.copilot.model`, `telemetry.enabled`).
 
 #### Examples
 
 ```bash
-# Remove a custom model override, falling back to the schema default
-dovo config unset agent.models.copilot
+# Remove a provider's model, falling back to the schema default
+dovo config unset agents.copilot.model
 
 # Remove an entire section, falling back to its section defaults
-dovo config unset agent
+dovo config unset agents
 ```
 
-Removing a key that is already absent is a no-op and exits successfully without writing to disk.
+Removing a key that is already absent is a no-op and exits successfully without writing to disk. Removing the last key of a provider block leaves an empty block (`"copilot": {}`) under `agents`.
 
 ### `dovo config validate`
 
@@ -91,4 +91,4 @@ Checks `.dovo/config.json` against the schema:
 dovo config validate
 ```
 
-On failure it lists the missing fields or invalid values. An `agent.provider` other than `copilot` is reported as `CONFIG_SCHEMA_INVALID`. The file is never modified.
+On failure it lists the missing fields or invalid values. A `default_agent` value or `agents` key other than `copilot` or `claude`, and the legacy top-level `agent` key, are reported as `CONFIG_SCHEMA_INVALID`. The file is never modified.

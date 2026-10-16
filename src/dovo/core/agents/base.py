@@ -70,7 +70,7 @@ class BaseAgentProvider(abc.ABC):
         """Return the fixed AGENT_ENV_OVERRIDE_INVALID message when a literal passthrough or step env entry is reserved, else None."""
         spec = self._provider_spec()
 
-        return None if spec is None else validate_agent_env_request(spec, request)
+        return None if spec is None else validate_agent_env_request(spec, request, spec.token)
 
     def _response_redactor(self, request: AgentRequest) -> SecretRedactor:
         """Build the invocation-time redactor for this provider's descriptor, the request's worktree, and its forwarded env secrets."""

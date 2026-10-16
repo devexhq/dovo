@@ -11,21 +11,20 @@ import pytest
 
 from dovo.common.filesystem import WorkspacePaths
 from dovo.core.agents.registry import PROVIDERS
-from dovo.core.config.models import AgentConfig, AgentProvider, DovoConfig, ProjectConfig
+from dovo.core.config.models import DEFAULT_AGENT, AgentProvider, DovoConfig, ProjectConfig
 from dovo.core.diagnostics.checks.env_binaries import EnvBinariesCheck
 from dovo.core.diagnostics.models import CheckCategory, CheckStatus, DiagnosticsContext
 
 WorkspacePathsFactory = Callable[[Path, Path | None], WorkspacePaths]
 
 BINARY_TOKENS = sorted(token for token, spec in PROVIDERS.items() if spec.binary is not None)
-DEFAULT_TOKEN = AgentConfig().provider
+DEFAULT_TOKEN = DEFAULT_AGENT
 
 
 def _context_with_provider(
     cwd: Path, provider: str, workspace_paths_factory: WorkspacePathsFactory
 ) -> DiagnosticsContext:
-    agent = AgentConfig(provider=cast(AgentProvider, provider))
-    config = DovoConfig(version=1, project=ProjectConfig(name="demo"), agent=agent)
+    config = DovoConfig(version=1, project=ProjectConfig(name="demo"), default_agent=cast(AgentProvider, provider))
     return DiagnosticsContext(cwd=cwd, config=config, paths=workspace_paths_factory(cwd, None))
 
 

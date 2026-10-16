@@ -12,7 +12,7 @@ from dovo.cli.ui.formatters.config import (
     ConfigValidationView,
 )
 from dovo.core.config.models import (
-    AgentConfig,
+    AgentSettings,
     ConcurrencyConfig,
     DoctorConfig,
     DovoConfig,
@@ -45,12 +45,8 @@ def _make_config(name: str = "valid-proj") -> DovoConfig:
             max_active_worktrees=3,
             default_timeout_seconds=900,
         ),
-        agent=AgentConfig(
-            provider="copilot",
-            endpoint=None,
-            temperature=0.2,
-            max_tokens=4096,
-        ),
+        default_agent="copilot",
+        agents={"copilot": AgentSettings(endpoint=None, temperature=0.2, max_tokens=4096)},
         history=HistoryConfig(
             save_attempt_logs=True,
             save_agent_payloads=True,
@@ -105,10 +101,10 @@ VALID_WITH_WARNINGS_CASE = FormatterCase(
         config_path=CONFIG_PATH,
         config=VALID_CONFIG,
         warnings=[
-            "agent.provider 'copilot' requires agent.models.copilot but it is missing (CONFIG_WARN_AGENT_MODEL_MISSING)."
+            "default_agent 'copilot' requires agents.copilot.model but it is missing (CONFIG_WARN_AGENT_MODEL_MISSING)."
         ],
         errors=[],
-        fixes=["Set agent.models.copilot in .dovo/config.json"],
+        fixes=["Set agents.copilot.model in .dovo/config.json"],
     ),
     view=ConfigValidationView(
         status=ConfigValidationStatus.VALID,
@@ -118,15 +114,15 @@ VALID_WITH_WARNINGS_CASE = FormatterCase(
         config=VALID_CONFIG,
         errors=[],
         warnings=[
-            "agent.provider 'copilot' requires agent.models.copilot but it is missing (CONFIG_WARN_AGENT_MODEL_MISSING)."
+            "default_agent 'copilot' requires agents.copilot.model but it is missing (CONFIG_WARN_AGENT_MODEL_MISSING)."
         ],
-        fixes=["Set agent.models.copilot in .dovo/config.json"],
+        fixes=["Set agents.copilot.model in .dovo/config.json"],
     ),
     render_expectations=[
         CONFIG_PATH.as_posix(),
         "valid with warnings",
-        "agent.provider 'copilot' requires agent.models.copilot but it is missing (CONFIG_WARN_AGENT_MODEL_MISSING).",
-        "Set agent.models.copilot in .dovo/config.json",
+        "default_agent 'copilot' requires agents.copilot.model but it is missing (CONFIG_WARN_AGENT_MODEL_MISSING).",
+        "Set agents.copilot.model in .dovo/config.json",
     ],
 )
 
@@ -205,15 +201,17 @@ VALIDATION_PAYLOAD_CASES = [
                     "max_active_worktrees": 3,
                     "default_timeout_seconds": 900,
                 },
-                "agent": {
-                    "provider": "copilot",
-                    "models": {},
-                    "endpoint": None,
-                    "temperature": 0.2,
-                    "max_tokens": 4096,
-                    "env_passthrough": [],
-                    "env_mode": "allowlist",
-                    "mcp_servers": {},
+                "default_agent": "copilot",
+                "agents": {
+                    "copilot": {
+                        "model": None,
+                        "endpoint": None,
+                        "temperature": 0.2,
+                        "max_tokens": 4096,
+                        "env_passthrough": [],
+                        "env_mode": "allowlist",
+                        "mcp_servers": {},
+                    }
                 },
                 "history": {
                     "save_attempt_logs": True,
