@@ -4,9 +4,9 @@ from __future__ import annotations
 
 from rich.text import Text
 
+from dovo.cli.ui.formatters.base import ComponentFormatter
 from dovo.cli.ui.formatters.worktree.common import CATEGORY_LABELS
 from dovo.cli.ui.formatters.worktree.worktree_views import PrunedItemView
-from dovo.common.types import ComponentFormatter
 from dovo.core.worktree.models import PruneAction, PrunedItem
 
 

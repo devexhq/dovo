@@ -2,19 +2,18 @@
 
 from __future__ import annotations
 
-from typing import Any
-
+from rich.console import RenderableType
 from rich.text import Text
 
+from dovo.cli.ui.formatters.base import ComponentFormatter
 from dovo.cli.ui.formatters.common import build_error_panel
-from dovo.common.types import ComponentFormatter
 from dovo.core.config.mutate import ConfigUnsetResult, ConfigUnsetStatus
 
 
 class ConfigUnsetFormatter(ComponentFormatter[ConfigUnsetResult]):
     """Formatter for configuration removal results."""
 
-    def to_rich(self, data: ConfigUnsetResult) -> Any:
+    def to_rich(self, data: ConfigUnsetResult) -> RenderableType:
         """Render configuration removal confirmation or error panel."""
         if data.status == ConfigUnsetStatus.OK:
             return Text.from_markup(f"[bold green]✔  Config unset: {data.key}[/bold green]")

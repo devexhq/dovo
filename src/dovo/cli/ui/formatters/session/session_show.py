@@ -3,12 +3,12 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
 
-from rich.console import Group
+from rich.console import Group, RenderableType
 from rich.panel import Panel
 from rich.text import Text
 
+from dovo.cli.ui.formatters.base import ComponentFormatter
 from dovo.cli.ui.formatters.common import build_error_panel
 from dovo.cli.ui.formatters.session.common import (
     build_metadata_table,
@@ -17,7 +17,6 @@ from dovo.cli.ui.formatters.session.common import (
     build_steps_table,
 )
 from dovo.cli.ui.formatters.session.session_views import SessionShowView
-from dovo.common.types import ComponentFormatter
 from dovo.common.utils import display_path
 from dovo.core.sessions import HistoryShowResult, HistoryShowStatus
 
@@ -48,7 +47,7 @@ def _render_show_error_panel(view: SessionShowView) -> Panel | None:
 STEP_LOGS_HINT = "Use 'dovo logs {session_id} --step <step_id>' for step output."
 
 
-def _render_show_steps(view: SessionShowView) -> list[Any]:
+def _render_show_steps(view: SessionShowView) -> list[RenderableType]:
     """Render the Steps table, its error lines and the logs hint, or the warnings when no steps exist."""
     if not view.steps:
         return [Text(warning, style="dim") for warning in view.warnings]
@@ -60,12 +59,12 @@ def _render_show_steps(view: SessionShowView) -> list[Any]:
     ]
 
 
-def _render_show_run(view: SessionShowView) -> Any:
+def _render_show_run(view: SessionShowView) -> RenderableType:
     """Render detailed session metadata panel, error panel, and step timeline."""
     if view.session is None:
         return Text("")
 
-    renderables: list[Any] = [
+    renderables: list[RenderableType] = [
         Panel(
             build_metadata_table(view.session, worktree_kept=view.worktree_kept, worktree_path=view.worktree_path),
             title=f"Session Metadata: {view.session.session_id}",
@@ -113,7 +112,7 @@ class SessionShowFormatter(ComponentFormatter[HistoryShowResult, SessionShowView
             fixes=list(data.fixes),
         )
 
-    def to_rich(self, data: HistoryShowResult) -> Any:
+    def to_rich(self, data: HistoryShowResult) -> RenderableType:
         """Render detailed session metadata panel, error panel, and step timeline."""
         view = self.transform(data)
         error_panel = _render_show_error_panel(view)

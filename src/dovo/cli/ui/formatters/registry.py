@@ -25,8 +25,8 @@ import dovo.core.diagnostics as diagnostics_models
 import dovo.core.sessions as sessions_models
 import dovo.core.status as status_models
 import dovo.core.worktree as worktree_models
+from dovo.cli.ui.formatters.base import ComponentFormatter
 from dovo.cli.ui.formatters.common import DispatcherProtocol
-from dovo.common.types import ComponentFormatter
 
 if TYPE_CHECKING:
     from rich.console import Console

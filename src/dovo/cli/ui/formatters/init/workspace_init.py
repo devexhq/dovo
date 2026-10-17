@@ -4,11 +4,12 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from pathlib import Path
-from typing import Any, NamedTuple
+from typing import NamedTuple
 
-from rich.console import Group
+from rich.console import Group, RenderableType
 from rich.text import Text
 
+from dovo.cli.ui.formatters.base import ComponentFormatter
 from dovo.cli.ui.formatters.init.common import (
     render_bootstrap_lines,
     render_config_lines,
@@ -19,7 +20,6 @@ from dovo.cli.ui.formatters.init.common import (
 from dovo.cli.ui.formatters.init.init_view import WorkspaceInitView
 from dovo.common.constants import DOVO_GITIGNORE_TRACKED_ENTRIES
 from dovo.common.models import BaseResult
-from dovo.common.types import ComponentFormatter
 from dovo.common.utils import display_path
 from dovo.core.bootstrap.models import (
     BootstrapOutcome,
@@ -189,14 +189,14 @@ class WorkspaceInitFormatter(ComponentFormatter[WorkspaceInitResult, WorkspaceIn
             fixes=_collect_fixes(data),
         )
 
-    def to_rich(self, data: WorkspaceInitResult) -> Any:
+    def to_rich(self, data: WorkspaceInitResult) -> RenderableType:
         """Render initialization summary, repair details, or failure panels."""
         view = self.transform(data)
         failure_panel = render_failure_panel(view)
         if failure_panel is not None:
             return failure_panel
 
-        renderables: list[Any] = [Text("")]
+        renderables: list[RenderableType] = [Text("")]
         if view.bootstrap_outcome is not None:
             renderables.extend(render_bootstrap_lines(view))
             renderables.extend(render_identity_lines(view))

@@ -2,19 +2,18 @@
 
 from __future__ import annotations
 
-from typing import Any
-
+from rich.console import RenderableType
 from rich.text import Text
 
+from dovo.cli.ui.formatters.base import ComponentFormatter
 from dovo.cli.ui.formatters.common import build_error_panel
-from dovo.common.types import ComponentFormatter
 from dovo.core.catalog.models import CatalogDeleteResult
 
 
 class CatalogDeleteFormatter(ComponentFormatter[CatalogDeleteResult]):
     """Formatter for catalog delete command results."""
 
-    def to_rich(self, data: CatalogDeleteResult) -> Any:
+    def to_rich(self, data: CatalogDeleteResult) -> RenderableType:
         """Render single-line deletion confirmation, cancellation, or error panel."""
         if data.cancelled:
             return Text("Deletion cancelled.")

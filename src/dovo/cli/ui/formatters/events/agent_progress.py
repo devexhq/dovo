@@ -12,7 +12,7 @@ from rich.table import Table
 from rich.text import Text
 
 from dovo.cli.ui.events import AgentProgressEvent
-from dovo.common.types import ComponentFormatter
+from dovo.cli.ui.formatters.base import ComponentFormatter
 from dovo.core.agents import AgentProgressKind
 
 _BULLET: Final[str] = "●"

@@ -2,14 +2,13 @@
 
 from __future__ import annotations
 
-from typing import Any
-
+from rich.console import RenderableType
 from rich.text import Text
 
+from dovo.cli.ui.formatters.base import ComponentFormatter
 from dovo.cli.ui.formatters.common import build_error_panel
 from dovo.cli.ui.formatters.config.common import format_config_value
 from dovo.cli.ui.formatters.config.config_views import ConfigSetView
-from dovo.common.types import ComponentFormatter
 from dovo.core.config.mutate import ConfigSetResult, ConfigSetStatus
 
 
@@ -37,7 +36,7 @@ class ConfigSetFormatter(ComponentFormatter[ConfigSetResult, ConfigSetView]):
             fixes=list(data.fixes),
         )
 
-    def to_rich(self, data: ConfigSetResult) -> Any:
+    def to_rich(self, data: ConfigSetResult) -> RenderableType:
         """Render configuration update confirmation or error panel."""
         view = self.transform(data)
         if view.status == ConfigSetStatus.OK:

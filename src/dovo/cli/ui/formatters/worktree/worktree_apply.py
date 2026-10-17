@@ -2,20 +2,18 @@
 
 from __future__ import annotations
 
-from typing import Any
-
-from rich.console import Group
+from rich.console import Group, RenderableType
 from rich.text import Text
 
+from dovo.cli.ui.formatters.base import ComponentFormatter
 from dovo.cli.ui.formatters.common import build_error_panel
-from dovo.common.types import ComponentFormatter
 from dovo.core.worktree.models import WorktreeApplyResult, WorktreeApplyStrategy
 
 
 def _format_apply_success(data: WorktreeApplyResult) -> Group:
     """Render success block for worktree apply."""
     strategy_label = data.strategy.value
-    renderables: list[Any] = [
+    renderables: list[RenderableType] = [
         Text(f"Applied worktree {data.worktree_id} to workspace ({strategy_label})", style="green")
     ]
 
@@ -40,7 +38,7 @@ def _format_apply_success(data: WorktreeApplyResult) -> Group:
 class WorktreeApplyFormatter(ComponentFormatter[WorktreeApplyResult]):
     """Formatter for worktree apply command results."""
 
-    def to_rich(self, data: WorktreeApplyResult) -> Any:
+    def to_rich(self, data: WorktreeApplyResult) -> RenderableType:
         """Render worktree apply success summary or failure panel."""
         if data.ok:
             return _format_apply_success(data)

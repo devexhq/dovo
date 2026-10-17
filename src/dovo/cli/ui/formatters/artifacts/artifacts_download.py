@@ -2,19 +2,18 @@
 
 from __future__ import annotations
 
-from typing import Any
-
+from rich.console import RenderableType
 from rich.text import Text
 
+from dovo.cli.ui.formatters.base import ComponentFormatter
 from dovo.cli.ui.formatters.common import build_error_panel
-from dovo.common.types import ComponentFormatter
 from dovo.core.artifacts.models import ArtifactDownloadResult, ArtifactDownloadStatus
 
 
 class ArtifactDownloadFormatter(ComponentFormatter[ArtifactDownloadResult]):
     """Formatter for `dovo artifacts download` command results."""
 
-    def to_rich(self, data: ArtifactDownloadResult) -> Any:
+    def to_rich(self, data: ArtifactDownloadResult) -> RenderableType:
         """Render download success or an error panel keyed by status."""
         if data.status == ArtifactDownloadStatus.OK:
             return Text(

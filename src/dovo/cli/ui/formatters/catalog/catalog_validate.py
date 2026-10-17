@@ -3,14 +3,13 @@
 from __future__ import annotations
 
 import re
-from typing import Any
 
-from rich.console import Group
+from rich.console import Group, RenderableType
 from rich.table import Table
 from rich.text import Text
 
+from dovo.cli.ui.formatters.base import ComponentFormatter
 from dovo.cli.ui.formatters.catalog.catalog_views import CatalogValidateView
-from dovo.common.types import ComponentFormatter
 from dovo.common.utils import enum_value
 from dovo.core.catalog.models import CatalogValidateResult
 
@@ -83,10 +82,10 @@ class CatalogValidateFormatter(ComponentFormatter[CatalogValidateResult, Catalog
             fixes=list(data.fixes),
         )
 
-    def to_rich(self, data: CatalogValidateResult) -> Any:
+    def to_rich(self, data: CatalogValidateResult) -> RenderableType:
         """Render the status banner plus Errors/Warnings tables."""
         view = self.transform(data)
-        renderables: list[Any] = [_build_status_banner(view)]
+        renderables: list[RenderableType] = [_build_status_banner(view)]
         if view.errors:
             renderables.append(_build_issues_table("Errors", view.errors, view.fixes, show_remediation=True))
         if view.warnings:

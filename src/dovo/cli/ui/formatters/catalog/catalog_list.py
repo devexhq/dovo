@@ -2,12 +2,11 @@
 
 from __future__ import annotations
 
-from typing import Any
-
-from rich.console import Group
+from rich.console import Group, RenderableType
 from rich.panel import Panel
 from rich.text import Text
 
+from dovo.cli.ui.formatters.base import ComponentFormatter
 from dovo.cli.ui.formatters.catalog.catalog_views import (
     CatalogItemView,
     CatalogListView,
@@ -19,26 +18,25 @@ from dovo.cli.ui.formatters.catalog.common import (
     catalog_type_label,
 )
 from dovo.cli.ui.formatters.common import build_error_panel
-from dovo.common.types import ComponentFormatter
 from dovo.common.utils import enum_value
 from dovo.core.catalog.models import CatalogListResult
 
 
-def _render_list_empty(view: CatalogListView) -> Any:
+def _render_list_empty(view: CatalogListView) -> RenderableType:
     """Render empty state message and any warnings for catalog list."""
     label = catalog_type_label(view.type_filter, view.items).lower()
-    renderables: list[Any] = [Text(f"No {label} found.")]
+    renderables: list[RenderableType] = [Text(f"No {label} found.")]
     for warning in view.warnings:
         renderables.append(Panel(warning, title="Catalog Scan Warning", border_style="red"))
     return Group(*renderables) if view.warnings else renderables[0]
 
 
-def _render_list_items(view: CatalogListView) -> Any:
+def _render_list_items(view: CatalogListView) -> RenderableType:
     """Render table of catalog items along with any warnings."""
     table = build_catalog_table(view.items, type_filter=view.type_filter)
     if not view.warnings:
         return table
-    renderables: list[Any] = [table]
+    renderables: list[RenderableType] = [table]
     for warning in view.warnings:
         renderables.append(Panel(warning, title="Catalog Scan Warning", border_style="red"))
     return Group(*renderables)
@@ -81,7 +79,7 @@ class CatalogListFormatter(ComponentFormatter[CatalogListResult, CatalogListView
             fixes=data.fixes,
         )
 
-    def to_rich(self, data: CatalogListResult) -> Any:
+    def to_rich(self, data: CatalogListResult) -> RenderableType:
         """Render catalog blueprint list, templates table, or empty state."""
         view = self.transform(data)
 

@@ -2,14 +2,12 @@
 
 from __future__ import annotations
 
-from typing import Any
-
-from rich.console import Group
+from rich.console import Group, RenderableType
 from rich.text import Text
 
+from dovo.cli.ui.formatters.base import ComponentFormatter
 from dovo.cli.ui.formatters.status.common import build_status_table
 from dovo.cli.ui.formatters.status.status_view import StatusHealth, StatusView
-from dovo.common.types import ComponentFormatter
 from dovo.common.utils import display_path
 from dovo.core.config import agent_settings
 from dovo.core.config.loader import ConfigLoadStatus
@@ -81,11 +79,11 @@ class DovoStatusFormatter(ComponentFormatter[DovoStatusResult, StatusView]):
             remediations=list(data.fixes),
         )
 
-    def to_rich(self, data: DovoStatusResult) -> Any:
+    def to_rich(self, data: DovoStatusResult) -> RenderableType:
         """Render status summary table, warnings, and remediation hints from transform(data)."""
         view = self.transform(data)
         table = build_status_table(view)
-        renderables: list[Any] = [table]
+        renderables: list[RenderableType] = [table]
 
         if view.warnings:
             renderables.append(Text(""))

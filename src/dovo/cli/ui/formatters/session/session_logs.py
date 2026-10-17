@@ -2,15 +2,14 @@
 
 from __future__ import annotations
 
-from typing import Any
-
+from rich.console import RenderableType
 from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
 
+from dovo.cli.ui.formatters.base import ComponentFormatter
 from dovo.cli.ui.formatters.common import build_error_panel
 from dovo.cli.ui.formatters.session.session_views import SessionLogsView
-from dovo.common.types import ComponentFormatter
 from dovo.core.sessions import LogsShowResult, LogsShowStatus, SessionLogEvent
 
 
@@ -78,7 +77,7 @@ class SessionLogsFormatter(ComponentFormatter[LogsShowResult, SessionLogsView]):
             fixes=list(data.fixes),
         )
 
-    def to_rich(self, data: LogsShowResult) -> Any:
+    def to_rich(self, data: LogsShowResult) -> RenderableType:
         """Render session.log events as a table, or step log lines verbatim."""
         view = self.transform(data)
         error_panel = _render_error_panel(view)

@@ -2,23 +2,21 @@
 
 from __future__ import annotations
 
-from typing import Any
-
-from rich.console import Group
+from rich.console import Group, RenderableType
 from rich.text import Text
 
+from dovo.cli.ui.formatters.base import ComponentFormatter
 from dovo.cli.ui.formatters.worktree.pruned_item import PrunedItemFormatter
 from dovo.cli.ui.formatters.worktree.worktree_views import WorktreePruneView
-from dovo.common.types import ComponentFormatter
 from dovo.core.worktree.models import WorktreePruneResult
 
 
-def _format_prune_rich(view: WorktreePruneView) -> Any:
+def _format_prune_rich(view: WorktreePruneView) -> RenderableType:
     """Render rich group or text for worktree prune view."""
     if not view.items and not view.errors:
         return Text("No stale worktrees found.")
 
-    renderables: list[Any] = []
+    renderables: list[RenderableType] = []
     item_formatter = PrunedItemFormatter()
     for item in view.items:
         renderables.append(item_formatter.render_item(item))
@@ -63,7 +61,7 @@ class WorktreePruneFormatter(ComponentFormatter[WorktreePruneResult, WorktreePru
             fixes=list(data.fixes),
         )
 
-    def to_rich(self, data: WorktreePruneResult) -> Any:
+    def to_rich(self, data: WorktreePruneResult) -> RenderableType:
         """Render worktree prune action lines, empty state, or errors."""
         view = self.transform(data)
         return _format_prune_rich(view)

@@ -5,7 +5,7 @@ from __future__ import annotations
 from rich.text import Text
 
 from dovo.cli.ui.events import RunSuccessEvent
-from dovo.common.types import ComponentFormatter
+from dovo.cli.ui.formatters.base import ComponentFormatter
 
 
 class RunSuccessFormatter(ComponentFormatter[RunSuccessEvent]):

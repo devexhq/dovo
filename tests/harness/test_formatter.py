@@ -6,7 +6,7 @@ import pytest
 from pydantic import BaseModel
 from rich.panel import Panel
 
-from dovo.common.types import ComponentFormatter
+from dovo.cli.ui.formatters.base import ComponentFormatter
 from tests.harness.formatter import (
     FormatterCase,
     assert_json_payload_matches_published_shape,

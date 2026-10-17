@@ -7,7 +7,7 @@ from rich.padding import Padding
 from rich.text import Text
 
 from dovo.cli.ui.events import AgentSummaryView, StepOutputEvent
-from dovo.common.types import ComponentFormatter
+from dovo.cli.ui.formatters.base import ComponentFormatter
 
 
 def _build_agent_summary(summary: AgentSummaryView) -> Group:

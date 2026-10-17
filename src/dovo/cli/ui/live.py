@@ -6,9 +6,8 @@ import time
 from collections import deque
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from typing import Any
 
-from rich.console import Console, Group
+from rich.console import Console, Group, RenderableType
 from rich.live import Live
 from rich.panel import Panel
 from rich.table import Table
@@ -280,14 +279,14 @@ class LiveDisplayManager:
                 self._iteration_results[self._loop_iteration] = all(condition.passed for condition in event.conditions)
         self._refresh()
 
-    def handle_worktree(self, event: WorktreeLifecycleEvent, rendered: Text) -> None:
+    def handle_worktree(self, event: WorktreeLifecycleEvent, rendered: RenderableType) -> None:
         """Handle worktree lifecycle event by updating title info and printing above live table."""
         if event.action == "ready":
             self.worktree_info = f"Active ({event.path})" if event.active else "In-place (workspace)"
         self.print_above(rendered)
         self._refresh()
 
-    def print_above(self, renderable: Any) -> None:
+    def print_above(self, renderable: RenderableType) -> None:
         """Print a renderable above the live display without breaking progress."""
         if self._live is not None:
             self._live.console.print(renderable)
