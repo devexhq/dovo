@@ -14,7 +14,8 @@ they are not repeated here.
 1. **Plan** (`/dovo-plan`) anything that adds surface: a command, flag, result
    model, status enum, service, formatter, config key, schema field or table.
    The plan sizes the work and splits it into phases. Skip it for a single-file
-   change that adds no surface.
+   change that adds no surface. If a plan was created, review it
+   (`/dovo-plan-review`) in a fresh session before a human approves it.
 2. **One phase, one PR.** Each phase is reviewable in one sitting (roughly 400
    changed lines or less), passes the quality gate on its own and ships
    something. When a change replaces an internal, phase it as add, switch
