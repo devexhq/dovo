@@ -122,8 +122,11 @@ def init_git_repository(
 
     initial_files maps a path relative to root to its content; a file that already exists keeps its content.
     """
-    has_conflicting_files = initial_files and any((root / relative_path).exists() for relative_path in initial_files)
-    if has_conflicting_files:
+    has_git_directory = (root / ".git").exists()
+    has_conflicting_files = bool(
+        initial_files and any((root / relative_path).exists() for relative_path in initial_files)
+    )
+    if has_git_directory or has_conflicting_files:
         _init_git_repository_direct(root, branch, user_name, user_email, initial_files)
         return
 
