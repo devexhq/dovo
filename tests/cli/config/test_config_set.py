@@ -11,16 +11,10 @@ from dovo.cli import app
 from dovo.cli.config.commands.config_set import config_set_command
 from dovo.cli.context import CliContext
 from dovo.common.filesystem import Filesystem
-from dovo.common.filesystem.models import WorkspacePaths
 from dovo.core.config.generator import build_default_config
 from dovo.core.config.mutate import ConfigSetStatus
 from dovo.core.db.db import DovoDb
 from tests.harness.workspace_paths import initialized_workspace_paths
-
-
-def _paths_for(root: Path) -> WorkspacePaths:
-    """Resolve the WorkspacePaths snapshot for root, reflecting its current project.json."""
-    return initialized_workspace_paths(root)
 
 
 class ConfigSetRootTests:
@@ -31,7 +25,7 @@ class ConfigSetRootTests:
         payload = build_default_config("demo-workspace")
         Filesystem.atomic_write_json(config_path, payload)
 
-        paths = _paths_for(isolated_workspace)
+        paths = initialized_workspace_paths(isolated_workspace)
         context = CliContext(paths=paths, db=DovoDb(database_file=paths.database_file, project_id=paths.project_id))
         result = config_set_command(context, "worktrees.max_active_worktrees", "3")
 

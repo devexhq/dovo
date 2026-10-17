@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import fcntl
+import json
 import os
 import pty
+import re
 import select
 import shutil
 import signal
@@ -25,6 +27,7 @@ E2E_CACHES = Path("/tmp/dovo-e2e-caches")
 LOCK_FILE = Path("/tmp/dovo-e2e.lock")
 FIXTURES_LOCK_PATH = Path(__file__).parent / "fixtures.lock"
 LOCAL_FIXTURES_CANDIDATE = Path("/home/luckner/workspace/devexhq/dovo-e2e-fixtures")
+ANSI_ESCAPE = re.compile(r"\x1b\[[0-9;?]*[A-Za-z]")
 
 
 @dataclass(frozen=True)
@@ -39,7 +42,7 @@ class DovoRunResult:
 
 @dataclass(frozen=True)
 class DovoPtyResult:
-    """Terminal transcript captured from an interactive PTY dovo CLI invocation."""
+    """Terminal transcript, with ANSI escape sequences removed, from an interactive PTY dovo CLI invocation."""
 
     transcript: str
     exit_code: int
@@ -57,6 +60,13 @@ def resolve_dovo_binary() -> str:
         return str(venv_binary)
 
     pytest.fail("The 'dovo' CLI executable was not found. Install package in editable or wheel mode.")
+
+
+def _partial_output(output: bytes | str | None) -> str:
+    """Decode output captured before a timeout; TimeoutExpired carries bytes even when text=True."""
+    if output is None:
+        return "<none>"
+    return output.decode("utf-8", errors="replace") if isinstance(output, bytes) else output
 
 
 class DovoRunner:
@@ -82,15 +92,22 @@ class DovoRunner:
 
         cmd = [self._binary_path, *args]
         start_time = time.monotonic()
-        process = subprocess.run(
-            cmd,
-            cwd=target_cwd,
-            input=input_text,
-            text=True,
-            capture_output=True,
-            env=execution_env,
-            timeout=timeout,
-        )
+        try:
+            process = subprocess.run(
+                cmd,
+                cwd=target_cwd,
+                input=input_text,
+                text=True,
+                capture_output=True,
+                env=execution_env,
+                timeout=timeout,
+            )
+        except subprocess.TimeoutExpired as exc:
+            pytest.fail(
+                f"dovo {' '.join(args)} timed out after {timeout}s and was killed.\n"
+                f"--- stdout before kill ---\n{_partial_output(exc.stdout)}\n"
+                f"--- stderr before kill ---\n{_partial_output(exc.stderr)}"
+            )
         duration = time.monotonic() - start_time
 
         return DovoRunResult(
@@ -148,7 +165,7 @@ class DovoPtyRunner:
             )
             exit_code = process.wait(timeout=5.0)
             return DovoPtyResult(
-                transcript=transcript,
+                transcript=ANSI_ESCAPE.sub("", transcript),
                 exit_code=exit_code,
                 duration_seconds=time.monotonic() - start_time,
             )
@@ -452,3 +469,54 @@ def initialized_project(git_project: Path, run_dovo: DovoRunner) -> Path:
     subprocess.run(["git", "add", "-A"], cwd=git_project, check=True, capture_output=True)
     subprocess.run(["git", "commit", "-m", "chore: initialize dovo"], cwd=git_project, check=True, capture_output=True)
     return git_project
+
+
+def write_blueprint(project: Path, name: str, content: str, *, runner: DovoRunner | None = None) -> Path:
+    """Write a blueprint YAML definition into the project repository catalog and commit it."""
+    blueprint_file = project / ".dovo" / "catalog" / "blueprints" / f"{name}.yml"
+    blueprint_file.parent.mkdir(parents=True, exist_ok=True)
+    blueprint_file.write_text(content, encoding="utf-8")
+    if runner is not None:
+        runner(["blueprint", "list"], cwd=project)
+    subprocess.run(["git", "add", "-A"], cwd=project, check=True, capture_output=True)
+    subprocess.run(
+        ["git", "commit", "-m", f"chore: add blueprint {name}"], cwd=project, check=True, capture_output=True
+    )
+    return blueprint_file
+
+
+def parse_json(stdout: str) -> dict[str, object]:
+    """Extract and parse first JSON payload from command output."""
+    for line in stdout.splitlines():
+        trimmed = line.strip()
+        if trimmed.startswith("{") and trimmed.endswith("}"):
+            try:
+                data = json.loads(trimmed)
+                if isinstance(data, dict):
+                    return data
+            except json.JSONDecodeError:
+                pass
+    return json.loads(stdout)
+
+
+def parse_events(stdout: str) -> list[dict[str, object]]:
+    """Parse newline-delimited JSON events from stdout."""
+    events: list[dict[str, object]] = []
+    for line in stdout.splitlines():
+        line = line.strip()
+        if line.startswith("{") and line.endswith("}"):
+            try:
+                data = json.loads(line)
+                if isinstance(data, dict):
+                    events.append(data)
+            except json.JSONDecodeError:
+                pass
+    return events
+
+
+def find_event(stdout: str, event_type: str) -> dict[str, object]:
+    """Find a specific event envelope by event_type from newline-delimited JSON stdout."""
+    for event in parse_events(stdout):
+        if event.get("event_type") == event_type:
+            return event
+    raise ValueError(f"Event '{event_type}' not found in stdout:\n{stdout}")

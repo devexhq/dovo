@@ -18,12 +18,6 @@ class DoctorCliTests:
     def test_doctor_category_filter_executes_isolated_category_checks(
         self, run_dovo: DovoRunner, initialized_project: Path
     ) -> None:
-        """Scenario: Restrict health checks to a specific diagnostic category.
-
-        Given an initialized workspace
-        When dovo doctor --category git --format json is executed
-        Then only checks belonging to the git category are executed and included in the report
-        """
         result = run_dovo(["doctor", "--category", "git", "--format", "json"], cwd=initialized_project)
 
         assert result.exit_code == 0
@@ -37,12 +31,6 @@ class DoctorCliTests:
     def test_doctor_corrupted_config_reports_failure_and_exits_one(
         self, run_dovo: DovoRunner, initialized_project: Path
     ) -> None:
-        """Scenario: Report failure diagnostics and exit code 1 for corrupted configuration.
-
-        Given an initialized workspace where .dovo/config.json has invalid JSON syntax
-        When dovo doctor --format json is executed
-        Then the command exits 1, reports a failure diagnostic with DOCTOR_CONFIG_MALFORMED, and suggests repair remediation
-        """
         config_path = initialized_project / ".dovo" / "config.json"
         config_path.write_text("corrupted json { invalid", encoding="utf-8")
 

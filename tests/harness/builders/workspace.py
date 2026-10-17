@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import subprocess
 import tempfile
+from collections.abc import Mapping
 from pathlib import Path
 
 from dovo.common.filesystem import Filesystem
@@ -15,6 +16,36 @@ from dovo.core.config.generator import generate_default_config
 from dovo.core.db.migrations import init_database
 from dovo.core.project.services.identity import generate_project_identity, save_project_identity
 from dovo.core.project.services.storage import build_workspace_paths
+
+
+def init_git_repository(
+    root: Path,
+    *,
+    branch: str = "main",
+    user_name: str = "Test User",
+    user_email: str = "test@example.com",
+    initial_files: Mapping[str, str] | None = None,
+) -> None:
+    """Run git init in root with a committable identity, then commit initial_files when given.
+
+    initial_files maps a path relative to root to its content; a file that already exists keeps its content.
+    """
+    _git(root, "init", "-b", branch)
+    _git(root, "config", "user.name", user_name)
+    _git(root, "config", "user.email", user_email)
+    if not initial_files:
+        return
+
+    for relative_path, content in initial_files.items():
+        file_path = root / relative_path
+        if not file_path.exists():
+            file_path.write_text(content, encoding="utf-8")
+    _git(root, "add", *initial_files)
+    _git(root, "commit", "-m", "Initial commit")
+
+
+def _git(root: Path, *args: str) -> None:
+    subprocess.run(["git", *args], cwd=root, check=True, capture_output=True, text=True)
 
 
 class WorkspaceBuilder:
@@ -113,49 +144,12 @@ class WorkspaceBuilder:
         return workspace_root
 
     def _scaffold_git_repository(self, workspace_root: Path) -> None:
-        subprocess.run(
-            ["git", "init", "-b", self._git_branch],
-            cwd=workspace_root,
-            check=True,
-            capture_output=True,
-            text=True,
-        )
-        subprocess.run(
-            ["git", "config", "user.name", self._git_user_name],
-            cwd=workspace_root,
-            check=True,
-            capture_output=True,
-            text=True,
-        )
-        subprocess.run(
-            ["git", "config", "user.email", self._git_user_email],
-            cwd=workspace_root,
-            check=True,
-            capture_output=True,
-            text=True,
-        )
-
-        readme_path = workspace_root / "README.md"
-        if not readme_path.exists():
-            readme_path.write_text("# Test Repo\n", encoding="utf-8")
-
-        gitignore_path = workspace_root / ".gitignore"
-        if not gitignore_path.exists():
-            gitignore_path.write_text("/.dovo/\n", encoding="utf-8")
-
-        subprocess.run(
-            ["git", "add", "README.md", ".gitignore"],
-            cwd=workspace_root,
-            check=True,
-            capture_output=True,
-            text=True,
-        )
-        subprocess.run(
-            ["git", "commit", "-m", "Initial commit"],
-            cwd=workspace_root,
-            check=True,
-            capture_output=True,
-            text=True,
+        init_git_repository(
+            workspace_root,
+            branch=self._git_branch,
+            user_name=self._git_user_name,
+            user_email=self._git_user_email,
+            initial_files={"README.md": "# Test Repo\n", ".gitignore": "/.dovo/\n"},
         )
 
     def _scaffold_workspace_config(self, workspace_root: Path, dot_dovo: Path) -> None:

@@ -26,13 +26,13 @@ class WorktreePruneCliIntegrationTests:
     def test_worktree_prune_cli_flag_wired_reports_nothing_exits_zero(
         self,
         cli_runner: CliRunner,
-        worktree_workspace: Path,
+        cli_workspace: Path,
         dispatch_spy: list[Any],
         flag: str,
         dry_run: bool,
         force: bool,
     ) -> None:
-        result = cli_runner.invoke(app, ["-p", str(worktree_workspace), "worktree", "prune", flag])
+        result = cli_runner.invoke(app, ["-p", str(cli_workspace), "worktree", "prune", flag])
 
         assert result.exit_code == 0
         assert "No stale worktrees found." in result.stdout
@@ -45,9 +45,9 @@ class WorktreePruneCliIntegrationTests:
         assert len(payload.items) == 0
         assert len(payload.errors) == 0
 
-    def test_worktree_prune_cli_renders_json(self, cli_runner: CliRunner, worktree_workspace: Path) -> None:
+    def test_worktree_prune_cli_renders_json(self, cli_runner: CliRunner, cli_workspace: Path) -> None:
         result = cli_runner.invoke(
-            app, ["-p", str(worktree_workspace), "worktree", "prune", "--dry-run", "--format", "json"]
+            app, ["-p", str(cli_workspace), "worktree", "prune", "--dry-run", "--format", "json"]
         )
 
         assert result.exit_code == 0

@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any
 
 import pytest
 from typer.testing import CliRunner
@@ -42,11 +41,11 @@ class SessionLogsCliIntegrationTests:
     """Typer runner integration tests for dovo session logs."""
 
     def test_logs_command_exit_0_prints_run_log_events_for_valid_session(
-        self, cli_runner: CliRunner, session_workspace: Path
+        self, cli_runner: CliRunner, cli_workspace: Path
     ) -> None:
-        _seed_session(session_workspace)
+        _seed_session(cli_workspace)
 
-        result = cli_runner.invoke(app, ["-p", str(session_workspace), "session", "logs", "sess-logs"])
+        result = cli_runner.invoke(app, ["-p", str(cli_workspace), "session", "logs", "sess-logs"])
 
         assert result.exit_code == 0
         for event in _EVENTS:
@@ -54,15 +53,15 @@ class SessionLogsCliIntegrationTests:
             assert event.event.value in result.stdout
 
     def test_logs_command_step_attempt_stream_tail_options_bind_to_service_call(
-        self, cli_runner: CliRunner, session_workspace: Path, dispatch_spy: list[Any]
+        self, cli_runner: CliRunner, cli_workspace: Path, dispatch_spy: list[object]
     ) -> None:
-        _seed_session(session_workspace)
+        _seed_session(cli_workspace)
 
         result = cli_runner.invoke(
             app,
             [
                 "-p",
-                str(session_workspace),
+                str(cli_workspace),
                 "session",
                 "logs",
                 "sess-logs",
@@ -85,21 +84,19 @@ class SessionLogsCliIntegrationTests:
         ]
 
     def test_logs_command_unknown_session_exits_1_with_not_found_message(
-        self, cli_runner: CliRunner, session_workspace: Path
+        self, cli_runner: CliRunner, cli_workspace: Path
     ) -> None:
-        result = cli_runner.invoke(app, ["-p", str(session_workspace), "session", "logs", "ghost-session"])
+        result = cli_runner.invoke(app, ["-p", str(cli_workspace), "session", "logs", "ghost-session"])
 
         assert result.exit_code == 1
         assert "Logs Not Found" in result.stdout
         assert "No logs found for session 'ghost-session'" in result.stdout
         assert "Run `dovo session list`" in result.stdout
 
-    def test_logs_command_format_json_matches_wire_schema(self, cli_runner: CliRunner, session_workspace: Path) -> None:
-        _seed_session(session_workspace)
+    def test_logs_command_format_json_matches_wire_schema(self, cli_runner: CliRunner, cli_workspace: Path) -> None:
+        _seed_session(cli_workspace)
 
-        result = cli_runner.invoke(
-            app, ["-p", str(session_workspace), "session", "logs", "sess-logs", "--format", "json"]
-        )
+        result = cli_runner.invoke(app, ["-p", str(cli_workspace), "session", "logs", "sess-logs", "--format", "json"])
 
         assert result.exit_code == 0
         assert json.loads(result.stdout) == {
@@ -172,20 +169,20 @@ class SessionLogsCliIntegrationTests:
     def test_logs_command_masks_name_listed_in_config(
         self,
         cli_runner: CliRunner,
-        session_workspace: Path,
+        cli_workspace: Path,
         monkeypatch: pytest.MonkeyPatch,
         names: list[str],
         expected_line: str,
     ) -> None:
         monkeypatch.setenv("DB_PIN", "1234")
-        session_log_dir = _seed_session(session_workspace)
+        session_log_dir = _seed_session(cli_workspace)
         (session_log_dir / "02_pin_attempt_1.stdout.log").write_text("pin 1234\n", encoding="utf-8")
-        config_path = initialized_workspace_paths(session_workspace).config_file
+        config_path = initialized_workspace_paths(cli_workspace).config_file
         config = json.loads(config_path.read_text(encoding="utf-8"))
         config["environment"] = {"sensitive_variables": names}
         Filesystem.atomic_write_json(config_path, config)
 
-        result = cli_runner.invoke(app, ["-p", str(session_workspace), "session", "logs", "sess-logs", "--step", "pin"])
+        result = cli_runner.invoke(app, ["-p", str(cli_workspace), "session", "logs", "sess-logs", "--step", "pin"])
 
         assert result.exit_code == 0
         assert f"pin {expected_line}" in result.stdout
@@ -195,24 +192,24 @@ class SessionLogsLatestCliIntegrationTests:
     """Typer runner integration tests for dovo session logs with the session id omitted."""
 
     def test_logs_without_id_uses_latest_and_prints_latest_line(
-        self, cli_runner: CliRunner, session_workspace: Path
+        self, cli_runner: CliRunner, cli_workspace: Path
     ) -> None:
-        paths = initialized_workspace_paths(session_workspace)
+        paths = initialized_workspace_paths(cli_workspace)
         DovoDb(database_file=paths.database_file, project_id=paths.project_id).sessions.create(
             session_id="sess-older", blueprint_name="bp", blueprint_key="bp", status=SessionStatus.COMPLETED
         )
-        _seed_session(session_workspace)
+        _seed_session(cli_workspace)
 
-        result = cli_runner.invoke(app, ["-p", str(session_workspace), "session", "logs", "--step", "build"])
+        result = cli_runner.invoke(app, ["-p", str(cli_workspace), "session", "logs", "--step", "build"])
 
         assert result.exit_code == 0
         assert result.stdout.lstrip().startswith("Session: sess-logs (latest)")
         assert "stdout-line" in result.stdout
 
-    def test_logs_without_id_json_omits_latest_line(self, cli_runner: CliRunner, session_workspace: Path) -> None:
-        _seed_session(session_workspace)
+    def test_logs_without_id_json_omits_latest_line(self, cli_runner: CliRunner, cli_workspace: Path) -> None:
+        _seed_session(cli_workspace)
 
-        result = cli_runner.invoke(app, ["-p", str(session_workspace), "session", "logs", "--format", "json"])
+        result = cli_runner.invoke(app, ["-p", str(cli_workspace), "session", "logs", "--format", "json"])
 
         assert result.exit_code == 0
         envelope = json.loads(result.stdout)
@@ -221,9 +218,9 @@ class SessionLogsLatestCliIntegrationTests:
         assert "(latest)" not in result.stdout
 
     def test_logs_without_sessions_exits_one_with_create_session_fix(
-        self, cli_runner: CliRunner, session_workspace: Path
+        self, cli_runner: CliRunner, cli_workspace: Path
     ) -> None:
-        result = cli_runner.invoke(app, ["-p", str(session_workspace), "session", "logs"])
+        result = cli_runner.invoke(app, ["-p", str(cli_workspace), "session", "logs"])
 
         assert result.exit_code == 1
         assert "Session Not Found" in result.stdout

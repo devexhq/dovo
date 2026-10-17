@@ -26,15 +26,12 @@ from tests.harness.sessions import RecordingRunObserver
 from tests.harness.workspace_paths import initialized_workspace_paths
 
 
-def _paths_for(root: Path) -> WorkspacePaths:
-    """Resolve the WorkspacePaths snapshot for root, reflecting its current project.json."""
-    return initialized_workspace_paths(root)
-
-
 class WorkspaceSetupTests:
     def test_no_worktree_returns_resolved_cwd_and_notifies_inactive(self, tmp_path: Path) -> None:
         observer = RecordingRunObserver()
-        context = RunSettings(cwd=tmp_path, use_worktree=False, observer=observer, paths=_paths_for(tmp_path))
+        context = RunSettings(
+            cwd=tmp_path, use_worktree=False, observer=observer, paths=initialized_workspace_paths(tmp_path)
+        )
 
         target_dir, manager, session, error = Workspace(context).setup()
 
@@ -100,7 +97,7 @@ class WorkspaceSetupTests:
             )
             .build()
         )
-        paths = _paths_for(workspace_root)
+        paths = initialized_workspace_paths(workspace_root)
         first = Workspace(RunSettings(cwd=workspace_root, use_worktree=True, session_id="first", paths=paths))
         assert first.setup()[3] is None
 
@@ -135,7 +132,9 @@ class WorkspaceSetupTests:
         assert setup.error == "Git worktree creation failed: malformed config.json"
 
     def test_worktree_id_with_use_worktree_false_returns_resolved_cwd(self, tmp_path: Path) -> None:
-        context = RunSettings(cwd=tmp_path, use_worktree=False, worktree_id="sess-1", paths=_paths_for(tmp_path))
+        context = RunSettings(
+            cwd=tmp_path, use_worktree=False, worktree_id="sess-1", paths=initialized_workspace_paths(tmp_path)
+        )
 
         target_dir, manager, session, error = Workspace(context).setup()
 
@@ -193,7 +192,9 @@ class WorkspaceRetainedWorktreeTests:
 class WorkspaceCleanupTests:
     def test_missing_manager_or_session_returns_false_and_notifies_not_kept(self, tmp_path: Path) -> None:
         observer = RecordingRunObserver()
-        context = RunSettings(cwd=tmp_path, use_worktree=False, observer=observer, paths=_paths_for(tmp_path))
+        context = RunSettings(
+            cwd=tmp_path, use_worktree=False, observer=observer, paths=initialized_workspace_paths(tmp_path)
+        )
 
         warnings: list[str] = []
 
@@ -447,7 +448,9 @@ class WorkspaceLinkSessionDirTests:
 
 class WorkspaceHandleAutoApplyTests:
     def test_auto_apply_disabled_returns_none_and_false(self, tmp_path: Path) -> None:
-        context = RunSettings(cwd=tmp_path, use_worktree=False, auto_apply=False, paths=_paths_for(tmp_path))
+        context = RunSettings(
+            cwd=tmp_path, use_worktree=False, auto_apply=False, paths=initialized_workspace_paths(tmp_path)
+        )
         errors: list[str] = []
         warnings: list[str] = []
 
@@ -681,7 +684,9 @@ class WorkspaceFinalizeCleanupTests:
 
 class WorkspacePrepareSessionTmpDirTests:
     def test_no_session_id_returns_none(self, tmp_path: Path) -> None:
-        context = RunSettings(cwd=tmp_path, use_worktree=False, session_id=None, paths=_paths_for(tmp_path))
+        context = RunSettings(
+            cwd=tmp_path, use_worktree=False, session_id=None, paths=initialized_workspace_paths(tmp_path)
+        )
         warnings: list[str] = []
 
         result = Workspace(context).prepare_session_tmp_dir(warnings)
@@ -690,12 +695,14 @@ class WorkspacePrepareSessionTmpDirTests:
         assert warnings == []
 
     def test_creates_steps_subdirectory_and_returns_session_tmp_dir(self, tmp_path: Path) -> None:
-        context = RunSettings(cwd=tmp_path, use_worktree=False, session_id="session-abc", paths=_paths_for(tmp_path))
+        context = RunSettings(
+            cwd=tmp_path, use_worktree=False, session_id="session-abc", paths=initialized_workspace_paths(tmp_path)
+        )
         warnings: list[str] = []
 
         result = Workspace(context).prepare_session_tmp_dir(warnings)
 
-        assert result == _paths_for(tmp_path).tmp_dir / "session-abc"
+        assert result == initialized_workspace_paths(tmp_path).tmp_dir / "session-abc"
         assert result is not None
         assert (result / "steps").is_dir()
         assert warnings == []
@@ -703,7 +710,9 @@ class WorkspacePrepareSessionTmpDirTests:
     def test_mkdir_failure_appends_warning_and_returns_none(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        context = RunSettings(cwd=tmp_path, use_worktree=False, session_id="session-abc", paths=_paths_for(tmp_path))
+        context = RunSettings(
+            cwd=tmp_path, use_worktree=False, session_id="session-abc", paths=initialized_workspace_paths(tmp_path)
+        )
 
         def _raise(self: Path, *args: object, **kwargs: object) -> None:
             raise OSError("disk full")
@@ -720,13 +729,15 @@ class WorkspacePrepareSessionTmpDirTests:
 
 class WorkspacePrepareSessionArtifactsTests:
     def test_no_session_id_returns_no_store(self, tmp_path: Path) -> None:
-        context = RunSettings(cwd=tmp_path, use_worktree=False, session_id=None, paths=_paths_for(tmp_path))
+        context = RunSettings(
+            cwd=tmp_path, use_worktree=False, session_id=None, paths=initialized_workspace_paths(tmp_path)
+        )
 
         assert Workspace(context).prepare_session_artifacts() is None
 
     def test_session_id_set_returns_store_bound_to_session(self, tmp_path: Path) -> None:
         workspace_root = WorkspaceBuilder(tmp_path / "artifacts_workspace").with_database().build()
-        paths = _paths_for(workspace_root)
+        paths = initialized_workspace_paths(workspace_root)
         context = RunSettings(cwd=workspace_root, use_worktree=False, session_id="session-abc", paths=paths)
         (workspace_root / "PLAN.md").write_text("plan", encoding="utf-8")
 
@@ -749,7 +760,7 @@ class WorkspaceSinglePathResolutionTests:
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         workspace_root = WorkspaceBuilder(tmp_path / "path_snapshot_workspace").with_git().with_database().build()
-        paths = _paths_for(workspace_root)
+        paths = initialized_workspace_paths(workspace_root)
         context = RunSettings(cwd=workspace_root, use_worktree=False, session_id="path-snapshot", paths=paths)
 
         def _unexpected_resolution(*args: object, **kwargs: object) -> WorkspacePaths:
@@ -776,7 +787,9 @@ class WorkspaceSinglePathResolutionTests:
 
 class WorkspacePrepareSessionLogDirTests:
     def test_no_session_id_returns_none(self, tmp_path: Path) -> None:
-        context = RunSettings(cwd=tmp_path, use_worktree=False, session_id=None, paths=_paths_for(tmp_path))
+        context = RunSettings(
+            cwd=tmp_path, use_worktree=False, session_id=None, paths=initialized_workspace_paths(tmp_path)
+        )
         warnings: list[str] = []
 
         result = Workspace(context).prepare_session_log_dir(warnings)
@@ -785,12 +798,14 @@ class WorkspacePrepareSessionLogDirTests:
         assert warnings == []
 
     def test_creates_and_returns_session_log_dir(self, tmp_path: Path) -> None:
-        context = RunSettings(cwd=tmp_path, use_worktree=False, session_id="session-abc", paths=_paths_for(tmp_path))
+        context = RunSettings(
+            cwd=tmp_path, use_worktree=False, session_id="session-abc", paths=initialized_workspace_paths(tmp_path)
+        )
         warnings: list[str] = []
 
         result = Workspace(context).prepare_session_log_dir(warnings)
 
-        assert result == _paths_for(tmp_path).logs_dir / "session-abc"
+        assert result == initialized_workspace_paths(tmp_path).logs_dir / "session-abc"
         assert result is not None
         assert result.is_dir()
         assert warnings == []
@@ -798,7 +813,9 @@ class WorkspacePrepareSessionLogDirTests:
     def test_mkdir_failure_appends_warning_and_returns_none(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        context = RunSettings(cwd=tmp_path, use_worktree=False, session_id="session-abc", paths=_paths_for(tmp_path))
+        context = RunSettings(
+            cwd=tmp_path, use_worktree=False, session_id="session-abc", paths=initialized_workspace_paths(tmp_path)
+        )
 
         def _raise(self: Path, *args: object, **kwargs: object) -> None:
             raise OSError("disk full")
@@ -825,7 +842,7 @@ class WorkspaceCleanupSessionTmpDirTests:
     def test_noop_branches_leave_directory_untouched(
         self, tmp_path: Path, session_tmp_dir_present: bool, keep: bool, status: SessionStatus
     ) -> None:
-        context = RunSettings(cwd=tmp_path, use_worktree=False, paths=_paths_for(tmp_path))
+        context = RunSettings(cwd=tmp_path, use_worktree=False, paths=initialized_workspace_paths(tmp_path))
         session_tmp_dir = None
         if session_tmp_dir_present:
             session_tmp_dir = tmp_path / "scratch"
@@ -837,7 +854,7 @@ class WorkspaceCleanupSessionTmpDirTests:
             assert session_tmp_dir.exists()
 
     def test_completed_and_not_kept_removes_directory(self, tmp_path: Path) -> None:
-        context = RunSettings(cwd=tmp_path, use_worktree=False, paths=_paths_for(tmp_path))
+        context = RunSettings(cwd=tmp_path, use_worktree=False, paths=initialized_workspace_paths(tmp_path))
         session_tmp_dir = tmp_path / "scratch"
         session_tmp_dir.mkdir()
 
@@ -846,7 +863,7 @@ class WorkspaceCleanupSessionTmpDirTests:
         assert not session_tmp_dir.exists()
 
     def test_removal_failure_is_swallowed(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        context = RunSettings(cwd=tmp_path, use_worktree=False, paths=_paths_for(tmp_path))
+        context = RunSettings(cwd=tmp_path, use_worktree=False, paths=initialized_workspace_paths(tmp_path))
         session_tmp_dir = tmp_path / "scratch"
         session_tmp_dir.mkdir()
 
@@ -878,7 +895,7 @@ class ScratchLifecycleCleanupTests:
 
     def test_completed_unkept_run_removes_session_tree_including_invocation_directories(self, tmp_path: Path) -> None:
         session_tmp_dir, _ = self._allocate(tmp_path, "session-a")
-        context = RunSettings(cwd=tmp_path, use_worktree=False, paths=_paths_for(tmp_path))
+        context = RunSettings(cwd=tmp_path, use_worktree=False, paths=initialized_workspace_paths(tmp_path))
 
         Workspace(context).cleanup_session_tmp_dir(session_tmp_dir, keep=False, status=SessionStatus.COMPLETED)
 
@@ -895,7 +912,7 @@ class ScratchLifecycleCleanupTests:
     )
     def test_retained_runs_keep_invocation_directories(self, tmp_path: Path, keep: bool, status: SessionStatus) -> None:
         session_tmp_dir, invocation = self._allocate(tmp_path, "session-a")
-        context = RunSettings(cwd=tmp_path, use_worktree=False, paths=_paths_for(tmp_path))
+        context = RunSettings(cwd=tmp_path, use_worktree=False, paths=initialized_workspace_paths(tmp_path))
 
         Workspace(context).cleanup_session_tmp_dir(session_tmp_dir, keep=keep, status=status)
 
@@ -906,7 +923,7 @@ class ScratchLifecycleCleanupTests:
         session_a, _ = self._allocate(tmp_path, "session-a")
         _, invocation_b = self._allocate(tmp_path, "session-b")
         (invocation_b.scratch_path / "notes.txt").write_text("keep", encoding="utf-8")
-        context = RunSettings(cwd=tmp_path, use_worktree=False, paths=_paths_for(tmp_path))
+        context = RunSettings(cwd=tmp_path, use_worktree=False, paths=initialized_workspace_paths(tmp_path))
 
         Workspace(context).cleanup_session_tmp_dir(session_a, keep=False, status=SessionStatus.COMPLETED)
 

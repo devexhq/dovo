@@ -14,7 +14,6 @@ from dovo.core.config.models import (
 from dovo.core.diagnostics.models import (
     CheckCategory,
     CheckStatus,
-    DiagnosticCheckResult,
     DiagnosticsContext,
     RemediationType,
 )
@@ -23,49 +22,9 @@ from dovo.core.diagnostics.services.runner import (
     DiagnosticRunner,
     execute_single_check,
 )
+from tests.harness.builders import StubCheck
 
 WorkspacePathsFactory = Callable[[Path, Path | None], WorkspacePaths]
-
-
-class MockCheck:
-    """Protocol-conforming test double for DiagnosticCheck."""
-
-    def __init__(
-        self,
-        check_id: str,
-        name: str = "Mock Check",
-        category: CheckCategory = CheckCategory.GIT,
-        result_status: CheckStatus = CheckStatus.OK,
-        should_crash: bool = False,
-        crash_message: str = "Unexpected failure",
-        duration_ms: float = 0.0,
-    ) -> None:
-        self.check_id = check_id
-        self.name = name
-        self.category = category
-        self.result_status = result_status
-        self.should_crash = should_crash
-        self.crash_message = crash_message
-        self.duration_ms = duration_ms
-        self.executed: bool = False
-
-    def execute(self, context: DiagnosticsContext) -> DiagnosticCheckResult:
-        self.executed = True
-        if self.should_crash:
-            raise RuntimeError(self.crash_message)
-        return DiagnosticCheckResult(
-            check_id=self.check_id,
-            name=self.name,
-            category=self.category,
-            status=self.result_status,
-            message=f"Executed {self.check_id}",
-            details={"ran": True},
-            duration_ms=self.duration_ms,
-            error_code=None,
-            errors=[],
-            warnings=[],
-            fixes=[],
-        )
 
 
 class DiagnosticRunnerFilteringTests:
@@ -75,9 +34,9 @@ class DiagnosticRunnerFilteringTests:
         self, tmp_path: Path, workspace_paths_factory: WorkspacePathsFactory
     ) -> None:
         registry = CheckRegistry()
-        git_check = MockCheck(check_id="git.repo", category=CheckCategory.GIT)
-        config_check = MockCheck(check_id="config.schema", category=CheckCategory.CONFIG)
-        agent_check = MockCheck(check_id="agent.setup", category=CheckCategory.AGENT)
+        git_check = StubCheck(check_id="git.repo", category=CheckCategory.GIT)
+        config_check = StubCheck(check_id="config.schema", category=CheckCategory.CONFIG)
+        agent_check = StubCheck(check_id="agent.setup", category=CheckCategory.AGENT)
 
         registry.register(git_check)
         registry.register(config_check)
@@ -110,8 +69,8 @@ class DiagnosticRunnerFilteringTests:
         workspace_paths_factory: WorkspacePathsFactory,
     ) -> None:
         registry = CheckRegistry()
-        check1 = MockCheck(check_id="check.one", category=CheckCategory.GIT)
-        check2 = MockCheck(check_id="check.two", category=CheckCategory.ENVIRONMENT)
+        check1 = StubCheck(check_id="check.one", category=CheckCategory.GIT)
+        check2 = StubCheck(check_id="check.two", category=CheckCategory.ENVIRONMENT)
 
         registry.register(check1)
         registry.register(check2)
@@ -170,7 +129,7 @@ class DiagnosticRunnerConfigToggleTests:
         workspace_paths_factory: WorkspacePathsFactory,
     ) -> None:
         registry = CheckRegistry()
-        check = MockCheck(check_id=check_id, category=category)
+        check = StubCheck(check_id=check_id, category=category)
         registry.register(check)
 
         doctor_config = DoctorConfig(**{toggle_attr: False})
@@ -198,7 +157,7 @@ class DiagnosticRunnerConfigToggleTests:
         self, tmp_path: Path, workspace_paths_factory: WorkspacePathsFactory
     ) -> None:
         registry = CheckRegistry()
-        check = MockCheck(check_id="git.repo", category=CheckCategory.GIT)
+        check = StubCheck(check_id="git.repo", category=CheckCategory.GIT)
         registry.register(check)
 
         runner = DiagnosticRunner(registry=registry)
@@ -216,12 +175,11 @@ class DiagnosticRunnerContainmentTests:
     def test_unhandled_exception_recorded_as_failed_with_doctor_check_crash(
         self, tmp_path: Path, workspace_paths_factory: WorkspacePathsFactory
     ) -> None:
-        check = MockCheck(
+        check = StubCheck(
             check_id="crashing.check",
             name="Crashing Check",
             category=CheckCategory.WORKTREE,
-            should_crash=True,
-            crash_message="Simulated crash in worktree inspection",
+            crash=RuntimeError("Simulated crash in worktree inspection"),
         )
         context = DiagnosticsContext(cwd=tmp_path, config=None, paths=workspace_paths_factory(tmp_path, None))
 
@@ -245,16 +203,14 @@ class DiagnosticRunnerContainmentTests:
         self, tmp_path: Path, workspace_paths_factory: WorkspacePathsFactory
     ) -> None:
         registry = CheckRegistry()
-        crash_check = MockCheck(
+        crash_check = StubCheck(
             check_id="check.crash",
             category=CheckCategory.GIT,
-            should_crash=True,
-            crash_message="crash 1",
+            crash=RuntimeError("crash 1"),
         )
-        healthy_check = MockCheck(
+        healthy_check = StubCheck(
             check_id="check.healthy",
             category=CheckCategory.CONFIG,
-            should_crash=False,
         )
 
         registry.register(crash_check)
@@ -284,8 +240,8 @@ class DiagnosticRunnerMetricsTests:
         workspace_paths_factory: WorkspacePathsFactory,
     ) -> None:
         registry = CheckRegistry()
-        check1 = MockCheck(check_id="c1", category=CheckCategory.GIT)
-        check2 = MockCheck(check_id="c2", category=CheckCategory.FILESYSTEM)
+        check1 = StubCheck(check_id="c1", category=CheckCategory.GIT)
+        check2 = StubCheck(check_id="c2", category=CheckCategory.FILESYSTEM)
 
         registry.register(check1)
         registry.register(check2)

@@ -23,11 +23,6 @@ from tests.harness import WorkspaceBuilder
 from tests.harness.workspace_paths import initialized_workspace_paths
 
 
-def _status_paths(workspace: Path) -> WorkspacePaths:
-    """Resolve the WorkspacePaths snapshot for a WorkspaceBuilder-scaffolded workspace root."""
-    return initialized_workspace_paths(workspace)
-
-
 def _config_payload(*, model: str | None = "gpt-4o", max_active_worktrees: int = 5) -> dict[str, Any]:
     return DovoConfig(
         version=1,
@@ -35,6 +30,39 @@ def _config_payload(*, model: str | None = "gpt-4o", max_active_worktrees: int =
         agents={"copilot": AgentSettings(model=model)} if model else {},
         worktree=WorktreeConfig(max_active_worktrees=max_active_worktrees),
     ).model_dump(mode="json")
+
+
+_DEFAULT_CONFIG = _config_payload()
+
+type BuildStatusWorkspace = Callable[..., Path]
+
+
+@pytest.fixture
+def status_workspace(tmp_path: Path) -> BuildStatusWorkspace:
+    """Return a builder of a git workspace without catalog templates.
+
+    The builder writes config as config.json (JSON for a dict, raw text for a str) or omits the file when None.
+    """
+
+    def build(
+        *,
+        branch: str = "feature-status",
+        database: bool = True,
+        config: dict[str, object] | str | None = _DEFAULT_CONFIG,
+    ) -> Path:
+        builder = WorkspaceBuilder(tmp_path / "workspace").with_git(branch=branch).without_catalog_templates()
+        if not database:
+            builder = builder.without_database()
+        if config is None:
+            builder = builder.without_config()
+        workspace = builder.build()
+        if isinstance(config, str):
+            Filesystem.atomic_write_text(Filesystem(workspace).config_file, config)
+        elif config is not None:
+            Filesystem.atomic_write_json(Filesystem(workspace).config_file, config)
+        return workspace
+
+    return build
 
 
 class StatusEntrypointTests:
@@ -49,18 +77,11 @@ class StatusEntrypointTests:
     )
     def test_status_collect_returns_dovo_status_result(
         self,
-        tmp_path: Path,
+        status_workspace: BuildStatusWorkspace,
         invoke: Callable[[WorkspacePaths], DovoStatusResult],
     ) -> None:
-        workspace = (
-            WorkspaceBuilder(tmp_path / "entrypoint_collect")
-            .with_git(branch="feature-entrypoint")
-            .without_catalog_templates()
-            .build()
-        )
-        fs = Filesystem(workspace)
-        Filesystem.atomic_write_json(fs.config_file, _config_payload(model="gpt-4o"))
-        paths = _status_paths(workspace)
+        workspace = status_workspace(branch="feature-entrypoint")
+        paths = initialized_workspace_paths(workspace)
 
         result = invoke(paths)
 
@@ -73,18 +94,11 @@ class StatusEntrypointTests:
 class StatusCollectorGitCollectionTests:
     """Tests for git repository status collection in collect_status."""
 
-    def test_collect_status_clean_worktree(self, tmp_path: Path) -> None:
-        workspace = (
-            WorkspaceBuilder(tmp_path / "clean_ws")
-            .with_git(branch="feature-status")
-            .with_database()
-            .without_catalog_templates()
-            .build()
-        )
-        paths = _status_paths(workspace)
+    def test_collect_status_clean_worktree(self, status_workspace: BuildStatusWorkspace) -> None:
+        workspace = status_workspace(config=_config_payload(model="gpt-4o", max_active_worktrees=3))
         fs = Filesystem(workspace)
-        config_data = _config_payload(model="gpt-4o", max_active_worktrees=3)
-        Filesystem.atomic_write_json(fs.config_file, config_data)
+        paths = initialized_workspace_paths(workspace)
+
         Filesystem.atomic_write_text(fs.catalog_blueprints_dir / "deploy.yml", "name: deploy\n")
         Filesystem.atomic_write_text(fs.catalog_blueprints_dir / "lint-blueprint.yml", "name: lint-blueprint\n")
         Filesystem.atomic_write_text(fs.catalog_steps_dir / "test-step.yml", "name: test-step\n")
@@ -124,42 +138,26 @@ class StatusCollectorGitCollectionTests:
         assert result.warnings == []
         assert result.fixes == []
 
-    def test_collect_status_dirty_worktree(self, tmp_path: Path) -> None:
-        workspace = (
-            WorkspaceBuilder(tmp_path / "dirty_ws")
-            .with_git(branch="feature-dirty")
-            .with_database()
-            .without_catalog_templates()
-            .build()
-        )
-        fs = Filesystem(workspace)
-        Filesystem.atomic_write_json(fs.config_file, _config_payload(model="gpt-4o"))
+    def test_collect_status_dirty_worktree(self, status_workspace: BuildStatusWorkspace) -> None:
+        workspace = status_workspace(branch="feature-dirty")
 
         untracked = workspace / "new_file.txt"
         untracked.write_text("hello", encoding="utf-8")
 
-        result = collect_status(_status_paths(workspace))
+        result = collect_status(initialized_workspace_paths(workspace))
 
         assert result.git.branch == "feature-dirty"
         assert result.git.is_dirty is True
         assert result.git.uncommitted_files == 1
         assert result.warnings == ["Working tree has 1 uncommitted change(s)."]
 
-    def test_collect_status_detached_head(self, tmp_path: Path) -> None:
-        workspace = (
-            WorkspaceBuilder(tmp_path / "detached_ws")
-            .with_git(branch="feature-detached")
-            .with_database()
-            .without_catalog_templates()
-            .build()
-        )
-        fs = Filesystem(workspace)
-        Filesystem.atomic_write_json(fs.config_file, _config_payload(model="gpt-4o"))
+    def test_collect_status_detached_head(self, status_workspace: BuildStatusWorkspace) -> None:
+        workspace = status_workspace(branch="feature-detached")
 
         commit_hash = GitRunner.run(["rev-parse", "HEAD"], path=workspace).strip()
         subprocess.run(["git", "checkout", commit_hash], cwd=workspace, check=True, capture_output=True)
 
-        result = collect_status(_status_paths(workspace))
+        result = collect_status(initialized_workspace_paths(workspace))
 
         assert result.git.branch == "HEAD (detached)"
         assert result.git.is_git_repo is True
@@ -168,7 +166,7 @@ class StatusCollectorGitCollectionTests:
         non_git_dir = tmp_path / "non_git"
         non_git_dir.mkdir(parents=True, exist_ok=True)
 
-        result = collect_status(_status_paths(non_git_dir))
+        result = collect_status(initialized_workspace_paths(non_git_dir))
 
         assert result.is_initialized is False
         assert result.git.is_git_repo is False
@@ -190,47 +188,34 @@ class StatusCollectorGitCollectionTests:
     )
     def test_collect_status_git_error(
         self,
-        tmp_path: Path,
+        status_workspace: BuildStatusWorkspace,
         monkeypatch: pytest.MonkeyPatch,
         git_error: Exception,
     ) -> None:
-        workspace = (
-            WorkspaceBuilder(tmp_path / "git_error_ws")
-            .with_git(branch="feature-status")
-            .without_catalog_templates()
-            .build()
-        )
-        fs = Filesystem(workspace)
-        Filesystem.atomic_write_json(fs.config_file, _config_payload(model="gpt-4o"))
+        workspace = status_workspace()
 
         def mock_run(*args: object, **kwargs: object) -> str:
             raise git_error
 
         monkeypatch.setattr(GitRunner, "run", mock_run)
 
-        result = collect_status(_status_paths(workspace))
+        result = collect_status(initialized_workspace_paths(workspace))
 
         assert result.git.is_git_repo is False
         assert result.git.branch == "unknown"
         assert result.fixes == ["Run 'git init' or navigate to a Git repository."]
 
-    def test_collect_status_git_rev_parse_not_true(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        workspace = (
-            WorkspaceBuilder(tmp_path / "git_false_ws")
-            .with_git(branch="feature-status")
-            .without_catalog_templates()
-            .build()
-        )
-        fs = Filesystem(workspace)
-        config_data = _config_payload(model="gpt-4o")
-        Filesystem.atomic_write_json(fs.config_file, config_data)
+    def test_collect_status_git_rev_parse_not_true(
+        self, status_workspace: BuildStatusWorkspace, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        workspace = status_workspace()
 
         def mock_run(*args: object, **kwargs: object) -> str:
             return "false"
 
         monkeypatch.setattr(GitRunner, "run", mock_run)
 
-        result = collect_status(_status_paths(workspace))
+        result = collect_status(initialized_workspace_paths(workspace))
 
         assert result.git.is_git_repo is False
         assert result.git.branch == "none"
@@ -240,15 +225,10 @@ class StatusCollectorGitCollectionTests:
 class StatusCollectorConfigAndCatalogTests:
     """Tests for configuration and catalog status collection in collect_status."""
 
-    def test_collect_status_uninitialized_workspace(self, tmp_path: Path) -> None:
-        workspace = (
-            WorkspaceBuilder(tmp_path / "uninit_ws")
-            .with_git(branch="feature-uninit")
-            .without_config()
-            .without_catalog_templates()
-            .build()
-        )
-        result = collect_status(_status_paths(workspace))
+    def test_collect_status_uninitialized_workspace(self, status_workspace: BuildStatusWorkspace) -> None:
+        workspace = status_workspace(branch="feature-uninit", config=None)
+
+        result = collect_status(initialized_workspace_paths(workspace))
 
         assert result.is_initialized is False
         assert result.git.branch == "feature-uninit"
@@ -256,17 +236,10 @@ class StatusCollectorConfigAndCatalogTests:
         assert result.warnings == ["Dovo workspace is not initialized. Run 'dovo init' to configure."]
         assert result.fixes == ["Run 'dovo init' to initialize Dovo in this repository."]
 
-    def test_collect_status_malformed_config(self, tmp_path: Path) -> None:
-        workspace = (
-            WorkspaceBuilder(tmp_path / "malformed_config_ws")
-            .with_git(branch="feature-status")
-            .without_catalog_templates()
-            .build()
-        )
-        fs = Filesystem(workspace)
-        Filesystem.atomic_write_text(fs.config_file, "{invalid_json: true")
+    def test_collect_status_malformed_config(self, status_workspace: BuildStatusWorkspace) -> None:
+        workspace = status_workspace(config="{invalid_json: true")
 
-        result = collect_status(_status_paths(workspace))
+        result = collect_status(initialized_workspace_paths(workspace))
 
         assert result.config.status == ConfigLoadStatus.MALFORMED_JSON
         assert result.config.is_valid is False
@@ -275,35 +248,23 @@ class StatusCollectorConfigAndCatalogTests:
         assert any("Malformed config.json" in w for w in result.warnings)
         assert result.fixes == ["Repair JSON syntax in .dovo/config.json or restore from backup."]
 
-    def test_collect_status_missing_catalog_directory(self, tmp_path: Path) -> None:
-        workspace = (
-            WorkspaceBuilder(tmp_path / "missing_catalog_ws")
-            .with_git(branch="feature-status")
-            .without_catalog_templates()
-            .build()
-        )
-        fs = Filesystem(workspace)
-        Filesystem.atomic_write_json(fs.config_file, _config_payload(model="gpt-4o"))
+    def test_collect_status_missing_catalog_directory(self, status_workspace: BuildStatusWorkspace) -> None:
+        workspace = status_workspace()
 
-        result = collect_status(_status_paths(workspace))
+        result = collect_status(initialized_workspace_paths(workspace))
 
         assert result.is_initialized is True
         assert result.catalog.exists is False
         assert result.catalog.total_items == 0
 
-    def test_collect_status_invalid_catalog_blueprint(self, tmp_path: Path) -> None:
-        workspace = (
-            WorkspaceBuilder(tmp_path / "invalid_catalog_bp_ws")
-            .with_git(branch="feature-status")
-            .without_catalog_templates()
-            .build()
-        )
+    def test_collect_status_invalid_catalog_blueprint(self, status_workspace: BuildStatusWorkspace) -> None:
+        workspace = status_workspace()
         fs = Filesystem(workspace)
-        Filesystem.atomic_write_json(fs.config_file, _config_payload(model="gpt-4o"))
+
         Filesystem.atomic_write_text(fs.catalog_blueprints_dir / "valid-bp.yml", "name: valid-bp\n")
         Filesystem.atomic_write_text(fs.catalog_blueprints_dir / "bad.yml", "invalid: [yaml: broken\n")
 
-        result = collect_status(_status_paths(workspace))
+        result = collect_status(initialized_workspace_paths(workspace))
 
         assert result.catalog.exists is True
         assert result.catalog.total_items == 2
@@ -315,55 +276,33 @@ class StatusCollectorConfigAndCatalogTests:
 class StatusCollectorDatabaseAndWorktreeTests:
     """Tests for database and worktree status collection in collect_status."""
 
-    def test_collect_status_missing_database(self, tmp_path: Path) -> None:
-        workspace = (
-            WorkspaceBuilder(tmp_path / "missing_db_ws")
-            .with_git(branch="feature-status")
-            .without_database()
-            .without_catalog_templates()
-            .build()
-        )
-        fs = Filesystem(workspace)
-        Filesystem.atomic_write_json(fs.config_file, _config_payload(model="gpt-4o"))
+    def test_collect_status_missing_database(self, status_workspace: BuildStatusWorkspace) -> None:
+        workspace = status_workspace(database=False)
 
-        result = collect_status(_status_paths(workspace))
+        result = collect_status(initialized_workspace_paths(workspace))
 
         assert result.database.exists is False
         assert result.database.is_accessible is False
 
-    def test_collect_status_corrupted_database(self, tmp_path: Path) -> None:
-        workspace = (
-            WorkspaceBuilder(tmp_path / "corrupted_db_ws")
-            .with_git(branch="feature-status")
-            .with_database()
-            .without_catalog_templates()
-            .build()
-        )
-        fs = Filesystem(workspace)
-        Filesystem.atomic_write_json(fs.config_file, _config_payload(model="gpt-4o"))
+    def test_collect_status_corrupted_database(self, status_workspace: BuildStatusWorkspace) -> None:
+        workspace = status_workspace()
+
         (resolve_global_paths(None).data_dir / "dovo.db").write_bytes(b"NOT A SQLITE DATABASE")
 
-        result = collect_status(_status_paths(workspace))
+        result = collect_status(initialized_workspace_paths(workspace))
 
         assert result.database.exists is True
         assert result.database.is_accessible is False
         assert result.database.total_sessions == 0
 
-    def test_collect_status_worktrees_directory_fallback(self, tmp_path: Path) -> None:
-        workspace = (
-            WorkspaceBuilder(tmp_path / "worktree_fallback_ws")
-            .with_git(branch="feature-status")
-            .without_database()
-            .without_catalog_templates()
-            .build()
-        )
+    def test_collect_status_worktrees_directory_fallback(self, status_workspace: BuildStatusWorkspace) -> None:
+        workspace = status_workspace(database=False, config=_config_payload(model="gpt-4o", max_active_worktrees=4))
         fs = Filesystem(workspace)
-        config_payload = _config_payload(model="gpt-4o", max_active_worktrees=4)
-        Filesystem.atomic_write_json(fs.config_file, config_payload)
+
         (fs.worktrees_dir / "sb-1").mkdir(parents=True, exist_ok=True)
         (fs.worktrees_dir / "sb-2").mkdir(parents=True, exist_ok=True)
 
-        result = collect_status(_status_paths(workspace))
+        result = collect_status(initialized_workspace_paths(workspace))
 
         assert result.database.exists is False
         assert result.worktrees.active_worktrees == 2
@@ -372,19 +311,12 @@ class StatusCollectorDatabaseAndWorktreeTests:
 
     def test_collect_status_worktrees_db_query_error(
         self,
-        tmp_path: Path,
+        status_workspace: BuildStatusWorkspace,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        workspace = (
-            WorkspaceBuilder(tmp_path / "worktree_db_error_ws")
-            .with_git(branch="feature-status")
-            .with_database()
-            .without_catalog_templates()
-            .build()
-        )
-        paths = _status_paths(workspace)
+        workspace = status_workspace()
         fs = Filesystem(workspace)
-        Filesystem.atomic_write_json(fs.config_file, _config_payload(model="gpt-4o"))
+        paths = initialized_workspace_paths(workspace)
 
         sessions_repo = SessionsRepository(db_path=paths.database_file, project_id=paths.project_id)
         sessions_repo.create(
@@ -410,16 +342,12 @@ class StatusCollectorDatabaseAndWorktreeTests:
 class StatusCollectorWarningsOrderingTests:
     """Tests verifying deterministic warning priority order in collect_status."""
 
-    def test_collect_status_warnings_follow_deterministic_priority(self, tmp_path: Path) -> None:
-        workspace = (
-            WorkspaceBuilder(tmp_path / "warnings_order_ws")
-            .with_git(branch="main")
-            .without_config()
-            .without_catalog_templates()
-            .build()
-        )
+    def test_collect_status_warnings_follow_deterministic_priority(
+        self, status_workspace: BuildStatusWorkspace
+    ) -> None:
+        workspace = status_workspace(branch="main", config=None)
         fs = Filesystem(workspace)
-        paths = _status_paths(workspace)
+        paths = initialized_workspace_paths(workspace)
 
         (workspace / "dirty.txt").write_text("dirty content", encoding="utf-8")
         Filesystem.atomic_write_text(fs.catalog_blueprints_dir / "broken.yml", "bad: [yaml\n")
@@ -452,16 +380,10 @@ class StatusCollectorWarningsOrderingTests:
 class StatusCollectorFixesRemediationTests:
     """Tests for actionable remediation fixes in collect_status."""
 
-    def test_collect_status_fixes_for_uninitialized_workspace(self, tmp_path: Path) -> None:
-        workspace = (
-            WorkspaceBuilder(tmp_path / "uninit_fixes_ws")
-            .with_git(branch="feature-status")
-            .without_config()
-            .without_catalog_templates()
-            .build()
-        )
+    def test_collect_status_fixes_for_uninitialized_workspace(self, status_workspace: BuildStatusWorkspace) -> None:
+        workspace = status_workspace(config=None)
 
-        result = collect_status(_status_paths(workspace))
+        result = collect_status(initialized_workspace_paths(workspace))
 
         assert result.fixes == ["Run 'dovo init' to initialize Dovo in this repository."]
 
@@ -470,7 +392,7 @@ class StatusCollectorFixesRemediationTests:
         fs = Filesystem(non_git_dir)
         Filesystem.atomic_write_json(fs.config_file, _config_payload(model="gpt-4o"))
 
-        result = collect_status(_status_paths(non_git_dir))
+        result = collect_status(initialized_workspace_paths(non_git_dir))
 
         assert result.fixes == ["Run 'git init' or navigate to a Git repository."]
 
@@ -496,53 +418,36 @@ class StatusCollectorFixesRemediationTests:
     )
     def test_collect_status_fixes_for_invalid_config_payload(
         self,
-        tmp_path: Path,
+        status_workspace: BuildStatusWorkspace,
         payload: str,
         expected_fix: str,
     ) -> None:
-        workspace = (
-            WorkspaceBuilder(tmp_path / "invalid_config_fixes_ws")
-            .with_git(branch="feature-status")
-            .without_catalog_templates()
-            .build()
-        )
-        fs = Filesystem(workspace)
-        Filesystem.atomic_write_text(fs.config_file, payload)
+        workspace = status_workspace(config=payload)
 
-        result = collect_status(_status_paths(workspace))
+        result = collect_status(initialized_workspace_paths(workspace))
 
         assert result.fixes == [expected_fix]
 
-    def test_collect_status_fixes_for_path_is_directory(self, tmp_path: Path) -> None:
-        workspace = (
-            WorkspaceBuilder(tmp_path / "path_is_dir_fixes_ws")
-            .with_git(branch="feature-status")
-            .without_config()
-            .without_catalog_templates()
-            .build()
-        )
+    def test_collect_status_fixes_for_path_is_directory(self, status_workspace: BuildStatusWorkspace) -> None:
+        workspace = status_workspace(config=None)
         fs = Filesystem(workspace)
+
         fs.config_file.mkdir(parents=True, exist_ok=True)
 
-        result = collect_status(_status_paths(workspace))
+        result = collect_status(initialized_workspace_paths(workspace))
 
         assert result.fixes == ["Remove directory at .dovo/config.json and run 'dovo init'."]
 
-    def test_collect_status_fixes_for_unreadable(self, tmp_path: Path) -> None:
-        workspace = (
-            WorkspaceBuilder(tmp_path / "unreadable_fixes_ws")
-            .with_git(branch="feature-status")
-            .without_catalog_templates()
-            .build()
-        )
+    def test_collect_status_fixes_for_unreadable(self, status_workspace: BuildStatusWorkspace) -> None:
+        workspace = status_workspace(config="{}")
         fs = Filesystem(workspace)
-        Filesystem.atomic_write_text(fs.config_file, "{}")
+
         fs.config_file.chmod(0)
 
         try:
             if os.access(fs.config_file, os.R_OK):
                 pytest.skip("filesystem still allows reading unreadable mode")
-            result = collect_status(_status_paths(workspace))
+            result = collect_status(initialized_workspace_paths(workspace))
             assert result.fixes == ["Check file permissions for .dovo/config.json."]
         finally:
             fs.config_file.chmod(stat.S_IRUSR | stat.S_IWUSR)

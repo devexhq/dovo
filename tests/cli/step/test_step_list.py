@@ -5,25 +5,22 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
 from typer.testing import CliRunner
 
 from dovo.cli import app
-from dovo.common.filesystem.models import WorkspacePaths
 from dovo.core.catalog import Catalog
 from dovo.core.catalog.models import CatalogItemType
 from tests.harness.workspace_paths import initialized_workspace_paths
 
-
-def _paths_for(root: Path) -> WorkspacePaths:
-    """Resolve the WorkspacePaths snapshot for root, reflecting its current project.json."""
-    return initialized_workspace_paths(root)
+pytestmark = pytest.mark.usefixtures("workspace_config")
 
 
 class StepListCliIntegrationTests:
     """Typer runner integration tests for dovo step list."""
 
     def test_step_list_cli_renders_terminal_table(self, cli_runner: CliRunner, isolated_workspace: Path) -> None:
-        Catalog(_paths_for(isolated_workspace)).create(CatalogItemType.STEP, "listed-step")
+        Catalog(initialized_workspace_paths(isolated_workspace)).create(CatalogItemType.STEP, "listed-step")
 
         result = cli_runner.invoke(app, ["-p", str(isolated_workspace), "step", "list"])
 
@@ -34,7 +31,7 @@ class StepListCliIntegrationTests:
         assert "Blueprints:" not in result.stdout
 
     def test_step_list_cli_renders_json(self, cli_runner: CliRunner, isolated_workspace: Path) -> None:
-        Catalog(_paths_for(isolated_workspace)).create(CatalogItemType.STEP, "json-step")
+        Catalog(initialized_workspace_paths(isolated_workspace)).create(CatalogItemType.STEP, "json-step")
 
         result = cli_runner.invoke(app, ["-p", str(isolated_workspace), "step", "list", "--format", "json"])
 
@@ -45,8 +42,8 @@ class StepListCliIntegrationTests:
 
     def test_step_list_cli_only_returns_step_items(self, cli_runner: CliRunner, isolated_workspace: Path) -> None:
         """Exclude blueprints from the step listing; the packaged default.yml step still appears per tier."""
-        Catalog(_paths_for(isolated_workspace)).create(CatalogItemType.STEP, "only-step")
-        Catalog(_paths_for(isolated_workspace)).create(CatalogItemType.BLUEPRINT, "only-blueprint")
+        Catalog(initialized_workspace_paths(isolated_workspace)).create(CatalogItemType.STEP, "only-step")
+        Catalog(initialized_workspace_paths(isolated_workspace)).create(CatalogItemType.BLUEPRINT, "only-blueprint")
 
         result = cli_runner.invoke(app, ["-p", str(isolated_workspace), "step", "list", "--format", "json"])
 
@@ -64,7 +61,7 @@ class StepListCliIntegrationTests:
         assert not (git_repo / ".dovo").exists()
 
     def test_step_ls_alias_cli_matches_list_output(self, cli_runner: CliRunner, isolated_workspace: Path) -> None:
-        Catalog(_paths_for(isolated_workspace)).create(CatalogItemType.STEP, "alias-step")
+        Catalog(initialized_workspace_paths(isolated_workspace)).create(CatalogItemType.STEP, "alias-step")
 
         list_result = cli_runner.invoke(app, ["-p", str(isolated_workspace), "step", "list"])
         ls_result = cli_runner.invoke(app, ["-p", str(isolated_workspace), "step", "ls"])

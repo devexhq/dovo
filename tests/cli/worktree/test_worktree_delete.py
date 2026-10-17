@@ -4,26 +4,19 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any
 
 import pytest
 from typer.testing import CliRunner
 
 from dovo.cli import app
-from dovo.common.filesystem.models import WorkspacePaths
-from dovo.core.worktree.models import WorktreeDeleteStatus, WorktreeSession
+from dovo.core.worktree.models import WorktreeDeleteResult, WorktreeDeleteStatus, WorktreeSession
 from dovo.core.worktree.worktree import Worktree
 from tests.harness.workspace_paths import initialized_workspace_paths
 
 
-def _paths_for(root: Path) -> WorkspacePaths:
-    """Resolve the WorkspacePaths snapshot for root, reflecting its current project.json."""
-    return initialized_workspace_paths(root)
-
-
-def _create_worktree(worktree_workspace: Path) -> WorktreeSession:
+def _create_worktree(cli_workspace: Path) -> WorktreeSession:
     """Create a fresh worktree via the entrypoint for one delete test."""
-    create_result = Worktree(paths=_paths_for(worktree_workspace)).create(name="delete-me")
+    create_result = Worktree(paths=initialized_workspace_paths(cli_workspace)).create(name="delete-me")
     assert create_result.session is not None
     return create_result.session
 
@@ -32,12 +25,12 @@ class WorktreeDeleteCliIntegrationTests:
     """Typer runner integration tests for dovo worktree delete."""
 
     def test_worktree_delete_cli_declined_confirmation_exits_one(
-        self, cli_runner: CliRunner, worktree_workspace: Path, dispatch_spy: list[Any]
+        self, cli_runner: CliRunner, cli_workspace: Path, dispatch_spy: list[WorktreeDeleteResult]
     ) -> None:
-        session = _create_worktree(worktree_workspace)
+        session = _create_worktree(cli_workspace)
 
         result = cli_runner.invoke(
-            app, ["-p", str(worktree_workspace), "worktree", "delete", session.session_id], input="n\n"
+            app, ["-p", str(cli_workspace), "worktree", "delete", session.session_id], input="n\n"
         )
 
         assert result.exit_code == 1
@@ -63,16 +56,16 @@ class WorktreeDeleteCliIntegrationTests:
     def test_worktree_delete_cli_confirmed_or_forced_deletes_exits_zero(
         self,
         cli_runner: CliRunner,
-        worktree_workspace: Path,
-        dispatch_spy: list[Any],
+        cli_workspace: Path,
+        dispatch_spy: list[WorktreeDeleteResult],
         extra_args: list[str],
         invoke_input: str | None,
     ) -> None:
-        session = _create_worktree(worktree_workspace)
+        session = _create_worktree(cli_workspace)
 
         result = cli_runner.invoke(
             app,
-            ["-p", str(worktree_workspace), "worktree", "delete", session.session_id, *extra_args],
+            ["-p", str(cli_workspace), "worktree", "delete", session.session_id, *extra_args],
             input=invoke_input,
         )
 
@@ -90,9 +83,9 @@ class WorktreeDeleteCliIntegrationTests:
         assert payload.worktree.id == session.session_id
 
     def test_worktree_delete_cli_missing_worktree_exits_one(
-        self, cli_runner: CliRunner, worktree_workspace: Path, dispatch_spy: list[Any]
+        self, cli_runner: CliRunner, cli_workspace: Path, dispatch_spy: list[WorktreeDeleteResult]
     ) -> None:
-        result = cli_runner.invoke(app, ["-p", str(worktree_workspace), "worktree", "delete", "missing-id", "--force"])
+        result = cli_runner.invoke(app, ["-p", str(cli_workspace), "worktree", "delete", "missing-id", "--force"])
 
         assert result.exit_code == 1
         assert "not found" in result.stdout
@@ -105,14 +98,14 @@ class WorktreeDeleteCliIntegrationTests:
         assert payload.worktree is None
         assert payload.errors == ["Worktree 'missing-id' not found."]
 
-    def test_worktree_delete_cli_renders_json(self, cli_runner: CliRunner, worktree_workspace: Path) -> None:
-        session = _create_worktree(worktree_workspace)
+    def test_worktree_delete_cli_renders_json(self, cli_runner: CliRunner, cli_workspace: Path) -> None:
+        session = _create_worktree(cli_workspace)
 
         result = cli_runner.invoke(
             app,
             [
                 "-p",
-                str(worktree_workspace),
+                str(cli_workspace),
                 "worktree",
                 "delete",
                 session.session_id,
@@ -154,13 +147,13 @@ class WorktreeDeleteCliIntegrationTests:
         }
 
     def test_worktree_delete_cli_declined_confirmation_renders_json(
-        self, cli_runner: CliRunner, worktree_workspace: Path
+        self, cli_runner: CliRunner, cli_workspace: Path
     ) -> None:
-        session = _create_worktree(worktree_workspace)
+        session = _create_worktree(cli_workspace)
 
         result = cli_runner.invoke(
             app,
-            ["-p", str(worktree_workspace), "worktree", "delete", session.session_id, "--format", "json"],
+            ["-p", str(cli_workspace), "worktree", "delete", session.session_id, "--format", "json"],
             input="n\n",
         )
 
@@ -197,11 +190,11 @@ class WorktreeDeleteCliIntegrationTests:
         }
 
     def test_worktree_delete_cli_missing_worktree_renders_json(
-        self, cli_runner: CliRunner, worktree_workspace: Path
+        self, cli_runner: CliRunner, cli_workspace: Path
     ) -> None:
         result = cli_runner.invoke(
             app,
-            ["-p", str(worktree_workspace), "worktree", "delete", "missing-id", "--force", "--format", "json"],
+            ["-p", str(cli_workspace), "worktree", "delete", "missing-id", "--force", "--format", "json"],
         )
 
         assert result.exit_code == 1

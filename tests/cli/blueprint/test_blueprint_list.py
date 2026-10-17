@@ -5,25 +5,22 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
 from typer.testing import CliRunner
 
 from dovo.cli import app
-from dovo.common.filesystem.models import WorkspacePaths
 from dovo.core.catalog import Catalog
 from dovo.core.catalog.models import CatalogItemType
 from tests.harness.workspace_paths import initialized_workspace_paths
 
-
-def _paths_for(root: Path) -> WorkspacePaths:
-    """Resolve the WorkspacePaths snapshot for root, reflecting its current project.json."""
-    return initialized_workspace_paths(root)
+pytestmark = pytest.mark.usefixtures("workspace_config")
 
 
 class BlueprintListCliIntegrationTests:
     """Typer runner integration tests for dovo blueprint list."""
 
     def test_blueprint_list_cli_renders_terminal_table(self, cli_runner: CliRunner, isolated_workspace: Path) -> None:
-        Catalog(_paths_for(isolated_workspace)).create(CatalogItemType.BLUEPRINT, "listed-blueprint")
+        Catalog(initialized_workspace_paths(isolated_workspace)).create(CatalogItemType.BLUEPRINT, "listed-blueprint")
 
         result = cli_runner.invoke(app, ["-p", str(isolated_workspace), "blueprint", "list"])
 
@@ -33,7 +30,7 @@ class BlueprintListCliIntegrationTests:
         assert "Blueprints:" in result.stdout
 
     def test_blueprint_list_cli_renders_json(self, cli_runner: CliRunner, isolated_workspace: Path) -> None:
-        Catalog(_paths_for(isolated_workspace)).create(CatalogItemType.BLUEPRINT, "json-blueprint")
+        Catalog(initialized_workspace_paths(isolated_workspace)).create(CatalogItemType.BLUEPRINT, "json-blueprint")
 
         result = cli_runner.invoke(app, ["-p", str(isolated_workspace), "blueprint", "list", "--format", "json"])
 
@@ -46,8 +43,8 @@ class BlueprintListCliIntegrationTests:
         self, cli_runner: CliRunner, isolated_workspace: Path
     ) -> None:
         """Exclude steps from the blueprint listing; the packaged default.yml blueprint still appears per tier."""
-        Catalog(_paths_for(isolated_workspace)).create(CatalogItemType.BLUEPRINT, "only-blueprint")
-        Catalog(_paths_for(isolated_workspace)).create(CatalogItemType.STEP, "only-step")
+        Catalog(initialized_workspace_paths(isolated_workspace)).create(CatalogItemType.BLUEPRINT, "only-blueprint")
+        Catalog(initialized_workspace_paths(isolated_workspace)).create(CatalogItemType.STEP, "only-step")
 
         result = cli_runner.invoke(app, ["-p", str(isolated_workspace), "blueprint", "list", "--format", "json"])
 
@@ -65,7 +62,7 @@ class BlueprintListCliIntegrationTests:
         assert not (git_repo / ".dovo").exists()
 
     def test_blueprint_ls_alias_cli_matches_list_output(self, cli_runner: CliRunner, isolated_workspace: Path) -> None:
-        Catalog(_paths_for(isolated_workspace)).create(CatalogItemType.BLUEPRINT, "alias-blueprint")
+        Catalog(initialized_workspace_paths(isolated_workspace)).create(CatalogItemType.BLUEPRINT, "alias-blueprint")
 
         list_result = cli_runner.invoke(app, ["-p", str(isolated_workspace), "blueprint", "list"])
         ls_result = cli_runner.invoke(app, ["-p", str(isolated_workspace), "blueprint", "ls"])

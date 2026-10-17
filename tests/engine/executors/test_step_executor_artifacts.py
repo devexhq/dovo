@@ -6,12 +6,12 @@ from pathlib import Path
 
 from dovo.common.filesystem.models import WorkspacePaths
 from dovo.core.artifacts import Artifacts
-from dovo.core.artifacts.models import ArtifactProvenance
 from dovo.core.artifacts.store import ArtifactStore
 from dovo.core.catalog.definitions import StepDefinition
 from dovo.core.db.repositories.artifacts import ArtifactsRepository
 from dovo.engine.executors.models import StepExecutionContext, StepResult
 from dovo.engine.executors.step_executor import StepExecution
+from tests.conftest import PublishArtifact
 
 _NOT_PRODUCED = "Artifact 'plan' matched no files at 'PLAN.md' (ARTIFACT_NOT_PRODUCED)."
 
@@ -48,20 +48,6 @@ def _run(
             loop_iteration=loop_iteration,
         )
     ).run()
-
-
-def _publish_plan(
-    paths: WorkspacePaths, repository: ArtifactsRepository, tmp_path: Path, files: dict[str, str]
-) -> None:
-    """Publish files as the next revision of 'plan' in session wf_1."""
-    source = tmp_path / f"source-{len(repository.list())}"
-    for relative_path, content in files.items():
-        (source / relative_path).parent.mkdir(parents=True, exist_ok=True)
-        (source / relative_path).write_text(content, encoding="utf-8")
-    result = Artifacts(paths, repository).publish(
-        "wf_1", "plan", "*", worktree_path=source, provenance=ArtifactProvenance()
-    )
-    assert result.ok
 
 
 class StepExecutionArtifactsTests:
@@ -150,10 +136,14 @@ class StepExecutionArtifactsTests:
 
 class StepExecutionArtifactReferencesTests:
     def test_command_renders_latest_revision_number_and_content(
-        self, tmp_path: Path, engine_paths: WorkspacePaths, artifacts_repository: ArtifactsRepository
+        self,
+        tmp_path: Path,
+        engine_paths: WorkspacePaths,
+        artifacts_repository: ArtifactsRepository,
+        publish_artifact: PublishArtifact,
     ) -> None:
-        _publish_plan(engine_paths, artifacts_repository, tmp_path, {"PLAN.md": "first"})
-        _publish_plan(engine_paths, artifacts_repository, tmp_path, {"PLAN.md": "second"})
+        publish_artifact("plan", {"PLAN.md": "first"})
+        publish_artifact("plan", {"PLAN.md": "second"})
         step = StepDefinition.model_validate(
             {
                 "id": "show",
@@ -167,9 +157,13 @@ class StepExecutionArtifactReferencesTests:
         assert result.stdout == "2:second\n"
 
     def test_content_unavailable_fails_step_with_classified_message(
-        self, tmp_path: Path, engine_paths: WorkspacePaths, artifacts_repository: ArtifactsRepository
+        self,
+        tmp_path: Path,
+        engine_paths: WorkspacePaths,
+        artifacts_repository: ArtifactsRepository,
+        publish_artifact: PublishArtifact,
     ) -> None:
-        _publish_plan(engine_paths, artifacts_repository, tmp_path, {"a.md": "a", "b.md": "b"})
+        publish_artifact("plan", {"a.md": "a", "b.md": "b"})
         worktree_path = tmp_path / "wt"
         step = StepDefinition.model_validate(
             {"id": "show", "type": "command", "command": "touch ran.marker; echo {{ artifacts.plan.content }}"}

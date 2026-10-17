@@ -4,34 +4,27 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any
 
 from typer.testing import CliRunner
 
 from dovo.cli import app
-from dovo.common.filesystem.models import WorkspacePaths
 from dovo.core.db import WorktreeStatus
 from dovo.core.worktree.models import WorktreeShowResult, WorktreeShowStatus
 from dovo.core.worktree.worktree import Worktree
 from tests.harness.workspace_paths import initialized_workspace_paths
 
 
-def _paths_for(root: Path) -> WorkspacePaths:
-    """Resolve the WorkspacePaths snapshot for root, reflecting its current project.json."""
-    return initialized_workspace_paths(root)
-
-
 class WorktreeShowCliIntegrationTests:
     """Typer runner integration tests for dovo worktree show."""
 
     def test_worktree_show_cli_existing_worktree_exits_zero(
-        self, cli_runner: CliRunner, worktree_workspace: Path, dispatch_spy: list[Any]
+        self, cli_runner: CliRunner, cli_workspace: Path, dispatch_spy: list[object]
     ) -> None:
-        create_result = Worktree(paths=_paths_for(worktree_workspace)).create(name="show-me")
+        create_result = Worktree(paths=initialized_workspace_paths(cli_workspace)).create(name="show-me")
         assert create_result.session is not None
         session = create_result.session
 
-        result = cli_runner.invoke(app, ["-p", str(worktree_workspace), "worktree", "show", session.session_id])
+        result = cli_runner.invoke(app, ["-p", str(cli_workspace), "worktree", "show", session.session_id])
 
         assert result.exit_code == 0
         assert session.session_id in result.stdout
@@ -53,9 +46,9 @@ class WorktreeShowCliIntegrationTests:
         assert len(result_dto.fixes) == 0
 
     def test_worktree_show_cli_missing_worktree_exits_one(
-        self, cli_runner: CliRunner, worktree_workspace: Path, dispatch_spy: list[Any]
+        self, cli_runner: CliRunner, cli_workspace: Path, dispatch_spy: list[object]
     ) -> None:
-        result = cli_runner.invoke(app, ["-p", str(worktree_workspace), "worktree", "show", "missing-id"])
+        result = cli_runner.invoke(app, ["-p", str(cli_workspace), "worktree", "show", "missing-id"])
 
         assert result.exit_code == 1
         assert "not found" in result.stdout
@@ -70,14 +63,14 @@ class WorktreeShowCliIntegrationTests:
         assert len(result_dto.warnings) == 0
         assert result_dto.fixes == ["Run `dovo worktree list` to see known worktrees"]
 
-    def test_worktree_show_cli_renders_json(self, cli_runner: CliRunner, worktree_workspace: Path) -> None:
-        create_result = Worktree(paths=_paths_for(worktree_workspace)).create(name="show-me")
+    def test_worktree_show_cli_renders_json(self, cli_runner: CliRunner, cli_workspace: Path) -> None:
+        create_result = Worktree(paths=initialized_workspace_paths(cli_workspace)).create(name="show-me")
         assert create_result.session is not None
         session = create_result.session
 
         result = cli_runner.invoke(
             app,
-            ["-p", str(worktree_workspace), "worktree", "show", session.session_id, "--format", "json"],
+            ["-p", str(cli_workspace), "worktree", "show", session.session_id, "--format", "json"],
         )
 
         assert result.exit_code == 0

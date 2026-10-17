@@ -8,21 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from e2e.conftest import DOVO_HOME, DovoRunner
-
-
-def _write_blueprint(project: Path, name: str, content: str, *, runner: DovoRunner | None = None) -> Path:
-    """Write a blueprint YAML definition into the project repository catalog and commit it."""
-    blueprint_file = project / ".dovo" / "catalog" / "blueprints" / f"{name}.yml"
-    blueprint_file.parent.mkdir(parents=True, exist_ok=True)
-    blueprint_file.write_text(content, encoding="utf-8")
-    if runner is not None:
-        runner(["blueprint", "list"], cwd=project)
-    subprocess.run(["git", "add", "-A"], cwd=project, check=True, capture_output=True)
-    subprocess.run(
-        ["git", "commit", "-m", f"chore: add blueprint {name}"], cwd=project, check=True, capture_output=True
-    )
-    return blueprint_file
+from e2e.conftest import DOVO_HOME, DovoRunner, find_event, write_blueprint
 
 
 def _get_project_id(project: Path) -> str:
@@ -31,41 +17,12 @@ def _get_project_id(project: Path) -> str:
     return str(data.get("id", ""))
 
 
-def _parse_events(stdout: str) -> list[dict[str, object]]:
-    """Parse newline-delimited JSON events from stdout."""
-    events: list[dict[str, object]] = []
-    for line in stdout.splitlines():
-        line = line.strip()
-        if line.startswith("{") and line.endswith("}"):
-            try:
-                data = json.loads(line)
-                if isinstance(data, dict):
-                    events.append(data)
-            except json.JSONDecodeError:
-                pass
-    return events
-
-
-def _find_event(stdout: str, event_type: str) -> dict[str, object]:
-    """Find a specific event envelope by event_type from newline-delimited JSON stdout."""
-    for event in _parse_events(stdout):
-        if event.get("event_type") == event_type:
-            return event
-    raise ValueError(f"Event '{event_type}' not found in stdout:\n{stdout}")
-
-
 @pytest.mark.e2e
 @pytest.mark.fixture
 class RunCliTests:
     """E2E tests for blueprint execution lifecycle, isolation, and parameter handling."""
 
     def test_run_auto_initializes_uninitialized_git_repo(self, run_dovo: DovoRunner, git_project: Path) -> None:
-        """Scenario: Running dovo run in an uninitialized Git repository automatically triggers lazy workspace initialization.
-
-        Given an uninitialized Git repository with no .dovo project state
-        When dovo run is executed targeting a blueprint
-        Then the workspace is lazily initialized with project.json and config.json created
-        """
         assert not (git_project / ".dovo" / "project.json").exists()
 
         global_bp_dir = DOVO_HOME / "global" / "catalog" / "blueprints"
@@ -90,13 +47,7 @@ steps:
         assert (git_project / "lazy_output.txt").read_text().strip() == "lazy initialized"
 
     def test_run_no_worktree_persists_completed_session(self, run_dovo: DovoRunner, initialized_project: Path) -> None:
-        """Scenario: Deterministic local blueprint run with --no-worktree persists a completed session.
-
-        Given an initialized project containing a deterministic runnable blueprint
-        When dovo run is executed with --no-worktree and --format json
-        Then the run succeeds with status completed and the completed session is persisted in the database
-        """
-        _write_blueprint(
+        write_blueprint(
             initialized_project,
             "deterministic-bp",
             """version: "1.0"
@@ -115,7 +66,7 @@ steps:
         )
 
         assert result.exit_code == 0
-        envelope = _find_event(result.stdout, "RunSuccessEvent")
+        envelope = find_event(result.stdout, "RunSuccessEvent")
         payload = envelope.get("payload")
         assert isinstance(payload, dict)
         assert payload.get("status") == "completed"
@@ -142,14 +93,8 @@ steps:
     def test_run_worktree_creates_branch_directory_and_run_symlink(
         self, run_dovo: DovoRunner, initialized_project: Path
     ) -> None:
-        """Scenario: Worktree-isolated blueprint execution creates a dedicated branch, worktree directory, and .dovo/run symlink.
-
-        Given an initialized project containing a worktree-isolated runnable blueprint
-        When dovo run is executed with --keep
-        Then a dedicated branch, worktree directory, and .dovo/run symlink pointing to the session directory are created
-        """
         session_id = "worktree-sess-01"
-        _write_blueprint(
+        write_blueprint(
             initialized_project,
             "worktree-check-bp",
             """version: "1.0"
@@ -170,7 +115,7 @@ steps:
         )
 
         assert result.exit_code == 0
-        envelope = _find_event(result.stdout, "RunSuccessEvent")
+        envelope = find_event(result.stdout, "RunSuccessEvent")
         assert envelope.get("event_type") == "RunSuccessEvent"
 
         worktree_dir = initialized_project / ".dovo" / "worktrees" / session_id
@@ -197,13 +142,7 @@ steps:
     def test_run_auto_apply_transfers_worktree_changes_to_workspace(
         self, run_dovo: DovoRunner, initialized_project: Path
     ) -> None:
-        """Scenario: Automatically apply worktree changes back to the main workspace on successful completion.
-
-        Given an initialized project containing a blueprint that produces changes in its worktree
-        When dovo run is executed with --auto-apply
-        Then changes generated inside the worktree are automatically transferred to the main workspace
-        """
-        _write_blueprint(
+        write_blueprint(
             initialized_project,
             "auto-apply-bp",
             """version: "1.0"
@@ -222,7 +161,7 @@ steps:
         )
 
         assert result.exit_code == 0
-        envelope = _find_event(result.stdout, "RunSuccessEvent")
+        envelope = find_event(result.stdout, "RunSuccessEvent")
         assert envelope.get("event_type") == "RunSuccessEvent"
 
         applied_file = initialized_project / "applied_file.txt"
@@ -232,13 +171,8 @@ steps:
     def test_run_keep_retains_worktree_and_branch_on_disk(
         self, run_dovo: DovoRunner, initialized_project: Path
     ) -> None:
-        """Scenario: Retain worktree directory and branch on disk after a successful run with --keep.
-
-        Given an initialized project containing a runnable blueprint
-        When dovo run is executed with --keep versus without --keep
-        Then the --keep execution retains the worktree directory and branch, whereas omitting --keep removes them
-        """
-        _write_blueprint(
+        """Without --keep the worktree and branch are removed; with --keep both are retained."""
+        write_blueprint(
             initialized_project,
             "keep-toggle-bp",
             """version: "1.0"
@@ -284,14 +218,8 @@ steps:
         assert f"dovo/{kept_id}" in kept_branch_proc.stdout
 
     def test_run_session_id_assigns_explicit_identifier(self, run_dovo: DovoRunner, initialized_project: Path) -> None:
-        """Scenario: Assign explicit session identifier recorded in database and filesystem.
-
-        Given an initialized project containing a runnable blueprint
-        When dovo run is executed with --session-id explicit-custom-id
-        Then the session directory and database record use the exact explicit session identifier
-        """
         explicit_id = "explicit-sess-99"
-        _write_blueprint(
+        write_blueprint(
             initialized_project,
             "explicit-id-bp",
             """version: "1.0"
@@ -310,7 +238,7 @@ steps:
         )
 
         assert result.exit_code == 0
-        envelope = _find_event(result.stdout, "RunSuccessEvent")
+        envelope = find_event(result.stdout, "RunSuccessEvent")
         payload = envelope.get("payload")
         assert isinstance(payload, dict)
         assert payload.get("session_id") == explicit_id
@@ -332,13 +260,7 @@ steps:
     def test_run_parameter_forwarding_interpolates_inputs(
         self, run_dovo: DovoRunner, initialized_project: Path
     ) -> None:
-        """Scenario: CLI argument parameter forwarding interpolates input values into step definitions.
-
-        Given an initialized project containing a blueprint declaring input parameters
-        When dovo run is executed forwarding CLI parameters
-        Then input values are interpolated into step definitions via template syntax
-        """
-        _write_blueprint(
+        write_blueprint(
             initialized_project,
             "param-forwarding-bp",
             """version: "1.0"
@@ -367,13 +289,7 @@ steps:
     def test_run_missing_required_input_aborts_without_session(
         self, run_dovo: DovoRunner, initialized_project: Path
     ) -> None:
-        """Scenario: Omitting a required blueprint input aborts execution early without inserting a session row.
-
-        Given an initialized project containing a blueprint declaring a required input
-        When dovo run is executed without providing the required input
-        Then the command exits with code 1, reports a descriptive error, and inserts no session row into the database
-        """
-        _write_blueprint(
+        write_blueprint(
             initialized_project,
             "required-input-bp",
             """version: "1.0"

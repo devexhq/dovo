@@ -32,60 +32,60 @@ class ArtifactsDownloadCliIntegrationTests:
     """Typer runner integration tests for dovo artifacts download."""
 
     def test_artifacts_download_cli_happy_path_extracts_files_and_exits_zero(
-        self, cli_runner: CliRunner, artifacts_workspace: Path, tmp_path: Path
+        self, cli_runner: CliRunner, cli_workspace: Path, tmp_path: Path
     ) -> None:
-        _publish_artifact(artifacts_workspace, session_id="wf_one", name="dist-packages")
+        _publish_artifact(cli_workspace, session_id="wf_one", name="dist-packages")
         dest = tmp_path / "out"
 
         result = cli_runner.invoke(
             app,
-            ["-p", str(artifacts_workspace), "artifacts", "download", "wf_one", "dist-packages", "--dest", str(dest)],
+            ["-p", str(cli_workspace), "artifacts", "download", "wf_one", "dist-packages", "--dest", str(dest)],
         )
 
         assert result.exit_code == 0
         assert (dest / "dist" / "pkg.whl").read_bytes() == b"package-bytes"
 
     def test_artifacts_download_cli_not_found_exits_one(
-        self, cli_runner: CliRunner, artifacts_workspace: Path, tmp_path: Path
+        self, cli_runner: CliRunner, cli_workspace: Path, tmp_path: Path
     ) -> None:
         dest = tmp_path / "out"
 
         result = cli_runner.invoke(
             app,
-            ["-p", str(artifacts_workspace), "artifacts", "download", "wf_one", "missing", "--dest", str(dest)],
+            ["-p", str(cli_workspace), "artifacts", "download", "wf_one", "missing", "--dest", str(dest)],
         )
 
         assert result.exit_code == 1
         assert "Artifact 'missing' not found for session 'wf_one'" in result.stdout
 
     def test_artifacts_download_cli_checksum_mismatch_exits_one_without_partial_files(
-        self, cli_runner: CliRunner, artifacts_workspace: Path, tmp_path: Path
+        self, cli_runner: CliRunner, cli_workspace: Path, tmp_path: Path
     ) -> None:
-        _publish_artifact(artifacts_workspace, session_id="wf_one", name="dist-packages")
-        artifacts_dir = initialized_workspace_paths(artifacts_workspace).artifacts_dir
+        _publish_artifact(cli_workspace, session_id="wf_one", name="dist-packages")
+        artifacts_dir = initialized_workspace_paths(cli_workspace).artifacts_dir
         artifact_dir = artifacts_dir / "wf_one" / "dist-packages" / "1"
         (artifact_dir / "dist" / "pkg.whl").write_bytes(b"corrupted-bytes")
         dest = tmp_path / "out"
 
         result = cli_runner.invoke(
             app,
-            ["-p", str(artifacts_workspace), "artifacts", "download", "wf_one", "dist-packages", "--dest", str(dest)],
+            ["-p", str(cli_workspace), "artifacts", "download", "wf_one", "dist-packages", "--dest", str(dest)],
         )
 
         assert result.exit_code == 1
         assert not dest.exists()
 
     def test_artifacts_download_cli_format_json_emits_wire_schema(
-        self, cli_runner: CliRunner, artifacts_workspace: Path, tmp_path: Path
+        self, cli_runner: CliRunner, cli_workspace: Path, tmp_path: Path
     ) -> None:
-        _publish_artifact(artifacts_workspace, session_id="wf_one", name="dist-packages")
+        _publish_artifact(cli_workspace, session_id="wf_one", name="dist-packages")
         dest = tmp_path / "out"
 
         result = cli_runner.invoke(
             app,
             [
                 "-p",
-                str(artifacts_workspace),
+                str(cli_workspace),
                 "artifacts",
                 "download",
                 "wf_one",
@@ -115,17 +115,17 @@ class ArtifactsDownloadCliIntegrationTests:
         }
 
     def test_artifacts_download_cli_revision_option_binds_to_domain_and_extracts_that_revision(
-        self, cli_runner: CliRunner, artifacts_workspace: Path, tmp_path: Path
+        self, cli_runner: CliRunner, cli_workspace: Path, tmp_path: Path
     ) -> None:
-        _publish_artifact(artifacts_workspace, session_id="wf_one", name="plan", content=b"v1")
-        _publish_artifact(artifacts_workspace, session_id="wf_one", name="plan", content=b"v2")
+        _publish_artifact(cli_workspace, session_id="wf_one", name="plan", content=b"v1")
+        _publish_artifact(cli_workspace, session_id="wf_one", name="plan", content=b"v2")
         dest = tmp_path / "out"
 
         result = cli_runner.invoke(
             app,
             [
                 "-p",
-                str(artifacts_workspace),
+                str(cli_workspace),
                 "artifacts",
                 "download",
                 "wf_one",
@@ -141,15 +141,15 @@ class ArtifactsDownloadCliIntegrationTests:
         assert (dest / "dist" / "pkg.whl").read_bytes() == b"v1"
 
     def test_artifacts_download_cli_unknown_revision_exits_one(
-        self, cli_runner: CliRunner, artifacts_workspace: Path, tmp_path: Path
+        self, cli_runner: CliRunner, cli_workspace: Path, tmp_path: Path
     ) -> None:
-        _publish_artifact(artifacts_workspace, session_id="wf_one", name="plan")
+        _publish_artifact(cli_workspace, session_id="wf_one", name="plan")
 
         result = cli_runner.invoke(
             app,
             [
                 "-p",
-                str(artifacts_workspace),
+                str(cli_workspace),
                 "artifacts",
                 "download",
                 "wf_one",
@@ -165,16 +165,16 @@ class ArtifactsDownloadCliIntegrationTests:
         assert "Artifact 'plan' revision 9 not found for session 'wf_one'" in result.stdout
 
     def test_artifacts_download_cli_revision_zero_is_rejected_by_option_validation(
-        self, cli_runner: CliRunner, artifacts_workspace: Path, tmp_path: Path
+        self, cli_runner: CliRunner, cli_workspace: Path, tmp_path: Path
     ) -> None:
-        _publish_artifact(artifacts_workspace, session_id="wf_one", name="plan")
+        _publish_artifact(cli_workspace, session_id="wf_one", name="plan")
         dest = tmp_path / "out"
 
         result = cli_runner.invoke(
             app,
             [
                 "-p",
-                str(artifacts_workspace),
+                str(cli_workspace),
                 "artifacts",
                 "download",
                 "wf_one",

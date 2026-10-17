@@ -10,29 +10,15 @@ from typer.testing import CliRunner
 
 from dovo.cli import app
 from dovo.common.filesystem import Filesystem
-from dovo.common.filesystem.models import WorkspacePaths
 from dovo.core.db import DovoDb, SessionStatus
-from tests.harness.workspace_paths import initialized_workspace_paths
-
-
-def _paths_for(root: Path) -> WorkspacePaths:
-    """Resolve the WorkspacePaths snapshot for root, reflecting its current project.json."""
-    return initialized_workspace_paths(root)
-
-
-def _db_for(workspace: Path) -> DovoDb:
-    """Construct a DovoDb bound to workspace's resolved database file and project id."""
-    paths = _paths_for(workspace)
-    return DovoDb(database_file=paths.database_file, project_id=paths.project_id)
+from tests.harness.workspace_paths import initialized_workspace_db, initialized_workspace_paths
 
 
 class SessionListCliIntegrationTests:
     """Typer runner integration tests for dovo session / dovo session list."""
 
-    def test_session_cli_bare_lists_recent_runs_exits_zero(
-        self, cli_runner: CliRunner, session_workspace: Path
-    ) -> None:
-        db = _db_for(session_workspace)
+    def test_session_cli_bare_lists_recent_runs_exits_zero(self, cli_runner: CliRunner, cli_workspace: Path) -> None:
+        db = initialized_workspace_db(cli_workspace)
         db.sessions.create(
             session_id="session-completed",
             blueprint_name="task-a",
@@ -43,16 +29,14 @@ class SessionListCliIntegrationTests:
             session_id="session-failed", blueprint_name="task-b", blueprint_key="task-b", status=SessionStatus.FAILED
         )
 
-        result = cli_runner.invoke(app, ["-p", str(session_workspace), "session"])
+        result = cli_runner.invoke(app, ["-p", str(cli_workspace), "session"])
 
         assert result.exit_code == 0
         assert "session-completed" in result.stdout
         assert "session-failed" in result.stdout
 
-    def test_session_list_cli_json_emits_literal_wire_payload(
-        self, cli_runner: CliRunner, session_workspace: Path
-    ) -> None:
-        db = _db_for(session_workspace)
+    def test_session_list_cli_json_emits_literal_wire_payload(self, cli_runner: CliRunner, cli_workspace: Path) -> None:
+        db = initialized_workspace_db(cli_workspace)
         db.sessions.create(
             session_id="session-completed",
             blueprint_name="task-a",
@@ -63,7 +47,7 @@ class SessionListCliIntegrationTests:
             session_id="session-failed", blueprint_name="task-b", blueprint_key="task-b", status=SessionStatus.FAILED
         )
 
-        result = cli_runner.invoke(app, ["-p", str(session_workspace), "session", "list", "--format", "json"])
+        result = cli_runner.invoke(app, ["-p", str(cli_workspace), "session", "list", "--format", "json"])
 
         assert result.exit_code == 0
         data = json.loads(result.stdout)
@@ -104,8 +88,8 @@ class SessionListCliIntegrationTests:
             "fixes": [],
         }
 
-    def test_bare_session_and_ls_alias_equal_session_list(self, cli_runner: CliRunner, session_workspace: Path) -> None:
-        db = _db_for(session_workspace)
+    def test_bare_session_and_ls_alias_equal_session_list(self, cli_runner: CliRunner, cli_workspace: Path) -> None:
+        db = initialized_workspace_db(cli_workspace)
         db.sessions.create(
             session_id="session-one", blueprint_name="task-a", blueprint_key="task-a", status=SessionStatus.COMPLETED
         )
@@ -113,19 +97,17 @@ class SessionListCliIntegrationTests:
             session_id="session-two", blueprint_name="task-b", blueprint_key="task-b", status=SessionStatus.COMPLETED
         )
 
-        listed = cli_runner.invoke(app, ["-p", str(session_workspace), "session", "list"])
-        bare = cli_runner.invoke(app, ["-p", str(session_workspace), "session"])
-        aliased = cli_runner.invoke(app, ["-p", str(session_workspace), "session", "ls"])
+        listed = cli_runner.invoke(app, ["-p", str(cli_workspace), "session", "list"])
+        bare = cli_runner.invoke(app, ["-p", str(cli_workspace), "session"])
+        aliased = cli_runner.invoke(app, ["-p", str(cli_workspace), "session", "ls"])
 
         assert (listed.exit_code, bare.exit_code, aliased.exit_code) == (0, 0, 0)
         assert "session-two" in listed.stdout
         assert bare.stdout == listed.stdout
         assert aliased.stdout == listed.stdout
 
-    def test_bare_session_forwards_limit_status_and_format(
-        self, cli_runner: CliRunner, session_workspace: Path
-    ) -> None:
-        db = _db_for(session_workspace)
+    def test_bare_session_forwards_limit_status_and_format(self, cli_runner: CliRunner, cli_workspace: Path) -> None:
+        db = initialized_workspace_db(cli_workspace)
         db.sessions.create(
             session_id="failed-old", blueprint_name="task-a", blueprint_key="task-a", status=SessionStatus.FAILED
         )
@@ -137,11 +119,11 @@ class SessionListCliIntegrationTests:
         )
 
         bare = cli_runner.invoke(
-            app, ["-p", str(session_workspace), "session", "--status", "failed", "--limit", "1", "--format", "json"]
+            app, ["-p", str(cli_workspace), "session", "--status", "failed", "--limit", "1", "--format", "json"]
         )
         listed = cli_runner.invoke(
             app,
-            ["-p", str(session_workspace), "session", "list", "--status", "failed", "--limit", "1", "--format", "json"],
+            ["-p", str(cli_workspace), "session", "list", "--status", "failed", "--limit", "1", "--format", "json"],
         )
 
         assert bare.exit_code == 0
@@ -160,13 +142,13 @@ class SessionListCliIntegrationTests:
     def test_session_list_masks_name_listed_in_config(
         self,
         cli_runner: CliRunner,
-        session_workspace: Path,
+        cli_workspace: Path,
         monkeypatch: pytest.MonkeyPatch,
         names: list[str],
         expected_text: str,
     ) -> None:
         monkeypatch.setenv("DB_PIN", "1234")
-        paths = _paths_for(session_workspace)
+        paths = initialized_workspace_paths(cli_workspace)
         db = DovoDb(database_file=paths.database_file, project_id=paths.project_id)
         db.sessions.create(
             session_id="session-pin", blueprint_name="task-a", blueprint_key="task-a", status=SessionStatus.COMPLETED
@@ -176,7 +158,7 @@ class SessionListCliIntegrationTests:
         config["environment"] = {"sensitive_variables": names}
         Filesystem.atomic_write_json(paths.config_file, config)
 
-        result = cli_runner.invoke(app, ["-p", str(session_workspace), "session", "list", "--format", "json"])
+        result = cli_runner.invoke(app, ["-p", str(cli_workspace), "session", "list", "--format", "json"])
 
         assert result.exit_code == 0
         sessions = json.loads(result.stdout)["payload"]["sessions"]

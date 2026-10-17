@@ -11,7 +11,7 @@ from dovo.core.artifacts.store import ArtifactStore
 from dovo.core.catalog.definitions import InteractionSpec
 from dovo.core.interaction import InteractionResolveStatus
 from dovo.core.interaction.services.resolve import resolve_request
-from tests.core.interaction.conftest import PublishArtifact
+from tests.conftest import PublishArtifact
 
 _NO_SECRETS = SecretRedactor([])
 _FINDINGS_FROM = {

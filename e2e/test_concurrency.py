@@ -21,12 +21,7 @@ class AdvisoryLockingCliTests:
         run_dovo: DovoRunner,
         initialized_project: Path,
     ) -> None:
-        """Scenario: An external process holding workspace lock causes concurrent invocation to emit lock wait feedback and exit 1 upon timeout.
-
-        Given an initialized workspace with an external process holding .dovo/workspace.lock
-        When a concurrent mutating dovo command is invoked
-        Then lock waiting feedback is emitted and the command exits with code 1 upon timeout
-        """
+        """A mutating command blocked by an externally held workspace.lock reports the wait, then times out."""
         lock_file = initialized_project / ".dovo" / "workspace.lock"
         file_descriptor = os.open(lock_file, os.O_CREAT | os.O_RDWR)
         fcntl.flock(file_descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
