@@ -17,16 +17,8 @@ from tests.harness.formatter import (
 _CONTINUE_OPTION = PromptOption(key="c", label="Continue", decision="continue")
 _ABORT_OPTION = PromptOption(key="a", label="Abort", decision="abort")
 
-WITH_DIAGNOSTIC = FormatterCase(
+WITH_DIAGNOSTIC = FormatterCase.identity(
     data=PromptEvent(
-        prompt_type="step_failure",
-        step_id="step-1",
-        title="Action Needed",
-        diagnostic="Step timed out",
-        options=[_CONTINUE_OPTION],
-        default="c",
-    ),
-    view=PromptEvent(
         prompt_type="step_failure",
         step_id="step-1",
         title="Action Needed",
@@ -37,15 +29,8 @@ WITH_DIAGNOSTIC = FormatterCase(
     render_expectations=["Action Needed", "Step timed out"],
 )
 
-WITHOUT_DIAGNOSTIC = FormatterCase(
+WITHOUT_DIAGNOSTIC = FormatterCase.identity(
     data=PromptEvent(
-        prompt_type="step_failure",
-        step_id="step-2",
-        title="Blueprint Prompt",
-        diagnostic=None,
-        options=[_ABORT_OPTION],
-    ),
-    view=PromptEvent(
         prompt_type="step_failure",
         step_id="step-2",
         title="Blueprint Prompt",
@@ -75,9 +60,8 @@ _INTERACTION_FULL = PromptEvent(
     ],
     comment=PromptEventComment(policy="optional", message="Instructions for the agent"),
 )
-INTERACTION_FULL = FormatterCase(
+INTERACTION_FULL = FormatterCase.identity(
     data=_INTERACTION_FULL,
-    view=_INTERACTION_FULL,
     render_expectations=[
         "approve",
         "Approve this plan?",
@@ -93,9 +77,7 @@ INTERACTION_FULL = FormatterCase(
 _INTERACTION_SPARSE = PromptEvent(
     prompt_type="interaction", step_id="why", title="Why?", default=None, mode="text", message="Why?", options=[]
 )
-INTERACTION_SPARSE = FormatterCase(
-    data=_INTERACTION_SPARSE, view=_INTERACTION_SPARSE, render_expectations=["why", "Why?"]
-)
+INTERACTION_SPARSE = FormatterCase.identity(data=_INTERACTION_SPARSE, render_expectations=["why", "Why?"])
 
 _INTERACTION_MULTISELECT = PromptEvent(
     prompt_type="interaction",
@@ -115,9 +97,8 @@ _INTERACTION_MULTISELECT = PromptEvent(
         )
     ],
 )
-INTERACTION_MULTISELECT = FormatterCase(
+INTERACTION_MULTISELECT = FormatterCase.identity(
     data=_INTERACTION_MULTISELECT,
-    view=_INTERACTION_MULTISELECT,
     render_expectations=["triage", "B1", "Missing validation"],
 )
 

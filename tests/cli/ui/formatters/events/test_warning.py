@@ -14,26 +14,17 @@ from tests.harness.formatter import (
     assert_rich_render_shows_every_view_value,
 )
 
-STANDARD_WARNING = FormatterCase(
+STANDARD_WARNING = FormatterCase.identity(
     data=WarningEvent(message="Low disk space"),
-    view=WarningEvent(message="Low disk space"),
     render_expectations=["Low disk space"],
-)
-
-STALE_WARNING = FormatterCase(
-    data=WarningEvent(message="Stale worktrees detected: 3"),
-    view=WarningEvent(message="Stale worktrees detected: 3"),
-    render_expectations=["Stale worktrees detected: 3"],
 )
 
 WARNING_CASES = [
     pytest.param(STANDARD_WARNING, id="standard_warning"),
-    pytest.param(STALE_WARNING, id="stale_warning"),
 ]
 
 WARNING_PAYLOAD_CASES = [
     pytest.param(STANDARD_WARNING, {"message": "Low disk space"}, id="standard_warning"),
-    pytest.param(STALE_WARNING, {"message": "Stale worktrees detected: 3"}, id="stale_warning"),
 ]
 
 

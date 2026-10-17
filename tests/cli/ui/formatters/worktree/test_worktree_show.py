@@ -29,13 +29,8 @@ _RECORD = WorktreeRecord(
     updated_at="2026-08-31T20:00:00Z",
 )
 
-FOUND_ACTIVE = FormatterCase(
+FOUND_ACTIVE = FormatterCase.identity(
     data=WorktreeShowResult(
-        status=WorktreeShowStatus.OK,
-        worktree=_RECORD,
-        disk_present=True,
-    ),
-    view=WorktreeShowResult(
         status=WorktreeShowStatus.OK,
         worktree=_RECORD,
         disk_present=True,
@@ -43,14 +38,8 @@ FOUND_ACTIVE = FormatterCase(
     render_expectations=[_RECORD.id, "test-worktree", _RECORD.branch_name, _RECORD.base_commit],
 )
 
-RECONCILED_MISSING_DISK = FormatterCase(
+RECONCILED_MISSING_DISK = FormatterCase.identity(
     data=WorktreeShowResult(
-        status=WorktreeShowStatus.OK,
-        worktree=_RECORD,
-        disk_present=False,
-        reconciled=True,
-    ),
-    view=WorktreeShowResult(
         status=WorktreeShowStatus.OK,
         worktree=_RECORD,
         disk_present=False,
@@ -59,13 +48,8 @@ RECONCILED_MISSING_DISK = FormatterCase(
     render_expectations=[_RECORD.id, "test-worktree", _RECORD.branch_name, _RECORD.base_commit],
 )
 
-NOT_FOUND = FormatterCase(
+NOT_FOUND = FormatterCase.identity(
     data=WorktreeShowResult(
-        status=WorktreeShowStatus.NOT_FOUND,
-        errors=["Worktree 'dovo_missing' not found."],
-        fixes=["Run `dovo worktree list` to see known worktrees"],
-    ),
-    view=WorktreeShowResult(
         status=WorktreeShowStatus.NOT_FOUND,
         errors=["Worktree 'dovo_missing' not found."],
         fixes=["Run `dovo worktree list` to see known worktrees"],

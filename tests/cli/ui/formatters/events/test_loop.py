@@ -15,16 +15,8 @@ from tests.harness.formatter import (
     render_rich,
 )
 
-LOOP_START = FormatterCase(
+LOOP_START = FormatterCase.identity(
     data=LoopLifecycleEvent(
-        loop_id="loop_1",
-        action="start",
-        iteration=None,
-        max_iterations=5,
-        status=None,
-        message=None,
-    ),
-    view=LoopLifecycleEvent(
         loop_id="loop_1",
         action="start",
         iteration=None,
@@ -35,16 +27,8 @@ LOOP_START = FormatterCase(
     render_expectations=["loop_1"],
 )
 
-ITERATION_START = FormatterCase(
+ITERATION_START = FormatterCase.identity(
     data=LoopLifecycleEvent(
-        loop_id="loop_1",
-        action="iteration_start",
-        iteration=2,
-        max_iterations=5,
-        status=None,
-        message=None,
-    ),
-    view=LoopLifecycleEvent(
         loop_id="loop_1",
         action="iteration_start",
         iteration=2,
@@ -55,20 +39,8 @@ ITERATION_START = FormatterCase(
     render_expectations=["loop_1"],
 )
 
-CONDITIONS_EVALUATED = FormatterCase(
+CONDITIONS_EVALUATED = FormatterCase.identity(
     data=LoopLifecycleEvent(
-        loop_id="loop_1",
-        action="conditions_evaluated",
-        iteration=None,
-        max_iterations=None,
-        status=None,
-        message="Evaluated 1 condition(s)",
-        conditions=[
-            LoopConditionView(expression="steps.run-tests.exit_code == 0", passed=False, detail="FALSE (was 127)"),
-        ],
-        next_iteration=2,
-    ),
-    view=LoopLifecycleEvent(
         loop_id="loop_1",
         action="conditions_evaluated",
         iteration=None,
@@ -83,16 +55,8 @@ CONDITIONS_EVALUATED = FormatterCase(
     render_expectations=["loop_1", "steps.run-tests.exit_code == 0", "FALSE (was 127)"],
 )
 
-LOOP_DONE = FormatterCase(
+LOOP_DONE = FormatterCase.identity(
     data=LoopLifecycleEvent(
-        loop_id="loop_1",
-        action="done",
-        iteration=3,
-        max_iterations=5,
-        status="completed",
-        message=None,
-    ),
-    view=LoopLifecycleEvent(
         loop_id="loop_1",
         action="done",
         iteration=3,

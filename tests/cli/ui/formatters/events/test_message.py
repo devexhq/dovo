@@ -14,15 +14,13 @@ from tests.harness.formatter import (
     assert_rich_render_shows_every_view_value,
 )
 
-STYLED_MESSAGE = FormatterCase(
+STYLED_MESSAGE = FormatterCase.identity(
     data=MessageEvent(message="Operation finished", style="bold"),
-    view=MessageEvent(message="Operation finished", style="bold"),
     render_expectations=["Operation finished"],
 )
 
-PLAIN_MESSAGE = FormatterCase(
+PLAIN_MESSAGE = FormatterCase.identity(
     data=MessageEvent(message="Running task 'build'...", style=None),
-    view=MessageEvent(message="Running task 'build'...", style=None),
     render_expectations=["Running task 'build'..."],
 )
 

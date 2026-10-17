@@ -26,27 +26,18 @@ _RECORD = CatalogRecord(
     tier=CatalogTier.REPO,
 )
 
-DELETED = FormatterCase(
+DELETED = FormatterCase.identity(
     data=CatalogDeleteResult(item=_RECORD, deleted=True, cancelled=False),
-    view=CatalogDeleteResult(item=_RECORD, deleted=True, cancelled=False),
     render_expectations=[_RECORD.sha, str(_RECORD.path)],
 )
 
-CANCELLED = FormatterCase(
+CANCELLED = FormatterCase.identity(
     data=CatalogDeleteResult(item=None, deleted=False, cancelled=True, errors=["Deletion cancelled."]),
-    view=CatalogDeleteResult(item=None, deleted=False, cancelled=True, errors=["Deletion cancelled."]),
     render_expectations=["Deletion cancelled."],
 )
 
-DELETE_ERROR = FormatterCase(
+DELETE_ERROR = FormatterCase.identity(
     data=CatalogDeleteResult(
-        item=None,
-        deleted=False,
-        cancelled=False,
-        errors=["Catalog blueprint 'missing' not found."],
-        fixes=["Run `dovo blueprint list` to inspect available items"],
-    ),
-    view=CatalogDeleteResult(
         item=None,
         deleted=False,
         cancelled=False,

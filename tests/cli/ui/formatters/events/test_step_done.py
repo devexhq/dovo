@@ -14,17 +14,8 @@ from tests.harness.formatter import (
     assert_rich_render_shows_every_view_value,
 )
 
-STEP_SUCCESS = FormatterCase(
+STEP_SUCCESS = FormatterCase.identity(
     data=StepDoneEvent(
-        idx=1,
-        total=3,
-        step_id="step-1",
-        ok=True,
-        exit_code=0,
-        duration_seconds=1.5,
-        error_message=None,
-    ),
-    view=StepDoneEvent(
         idx=1,
         total=3,
         step_id="step-1",
@@ -36,17 +27,8 @@ STEP_SUCCESS = FormatterCase(
     render_expectations=["step-1", "1", "3"],
 )
 
-STEP_FAILURE = FormatterCase(
+STEP_FAILURE = FormatterCase.identity(
     data=StepDoneEvent(
-        idx=2,
-        total=3,
-        step_id="step-2",
-        ok=False,
-        exit_code=1,
-        duration_seconds=0.8,
-        error_message="Process crashed",
-    ),
-    view=StepDoneEvent(
         idx=2,
         total=3,
         step_id="step-2",

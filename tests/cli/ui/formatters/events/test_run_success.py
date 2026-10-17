@@ -15,15 +15,13 @@ from tests.harness.formatter import (
     assert_rich_render_shows_every_view_value,
 )
 
-FIRST_COMPLETED = FormatterCase(
+FIRST_COMPLETED = FormatterCase.identity(
     data=RunSuccessEvent(session_id="sess_123", blueprint_name="my_blueprint", status=SessionStatus.COMPLETED),
-    view=RunSuccessEvent(session_id="sess_123", blueprint_name="my_blueprint", status=SessionStatus.COMPLETED),
     render_expectations=["my_blueprint", "sess_123", "completed"],
 )
 
-SECOND_COMPLETED = FormatterCase(
+SECOND_COMPLETED = FormatterCase.identity(
     data=RunSuccessEvent(session_id="sess_456", blueprint_name="deploy-flow", status=SessionStatus.COMPLETED),
-    view=RunSuccessEvent(session_id="sess_456", blueprint_name="deploy-flow", status=SessionStatus.COMPLETED),
     render_expectations=["deploy-flow", "sess_456", "completed"],
 )
 

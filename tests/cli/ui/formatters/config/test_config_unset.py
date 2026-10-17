@@ -17,15 +17,8 @@ from tests.harness.formatter import (
 
 _CONFIG_PATH = Path("/workspace/.dovo/config.json")
 
-OK_EXISTED = FormatterCase(
+OK_EXISTED = FormatterCase.identity(
     data=ConfigUnsetResult(
-        status=ConfigUnsetStatus.OK,
-        config_path=_CONFIG_PATH,
-        key="agents.copilot.model",
-        existed=True,
-        previous_value="qwen2.5-coder",
-    ),
-    view=ConfigUnsetResult(
         status=ConfigUnsetStatus.OK,
         config_path=_CONFIG_PATH,
         key="agents.copilot.model",
@@ -35,15 +28,8 @@ OK_EXISTED = FormatterCase(
     render_expectations=["agents.copilot.model"],
 )
 
-OK_NOT_EXISTED = FormatterCase(
+OK_NOT_EXISTED = FormatterCase.identity(
     data=ConfigUnsetResult(
-        status=ConfigUnsetStatus.OK,
-        config_path=_CONFIG_PATH,
-        key="telemetry.nonexistent",
-        existed=False,
-        previous_value=None,
-    ),
-    view=ConfigUnsetResult(
         status=ConfigUnsetStatus.OK,
         config_path=_CONFIG_PATH,
         key="telemetry.nonexistent",
@@ -53,20 +39,8 @@ OK_NOT_EXISTED = FormatterCase(
     render_expectations=["telemetry.nonexistent"],
 )
 
-SCHEMA_INVALID = FormatterCase(
+SCHEMA_INVALID = FormatterCase.identity(
     data=ConfigUnsetResult(
-        status=ConfigUnsetStatus.SCHEMA_INVALID,
-        config_path=_CONFIG_PATH,
-        key="project",
-        existed=True,
-        previous_value={"name": "demo-workspace", "initialized_at": None},
-        errors=["Config schema validation failed (CONFIG_SCHEMA_INVALID):\n- (root): 'project' is a required property"],
-        fixes=[
-            "Run `dovo config validate` for details",
-            "Or `dovo init --repair` to insert missing keys without overwriting values",
-        ],
-    ),
-    view=ConfigUnsetResult(
         status=ConfigUnsetStatus.SCHEMA_INVALID,
         config_path=_CONFIG_PATH,
         key="project",

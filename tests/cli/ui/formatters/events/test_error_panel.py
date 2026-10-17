@@ -14,15 +14,13 @@ from tests.harness.formatter import (
     assert_rich_render_shows_every_view_value,
 )
 
-ERROR_PANEL_DEFAULT_BORDER = FormatterCase(
+ERROR_PANEL_DEFAULT_BORDER = FormatterCase.identity(
     data=ErrorPanelEvent(title="Custom Error", message="Something broke", border_style="red"),
-    view=ErrorPanelEvent(title="Custom Error", message="Something broke", border_style="red"),
     render_expectations=["Custom Error", "Something broke"],
 )
 
-ERROR_PANEL_CUSTOM_BORDER = FormatterCase(
+ERROR_PANEL_CUSTOM_BORDER = FormatterCase.identity(
     data=ErrorPanelEvent(title="Fatal Failure", message="Git executable missing", border_style="bold red"),
-    view=ErrorPanelEvent(title="Fatal Failure", message="Git executable missing", border_style="bold red"),
     render_expectations=["Fatal Failure", "Git executable missing"],
 )
 
