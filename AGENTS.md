@@ -62,10 +62,10 @@ ID, with the `path:line` that breaks it.
   *Why:* those files are shared, committed or uploaded.
 - **R8. Never edit, rename or delete a released migration; every new one is
   reversible.** A revision in a `v*` tag is fixed forward with a new revision.
-  Each revision stays dialect-neutral (`op.batch_alter_table`, no SQLite-only
-  `PRAGMA`) and implements `upgrade()` and `downgrade()` with tests for both in
-  `tests/core/db/test_migrations.py`. *Why:* users' databases are stamped with
-  released revisions.
+  Each revision file stays dialect-neutral (`op.batch_alter_table`, no
+  SQLite-only `PRAGMA` in revision files) and implements `upgrade()` and
+  `downgrade()` with tests for both in `tests/core/db/test_migrations.py`.
+  *Why:* users' databases are stamped with released revisions.
 
 ### Compatibility and change shape
 

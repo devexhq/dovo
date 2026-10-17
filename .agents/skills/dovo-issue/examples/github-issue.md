@@ -149,6 +149,4 @@ Fix:
 ## Definition of done
 
 - After `dovo init`, `load_config` succeeds on the generated file
-- Tests cover every `ConfigLoadStatus` value
-- In-tree callers use the new load API; superseded dual load paths are removed
-- No `dovo config` CLI subcommand is added in this change
+- Zero references to superseded config load helpers remain in `src/` or `tests/`
