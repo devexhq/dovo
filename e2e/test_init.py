@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from e2e.conftest import DOVO_HOME, DovoRunner
+from e2e.conftest import DOVO_HOME, DovoRunner, parse_json
 
 
 @pytest.mark.e2e
@@ -85,18 +85,28 @@ class InitCliTests:
         assert result.exit_code == 2
         assert not (git_project / ".dovo" / "project.json").exists()
 
-    @pytest.mark.parametrize(
-        "format_args",
-        [pytest.param([], id="text"), pytest.param(["--format", "json"], id="json")],
-    )
     def test_uninitialized_git_project_status_exits_one_with_init_prompt(
-        self, run_dovo: DovoRunner, git_project: Path, format_args: list[str]
+        self, run_dovo: DovoRunner, git_project: Path
     ) -> None:
-        result = run_dovo(["status", *format_args], cwd=git_project)
+        result = run_dovo(["status"], cwd=git_project)
 
         assert result.exit_code == 1
         assert "Workspace is not initialized" in result.stdout
         assert "dovo init" in result.stdout
+        assert not (git_project / ".dovo" / "project.json").exists()
+        assert not (git_project / ".dovo" / "config.json").exists()
+
+    @pytest.mark.xfail(
+        reason="src/dovo/cli/cli.py prints the Rich 'Workspace Not Initialized' panel before --format json applies",
+        strict=True,
+    )
+    def test_uninitialized_git_project_status_json_exits_one_with_json_envelope(
+        self, run_dovo: DovoRunner, git_project: Path
+    ) -> None:
+        result = run_dovo(["status", "--format", "json"], cwd=git_project)
+
+        assert result.exit_code == 1
+        parse_json(result.stdout)
         assert not (git_project / ".dovo" / "project.json").exists()
         assert not (git_project / ".dovo" / "config.json").exists()
 

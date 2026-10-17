@@ -17,6 +17,7 @@ import tomllib
 from collections.abc import Generator
 from dataclasses import dataclass
 from pathlib import Path
+from typing import cast
 
 import pytest
 
@@ -486,31 +487,23 @@ def write_blueprint(project: Path, name: str, content: str, *, runner: DovoRunne
 
 
 def parse_json(stdout: str) -> dict[str, object]:
-    """Extract and parse first JSON payload from command output."""
-    for line in stdout.splitlines():
-        trimmed = line.strip()
-        if trimmed.startswith("{") and trimmed.endswith("}"):
-            try:
-                data = json.loads(trimmed)
-                if isinstance(data, dict):
-                    return data
-            except json.JSONDecodeError:
-                pass
-    return json.loads(stdout)
+    """Parse the whole of stdout as one JSON object; any surrounding text fails the test."""
+    data = json.loads(stdout)
+    if not isinstance(data, dict):
+        pytest.fail(f"Expected a JSON object on stdout, got:\n{stdout}")
+    return cast("dict[str, object]", data)
 
 
 def parse_events(stdout: str) -> list[dict[str, object]]:
-    """Parse newline-delimited JSON events from stdout."""
+    """Parse newline-delimited JSON events; every nonempty stdout line must be a JSON object."""
     events: list[dict[str, object]] = []
     for line in stdout.splitlines():
-        line = line.strip()
-        if line.startswith("{") and line.endswith("}"):
-            try:
-                data = json.loads(line)
-                if isinstance(data, dict):
-                    events.append(data)
-            except json.JSONDecodeError:
-                pass
+        if not line.strip():
+            continue
+        data = json.loads(line)
+        if not isinstance(data, dict):
+            pytest.fail(f"Expected a JSON object event line, got: {line}")
+        events.append(cast("dict[str, object]", data))
     return events
 
 
