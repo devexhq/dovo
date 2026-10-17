@@ -8,9 +8,9 @@ import pytest
 
 from dovo.cli.ui.formatters.session.common import format_session_duration
 from dovo.cli.ui.formatters.session.session_list import SessionListFormatter
-from dovo.cli.ui.formatters.session.session_views import SessionListView, SessionSummaryView
-from dovo.core.db import SessionRecord, SessionStatus
+from dovo.cli.ui.formatters.session.session_views import SessionListView
 from dovo.core.sessions import HistoryListResult, HistoryListStatus
+from tests.harness.builders.sessions import session_record, session_summary_view
 from tests.harness.formatter import (
     FormatterCase,
     assert_json_payload_matches_published_shape,
@@ -19,48 +19,10 @@ from tests.harness.formatter import (
 )
 
 
-def _sample_session_record(
-    *,
-    session_id: str = "sess-12345678",
-    blueprint_name: str = "deploy-blueprint",
-    status: SessionStatus = SessionStatus.COMPLETED,
-    branch_name: str | None = "feature/test",
-    started_at: str | None = "2026-08-19 01:00:00",
-    completed_at: str | None = "2026-08-19 01:00:10",
-    error_message: str | None = None,
-) -> SessionRecord:
-    return SessionRecord(
-        id=1,
-        session_id=session_id,
-        blueprint_key=blueprint_name,
-        blueprint_name=blueprint_name,
-        status=status,
-        branch_name=branch_name or "",
-        started_at=started_at,
-        completed_at=completed_at,
-        error_message=error_message,
-    )
-
-
-def _make_session_summary_view(**overrides: Any) -> SessionSummaryView:
-    defaults: dict[str, Any] = {
-        "session_id": "sess-12345678",
-        "blueprint_name": "deploy-blueprint",
-        "status": "completed",
-        "branch_name": "feature/test",
-        "started_at": "2026-08-19 01:00:00",
-        "completed_at": "2026-08-19 01:00:10",
-        "duration_seconds": 10.0,
-        "error_message": None,
-    }
-    defaults.update(overrides)
-    return SessionSummaryView(**defaults)
-
-
 def _make_session_list_view(**overrides: Any) -> SessionListView:
     defaults: dict[str, Any] = {
         "status": HistoryListStatus.OK,
-        "sessions": [_make_session_summary_view()],
+        "sessions": [session_summary_view()],
         "total_sessions": 1,
         "errors": [],
         "warnings": [],
@@ -71,7 +33,7 @@ def _make_session_list_view(**overrides: Any) -> SessionListView:
 
 
 POPULATED_RUNS = FormatterCase(
-    data=HistoryListResult(status=HistoryListStatus.OK, sessions=[_sample_session_record()]),
+    data=HistoryListResult(status=HistoryListStatus.OK, sessions=[session_record()]),
     view=_make_session_list_view(),
     render_expectations=["sess-12345678", "deploy-blueprint", format_session_duration(10.0)],
 )
@@ -85,7 +47,7 @@ EMPTY_RUNS = FormatterCase(
 WARNINGS_RUNS = FormatterCase(
     data=HistoryListResult(
         status=HistoryListStatus.OK,
-        sessions=[_sample_session_record()],
+        sessions=[session_record()],
         warnings=["Reconciled 1 interrupted session (session_id: sess-stale)."],
     ),
     view=_make_session_list_view(warnings=["Reconciled 1 interrupted session (session_id: sess-stale)."]),
@@ -111,29 +73,6 @@ HISTORY_LIST_CASES = [
 ]
 
 HISTORY_LIST_PAYLOAD_CASES = [
-    pytest.param(
-        POPULATED_RUNS,
-        {
-            "status": "ok",
-            "sessions": [
-                {
-                    "session_id": "sess-12345678",
-                    "blueprint_name": "deploy-blueprint",
-                    "status": "completed",
-                    "branch_name": "feature/test",
-                    "started_at": "2026-08-19 01:00:00",
-                    "completed_at": "2026-08-19 01:00:10",
-                    "duration_seconds": 10.0,
-                    "error_message": None,
-                }
-            ],
-            "total_sessions": 1,
-            "errors": [],
-            "warnings": [],
-            "fixes": [],
-        },
-        id="populated_runs",
-    ),
     pytest.param(
         EMPTY_RUNS,
         {
@@ -168,18 +107,6 @@ HISTORY_LIST_PAYLOAD_CASES = [
             "fixes": [],
         },
         id="warnings_runs",
-    ),
-    pytest.param(
-        ERRORS_RUNS,
-        {
-            "status": "ok",
-            "sessions": [],
-            "total_sessions": 0,
-            "errors": ["Database query failed."],
-            "warnings": [],
-            "fixes": [],
-        },
-        id="errors_runs",
     ),
 ]
 

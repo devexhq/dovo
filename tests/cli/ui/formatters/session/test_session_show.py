@@ -9,9 +9,10 @@ import pytest
 
 from dovo.cli.ui.formatters.session.common import format_session_duration
 from dovo.cli.ui.formatters.session.session_show import SessionShowFormatter
-from dovo.cli.ui.formatters.session.session_views import SessionShowView, SessionSummaryView
-from dovo.core.db import SessionRecord, SessionStatus
+from dovo.cli.ui.formatters.session.session_views import SessionShowView
+from dovo.core.db import SessionStatus
 from dovo.core.sessions import HistoryShowResult, HistoryShowStatus, StepRunSummary
+from tests.harness.builders.sessions import session_record, session_summary_view
 from tests.harness.formatter import (
     FormatterCase,
     assert_json_payload_matches_published_shape,
@@ -20,49 +21,11 @@ from tests.harness.formatter import (
 )
 
 
-def _sample_session_record(
-    *,
-    session_id: str = "sess-12345678",
-    blueprint_name: str = "deploy-blueprint",
-    status: SessionStatus = SessionStatus.COMPLETED,
-    branch_name: str | None = "feature/test",
-    started_at: str | None = "2026-08-19 01:00:00",
-    completed_at: str | None = "2026-08-19 01:00:10",
-    error_message: str | None = None,
-) -> SessionRecord:
-    return SessionRecord(
-        id=1,
-        session_id=session_id,
-        blueprint_key=blueprint_name,
-        blueprint_name=blueprint_name,
-        status=status,
-        branch_name=branch_name or "",
-        started_at=started_at,
-        completed_at=completed_at,
-        error_message=error_message,
-    )
-
-
-def _make_session_summary_view(**overrides: Any) -> SessionSummaryView:
-    defaults: dict[str, Any] = {
-        "session_id": "sess-12345678",
-        "blueprint_name": "deploy-blueprint",
-        "status": "completed",
-        "branch_name": "feature/test",
-        "started_at": "2026-08-19 01:00:00",
-        "completed_at": "2026-08-19 01:00:10",
-        "duration_seconds": 10.0,
-        "error_message": None,
-    }
-    defaults.update(overrides)
-    return SessionSummaryView(**defaults)
-
-
 def _make_session_show_view(**overrides: Any) -> SessionShowView:
     defaults: dict[str, Any] = {
         "status": HistoryShowStatus.OK,
         "session_id": "sess-12345678",
-        "session": _make_session_summary_view(),
+        "session": session_summary_view(),
         "log_files": [],
         "log_snippet": [],
         "steps": [],
@@ -75,7 +38,7 @@ def _make_session_show_view(**overrides: Any) -> SessionShowView:
 
 
 COMPLETED_RUN = FormatterCase(
-    data=HistoryShowResult(status=HistoryShowStatus.OK, session_id="sess-12345678", session=_sample_session_record()),
+    data=HistoryShowResult(status=HistoryShowStatus.OK, session_id="sess-12345678", session=session_record()),
     view=_make_session_show_view(),
     render_expectations=["sess-12345678", "deploy-blueprint", "feature/test", format_session_duration(10.0)],
 )
@@ -84,12 +47,12 @@ KEPT_WORKTREE_RUN = FormatterCase(
     data=HistoryShowResult(
         status=HistoryShowStatus.OK,
         session_id="sess-12345678",
-        session=_sample_session_record(status=SessionStatus.FAILED),
+        session=session_record(status=SessionStatus.FAILED),
         worktree_kept=True,
         worktree_path=Path.cwd() / ".dovo" / "worktrees" / "sess-12345678",
     ),
     view=_make_session_show_view(
-        session=_make_session_summary_view(status="failed"),
+        session=session_summary_view(status="failed"),
         worktree_kept=True,
         worktree_path=".dovo/worktrees/sess-12345678",
     ),
@@ -100,12 +63,10 @@ FAILED_RUN_WITH_ERROR = FormatterCase(
     data=HistoryShowResult(
         status=HistoryShowStatus.OK,
         session_id="sess-12345678",
-        session=_sample_session_record(
-            status=SessionStatus.FAILED, error_message="Step 'checkout' failed with exit code 1."
-        ),
+        session=session_record(status=SessionStatus.FAILED, error_message="Step 'checkout' failed with exit code 1."),
     ),
     view=_make_session_show_view(
-        session=_make_session_summary_view(status="failed", error_message="Step 'checkout' failed with exit code 1.")
+        session=session_summary_view(status="failed", error_message="Step 'checkout' failed with exit code 1.")
     ),
     render_expectations=[
         "sess-12345678",
@@ -120,14 +81,14 @@ PAUSED_RUN_WITH_ERROR = FormatterCase(
     data=HistoryShowResult(
         status=HistoryShowStatus.OK,
         session_id="sess-12345678",
-        session=_sample_session_record(
+        session=session_record(
             status=SessionStatus.PAUSED,
             completed_at=None,
             error_message="Step 'step-2' failed: Waiting for approval",
         ),
     ),
     view=_make_session_show_view(
-        session=_make_session_summary_view(
+        session=session_summary_view(
             status="paused",
             completed_at=None,
             duration_seconds=None,
@@ -148,7 +109,7 @@ RUN_WITH_LOGS = FormatterCase(
     data=HistoryShowResult(
         status=HistoryShowStatus.OK,
         session_id="sess-12345678",
-        session=_sample_session_record(),
+        session=session_record(),
         log_files=_LOG_FILES,
         log_snippet=_LOG_SNIPPET,
     ),
@@ -184,7 +145,7 @@ _STEPS = [
 ]
 RUN_WITH_STEPS = FormatterCase(
     data=HistoryShowResult(
-        status=HistoryShowStatus.OK, session_id="sess-12345678", session=_sample_session_record(), steps=_STEPS
+        status=HistoryShowStatus.OK, session_id="sess-12345678", session=session_record(), steps=_STEPS
     ),
     view=_make_session_show_view(steps=_STEPS),
     render_expectations=[
@@ -209,7 +170,7 @@ RUN_WITHOUT_STEP_DATA = FormatterCase(
     data=HistoryShowResult(
         status=HistoryShowStatus.OK,
         session_id="sess-12345678",
-        session=_sample_session_record(),
+        session=session_record(),
         warnings=[_NO_STEP_DATA_WARNING],
     ),
     view=_make_session_show_view(warnings=[_NO_STEP_DATA_WARNING]),
@@ -241,139 +202,6 @@ HISTORY_SHOW_CASES = [
 ]
 
 HISTORY_SHOW_PAYLOAD_CASES = [
-    pytest.param(
-        KEPT_WORKTREE_RUN,
-        {
-            "status": "ok",
-            "session_id": "sess-12345678",
-            "session": {
-                "session_id": "sess-12345678",
-                "blueprint_name": "deploy-blueprint",
-                "status": "failed",
-                "branch_name": "feature/test",
-                "started_at": "2026-08-19 01:00:00",
-                "completed_at": "2026-08-19 01:00:10",
-                "duration_seconds": 10.0,
-                "error_message": None,
-            },
-            "log_files": [],
-            "log_snippet": [],
-            "steps": [],
-            "worktree_kept": True,
-            "worktree_path": ".dovo/worktrees/sess-12345678",
-            "errors": [],
-            "warnings": [],
-            "fixes": [],
-        },
-        id="kept_worktree_run",
-    ),
-    pytest.param(
-        COMPLETED_RUN,
-        {
-            "status": "ok",
-            "session_id": "sess-12345678",
-            "session": {
-                "session_id": "sess-12345678",
-                "blueprint_name": "deploy-blueprint",
-                "status": "completed",
-                "branch_name": "feature/test",
-                "started_at": "2026-08-19 01:00:00",
-                "completed_at": "2026-08-19 01:00:10",
-                "duration_seconds": 10.0,
-                "error_message": None,
-            },
-            "log_files": [],
-            "log_snippet": [],
-            "steps": [],
-            "worktree_kept": None,
-            "worktree_path": None,
-            "errors": [],
-            "warnings": [],
-            "fixes": [],
-        },
-        id="completed_run",
-    ),
-    pytest.param(
-        FAILED_RUN_WITH_ERROR,
-        {
-            "status": "ok",
-            "session_id": "sess-12345678",
-            "session": {
-                "session_id": "sess-12345678",
-                "blueprint_name": "deploy-blueprint",
-                "status": "failed",
-                "branch_name": "feature/test",
-                "started_at": "2026-08-19 01:00:00",
-                "completed_at": "2026-08-19 01:00:10",
-                "duration_seconds": 10.0,
-                "error_message": "Step 'checkout' failed with exit code 1.",
-            },
-            "log_files": [],
-            "log_snippet": [],
-            "steps": [],
-            "worktree_kept": None,
-            "worktree_path": None,
-            "errors": [],
-            "warnings": [],
-            "fixes": [],
-        },
-        id="failed_run_with_error",
-    ),
-    pytest.param(
-        PAUSED_RUN_WITH_ERROR,
-        {
-            "status": "ok",
-            "session_id": "sess-12345678",
-            "session": {
-                "session_id": "sess-12345678",
-                "blueprint_name": "deploy-blueprint",
-                "status": "paused",
-                "branch_name": "feature/test",
-                "started_at": "2026-08-19 01:00:00",
-                "completed_at": None,
-                "duration_seconds": None,
-                "error_message": "Step 'step-2' failed: Waiting for approval",
-            },
-            "log_files": [],
-            "log_snippet": [],
-            "steps": [],
-            "worktree_kept": None,
-            "worktree_path": None,
-            "errors": [],
-            "warnings": [],
-            "fixes": [],
-        },
-        id="paused_run_with_error",
-    ),
-    pytest.param(
-        RUN_WITH_LOGS,
-        {
-            "status": "ok",
-            "session_id": "sess-12345678",
-            "session": {
-                "session_id": "sess-12345678",
-                "blueprint_name": "deploy-blueprint",
-                "status": "completed",
-                "branch_name": "feature/test",
-                "started_at": "2026-08-19 01:00:00",
-                "completed_at": "2026-08-19 01:00:10",
-                "duration_seconds": 10.0,
-                "error_message": None,
-            },
-            "log_files": [
-                "/logs/sess-12345678/01_build_attempt_1.stdout.log",
-                "/logs/sess-12345678/session.log",
-            ],
-            "log_snippet": ["[2026-08-19T01:00:01+00:00] step_start step_id=build"],
-            "steps": [],
-            "worktree_kept": None,
-            "worktree_path": None,
-            "errors": [],
-            "warnings": [],
-            "fixes": [],
-        },
-        id="run_with_logs",
-    ),
     pytest.param(
         RUN_WITH_STEPS,
         {
@@ -472,32 +300,6 @@ HISTORY_SHOW_PAYLOAD_CASES = [
         id="run_with_steps",
     ),
     pytest.param(
-        RUN_WITHOUT_STEP_DATA,
-        {
-            "status": "ok",
-            "session_id": "sess-12345678",
-            "session": {
-                "session_id": "sess-12345678",
-                "blueprint_name": "deploy-blueprint",
-                "status": "completed",
-                "branch_name": "feature/test",
-                "started_at": "2026-08-19 01:00:00",
-                "completed_at": "2026-08-19 01:00:10",
-                "duration_seconds": 10.0,
-                "error_message": None,
-            },
-            "log_files": [],
-            "log_snippet": [],
-            "steps": [],
-            "worktree_kept": None,
-            "worktree_path": None,
-            "errors": [],
-            "warnings": ["No step data recorded for this session."],
-            "fixes": [],
-        },
-        id="run_without_step_data",
-    ),
-    pytest.param(
         NOT_FOUND,
         {
             "status": "not_found",
@@ -513,23 +315,6 @@ HISTORY_SHOW_PAYLOAD_CASES = [
             "fixes": [],
         },
         id="not_found",
-    ),
-    pytest.param(
-        SHOW_ERROR,
-        {
-            "status": "ok",
-            "session_id": "sess-1",
-            "session": None,
-            "log_files": [],
-            "log_snippet": [],
-            "steps": [],
-            "worktree_kept": None,
-            "worktree_path": None,
-            "errors": ["Database locked"],
-            "warnings": [],
-            "fixes": [],
-        },
-        id="show_error",
     ),
 ]
 

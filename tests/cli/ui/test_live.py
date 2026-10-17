@@ -4,9 +4,7 @@ from __future__ import annotations
 
 import io
 
-from rich.console import Console, Group
-from rich.panel import Panel
-from rich.table import Table
+from rich.console import Console
 
 from dovo.cli.ui.dispatcher import UiDispatcher
 from dovo.cli.ui.events import LoopLifecycleEvent, StepDoneEvent, StepStartEvent
@@ -17,6 +15,11 @@ def _manager() -> LiveDisplayManager:
     """Build a LiveDisplayManager with no active Live session, for state-only testing."""
     console = Console(force_terminal=False, color_system=None, width=100, file=io.StringIO())
     return LiveDisplayManager(console)
+
+
+def _terminal_console(output: io.StringIO) -> Console:
+    """Build an interactive console whose Live frames are captured in output."""
+    return Console(force_terminal=True, color_system=None, width=100, file=output)
 
 
 class LiveDisplayManagerLoopTests:
@@ -37,35 +40,40 @@ class LiveDisplayManagerLoopTests:
         assert manager.steps == []
 
     def test_loop_panel_included_in_single_renderable(self) -> None:
-        manager = _manager()
+        output = io.StringIO()
+        manager = LiveDisplayManager(_terminal_console(output))
+        manager.start()
 
         manager.handle_loop_lifecycle(LoopLifecycleEvent(loop_id="dev-cycle", action="start", max_iterations=5))
-        renderable = manager._build_renderable()
+        manager.stop()
 
-        assert isinstance(renderable, Group)
-        renderable_types = [type(item) for item in renderable.renderables]
-        assert Panel in renderable_types
-        assert Table in renderable_types
+        rendered = output.getvalue()
+        assert "dev-cycle" in rendered
+        assert "iterations" in rendered
+        assert "Blueprint Execution Progress" in rendered
 
     def test_no_loop_active_omits_panel(self) -> None:
-        manager = _manager()
+        output = io.StringIO()
+        manager = LiveDisplayManager(_terminal_console(output))
+        manager.start()
+        manager.stop()
 
-        renderable = manager._build_renderable()
-
-        assert isinstance(renderable, Table)
+        rendered = output.getvalue()
+        assert "Blueprint Execution Progress" in rendered
+        assert "iterations" not in rendered
 
     def test_dispatch_live_routes_loop_lifecycle_events(self) -> None:
-        console = Console(force_terminal=True, color_system=None, width=100, file=io.StringIO())
-        dispatcher = UiDispatcher(console=console)
+        output = io.StringIO()
+        dispatcher = UiDispatcher(console=_terminal_console(output))
         dispatcher.start_live()
         try:
             dispatcher.dispatch(LoopLifecycleEvent(loop_id="dev-cycle", action="start", max_iterations=5))
-
-            assert dispatcher._live_display is not None
-            assert dispatcher._live_display._loop_id == "dev-cycle"
-            assert dispatcher._live_display._loop_max_iterations == 5
         finally:
             dispatcher.stop_live()
+
+        rendered = output.getvalue()
+        assert "dev-cycle" in rendered
+        assert "5 ○" in rendered
 
 
 class BuildLoopStatusPanelTests:

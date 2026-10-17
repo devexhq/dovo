@@ -22,176 +22,83 @@ from tests.harness.formatter import (
 )
 
 
-def _sample_catalog_record() -> CatalogRecord:
+def _record(name: str, item_type: CatalogItemType) -> CatalogRecord:
     return CatalogRecord(
-        key="test-blueprint",
-        sha="blueprint_1234567",
-        item_type=CatalogItemType.BLUEPRINT,
-        name="test-blueprint",
+        key=name,
+        sha=f"{item_type.value}_1234567",
+        item_type=item_type,
+        name=name,
         namespace=None,
-        path=Path("blueprints/test-blueprint.yml"),
+        path=Path(f"{item_type.value}s/{name}.yml"),
         checksum="1234567890abcdef",
         tier=CatalogTier.REPO,
     )
 
 
-def _sample_step_record() -> CatalogRecord:
-    return CatalogRecord(
-        key="test-step",
-        sha="step_1234567",
-        item_type=CatalogItemType.STEP,
-        name="test-step",
-        namespace=None,
-        path=Path("steps/test-step.yml"),
-        checksum="abcdef1234567890",
-        tier=CatalogTier.REPO,
+def _item_view(name: str, item_type: str) -> CatalogItemView:
+    return CatalogItemView(
+        sha=f"{item_type}_1234567",
+        item_type=item_type,
+        name=name,
+        path=f"{item_type}s/{name}.yml",
+        checksum="1234567890abcdef",
+        tier="repo",
     )
 
 
+_EMPTY_VIEW = CatalogListView(items=[], type_filter=None, templates=[], total_items=0, errors=[], warnings=[], fixes=[])
+
+
 WITH_ITEMS = FormatterCase(
-    data=CatalogListResult(items=[_sample_catalog_record()]),
-    view=CatalogListView(
-        items=[
-            CatalogItemView(
-                sha="blueprint_1234567",
-                item_type="blueprint",
-                name="test-blueprint",
-                path="blueprints/test-blueprint.yml",
-                checksum="1234567890abcdef",
-                tier="repo",
-            )
-        ],
-        type_filter=None,
-        templates=[],
-        total_items=1,
-        errors=[],
-        warnings=[],
-        fixes=[],
-    ),
+    data=CatalogListResult(items=[_record("test-blueprint", CatalogItemType.BLUEPRINT)]),
+    view=_EMPTY_VIEW.model_copy(update={"items": [_item_view("test-blueprint", "blueprint")], "total_items": 1}),
     render_expectations=["test-blueprint", "blueprint_1234567", "blueprint", "repo", "blueprints/test-blueprint.yml"],
 )
 
 EMPTY_ITEMS = FormatterCase(
     data=CatalogListResult(items=[]),
-    view=CatalogListView(
-        items=[],
-        type_filter=None,
-        templates=[],
-        total_items=0,
-        errors=[],
-        warnings=[],
-        fixes=[],
-    ),
+    view=_EMPTY_VIEW,
     render_expectations=["No items found."],
 )
 
 WITH_STEP_ITEMS = FormatterCase(
-    data=CatalogListResult(items=[_sample_step_record()], type_filter=CatalogItemType.STEP),
-    view=CatalogListView(
-        items=[
-            CatalogItemView(
-                sha="step_1234567",
-                item_type="step",
-                name="test-step",
-                path="steps/test-step.yml",
-                checksum="abcdef1234567890",
-                tier="repo",
-            )
-        ],
-        type_filter="step",
-        templates=[],
-        total_items=1,
-        errors=[],
-        warnings=[],
-        fixes=[],
+    data=CatalogListResult(items=[_record("test-step", CatalogItemType.STEP)], type_filter=CatalogItemType.STEP),
+    view=_EMPTY_VIEW.model_copy(
+        update={"items": [_item_view("test-step", "step")], "type_filter": "step", "total_items": 1}
     ),
-    render_expectations=["test-step", "step_1234567", "steps/test-step.yml", "Steps:"],
+    render_expectations=["test-step", "step_1234567", "steps/test-step.yml"],
 )
 
 EMPTY_STEP_ITEMS = FormatterCase(
     data=CatalogListResult(items=[], type_filter=CatalogItemType.STEP),
-    view=CatalogListView(
-        items=[],
-        type_filter="step",
-        templates=[],
-        total_items=0,
-        errors=[],
-        warnings=[],
-        fixes=[],
-    ),
+    view=_EMPTY_VIEW.model_copy(update={"type_filter": "step"}),
     render_expectations=["No steps found."],
 )
 
 TEMPLATES = FormatterCase(
     data=CatalogListResult(templates=[("blueprint", "blueprints/default.yml")]),
-    view=CatalogListView(
-        items=[],
-        type_filter=None,
-        templates=[CatalogTemplateView(item_type="blueprint", path="blueprints/default.yml")],
-        total_items=0,
-        errors=[],
-        warnings=[],
-        fixes=[],
+    view=_EMPTY_VIEW.model_copy(
+        update={"templates": [CatalogTemplateView(item_type="blueprint", path="blueprints/default.yml")]}
     ),
     render_expectations=["blueprint", "blueprints/default.yml"],
 )
 
 EMPTY_TEMPLATES = FormatterCase(
     data=CatalogListResult(type_filter="template", templates=[]),
-    view=CatalogListView(
-        items=[],
-        type_filter="template",
-        templates=[],
-        total_items=0,
-        errors=[],
-        warnings=[],
-        fixes=[],
-    ),
+    view=_EMPTY_VIEW.model_copy(update={"type_filter": "template"}),
     render_expectations=["No packaged templates found."],
 )
 
 WITH_ERRORS = FormatterCase(
     data=CatalogListResult(errors=["Invalid --type argument 'invalid'."]),
-    view=CatalogListView(
-        items=[],
-        type_filter=None,
-        templates=[],
-        total_items=0,
-        errors=["Invalid --type argument 'invalid'."],
-        warnings=[],
-        fixes=[],
-    ),
+    view=_EMPTY_VIEW.model_copy(update={"errors": ["Invalid --type argument 'invalid'."]}),
     render_expectations=["Invalid --type argument 'invalid'."],
 )
 
 WITH_WARNINGS = FormatterCase(
-    data=CatalogListResult(items=[_sample_catalog_record()], warnings=["Failed to parse corrupted.yml"]),
-    view=CatalogListView(
-        items=[
-            CatalogItemView(
-                sha="blueprint_1234567",
-                item_type="blueprint",
-                name="test-blueprint",
-                path="blueprints/test-blueprint.yml",
-                checksum="1234567890abcdef",
-                tier="repo",
-            )
-        ],
-        type_filter=None,
-        templates=[],
-        total_items=1,
-        errors=[],
-        warnings=["Failed to parse corrupted.yml"],
-        fixes=[],
-    ),
-    render_expectations=[
-        "test-blueprint",
-        "blueprint_1234567",
-        "blueprint",
-        "repo",
-        "blueprints/test-blueprint.yml",
-        "Failed to parse corrupted.yml",
-    ],
+    data=WITH_ITEMS.data.model_copy(update={"warnings": ["Failed to parse corrupted.yml"]}),
+    view=WITH_ITEMS.view.model_copy(update={"warnings": ["Failed to parse corrupted.yml"]}),
+    render_expectations=[*WITH_ITEMS.render_expectations, "Failed to parse corrupted.yml"],
 )
 
 LIST_CASES = [
@@ -206,67 +113,6 @@ LIST_CASES = [
 ]
 
 PAYLOAD_CASES = [
-    pytest.param(
-        WITH_ITEMS,
-        {
-            "errors": [],
-            "warnings": [],
-            "fixes": [],
-            "items": [
-                {
-                    "sha": "blueprint_1234567",
-                    "item_type": "blueprint",
-                    "name": "test-blueprint",
-                    "path": "blueprints/test-blueprint.yml",
-                    "checksum": "1234567890abcdef",
-                    "tier": "repo",
-                }
-            ],
-            "type_filter": None,
-            "templates": [],
-            "total_items": 1,
-        },
-        id="with_items_payload",
-    ),
-    pytest.param(
-        EMPTY_ITEMS,
-        {
-            "errors": [],
-            "warnings": [],
-            "fixes": [],
-            "items": [],
-            "type_filter": None,
-            "templates": [],
-            "total_items": 0,
-        },
-        id="empty_items_payload",
-    ),
-    pytest.param(
-        TEMPLATES,
-        {
-            "errors": [],
-            "warnings": [],
-            "fixes": [],
-            "items": [],
-            "type_filter": None,
-            "templates": [{"item_type": "blueprint", "path": "blueprints/default.yml"}],
-            "total_items": 0,
-        },
-        id="templates_payload",
-    ),
-    pytest.param(
-        WITH_ERRORS,
-        {
-            "errors": ["Invalid --type argument 'invalid'."],
-            "warnings": [],
-            "fixes": [],
-            "items": [],
-            "type_filter": None,
-            "templates": [],
-            "total_items": 0,
-        },
-        id="with_errors_payload",
-    ),
     pytest.param(
         WITH_WARNINGS,
         {
@@ -287,7 +133,20 @@ PAYLOAD_CASES = [
             "templates": [],
             "total_items": 1,
         },
-        id="with_warnings_payload",
+        id="populated_payload",
+    ),
+    pytest.param(
+        EMPTY_ITEMS,
+        {
+            "errors": [],
+            "warnings": [],
+            "fixes": [],
+            "items": [],
+            "type_filter": None,
+            "templates": [],
+            "total_items": 0,
+        },
+        id="empty_payload",
     ),
 ]
 

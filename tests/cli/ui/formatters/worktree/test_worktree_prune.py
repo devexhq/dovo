@@ -102,7 +102,6 @@ PRUNED_MULTIPLE_ITEMS = FormatterCase(
     ),
     view=_make_prune_view(
         status=WorktreePruneStatus.PARTIAL_SUCCESS,
-        dry_run=False,
         force=True,
         items=[
             _make_pruned_item_view(
@@ -110,7 +109,6 @@ PRUNED_MULTIPLE_ITEMS = FormatterCase(
                 category_label="stale branch",
                 identifier="feature/stale",
                 action=PruneAction.PRUNED,
-                is_dry_run=False,
                 reason="Cleaned up branch",
             ),
             _make_pruned_item_view(
@@ -118,7 +116,6 @@ PRUNED_MULTIPLE_ITEMS = FormatterCase(
                 category_label="orphaned directory",
                 identifier="dovo_dirty",
                 action=PruneAction.SKIPPED,
-                is_dry_run=False,
                 reason="Contains uncommitted changes",
             ),
             _make_pruned_item_view(
@@ -126,8 +123,6 @@ PRUNED_MULTIPLE_ITEMS = FormatterCase(
                 category_label="stale worktree ref",
                 identifier="/tmp/dovo_ref",
                 action=PruneAction.FAILED,
-                is_dry_run=False,
-                reason="",
                 error="Ref locked",
             ),
         ],
@@ -154,9 +149,7 @@ DRY_RUN_PRUNE = FormatterCase(
         ],
     ),
     view=_make_prune_view(
-        status=WorktreePruneStatus.OK,
         dry_run=True,
-        force=False,
         items=[
             _make_pruned_item_view(
                 category=StaleWorktreeCategory.STALE_BRANCH,
@@ -168,8 +161,6 @@ DRY_RUN_PRUNE = FormatterCase(
             ),
         ],
         pruned_count=1,
-        skipped_count=0,
-        failed_count=0,
     ),
     render_expectations=["feature/dry"],
 )

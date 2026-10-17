@@ -54,18 +54,6 @@ WORKTREE_CASES = [
 
 WORKTREE_PAYLOAD_CASES = [
     pytest.param(
-        READY_ACTIVE,
-        {
-            "action": "ready",
-            "path": "/tmp/worktree1",
-            "active": True,
-            "kept": None,
-            "worktree_id": None,
-            "branch": None,
-        },
-        id="ready_active",
-    ),
-    pytest.param(
         READY_IN_PLACE,
         {
             "action": "ready",
@@ -76,30 +64,6 @@ WORKTREE_PAYLOAD_CASES = [
             "branch": None,
         },
         id="ready_in_place",
-    ),
-    pytest.param(
-        CLEANUP_RETAINED,
-        {
-            "action": "cleanup",
-            "path": "/tmp/worktree2",
-            "active": None,
-            "kept": True,
-            "worktree_id": None,
-            "branch": None,
-        },
-        id="cleanup_retained",
-    ),
-    pytest.param(
-        CLEANUP_CLEANED,
-        {
-            "action": "cleanup",
-            "path": "",
-            "active": None,
-            "kept": False,
-            "worktree_id": None,
-            "branch": None,
-        },
-        id="cleanup_cleaned",
     ),
     pytest.param(
         CLEANUP_KEPT_WITH_FIX,

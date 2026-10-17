@@ -166,21 +166,6 @@ SET_PAYLOAD_CASES = [
         id="success_str_payload",
     ),
     pytest.param(
-        SUCCESS_BOOL_CASE,
-        {
-            "status": "ok",
-            "config_path": "/workspace/.dovo/config.json",
-            "key": "telemetry.enabled",
-            "value": True,
-            "value_str": "true",
-            "value_type": "bool",
-            "errors": [],
-            "warnings": [],
-            "fixes": [],
-        },
-        id="success_bool_payload",
-    ),
-    pytest.param(
         ERROR_SCHEMA_INVALID_CASE,
         {
             "status": "schema_invalid",

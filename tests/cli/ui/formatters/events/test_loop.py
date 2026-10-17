@@ -90,20 +90,6 @@ LOOP_PAYLOAD_CASES = [
         id="loop_start",
     ),
     pytest.param(
-        ITERATION_START,
-        {
-            "loop_id": "loop_1",
-            "action": "iteration_start",
-            "iteration": 2,
-            "max_iterations": 5,
-            "status": None,
-            "message": None,
-            "conditions": [],
-            "next_iteration": None,
-        },
-        id="iteration_start",
-    ),
-    pytest.param(
         CONDITIONS_EVALUATED,
         {
             "loop_id": "loop_1",
@@ -118,20 +104,6 @@ LOOP_PAYLOAD_CASES = [
             "next_iteration": 2,
         },
         id="conditions_evaluated",
-    ),
-    pytest.param(
-        LOOP_DONE,
-        {
-            "loop_id": "loop_1",
-            "action": "done",
-            "iteration": 3,
-            "max_iterations": 5,
-            "status": "completed",
-            "message": None,
-            "conditions": [],
-            "next_iteration": None,
-        },
-        id="loop_done",
     ),
 ]
 

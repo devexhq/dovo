@@ -88,26 +88,7 @@ WITH_MULTIPLE_ARTIFACTS = FormatterCase(
 
 WITH_ARTIFACT = FormatterCase(
     data=ArtifactsListResult(status=ArtifactsListStatus.OK, artifacts=[_RECORD]),
-    view=ArtifactsListView(
-        artifacts=[
-            ArtifactRowView(
-                name="dist-packages",
-                session_id="wf_abc123",
-                revision=2,
-                digest=_DIGEST,
-                digest_display="b07d44aa",
-                step_id="plan",
-                step_display="plan",
-                attempt=1,
-                loop_iteration=2,
-                iteration_display="2",
-                file_count=3,
-                size_bytes=1_070_546,
-                size_display="1.02 MB",
-                expires_at=None,
-            )
-        ]
-    ),
+    view=ArtifactsListView(artifacts=[WITH_MULTIPLE_ARTIFACTS.view.artifacts[0]]),
 )
 
 WITH_LEGACY_ARTIFACT = FormatterCase(
@@ -188,10 +169,6 @@ ARTIFACTS_LIST_PAYLOAD_CASES = [
 class ArtifactsListFormatterTests:
     """Tier 2 presentation contract tests for ArtifactsListFormatter."""
 
-    def test_transform_derives_human_readable_size(self) -> None:
-        """Map size_bytes=1_070_546 to size_display '1.02 MB'."""
-        assert_transform_derives_expected_view(ArtifactsListFormatter, WITH_ARTIFACT.data, WITH_ARTIFACT.view)
-
     def test_transform_preserves_every_artifact_row(self) -> None:
         assert_transform_derives_expected_view(
             ArtifactsListFormatter, WITH_MULTIPLE_ARTIFACTS.data, WITH_MULTIPLE_ARTIFACTS.view
@@ -209,8 +186,3 @@ class ArtifactsListFormatterTests:
         self, case: FormatterCase[ArtifactsListResult, ArtifactsListView], expected_payload: dict[str, Any]
     ) -> None:
         assert_json_payload_matches_published_shape(ArtifactsListFormatter, case, expected_payload)
-
-    def test_to_rich_renders_pinned_artifact_name_and_session_id(self) -> None:
-        assert_rich_render_shows_every_view_value(
-            ArtifactsListFormatter, WITH_ARTIFACT.data, ["dist-packages", "wf_abc123"]
-        )

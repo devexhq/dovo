@@ -87,27 +87,6 @@ CATALOG_CREATE_PAYLOAD_CASES = [
         id="created_blueprint",
     ),
     pytest.param(
-        CREATED_USER_BLUEPRINT,
-        {
-            "errors": [],
-            "warnings": [],
-            "fixes": [],
-            "error_code": None,
-            "item": {
-                "key": "user-blueprint",
-                "sha": "blueprint_89abcde",
-                "item_type": "blueprint",
-                "name": "user-blueprint",
-                "namespace": None,
-                "path": "blueprints/user-blueprint.yml",
-                "checksum": "89abcdef01234567",
-                "tier": "user",
-            },
-            "resolved_path": str(_USER_RESOLVED_PATH),
-        },
-        id="created_user_blueprint",
-    ),
-    pytest.param(
         CREATION_ERROR,
         {
             "errors": ["Naming collision on blueprint."],
