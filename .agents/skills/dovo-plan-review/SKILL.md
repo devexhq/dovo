@@ -57,7 +57,7 @@ A miss is Blocking when implementing the plan as written produces a bug, data lo
 
 ## 5. Check coverage
 
-- Every FR, NFR, numbered error case and Definition of Done item maps to a phase and to at least one planned test. List the gaps.
+- Every FR, NFR, numbered error case, Definition of Done item and GWT scenario maps to a phase and to at least one planned test in `## Traceability`. List the gaps.
 - Every command the plan adds or changes has the R13 runner matrix: success, a failure path, `--format json` and each option it binds.
 - Nothing out of scope, or named under Traps as not touched, is planned.
 - Each planned test pins a contract no other test pins (R12), and sibling cases are planned as one parametrized test.

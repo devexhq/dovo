@@ -11,7 +11,7 @@ A plan has two readers. The human approving it needs to see, at the top, what ch
 gh issue view <number> --json number,title,body
 ```
 
-- Link the issue; do not copy its prose. Every `FR-*`, `NFR-*`, numbered error case and Definition of Done item appears by ID in the `## Traceability` table instead.
+- Link the issue; do not copy its prose. Every `FR-*`, `NFR-*`, numbered error case and Definition of Done item appears by ID in the `## Traceability` table instead, as does every GWT scenario (`GWT-<n>`).
 - Copy **literal** contracts verbatim into the `### Code` block of the phase that implements them: pre-determined data, models, enums, flags, JSON, and exact error and output strings. The implementing agent does not read the issue.
 - Turn each **Out of scope** item into a bullet under `## Traps`.
 - Absent an issue, quote the request in the opening paragraph and number the requirements you derive from it (`FR-1`, …) in a `## Requirements` list after `## What you're approving`.
@@ -110,6 +110,7 @@ The issue's contract is not repeated here; read it on #<n>. This plan covers how
 |---|---|---|
 | FR-1 <short name> | 1 | `<TestClass>.<test_method>` |
 | Error 1 <short name> | 2 | `<test_file>::<test_method>` |
+| GWT-1 <short name> | 1 | `<TestClass>.<test_method>` |
 
 ---
 
@@ -165,6 +166,6 @@ class <TestClass>:  # <test file path>
 
 ## Step 5: Save and hand off
 
-1. Verify all planned paths, imports, stubs, and phases against R1–R17 in [AGENTS.md](../../AGENTS.md), and that every requirement ID appears in `## Traceability`.
+1. Verify all planned paths, imports, stubs, and phases against R1–R17 in [AGENTS.md](../../AGENTS.md), and that every requirement ID and GWT scenario appears in `## Traceability`.
 2. Write `.agentic/plan.md` (and `.agentic/evidence.md` when used), deleting any stale `.agentic/review*` and `.agentic/plan-review*`.
 3. Report the plan path, the Phases table, and every numbered Open Question.
