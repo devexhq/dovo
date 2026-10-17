@@ -5,7 +5,7 @@ description: >-
   CLI with authoritative scope, numbered FR/NFR contracts, pre-determined data,
   error cases, and a non-redundant Definition of Done. Grounds the issue in the
   code first and splits work larger than one user story or about two PRs into
-  sibling issues. Invoked as /dovo-issue.
+  a parent issue with native sub-issues. Invoked as /dovo-issue.
   Use when asked to create, draft, or revise a GitHub issue.
 ---
 
@@ -29,7 +29,7 @@ Canonical example of structure, depth, and tone: [examples/github-issue.md](exam
 
 3. **Self-contained (zero issue-tracker tours):**
    - Prefer **in-repo paths** (`AGENTS.md`, `src/dovo/...`, `schemas/v1/...`) over GitHub issue numbers.
-   - Default to **zero** issue links in the body. Only link another issue when it supersedes/duplicates a ticket, names a hard blocker (`Blocked by #n`), or is the parent that orders a split.
+   - Default to **zero** issue links in the body. Only link another issue when it supersedes or duplicates a ticket. Parent and blocker relationships are set with `gh` flags (see **Size and split**), never written into the body.
    - Write **Out of scope** as self-contained capability bullets (e.g., `- CLI subcommands (dovo config show|set)`), never `- Everything in #9–#20`. When a sibling issue covers the item, say so: `- Referencing prompts from agent steps (next issue in this split)`.
 
 4. **Observable contracts only:**
@@ -41,7 +41,7 @@ Canonical example of structure, depth, and tone: [examples/github-issue.md](exam
 ### 1. Ground
 
 Before drafting, read the entry points of every surface the issue touches, and their callers. Record:
-- **Existing bugs on the path** the work builds on. Each becomes its own issue, which the new one names as a blocker.
+- **Existing bugs on the path** the work builds on. Each becomes its own sub-issue, which blocks the work that depends on it.
 - **Persisted formats** the work changes (session state and manifests, `data.db`, `config.json`, catalog `index.json`, blueprint and step YAML). List each under **Shared surfaces changed**, with what happens to data written before the change.
 
 Only read; never edit code or run tooling.
@@ -55,9 +55,12 @@ An issue is one user story that ships value on its own, and plans into one or tw
 - it changes a persisted format *and* adds CLI surface
 - you estimate more than about 800 changed lines, tests included
 
-Split by value delivered, never by layer: each child has its own user story and is useful once merged. A child that cannot ship before another starts its body with a `Blocked by #n` line, above the Goal. When a split produces three or more children, also create a short parent issue: one Goal paragraph and an ordered checklist of its children, with no FRs of its own.
+Split by value delivered, never by layer: each child has its own user story and is useful once merged. Every split has a parent issue and native GitHub sub-issues:
 
-For example, "prompts as a catalog type that agent steps can reference" splits into: a bug fix on the shared catalog delete path; prompts as a catalog type with `dovo prompt` commands; and `prompt_file` on agent steps, blocked by the second.
+- **Parent:** the Goal / User Story, one short paragraph on why the children are ordered as they are, and an **Out of scope** list for the whole feature. No FRs, data, error cases or Definition of Done: GitHub tracks progress through the sub-issues. When splitting an existing issue, edit it into the parent (`gh issue edit <n> --body-file …`) so its number, links and discussion survive.
+- **Sub-issues:** full issues in the structure below, each self-contained. The planner reads only the sub-issue, never the parent or its siblings, so every requirement and literal contract it needs is in its own body. Create each with `gh issue create --parent <parent>`, adding `--blocked-by <n>` when it cannot ship before another sub-issue.
+
+For example, "prompts as a catalog type that agent steps can reference" becomes a parent with three sub-issues: a bug fix on the shared catalog delete path; prompts as a catalog type with `dovo prompt` commands, blocked by the fix; and `prompt_file` on agent steps, blocked by the catalog type.
 
 ### 3. Draft
 
@@ -126,4 +129,4 @@ Before running `gh issue create` or `gh issue edit`:
 4. Re-run the **Size and split** checks on the finished draft. If one now holds, split before publishing.
 5. Scan FRs and **Pre-determined data** for private helper names, loop or call-site lists, and module paths that are not public surface. Delete them (principle 4).
 6. Confirm every bug and persisted-format change found in **Ground** appears as a blocker issue or under **Shared surfaces changed**.
-7. When publishing a split, create the blockers first so each `Blocked by #n` points at a real issue, then the parent last.
+7. When publishing a split, create or edit the parent first, then the sub-issues in dependency order so each `--blocked-by` names an issue that exists. Confirm with `gh api repos/{owner}/{repo}/issues/<parent>/sub_issues --jq '.[].number'`.
