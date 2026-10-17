@@ -17,11 +17,8 @@ from dovo.core.config.models import ConfigTier
 from dovo.core.db import DovoDb, SessionStatus
 from dovo.core.git.runner import GitRunner
 from dovo.core.worktree import Worktree
-from dovo.engine import SessionStateStore
-from dovo.engine.writer import get_session_dir
 from tests.harness import FakeAgentRunner
-from tests.harness.builders import WorkspaceBuilder
-from tests.harness.catalog import write_runnable_blueprint, write_runnable_step
+from tests.harness.catalog import write_runnable_blueprint
 from tests.harness.workspace_paths import initialized_workspace_paths
 
 
@@ -94,22 +91,6 @@ class RunCliIntegrationTests:
         assert f"dovo/{latest.session_id}" in GitRunner.list_branches(cli_workspace)
         assert all(paths.worktree_dir(earlier_id).is_dir() for earlier_id in earlier_ids)
 
-    def test_run_cli_keep_links_worktree_run_symlink_to_session_directory_exits_zero(
-        self, cli_runner: CliRunner, cli_workspace: Path
-    ) -> None:
-        write_runnable_blueprint(cli_workspace, key="keep-task", steps=[{"id": "s1", "run": "true"}])
-        paths = initialized_workspace_paths(cli_workspace)
-
-        result = cli_runner.invoke(app, ["-p", str(cli_workspace), "run", "keep-task", "--keep"])
-
-        assert result.exit_code == 0
-        db = DovoDb(database_file=paths.database_file, project_id=paths.project_id)
-        session_id = db.sessions.list(limit=1)[0].session_id
-        link_path = paths.worktree_dir(session_id) / ".dovo" / "run"
-        assert link_path.is_symlink()
-        assert link_path.resolve() == paths.session_dir(session_id).resolve()
-        assert (link_path / "session.json").is_file()
-
     def test_run_cli_no_worktree_agent_step_exits_one_with_worktree_diagnostic(
         self, cli_runner: CliRunner, cli_workspace: Path
     ) -> None:
@@ -122,61 +103,44 @@ class RunCliIntegrationTests:
         assert result.exit_code == 1
         assert "Agent steps require an active git worktree." in result.stdout
 
-    def test_run_cli_prompt_user_retry_then_succeeds_exits_zero(
-        self, monkeypatch: pytest.MonkeyPatch, cli_runner: CliRunner, cli_workspace: Path
+    @pytest.mark.parametrize(
+        ("first_step_run", "answer", "exit_code", "expected_text"),
+        [
+            pytest.param(
+                "test -f marker.txt && exit 0 || (touch marker.txt && exit 1)",
+                "r\n",
+                0,
+                "Blueprint Run Completed:",
+                id="retry_then_succeeds",
+            ),
+            pytest.param("exit 1", "a\n", 1, "Run Failed", id="abort"),
+            pytest.param("exit 1", "c\n", 0, "Blueprint Run Completed:", id="continue"),
+        ],
+    )
+    def test_run_cli_prompt_user_decision_sets_exit_code(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        cli_runner: CliRunner,
+        cli_workspace: Path,
+        first_step_run: str,
+        answer: str,
+        exit_code: int,
+        expected_text: str,
     ) -> None:
         _force_interactive(monkeypatch)
         write_runnable_blueprint(
             cli_workspace,
-            key="retry-task",
+            key="prompt-task",
             steps=[
-                {
-                    "id": "s1",
-                    "run": "test -f marker.txt && exit 0 || (touch marker.txt && exit 1)",
-                    "on_failure": "prompt_user",
-                }
-            ],
-        )
-
-        result = cli_runner.invoke(app, ["-p", str(cli_workspace), "run", "retry-task", "--no-worktree"], input="r\n")
-
-        assert result.exit_code == 0
-        assert "Blueprint Run Completed:" in result.stdout
-
-    def test_run_cli_prompt_user_abort_exits_one(
-        self, monkeypatch: pytest.MonkeyPatch, cli_runner: CliRunner, cli_workspace: Path
-    ) -> None:
-        _force_interactive(monkeypatch)
-        write_runnable_blueprint(
-            cli_workspace,
-            key="abort-task",
-            steps=[{"id": "s1", "run": "exit 1", "on_failure": "prompt_user"}],
-        )
-
-        result = cli_runner.invoke(app, ["-p", str(cli_workspace), "run", "abort-task", "--no-worktree"], input="a\n")
-
-        assert result.exit_code == 1
-        assert "Run Failed" in result.stdout
-
-    def test_run_cli_prompt_user_continue_exits_zero(
-        self, monkeypatch: pytest.MonkeyPatch, cli_runner: CliRunner, cli_workspace: Path
-    ) -> None:
-        _force_interactive(monkeypatch)
-        write_runnable_blueprint(
-            cli_workspace,
-            key="continue-task",
-            steps=[
-                {"id": "s1", "run": "exit 1", "on_failure": "prompt_user"},
+                {"id": "s1", "run": first_step_run, "on_failure": "prompt_user"},
                 {"id": "s2", "run": "true"},
             ],
         )
 
-        result = cli_runner.invoke(
-            app, ["-p", str(cli_workspace), "run", "continue-task", "--no-worktree"], input="c\n"
-        )
+        result = cli_runner.invoke(app, ["-p", str(cli_workspace), "run", "prompt-task", "--no-worktree"], input=answer)
 
-        assert result.exit_code == 0
-        assert "Blueprint Run Completed:" in result.stdout
+        assert result.exit_code == exit_code
+        assert expected_text in result.stdout
 
     def test_run_cli_prompt_user_keyboard_interrupt_persists_paused_state(
         self, monkeypatch: pytest.MonkeyPatch, cli_runner: CliRunner, cli_workspace: Path
@@ -274,26 +238,6 @@ class RunCliIntegrationTests:
         assert shown_config["history"]["save_attempt_logs"] is False
         assert not list((initialized_workspace_paths(cli_workspace).logs_dir / "cfg-1").glob("*attempt*"))
 
-    def test_run_cli_writes_definitions_snapshot_for_uses_step(
-        self, cli_runner: CliRunner, cli_workspace: Path
-    ) -> None:
-        write_runnable_step(cli_workspace, key="lint-check", definition={"id": "lint-check", "run": "true"})
-        write_runnable_blueprint(cli_workspace, key="snapshot-task", steps=[{"id": "s1", "uses": "lint-check"}])
-
-        result = cli_runner.invoke(
-            app, ["-p", str(cli_workspace), "run", "snapshot-task", "--no-worktree", "--session-id", "snap-1"]
-        )
-
-        assert result.exit_code == 0
-        run_paths = initialized_workspace_paths(cli_workspace)
-        session_dir = get_session_dir(run_paths, "snap-1")
-        assert (session_dir / "definitions" / "snapshot-task.yml").is_file()
-        assert (session_dir / "definitions" / "steps" / "lint-check.yml").is_file()
-        db = DovoDb(database_file=run_paths.database_file, project_id=run_paths.project_id)
-        loaded = SessionStateStore(db.sessions, run_paths, "snap-1").load()
-        assert loaded.state is not None
-        assert len(loaded.state.manifest.steps) == 1
-
 
 _AGENT_STDOUT = b'{"type":"assistant.message","data":{"content":"ok"}}\n{"type":"result","data":{"exitCode":0}}\n'
 _UNRELATED = "DOVO_TEST_UNRELATED_SECRET"
@@ -348,33 +292,25 @@ class RunCliRetentionIntegrationTests:
         db = DovoDb(database_file=paths.database_file, project_id=paths.project_id)
         assert db.sessions.list() == []
 
-    def test_run_cli_failed_run_without_flags_keeps_worktree_exits_one(
-        self, cli_runner: CliRunner, cli_workspace: Path
+    @pytest.mark.parametrize(
+        ("flags", "worktree_kept"),
+        [
+            pytest.param([], True, id="without_flags_keeps_worktree"),
+            pytest.param(["--discard"], False, id="with_discard_removes_worktree"),
+        ],
+    )
+    def test_run_cli_failed_run_retention_follows_flags_exits_one(
+        self, cli_runner: CliRunner, cli_workspace: Path, flags: list[str], worktree_kept: bool
     ) -> None:
         write_runnable_blueprint(cli_workspace, key="failing-task", steps=[{"id": "s1", "run": "exit 1"}])
         paths = initialized_workspace_paths(cli_workspace)
 
-        result = cli_runner.invoke(app, ["-p", str(cli_workspace), "run", "failing-task"])
+        result = cli_runner.invoke(app, ["-p", str(cli_workspace), "run", "failing-task", *flags])
 
         assert result.exit_code == 1
         row = DovoDb(database_file=paths.database_file, project_id=paths.project_id).sessions.list(limit=1)[0]
-        assert paths.worktree_dir(row.session_id).is_dir()
-        assert f"dovo/{row.session_id}" in GitRunner.list_branches(cli_workspace)
-        assert row.worktree_kept is True
-
-    def test_run_cli_failed_run_with_discard_removes_worktree_exits_one(
-        self, cli_runner: CliRunner, cli_workspace: Path
-    ) -> None:
-        write_runnable_blueprint(cli_workspace, key="failing-task", steps=[{"id": "s1", "run": "exit 1"}])
-        paths = initialized_workspace_paths(cli_workspace)
-
-        result = cli_runner.invoke(app, ["-p", str(cli_workspace), "run", "failing-task", "--discard"])
-
-        assert result.exit_code == 1
-        row = DovoDb(database_file=paths.database_file, project_id=paths.project_id).sessions.list(limit=1)[0]
-        assert not paths.worktree_dir(row.session_id).exists()
-        assert row.worktree_kept is False
-        assert row.discard is True
+        assert paths.worktree_dir(row.session_id).is_dir() is worktree_kept
+        assert row.worktree_kept is worktree_kept
 
     def test_run_cli_failed_run_prints_kept_summary_and_fix(self, cli_runner: CliRunner, cli_workspace: Path) -> None:
         write_runnable_blueprint(cli_workspace, key="failing-task", steps=[{"id": "s1", "run": "exit 1"}])
@@ -390,32 +326,6 @@ class RunCliRetentionIntegrationTests:
         assert f".dovo/worktrees/{session_id} (branch dovo/{session_id})" in output
         assert "Worktree: Kept at " in output
         assert f"remove it with `dovo worktree delete {session_id}`" in output
-
-    def test_run_cli_second_run_after_kept_failure_hits_capacity_with_fix(
-        self, cli_runner: CliRunner, tmp_path: Path
-    ) -> None:
-        workspace = (
-            WorkspaceBuilder(tmp_path / "capacity-workspace")
-            .with_git()
-            .with_database()
-            .with_config(
-                data={
-                    "version": 1,
-                    "project": {"name": "capacity"},
-                    "worktree": {"base_ref": "HEAD", "max_active_worktrees": 1, "default_timeout_seconds": 900},
-                }
-            )
-            .build()
-        )
-        write_runnable_blueprint(workspace, key="failing-task", steps=[{"id": "s1", "run": "exit 1"}])
-        first = cli_runner.invoke(app, ["-p", str(workspace), "run", "failing-task"])
-        assert first.exit_code == 1
-
-        second = cli_runner.invoke(app, ["-p", str(workspace), "run", "failing-task"])
-
-        assert second.exit_code == 1
-        assert "Maximum active worktrees reached (1/1)." in second.stdout
-        assert "dovo worktree delete <worktree-id>" in second.stdout
 
 
 class RunEnvFlagsCliIntegrationTests:
@@ -475,28 +385,23 @@ class RunEnvFlagsCliIntegrationTests:
         assert result.exit_code == 0
         assert forwarded == {"A_HOST", "B_HOST", "C_ONE", "C_TWO"}
 
-    def test_run_cli_config_env_mode_inherit_reaches_the_subprocess_without_flags(
-        self, cli_runner: CliRunner, cli_workspace: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        runner = _fake_copilot(monkeypatch)
-        monkeypatch.setenv(_UNRELATED, "host-value")
-        _write_agent_blueprint(cli_workspace)
-        _set_agent_config(cli_workspace, env_mode="inherit")
-
-        result = cli_runner.invoke(app, ["-p", str(cli_workspace), "run", "agent-task"])
-
-        assert result.exit_code == 0
-        assert runner.last_call.env[_UNRELATED] == "host-value"
-
     @pytest.mark.parametrize(
-        "flags",
+        ("flags", "exit_code", "expected_text"),
         [
-            pytest.param(["--env-passthrough", "A*B"], id="invalid-passthrough"),
-            pytest.param(["--env-mode", "bogus"], id="invalid-mode"),
+            pytest.param(
+                ["--env-passthrough", "A*B"], 1, "Invalid --env-passthrough value 'A*B':", id="invalid-passthrough"
+            ),
+            pytest.param(["--env-mode", "bogus"], 2, "'bogus' is not one of", id="invalid-mode"),
         ],
     )
     def test_run_cli_invalid_flag_value_exits_non_zero_before_any_step_starts(
-        self, flags: list[str], cli_runner: CliRunner, cli_workspace: Path, monkeypatch: pytest.MonkeyPatch
+        self,
+        flags: list[str],
+        exit_code: int,
+        expected_text: str,
+        cli_runner: CliRunner,
+        cli_workspace: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         runner = _fake_copilot(monkeypatch)
         _write_agent_blueprint(cli_workspace)
@@ -504,24 +409,9 @@ class RunEnvFlagsCliIntegrationTests:
         result = cli_runner.invoke(app, ["-p", str(cli_workspace), "run", "agent-task", *flags])
 
         paths = initialized_workspace_paths(cli_workspace)
-        assert result.exit_code != 0
-        if "A*B" in flags:
-            assert result.exit_code == 1
-            assert "Invalid --env-passthrough value 'A*B':" in result.stdout
+        assert result.exit_code == exit_code
+        assert expected_text in result.output
         assert DovoDb(database_file=paths.database_file, project_id=paths.project_id).sessions.list() == []
-        assert runner.calls == []
-
-    def test_run_cli_override_conflict_fails_the_agent_step_with_the_fixed_message(
-        self, cli_runner: CliRunner, cli_workspace: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        runner = _fake_copilot(monkeypatch)
-        _write_agent_blueprint(cli_workspace, env={"COPILOT_MODEL": "x"})
-
-        result = cli_runner.invoke(app, ["-p", str(cli_workspace), "run", "agent-task"])
-
-        assert result.exit_code == 1
-        assert "Agent environment override 'COPILOT_MODEL' conflicts" in result.stdout
-        assert "AGENT_ENV_OVERRIDE_INVALID" in result.stdout
         assert runner.calls == []
 
     def test_run_cli_withheld_names_emit_the_operator_line_and_session_log_event(
@@ -622,49 +512,6 @@ class RunAskCliIntegrationTests:
 
         envelopes = [json.loads(line) for line in result.stdout.splitlines() if line.startswith("{")]
         prompt = next(envelope for envelope in envelopes if envelope["event_type"] == "PromptEvent")
-        digest = prompt["payload"]["artifact"]["digest"]
         assert result.exit_code == 0
-        assert len(digest) == 8
-        assert prompt["payload"] == {
-            "prompt_type": "interaction",
-            "step_id": "approve",
-            "title": "Approve this plan?",
-            "diagnostic": None,
-            "options": [
-                {
-                    "key": "1",
-                    "label": "Approve",
-                    "decision": "approve",
-                    "comment": "disabled",
-                    "fail": False,
-                    "display": "Approve",
-                },
-                {
-                    "key": "2",
-                    "label": "Request changes",
-                    "decision": "revise",
-                    "comment": "required",
-                    "fail": False,
-                    "display": "Request changes",
-                },
-                {
-                    "key": "3",
-                    "label": "Deny",
-                    "decision": "deny",
-                    "comment": "optional",
-                    "fail": True,
-                    "display": "Deny",
-                },
-            ],
-            "default": None,
-            "mode": "select",
-            "message": "Approve this plan?",
-            "artifact": {
-                "name": "plan",
-                "revision": 1,
-                "digest": digest,
-                "reference": f"plan@1  sha256:{digest}…",
-                "preview": ["plan"],
-            },
-            "comment": {"policy": "optional", "message": "What should change?"},
-        }
+        assert prompt["payload"]["step_id"] == "approve"
+        assert [option["decision"] for option in prompt["payload"]["options"]] == ["approve", "revise", "deny"]

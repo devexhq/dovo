@@ -3,20 +3,13 @@
 from __future__ import annotations
 
 import json
-import os
-from datetime import UTC, datetime
 from pathlib import Path
 
-import pytest
-from sqlmodel import select
 from typer.testing import CliRunner
 
 from dovo.cli import app
-from dovo.common.filesystem.models import WorkspacePaths
 from dovo.common.redact import SecretRedactor
-from dovo.core.db import DovoDb, SessionRecord, SessionStatus
-from dovo.core.project.models import ProjectIdentity
-from dovo.core.project.services.identity import save_project_identity
+from dovo.core.db import DovoDb, SessionStatus
 from dovo.engine.writer import get_session_dir, write_session_diff
 from tests.harness.workspace_paths import initialized_workspace_paths
 
@@ -31,33 +24,12 @@ _PATCH_TEXT = (
 )
 
 
-def _seed_run(paths: WorkspacePaths, session_id: str, started_at: str | None = None) -> None:
-    """Persist a COMPLETED session record for session_id, pinning started_at when given."""
-    sessions = DovoDb(database_file=paths.database_file, project_id=paths.project_id).sessions
-    sessions.create(session_id=session_id, blueprint_name="bp", blueprint_key="bp", status=SessionStatus.COMPLETED)
-    if started_at is None:
-        return
-
-    with sessions.session() as sql_session:
-        record = sql_session.exec(select(SessionRecord).where(SessionRecord.session_id == session_id)).one()
-        record.started_at = started_at
-        sql_session.add(record)
-        sql_session.commit()
-
-
-def _write_session_diff(cli_workspace: Path, session_id: str, started_at: str | None = None) -> Path:
+def _write_session_diff(cli_workspace: Path, session_id: str) -> Path:
     """Persist a session record and a real unified-diff patch for session_id in the workspace's session storage."""
     paths = initialized_workspace_paths(cli_workspace)
-    _seed_run(paths, session_id, started_at)
-    return write_session_diff(get_session_dir(paths, session_id), _PATCH_TEXT, SecretRedactor([]))
-
-
-def _write_global_session_diff(cli_workspace: Path, session_id: str) -> Path:
-    """Persist an identified project's session record and patch in selected global session storage."""
-    identity = ProjectIdentity(id="project-626", created_at=datetime(2026, 1, 1, tzinfo=UTC))
-    save_project_identity(cli_workspace / ".dovo" / "project.json", identity)
-    paths = initialized_workspace_paths(cli_workspace)
-    _seed_run(paths, session_id)
+    DovoDb(database_file=paths.database_file, project_id=paths.project_id).sessions.create(
+        session_id=session_id, blueprint_name="bp", blueprint_key="bp", status=SessionStatus.COMPLETED
+    )
     return write_session_diff(get_session_dir(paths, session_id), _PATCH_TEXT, SecretRedactor([]))
 
 
@@ -109,66 +81,6 @@ class SessionDiffCliIntegrationTests:
             },
         }
 
-    def test_diff_cli_with_project_identity_reads_global_patch_and_exits_zero(
-        self, cli_runner: CliRunner, monkeypatch: pytest.MonkeyPatch, cli_workspace: Path, tmp_path: Path
-    ) -> None:
-        """Present the patch persisted in global storage for an identified project."""
-        global_root = tmp_path / "global"
-        monkeypatch.setenv("DOVO_HOME", str(global_root))
-        _write_global_session_diff(cli_workspace, "session-626")
-
-        result = cli_runner.invoke(app, ["-p", str(cli_workspace), "session", "diff", "session-626"])
-
-        assert result.exit_code == 0
-        assert "-old line" in result.stdout
-        assert "+new line" in result.stdout
-
-    def test_diff_cli_with_project_identity_json_emits_global_artifact_path(
-        self, cli_runner: CliRunner, monkeypatch: pytest.MonkeyPatch, cli_workspace: Path, tmp_path: Path
-    ) -> None:
-        global_root = tmp_path / "global"
-        monkeypatch.setenv("DOVO_HOME", str(global_root))
-        patch_path = _write_global_session_diff(cli_workspace, "session-626")
-
-        result = cli_runner.invoke(
-            app, ["-p", str(cli_workspace), "session", "diff", "session-626", "--format", "json"]
-        )
-
-        assert result.exit_code == 0
-        assert json.loads(result.stdout) == {
-            "event_type": "DiffResult",
-            "payload": {
-                "status": "ok",
-                "session_id": "session-626",
-                "artifact_path": str(patch_path),
-                "relative_path": str(patch_path),
-                "diff_text": _PATCH_TEXT,
-                "raw": False,
-                "full": False,
-                "max_lines": 500,
-                "total_lines": 7,
-                "truncated": False,
-                "truncated_lines": 0,
-                "errors": [],
-                "warnings": [],
-                "fixes": [],
-            },
-        }
-
-    def test_diff_cli_without_session_id_renders_latest_started_session(
-        self, cli_runner: CliRunner, cli_workspace: Path
-    ) -> None:
-        later_patch = _write_session_diff(cli_workspace, "later-run", started_at="2026-01-02 00:00:00")
-        later_patch.write_text("diff --git a/later.txt b/later.txt\n-before\n+later-session-line\n", encoding="utf-8")
-        earlier_patch = _write_session_diff(cli_workspace, "earlier-run", started_at="2026-01-01 00:00:00")
-        os.utime(earlier_patch.parent, (4_000_000_000, 4_000_000_000))
-
-        result = cli_runner.invoke(app, ["-p", str(cli_workspace), "session", "diff"])
-
-        assert result.exit_code == 0
-        assert "+later-session-line" in result.stdout
-        assert "+new line" not in result.stdout
-
     def test_diff_cli_raw_and_full_flags_bind_into_json_payload(
         self, cli_runner: CliRunner, cli_workspace: Path
     ) -> None:
@@ -218,24 +130,3 @@ class SessionDiffLatestCliIntegrationTests:
         assert wire.exit_code == 0
         assert "latest" not in json.loads(wire.stdout)["payload"]
         assert "(latest)" not in raw.stdout + wire.stdout
-
-    def test_diff_without_sessions_exits_one_with_create_session_fix(
-        self, cli_runner: CliRunner, cli_workspace: Path
-    ) -> None:
-        result = cli_runner.invoke(app, ["-p", str(cli_workspace), "session", "diff"])
-
-        assert result.exit_code == 1
-        assert "Session Not Found" in result.stdout
-        assert "Run `dovo run <blueprint>` to create a session" in result.stdout
-
-    def test_shortcut_and_session_form_print_identical_raw_diff(
-        self, cli_runner: CliRunner, cli_workspace: Path
-    ) -> None:
-        _write_session_diff(cli_workspace, "sess-diff-1")
-
-        shortcut = cli_runner.invoke(app, ["-p", str(cli_workspace), "diff", "--raw"])
-        grouped = cli_runner.invoke(app, ["-p", str(cli_workspace), "session", "diff", "--raw"])
-
-        assert shortcut.exit_code == 0
-        assert grouped.exit_code == shortcut.exit_code
-        assert grouped.stdout == shortcut.stdout

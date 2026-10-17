@@ -124,37 +124,25 @@ class DispatcherFailurePrompterTests:
         assert decision == LoopPromptDecision.GRANT
         assert "Reached max_iterations (5)" in buffer.getvalue()
 
-    def test_prompt_step_failure_non_interactive_json_mode_aborts_without_blocking(
+    def test_json_mode_aborts_without_blocking_and_events_carry_the_step_or_loop_id(
         self, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
     ) -> None:
-        dispatcher = UiDispatcher(output_format="json")
-        prompter = DispatcherFailurePrompter(dispatcher)
+        prompter = DispatcherFailurePrompter(UiDispatcher(output_format="json"))
 
         def _fail_if_called(*_args: object, **_kwargs: object) -> str:
             raise AssertionError("input() must not be called in non-interactive json mode")
 
         monkeypatch.setattr("builtins.input", _fail_if_called)
 
-        decision = prompter.prompt_step_failure(step=_failing_step(), result=_failing_result(), diagnostic="boom")
+        step_decision = prompter.prompt_step_failure(step=_failing_step(), result=_failing_result(), diagnostic="boom")
+        loop_decision = prompter.prompt_loop_max_iterations(loop=_loop_block(), iteration=1, diagnostic="diag")
 
-        assert decision == FailurePromptDecision.ABORT
-        lines = [line for line in capsys.readouterr().out.splitlines() if line.strip()]
-        assert len(lines) == 1
-        event = json.loads(lines[0])
-        assert event["event_type"] == "PromptEvent"
-
-
-class DispatcherFailurePrompterEventTests:
-    """Contract tests for the event field renamed to step_id."""
-
-    def test_events_carry_the_step_or_loop_id_as_step_id(self, capsys: pytest.CaptureFixture[str]) -> None:
-        prompter = DispatcherFailurePrompter(UiDispatcher(output_format="json"))
-
-        prompter.prompt_step_failure(step=_failing_step(), result=_failing_result(), diagnostic="boom")
-        prompter.prompt_loop_max_iterations(loop=_loop_block(), iteration=1, diagnostic="diag")
-
-        lines = [json.loads(line) for line in capsys.readouterr().out.splitlines() if line.strip()]
-        assert [line["payload"]["step_id"] for line in lines] == ["s1", "loop1"]
+        assert (step_decision, loop_decision) == (FailurePromptDecision.ABORT, LoopPromptDecision.ABORT)
+        events = [json.loads(line) for line in capsys.readouterr().out.splitlines() if line.strip()]
+        assert [(event["event_type"], event["payload"]["step_id"]) for event in events] == [
+            ("PromptEvent", "s1"),
+            ("PromptEvent", "loop1"),
+        ]
 
 
 def _option(value: str, label: str, *, policy: CommentPolicy = "disabled", fail: bool = False) -> RequestOption:
@@ -351,25 +339,16 @@ class DispatcherInteractionPrompterTests:
         assert answer is None
 
     @pytest.mark.parametrize(
-        ("mode", "no_tty", "force_terminal"),
+        ("no_tty", "force_terminal"),
         [
-            pytest.param("no_tty", True, True, id="no_tty"),
-            pytest.param("not_a_terminal", False, False, id="not_a_terminal"),
-            pytest.param("json", False, True, id="json_format"),
+            pytest.param(True, True, id="no_tty"),
+            pytest.param(False, False, id="not_a_terminal"),
         ],
     )
     def test_non_interactive_emits_event_and_returns_none_without_reading(
-        self,
-        monkeypatch: pytest.MonkeyPatch,
-        capsys: pytest.CaptureFixture[str],
-        mode: str,
-        no_tty: bool,
-        force_terminal: bool,
+        self, monkeypatch: pytest.MonkeyPatch, no_tty: bool, force_terminal: bool
     ) -> None:
-        if mode == "json":
-            dispatcher, buffer = UiDispatcher(output_format="json"), io.StringIO()
-        else:
-            dispatcher, buffer = _buffered_dispatcher(force_terminal=force_terminal)
+        dispatcher, buffer = _buffered_dispatcher(force_terminal=force_terminal)
         terminal = _Terminal([])
         monkeypatch.setattr("builtins.input", terminal)
         prompter = DispatcherInteractionPrompter(dispatcher, no_tty=no_tty)
@@ -377,10 +356,20 @@ class DispatcherInteractionPrompterTests:
         answer = prompter.ask(_select_request())
 
         assert (answer, terminal.prompts, prompter.is_interactive) == (None, [], False)
-        written = capsys.readouterr().out if mode == "json" else buffer.getvalue()
-        assert written.count("approve") >= 1
-        if mode == "json":
-            assert [json.loads(line)["event_type"] for line in written.splitlines() if line.strip()] == ["PromptEvent"]
+        assert "approve" in buffer.getvalue()
+
+    def test_json_format_emits_prompt_event_and_returns_none_without_reading(
+        self, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        terminal = _Terminal([])
+        monkeypatch.setattr("builtins.input", terminal)
+        prompter = DispatcherInteractionPrompter(UiDispatcher(output_format="json"), no_tty=False)
+
+        answer = prompter.ask(_select_request())
+
+        assert (answer, terminal.prompts, prompter.is_interactive) == (None, [], False)
+        written = capsys.readouterr().out
+        assert [json.loads(line)["event_type"] for line in written.splitlines() if line.strip()] == ["PromptEvent"]
 
     def test_event_uses_one_based_keys_option_values_and_short_digest(self, capsys: pytest.CaptureFixture[str]) -> None:
         artifact = RequestArtifact(name="plan", revision=2, digest="b07d44aa11223344", preview=["line"])

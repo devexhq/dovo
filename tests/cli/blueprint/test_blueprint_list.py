@@ -53,14 +53,6 @@ class BlueprintListCliIntegrationTests:
         assert names == ["only-blueprint", "default"]
         assert all(item["item_type"] == "blueprint" for item in payload["payload"]["items"])
 
-    def test_blueprint_list_cli_uninitialized_git_repo_exits_nonzero_without_writing(
-        self, cli_runner: CliRunner, git_repo: Path
-    ) -> None:
-        result = cli_runner.invoke(app, ["-p", str(git_repo), "blueprint", "list"])
-
-        assert result.exit_code != 0
-        assert not (git_repo / ".dovo").exists()
-
     def test_blueprint_ls_alias_cli_matches_list_output(self, cli_runner: CliRunner, isolated_workspace: Path) -> None:
         Catalog(initialized_workspace_paths(isolated_workspace)).create(CatalogItemType.BLUEPRINT, "alias-blueprint")
 

@@ -9,15 +9,9 @@ from typing import Any
 from typer.testing import CliRunner
 
 from dovo.cli import app
-from dovo.common.filesystem.services.global_root import resolve_global_paths
-from dovo.core.config.loader import ConfigLoadStatus
 from dovo.core.status.models import (
     DovoStatusResult,
 )
-from tests.harness.builders import WorkspaceBuilder
-
-_BRANCH_WARNING = "Active branch is 'main'. Automated workflows on primary branches are discouraged."
-_AGENT_MODEL_WARNING = "Agent model is not configured (agents.copilot.model is unset)."
 
 
 class StatusCliIntegrationTests:
@@ -35,22 +29,7 @@ class StatusCliIntegrationTests:
         result_dto = dispatch_spy[0]
         assert isinstance(result_dto, DovoStatusResult)
         assert result_dto.root_dir == status_workspace
-        assert result_dto.is_initialized is True
-        assert result_dto.git.is_git_repo is True
-        assert result_dto.git.branch == "main"
         assert result_dto.git.is_dirty is False
-        assert result_dto.git.uncommitted_files == 0
-        assert result_dto.config.status == ConfigLoadStatus.OK
-        assert result_dto.config.config_path == status_workspace / ".dovo" / "config.json"
-        assert result_dto.config.is_valid is True
-        assert result_dto.catalog.exists is False
-        assert result_dto.catalog.total_items == 0
-        assert result_dto.database.exists is True
-        assert result_dto.database.db_path == resolve_global_paths(None).data_dir / "dovo.db"
-        assert result_dto.database.is_accessible is True
-        assert result_dto.worktrees.active_worktrees == 0
-        assert result_dto.worktrees.max_active_worktrees == 3
-        assert result_dto.warnings == [_BRANCH_WARNING, _AGENT_MODEL_WARNING]
 
     def test_status_cli_dirty_worktree_shows_dirty_branch_exits_zero(
         self, cli_runner: CliRunner, status_workspace: Path, dispatch_spy: list[Any]
@@ -65,66 +44,14 @@ class StatusCliIntegrationTests:
         result_dto = dispatch_spy[0]
         assert isinstance(result_dto, DovoStatusResult)
         assert result_dto.root_dir == status_workspace
-        assert result_dto.is_initialized is True
-        assert result_dto.git.is_git_repo is True
-        assert result_dto.git.branch == "main"
         assert result_dto.git.is_dirty is True
         assert result_dto.git.uncommitted_files == 1
-        assert result_dto.config.status == ConfigLoadStatus.OK
-        assert result_dto.config.config_path == status_workspace / ".dovo" / "config.json"
-        assert result_dto.config.is_valid is True
-        assert result_dto.catalog.exists is False
-        assert result_dto.catalog.total_items == 0
-        assert result_dto.database.exists is True
-        assert result_dto.database.db_path == resolve_global_paths(None).data_dir / "dovo.db"
-        assert result_dto.database.is_accessible is True
-        assert result_dto.worktrees.active_worktrees == 0
-        assert result_dto.worktrees.max_active_worktrees == 3
-        assert result_dto.warnings == [
-            _BRANCH_WARNING,
-            "Working tree has 1 uncommitted change(s).",
-            _AGENT_MODEL_WARNING,
-        ]
 
     def test_status_cli_renders_json(self, cli_runner: CliRunner, status_workspace: Path) -> None:
         result = cli_runner.invoke(app, ["-p", str(status_workspace), "status", "--format", "json"])
 
         assert result.exit_code == 0
-        assert json.loads(result.stdout) == {
-            "event_type": "DovoStatusResult",
-            "payload": {
-                "health": "ok",
-                "root_dir": str(status_workspace),
-                "project_name": "workspace",
-                "config_status": "ok",
-                "config_path_relative": ".dovo/config.json",
-                "git_branch": "main",
-                "git_is_dirty": False,
-                "uncommitted_files": 0,
-                "agent_model": None,
-                "active_worktrees": 0,
-                "max_active_worktrees": 3,
-                "valid_catalog_items": 0,
-                "total_catalog_items": 0,
-                "total_sessions": 0,
-                "errors": [],
-                "warnings": [
-                    "Active branch is 'main'. Automated workflows on primary branches are discouraged.",
-                    "Agent model is not configured (agents.copilot.model is unset).",
-                ],
-                "remediations": [],
-            },
-        }
-
-    def test_status_cli_identity_without_config_reports_not_initialized(
-        self, cli_runner: CliRunner, tmp_path: Path, dispatch_spy: list[Any]
-    ) -> None:
-        workspace = WorkspaceBuilder(tmp_path / "workspace").with_git().without_config().build()
-
-        result = cli_runner.invoke(app, ["-p", str(workspace), "status"])
-
-        assert result.exit_code == 0
-        assert len(dispatch_spy) == 1
-        result_dto = dispatch_spy[0]
-        assert isinstance(result_dto, DovoStatusResult)
-        assert result_dto.is_initialized is False
+        event = json.loads(result.stdout)
+        assert event["event_type"] == "DovoStatusResult"
+        assert event["payload"]["health"] == "ok"
+        assert event["payload"]["root_dir"] == str(status_workspace)

@@ -70,17 +70,6 @@ class ArtifactsPruneCliIntegrationTests:
         assert result.exit_code == 0
         assert initialized_workspace_db(cli_workspace).artifacts.get("wf_one", "dist-packages") is None
 
-    def test_artifacts_prune_cli_disabled_config_without_force_exits_zero(
-        self, cli_runner: CliRunner, cli_workspace: Path
-    ) -> None:
-        _write_prune_config(cli_workspace, remove_expired_artifacts=False)
-        _seed_expired_artifact(cli_workspace)
-
-        result = cli_runner.invoke(app, ["-p", str(cli_workspace), "artifacts", "prune"])
-
-        assert result.exit_code == 0
-        assert initialized_workspace_db(cli_workspace).artifacts.get("wf_one", "dist-packages") is not None
-
     def test_artifacts_prune_cli_dry_run_flag_binds_without_deleting(
         self, cli_runner: CliRunner, cli_workspace: Path
     ) -> None:

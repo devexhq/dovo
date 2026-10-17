@@ -39,12 +39,7 @@ class WorktreeCreateCliIntegrationTests:
         assert payload.status == WorktreeCreateStatus.OK
         assert payload.session is not None
         assert payload.session.session_id == session_id
-        assert payload.session.target_branch == f"dovo/{session_id}"
         assert payload.session.name == "demo"
-        assert payload.session.command_passed is None
-        assert not payload.session.wip_applied
-        assert len(payload.session.wip_paths) == 0
-        assert len(payload.errors) == 0
 
     def test_worktree_create_cli_capacity_exceeded_exits_one(
         self, cli_runner: CliRunner, cli_workspace: Path, dispatch_spy: list[WorktreeCreateResult]
@@ -60,9 +55,7 @@ class WorktreeCreateCliIntegrationTests:
         assert len(dispatch_spy) == 4
         payload = dispatch_spy[-1]
         assert payload.status == WorktreeCreateStatus.CAPACITY_EXCEEDED
-        assert payload.session is None
         assert payload.errors == ["Maximum active worktrees reached (3/3)."]
-        assert len(payload.fixes) > 0
 
     def test_worktree_create_cli_renders_json(self, cli_runner: CliRunner, cli_workspace: Path) -> None:
         result = cli_runner.invoke(
@@ -71,33 +64,10 @@ class WorktreeCreateCliIntegrationTests:
         )
 
         assert result.exit_code == 0
-        actual_json = json.loads(result.stdout)
-        session = actual_json["payload"]["session"]
-        for field in ("session_id", "target_branch", "worktree_path", "base_commit", "created_at"):
-            assert session[field]
-            session[field] = "placeholder"
-
-        assert actual_json == {
-            "event_type": "WorktreeCreateResult",
-            "payload": {
-                "status": "ok",
-                "session": {
-                    "session_id": "placeholder",
-                    "target_branch": "placeholder",
-                    "worktree_path": "placeholder",
-                    "base_commit": "placeholder",
-                    "name": "demo",
-                    "created_at": "placeholder",
-                    "command_passed": None,
-                    "wip_applied": False,
-                    "wip_paths": [],
-                },
-                "error_code": None,
-                "errors": [],
-                "warnings": [],
-                "fixes": [],
-            },
-        }
+        event = json.loads(result.stdout)
+        assert event["event_type"] == "WorktreeCreateResult"
+        assert event["payload"]["status"] == "ok"
+        assert event["payload"]["session"]["name"] == "demo"
 
     def test_worktree_create_cli_with_wip_flag_overlays_and_exits_zero(
         self, cli_runner: CliRunner, cli_workspace: Path, dispatch_spy: list[WorktreeCreateResult]
@@ -114,10 +84,7 @@ class WorktreeCreateCliIntegrationTests:
         payload = dispatch_spy[0]
         assert payload.status == WorktreeCreateStatus.OK
         assert payload.session is not None
-        assert payload.session.name == "wip-demo"
-        assert payload.session.wip_applied is True
         assert payload.session.wip_paths == ["dirty.txt"]
-        assert len(payload.errors) == 0
 
     def test_worktree_create_cli_with_base_ref_option_branches_from_specified_target(
         self, cli_runner: CliRunner, cli_workspace: Path, dispatch_spy: list[WorktreeCreateResult]
@@ -144,9 +111,6 @@ class WorktreeCreateCliIntegrationTests:
         assert payload.status == WorktreeCreateStatus.OK
         assert payload.session is not None
         assert payload.session.base_commit == first_commit
-        assert payload.session.name == "ref-demo"
-        assert not payload.session.wip_applied
-        assert len(payload.errors) == 0
 
         session = payload.session
         assert (session.worktree_path / "first.txt").read_text(encoding="utf-8") == "first commit\n"

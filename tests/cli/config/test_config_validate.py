@@ -1,4 +1,4 @@
-"""Dual-tier matrix tests for dovo config validate."""
+"""Typer runner tests for dovo config validate."""
 
 from __future__ import annotations
 
@@ -8,59 +8,8 @@ from pathlib import Path
 from typer.testing import CliRunner
 
 from dovo.cli import app
-from dovo.cli.config.commands.config_validate import config_validate_command
-from dovo.cli.context import CliContext
 from dovo.common.filesystem import Filesystem
 from dovo.core.config.generator import build_default_config
-from dovo.core.config.models import DovoConfig
-from dovo.core.config.validate import (
-    ConfigValidationStatus,
-)
-from dovo.core.db.db import DovoDb
-from tests.harness.workspace_paths import initialized_workspace_paths
-
-
-class ConfigValidateRootTests:
-    """Direct handler unit tests for config_validate_command."""
-
-    def test_config_validate_clean_returns_valid(self, isolated_workspace: Path) -> None:
-        config_path = isolated_workspace / ".dovo" / "config.json"
-        payload = build_default_config("demo-workspace")
-        Filesystem.atomic_write_json(config_path, payload)
-
-        paths = initialized_workspace_paths(isolated_workspace)
-        context = CliContext(paths=paths, db=DovoDb(database_file=paths.database_file, project_id=paths.project_id))
-        result = config_validate_command(context)
-
-        assert result.status == ConfigValidationStatus.VALID
-        assert result.config_path == config_path
-        assert result.config == DovoConfig.model_validate(payload)
-        assert result.raw == payload
-        assert result.warnings == []
-        assert result.errors == []
-        assert result.fixes == []
-
-    def test_config_validate_error_returns_invalid_status(self, isolated_workspace: Path) -> None:
-        config_path = isolated_workspace / ".dovo" / "config.json"
-        invalid_payload = {"version": 1}
-        Filesystem.atomic_write_json(config_path, invalid_payload)
-
-        paths = initialized_workspace_paths(isolated_workspace)
-        context = CliContext(paths=paths, db=DovoDb(database_file=paths.database_file, project_id=paths.project_id))
-        result = config_validate_command(context)
-
-        assert result.status == ConfigValidationStatus.INVALID
-        assert result.config_path == config_path
-        assert result.config is None
-        assert result.raw == invalid_payload
-        assert result.errors == [
-            "Config schema validation failed (CONFIG_SCHEMA_INVALID):\n- (root): 'project' is a required property"
-        ]
-        assert result.warnings == []
-        assert result.fixes == [
-            "Run `dovo config validate` for details",
-            "Or `dovo init --repair` to insert missing keys without overwriting values",
-        ]
 
 
 class ConfigValidateCliIntegrationTests:

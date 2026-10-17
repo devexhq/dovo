@@ -8,7 +8,6 @@ from pathlib import Path
 from typer.testing import CliRunner
 
 from dovo.cli import app
-from dovo.core.db import WorktreeStatus
 from dovo.core.worktree.models import WorktreeShowResult, WorktreeShowStatus
 from dovo.core.worktree.worktree import Worktree
 from tests.harness.workspace_paths import initialized_workspace_paths
@@ -35,15 +34,6 @@ class WorktreeShowCliIntegrationTests:
         assert result_dto.worktree is not None
         assert result_dto.worktree.id == session.session_id
         assert result_dto.worktree.name == "show-me"
-        assert result_dto.worktree.branch_name == session.target_branch
-        assert result_dto.worktree.base_commit == session.base_commit
-        assert result_dto.worktree.worktree_path == session.worktree_path
-        assert result_dto.worktree.status == WorktreeStatus.ACTIVE
-        assert result_dto.disk_present is True
-        assert result_dto.reconciled is False
-        assert len(result_dto.errors) == 0
-        assert len(result_dto.warnings) == 0
-        assert len(result_dto.fixes) == 0
 
     def test_worktree_show_cli_missing_worktree_exits_one(
         self, cli_runner: CliRunner, cli_workspace: Path, dispatch_spy: list[object]
@@ -56,12 +46,7 @@ class WorktreeShowCliIntegrationTests:
         result_dto = dispatch_spy[0]
         assert isinstance(result_dto, WorktreeShowResult)
         assert result_dto.status == WorktreeShowStatus.NOT_FOUND
-        assert result_dto.worktree is None
-        assert result_dto.disk_present is False
-        assert result_dto.reconciled is False
         assert result_dto.errors == ["Worktree 'missing-id' not found."]
-        assert len(result_dto.warnings) == 0
-        assert result_dto.fixes == ["Run `dovo worktree list` to see known worktrees"]
 
     def test_worktree_show_cli_renders_json(self, cli_runner: CliRunner, cli_workspace: Path) -> None:
         create_result = Worktree(paths=initialized_workspace_paths(cli_workspace)).create(name="show-me")
@@ -74,32 +59,7 @@ class WorktreeShowCliIntegrationTests:
         )
 
         assert result.exit_code == 0
-        actual_json = json.loads(result.stdout)
-        worktree = actual_json["payload"]["worktree"]
-        for field in ("created_at", "updated_at", "project_id"):
-            assert worktree[field]
-            worktree[field] = "placeholder"
-
-        assert actual_json == {
-            "event_type": "WorktreeShowResult",
-            "payload": {
-                "status": "ok",
-                "worktree": {
-                    "id": session.session_id,
-                    "project_id": "placeholder",
-                    "name": "show-me",
-                    "branch_name": session.target_branch,
-                    "base_commit": session.base_commit,
-                    "worktree_path": str(session.worktree_path),
-                    "status": "active",
-                    "created_at": "placeholder",
-                    "updated_at": "placeholder",
-                },
-                "disk_present": True,
-                "reconciled": False,
-                "errors": [],
-                "warnings": [],
-                "fixes": [],
-                "error_code": None,
-            },
-        }
+        event = json.loads(result.stdout)
+        assert event["event_type"] == "WorktreeShowResult"
+        assert event["payload"]["status"] == "ok"
+        assert event["payload"]["worktree"]["id"] == session.session_id

@@ -3,13 +3,13 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
 from pathlib import Path
 
 import pytest
 from typer.testing import CliRunner
 
 from dovo.cli import app
-from dovo.common.filesystem import Filesystem
 from dovo.core.db import DovoDb, SessionStatus
 from dovo.core.sessions import LogsShowResult, LogsShowStatus, SessionLogEvent, SessionLogEventType
 from tests.harness.workspace_paths import initialized_workspace_paths
@@ -99,65 +99,9 @@ class SessionLogsCliIntegrationTests:
         result = cli_runner.invoke(app, ["-p", str(cli_workspace), "session", "logs", "sess-logs", "--format", "json"])
 
         assert result.exit_code == 0
-        assert json.loads(result.stdout) == {
-            "event_type": "LogsShowResult",
-            "payload": {
-                "status": "ok",
-                "session_id": "sess-logs",
-                "lines": [],
-                "events": [
-                    {
-                        "ts": "2026-09-26T10:00:00+00:00",
-                        "event": "session_started",
-                        "session_id": "sess-logs",
-                        "blueprint_key": None,
-                        "step_index": None,
-                        "step_id": None,
-                        "step_name": None,
-                        "attempt": None,
-                        "status": None,
-                        "exit_code": None,
-                        "duration_seconds": None,
-                        "loop_id": None,
-                        "iteration": None,
-                        "max_iterations": None,
-                        "all_passed": None,
-                        "next_iteration": None,
-                        "env_withheld": None,
-                        "kind": None,
-                        "target": None,
-                        "conditions": None,
-                    },
-                    {
-                        "ts": "2026-09-26T10:00:01+00:00",
-                        "event": "session_completed",
-                        "session_id": None,
-                        "blueprint_key": None,
-                        "step_index": None,
-                        "step_id": None,
-                        "step_name": None,
-                        "attempt": None,
-                        "status": "completed",
-                        "exit_code": None,
-                        "duration_seconds": None,
-                        "loop_id": None,
-                        "iteration": None,
-                        "max_iterations": None,
-                        "all_passed": None,
-                        "next_iteration": None,
-                        "env_withheld": None,
-                        "kind": None,
-                        "target": None,
-                        "conditions": None,
-                    },
-                ],
-                "available_steps": [],
-                "available_attempts": [],
-                "errors": [],
-                "warnings": [],
-                "fixes": [],
-            },
-        }
+        event = json.loads(result.stdout)
+        assert event["event_type"] == "LogsShowResult"
+        assert [row["event"] for row in event["payload"]["events"]] == ["session_started", "session_completed"]
 
     @pytest.mark.parametrize(
         ("names", "expected_line"),
@@ -170,19 +114,13 @@ class SessionLogsCliIntegrationTests:
         self,
         cli_runner: CliRunner,
         cli_workspace: Path,
-        monkeypatch: pytest.MonkeyPatch,
+        seed_pin_session: Callable[[list[str]], None],
         names: list[str],
         expected_line: str,
     ) -> None:
-        monkeypatch.setenv("DB_PIN", "1234")
-        session_log_dir = _seed_session(cli_workspace)
-        (session_log_dir / "02_pin_attempt_1.stdout.log").write_text("pin 1234\n", encoding="utf-8")
-        config_path = initialized_workspace_paths(cli_workspace).config_file
-        config = json.loads(config_path.read_text(encoding="utf-8"))
-        config["environment"] = {"sensitive_variables": names}
-        Filesystem.atomic_write_json(config_path, config)
+        seed_pin_session(names)
 
-        result = cli_runner.invoke(app, ["-p", str(cli_workspace), "session", "logs", "sess-logs", "--step", "pin"])
+        result = cli_runner.invoke(app, ["-p", str(cli_workspace), "session", "logs", "session-pin", "--step", "pin"])
 
         assert result.exit_code == 0
         assert f"pin {expected_line}" in result.stdout

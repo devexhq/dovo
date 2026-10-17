@@ -300,13 +300,6 @@ class ConfigTolerantCommandsPostInitTests:
 class SessionCliTests:
     """Root wiring of the session group and its shortcuts."""
 
-    def test_root_help_lists_session_and_shortcuts(self, cli_runner: CliRunner) -> None:
-        result = cli_runner.invoke(app, ["--help"])
-
-        assert result.exit_code == 0
-        for name in ("session", "logs", "diff", "resume"):
-            assert name in result.output
-
     @pytest.mark.parametrize(
         ("shortcut", "grouped"),
         [

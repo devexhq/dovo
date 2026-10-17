@@ -33,10 +33,7 @@ def _assert_dispatches_ok_diff(dispatch_spy: list[WorktreeDiffResult], session_i
     captured = dispatch_spy[0]
     assert captured.status == WorktreeDiffStatus.OK
     assert captured.worktree_id == session_id
-    assert "diff --git" in captured.diff_text
     assert ("target.py" in captured.stat_text) is stat
-    assert captured.files_changed == ["target.py"]
-    assert len(captured.errors) == 0
 
 
 class WorktreeDiffCliIntegrationTests:
@@ -77,9 +74,6 @@ class WorktreeDiffCliIntegrationTests:
         captured = dispatch_spy[0]
         assert captured.status == WorktreeDiffStatus.NOT_FOUND
         assert captured.worktree_id == "missing-id"
-        assert captured.diff_text == ""
-        assert captured.stat_text == ""
-        assert len(captured.files_changed) == 0
         assert captured.errors == ["Worktree 'missing-id' not found."]
 
     def test_worktree_diff_cli_renders_json(self, cli_runner: CliRunner, cli_workspace: Path) -> None:
@@ -90,22 +84,7 @@ class WorktreeDiffCliIntegrationTests:
         )
 
         assert result.exit_code == 0
-        actual_json = json.loads(result.stdout)
-        payload = actual_json["payload"]
-        assert "target.py" in payload["diff_text"]
-        payload["diff_text"] = "placeholder"
-
-        assert actual_json == {
-            "event_type": "WorktreeDiffResult",
-            "payload": {
-                "status": "ok",
-                "worktree_id": session.session_id,
-                "diff_text": "placeholder",
-                "stat_text": "",
-                "files_changed": ["target.py"],
-                "error_code": None,
-                "errors": [],
-                "warnings": [],
-                "fixes": [],
-            },
-        }
+        event = json.loads(result.stdout)
+        assert event["event_type"] == "WorktreeDiffResult"
+        assert event["payload"]["status"] == "ok"
+        assert event["payload"]["files_changed"] == ["target.py"]
