@@ -17,13 +17,8 @@ from tests.harness.formatter import (
     assert_rich_render_shows_every_view_value,
 )
 
-OK_WITH_DIFF = FormatterCase(
+OK_WITH_DIFF = FormatterCase.identity(
     data=WorktreeDiffResult(
-        status=WorktreeDiffStatus.OK,
-        worktree_id="dovo_diff",
-        diff_text="+new_line",
-    ),
-    view=WorktreeDiffResult(
         status=WorktreeDiffStatus.OK,
         worktree_id="dovo_diff",
         diff_text="+new_line",
@@ -31,26 +26,16 @@ OK_WITH_DIFF = FormatterCase(
     render_expectations=["+new_line"],
 )
 
-EMPTY_DIFF = FormatterCase(
+EMPTY_DIFF = FormatterCase.identity(
     data=WorktreeDiffResult(
-        status=WorktreeDiffStatus.EMPTY_DIFF,
-        worktree_id="dovo_empty",
-    ),
-    view=WorktreeDiffResult(
         status=WorktreeDiffStatus.EMPTY_DIFF,
         worktree_id="dovo_empty",
     ),
     render_expectations=["dovo_empty"],
 )
 
-NOT_FOUND = FormatterCase(
+NOT_FOUND = FormatterCase.identity(
     data=WorktreeDiffResult(
-        status=WorktreeDiffStatus.NOT_FOUND,
-        worktree_id="dovo_missing",
-        errors=["Worktree 'dovo_missing' not found."],
-        fixes=["Run `dovo worktree list` to see known worktrees"],
-    ),
-    view=WorktreeDiffResult(
         status=WorktreeDiffStatus.NOT_FOUND,
         worktree_id="dovo_missing",
         errors=["Worktree 'dovo_missing' not found."],

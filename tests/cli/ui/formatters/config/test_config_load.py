@@ -18,13 +18,8 @@ from tests.harness.formatter import (
 
 _CONFIG_PATH = Path("/workspace/.dovo/config.json")
 
-VALID_CONFIG = FormatterCase(
+VALID_CONFIG = FormatterCase.identity(
     data=ConfigLoadResult(
-        status=ConfigLoadStatus.OK,
-        config_path=_CONFIG_PATH,
-        config=DovoConfig(version=1, project=ProjectConfig(name="test-project")),
-    ),
-    view=ConfigLoadResult(
         status=ConfigLoadStatus.OK,
         config_path=_CONFIG_PATH,
         config=DovoConfig(version=1, project=ProjectConfig(name="test-project")),
@@ -32,14 +27,8 @@ VALID_CONFIG = FormatterCase(
     render_expectations=["test-project", _CONFIG_PATH.as_posix()],
 )
 
-NOT_FOUND = FormatterCase(
+NOT_FOUND = FormatterCase.identity(
     data=ConfigLoadResult(
-        status=ConfigLoadStatus.NOT_FOUND,
-        config_path=_CONFIG_PATH,
-        errors=["Configuration file not found at '/workspace/.dovo/config.json' (CONFIG_NOT_FOUND)."],
-        fixes=["Run `dovo init` to initialize Dovo"],
-    ),
-    view=ConfigLoadResult(
         status=ConfigLoadStatus.NOT_FOUND,
         config_path=_CONFIG_PATH,
         errors=["Configuration file not found at '/workspace/.dovo/config.json' (CONFIG_NOT_FOUND)."],

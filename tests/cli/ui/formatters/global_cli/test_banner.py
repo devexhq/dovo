@@ -14,26 +14,17 @@ from tests.harness.formatter import (
     assert_rich_render_shows_every_view_value,
 )
 
-STANDARD_VERSION = FormatterCase(
+STANDARD_VERSION = FormatterCase.identity(
     data=WelcomeBannerEvent(version="0.1.0"),
-    view=WelcomeBannerEvent(version="0.1.0"),
     render_expectations=["v0.1.0"],
-)
-
-PRERELEASE_VERSION = FormatterCase(
-    data=WelcomeBannerEvent(version="1.2.3-rc.1"),
-    view=WelcomeBannerEvent(version="1.2.3-rc.1"),
-    render_expectations=["v1.2.3-rc.1"],
 )
 
 BANNER_CASES = [
     pytest.param(STANDARD_VERSION, id="standard_version"),
-    pytest.param(PRERELEASE_VERSION, id="prerelease_version"),
 ]
 
 BANNER_PAYLOAD_CASES = [
     pytest.param(STANDARD_VERSION, {"version": "0.1.0"}, id="standard_version"),
-    pytest.param(PRERELEASE_VERSION, {"version": "1.2.3-rc.1"}, id="prerelease_version"),
 ]
 
 

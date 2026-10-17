@@ -22,27 +22,18 @@ FAILURE_SUMMARY_LINE = json.dumps(
     {"status": "unfixable", "summary": None, "unfixable_reason": "no network", "touched_files": []}
 )
 
-STDOUT_LINE = FormatterCase(
+STDOUT_LINE = FormatterCase.identity(
     data=StepOutputEvent(step_id="step-1", line="building...", stream="stdout"),
-    view=StepOutputEvent(step_id="step-1", line="building...", stream="stdout"),
     render_expectations=["building..."],
 )
 
-STDERR_LINE = FormatterCase(
+STDERR_LINE = FormatterCase.identity(
     data=StepOutputEvent(step_id="step-1", line="warning: deprecated", stream="stderr"),
-    view=StepOutputEvent(step_id="step-1", line="warning: deprecated", stream="stderr"),
     render_expectations=["warning: deprecated"],
 )
 
-SUCCESS_SUMMARY = FormatterCase(
+SUCCESS_SUMMARY = FormatterCase.identity(
     data=StepOutputEvent(
-        step_id="plan",
-        line=SUCCESS_SUMMARY_LINE,
-        agent_summary=AgentSummaryView(
-            status="no_op", succeeded=True, summary="Wrote the plan.", touched_files=["notes.txt"]
-        ),
-    ),
-    view=StepOutputEvent(
         step_id="plan",
         line=SUCCESS_SUMMARY_LINE,
         agent_summary=AgentSummaryView(
@@ -52,13 +43,8 @@ SUCCESS_SUMMARY = FormatterCase(
     render_expectations=["no_op", "Wrote the plan.", "notes.txt"],
 )
 
-FAILURE_SUMMARY = FormatterCase(
+FAILURE_SUMMARY = FormatterCase.identity(
     data=StepOutputEvent(
-        step_id="plan",
-        line=FAILURE_SUMMARY_LINE,
-        agent_summary=AgentSummaryView(status="unfixable", succeeded=False, unfixable_reason="no network"),
-    ),
-    view=StepOutputEvent(
         step_id="plan",
         line=FAILURE_SUMMARY_LINE,
         agent_summary=AgentSummaryView(status="unfixable", succeeded=False, unfixable_reason="no network"),
@@ -66,9 +52,8 @@ FAILURE_SUMMARY = FormatterCase(
     render_expectations=["unfixable", "no network"],
 )
 
-JSON_LINE_WITHOUT_SUMMARY = FormatterCase(
+JSON_LINE_WITHOUT_SUMMARY = FormatterCase.identity(
     data=StepOutputEvent(step_id="step-1", line='{"status": "ok"}'),
-    view=StepOutputEvent(step_id="step-1", line='{"status": "ok"}'),
     render_expectations=['{"status": "ok"}'],
 )
 

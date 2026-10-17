@@ -14,35 +14,28 @@ from tests.harness.formatter import (
     assert_rich_render_shows_every_view_value,
 )
 
-READY_ACTIVE = FormatterCase(
+READY_ACTIVE = FormatterCase.identity(
     data=WorktreeLifecycleEvent(action="ready", path="/tmp/worktree1", active=True, kept=None),
-    view=WorktreeLifecycleEvent(action="ready", path="/tmp/worktree1", active=True, kept=None),
     render_expectations=["/tmp/worktree1"],
 )
 
-READY_IN_PLACE = FormatterCase(
+READY_IN_PLACE = FormatterCase.identity(
     data=WorktreeLifecycleEvent(action="ready", path="", active=False, kept=None),
-    view=WorktreeLifecycleEvent(action="ready", path="", active=False, kept=None),
     render_expectations=["Worktree: In-place (workspace)"],
 )
 
-CLEANUP_RETAINED = FormatterCase(
+CLEANUP_RETAINED = FormatterCase.identity(
     data=WorktreeLifecycleEvent(action="cleanup", path="/tmp/worktree2", active=None, kept=True),
-    view=WorktreeLifecycleEvent(action="cleanup", path="/tmp/worktree2", active=None, kept=True),
     render_expectations=["/tmp/worktree2"],
 )
 
-CLEANUP_CLEANED = FormatterCase(
+CLEANUP_CLEANED = FormatterCase.identity(
     data=WorktreeLifecycleEvent(action="cleanup", path="", active=None, kept=False),
-    view=WorktreeLifecycleEvent(action="cleanup", path="", active=None, kept=False),
     render_expectations=["Worktree: Cleaned"],
 )
 
-CLEANUP_KEPT_WITH_FIX = FormatterCase(
+CLEANUP_KEPT_WITH_FIX = FormatterCase.identity(
     data=WorktreeLifecycleEvent(
-        action="cleanup", path=".dovo/worktrees/s1", kept=True, worktree_id="s1", branch="dovo/s1"
-    ),
-    view=WorktreeLifecycleEvent(
         action="cleanup", path=".dovo/worktrees/s1", kept=True, worktree_id="s1", branch="dovo/s1"
     ),
     render_expectations=[

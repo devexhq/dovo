@@ -14,15 +14,8 @@ from tests.harness.formatter import (
     assert_rich_render_shows_every_view_value,
 )
 
-WITH_NAME_AND_COMMAND = FormatterCase(
+WITH_NAME_AND_COMMAND = FormatterCase.identity(
     data=StepStartEvent(
-        idx=1,
-        total=3,
-        step_id="step-1",
-        name="Run Tests",
-        command="pytest",
-    ),
-    view=StepStartEvent(
         idx=1,
         total=3,
         step_id="step-1",
@@ -32,15 +25,8 @@ WITH_NAME_AND_COMMAND = FormatterCase(
     render_expectations=["1", "3", "Run Tests", "pytest"],
 )
 
-WITHOUT_NAME_AND_COMMAND = FormatterCase(
+WITHOUT_NAME_AND_COMMAND = FormatterCase.identity(
     data=StepStartEvent(
-        idx=2,
-        total=3,
-        step_id="step-2",
-        name=None,
-        command=None,
-    ),
-    view=StepStartEvent(
         idx=2,
         total=3,
         step_id="step-2",

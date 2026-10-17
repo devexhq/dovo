@@ -27,19 +27,13 @@ _SESSION = WorktreeSession(
     created_at="2026-08-31T20:00:00Z",
 )
 
-CREATED_OK = FormatterCase(
+CREATED_OK = FormatterCase.identity(
     data=WorktreeCreateResult(status=WorktreeCreateStatus.OK, session=_SESSION),
-    view=WorktreeCreateResult(status=WorktreeCreateStatus.OK, session=_SESSION),
     render_expectations=[_SESSION.session_id, _SESSION.target_branch],
 )
 
-FAILED_GIT = FormatterCase(
+FAILED_GIT = FormatterCase.identity(
     data=WorktreeCreateResult(
-        status=WorktreeCreateStatus.GIT_FAILED,
-        errors=["Git checkout failed."],
-        fixes=["Check git status and branch name"],
-    ),
-    view=WorktreeCreateResult(
         status=WorktreeCreateStatus.GIT_FAILED,
         errors=["Git checkout failed."],
         fixes=["Check git status and branch name"],

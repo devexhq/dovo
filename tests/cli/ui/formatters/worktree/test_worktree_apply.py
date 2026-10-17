@@ -18,15 +18,8 @@ from tests.harness.formatter import (
     assert_rich_render_shows_every_view_value,
 )
 
-APPLIED_SQUASH = FormatterCase(
+APPLIED_SQUASH = FormatterCase.identity(
     data=WorktreeApplyResult(
-        status=WorktreeApplyStatus.OK,
-        worktree_id="dovo_1",
-        strategy=WorktreeApplyStrategy.SQUASH,
-        commit_sha="abc1234",
-        cleaned_up=True,
-    ),
-    view=WorktreeApplyResult(
         status=WorktreeApplyStatus.OK,
         worktree_id="dovo_1",
         strategy=WorktreeApplyStrategy.SQUASH,
@@ -36,15 +29,8 @@ APPLIED_SQUASH = FormatterCase(
     render_expectations=["dovo_1", "squash", "abc1234"],
 )
 
-APPLIED_PATCH = FormatterCase(
+APPLIED_PATCH = FormatterCase.identity(
     data=WorktreeApplyResult(
-        status=WorktreeApplyStatus.OK,
-        worktree_id="dovo_2",
-        strategy=WorktreeApplyStrategy.PATCH,
-        touched_files=["src/main.py"],
-        cleaned_up=False,
-    ),
-    view=WorktreeApplyResult(
         status=WorktreeApplyStatus.OK,
         worktree_id="dovo_2",
         strategy=WorktreeApplyStrategy.PATCH,
@@ -54,16 +40,8 @@ APPLIED_PATCH = FormatterCase(
     render_expectations=["dovo_2", "patch"],
 )
 
-FAILED_CONFLICT = FormatterCase(
+FAILED_CONFLICT = FormatterCase.identity(
     data=WorktreeApplyResult(
-        status=WorktreeApplyStatus.GIT_FAILED,
-        worktree_id="dovo_3",
-        strategy=WorktreeApplyStrategy.SQUASH,
-        conflicting_files=["src/conflict.py"],
-        errors=["Merge conflict in src/conflict.py"],
-        fixes=["Resolve manually"],
-    ),
-    view=WorktreeApplyResult(
         status=WorktreeApplyStatus.GIT_FAILED,
         worktree_id="dovo_3",
         strategy=WorktreeApplyStrategy.SQUASH,

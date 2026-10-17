@@ -14,16 +14,8 @@ from tests.harness.formatter import (
     assert_rich_render_shows_every_view_value,
 )
 
-OK = FormatterCase(
+OK = FormatterCase.identity(
     data=ArtifactDownloadResult(
-        status=ArtifactDownloadStatus.OK,
-        session_id="wf_abc123",
-        name="dist-packages",
-        dest="/tmp/out",
-        revision=2,
-        file_count=2,
-    ),
-    view=ArtifactDownloadResult(
         status=ArtifactDownloadStatus.OK,
         session_id="wf_abc123",
         name="dist-packages",
@@ -34,14 +26,8 @@ OK = FormatterCase(
     render_expectations=["dist-packages", "/tmp/out"],
 )
 
-NOT_FOUND = FormatterCase(
+NOT_FOUND = FormatterCase.identity(
     data=ArtifactDownloadResult(
-        status=ArtifactDownloadStatus.NOT_FOUND,
-        session_id="wf_abc123",
-        name="missing",
-        errors=["Artifact 'missing' not found for session 'wf_abc123'"],
-    ),
-    view=ArtifactDownloadResult(
         status=ArtifactDownloadStatus.NOT_FOUND,
         session_id="wf_abc123",
         name="missing",

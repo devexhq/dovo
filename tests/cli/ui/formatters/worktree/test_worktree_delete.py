@@ -17,13 +17,8 @@ from tests.harness.formatter import (
     assert_rich_render_shows_every_view_value,
 )
 
-DELETED = FormatterCase(
+DELETED = FormatterCase.identity(
     data=WorktreeDeleteResult(
-        status=WorktreeDeleteStatus.DELETED,
-        worktree_id="dovo_del",
-        deleted=True,
-    ),
-    view=WorktreeDeleteResult(
         status=WorktreeDeleteStatus.DELETED,
         worktree_id="dovo_del",
         deleted=True,
@@ -31,13 +26,8 @@ DELETED = FormatterCase(
     render_expectations=["dovo_del"],
 )
 
-ALREADY_CLEANED = FormatterCase(
+ALREADY_CLEANED = FormatterCase.identity(
     data=WorktreeDeleteResult(
-        status=WorktreeDeleteStatus.ALREADY_CLEANED,
-        worktree_id="dovo_del",
-        deleted=False,
-    ),
-    view=WorktreeDeleteResult(
         status=WorktreeDeleteStatus.ALREADY_CLEANED,
         worktree_id="dovo_del",
         deleted=False,
@@ -45,13 +35,8 @@ ALREADY_CLEANED = FormatterCase(
     render_expectations=["dovo_del"],
 )
 
-ABORTED = FormatterCase(
+ABORTED = FormatterCase.identity(
     data=WorktreeDeleteResult(
-        status=WorktreeDeleteStatus.ABORTED,
-        worktree_id="dovo_del",
-        deleted=False,
-    ),
-    view=WorktreeDeleteResult(
         status=WorktreeDeleteStatus.ABORTED,
         worktree_id="dovo_del",
         deleted=False,
@@ -59,15 +44,8 @@ ABORTED = FormatterCase(
     render_expectations=["Aborted"],
 )
 
-NOT_FOUND = FormatterCase(
+NOT_FOUND = FormatterCase.identity(
     data=WorktreeDeleteResult(
-        status=WorktreeDeleteStatus.NOT_FOUND,
-        worktree_id="dovo_missing",
-        deleted=False,
-        errors=["Worktree 'dovo_missing' not found."],
-        fixes=["Run `dovo worktree list` to see known worktrees"],
-    ),
-    view=WorktreeDeleteResult(
         status=WorktreeDeleteStatus.NOT_FOUND,
         worktree_id="dovo_missing",
         deleted=False,

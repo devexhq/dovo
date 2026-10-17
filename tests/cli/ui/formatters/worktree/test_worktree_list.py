@@ -29,15 +29,13 @@ _RECORD = WorktreeRecord(
     updated_at="2026-08-31T20:00:00Z",
 )
 
-WITH_WORKTREES = FormatterCase(
+WITH_WORKTREES = FormatterCase.identity(
     data=WorktreeListResult(status=WorktreeListStatus.OK, worktrees=[_RECORD]),
-    view=WorktreeListResult(status=WorktreeListStatus.OK, worktrees=[_RECORD]),
     render_expectations=[_RECORD.id, "list-worktree", _RECORD.branch_name],
 )
 
-EMPTY_WORKTREES = FormatterCase(
+EMPTY_WORKTREES = FormatterCase.identity(
     data=WorktreeListResult(status=WorktreeListStatus.OK, worktrees=[]),
-    view=WorktreeListResult(status=WorktreeListStatus.OK, worktrees=[]),
     render_expectations=["No worktrees found."],
 )
 

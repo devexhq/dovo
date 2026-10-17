@@ -11,7 +11,7 @@ from rich.console import Console
 from dovo.common.types import ComponentFormatter
 
 
-@dataclass
+@dataclass(frozen=True)
 class FormatterCase[TData, TView]:
     """One formatter scenario: the domain input, intermediate view, and render expectations.
 
@@ -24,6 +24,11 @@ class FormatterCase[TData, TView]:
     data: TData
     view: TView
     render_expectations: list[str] = field(default_factory=list)
+
+    @classmethod
+    def identity(cls, data: TData, render_expectations: list[str]) -> FormatterCase[TData, TData]:
+        """Build a case for a formatter whose view is its input, so the data is written once."""
+        return FormatterCase(data=data, view=data, render_expectations=render_expectations)
 
 
 def render_rich(renderable: object, width: int = 160) -> str:

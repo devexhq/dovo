@@ -39,25 +39,18 @@ _USER_RECORD = CatalogRecord(
 )
 _USER_RESOLVED_PATH = Path("/home/user/.dovo/user/catalog/blueprints/user-blueprint.yml")
 
-CREATED_BLUEPRINT = FormatterCase(
+CREATED_BLUEPRINT = FormatterCase.identity(
     data=CatalogCreateResult(item=_RECORD, resolved_path=_REPO_RESOLVED_PATH),
-    view=CatalogCreateResult(item=_RECORD, resolved_path=_REPO_RESOLVED_PATH),
     render_expectations=["blueprint", "test-blueprint", "repo", ".dovo/catalog/blueprints/test-blueprint.yml"],
 )
 
-CREATED_USER_BLUEPRINT = FormatterCase(
+CREATED_USER_BLUEPRINT = FormatterCase.identity(
     data=CatalogCreateResult(item=_USER_RECORD, resolved_path=_USER_RESOLVED_PATH),
-    view=CatalogCreateResult(item=_USER_RECORD, resolved_path=_USER_RESOLVED_PATH),
     render_expectations=["blueprint", "user-blueprint", "user", str(_USER_RESOLVED_PATH)],
 )
 
-CREATION_ERROR = FormatterCase(
+CREATION_ERROR = FormatterCase.identity(
     data=CatalogCreateResult(
-        item=None,
-        errors=["Naming collision on blueprint."],
-        fixes=["Choose a different name"],
-    ),
-    view=CatalogCreateResult(
         item=None,
         errors=["Naming collision on blueprint."],
         fixes=["Choose a different name"],
