@@ -9,6 +9,7 @@ from rich.console import Console
 from dovo.cli.ui.dispatcher import UiDispatcher
 from dovo.cli.ui.events import LoopLifecycleEvent, StepDoneEvent, StepStartEvent
 from dovo.cli.ui.live import LiveDisplayManager, build_loop_status_panel
+from tests.harness.formatter import render_rich
 
 
 def _manager() -> LiveDisplayManager:
@@ -18,8 +19,8 @@ def _manager() -> LiveDisplayManager:
 
 
 def _terminal_console(output: io.StringIO) -> Console:
-    """Build an interactive console whose Live frames are captured in output."""
-    return Console(force_terminal=True, color_system=None, width=100, file=output)
+    """Build an interactive console whose Live frames are captured in output, since render_rich cannot drive Live."""
+    return Console(force_terminal=True, color_system=None, width=160, file=output)
 
 
 class LiveDisplayManagerLoopTests:
@@ -87,9 +88,7 @@ class BuildLoopStatusPanelTests:
             {1: True, 2: False},
         )
 
-        console = Console(width=100, color_system=None, record=True)
-        console.print(panel)
-        rendered = console.export_text()
+        rendered = render_rich(panel)
 
         assert "dev-cycle" in rendered
         assert "iteration 3/5" in rendered
