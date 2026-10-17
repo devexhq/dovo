@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import builtins
 from pathlib import Path
 
 from sqlmodel import col, func, select
@@ -69,7 +70,7 @@ class ArtifactsRepository(BaseRepository):
                 statement = statement.where(ArtifactRecord.revision == revision)
             return session.exec(statement.order_by(col(ArtifactRecord.revision).desc())).first()
 
-    def list(self, session_id: str | None = None) -> list[ArtifactRecord]:
+    def list(self, session_id: str | None = None) -> builtins.list[ArtifactRecord]:
         """List artifact revision rows for the current project, optionally filtered to one session, newest first."""
         with self.session() as session:
             statement = select(ArtifactRecord).where(ArtifactRecord.project_id == self.project_id)
@@ -91,7 +92,7 @@ class ArtifactsRepository(BaseRepository):
                 ),
             )
 
-    def list_expired(self, now: str) -> list[ArtifactRecord]:
+    def list_expired(self, now: str) -> builtins.list[ArtifactRecord]:
         """List artifact rows whose expires_at is set and at or before now, for the current project."""
         with self.session() as session:
             statement = select(ArtifactRecord).where(

@@ -23,7 +23,7 @@ steps:
 
   - id: typecheck
     name: Typecheck
-    run: uv run basedpyright src tests --level error
+    run: uv run ty check src tests e2e
     timeout_seconds: 300
 
   - id: docs

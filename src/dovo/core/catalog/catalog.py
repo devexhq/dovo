@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import builtins
 from pathlib import Path
 from typing import Any, Protocol
 
@@ -91,7 +92,7 @@ class Catalog:
         )
 
     def _list_packaged_templates_result(
-        self, records: list[CatalogRecord], scan_result: CatalogScanResult
+        self, records: builtins.list[CatalogRecord], scan_result: CatalogScanResult
     ) -> CatalogListResult:
         """Build the CatalogListResult for the '--type template' sugar filter."""
         packaged_items = [record for record in records if record.tier == CatalogTier.PACKAGED]
@@ -285,7 +286,7 @@ class Catalog:
         target: str,
         *,
         item_type: CatalogItemType | None,
-    ) -> CatalogValidateResult | tuple[Path, str, str, list[str]]:
+    ) -> CatalogValidateResult | tuple[Path, str, str, builtins.list[str]]:
         """Resolve target to (absolute_path, item_type_value, definition_key, warnings), or a terminal not-found/type-required result.
 
         Kept on ``Catalog`` rather than in ``services/validate.py`` so the catalog-name branch can call

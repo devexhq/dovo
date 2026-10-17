@@ -92,7 +92,7 @@ breath — stop after the drafts and let them invoke it.
   files, nothing more. Committing, pushing, and opening the PR is a human
   action taken outside this skill.
 - **Never run tests or tooling** (`dovo run tests`, `dovo run quality`, `ruff`,
-  `basedpyright`). This skill packages what's already there; it doesn't gate it.
+  `ty`). This skill packages what's already there; it doesn't gate it.
 - **Never edit code** while drafting. If the diff looks wrong or mixes
   unrelated concerns, say so and ask before drafting, since this repo
   requires one fix or feature per PR.

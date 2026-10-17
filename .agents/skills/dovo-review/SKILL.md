@@ -21,7 +21,7 @@ Output goes to `.agentic/review.md`, which `/dovo-code review` consumes, paired 
 
 ## Hard boundaries
 
-- **Never run tests or tooling.** No `dovo run`, `pytest`, `ruff` or `basedpyright`; `/dovo-code` owns the gate. Read-only `git`, read-only `gh`, `rg` and file reads are enough.
+- **Never run tests or tooling.** No `dovo run`, `pytest`, `ruff` or `ty`; `/dovo-code` owns the gate. Read-only `git`, read-only `gh`, `rg` and file reads are enough.
 - **Never edit, stage, commit or push.** Report findings and hand off.
 - **Re-read from disk.** Every file you reason about is read fresh in this session.
 - **Every finding cites a `path:line`** and says what goes wrong, not just which rule it touches.
@@ -70,7 +70,7 @@ Skip this when `.agentic/plan.md` is absent, and say so.
 
 Go through R1–R17 in [AGENTS.md](../../../AGENTS.md) against the diff. Report **only violations**, each as a finding with the rule id and the `path:line` that breaks it. Do not list rules that pass, and do not report a rule the diff cannot touch. A rule violation is Blocking unless it is cosmetic in context, in which case say why it is a Warning.
 
-Do not re-check what tooling enforces: import direction, output routing, direct file writes, model strictness, explicit `Any`, ignore reasons and docstring presence are covered by `tests/lint/`, ruff and basedpyright. Do flag a change that weakens that tooling: a new allowlist or baseline entry, a new per-file ignore, or a suppression.
+Do not re-check what tooling enforces: import direction, output routing, direct file writes, model strictness, ignore reasons and docstring presence are covered by `tests/lint/`, ruff and ty. Explicit `Any` is not tool-enforced, so check each new one against the permitted list in `docs/agents/code-conventions.md`. Do flag a change that weakens that tooling: a new allowlist or baseline entry, a new per-file ignore, or a suppression.
 
 ## 7. Check the docs
 

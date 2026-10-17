@@ -6,7 +6,7 @@ workflows and AI agent workspaces, backed by a local `.dovo/` state directory.
 The codebase is the main specification. Read the code around your change and
 the [exemplars](#exemplars) before writing anything, and make new code look like
 them. The rules below cover what the code cannot show and what is expensive to
-get wrong. Mechanical checks live in `tests/lint/`, ruff and basedpyright, so
+get wrong. Mechanical checks live in `tests/lint/`, ruff and ty, so
 they are not repeated here.
 
 ## How work flows
@@ -134,14 +134,14 @@ uv run dovo run tests --path tests/core/   # scoped tests while iterating (also 
 uv run dovo run quality         # all quality gates against the working tree
 uv run ruff format .            # format (the gate only checks it)
 uv run ruff check .             # lint
-uv run basedpyright src tests   # typecheck (errors must be 0)
+uv run ty check src tests e2e   # typecheck (must report no diagnostics)
 ```
 
 ## Quality gate
 
 `uv run dovo run quality` must pass before every commit. It runs, in order,
 and stops at the first failure: `ruff format --check`, `ruff check`,
-`basedpyright src tests --level error`, `mkdocs build --strict`, `complexipy`
+`ty check src tests e2e`, `mkdocs build --strict`, `complexipy`
 on the files changed against `origin/main` (no touched function over 10), and
 the full test suite with coverage (at least 80%). CI runs the same blueprint.
 Fix a failure in the code, never with a suppression or a lowered threshold.

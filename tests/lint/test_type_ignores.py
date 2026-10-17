@@ -1,4 +1,4 @@
-"""Invariant: every `pyright: ignore[...]` in src/dovo and tests carries a trailing reason comment."""
+"""Invariant: every `ty: ignore[...]` in src/dovo and tests carries a trailing reason comment."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ from typing import Final
 
 from tests.lint.astlib import REPO_ROOT, SRC_ROOT, TESTS_ROOT, collect_python_files
 
-IGNORE: Final[re.Pattern[str]] = re.compile(r"#\s*pyright:\s*ignore\[[^\]]+\](?P<rest>.*)$")
+IGNORE: Final[re.Pattern[str]] = re.compile(r"#\s*ty:\s*ignore\[[^\]]+\](?P<rest>.*)$")
 REASON: Final[re.Pattern[str]] = re.compile(r"\s*#\s*\S.*")
 
 
@@ -22,7 +22,7 @@ def _ignores_without_reason(file_path: Path) -> list[str]:
     ]
 
 
-class PyrightIgnoreTests:
+class TypeIgnoreTests:
     def test_every_ignore_names_its_reason(self) -> None:
         files = [*collect_python_files(SRC_ROOT), *collect_python_files(TESTS_ROOT)]
         assert files, "no Python files found, so the rule would pass vacuously"

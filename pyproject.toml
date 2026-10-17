@@ -41,7 +41,7 @@ dev = [
     "ruff>=0.6.0",
     "invoke>=2.0.0",
     "complexipy>=6.2.0",
-    "basedpyright>=1.39.10",
+    "ty>=0.0.89",
 ]
 docs = [
     "mkdocs>=1.5.0",
@@ -212,7 +212,7 @@ docstring-code-line-length = "dynamic"
 
 [dependency-groups]
 dev = [
-    "basedpyright>=1.39.10",
+    "ty>=0.0.89",
 ]
 
 [tool.complexipy]
@@ -222,8 +222,16 @@ check-script = true               # Score module-level/top-level logic, not just
 suggest-refactors = false          # Show deterministic Rust AST-based refactor plans
 failed = true
 
-[tool.basedpyright]
-# Source and test suites type-checked under recommended mode.
+[tool.ty.environment]
+python-version = "3.13"
+python-platform = "linux"
+
+[tool.ty.analysis]
+# Only rule-scoped `# ty: ignore[rule]` suppresses a diagnostic; bare `# type: ignore` does not.
+respect-type-ignore-comments = false
+
+[tool.ty.src]
+# Source, test and e2e suites are type-checked.
 include = ["src", "tests", "e2e"]
 exclude = [
     "**/__pycache__",
@@ -234,22 +242,3 @@ exclude = [
     "site",
     "scratch",
 ]
-pythonVersion = "3.13"
-pythonPlatform = "Linux"
-typeCheckingMode = "recommended"
-failOnWarnings = false  # The gate is zero errors; warnings stay visible but do not fail (also under GITHUB_ACTIONS)
-venvPath = "."
-venv = ".venv"
-
-# Framework / Pydantic noise that dominates first-run volume without catching
-# real package bugs. Keep true type errors as errors; leave most unknown/Any
-# rules at recommended defaults so they remain visible as warnings.
-reportCallInDefaultInitializer = "none"  # Typer Option()/Argument() defaults
-reportUnusedParameter = "none"  # Typer ctx and callback-required params
-reportUnannotatedClassAttribute = "none"  # Pydantic model_config / ClassVar flood
-reportUnusedCallResult = "none"  # Path.mkdir, list.append-style intentional discards
-reportUninitializedInstanceVariable = "none"  # Pytest fixture-initialized instance attributes
-reportMissingTypeStubs = false
-# Any is an error so new code cannot add it; the sites that predate this are
-# recorded in .basedpyright/baseline.json and only ever leave it.
-reportExplicitAny = "error"

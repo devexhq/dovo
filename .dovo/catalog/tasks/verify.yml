@@ -28,8 +28,8 @@ steps:
     run: uv run ruff check .
 
   - id: types
-    name: Basedpyright
-    run: uv run basedpyright src --level error
+    name: Typecheck
+    run: uv run ty check src tests e2e
     timeout_seconds: 600
 
   - id: tests

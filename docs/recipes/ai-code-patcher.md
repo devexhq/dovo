@@ -44,7 +44,7 @@ steps:
   # 4. Verification & Quality Gates
   - id: run-linters
     name: Check code formatting and types
-    run: ruff check . && basedpyright src
+    run: ruff check . && ty check src
     assert:
       exit_code: 0
     on_failure:

@@ -104,7 +104,7 @@ class BaseAgentProviderTests:
             pass
 
         with pytest.raises(TypeError):
-            _IncompleteProvider()  # pyright: ignore[reportAbstractUsage]  # intentional ill-typed input: the subject is the raised TypeError
+            _IncompleteProvider()  # ty: ignore[call-non-callable]  # intentional ill-typed input: the subject is the raised TypeError
 
 
 class CredentialPreflightTests:
