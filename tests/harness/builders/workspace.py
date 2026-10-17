@@ -61,6 +61,10 @@ def _create_git_template(
     _git(template_repository, "init", "-b", branch)
     _git(template_repository, "config", "user.name", user_name)
     _git(template_repository, "config", "user.email", user_email)
+    _git(template_repository, "config", "gc.auto", "0")
+    _git(template_repository, "config", "gc.autoDetach", "false")
+    _git(template_repository, "config", "maintenance.auto", "false")
+    _git(template_repository, "config", "maintenance.autoDetach", "false")
     if initial_files:
         for relative_path, content in initial_files.items():
             file_path = template_repository / relative_path
@@ -98,6 +102,10 @@ def _init_git_repository_direct(
     _git(root, "init", "-b", branch)
     _git(root, "config", "user.name", user_name)
     _git(root, "config", "user.email", user_email)
+    _git(root, "config", "gc.auto", "0")
+    _git(root, "config", "gc.autoDetach", "false")
+    _git(root, "config", "maintenance.auto", "false")
+    _git(root, "config", "maintenance.autoDetach", "false")
     if not initial_files:
         return
 
@@ -132,7 +140,12 @@ def init_git_repository(
 
     template_repository = _get_git_template(branch, user_name, user_email, initial_files)
     root.mkdir(parents=True, exist_ok=True)
-    shutil.copytree(template_repository, root, dirs_exist_ok=True)
+    shutil.copytree(
+        template_repository,
+        root,
+        dirs_exist_ok=True,
+        ignore=shutil.ignore_patterns("*.lock", "gc.pid"),
+    )
 
 
 def _git(root: Path, *args: str) -> None:
