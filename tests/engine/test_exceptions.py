@@ -7,8 +7,7 @@ from pathlib import Path
 import pytest
 
 from dovo.core.inputs import InputResolveResult
-from dovo.engine.exceptions import EngineError, EngineInputError, EngineResumeError, EngineSnapshotMissingError
-from dovo.engine.models import EngineResumeStatus
+from dovo.engine.exceptions import EngineError, EngineInputError, EngineSnapshotMissingError
 
 
 class EngineInputErrorTests:
@@ -29,14 +28,6 @@ class EngineInputErrorTests:
 
         assert str(error) == expected
         assert error.result is result
-
-
-class EngineResumeErrorTests:
-    def test_error_carries_status_and_message(self) -> None:
-        error = EngineResumeError(EngineResumeStatus.NOT_FOUND, "no such run")
-
-        assert str(error) == "no such run"
-        assert error.status is EngineResumeStatus.NOT_FOUND
 
 
 class EngineSnapshotMissingErrorTests:

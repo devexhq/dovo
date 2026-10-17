@@ -9,7 +9,6 @@ from dovo.engine.executors.models import StepResult
 from dovo.engine.failure import (
     USER_CONTINUED_MARKER,
     effective_terminal_policy,
-    failed_step_message,
     mark_continued_after_prompt,
     resolve_terminal_action,
     step_failure_diagnostic,
@@ -47,18 +46,9 @@ class FailurePolicyHelperTests:
 
         updated = mark_continued_after_prompt(original)
 
-        assert updated.step_id == "publish"
-        assert updated.status == "ignored"
-        assert updated.exit_code == 1
-        assert updated.stdout == ""
-        assert updated.stderr == ""
-        assert updated.duration_seconds == 0.1
-        assert updated.attempts == 1
-        assert updated.error_message == f"boom ({USER_CONTINUED_MARKER})"
-        assert updated.errors == []
-        assert updated.warnings == []
-        assert updated.fixes == []
-        assert updated.ok is True
+        assert updated == original.model_copy(
+            update={"status": "ignored", "error_message": f"boom ({USER_CONTINUED_MARKER})"}
+        )
 
     def test_step_failure_diagnostic_prefers_error_message_over_stderr_and_exit_code(self) -> None:
         result = StepResult(
@@ -72,21 +62,6 @@ class FailurePolicyHelperTests:
         )
 
         assert step_failure_diagnostic(result) == "explicit failure"
-
-
-class FailedStepMessageTests:
-    def test_formats_step_id_and_diagnostic_detail(self) -> None:
-        result = StepResult(
-            step_id="fail",
-            status="failed",
-            exit_code=1,
-            stdout="",
-            stderr="",
-            duration_seconds=0.0,
-            error_message="Command failed with exit code 1.",
-        )
-
-        assert failed_step_message(result) == "Step 'fail' failed: Command failed with exit code 1."
 
 
 class ResolveTerminalActionTests:

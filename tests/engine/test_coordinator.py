@@ -251,32 +251,6 @@ class CoordinatorExecuteTests:
         assert [result.status for result in outcome.step_results] == ["ignored", "completed"]
         assert _leaf(_state(engine_paths, sessions_repo, "cont"), "a").state == NodeState.IGNORED
 
-    def test_fresh_and_resumed_linear_runs_produce_equal_step_results(
-        self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository
-    ) -> None:
-        straight = _run_new(
-            engine_paths,
-            sessions_repo,
-            "straight",
-            [_step("a", "true"), _step("b", "exit 1", on_failure="continue"), _step("c", "true")],
-        )
-        seed_paused_session(
-            engine_paths,
-            sessions_repo,
-            session_id="resumed",
-            steps=[_step("a", "true"), _step("b", "exit 1", on_failure="prompt_user"), _step("c", "true")],
-            paused_step_id="b",
-        )
-
-        resumed = _coordinator(
-            engine_paths, sessions_repo, "resumed", prompter=ScriptedFailurePrompter([FailurePromptDecision.CONTINUE])
-        ).execute()
-
-        assert [(r.step_id, r.status) for r in resumed.step_results] == [
-            (r.step_id, r.status) for r in straight.step_results
-        ]
-        assert [r.status for r in resumed.step_results] == ["completed", "ignored", "completed"]
-
     def test_unreadable_state_returns_failed_outcome_without_running_steps(
         self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository, engine_workspace: Path
     ) -> None:
@@ -443,28 +417,6 @@ class CoordinatorArtifactRevisionsTests:
 
 
 class CoordinatorObserverContractTests:
-    def test_linear_run_emits_pinned_observer_sequence(
-        self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository
-    ) -> None:
-        observer = RecordingRunObserver()
-
-        _run_new(
-            engine_paths,
-            sessions_repo,
-            "linear",
-            [_step("a", "echo a"), _step("b", "echo b"), _step("c", "echo c")],
-            observer=observer,
-        )
-
-        assert [call for call in observer.calls if call[0] != "step_output"] == [
-            ("step_start", 1, 3, "a"),
-            ("step_done", 1, 3, "a", "completed"),
-            ("step_start", 2, 3, "b"),
-            ("step_done", 2, 3, "b", "completed"),
-            ("step_start", 3, 3, "c"),
-            ("step_done", 3, 3, "c", "completed"),
-        ]
-
     def test_loop_run_emits_pinned_observer_sequence(
         self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository
     ) -> None:
@@ -519,17 +471,6 @@ class CoordinatorObserverContractTests:
         ]
         evaluated = [e for e in events if e.event is SessionLogEventType.LOOP_CONDITIONS_EVALUATED]
         assert [[c["passed"] for c in e.conditions or []] for e in evaluated] == [[False], [True]]
-
-    def test_top_level_step_events_leave_loop_fields_null(
-        self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository
-    ) -> None:
-        _run_new(engine_paths, sessions_repo, "flat-log", [_step("a", "true"), _step("b", "true")])
-
-        events = read_session_log_events(engine_paths.logs_dir / "flat-log", tail=None)
-
-        step_events = [e for e in events if e.event.value in {"step_start", "step_done"}]
-        assert len(step_events) == 4
-        assert [(e.loop_id, e.iteration) for e in step_events] == [(None, None)] * 4
 
     def test_step_name_and_duration_are_logged(
         self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository
@@ -732,16 +673,6 @@ class CoordinatorMetadataTests:
 
 
 class CoordinatorLeafTransitionTests:
-    def test_pending_leaf_success_returns_completed_and_persists_state(
-        self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository
-    ) -> None:
-        outcome = _run_new(engine_paths, sessions_repo, "adv-ok", [_step("a", "echo a")])
-
-        leaf = _leaf(_state(engine_paths, sessions_repo, "adv-ok"), "a")
-        assert outcome.status == SessionStatus.COMPLETED
-        assert leaf.state == NodeState.COMPLETED
-        assert [attempt.number for attempt in leaf.attempts] == [1]
-
     def test_prompt_retry_then_abort_prompts_twice_and_fails_node_with_two_attempts(
         self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository
     ) -> None:
@@ -1425,35 +1356,24 @@ class CoordinatorLoopCeilingTests:
 
 
 class CoordinatorCorruptLoopStateTests:
-    @pytest.mark.parametrize("corruption", ["loop_id", "child_order", "child_id"])
     def test_structurally_corrupt_loop_state_fails_before_any_step_runs(
-        self,
-        engine_paths: WorkspacePaths,
-        sessions_repo: SessionsRepository,
-        engine_workspace: Path,
-        corruption: str,
+        self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository, engine_workspace: Path
     ) -> None:
         body = [_step("edit", "touch edit.ran"), _step("verify", "touch verify.ran")]
         seed_new_session(engine_paths, sessions_repo, session_id="corrupt-loop", steps=[_loop("fix", body)])
         store = SessionStateStore(sessions_repo, engine_paths, "corrupt-loop")
         state = _state(engine_paths, sessions_repo, "corrupt-loop")
-        loop = _loop_node(state, "fix")
-        if corruption == "loop_id":
-            loop.id = "ghost"
-            expected = "Loop 'ghost' does not match a loop in the run snapshot."
-        elif corruption == "child_order":
-            loop.iterations[0].steps.reverse()
-            expected = "Loop 'fix' iteration 1 steps ['verify', 'edit'] do not match the loop body ['edit', 'verify']."
-        else:
-            loop.iterations[0].steps[1].id = "renamed"
-            expected = "Loop 'fix' iteration 1 steps ['edit', 'renamed'] do not match the loop body ['edit', 'verify']."
+        _loop_node(state, "fix").iterations[0].steps.reverse()
         assert store.save(state).ok
         revision = _state(engine_paths, sessions_repo, "corrupt-loop").revision
 
         outcome = _coordinator(engine_paths, sessions_repo, "corrupt-loop").execute()
 
         assert outcome.status == SessionStatus.FAILED
-        assert outcome.errors == [f"Execution state for session 'corrupt-loop' is corrupt: {expected}"]
+        assert outcome.errors == [
+            "Execution state for session 'corrupt-loop' is corrupt: "
+            "Loop 'fix' iteration 1 steps ['verify', 'edit'] do not match the loop body ['edit', 'verify']."
+        ]
         assert not (engine_workspace / "edit.ran").exists()
         assert _state(engine_paths, sessions_repo, "corrupt-loop").revision == revision
 

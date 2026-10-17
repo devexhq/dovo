@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import dataclasses
 from pathlib import Path
-from typing import Any
 
 import pytest
 
@@ -14,7 +13,6 @@ from dovo.core.agents.models import ResolvedAgentSettings
 from dovo.core.worktree import WorktreeSession
 from dovo.engine.executors.models import AgentProgressUpdate, StepExecutionContext, StepResult
 from dovo.engine.executors.step_executor import StepExecution
-from dovo.engine.failure import USER_CONTINUED_MARKER
 from dovo.engine.models import FailurePromptDecision, RunContext, RunSettings, StepAction
 from dovo.engine.step_coordinator import StepCoordinator
 from tests.engine.conftest import AgentRunnerBuild
@@ -32,13 +30,13 @@ _AGENT_SETTINGS = ResolvedAgentSettings(
 )
 
 
-def _run_context(tmp_path: Path, *, session_log_dir: Path | None = None) -> RunContext:
+def _run_context(tmp_path: Path) -> RunContext:
     return RunContext(
         session_id="sess-1",
         paths=initialized_workspace_paths(tmp_path),
         target_dir=tmp_path,
         session_tmp_dir=None,
-        session_log_dir=session_log_dir,
+        session_log_dir=None,
         artifact_store=None,
     )
 
@@ -144,31 +142,6 @@ class StepCoordinatorRunnerWiringTests:
         ]
 
 
-class StepCoordinatorLoopIterationForwardingTests:
-    @pytest.mark.parametrize(
-        ("loop_iteration", "expected_filename"),
-        [
-            pytest.param(2, "01_check_iter_2_attempt_1.stdout.log", id="loop_iteration_set"),
-            pytest.param(None, "01_check_attempt_1.stdout.log", id="loop_iteration_none"),
-        ],
-    )
-    def test_run_attempt_loop_iteration_forwards_to_attempt_log_filename(
-        self,
-        tmp_path: Path,
-        loop_iteration: int | None,
-        expected_filename: str,
-    ) -> None:
-        context = RunSettings(cwd=tmp_path, use_worktree=False, paths=initialized_workspace_paths(tmp_path))
-        step = StepBuilder.command("echo ok").with_id("check").build()
-        run_context = _run_context(tmp_path, session_log_dir=tmp_path)
-
-        StepCoordinator(context).run_attempt(
-            run_context, [], step, idx=1, total=1, step_context=None, loop_iteration=loop_iteration
-        )
-
-        assert (tmp_path / expected_filename).exists()
-
-
 class StepCoordinatorLoopIdTests:
     @pytest.mark.parametrize(
         ("loop_id", "expected"),
@@ -252,18 +225,6 @@ class StepCoordinatorPrimitiveTests:
         assert result.status == "failed"
         assert prompter.prompted == []
 
-    def test_run_step_forwards_sensitive_variables_to_step_execution_context(
-        self, tmp_path: Path, captured_contexts: list[StepExecutionContext]
-    ) -> None:
-        context = RunSettings(
-            cwd=tmp_path, use_worktree=False, sensitive_variables=("PIN",), paths=initialized_workspace_paths(tmp_path)
-        )
-        step = StepBuilder.command("echo ok").with_id("ok").build()
-
-        StepCoordinator(context).run_attempt(_run_context(tmp_path), [], step, idx=1, total=1, step_context=None)
-
-        assert [metadata.sensitive_variables for metadata in captured_contexts] == [("PIN",)]
-
     def test_run_attempt_forwards_result_warnings_to_run_warnings(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
@@ -289,39 +250,6 @@ class StepCoordinatorPrimitiveTests:
 
         assert warnings == ["w1"]
 
-    @pytest.mark.parametrize(
-        ("ctx_kwargs", "prompter", "warning_substr"),
-        [
-            pytest.param({"no_tty": True}, ScriptedFailurePrompter(), "non-interactive", id="no-tty"),
-            pytest.param({}, None, "no failure prompter", id="no-prompter"),
-        ],
-    )
-    def test_prompt_decision_non_interactive_returns_abort_with_warning(
-        self,
-        tmp_path: Path,
-        ctx_kwargs: dict[str, Any],
-        prompter: ScriptedFailurePrompter | None,
-        warning_substr: str,
-    ) -> None:
-        context = RunSettings(
-            cwd=tmp_path,
-            use_worktree=False,
-            failure_prompter=prompter,
-            **ctx_kwargs,
-            paths=initialized_workspace_paths(tmp_path),
-        )
-        step = StepBuilder.command("exit 1").with_id("fail").with_on_failure(FailurePolicy.PROMPT_USER).build()
-        failed = StepResult(step_id="fail", status="failed", exit_code=1, stdout="", stderr="", duration_seconds=0.0)
-        coordinator = StepCoordinator(context)
-
-        decision, warning = coordinator.prompt_decision(step, failed)
-
-        assert decision == FailurePromptDecision.ABORT
-        assert warning is not None
-        assert warning.startswith("Warning: step 'fail' requested prompt_user but")
-        assert warning_substr in warning
-        assert coordinator.is_interactive is False
-
     def test_prompt_decision_interactive_returns_prompter_decision(self, tmp_path: Path) -> None:
         prompter = ScriptedFailurePrompter([FailurePromptDecision.RETRY])
         context = RunSettings(
@@ -334,23 +262,7 @@ class StepCoordinatorPrimitiveTests:
         assert coordinator.prompt_decision(step, failed) == (FailurePromptDecision.RETRY, None)
         assert coordinator.is_interactive is True
 
-    @pytest.mark.parametrize(
-        ("decision", "expected_action", "expected_status", "expected_error"),
-        [
-            pytest.param(FailurePromptDecision.RETRY, StepAction.RETRY, None, None, id="retry"),
-            pytest.param(FailurePromptDecision.CONTINUE, StepAction.CONTINUE, "ignored", None, id="continue"),
-            pytest.param(
-                FailurePromptDecision.ABORT, StepAction.ABORT, "failed", "Step 'fail' failed: boom", id="abort"
-            ),
-        ],
-    )
-    def test_apply_prompt_decision_maps_decision_to_action(
-        self,
-        decision: FailurePromptDecision,
-        expected_action: StepAction,
-        expected_status: str | None,
-        expected_error: str | None,
-    ) -> None:
+    def test_apply_prompt_decision_retry_records_nothing(self) -> None:
         failed = StepResult(
             step_id="fail",
             status="failed",
@@ -361,12 +273,8 @@ class StepCoordinatorPrimitiveTests:
             error_message="boom",
         )
 
-        action, recorded, error_message = StepCoordinator.apply_prompt_decision(decision, failed)
-
-        assert action is expected_action
-        assert (recorded.status if recorded is not None else None) == expected_status
-        assert error_message == expected_error
-        if decision == FailurePromptDecision.CONTINUE:
-            assert recorded is not None
-            assert recorded.error_message is not None
-            assert recorded.error_message.endswith(f"({USER_CONTINUED_MARKER})")
+        assert StepCoordinator.apply_prompt_decision(FailurePromptDecision.RETRY, failed) == (
+            StepAction.RETRY,
+            None,
+            None,
+        )

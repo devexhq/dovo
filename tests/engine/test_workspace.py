@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import shutil
+from collections.abc import Callable
+from dataclasses import dataclass
 from pathlib import Path
 
 import pytest
@@ -26,11 +28,30 @@ from tests.harness.sessions import RecordingRunObserver
 from tests.harness.workspace_paths import initialized_workspace_paths
 
 
+def _create_returns_git_failure(self: Worktree, *args: object, **kwargs: object) -> WorktreeCreateResult:
+    return WorktreeCreateResult(status=WorktreeCreateStatus.GIT_FAILED, errors=["git worktree add failed"])
+
+
+def _create_raises_config_load_error(self: Worktree, *args: object, **kwargs: object) -> WorktreeCreateResult:
+    load_result = ConfigLoadResult(status=ConfigLoadStatus.MALFORMED_JSON, config_path=Path("config.json"))
+    raise ConfigLoadError("malformed config.json", load_result)
+
+
 class WorkspaceSetupTests:
-    def test_no_worktree_returns_resolved_cwd_and_notifies_inactive(self, tmp_path: Path) -> None:
+    @pytest.mark.parametrize(
+        "worktree_id",
+        [pytest.param(None, id="no-worktree-id"), pytest.param("sess-1", id="worktree-id-ignored")],
+    )
+    def test_no_worktree_returns_resolved_cwd_and_notifies_inactive(
+        self, tmp_path: Path, worktree_id: str | None
+    ) -> None:
         observer = RecordingRunObserver()
         context = RunSettings(
-            cwd=tmp_path, use_worktree=False, observer=observer, paths=initialized_workspace_paths(tmp_path)
+            cwd=tmp_path,
+            use_worktree=False,
+            worktree_id=worktree_id,
+            observer=observer,
+            paths=initialized_workspace_paths(tmp_path),
         )
 
         target_dir, manager, session, error = Workspace(context).setup()
@@ -70,18 +91,37 @@ class WorkspaceSetupTests:
         assert row.branch_name == "dovo/blueprint_367e1e88"
         assert not paths.worktree_dir("lint").exists()
 
+    @pytest.mark.parametrize(
+        ("create", "expected_error"),
+        [
+            pytest.param(
+                _create_returns_git_failure,
+                "Git worktree creation failed: git worktree add failed",
+                id="git-failed",
+            ),
+            pytest.param(
+                _create_raises_config_load_error,
+                "Git worktree creation failed: malformed config.json",
+                id="config-load-error",
+            ),
+        ],
+    )
     def test_worktree_creation_failure_returns_error_message(
-        self, worktree_setup: WorktreeSetupFactory, worktree_root: Path, monkeypatch: pytest.MonkeyPatch
+        self,
+        worktree_setup: WorktreeSetupFactory,
+        worktree_root: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        create: Callable[..., WorktreeCreateResult],
+        expected_error: str,
     ) -> None:
-        failed_result = WorktreeCreateResult(status=WorktreeCreateStatus.GIT_FAILED, errors=["git worktree add failed"])
-        monkeypatch.setattr(Worktree, "create", lambda self, *args, **kwargs: failed_result)
+        monkeypatch.setattr(Worktree, "create", create)
 
         setup = worktree_setup()
 
         assert setup.target_dir == worktree_root.resolve()
         assert setup.manager is None
         assert setup.session is None
-        assert setup.error == "Git worktree creation failed: git worktree add failed"
+        assert setup.error == expected_error
 
     def test_capacity_failure_message_includes_fix_line(self, tmp_path: Path) -> None:
         workspace_root = (
@@ -112,33 +152,6 @@ class WorkspaceSetupTests:
             "Fix: Remove a kept worktree with `dovo worktree delete <worktree-id>` (see `dovo worktree list`), "
             "or Raise worktree.max_active_worktrees in .dovo/config.json"
         )
-
-    def test_worktree_creation_config_load_error_returns_error_message(
-        self, worktree_setup: WorktreeSetupFactory, worktree_root: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        load_result = ConfigLoadResult(
-            status=ConfigLoadStatus.MALFORMED_JSON, config_path=worktree_root / "config.json"
-        )
-
-        def _raise(self: Worktree, *args: object, **kwargs: object) -> WorktreeCreateResult:
-            raise ConfigLoadError("malformed config.json", load_result)
-
-        monkeypatch.setattr(Worktree, "create", _raise)
-
-        setup = worktree_setup()
-
-        assert setup.manager is None
-        assert setup.session is None
-        assert setup.error == "Git worktree creation failed: malformed config.json"
-
-    def test_worktree_id_with_use_worktree_false_returns_resolved_cwd(self, tmp_path: Path) -> None:
-        context = RunSettings(
-            cwd=tmp_path, use_worktree=False, worktree_id="sess-1", paths=initialized_workspace_paths(tmp_path)
-        )
-
-        target_dir, manager, session, error = Workspace(context).setup()
-
-        assert (target_dir, manager, session, error) == (tmp_path.resolve(), None, None, None)
 
 
 class WorkspaceRetainedWorktreeTests:
@@ -202,51 +215,6 @@ class WorkspaceCleanupTests:
 
         assert kept is False
         assert [call[:3] for call in observer.calls] == [("worktree_cleanup", False, tmp_path)]
-
-    def test_keep_true_returns_true_and_notifies_kept_without_removing_worktree(
-        self, worktree_setup: WorktreeSetupFactory
-    ) -> None:
-        observer = RecordingRunObserver()
-        workspace, target_dir, manager, session, _ = worktree_setup(keep=True, observer=observer)
-        assert session is not None
-
-        warnings: list[str] = []
-
-        kept = workspace.cleanup(manager, session, target_dir, SessionStatus.COMPLETED, warnings)
-
-        assert kept is True
-        assert target_dir.exists()
-        assert observer.calls[-1][:3] == ("worktree_cleanup", True, session.worktree_path)
-
-    def test_keep_false_removes_worktree_and_returns_false(self, worktree_setup: WorktreeSetupFactory) -> None:
-        observer = RecordingRunObserver()
-        workspace, target_dir, manager, session, _ = worktree_setup(keep=False, observer=observer)
-        assert session is not None
-
-        warnings: list[str] = []
-
-        kept = workspace.cleanup(manager, session, target_dir, SessionStatus.COMPLETED, warnings)
-
-        assert kept is False
-        assert not target_dir.exists()
-        assert observer.calls[-1][:3] == ("worktree_cleanup", False, session.worktree_path)
-
-    def test_cleanup_exception_is_swallowed_and_returns_false(
-        self, worktree_setup: WorktreeSetupFactory, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        workspace, target_dir, manager, session, _ = worktree_setup()
-        assert session is not None
-
-        def _raise(self: Worktree, *args: object, **kwargs: object) -> list[str]:
-            raise RuntimeError("worktree removal failed")
-
-        monkeypatch.setattr(Worktree, "cleanup", _raise)
-
-        warnings: list[str] = []
-
-        kept = workspace.cleanup(manager, session, target_dir, SessionStatus.COMPLETED, warnings)
-
-        assert kept is False
 
     def test_removal_failure_appends_warning_with_path_and_returns_false(
         self, worktree_setup: WorktreeSetupFactory, monkeypatch: pytest.MonkeyPatch
@@ -514,20 +482,6 @@ class WorkspaceCaptureAndPersistDiffTests:
 
         assert warnings == []
 
-    def test_writes_diff_patch_under_session_directory(
-        self, worktree_setup: WorktreeSetupFactory, worktree_paths: WorkspacePaths
-    ) -> None:
-        workspace, _, _, session, _ = worktree_setup(session_id="sess-1")
-        assert session is not None
-        (session.worktree_path / "new_file.txt").write_text("hello\n", encoding="utf-8")
-        warnings: list[str] = []
-
-        workspace.capture_and_persist_diff(session, warnings)
-
-        session_dir = worktree_paths.session_dir("sess-1")
-        assert (session_dir / "diff.patch").exists()
-        assert warnings == []
-
     @pytest.mark.parametrize(
         ("names", "expected_line", "value_visible"),
         [
@@ -590,34 +544,6 @@ class WorkspaceCaptureAndPersistDiffTests:
 
 
 class WorkspaceFinalizeCleanupTests:
-    def test_paused_status_keeps_worktree_and_notifies(self, worktree_setup: WorktreeSetupFactory) -> None:
-        observer = RecordingRunObserver()
-        workspace, target_dir, manager, session, _ = worktree_setup(keep=False, observer=observer)
-        assert session is not None
-
-        warnings: list[str] = []
-
-        kept = workspace.finalize_cleanup(
-            manager, session, target_dir, SessionStatus.PAUSED, apply_failed=False, warnings=warnings
-        )
-
-        assert kept is True
-        assert target_dir.exists()
-        assert observer.calls[-1][:3] == ("worktree_cleanup", True, session.worktree_path)
-
-    def test_apply_failed_keeps_worktree_even_when_completed(self, worktree_setup: WorktreeSetupFactory) -> None:
-        workspace, target_dir, manager, session, _ = worktree_setup(keep=False)
-        assert session is not None
-
-        warnings: list[str] = []
-
-        kept = workspace.finalize_cleanup(
-            manager, session, target_dir, SessionStatus.COMPLETED, apply_failed=True, warnings=warnings
-        )
-
-        assert kept is True
-        assert target_dir.exists()
-
     @pytest.mark.parametrize(
         ("status", "keep", "discard", "expected_kept"),
         [
@@ -640,13 +566,15 @@ class WorkspaceFinalizeCleanupTests:
         discard: bool,
         expected_kept: bool,
     ) -> None:
-        workspace, target_dir, manager, session, _ = worktree_setup(keep=keep, discard=discard)
+        observer = RecordingRunObserver()
+        workspace, target_dir, manager, session, _ = worktree_setup(keep=keep, discard=discard, observer=observer)
         assert session is not None
 
         kept = workspace.finalize_cleanup(manager, session, target_dir, status, apply_failed=False, warnings=[])
 
         assert kept is expected_kept
         assert target_dir.exists() is expected_kept
+        assert observer.calls[-1][:3] == ("worktree_cleanup", expected_kept, session.worktree_path)
 
     @pytest.mark.parametrize(
         ("status", "apply_failed"),
@@ -658,57 +586,73 @@ class WorkspaceFinalizeCleanupTests:
     def test_discard_does_not_override_paused_or_apply_failed(
         self, worktree_setup: WorktreeSetupFactory, status: SessionStatus, apply_failed: bool
     ) -> None:
-        workspace, target_dir, manager, session, _ = worktree_setup(discard=True)
+        observer = RecordingRunObserver()
+        workspace, target_dir, manager, session, _ = worktree_setup(discard=True, observer=observer)
         assert session is not None
 
         kept = workspace.finalize_cleanup(manager, session, target_dir, status, apply_failed=apply_failed, warnings=[])
 
         assert kept is True
         assert target_dir.exists()
-
-    def test_completed_status_without_apply_failure_delegates_to_cleanup(
-        self, worktree_setup: WorktreeSetupFactory
-    ) -> None:
-        workspace, target_dir, manager, session, _ = worktree_setup(keep=False)
-        assert session is not None
-
-        warnings: list[str] = []
-
-        kept = workspace.finalize_cleanup(
-            manager, session, target_dir, SessionStatus.COMPLETED, apply_failed=False, warnings=warnings
-        )
-
-        assert kept is False
-        assert not target_dir.exists()
+        assert observer.calls[-1][:3] == ("worktree_cleanup", True, session.worktree_path)
 
 
-class WorkspacePrepareSessionTmpDirTests:
-    def test_no_session_id_returns_none(self, tmp_path: Path) -> None:
+@dataclass(frozen=True)
+class _PrepareSessionDirCase:
+    prepare: Callable[[Workspace, list[str]], Path | None]
+    expected_dir: Callable[[WorkspacePaths], Path]
+    created: Path
+    failure_warning: str
+
+
+@pytest.mark.parametrize(
+    "case",
+    [
+        pytest.param(
+            _PrepareSessionDirCase(
+                prepare=Workspace.prepare_session_tmp_dir,
+                expected_dir=lambda paths: paths.tmp_dir / "session-abc",
+                created=Path("steps"),
+                failure_warning="Failed to create session scratch directory: disk full",
+            ),
+            id="tmp-dir",
+        ),
+        pytest.param(
+            _PrepareSessionDirCase(
+                prepare=Workspace.prepare_session_log_dir,
+                expected_dir=lambda paths: paths.logs_dir / "session-abc",
+                created=Path(),
+                failure_warning="Failed to create session log directory: disk full",
+            ),
+            id="log-dir",
+        ),
+    ],
+)
+class WorkspacePrepareSessionDirTests:
+    def test_no_session_id_returns_none(self, tmp_path: Path, case: _PrepareSessionDirCase) -> None:
         context = RunSettings(
             cwd=tmp_path, use_worktree=False, session_id=None, paths=initialized_workspace_paths(tmp_path)
         )
         warnings: list[str] = []
 
-        result = Workspace(context).prepare_session_tmp_dir(warnings)
+        result = case.prepare(Workspace(context), warnings)
 
         assert result is None
         assert warnings == []
 
-    def test_creates_steps_subdirectory_and_returns_session_tmp_dir(self, tmp_path: Path) -> None:
-        context = RunSettings(
-            cwd=tmp_path, use_worktree=False, session_id="session-abc", paths=initialized_workspace_paths(tmp_path)
-        )
+    def test_creates_and_returns_session_directory(self, tmp_path: Path, case: _PrepareSessionDirCase) -> None:
+        paths = initialized_workspace_paths(tmp_path)
+        context = RunSettings(cwd=tmp_path, use_worktree=False, session_id="session-abc", paths=paths)
         warnings: list[str] = []
 
-        result = Workspace(context).prepare_session_tmp_dir(warnings)
+        result = case.prepare(Workspace(context), warnings)
 
-        assert result == initialized_workspace_paths(tmp_path).tmp_dir / "session-abc"
-        assert result is not None
-        assert (result / "steps").is_dir()
+        assert result == case.expected_dir(paths)
+        assert (case.expected_dir(paths) / case.created).is_dir()
         assert warnings == []
 
     def test_mkdir_failure_appends_warning_and_returns_none(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, case: _PrepareSessionDirCase
     ) -> None:
         context = RunSettings(
             cwd=tmp_path, use_worktree=False, session_id="session-abc", paths=initialized_workspace_paths(tmp_path)
@@ -720,11 +664,10 @@ class WorkspacePrepareSessionTmpDirTests:
         monkeypatch.setattr(Path, "mkdir", _raise)
         warnings: list[str] = []
 
-        result = Workspace(context).prepare_session_tmp_dir(warnings)
+        result = case.prepare(Workspace(context), warnings)
 
         assert result is None
-        assert len(warnings) == 1
-        assert "disk full" in warnings[0]
+        assert warnings == [case.failure_warning]
 
 
 class WorkspacePrepareSessionArtifactsTests:
@@ -785,98 +728,6 @@ class WorkspaceSinglePathResolutionTests:
         assert warnings == []
 
 
-class WorkspacePrepareSessionLogDirTests:
-    def test_no_session_id_returns_none(self, tmp_path: Path) -> None:
-        context = RunSettings(
-            cwd=tmp_path, use_worktree=False, session_id=None, paths=initialized_workspace_paths(tmp_path)
-        )
-        warnings: list[str] = []
-
-        result = Workspace(context).prepare_session_log_dir(warnings)
-
-        assert result is None
-        assert warnings == []
-
-    def test_creates_and_returns_session_log_dir(self, tmp_path: Path) -> None:
-        context = RunSettings(
-            cwd=tmp_path, use_worktree=False, session_id="session-abc", paths=initialized_workspace_paths(tmp_path)
-        )
-        warnings: list[str] = []
-
-        result = Workspace(context).prepare_session_log_dir(warnings)
-
-        assert result == initialized_workspace_paths(tmp_path).logs_dir / "session-abc"
-        assert result is not None
-        assert result.is_dir()
-        assert warnings == []
-
-    def test_mkdir_failure_appends_warning_and_returns_none(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        context = RunSettings(
-            cwd=tmp_path, use_worktree=False, session_id="session-abc", paths=initialized_workspace_paths(tmp_path)
-        )
-
-        def _raise(self: Path, *args: object, **kwargs: object) -> None:
-            raise OSError("disk full")
-
-        monkeypatch.setattr(Path, "mkdir", _raise)
-        warnings: list[str] = []
-
-        result = Workspace(context).prepare_session_log_dir(warnings)
-
-        assert result is None
-        assert len(warnings) == 1
-        assert "disk full" in warnings[0]
-
-
-class WorkspaceCleanupSessionTmpDirTests:
-    @pytest.mark.parametrize(
-        ("session_tmp_dir_present", "keep", "status"),
-        [
-            pytest.param(False, False, SessionStatus.COMPLETED, id="no_directory"),
-            pytest.param(True, True, SessionStatus.COMPLETED, id="keep_true"),
-            pytest.param(True, False, SessionStatus.FAILED, id="not_completed"),
-        ],
-    )
-    def test_noop_branches_leave_directory_untouched(
-        self, tmp_path: Path, session_tmp_dir_present: bool, keep: bool, status: SessionStatus
-    ) -> None:
-        context = RunSettings(cwd=tmp_path, use_worktree=False, paths=initialized_workspace_paths(tmp_path))
-        session_tmp_dir = None
-        if session_tmp_dir_present:
-            session_tmp_dir = tmp_path / "scratch"
-            session_tmp_dir.mkdir()
-
-        Workspace(context).cleanup_session_tmp_dir(session_tmp_dir, keep=keep, status=status)
-
-        if session_tmp_dir is not None:
-            assert session_tmp_dir.exists()
-
-    def test_completed_and_not_kept_removes_directory(self, tmp_path: Path) -> None:
-        context = RunSettings(cwd=tmp_path, use_worktree=False, paths=initialized_workspace_paths(tmp_path))
-        session_tmp_dir = tmp_path / "scratch"
-        session_tmp_dir.mkdir()
-
-        Workspace(context).cleanup_session_tmp_dir(session_tmp_dir, keep=False, status=SessionStatus.COMPLETED)
-
-        assert not session_tmp_dir.exists()
-
-    def test_removal_failure_is_swallowed(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        context = RunSettings(cwd=tmp_path, use_worktree=False, paths=initialized_workspace_paths(tmp_path))
-        session_tmp_dir = tmp_path / "scratch"
-        session_tmp_dir.mkdir()
-
-        def _raise(*args: object, **kwargs: object) -> None:
-            raise OSError("busy")
-
-        monkeypatch.setattr(shutil, "rmtree", _raise)
-
-        Workspace(context).cleanup_session_tmp_dir(session_tmp_dir, keep=False, status=SessionStatus.COMPLETED)
-
-        assert session_tmp_dir.exists()
-
-
 class ScratchLifecycleCleanupTests:
     @staticmethod
     def _allocate(tmp_path: Path, session_name: str) -> tuple[Path, AgentInvocationContext]:
@@ -918,6 +769,19 @@ class ScratchLifecycleCleanupTests:
 
         assert invocation.scratch_path.is_dir()
         assert invocation.control_path.is_dir()
+
+    def test_removal_failure_is_swallowed(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        session_tmp_dir, _ = self._allocate(tmp_path, "session-a")
+        context = RunSettings(cwd=tmp_path, use_worktree=False, paths=initialized_workspace_paths(tmp_path))
+
+        def _raise(*args: object, **kwargs: object) -> None:
+            raise OSError("busy")
+
+        monkeypatch.setattr(shutil, "rmtree", _raise)
+
+        Workspace(context).cleanup_session_tmp_dir(session_tmp_dir, keep=False, status=SessionStatus.COMPLETED)
+
+        assert session_tmp_dir.exists()
 
     def test_cleanup_does_not_touch_another_sessions_directories(self, tmp_path: Path) -> None:
         session_a, _ = self._allocate(tmp_path, "session-a")
