@@ -9,96 +9,8 @@ from dovo.engine.executors import evaluate_condition
 from dovo.engine.executors.models import (
     AGENT_OUTCOME_EXIT_CODES,
     AgentStepSummary,
-    ConditionEvaluationResult,
     StepResult,
 )
-
-BOOLEAN_CASING_CASES = [
-    pytest.param(
-        "steps.check.outputs.ready == TRUE",
-        ConditionEvaluationResult(
-            expression="steps.check.outputs.ready == TRUE",
-            passed=True,
-            actual=True,
-            expected=True,
-            detail="TRUE",
-            errors=[],
-            warnings=[],
-            fixes=[],
-        ),
-        id="true_upper",
-    ),
-    pytest.param(
-        "steps.check.outputs.ready == true",
-        ConditionEvaluationResult(
-            expression="steps.check.outputs.ready == true",
-            passed=True,
-            actual=True,
-            expected=True,
-            detail="TRUE",
-            errors=[],
-            warnings=[],
-            fixes=[],
-        ),
-        id="true_lower",
-    ),
-    pytest.param(
-        "steps.check.outputs.ready == True",
-        ConditionEvaluationResult(
-            expression="steps.check.outputs.ready == True",
-            passed=True,
-            actual=True,
-            expected=True,
-            detail="TRUE",
-            errors=[],
-            warnings=[],
-            fixes=[],
-        ),
-        id="true_title",
-    ),
-    pytest.param(
-        "steps.check.outputs.ready == FALSE",
-        ConditionEvaluationResult(
-            expression="steps.check.outputs.ready == FALSE",
-            passed=False,
-            actual=True,
-            expected=False,
-            detail="FALSE (was True)",
-            errors=[],
-            warnings=[],
-            fixes=[],
-        ),
-        id="false_upper",
-    ),
-    pytest.param(
-        "steps.check.outputs.ready == false",
-        ConditionEvaluationResult(
-            expression="steps.check.outputs.ready == false",
-            passed=False,
-            actual=True,
-            expected=False,
-            detail="FALSE (was True)",
-            errors=[],
-            warnings=[],
-            fixes=[],
-        ),
-        id="false_lower",
-    ),
-    pytest.param(
-        "steps.check.outputs.ready == False",
-        ConditionEvaluationResult(
-            expression="steps.check.outputs.ready == False",
-            passed=False,
-            actual=True,
-            expected=False,
-            detail="FALSE (was True)",
-            errors=[],
-            warnings=[],
-            fixes=[],
-        ),
-        id="false_title",
-    ),
-]
 
 
 class ConditionExpressionEvaluatorTests:
@@ -126,11 +38,19 @@ class ConditionExpressionEvaluatorTests:
         assert result.warnings == []
         assert result.fixes == []
 
-    @pytest.mark.parametrize(("expression", "expected"), BOOLEAN_CASING_CASES)
+    @pytest.mark.parametrize(
+        ("literal", "passed", "detail"),
+        [
+            pytest.param("TRUE", True, "TRUE", id="true_upper"),
+            pytest.param("true", True, "TRUE", id="true_lower"),
+            pytest.param("True", True, "TRUE", id="true_title"),
+            pytest.param("FALSE", False, "FALSE (was True)", id="false_upper"),
+            pytest.param("false", False, "FALSE (was True)", id="false_lower"),
+            pytest.param("False", False, "FALSE (was True)", id="false_title"),
+        ],
+    )
     def test_evaluate_condition_parses_boolean_literals_case_insensitively(
-        self,
-        expression: str,
-        expected: ConditionEvaluationResult,
+        self, literal: str, passed: bool, detail: str
     ) -> None:
         step_res = StepResult(
             step_id="check",
@@ -141,10 +61,10 @@ class ConditionExpressionEvaluatorTests:
             duration_seconds=0.1,
         )
         result = evaluate_condition(
-            expression,
+            f"steps.check.outputs.ready == {literal}",
             step_results={"check": step_res},
         )
-        assert result == expected
+        assert (result.passed, result.actual, result.expected, result.detail) == (passed, True, passed, detail)
 
 
 def _agent_result(status: AgentResponseStatus) -> StepResult:

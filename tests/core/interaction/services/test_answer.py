@@ -59,90 +59,99 @@ class ValidateAnswerTests:
     """Contract tests for validate_answer and effective_comment_policy."""
 
     @pytest.mark.parametrize(
-        ("mode", "answer", "expected_selected", "expected_error"),
+        ("mode", "answer", "expected_selected"),
         [
-            pytest.param("select", InteractionAnswer(selected=["revise"]), ["revise"], None, id="select_valid"),
-            pytest.param("confirm", InteractionAnswer(selected=["deny"]), ["deny"], None, id="confirm_valid"),
-            pytest.param(
-                "select",
-                InteractionAnswer(selected=["maybe"]),
-                None,
-                _CHOICE_ERROR.format(value="maybe"),
-                id="select_unknown",
-            ),
-            pytest.param(
-                "select", InteractionAnswer(selected=[]), None, _CHOICE_ERROR.format(value=""), id="select_empty"
-            ),
-            pytest.param(
-                "select",
-                InteractionAnswer(selected=["approve", "deny"]),
-                None,
-                _CHOICE_ERROR.format(value="approve,deny"),
-                id="select_two",
-            ),
-            pytest.param("multiselect", InteractionAnswer(selected=[]), [], None, id="multiselect_none"),
+            pytest.param("select", InteractionAnswer(selected=["revise"]), ["revise"], id="select_valid"),
+            pytest.param("confirm", InteractionAnswer(selected=["deny"]), ["deny"], id="confirm_valid"),
+            pytest.param("multiselect", InteractionAnswer(selected=[]), [], id="multiselect_none"),
             pytest.param(
                 "multiselect",
                 InteractionAnswer(selected=["deny", "approve", "deny"]),
                 ["approve", "deny"],
-                None,
                 id="multiselect_option_order_unique",
+            ),
+        ],
+    )
+    def test_valid_choice_is_normalized_by_mode(
+        self, mode: str, answer: InteractionAnswer, expected_selected: list[str]
+    ) -> None:
+        result = validate_answer(_request(mode), answer)
+
+        assert result.ok is True
+        assert result.answer is not None
+        assert result.answer.selected == expected_selected
+
+    @pytest.mark.parametrize(
+        ("mode", "answer", "expected_error"),
+        [
+            pytest.param(
+                "select",
+                InteractionAnswer(selected=["maybe"]),
+                _CHOICE_ERROR.format(value="maybe"),
+                id="select_unknown",
+            ),
+            pytest.param("select", InteractionAnswer(selected=[]), _CHOICE_ERROR.format(value=""), id="select_empty"),
+            pytest.param(
+                "select",
+                InteractionAnswer(selected=["approve", "deny"]),
+                _CHOICE_ERROR.format(value="approve,deny"),
+                id="select_two",
             ),
             pytest.param(
                 "multiselect",
                 InteractionAnswer(selected=["x"]),
-                None,
                 _CHOICE_ERROR.format(value="x"),
                 id="multiselect_unknown",
             ),
         ],
     )
-    def test_choice_rules_by_mode(
-        self, mode: str, answer: InteractionAnswer, expected_selected: list[str] | None, expected_error: str | None
+    def test_invalid_choice_is_rejected_by_mode(
+        self, mode: str, answer: InteractionAnswer, expected_error: str
     ) -> None:
         result = validate_answer(_request(mode), answer)
 
-        if expected_error is None:
-            assert result.ok is True
-            assert result.answer is not None
-            assert result.answer.selected == expected_selected
-        else:
-            assert result.status == InteractionAnswerStatus.INVALID
-            assert result.errors == [expected_error]
+        assert result.status == InteractionAnswerStatus.INVALID
+        assert result.errors == [expected_error]
+
+    def test_text_mode_trims_text(self) -> None:
+        result = validate_answer(_request("text", options=[]), InteractionAnswer(text="  use sqlite \n"))
+
+        assert result.answer is not None
+        assert result.answer.text == "use sqlite"
 
     @pytest.mark.parametrize(
-        ("answer", "expected_error"),
-        [
-            pytest.param(InteractionAnswer(text="  use sqlite \n"), None, id="trimmed"),
-            pytest.param(
-                InteractionAnswer(text="   "),
-                "Prompt 'approve' requires non-empty text.\nFix: pass --answer approve=<text>.",
-                id="blank",
-            ),
-            pytest.param(
-                InteractionAnswer(),
-                "Prompt 'approve' requires non-empty text.\nFix: pass --answer approve=<text>.",
-                id="missing",
-            ),
-        ],
+        "answer",
+        [pytest.param(InteractionAnswer(text="   "), id="blank"), pytest.param(InteractionAnswer(), id="missing")],
     )
-    def test_text_mode_requires_non_empty_trimmed_text(
-        self, answer: InteractionAnswer, expected_error: str | None
-    ) -> None:
+    def test_text_mode_requires_non_empty_text(self, answer: InteractionAnswer) -> None:
         result = validate_answer(_request("text", options=[]), answer)
 
-        if expected_error is None:
-            assert result.answer is not None
-            assert result.answer.text == "use sqlite"
-        else:
-            assert result.errors == [expected_error]
+        assert result.errors == ["Prompt 'approve' requires non-empty text.\nFix: pass --answer approve=<text>."]
 
     @pytest.mark.parametrize(
-        ("policy", "comment", "expected_comment", "expected_error"),
+        ("policy", "comment", "expected_comment"),
+        [
+            pytest.param("optional", "", None, id="optional_empty"),
+            pytest.param("optional", "keep it  \n", "keep it", id="trailing_whitespace_stripped"),
+            pytest.param("optional", "x" * 8000, "x" * 8000, id="at_limit"),
+            pytest.param("disabled", "ignored", None, id="disabled_drops_comment"),
+        ],
+    )
+    def test_accepted_comment_is_normalized_by_policy(
+        self, policy: CommentPolicy, comment: str, expected_comment: str | None
+    ) -> None:
+        request = _request(options=_options("approve", "revise", policy=policy))
+
+        result = validate_answer(request, InteractionAnswer(selected=["revise"], comment=comment))
+
+        assert result.answer is not None
+        assert result.answer.comment == expected_comment
+
+    @pytest.mark.parametrize(
+        ("policy", "comment", "expected_error"),
         [
             pytest.param(
                 "required",
-                None,
                 None,
                 "Prompt 'approve' answered 'revise' requires a comment.\nFix: pass --comment or --comment-file.",
                 id="required_missing",
@@ -150,29 +159,20 @@ class ValidateAnswerTests:
             pytest.param(
                 "required",
                 "  ",
-                None,
                 "Prompt 'approve' answered 'revise' requires a comment.\nFix: pass --comment or --comment-file.",
                 id="required_blank",
             ),
-            pytest.param("optional", "", None, None, id="optional_empty"),
-            pytest.param("optional", "keep it  \n", "keep it", None, id="trailing_whitespace_stripped"),
-            pytest.param("optional", "x" * 8001, None, "Comment is too long (max 8000 characters).", id="too_long"),
-            pytest.param("optional", "x" * 8000, "x" * 8000, None, id="at_limit"),
-            pytest.param("disabled", "ignored", None, None, id="disabled_drops_comment"),
+            pytest.param("optional", "x" * 8001, "Comment is too long (max 8000 characters).", id="too_long"),
         ],
     )
-    def test_comment_policy_rules(
-        self, policy: CommentPolicy, comment: str | None, expected_comment: str | None, expected_error: str | None
+    def test_rejected_comment_reports_the_policy_error(
+        self, policy: CommentPolicy, comment: str | None, expected_error: str
     ) -> None:
         request = _request(options=_options("approve", "revise", policy=policy))
 
         result = validate_answer(request, InteractionAnswer(selected=["revise"], comment=comment))
 
-        if expected_error is None:
-            assert result.answer is not None
-            assert result.answer.comment == expected_comment
-        else:
-            assert result.errors == [expected_error]
+        assert result.errors == [expected_error]
 
     def test_effective_policy_picks_chosen_option_then_strictest_then_default(self) -> None:
         options = [

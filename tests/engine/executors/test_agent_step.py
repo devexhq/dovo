@@ -30,7 +30,6 @@ from dovo.core.agents.models import AgentDenial
 from dovo.core.agents.responses import blocked_response, provider_error_response
 from dovo.core.agents.scratch import scratch_unavailable_message
 from dovo.core.catalog.definitions import StepDefinition, StepType
-from dovo.core.git import GitRunner
 from dovo.core.sessions import SessionLogEvent, SessionLogEventType
 from dovo.engine.executors.agent_step import (
     BLANK_PROMPT_MESSAGE,
@@ -133,21 +132,6 @@ def _no_op(summary: str | None = _NO_OP_SUMMARY, raw_text: str | None = None) ->
     return AgentResponse(status=AgentResponseStatus.NO_OP, summary=summary, raw_text=raw_text)
 
 
-def _forbid_git_apply(monkeypatch: pytest.MonkeyPatch) -> list[str]:
-    calls: list[str] = []
-
-    def _record(name: str) -> Callable[..., tuple[int, str, str]]:
-        def _spy(*args: object, **kwargs: object) -> tuple[int, str, str]:
-            calls.append(name)
-            raise AssertionError(f"GitRunner.{name} must not run")
-
-        return _spy
-
-    monkeypatch.setattr(GitRunner, "apply_check", staticmethod(_record("apply_check")))
-    monkeypatch.setattr(GitRunner, "apply", staticmethod(_record("apply")))
-    return calls
-
-
 class AgentOutcomeMappingTests:
     def test_mapping_covers_every_status_with_issue_codes(self) -> None:
         assert dict(AGENT_OUTCOME_EXIT_CODES) == {
@@ -161,38 +145,46 @@ class AgentOutcomeMappingTests:
         assert set(AGENT_OUTCOME_EXIT_CODES) == set(AgentResponseStatus)
 
 
-class ExecuteAgentStepBlockedTests:
-    def test_blocked_attempt_fails_step_with_exit_204_and_blocked_summary(
-        self, git_repo: Path, monkeypatch: pytest.MonkeyPatch
+class ExecuteAgentStepToolPolicyFailureTests:
+    @pytest.mark.parametrize(
+        ("response", "exit_code", "summary_status", "stderr_fragments"),
+        [
+            pytest.param(
+                blocked_response(
+                    provider="copilot",
+                    duration_ms=1,
+                    denials=[AgentDenial(tool="bash", message="denied", capability=ToolCapability.SHELL)],
+                ),
+                204,
+                "blocked",
+                ["AGENT_PERMISSION_BLOCKED", "tools: {allow: [{capability: shell}]}"],
+                id="blocked",
+            ),
+            pytest.param(
+                provider_error_response(duration_ms=1, errors=[tool_policy_unsupported_message("copilot")]),
+                203,
+                "provider_error",
+                ["AGENT_TOOL_POLICY_UNSUPPORTED"],
+                id="unsupported_policy",
+            ),
+        ],
+    )
+    def test_tool_policy_failure_fails_step_with_mapped_exit_code_and_diagnostic(
+        self,
+        git_repo: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        response: AgentResponse,
+        exit_code: int,
+        summary_status: str,
+        stderr_fragments: list[str],
     ) -> None:
-        response = blocked_response(
-            provider="copilot",
-            duration_ms=1,
-            denials=[AgentDenial(tool="bash", message="denied", capability=ToolCapability.SHELL)],
-        )
         _use_provider(monkeypatch, FakeAgentProvider(response))
 
         outcome = _run(git_repo)
 
-        assert outcome.status == "failed"
-        assert outcome.exit_code == 204
-        assert _summary(outcome)["status"] == "blocked"
-        assert "AGENT_PERMISSION_BLOCKED" in outcome.stderr
-        assert "tools: {allow: [{capability: shell}]}" in outcome.stderr
-
-
-class ExecuteAgentStepUnsupportedPolicyTests:
-    def test_unsupported_policy_response_fails_step_with_exit_203(
-        self, git_repo: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        response = provider_error_response(duration_ms=1, errors=[tool_policy_unsupported_message("copilot")])
-        _use_provider(monkeypatch, FakeAgentProvider(response))
-
-        outcome = _run(git_repo)
-
-        assert outcome.status == "failed"
-        assert outcome.exit_code == 203
-        assert "AGENT_TOOL_POLICY_UNSUPPORTED" in outcome.stderr
+        assert (outcome.status, outcome.exit_code) == ("failed", exit_code)
+        assert _summary(outcome)["status"] == summary_status
+        assert [fragment for fragment in stderr_fragments if fragment not in outcome.stderr] == []
 
 
 def _record_direct_attempts(monkeypatch: pytest.MonkeyPatch) -> list[dict[str, object]]:
@@ -248,65 +240,6 @@ class ExecuteAgentStepRequestTests:
         _run(git_repo, step=step)
 
         assert [call["max_files"] for call in calls] == [100]
-
-    def test_missing_settings_fail_before_provider_lookup(
-        self, git_repo: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        requested = _use_provider(monkeypatch, FakeAgentProvider(_no_op()))
-
-        outcome = execute_agent_step(
-            _step(),
-            agent=None,
-            worktree_path=git_repo,
-            worktree_active=True,
-            session_tmp_dir=_session_tmp_dir(git_repo),
-            main_checkout=git_repo,
-            session_log_dir=None,
-            session_dir=None,
-            metadata=_METADATA,
-            on_output=None,
-            on_agent_line=None,
-            progress=RecordingProgressSink(),
-        )
-
-        assert outcome.status == "failed"
-        assert outcome.exit_code == 203
-        assert outcome.error_message == MISSING_SETTINGS_MESSAGE
-        assert _summary(outcome)["status"] == "provider_error"
-        assert requested == []
-
-    def test_blank_interpolated_prompt_fails_before_provider_lookup(
-        self, git_repo: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        requested = _use_provider(monkeypatch, FakeAgentProvider(_no_op()))
-
-        outcome = _run(git_repo, step=_step(prompt="   "))
-
-        assert outcome.status == "failed"
-        assert outcome.exit_code == 203
-        assert outcome.error_message == BLANK_PROMPT_MESSAGE
-        assert requested == []
-
-
-class ExecuteAgentStepWorktreeTests:
-    def test_inactive_worktree_fails_before_provider_or_patch(
-        self, git_repo: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        requested = _use_provider(monkeypatch, FakeAgentProvider(_patch()))
-        apply_calls = _forbid_git_apply(monkeypatch)
-
-        outcome = _run(git_repo, worktree_active=False)
-
-        assert outcome.status == "failed"
-        assert outcome.exit_code == 203
-        assert outcome.error_message == WORKTREE_REQUIRED_MESSAGE
-        assert outcome.stderr == WORKTREE_REQUIRED_MESSAGE
-        assert (
-            outcome.stdout == '{"status":"provider_error","summary":null,"unfixable_reason":null,"touched_files":[]}\n'
-        )
-        assert requested == []
-        assert apply_calls == []
-        assert not (git_repo / "a.txt").exists()
 
 
 class ExecuteAgentStepOutputTests:
@@ -497,21 +430,30 @@ class ExecuteAgentStepScratchTests:
         assert _porcelain(git_repo) == ""
 
     @pytest.mark.parametrize(
-        ("guard", "expected_message"),
+        ("step", "agent", "worktree_active", "expected_message"),
         [
-            pytest.param("worktree", WORKTREE_REQUIRED_MESSAGE, id="worktree-inactive"),
-            pytest.param("settings", MISSING_SETTINGS_MESSAGE, id="no-settings"),
-            pytest.param("prompt", BLANK_PROMPT_MESSAGE, id="blank-prompt"),
+            pytest.param(_step(), _settings(), False, WORKTREE_REQUIRED_MESSAGE, id="worktree-inactive"),
+            pytest.param(_step(), None, True, MISSING_SETTINGS_MESSAGE, id="no-settings"),
+            pytest.param(_step(prompt="   "), _settings(), True, BLANK_PROMPT_MESSAGE, id="blank-prompt"),
         ],
     )
-    def test_guards_run_before_allocation(self, git_repo: Path, guard: str, expected_message: str) -> None:
+    def test_guards_run_before_allocation(
+        self,
+        git_repo: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        step: StepDefinition,
+        agent: ResolvedAgentSettings | None,
+        worktree_active: bool,
+        expected_message: str,
+    ) -> None:
+        requested = _use_provider(monkeypatch, FakeAgentProvider(_patch()))
         session_tmp = _session_tmp_dir(git_repo)
 
         outcome = execute_agent_step(
-            _step(prompt="   " if guard == "prompt" else "Plan the change"),
-            agent=None if guard == "settings" else _settings(),
+            step,
+            agent=agent,
             worktree_path=git_repo,
-            worktree_active=guard != "worktree",
+            worktree_active=worktree_active,
             session_tmp_dir=session_tmp,
             main_checkout=git_repo,
             session_log_dir=None,
@@ -522,7 +464,12 @@ class ExecuteAgentStepScratchTests:
             progress=RecordingProgressSink(),
         )
 
-        assert outcome.error_message == expected_message
+        assert (outcome.status, outcome.exit_code) == ("failed", 203)
+        assert outcome.error_message == outcome.stderr == expected_message
+        assert (
+            outcome.stdout == '{"status":"provider_error","summary":null,"unfixable_reason":null,"touched_files":[]}\n'
+        )
+        assert requested == []
         assert list(session_tmp.iterdir()) == []
 
     @pytest.mark.parametrize(
@@ -759,29 +706,34 @@ class AgentStepRejectedPatchTests:
         assert outcome.rejected_patch_path == "P"
         assert (outcome.error_message or "").endswith("Discarded edit saved to P.")
 
-    def test_destination_is_session_dir_rejected_step_id_attempt_patch(
-        self, git_repo: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    @pytest.mark.parametrize(
+        ("metadata", "filename"),
+        [
+            pytest.param(
+                ExecutionMetadata(step=StepMetadata(id="code", name="code", index=1, attempt=2)),
+                "code_attempt_2.patch",
+                id="step_id_attempt",
+            ),
+            pytest.param(
+                ExecutionMetadata(step=StepMetadata(id="code", name="code", index=1), loop_iteration=2),
+                "code_iter_2_attempt_1.patch",
+                id="loop_iteration_adds_iter_segment",
+            ),
+        ],
+    )
+    def test_destination_is_session_dir_rejected_patch_named_for_the_attempt(
+        self,
+        git_repo: Path,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        metadata: ExecutionMetadata,
+        filename: str,
     ) -> None:
         contexts = _record_contexts(monkeypatch)
-        metadata = ExecutionMetadata(step=StepMetadata(id="code", name="code", index=1, attempt=2))
 
         _run(git_repo, step=StepBuilder.agent("Plan").with_id("code").build(), session_dir=tmp_path, metadata=metadata)
 
-        assert [context.rejected_patch_destination for context in contexts] == [
-            tmp_path / "rejected" / "code_attempt_2.patch"
-        ]
-
-    def test_loop_iteration_adds_iter_segment_to_destination(
-        self, git_repo: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        contexts = _record_contexts(monkeypatch)
-        metadata = ExecutionMetadata(step=StepMetadata(id="code", name="code", index=1), loop_iteration=2)
-
-        _run(git_repo, step=StepBuilder.agent("Plan").with_id("code").build(), session_dir=tmp_path, metadata=metadata)
-
-        assert [context.rejected_patch_destination for context in contexts] == [
-            tmp_path / "rejected" / "code_iter_2_attempt_1.patch"
-        ]
+        assert [context.rejected_patch_destination for context in contexts] == [tmp_path / "rejected" / filename]
 
     def test_missing_session_dir_passes_no_destination(self, git_repo: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         contexts = _record_contexts(monkeypatch)

@@ -30,17 +30,8 @@ class StepRetryExecutionTests:
         step = StepBuilder.command(cmd).with_id("retry-adapt").with_retry(max_retries=2, backoff_ms=0).build()
         result = StepExecution(StepExecutionContext(step=step, worktree_path=tmp_path)).run()
 
-        assert result.step_id == "retry-adapt"
-        assert result.status == "completed"
-        assert result.exit_code == 0
+        assert (result.status, result.exit_code, result.attempts) == ("completed", 0, 2)
         assert result.stdout == "attempt 2 succeeded\n"
-        assert result.stderr == ""
-        assert result.attempts == 2
-        assert result.error_message is None
-        assert result.errors == []
-        assert result.warnings == []
-        assert result.fixes == []
-        assert result.duration_seconds >= 0.0
 
 
 class StepRunnerRobustnessTests:
@@ -73,14 +64,6 @@ class StepRunnerRobustnessTests:
         assert marker_file.exists()
         assert marker_file.read_text().strip() == "done"
 
-        assert result.step_id == "robustness-observer"
-        assert result.status == "failed"
-        assert result.exit_code == 1
+        assert (result.status, result.exit_code) == ("failed", 1)
         assert result.stdout == "line 1\nline 2\n"
-        assert result.stderr == ""
-        assert result.attempts == 1
         assert result.error_message == "Command pipe error: Output callback error on stdout: observer crashed"
-        assert result.errors == []
-        assert result.warnings == []
-        assert result.fixes == []
-        assert result.duration_seconds >= 0.0

@@ -15,23 +15,6 @@ from tests.conftest import PublishArtifact
 
 
 class HandleArtifactsUploadTests:
-    def test_handle_artifacts_upload_success_maps_to_completed_outcome(
-        self, tmp_path: Path, artifact_store: ArtifactStore
-    ) -> None:
-        worktree_path = tmp_path / "worktree"
-        (worktree_path / "dist").mkdir(parents=True)
-        (worktree_path / "dist" / "pkg.whl").write_bytes(b"bytes")
-        ctx = InternalCommandContext(
-            worktree_path=worktree_path,
-            env={"ARTIFACT_NAME": "dist-packages", "ARTIFACT_PATH": "dist/*.whl"},
-            artifact_store=artifact_store,
-        )
-
-        outcome = handle_artifacts_upload(ctx)
-
-        assert outcome.status == "completed"
-        assert outcome.exit_code == 0
-
     def test_handle_artifacts_upload_no_matching_files_maps_to_failed_outcome(
         self, tmp_path: Path, artifact_store: ArtifactStore
     ) -> None:
@@ -67,7 +50,7 @@ class HandleArtifactsUploadTests:
         outcome = handle_artifacts_upload(ctx)
 
         record = artifacts_repository.get("wf_1", "plan")
-        assert outcome.status == "completed"
+        assert (outcome.status, outcome.exit_code) == ("completed", 0)
         assert record is not None
         manifest = json.loads((record.path / "manifest.json").read_text(encoding="utf-8"))
         assert (record.step_id, record.attempt, record.loop_iteration) == ("up", 2, 3)
@@ -82,35 +65,24 @@ def _publish_two_revisions(publish_artifact: PublishArtifact) -> None:
 
 
 class HandleArtifactsDownloadTests:
-    def test_handle_artifacts_download_artifact_revision_extracts_that_revision(
-        self, tmp_path: Path, artifact_store: ArtifactStore, publish_artifact: PublishArtifact
+    @pytest.mark.parametrize(
+        ("raw", "expected"),
+        [pytest.param("1", "v1", id="artifact_revision"), pytest.param("", "v2", id="latest_without_revision")],
+    )
+    def test_handle_artifacts_download_extracts_requested_or_latest_revision(
+        self, raw: str, expected: str, tmp_path: Path, artifact_store: ArtifactStore, publish_artifact: PublishArtifact
     ) -> None:
         _publish_two_revisions(publish_artifact)
         ctx = InternalCommandContext(
             worktree_path=tmp_path,
-            env={"ARTIFACT_NAME": "plan", "ARTIFACT_DEST": str(tmp_path / "out"), "ARTIFACT_REVISION": "1"},
+            env={"ARTIFACT_NAME": "plan", "ARTIFACT_DEST": str(tmp_path / "out"), "ARTIFACT_REVISION": raw},
             artifact_store=artifact_store,
         )
 
         outcome = handle_artifacts_download(ctx)
 
         assert outcome.status == "completed"
-        assert (tmp_path / "out" / "PLAN.md").read_text(encoding="utf-8") == "v1"
-
-    def test_handle_artifacts_download_without_revision_extracts_latest(
-        self, tmp_path: Path, artifact_store: ArtifactStore, publish_artifact: PublishArtifact
-    ) -> None:
-        _publish_two_revisions(publish_artifact)
-        ctx = InternalCommandContext(
-            worktree_path=tmp_path,
-            env={"ARTIFACT_NAME": "plan", "ARTIFACT_DEST": str(tmp_path / "out"), "ARTIFACT_REVISION": ""},
-            artifact_store=artifact_store,
-        )
-
-        outcome = handle_artifacts_download(ctx)
-
-        assert outcome.status == "completed"
-        assert (tmp_path / "out" / "PLAN.md").read_text(encoding="utf-8") == "v2"
+        assert (tmp_path / "out" / "PLAN.md").read_text(encoding="utf-8") == expected
 
     @pytest.mark.parametrize("raw", ["abc", "0", "-2"])
     def test_handle_artifacts_download_invalid_revision_fails_without_download(

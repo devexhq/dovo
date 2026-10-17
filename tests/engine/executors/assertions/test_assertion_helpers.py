@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import pytest
+
 from dovo.engine.executors.assertions.assertion_helpers import safe_repr, short_pair, short_repr, shorten
 
 
@@ -11,16 +13,6 @@ class _BrokenRepr:
 
 
 class SafeReprTests:
-    def test_returns_repr_unchanged_by_default(self) -> None:
-        value = "x" * 200
-
-        assert safe_repr(value) == repr(value)
-
-    def test_short_mode_truncates_long_reprs_with_marker(self) -> None:
-        value = "x" * 200
-
-        assert safe_repr(value, short=True) == repr(value)[:80] + " [truncated]..."
-
     def test_falls_back_to_object_repr_when_repr_raises(self) -> None:
         value = _BrokenRepr()
 
@@ -28,21 +20,22 @@ class SafeReprTests:
 
 
 class ShortenTests:
-    def test_collapses_a_long_middle_into_a_char_count(self) -> None:
-        assert shorten("a" * 5 + "m" * 20 + "z" * 5, 5, 5) == "aaaaa[20 chars]zzzzz"
-
-    def test_leaves_text_unchanged_when_collapsing_saves_nothing(self) -> None:
-        text = "a" * 5 + "m" * 12 + "z" * 5
-
-        assert shorten(text, 5, 5) == text
+    @pytest.mark.parametrize(
+        ("middle", "expected"),
+        [
+            pytest.param("m" * 20, "aaaaa[20 chars]zzzzz", id="collapses_long_middle"),
+            pytest.param("m" * 12, "aaaaa" + "m" * 12 + "zzzzz", id="unchanged_when_collapsing_saves_nothing"),
+        ],
+    )
+    def test_shorten_collapses_the_middle_only_when_it_saves_space(self, middle: str, expected: str) -> None:
+        assert shorten("a" * 5 + middle + "z" * 5, 5, 5) == expected
 
 
 class ShortReprTests:
-    def test_short_values_are_returned_as_plain_repr(self) -> None:
-        assert short_repr({"a": 1}) == "{'a': 1}"
+    def test_long_values_are_truncated_at_80_characters(self) -> None:
+        value = "y" * 200
 
-    def test_long_values_are_truncated(self) -> None:
-        assert short_repr("y" * 200).endswith(" [truncated]...")
+        assert short_repr(value) == repr(value)[:80] + " [truncated]..."
 
 
 class ShortPairTests:

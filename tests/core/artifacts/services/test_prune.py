@@ -79,6 +79,7 @@ class PruneArtifactsServiceTests:
         assert result.items == [PrunedArtifact(session_id="wf_abc123", name="dist-packages", revision=1, pruned=True)]
         assert not artifact_dir.exists()
         assert artifacts_repository.get("wf_abc123", "dist-packages") is None
+        assert (tmp_path / ".dovo" / ".lock").exists()
 
     def test_prune_artifacts_dry_run_reports_without_deleting(
         self, tmp_path: Path, artifacts_repository: ArtifactsRepository
@@ -94,17 +95,6 @@ class PruneArtifactsServiceTests:
         assert result.items[0].pruned is True
         assert artifact_dir.exists()
         assert artifacts_repository.get("wf_abc123", "dist-packages") is not None
-
-    def test_prune_artifacts_locks_workspace_root(
-        self, tmp_path: Path, artifacts_repository: ArtifactsRepository
-    ) -> None:
-        artifact_dir = tmp_path / "artifacts" / "wf_abc123" / "dist-packages"
-        artifact_dir.mkdir(parents=True)
-        _create_row(artifacts_repository, artifact_dir, expires_at=_past_timestamp())
-
-        prune_artifacts(tmp_path, artifacts_repository, remove_expired=True)
-
-        assert (tmp_path / ".dovo" / ".lock").exists()
 
     def test_prune_artifacts_removes_only_the_expired_revision(
         self, tmp_path: Path, artifacts_repository: ArtifactsRepository

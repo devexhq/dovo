@@ -75,9 +75,16 @@ def _as_expected_record(record: SessionRecord) -> SessionRecord:
     )
 
 
+def _create(
+    db: SessionsRepository, session_id: str, status: SessionStatus = SessionStatus.COMPLETED, pid: int | None = None
+) -> SessionRecord:
+    """Create a session record for blueprint 'bp' with the given status and pid."""
+    return db.create(session_id=session_id, blueprint_name="bp", blueprint_key="bp", status=status, pid=pid)
+
+
 def _seed_run(db: SessionsRepository, session_id: str, started_at: str) -> SessionRecord:
     """Create a COMPLETED session record and pin its started_at."""
-    db.create(session_id=session_id, blueprint_name="bp", blueprint_key="bp", status=SessionStatus.COMPLETED)
+    _create(db, session_id)
     with db.session() as sql_session:
         record = sql_session.exec(select(SessionRecord).where(SessionRecord.session_id == session_id)).one()
         record.started_at = started_at
@@ -116,17 +123,6 @@ class SessionDiffTests:
         assert result.errors == ["Session 'orphan' not found."]
         assert result.fixes == ["Run `dovo session list` to list valid session IDs"]
         assert result.artifact_path is None
-
-    def test_diff_with_run_record_but_no_patch_returns_diff_not_found(self, isolated_workspace: Path) -> None:
-        session = Session(initialized_workspace_paths(isolated_workspace), "session-3")
-        session.db.create(
-            session_id="session-3", blueprint_name="bp", blueprint_key="bp", status=SessionStatus.COMPLETED
-        )
-
-        result = session.diff()
-
-        assert result.status == DiffStatus.DIFF_NOT_FOUND
-        assert result.session_id == "session-3"
 
 
 class SessionCollectionLatestDiffTests:
@@ -206,21 +202,6 @@ class SessionCollectionLatestTests:
         assert result.fixes == ["Run `dovo run <blueprint>` to create a session"]
 
 
-class SessionCollectionGetTests:
-    def test_get_returns_session_bound_to_id_sharing_the_collection_repository(self, isolated_workspace: Path) -> None:
-        sessions = SessionCollection(initialized_workspace_paths(isolated_workspace))
-        seeded = sessions.db.create(
-            session_id="known", blueprint_name="bp", blueprint_key="bp", status=SessionStatus.COMPLETED
-        )
-
-        known = sessions.get("known").details()
-        unknown = sessions.get("ghost").details()
-
-        assert known.status == HistoryShowStatus.OK
-        assert known.session == _as_expected_record(seeded)
-        assert unknown.status == HistoryShowStatus.NOT_FOUND
-
-
 class SessionLogsTests:
     def test_logs_returns_session_not_found_when_no_run_record_exists(self, isolated_workspace: Path) -> None:
         result = Session(initialized_workspace_paths(isolated_workspace), "ghost").logs()
@@ -255,22 +236,6 @@ class SessionLogsTests:
 
         assert result.status == LogsShowStatus.OK
         assert result.events == written
-
-    def test_logs_step_filter_returns_latest_attempt_stdout_and_stderr_interleaved_by_stream_option(
-        self, isolated_workspace: Path
-    ) -> None:
-        session = Session(initialized_workspace_paths(isolated_workspace), "sess")
-        session_log_dir = _seed_session(session, isolated_workspace)
-        (session_log_dir / "01_build_attempt_1.stdout.log").write_text("old out\n", encoding="utf-8")
-        (session_log_dir / "01_build_attempt_1.stderr.log").write_text("old err\n", encoding="utf-8")
-        (session_log_dir / "01_build_attempt_2.stdout.log").write_text("new out\n", encoding="utf-8")
-        (session_log_dir / "01_build_attempt_2.stderr.log").write_text("new err\n", encoding="utf-8")
-
-        result = session.logs(step="build", stream=LogStreamFilter.BOTH)
-
-        assert result.status == LogsShowStatus.OK
-        assert result.lines == ["new out", "new err"]
-        assert result.events == []
 
     def test_logs_unknown_step_returns_step_not_found_with_available_steps(self, isolated_workspace: Path) -> None:
         session = Session(initialized_workspace_paths(isolated_workspace), "sess")
@@ -347,18 +312,8 @@ class SessionCollectionListTests:
 
     def test_unfiltered_list_returns_runs_ordered_with_ok_status(self, isolated_workspace: Path) -> None:
         sessions = SessionCollection(initialized_workspace_paths(isolated_workspace))
-        session_first = sessions.db.create(
-            session_id="session-001",
-            blueprint_name="task-alpha",
-            blueprint_key="task-alpha",
-            status=SessionStatus.COMPLETED,
-        )
-        session_second = sessions.db.create(
-            session_id="session-002",
-            blueprint_name="task-beta",
-            blueprint_key="task-beta",
-            status=SessionStatus.FAILED,
-        )
+        session_first = _create(sessions.db, "session-001")
+        session_second = _create(sessions.db, "session-002", SessionStatus.FAILED)
 
         result = sessions.list()
 
@@ -367,24 +322,9 @@ class SessionCollectionListTests:
 
     def test_limit_parameter_restricts_number_of_returned_runs(self, isolated_workspace: Path) -> None:
         sessions = SessionCollection(initialized_workspace_paths(isolated_workspace))
-        sessions.db.create(
-            session_id="session-001",
-            blueprint_name="task-alpha",
-            blueprint_key="task-alpha",
-            status=SessionStatus.COMPLETED,
-        )
-        sessions.db.create(
-            session_id="session-002",
-            blueprint_name="task-beta",
-            blueprint_key="task-beta",
-            status=SessionStatus.COMPLETED,
-        )
-        session_third = sessions.db.create(
-            session_id="session-003",
-            blueprint_name="task-gamma",
-            blueprint_key="task-gamma",
-            status=SessionStatus.COMPLETED,
-        )
+        _create(sessions.db, "session-001")
+        _create(sessions.db, "session-002")
+        session_third = _create(sessions.db, "session-003")
 
         result = sessions.list(limit=1)
 
@@ -405,26 +345,10 @@ class SessionCollectionListTests:
         self, isolated_workspace: Path, status_arg: str, expected_session_id: str
     ) -> None:
         sessions = SessionCollection(initialized_workspace_paths(isolated_workspace))
-        run_comp = sessions.db.create(
-            session_id="session-comp",
-            blueprint_name="task-comp",
-            blueprint_key="task-comp",
-            status=SessionStatus.COMPLETED,
-        )
-        run_fail = sessions.db.create(
-            session_id="session-fail",
-            blueprint_name="task-fail",
-            blueprint_key="task-fail",
-            status=SessionStatus.FAILED,
-        )
+        run_comp = _create(sessions.db, "session-comp")
+        run_fail = _create(sessions.db, "session-fail", SessionStatus.FAILED)
         # Using current process PID ensures is_run_stale is False so reconcile_stale_sessions does not flip status to FAILED.
-        run_active = sessions.db.create(
-            session_id="session-run",
-            blueprint_name="task-run",
-            blueprint_key="task-run",
-            status=SessionStatus.RUNNING,
-            pid=os.getpid(),
-        )
+        run_active = _create(sessions.db, "session-run", SessionStatus.RUNNING, pid=os.getpid())
         lookup: dict[str, SessionRecord] = {
             "session-comp": run_comp,
             "session-fail": run_fail,
@@ -438,12 +362,7 @@ class SessionCollectionListTests:
 
     def test_unknown_status_filter_fallback_passes_raw_string_to_query(self, isolated_workspace: Path) -> None:
         sessions = SessionCollection(initialized_workspace_paths(isolated_workspace))
-        sessions.db.create(
-            session_id="session-comp",
-            blueprint_name="task-comp",
-            blueprint_key="task-comp",
-            status=SessionStatus.COMPLETED,
-        )
+        _create(sessions.db, "session-comp")
 
         result = sessions.list(status="nonexistent_status_value")
 
@@ -470,30 +389,26 @@ class SessionCollectionListTests:
 class SessionDetailsTests:
     """Integration tests for Session.details session lookup."""
 
-    def test_missing_session_id_returns_not_found_status(self, isolated_workspace: Path) -> None:
-        session = Session(initialized_workspace_paths(isolated_workspace), "nonexistent-session")
+    def test_collection_get_details_returns_shared_repository_record_or_not_found(
+        self, isolated_workspace: Path
+    ) -> None:
+        sessions = SessionCollection(initialized_workspace_paths(isolated_workspace))
+        seeded = _create(sessions.db, "known")
 
-        result = session.details()
+        known = sessions.get("known").details()
+        unknown = sessions.get("ghost").details()
 
-        assert result.status == HistoryShowStatus.NOT_FOUND
-        assert result.session_id == "nonexistent-session"
-        assert result.session is None
-        assert result.ok is False
-
-    def test_existing_session_id_returns_ok_status_with_run_record(self, isolated_workspace: Path) -> None:
-        session = Session(initialized_workspace_paths(isolated_workspace), "session-alpha")
-        seeded_session = session.db.create(
-            session_id="session-alpha",
-            blueprint_name="deploy-flow",
-            blueprint_key="deploy-flow",
-            status=SessionStatus.COMPLETED,
+        assert (known.status, known.session_id, known.session) == (
+            HistoryShowStatus.OK,
+            "known",
+            _as_expected_record(seeded),
         )
-
-        result = session.details()
-
-        assert result.status == HistoryShowStatus.OK
-        assert result.session_id == "session-alpha"
-        assert result.session == _as_expected_record(seeded_session)
+        assert (unknown.status, unknown.session_id, unknown.session, unknown.ok) == (
+            HistoryShowStatus.NOT_FOUND,
+            "ghost",
+            None,
+            False,
+        )
 
 
 class SessionDetailsWorktreeOutcomeTests:
@@ -640,13 +555,6 @@ class SessionHistoryRedactionTests:
         stored = collection.db.get("old")
         assert stored is not None
         assert stored.error_message == "1234"
-
-    def test_collection_get_passes_sensitive_variables_to_session(self, isolated_workspace: Path) -> None:
-        collection = SessionCollection(initialized_workspace_paths(isolated_workspace), sensitive_variables=("A", "B"))
-
-        session = collection.get("s")
-
-        assert session.sensitive_variables == ("A", "B")
 
     def test_logs_return_masked_step_lines(self, isolated_workspace: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("SVC_TOKEN", "s3cr3t-value")

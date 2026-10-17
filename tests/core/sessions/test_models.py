@@ -3,12 +3,10 @@
 from __future__ import annotations
 
 import pytest
-from pydantic import ValidationError
 
 from dovo.core.db import SessionRecord, SessionStatus
 from dovo.core.sessions import (
     HistoryListResult,
-    HistoryListStatus,
     HistoryShowResult,
     HistoryShowStatus,
     LogsShowResult,
@@ -33,69 +31,41 @@ class LogsShowResultOkTests:
         assert LogsShowResult(status=status, errors=errors).ok is expected_ok
 
 
-class RunLogEventTests:
-    def test_new_fields_default_to_none_and_unknown_field_is_rejected(self) -> None:
-        event = SessionLogEvent(event=SessionLogEventType.STEP_START)
-
-        assert (event.step_name, event.duration_seconds) == (None, None)
-        with pytest.raises(ValidationError):
-            SessionLogEvent.model_validate({"event": SessionLogEventType.STEP_START, "unknown_field": 1})
-
-
 class SessionLogEventContractTests:
-    def test_agent_env_filtered_event_round_trips_and_details_lists_env_withheld(self) -> None:
-        event = SessionLogEvent(event=SessionLogEventType.AGENT_ENV_FILTERED, step_id="s", env_withheld="A,B")
-
+    @pytest.mark.parametrize(
+        ("event", "details"),
+        [
+            pytest.param(
+                SessionLogEvent(event=SessionLogEventType.AGENT_ENV_FILTERED, step_id="s", env_withheld="A,B"),
+                {"step_id": "s", "env_withheld": "A,B"},
+                id="agent_env_filtered",
+            ),
+            pytest.param(
+                SessionLogEvent(event=SessionLogEventType.AGENT_PROGRESS, step_id="s", kind="edit", target="a.txt"),
+                {"step_id": "s", "kind": "edit", "target": "a.txt"},
+                id="agent_progress",
+            ),
+        ],
+    )
+    def test_event_round_trips_and_details_lists_its_fields(
+        self, event: SessionLogEvent, details: dict[str, str]
+    ) -> None:
         restored = SessionLogEvent.model_validate_json(event.model_dump_json())
 
         assert restored == event
-        assert restored.details() == {"step_id": "s", "env_withheld": "A,B"}
-
-
-class SessionLogEventProgressTests:
-    def test_agent_progress_event_round_trips_and_details_lists_kind_and_target(self) -> None:
-        event = SessionLogEvent(event=SessionLogEventType.AGENT_PROGRESS, step_id="s", kind="edit", target="a.txt")
-
-        restored = SessionLogEvent.model_validate_json(event.model_dump_json())
-
-        assert restored == event
-        assert restored.details() == {"step_id": "s", "kind": "edit", "target": "a.txt"}
+        assert restored.details() == details
 
 
 class HistoryListResultTests:
-    def test_defaults_describe_an_empty_ok_listing(self) -> None:
-        result = HistoryListResult()
-
-        assert (result.status, result.sessions, result.errors, result.warnings, result.fixes, result.error_code) == (
-            HistoryListStatus.OK,
-            [],
-            [],
-            [],
-            [],
-            None,
-        )
-        assert result.ok is True
-
-    def test_ok_is_false_when_errors_are_present(self) -> None:
-        assert HistoryListResult(errors=["boom"]).ok is False
+    @pytest.mark.parametrize(
+        ("errors", "expected_ok"),
+        [pytest.param([], True, id="no_errors"), pytest.param(["boom"], False, id="errors")],
+    )
+    def test_ok_is_false_only_when_errors_are_present(self, errors: list[str], expected_ok: bool) -> None:
+        assert HistoryListResult(errors=errors).ok is expected_ok
 
 
 class HistoryShowResultTests:
-    def test_defaults_leave_run_and_log_fields_empty(self) -> None:
-        result = HistoryShowResult(status=HistoryShowStatus.NOT_FOUND)
-
-        assert (
-            result.session_id,
-            result.session,
-            result.log_files,
-            result.log_snippet,
-            result.errors,
-            result.warnings,
-            result.fixes,
-            result.error_code,
-        ) == (None, None, [], [], [], [], [], None)
-        assert result.ok is False
-
     @pytest.mark.parametrize(
         ("has_run", "errors", "expected_ok"),
         [

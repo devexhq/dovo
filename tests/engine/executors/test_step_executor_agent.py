@@ -65,7 +65,9 @@ def _use_provider(monkeypatch: pytest.MonkeyPatch, provider: FakeAgentProvider) 
 
 
 class AgentRunnerDispatchTests:
-    def test_agent_step_dispatch_passes_execution_metadata_to_the_runner(self, git_repo: Path) -> None:
+    def test_agent_step_dispatch_passes_execution_metadata_and_loop_iteration_to_the_runner(
+        self, git_repo: Path
+    ) -> None:
         received: list[ExecutionMetadata] = []
 
         def _runner(
@@ -81,9 +83,15 @@ class AgentRunnerDispatchTests:
 
         step = StepBuilder.agent("plan").with_id("plan-step").build()
 
+        StepExecution(
+            StepExecutionContext(step=step, worktree_path=git_repo, agent_runner=_runner, loop_iteration=3)
+        ).run()
         StepExecution(StepExecutionContext(step=step, worktree_path=git_repo, agent_runner=_runner)).run()
 
-        assert [(metadata.step.id, metadata.step.attempt) for metadata in received] == [("plan-step", 1)]
+        assert [(metadata.step.id, metadata.step.attempt, metadata.loop_iteration) for metadata in received] == [
+            ("plan-step", 1, 3),
+            ("plan-step", 1, None),
+        ]
 
 
 class AgentStepRunnerTests:
@@ -220,29 +228,6 @@ class AgentStepRedactionTests:
 
 
 class StepExecutorRejectedPatchTests:
-    def test_loop_iteration_reaches_the_agent_runner_metadata(self, git_repo: Path) -> None:
-        received: list[ExecutionMetadata] = []
-
-        def _runner(
-            step: StepDefinition,
-            worktree: Path,
-            on_output: OutputCallback | None,
-            on_agent_line: OutputCallback | None,
-            progress: AgentProgressSink,
-            metadata: ExecutionMetadata,
-        ) -> StepDispatchOutcome:
-            received.append(metadata)
-            return StepDispatchOutcome(status="completed", exit_code=0, stdout="", stderr="")
-
-        step = StepBuilder.agent("plan").build()
-
-        StepExecution(
-            StepExecutionContext(step=step, worktree_path=git_repo, agent_runner=_runner, loop_iteration=3)
-        ).run()
-        StepExecution(StepExecutionContext(step=step, worktree_path=git_repo, agent_runner=_runner)).run()
-
-        assert [metadata.loop_iteration for metadata in received] == [3, None]
-
     def test_failed_agent_outcome_path_becomes_step_result_field(self, git_repo: Path) -> None:
 
         def _runner(

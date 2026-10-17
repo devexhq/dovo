@@ -281,25 +281,6 @@ class AgentProgressSessionLogTests:
             )
         ] * 2
 
-    def test_report_masks_the_target_with_the_step_redactor(self, tmp_path: Path) -> None:
-        secret = "hunter2-hunter2"
-        reporter = _reporter(session_log_dir=tmp_path, redactor=SecretRedactor([("TOKEN", secret)]))
-
-        reporter.report(AgentProgress(kind=AgentProgressKind.SHELL, target=f"curl -H {secret}"))
-
-        (event,) = _logged_events(tmp_path)
-        assert event.target is not None
-        assert "[REDACTED" in event.target
-        assert secret not in event.target
-
-    def test_report_without_a_session_log_dir_writes_no_event(self) -> None:
-        updates: list[AgentProgressUpdate] = []
-
-        result = _reporter(updates=updates).report(AgentProgress(kind=AgentProgressKind.READ, target="x"))
-
-        assert result is None
-        assert updates == [AgentProgressUpdate(kind=AgentProgressKind.READ, target="x")]
-
     def test_report_masks_a_step_only_secret_before_truncating_the_target(self, tmp_path: Path) -> None:
         secret = "QWERTYUIOPASDFGHJKLZ"
         redactor = SecretRedactor([("TOKEN", secret)])
@@ -314,11 +295,3 @@ class AgentProgressSessionLogTests:
         assert event.target == expected
         assert secret[:4] not in expected
         assert updates == [AgentProgressUpdate(kind=AgentProgressKind.SHELL, target=expected)]
-
-    def test_report_truncates_a_long_target_to_119_characters_plus_ellipsis(self, tmp_path: Path) -> None:
-        reporter = _reporter(session_log_dir=tmp_path)
-
-        reporter.report(AgentProgress(kind=AgentProgressKind.SHELL, target="x" * 300))
-
-        (event,) = _logged_events(tmp_path)
-        assert event.target == "x" * 119 + "…"

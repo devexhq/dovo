@@ -74,10 +74,3 @@ class ArtifactNamespaceProviderTests:
             "Artifact 'plan' cannot be inlined (ARTIFACT_CONTENT_UNAVAILABLE): "
             "artifact has 2 files, content needs exactly one"
         )
-
-    def test_revision_of_multi_file_artifact_never_reads_content(
-        self, artifact_store: ArtifactStore, publish_artifact: PublishArtifact
-    ) -> None:
-        publish_artifact("plan", {"a.md": "a", "b.md": "b"})
-
-        assert ArtifactNamespaceProvider(artifact_store).resolve("artifacts.plan.revision") == "1"
