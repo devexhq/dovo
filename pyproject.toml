@@ -117,10 +117,11 @@ exclude = [
 # E/W pycodestyle, F pyflakes, I isort, B bugbear, C4 comprehensions,
 # UP pyupgrade, RUF ruff, FA future-annotations, D pydocstyle (Google),
 # S101 assert ban in prod, PGH scoped ignore/noqa, SLF001 private member ban,
-# PLR0913 max args <= 5, PLC0415 top-level imports only.
+# PLR0913 max args <= 5, PLC0415 top-level imports only,
+# ANN401 no `Any` in parameter or return annotations.
 select = [
     "E", "W", "F", "I", "B", "C4", "UP", "RUF", "FA", "D", "T20", "TID",
-    "S101", "PGH", "SLF001", "PLR0913", "PLC0415"
+    "S101", "PGH", "SLF001", "PLR0913", "PLC0415", "ANN401"
 ]
 # E501 handled by formatter; FA100 allow missing future annotations;
 # D100/D101/D104/D105/D107 skip noisy docstring requirements.

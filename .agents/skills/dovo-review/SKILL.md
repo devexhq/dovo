@@ -70,7 +70,7 @@ Skip this when `.agentic/plan.md` is absent, and say so.
 
 Go through R1–R17 in [AGENTS.md](../../../AGENTS.md) against the diff. Report **only violations**, each as a finding with the rule id and the `path:line` that breaks it. Do not list rules that pass, and do not report a rule the diff cannot touch. A rule violation is Blocking unless it is cosmetic in context, in which case say why it is a Warning.
 
-Do not re-check what tooling enforces: import direction, output routing, direct file writes, model strictness, ignore reasons and docstring presence are covered by `tests/lint/`, ruff and ty. `tests/lint/test_explicit_any.py` caps explicit `Any` per file, so a change that raises an `ANY_BUDGET` entry must justify each new `Any` against the permitted list in `docs/agents/code-conventions.md`. Do flag a change that weakens that tooling: a new allowlist or baseline entry, a new per-file ignore, or a suppression.
+Do not re-check what tooling enforces: import direction, output routing, direct file writes, model strictness, ignore reasons and docstring presence are covered by `tests/lint/`, ruff and ty. Ruff `ANN401` rejects `Any` as a parameter or return annotation, and `tests/lint/test_explicit_any.py` caps the remaining explicit `Any` per file, so a change that raises an `ANY_BUDGET` entry must justify each new `Any` against the permitted list in `docs/agents/code-conventions.md`. Do flag a change that weakens that tooling: a new allowlist or baseline entry, a new per-file ignore, or a suppression.
 
 ## 7. Check the docs
 

@@ -53,12 +53,10 @@ core/<domain>/
 
 ## Type Annotations and `Any`
 
-- **`Any` on a return type (`-> Any`)** loses type checking at every call site transitively; treat it as a defect unless the value is genuinely unconstrained.
-- **Prefer `object` over `Any`** when a value is only stored, compared, or passed through. Pydantic `mode="before"` validators take and return `object` (`(cls, value: object) -> object`), narrowing with `isinstance`.
-- **Permitted `Any`:**
-  1. `dict[str, Any]` at JSON/YAML serialization boundaries (`model_dump(mode="json")`).
-  2. Values evaluated dynamically from user documents (`engine/executors/conditions.py`).
-  3. `**kwargs: Any` on a pass-through wrapper.
+- **No bare `Any` annotation:** ruff `ANN401` rejects `Any` as a parameter or return annotation, `*args: Any` and `**kwargs: Any` included. Type the value, or use `object` when it is unconstrained.
+- **Prefer `object` over `Any`** when a value is only stored, compared, or passed through. Values from YAML documents or user input (`engine/executors/conditions.py`, `assertions/json_match.py`) are `object`, narrowed with `isinstance` or a `TypeIs` guard where the code operates on them. Pydantic `mode="before"` validators take and return `object` (`(cls, value: object) -> object`).
+- **`pydantic.JsonValue`** only for data that must be JSON, such as `json.loads` output or a value written to `config.json` (`core/config/parser.py`). `yaml.safe_load` can return `datetime` and `date`, so YAML data is `object`.
+- **Permitted `Any`:** `dict[str, Any]` at JSON/YAML serialization boundaries (`model_dump(mode="json")`).
 - **Banned `Any`:** Dodging an import boundary, test seams, replacing an existing model type, or leaving generic parameters unannotated (`Popen[Any]` instead of `Popen[str]`).
 - **Budget:** `tests/lint/test_explicit_any.py` fails when a file names `Any` more often than its `ANY_BUDGET` entry (zero when unlisted), and when an entry is higher than the file's count. Removing an `Any` means lowering its entry; adding a permitted one means raising it in the same change.
 
