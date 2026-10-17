@@ -7,6 +7,7 @@ from typing import Any, ClassVar
 
 from sqlalchemy import String, TypeDecorator, UniqueConstraint
 from sqlmodel import Field, SQLModel
+from sqlmodel.main import SQLModelConfig
 
 
 class WorktreeStatus(StrEnum):
@@ -111,8 +112,8 @@ class SessionStatusType(TypeDecorator[SessionStatus]):
 class WorktreeRecord(SQLModel, table=True):
     """Row shape for the centralized `worktrees` table."""
 
-    __tablename__: ClassVar[str] = "worktrees"  # pyright: ignore[reportIncompatibleVariableOverride]  # SQLModel stub types it as a declared_attr
-    model_config = {"extra": "forbid"}
+    __tablename__: ClassVar[str] = "worktrees"
+    model_config = SQLModelConfig(extra="forbid")
 
     id: str = Field(primary_key=True)
     project_id: str = Field(index=True, nullable=False)
@@ -134,8 +135,8 @@ class WorktreeRecord(SQLModel, table=True):
 class SessionRecord(SQLModel, table=True):
     """Row shape for the centralized `sessions` table."""
 
-    __tablename__: ClassVar[str] = "sessions"  # pyright: ignore[reportIncompatibleVariableOverride]  # SQLModel stub types it as a declared_attr
-    model_config = {"extra": "forbid"}
+    __tablename__: ClassVar[str] = "sessions"
+    model_config = SQLModelConfig(extra="forbid")
 
     id: int | None = Field(default=None, primary_key=True)
     project_id: str = Field(index=True, nullable=False)
@@ -184,8 +185,8 @@ class SessionRecord(SQLModel, table=True):
 class ArtifactRecord(SQLModel, table=True):
     """Row shape for the centralized `artifacts` table."""
 
-    __tablename__: ClassVar[str] = "artifacts"  # pyright: ignore[reportIncompatibleVariableOverride]  # SQLModel stub types it as a declared_attr
-    model_config = {"extra": "forbid"}
+    __tablename__: ClassVar[str] = "artifacts"
+    model_config = SQLModelConfig(extra="forbid")
     __table_args__ = (
         UniqueConstraint(
             "project_id", "session_id", "name", "revision", name="uq_artifacts_project_session_name_revision"
@@ -217,8 +218,8 @@ class ArtifactRecord(SQLModel, table=True):
 class CostRecord(SQLModel, table=True):
     """Row shape for the centralized `costs` table."""
 
-    __tablename__: ClassVar[str] = "costs"  # pyright: ignore[reportIncompatibleVariableOverride]  # SQLModel stub types it as a declared_attr
-    model_config = {"extra": "forbid"}
+    __tablename__: ClassVar[str] = "costs"
+    model_config = SQLModelConfig(extra="forbid")
 
     id: int | None = Field(default=None, primary_key=True)
     project_id: str = Field(index=True, nullable=False)

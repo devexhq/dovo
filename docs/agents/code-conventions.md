@@ -66,10 +66,9 @@ core/<domain>/
 
 ## Type Checker Suppressions
 
-Default: fix the type. Every `# pyright: ignore[reportRuleName]` requires an explicit trailing reason (`tests/lint/test_pyright_ignores.py`). Bare `# type: ignore` is never honored.
+Default: fix the type. Every `# ty: ignore[rule-name]` requires an explicit trailing reason (`tests/lint/test_type_ignores.py`). Bare `# type: ignore` is never honored (`respect-type-ignore-comments = false`).
 
 - **Permitted (with reason):**
   1. Intentional ill-typed test inputs whose subject is a runtime `TypeError` or `ValidationError`.
-  2. Third-party stub conflicts (`__tablename__: ClassVar[str]` in `core/db/models.py`).
-  3. Platform-gated imports (`msvcrt` when `pythonPlatform = "Linux"` in `common/lock.py`).
+  2. Third-party stub gaps where narrowing or a typed constructor (`SQLModelConfig`, `isinstance(command, TyperGroup)`) is not possible.
 - **Banned:** Silencing wrong-shaped test fixtures/mocks, hiding nullable attributes, or omitting the reason.

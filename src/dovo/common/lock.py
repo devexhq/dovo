@@ -18,11 +18,11 @@ LockWaitNotifier = Callable[[Path, str | None, float], None]
 if sys.platform != "win32":
     import fcntl
 
-    msvcrt = None  # pyright: ignore[reportConstantRedefinition]  # platform-gated: the other branch binds the module
+    msvcrt = None
 else:
-    import msvcrt  # pyright: ignore[reportMissingImports]  # platform-gated: only exists on Windows
+    import msvcrt
 
-    fcntl = None  # pyright: ignore[reportConstantRedefinition]  # platform-gated: the other branch binds the module
+    fcntl = None
 
 POLL_INTERVAL_SECONDS = 0.2
 DEFAULT_LOCK_TIMEOUT_SECONDS = 30.0

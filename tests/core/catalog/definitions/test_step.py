@@ -35,7 +35,7 @@ class StepDefinitionArtifactsFieldTests:
                 id="s1",
                 type=StepType.COMMAND,
                 command="echo hi",
-                artifacts=artifacts_payload,  # pyright: ignore[reportArgumentType]  # intentional ill-typed input: the raised ValidationError is this test's subject
+                artifacts=artifacts_payload,  # ty: ignore[invalid-argument-type]  # intentional ill-typed input: the raised ValidationError is this test's subject
             )
 
     def test_internal_type_without_command_raises_validation_error(self) -> None:

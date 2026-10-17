@@ -105,7 +105,7 @@ steps:
 
         before_resume = run_dovo(["session", "show", session_id, "--format", "json"], cwd=initialized_project)
         before_data = parse_json(before_resume.stdout)
-        session_info = before_data.get("payload", {}).get("session", {})  # pyright: ignore[reportAttributeAccessIssue]
+        session_info = before_data.get("payload", {}).get("session", {})  # ty: ignore[unresolved-attribute]  # parse_json returns object; the envelope is a dict at runtime
         assert session_info.get("status") == "paused"
 
         (initialized_project / "fix_marker.txt").write_text("fixed", encoding="utf-8")
@@ -126,7 +126,7 @@ steps:
         after_resume = run_dovo(["session", "show", session_id, "--format", "json"], cwd=initialized_project)
         assert after_resume.exit_code == 0
         after_data = parse_json(after_resume.stdout)
-        after_session = after_data.get("payload", {}).get("session", {})  # pyright: ignore[reportAttributeAccessIssue]
+        after_session = after_data.get("payload", {}).get("session", {})  # ty: ignore[unresolved-attribute]  # parse_json returns object; the envelope is a dict at runtime
         assert after_session.get("status") == "completed"
 
     def test_resume_with_explicit_session_id_completes_targeted_session(
@@ -175,5 +175,5 @@ steps:
         show_result = run_dovo(["session", "show", session_id, "--format", "json"], cwd=initialized_project)
         assert show_result.exit_code == 0
         show_data = parse_json(show_result.stdout)
-        session_info = show_data.get("payload", {}).get("session", {})  # pyright: ignore[reportAttributeAccessIssue]
+        session_info = show_data.get("payload", {}).get("session", {})  # ty: ignore[unresolved-attribute]  # parse_json returns object; the envelope is a dict at runtime
         assert session_info.get("status") == "completed"

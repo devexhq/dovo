@@ -35,7 +35,7 @@ Every formatter gets three tests built on `tests.harness.formatter.FormatterCase
 Every command action gets a `*CliIntegrationTests` suite (`runner.invoke(app, [...])`) covering happy path exit 0, option/argument binding for every declared flag, failure path non-zero exit, and `--format json`. Add a direct-handler `*RootTests` suite only when the handler owns branch/coercion logic outside the domain layer.
 
 ### Tier 4 — Invariants (`tests/lint/`)
-Static AST and architectural boundary checks: layer direction, output routing, atomic file writes, model strictness, pyright ignore reasons, and `README.md` command parity.
+Static AST and architectural boundary checks: layer direction, output routing, atomic file writes, model strictness, type-ignore reasons, and `README.md` command parity.
 
 ## Harness, Fixtures, and Parameterization
 

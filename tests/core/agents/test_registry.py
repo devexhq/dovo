@@ -102,7 +102,7 @@ class ResolvedAgentSettingsTests:
 
         settings = ResolvedAgentSettings.model_validate(valid)
         with pytest.raises(ValidationError):
-            settings.provider = "unit-test"
+            settings.provider = "unit-test"  # ty: ignore[invalid-assignment]  # intentional ill-typed test input: frozen-model write
 
 
 def _reflect_credentials(spec: ProviderSpec, monkeypatch: pytest.MonkeyPatch) -> list[str]:

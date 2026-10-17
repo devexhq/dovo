@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import builtins
 from datetime import UTC, datetime
 
 from sqlmodel import col, select
@@ -178,7 +179,7 @@ class SessionsRepository(BaseRepository):
         self,
         limit: int | None = None,
         status: SessionStatus | str | None = None,
-    ) -> list[SessionRecord]:
+    ) -> builtins.list[SessionRecord]:
         """List session records ordered by started_at DESC, id DESC with optional filters."""
         with self.session() as session:
             statement = select(SessionRecord).where(SessionRecord.project_id == self.project_id)

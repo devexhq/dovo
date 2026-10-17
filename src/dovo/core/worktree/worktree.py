@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import builtins
+
 from dovo.common.filesystem import WorkspacePaths
 from dovo.common.lock import WorkspaceLock
 from dovo.core.db import SessionsRepository, WorktreeRecord, WorktreesRepository, WorktreeStatus
@@ -79,7 +81,7 @@ class Worktree:
         session: WorktreeSession | WorktreeRecord,
         *,
         force: bool = True,
-    ) -> list[str]:
+    ) -> builtins.list[str]:
         """Remove worktree, delete throwaway branch, and prune."""
         with WorkspaceLock(self.paths.lock_file):
             return self.lifecycle.cleanup(session, force=force)

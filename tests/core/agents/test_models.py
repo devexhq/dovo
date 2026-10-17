@@ -204,7 +204,7 @@ class InvocationContextModelTests:
         context = _context(tmp_path)
 
         with pytest.raises(ValidationError):
-            context.invocation_id = "b" * 32  # pyright: ignore[reportAttributeAccessIssue]  # intentional ill-typed test input: frozen-model write
+            context.invocation_id = "b" * 32  # ty: ignore[invalid-assignment]  # intentional ill-typed test input: frozen-model write
 
     @pytest.mark.parametrize(
         "request_kind", [pytest.param("agent", id="agent-request"), pytest.param("run", id="run-request")]

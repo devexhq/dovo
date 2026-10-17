@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import builtins
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -51,7 +52,7 @@ class WorktreesRepository(BaseRepository):
             )
             return session.exec(statement).first()
 
-    def list(self, status: WorktreeStatus | None = None) -> list[WorktreeRecord]:
+    def list(self, status: WorktreeStatus | None = None) -> builtins.list[WorktreeRecord]:
         """List worktree rows ordered by ``created_at`` descending.
 
         When ``status`` is set, only rows with that status are returned.
@@ -94,7 +95,7 @@ class WorktreesRepository(BaseRepository):
             return None
         return self.update_status(record.id, WorktreeStatus.CLEANED)
 
-    def reconcile_stale_active(self, id: str | None = None) -> list[WorktreeRecord]:
+    def reconcile_stale_active(self, id: str | None = None) -> builtins.list[WorktreeRecord]:
         """Mark active rows whose worktree directory is missing on disk as cleaned.
 
         Args:

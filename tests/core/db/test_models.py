@@ -65,15 +65,13 @@ class DbRecordModelTests:
                 id="worktree_record",
             ),
             pytest.param(
-                lambda: CostRecord(  # pyright: ignore[reportCallIssue] # intentional: omitted project_id is this test's subject
+                lambda: CostRecord(  # ty: ignore[missing-argument]  # intentional: omitted project_id is this test's subject
                     session_id="wf_abc123", branch_name="deploy", model_id="claude-sonnet-5"
                 ),
                 id="cost_record",
             ),
             pytest.param(
-                lambda: ArtifactRecord(  # pyright: ignore[reportCallIssue] # intentional: omitted project_id is this test's subject
-                    session_id="wf_abc123", name="dist", path="/tmp/artifacts/wf_abc123/dist"
-                ),
+                lambda: ArtifactRecord(session_id="wf_abc123", name="dist", path="/tmp/artifacts/wf_abc123/dist"),
                 id="artifact_record",
             ),
         ],
