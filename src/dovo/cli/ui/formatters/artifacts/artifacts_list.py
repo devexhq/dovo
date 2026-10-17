@@ -2,8 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any
-
+from pydantic import JsonValue
 from rich.console import RenderableType
 from rich.text import Text
 
@@ -41,7 +40,7 @@ class ArtifactsListFormatter(ComponentFormatter[ArtifactsListResult, ArtifactsLi
         """Derive the presentation-ready view listing every artifact row."""
         return ArtifactsListView(artifacts=[_to_row(record) for record in data.artifacts])
 
-    def to_json_serializable(self, data: ArtifactsListResult) -> dict[str, Any]:
+    def to_json_serializable(self, data: ArtifactsListResult) -> dict[str, JsonValue]:
         """Emit status plus every artifact row as its ArtifactRowView wire payload."""
         view = self.transform(data)
         return {

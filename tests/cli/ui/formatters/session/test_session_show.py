@@ -21,8 +21,8 @@ from tests.harness.formatter import (
 )
 
 
-def _make_session_show_view(**overrides: Any) -> SessionShowView:
-    defaults: dict[str, Any] = {
+def _make_session_show_view(**overrides: object) -> SessionShowView:
+    defaults: dict[str, object] = {
         "status": HistoryShowStatus.OK,
         "session_id": "sess-12345678",
         "session": session_summary_view(),
@@ -33,8 +33,7 @@ def _make_session_show_view(**overrides: Any) -> SessionShowView:
         "warnings": [],
         "fixes": [],
     }
-    defaults.update(overrides)
-    return SessionShowView(**defaults)
+    return SessionShowView.model_validate({**defaults, **overrides})
 
 
 COMPLETED_RUN = FormatterCase(

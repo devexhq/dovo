@@ -31,7 +31,7 @@ from dovo.cli.ui.formatters.common import DispatcherProtocol
 if TYPE_CHECKING:
     from rich.console import Console
 
-FORMATTER_REGISTRY: Final[dict[type[BaseModel], type[ComponentFormatter[Any, Any]]]] = {
+FORMATTER_REGISTRY: Final[dict[type[BaseModel], type[ComponentFormatter[Any]]]] = {
     # Artifacts
     artifacts_models.ArtifactsListResult: artifacts_formatters.ArtifactsListFormatter,
     artifacts_models.ArtifactDownloadResult: artifacts_formatters.ArtifactDownloadFormatter,
@@ -86,9 +86,9 @@ FORMATTER_REGISTRY: Final[dict[type[BaseModel], type[ComponentFormatter[Any, Any
 
 
 def _instantiate_formatter(
-    formatter_cls: type[ComponentFormatter[Any, Any]],
+    formatter_cls: type[ComponentFormatter[Any]],
     console: Console | None = None,
-) -> ComponentFormatter[Any, Any]:
+) -> ComponentFormatter[Any]:
     """Instantiate formatter, passing console if accepted by constructor.
 
     Args:

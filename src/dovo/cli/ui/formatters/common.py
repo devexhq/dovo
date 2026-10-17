@@ -9,6 +9,10 @@ from rich.panel import Panel
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
+    from pydantic import BaseModel
+
+    from dovo.cli.ui.formatters.base import ComponentFormatter
+
 DEFAULT_PANEL_STYLE = "blue"
 ERROR_PANEL_STYLE = "red"
 WARNING_STYLE = "yellow"
@@ -133,26 +137,12 @@ def build_error_panel(
 class DispatcherProtocol(Protocol):
     """Protocol for dispatcher registration entrypoint."""
 
-    @overload
     def register(
         self,
-        model_cls: type[Any],
-        formatter: Any,
-    ) -> Any: ...
-
-    @overload
-    def register(
-        self,
-        model_cls: type[Any],
-        formatter: None = None,
-    ) -> Any: ...
-
-    def register(
-        self,
-        model_cls: type[Any],
-        formatter: Any = None,
-    ) -> Any:
-        """Register a formatter for a specific result or event type."""
+        model_cls: type[BaseModel],
+        formatter: ComponentFormatter[Any],
+    ) -> object:
+        """Register a formatter instance for a specific result or event type."""
         ...
 
 

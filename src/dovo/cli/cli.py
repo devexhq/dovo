@@ -2,10 +2,14 @@
 
 import sys
 from pathlib import Path
-from typing import Annotated, Any
+from typing import TYPE_CHECKING, Annotated
 
 import typer
 from typer.core import TyperGroup
+
+if TYPE_CHECKING:
+    # TyperGroup.invoke is annotated with Typer's vendored click Context, which has no public name.
+    from typer._click.core import Context
 
 from dovo.cli.artifacts.app import artifacts_app
 from dovo.cli.blueprint.app import blueprint_app
@@ -35,7 +39,7 @@ NON_STRICT_CONFIG_COMMANDS = {"config", "doctor", "init", "status"}
 class DovoTyperGroup(TyperGroup):
     """Custom TyperGroup capturing subcommand args for context initialization."""
 
-    def invoke(self, ctx: Any) -> Any:
+    def invoke(self, ctx: "Context") -> object:
         """Capture help flags before executing command callbacks."""
         if getattr(ctx, "_protected_args", None) or getattr(ctx, "args", None):
             raw_args = [*ctx._protected_args, *ctx.args]

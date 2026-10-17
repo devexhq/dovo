@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 from collections import Counter
 from pathlib import Path
-from typing import Any, Final, Protocol
+from typing import Any, Final, Protocol, Self
 
 import yaml
 from pydantic import ValidationError
@@ -23,7 +23,7 @@ class _PydanticModel(Protocol):
     """Minimal protocol for catalog definition classes validated via Pydantic."""
 
     @classmethod
-    def model_validate(cls, obj: Any) -> Any:
+    def model_validate(cls, obj: object) -> Self:
         """Validate and parse raw data into a model instance."""
         ...
 

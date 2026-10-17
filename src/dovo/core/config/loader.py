@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
@@ -181,7 +182,7 @@ def _check_path_existence(target_path: Path) -> ConfigLoadResult | None:
 
 def _get_cached_config(
     target_path: Path,
-    stat: Any,
+    stat: os.stat_result | None,
     bypass_cache: bool,
 ) -> ConfigLoadResult | None:
     """Return cached ConfigLoadResult if stat matches in-memory entry."""

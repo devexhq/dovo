@@ -3,9 +3,9 @@
 from datetime import UTC, datetime
 from enum import StrEnum
 from pathlib import Path
-from typing import Any, ClassVar
+from typing import ClassVar
 
-from sqlalchemy import String, TypeDecorator, UniqueConstraint
+from sqlalchemy import Dialect, String, TypeDecorator, UniqueConstraint
 from sqlmodel import Field, SQLModel
 from sqlmodel.main import SQLModelConfig
 
@@ -58,13 +58,13 @@ class PathType(TypeDecorator[Path]):
     impl = String
     cache_ok = True
 
-    def process_bind_param(self, value: Path | str | None, dialect: Any) -> str | None:
+    def process_bind_param(self, value: Path | str | None, dialect: Dialect) -> str | None:
         """Coerce incoming Path or str object to string for SQLite storage."""
         if value is None:
             return None
         return str(value)
 
-    def process_result_value(self, value: str | None, dialect: Any) -> Path | None:
+    def process_result_value(self, value: str | None, dialect: Dialect) -> Path | None:
         """Coerce retrieved database string value back into a Path instance."""
         if value is None:
             return None
@@ -77,13 +77,13 @@ class WorktreeStatusType(TypeDecorator[WorktreeStatus]):
     impl = String
     cache_ok = True
 
-    def process_bind_param(self, value: WorktreeStatus | str | None, dialect: Any) -> str | None:
+    def process_bind_param(self, value: WorktreeStatus | str | None, dialect: Dialect) -> str | None:
         """Coerce incoming WorktreeStatus or str to string for SQLite storage."""
         if value is None:
             return None
         return value.value if isinstance(value, WorktreeStatus) else str(value)
 
-    def process_result_value(self, value: str | None, dialect: Any) -> WorktreeStatus | None:
+    def process_result_value(self, value: str | None, dialect: Dialect) -> WorktreeStatus | None:
         """Coerce retrieved database string value back into a WorktreeStatus instance."""
         if value is None:
             return None
@@ -96,13 +96,13 @@ class SessionStatusType(TypeDecorator[SessionStatus]):
     impl = String
     cache_ok = True
 
-    def process_bind_param(self, value: SessionStatus | str | None, dialect: Any) -> str | None:
+    def process_bind_param(self, value: SessionStatus | str | None, dialect: Dialect) -> str | None:
         """Coerce incoming SessionStatus or str to string for SQLite storage."""
         if value is None:
             return None
         return value.value if isinstance(value, SessionStatus) else str(value)
 
-    def process_result_value(self, value: str | None, dialect: Any) -> SessionStatus | None:
+    def process_result_value(self, value: str | None, dialect: Dialect) -> SessionStatus | None:
         """Coerce retrieved database string value back into a SessionStatus instance."""
         if value is None:
             return None
@@ -125,7 +125,7 @@ class WorktreeRecord(SQLModel, table=True):
     created_at: str = Field(default_factory=_now_utc_str)
     updated_at: str = Field(default_factory=_now_utc_str)
 
-    def __init__(self, **data: Any) -> None:
+    def __init__(self, **data: object) -> None:
         """Initialize WorktreeRecord, coercing string paths to Path instances."""
         if "worktree_path" in data and isinstance(data["worktree_path"], str):
             data["worktree_path"] = Path(data["worktree_path"])
@@ -163,7 +163,7 @@ class SessionRecord(SQLModel, table=True):
     worktree_id: str | None = Field(default=None)
     worktree_kept: bool = Field(default=False)
 
-    def __init__(self, **data: Any) -> None:
+    def __init__(self, **data: object) -> None:
         """Initialize SessionRecord, coercing string enums to Enum instances."""
         if "status" in data and isinstance(data["status"], str):
             data["status"] = SessionStatus(data["status"])
@@ -208,7 +208,7 @@ class ArtifactRecord(SQLModel, table=True):
     created_at: str = Field(default_factory=_now_utc_str)
     expires_at: str | None = Field(default=None, index=True)
 
-    def __init__(self, **data: Any) -> None:
+    def __init__(self, **data: object) -> None:
         """Initialize ArtifactRecord, coercing a string path to a Path instance."""
         if "path" in data and isinstance(data["path"], str):
             data["path"] = Path(data["path"])

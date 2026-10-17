@@ -290,7 +290,7 @@ class StepDefinition(BaseModel):
 
     @field_validator("type", mode="before")
     @classmethod
-    def coerce_type(cls, val: Any) -> Any:
+    def coerce_type(cls, val: object) -> object:
         """Coerce YAML/JSON strings to StepType (strict mode skips enum coercion)."""
         if isinstance(val, str):
             try:
@@ -301,13 +301,13 @@ class StepDefinition(BaseModel):
 
     @field_validator("tools", mode="before")
     @classmethod
-    def reject_legacy_tools(cls, val: Any) -> Any:
+    def reject_legacy_tools(cls, val: object) -> object:
         """Reject the legacy string list with migration guidance."""
         return coerce_tool_policy(val)
 
     @field_validator("on_failure", mode="before")
     @classmethod
-    def coerce_on_failure(cls, val: Any) -> Any:
+    def coerce_on_failure(cls, val: object) -> object:
         """Accept bare 'abort' string or full {action, max_retries, backoff_ms, on_max_retries} object."""
         if val is None:
             return None
@@ -345,7 +345,7 @@ class LoopStepBlock(BaseModel):
 
     @field_validator("on_max_iterations", mode="before")
     @classmethod
-    def coerce_on_max_iterations(cls, val: Any) -> Any:
+    def coerce_on_max_iterations(cls, val: object) -> object:
         """Coerce string value to FailurePolicy enum instance."""
         if isinstance(val, str):
             try:
