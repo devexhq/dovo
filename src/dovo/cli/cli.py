@@ -2,9 +2,10 @@
 
 import sys
 from pathlib import Path
-from typing import Annotated, Any
+from typing import Annotated
 
 import typer
+from typer._click.core import Context
 from typer.core import TyperGroup
 
 from dovo.cli.artifacts.app import artifacts_app
@@ -35,7 +36,7 @@ NON_STRICT_CONFIG_COMMANDS = {"config", "doctor", "init", "status"}
 class DovoTyperGroup(TyperGroup):
     """Custom TyperGroup capturing subcommand args for context initialization."""
 
-    def invoke(self, ctx: Any) -> Any:
+    def invoke(self, ctx: Context) -> object:
         """Capture help flags before executing command callbacks."""
         if getattr(ctx, "_protected_args", None) or getattr(ctx, "args", None):
             raw_args = [*ctx._protected_args, *ctx.args]

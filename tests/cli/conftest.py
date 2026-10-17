@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
 
 import pytest
 
@@ -32,17 +31,17 @@ def _restore_output_format(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 @pytest.fixture
-def dispatch_spy(monkeypatch: pytest.MonkeyPatch) -> list[Any]:
+def dispatch_spy(monkeypatch: pytest.MonkeyPatch) -> list[object]:
     """Capture every DTO a command handler passes to ui_dispatcher.dispatch during a CLI invocation.
 
     Calls through to the real dispatcher, so exit code and rendered stdout still behave normally.
     """
-    captured: list[Any] = []
+    captured: list[object] = []
     original_dispatch = ui_dispatcher.dispatch
 
-    def _spy_dispatch(data: Any, **kwargs: Any) -> None:
+    def _spy_dispatch(data: object, output_format: str | None = None) -> None:
         captured.append(data)
-        original_dispatch(data, **kwargs)
+        original_dispatch(data, output_format)
 
     monkeypatch.setattr(ui_dispatcher, "dispatch", _spy_dispatch)
     return captured

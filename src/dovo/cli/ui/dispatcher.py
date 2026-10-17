@@ -34,7 +34,7 @@ class UiDispatcher:
             output_format: Default output format ("terminal" or "json"). Defaults to "terminal".
         """
         self._custom_console: Console | None = console
-        self._registry: dict[type[Any], ComponentFormatter[Any]] = {}
+        self._registry: dict[type[object], ComponentFormatter[Any]] = {}
         self._output_format: str = output_format
         self._live_display: LiveDisplayManager | None = None
         self._tail_display: CollapsingTailDisplay | None = None
@@ -92,9 +92,9 @@ class UiDispatcher:
 
     def register(
         self,
-        model_cls: type[Any],
+        model_cls: type[object],
         formatter: ComponentFormatter[Any] | type[ComponentFormatter[Any]] | None = None,
-    ) -> Any:
+    ) -> object:
         """Register a formatter for a domain data model class.
 
         Can be called directly or used as a decorator.
@@ -116,7 +116,7 @@ class UiDispatcher:
             return decorator(formatter)
         return decorator
 
-    def dispatch(self, data: Any, output_format: str | None = None) -> None:
+    def dispatch(self, data: object, output_format: str | None = None) -> None:
         """Dispatch domain data to registered formatter according to output format.
 
         Args:
@@ -146,7 +146,7 @@ class UiDispatcher:
             rich_renderable = formatter.to_rich(data)
             self._console.print(rich_renderable)
 
-    def _dispatch_interactive(self, data: Any, formatter: ComponentFormatter[Any]) -> bool:
+    def _dispatch_interactive(self, data: object, formatter: ComponentFormatter[Any]) -> bool:
         """Route event to active live or collapsing-tail display if one is running."""
         if self._live_display is not None and self._live_display.is_active:
             if isinstance(data, PromptEvent):
@@ -208,7 +208,7 @@ class UiDispatcher:
         else:
             self._tail_display.print_above(formatter.to_rich(data))
 
-    def _dispatch_live(self, data: Any, formatter: ComponentFormatter[Any]) -> None:
+    def _dispatch_live(self, data: object, formatter: ComponentFormatter[Any]) -> None:
         """Route events through active live display session."""
         if self._live_display is None:
             return

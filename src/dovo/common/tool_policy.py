@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import re
 from enum import StrEnum
-from typing import Any, Final, Literal
+from typing import Final, Literal
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
@@ -41,7 +41,7 @@ class ToolRule(BaseModel):
 
     @field_validator("capability", mode="before")
     @classmethod
-    def coerce_capability(cls, val: Any) -> Any:
+    def coerce_capability(cls, val: object) -> object:
         """Coerce YAML/JSON strings to ToolCapability (strict mode skips enum coercion)."""
         if isinstance(val, str):
             try:

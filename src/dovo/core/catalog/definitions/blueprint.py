@@ -30,7 +30,7 @@ def extract_defaults_on_failure(raw_defaults: object) -> object | None:
 
 def apply_on_failure_default(
     step_data: dict[str, Any],
-    on_failure_default: Any | None,
+    on_failure_default: object | None,
 ) -> dict[str, Any]:
     """Copy blueprint ``on_failure`` onto a step dict when the step omits it.
 
@@ -74,7 +74,7 @@ class BlueprintDefaults(BaseModel):
 
     @field_validator("on_failure", mode="before")
     @classmethod
-    def coerce_on_failure(cls, val: Any) -> Any:
+    def coerce_on_failure(cls, val: object) -> object:
         """Match StepDefinition.on_failure string-or-object coercion."""
         if val is None:
             return None
@@ -113,13 +113,13 @@ class BlueprintDefinition(BaseModel):
 
     @field_validator("description", "summary", mode="before")
     @classmethod
-    def _coerce_blank_text(cls, value: Any) -> Any:
+    def _coerce_blank_text(cls, value: object) -> object:
         """Treat JSON/YAML null as an empty string."""
         return "" if value is None else value
 
     @model_validator(mode="before")
     @classmethod
-    def _fill_step_shorthand_defaults(cls, data: Any) -> Any:
+    def _fill_step_shorthand_defaults(cls, data: object) -> object:
         """Fill missing step ids, map bare ``command:``, and inherit defaults.on_failure."""
         if not isinstance(data, dict):
             return data
@@ -164,7 +164,7 @@ class BlueprintDefinition(BaseModel):
         step_dict["run"] = step_dict.pop("command")
 
     @classmethod
-    def _normalize_step_item(cls, item: Any, idx: int, on_failure_default: Any | None = None) -> Any:
+    def _normalize_step_item(cls, item: object, idx: int, on_failure_default: object | None = None) -> object:
         """Normalize one raw step entry for ``StepDefinition`` validation."""
         if not isinstance(item, dict):
             return item

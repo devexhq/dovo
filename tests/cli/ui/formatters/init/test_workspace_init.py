@@ -40,9 +40,9 @@ BASELINE_IDENTITY_RESULT = ProjectIdentityProvisionResult(
 )
 
 
-def make_init_view(**overrides: Any) -> WorkspaceInitView:
+def make_init_view(**overrides: object) -> WorkspaceInitView:
     """Construct a WorkspaceInitView with baseline initialized defaults."""
-    defaults: dict[str, Any] = {
+    defaults: dict[str, object] = {
         "ok": True,
         "root_path": DOVO,
         "root_path_relative": ".dovo",
@@ -67,8 +67,7 @@ def make_init_view(**overrides: Any) -> WorkspaceInitView:
         "warnings": [],
         "fixes": [],
     }
-    defaults.update(overrides)
-    return WorkspaceInitView(**defaults)
+    return WorkspaceInitView.model_validate({**defaults, **overrides})
 
 
 INITIALIZED = FormatterCase(

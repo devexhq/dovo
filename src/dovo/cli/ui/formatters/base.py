@@ -1,11 +1,11 @@
 from abc import ABC, abstractmethod
-from typing import Any, ClassVar, cast
+from typing import ClassVar, cast
 
-from pydantic import BaseModel
+from pydantic import BaseModel, JsonValue
 from rich.console import RenderableType
 
 
-class ComponentFormatter[T, V: BaseModel = Any](ABC):
+class ComponentFormatter[T, V: BaseModel = BaseModel](ABC):
     """Interface for formatting a specific type of domain data.
 
     Rule for view models:
@@ -36,7 +36,7 @@ class ComponentFormatter[T, V: BaseModel = Any](ABC):
         # 1. Return data unchanged for the identity / no-derivation set
         return cast(V, data)
 
-    def to_json_serializable(self, data: T) -> dict[str, Any]:
+    def to_json_serializable(self, data: T) -> dict[str, JsonValue]:
         """Emit the view, so JSON and terminal cannot disagree about content.
 
         Args:

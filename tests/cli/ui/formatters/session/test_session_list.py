@@ -19,8 +19,8 @@ from tests.harness.formatter import (
 )
 
 
-def _make_session_list_view(**overrides: Any) -> SessionListView:
-    defaults: dict[str, Any] = {
+def _make_session_list_view(**overrides: object) -> SessionListView:
+    defaults: dict[str, object] = {
         "status": HistoryListStatus.OK,
         "sessions": [session_summary_view()],
         "total_sessions": 1,
@@ -28,8 +28,7 @@ def _make_session_list_view(**overrides: Any) -> SessionListView:
         "warnings": [],
         "fixes": [],
     }
-    defaults.update(overrides)
-    return SessionListView(**defaults)
+    return SessionListView.model_validate({**defaults, **overrides})
 
 
 POPULATED_RUNS = FormatterCase(

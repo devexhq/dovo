@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import builtins
 from pathlib import Path
-from typing import Any, Protocol
+from typing import Any, Protocol, Self
 
 import yaml
 
@@ -51,7 +51,7 @@ class _PydanticModel(Protocol):
     """Minimal protocol for catalog definition classes validated via Pydantic."""
 
     @classmethod
-    def model_validate(cls, obj: Any) -> Any:
+    def model_validate(cls, obj: object) -> Self:
         """Validate and parse raw data into a model instance."""
         ...
 

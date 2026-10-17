@@ -26,9 +26,9 @@ from tests.harness.formatter import (
 )
 
 
-def _make_pruned_item_view(**overrides: Any) -> PrunedItemView:
+def _make_pruned_item_view(**overrides: object) -> PrunedItemView:
     """Construct a PrunedItemView with all fields explicitly specified."""
-    defaults: dict[str, Any] = {
+    defaults: dict[str, object] = {
         "category": StaleWorktreeCategory.STALE_BRANCH,
         "category_label": "stale branch",
         "identifier": "feature/stale",
@@ -40,13 +40,12 @@ def _make_pruned_item_view(**overrides: Any) -> PrunedItemView:
         "reason": "",
         "error": None,
     }
-    defaults.update(overrides)
-    return PrunedItemView(**defaults)
+    return PrunedItemView.model_validate({**defaults, **overrides})
 
 
-def _make_prune_view(**overrides: Any) -> WorktreePruneView:
+def _make_prune_view(**overrides: object) -> WorktreePruneView:
     """Construct a WorktreePruneView with all fields explicitly specified."""
-    defaults: dict[str, Any] = {
+    defaults: dict[str, object] = {
         "status": WorktreePruneStatus.OK,
         "dry_run": False,
         "force": False,
@@ -58,8 +57,7 @@ def _make_prune_view(**overrides: Any) -> WorktreePruneView:
         "warnings": [],
         "fixes": [],
     }
-    defaults.update(overrides)
-    return WorktreePruneView(**defaults)
+    return WorktreePruneView.model_validate({**defaults, **overrides})
 
 
 EMPTY_PRUNE = FormatterCase(

@@ -26,9 +26,9 @@ _SAMPLE_DIFF = """diff --git a/src/main.py b/src/main.py
 """
 
 
-def make_diff_view(**overrides: Any) -> SessionDiffView:
+def make_diff_view(**overrides: object) -> SessionDiffView:
     """Construct a SessionDiffView with healthy baseline defaults."""
-    defaults: dict[str, Any] = {
+    defaults: dict[str, object] = {
         "status": DiffStatus.OK,
         "session_id": "dovo_fmt_1",
         "artifact_path": Path("/repo/.dovo/sessions/dovo_fmt_1/diff.patch"),
@@ -44,8 +44,7 @@ def make_diff_view(**overrides: Any) -> SessionDiffView:
         "warnings": [],
         "fixes": [],
     }
-    defaults.update(overrides)
-    return SessionDiffView(**defaults)
+    return SessionDiffView.model_validate({**defaults, **overrides})
 
 
 OK_POPULATED_DATA = DiffResult(

@@ -98,9 +98,9 @@ def _make_status_result(
     )
 
 
-def _make_status_view(**overrides: Any) -> StatusView:
+def _make_status_view(**overrides: object) -> StatusView:
     """Construct a StatusView with healthy baseline defaults."""
-    defaults: dict[str, Any] = {
+    defaults: dict[str, object] = {
         "health": StatusHealth.OK,
         "root_dir": ROOT,
         "project_name": "dovo",
@@ -119,8 +119,7 @@ def _make_status_view(**overrides: Any) -> StatusView:
         "warnings": [],
         "remediations": [],
     }
-    defaults.update(overrides)
-    return StatusView(**defaults)
+    return StatusView.model_validate({**defaults, **overrides})
 
 
 HEALTHY = FormatterCase(

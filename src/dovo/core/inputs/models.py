@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from enum import StrEnum
-from typing import Any
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
@@ -31,7 +30,7 @@ class ParameterInput(BaseModel):
 
     @field_validator("type", mode="before")
     @classmethod
-    def coerce_type(cls, value: Any) -> Any:
+    def coerce_type(cls, value: object) -> object:
         """Accept bare YAML strings for ``type`` under strict mode."""
         if isinstance(value, str):
             try:
@@ -42,7 +41,7 @@ class ParameterInput(BaseModel):
 
     @field_validator("aliases", mode="before")
     @classmethod
-    def coerce_aliases(cls, value: Any) -> Any:
+    def coerce_aliases(cls, value: object) -> object:
         """Normalize a single alias string into a one-element list."""
         if isinstance(value, str):
             return [value]

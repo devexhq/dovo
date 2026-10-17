@@ -97,7 +97,7 @@ class OnFailureSpec(BaseModel):
 
     @field_validator("action", "on_max_retries", mode="before")
     @classmethod
-    def parse_policy(cls, val: Any) -> Any:
+    def parse_policy(cls, val: object) -> object:
         """Coerce string values to FailurePolicy enum instances."""
         if isinstance(val, str):
             try:
@@ -123,7 +123,7 @@ class BlueprintDefaults(BaseModel):
 
     @field_validator("on_failure", mode="before")
     @classmethod
-    def coerce_on_failure(cls, val: Any) -> Any:
+    def coerce_on_failure(cls, val: object) -> object:
         """Match StepDefinition.on_failure string-or-object coercion."""
         if val is None:
             return None

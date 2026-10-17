@@ -4,14 +4,14 @@ import sqlite3
 from collections.abc import Generator
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Any
 
 from sqlalchemy import Engine, event
-from sqlalchemy.pool import NullPool
+from sqlalchemy.engine.interfaces import DBAPIConnection
+from sqlalchemy.pool import ConnectionPoolEntry, NullPool
 from sqlmodel import Session, create_engine
 
 
-def _set_sqlite_pragmas(dbapi_connection: Any, connection_record: Any) -> None:
+def _set_sqlite_pragmas(dbapi_connection: DBAPIConnection, connection_record: ConnectionPoolEntry) -> None:
     """Enable WAL mode and busy timeout for safe concurrent CLI + Desktop access."""
     cursor = dbapi_connection.cursor()
     try:

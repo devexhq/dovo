@@ -71,7 +71,7 @@ class AgentSettings(BaseModel):
 
     @field_validator("tools", mode="before")
     @classmethod
-    def reject_legacy_tools(cls, val: Any) -> Any:
+    def reject_legacy_tools(cls, val: object) -> object:
         """Reject the legacy string list with migration guidance."""
         return coerce_tool_policy(val)
 

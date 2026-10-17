@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
-from typing import Annotated, Any
+from typing import Annotated
 
 import typer
+from typer._click.core import Context
 from typer.core import TyperGroup
 
 from dovo.cli.context import CliContext
@@ -16,7 +17,7 @@ from .commands.root import run_command
 class RunTyperGroup(TyperGroup):
     """Custom TyperGroup allowing extra args forwarding when invoked without subcommands."""
 
-    def invoke(self, ctx: Any) -> Any:
+    def invoke(self, ctx: Context) -> object:
         """Forward protected args to ctx.args when no subcommands are registered."""
         if not self.commands and self.invoke_without_command:
             ctx.args = [*getattr(ctx, "_protected_args", []), *ctx.args]
