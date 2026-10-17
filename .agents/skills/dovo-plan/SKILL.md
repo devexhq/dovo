@@ -50,4 +50,4 @@ When the issue leaves a detail unspecified, choose the option consistent with th
 
 Run planning.md Step 5. Report the paths written, the Phases table, a one-paragraph summary, every numbered Open Question restated in chat, and plainly that this was planning only: nothing was implemented, tested, committed or pushed.
 
-**A human reviews the plan before implementation.** Stop and wait. `/dovo-code --phase 1` implements the first phase.
+**A human reviews the plan before implementation.** Stop and wait. `/dovo-plan-review` reviews it in a fresh session first; `/dovo-code --phase 1` implements the first phase.
