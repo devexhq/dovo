@@ -49,7 +49,7 @@ Only read; never edit code or run tooling.
 ### 2. Size and split
 
 An issue is one user story that ships value on its own, and plans into one or two PRs. Split it when any of these hold:
-- the **I want** line needs an "and"
+- the **I want** line joins independently valuable outcomes
 - more than about 6 FRs
 - more than one new public surface (for example a command group *and* a schema field)
 - it changes a persisted format *and* adds CLI surface
