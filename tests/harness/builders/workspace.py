@@ -144,8 +144,15 @@ def init_git_repository(
         template_repository,
         root,
         dirs_exist_ok=True,
-        ignore=shutil.ignore_patterns("*.lock", "gc.pid"),
+        ignore=lambda directory, names: _transient_git_files(template_repository, directory, names),
     )
+
+
+def _transient_git_files(repository: Path, directory: str, names: list[str]) -> set[str]:
+    """Return the lock and gc files in names to skip when directory is inside repository's .git."""
+    if Path(directory).relative_to(repository).parts[:1] != (".git",):
+        return set()
+    return {name for name in names if name.endswith(".lock") or name == "gc.pid"}
 
 
 def _git(root: Path, *args: str) -> None:
