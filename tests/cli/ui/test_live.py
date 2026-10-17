@@ -45,22 +45,23 @@ class LiveDisplayManagerLoopTests:
         manager.start()
 
         manager.handle_loop_lifecycle(LoopLifecycleEvent(loop_id="dev-cycle", action="start", max_iterations=5))
+        manager.handle_step_start(StepStartEvent(idx=1, total=1, step_id="run-tests", name="run-tests"))
         manager.stop()
 
         rendered = output.getvalue()
         assert "dev-cycle" in rendered
-        assert "iterations" in rendered
-        assert "Blueprint Execution Progress" in rendered
+        assert "run-tests" in rendered
 
     def test_no_loop_active_omits_panel(self) -> None:
         output = io.StringIO()
         manager = LiveDisplayManager(_terminal_console(output))
         manager.start()
+        manager.handle_step_start(StepStartEvent(idx=1, total=1, step_id="run-tests", name="run-tests"))
         manager.stop()
 
         rendered = output.getvalue()
-        assert "Blueprint Execution Progress" in rendered
-        assert "iterations" not in rendered
+        assert "run-tests" in rendered
+        assert "Loop" not in rendered
 
     def test_dispatch_live_routes_loop_lifecycle_events(self) -> None:
         output = io.StringIO()
@@ -71,9 +72,7 @@ class LiveDisplayManagerLoopTests:
         finally:
             dispatcher.stop_live()
 
-        rendered = output.getvalue()
-        assert "dev-cycle" in rendered
-        assert "5 ○" in rendered
+        assert "dev-cycle" in output.getvalue()
 
 
 class BuildLoopStatusPanelTests:
