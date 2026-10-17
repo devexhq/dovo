@@ -134,14 +134,14 @@ uv run dovo run tests --path tests/core/   # scoped tests while iterating (also 
 uv run dovo run quality         # all quality gates against the working tree
 uv run ruff format .            # format (the gate only checks it)
 uv run ruff check .             # lint
-uv run ty check src tests       # typecheck (must report no diagnostics)
+uv run ty check src tests e2e   # typecheck (must report no diagnostics)
 ```
 
 ## Quality gate
 
 `uv run dovo run quality` must pass before every commit. It runs, in order,
 and stops at the first failure: `ruff format --check`, `ruff check`,
-`ty check src tests`, `mkdocs build --strict`, `complexipy`
+`ty check src tests e2e`, `mkdocs build --strict`, `complexipy`
 on the files changed against `origin/main` (no touched function over 10), and
 the full test suite with coverage (at least 80%). CI runs the same blueprint.
 Fix a failure in the code, never with a suppression or a lowered threshold.
