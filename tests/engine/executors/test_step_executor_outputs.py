@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from dovo.engine.executors.models import StepExecutionContext
 from dovo.engine.executors.step_executor import StepExecution
 from tests.harness.builders import StepBuilder
@@ -43,61 +45,58 @@ class StepExecutionTempEnvVarTests:
 
 
 class StepExecutionOutputParsingTests:
-    def test_command_step_writes_key_value_lines_populates_step_result_outputs(self, tmp_path: Path) -> None:
-        step = (
-            StepBuilder.command('echo "greeting=hello" >> "$DOVO_OUTPUT"; echo "count=2" >> "$DOVO_OUTPUT"')
-            .with_id("s1")
-            .build()
-        )
-
-        result = StepExecution(
-            StepExecutionContext(step=step, worktree_path=tmp_path, session_tmp_dir=tmp_path / "session")
-        ).run()
-
-        assert result.status == "completed"
-        assert result.outputs == {"greeting": "hello", "count": "2"}
-
-    def test_command_step_output_file_blank_and_comment_lines_are_ignored(self, tmp_path: Path) -> None:
-        step = (
-            StepBuilder.command(
+    @pytest.mark.parametrize(
+        ("command", "outputs", "warnings"),
+        [
+            pytest.param(
+                'echo "greeting=hello" >> "$DOVO_OUTPUT"; echo "count=2" >> "$DOVO_OUTPUT"',
+                {"greeting": "hello", "count": "2"},
+                [],
+                id="key_value_lines",
+            ),
+            pytest.param(
                 'printf "\\n# a comment\\nkey=value\\n" >> "$DOVO_OUTPUT"',
-            )
-            .with_id("s1")
-            .build()
-        )
+                {"key": "value"},
+                [],
+                id="blank_and_comment_lines_ignored",
+            ),
+            pytest.param(
+                'printf "malformed_no_equals\\nkey=value\\n" >> "$DOVO_OUTPUT"',
+                {"key": "value"},
+                ["Malformed step output line, missing '=': 'malformed_no_equals'"],
+                id="line_without_equals_warns",
+            ),
+            pytest.param("echo hi", {}, [], id="missing_output_file"),
+            pytest.param(
+                'printf "body<<EOF\\nline one\\n\\nline=three\\nEOF\\n" >> "$DOVO_OUTPUT"',
+                {"body": "line one\n\nline=three"},
+                [],
+                id="heredoc_multiline_verbatim",
+            ),
+            pytest.param(
+                'printf "plain=value\\nbody<<EOF\\nline a\\nline b\\nEOF\\n" >> "$DOVO_OUTPUT"',
+                {"plain": "value", "body": "line a\nline b"},
+                [],
+                id="heredoc_alongside_plain_line",
+            ),
+            pytest.param(
+                'printf "body<<EOF\\nline a\\nline b\\n" >> "$DOVO_OUTPUT"',
+                {},
+                ["Malformed step output heredoc, missing terminator 'EOF' for key 'body'"],
+                id="unterminated_heredoc_drops_key_and_warns",
+            ),
+        ],
+    )
+    def test_command_step_output_file_is_parsed_into_outputs_and_warnings(
+        self, command: str, outputs: dict[str, str], warnings: list[str], tmp_path: Path
+    ) -> None:
+        step = StepBuilder.command(command).with_id("s1").build()
 
         result = StepExecution(
             StepExecutionContext(step=step, worktree_path=tmp_path, session_tmp_dir=tmp_path / "session")
         ).run()
 
-        assert result.status == "completed"
-        assert result.outputs == {"key": "value"}
-        assert result.warnings == []
-
-    def test_command_step_output_file_line_without_equals_recorded_as_warning_not_error(self, tmp_path: Path) -> None:
-        step = (
-            StepBuilder.command('printf "malformed_no_equals\\nkey=value\\n" >> "$DOVO_OUTPUT"').with_id("s1").build()
-        )
-
-        result = StepExecution(
-            StepExecutionContext(step=step, worktree_path=tmp_path, session_tmp_dir=tmp_path / "session")
-        ).run()
-
-        assert result.status == "completed"
-        assert result.outputs == {"key": "value"}
-        assert len(result.warnings) == 1
-        assert "malformed_no_equals" in result.warnings[0]
-
-    def test_command_step_missing_output_file_returns_empty_outputs_without_error(self, tmp_path: Path) -> None:
-        step = StepBuilder.command("echo hi").with_id("s1").build()
-
-        result = StepExecution(
-            StepExecutionContext(step=step, worktree_path=tmp_path, session_tmp_dir=tmp_path / "session")
-        ).run()
-
-        assert result.status == "completed"
-        assert result.outputs == {}
-        assert result.warnings == []
+        assert (result.status, result.outputs, result.warnings) == ("completed", outputs, warnings)
 
     def test_command_step_retry_truncates_output_file_between_attempts(self, tmp_path: Path) -> None:
         step = (
@@ -116,55 +115,3 @@ class StepExecutionOutputParsingTests:
 
         assert result.status == "completed"
         assert result.outputs == {"fresh": "yes"}
-
-    def test_command_step_heredoc_output_captures_multiline_value_verbatim(self, tmp_path: Path) -> None:
-        step = (
-            StepBuilder.command(
-                'printf "body<<EOF\\nline one\\n\\nline=three\\nEOF\\n" >> "$DOVO_OUTPUT"',
-            )
-            .with_id("s1")
-            .build()
-        )
-
-        result = StepExecution(
-            StepExecutionContext(step=step, worktree_path=tmp_path, session_tmp_dir=tmp_path / "session")
-        ).run()
-
-        assert result.status == "completed"
-        assert result.outputs == {"body": "line one\n\nline=three"}
-        assert result.warnings == []
-
-    def test_command_step_heredoc_output_alongside_plain_key_value_line_parses_both(self, tmp_path: Path) -> None:
-        step = (
-            StepBuilder.command(
-                'printf "plain=value\\nbody<<EOF\\nline a\\nline b\\nEOF\\n" >> "$DOVO_OUTPUT"',
-            )
-            .with_id("s1")
-            .build()
-        )
-
-        result = StepExecution(
-            StepExecutionContext(step=step, worktree_path=tmp_path, session_tmp_dir=tmp_path / "session")
-        ).run()
-
-        assert result.status == "completed"
-        assert result.outputs == {"plain": "value", "body": "line a\nline b"}
-
-    def test_command_step_unterminated_heredoc_drops_key_and_warns_without_failing_step(self, tmp_path: Path) -> None:
-        step = (
-            StepBuilder.command(
-                'printf "body<<EOF\\nline a\\nline b\\n" >> "$DOVO_OUTPUT"',
-            )
-            .with_id("s1")
-            .build()
-        )
-
-        result = StepExecution(
-            StepExecutionContext(step=step, worktree_path=tmp_path, session_tmp_dir=tmp_path / "session")
-        ).run()
-
-        assert result.status == "completed"
-        assert result.outputs == {}
-        assert len(result.warnings) == 1
-        assert "body" in result.warnings[0]
-        assert "EOF" in result.warnings[0]

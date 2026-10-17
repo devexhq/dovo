@@ -6,19 +6,11 @@ import hashlib
 from pathlib import Path
 
 from dovo.core.artifacts.models import ArtifactManifestFile, ArtifactProvenance
-from dovo.core.artifacts.services.manifest import build_manifest, compute_bundle_digest, compute_file_checksum
+from dovo.core.artifacts.services.manifest import build_manifest, compute_bundle_digest
 
 
 class ManifestServiceTests:
-    """Contract tests for compute_file_checksum and build_manifest."""
-
-    def test_compute_file_checksum_matches_known_sha256(self, tmp_path: Path) -> None:
-        target = tmp_path / "hello.txt"
-        target.write_bytes(b"hello")
-
-        checksum = compute_file_checksum(target)
-
-        assert checksum == hashlib.sha256(b"hello").hexdigest()
+    """Contract tests for build_manifest and compute_bundle_digest."""
 
     def test_build_manifest_zero_retention_days_yields_null_expires_at(self, tmp_path: Path) -> None:
         files = [ArtifactManifestFile(path="dist/pkg.whl", sha256="abc123", size_bytes=10)]

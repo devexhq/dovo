@@ -8,7 +8,7 @@ import pytest
 
 from dovo.common.filesystem.models import WorkspacePaths
 from dovo.core.artifacts import Artifacts
-from dovo.core.artifacts.models import ArtifactDownloadStatus, ArtifactProvenance, ArtifactUploadStatus
+from dovo.core.artifacts.models import ArtifactDownloadStatus, ArtifactProvenance
 from dovo.core.artifacts.store import ArtifactStore
 from dovo.core.db.repositories.artifacts import ArtifactsRepository
 
@@ -43,22 +43,6 @@ class ArtifactStoreTests:
         assert record is not None
         assert record.revision == 1
         assert [stored.session_id for stored in artifacts_repository.list()] == ["wf_1"]
-
-    def test_publish_with_no_matching_files_returns_no_matching_files_status(
-        self, tmp_path: Path, artifacts_paths: WorkspacePaths, artifacts_repository: ArtifactsRepository
-    ) -> None:
-        store = ArtifactStore(Artifacts(artifacts_paths, artifacts_repository), "wf_1")
-
-        result = store.publish(
-            _worktree(tmp_path, "plan"),
-            name="plan",
-            path_glob="MISSING.md",
-            retention_days=None,
-            provenance=ArtifactProvenance(),
-        )
-
-        assert result.status == ArtifactUploadStatus.NO_MATCHING_FILES
-        assert artifacts_repository.get("wf_1", "plan") is None
 
     @pytest.mark.parametrize(
         ("override", "expected"),

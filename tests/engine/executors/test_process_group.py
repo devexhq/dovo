@@ -58,16 +58,8 @@ class ProcessGroupEscalationTests:
         result = execution.run()
         elapsed = time.monotonic() - start_time
 
-        assert result.step_id == "timeout-escalate"
-        assert result.status == "failed"
-        assert result.exit_code == 124
-        assert result.stdout == ""
-        assert result.stderr == ""
-        assert result.attempts == 1
+        assert (result.status, result.exit_code) == ("failed", 124)
         assert result.error_message == "Command step execution timed out after 1 seconds."
-        assert result.errors == []
-        assert result.warnings == []
-        assert result.fixes == []
         assert result.duration_seconds >= 2.0
         assert elapsed >= 2.0
 

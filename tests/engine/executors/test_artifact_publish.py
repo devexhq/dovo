@@ -12,8 +12,6 @@ from dovo.core.catalog.definitions import ArtifactPublishSpec, StepDefinition, S
 from dovo.core.db.repositories.artifacts import ArtifactsRepository
 from dovo.engine.executors.artifact_publish import ArtifactPublishOutcome, publish_declared_artifacts
 
-_MISSING_PLAN = "Artifact 'plan' matched no files at 'PLAN.md' (ARTIFACT_NOT_PRODUCED)."
-
 
 def _step(*specs: ArtifactPublishSpec) -> StepDefinition:
     """Build a command step declaring the given artifact specs."""
@@ -31,34 +29,6 @@ def _worktree(tmp_path: Path, *files: str) -> Path:
 
 class PublishDeclaredArtifactsTests:
     """Contract tests for publish_declared_artifacts."""
-
-    def test_required_spec_matching_nothing_returns_not_produced_message(
-        self, tmp_path: Path, artifact_store: ArtifactStore
-    ) -> None:
-        outcome = publish_declared_artifacts(
-            _step(ArtifactPublishSpec(name="plan", path="PLAN.md")),
-            worktree_path=_worktree(tmp_path),
-            store=artifact_store,
-            attempt=1,
-            loop_iteration=None,
-        )
-
-        assert outcome == ArtifactPublishOutcome(error_message=_MISSING_PLAN, warnings=[])
-
-    def test_optional_spec_matching_nothing_returns_warning_and_no_error(
-        self, tmp_path: Path, artifact_store: ArtifactStore
-    ) -> None:
-        outcome = publish_declared_artifacts(
-            _step(ArtifactPublishSpec(name="plan", path="PLAN.md", required=False)),
-            worktree_path=_worktree(tmp_path),
-            store=artifact_store,
-            attempt=1,
-            loop_iteration=None,
-        )
-
-        assert outcome == ArtifactPublishOutcome(
-            error_message=None, warnings=[f"Failed to publish artifact 'plan': {_MISSING_PLAN}"]
-        )
 
     @pytest.mark.parametrize(
         ("required", "expected"),

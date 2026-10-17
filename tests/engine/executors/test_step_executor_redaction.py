@@ -20,14 +20,34 @@ from tests.harness.builders import StepBuilder
 
 
 class StepExecutionRedactionTests:
+    @pytest.mark.parametrize(
+        ("name", "value", "listed", "expected"),
+        [
+            pytest.param(
+                "ANTHROPIC_API_KEY",
+                "sk-ant-secret-value-123",
+                (),
+                "[REDACTED:ANTHROPIC_API_KEY]\n",
+                id="env_secret",
+            ),
+            pytest.param("PIN", "1234", ("PIN",), "[REDACTED:PIN]\n", id="listed_short_value"),
+            pytest.param("PIN", "1234", (), "1234\n", id="unlisted_short_value"),
+        ],
+    )
     def test_run_masks_env_secret_in_result_stream_and_attempt_log(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        name: str,
+        value: str,
+        listed: tuple[str, ...],
+        expected: str,
     ) -> None:
-        monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-secret-value-123")
+        monkeypatch.setenv(name, value)
         log_dir = tmp_path / "logs"
         log_dir.mkdir()
         streamed: list[tuple[str, str]] = []
-        step = StepBuilder.command("echo $ANTHROPIC_API_KEY").with_id("show").build()
+        step = StepBuilder.command(f"echo ${name}").with_id("show").build()
 
         result = StepExecution(
             StepExecutionContext(
@@ -35,14 +55,13 @@ class StepExecutionRedactionTests:
                 worktree_path=tmp_path,
                 session_log_dir=log_dir,
                 on_output=lambda stream, line: streamed.append((stream, line)),
+                sensitive_variables=listed,
             )
         ).run()
 
-        assert result.stdout == "[REDACTED:ANTHROPIC_API_KEY]\n"
-        assert streamed == [("stdout", "[REDACTED:ANTHROPIC_API_KEY]\n")]
-        assert (log_dir / "01_show_attempt_1.stdout.log").read_text(encoding="utf-8") == (
-            "[REDACTED:ANTHROPIC_API_KEY]\n"
-        )
+        assert result.stdout == expected
+        assert streamed == [("stdout", expected)]
+        assert (log_dir / "01_show_attempt_1.stdout.log").read_text(encoding="utf-8") == expected
 
     def test_run_masks_env_secret_in_agent_attempt_log(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-secret-value-123")
@@ -71,8 +90,17 @@ class StepExecutionRedactionTests:
         assert logged == "token [REDACTED:ANTHROPIC_API_KEY]\n"
         assert "sk-ant-secret-value-123" not in logged
 
-    def test_run_masks_step_env_secret_on_stderr(self, tmp_path: Path) -> None:
-        step = StepBuilder.command("echo $DEPLOY_TOKEN >&2").with_env("DEPLOY_TOKEN", "s3cr3t-value").build()
+    @pytest.mark.parametrize(
+        ("name", "value", "listed"),
+        [
+            pytest.param("DEPLOY_TOKEN", "s3cr3t-value", (), id="secret_pattern"),
+            pytest.param("DB_PIN", "99", ("DB_PIN",), id="listed_name"),
+        ],
+    )
+    def test_run_masks_step_env_secret_on_stderr(
+        self, tmp_path: Path, name: str, value: str, listed: tuple[str, ...]
+    ) -> None:
+        step = StepBuilder.command(f"echo ${name} >&2").with_env(name, value).build()
         streamed: list[tuple[str, str]] = []
 
         result = StepExecution(
@@ -80,11 +108,12 @@ class StepExecutionRedactionTests:
                 step=step,
                 worktree_path=tmp_path,
                 on_output=lambda stream, line: streamed.append((stream, line)),
+                sensitive_variables=listed,
             )
         ).run()
 
-        assert result.stderr == "[REDACTED:DEPLOY_TOKEN]\n"
-        assert streamed == [("stderr", "[REDACTED:DEPLOY_TOKEN]\n")]
+        assert result.stderr == f"[REDACTED:{name}]\n"
+        assert streamed == [("stderr", f"[REDACTED:{name}]\n")]
 
     def test_run_masks_repository_env_file_secrets(self, tmp_path: Path, engine_paths: WorkspacePaths) -> None:
         (engine_paths.root_dir / ".env").write_text("DB_PASSWORD=hunter2-long\n", encoding="utf-8")
@@ -94,93 +123,45 @@ class StepExecutionRedactionTests:
 
         assert result.stdout == "[REDACTED:DB_PASSWORD]\n"
 
+    @pytest.mark.parametrize(
+        ("name", "value", "listed"),
+        [
+            pytest.param("X_SECRET", "s3cr3t-value", (), id="secret_pattern"),
+            pytest.param("PIN", "1234", ("PIN", "UNSET_NAME"), id="listed_name_with_unset_name"),
+        ],
+    )
     def test_run_masks_secret_quoted_in_assertion_failure_message(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, name: str, value: str, listed: tuple[str, ...]
     ) -> None:
-        monkeypatch.setenv("X_SECRET", "s3cr3t-value")
-        step = StepBuilder.command("echo $X_SECRET").assert_output_not_contains("s3cr3t-value").build()
-
-        result = StepExecution(StepExecutionContext(step=step, worktree_path=tmp_path)).run()
-
-        assert result.status == "failed"
-        assert result.error_message is not None
-        assert "[REDACTED:X_SECRET]" in result.error_message
-        assert "s3cr3t-value" not in result.error_message
-
-    def test_run_evaluates_assertions_against_unmasked_output(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        monkeypatch.setenv("X_SECRET", "s3cr3t-value")
-        step = StepBuilder.command("echo $X_SECRET").assert_output_contains("s3cr3t-value").build()
-
-        result = StepExecution(StepExecutionContext(step=step, worktree_path=tmp_path)).run()
-
-        assert result.status == "completed"
-        assert result.stdout == "[REDACTED:X_SECRET]\n"
-
-    def test_run_masks_listed_short_value_in_result_stream_and_attempt_log(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        monkeypatch.setenv("PIN", "1234")
-        log_dir = tmp_path / "logs"
-        log_dir.mkdir()
-        streamed: list[tuple[str, str]] = []
-        step = StepBuilder.command("echo $PIN").with_id("show").build()
-        execution = StepExecution(
-            StepExecutionContext(
-                step=step,
-                worktree_path=tmp_path,
-                session_log_dir=log_dir,
-                on_output=lambda stream, line: streamed.append((stream, line)),
-                sensitive_variables=("PIN",),
-            )
-        )
-
-        result = execution.run()
-
-        unlisted = StepExecution(StepExecutionContext(step=step, worktree_path=tmp_path)).run()
-        assert result.stdout == "[REDACTED:PIN]\n"
-        assert streamed == [("stdout", "[REDACTED:PIN]\n")]
-        assert (log_dir / "01_show_attempt_1.stdout.log").read_text(encoding="utf-8") == "[REDACTED:PIN]\n"
-        assert execution.redactor.redact_text(result.stdout) == result.stdout
-        assert unlisted.stdout == "1234\n"
-
-    def test_run_masks_listed_name_set_only_in_step_env_on_stderr(self, tmp_path: Path) -> None:
-        step = StepBuilder.command("echo $DB_PIN >&2").with_env("DB_PIN", "99").build()
-
-        result = StepExecution(
-            StepExecutionContext(step=step, worktree_path=tmp_path, sensitive_variables=("DB_PIN",))
-        ).run()
-
-        assert result.stderr == "[REDACTED:DB_PIN]\n"
-
-    def test_run_masks_listed_value_in_error_message_and_skips_unset_name_silently(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        monkeypatch.setenv("PIN", "1234")
+        monkeypatch.setenv(name, value)
         monkeypatch.delenv("UNSET_NAME", raising=False)
-        step = StepBuilder.command("echo $PIN").assert_output_not_contains("1234").build()
-        execution = StepExecution(
-            StepExecutionContext(step=step, worktree_path=tmp_path, sensitive_variables=("PIN", "UNSET_NAME"))
-        )
+        step = StepBuilder.command(f"echo ${name}").assert_output_not_contains(value).build()
+        execution = StepExecution(StepExecutionContext(step=step, worktree_path=tmp_path, sensitive_variables=listed))
 
         result = execution.run()
 
         assert result.status == "failed"
         assert result.error_message is not None
-        assert "[REDACTED:PIN]" in result.error_message
-        assert "1234" not in result.error_message
+        assert f"[REDACTED:{name}]" in result.error_message
+        assert value not in result.error_message
         assert execution.log_warnings == []
 
-    def test_run_evaluates_assertion_against_unmasked_output_for_listed_name(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    @pytest.mark.parametrize(
+        ("name", "value", "listed"),
+        [
+            pytest.param("X_SECRET", "s3cr3t-value", (), id="secret_pattern"),
+            pytest.param("PIN", "1234", ("PIN",), id="listed_name"),
+        ],
+    )
+    def test_run_evaluates_assertions_against_unmasked_output(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, name: str, value: str, listed: tuple[str, ...]
     ) -> None:
-        monkeypatch.setenv("PIN", "1234")
-        step = StepBuilder.command("echo $PIN").assert_output_contains("1234").build()
+        monkeypatch.setenv(name, value)
+        step = StepBuilder.command(f"echo ${name}").assert_output_contains(value).build()
 
         result = StepExecution(
-            StepExecutionContext(step=step, worktree_path=tmp_path, sensitive_variables=("PIN",))
+            StepExecutionContext(step=step, worktree_path=tmp_path, sensitive_variables=listed)
         ).run()
 
         assert result.status == "completed"
-        assert result.stdout == "[REDACTED:PIN]\n"
+        assert result.stdout == f"[REDACTED:{name}]\n"
