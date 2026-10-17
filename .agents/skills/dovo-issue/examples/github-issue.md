@@ -16,7 +16,7 @@ The block below is the issue body only (title: `Implement config loader`).
 ## Scope
 
 ### In scope
-- Resolve the default config path to `<repo>/.dovo/config.json` via `get_dovo_config_file`
+- Resolve the default config path to `<repo>/.dovo/config.json`
 - Load raw JSON from disk with stable, classified failures
 - Validate against config schema v1 and map into typed `DovoConfig`
 - Expose a non-raising `ConfigLoadResult` API as the primary load surface
@@ -38,7 +38,7 @@ The block below is the issue body only (title: `Implement config loader`).
 
 ### FR-1: Default path resolution
 Given repository root `cwd`, or an explicit `config_path`:
-- default path is `get_dovo_config_file(cwd)` → `cwd / ".dovo" / "config.json"`
+- default path is `cwd / ".dovo" / "config.json"`
 - explicit `config_path` wins when provided
 - resolved path on the result is absolute
 
@@ -81,7 +81,7 @@ When the root is an object that fails config schema v1 or Pydantic mapping:
 ## Non-functional requirements
 
 ### NFR-1: Single load module
-All config reads go through `dovo.core.config.manager`. Command packages must not call `json.load` on config directly.
+Every config read goes through the loader's entrypoint. Command packages must not call `json.load` on config directly.
 
 ### NFR-2: Testable I/O
 Filesystem access is via `Path` arguments. Process CWD is only a default for `cwd`, never hard-coded inside helpers.
