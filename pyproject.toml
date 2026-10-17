@@ -41,7 +41,7 @@ dev = [
     "ruff>=0.6.0",
     "invoke>=2.0.0",
     "complexipy>=6.2.0",
-    "ty>=0.0.89",
+    "ty==0.0.89",
 ]
 docs = [
     "mkdocs>=1.5.0",
@@ -212,7 +212,7 @@ docstring-code-line-length = "dynamic"
 
 [dependency-groups]
 dev = [
-    "ty>=0.0.89",
+    "ty==0.0.89",
 ]
 
 [tool.complexipy]
@@ -229,6 +229,16 @@ python-platform = "linux"
 [tool.ty.analysis]
 # Only rule-scoped `# ty: ignore[rule]` suppresses a diagnostic; bare `# type: ignore` does not.
 respect-type-ignore-comments = false
+
+[tool.ty.rules]
+# Report these as errors explicitly so their level does not depend on ty's defaults.
+possibly-unresolved-reference = "error"
+possibly-missing-attribute = "error"
+possibly-missing-import = "error"
+division-by-zero = "error"
+deprecated = "error"
+redundant-cast = "error"
+unused-ignore-comment = "error"
 
 [tool.ty.src]
 # Source, test and e2e suites are type-checked.

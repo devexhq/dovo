@@ -9,6 +9,7 @@ from typing import Final
 REPO_ROOT: Final[Path] = Path(__file__).parent.parent.parent
 SRC_ROOT: Final[Path] = REPO_ROOT / "src" / "dovo"
 TESTS_ROOT: Final[Path] = REPO_ROOT / "tests"
+E2E_ROOT: Final[Path] = REPO_ROOT / "e2e"
 
 
 def collect_python_files(directory: Path) -> list[Path]:
