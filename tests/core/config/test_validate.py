@@ -103,6 +103,26 @@ class ConfigSemanticValidationTests:
         assert result.warnings == ["worktree.max_active_worktrees (11) exceeds 10 (CONFIG_WARN_WORKTREE_LIMIT)."]
         assert result.fixes == ["Lower worktree.max_active_worktrees to 10 or fewer"]
 
+    def test_validate_schema_violation_carries_load_raw_errors_and_fixes(self, tmp_path: Path) -> None:
+        payload = {"version": 1}
+        config_path = tmp_path / "config.json"
+        Filesystem.atomic_write_json(config_path, payload)
+
+        result = validate_config_result(config_path=config_path)
+
+        assert result.status == ConfigValidationStatus.INVALID
+        assert result.config_path == config_path
+        assert result.raw == payload
+        assert result.config is None
+        assert result.errors == [
+            "Config schema validation failed (CONFIG_SCHEMA_INVALID):\n- (root): 'project' is a required property"
+        ]
+        assert result.warnings == []
+        assert result.fixes == [
+            "Run `dovo config validate` for details",
+            "Or `dovo init --repair` to insert missing keys without overwriting values",
+        ]
+
 
 class ConfigProviderRegistryValidationTests:
     @staticmethod
