@@ -61,6 +61,7 @@ core/<domain>/
   3. Values evaluated dynamically from user documents (`engine/executors/conditions.py`).
   4. `**kwargs: Any` on a pass-through wrapper.
 - **Banned `Any`:** Dodging an import boundary, test seams, replacing an existing model type, or leaving generic parameters unannotated (`Popen[Any]` instead of `Popen[str]`).
+- **Budget:** `tests/lint/test_explicit_any.py` fails when a file names `Any` more often than its `ANY_BUDGET` entry (zero when unlisted), and when an entry is higher than the file's count. Removing an `Any` means lowering its entry; adding a permitted one means raising it in the same change.
 
 ---
 
