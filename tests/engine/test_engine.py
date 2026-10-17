@@ -7,42 +7,19 @@ from pathlib import Path
 import pytest
 
 from dovo.common.filesystem.models import WorkspacePaths
-from dovo.core.agents.models import AgentEnvOverrides
 from dovo.core.catalog import Catalog
 from dovo.core.catalog.blueprint import Blueprint
-from dovo.core.catalog.definitions import LoopStepBlock, StepDefinition
 from dovo.core.db import SessionsRepository, SessionStatus
 from dovo.core.git.runner import GitRunner
 from dovo.engine import Engine, EngineResumeError, EngineResumeStatus, RunRequest, SessionStateStore
-from dovo.engine.executors.models import StepResult
-from dovo.engine.models import (
-    FailurePromptDecision,
-    FailurePrompter,
-    InteractionPrompter,
-    LoopPromptDecision,
-    RunObserver,
-    RunOutcome,
-)
+from dovo.engine.models import FailurePromptDecision, RunOutcome
 from dovo.engine.state_models import SessionJsonPayload
 from dovo.engine.writer import get_session_dir
+from tests.engine.conftest import StubDriveRun
 from tests.harness.builders import BlueprintBuilder, StepBuilder, WorkspaceBuilder
 from tests.harness.catalog import write_runnable_blueprint, write_runnable_step
-from tests.harness.sessions import seed_paused_session
+from tests.harness.sessions import ScriptedFailurePrompter, seed_paused_session
 from tests.harness.workspace_paths import initialized_workspace_paths
-
-
-class _ContinuePrompter(FailurePrompter):
-    """FailurePrompter answering CONTINUE to every step failure."""
-
-    def prompt_step_failure(
-        self, *, step: StepDefinition, result: StepResult, diagnostic: str
-    ) -> FailurePromptDecision:
-        return FailurePromptDecision.CONTINUE
-
-    def prompt_loop_max_iterations(
-        self, *, loop: LoopStepBlock, iteration: int, diagnostic: str, grant_count: int = 3
-    ) -> LoopPromptDecision:
-        raise AssertionError("prompt_loop_max_iterations should not be called")
 
 
 def _engine(paths: WorkspacePaths, sessions: SessionsRepository) -> Engine:
@@ -52,26 +29,6 @@ def _engine(paths: WorkspacePaths, sessions: SessionsRepository) -> Engine:
 def _catalog_blueprint(paths: WorkspacePaths, key: str, steps: list[dict[str, object]]) -> Blueprint:
     write_runnable_blueprint(paths.root_dir, key=key, steps=steps)
     return Blueprint.load(key, catalog=Catalog(paths))
-
-
-def _patch_drive_run(monkeypatch: pytest.MonkeyPatch, paths: WorkspacePaths, outcome: RunOutcome | None = None) -> None:
-    """Replace drive_run so Engine persistence is observed without executing steps."""
-    result = outcome or RunOutcome(status=SessionStatus.COMPLETED, worktree_path=paths.root_dir)
-
-    def fake_drive_run(
-        paths: WorkspacePaths,
-        sessions: SessionsRepository,
-        session_id: str,
-        *,
-        observer: RunObserver | None,
-        prompter: FailurePrompter | None,
-        interaction_prompter: InteractionPrompter | None = None,
-        no_tty: bool,
-        env_overrides: AgentEnvOverrides | None = None,
-    ) -> RunOutcome:
-        return result
-
-    monkeypatch.setattr("dovo.engine.engine.drive_run", fake_drive_run)
 
 
 class EngineRunStartFailureTests:
@@ -146,7 +103,7 @@ class EngineDispatchTests:
         manifest = SessionStateStore(sessions_repo, engine_paths, "paused").load().state
         assert manifest is not None
 
-        resumed = engine.resume("paused", failure_prompter=_ContinuePrompter())
+        resumed = engine.resume("paused", failure_prompter=ScriptedFailurePrompter([FailurePromptDecision.CONTINUE]))
 
         assert (fresh.status, resumed.status) == (SessionStatus.COMPLETED, SessionStatus.COMPLETED)
         assert [result.step_id for result in fresh.step_results] == ["a", "b"]
@@ -198,27 +155,17 @@ class EngineDispatchTests:
         self,
         engine_paths: WorkspacePaths,
         sessions_repo: SessionsRepository,
-        monkeypatch: pytest.MonkeyPatch,
+        stub_drive_run: StubDriveRun,
         entry: str,
         expected_session_id: str | None,
     ) -> None:
         seen: list[str] = []
 
-        def recording_drive_run(
-            paths: WorkspacePaths,
-            sessions: SessionsRepository,
-            session_id: str,
-            *,
-            observer: RunObserver | None,
-            prompter: FailurePrompter | None,
-            interaction_prompter: InteractionPrompter | None = None,
-            no_tty: bool,
-            env_overrides: AgentEnvOverrides | None = None,
-        ) -> RunOutcome:
+        def recording_drive_run(paths: WorkspacePaths, sessions: SessionsRepository, session_id: str) -> RunOutcome:
             seen.append(session_id)
             return RunOutcome(status=SessionStatus.COMPLETED, worktree_path=paths.root_dir)
 
-        monkeypatch.setattr("dovo.engine.engine.drive_run", recording_drive_run)
+        stub_drive_run(recording_drive_run)
         engine = _engine(engine_paths, sessions_repo)
         if entry == "resume":
             seed_paused_session(
@@ -250,10 +197,14 @@ class EngineResumeFinalizationTests:
         )
 
     def test_resume_mark_running_failure_appends_warning_but_still_runs(
-        self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository, monkeypatch: pytest.MonkeyPatch
+        self,
+        engine_paths: WorkspacePaths,
+        sessions_repo: SessionsRepository,
+        monkeypatch: pytest.MonkeyPatch,
+        stub_drive_run: StubDriveRun,
     ) -> None:
         self._seed(engine_paths, sessions_repo, "mark-running")
-        _patch_drive_run(monkeypatch, engine_paths)
+        stub_drive_run(None)
 
         def locked(*args: object, **kwargs: object) -> None:
             raise RuntimeError("locked")
@@ -268,10 +219,14 @@ class EngineResumeFinalizationTests:
         assert row.status == SessionStatus.COMPLETED
 
     def test_resume_finalize_failure_appends_warning_and_leaves_row_running(
-        self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository, monkeypatch: pytest.MonkeyPatch
+        self,
+        engine_paths: WorkspacePaths,
+        sessions_repo: SessionsRepository,
+        monkeypatch: pytest.MonkeyPatch,
+        stub_drive_run: StubDriveRun,
     ) -> None:
         self._seed(engine_paths, sessions_repo, "finalize")
-        _patch_drive_run(monkeypatch, engine_paths)
+        stub_drive_run(None)
 
         def locked(*args: object, **kwargs: object) -> None:
             raise RuntimeError("locked")
@@ -288,13 +243,13 @@ class EngineResumeFinalizationTests:
 
 class EngineRunSnapshotsDefinitionsTests:
     def test_run_writes_snapshot_files_and_records_manifest_in_state(
-        self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository, monkeypatch: pytest.MonkeyPatch
+        self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository, stub_drive_run: StubDriveRun
     ) -> None:
         write_runnable_step(
             engine_paths.root_dir, key="lint-check", definition={"id": "lint-check", "run": "echo lint"}
         )
         blueprint = _catalog_blueprint(engine_paths, "snap-task", [{"id": "s1", "uses": "lint-check"}])
-        _patch_drive_run(monkeypatch, engine_paths)
+        stub_drive_run(None)
 
         outcome = _engine(engine_paths, sessions_repo).run(
             blueprint, RunRequest(session_id="snap-1", use_worktree=False)
@@ -310,24 +265,14 @@ class EngineRunSnapshotsDefinitionsTests:
         assert [ref.ref for ref in loaded.state.manifest.steps] == ["repo:step:lint-check"]
 
     def test_run_persists_initial_state_and_projection_before_first_step(
-        self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository, monkeypatch: pytest.MonkeyPatch
+        self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository, stub_drive_run: StubDriveRun
     ) -> None:
         blueprint = _catalog_blueprint(
             engine_paths, "init-task", [{"id": "s1", "run": "echo one"}, {"id": "s2", "run": "echo two"}]
         )
         observed: dict[str, object] = {}
 
-        def observing_drive_run(
-            paths: WorkspacePaths,
-            sessions: SessionsRepository,
-            session_id: str,
-            *,
-            observer: RunObserver | None,
-            prompter: FailurePrompter | None,
-            interaction_prompter: InteractionPrompter | None = None,
-            no_tty: bool,
-            env_overrides: AgentEnvOverrides | None = None,
-        ) -> RunOutcome:
+        def observing_drive_run(paths: WorkspacePaths, sessions: SessionsRepository, session_id: str) -> RunOutcome:
             row = sessions.get(session_id)
             assert row is not None
             loaded = SessionStateStore(sessions, paths, session_id).load()
@@ -341,7 +286,7 @@ class EngineRunSnapshotsDefinitionsTests:
             observed["state"] = loaded.state.nodes
             return RunOutcome(status=SessionStatus.COMPLETED, worktree_path=paths.root_dir)
 
-        monkeypatch.setattr("dovo.engine.engine.drive_run", observing_drive_run)
+        stub_drive_run(observing_drive_run)
 
         _engine(engine_paths, sessions_repo).run(blueprint, RunRequest(session_id="init-1", use_worktree=False))
 
@@ -351,10 +296,10 @@ class EngineRunSnapshotsDefinitionsTests:
         assert observed["projection"] == observed["state"]
 
     def test_run_finalizes_row_with_revision_one_and_completed_status(
-        self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository, monkeypatch: pytest.MonkeyPatch
+        self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository, stub_drive_run: StubDriveRun
     ) -> None:
         blueprint = _catalog_blueprint(engine_paths, "final-task", [{"id": "s1", "run": "echo one"}])
-        _patch_drive_run(monkeypatch, engine_paths)
+        stub_drive_run(None)
 
         _engine(engine_paths, sessions_repo).run(blueprint, RunRequest(session_id="final-1", use_worktree=False))
 
@@ -367,7 +312,7 @@ class EngineRunSnapshotsDefinitionsTests:
 
 class EngineResumePreservesDefinitionsTests:
     def test_resume_finalization_keeps_original_manifest_and_bumps_revision(
-        self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository, monkeypatch: pytest.MonkeyPatch
+        self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository, stub_drive_run: StubDriveRun
     ) -> None:
         seed_paused_session(
             engine_paths,
@@ -381,7 +326,7 @@ class EngineResumePreservesDefinitionsTests:
         )
         before = SessionStateStore(sessions_repo, engine_paths, "task_defs").load().state
         assert before is not None
-        _patch_drive_run(monkeypatch, engine_paths)
+        stub_drive_run(None)
 
         _engine(engine_paths, sessions_repo).resume("task_defs")
 
@@ -392,13 +337,13 @@ class EngineResumePreservesDefinitionsTests:
 
 
 class EngineRunConfigPersistenceTests:
-    def test_run_persists_resolved_configuration_on_row(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_run_persists_resolved_configuration_on_row(self, tmp_path: Path, stub_drive_run: StubDriveRun) -> None:
         workspace = WorkspaceBuilder(tmp_path / "git-workspace").with_git().with_database().build()
         paths = initialized_workspace_paths(workspace)
         sessions = SessionsRepository(db_path=paths.database_file, project_id=paths.project_id)
         write_runnable_blueprint(workspace, key="cfg", steps=[{"id": "s1", "run": "echo hi"}])
         blueprint = Blueprint.load("cfg", catalog=Catalog(paths))
-        _patch_drive_run(monkeypatch, paths)
+        stub_drive_run(None)
 
         _engine(paths, sessions).run(
             blueprint,
@@ -418,11 +363,11 @@ class EngineRunConfigPersistenceTests:
         self,
         engine_paths: WorkspacePaths,
         sessions_repo: SessionsRepository,
-        monkeypatch: pytest.MonkeyPatch,
+        stub_drive_run: StubDriveRun,
         discard: bool,
     ) -> None:
         blueprint = _catalog_blueprint(engine_paths, "discard-task", [{"id": "s1", "run": "echo one"}])
-        _patch_drive_run(monkeypatch, engine_paths)
+        stub_drive_run(None)
 
         _engine(engine_paths, sessions_repo).run(
             blueprint, RunRequest(session_id="discard-1", use_worktree=False, discard=discard)
@@ -433,7 +378,7 @@ class EngineRunConfigPersistenceTests:
         assert row.discard is discard
 
     def test_run_persists_resolved_inputs_json_on_row(
-        self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository, monkeypatch: pytest.MonkeyPatch
+        self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository, stub_drive_run: StubDriveRun
     ) -> None:
         blueprint = Blueprint(
             BlueprintBuilder("inputs")
@@ -443,7 +388,7 @@ class EngineRunConfigPersistenceTests:
             .build()
         )
         write_runnable_blueprint(engine_paths.root_dir, key="inputs", steps=[{"id": "s1", "run": "echo hi"}])
-        _patch_drive_run(monkeypatch, engine_paths)
+        stub_drive_run(None)
 
         _engine(engine_paths, sessions_repo).run(
             blueprint, RunRequest(session_id="inputs-1", inputs={"env": "prod"}, use_worktree=False)
@@ -454,10 +399,10 @@ class EngineRunConfigPersistenceTests:
         assert row.inputs_json == '{"env": "prod"}'
 
     def test_run_catalog_blueprint_records_manifest_tier_on_row(
-        self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository, monkeypatch: pytest.MonkeyPatch
+        self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository, stub_drive_run: StubDriveRun
     ) -> None:
         blueprint = _catalog_blueprint(engine_paths, "tier-task", [{"id": "s1", "run": "echo one"}])
-        _patch_drive_run(monkeypatch, engine_paths)
+        stub_drive_run(None)
 
         _engine(engine_paths, sessions_repo).run(blueprint, RunRequest(session_id="tier-1", use_worktree=False))
 
@@ -466,10 +411,10 @@ class EngineRunConfigPersistenceTests:
         assert row.blueprint_tier == "repo"
 
     def test_run_outside_git_repository_stores_null_commit_sha(
-        self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository, monkeypatch: pytest.MonkeyPatch
+        self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository, stub_drive_run: StubDriveRun
     ) -> None:
         blueprint = _catalog_blueprint(engine_paths, "nogit-task", [{"id": "s1", "run": "echo one"}])
-        _patch_drive_run(monkeypatch, engine_paths)
+        stub_drive_run(None)
 
         outcome = _engine(engine_paths, sessions_repo).run(
             blueprint, RunRequest(session_id="nogit-1", use_worktree=False)
@@ -492,15 +437,15 @@ class EngineRunConfigPersistenceTests:
         self,
         engine_paths: WorkspacePaths,
         sessions_repo: SessionsRepository,
-        monkeypatch: pytest.MonkeyPatch,
+        stub_drive_run: StubDriveRun,
         outcome_status: SessionStatus,
         outcome_worktree_id: str | None,
     ) -> None:
         blueprint = _catalog_blueprint(engine_paths, "worktree-task", [{"id": "s1", "run": "echo one"}])
-        _patch_drive_run(
-            monkeypatch,
-            engine_paths,
-            RunOutcome(status=outcome_status, worktree_path=engine_paths.root_dir, worktree_id=outcome_worktree_id),
+        stub_drive_run(
+            lambda paths, sessions, session_id: RunOutcome(
+                status=outcome_status, worktree_path=paths.root_dir, worktree_id=outcome_worktree_id
+            )
         )
 
         _engine(engine_paths, sessions_repo).run(
@@ -519,19 +464,14 @@ class EngineRunProjectionTests:
         self,
         engine_paths: WorkspacePaths,
         sessions_repo: SessionsRepository,
-        monkeypatch: pytest.MonkeyPatch,
+        stub_drive_run: StubDriveRun,
         keep: bool,
     ) -> None:
         blueprint = _catalog_blueprint(engine_paths, "proj-task", [{"id": "s1", "run": "echo one"}])
-        _patch_drive_run(
-            monkeypatch,
-            engine_paths,
-            RunOutcome(
-                status=SessionStatus.COMPLETED,
-                worktree_path=engine_paths.root_dir,
-                worktree_id="dovo_1",
-                worktree_kept=keep,
-            ),
+        stub_drive_run(
+            lambda paths, sessions, session_id: RunOutcome(
+                status=SessionStatus.COMPLETED, worktree_path=paths.root_dir, worktree_id="dovo_1", worktree_kept=keep
+            )
         )
 
         outcome = _engine(engine_paths, sessions_repo).run(
@@ -555,25 +495,15 @@ class EngineRunProjectionTests:
 
 class EngineFinalizeFallbackTests:
     def test_finalize_falls_back_to_row_update_when_state_is_corrupt(
-        self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository, monkeypatch: pytest.MonkeyPatch
+        self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository, stub_drive_run: StubDriveRun
     ) -> None:
         blueprint = _catalog_blueprint(engine_paths, "corrupt-task", [{"id": "s1", "run": "echo one"}])
 
-        def corrupting_drive_run(
-            paths: WorkspacePaths,
-            sessions: SessionsRepository,
-            session_id: str,
-            *,
-            observer: RunObserver | None,
-            prompter: FailurePrompter | None,
-            interaction_prompter: InteractionPrompter | None = None,
-            no_tty: bool,
-            env_overrides: AgentEnvOverrides | None = None,
-        ) -> RunOutcome:
+        def corrupting_drive_run(paths: WorkspacePaths, sessions: SessionsRepository, session_id: str) -> RunOutcome:
             sessions.save_execution_state(session_id, "not json", expected_revision=0, next_revision=0)
             return RunOutcome(status=SessionStatus.COMPLETED, worktree_path=paths.root_dir)
 
-        monkeypatch.setattr("dovo.engine.engine.drive_run", corrupting_drive_run)
+        stub_drive_run(corrupting_drive_run)
 
         outcome = _engine(engine_paths, sessions_repo).run(
             blueprint, RunRequest(session_id="corrupt-1", use_worktree=False)

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -16,6 +15,7 @@ from dovo.core.interaction import HeadlessAnswerInput
 from dovo.engine import BlueprintRunService
 from dovo.engine.models import BlueprintRunResult, RunOutcome
 from dovo.engine.services.resume import BlueprintResumeService
+from tests.engine.conftest import StubDriveRun
 from tests.harness.ask import scripted_loop_blueprint
 from tests.harness.catalog import write_runnable_blueprint
 from tests.harness.sessions import seed_paused_ask_session, seed_paused_session
@@ -36,7 +36,7 @@ class BlueprintResumeServiceExecuteTests:
         self,
         engine_paths: WorkspacePaths,
         sessions_repo: SessionsRepository,
-        stub_drive_run: Callable[[RunOutcome | None], None],
+        stub_drive_run: StubDriveRun,
     ) -> None:
         _seed(engine_paths, sessions_repo, "paused-1")
         stub_drive_run(None)
@@ -51,7 +51,7 @@ class BlueprintResumeServiceExecuteTests:
         self,
         engine_paths: WorkspacePaths,
         sessions_repo: SessionsRepository,
-        stub_drive_run: Callable[[RunOutcome | None], None],
+        stub_drive_run: StubDriveRun,
     ) -> None:
         _seed(engine_paths, sessions_repo, "paused-old")
         _seed(engine_paths, sessions_repo, "paused-new")

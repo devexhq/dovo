@@ -24,129 +24,29 @@ from dovo.core.db import SessionsRepository, SessionStatus, WorktreesRepository
 from dovo.core.git.runner import GitRunner
 from dovo.core.sessions.services.read_logs import read_session_log_events
 from dovo.core.worktree import Worktree, WorktreeApplyResult, WorktreeApplyStatus
-from dovo.engine.executors.agent_step import WORKTREE_REQUIRED_MESSAGE, build_agent_step_runner
+from dovo.engine.executors.agent_step import WORKTREE_REQUIRED_MESSAGE
 from dovo.engine.executors.models import (
-    AgentStepRunner,
-    ConditionEvaluationResult,
     StepExecutionContext,
-    StepResult,
 )
-from dovo.engine.executors.step_executor import StepExecution
 from dovo.engine.models import (
     FailurePromptDecision,
     FailurePrompter,
-    LoopPromptDecision,
     RunObserver,
     RunOutcome,
 )
 from dovo.engine.session import drive_run
 from dovo.engine.writer import snapshot_blueprint_path
+from tests.engine.conftest import AgentRunnerBuild
 from tests.harness import AGENT_ADAPTER_FACTORY, FakeAgentProvider, new_file_diff
 from tests.harness.builders import WorkspaceBuilder
-from tests.harness.sessions import NoOpRunObserver, seed_new_session, seed_paused_session
+from tests.harness.sessions import (
+    NoOpRunObserver,
+    RecordingRunObserver,
+    ScriptedFailurePrompter,
+    seed_new_session,
+    seed_paused_session,
+)
 from tests.harness.workspace_paths import initialized_workspace_paths
-
-
-class _Prompter(FailurePrompter):
-    """Scripted FailurePrompter answering with queued decisions, or interrupting when the queue is empty."""
-
-    def __init__(self, decisions: list[FailurePromptDecision] | None = None) -> None:
-        self.decisions = list(decisions or [])
-
-    def prompt_step_failure(
-        self, *, step: StepDefinition, result: StepResult, diagnostic: str
-    ) -> FailurePromptDecision:
-        if not self.decisions:
-            raise KeyboardInterrupt
-        return self.decisions.pop(0)
-
-    def prompt_loop_max_iterations(
-        self, *, loop: LoopStepBlock, iteration: int, diagnostic: str, grant_count: int = 3
-    ) -> LoopPromptDecision:
-        raise AssertionError("prompt_loop_max_iterations should not be called")
-
-
-class _DiagnosticPrompter(_Prompter):
-    """Scripted FailurePrompter that also records each failure diagnostic it is shown."""
-
-    def __init__(self, decisions: list[FailurePromptDecision] | None = None) -> None:
-        super().__init__(decisions)
-        self.diagnostics: list[str] = []
-
-    def prompt_step_failure(
-        self, *, step: StepDefinition, result: StepResult, diagnostic: str
-    ) -> FailurePromptDecision:
-        self.diagnostics.append(diagnostic)
-        return super().prompt_step_failure(step=step, result=result, diagnostic=diagnostic)
-
-
-class _LifecycleObserver(NoOpRunObserver):
-    """RunObserver recording worktree, step, and streamed-output callbacks in call order."""
-
-    def __init__(self) -> None:
-        self.events: list[tuple[object, ...]] = []
-
-    def on_worktree_ready(self, path: Path, active: bool) -> None:
-        self.events.append(("worktree_ready", path, active))
-
-    def on_step_start(self, idx: int, total: int, step: StepDefinition) -> None:
-        self.events.append(("step_start", idx, total, step.id))
-
-    def on_step_output(self, idx: int, total: int, step: StepDefinition, line: str, stream: str = "stdout") -> None:
-        self.events.append(("step_output", idx, total, step.id, line, stream))
-
-    def on_step_done(self, idx: int, total: int, step: StepDefinition, result: StepResult) -> None:
-        self.events.append(("step_done", idx, total, result.step_id))
-
-    def on_worktree_cleanup(
-        self, kept: bool, path: Path, worktree_id: str | None = None, branch: str | None = None
-    ) -> None:
-        self.events.append(("worktree_cleanup", kept, path))
-
-
-class _SequenceObserver(NoOpRunObserver):
-    """RunObserver recording every callback in one ordered list."""
-
-    def __init__(self) -> None:
-        self.calls: list[tuple[object, ...]] = []
-
-    def on_worktree_ready(self, path: Path, active: bool) -> None:
-        self.calls.append(("worktree_ready",))
-
-    def on_run_started(self, steps: Sequence[StepDefinition | LoopStepBlock]) -> None:
-        self.calls.append(("run_started", [step.id for step in steps]))
-
-    def on_step_start(self, idx: int, total: int, step: StepDefinition) -> None:
-        self.calls.append(("step_start", idx, total, step.id))
-
-    def on_step_done(self, idx: int, total: int, step: StepDefinition, result: StepResult) -> None:
-        self.calls.append(("step_done", idx, total, step.id, result.status))
-
-    def on_loop_start(self, loop_id: str, max_iterations: int) -> None:
-        self.calls.append(("loop_start", max_iterations))
-
-    def on_loop_iteration_start(self, loop_id: str, iteration: int, max_iterations: int) -> None:
-        self.calls.append(("loop_iteration_start", iteration, max_iterations))
-
-    def on_loop_conditions_evaluated(
-        self,
-        loop_id: str,
-        results: list[ConditionEvaluationResult],
-        all_passed: bool,
-        next_iteration: int | None = None,
-    ) -> None:
-        self.calls.append(("loop_conditions_evaluated", [r.passed for r in results], all_passed, next_iteration))
-
-    def on_loop_done(self, loop_id: str, status: str, total_iterations: int) -> None:
-        self.calls.append(("loop_done", status, total_iterations))
-
-    def on_worktree_cleanup(
-        self, kept: bool, path: Path, worktree_id: str | None = None, branch: str | None = None
-    ) -> None:
-        self.calls.append(("worktree_cleanup",))
-
-    def on_run_completed(self, outcome: RunOutcome) -> None:
-        self.calls.append(("run_completed", outcome))
 
 
 class _RaisingRunLevelObserver(NoOpRunObserver):
@@ -223,7 +123,9 @@ class DriveRunWorktreeTests:
             worktree_id=worktree_id,
         )
 
-        outcome = _drive(git_paths, git_runs, "resume-worktree", prompter=_Prompter([FailurePromptDecision.RETRY]))
+        outcome = _drive(
+            git_paths, git_runs, "resume-worktree", prompter=ScriptedFailurePrompter([FailurePromptDecision.RETRY])
+        )
 
         assert outcome.status == SessionStatus.COMPLETED
         assert outcome.worktree_id == worktree_id
@@ -380,7 +282,7 @@ class DriveRunCleanupTests:
             use_worktree=True,
         )
 
-        outcome = _drive(git_paths, git_runs, "pause", prompter=_Prompter())
+        outcome = _drive(git_paths, git_runs, "pause", prompter=ScriptedFailurePrompter([KeyboardInterrupt()]))
 
         assert outcome.status == SessionStatus.PAUSED
         assert outcome.worktree_kept is True
@@ -512,7 +414,9 @@ class DriveRunCleanupTests:
         (session_tmp_dir / "step_step_a.output").write_text("marker=yes\n", encoding="utf-8")
         (session_tmp_dir / "step_step_b.output").write_text("stale=yes\n", encoding="utf-8")
 
-        outcome = _drive(engine_paths, sessions_repo, "resume-tmp", prompter=_Prompter([FailurePromptDecision.RETRY]))
+        outcome = _drive(
+            engine_paths, sessions_repo, "resume-tmp", prompter=ScriptedFailurePrompter([FailurePromptDecision.RETRY])
+        )
 
         assert outcome.status == SessionStatus.COMPLETED
         assert outcome.step_results[-1].outputs == {"fresh": "yes"}
@@ -588,11 +492,11 @@ class DriveRunCleanupTests:
             session_id="streamed",
             steps=[_step("s1", "echo out; echo err >&2")],
         )
-        observer = _LifecycleObserver()
+        observer = RecordingRunObserver()
 
         _drive(engine_paths, sessions_repo, "streamed", observer=observer)
 
-        output_events = [event for event in observer.events if event[0] == "step_output"]
+        output_events = [event for event in observer.calls if event[0] == "step_output"]
         assert sorted(output_events) == [
             ("step_output", 1, 1, "s1", "err\n", "stderr"),
             ("step_output", 1, 1, "s1", "out\n", "stdout"),
@@ -609,13 +513,14 @@ class DriveRunObserverContractTests:
             session_id="seq-linear",
             steps=[_step("a", "true"), _step("b", "true"), _step("c", "true")],
         )
-        observer = _SequenceObserver()
+        observer = RecordingRunObserver()
 
         outcome = _drive(engine_paths, sessions_repo, "seq-linear", observer=observer)
 
+        root = engine_paths.root_dir.resolve()
         assert outcome.status == SessionStatus.COMPLETED
         assert observer.calls == [
-            ("worktree_ready",),
+            ("worktree_ready", root, False),
             ("run_started", ["a", "b", "c"]),
             ("step_start", 1, 3, "a"),
             ("step_done", 1, 3, "a", "completed"),
@@ -623,7 +528,7 @@ class DriveRunObserverContractTests:
             ("step_done", 2, 3, "b", "completed"),
             ("step_start", 3, 3, "c"),
             ("step_done", 3, 3, "c", "completed"),
-            ("worktree_cleanup",),
+            ("worktree_cleanup", False, root, None, None),
             ("run_completed", outcome),
         ]
 
@@ -636,10 +541,11 @@ class DriveRunObserverContractTests:
             session_id="seq-loop",
             steps=[_loop("loop", [_step("s1", "true"), _step("s2", "true")])],
         )
-        observer = _SequenceObserver()
+        observer = RecordingRunObserver()
 
         outcome = _drive(engine_paths, sessions_repo, "seq-loop", observer=observer)
 
+        root = engine_paths.root_dir.resolve()
         iteration_steps = [
             ("step_start", 1, 2, "s1"),
             ("step_done", 1, 2, "s1", "completed"),
@@ -647,17 +553,17 @@ class DriveRunObserverContractTests:
             ("step_done", 2, 2, "s2", "completed"),
         ]
         assert observer.calls == [
-            ("worktree_ready",),
+            ("worktree_ready", root, False),
             ("run_started", ["loop"]),
-            ("loop_start", 2),
-            ("loop_iteration_start", 1, 2),
+            ("loop_start", "loop", 2),
+            ("loop_iteration_start", "loop", 1, 2),
             *iteration_steps,
-            ("loop_conditions_evaluated", [False], False, 2),
-            ("loop_iteration_start", 2, 2),
+            ("loop_conditions_evaluated", "loop", [False], False, 2),
+            ("loop_iteration_start", "loop", 2, 2),
             *iteration_steps,
-            ("loop_conditions_evaluated", [True], True, None),
-            ("loop_done", "completed", 2),
-            ("worktree_cleanup",),
+            ("loop_conditions_evaluated", "loop", [True], True, None),
+            ("loop_done", "loop", "completed", 2),
+            ("worktree_cleanup", False, root, None, None),
             ("run_completed", outcome),
         ]
 
@@ -671,15 +577,21 @@ class DriveRunObserverContractTests:
             session_id="seq-pause",
             steps=[_step("a", f"test -e {marker}", on_failure="prompt_user")],
         )
-        observer = _SequenceObserver()
+        observer = RecordingRunObserver()
 
-        paused = _drive(engine_paths, sessions_repo, "seq-pause", prompter=_Prompter(), observer=observer)
+        paused = _drive(
+            engine_paths,
+            sessions_repo,
+            "seq-pause",
+            prompter=ScriptedFailurePrompter([KeyboardInterrupt()]),
+            observer=observer,
+        )
         marker.touch()
         resumed = _drive(
             engine_paths,
             sessions_repo,
             "seq-pause",
-            prompter=_Prompter([FailurePromptDecision.RETRY]),
+            prompter=ScriptedFailurePrompter([FailurePromptDecision.RETRY]),
             observer=observer,
         )
 
@@ -698,7 +610,7 @@ class DriveRunObserverContractTests:
     ) -> None:
         seed_new_session(engine_paths, sessions_repo, session_id="seq-nosnap", steps=[_step("a", "true")])
         snapshot_blueprint_path(engine_paths.session_dir("seq-nosnap"), "seq-nosnap").unlink()
-        observer = _SequenceObserver()
+        observer = RecordingRunObserver()
 
         outcome = _drive(engine_paths, sessions_repo, "seq-nosnap", observer=observer)
 
@@ -711,7 +623,7 @@ class DriveRunObserverContractTests:
         seed_new_session(
             engine_paths, sessions_repo, session_id="seq-nogit", steps=[_step("a", "true")], use_worktree=True
         )
-        observer = _SequenceObserver()
+        observer = RecordingRunObserver()
 
         outcome = _drive(engine_paths, sessions_repo, "seq-nogit", observer=observer)
 
@@ -722,7 +634,7 @@ class DriveRunObserverContractTests:
     def test_missing_row_notifies_nothing(
         self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository
     ) -> None:
-        observer = _SequenceObserver()
+        observer = RecordingRunObserver()
 
         outcome = _drive(engine_paths, sessions_repo, "missing", observer=observer)
 
@@ -777,48 +689,6 @@ def _agent_workspace(tmp_path: Path, agents: dict[str, object]) -> tuple[Workspa
 
 
 @pytest.fixture
-def captured_contexts(monkeypatch: pytest.MonkeyPatch) -> list[StepExecutionContext]:
-    """Collect the contexts reaching StepExecution during drive_run, in construction order."""
-    captured: list[StepExecutionContext] = []
-
-    class _CapturingStepExecution(StepExecution):
-        def __init__(self, metadata: StepExecutionContext) -> None:
-            captured.append(metadata)
-            super().__init__(metadata)
-
-    monkeypatch.setattr("dovo.engine.step_coordinator.StepExecution", _CapturingStepExecution)
-    return captured
-
-
-@pytest.fixture
-def captured_agent_args(monkeypatch: pytest.MonkeyPatch) -> list[ResolvedAgentSettings | None]:
-    """Agent settings handed to build_agent_step_runner during drive_run, in call order."""
-    captured: list[ResolvedAgentSettings | None] = []
-
-    def _recording_build(
-        agent: ResolvedAgentSettings | None,
-        worktree_active: bool,
-        *,
-        session_tmp_dir: Path | None,
-        main_checkout: Path,
-        session_log_dir: Path | None,
-        session_dir: Path | None,
-    ) -> AgentStepRunner:
-        captured.append(agent)
-        return build_agent_step_runner(
-            agent,
-            worktree_active,
-            session_tmp_dir=session_tmp_dir,
-            main_checkout=main_checkout,
-            session_log_dir=session_log_dir,
-            session_dir=session_dir,
-        )
-
-    monkeypatch.setattr("dovo.engine.step_coordinator.build_agent_step_runner", _recording_build)
-    return captured
-
-
-@pytest.fixture
 def noop_agent_provider(monkeypatch: pytest.MonkeyPatch) -> FakeAgentProvider:
     """FakeAgentProvider answering NO_OP, installed behind the agent factory seam."""
     provider = FakeAgentProvider(AgentResponse(status=AgentResponseStatus.NO_OP, summary="plan text"))
@@ -830,7 +700,7 @@ class ResolveAgentSettingsEnvTests:
     def test_flag_entries_append_to_config_entries_without_duplicates(
         self,
         tmp_path: Path,
-        captured_agent_args: list[ResolvedAgentSettings | None],
+        captured_builds: list[AgentRunnerBuild],
         noop_agent_provider: FakeAgentProvider,
     ) -> None:
         paths, sessions = _agent_workspace(tmp_path, {"copilot": {**_AGENT_CONFIG, "env_passthrough": ["A", "B"]}})
@@ -838,14 +708,14 @@ class ResolveAgentSettingsEnvTests:
 
         _drive(paths, sessions, "flags", env_overrides=AgentEnvOverrides(env_passthrough=["B", "C"]))
 
-        assert captured_agent_args[0] is not None
-        assert captured_agent_args[0].env_passthrough == ["A", "B", "C"]
-        assert captured_agent_args[0].env_mode == "allowlist"
+        assert captured_builds[0].agent is not None
+        assert captured_builds[0].agent.env_passthrough == ["A", "B", "C"]
+        assert captured_builds[0].agent.env_mode == "allowlist"
 
     def test_flag_mode_overrides_config_mode_for_that_drive_only(
         self,
         tmp_path: Path,
-        captured_agent_args: list[ResolvedAgentSettings | None],
+        captured_builds: list[AgentRunnerBuild],
         noop_agent_provider: FakeAgentProvider,
     ) -> None:
         paths, sessions = _agent_workspace(tmp_path, {"copilot": _AGENT_CONFIG})
@@ -856,7 +726,7 @@ class ResolveAgentSettingsEnvTests:
         _drive(paths, sessions, "mode", env_overrides=AgentEnvOverrides(env_mode="inherit"))
         _drive(paths, sessions, "plain")
 
-        assert [settings.env_mode for settings in captured_agent_args if settings is not None] == [
+        assert [build.agent.env_mode for build in captured_builds if build.agent is not None] == [
             "inherit",
             "allowlist",
         ]
@@ -882,7 +752,7 @@ class ResolveAgentSettingsToolsTests:
     def test_absent_config_tools_resolves_to_default_and_configured_tools_pass_through(
         self,
         tmp_path: Path,
-        captured_agent_args: list[ResolvedAgentSettings | None],
+        captured_builds: list[AgentRunnerBuild],
         noop_agent_provider: FakeAgentProvider,
         config_tools: dict[str, object] | None,
         expected: ToolPolicy,
@@ -893,15 +763,15 @@ class ResolveAgentSettingsToolsTests:
 
         _drive(paths, sessions, "tools")
 
-        assert captured_agent_args[0] is not None
-        assert captured_agent_args[0].tools == expected
+        assert captured_builds[0].agent is not None
+        assert captured_builds[0].agent.tools == expected
 
 
 class ResolveAgentSettingsMcpServersTests:
     def test_configured_mcp_servers_reach_resolved_settings(
         self,
         tmp_path: Path,
-        captured_agent_args: list[ResolvedAgentSettings | None],
+        captured_builds: list[AgentRunnerBuild],
         noop_agent_provider: FakeAgentProvider,
     ) -> None:
         agent_config = {**_AGENT_CONFIG, "mcp_servers": {"github": {"command": "npx"}}}
@@ -910,8 +780,8 @@ class ResolveAgentSettingsMcpServersTests:
 
         _drive(paths, sessions, "mcp")
 
-        assert captured_agent_args[0] is not None
-        assert captured_agent_args[0].mcp_servers == {"github": McpServerDefinition(command="npx")}
+        assert captured_builds[0].agent is not None
+        assert captured_builds[0].agent.mcp_servers == {"github": McpServerDefinition(command="npx")}
 
 
 class DriveRunAgentSettingsTests:
@@ -919,7 +789,7 @@ class DriveRunAgentSettingsTests:
         self,
         tmp_path: Path,
         captured_contexts: list[StepExecutionContext],
-        captured_agent_args: list[ResolvedAgentSettings | None],
+        captured_builds: list[AgentRunnerBuild],
         noop_agent_provider: FakeAgentProvider,
     ) -> None:
         paths, sessions = _agent_workspace(tmp_path, {"copilot": _AGENT_CONFIG, "claude": _CLAUDE_CONFIG})
@@ -928,7 +798,7 @@ class DriveRunAgentSettingsTests:
         outcome = _drive(paths, sessions, "fresh")
 
         assert outcome.status == SessionStatus.COMPLETED
-        assert captured_agent_args == [
+        assert [build.agent for build in captured_builds] == [
             ResolvedAgentSettings(
                 provider="copilot",
                 model="test-model",
@@ -977,7 +847,7 @@ class DriveRunAgentSettingsTests:
     def test_resumed_run_override_resolves_field_defaults_for_provider_without_block(
         self,
         tmp_path: Path,
-        captured_agent_args: list[ResolvedAgentSettings | None],
+        captured_builds: list[AgentRunnerBuild],
         noop_agent_provider: FakeAgentProvider,
     ) -> None:
         paths, sessions = _agent_workspace(tmp_path, {"copilot": _AGENT_CONFIG})
@@ -991,10 +861,10 @@ class DriveRunAgentSettingsTests:
             agent="fake-provider",
         )
 
-        outcome = _drive(paths, sessions, "resumed", prompter=_Prompter([FailurePromptDecision.RETRY]))
+        outcome = _drive(paths, sessions, "resumed", prompter=ScriptedFailurePrompter([FailurePromptDecision.RETRY]))
 
         assert outcome.status == SessionStatus.COMPLETED
-        assert captured_agent_args == [
+        assert [build.agent for build in captured_builds] == [
             ResolvedAgentSettings(
                 provider="fake-provider",
                 model=None,
@@ -1008,7 +878,7 @@ class DriveRunAgentSettingsTests:
     def test_settings_are_resolved_once_per_drive(
         self,
         tmp_path: Path,
-        captured_agent_args: list[ResolvedAgentSettings | None],
+        captured_builds: list[AgentRunnerBuild],
         noop_agent_provider: FakeAgentProvider,
     ) -> None:
         paths, sessions = _agent_workspace(tmp_path, {"copilot": _AGENT_CONFIG})
@@ -1018,16 +888,16 @@ class DriveRunAgentSettingsTests:
 
         _drive(paths, sessions, "twice")
 
-        assert len(captured_agent_args) == 2
-        assert captured_agent_args[0] is not None
-        assert captured_agent_args[0] is captured_agent_args[1]
+        assert len(captured_builds) == 2
+        assert captured_builds[0].agent is not None
+        assert captured_builds[0].agent is captured_builds[1].agent
 
     def test_config_resolution_failure_fails_run_without_running_steps(
         self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository
     ) -> None:
         engine_paths.config_file.write_text("{not json", encoding="utf-8")
         seed_new_session(engine_paths, sessions_repo, session_id="bad-config", steps=[_step("a", "echo hi")])
-        observer = _SequenceObserver()
+        observer = RecordingRunObserver()
 
         outcome = _drive(engine_paths, sessions_repo, "bad-config", observer=observer)
 
@@ -1039,7 +909,7 @@ class DriveRunAgentSettingsTests:
     def test_override_agent_uses_that_providers_model_temperature_and_tools(
         self,
         tmp_path: Path,
-        captured_agent_args: list[ResolvedAgentSettings | None],
+        captured_builds: list[AgentRunnerBuild],
         noop_agent_provider: FakeAgentProvider,
     ) -> None:
         """Resolve every field from agents.claude for override "claude" while the copilot block sets its own tools."""
@@ -1051,7 +921,7 @@ class DriveRunAgentSettingsTests:
 
         _drive(paths, sessions, "claude-run")
 
-        assert captured_agent_args == [
+        assert [build.agent for build in captured_builds] == [
             ResolvedAgentSettings(
                 provider="claude",
                 model="claude-model",
@@ -1065,7 +935,7 @@ class DriveRunAgentSettingsTests:
     def test_registered_provider_without_entry_resolves_field_defaults(
         self,
         tmp_path: Path,
-        captured_agent_args: list[ResolvedAgentSettings | None],
+        captured_builds: list[AgentRunnerBuild],
         noop_agent_provider: FakeAgentProvider,
     ) -> None:
         paths, sessions = _agent_workspace(tmp_path, {"copilot": _AGENT_CONFIG})
@@ -1075,7 +945,7 @@ class DriveRunAgentSettingsTests:
 
         _drive(paths, sessions, "no-block")
 
-        assert captured_agent_args == [
+        assert [build.agent for build in captured_builds] == [
             ResolvedAgentSettings(
                 provider="claude",
                 model=None,
@@ -1123,7 +993,7 @@ class DriveRunAgentWorktreeTests:
             _agent_step("agent", on_failure="prompt_user"),
             _step("after", "echo after", **{"assert": {"output_contains": "after"}}),
         ]
-        prompter = _DiagnosticPrompter([FailurePromptDecision.CONTINUE])
+        prompter = ScriptedFailurePrompter([FailurePromptDecision.CONTINUE])
         if resumed:
             seed_paused_session(paths, sessions, session_id="in-place", steps=steps, paused_step_id="agent")
             prompter.decisions.insert(0, FailurePromptDecision.RETRY)
@@ -1210,12 +1080,12 @@ class DriveRunAgentExecutionTests:
         self, git_paths: WorkspacePaths, git_runs: SessionsRepository, noop_agent_provider: FakeAgentProvider
     ) -> None:
         seed_new_session(git_paths, git_runs, session_id="plan-only", steps=[_agent_step("plan")], use_worktree=True)
-        observer = _LifecycleObserver()
+        observer = RecordingRunObserver()
 
         outcome = _drive(git_paths, git_runs, "plan-only", observer=observer)
 
         assert outcome.status == SessionStatus.COMPLETED
-        outputs = [event for event in observer.events if event[0] == "step_output" and event[3] == "plan"]
+        outputs = [event for event in observer.calls if event[0] == "step_output" and event[3] == "plan"]
         assert [event[4] for event in outputs] == [
             '{"status":"no_op","summary":"plan text","unfixable_reason":null,"touched_files":[]}\n'
         ]

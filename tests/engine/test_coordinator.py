@@ -15,7 +15,7 @@ from dovo.common.filesystem.models import WorkspacePaths
 from dovo.core.artifacts import Artifacts
 from dovo.core.artifacts.services.download import download_artifact
 from dovo.core.artifacts.store import ArtifactStore
-from dovo.core.catalog.definitions import LoopStepBlock, StepDefinition
+from dovo.core.catalog.definitions import StepDefinition
 from dovo.core.db import SessionsRepository, SessionStatus
 from dovo.core.db.repositories.artifacts import ArtifactsRepository
 from dovo.core.interaction import InteractionAnswer, InteractionRequest, RequestOption
@@ -24,7 +24,7 @@ from dovo.core.sessions.services.read_logs import read_session_log_events
 from dovo.core.worktree.models import WorktreeSession
 from dovo.engine import RunCoordinator, SessionStateStore
 from dovo.engine.executors import StepExecution
-from dovo.engine.executors.models import ConditionEvaluationResult, StepResult
+from dovo.engine.executors.models import StepResult
 from dovo.engine.failure import USER_CONTINUED_MARKER
 from dovo.engine.models import (
     FailurePromptDecision,
@@ -43,7 +43,15 @@ from dovo.engine.state_models import (
     StepAttemptRecord,
 )
 from dovo.engine.writer import snapshot_blueprint_path
-from tests.harness.sessions import SEEDED_FAILURE, NoOpRunObserver, seed_new_session, seed_paused_session
+from tests.engine.conftest import SpySaveExecutionState
+from tests.harness.sessions import (
+    SEEDED_FAILURE,
+    NoOpRunObserver,
+    RecordingRunObserver,
+    ScriptedFailurePrompter,
+    seed_new_session,
+    seed_paused_session,
+)
 
 _FAIL_DETAIL = "Command failed with exit code 1."
 
@@ -63,87 +71,6 @@ def _loop_body_entries(iteration: int) -> list[tuple[str, dict[str, object]]]:
         ("step_start", {"step_index": 2, "step_id": "s2", "attempt": 1, **loop_fields}),
         ("step_done", {"step_index": 2, "step_id": "s2", **done}),
     ]
-
-
-class _Prompter(FailurePrompter):
-    """Scripted FailurePrompter recording each prompted result; can run a hook or raise KeyboardInterrupt on prompt."""
-
-    def __init__(
-        self,
-        decisions: list[FailurePromptDecision] | None = None,
-        *,
-        on_prompt: Callable[[], None] | None = None,
-        interrupt: bool = False,
-        loop_decisions: list[LoopPromptDecision] | None = None,
-        interrupt_loop: bool = False,
-    ) -> None:
-        self.decisions = list(decisions or [])
-        self.prompted: list[StepResult] = []
-        self.on_prompt = on_prompt
-        self.interrupt = interrupt
-        self.loop_decisions = list(loop_decisions or [])
-        self.loop_prompts: list[tuple[int, int]] = []
-        self.interrupt_loop = interrupt_loop
-
-    def prompt_step_failure(
-        self,
-        *,
-        step: StepDefinition,
-        result: StepResult,
-        diagnostic: str,
-    ) -> FailurePromptDecision:
-        self.prompted.append(result)
-        if self.on_prompt is not None:
-            self.on_prompt()
-        if self.interrupt:
-            raise KeyboardInterrupt
-        return self.decisions.pop(0)
-
-    def prompt_loop_max_iterations(
-        self,
-        *,
-        loop: LoopStepBlock,
-        iteration: int,
-        diagnostic: str,
-        grant_count: int = 3,
-    ) -> LoopPromptDecision:
-        self.loop_prompts.append((iteration, grant_count))
-        if self.interrupt_loop:
-            raise KeyboardInterrupt
-        return self.loop_decisions.pop(0)
-
-
-class _SequenceObserver(NoOpRunObserver):
-    """RunObserver recording every step and loop callback in one ordered list."""
-
-    def __init__(self) -> None:
-        self.calls: list[tuple[object, ...]] = []
-
-    def on_step_start(self, idx: int, total: int, step: StepDefinition) -> None:
-        self.calls.append(("step_start", idx, total, step.id))
-
-    def on_step_done(self, idx: int, total: int, step: StepDefinition, result: StepResult) -> None:
-        self.calls.append(("step_done", idx, total, step.id, result.status))
-
-    def on_loop_start(self, loop_id: str, max_iterations: int) -> None:
-        self.calls.append(("loop_start", loop_id, max_iterations))
-
-    def on_loop_iteration_start(self, loop_id: str, iteration: int, max_iterations: int) -> None:
-        self.calls.append(("loop_iteration_start", loop_id, iteration, max_iterations))
-
-    def on_loop_conditions_evaluated(
-        self,
-        loop_id: str,
-        results: list[ConditionEvaluationResult],
-        all_passed: bool,
-        next_iteration: int | None = None,
-    ) -> None:
-        self.calls.append(
-            ("loop_conditions_evaluated", loop_id, [r.passed for r in results], all_passed, next_iteration)
-        )
-
-    def on_loop_done(self, loop_id: str, status: str, total_iterations: int) -> None:
-        self.calls.append(("loop_done", loop_id, status, total_iterations))
 
 
 class _RaisingObserver(NoOpRunObserver):
@@ -197,6 +124,7 @@ def _context(
     worktree: WorktreeSession | None = None,
     no_tty: bool = False,
     artifacts_db: ArtifactsRepository | None = None,
+    interaction_prompter: InteractionPrompter | None = None,
 ) -> RunContext:
     """Session context with scratch and log directories created like drive_run does."""
     session_tmp_dir = paths.tmp_dir / session_id
@@ -212,6 +140,7 @@ def _context(
         artifact_store=ArtifactStore(Artifacts(paths, artifacts_db), session_id) if artifacts_db is not None else None,
         worktree=worktree,
         no_tty=no_tty,
+        interaction_prompter=interaction_prompter,
     )
 
 
@@ -283,76 +212,6 @@ def _last_result(node: ExecutionLeafNode) -> StepResult:
     return result
 
 
-@pytest.fixture
-def saved_statuses(monkeypatch: pytest.MonkeyPatch) -> list[SessionStatus | str | None]:
-    """Record the run status carried by every execution-state save."""
-    recorded: list[SessionStatus | str | None] = []
-    real = SessionsRepository.save_execution_state
-
-    def spy(
-        self: SessionsRepository,
-        session_id: str,
-        execution_state_json: str,
-        *,
-        expected_revision: int,
-        next_revision: int,
-        status: SessionStatus | str | None = None,
-        error_message: str | None = None,
-        worktree_id: str | None = None,
-        worktree_kept: bool | None = None,
-    ):
-        recorded.append(status)
-        return real(
-            self,
-            session_id,
-            execution_state_json,
-            expected_revision=expected_revision,
-            next_revision=next_revision,
-            status=status,
-            error_message=error_message,
-            worktree_id=worktree_id,
-            worktree_kept=worktree_kept,
-        )
-
-    monkeypatch.setattr(SessionsRepository, "save_execution_state", spy)
-    return recorded
-
-
-@pytest.fixture
-def saved_states(monkeypatch: pytest.MonkeyPatch) -> list[ExecutionStateTree]:
-    """Record the parsed execution state carried by every execution-state save."""
-    recorded: list[ExecutionStateTree] = []
-    real = SessionsRepository.save_execution_state
-
-    def spy(
-        self: SessionsRepository,
-        session_id: str,
-        execution_state_json: str,
-        *,
-        expected_revision: int,
-        next_revision: int,
-        status: SessionStatus | str | None = None,
-        error_message: str | None = None,
-        worktree_id: str | None = None,
-        worktree_kept: bool | None = None,
-    ):
-        recorded.append(ExecutionStateTree.model_validate_json(execution_state_json))
-        return real(
-            self,
-            session_id,
-            execution_state_json,
-            expected_revision=expected_revision,
-            next_revision=next_revision,
-            status=status,
-            error_message=error_message,
-            worktree_id=worktree_id,
-            worktree_kept=worktree_kept,
-        )
-
-    monkeypatch.setattr(SessionsRepository, "save_execution_state", spy)
-    return recorded
-
-
 class CoordinatorExecuteTests:
     def test_two_leaf_run_completes_with_flattened_results_and_advancing_revision(
         self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository
@@ -410,7 +269,7 @@ class CoordinatorExecuteTests:
         )
 
         resumed = _coordinator(
-            engine_paths, sessions_repo, "resumed", prompter=_Prompter([FailurePromptDecision.CONTINUE])
+            engine_paths, sessions_repo, "resumed", prompter=ScriptedFailurePrompter([FailurePromptDecision.CONTINUE])
         ).execute()
 
         assert [(r.step_id, r.status) for r in resumed.step_results] == [
@@ -435,42 +294,12 @@ class CoordinatorExecuteTests:
         engine_paths: WorkspacePaths,
         sessions_repo: SessionsRepository,
         engine_workspace: Path,
-        monkeypatch: pytest.MonkeyPatch,
+        spy_save_execution_state: SpySaveExecutionState,
     ) -> None:
         seed_new_session(
             engine_paths, sessions_repo, session_id="persist", steps=[_step("a", "echo a"), _step("b", "touch b.ran")]
         )
-        real = SessionsRepository.save_execution_state
-        calls: list[int] = []
-
-        def flaky(
-            self: SessionsRepository,
-            session_id: str,
-            execution_state_json: str,
-            *,
-            expected_revision: int,
-            next_revision: int,
-            status: SessionStatus | str | None = None,
-            error_message: str | None = None,
-            worktree_id: str | None = None,
-            worktree_kept: bool | None = None,
-        ):
-            calls.append(next_revision)
-            if len(calls) == 2:
-                return None
-            return real(
-                self,
-                session_id,
-                execution_state_json,
-                expected_revision=expected_revision,
-                next_revision=next_revision,
-                status=status,
-                error_message=error_message,
-                worktree_id=worktree_id,
-                worktree_kept=worktree_kept,
-            )
-
-        monkeypatch.setattr(SessionsRepository, "save_execution_state", flaky)
+        spy_save_execution_state(lambda saves: len(saves) != 2)
 
         outcome = _coordinator(engine_paths, sessions_repo, "persist").execute()
 
@@ -617,7 +446,7 @@ class CoordinatorObserverContractTests:
     def test_linear_run_emits_pinned_observer_sequence(
         self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository
     ) -> None:
-        observer = _SequenceObserver()
+        observer = RecordingRunObserver()
 
         _run_new(
             engine_paths,
@@ -627,7 +456,7 @@ class CoordinatorObserverContractTests:
             observer=observer,
         )
 
-        assert observer.calls == [
+        assert [call for call in observer.calls if call[0] != "step_output"] == [
             ("step_start", 1, 3, "a"),
             ("step_done", 1, 3, "a", "completed"),
             ("step_start", 2, 3, "b"),
@@ -639,7 +468,7 @@ class CoordinatorObserverContractTests:
     def test_loop_run_emits_pinned_observer_sequence(
         self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository
     ) -> None:
-        observer = _SequenceObserver()
+        observer = RecordingRunObserver()
 
         _run_new(
             engine_paths,
@@ -822,7 +651,7 @@ class CoordinatorMetadataTests:
                     on_failure="prompt_user",
                 )
             ],
-            prompter=_Prompter([FailurePromptDecision.RETRY]),
+            prompter=ScriptedFailurePrompter([FailurePromptDecision.RETRY]),
         )
 
         assert outcome.status == SessionStatus.COMPLETED
@@ -916,7 +745,7 @@ class CoordinatorLeafTransitionTests:
     def test_prompt_retry_then_abort_prompts_twice_and_fails_node_with_two_attempts(
         self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository
     ) -> None:
-        prompter = _Prompter([FailurePromptDecision.RETRY, FailurePromptDecision.ABORT])
+        prompter = ScriptedFailurePrompter([FailurePromptDecision.RETRY, FailurePromptDecision.ABORT])
 
         outcome = _run_new(
             engine_paths,
@@ -940,7 +769,7 @@ class CoordinatorLeafTransitionTests:
             sessions_repo,
             "adv-continue",
             [_step("a", "exit 1", on_failure="prompt_user")],
-            prompter=_Prompter([FailurePromptDecision.CONTINUE]),
+            prompter=ScriptedFailurePrompter([FailurePromptDecision.CONTINUE]),
         )
 
         leaf = _leaf(_state(engine_paths, sessions_repo, "adv-continue"), "a")
@@ -956,7 +785,7 @@ class CoordinatorLeafTransitionTests:
             sessions_repo,
             "adv-abort",
             [_step("a", "exit 1", on_failure="prompt_user")],
-            prompter=_Prompter([FailurePromptDecision.ABORT]),
+            prompter=ScriptedFailurePrompter([FailurePromptDecision.ABORT]),
         )
 
         assert outcome.status == SessionStatus.FAILED
@@ -966,7 +795,7 @@ class CoordinatorLeafTransitionTests:
     @pytest.mark.parametrize(
         ("no_tty", "prompter", "warning_substr"),
         [
-            pytest.param(True, _Prompter(), "non-interactive", id="no-tty"),
+            pytest.param(True, ScriptedFailurePrompter(), "non-interactive", id="no-tty"),
             pytest.param(False, None, "no failure prompter", id="no-prompter"),
         ],
     )
@@ -974,11 +803,13 @@ class CoordinatorLeafTransitionTests:
         self,
         engine_paths: WorkspacePaths,
         sessions_repo: SessionsRepository,
-        saved_statuses: list[SessionStatus | str | None],
+        spy_save_execution_state: SpySaveExecutionState,
         no_tty: bool,
-        prompter: _Prompter | None,
+        prompter: ScriptedFailurePrompter | None,
         warning_substr: str,
     ) -> None:
+        saves = spy_save_execution_state(None)
+
         outcome = _run_new(
             engine_paths,
             sessions_repo,
@@ -993,7 +824,7 @@ class CoordinatorLeafTransitionTests:
         assert len(outcome.warnings) == 1
         assert outcome.warnings[0].startswith("Warning: step 'a' requested prompt_user but")
         assert warning_substr in outcome.warnings[0]
-        assert SessionStatus.PAUSED not in saved_statuses
+        assert SessionStatus.PAUSED not in [save.status for save in saves]
         assert prompter is None or prompter.prompted == []
 
     def test_prompt_persists_paused_state_before_prompter_is_consulted(
@@ -1014,7 +845,7 @@ class CoordinatorLeafTransitionTests:
             sessions_repo,
             "adv-paused",
             [_step("a", "exit 1", on_failure="prompt_user")],
-            prompter=_Prompter([FailurePromptDecision.CONTINUE], on_prompt=read_row),
+            prompter=ScriptedFailurePrompter([FailurePromptDecision.CONTINUE], on_prompt=read_row),
         )
 
         assert seen == {"status": SessionStatus.PAUSED, "leaf_state": NodeState.PAUSED, "result_status": "failed"}
@@ -1028,7 +859,7 @@ class CoordinatorLeafTransitionTests:
             sessions_repo,
             "adv-paused-outcome",
             [_step("a", "exit 1", on_failure="prompt_user"), _step("b", "echo b")],
-            prompter=_Prompter(interrupt=True),
+            prompter=ScriptedFailurePrompter([KeyboardInterrupt()]),
         )
 
         assert outcome.status == SessionStatus.PAUSED
@@ -1042,7 +873,7 @@ class CoordinatorLeafTransitionTests:
     def test_retry_exhausted_escalates_to_on_max_retries_prompt(
         self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository
     ) -> None:
-        prompter = _Prompter([FailurePromptDecision.ABORT])
+        prompter = ScriptedFailurePrompter([FailurePromptDecision.ABORT])
 
         outcome = _run_new(
             engine_paths,
@@ -1085,7 +916,7 @@ def _pause_loop(
     steps: list[dict[str, object]],
 ) -> RunOutcome:
     """Seed a run and execute it with a prompter that Ctrl-Cs at the first failure prompt, pausing the run."""
-    return _run_new(paths, sessions, session_id, steps, prompter=_Prompter(interrupt=True))
+    return _run_new(paths, sessions, session_id, steps, prompter=ScriptedFailurePrompter([KeyboardInterrupt()]))
 
 
 class CoordinatorLoopBodyParityTests:
@@ -1113,14 +944,19 @@ class CoordinatorLoopBodyParityTests:
             return _step("s", command, on_failure=on_failure)
 
         top = _run_new(
-            engine_paths, sessions_repo, "top", [flaky("top.marker")], prompter=_Prompter(decisions), no_tty=no_tty
+            engine_paths,
+            sessions_repo,
+            "top",
+            [flaky("top.marker")],
+            prompter=ScriptedFailurePrompter(decisions),
+            no_tty=no_tty,
         )
         looped = _run_new(
             engine_paths,
             sessions_repo,
             "looped",
             [_loop("loop", [flaky("loop.marker")], max_iterations=1, until=["iteration.index >= 1"])],
-            prompter=_Prompter(decisions),
+            prompter=ScriptedFailurePrompter(decisions),
             no_tty=no_tty,
         )
 
@@ -1216,7 +1052,7 @@ class CoordinatorLoopResumeTests:
             runs_at_prompt.append(_runs(engine_workspace, paused_id))
             (engine_workspace / "allow").touch()
 
-        prompter = _Prompter([FailurePromptDecision.RETRY], on_prompt=allow_retry)
+        prompter = ScriptedFailurePrompter([FailurePromptDecision.RETRY], on_prompt=allow_retry)
 
         outcome = _coordinator(engine_paths, sessions_repo, "loop-retry", prompter=prompter).execute()
 
@@ -1235,7 +1071,10 @@ class CoordinatorLoopResumeTests:
         _pause_loop(engine_paths, sessions_repo, "loop-continue", [_loop("loop", _counting_body(1), max_iterations=1)])
 
         outcome = _coordinator(
-            engine_paths, sessions_repo, "loop-continue", prompter=_Prompter([FailurePromptDecision.CONTINUE])
+            engine_paths,
+            sessions_repo,
+            "loop-continue",
+            prompter=ScriptedFailurePrompter([FailurePromptDecision.CONTINUE]),
         ).execute()
 
         assert outcome.status == SessionStatus.COMPLETED
@@ -1250,7 +1089,10 @@ class CoordinatorLoopResumeTests:
         _pause_loop(engine_paths, sessions_repo, "loop-abort-resume", [_loop("loop", _counting_body(1))])
 
         outcome = _coordinator(
-            engine_paths, sessions_repo, "loop-abort-resume", prompter=_Prompter([FailurePromptDecision.ABORT])
+            engine_paths,
+            sessions_repo,
+            "loop-abort-resume",
+            prompter=ScriptedFailurePrompter([FailurePromptDecision.ABORT]),
         ).execute()
 
         assert outcome.status == SessionStatus.FAILED
@@ -1275,7 +1117,9 @@ class CoordinatorLoopResumeTests:
             )
         ]
         _pause_loop(engine_paths, sessions_repo, "loop-second", steps)
-        prompter = _Prompter([FailurePromptDecision.RETRY], on_prompt=lambda: (engine_workspace / "allow").touch())
+        prompter = ScriptedFailurePrompter(
+            [FailurePromptDecision.RETRY], on_prompt=lambda: (engine_workspace / "allow").touch()
+        )
 
         outcome = _coordinator(engine_paths, sessions_repo, "loop-second", prompter=prompter).execute()
 
@@ -1301,7 +1145,9 @@ class CoordinatorLoopResumeTests:
         (engine_workspace / "allow").unlink()
         (engine_workspace / "s1.count").unlink()
         _pause_loop(engine_paths, sessions_repo, "resumed-loop", steps)
-        prompter = _Prompter([FailurePromptDecision.RETRY], on_prompt=lambda: (engine_workspace / "allow").touch())
+        prompter = ScriptedFailurePrompter(
+            [FailurePromptDecision.RETRY], on_prompt=lambda: (engine_workspace / "allow").touch()
+        )
 
         resumed = _coordinator(engine_paths, sessions_repo, "resumed-loop", prompter=prompter).execute()
 
@@ -1325,7 +1171,7 @@ class CoordinatorLoopResumeTests:
         leaf.state = NodeState.RUNNING
         leaf.attempts = [StepAttemptRecord(number=1, started_at="t")]
         assert SessionStateStore(sessions_repo, engine_paths, "loop-crashed").save(state).ok
-        prompter = _Prompter([FailurePromptDecision.CONTINUE])
+        prompter = ScriptedFailurePrompter([FailurePromptDecision.CONTINUE])
 
         outcome = _coordinator(engine_paths, sessions_repo, "loop-crashed", prompter=prompter).execute()
 
@@ -1341,7 +1187,10 @@ class CoordinatorLoopResumeTests:
         _pause_loop(engine_paths, sessions_repo, "loop-events", [_loop("loop", _counting_body(1), max_iterations=1)])
 
         _coordinator(
-            engine_paths, sessions_repo, "loop-events", prompter=_Prompter([FailurePromptDecision.CONTINUE])
+            engine_paths,
+            sessions_repo,
+            "loop-events",
+            prompter=ScriptedFailurePrompter([FailurePromptDecision.CONTINUE]),
         ).execute()
 
         events = [event["event"] for event in _session_log(engine_paths, "loop-events")]
@@ -1362,8 +1211,10 @@ class CoordinatorLoopUntilTests:
             )
         ]
         _pause_loop(engine_paths, sessions_repo, "loop-until", steps)
-        observer = _SequenceObserver()
-        prompter = _Prompter([FailurePromptDecision.RETRY], on_prompt=lambda: (engine_workspace / "allow").touch())
+        observer = RecordingRunObserver()
+        prompter = ScriptedFailurePrompter(
+            [FailurePromptDecision.RETRY], on_prompt=lambda: (engine_workspace / "allow").touch()
+        )
 
         outcome = _coordinator(
             engine_paths, sessions_repo, "loop-until", prompter=prompter, observer=observer
@@ -1395,13 +1246,15 @@ class CoordinatorLoopTerminalTests:
         self,
         engine_paths: WorkspacePaths,
         sessions_repo: SessionsRepository,
-        saved_states: list[ExecutionStateTree],
+        spy_save_execution_state: SpySaveExecutionState,
     ) -> None:
         """Persist iteration 1 COMPLETED with until_passed False before iteration 2 exists."""
+        saves = spy_save_execution_state(None)
+
         _run_new(engine_paths, sessions_repo, "loop-persist", [_loop("loop", [_step("s", "true")])])
 
         shapes = [
-            [(it.number, it.state, it.until_passed) for it in _loop_node(state).iterations] for state in saved_states
+            [(it.number, it.state, it.until_passed) for it in _loop_node(save.state).iterations] for save in saves
         ]
         completed_first = shapes.index([(1, NodeState.COMPLETED, False)])
         assert any(len(shape) == 2 for shape in shapes[completed_first + 1 :])
@@ -1523,7 +1376,7 @@ class CoordinatorLoopCeilingTests:
         errors: list[str],
         warnings: list[str],
     ) -> None:
-        prompter = _Prompter(loop_decisions=[answer] if answer is not None else [])
+        prompter = ScriptedFailurePrompter([answer] if answer is not None else [])
 
         outcome = _run_new(
             engine_paths,
@@ -1540,7 +1393,7 @@ class CoordinatorLoopCeilingTests:
     def test_grant_decision_persists_larger_ceiling_and_runs_more_iterations(
         self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository
     ) -> None:
-        prompter = _Prompter(loop_decisions=[LoopPromptDecision.GRANT])
+        prompter = ScriptedFailurePrompter([LoopPromptDecision.GRANT])
 
         outcome = _run_new(
             engine_paths,
@@ -1563,7 +1416,7 @@ class CoordinatorLoopCeilingTests:
             sessions_repo,
             "loop-ceiling-interrupt",
             [_loop("loop", [_step("s", "true")], max_iterations=1, until=["iteration.index >= 99"])],
-            prompter=_Prompter(interrupt_loop=True),
+            prompter=ScriptedFailurePrompter([KeyboardInterrupt()]),
         )
 
         assert outcome.status == SessionStatus.CANCELLED
@@ -1619,7 +1472,7 @@ class CoordinatorPausedGateTests:
         self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository, engine_workspace: Path
     ) -> None:
         self._seed(engine_paths, sessions_repo, "gate-continue")
-        prompter = _Prompter([FailurePromptDecision.CONTINUE])
+        prompter = ScriptedFailurePrompter([FailurePromptDecision.CONTINUE])
 
         outcome = _coordinator(engine_paths, sessions_repo, "gate-continue", prompter=prompter).execute()
 
@@ -1638,7 +1491,7 @@ class CoordinatorPausedGateTests:
         self._seed(engine_paths, sessions_repo, "gate-retry")
 
         outcome = _coordinator(
-            engine_paths, sessions_repo, "gate-retry", prompter=_Prompter([FailurePromptDecision.RETRY])
+            engine_paths, sessions_repo, "gate-retry", prompter=ScriptedFailurePrompter([FailurePromptDecision.RETRY])
         ).execute()
 
         assert outcome.status == SessionStatus.COMPLETED
@@ -1653,7 +1506,7 @@ class CoordinatorPausedGateTests:
         self._seed(engine_paths, sessions_repo, "gate-abort")
 
         outcome = _coordinator(
-            engine_paths, sessions_repo, "gate-abort", prompter=_Prompter([FailurePromptDecision.ABORT])
+            engine_paths, sessions_repo, "gate-abort", prompter=ScriptedFailurePrompter([FailurePromptDecision.ABORT])
         ).execute()
 
         assert outcome.status == SessionStatus.FAILED
@@ -1812,25 +1665,6 @@ class _ScriptedPrompter(InteractionPrompter):
         return scripted
 
 
-class _AbortPrompter(FailurePrompter):
-    """FailurePrompter that records prompted step ids and answers ABORT, or raises KeyboardInterrupt when set."""
-
-    def __init__(self, *, interrupt: bool = False) -> None:
-        self.prompted: list[str] = []
-        self.interrupt = interrupt
-
-    def prompt_step_failure(self, *, step: StepDefinition, result: object, diagnostic: str) -> FailurePromptDecision:
-        self.prompted.append(step.id)
-        if self.interrupt:
-            raise KeyboardInterrupt
-        return FailurePromptDecision.ABORT
-
-    def prompt_loop_max_iterations(
-        self, *, loop: LoopStepBlock, iteration: int, diagnostic: str, grant_count: int = 3
-    ) -> LoopPromptDecision:
-        raise AssertionError("loop prompt is not expected")
-
-
 @dataclass
 class AskRun:
     """Seed and drive ask runs through RunCoordinator over a real workspace."""
@@ -1848,19 +1682,7 @@ class AskRun:
         self, prompter: InteractionPrompter | None = None, failure_prompter: FailurePrompter | None = None
     ) -> RunOutcome:
         """Execute (or resume) the seeded session with a new coordinator."""
-        session_tmp_dir = self.paths.tmp_dir / _SESSION_ID
-        (session_tmp_dir / "steps").mkdir(parents=True, exist_ok=True)
-        session_log_dir = self.paths.logs_dir / _SESSION_ID
-        session_log_dir.mkdir(parents=True, exist_ok=True)
-        context = RunContext(
-            session_id=_SESSION_ID,
-            paths=self.paths,
-            target_dir=self.paths.root_dir,
-            session_tmp_dir=session_tmp_dir,
-            session_log_dir=session_log_dir,
-            artifact_store=ArtifactStore(Artifacts(self.paths, self.artifacts), _SESSION_ID),
-            interaction_prompter=prompter,
-        )
+        context = _context(self.paths, _SESSION_ID, artifacts_db=self.artifacts, interaction_prompter=prompter)
         coordinator = RunCoordinator(
             SessionStateStore(self.sessions, self.paths, _SESSION_ID), context, prompter=failure_prompter
         )
@@ -2072,13 +1894,13 @@ class CoordinatorAskTests:
     def test_paused_leaf_without_pending_ask_still_follows_the_failure_gate(self, ask_run: AskRun) -> None:
         steps = [_approve_step(on_failure="prompt_user")]
         seed_new_session(ask_run.paths, ask_run.sessions, session_id=_SESSION_ID, steps=steps)
-        ask_run.execute(_ScriptedPrompter([_answer("deny")]), _AbortPrompter(interrupt=True))
+        ask_run.execute(_ScriptedPrompter([_answer("deny")]), ScriptedFailurePrompter([KeyboardInterrupt()]))
         assert (ask_run.leaf("approve").state, ask_run.leaf("approve").pending_ask) == (NodeState.PAUSED, None)
-        failure_prompter = _AbortPrompter()
+        failure_prompter = ScriptedFailurePrompter([FailurePromptDecision.ABORT])
         interaction_prompter = _ScriptedPrompter([])
 
         outcome = ask_run.execute(interaction_prompter, failure_prompter)
 
-        assert failure_prompter.prompted == ["approve"]
+        assert [result.step_id for result in failure_prompter.prompted] == ["approve"]
         assert interaction_prompter.requests == []
         assert outcome.status == SessionStatus.FAILED

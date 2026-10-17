@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -16,7 +16,7 @@ from dovo.core.db import SessionRecord, SessionsRepository, SessionStatus
 from dovo.core.db.repositories.artifacts import ArtifactsRepository
 from dovo.engine import RunCoordinator, RunObserver, RunOutcome
 from dovo.engine.executors.models import AgentProgressUpdate, ConditionEvaluationResult, StepResult
-from dovo.engine.models import RunContext
+from dovo.engine.models import FailurePromptDecision, FailurePrompter, LoopPromptDecision, RunContext
 from dovo.engine.state_models import ExecutionLeafNode, NodeState, StepAttemptRecord
 from dovo.engine.state_store import SessionStateStore
 from dovo.engine.writer import snapshot_definitions
@@ -78,6 +78,142 @@ class NoOpRunObserver(RunObserver):
 
     def on_run_completed(self, outcome: RunOutcome) -> None:
         pass
+
+
+def _recorded(value: object) -> object:
+    """Reduce a hook argument to what observer tests compare: ids for steps and loops, statuses, passed flags."""
+    if isinstance(value, StepDefinition | LoopStepBlock):
+        return value.id
+    if isinstance(value, StepResult):
+        return value.status
+    if isinstance(value, ConditionEvaluationResult):
+        return value.passed
+    if isinstance(value, list | tuple):
+        return [_recorded(item) for item in value]
+    return value
+
+
+class RecordingRunObserver(NoOpRunObserver):
+    """Record every observer hook call, in order, as (hook name, arguments).
+
+    Each call is one flat tuple: the hook name without its ``on_`` prefix, then every argument
+    in signature order. Steps and loops are recorded by id, a StepResult by its status and each
+    condition result by whether it passed; paths, outcomes and progress updates are kept as passed.
+    """
+
+    def __init__(self) -> None:
+        self.calls: list[tuple[object, ...]] = []
+
+    def _record(self, hook: str, *args: object) -> None:
+        self.calls.append((hook, *(_recorded(arg) for arg in args)))
+
+    def on_worktree_ready(self, path: Path, active: bool) -> None:
+        self._record("worktree_ready", path, active)
+
+    def on_step_start(self, idx: int, total: int, step: StepDefinition) -> None:
+        self._record("step_start", idx, total, step)
+
+    def on_step_output(
+        self,
+        idx: int,
+        total: int,
+        step: StepDefinition,
+        line: str,
+        stream: str = "stdout",
+    ) -> None:
+        self._record("step_output", idx, total, step, line, stream)
+
+    def on_step_progress(self, idx: int, total: int, step: StepDefinition, update: AgentProgressUpdate) -> None:
+        self._record("step_progress", idx, total, step, update)
+
+    def on_step_done(self, idx: int, total: int, step: StepDefinition, result: StepResult) -> None:
+        self._record("step_done", idx, total, step, result)
+
+    def on_loop_start(self, loop_id: str, max_iterations: int) -> None:
+        self._record("loop_start", loop_id, max_iterations)
+
+    def on_loop_iteration_start(self, loop_id: str, iteration: int, max_iterations: int) -> None:
+        self._record("loop_iteration_start", loop_id, iteration, max_iterations)
+
+    def on_loop_conditions_evaluated(
+        self,
+        loop_id: str,
+        results: list[ConditionEvaluationResult],
+        all_passed: bool,
+        next_iteration: int | None = None,
+    ) -> None:
+        self._record("loop_conditions_evaluated", loop_id, results, all_passed, next_iteration)
+
+    def on_loop_done(self, loop_id: str, status: str, total_iterations: int) -> None:
+        self._record("loop_done", loop_id, status, total_iterations)
+
+    def on_worktree_cleanup(
+        self, kept: bool, path: Path, worktree_id: str | None = None, branch: str | None = None
+    ) -> None:
+        self._record("worktree_cleanup", kept, path, worktree_id, branch)
+
+    def on_run_started(self, steps: Sequence[StepDefinition | LoopStepBlock]) -> None:
+        self._record("run_started", steps)
+
+    def on_run_completed(self, outcome: RunOutcome) -> None:
+        self._record("run_completed", outcome)
+
+
+type ScriptedDecision = FailurePromptDecision | LoopPromptDecision | BaseException
+
+
+class ScriptedFailurePrompter(FailurePrompter):
+    """Return queued decisions in order and record each prompted step; raise KeyboardInterrupt when queued.
+
+    A queued exception instance is raised instead of answering. ``prompted`` holds each failed
+    StepResult and ``diagnostics`` the diagnostic shown with it; ``loop_prompts`` holds the
+    (iteration, grant_count) of each max-iterations prompt. ``on_prompt`` runs before a
+    step-failure answer is taken from the queue.
+    """
+
+    def __init__(
+        self, decisions: Sequence[ScriptedDecision] = (), *, on_prompt: Callable[[], None] | None = None
+    ) -> None:
+        self.decisions: list[ScriptedDecision] = list(decisions)
+        self.on_prompt = on_prompt
+        self.prompted: list[StepResult] = []
+        self.diagnostics: list[str] = []
+        self.loop_prompts: list[tuple[int, int]] = []
+
+    def _next(self) -> FailurePromptDecision | LoopPromptDecision:
+        assert self.decisions, "ScriptedFailurePrompter was prompted with no decision queued"
+        decision = self.decisions.pop(0)
+        if isinstance(decision, BaseException):
+            raise decision
+        return decision
+
+    def prompt_step_failure(
+        self,
+        *,
+        step: StepDefinition,
+        result: StepResult,
+        diagnostic: str,
+    ) -> FailurePromptDecision:
+        self.prompted.append(result)
+        self.diagnostics.append(diagnostic)
+        if self.on_prompt is not None:
+            self.on_prompt()
+        decision = self._next()
+        assert isinstance(decision, FailurePromptDecision)
+        return decision
+
+    def prompt_loop_max_iterations(
+        self,
+        *,
+        loop: LoopStepBlock,
+        iteration: int,
+        diagnostic: str,
+        grant_count: int = 3,
+    ) -> LoopPromptDecision:
+        self.loop_prompts.append((iteration, grant_count))
+        decision = self._next()
+        assert isinstance(decision, LoopPromptDecision)
+        return decision
 
 
 def seed_new_session(

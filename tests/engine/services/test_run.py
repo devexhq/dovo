@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
-
 import pytest
 
 from dovo.common.filesystem.models import WorkspacePaths
@@ -12,6 +10,7 @@ from dovo.core.db import SessionsRepository, SessionStatus
 from dovo.core.sessions import ReconciliationResult
 from dovo.engine.models import RunOutcome
 from dovo.engine.services.run import BlueprintRunService
+from tests.engine.conftest import StubDriveRun
 from tests.harness.catalog import write_runnable_blueprint
 
 
@@ -20,7 +19,7 @@ class BlueprintRunServiceExecuteTests:
         self,
         engine_paths: WorkspacePaths,
         sessions_repo: SessionsRepository,
-        stub_drive_run: Callable[[RunOutcome | None], None],
+        stub_drive_run: StubDriveRun,
     ) -> None:
         write_runnable_blueprint(engine_paths.root_dir, key="lint", steps=[{"id": "a", "run": "true"}])
         stub_drive_run(None)
@@ -38,13 +37,14 @@ class BlueprintRunServiceExecuteTests:
         self,
         engine_paths: WorkspacePaths,
         sessions_repo: SessionsRepository,
-        stub_drive_run: Callable[[RunOutcome | None], None],
+        stub_drive_run: StubDriveRun,
     ) -> None:
         write_runnable_blueprint(engine_paths.root_dir, key="lint", steps=[{"id": "a", "run": "true"}])
         stub_drive_run(
-            RunOutcome(
+            lambda paths, sessions, session_id: RunOutcome(
                 status=SessionStatus.FAILED,
-                worktree_path=engine_paths.root_dir,
+                worktree_path=paths.root_dir,
+                session_id=session_id,
                 errors=["step 'a' failed"],
                 warnings=["cleanup skipped"],
             )
