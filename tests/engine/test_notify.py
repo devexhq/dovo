@@ -2,72 +2,20 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
-from pathlib import Path
-
-from dovo.core.catalog.definitions import LoopStepBlock, StepDefinition
-from dovo.engine.executors.models import AgentProgressUpdate, ConditionEvaluationResult, StepResult
-from dovo.engine.models import RunObserver, RunOutcome
+from dovo.core.catalog.definitions import StepDefinition
 from dovo.engine.notify import safe_notify
 from tests.harness.builders import StepBuilder
+from tests.harness.sessions import NoOpRunObserver
 
 
-class _NoOpRunObserver(RunObserver):
-    """Test double implementing every RunObserver hook as a no-op; subclass and override only what a test needs."""
-
-    def on_worktree_ready(self, path: Path, active: bool) -> None:
-        pass
-
-    def on_step_start(self, idx: int, total: int, step: StepDefinition) -> None:
-        pass
-
-    def on_step_output(self, idx: int, total: int, step: StepDefinition, line: str, stream: str = "stdout") -> None:
-        pass
-
-    def on_step_progress(self, idx: int, total: int, step: StepDefinition, update: AgentProgressUpdate) -> None:
-        pass
-
-    def on_step_done(self, idx: int, total: int, step: StepDefinition, result: StepResult) -> None:
-        pass
-
-    def on_loop_start(self, loop_id: str, max_iterations: int) -> None:
-        pass
-
-    def on_loop_iteration_start(self, loop_id: str, iteration: int, max_iterations: int) -> None:
-        pass
-
-    def on_loop_conditions_evaluated(
-        self,
-        loop_id: str,
-        results: list[ConditionEvaluationResult],
-        all_passed: bool,
-        next_iteration: int | None = None,
-    ) -> None:
-        pass
-
-    def on_loop_done(self, loop_id: str, status: str, total_iterations: int) -> None:
-        pass
-
-    def on_worktree_cleanup(
-        self, kept: bool, path: Path, worktree_id: str | None = None, branch: str | None = None
-    ) -> None:
-        pass
-
-    def on_run_started(self, steps: Sequence[StepDefinition | LoopStepBlock]) -> None:
-        pass
-
-    def on_run_completed(self, outcome: RunOutcome) -> None:
-        pass
-
-
-class _ExplodingOnStepStartObserver(_NoOpRunObserver):
+class _ExplodingOnStepStartObserver(NoOpRunObserver):
     """Test double raising from on_step_start."""
 
     def on_step_start(self, idx: int, total: int, step: StepDefinition) -> None:
         raise RuntimeError("step start exploded")
 
 
-class _RecordingOnStepStartObserver(_NoOpRunObserver):
+class _RecordingOnStepStartObserver(NoOpRunObserver):
     """Test double recording the exact args and kwargs on_step_start was invoked with."""
 
     def __init__(self) -> None:
@@ -86,7 +34,7 @@ class SafeNotifyTests:
         assert result is None
 
     def test_observer_missing_method_is_noop(self) -> None:
-        observer = _NoOpRunObserver()
+        observer = NoOpRunObserver()
 
         result = safe_notify(observer, "on_some_hook_not_in_the_protocol")
 

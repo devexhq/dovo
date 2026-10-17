@@ -12,23 +12,15 @@ from dovo.common.filesystem.models import WorkspacePaths
 from dovo.common.models import FailurePolicy
 from dovo.core.agents import AgentProgressKind, default_tool_policy
 from dovo.core.agents.models import ResolvedAgentSettings
-from dovo.core.catalog.definitions import StepDefinition
 from dovo.core.worktree import WorktreeSession
-from dovo.engine.executors.agent_step import build_agent_step_runner
-from dovo.engine.executors.models import AgentProgressUpdate, ProgressCallback, StepExecutionContext, StepResult
+from dovo.engine.executors.models import AgentProgressUpdate, StepExecutionContext, StepResult
 from dovo.engine.executors.step_executor import StepExecution
 from dovo.engine.failure import USER_CONTINUED_MARKER
-from dovo.engine.models import (
-    FailurePromptDecision,
-    FailurePrompter,
-    LoopPromptDecision,
-    RunContext,
-    RunSettings,
-    StepAction,
-)
+from dovo.engine.models import FailurePromptDecision, RunContext, RunSettings, StepAction
 from dovo.engine.step_coordinator import StepCoordinator
+from tests.engine.conftest import AgentRunnerBuild
 from tests.harness.builders import StepBuilder
-from tests.harness.sessions import NoOpRunObserver
+from tests.harness.sessions import RecordingRunObserver, ScriptedFailurePrompter
 from tests.harness.workspace_paths import initialized_workspace_paths
 
 
@@ -45,32 +37,6 @@ _AGENT_SETTINGS = ResolvedAgentSettings(
     max_tokens=512,
     tools=default_tool_policy(),
 )
-
-
-class _RefusingFailurePrompter(FailurePrompter):
-    """Test double refusing every FailurePrompter hook by raising; subclass and override only what a test needs."""
-
-    def __init__(self) -> None:
-        self.calls = 0
-
-    def prompt_step_failure(self, **kwargs: object) -> FailurePromptDecision:
-        self.calls += 1
-        raise AssertionError("prompt_step_failure should not be called")
-
-    def prompt_loop_max_iterations(self, **kwargs: object) -> LoopPromptDecision:
-        raise AssertionError("prompt_loop_max_iterations should not be called")
-
-
-class _ScriptedFailurePrompter(_RefusingFailurePrompter):
-    """Test double returning a scripted queue of FailurePromptDecision values."""
-
-    def __init__(self, decisions: list[FailurePromptDecision]) -> None:
-        super().__init__()
-        self.decisions = list(decisions)
-
-    def prompt_step_failure(self, **kwargs: object) -> FailurePromptDecision:
-        self.calls += 1
-        return self.decisions.pop(0)
 
 
 def _run_context(tmp_path: Path, *, session_log_dir: Path | None = None) -> RunContext:
@@ -104,64 +70,29 @@ class BuildStepContextTests:
 
 
 class StepCoordinatorAgentRunnerTests:
-    @staticmethod
-    def _spy(monkeypatch: pytest.MonkeyPatch) -> tuple[list[tuple[ResolvedAgentSettings | None, bool]], list[Any]]:
-        """Record build_agent_step_runner calls and the agent_runner each StepExecutionContext receives."""
-        builds: list[tuple[ResolvedAgentSettings | None, bool]] = []
-        runners: list[Any] = []
-
-        def _recording_build(
-            agent: ResolvedAgentSettings | None,
-            worktree_active: bool,
-            *,
-            session_tmp_dir: Path | None,
-            main_checkout: Path,
-            session_log_dir: Path | None,
-            session_dir: Path | None,
-        ) -> Any:
-            builds.append((agent, worktree_active))
-            return build_agent_step_runner(
-                agent,
-                worktree_active,
-                session_tmp_dir=session_tmp_dir,
-                main_checkout=main_checkout,
-                session_log_dir=session_log_dir,
-                session_dir=session_dir,
-            )
-
-        class _CapturingStepExecution(StepExecution):
-            """StepExecution subclass recording the agent_runner of the StepExecutionContext it is constructed with."""
-
-            def __init__(self, metadata: StepExecutionContext) -> None:
-                runners.append(metadata.agent_runner)
-                super().__init__(metadata)
-
-        monkeypatch.setattr("dovo.engine.step_coordinator.build_agent_step_runner", _recording_build)
-        monkeypatch.setattr("dovo.engine.step_coordinator.StepExecution", _CapturingStepExecution)
-        return builds, runners
-
     def test_run_attempt_builds_runner_from_resolved_agent_identity(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+        self,
+        tmp_path: Path,
+        captured_builds: list[AgentRunnerBuild],
+        captured_contexts: list[StepExecutionContext],
     ) -> None:
-        builds, runners = self._spy(monkeypatch)
         context = RunSettings(cwd=tmp_path, use_worktree=False, agent=_AGENT_SETTINGS, paths=_paths_for(tmp_path))
         step = StepBuilder.command("echo ok").with_id("ok").build()
 
         StepCoordinator(context).run_attempt(_run_context(tmp_path), [], step, idx=1, total=1, step_context=None)
 
-        assert len(builds) == 1
-        assert builds[0][0] is _AGENT_SETTINGS
-        assert len(runners) == 1
-        assert runners[0] is not None
+        assert len(captured_builds) == 1
+        assert captured_builds[0].agent is _AGENT_SETTINGS
+        assert len(captured_contexts) == 1
+        assert captured_contexts[0].agent_runner is not None
 
     @pytest.mark.parametrize(
         ("has_worktree", "expected"),
         [pytest.param(True, True, id="active-worktree"), pytest.param(False, False, id="no-worktree")],
     )
     def test_run_attempt_binds_worktree_active_from_run_context(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, has_worktree: bool, expected: bool
+        self, tmp_path: Path, captured_builds: list[AgentRunnerBuild], has_worktree: bool, expected: bool
     ) -> None:
-        builds, _ = self._spy(monkeypatch)
         session = WorktreeSession(
             session_id="s",
             target_branch="main",
@@ -175,35 +106,13 @@ class StepCoordinatorAgentRunnerTests:
 
         StepCoordinator(context).run_attempt(run_context, [], step, idx=1, total=1, step_context=None)
 
-        assert [worktree_active for _, worktree_active in builds] == [expected]
+        assert [build.worktree_active for build in captured_builds] == [expected]
 
 
 class StepCoordinatorRunnerWiringTests:
     def test_runner_is_built_with_run_context_session_dirs_and_main_checkout(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+        self, tmp_path: Path, captured_builds: list[AgentRunnerBuild]
     ) -> None:
-        scratch_roots: list[tuple[Path | None, Path | None, Path]] = []
-
-        def _recording_build(
-            agent: ResolvedAgentSettings | None,
-            worktree_active: bool,
-            *,
-            session_tmp_dir: Path | None,
-            main_checkout: Path,
-            session_log_dir: Path | None,
-            session_dir: Path | None,
-        ) -> Any:
-            scratch_roots.append((session_tmp_dir, session_log_dir, main_checkout))
-            return build_agent_step_runner(
-                agent,
-                worktree_active,
-                session_tmp_dir=session_tmp_dir,
-                main_checkout=main_checkout,
-                session_log_dir=session_log_dir,
-                session_dir=session_dir,
-            )
-
-        monkeypatch.setattr("dovo.engine.step_coordinator.build_agent_step_runner", _recording_build)
         paths = _paths_for(tmp_path)
         session_tmp = tmp_path / "session-tmp"
         session_log = tmp_path / "session-log"
@@ -215,43 +124,25 @@ class StepCoordinatorRunnerWiringTests:
 
         StepCoordinator(context).run_attempt(run_context, [], step, idx=1, total=1, step_context=None)
 
-        assert scratch_roots == [(session_tmp, session_log, paths.root_dir)]
+        assert [(b.session_tmp_dir, b.session_log_dir, b.main_checkout) for b in captured_builds] == [
+            (session_tmp, session_log, paths.root_dir)
+        ]
 
     @pytest.mark.parametrize(
         "session_id", [pytest.param("blueprint_abc", id="with-session"), pytest.param(None, id="no-session")]
     )
     def test_runner_session_dir_is_the_session_storage_directory_or_none(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, session_id: str | None
+        self, tmp_path: Path, captured_builds: list[AgentRunnerBuild], session_id: str | None
     ) -> None:
-        session_dirs: list[Path | None] = []
-
-        def _recording_build(
-            agent: ResolvedAgentSettings | None,
-            worktree_active: bool,
-            *,
-            session_tmp_dir: Path | None,
-            main_checkout: Path,
-            session_log_dir: Path | None,
-            session_dir: Path | None,
-        ) -> Any:
-            session_dirs.append(session_dir)
-            return build_agent_step_runner(
-                agent,
-                worktree_active,
-                session_tmp_dir=session_tmp_dir,
-                main_checkout=main_checkout,
-                session_log_dir=session_log_dir,
-                session_dir=session_dir,
-            )
-
-        monkeypatch.setattr("dovo.engine.step_coordinator.build_agent_step_runner", _recording_build)
         paths = _paths_for(tmp_path)
         context = RunSettings(cwd=tmp_path, use_worktree=False, paths=paths, session_id=session_id)
         step = StepBuilder.command("echo ok").with_id("ok").build()
 
         StepCoordinator(context).run_attempt(_run_context(tmp_path), [], step, idx=1, total=1, step_context=None)
 
-        assert session_dirs == [paths.session_dir(session_id) if session_id else None]
+        assert [build.session_dir for build in captured_builds] == [
+            paths.session_dir(session_id) if session_id else None
+        ]
 
 
 class StepCoordinatorLoopIterationForwardingTests:
@@ -285,18 +176,12 @@ class StepCoordinatorLoopIdTests:
         [pytest.param("code-loop", "code-loop", id="loop-step"), pytest.param(None, None, id="top-level-step")],
     )
     def test_loop_step_context_carries_the_loop_id(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, loop_id: str | None, expected: str | None
+        self,
+        tmp_path: Path,
+        captured_contexts: list[StepExecutionContext],
+        loop_id: str | None,
+        expected: str | None,
     ) -> None:
-        seen: list[str | None] = []
-
-        class _CapturingStepExecution(StepExecution):
-            """StepExecution subclass recording the loop_id of the StepExecutionContext it is constructed with."""
-
-            def __init__(self, metadata: StepExecutionContext) -> None:
-                seen.append(metadata.loop_id)
-                super().__init__(metadata)
-
-        monkeypatch.setattr("dovo.engine.step_coordinator.StepExecution", _CapturingStepExecution)
         context = RunSettings(cwd=tmp_path, use_worktree=False, paths=_paths_for(tmp_path))
         step = StepBuilder.command("echo ok").with_id("ok").build()
 
@@ -304,70 +189,39 @@ class StepCoordinatorLoopIdTests:
             _run_context(tmp_path), [], step, idx=1, total=1, step_context=None, loop_iteration=2, loop_id=loop_id
         )
 
-        assert seen == [expected]
-
-
-class _RecordingRunObserver(NoOpRunObserver):
-    """Test double implementing RunObserver, recording step lifecycle callbacks in call order."""
-
-    def __init__(self) -> None:
-        self.events: list[str] = []
-
-    def on_step_start(self, idx: int, total: int, step: StepDefinition) -> None:
-        self.events.append(f"start:{step.id}")
-
-    def on_step_progress(self, idx: int, total: int, step: StepDefinition, update: AgentProgressUpdate) -> None:
-        self.events.append(f"progress:{idx}/{total}:{step.id}:{update.kind.value}:{update.target}")
-
-    def on_step_done(self, idx: int, total: int, step: StepDefinition, result: StepResult) -> None:
-        self.events.append(f"done:{result.step_id}")
+        assert [metadata.loop_id for metadata in captured_contexts] == [expected]
 
 
 class StepCoordinatorProgressWiringTests:
-    @staticmethod
-    def _captured_callbacks(monkeypatch: pytest.MonkeyPatch) -> list[ProgressCallback | None]:
-        callbacks: list[ProgressCallback | None] = []
-
-        class _CapturingStepExecution(StepExecution):
-            """StepExecution subclass recording the on_progress callback of the StepExecutionContext it receives."""
-
-            def __init__(self, metadata: StepExecutionContext) -> None:
-                callbacks.append(metadata.on_progress)
-                super().__init__(metadata)
-
-        monkeypatch.setattr("dovo.engine.step_coordinator.StepExecution", _CapturingStepExecution)
-        return callbacks
-
     def test_progress_callback_notifies_the_observer_with_the_step_position(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+        self, tmp_path: Path, captured_contexts: list[StepExecutionContext]
     ) -> None:
-        callbacks = self._captured_callbacks(monkeypatch)
-        observer = _RecordingRunObserver()
+        observer = RecordingRunObserver()
         context = RunSettings(cwd=tmp_path, use_worktree=False, observer=observer, paths=_paths_for(tmp_path))
         step = StepBuilder.command("echo ok").with_id("ok").build()
 
         StepCoordinator(context).run_attempt(_run_context(tmp_path), [], step, idx=2, total=5, step_context=None)
 
-        [callback] = callbacks
+        [callback] = [metadata.on_progress for metadata in captured_contexts]
         assert callback is not None
-        callback(AgentProgressUpdate(kind=AgentProgressKind.READ, target="x.py"))
-        assert "progress:2/5:ok:read:x.py" in observer.events
+        update = AgentProgressUpdate(kind=AgentProgressKind.READ, target="x.py")
+        callback(update)
+        assert ("step_progress", 2, 5, "ok", update) in observer.calls
 
     def test_progress_callback_is_absent_without_an_observer(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+        self, tmp_path: Path, captured_contexts: list[StepExecutionContext]
     ) -> None:
-        callbacks = self._captured_callbacks(monkeypatch)
         context = RunSettings(cwd=tmp_path, use_worktree=False, paths=_paths_for(tmp_path))
         step = StepBuilder.command("echo ok").with_id("ok").build()
 
         StepCoordinator(context).run_attempt(_run_context(tmp_path), [], step, idx=1, total=1, step_context=None)
 
-        assert callbacks == [None]
+        assert [metadata.on_progress for metadata in captured_contexts] == [None]
 
 
 class StepCoordinatorPrimitiveTests:
     def test_run_attempt_returns_completed_result_and_notifies_observer(self, tmp_path: Path) -> None:
-        observer = _RecordingRunObserver()
+        observer = RecordingRunObserver()
         context = RunSettings(cwd=tmp_path, use_worktree=False, observer=observer, paths=_paths_for(tmp_path))
         step = StepBuilder.command("echo ok").with_id("ok").build()
 
@@ -376,10 +230,13 @@ class StepCoordinatorPrimitiveTests:
         )
 
         assert (result.status, result.attempts) == ("completed", 1)
-        assert observer.events == ["start:ok", "done:ok"]
+        assert [call for call in observer.calls if call[0] != "step_output"] == [
+            ("step_start", 1, 1, "ok"),
+            ("step_done", 1, 1, "ok", "completed"),
+        ]
 
     def test_run_attempt_returns_failed_result_without_applying_policy(self, tmp_path: Path) -> None:
-        prompter = _RefusingFailurePrompter()
+        prompter = ScriptedFailurePrompter()
         context = RunSettings(cwd=tmp_path, use_worktree=False, failure_prompter=prompter, paths=_paths_for(tmp_path))
         step = StepBuilder.command("exit 1").with_id("fail").with_on_failure(FailurePolicy.PROMPT_USER).build()
 
@@ -388,19 +245,11 @@ class StepCoordinatorPrimitiveTests:
         )
 
         assert result.status == "failed"
-        assert prompter.calls == 0
+        assert prompter.prompted == []
 
     def test_run_step_forwards_sensitive_variables_to_step_execution_context(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+        self, tmp_path: Path, captured_contexts: list[StepExecutionContext]
     ) -> None:
-        captured: list[StepExecutionContext] = []
-
-        class _CapturingStepExecution(StepExecution):
-            def __init__(self, metadata: StepExecutionContext) -> None:
-                captured.append(metadata)
-                super().__init__(metadata)
-
-        monkeypatch.setattr("dovo.engine.step_coordinator.StepExecution", _CapturingStepExecution)
         context = RunSettings(
             cwd=tmp_path, use_worktree=False, sensitive_variables=("PIN",), paths=_paths_for(tmp_path)
         )
@@ -408,7 +257,7 @@ class StepCoordinatorPrimitiveTests:
 
         StepCoordinator(context).run_attempt(_run_context(tmp_path), [], step, idx=1, total=1, step_context=None)
 
-        assert [metadata.sensitive_variables for metadata in captured] == [("PIN",)]
+        assert [metadata.sensitive_variables for metadata in captured_contexts] == [("PIN",)]
 
     def test_run_attempt_forwards_result_warnings_to_run_warnings(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -438,7 +287,7 @@ class StepCoordinatorPrimitiveTests:
     @pytest.mark.parametrize(
         ("ctx_kwargs", "prompter", "warning_substr"),
         [
-            pytest.param({"no_tty": True}, _RefusingFailurePrompter(), "non-interactive", id="no-tty"),
+            pytest.param({"no_tty": True}, ScriptedFailurePrompter(), "non-interactive", id="no-tty"),
             pytest.param({}, None, "no failure prompter", id="no-prompter"),
         ],
     )
@@ -446,7 +295,7 @@ class StepCoordinatorPrimitiveTests:
         self,
         tmp_path: Path,
         ctx_kwargs: dict[str, Any],
-        prompter: _RefusingFailurePrompter | None,
+        prompter: ScriptedFailurePrompter | None,
         warning_substr: str,
     ) -> None:
         context = RunSettings(
@@ -469,7 +318,7 @@ class StepCoordinatorPrimitiveTests:
         assert coordinator.is_interactive is False
 
     def test_prompt_decision_interactive_returns_prompter_decision(self, tmp_path: Path) -> None:
-        prompter = _ScriptedFailurePrompter([FailurePromptDecision.RETRY])
+        prompter = ScriptedFailurePrompter([FailurePromptDecision.RETRY])
         context = RunSettings(cwd=tmp_path, use_worktree=False, failure_prompter=prompter, paths=_paths_for(tmp_path))
         step = StepBuilder.command("exit 1").with_id("fail").with_on_failure(FailurePolicy.PROMPT_USER).build()
         failed = StepResult(step_id="fail", status="failed", exit_code=1, stdout="", stderr="", duration_seconds=0.0)
