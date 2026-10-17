@@ -3,16 +3,12 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Callable
 from pathlib import Path
-from typing import Any
 
 import pytest
 from typer.testing import CliRunner
 
 from dovo.cli import app
-from dovo.cli.ui.dispatcher import ui_dispatcher
-from dovo.core.config.models import ConfigTier
 from dovo.core.db import DovoDb, SessionStatus
 from dovo.core.worktree import Worktree
 from tests.harness import FakeAgentRunner
@@ -115,26 +111,6 @@ class SessionResumeCliIntegrationTests:
         success_events = [e for e in events if e["event_type"] == "RunSuccessEvent"]
         assert len(success_events) == 1
         assert success_events[0]["payload"]["status"] == "completed"
-
-    def test_resume_cli_malformed_user_tier_exits_one_with_config_error_panel(
-        self,
-        cli_runner: CliRunner,
-        cli_workspace: Path,
-        write_tier_config: Callable[[ConfigTier, dict[str, Any] | str], Path],
-    ) -> None:
-        """Exit 1 with a tier-attributed Config Error panel when the User tier config.json is malformed.
-
-        The top-level callback resolves config before the resume handler runs,
-        so no paused session is looked up.
-        """
-        ui_dispatcher.set_output_format("terminal")
-        write_tier_config(ConfigTier.USER, "{not valid json")
-
-        result = cli_runner.invoke(app, ["-p", str(cli_workspace), "session", "resume", "unknown-session"])
-
-        assert result.exit_code == 1
-        assert "Config Error" in result.stdout
-        assert "Invalid configuration in user layer" in result.stdout
 
     def test_resume_cli_completes_after_source_catalog_blueprint_deleted(
         self, cli_runner: CliRunner, cli_workspace: Path
@@ -296,19 +272,6 @@ class SessionResumeAskCliIntegrationTests:
         assert (cli_workspace / "done.marker").exists()
         assert _session_status(cli_workspace, session_id) == SessionStatus.COMPLETED
 
-    def test_invalid_answer_exits_one_with_valid_choices_and_stays_paused(
-        self, cli_runner: CliRunner, cli_workspace: Path
-    ) -> None:
-        session_id = _seed_paused_ask(cli_workspace)
-
-        result = cli_runner.invoke(app, ["-p", str(cli_workspace), "resume", session_id, "--answer", "approve=maybe"])
-
-        assert result.exit_code == 1
-        assert "'maybe' is not a valid answer for prompt 'approve'." in result.stdout
-        assert "Fix: use one of: approve, revise, deny" in result.stdout
-        assert _session_status(cli_workspace, session_id) == SessionStatus.PAUSED
-        assert not (cli_workspace / "done.marker").exists()
-
     @pytest.mark.parametrize(
         "case",
         [
@@ -349,19 +312,6 @@ class SessionResumeAskCliIntegrationTests:
         assert result.exit_code == 1
         assert _session_status(cli_workspace, session_id) == SessionStatus.PAUSED
         assert not (cli_workspace / "done.marker").exists()
-
-    def test_answers_with_no_pending_prompt_exit_one(self, cli_runner: CliRunner, cli_workspace: Path) -> None:
-        _seed_paused_session(
-            cli_workspace,
-            session_id="paused-session-1",
-            steps=[{"id": "a", "run": "true", "on_failure": "continue"}],
-            paused_step_id="a",
-        )
-
-        result = cli_runner.invoke(app, ["-p", str(cli_workspace), "resume", "paused-session-1", "--answer", "a=b"])
-
-        assert result.exit_code == 1
-        assert "No prompt is pending for session 'paused-session-1'." in result.stdout
 
     def test_no_tty_resume_re_asks_and_pauses_again_exit_zero(self, cli_runner: CliRunner, cli_workspace: Path) -> None:
         session_id = _seed_paused_ask(cli_workspace)

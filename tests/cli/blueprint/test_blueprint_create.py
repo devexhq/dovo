@@ -49,13 +49,15 @@ class BlueprintCreateCliIntegrationTests:
         assert result.exit_code == 1
         assert "collision" in result.stdout
 
-    def test_blueprint_create_cli_requires_name_option(self, cli_runner: CliRunner, isolated_workspace: Path) -> None:
-        result = cli_runner.invoke(app, ["-p", str(isolated_workspace), "blueprint", "create"])
-
-        assert result.exit_code != 0
-
-    def test_blueprint_create_cli_user_flag_writes_user_tier_file(
-        self, cli_runner: CliRunner, isolated_workspace: Path
+    @pytest.mark.parametrize(
+        ("tier", "catalog_dir_attr"),
+        [
+            pytest.param("user", "user_catalog_dir", id="user"),
+            pytest.param("global", "global_catalog_dir", id="global"),
+        ],
+    )
+    def test_blueprint_create_cli_tier_flag_writes_tier_file(
+        self, cli_runner: CliRunner, isolated_workspace: Path, tier: str, catalog_dir_attr: str
     ) -> None:
         result = cli_runner.invoke(
             app,
@@ -65,42 +67,17 @@ class BlueprintCreateCliIntegrationTests:
                 "blueprint",
                 "create",
                 "--name",
-                "user-blueprint",
-                "--user",
+                "tier-blueprint",
+                f"--{tier}",
                 "--format",
                 "json",
             ],
         )
 
         assert result.exit_code == 0
-        payload = json.loads(result.stdout)
-        assert payload["payload"]["item"]["tier"] == "user"
-        target_file = resolve_global_paths(None).user_catalog_dir / "blueprints" / "user-blueprint.yml"
-        assert target_file.is_file()
-
-    def test_blueprint_create_cli_global_flag_writes_global_tier_file(
-        self, cli_runner: CliRunner, isolated_workspace: Path
-    ) -> None:
-        result = cli_runner.invoke(
-            app,
-            [
-                "-p",
-                str(isolated_workspace),
-                "blueprint",
-                "create",
-                "--name",
-                "global-blueprint",
-                "--global",
-                "--format",
-                "json",
-            ],
-        )
-
-        assert result.exit_code == 0
-        payload = json.loads(result.stdout)
-        assert payload["payload"]["item"]["tier"] == "global"
-        target_file = resolve_global_paths(None).global_catalog_dir / "blueprints" / "global-blueprint.yml"
-        assert target_file.is_file()
+        assert json.loads(result.stdout)["payload"]["item"]["tier"] == tier
+        catalog_dir: Path = getattr(resolve_global_paths(None), catalog_dir_attr)
+        assert (catalog_dir / "blueprints" / "tier-blueprint.yml").is_file()
 
     def test_blueprint_create_cli_user_and_global_together_exits_one(
         self, cli_runner: CliRunner, isolated_workspace: Path

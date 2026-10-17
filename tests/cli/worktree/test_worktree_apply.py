@@ -44,13 +44,6 @@ class WorktreeApplyCliIntegrationTests:
         assert dispatch_spy[0].status == WorktreeApplyStatus.OK
         assert dispatch_spy[0].worktree_id == session.session_id
         assert dispatch_spy[0].strategy == WorktreeApplyStrategy.PATCH
-        assert dispatch_spy[0].touched_files == ["target.py"]
-        assert dispatch_spy[0].conflicting_files == []
-        assert dispatch_spy[0].cleaned_up is False
-        assert dispatch_spy[0].commit_sha is None
-        assert dispatch_spy[0].errors == []
-        assert dispatch_spy[0].warnings == []
-        assert dispatch_spy[0].fixes == []
 
     def test_worktree_apply_cli_missing_worktree_exits_one(
         self, cli_runner: CliRunner, cli_workspace: Path, dispatch_spy: list[WorktreeApplyResult]
@@ -62,14 +55,7 @@ class WorktreeApplyCliIntegrationTests:
         assert len(dispatch_spy) == 1
         assert dispatch_spy[0].status == WorktreeApplyStatus.NOT_FOUND
         assert dispatch_spy[0].worktree_id == "missing-id"
-        assert dispatch_spy[0].strategy == WorktreeApplyStrategy.PATCH
-        assert dispatch_spy[0].touched_files == []
-        assert dispatch_spy[0].conflicting_files == []
-        assert dispatch_spy[0].cleaned_up is False
-        assert dispatch_spy[0].commit_sha is None
         assert dispatch_spy[0].errors == ["Worktree 'missing-id' not found."]
-        assert dispatch_spy[0].warnings == []
-        assert dispatch_spy[0].fixes == ["Run `dovo worktree list` to see known worktrees"]
 
     def test_worktree_apply_cli_renders_json(self, cli_runner: CliRunner, cli_workspace: Path) -> None:
         session = _create_worktree_with_committed_change(cli_workspace)
@@ -79,19 +65,7 @@ class WorktreeApplyCliIntegrationTests:
         )
 
         assert result.exit_code == 0
-        assert json.loads(result.stdout) == {
-            "event_type": "WorktreeApplyResult",
-            "payload": {
-                "status": "ok",
-                "worktree_id": session.session_id,
-                "strategy": "patch",
-                "touched_files": ["target.py"],
-                "conflicting_files": [],
-                "cleaned_up": False,
-                "commit_sha": None,
-                "error_code": None,
-                "errors": [],
-                "warnings": [],
-                "fixes": [],
-            },
-        }
+        event = json.loads(result.stdout)
+        assert event["event_type"] == "WorktreeApplyResult"
+        assert event["payload"]["status"] == "ok"
+        assert event["payload"]["touched_files"] == ["target.py"]

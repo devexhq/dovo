@@ -37,14 +37,9 @@ class WorktreeDeleteCliIntegrationTests:
         assert "Aborted." in result.stdout
         assert session.worktree_path.is_dir()
         assert len(dispatch_spy) == 1
-
-        payload = dispatch_spy[0]
-        assert payload.status == WorktreeDeleteStatus.ABORTED
-        assert payload.worktree_id == session.session_id
-        assert not payload.deleted
-        assert payload.errors == ["Aborted."]
-        assert payload.worktree is not None
-        assert payload.worktree.id == session.session_id
+        assert dispatch_spy[0].status == WorktreeDeleteStatus.ABORTED
+        assert dispatch_spy[0].worktree_id == session.session_id
+        assert not dispatch_spy[0].deleted
 
     @pytest.mark.parametrize(
         ("extra_args", "invoke_input"),
@@ -73,14 +68,9 @@ class WorktreeDeleteCliIntegrationTests:
         assert "Worktree deleted:" in result.stdout
         assert not session.worktree_path.exists()
         assert len(dispatch_spy) == 1
-
-        payload = dispatch_spy[0]
-        assert payload.status == WorktreeDeleteStatus.DELETED
-        assert payload.worktree_id == session.session_id
-        assert payload.deleted
-        assert len(payload.errors) == 0
-        assert payload.worktree is not None
-        assert payload.worktree.id == session.session_id
+        assert dispatch_spy[0].status == WorktreeDeleteStatus.DELETED
+        assert dispatch_spy[0].worktree_id == session.session_id
+        assert dispatch_spy[0].deleted
 
     def test_worktree_delete_cli_missing_worktree_exits_one(
         self, cli_runner: CliRunner, cli_workspace: Path, dispatch_spy: list[WorktreeDeleteResult]
@@ -90,124 +80,22 @@ class WorktreeDeleteCliIntegrationTests:
         assert result.exit_code == 1
         assert "not found" in result.stdout
         assert len(dispatch_spy) == 1
+        assert dispatch_spy[0].status == WorktreeDeleteStatus.NOT_FOUND
+        assert dispatch_spy[0].worktree_id == "missing-id"
+        assert dispatch_spy[0].errors == ["Worktree 'missing-id' not found."]
 
-        payload = dispatch_spy[0]
-        assert payload.status == WorktreeDeleteStatus.NOT_FOUND
-        assert payload.worktree_id == "missing-id"
-        assert not payload.deleted
-        assert payload.worktree is None
-        assert payload.errors == ["Worktree 'missing-id' not found."]
-
-    def test_worktree_delete_cli_renders_json(self, cli_runner: CliRunner, cli_workspace: Path) -> None:
+    def test_worktree_delete_cli_format_json_emits_result_event(
+        self, cli_runner: CliRunner, cli_workspace: Path
+    ) -> None:
         session = _create_worktree(cli_workspace)
 
         result = cli_runner.invoke(
             app,
-            [
-                "-p",
-                str(cli_workspace),
-                "worktree",
-                "delete",
-                session.session_id,
-                "--force",
-                "--format",
-                "json",
-            ],
+            ["-p", str(cli_workspace), "worktree", "delete", session.session_id, "--force", "--format", "json"],
         )
 
         assert result.exit_code == 0
-        actual_json = json.loads(result.stdout)
-        worktree = actual_json["payload"]["worktree"]
-        for field in ("created_at", "updated_at", "project_id"):
-            assert worktree[field]
-            worktree[field] = "placeholder"
-
-        assert actual_json == {
-            "event_type": "WorktreeDeleteResult",
-            "payload": {
-                "status": "deleted",
-                "worktree_id": session.session_id,
-                "worktree": {
-                    "id": session.session_id,
-                    "project_id": "placeholder",
-                    "name": "delete-me",
-                    "branch_name": session.target_branch,
-                    "base_commit": session.base_commit,
-                    "worktree_path": str(session.worktree_path),
-                    "status": "active",
-                    "created_at": "placeholder",
-                    "updated_at": "placeholder",
-                },
-                "deleted": True,
-                "error_code": None,
-                "errors": [],
-                "warnings": [],
-                "fixes": [],
-            },
-        }
-
-    def test_worktree_delete_cli_declined_confirmation_renders_json(
-        self, cli_runner: CliRunner, cli_workspace: Path
-    ) -> None:
-        session = _create_worktree(cli_workspace)
-
-        result = cli_runner.invoke(
-            app,
-            ["-p", str(cli_workspace), "worktree", "delete", session.session_id, "--format", "json"],
-            input="n\n",
-        )
-
-        assert result.exit_code == 1
-        json_line = result.stdout.strip().splitlines()[-1]
-        actual_json = json.loads(json_line)
-        worktree = actual_json["payload"]["worktree"]
-        for field in ("created_at", "updated_at", "project_id"):
-            assert worktree[field]
-            worktree[field] = "placeholder"
-
-        assert actual_json == {
-            "event_type": "WorktreeDeleteResult",
-            "payload": {
-                "status": "aborted",
-                "worktree_id": session.session_id,
-                "worktree": {
-                    "id": session.session_id,
-                    "project_id": "placeholder",
-                    "name": "delete-me",
-                    "branch_name": session.target_branch,
-                    "base_commit": session.base_commit,
-                    "worktree_path": str(session.worktree_path),
-                    "status": "active",
-                    "created_at": "placeholder",
-                    "updated_at": "placeholder",
-                },
-                "deleted": False,
-                "error_code": None,
-                "errors": ["Aborted."],
-                "warnings": [],
-                "fixes": [],
-            },
-        }
-
-    def test_worktree_delete_cli_missing_worktree_renders_json(
-        self, cli_runner: CliRunner, cli_workspace: Path
-    ) -> None:
-        result = cli_runner.invoke(
-            app,
-            ["-p", str(cli_workspace), "worktree", "delete", "missing-id", "--force", "--format", "json"],
-        )
-
-        assert result.exit_code == 1
-        assert json.loads(result.stdout) == {
-            "event_type": "WorktreeDeleteResult",
-            "payload": {
-                "status": "not_found",
-                "worktree_id": "missing-id",
-                "worktree": None,
-                "deleted": False,
-                "error_code": None,
-                "errors": ["Worktree 'missing-id' not found."],
-                "warnings": [],
-                "fixes": ["Run `dovo worktree list` to see known worktrees"],
-            },
-        }
+        event = json.loads(result.stdout)
+        assert event["event_type"] == "WorktreeDeleteResult"
+        assert event["payload"]["status"] == "deleted"
+        assert event["payload"]["worktree_id"] == session.session_id

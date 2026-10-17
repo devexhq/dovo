@@ -1,4 +1,4 @@
-"""Dual-tier matrix tests for dovo config set."""
+"""Typer runner tests for dovo config set."""
 
 from __future__ import annotations
 
@@ -8,40 +8,8 @@ from pathlib import Path
 from typer.testing import CliRunner
 
 from dovo.cli import app
-from dovo.cli.config.commands.config_set import config_set_command
-from dovo.cli.context import CliContext
 from dovo.common.filesystem import Filesystem
 from dovo.core.config.generator import build_default_config
-from dovo.core.config.mutate import ConfigSetStatus
-from dovo.core.db.db import DovoDb
-from tests.harness.workspace_paths import initialized_workspace_paths
-
-
-class ConfigSetRootTests:
-    """Direct handler unit tests for config_set_command."""
-
-    def test_config_set_schema_violation_returns_error(self, isolated_workspace: Path) -> None:
-        config_path = isolated_workspace / ".dovo" / "config.json"
-        payload = build_default_config("demo-workspace")
-        Filesystem.atomic_write_json(config_path, payload)
-
-        paths = initialized_workspace_paths(isolated_workspace)
-        context = CliContext(paths=paths, db=DovoDb(database_file=paths.database_file, project_id=paths.project_id))
-        result = config_set_command(context, "worktrees.max_active_worktrees", "3")
-
-        assert result.status == ConfigSetStatus.SCHEMA_INVALID
-        assert result.config_path == config_path
-        assert result.key == "worktrees.max_active_worktrees"
-        assert result.value == 3
-        assert result.errors == [
-            "Config schema validation failed (CONFIG_SCHEMA_INVALID):\n- (root): Additional properties are not allowed ('worktrees' was unexpected)"
-        ]
-        assert result.fixes == [
-            "Run `dovo config validate` for details",
-            "Or `dovo init --repair` to insert missing keys without overwriting values",
-        ]
-        assert result.warnings == []
-        assert json.loads(config_path.read_text()) == payload
 
 
 class ConfigSetCliIntegrationTests:

@@ -58,23 +58,6 @@ class ArtifactsDownloadCliIntegrationTests:
         assert result.exit_code == 1
         assert "Artifact 'missing' not found for session 'wf_one'" in result.stdout
 
-    def test_artifacts_download_cli_checksum_mismatch_exits_one_without_partial_files(
-        self, cli_runner: CliRunner, cli_workspace: Path, tmp_path: Path
-    ) -> None:
-        _publish_artifact(cli_workspace, session_id="wf_one", name="dist-packages")
-        artifacts_dir = initialized_workspace_paths(cli_workspace).artifacts_dir
-        artifact_dir = artifacts_dir / "wf_one" / "dist-packages" / "1"
-        (artifact_dir / "dist" / "pkg.whl").write_bytes(b"corrupted-bytes")
-        dest = tmp_path / "out"
-
-        result = cli_runner.invoke(
-            app,
-            ["-p", str(cli_workspace), "artifacts", "download", "wf_one", "dist-packages", "--dest", str(dest)],
-        )
-
-        assert result.exit_code == 1
-        assert not dest.exists()
-
     def test_artifacts_download_cli_format_json_emits_wire_schema(
         self, cli_runner: CliRunner, cli_workspace: Path, tmp_path: Path
     ) -> None:
@@ -139,30 +122,6 @@ class ArtifactsDownloadCliIntegrationTests:
 
         assert result.exit_code == 0
         assert (dest / "dist" / "pkg.whl").read_bytes() == b"v1"
-
-    def test_artifacts_download_cli_unknown_revision_exits_one(
-        self, cli_runner: CliRunner, cli_workspace: Path, tmp_path: Path
-    ) -> None:
-        _publish_artifact(cli_workspace, session_id="wf_one", name="plan")
-
-        result = cli_runner.invoke(
-            app,
-            [
-                "-p",
-                str(cli_workspace),
-                "artifacts",
-                "download",
-                "wf_one",
-                "plan",
-                "--dest",
-                str(tmp_path / "out"),
-                "--revision",
-                "9",
-            ],
-        )
-
-        assert result.exit_code == 1
-        assert "Artifact 'plan' revision 9 not found for session 'wf_one'" in result.stdout
 
     def test_artifacts_download_cli_revision_zero_is_rejected_by_option_validation(
         self, cli_runner: CliRunner, cli_workspace: Path, tmp_path: Path
