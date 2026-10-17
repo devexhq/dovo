@@ -14,7 +14,10 @@ class StepRunnerAssertionContractTests:
     def test_passing_assertion_leaves_step_completed(self, tmp_path: Path) -> None:
         (tmp_path / "present.bin").write_text("x", encoding="utf-8")
         step = StepDefinition(
-            id="test-assert-pass", type=StepType.COMMAND, command="true", assert_=StepAssert(file_exists="present.bin")
+            id="test-assert-pass",
+            type=StepType.COMMAND,
+            command=f'{sys.executable} -c "pass"',
+            assert_=StepAssert(file_exists="present.bin"),
         )
 
         result = StepExecution(StepExecutionContext(step=step, worktree_path=tmp_path)).run()
