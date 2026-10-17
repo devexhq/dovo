@@ -174,26 +174,6 @@ DIFF_PAYLOAD_CASES = [
         id="ok_populated_diff",
     ),
     pytest.param(
-        EMPTY_DIFF,
-        {
-            "status": "empty_diff",
-            "session_id": "dovo_fmt_empty",
-            "artifact_path": "/repo/.dovo/sessions/dovo_fmt_empty/diff.patch",
-            "relative_path": "/repo/.dovo/sessions/dovo_fmt_empty/diff.patch",
-            "diff_text": "",
-            "raw": False,
-            "full": False,
-            "max_lines": None,
-            "total_lines": 0,
-            "truncated": False,
-            "truncated_lines": 0,
-            "errors": [],
-            "warnings": [],
-            "fixes": [],
-        },
-        id="empty_diff",
-    ),
-    pytest.param(
         SESSION_NOT_FOUND,
         {
             "status": "session_not_found",

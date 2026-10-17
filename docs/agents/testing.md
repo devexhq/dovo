@@ -106,6 +106,8 @@ process groups. Secrets/env-dependent tests use `monkeypatch` to isolate environ
 
 ### Rich Render Assertions
 `render_rich(renderable, width=160)` via a real `Console` is the only supported capture method.
+The one exception is a test that drives a Rich `Live` display, which writes only to the console it
+is bound to: give it a `force_terminal=True` console at width 160 writing to an `io.StringIO`.
 Width is pinned at 160 everywhere (`pyproject.toml`, the quality and tests blueprints, CI) via `COLUMNS=160`; tests must
 not rely on ambient terminal size or mutate `os.environ["COLUMNS"]`.
 

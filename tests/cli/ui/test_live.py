@@ -4,19 +4,23 @@ from __future__ import annotations
 
 import io
 
-from rich.console import Console, Group
-from rich.panel import Panel
-from rich.table import Table
+from rich.console import Console
 
 from dovo.cli.ui.dispatcher import UiDispatcher
 from dovo.cli.ui.events import LoopLifecycleEvent, StepDoneEvent, StepStartEvent
 from dovo.cli.ui.live import LiveDisplayManager, build_loop_status_panel
+from tests.harness.formatter import render_rich
 
 
 def _manager() -> LiveDisplayManager:
     """Build a LiveDisplayManager with no active Live session, for state-only testing."""
     console = Console(force_terminal=False, color_system=None, width=100, file=io.StringIO())
     return LiveDisplayManager(console)
+
+
+def _terminal_console(output: io.StringIO) -> Console:
+    """Build an interactive console whose Live frames are captured in output, since render_rich cannot drive Live."""
+    return Console(force_terminal=True, color_system=None, width=160, file=output)
 
 
 class LiveDisplayManagerLoopTests:
@@ -37,35 +41,39 @@ class LiveDisplayManagerLoopTests:
         assert manager.steps == []
 
     def test_loop_panel_included_in_single_renderable(self) -> None:
-        manager = _manager()
+        output = io.StringIO()
+        manager = LiveDisplayManager(_terminal_console(output))
+        manager.start()
 
         manager.handle_loop_lifecycle(LoopLifecycleEvent(loop_id="dev-cycle", action="start", max_iterations=5))
-        renderable = manager._build_renderable()
+        manager.handle_step_start(StepStartEvent(idx=1, total=1, step_id="run-tests", name="run-tests"))
+        manager.stop()
 
-        assert isinstance(renderable, Group)
-        renderable_types = [type(item) for item in renderable.renderables]
-        assert Panel in renderable_types
-        assert Table in renderable_types
+        rendered = output.getvalue()
+        assert "dev-cycle" in rendered
+        assert "run-tests" in rendered
 
     def test_no_loop_active_omits_panel(self) -> None:
-        manager = _manager()
+        output = io.StringIO()
+        manager = LiveDisplayManager(_terminal_console(output))
+        manager.start()
+        manager.handle_step_start(StepStartEvent(idx=1, total=1, step_id="run-tests", name="run-tests"))
+        manager.stop()
 
-        renderable = manager._build_renderable()
-
-        assert isinstance(renderable, Table)
+        rendered = output.getvalue()
+        assert "run-tests" in rendered
+        assert "Loop" not in rendered
 
     def test_dispatch_live_routes_loop_lifecycle_events(self) -> None:
-        console = Console(force_terminal=True, color_system=None, width=100, file=io.StringIO())
-        dispatcher = UiDispatcher(console=console)
+        output = io.StringIO()
+        dispatcher = UiDispatcher(console=_terminal_console(output))
         dispatcher.start_live()
         try:
             dispatcher.dispatch(LoopLifecycleEvent(loop_id="dev-cycle", action="start", max_iterations=5))
-
-            assert dispatcher._live_display is not None
-            assert dispatcher._live_display._loop_id == "dev-cycle"
-            assert dispatcher._live_display._loop_max_iterations == 5
         finally:
             dispatcher.stop_live()
+
+        assert "dev-cycle" in output.getvalue()
 
 
 class BuildLoopStatusPanelTests:
@@ -80,9 +88,7 @@ class BuildLoopStatusPanelTests:
             {1: True, 2: False},
         )
 
-        console = Console(width=100, color_system=None, record=True)
-        console.print(panel)
-        rendered = console.export_text()
+        rendered = render_rich(panel)
 
         assert "dev-cycle" in rendered
         assert "iteration 3/5" in rendered

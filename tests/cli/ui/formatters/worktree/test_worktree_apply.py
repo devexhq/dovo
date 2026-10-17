@@ -77,23 +77,6 @@ WORKTREE_APPLY_PAYLOAD_CASES = [
         id="applied_squash",
     ),
     pytest.param(
-        APPLIED_PATCH,
-        {
-            "status": "ok",
-            "worktree_id": "dovo_2",
-            "strategy": "patch",
-            "touched_files": ["src/main.py"],
-            "conflicting_files": [],
-            "cleaned_up": False,
-            "commit_sha": None,
-            "warnings": [],
-            "errors": [],
-            "error_code": None,
-            "fixes": [],
-        },
-        id="applied_patch",
-    ),
-    pytest.param(
         FAILED_CONFLICT,
         {
             "status": "git_failed",

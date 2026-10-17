@@ -11,17 +11,7 @@ from dovo.cli.ui.formatters.config import (
     ConfigValidateFormatter,
     ConfigValidationView,
 )
-from dovo.core.config.models import (
-    AgentSettings,
-    ConcurrencyConfig,
-    DoctorConfig,
-    DovoConfig,
-    HistoryConfig,
-    ProjectConfig,
-    PruneConfig,
-    TelemetryConfig,
-    WorktreeConfig,
-)
+from dovo.core.config.models import DovoConfig, ProjectConfig
 from dovo.core.config.validate import (
     ConfigValidationResult,
     ConfigValidationStatus,
@@ -36,42 +26,7 @@ from tests.harness.formatter import (
 CONFIG_PATH = Path("/workspace/.dovo/config.json")
 
 
-def _make_config(name: str = "valid-proj") -> DovoConfig:
-    return DovoConfig(
-        version=1,
-        project=ProjectConfig(name=name, initialized_at=None),
-        worktree=WorktreeConfig(
-            base_ref="HEAD",
-            max_active_worktrees=3,
-            default_timeout_seconds=900,
-        ),
-        default_agent="copilot",
-        agents={"copilot": AgentSettings(endpoint=None, temperature=0.2, max_tokens=4096)},
-        history=HistoryConfig(
-            save_attempt_logs=True,
-            save_agent_payloads=True,
-            save_final_diff=True,
-            max_sessions=1000,
-        ),
-        doctor=DoctorConfig(
-            check_git=True,
-            check_paths_writable=True,
-            check_config_schema=True,
-            check_stale_worktrees=True,
-            check_required_binaries=True,
-        ),
-        prune=PruneConfig(
-            remove_stale_worktrees=True,
-            remove_orphaned_worktrees=True,
-            remove_expired_artifacts=False,
-            artifact_ttl_days=30,
-        ),
-        telemetry=TelemetryConfig(enabled=False),
-        concurrency=ConcurrencyConfig(lock_timeout_seconds=30.0),
-    )
-
-
-VALID_CONFIG = _make_config("valid-proj")
+VALID_CONFIG = DovoConfig(version=1, project=ProjectConfig(name="valid-proj", initialized_at=None))
 
 VALID_CASE = FormatterCase(
     data=ConfigValidationResult(
@@ -131,7 +86,7 @@ INVALID_CASE = FormatterCase(
         status=ConfigValidationStatus.INVALID,
         config_path=CONFIG_PATH,
         errors=["semantic failure (CONFIG_ERROR)."],
-        warnings=[],
+        warnings=["warning message (CONFIG_WARN)."],
         fixes=["Fix the reported configuration error"],
     ),
     view=ConfigValidationView(
@@ -141,44 +96,27 @@ INVALID_CASE = FormatterCase(
         raw=None,
         config=None,
         errors=["semantic failure (CONFIG_ERROR)."],
-        warnings=[],
+        warnings=["warning message (CONFIG_WARN)."],
         fixes=["Fix the reported configuration error"],
     ),
     render_expectations=[
         "semantic failure (CONFIG_ERROR).",
         "Fix the reported configuration error",
+        "warning message (CONFIG_WARN).",
     ],
 )
 
-INVALID_WITH_WARNINGS_CASE = FormatterCase(
-    data=ConfigValidationResult(
-        status=ConfigValidationStatus.INVALID,
-        config_path=CONFIG_PATH,
-        errors=["semantic failure (CONFIG_ERROR)."],
-        warnings=["warning message (CONFIG_WARN)."],
-        fixes=[],
-    ),
-    view=ConfigValidationView(
-        status=ConfigValidationStatus.INVALID,
-        config_path=CONFIG_PATH,
-        status_label="invalid",
-        raw=None,
-        config=None,
-        errors=["semantic failure (CONFIG_ERROR)."],
-        warnings=["warning message (CONFIG_WARN)."],
-        fixes=[],
-    ),
-    render_expectations=[
-        "semantic failure (CONFIG_ERROR).",
-        "warning message (CONFIG_WARN).",
-    ],
+INVALID_WITHOUT_WARNINGS_CASE = FormatterCase(
+    data=INVALID_CASE.data.model_copy(update={"warnings": []}),
+    view=INVALID_CASE.view.model_copy(update={"warnings": []}),
+    render_expectations=["semantic failure (CONFIG_ERROR).", "Fix the reported configuration error"],
 )
 
 VALIDATION_CASES = [
     pytest.param(VALID_CASE, id="valid_config"),
     pytest.param(VALID_WITH_WARNINGS_CASE, id="valid_with_warnings"),
-    pytest.param(INVALID_CASE, id="invalid_config"),
-    pytest.param(INVALID_WITH_WARNINGS_CASE, id="invalid_with_warnings"),
+    pytest.param(INVALID_CASE, id="invalid_with_warnings"),
+    pytest.param(INVALID_WITHOUT_WARNINGS_CASE, id="invalid_without_warnings"),
 ]
 
 VALIDATION_PAYLOAD_CASES = [
@@ -191,28 +129,11 @@ VALIDATION_PAYLOAD_CASES = [
             "raw": None,
             "config": {
                 "version": 1,
-                "project": {
-                    "name": "valid-proj",
-                    "initialized_at": None,
-                },
+                "project": {"name": "valid-proj", "initialized_at": None},
                 "ignore_global_root_error": False,
-                "worktree": {
-                    "base_ref": "HEAD",
-                    "max_active_worktrees": 3,
-                    "default_timeout_seconds": 900,
-                },
+                "worktree": {"base_ref": "HEAD", "max_active_worktrees": 3, "default_timeout_seconds": 900},
                 "default_agent": "copilot",
-                "agents": {
-                    "copilot": {
-                        "model": None,
-                        "endpoint": None,
-                        "temperature": 0.2,
-                        "max_tokens": 4096,
-                        "env_passthrough": [],
-                        "env_mode": "allowlist",
-                        "mcp_servers": {},
-                    }
-                },
+                "agents": {},
                 "history": {
                     "save_attempt_logs": True,
                     "save_agent_payloads": True,
@@ -232,15 +153,9 @@ VALIDATION_PAYLOAD_CASES = [
                     "remove_expired_artifacts": False,
                     "artifact_ttl_days": 30,
                 },
-                "telemetry": {
-                    "enabled": False,
-                },
-                "concurrency": {
-                    "lock_timeout_seconds": 30.0,
-                },
-                "environment": {
-                    "sensitive_variables": [],
-                },
+                "telemetry": {"enabled": False},
+                "concurrency": {"lock_timeout_seconds": 30.0},
+                "environment": {"sensitive_variables": []},
             },
             "errors": [],
             "warnings": [],
@@ -257,7 +172,7 @@ VALIDATION_PAYLOAD_CASES = [
             "raw": None,
             "config": None,
             "errors": ["semantic failure (CONFIG_ERROR)."],
-            "warnings": [],
+            "warnings": ["warning message (CONFIG_WARN)."],
             "fixes": ["Fix the reported configuration error"],
         },
         id="invalid_payload",

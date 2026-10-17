@@ -169,167 +169,79 @@ UNINITIALIZED_NON_GIT = FormatterCase(
     ],
 )
 
-DEGRADED_SCHEMA_INVALID = FormatterCase(
-    data=_make_status_result(
-        root_dir=ROOT,
-        config=ConfigStatusInfo(
-            status=ConfigLoadStatus.SCHEMA_INVALID,
-            config_path=CONFIG_PATH,
-            is_valid=False,
-            config=None,
-            errors=["Invalid value at 'agents.copilot.model': expected string"],
-        ),
-        warnings=["Invalid value: expected string"],
-        fixes=["Run 'dovo config validate' to inspect schema errors or 'dovo init --repair' to insert missing keys."],
-    ),
-    view=_make_status_view(
-        health=StatusHealth.DEGRADED,
-        project_name=None,
-        config_status=ConfigLoadStatus.SCHEMA_INVALID,
-        agent_model=None,
-        active_worktrees=None,
-        max_active_worktrees=None,
-        valid_catalog_items=None,
-        total_catalog_items=None,
-        warnings=["Invalid value: expected string"],
-        remediations=[
-            "Run 'dovo config validate' to inspect schema errors or 'dovo init --repair' to insert missing keys."
-        ],
-    ),
-    render_expectations=[
-        "feature/status-cmd",
-        "Invalid value: expected string",
-        "Run 'dovo config validate' to inspect schema errors or 'dovo init --repair' to insert missing keys.",
-    ],
-)
 
-DEGRADED_MALFORMED_JSON = FormatterCase(
-    data=_make_status_result(
-        root_dir=ROOT,
-        config=ConfigStatusInfo(
-            status=ConfigLoadStatus.MALFORMED_JSON,
-            config_path=CONFIG_PATH,
-            is_valid=False,
-            config=None,
-            errors=["Malformed config.json: Expecting property name"],
+def _degraded_config_case(
+    status: ConfigLoadStatus, warning: str, fix: str
+) -> FormatterCase[DovoStatusResult, StatusView]:
+    """Build a degraded-config case: config-derived fields blank, branch still shown, warning and fix surfaced."""
+    return FormatterCase(
+        data=_make_status_result(
+            root_dir=ROOT,
+            config=ConfigStatusInfo(
+                status=status, config_path=CONFIG_PATH, is_valid=False, config=None, errors=[warning]
+            ),
+            warnings=[warning],
+            fixes=[fix],
         ),
-        warnings=["Malformed config.json"],
-        fixes=["Repair JSON syntax in .dovo/config.json or restore from backup."],
-    ),
-    view=_make_status_view(
-        health=StatusHealth.DEGRADED,
-        project_name=None,
-        config_status=ConfigLoadStatus.MALFORMED_JSON,
-        agent_model=None,
-        active_worktrees=None,
-        max_active_worktrees=None,
-        valid_catalog_items=None,
-        total_catalog_items=None,
-        warnings=["Malformed config.json"],
-        remediations=["Repair JSON syntax in .dovo/config.json or restore from backup."],
-    ),
-    render_expectations=[
-        "feature/status-cmd",
-        "Malformed config.json",
-        "Repair JSON syntax in .dovo/config.json or restore from backup.",
-    ],
-)
+        view=_make_status_view(
+            health=StatusHealth.DEGRADED,
+            project_name=None,
+            config_status=status,
+            agent_model=None,
+            active_worktrees=None,
+            max_active_worktrees=None,
+            valid_catalog_items=None,
+            total_catalog_items=None,
+            warnings=[warning],
+            remediations=[fix],
+        ),
+        render_expectations=["feature/status-cmd", warning, fix],
+    )
 
-DEGRADED_ROOT_NOT_OBJECT = FormatterCase(
-    data=_make_status_result(
-        root_dir=ROOT,
-        config=ConfigStatusInfo(
-            status=ConfigLoadStatus.ROOT_NOT_OBJECT,
-            config_path=CONFIG_PATH,
-            is_valid=False,
-            config=None,
-            errors=["Malformed config.json: root must be an object"],
-        ),
-        warnings=["Malformed config.json: root must be an object"],
-        fixes=["Ensure .dovo/config.json contains a JSON object root."],
-    ),
-    view=_make_status_view(
-        health=StatusHealth.DEGRADED,
-        project_name=None,
-        config_status=ConfigLoadStatus.ROOT_NOT_OBJECT,
-        agent_model=None,
-        active_worktrees=None,
-        max_active_worktrees=None,
-        valid_catalog_items=None,
-        total_catalog_items=None,
-        warnings=["Malformed config.json: root must be an object"],
-        remediations=["Ensure .dovo/config.json contains a JSON object root."],
-    ),
-    render_expectations=[
-        "feature/status-cmd",
-        "Malformed config.json: root must be an object",
-        "Ensure .dovo/config.json contains a JSON object root.",
-    ],
-)
 
-DEGRADED_PATH_IS_DIRECTORY = FormatterCase(
-    data=_make_status_result(
-        root_dir=ROOT,
-        config=ConfigStatusInfo(
-            status=ConfigLoadStatus.PATH_IS_DIRECTORY,
-            config_path=CONFIG_PATH,
-            is_valid=False,
-            config=None,
-            errors=["Config path is a directory, not a file"],
+DEGRADED_CONFIG_CASES = [
+    pytest.param(
+        _degraded_config_case(
+            ConfigLoadStatus.SCHEMA_INVALID,
+            "Invalid value: expected string",
+            "Run 'dovo config validate' to inspect schema errors or 'dovo init --repair' to insert missing keys.",
         ),
-        warnings=["Config path is a directory, not a file"],
-        fixes=["Remove directory at .dovo/config.json and run 'dovo init'."],
+        id="degraded_schema_invalid",
     ),
-    view=_make_status_view(
-        health=StatusHealth.DEGRADED,
-        project_name=None,
-        config_status=ConfigLoadStatus.PATH_IS_DIRECTORY,
-        agent_model=None,
-        active_worktrees=None,
-        max_active_worktrees=None,
-        valid_catalog_items=None,
-        total_catalog_items=None,
-        warnings=["Config path is a directory, not a file"],
-        remediations=["Remove directory at .dovo/config.json and run 'dovo init'."],
+    pytest.param(
+        _degraded_config_case(
+            ConfigLoadStatus.MALFORMED_JSON,
+            "Malformed config.json",
+            "Repair JSON syntax in .dovo/config.json or restore from backup.",
+        ),
+        id="degraded_malformed_json",
     ),
-    render_expectations=[
-        "feature/status-cmd",
-        "Config path is a directory, not a file",
-        "Remove directory at .dovo/config.json and run 'dovo init'.",
-    ],
-)
+    pytest.param(
+        _degraded_config_case(
+            ConfigLoadStatus.ROOT_NOT_OBJECT,
+            "Malformed config.json: root must be an object",
+            "Ensure .dovo/config.json contains a JSON object root.",
+        ),
+        id="degraded_root_not_object",
+    ),
+    pytest.param(
+        _degraded_config_case(
+            ConfigLoadStatus.PATH_IS_DIRECTORY,
+            "Config path is a directory, not a file",
+            "Remove directory at .dovo/config.json and run 'dovo init'.",
+        ),
+        id="degraded_path_is_directory",
+    ),
+    pytest.param(
+        _degraded_config_case(
+            ConfigLoadStatus.UNREADABLE,
+            "Unable to read config.json: Permission denied",
+            "Check file permissions for .dovo/config.json.",
+        ),
+        id="degraded_unreadable",
+    ),
+]
 
-DEGRADED_UNREADABLE = FormatterCase(
-    data=_make_status_result(
-        root_dir=ROOT,
-        config=ConfigStatusInfo(
-            status=ConfigLoadStatus.UNREADABLE,
-            config_path=CONFIG_PATH,
-            is_valid=False,
-            config=None,
-            errors=["Unable to read config.json: Permission denied"],
-        ),
-        warnings=["Unable to read config.json: Permission denied"],
-        fixes=["Check file permissions for .dovo/config.json."],
-    ),
-    view=_make_status_view(
-        health=StatusHealth.DEGRADED,
-        project_name=None,
-        config_status=ConfigLoadStatus.UNREADABLE,
-        agent_model=None,
-        active_worktrees=None,
-        max_active_worktrees=None,
-        valid_catalog_items=None,
-        total_catalog_items=None,
-        warnings=["Unable to read config.json: Permission denied"],
-        remediations=["Check file permissions for .dovo/config.json."],
-    ),
-    render_expectations=[
-        "feature/status-cmd",
-        "Unable to read config.json: Permission denied",
-        "Check file permissions for .dovo/config.json.",
-    ],
-)
 
 DIRTY_BRANCH = FormatterCase(
     data=_make_status_result(
@@ -501,11 +413,7 @@ DEGRADED_RAW_CONFIG_PROJECT = FormatterCase(
 STATUS_CASES = [
     pytest.param(HEALTHY, id="healthy_workspace"),
     pytest.param(UNINITIALIZED_NON_GIT, id="uninitialized_non_git"),
-    pytest.param(DEGRADED_SCHEMA_INVALID, id="degraded_schema_invalid"),
-    pytest.param(DEGRADED_MALFORMED_JSON, id="degraded_malformed_json"),
-    pytest.param(DEGRADED_ROOT_NOT_OBJECT, id="degraded_root_not_object"),
-    pytest.param(DEGRADED_PATH_IS_DIRECTORY, id="degraded_path_is_directory"),
-    pytest.param(DEGRADED_UNREADABLE, id="degraded_unreadable"),
+    *DEGRADED_CONFIG_CASES,
     pytest.param(DIRTY_BRANCH, id="dirty_branch"),
     pytest.param(NOT_A_GIT_REPO, id="not_a_git_repo"),
     pytest.param(UNNAMED_PROJECT, id="unnamed_project"),

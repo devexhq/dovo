@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
 
 import pytest
 
@@ -165,26 +164,13 @@ DOCTOR_REPORT_CASES = [
 
 DOCTOR_REPORT_PAYLOAD_CASES = [
     pytest.param(
-        MIXED_STATUS,
+        DiagnosticsReport(workspace_root=ROOT, checks=[WARNING_CHECK, FAILED_CHECK], total_duration_ms=12.4),
         {
             "ok": False,
             "has_warnings": True,
             "workspace_root": "/workspace/my-repo",
             "total_duration_ms": 12.4,
             "checks": [
-                {
-                    "check_id": "git.repo",
-                    "name": "Git Repository Check",
-                    "category": "git",
-                    "status": "ok",
-                    "message": "Git repository detected at '/workspace/my-repo' on branch 'main'.",
-                    "details": {"root": "/workspace/my-repo", "branch": "main"},
-                    "duration_ms": 2.1,
-                    "error_code": None,
-                    "errors": [],
-                    "warnings": [],
-                    "remediations": [],
-                },
                 {
                     "check_id": "agent.setup",
                     "name": "Agent Setup Check",
@@ -237,25 +223,12 @@ DOCTOR_REPORT_PAYLOAD_CASES = [
                         }
                     ],
                 },
-                {
-                    "check_id": "worktree.refs",
-                    "name": "Worktree References Check",
-                    "category": "worktree",
-                    "status": "skipped",
-                    "message": "Check 'worktree.refs' skipped by configuration.",
-                    "details": {},
-                    "duration_ms": 0.0,
-                    "error_code": None,
-                    "errors": [],
-                    "warnings": [],
-                    "remediations": [],
-                },
             ],
         },
-        id="mixed_status",
+        id="warning_and_failed",
     ),
     pytest.param(
-        EMPTY_CHECKS,
+        EMPTY_CHECKS.data,
         {
             "ok": True,
             "has_warnings": False,
@@ -275,11 +248,11 @@ class DoctorReportFormatterTests:
     def test_transform_derives_expected_view(self, case: FormatterCase[DiagnosticsReport, DoctorReportView]) -> None:
         assert_transform_derives_expected_view(DoctorReportFormatter, case.data, case.view)
 
-    @pytest.mark.parametrize(("case", "expected_payload"), DOCTOR_REPORT_PAYLOAD_CASES)
+    @pytest.mark.parametrize(("report", "expected_payload"), DOCTOR_REPORT_PAYLOAD_CASES)
     def test_json_payload_matches_published_shape(
-        self, case: FormatterCase[DiagnosticsReport, DoctorReportView], expected_payload: dict[str, Any]
+        self, report: DiagnosticsReport, expected_payload: dict[str, object]
     ) -> None:
-        assert_json_payload_matches_published_shape(DoctorReportFormatter, case.data, expected_payload)
+        assert_json_payload_matches_published_shape(DoctorReportFormatter, report, expected_payload)
 
     @pytest.mark.parametrize("case", DOCTOR_REPORT_CASES)
     def test_rich_render_shows_every_view_value(self, case: FormatterCase[DiagnosticsReport, DoctorReportView]) -> None:

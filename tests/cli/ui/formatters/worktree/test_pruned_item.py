@@ -21,6 +21,34 @@ from tests.harness.formatter import (
     assert_transform_derives_expected_view,
 )
 
+
+def _make_pruned_item_view(
+    *,
+    category: StaleWorktreeCategory,
+    category_label: str,
+    identifier: str,
+    action: PruneAction,
+    is_dry_run: bool = False,
+    path: Path | None = None,
+    branch_name: str | None = None,
+    session_id: str | None = None,
+    reason: str = "",
+    error: str | None = None,
+) -> PrunedItemView:
+    return PrunedItemView(
+        category=category,
+        category_label=category_label,
+        identifier=identifier,
+        action=action,
+        is_dry_run=is_dry_run,
+        path=path,
+        branch_name=branch_name,
+        session_id=session_id,
+        reason=reason,
+        error=error,
+    )
+
+
 DRY_RUN_STALE_BRANCH = FormatterCase(
     data=PrunedItem(
         category=StaleWorktreeCategory.STALE_BRANCH,
@@ -28,17 +56,13 @@ DRY_RUN_STALE_BRANCH = FormatterCase(
         action=PruneAction.PRUNED,
         reason="Would prune stale branch",
     ),
-    view=PrunedItemView(
+    view=_make_pruned_item_view(
         category=StaleWorktreeCategory.STALE_BRANCH,
         category_label="stale branch",
         identifier="feature/1",
         action=PruneAction.PRUNED,
         is_dry_run=True,
-        path=None,
-        branch_name=None,
-        session_id=None,
         reason="Would prune stale branch",
-        error=None,
     ),
     render_expectations=["feature/1", "stale branch"],
 )
@@ -51,17 +75,13 @@ PRUNED_ORPHANED_DIRECTORY = FormatterCase(
         path=Path("/tmp/dovo_12345678"),
         reason="Cleaned up orphaned directory",
     ),
-    view=PrunedItemView(
+    view=_make_pruned_item_view(
         category=StaleWorktreeCategory.ORPHANED_DIRECTORY,
         category_label="orphaned directory",
         identifier="dovo_12345678",
         action=PruneAction.PRUNED,
-        is_dry_run=False,
         path=Path("/tmp/dovo_12345678"),
-        branch_name=None,
-        session_id=None,
         reason="Cleaned up orphaned directory",
-        error=None,
     ),
     render_expectations=["dovo_12345678", "orphaned directory"],
 )
@@ -74,17 +94,13 @@ SKIPPED_DIRTY_DIRECTORY = FormatterCase(
         path=Path("/tmp/dovo_dirty"),
         reason="Contains uncommitted changes",
     ),
-    view=PrunedItemView(
+    view=_make_pruned_item_view(
         category=StaleWorktreeCategory.ORPHANED_DIRECTORY,
         category_label="orphaned directory",
         identifier="dovo_dirty",
         action=PruneAction.SKIPPED,
-        is_dry_run=False,
         path=Path("/tmp/dovo_dirty"),
-        branch_name=None,
-        session_id=None,
         reason="Contains uncommitted changes",
-        error=None,
     ),
     render_expectations=["dovo_dirty", "orphaned directory"],
 )
@@ -96,16 +112,11 @@ FAILED_STALE_WORKTREE_REF = FormatterCase(
         action=PruneAction.FAILED,
         error="Permission denied",
     ),
-    view=PrunedItemView(
+    view=_make_pruned_item_view(
         category=StaleWorktreeCategory.STALE_WORKTREE_REF,
         category_label="stale worktree ref",
         identifier="/tmp/worktree",
         action=PruneAction.FAILED,
-        is_dry_run=False,
-        path=None,
-        branch_name=None,
-        session_id=None,
-        reason="",
         error="Permission denied",
     ),
     render_expectations=["/tmp/worktree", "stale worktree ref", "Permission denied"],
@@ -120,17 +131,14 @@ STALE_DB_RECORD = FormatterCase(
         branch_name="feature/test",
         reason="Removed dead record",
     ),
-    view=PrunedItemView(
+    view=_make_pruned_item_view(
         category=StaleWorktreeCategory.STALE_DB_RECORD,
         category_label="stale db record",
         identifier="dovo_rec",
         action=PruneAction.PRUNED,
-        is_dry_run=False,
-        path=None,
         session_id="session-123",
         branch_name="feature/test",
         reason="Removed dead record",
-        error=None,
     ),
     render_expectations=["dovo_rec", "stale db record"],
 )

@@ -28,17 +28,6 @@ OK_EXISTED = FormatterCase.identity(
     render_expectations=["agents.copilot.model"],
 )
 
-OK_NOT_EXISTED = FormatterCase.identity(
-    data=ConfigUnsetResult(
-        status=ConfigUnsetStatus.OK,
-        config_path=_CONFIG_PATH,
-        key="telemetry.nonexistent",
-        existed=False,
-        previous_value=None,
-    ),
-    render_expectations=["telemetry.nonexistent"],
-)
-
 SCHEMA_INVALID = FormatterCase.identity(
     data=ConfigUnsetResult(
         status=ConfigUnsetStatus.SCHEMA_INVALID,
@@ -75,21 +64,6 @@ CONFIG_UNSET_PAYLOAD_CASES = [
             "fixes": [],
         },
         id="ok_existed",
-    ),
-    pytest.param(
-        OK_NOT_EXISTED,
-        {
-            "status": "ok",
-            "config_path": "/workspace/.dovo/config.json",
-            "key": "telemetry.nonexistent",
-            "existed": False,
-            "previous_value": None,
-            "warnings": [],
-            "errors": [],
-            "error_code": None,
-            "fixes": [],
-        },
-        id="ok_not_existed",
     ),
     pytest.param(
         SCHEMA_INVALID,

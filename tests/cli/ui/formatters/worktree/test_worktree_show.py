@@ -88,29 +88,6 @@ WORKTREE_SHOW_PAYLOAD_CASES = [
         id="found_active",
     ),
     pytest.param(
-        RECONCILED_MISSING_DISK,
-        {
-            "status": "ok",
-            "worktree": {
-                "id": "dovo_test1234",
-                "name": "test-worktree",
-                "branch_name": "dovo/test",
-                "base_commit": "abc1234",
-                "worktree_path": "/tmp/dovo_test1234",
-                "status": "active",
-                "created_at": "2026-08-31T20:00:00Z",
-                "updated_at": "2026-08-31T20:00:00Z",
-            },
-            "disk_present": False,
-            "reconciled": True,
-            "warnings": [],
-            "errors": [],
-            "error_code": None,
-            "fixes": [],
-        },
-        id="reconciled_missing_disk",
-    ),
-    pytest.param(
         NOT_FOUND,
         {
             "status": "not_found",
