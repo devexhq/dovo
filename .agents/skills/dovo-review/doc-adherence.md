@@ -1,34 +1,24 @@
 # Doc adherence gates
 
-Walk the changed-file list against this table. A gate fires only when the change matches its trigger: `AGENTS.md` states that no doc update is better than busywork, so an update outside these gates is itself a finding.
-
-Read the doc named by any gate that fires before judging whether it was satisfied.
+Walk the changed-file list against this table (and [docs/agents/documentation.md](../../../docs/agents/documentation.md)). A gate fires only when the change matches its trigger or makes an existing doc/docstring sentence false (`R17`): `AGENTS.md` states that no doc update is better than busywork, so an update outside these triggers and `R17` is itself a finding.
 
 ## Required updates in the same change
 
 | Trigger in the diff | Must be satisfied | Where |
 |---|---|---|
-| Package layout, domain ownership, or import boundaries changed | `architecture.md` *structure* sections updated (layers tree, ownership, boundaries) and nothing else appended there | `docs/agents/architecture.md` |
 | Command added, renamed, or removed in `src/dovo/cli/cli.py` (`add_typer` / `register_*`) | `README.md` Quick start and command surface match `dovo --help` exactly, no documented command that does not exist, none shipped undocumented | `README.md` |
-| User-visible CLI behavior or flags changed | per-command page updated (not `architecture.md`) | `docs/cli/` |
-| A cross-cutting contract changed (config merge rules, path ownership, persistence authority, secrets handling) | schema doc updated | `docs/agents/schemas.md` |
-| `core/db/` schema, table, or migration touched | migration hygiene checklist followed; a new table or column has a real caller in the same change, or an explicit note on why it lands ahead of one | `docs/agents/ci-and-tooling.md#database-migration-hygiene` |
-| New agent provider added | provider procedure followed and its setup failure modes documented | `architecture.md#adding-a-new-agent-provider` plus `docs/agents/troubleshooting.md` |
-| A package or subsystem removed | removal procedure followed | `docs/agents/ci-and-tooling.md#dead-code-removal` |
+| User-visible CLI behavior or flags changed | per-command page updated | `docs/cli/` |
+| User-visible config or blueprint schema changed | corresponding schema reference page updated | `docs/reference/` |
 | A production symbol deleted whose only caller was a test | the test deleted in the same change, coverage expected to fall, no backfilled tests holding the percentage, and no negative existence tests (`assert not hasattr(...)`) added | `AGENTS.md`, `docs/agents/testing.md` |
-| How to write Python here changed (placement, `Result`/`Outcome`, error or DRY rules) | conventions doc updated | `docs/agents/code-conventions.md` |
-| Commit or PR opened as part of the change | commit and PR conventions followed | `docs/agents/git-and-pr-conventions.md` |
-| A GitHub issue created or updated | issue structure, tone, and required sections followed | `docs/agents/github-issues.md` |
-
-A pure refactor that does not change public layout or ownership needs no `architecture.md` diff.
+| How to write Python here changed (package or module layout, model placement, `Result`/`Outcome`, error or `Any`/ignore rules) | conventions doc updated | `docs/agents/code-conventions.md` |
+| Test tier or harness conventions changed | testing guide updated | `docs/agents/testing.md` |
+| Any change makes an existing doc, skill, rule, or docstring sentence false (`R17`) | false sentence corrected or deleted in the same change | affected doc or docstring |
 
 ## Quality of any doc change in the diff
 
-- **No duplicated source.** A field table, model signature, or enum list hand-copied from source is a smell: it should link to the model file and class and document only what the type hints do not show (validators, resolution order, cross-field invariants, why a field exists). Flag new instances.
-- **Unavoidable field tables need a test.** When a table is the specification for something external (a JSON Schema, a stable CLI output format), a test must fail when table and source disagree. A doc claim with no test behind it will eventually be wrong.
+- **No duplicated source.** A field table, model signature, or enum list hand-copied from source is a smell: link to the model file and class and document only what the type hints do not show. Flag new instances.
+- **Unavoidable field tables need a test.** When a table is the specification for something external (a JSON Schema, a stable CLI output format), a test must fail when table and source disagree.
 - **Prefer deletion over accretion.** A stale bullet replaced is better than a parallel truth appended. Flag a doc that now states two contradictory things.
-- **Right doc for the content.** Feature behavior narrative in `architecture.md`, or user-facing CLI behavior anywhere but `docs/cli/`, is misplaced.
-- **Terminology.** Blueprint, step, run, session, worktree, and checkpoint each mean something specific; check new prose against the Terminology table in `docs/agents/architecture.md`.
 
 ## Process directives
 
@@ -36,4 +26,4 @@ These are `AGENTS.md` directives about how the work was done. Report violations 
 
 - **Plan before code.** A change that adds surface needed a plan per `docs/agents/planning.md`. Skippable only for a single-file change adding no new surface.
 - **One phase per PR.** A diff that spans several plan phases, or runs well past the plan's size estimate, should have been split.
-- **Gates before commit.** `dovo run quality` (ruff format, ruff check, basedpyright, docs build, complexity on changed files, tests with coverage) had to pass before committing. This skill does not run them (`/dovo-code` owns the gate); ask whether they were run and report the answer as reported, never as verified.
+- **Gates before commit.** `dovo run quality` had to pass before committing. This skill does not run them (`/dovo-code` owns the gate); ask whether they were run and report the answer as reported, never as verified.

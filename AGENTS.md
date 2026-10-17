@@ -30,9 +30,8 @@ ID, with the `path:line` that breaks it.
 ### Architecture
 
 - **R1. Imports flow one way: common → core → engine → cli.** Within `core/`,
-  packages follow the chain in
-  [architecture.md](docs/agents/architecture.md#package-boundaries-import-direction). *Why:* each
-  layer can be tested and changed without the ones above it.
+  packages follow `core/project → core/{db,git,worktree,catalog,inputs,sessions,status,artifacts,interaction} → core/agents → core/diagnostics`.
+  *Why:* each layer can be tested and changed without the ones above it.
   `tests/lint/test_layer_direction.py` enforces the table; design with it rather
   than discovering it at the gate.
 - **R2. CLI handlers parse arguments, call one domain entrypoint and dispatch
@@ -63,8 +62,9 @@ ID, with the `path:line` that breaks it.
   *Why:* those files are shared, committed or uploaded.
 - **R8. Never edit, rename or delete a released migration; every new one is
   reversible.** A revision in a `v*` tag is fixed forward with a new revision.
-  Each revision implements `upgrade()` and `downgrade()` with tests for both
-  (see [ci-and-tooling.md](docs/agents/ci-and-tooling.md#migration-lifecycle)).
+  Each revision file stays dialect-neutral (`op.batch_alter_table`, no
+  SQLite-only `PRAGMA` in revision files) and implements `upgrade()` and
+  `downgrade()` with tests for both in `tests/core/db/test_migrations.py`.
   *Why:* users' databases are stamped with released revisions.
 
 ### Compatibility and change shape
@@ -150,17 +150,11 @@ Fix a failure in the code, never with a suppression or a lowered threshold.
 
 | Doc | When to use |
 |-----|-------------|
-| [docs/agents/architecture.md](docs/agents/architecture.md) | Module layout, import boundaries, terminology, `.dovo/` layout |
-| [docs/agents/code-conventions.md](docs/agents/code-conventions.md) | Python style, model placement, results, writes, console output |
-| [docs/agents/testing.md](docs/agents/testing.md) | Test tiers, harness helpers, running tests |
-| [docs/agents/planning.md](docs/agents/planning.md) | Planning and phasing an issue |
+| [docs/agents/code-conventions.md](docs/agents/code-conventions.md) | Python style, model placement, `Any` and type-ignore rules |
+| [docs/agents/testing.md](docs/agents/testing.md) | Test tiers, harness helpers, naming, parameterization |
+| [docs/agents/planning.md](docs/agents/planning.md) | Planning and phasing an issue (`/dovo-plan`) |
 | [docs/agents/documentation.md](docs/agents/documentation.md) | Which user-facing docs a change must update |
-| [docs/agents/schemas.md](docs/agents/schemas.md) | Config merge, paths, persistence authority, secrets |
-| [docs/agents/ci-and-tooling.md](docs/agents/ci-and-tooling.md) | Gates, lint and type settings, migrations, CI |
-| [docs/agents/git-and-pr-conventions.md](docs/agents/git-and-pr-conventions.md) | Commits, branches and PRs |
-| [docs/agents/github-issues.md](docs/agents/github-issues.md) | Writing GitHub issues |
-| [docs/agents/troubleshooting.md](docs/agents/troubleshooting.md) | Agent-provider setup failures |
 | [docs/cli/](docs/cli/) | Per-command user reference |
 
-End a unit of work with a summary, the quality gate result and a commit message
-following [git-and-pr-conventions.md](docs/agents/git-and-pr-conventions.md).
+End a unit of work with a summary, the quality gate result and a semantic commit
+message (`type(scope): imperative summary`, on a `<username>/<short-description>` branch).
