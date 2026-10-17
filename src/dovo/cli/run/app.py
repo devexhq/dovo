@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
-from typing import Annotated
+from typing import TYPE_CHECKING, Annotated
 
 import typer
-from typer._click.core import Context
 from typer.core import TyperGroup
+
+if TYPE_CHECKING:
+    # TyperGroup.invoke is annotated with Typer's vendored click Context, which has no public name.
+    from typer._click.core import Context
 
 from dovo.cli.context import CliContext
 from dovo.common.models import AgentEnvModeOptions, DisplayFormatOptions, OutputFormatOptions
