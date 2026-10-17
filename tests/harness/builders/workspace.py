@@ -34,6 +34,10 @@ def _get_template_directory() -> Path:
 def init_test_database(database_file: Path) -> Path:
     """Initialize database_file with a freshly migrated SQLite schema cloned from a cached template."""
     global _TEMPLATE_DATABASE_PATH
+    if database_file.exists():
+        init_database(database_file)
+        return database_file
+
     if _TEMPLATE_DATABASE_PATH is None or not _TEMPLATE_DATABASE_PATH.exists():
         template_directory = _get_template_directory()
         template_file = template_directory / "template_dovo.db"
@@ -51,6 +55,7 @@ def _create_git_template(
     user_email: str,
     initial_files: Mapping[str, str] | None,
 ) -> Path:
+    """Create and populate a template Git repository in the worker template directory."""
     template_directory = _get_template_directory()
     template_repository = Path(tempfile.mkdtemp(prefix="git_template_", dir=template_directory))
     _git(template_repository, "init", "-b", branch)
@@ -72,6 +77,7 @@ def _get_git_template(
     user_email: str,
     initial_files: Mapping[str, str] | None,
 ) -> Path:
+    """Return a cached template Git repository for the given configuration."""
     files_key = tuple(sorted(initial_files.items())) if initial_files else None
     cache_key = (branch, user_name, user_email, files_key)
     template_repository = _GIT_TEMPLATES.get(cache_key)
@@ -79,6 +85,29 @@ def _get_git_template(
         template_repository = _create_git_template(branch, user_name, user_email, initial_files)
         _GIT_TEMPLATES[cache_key] = template_repository
     return template_repository
+
+
+def _init_git_repository_direct(
+    root: Path,
+    branch: str,
+    user_name: str,
+    user_email: str,
+    initial_files: Mapping[str, str] | None,
+) -> None:
+    """Initialize a Git repository directly in root without using a cached template."""
+    _git(root, "init", "-b", branch)
+    _git(root, "config", "user.name", user_name)
+    _git(root, "config", "user.email", user_email)
+    if not initial_files:
+        return
+
+    for relative_path, content in initial_files.items():
+        file_path = root / relative_path
+        if not file_path.exists():
+            file_path.parent.mkdir(parents=True, exist_ok=True)
+            file_path.write_text(content, encoding="utf-8")
+    _git(root, "add", *initial_files)
+    _git(root, "commit", "-m", "Initial commit")
 
 
 def init_git_repository(
@@ -93,19 +122,14 @@ def init_git_repository(
 
     initial_files maps a path relative to root to its content; a file that already exists keeps its content.
     """
+    has_conflicting_files = initial_files and any((root / relative_path).exists() for relative_path in initial_files)
+    if has_conflicting_files:
+        _init_git_repository_direct(root, branch, user_name, user_email, initial_files)
+        return
+
     template_repository = _get_git_template(branch, user_name, user_email, initial_files)
-
-    pre_existing_files = {
-        root / relative_path: (root / relative_path).read_text(encoding="utf-8")
-        for relative_path in (initial_files or ())
-        if (root / relative_path).exists()
-    }
-
     root.mkdir(parents=True, exist_ok=True)
     shutil.copytree(template_repository, root, dirs_exist_ok=True)
-
-    for target_file, content in pre_existing_files.items():
-        target_file.write_text(content, encoding="utf-8")
 
 
 def _git(root: Path, *args: str) -> None:

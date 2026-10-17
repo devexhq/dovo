@@ -58,7 +58,9 @@ class ProcessGroupEscalationTests:
         execution = StepExecution(StepExecutionContext(step=step, worktree_path=tmp_path))
         monkeypatch.setattr(
             "dovo.engine.executors.step_executor.terminate_process_tree",
-            lambda proc, *, grace_seconds=2.0, pgid=None: terminate_process_tree(proc, grace_seconds=0.2, pgid=pgid),
+            lambda process, *, grace_seconds=2.0, pgid=None: terminate_process_tree(
+                process, grace_seconds=0.2, pgid=pgid
+            ),
         )
         result = execution.run()
         elapsed = time.monotonic() - start_time
