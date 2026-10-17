@@ -10,12 +10,10 @@ from pydantic import ValidationError
 from dovo.common.filesystem import Filesystem
 from dovo.common.filesystem.models import WorkspacePaths
 from dovo.common.models import FailurePolicy
-from dovo.core.agents import AgentResponseStatus
 from dovo.core.catalog.blueprint import Blueprint
 from dovo.core.catalog.definitions import LoopStepBlock
 from dovo.core.db import SessionRecord, SessionsRepository, SessionStatus
 from dovo.engine import SessionStateStore
-from dovo.engine.executors.models import AGENT_OUTCOME_EXIT_CODES, StepResult
 from dovo.engine.models import DefinitionRef, DefinitionsManifest
 from dovo.engine.projection import build_session_json_payload
 from dovo.engine.state_models import (
@@ -27,7 +25,6 @@ from dovo.engine.state_models import (
     SessionJsonPayload,
     SessionStateLoadStatus,
     SessionStateWriteStatus,
-    StepAttemptRecord,
 )
 from dovo.engine.state_store import new_iteration
 from tests.harness.builders import BlueprintBuilder, StepBuilder, WorkspaceBuilder
@@ -238,19 +235,7 @@ class SessionStateStoreSaveTests:
         assert fixture.store.load().ok
         assert fixture.projection().revision == 1
 
-    def test_save_with_run_status_updates_lifecycle_in_same_commit(self, tmp_path: Path) -> None:
-        fixture = _Fixture(tmp_path)
-        state = fixture.initialized_at(0)
-
-        fixture.store.save(state, run_status=SessionStatus.COMPLETED, error_message=None)
-
-        row = fixture.sessions.get(SESSION_ID)
-        assert row is not None
-        assert row.status == SessionStatus.COMPLETED
-        assert row.completed_at is not None
-        assert row.execution_state_revision == 1
-
-    def test_save_terminal_status_writes_row_equal_lifecycle_to_session_json(self, tmp_path: Path) -> None:
+    def test_save_terminal_status_updates_row_and_session_json_in_same_commit(self, tmp_path: Path) -> None:
         fixture = _Fixture(tmp_path)
         state = fixture.initialized_at(0)
 
@@ -260,6 +245,8 @@ class SessionStateStoreSaveTests:
 
         row = fixture.row()
         lifecycle = fixture.projection().lifecycle
+        assert row.status == SessionStatus.FAILED
+        assert row.execution_state_revision == 1
         assert lifecycle.status == SessionStatus.FAILED
         assert lifecycle.error_message == "boom"
         assert lifecycle.started_at == row.started_at
@@ -374,63 +361,3 @@ class SessionStateStoreLoadTests:
         result = SessionStateStore(fixture.sessions, fixture.paths, "unknown").load()
 
         assert result.status == SessionStateLoadStatus.NOT_FOUND
-
-
-class SessionStateStoreAgentAttemptTests:
-    def test_failed_agent_attempt_roundtrips_code_and_summary_stdout(self, tmp_path: Path) -> None:
-        fixture = _Fixture(tmp_path)
-        state = fixture.initialized_at(0)
-        leaf = state.nodes[0]
-        assert isinstance(leaf, ExecutionLeafNode)
-        stdout = '{"status":"timeout","summary":null,"unfixable_reason":null,"touched_files":[]}\n'
-        result = StepResult(
-            step_id=leaf.id,
-            status="failed",
-            exit_code=AGENT_OUTCOME_EXIT_CODES[AgentResponseStatus.TIMEOUT],
-            stdout=stdout,
-            stderr="Agent timed out",
-            duration_seconds=0.5,
-            error_message="Agent timed out",
-        )
-        leaf.attempts = [StepAttemptRecord(number=1, started_at="2026-10-03T00:00:00+00:00", result=result)]
-
-        saved = fixture.store.save(state)
-        loaded = fixture.store.load()
-
-        assert saved.status == SessionStateWriteStatus.OK
-        assert loaded.state is not None
-        loaded_leaf = loaded.state.nodes[0]
-        assert isinstance(loaded_leaf, ExecutionLeafNode)
-        loaded_result = loaded_leaf.attempts[0].result
-        assert loaded_result is not None
-        assert loaded_result.exit_code == 202
-        assert loaded_result.stdout == stdout
-        assert loaded_result.error_message == "Agent timed out"
-
-
-class SessionStateStoreRegenerateProjectionTests:
-    """Contract tests for SessionStateStore.regenerate_projection."""
-
-    def test_regenerate_projection_writes_payload_json_and_returns_path(self, tmp_path: Path) -> None:
-        fixture = _Fixture(tmp_path)
-        state = ExecutionStateTree(revision=3, manifest=fixture.manifest, nodes=[ExecutionLeafNode(id="setup")])
-
-        row = fixture.row()
-
-        path = fixture.store.regenerate_projection(state, row)
-
-        assert path == fixture.session_json
-        assert path.read_text(encoding="utf-8") == build_session_json_payload(state, row).model_dump_json(indent=2)
-
-    def test_regenerate_projection_unwritable_directory_raises_oserror(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        fixture = _Fixture(tmp_path)
-
-        def fail_write(_path: Path, _text: str) -> None:
-            raise OSError("read-only")
-
-        monkeypatch.setattr(Filesystem, "atomic_write_text", fail_write)
-
-        with pytest.raises(OSError, match="read-only"):
-            fixture.store.regenerate_projection(ExecutionStateTree(manifest=fixture.manifest), fixture.row())

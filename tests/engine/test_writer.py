@@ -186,23 +186,24 @@ class SessionArtifactWriterTests:
         assert session_dir.is_dir()
         assert not (repository / ".dovo" / "sessions" / "session-626").exists()
 
-    def test_write_session_diff_persists_diff_text_and_returns_the_patch_file_path(self, tmp_path: Path) -> None:
-        session_dir = tmp_path / "session-dir"
-        session_dir.mkdir()
-
-        target = write_session_diff(session_dir, "diff content", SecretRedactor([]))
-
-        assert target == session_dir / "diff.patch"
-        assert target.read_text(encoding="utf-8") == "diff content"
-
-    def test_write_session_diff_persists_masked_copy_and_leaves_input_unchanged(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    @pytest.mark.parametrize(
+        ("secrets", "expected_text"),
+        [
+            pytest.param([], "+key=sk-ant-secret-value-123\n", id="no-secrets"),
+            pytest.param(
+                [("ANTHROPIC_API_KEY", "sk-ant-secret-value-123")],
+                "+key=[REDACTED:ANTHROPIC_API_KEY]\n",
+                id="masked",
+            ),
+        ],
+    )
+    def test_write_session_diff_persists_redacted_text_and_returns_the_patch_file_path(
+        self, tmp_path: Path, secrets: list[tuple[str, str]], expected_text: str
     ) -> None:
-        monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-secret-value-123")
         session_dir = tmp_path / "session-dir"
         session_dir.mkdir()
 
-        target = write_session_diff(session_dir, "+key=sk-ant-secret-value-123\n", SecretRedactor.from_environment())
+        target = write_session_diff(session_dir, "+key=sk-ant-secret-value-123\n", SecretRedactor(secrets))
 
         assert target == session_dir / "diff.patch"
-        assert target.read_text(encoding="utf-8") == "+key=[REDACTED:ANTHROPIC_API_KEY]\n"
+        assert target.read_text(encoding="utf-8") == expected_text

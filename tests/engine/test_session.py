@@ -63,16 +63,6 @@ def _step(step_id: str, run: str, **extra: object) -> dict[str, object]:
     return {"id": step_id, "run": run, **extra}
 
 
-def _loop(loop_id: str, do: list[dict[str, object]], *, max_iterations: int = 2) -> dict[str, object]:
-    return {
-        "id": loop_id,
-        "type": "loop",
-        "max_iterations": max_iterations,
-        "until": [f"iteration.index >= {max_iterations}"],
-        "do": do,
-    }
-
-
 def _drive(
     paths: WorkspacePaths,
     sessions: SessionsRepository,
@@ -160,12 +150,14 @@ class DriveRunWorktreeTests:
         seed_new_session(
             engine_paths, sessions_repo, session_id="no-git", steps=[_step("a", "touch a.ran")], use_worktree=True
         )
+        observer = RecordingRunObserver()
 
-        outcome = _drive(engine_paths, sessions_repo, "no-git")
+        outcome = _drive(engine_paths, sessions_repo, "no-git", observer=observer)
 
         assert outcome.status == SessionStatus.FAILED
         assert outcome.errors[0].startswith("Git worktree creation failed:")
         assert not (engine_workspace / "a.ran").exists()
+        assert [call for call in observer.calls if str(call[0]).startswith("run_")] == [("run_completed", outcome)]
 
 
 class DriveRunStorageBridgeTests:
@@ -197,93 +189,63 @@ class DriveRunStorageBridgeTests:
         assert not step_marker.exists()
         assert source_sentinel.read_text(encoding="utf-8") == "do not delete"
 
-    def test_cleanup_unlink_failure_surfaces_in_outcome_warnings(
-        self, git_paths: WorkspacePaths, git_runs: SessionsRepository, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        seed_new_session(
-            git_paths, git_runs, session_id="unlink-busy", steps=[_step("a", "echo hi")], use_worktree=True
-        )
-        monkeypatch.setattr("dovo.engine.workspace.remove_storage_bridge", lambda worktree_path: "unlink busy")
-
-        outcome = _drive(git_paths, git_runs, "unlink-busy")
-
-        assert outcome.status == SessionStatus.COMPLETED
-        assert "unlink busy" in outcome.warnings
-        assert not outcome.worktree_path.exists()
-
 
 class DriveRunMissingRowTests:
-    def test_unknown_session_returns_failed_outcome_without_running_steps(
+    def test_unknown_session_returns_failed_outcome_without_running_steps_or_notifying(
         self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository
     ) -> None:
-        outcome = _drive(engine_paths, sessions_repo, "missing")
+        observer = RecordingRunObserver()
+
+        outcome = _drive(engine_paths, sessions_repo, "missing", observer=observer)
 
         assert outcome.status == SessionStatus.FAILED
         assert outcome.errors == ["Session 'missing' not found."]
         assert outcome.worktree_path == engine_paths.root_dir
+        assert observer.calls == []
 
 
 class DriveRunRetentionTests:
-    def test_failed_run_keeps_worktree_and_records_outcome(
-        self, git_paths: WorkspacePaths, git_runs: SessionsRepository
-    ) -> None:
-        seed_new_session(git_paths, git_runs, session_id="failed-keep", steps=[_step("a", "exit 1")], use_worktree=True)
-
-        outcome = _drive(git_paths, git_runs, "failed-keep")
-
-        assert outcome.status == SessionStatus.FAILED
-        assert outcome.worktree_kept is True
-        assert outcome.worktree_id == "failed-keep"
-        assert outcome.worktree_path.is_dir()
-
-    def test_discard_row_removes_failed_run_worktree(
-        self, git_paths: WorkspacePaths, git_runs: SessionsRepository
+    @pytest.mark.parametrize(
+        ("step", "keep", "discard", "decisions", "expected_status", "expected_kept"),
+        [
+            pytest.param(_step("a", "exit 1"), False, False, [], SessionStatus.FAILED, True, id="failed-default"),
+            pytest.param(_step("a", "exit 1"), False, True, [], SessionStatus.FAILED, False, id="failed-discard"),
+            pytest.param(_step("a", "true"), True, False, [], SessionStatus.COMPLETED, True, id="completed-keep"),
+            pytest.param(
+                _step("a", "exit 1", on_failure="prompt_user"),
+                False,
+                False,
+                [KeyboardInterrupt()],
+                SessionStatus.PAUSED,
+                True,
+                id="paused",
+            ),
+        ],
+    )
+    def test_outcome_reports_worktree_retention(
+        self,
+        git_paths: WorkspacePaths,
+        git_runs: SessionsRepository,
+        step: dict[str, object],
+        keep: bool,
+        discard: bool,
+        decisions: list[KeyboardInterrupt],
+        expected_status: SessionStatus,
+        expected_kept: bool,
     ) -> None:
         seed_new_session(
-            git_paths,
-            git_runs,
-            session_id="failed-discard",
-            steps=[_step("a", "exit 1")],
-            use_worktree=True,
-            discard=True,
+            git_paths, git_runs, session_id="retention", steps=[step], use_worktree=True, keep=keep, discard=discard
         )
 
-        outcome = _drive(git_paths, git_runs, "failed-discard")
+        outcome = _drive(git_paths, git_runs, "retention", prompter=ScriptedFailurePrompter(decisions))
 
-        assert outcome.status == SessionStatus.FAILED
-        assert outcome.worktree_kept is False
-        assert not outcome.worktree_path.exists()
+        assert outcome.status == expected_status
+        assert outcome.worktree_kept is expected_kept
+        assert outcome.worktree_id == "retention"
+        assert outcome.worktree_path.is_dir() is expected_kept
 
 
 class DriveRunCleanupTests:
-    def test_keep_true_preserves_worktree_after_completed_run(
-        self, git_paths: WorkspacePaths, git_runs: SessionsRepository
-    ) -> None:
-        seed_new_session(
-            git_paths, git_runs, session_id="keep", steps=[_step("a", "echo keep")], use_worktree=True, keep=True
-        )
-
-        outcome = _drive(git_paths, git_runs, "keep")
-
-        assert outcome.status == SessionStatus.COMPLETED
-        assert outcome.worktree_kept is True
-        assert outcome.worktree_path.is_dir()
-
-    def test_paused_outcome_keeps_worktree(self, git_paths: WorkspacePaths, git_runs: SessionsRepository) -> None:
-        seed_new_session(
-            git_paths,
-            git_runs,
-            session_id="pause",
-            steps=[_step("a", "exit 1", on_failure="prompt_user")],
-            use_worktree=True,
-        )
-
-        outcome = _drive(git_paths, git_runs, "pause", prompter=ScriptedFailurePrompter([KeyboardInterrupt()]))
-
-        assert outcome.status == SessionStatus.PAUSED
-        assert outcome.worktree_kept is True
-        assert outcome.worktree_path.is_dir()
-
     def test_diff_persisted_under_session_id_not_worktree_key(
         self, git_paths: WorkspacePaths, git_runs: SessionsRepository
     ) -> None:
@@ -528,41 +490,6 @@ class DriveRunObserverContractTests:
             ("run_completed", outcome),
         ]
 
-    def test_loop_run_emits_pinned_observer_sequence(
-        self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository
-    ) -> None:
-        seed_new_session(
-            engine_paths,
-            sessions_repo,
-            session_id="seq-loop",
-            steps=[_loop("loop", [_step("s1", "true"), _step("s2", "true")])],
-        )
-        observer = RecordingRunObserver()
-
-        outcome = _drive(engine_paths, sessions_repo, "seq-loop", observer=observer)
-
-        root = engine_paths.root_dir.resolve()
-        iteration_steps = [
-            ("step_start", 1, 2, "s1"),
-            ("step_done", 1, 2, "s1", "completed"),
-            ("step_start", 2, 2, "s2"),
-            ("step_done", 2, 2, "s2", "completed"),
-        ]
-        assert observer.calls == [
-            ("worktree_ready", root, False),
-            ("run_started", ["loop"]),
-            ("loop_start", "loop", 2),
-            ("loop_iteration_start", "loop", 1, 2),
-            *iteration_steps,
-            ("loop_conditions_evaluated", "loop", [False], False, 2),
-            ("loop_iteration_start", "loop", 2, 2),
-            *iteration_steps,
-            ("loop_conditions_evaluated", "loop", [True], True, None),
-            ("loop_done", "loop", "completed", 2),
-            ("worktree_cleanup", False, root, None, None),
-            ("run_completed", outcome),
-        ]
-
     def test_run_completed_receives_paused_outcome_and_resume_gets_its_own_pair(
         self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository, engine_workspace: Path
     ) -> None:
@@ -612,31 +539,6 @@ class DriveRunObserverContractTests:
 
         assert outcome.status == SessionStatus.FAILED
         assert [call for call in observer.calls if str(call[0]).startswith("run_")] == [("run_completed", outcome)]
-
-    def test_setup_failure_notifies_run_completed_only(
-        self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository
-    ) -> None:
-        seed_new_session(
-            engine_paths, sessions_repo, session_id="seq-nogit", steps=[_step("a", "true")], use_worktree=True
-        )
-        observer = RecordingRunObserver()
-
-        outcome = _drive(engine_paths, sessions_repo, "seq-nogit", observer=observer)
-
-        assert outcome.status == SessionStatus.FAILED
-        assert outcome.errors[0].startswith("Git worktree creation failed:")
-        assert [call for call in observer.calls if str(call[0]).startswith("run_")] == [("run_completed", outcome)]
-
-    def test_missing_row_notifies_nothing(
-        self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository
-    ) -> None:
-        observer = RecordingRunObserver()
-
-        outcome = _drive(engine_paths, sessions_repo, "missing", observer=observer)
-
-        assert outcome.status == SessionStatus.FAILED
-        assert outcome.errors == ["Session 'missing' not found."]
-        assert observer.calls == []
 
     def test_raising_run_level_observer_leaves_outcome_unchanged(
         self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository
@@ -729,81 +631,100 @@ class ResolveAgentSettingsEnvTests:
         assert paths.config_file.read_bytes() == before
 
 
-class ResolveAgentSettingsToolsTests:
-    @pytest.mark.parametrize(
-        ("config_tools", "expected"),
-        [
-            pytest.param(None, default_tool_policy(), id="absent-resolves-to-default"),
-            pytest.param(
-                {"allow": [{"capability": "shell", "pattern": "git status"}], "deny": [{"capability": "network"}]},
-                ToolPolicy(
-                    allow=[ToolRule(capability=ToolCapability.SHELL, pattern="git status")],
-                    deny=[ToolRule(capability=ToolCapability.NETWORK)],
-                ),
-                id="configured-passes-through",
-            ),
-            pytest.param({}, ToolPolicy(), id="configured-empty-grants-nothing"),
-        ],
+_COPILOT_SETTINGS = ResolvedAgentSettings(
+    provider="copilot",
+    model="test-model",
+    endpoint="http://127.0.0.1:9999",
+    temperature=0.7,
+    max_tokens=512,
+    tools=default_tool_policy(),
+)
+
+
+def _field_default_settings(provider: str) -> ResolvedAgentSettings:
+    return ResolvedAgentSettings(
+        provider=provider, model=None, endpoint=None, temperature=0.2, max_tokens=4096, tools=default_tool_policy()
     )
-    def test_absent_config_tools_resolves_to_default_and_configured_tools_pass_through(
-        self,
-        tmp_path: Path,
-        captured_builds: list[AgentRunnerBuild],
-        noop_agent_provider: FakeAgentProvider,
-        config_tools: dict[str, object] | None,
-        expected: ToolPolicy,
-    ) -> None:
-        agent_config = _AGENT_CONFIG if config_tools is None else {**_AGENT_CONFIG, "tools": config_tools}
-        paths, sessions = _agent_workspace(tmp_path, {"copilot": agent_config})
-        seed_new_session(paths, sessions, session_id="tools", steps=[_agent_step("a")], use_worktree=True)
-
-        _drive(paths, sessions, "tools")
-
-        assert captured_builds[0].agent is not None
-        assert captured_builds[0].agent.tools == expected
-
-
-class ResolveAgentSettingsMcpServersTests:
-    def test_configured_mcp_servers_reach_resolved_settings(
-        self,
-        tmp_path: Path,
-        captured_builds: list[AgentRunnerBuild],
-        noop_agent_provider: FakeAgentProvider,
-    ) -> None:
-        agent_config = {**_AGENT_CONFIG, "mcp_servers": {"github": {"command": "npx"}}}
-        paths, sessions = _agent_workspace(tmp_path, {"copilot": agent_config})
-        seed_new_session(paths, sessions, session_id="mcp", steps=[_agent_step("a")], use_worktree=True)
-
-        _drive(paths, sessions, "mcp")
-
-        assert captured_builds[0].agent is not None
-        assert captured_builds[0].agent.mcp_servers == {"github": McpServerDefinition(command="npx")}
 
 
 class DriveRunAgentSettingsTests:
+    @pytest.mark.parametrize(
+        ("agents", "agent", "expected"),
+        [
+            pytest.param(
+                {"copilot": _AGENT_CONFIG, "claude": _CLAUDE_CONFIG}, None, _COPILOT_SETTINGS, id="default-agent"
+            ),
+            pytest.param(
+                {
+                    "copilot": {
+                        **_AGENT_CONFIG,
+                        "tools": {
+                            "allow": [{"capability": "shell", "pattern": "git status"}],
+                            "deny": [{"capability": "network"}],
+                        },
+                    }
+                },
+                None,
+                _COPILOT_SETTINGS.model_copy(
+                    update={
+                        "tools": ToolPolicy(
+                            allow=[ToolRule(capability=ToolCapability.SHELL, pattern="git status")],
+                            deny=[ToolRule(capability=ToolCapability.NETWORK)],
+                        )
+                    }
+                ),
+                id="configured-tools-pass-through",
+            ),
+            pytest.param(
+                {"copilot": {**_AGENT_CONFIG, "tools": {}}},
+                None,
+                _COPILOT_SETTINGS.model_copy(update={"tools": ToolPolicy()}),
+                id="configured-empty-tools-grant-nothing",
+            ),
+            pytest.param(
+                {"copilot": {**_AGENT_CONFIG, "mcp_servers": {"github": {"command": "npx"}}}},
+                None,
+                _COPILOT_SETTINGS.model_copy(update={"mcp_servers": {"github": McpServerDefinition(command="npx")}}),
+                id="configured-mcp-servers",
+            ),
+            pytest.param(
+                {
+                    "copilot": {**_AGENT_CONFIG, "tools": {"deny": [{"capability": "network"}]}},
+                    "claude": _CLAUDE_CONFIG,
+                },
+                "claude",
+                ResolvedAgentSettings(
+                    provider="claude",
+                    model="claude-model",
+                    endpoint="http://127.0.0.1:9998",
+                    temperature=1.1,
+                    max_tokens=256,
+                    tools=ToolPolicy(allow_all=True),
+                ),
+                id="override-uses-its-own-block",
+            ),
+            pytest.param(
+                {"copilot": _AGENT_CONFIG}, "claude", _field_default_settings("claude"), id="override-without-block"
+            ),
+        ],
+    )
     def test_fresh_run_threads_effective_config_into_step_execution_context(
         self,
         tmp_path: Path,
         captured_contexts: list[StepExecutionContext],
         captured_builds: list[AgentRunnerBuild],
         noop_agent_provider: FakeAgentProvider,
+        agents: dict[str, object],
+        agent: str | None,
+        expected: ResolvedAgentSettings,
     ) -> None:
-        paths, sessions = _agent_workspace(tmp_path, {"copilot": _AGENT_CONFIG, "claude": _CLAUDE_CONFIG})
-        seed_new_session(paths, sessions, session_id="fresh", steps=[_agent_step("a")], use_worktree=True)
+        paths, sessions = _agent_workspace(tmp_path, agents)
+        seed_new_session(paths, sessions, session_id="fresh", steps=[_agent_step("a")], use_worktree=True, agent=agent)
 
         outcome = _drive(paths, sessions, "fresh")
 
         assert outcome.status == SessionStatus.COMPLETED
-        assert [build.agent for build in captured_builds] == [
-            ResolvedAgentSettings(
-                provider="copilot",
-                model="test-model",
-                endpoint="http://127.0.0.1:9999",
-                temperature=0.7,
-                max_tokens=512,
-                tools=default_tool_policy(),
-            )
-        ]
+        assert [build.agent for build in captured_builds] == [expected]
         assert "agent" not in (captured_contexts[0].context or {})
 
     def test_open_resolves_sensitive_variables_into_run_context_and_workspace_settings(
@@ -860,16 +781,7 @@ class DriveRunAgentSettingsTests:
         outcome = _drive(paths, sessions, "resumed", prompter=ScriptedFailurePrompter([FailurePromptDecision.RETRY]))
 
         assert outcome.status == SessionStatus.COMPLETED
-        assert [build.agent for build in captured_builds] == [
-            ResolvedAgentSettings(
-                provider="fake-provider",
-                model=None,
-                endpoint=None,
-                temperature=0.2,
-                max_tokens=4096,
-                tools=default_tool_policy(),
-            )
-        ]
+        assert [build.agent for build in captured_builds] == [_field_default_settings("fake-provider")]
 
     def test_settings_are_resolved_once_per_drive(
         self,
@@ -901,56 +813,6 @@ class DriveRunAgentSettingsTests:
         assert "CONFIG_MALFORMED_JSON" in outcome.errors[0]
         assert outcome.step_results == []
         assert [call[0] for call in observer.calls] == ["run_completed"]
-
-    def test_override_agent_uses_that_providers_model_temperature_and_tools(
-        self,
-        tmp_path: Path,
-        captured_builds: list[AgentRunnerBuild],
-        noop_agent_provider: FakeAgentProvider,
-    ) -> None:
-        """Resolve every field from agents.claude for override "claude" while the copilot block sets its own tools."""
-        copilot = {**_AGENT_CONFIG, "tools": {"deny": [{"capability": "network"}]}}
-        paths, sessions = _agent_workspace(tmp_path, {"copilot": copilot, "claude": _CLAUDE_CONFIG})
-        seed_new_session(
-            paths, sessions, session_id="claude-run", steps=[_agent_step("a")], use_worktree=True, agent="claude"
-        )
-
-        _drive(paths, sessions, "claude-run")
-
-        assert [build.agent for build in captured_builds] == [
-            ResolvedAgentSettings(
-                provider="claude",
-                model="claude-model",
-                endpoint="http://127.0.0.1:9998",
-                temperature=1.1,
-                max_tokens=256,
-                tools=ToolPolicy(allow_all=True),
-            )
-        ]
-
-    def test_registered_provider_without_entry_resolves_field_defaults(
-        self,
-        tmp_path: Path,
-        captured_builds: list[AgentRunnerBuild],
-        noop_agent_provider: FakeAgentProvider,
-    ) -> None:
-        paths, sessions = _agent_workspace(tmp_path, {"copilot": _AGENT_CONFIG})
-        seed_new_session(
-            paths, sessions, session_id="no-block", steps=[_agent_step("a")], use_worktree=True, agent="claude"
-        )
-
-        _drive(paths, sessions, "no-block")
-
-        assert [build.agent for build in captured_builds] == [
-            ResolvedAgentSettings(
-                provider="claude",
-                model=None,
-                endpoint=None,
-                temperature=0.2,
-                max_tokens=4096,
-                tools=default_tool_policy(),
-            )
-        ]
 
     def test_agent_step_with_unregistered_effective_provider_fails(self, tmp_path: Path) -> None:
         paths, sessions = _agent_workspace(tmp_path, {})

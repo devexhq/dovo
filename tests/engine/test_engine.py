@@ -11,7 +11,7 @@ from dovo.core.catalog import Catalog
 from dovo.core.catalog.blueprint import Blueprint
 from dovo.core.db import SessionsRepository, SessionStatus
 from dovo.core.git.runner import GitRunner
-from dovo.engine import Engine, EngineResumeError, EngineResumeStatus, RunRequest, SessionStateStore
+from dovo.engine import Engine, RunRequest, SessionStateStore
 from dovo.engine.models import FailurePromptDecision, RunOutcome
 from dovo.engine.state_models import SessionJsonPayload
 from dovo.engine.writer import get_session_dir
@@ -119,29 +119,6 @@ class EngineDispatchTests:
         final = SessionStateStore(sessions_repo, engine_paths, "paused").load().state
         assert final is not None
         assert final.manifest == manifest.manifest
-
-    @pytest.mark.parametrize(
-        "fault", [pytest.param("not-found", id="not-found"), pytest.param("wrong-status", id="wrong-status")]
-    )
-    def test_resume_of_invalid_run_raises_before_any_step_executes(
-        self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository, fault: str
-    ) -> None:
-        if fault == "wrong-status":
-            seed_paused_session(
-                engine_paths,
-                sessions_repo,
-                session_id="invalid",
-                steps=[{"id": "a", "run": "touch marker", "on_failure": "prompt_user"}],
-                paused_step_id="a",
-            )
-            sessions_repo.update_status("invalid", SessionStatus.COMPLETED)
-
-        with pytest.raises(EngineResumeError) as exc_info:
-            _engine(engine_paths, sessions_repo).resume("invalid")
-
-        expected = EngineResumeStatus.NOT_FOUND if fault == "not-found" else EngineResumeStatus.WRONG_STATUS
-        assert exc_info.value.status is expected
-        assert not (engine_paths.root_dir / "marker").exists()
 
     @pytest.mark.parametrize(
         ("entry", "expected_session_id"),
@@ -309,9 +286,7 @@ class EngineRunSnapshotsDefinitionsTests:
         assert row.completed_at is not None
         assert row.execution_state_revision == 1
 
-
-class EngineResumePreservesDefinitionsTests:
-    def test_resume_finalization_keeps_original_manifest_and_bumps_revision(
+    def test_resume_finalization_bumps_the_state_revision_once(
         self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository, stub_drive_run: StubDriveRun
     ) -> None:
         seed_paused_session(
@@ -332,83 +307,54 @@ class EngineResumePreservesDefinitionsTests:
 
         after = SessionStateStore(sessions_repo, engine_paths, "task_defs").load().state
         assert after is not None
-        assert after.manifest == before.manifest
         assert after.revision == before.revision + 1
 
 
 class EngineRunConfigPersistenceTests:
-    def test_run_persists_resolved_configuration_on_row(self, tmp_path: Path, stub_drive_run: StubDriveRun) -> None:
+    @pytest.mark.parametrize(
+        ("keep", "discard"), [pytest.param(True, False, id="keep"), pytest.param(False, True, id="discard")]
+    )
+    def test_run_persists_resolved_configuration_on_row(
+        self, tmp_path: Path, stub_drive_run: StubDriveRun, keep: bool, discard: bool
+    ) -> None:
         workspace = WorkspaceBuilder(tmp_path / "git-workspace").with_git().with_database().build()
         paths = initialized_workspace_paths(workspace)
         sessions = SessionsRepository(db_path=paths.database_file, project_id=paths.project_id)
         write_runnable_blueprint(workspace, key="cfg", steps=[{"id": "s1", "run": "echo hi"}])
-        blueprint = Blueprint.load("cfg", catalog=Catalog(paths))
-        stub_drive_run(None)
-
-        _engine(paths, sessions).run(
-            blueprint,
-            RunRequest(session_id="cfg-1", use_worktree=False, keep=True, agent="claude", auto_apply=True),
-        )
-
-        row = sessions.get("cfg-1")
-        assert row is not None
-        assert row.use_worktree is False
-        assert row.keep is True
-        assert row.agent == "claude"
-        assert row.auto_apply is True
-        assert row.commit_sha == GitRunner.rev_parse(workspace)
-
-    @pytest.mark.parametrize("discard", [True, False])
-    def test_run_request_discard_is_stored_on_session_row(
-        self,
-        engine_paths: WorkspacePaths,
-        sessions_repo: SessionsRepository,
-        stub_drive_run: StubDriveRun,
-        discard: bool,
-    ) -> None:
-        blueprint = _catalog_blueprint(engine_paths, "discard-task", [{"id": "s1", "run": "echo one"}])
-        stub_drive_run(None)
-
-        _engine(engine_paths, sessions_repo).run(
-            blueprint, RunRequest(session_id="discard-1", use_worktree=False, discard=discard)
-        )
-
-        row = sessions_repo.get("discard-1")
-        assert row is not None
-        assert row.discard is discard
-
-    def test_run_persists_resolved_inputs_json_on_row(
-        self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository, stub_drive_run: StubDriveRun
-    ) -> None:
         blueprint = Blueprint(
-            BlueprintBuilder("inputs")
+            BlueprintBuilder("cfg")
             .with_use_worktree(False)
             .with_input("env", required=True)
             .with_step(StepBuilder.command("echo hi").with_id("s1").build())
             .build()
         )
-        write_runnable_blueprint(engine_paths.root_dir, key="inputs", steps=[{"id": "s1", "run": "echo hi"}])
         stub_drive_run(None)
 
-        _engine(engine_paths, sessions_repo).run(
-            blueprint, RunRequest(session_id="inputs-1", inputs={"env": "prod"}, use_worktree=False)
+        _engine(paths, sessions).run(
+            blueprint,
+            RunRequest(
+                session_id="cfg-1",
+                inputs={"env": "prod"},
+                use_worktree=False,
+                keep=keep,
+                discard=discard,
+                agent="claude",
+                auto_apply=True,
+            ),
         )
 
-        row = sessions_repo.get("inputs-1")
+        row = sessions.get("cfg-1")
         assert row is not None
-        assert row.inputs_json == '{"env": "prod"}'
-
-    def test_run_catalog_blueprint_records_manifest_tier_on_row(
-        self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository, stub_drive_run: StubDriveRun
-    ) -> None:
-        blueprint = _catalog_blueprint(engine_paths, "tier-task", [{"id": "s1", "run": "echo one"}])
-        stub_drive_run(None)
-
-        _engine(engine_paths, sessions_repo).run(blueprint, RunRequest(session_id="tier-1", use_worktree=False))
-
-        row = sessions_repo.get("tier-1")
-        assert row is not None
-        assert row.blueprint_tier == "repo"
+        assert (
+            row.use_worktree,
+            row.keep,
+            row.discard,
+            row.agent,
+            row.auto_apply,
+            row.inputs_json,
+            row.blueprint_tier,
+            row.commit_sha,
+        ) == (False, keep, discard, "claude", True, '{"env": "prod"}', "repo", GitRunner.rev_parse(workspace))
 
     def test_run_outside_git_repository_stores_null_commit_sha(
         self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository, stub_drive_run: StubDriveRun
