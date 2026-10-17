@@ -6,7 +6,7 @@ from rich.console import Group
 from rich.text import Text
 
 from dovo.cli.ui.events import LoopLifecycleEvent
-from dovo.common.types import ComponentFormatter
+from dovo.cli.ui.formatters.base import ComponentFormatter
 
 
 def _build_conditions_evaluated_text(data: LoopLifecycleEvent) -> Group:

@@ -2,13 +2,12 @@
 
 from __future__ import annotations
 
-from typing import Any
-
+from rich.console import RenderableType
 from rich.panel import Panel
 from rich.text import Text
 
+from dovo.cli.ui.formatters.base import ComponentFormatter
 from dovo.cli.ui.formatters.common import build_error_panel
-from dovo.common.types import ComponentFormatter
 from dovo.core.worktree.models import WorktreeDeleteResult, WorktreeDeleteStatus
 
 
@@ -33,7 +32,7 @@ def _format_delete_error_panel(data: WorktreeDeleteResult) -> Panel:
 class WorktreeDeleteFormatter(ComponentFormatter[WorktreeDeleteResult]):
     """Formatter for worktree delete command results."""
 
-    def to_rich(self, data: WorktreeDeleteResult) -> Any:
+    def to_rich(self, data: WorktreeDeleteResult) -> RenderableType:
         """Render worktree delete success, aborted, or error state."""
         if data.status == WorktreeDeleteStatus.ALREADY_CLEANED:
             return Text(f"Worktree '{data.worktree_id}' is already cleaned; nothing to remove.")

@@ -2,14 +2,14 @@
 
 from __future__ import annotations
 
-from typing import Any, Final
+from typing import Final
 
-from rich.console import Group
+from rich.console import Group, RenderableType
 from rich.table import Table
 from rich.text import Text
 
+from dovo.cli.ui.formatters.base import ComponentFormatter
 from dovo.cli.ui.formatters.doctor.doctor_views import DoctorCheckView, DoctorReportView
-from dovo.common.types import ComponentFormatter
 from dovo.core.diagnostics import CheckStatus, DiagnosticsReport, Remediation
 from dovo.core.diagnostics.services.remediation import format_remediation_summary
 
@@ -84,10 +84,10 @@ class DoctorReportFormatter(ComponentFormatter[DiagnosticsReport, DoctorReportVi
             ],
         )
 
-    def to_rich(self, data: DiagnosticsReport) -> Any:
+    def to_rich(self, data: DiagnosticsReport) -> RenderableType:
         """Render the checks table, summary line, and (when any check has remediations) a Fix: summary from transform(data)."""
         view = self.transform(data)
-        renderables: list[Any] = [_build_checks_table(view), Text(_summary_line(view))]
+        renderables: list[RenderableType] = [_build_checks_table(view), Text(_summary_line(view))]
 
         remediation_summary = format_remediation_summary(_all_remediations(view))
         if remediation_summary:

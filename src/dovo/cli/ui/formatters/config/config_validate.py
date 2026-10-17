@@ -2,15 +2,13 @@
 
 from __future__ import annotations
 
-from typing import Any
-
-from rich.console import Group
+from rich.console import Group, RenderableType
 from rich.text import Text
 
+from dovo.cli.ui.formatters.base import ComponentFormatter
 from dovo.cli.ui.formatters.common import build_error_panel, render_list_fixes
 from dovo.cli.ui.formatters.config.config_views import ConfigValidationView
 from dovo.common.formatters import format_warning_bullets
-from dovo.common.types import ComponentFormatter
 from dovo.core.config.validate import ConfigValidationResult, ConfigValidationStatus
 
 
@@ -39,7 +37,7 @@ def _format_valid_config(view: ConfigValidationView) -> Text:
     return Text("\n".join(lines))
 
 
-def _format_invalid_config(view: ConfigValidationView) -> Any:
+def _format_invalid_config(view: ConfigValidationView) -> RenderableType:
     """Format failed configuration validation error panel and warnings."""
     panel = build_error_panel(
         "Config Validation Failed",
@@ -76,7 +74,7 @@ class ConfigValidateFormatter(ComponentFormatter[ConfigValidationResult, ConfigV
             fixes=list(data.fixes),
         )
 
-    def to_rich(self, data: ConfigValidationResult) -> Any:
+    def to_rich(self, data: ConfigValidationResult) -> RenderableType:
         """Render status label, warning bullets, or error panel."""
         view = self.transform(data)
         if view.status == ConfigValidationStatus.VALID:

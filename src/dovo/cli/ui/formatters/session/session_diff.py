@@ -2,13 +2,12 @@
 
 from __future__ import annotations
 
-from typing import Any
-
-from rich.console import Console, Group
+from rich.console import Console, Group, RenderableType
 from rich.panel import Panel
 from rich.syntax import Syntax
 from rich.text import Text
 
+from dovo.cli.ui.formatters.base import ComponentFormatter
 from dovo.cli.ui.formatters.common import build_error_panel
 from dovo.cli.ui.formatters.session.common import (
     format_truncation_notice,
@@ -17,7 +16,6 @@ from dovo.cli.ui.formatters.session.common import (
 )
 from dovo.cli.ui.formatters.session.session_views import SessionDiffView
 from dovo.common.constants import DEFAULT_MAX_DIFF_LINES
-from dovo.common.types import ComponentFormatter
 from dovo.core.sessions import DiffResult, DiffStatus
 
 
@@ -146,7 +144,7 @@ class SessionDiffFormatter(ComponentFormatter[DiffResult, SessionDiffView]):
 
         return data.diff_text
 
-    def to_rich(self, data: DiffResult) -> Any:
+    def to_rich(self, data: DiffResult) -> RenderableType:
         """Render syntax-highlighted unified diff, empty message, or error panel."""
         view = self.transform(data)
 

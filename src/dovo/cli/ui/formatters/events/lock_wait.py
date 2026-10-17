@@ -7,7 +7,7 @@ from pathlib import Path
 from rich.panel import Panel
 
 from dovo.cli.ui.events import LockWaitEvent
-from dovo.common.types import ComponentFormatter
+from dovo.cli.ui.formatters.base import ComponentFormatter
 
 
 class LockWaitFormatter(ComponentFormatter[LockWaitEvent]):

@@ -2,8 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any
-
+from rich.console import RenderableType
 from rich.panel import Panel
 from rich.text import Text
 
@@ -16,17 +15,17 @@ from dovo.cli.ui.formatters.init.init_view import WorkspaceInitView
 from dovo.core.bootstrap.models import BootstrapOutcome, InitFailureMode
 
 
-def render_string_bullets(items: list[str], label: str) -> list[Any]:
+def render_string_bullets(items: list[str], label: str) -> list[RenderableType]:
     """Render bullet list of relative path strings or keys."""
-    lines: list[Any] = [Text.from_markup(f"[bold dim]{label}:[/bold dim]")]
+    lines: list[RenderableType] = [Text.from_markup(f"[bold dim]{label}:[/bold dim]")]
     for item in items:
         lines.append(Text.from_markup(f"  [dim]•[/dim] [cyan]{item}[/cyan]"))
     return lines
 
 
-def render_bootstrap_lines(view: WorkspaceInitView) -> list[Any]:
+def render_bootstrap_lines(view: WorkspaceInitView) -> list[RenderableType]:
     """Render bootstrap result status and created directory lines."""
-    renderables: list[Any] = []
+    renderables: list[RenderableType] = []
     dovo_label = view.root_path_relative or ".dovo"
     if view.bootstrap_outcome == BootstrapOutcome.REPAIRED:
         renderables.append(Text.from_markup(f"[bold green]✔  Dovo structure repaired at {dovo_label}[/bold green]"))
@@ -40,9 +39,9 @@ def render_bootstrap_lines(view: WorkspaceInitView) -> list[Any]:
     return renderables
 
 
-def render_identity_lines(view: WorkspaceInitView) -> list[Any]:
+def render_identity_lines(view: WorkspaceInitView) -> list[RenderableType]:
     """Render project identity and local .dovo/.gitignore result lines."""
-    renderables: list[Any] = []
+    renderables: list[RenderableType] = []
     if view.project_id is not None:
         identity_label = view.identity_path_relative or ".dovo/project.json"
         renderables.append(Text.from_markup(f"  [dim]•[/dim] Project ID: [cyan]{view.project_id}[/cyan]"))
@@ -61,11 +60,11 @@ def render_identity_lines(view: WorkspaceInitView) -> list[Any]:
     return renderables
 
 
-def render_config_lines(view: WorkspaceInitView) -> list[Any]:
+def render_config_lines(view: WorkspaceInitView) -> list[RenderableType]:
     """Render config generation result lines."""
     if not view.config_path_relative:
         return []
-    renderables: list[Any] = [Text("")]
+    renderables: list[RenderableType] = [Text("")]
     label = f"./{view.config_path_relative}"
     if view.config_created:
         renderables.append(Text.from_markup(f"  [dim]•[/dim] Generated config: [cyan]{label}[/cyan]"))
@@ -82,9 +81,9 @@ def render_config_lines(view: WorkspaceInitView) -> list[Any]:
     return renderables
 
 
-def render_seed_lines(view: WorkspaceInitView) -> list[Any]:
+def render_seed_lines(view: WorkspaceInitView) -> list[RenderableType]:
     """Render template seed result lines."""
-    renderables: list[Any] = [Text("")]
+    renderables: list[RenderableType] = [Text("")]
     if view.seeded_files:
         renderables.append(Text.from_markup("[bold green]✔  Seeded starter blueprints[/bold green]"))
         renderables.extend(render_string_bullets(view.seeded_files, "Created"))

@@ -8,7 +8,7 @@ from typing import Any
 from pydantic import BaseModel
 from rich.console import Console
 
-from dovo.common.types import ComponentFormatter
+from dovo.cli.ui.formatters.base import ComponentFormatter
 
 
 @dataclass(frozen=True)

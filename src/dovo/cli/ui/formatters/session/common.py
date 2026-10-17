@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from pathlib import Path
-from typing import Any
 
+from rich.console import RenderableType
 from rich.table import Table
 from rich.text import Text
 
@@ -146,7 +146,7 @@ def format_truncation_notice(
     relative_path: str,
     limit: int,
     total_lines: int,
-) -> list[Any]:
+) -> list[RenderableType]:
     """Render truncation notice and interaction hints."""
     session_command = f"dovo diff {session_id}" if session_id else "dovo diff"
     return [

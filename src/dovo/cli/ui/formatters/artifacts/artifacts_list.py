@@ -4,11 +4,12 @@ from __future__ import annotations
 
 from typing import Any
 
+from rich.console import RenderableType
 from rich.text import Text
 
 from dovo.cli.ui.formatters.artifacts.artifacts_views import ArtifactRowView, ArtifactsListView
 from dovo.cli.ui.formatters.artifacts.common import build_artifacts_table, format_size_bytes
-from dovo.common.types import ComponentFormatter
+from dovo.cli.ui.formatters.base import ComponentFormatter
 from dovo.core.artifacts.models import ArtifactsListResult
 from dovo.core.db.models import ArtifactRecord
 
@@ -51,7 +52,7 @@ class ArtifactsListFormatter(ComponentFormatter[ArtifactsListResult, ArtifactsLi
             "fixes": list(data.fixes),
         }
 
-    def to_rich(self, data: ArtifactsListResult) -> Any:
+    def to_rich(self, data: ArtifactsListResult) -> RenderableType:
         """Render the full artifacts table or empty state."""
         view = self.transform(data)
         if not view.artifacts:

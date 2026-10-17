@@ -3,26 +3,25 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
 
-from rich.console import Group
+from rich.console import Group, RenderableType
 from rich.syntax import Syntax
 from rich.text import Text
 
+from dovo.cli.ui.formatters.base import ComponentFormatter
 from dovo.cli.ui.formatters.catalog.catalog_views import (
     CatalogItemView,
     CatalogShowView,
     CatalogTemplateView,
 )
 from dovo.cli.ui.formatters.common import build_error_panel
-from dovo.common.types import ComponentFormatter
 from dovo.common.utils import enum_value
 from dovo.core.catalog.models import CatalogShowResult, CatalogTier
 
 
-def _render_show_template_matches(matches: list[CatalogTemplateView], content: str | None) -> Any:
+def _render_show_template_matches(matches: list[CatalogTemplateView], content: str | None) -> RenderableType:
     """Render matching template paths and optional syntax-highlighted definition."""
-    renderables: list[Any] = []
+    renderables: list[RenderableType] = []
     for template in matches:
         renderables.append(Text.from_markup(f"[bold green]Template:[/]    {template.path}"))
         if content:
@@ -38,7 +37,7 @@ def _render_show_item(item: CatalogItemView, content: str | None, catalog_path_r
     """Render catalog item details, metadata, and optional YAML definition."""
     rel_path = catalog_path_relative or item.path
     type_label = f"{item.item_type.capitalize()}:".ljust(_SHOW_LABEL_WIDTH)
-    renderables: list[Any] = [
+    renderables: list[RenderableType] = [
         Text.from_markup(f"[bold green]{type_label}[/]{item.name} ({item.sha})"),
         Text.from_markup(f"[bold green]{'Type:'.ljust(_SHOW_LABEL_WIDTH)}[/]{item.item_type}"),
         Text.from_markup(f"[bold green]{'Path:'.ljust(_SHOW_LABEL_WIDTH)}[/]{rel_path}"),
@@ -90,7 +89,7 @@ class CatalogShowFormatter(ComponentFormatter[CatalogShowResult, CatalogShowView
             fixes=data.fixes,
         )
 
-    def to_rich(self, data: CatalogShowResult) -> Any:
+    def to_rich(self, data: CatalogShowResult) -> RenderableType:
         """Render blueprint header metadata and YAML syntax highlighting or template."""
         view = self.transform(data)
 

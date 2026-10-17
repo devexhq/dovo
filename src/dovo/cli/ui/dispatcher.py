@@ -15,9 +15,9 @@ from dovo.cli.ui.events import (
     StepStartEvent,
     WorktreeLifecycleEvent,
 )
+from dovo.cli.ui.formatters.base import ComponentFormatter
 from dovo.cli.ui.live import LiveDisplayManager
 from dovo.cli.ui.tail import CollapsingTailDisplay
-from dovo.common.types import ComponentFormatter
 
 T = TypeVar("T")
 F = TypeVar("F", bound=ComponentFormatter[Any] | type[ComponentFormatter[Any]])

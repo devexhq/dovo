@@ -2,13 +2,11 @@
 
 from __future__ import annotations
 
-from typing import Any
-
-from rich.console import Group
+from rich.console import Group, RenderableType
 from rich.text import Text
 
 from dovo.cli.ui.formatters.artifacts.artifacts_views import ArtifactsPruneView
-from dovo.common.types import ComponentFormatter
+from dovo.cli.ui.formatters.base import ComponentFormatter
 from dovo.core.artifacts.models import ArtifactsPruneResult, ArtifactsPruneStatus, PrunedArtifact
 
 
@@ -33,7 +31,7 @@ class ArtifactsPruneFormatter(ComponentFormatter[ArtifactsPruneResult, Artifacts
             failed_count=sum(1 for item in data.items if not item.pruned),
         )
 
-    def to_rich(self, data: ArtifactsPruneResult) -> Any:
+    def to_rich(self, data: ArtifactsPruneResult) -> RenderableType:
         """Render prune action lines, disabled state, or empty state."""
         view = self.transform(data)
         if view.status == ArtifactsPruneStatus.DISABLED:

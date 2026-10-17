@@ -2,6 +2,7 @@ from abc import ABC, abstractmethod
 from typing import Any, ClassVar, cast
 
 from pydantic import BaseModel
+from rich.console import RenderableType
 
 
 class ComponentFormatter[T, V: BaseModel = Any](ABC):
@@ -63,7 +64,7 @@ class ComponentFormatter[T, V: BaseModel = Any](ABC):
         raise NotImplementedError
 
     @abstractmethod
-    def to_rich(self, data: T) -> Any:
+    def to_rich(self, data: T) -> RenderableType:
         """Build the renderable from transform(data). No derivation permitted here.
 
         Args:

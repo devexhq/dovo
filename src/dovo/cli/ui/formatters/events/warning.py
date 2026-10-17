@@ -5,7 +5,7 @@ from __future__ import annotations
 from rich.text import Text
 
 from dovo.cli.ui.events import WarningEvent
-from dovo.common.types import ComponentFormatter
+from dovo.cli.ui.formatters.base import ComponentFormatter
 
 
 class WarningFormatter(ComponentFormatter[WarningEvent]):

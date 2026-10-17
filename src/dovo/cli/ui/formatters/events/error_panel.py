@@ -5,7 +5,7 @@ from __future__ import annotations
 from rich.panel import Panel
 
 from dovo.cli.ui.events import ErrorPanelEvent
-from dovo.common.types import ComponentFormatter
+from dovo.cli.ui.formatters.base import ComponentFormatter
 
 
 class ErrorPanelFormatter(ComponentFormatter[ErrorPanelEvent]):

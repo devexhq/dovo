@@ -6,7 +6,7 @@ from __future__ import annotations
 import sys
 from collections import deque
 
-from rich.console import Console
+from rich.console import Console, RenderableType
 from rich.text import Text
 
 from dovo.cli.ui.events import StepDoneEvent, StepOutputEvent, StepStartEvent, WorktreeLifecycleEvent
@@ -78,23 +78,23 @@ class CollapsingTailDisplay:
             summary = Text.from_markup(f"[bold red]✖[/] [{event.idx}/{event.total}] {event.step_id}  {detail}")
         self.console.print(summary)
 
-    def handle_worktree(self, event: WorktreeLifecycleEvent, rendered: Text) -> None:
+    def handle_worktree(self, event: WorktreeLifecycleEvent, rendered: RenderableType) -> None:
         """Print a worktree lifecycle notice above any active tail.
 
         Args:
             event: WorktreeLifecycleEvent (used to update worktree info if needed).
-            rendered: Pre-rendered Text from WorktreeLifecycleFormatter.
+            rendered: Pre-rendered notice from WorktreeLifecycleFormatter.
         """
         del event
         self._erase_tail()
         self.console.print(rendered)
         self._reprint_tail()
 
-    def print_above(self, renderable: object) -> None:
+    def print_above(self, renderable: RenderableType) -> None:
         """Print a Rich renderable above the current tail without losing tail context.
 
         Args:
-            renderable: Any Rich-renderable object.
+            renderable: Rich renderable to print.
         """
         self._erase_tail()
         self.console.print(renderable)

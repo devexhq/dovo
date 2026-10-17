@@ -3,12 +3,12 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
 
+from rich.console import RenderableType
 from rich.text import Text
 
+from dovo.cli.ui.formatters.base import ComponentFormatter
 from dovo.cli.ui.formatters.common import build_error_panel
-from dovo.common.types import ComponentFormatter
 from dovo.common.utils import enum_value
 from dovo.core.catalog.models import CatalogCreateResult, CatalogTier
 
@@ -27,7 +27,7 @@ def _display_path(tier: CatalogTier, rel_path: Path, resolved_path: Path) -> str
 class CatalogCreateFormatter(ComponentFormatter[CatalogCreateResult]):
     """Formatter for catalog create command results."""
 
-    def to_rich(self, data: CatalogCreateResult) -> Any:
+    def to_rich(self, data: CatalogCreateResult) -> RenderableType:
         """Render blueprint creation confirmation or failure panel."""
         if data.errors or not data.ok or data.item is None or data.resolved_path is None:
             return build_error_panel(
