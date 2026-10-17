@@ -5,10 +5,13 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
 from typer.testing import CliRunner
 
 from dovo.cli import app
 from dovo.common.filesystem.services.global_root import resolve_global_paths
+
+pytestmark = pytest.mark.usefixtures("workspace_config")
 
 
 class StepCreateCliIntegrationTests:

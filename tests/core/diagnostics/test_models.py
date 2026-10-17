@@ -16,32 +16,20 @@ from dovo.core.diagnostics.models import (
     DiagnosticsContext,
     DiagnosticsReport,
 )
+from tests.harness.builders import diagnostic_result
 
 WorkspacePathsFactory = Callable[[Path, Path | None], WorkspacePaths]
 
 
-class ConformingCheck:
-    """Protocol-conforming test double for DiagnosticCheck."""
+class StructuralCheck:
+    """Conforms to DiagnosticCheck by shape alone, without inheriting it."""
 
-    check_id: str = "test.check"
-    name: str = "Test Check"
+    check_id: str = "structural.check"
+    name: str = "Structural Check"
     category: CheckCategory = CheckCategory.GIT
 
     def execute(self, context: DiagnosticsContext) -> DiagnosticCheckResult:
-        return DiagnosticCheckResult(
-            check_id=self.check_id,
-            name=self.name,
-            category=self.category,
-            status=CheckStatus.OK,
-            message="Check passed.",
-            details={},
-            duration_ms=1.5,
-            error_code=None,
-            errors=[],
-            warnings=[],
-            fixes=[],
-            remediations=[],
-        )
+        return diagnostic_result(check_id=self.check_id, name=self.name, category=self.category)
 
 
 class NonConformingCheck:
@@ -68,20 +56,7 @@ class DiagnosticsModelsTests:
         status: CheckStatus,
         expected_ok: bool,
     ) -> None:
-        result = DiagnosticCheckResult(
-            check_id="test.status",
-            name="Status Check",
-            category=CheckCategory.CONFIG,
-            status=status,
-            message=f"Status is {status}",
-            details={"key": "value"},
-            duration_ms=4.2,
-            error_code="TEST_ERROR" if status == CheckStatus.FAILED else None,
-            errors=[f"Error: {status}"] if status == CheckStatus.FAILED else [],
-            warnings=[f"Warning: {status}"] if status == CheckStatus.WARNING else [],
-            fixes=[],
-            remediations=[],
-        )
+        result = diagnostic_result(status=status)
 
         assert result.ok is expected_ok
 
@@ -105,7 +80,7 @@ class DiagnosticsModelsTests:
         assert context.config == config
 
     def test_diagnostic_check_protocol_runtime_checkable(self) -> None:
-        conforming = ConformingCheck()
+        conforming = StructuralCheck()
         non_conforming = NonConformingCheck()
 
         assert isinstance(conforming, DiagnosticCheck)
@@ -116,34 +91,8 @@ class DiagnosticsReportModelsTests:
     """Unit tests for DiagnosticsReport model and aggregate properties."""
 
     def test_report_ok_true_when_checks_ok_or_skipped(self, tmp_path: Path) -> None:
-        check1 = DiagnosticCheckResult(
-            check_id="check.one",
-            name="Check One",
-            category=CheckCategory.GIT,
-            status=CheckStatus.OK,
-            message="passed",
-            details={},
-            duration_ms=1.0,
-            error_code=None,
-            errors=[],
-            warnings=[],
-            fixes=[],
-            remediations=[],
-        )
-        check2 = DiagnosticCheckResult(
-            check_id="check.two",
-            name="Check Two",
-            category=CheckCategory.CONFIG,
-            status=CheckStatus.SKIPPED,
-            message="skipped",
-            details={},
-            duration_ms=0.0,
-            error_code=None,
-            errors=[],
-            warnings=[],
-            fixes=[],
-            remediations=[],
-        )
+        check1 = diagnostic_result(status=CheckStatus.OK)
+        check2 = diagnostic_result(status=CheckStatus.SKIPPED)
         report = DiagnosticsReport(
             workspace_root=tmp_path,
             checks=[check1, check2],
@@ -154,34 +103,8 @@ class DiagnosticsReportModelsTests:
         assert report.has_warnings is False
 
     def test_report_ok_false_when_any_check_failed(self, tmp_path: Path) -> None:
-        check_ok = DiagnosticCheckResult(
-            check_id="check.ok",
-            name="Check OK",
-            category=CheckCategory.GIT,
-            status=CheckStatus.OK,
-            message="passed",
-            details={},
-            duration_ms=1.0,
-            error_code=None,
-            errors=[],
-            warnings=[],
-            fixes=[],
-            remediations=[],
-        )
-        check_failed = DiagnosticCheckResult(
-            check_id="check.failed",
-            name="Check Failed",
-            category=CheckCategory.WORKTREE,
-            status=CheckStatus.FAILED,
-            message="failed",
-            details={"error": "broken"},
-            duration_ms=2.5,
-            error_code="DOCTOR_CHECK_CRASH",
-            errors=["broken"],
-            warnings=[],
-            fixes=[],
-            remediations=[],
-        )
+        check_ok = diagnostic_result(status=CheckStatus.OK)
+        check_failed = diagnostic_result(status=CheckStatus.FAILED)
         report = DiagnosticsReport(
             workspace_root=tmp_path,
             checks=[check_ok, check_failed],
@@ -191,20 +114,7 @@ class DiagnosticsReportModelsTests:
         assert report.ok is False
 
     def test_report_has_warnings_true_when_warning_present(self, tmp_path: Path) -> None:
-        check_warn = DiagnosticCheckResult(
-            check_id="check.warn",
-            name="Check Warning",
-            category=CheckCategory.ENVIRONMENT,
-            status=CheckStatus.WARNING,
-            message="warning",
-            details={},
-            duration_ms=1.2,
-            error_code=None,
-            errors=[],
-            warnings=["disk space low"],
-            fixes=[],
-            remediations=[],
-        )
+        check_warn = diagnostic_result(status=CheckStatus.WARNING)
         report = DiagnosticsReport(
             workspace_root=tmp_path,
             checks=[check_warn],
@@ -215,62 +125,10 @@ class DiagnosticsReportModelsTests:
         assert report.has_warnings is True
 
     def test_report_with_every_status_is_not_ok_and_has_warnings(self, tmp_path: Path) -> None:
-        check_ok = DiagnosticCheckResult(
-            check_id="c.ok",
-            name="OK",
-            category=CheckCategory.GIT,
-            status=CheckStatus.OK,
-            message="ok",
-            details={},
-            duration_ms=0.5,
-            error_code=None,
-            errors=[],
-            warnings=[],
-            fixes=[],
-            remediations=[],
-        )
-        check_warn = DiagnosticCheckResult(
-            check_id="c.warn",
-            name="WARN",
-            category=CheckCategory.FILESYSTEM,
-            status=CheckStatus.WARNING,
-            message="warn",
-            details={},
-            duration_ms=0.5,
-            error_code=None,
-            errors=[],
-            warnings=["warn"],
-            fixes=[],
-            remediations=[],
-        )
-        check_fail = DiagnosticCheckResult(
-            check_id="c.fail",
-            name="FAIL",
-            category=CheckCategory.AGENT,
-            status=CheckStatus.FAILED,
-            message="fail",
-            details={},
-            duration_ms=0.5,
-            error_code="CRASH",
-            errors=["fail"],
-            warnings=[],
-            fixes=[],
-            remediations=[],
-        )
-        check_skip = DiagnosticCheckResult(
-            check_id="c.skip",
-            name="SKIP",
-            category=CheckCategory.CONFIG,
-            status=CheckStatus.SKIPPED,
-            message="skip",
-            details={},
-            duration_ms=0.0,
-            error_code=None,
-            errors=[],
-            warnings=[],
-            fixes=[],
-            remediations=[],
-        )
+        check_ok = diagnostic_result(status=CheckStatus.OK)
+        check_warn = diagnostic_result(status=CheckStatus.WARNING)
+        check_fail = diagnostic_result(status=CheckStatus.FAILED)
+        check_skip = diagnostic_result(status=CheckStatus.SKIPPED)
 
         report = DiagnosticsReport(
             workspace_root=tmp_path,

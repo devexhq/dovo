@@ -5,25 +5,22 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
 from typer.testing import CliRunner
 
 from dovo.cli import app
-from dovo.common.filesystem.models import WorkspacePaths
 from dovo.core.catalog import Catalog
 from dovo.core.catalog.models import CatalogItemType
 from tests.harness.workspace_paths import initialized_workspace_paths
 
-
-def _paths_for(root: Path) -> WorkspacePaths:
-    """Resolve the WorkspacePaths snapshot for root, reflecting its current project.json."""
-    return initialized_workspace_paths(root)
+pytestmark = pytest.mark.usefixtures("workspace_config")
 
 
 class StepShowCliIntegrationTests:
     """Typer runner integration tests for dovo step show."""
 
     def test_step_show_cli_renders_terminal_metadata(self, cli_runner: CliRunner, isolated_workspace: Path) -> None:
-        Catalog(_paths_for(isolated_workspace)).create(CatalogItemType.STEP, "show-step")
+        Catalog(initialized_workspace_paths(isolated_workspace)).create(CatalogItemType.STEP, "show-step")
 
         result = cli_runner.invoke(app, ["-p", str(isolated_workspace), "step", "show", "show-step"])
 
@@ -33,7 +30,7 @@ class StepShowCliIntegrationTests:
         assert "Blueprint:" not in result.stdout
 
     def test_step_show_cli_renders_json(self, cli_runner: CliRunner, isolated_workspace: Path) -> None:
-        Catalog(_paths_for(isolated_workspace)).create(CatalogItemType.STEP, "json-show-step")
+        Catalog(initialized_workspace_paths(isolated_workspace)).create(CatalogItemType.STEP, "json-show-step")
 
         result = cli_runner.invoke(
             app, ["-p", str(isolated_workspace), "step", "show", "json-show-step", "--format", "json"]
@@ -45,7 +42,7 @@ class StepShowCliIntegrationTests:
         assert payload["payload"]["item"]["tier"] == "repo"
 
     def test_step_show_cli_scopes_to_step_type(self, cli_runner: CliRunner, isolated_workspace: Path) -> None:
-        Catalog(_paths_for(isolated_workspace)).create(CatalogItemType.BLUEPRINT, "shared-name")
+        Catalog(initialized_workspace_paths(isolated_workspace)).create(CatalogItemType.BLUEPRINT, "shared-name")
 
         result = cli_runner.invoke(app, ["-p", str(isolated_workspace), "step", "show", "shared-name"])
 

@@ -4,20 +4,17 @@ from __future__ import annotations
 
 import json
 from collections.abc import Mapping
-from pathlib import Path
 
 import pytest
 
 from dovo.common.filesystem.models import WorkspacePaths
-from dovo.core.artifacts import Artifacts
-from dovo.core.artifacts.models import ArtifactProvenance
 from dovo.core.artifacts.store import ArtifactStore
 from dovo.core.catalog.definitions import StepDefinition
-from dovo.core.db.repositories.artifacts import ArtifactsRepository
 from dovo.core.interaction import InteractionAnswer
 from dovo.engine.executors import evaluate_condition
 from dovo.engine.executors.ask_step import complete_ask_step, resolve_ask_request
 from dovo.engine.executors.models import PreviousStepMetadata, StepExecutionContext
+from tests.conftest import PublishArtifact
 
 _MESSAGE = "Approve ${{ inputs.feature }} ({{ steps.plan.outputs.title }}, {{ artifacts.plan.revision }})?"
 _OPTIONS_FROM = {
@@ -29,17 +26,8 @@ _OPTIONS_FROM = {
 }
 
 
-def _publish(store: ArtifactStore, tmp_path: Path, name: str, files: dict[str, str]) -> None:
-    """Publish files as artifact name through store."""
-    source = tmp_path / f"source-{name}"
-    source.mkdir(exist_ok=True)
-    for relative_path, content in files.items():
-        (source / relative_path).write_text(content, encoding="utf-8")
-    assert store.publish(source, name=name, path_glob="*", retention_days=None, provenance=ArtifactProvenance()).ok
-
-
 def _context(
-    paths: WorkspacePaths, repository: ArtifactsRepository, interaction: Mapping[str, object], step_id: str = "approve"
+    paths: WorkspacePaths, store: ArtifactStore, interaction: Mapping[str, object], step_id: str = "approve"
 ) -> StepExecutionContext:
     """Build an ask-step execution context for session wf_1 with feature input and a prior `plan` step."""
     step = StepDefinition.model_validate({"id": step_id, "type": "ask", "interaction": interaction})
@@ -50,14 +38,14 @@ def _context(
         previous_step=PreviousStepMetadata(id="plan", outputs={"title": "Export plan"}),
         steps=[PreviousStepMetadata(id="plan", outputs={"title": "Export plan"})],
         session_id="wf_1",
-        artifact_store=ArtifactStore(Artifacts(paths, repository), "wf_1"),
+        artifact_store=store,
         paths=paths,
         sensitive_variables=("ASK_TEST_SECRET",),
     )
 
 
 @pytest.fixture
-def ask_context(engine_paths: WorkspacePaths, artifacts_repository: ArtifactsRepository) -> StepExecutionContext:
+def ask_context(engine_paths: WorkspacePaths, artifact_store: ArtifactStore) -> StepExecutionContext:
     """Context for a select ask step `approve` over approve / revise / deny."""
     interaction: dict[str, object] = {
         "mode": "select",
@@ -69,18 +57,18 @@ def ask_context(engine_paths: WorkspacePaths, artifacts_repository: ArtifactsRep
         ],
         "comment": {"policy": "optional"},
     }
-    return _context(engine_paths, artifacts_repository, interaction)
+    return _context(engine_paths, artifact_store, interaction)
 
 
 class AskStepExecutorTests:
     """Contract tests for resolve_ask_request and complete_ask_step."""
 
     def test_message_interpolates_inputs_steps_and_artifacts(
-        self, tmp_path: Path, engine_paths: WorkspacePaths, artifacts_repository: ArtifactsRepository
+        self, engine_paths: WorkspacePaths, artifact_store: ArtifactStore, publish_artifact: PublishArtifact
     ) -> None:
-        context = _context(engine_paths, artifacts_repository, {"mode": "confirm", "message": _MESSAGE})
+        context = _context(engine_paths, artifact_store, {"mode": "confirm", "message": _MESSAGE})
         assert context.artifact_store is not None
-        _publish(context.artifact_store, tmp_path, "plan", {"PLAN.md": "plan"})
+        publish_artifact("plan", {"PLAN.md": "plan"})
 
         resolution = resolve_ask_request(context)
 
@@ -88,11 +76,11 @@ class AskStepExecutorTests:
         assert resolution.request.message == "Approve export (Export plan, 1)?"
 
     def test_failed_resolution_becomes_failed_step_result_with_code(
-        self, engine_paths: WorkspacePaths, artifacts_repository: ArtifactsRepository
+        self, engine_paths: WorkspacePaths, artifact_store: ArtifactStore
     ) -> None:
         interaction = {"mode": "multiselect", "message": "Fix?", "options_from": _OPTIONS_FROM}
 
-        resolution = resolve_ask_request(_context(engine_paths, artifacts_repository, interaction, "triage"))
+        resolution = resolve_ask_request(_context(engine_paths, artifact_store, interaction, "triage"))
 
         assert resolution.request is None
         assert resolution.result is not None
@@ -100,12 +88,12 @@ class AskStepExecutorTests:
         assert "(ASK_OPTIONS_ARTIFACT_NOT_FOUND)" in (resolution.result.error_message or "")
 
     def test_empty_multiselect_settles_completed_without_a_request(
-        self, tmp_path: Path, engine_paths: WorkspacePaths, artifacts_repository: ArtifactsRepository
+        self, engine_paths: WorkspacePaths, artifact_store: ArtifactStore, publish_artifact: PublishArtifact
     ) -> None:
         interaction = {"mode": "multiselect", "message": "Fix?", "options_from": _OPTIONS_FROM}
-        context = _context(engine_paths, artifacts_repository, interaction, "triage")
+        context = _context(engine_paths, artifact_store, interaction, "triage")
         assert context.artifact_store is not None
-        _publish(context.artifact_store, tmp_path, "review", {"review.json": json.dumps({"findings": []})})
+        publish_artifact("review", {"review.json": json.dumps({"findings": []})})
 
         resolution = resolve_ask_request(context)
 
@@ -169,12 +157,12 @@ class AskStepExecutorTests:
         assert evaluation.passed is expected
 
     def test_empty_selection_stdout_satisfies_zero_count_condition(
-        self, tmp_path: Path, engine_paths: WorkspacePaths, artifacts_repository: ArtifactsRepository
+        self, engine_paths: WorkspacePaths, artifact_store: ArtifactStore, publish_artifact: PublishArtifact
     ) -> None:
         interaction = {"mode": "multiselect", "message": "Fix?", "options_from": _OPTIONS_FROM}
-        context = _context(engine_paths, artifacts_repository, interaction, "triage")
+        context = _context(engine_paths, artifact_store, interaction, "triage")
         assert context.artifact_store is not None
-        _publish(context.artifact_store, tmp_path, "review", {"review.json": json.dumps({"findings": []})})
+        publish_artifact("review", {"review.json": json.dumps({"findings": []})})
         settled = resolve_ask_request(context).result
         assert settled is not None
 

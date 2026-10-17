@@ -1,0 +1,51 @@
+name: E2E
+
+# The end-to-end suite drives the installed `dovo` binary against real fixture
+# repositories and takes about four minutes, so it runs after each merge to
+# main rather than on every pull request commit.
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+# A newer merge re-tests everything an older queued run would have, so only the
+# latest run per ref is kept.
+concurrency:
+  group: e2e-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  e2e:
+    name: E2E tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      COLUMNS: "160"
+      PYTHONIOENCODING: "utf-8"
+      # fixtures.lock pins an SSH URL; the runner has no SSH key, and the
+      # fixture repository is public, so clone it over HTTPS instead.
+      DOVO_E2E_FIXTURES_DIR: "https://github.com/devexhq/dovo-e2e-fixtures.git"
+
+    steps:
+      - name: Checkout Code Repository
+        uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Set up Python Environment
+        run: uv python install 3.13
+
+      - name: Install dependencies
+        run: uv sync --all-extras
+
+      - name: Run E2E tests
+        # Serial (-n 0): the session fixture holds an exclusive lock on
+        # /tmp/dovo-e2e.lock, so pytest-xdist workers would collide.
+        run: uv run pytest e2e -n 0 --durations=15

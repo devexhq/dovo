@@ -2,41 +2,11 @@
 
 from __future__ import annotations
 
-import json
-import subprocess
 from pathlib import Path
 
 import pytest
 
-from e2e.conftest import DovoRunner
-
-
-def _write_blueprint(project: Path, name: str, content: str, *, runner: DovoRunner | None = None) -> Path:
-    """Write a blueprint YAML definition into the project repository catalog and commit it."""
-    blueprint_file = project / ".dovo" / "catalog" / "blueprints" / f"{name}.yml"
-    blueprint_file.parent.mkdir(parents=True, exist_ok=True)
-    blueprint_file.write_text(content, encoding="utf-8")
-    if runner is not None:
-        runner(["blueprint", "list"], cwd=project)
-    subprocess.run(["git", "add", "-A"], cwd=project, check=True, capture_output=True)
-    subprocess.run(
-        ["git", "commit", "-m", f"chore: add blueprint {name}"], cwd=project, check=True, capture_output=True
-    )
-    return blueprint_file
-
-
-def _parse_json(stdout: str) -> dict[str, object]:
-    """Extract and parse first JSON payload from command output."""
-    for line in stdout.splitlines():
-        trimmed = line.strip()
-        if trimmed.startswith("{") and trimmed.endswith("}"):
-            try:
-                data = json.loads(trimmed)
-                if isinstance(data, dict):
-                    return data
-            except json.JSONDecodeError:
-                pass
-    return json.loads(stdout)
+from e2e.conftest import DovoRunner, parse_json, write_blueprint
 
 
 @pytest.mark.e2e
@@ -49,13 +19,7 @@ class SessionsAndHistoryCliTests:
         run_dovo: DovoRunner,
         initialized_project: Path,
     ) -> None:
-        """Scenario: dovo session list displays recorded sessions and supports filtering by status and limit.
-
-        Given an initialized workspace with multiple executed sessions across different statuses
-        When dovo session list is executed with --status completed and --limit 1
-        Then only completed sessions are returned up to the specified limit
-        """
-        _write_blueprint(
+        write_blueprint(
             initialized_project,
             "success-bp",
             """version: "1.0"
@@ -67,7 +31,7 @@ steps:
 """,
             runner=run_dovo,
         )
-        _write_blueprint(
+        write_blueprint(
             initialized_project,
             "failure-bp",
             """version: "1.0"
@@ -89,7 +53,7 @@ steps:
             cwd=initialized_project,
         )
         assert result.exit_code == 0
-        data = _parse_json(result.stdout)
+        data = parse_json(result.stdout)
         payload = data.get("payload", {})
         assert isinstance(payload, dict)
         sessions = payload.get("sessions", [])
@@ -108,13 +72,7 @@ steps:
         run_dovo: DovoRunner,
         initialized_project: Path,
     ) -> None:
-        """Scenario: dovo session show presents session execution metadata and step results.
-
-        Given an executed session with recorded steps
-        When dovo session show is executed for the session identifier
-        Then session metadata including status, duration, and step execution details are presented
-        """
-        _write_blueprint(
+        write_blueprint(
             initialized_project,
             "metadata-bp",
             """version: "1.0"
@@ -135,7 +93,7 @@ steps:
 
         show_json = run_dovo(["session", "show", session_id, "--format", "json"], cwd=initialized_project)
         assert show_json.exit_code == 0
-        data = _parse_json(show_json.stdout)
+        data = parse_json(show_json.stdout)
         payload = data.get("payload", {})
         assert isinstance(payload, dict)
         session = payload.get("session", {})
@@ -155,13 +113,7 @@ steps:
         run_dovo: DovoRunner,
         initialized_project: Path,
     ) -> None:
-        """Scenario: dovo diff presents the latest session changeset, and --raw outputs plain unformatted diff.
-
-        Given an executed session that modified files in the workspace
-        When dovo diff and dovo diff <session_id> --raw are executed
-        Then dovo diff presents the unified diff and --raw outputs the unformatted patch directly
-        """
-        _write_blueprint(
+        write_blueprint(
             initialized_project,
             "diff-sample-bp",
             """version: "1.0"
@@ -196,13 +148,7 @@ steps:
         run_dovo: DovoRunner,
         initialized_project: Path,
     ) -> None:
-        """Scenario: dovo logs displays the structured session event timeline.
-
-        Given an executed session with lifecycle and step events
-        When dovo logs <session_id> is executed
-        Then the structured timeline of session and step events is presented
-        """
-        _write_blueprint(
+        write_blueprint(
             initialized_project,
             "timeline-bp",
             """version: "1.0"
@@ -236,13 +182,7 @@ steps:
         run_dovo: DovoRunner,
         initialized_project: Path,
     ) -> None:
-        """Scenario: dovo logs with --step and --stream displays step attempt output with optional --tail filtering.
-
-        Given a session whose step emitted multi-line stdout output
-        When dovo logs is executed with --step, --stream stdout, and --tail
-        Then the trailing lines of the specified stream are returned
-        """
-        _write_blueprint(
+        write_blueprint(
             initialized_project,
             "multiline-bp",
             """version: "1.0"
@@ -274,12 +214,7 @@ steps:
         run_dovo: DovoRunner,
         initialized_project: Path,
     ) -> None:
-        """Scenario: Secrets and configured sensitive variables are masked as [REDACTED:<name>] across history, logs, and diff.
-
-        Given a workspace configured with environment.sensitive_variables and a session operating on secret values
-        When dovo logs, dovo diff, and dovo session show are inspected
-        Then secret values are masked with [REDACTED:<name>] and never appear in plain text
-        """
+        """Configured sensitive variables are masked as [REDACTED:<name>] in logs, diff and session show."""
         secret_name = "MY_SPECIAL_API_TOKEN"
         secret_value = "super_secret_val_88319"
         env_with_secret = {"MY_SPECIAL_API_TOKEN": secret_value}
@@ -290,7 +225,7 @@ steps:
         )
         assert cfg_res.exit_code == 0
 
-        _write_blueprint(
+        write_blueprint(
             initialized_project,
             "redact-check-bp",
             f"""version: "1.0"

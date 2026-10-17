@@ -5,7 +5,6 @@ from pathlib import Path
 from typing import Any
 
 from dovo.common.filesystem import Filesystem
-from dovo.common.filesystem.models import WorkspacePaths
 from dovo.core.config.models import (
     ConfigTier,
     DoctorConfig,
@@ -17,56 +16,18 @@ from dovo.core.diagnostics.diagnostics import Diagnostics
 from dovo.core.diagnostics.models import (
     CheckCategory,
     CheckStatus,
-    DiagnosticCheckResult,
-    DiagnosticsContext,
 )
 from dovo.core.diagnostics.services.registry import CheckRegistry, get_default_registry
+from tests.harness.builders import StubCheck
 from tests.harness.workspace_paths import initialized_workspace_paths
-
-
-def _paths_for(root: Path) -> WorkspacePaths:
-    """Resolve the WorkspacePaths snapshot for root, reflecting its current project.json."""
-    return initialized_workspace_paths(root)
-
-
-class DummyDiagnosticCheck:
-    """Protocol-conforming test double for DiagnosticCheck."""
-
-    def __init__(
-        self,
-        check_id: str,
-        name: str = "Dummy Diagnostics Check",
-        category: CheckCategory = CheckCategory.GIT,
-    ) -> None:
-        self.check_id = check_id
-        self.name = name
-        self.category = category
-        self.captured_context: DiagnosticsContext | None = None
-
-    def execute(self, context: DiagnosticsContext) -> DiagnosticCheckResult:
-        self.captured_context = context
-        return DiagnosticCheckResult(
-            check_id=self.check_id,
-            name=self.name,
-            category=self.category,
-            status=CheckStatus.OK,
-            message=f"Executed {self.check_id}",
-            details={},
-            duration_ms=0.5,
-            error_code=None,
-            errors=[],
-            warnings=[],
-            fixes=[],
-            remediations=[],
-        )
 
 
 class DiagnosticsCoordinatorTests:
     """Unit tests for Diagnostics entrypoint coordinator."""
 
     def test_run_diagnostics_delegates_to_runner_with_registered_checks(self, tmp_path: Path) -> None:
-        doctor = Diagnostics(_paths_for(tmp_path), registry=CheckRegistry())
-        check = DummyDiagnosticCheck(check_id="test.delegation", category=CheckCategory.GIT)
+        doctor = Diagnostics(initialized_workspace_paths(tmp_path), registry=CheckRegistry())
+        check = StubCheck(check_id="test.delegation", category=CheckCategory.GIT)
         doctor.registry.register(check)
 
         report = doctor.run_diagnostics()
@@ -89,8 +50,8 @@ class DiagnosticsCoordinatorTests:
         )
         Filesystem.atomic_write_json(config_dir / "config.json", serialize_config(config))
 
-        doctor = Diagnostics(_paths_for(tmp_path), registry=CheckRegistry())
-        git_check = DummyDiagnosticCheck(check_id="git.repo", category=CheckCategory.GIT)
+        doctor = Diagnostics(initialized_workspace_paths(tmp_path), registry=CheckRegistry())
+        git_check = StubCheck(check_id="git.repo", category=CheckCategory.GIT)
         doctor.registry.register(git_check)
 
         report = doctor.run_diagnostics(config=None)
@@ -113,8 +74,8 @@ class DiagnosticsCoordinatorTests:
             config_dir / "config.json", {"version": 1, "project": {"name": "resolved-project"}}
         )
 
-        doctor = Diagnostics(_paths_for(tmp_path), registry=CheckRegistry())
-        git_check = DummyDiagnosticCheck(check_id="git.repo", category=CheckCategory.GIT)
+        doctor = Diagnostics(initialized_workspace_paths(tmp_path), registry=CheckRegistry())
+        git_check = StubCheck(check_id="git.repo", category=CheckCategory.GIT)
         doctor.registry.register(git_check)
 
         report = doctor.run_diagnostics(config=None)
@@ -130,8 +91,8 @@ class DiagnosticsCoordinatorTests:
             doctor=DoctorConfig(check_git=False),
         )
 
-        doctor = Diagnostics(_paths_for(tmp_path), registry=CheckRegistry())
-        git_check = DummyDiagnosticCheck(check_id="git.repo", category=CheckCategory.GIT)
+        doctor = Diagnostics(initialized_workspace_paths(tmp_path), registry=CheckRegistry())
+        git_check = StubCheck(check_id="git.repo", category=CheckCategory.GIT)
         doctor.registry.register(git_check)
 
         report = doctor.run_diagnostics(config=explicit_config)
@@ -142,9 +103,9 @@ class DiagnosticsCoordinatorTests:
         assert report.checks[0].status == CheckStatus.SKIPPED
 
     def test_run_diagnostics_propagates_category_filter(self, tmp_path: Path) -> None:
-        doctor = Diagnostics(_paths_for(tmp_path), registry=CheckRegistry())
-        git_check = DummyDiagnosticCheck(check_id="git.repo", category=CheckCategory.GIT)
-        config_check = DummyDiagnosticCheck(check_id="config.schema", category=CheckCategory.CONFIG)
+        doctor = Diagnostics(initialized_workspace_paths(tmp_path), registry=CheckRegistry())
+        git_check = StubCheck(check_id="git.repo", category=CheckCategory.GIT)
+        config_check = StubCheck(check_id="config.schema", category=CheckCategory.CONFIG)
         doctor.registry.register(git_check)
         doctor.registry.register(config_check)
 
@@ -160,7 +121,7 @@ class DiagnosticsDefaultRegistryTests:
     """Unit tests for Diagnostics.__init__ registry default-wiring."""
 
     def test_init_without_registry_uses_default_registry_with_all_builtin_checks(self, tmp_path: Path) -> None:
-        doctor = Diagnostics(_paths_for(tmp_path))
+        doctor = Diagnostics(initialized_workspace_paths(tmp_path))
 
         assert [(check.check_id, type(check)) for check in doctor.registry.all()] == [
             (check.check_id, type(check)) for check in get_default_registry().all()
@@ -169,7 +130,7 @@ class DiagnosticsDefaultRegistryTests:
     def test_init_with_explicit_registry_does_not_use_default_registry(self, tmp_path: Path) -> None:
         explicit_registry = CheckRegistry()
 
-        doctor = Diagnostics(_paths_for(tmp_path), registry=explicit_registry)
+        doctor = Diagnostics(initialized_workspace_paths(tmp_path), registry=explicit_registry)
 
         assert doctor.registry is explicit_registry
         assert doctor.registry.all() == []

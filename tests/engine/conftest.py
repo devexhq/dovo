@@ -13,7 +13,6 @@ import pytest
 from dovo.common.filesystem.models import WorkspacePaths
 from dovo.core.agents.models import AgentEnvOverrides, ResolvedAgentSettings
 from dovo.core.db import SessionsRepository, SessionStatus
-from dovo.core.db.repositories.artifacts import ArtifactsRepository
 from dovo.core.worktree import Worktree, WorktreeSession
 from dovo.engine.executors.agent_step import build_agent_step_runner
 from dovo.engine.executors.models import AgentStepRunner, StepExecutionContext
@@ -28,11 +27,6 @@ type DriveRunCall = Callable[[WorkspacePaths, SessionsRepository, str], RunOutco
 type StubDriveRun = Callable[[DriveRunCall | None], None]
 
 
-def _paths_for(root: Path) -> WorkspacePaths:
-    """Resolve the WorkspacePaths snapshot for root, reflecting its current project.json."""
-    return initialized_workspace_paths(root)
-
-
 @pytest.fixture
 def engine_workspace(tmp_path: Path) -> Path:
     """Workspace root with an initialized database."""
@@ -42,7 +36,7 @@ def engine_workspace(tmp_path: Path) -> Path:
 @pytest.fixture
 def engine_paths(engine_workspace: Path) -> WorkspacePaths:
     """Return WorkspacePaths resolved for engine_workspace."""
-    return _paths_for(engine_workspace)
+    return initialized_workspace_paths(engine_workspace)
 
 
 @pytest.fixture
@@ -52,9 +46,9 @@ def sessions_repo(engine_paths: WorkspacePaths) -> SessionsRepository:
 
 
 @pytest.fixture
-def artifacts_repository(engine_paths: WorkspacePaths) -> ArtifactsRepository:
-    """ArtifactsRepository bound to engine_paths' project database."""
-    return ArtifactsRepository(db_path=engine_paths.database_file, project_id=engine_paths.project_id)
+def artifacts_paths(engine_paths: WorkspacePaths) -> WorkspacePaths:
+    """Bind the shared artifacts_repository and artifact_store fixtures to the engine workspace."""
+    return engine_paths
 
 
 def _completed_outcome(paths: WorkspacePaths, sessions: SessionsRepository, session_id: str) -> RunOutcome:
@@ -216,7 +210,7 @@ def worktree_root(tmp_path: Path) -> Path:
 @pytest.fixture
 def worktree_paths(worktree_root: Path) -> WorkspacePaths:
     """Return WorkspacePaths resolved for worktree_root."""
-    return _paths_for(worktree_root)
+    return initialized_workspace_paths(worktree_root)
 
 
 class WorktreeSetup(NamedTuple):

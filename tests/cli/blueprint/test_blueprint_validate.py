@@ -10,16 +10,12 @@ import yaml
 from typer.testing import CliRunner
 
 from dovo.cli import app
-from dovo.common.filesystem.models import WorkspacePaths
 from dovo.core.catalog import Catalog
 from dovo.core.catalog.models import CatalogItemType
 from tests.harness.ask import approval_gate_blueprint, review_triage_blueprint, revise_loop_blueprint
 from tests.harness.workspace_paths import initialized_workspace_paths
 
-
-def _paths_for(root: Path) -> WorkspacePaths:
-    """Resolve the WorkspacePaths snapshot for root, reflecting its current project.json."""
-    return initialized_workspace_paths(root)
+pytestmark = pytest.mark.usefixtures("workspace_config")
 
 
 class BlueprintValidateCliIntegrationTests:
@@ -28,7 +24,7 @@ class BlueprintValidateCliIntegrationTests:
     def test_blueprint_validate_cli_valid_blueprint_exits_zero(
         self, cli_runner: CliRunner, isolated_workspace: Path
     ) -> None:
-        Catalog(_paths_for(isolated_workspace)).create(CatalogItemType.BLUEPRINT, "valid-blueprint")
+        Catalog(initialized_workspace_paths(isolated_workspace)).create(CatalogItemType.BLUEPRINT, "valid-blueprint")
 
         result = cli_runner.invoke(app, ["-p", str(isolated_workspace), "blueprint", "validate", "valid-blueprint"])
 
@@ -36,7 +32,9 @@ class BlueprintValidateCliIntegrationTests:
         assert "PASSED" in result.stdout
 
     def test_blueprint_validate_cli_renders_json(self, cli_runner: CliRunner, isolated_workspace: Path) -> None:
-        Catalog(_paths_for(isolated_workspace)).create(CatalogItemType.BLUEPRINT, "json-valid-blueprint")
+        Catalog(initialized_workspace_paths(isolated_workspace)).create(
+            CatalogItemType.BLUEPRINT, "json-valid-blueprint"
+        )
 
         result = cli_runner.invoke(
             app, ["-p", str(isolated_workspace), "blueprint", "validate", "json-valid-blueprint", "--format", "json"]

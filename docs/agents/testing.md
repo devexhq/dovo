@@ -111,9 +111,13 @@ not rely on ambient terminal size or mutate `os.environ["COLUMNS"]`.
 
 ### Fixtures and Scope
 Shared in `tests/conftest.py`: `isolated_workspace(tmp_path)`, `git_repo(tmp_path)`,
-`cli_runner()` (`NO_COLOR=1`, `COLUMNS=160`). Domain-specific fixtures live in their own test
-module, not `conftest.py`. Fixtures yield plain tuples/paths, not opaque wrappers. Baseline lives
-in the fixture; edge/error conditions mutate the handle inline in the test body.
+`cli_runner()` (`NO_COLOR=1`, `COLUMNS=160`), and `artifacts_repository`, `artifact_store` and
+`publish_artifact` over `artifacts_paths` (an area's `conftest.py` overrides `artifacts_paths` to
+bind them to its own workspace). `tests/cli/conftest.py` adds `cli_workspace` (git, config,
+database, catalog) and `workspace_config`. A fixture used by several modules lives in the nearest
+common `conftest.py`; one used by a single module stays in that module. Shared doubles and
+builders live in `tests/harness`. Fixtures yield plain tuples/paths, not opaque wrappers. Baseline
+lives in the fixture; edge/error conditions mutate the handle inline in the test body.
 
 ## Parameterization as Primary Approach
 

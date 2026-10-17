@@ -8,7 +8,6 @@ from typing import Any
 
 import pytest
 
-from dovo.common.filesystem.models import WorkspacePaths
 from dovo.common.models import FailurePolicy
 from dovo.core.agents import AgentProgressKind, default_tool_policy
 from dovo.core.agents.models import ResolvedAgentSettings
@@ -23,12 +22,6 @@ from tests.harness.builders import StepBuilder
 from tests.harness.sessions import RecordingRunObserver, ScriptedFailurePrompter
 from tests.harness.workspace_paths import initialized_workspace_paths
 
-
-def _paths_for(root: Path) -> WorkspacePaths:
-    """Resolve the WorkspacePaths snapshot for root, reflecting its current project.json."""
-    return initialized_workspace_paths(root)
-
-
 _AGENT_SETTINGS = ResolvedAgentSettings(
     provider="copilot",
     model="test-model",
@@ -42,7 +35,7 @@ _AGENT_SETTINGS = ResolvedAgentSettings(
 def _run_context(tmp_path: Path, *, session_log_dir: Path | None = None) -> RunContext:
     return RunContext(
         session_id="sess-1",
-        paths=_paths_for(tmp_path),
+        paths=initialized_workspace_paths(tmp_path),
         target_dir=tmp_path,
         session_tmp_dir=None,
         session_log_dir=session_log_dir,
@@ -52,19 +45,23 @@ def _run_context(tmp_path: Path, *, session_log_dir: Path | None = None) -> RunC
 
 class BuildStepContextTests:
     def test_no_agent_or_inputs_returns_none(self, tmp_path: Path) -> None:
-        context = RunSettings(cwd=tmp_path, use_worktree=False, paths=_paths_for(tmp_path))
+        context = RunSettings(cwd=tmp_path, use_worktree=False, paths=initialized_workspace_paths(tmp_path))
 
         step_context = StepCoordinator(context).build_step_context()
 
         assert step_context is None
 
     def test_agent_set_without_inputs_returns_none(self, tmp_path: Path) -> None:
-        context = RunSettings(cwd=tmp_path, use_worktree=False, agent=_AGENT_SETTINGS, paths=_paths_for(tmp_path))
+        context = RunSettings(
+            cwd=tmp_path, use_worktree=False, agent=_AGENT_SETTINGS, paths=initialized_workspace_paths(tmp_path)
+        )
 
         assert StepCoordinator(context).build_step_context() is None
 
     def test_inputs_set_returns_inputs_only_dict(self, tmp_path: Path) -> None:
-        context = RunSettings(cwd=tmp_path, use_worktree=False, inputs={"branch": "main"}, paths=_paths_for(tmp_path))
+        context = RunSettings(
+            cwd=tmp_path, use_worktree=False, inputs={"branch": "main"}, paths=initialized_workspace_paths(tmp_path)
+        )
 
         assert StepCoordinator(context).build_step_context() == {"inputs": {"branch": "main"}}
 
@@ -76,7 +73,9 @@ class StepCoordinatorAgentRunnerTests:
         captured_builds: list[AgentRunnerBuild],
         captured_contexts: list[StepExecutionContext],
     ) -> None:
-        context = RunSettings(cwd=tmp_path, use_worktree=False, agent=_AGENT_SETTINGS, paths=_paths_for(tmp_path))
+        context = RunSettings(
+            cwd=tmp_path, use_worktree=False, agent=_AGENT_SETTINGS, paths=initialized_workspace_paths(tmp_path)
+        )
         step = StepBuilder.command("echo ok").with_id("ok").build()
 
         StepCoordinator(context).run_attempt(_run_context(tmp_path), [], step, idx=1, total=1, step_context=None)
@@ -101,7 +100,7 @@ class StepCoordinatorAgentRunnerTests:
             created_at="2026-01-01T00:00:00Z",
         )
         run_context = dataclasses.replace(_run_context(tmp_path), worktree=session if has_worktree else None)
-        context = RunSettings(cwd=tmp_path, use_worktree=has_worktree, paths=_paths_for(tmp_path))
+        context = RunSettings(cwd=tmp_path, use_worktree=has_worktree, paths=initialized_workspace_paths(tmp_path))
         step = StepBuilder.command("echo ok").with_id("ok").build()
 
         StepCoordinator(context).run_attempt(run_context, [], step, idx=1, total=1, step_context=None)
@@ -113,7 +112,7 @@ class StepCoordinatorRunnerWiringTests:
     def test_runner_is_built_with_run_context_session_dirs_and_main_checkout(
         self, tmp_path: Path, captured_builds: list[AgentRunnerBuild]
     ) -> None:
-        paths = _paths_for(tmp_path)
+        paths = initialized_workspace_paths(tmp_path)
         session_tmp = tmp_path / "session-tmp"
         session_log = tmp_path / "session-log"
         run_context = dataclasses.replace(
@@ -134,7 +133,7 @@ class StepCoordinatorRunnerWiringTests:
     def test_runner_session_dir_is_the_session_storage_directory_or_none(
         self, tmp_path: Path, captured_builds: list[AgentRunnerBuild], session_id: str | None
     ) -> None:
-        paths = _paths_for(tmp_path)
+        paths = initialized_workspace_paths(tmp_path)
         context = RunSettings(cwd=tmp_path, use_worktree=False, paths=paths, session_id=session_id)
         step = StepBuilder.command("echo ok").with_id("ok").build()
 
@@ -159,7 +158,7 @@ class StepCoordinatorLoopIterationForwardingTests:
         loop_iteration: int | None,
         expected_filename: str,
     ) -> None:
-        context = RunSettings(cwd=tmp_path, use_worktree=False, paths=_paths_for(tmp_path))
+        context = RunSettings(cwd=tmp_path, use_worktree=False, paths=initialized_workspace_paths(tmp_path))
         step = StepBuilder.command("echo ok").with_id("check").build()
         run_context = _run_context(tmp_path, session_log_dir=tmp_path)
 
@@ -182,7 +181,7 @@ class StepCoordinatorLoopIdTests:
         loop_id: str | None,
         expected: str | None,
     ) -> None:
-        context = RunSettings(cwd=tmp_path, use_worktree=False, paths=_paths_for(tmp_path))
+        context = RunSettings(cwd=tmp_path, use_worktree=False, paths=initialized_workspace_paths(tmp_path))
         step = StepBuilder.command("echo ok").with_id("ok").build()
 
         StepCoordinator(context).run_attempt(
@@ -197,7 +196,9 @@ class StepCoordinatorProgressWiringTests:
         self, tmp_path: Path, captured_contexts: list[StepExecutionContext]
     ) -> None:
         observer = RecordingRunObserver()
-        context = RunSettings(cwd=tmp_path, use_worktree=False, observer=observer, paths=_paths_for(tmp_path))
+        context = RunSettings(
+            cwd=tmp_path, use_worktree=False, observer=observer, paths=initialized_workspace_paths(tmp_path)
+        )
         step = StepBuilder.command("echo ok").with_id("ok").build()
 
         StepCoordinator(context).run_attempt(_run_context(tmp_path), [], step, idx=2, total=5, step_context=None)
@@ -211,7 +212,7 @@ class StepCoordinatorProgressWiringTests:
     def test_progress_callback_is_absent_without_an_observer(
         self, tmp_path: Path, captured_contexts: list[StepExecutionContext]
     ) -> None:
-        context = RunSettings(cwd=tmp_path, use_worktree=False, paths=_paths_for(tmp_path))
+        context = RunSettings(cwd=tmp_path, use_worktree=False, paths=initialized_workspace_paths(tmp_path))
         step = StepBuilder.command("echo ok").with_id("ok").build()
 
         StepCoordinator(context).run_attempt(_run_context(tmp_path), [], step, idx=1, total=1, step_context=None)
@@ -222,7 +223,9 @@ class StepCoordinatorProgressWiringTests:
 class StepCoordinatorPrimitiveTests:
     def test_run_attempt_returns_completed_result_and_notifies_observer(self, tmp_path: Path) -> None:
         observer = RecordingRunObserver()
-        context = RunSettings(cwd=tmp_path, use_worktree=False, observer=observer, paths=_paths_for(tmp_path))
+        context = RunSettings(
+            cwd=tmp_path, use_worktree=False, observer=observer, paths=initialized_workspace_paths(tmp_path)
+        )
         step = StepBuilder.command("echo ok").with_id("ok").build()
 
         result = StepCoordinator(context).run_attempt(
@@ -237,7 +240,9 @@ class StepCoordinatorPrimitiveTests:
 
     def test_run_attempt_returns_failed_result_without_applying_policy(self, tmp_path: Path) -> None:
         prompter = ScriptedFailurePrompter()
-        context = RunSettings(cwd=tmp_path, use_worktree=False, failure_prompter=prompter, paths=_paths_for(tmp_path))
+        context = RunSettings(
+            cwd=tmp_path, use_worktree=False, failure_prompter=prompter, paths=initialized_workspace_paths(tmp_path)
+        )
         step = StepBuilder.command("exit 1").with_id("fail").with_on_failure(FailurePolicy.PROMPT_USER).build()
 
         result = StepCoordinator(context).run_attempt(
@@ -251,7 +256,7 @@ class StepCoordinatorPrimitiveTests:
         self, tmp_path: Path, captured_contexts: list[StepExecutionContext]
     ) -> None:
         context = RunSettings(
-            cwd=tmp_path, use_worktree=False, sensitive_variables=("PIN",), paths=_paths_for(tmp_path)
+            cwd=tmp_path, use_worktree=False, sensitive_variables=("PIN",), paths=initialized_workspace_paths(tmp_path)
         )
         step = StepBuilder.command("echo ok").with_id("ok").build()
 
@@ -276,7 +281,7 @@ class StepCoordinatorPrimitiveTests:
                 )
 
         monkeypatch.setattr("dovo.engine.step_coordinator.StepExecution", _WarningStepExecution)
-        context = RunSettings(cwd=tmp_path, use_worktree=False, paths=_paths_for(tmp_path))
+        context = RunSettings(cwd=tmp_path, use_worktree=False, paths=initialized_workspace_paths(tmp_path))
         step = StepBuilder.command("echo ok").with_id("ok").build()
         warnings: list[str] = []
 
@@ -303,7 +308,7 @@ class StepCoordinatorPrimitiveTests:
             use_worktree=False,
             failure_prompter=prompter,
             **ctx_kwargs,
-            paths=_paths_for(tmp_path),
+            paths=initialized_workspace_paths(tmp_path),
         )
         step = StepBuilder.command("exit 1").with_id("fail").with_on_failure(FailurePolicy.PROMPT_USER).build()
         failed = StepResult(step_id="fail", status="failed", exit_code=1, stdout="", stderr="", duration_seconds=0.0)
@@ -319,7 +324,9 @@ class StepCoordinatorPrimitiveTests:
 
     def test_prompt_decision_interactive_returns_prompter_decision(self, tmp_path: Path) -> None:
         prompter = ScriptedFailurePrompter([FailurePromptDecision.RETRY])
-        context = RunSettings(cwd=tmp_path, use_worktree=False, failure_prompter=prompter, paths=_paths_for(tmp_path))
+        context = RunSettings(
+            cwd=tmp_path, use_worktree=False, failure_prompter=prompter, paths=initialized_workspace_paths(tmp_path)
+        )
         step = StepBuilder.command("exit 1").with_id("fail").with_on_failure(FailurePolicy.PROMPT_USER).build()
         failed = StepResult(step_id="fail", status="failed", exit_code=1, stdout="", stderr="", duration_seconds=0.0)
         coordinator = StepCoordinator(context)

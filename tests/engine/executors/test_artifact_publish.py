@@ -6,8 +6,6 @@ from pathlib import Path
 
 import pytest
 
-from dovo.common.filesystem.models import WorkspacePaths
-from dovo.core.artifacts import Artifacts
 from dovo.core.artifacts.models import ArtifactUploadResult, ArtifactUploadStatus
 from dovo.core.artifacts.store import ArtifactStore
 from dovo.core.catalog.definitions import ArtifactPublishSpec, StepDefinition, StepType
@@ -31,21 +29,16 @@ def _worktree(tmp_path: Path, *files: str) -> Path:
     return worktree_path
 
 
-def _store(paths: WorkspacePaths, repository: ArtifactsRepository) -> ArtifactStore:
-    """Build an ArtifactStore for session wf_1 over the engine workspace."""
-    return ArtifactStore(Artifacts(paths, repository), "wf_1")
-
-
 class PublishDeclaredArtifactsTests:
     """Contract tests for publish_declared_artifacts."""
 
     def test_required_spec_matching_nothing_returns_not_produced_message(
-        self, tmp_path: Path, engine_paths: WorkspacePaths, artifacts_repository: ArtifactsRepository
+        self, tmp_path: Path, artifact_store: ArtifactStore
     ) -> None:
         outcome = publish_declared_artifacts(
             _step(ArtifactPublishSpec(name="plan", path="PLAN.md")),
             worktree_path=_worktree(tmp_path),
-            store=_store(engine_paths, artifacts_repository),
+            store=artifact_store,
             attempt=1,
             loop_iteration=None,
         )
@@ -53,12 +46,12 @@ class PublishDeclaredArtifactsTests:
         assert outcome == ArtifactPublishOutcome(error_message=_MISSING_PLAN, warnings=[])
 
     def test_optional_spec_matching_nothing_returns_warning_and_no_error(
-        self, tmp_path: Path, engine_paths: WorkspacePaths, artifacts_repository: ArtifactsRepository
+        self, tmp_path: Path, artifact_store: ArtifactStore
     ) -> None:
         outcome = publish_declared_artifacts(
             _step(ArtifactPublishSpec(name="plan", path="PLAN.md", required=False)),
             worktree_path=_worktree(tmp_path),
-            store=_store(engine_paths, artifacts_repository),
+            store=artifact_store,
             attempt=1,
             loop_iteration=None,
         )
@@ -89,9 +82,8 @@ class PublishDeclaredArtifactsTests:
         required: bool,
         expected: ArtifactPublishOutcome,
         tmp_path: Path,
-        engine_paths: WorkspacePaths,
-        artifacts_repository: ArtifactsRepository,
         monkeypatch: pytest.MonkeyPatch,
+        artifact_store: ArtifactStore,
     ) -> None:
 
         def _raising_publish(*_args: object, **_kwargs: object) -> ArtifactUploadResult:
@@ -102,7 +94,7 @@ class PublishDeclaredArtifactsTests:
         outcome = publish_declared_artifacts(
             _step(ArtifactPublishSpec(name="plan", path="PLAN.md", required=required)),
             worktree_path=_worktree(tmp_path, "PLAN.md"),
-            store=_store(engine_paths, artifacts_repository),
+            store=artifact_store,
             attempt=1,
             loop_iteration=None,
         )
@@ -110,11 +102,7 @@ class PublishDeclaredArtifactsTests:
         assert outcome == expected
 
     def test_error_result_without_detail_uses_generic_text(
-        self,
-        tmp_path: Path,
-        engine_paths: WorkspacePaths,
-        artifacts_repository: ArtifactsRepository,
-        monkeypatch: pytest.MonkeyPatch,
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, artifact_store: ArtifactStore
     ) -> None:
         monkeypatch.setattr(
             "dovo.core.artifacts.artifacts.publish_artifact",
@@ -124,7 +112,7 @@ class PublishDeclaredArtifactsTests:
         outcome = publish_declared_artifacts(
             _step(ArtifactPublishSpec(name="plan", path="PLAN.md")),
             worktree_path=_worktree(tmp_path, "PLAN.md"),
-            store=_store(engine_paths, artifacts_repository),
+            store=artifact_store,
             attempt=1,
             loop_iteration=None,
         )
@@ -144,7 +132,7 @@ class PublishDeclaredArtifactsTests:
         assert not (tmp_path / "artifacts").exists()
 
     def test_stops_at_first_required_failure_keeping_earlier_revision(
-        self, tmp_path: Path, engine_paths: WorkspacePaths, artifacts_repository: ArtifactsRepository
+        self, tmp_path: Path, artifacts_repository: ArtifactsRepository, artifact_store: ArtifactStore
     ) -> None:
         step = _step(
             ArtifactPublishSpec(name="first", path="a.txt"),
@@ -155,7 +143,7 @@ class PublishDeclaredArtifactsTests:
         outcome = publish_declared_artifacts(
             step,
             worktree_path=_worktree(tmp_path, "a.txt", "c.txt"),
-            store=_store(engine_paths, artifacts_repository),
+            store=artifact_store,
             attempt=1,
             loop_iteration=None,
         )

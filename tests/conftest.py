@@ -16,9 +16,16 @@ from dovo.common.constants import REQUIRED_SUBDIRS
 from dovo.common.filesystem.models import WorkspacePaths
 from dovo.common.filesystem.services.global_root import resolve_global_paths
 from dovo.core.agents.registry import PROVIDERS
+from dovo.core.artifacts import Artifacts
+from dovo.core.artifacts.models import ArtifactProvenance
+from dovo.core.artifacts.store import ArtifactStore
 from dovo.core.config.models import ConfigTier
+from dovo.core.db.repositories.artifacts import ArtifactsRepository
 from dovo.core.project.services.identity import generate_project_identity, save_project_identity
 from tests.harness import initialized_workspace_paths, patch_claude_probe
+from tests.harness.builders import WorkspaceBuilder, init_git_repository
+
+PublishArtifact = Callable[[str, dict[str, str]], None]
 
 
 @pytest.fixture(autouse=True)
@@ -92,6 +99,44 @@ def workspace_paths(
 
 
 @pytest.fixture
+def artifacts_paths(tmp_path: Path) -> WorkspacePaths:
+    """Return WorkspacePaths for a freshly initialized, project-scoped workspace."""
+    workspace_root = WorkspaceBuilder(tmp_path / "artifacts_repo_workspace").build()
+    return initialized_workspace_paths(workspace_root)
+
+
+@pytest.fixture
+def artifacts_repository(artifacts_paths: WorkspacePaths) -> ArtifactsRepository:
+    """ArtifactsRepository bound to artifacts_paths' project database."""
+    return ArtifactsRepository(db_path=artifacts_paths.database_file, project_id=artifacts_paths.project_id)
+
+
+@pytest.fixture
+def artifact_store(artifacts_paths: WorkspacePaths, artifacts_repository: ArtifactsRepository) -> ArtifactStore:
+    """ArtifactStore for session 'wf_1' over artifacts_paths and artifacts_repository."""
+    return ArtifactStore(Artifacts(artifacts_paths, artifacts_repository), "wf_1")
+
+
+@pytest.fixture
+def publish_artifact(artifact_store: ArtifactStore, tmp_path: Path) -> PublishArtifact:
+    """Publish a named artifact holding the given files as the store's next revision."""
+    counter = {"count": 0}
+
+    def publish(name: str, files: dict[str, str]) -> None:
+        counter["count"] += 1
+        worktree = tmp_path / f"worktree-{counter['count']}"
+        worktree.mkdir()
+        for relative_path, content in files.items():
+            (worktree / relative_path).write_text(content, encoding="utf-8")
+        result = artifact_store.publish(
+            worktree, name=name, path_glob="*", retention_days=None, provenance=ArtifactProvenance()
+        )
+        assert result.ok
+
+    return publish
+
+
+@pytest.fixture
 def git_repo(tmp_path: Path) -> Path:
     """Initialize a bare-minimum Git repository with user identity and root commit on main.
 
@@ -103,47 +148,7 @@ def git_repo(tmp_path: Path) -> Path:
     """
     repo = tmp_path / "repo"
     repo.mkdir(parents=True, exist_ok=True)
-
-    subprocess.run(
-        ["git", "init", "-b", "main"],
-        cwd=repo,
-        check=True,
-        capture_output=True,
-        text=True,
-    )
-    subprocess.run(
-        ["git", "config", "user.name", "Test User"],
-        cwd=repo,
-        check=True,
-        capture_output=True,
-        text=True,
-    )
-    subprocess.run(
-        ["git", "config", "user.email", "test@example.com"],
-        cwd=repo,
-        check=True,
-        capture_output=True,
-        text=True,
-    )
-
-    readme_path = repo / "README.md"
-    readme_path.write_text("# Test Repo\n", encoding="utf-8")
-
-    subprocess.run(
-        ["git", "add", "README.md"],
-        cwd=repo,
-        check=True,
-        capture_output=True,
-        text=True,
-    )
-    subprocess.run(
-        ["git", "commit", "-m", "Initial commit"],
-        cwd=repo,
-        check=True,
-        capture_output=True,
-        text=True,
-    )
-
+    init_git_repository(repo, initial_files={"README.md": "# Test Repo\n"})
     return repo
 
 

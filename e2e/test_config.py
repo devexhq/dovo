@@ -16,12 +16,7 @@ class ConfigCliTests:
     """E2E tests for configuration resolution precedence, updates, validation, and masking."""
 
     def test_hierarchical_config_resolution_precedence(self, run_dovo: DovoRunner, initialized_project: Path) -> None:
-        """Scenario: Global, user, and repository configuration resolve in documented precedence.
-
-        Given a global config with max_active_worktrees=5, user config with max_active_worktrees=7, and repo config with max_active_worktrees=9
-        When dovo config show --format json is executed
-        Then the repo setting overrides user and global tiers, yielding max_active_worktrees=9
-        """
+        """User config (7) overrides global (5); a repo override (9) then wins over both."""
         global_config_dir = DOVO_HOME / "global"
         user_config_dir = DOVO_HOME / "user"
         global_config_dir.mkdir(parents=True, exist_ok=True)
@@ -57,12 +52,7 @@ class ConfigCliTests:
     def test_fresh_session_observes_clean_isolated_configuration(
         self, run_dovo: DovoRunner, initialized_project: Path
     ) -> None:
-        """Scenario: Isolated session does not observe foreign global configuration.
-
-        Given a clean test environment with default isolated DOVO_HOME
-        When dovo config show --format json is executed in a newly initialized project
-        Then the effective configuration contains standard schema defaults rather than host ambient settings
-        """
+        """A newly initialized project sees schema defaults, not host ambient settings."""
         result = run_dovo(["config", "show", "--format", "json"], cwd=initialized_project)
 
         assert result.exit_code == 0
@@ -75,12 +65,6 @@ class ConfigCliTests:
     def test_config_show_json_displays_full_normalized_configuration(
         self, run_dovo: DovoRunner, initialized_project: Path
     ) -> None:
-        """Scenario: Config show emits complete parseable JSON payload.
-
-        Given an initialized workspace
-        When dovo config show --format json is executed
-        Then the command exits 0 and returns an envelope with status ok, config_path, and full configuration keys
-        """
         result = run_dovo(["config", "show", "--format", "json"], cwd=initialized_project)
 
         assert result.exit_code == 0
@@ -93,56 +77,38 @@ class ConfigCliTests:
         config_data = payload["config"]
         assert "project" in config_data
         assert "worktree" in config_data
-        assert "agent" in config_data
+        assert "agents" in config_data
         assert "history" in config_data
         assert "environment" in config_data
 
     def test_config_set_updates_nested_dot_path(self, run_dovo: DovoRunner, initialized_project: Path) -> None:
-        """Scenario: Update nested configuration key using dot notation.
-
-        Given an initialized workspace
-        When dovo config set agent.model custom-model-e2e is executed
-        Then the command exits 0 and the updated model name is persisted in .dovo/config.json
-        """
-        result_set = run_dovo(["config", "set", "agent.model", "custom-model-e2e"], cwd=initialized_project)
+        result_set = run_dovo(["config", "set", "agents.copilot.model", "custom-model-e2e"], cwd=initialized_project)
         assert result_set.exit_code == 0
 
         config_file = initialized_project / ".dovo" / "config.json"
         with open(config_file, encoding="utf-8") as f:
             persisted = json.load(f)
 
-        assert persisted["agent"]["model"] == "custom-model-e2e"
+        assert persisted["agents"]["copilot"]["model"] == "custom-model-e2e"
 
     def test_config_unset_reverts_to_schema_default(self, run_dovo: DovoRunner, initialized_project: Path) -> None:
-        """Scenario: Unset overridden configuration key to restore schema defaults.
-
-        Given an initialized workspace with a customized agent model setting
-        When dovo config unset agent.model is executed
-        Then the command exits 0 and the key is removed from config.json, reverting to null
-        """
-        run_dovo(["config", "set", "agent.model", "temporary-model"], cwd=initialized_project)
-        result_unset = run_dovo(["config", "unset", "agent.model"], cwd=initialized_project)
+        run_dovo(["config", "set", "agents.copilot.model", "temporary-model"], cwd=initialized_project)
+        result_unset = run_dovo(["config", "unset", "agents.copilot.model"], cwd=initialized_project)
 
         assert result_unset.exit_code == 0
         config_file = initialized_project / ".dovo" / "config.json"
         with open(config_file, encoding="utf-8") as f:
             persisted = json.load(f)
 
-        assert "model" not in persisted["agent"]
+        assert persisted["agents"] == {"copilot": {}}
 
         result_show = run_dovo(["config", "show", "--format", "json"], cwd=initialized_project)
         envelope = json.loads(result_show.stdout)
-        assert envelope["payload"]["config"]["agent"]["model"] is None
+        assert envelope["payload"]["config"]["agents"]["copilot"]["model"] is None
 
     def test_config_validate_verifies_valid_and_invalid_schemas(
         self, run_dovo: DovoRunner, initialized_project: Path
     ) -> None:
-        """Scenario: Validate configuration schema compliance.
-
-        Given an initialized workspace with a valid .dovo/config.json
-        When dovo config validate is executed
-        Then it exits 0; when corrupted with unexpected properties, it exits 1 with validation errors
-        """
         valid_result = run_dovo(["config", "validate"], cwd=initialized_project)
         assert valid_result.exit_code == 0
         assert "Status: valid" in valid_result.stdout
@@ -161,12 +127,6 @@ class ConfigCliTests:
     def test_config_show_masks_configured_sensitive_variables(
         self, run_dovo: DovoRunner, initialized_project: Path
     ) -> None:
-        """Scenario: Mask configured sensitive variable values in CLI output.
-
-        Given an initialized workspace with environment.sensitive_variables declaring SECRET_KEY
-        When dovo config show is executed with SECRET_KEY present in the process environment
-        Then the secret key value is never printed in cleartext in the standard output
-        """
         secret_value = "super-confidential-token-998877"
         run_dovo(["config", "set", "environment.sensitive_variables", '["SECRET_KEY"]'], cwd=initialized_project)
 

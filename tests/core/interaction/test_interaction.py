@@ -16,7 +16,7 @@ from dovo.core.interaction import (
     InteractionResolveStatus,
     RequestOption,
 )
-from tests.core.interaction.conftest import PublishArtifact
+from tests.conftest import PublishArtifact
 
 
 def _request() -> InteractionRequest:

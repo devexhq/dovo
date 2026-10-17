@@ -98,6 +98,8 @@ Three CI jobs run on pushes to `main` and on pull requests:
 - **prek**: `prek` run against the PR base ref (`origin/${GITHUB_BASE_REF}`) on pull requests, or `--all-files` on `main`.
 - **ci**: Gate job requiring `test` and `prek` to succeed.
 
+The end-to-end suite runs separately, in `.github/workflows/e2e.yml`, on every push to `main` (each merged pull request) and on manual dispatch. It does not run on pull requests. It runs `uv run pytest e2e -n 0`: serial, because the session fixture holds an exclusive lock on `/tmp/dovo-e2e.lock`. `DOVO_E2E_FIXTURES_DIR` points the fixture clone at the public HTTPS URL, because `e2e/fixtures.lock` pins an SSH one. A newer push to `main` cancels a run still in progress.
+
 ---
 
 ## Database Migration Hygiene

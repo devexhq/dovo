@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any
 
 import pytest
 from typer.testing import CliRunner
@@ -22,8 +21,8 @@ class DoctorCliIntegrationTests:
     def test_doctor_cli_healthy_workspace_exits_zero_and_dispatches_report(
         self,
         cli_runner: CliRunner,
-        doctor_workspace: Path,
-        dispatch_spy: list[Any],
+        cli_workspace: Path,
+        dispatch_spy: list[object],
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         monkeypatch.setattr("dovo.core.diagnostics.checks.env_binaries.shutil.which", lambda _name: "/usr/bin/tool")
@@ -31,7 +30,7 @@ class DoctorCliIntegrationTests:
         for env_name in credential_envs:
             monkeypatch.delenv(env_name, raising=False)
         monkeypatch.setenv(credential_envs[0], "fake-token")
-        result = cli_runner.invoke(app, ["-p", str(doctor_workspace), "doctor"])
+        result = cli_runner.invoke(app, ["-p", str(cli_workspace), "doctor"])
 
         assert result.exit_code == 0
         assert "Dovo Doctor Report" in result.stdout
@@ -39,7 +38,7 @@ class DoctorCliIntegrationTests:
         assert len(dispatch_spy) == 1
         report = dispatch_spy[0]
         assert isinstance(report, DiagnosticsReport)
-        assert report.workspace_root == doctor_workspace
+        assert report.workspace_root == cli_workspace
         assert [c.check_id for c in report.checks] == [
             "git.repo",
             "config.schema",
@@ -61,29 +60,29 @@ class DoctorCliIntegrationTests:
         assert report.total_duration_ms >= 0.0
 
     def test_doctor_cli_category_filter_runs_only_matching_check(
-        self, cli_runner: CliRunner, doctor_workspace: Path, dispatch_spy: list[Any]
+        self, cli_runner: CliRunner, cli_workspace: Path, dispatch_spy: list[object]
     ) -> None:
-        result = cli_runner.invoke(app, ["-p", str(doctor_workspace), "doctor", "--category", "git"])
+        result = cli_runner.invoke(app, ["-p", str(cli_workspace), "doctor", "--category", "git"])
 
         assert result.exit_code == 0
         assert len(dispatch_spy) == 1
         report = dispatch_spy[0]
         assert isinstance(report, DiagnosticsReport)
-        assert report.workspace_root == doctor_workspace
+        assert report.workspace_root == cli_workspace
         assert len(report.checks) == 1
         assert report.checks[0].check_id == "git.repo"
         assert report.checks[0].status == CheckStatus.OK
 
     def test_doctor_cli_invalid_category_exits_two_without_dispatch(
-        self, cli_runner: CliRunner, doctor_workspace: Path, dispatch_spy: list[Any]
+        self, cli_runner: CliRunner, cli_workspace: Path, dispatch_spy: list[object]
     ) -> None:
-        result = cli_runner.invoke(app, ["-p", str(doctor_workspace), "doctor", "--category", "bogus"])
+        result = cli_runner.invoke(app, ["-p", str(cli_workspace), "doctor", "--category", "bogus"])
 
         assert result.exit_code == 2
         assert dispatch_spy == []
 
     def test_doctor_cli_non_git_workspace_with_category_git_exits_one(
-        self, cli_runner: CliRunner, tmp_path: Path, dispatch_spy: list[Any]
+        self, cli_runner: CliRunner, tmp_path: Path, dispatch_spy: list[object]
     ) -> None:
         initialized_workspace_paths(tmp_path)
 
@@ -106,12 +105,10 @@ class DoctorCliIntegrationTests:
         assert check.remediations[0].command == "git init"
 
     def test_doctor_cli_renders_json_wire_payload_for_category_git(
-        self, cli_runner: CliRunner, doctor_workspace: Path
+        self, cli_runner: CliRunner, cli_workspace: Path
     ) -> None:
         """Match the literal FR-5 payload for the single git.repo check, with durations as non-negative floats."""
-        result = cli_runner.invoke(
-            app, ["-p", str(doctor_workspace), "doctor", "--category", "git", "--format", "json"]
-        )
+        result = cli_runner.invoke(app, ["-p", str(cli_workspace), "doctor", "--category", "git", "--format", "json"])
 
         assert result.exit_code == 0
         envelope = json.loads(result.stdout)
@@ -130,15 +127,15 @@ class DoctorCliIntegrationTests:
         assert payload == {
             "ok": True,
             "has_warnings": False,
-            "workspace_root": str(doctor_workspace),
+            "workspace_root": str(cli_workspace),
             "checks": [
                 {
                     "check_id": "git.repo",
                     "name": "Git Repository Check",
                     "category": "git",
                     "status": "ok",
-                    "message": f"Git repository detected at '{doctor_workspace}' on branch 'main'.",
-                    "details": {"root": str(doctor_workspace), "branch": "main"},
+                    "message": f"Git repository detected at '{cli_workspace}' on branch 'main'.",
+                    "details": {"root": str(cli_workspace), "branch": "main"},
                     "error_code": None,
                     "errors": [],
                     "warnings": [],

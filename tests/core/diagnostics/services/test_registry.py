@@ -12,40 +12,9 @@ from dovo.core.diagnostics.checks.worktree_refs import WorktreeRefsCheck
 from dovo.core.diagnostics.exceptions import CheckRegistrationError
 from dovo.core.diagnostics.models import (
     CheckCategory,
-    CheckStatus,
-    DiagnosticCheckResult,
-    DiagnosticsContext,
 )
 from dovo.core.diagnostics.services.registry import CheckRegistry, get_default_registry
-
-
-class DummyCheck:
-    """Protocol-conforming test double for DiagnosticCheck."""
-
-    def __init__(
-        self,
-        check_id: str,
-        name: str = "Dummy Check",
-        category: CheckCategory = CheckCategory.GIT,
-    ) -> None:
-        self.check_id = check_id
-        self.name = name
-        self.category = category
-
-    def execute(self, context: DiagnosticsContext) -> DiagnosticCheckResult:
-        return DiagnosticCheckResult(
-            check_id=self.check_id,
-            name=self.name,
-            category=self.category,
-            status=CheckStatus.OK,
-            message="Check executed successfully.",
-            details={},
-            duration_ms=0.1,
-            error_code=None,
-            errors=[],
-            warnings=[],
-            fixes=[],
-        )
+from tests.harness.builders import StubCheck
 
 
 class CheckRegistryTests:
@@ -53,8 +22,8 @@ class CheckRegistryTests:
 
     def test_register_duplicate_raises_check_registration_error(self) -> None:
         registry = CheckRegistry()
-        check1 = DummyCheck(check_id="duplicate.id", name="First", category=CheckCategory.GIT)
-        check2 = DummyCheck(check_id="duplicate.id", name="Second", category=CheckCategory.CONFIG)
+        check1 = StubCheck(check_id="duplicate.id", name="First", category=CheckCategory.GIT)
+        check2 = StubCheck(check_id="duplicate.id", name="Second", category=CheckCategory.CONFIG)
 
         registry.register(check1)
 
@@ -68,8 +37,8 @@ class CheckRegistryTests:
         registry = CheckRegistry()
         assert registry.all() == []
 
-        check1 = DummyCheck(check_id="one", category=CheckCategory.GIT)
-        check2 = DummyCheck(check_id="two", category=CheckCategory.AGENT)
+        check1 = StubCheck(check_id="one", category=CheckCategory.GIT)
+        check2 = StubCheck(check_id="two", category=CheckCategory.AGENT)
 
         registry.register(check1)
         registry.register(check2)

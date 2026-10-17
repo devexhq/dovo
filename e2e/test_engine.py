@@ -2,50 +2,11 @@
 
 from __future__ import annotations
 
-import json
-import subprocess
 from pathlib import Path
 
 import pytest
 
-from e2e.conftest import DovoPtyRunner, DovoRunner
-
-
-def _write_blueprint(project: Path, name: str, content: str, *, runner: DovoRunner | None = None) -> Path:
-    """Write a blueprint YAML definition into the project repository catalog and commit it."""
-    blueprint_file = project / ".dovo" / "catalog" / "blueprints" / f"{name}.yml"
-    blueprint_file.parent.mkdir(parents=True, exist_ok=True)
-    blueprint_file.write_text(content, encoding="utf-8")
-    if runner is not None:
-        runner(["blueprint", "list"], cwd=project)
-    subprocess.run(["git", "add", "-A"], cwd=project, check=True, capture_output=True)
-    subprocess.run(
-        ["git", "commit", "-m", f"chore: add blueprint {name}"], cwd=project, check=True, capture_output=True
-    )
-    return blueprint_file
-
-
-def _parse_events(stdout: str) -> list[dict[str, object]]:
-    """Parse newline-delimited JSON events from stdout."""
-    events: list[dict[str, object]] = []
-    for line in stdout.splitlines():
-        line = line.strip()
-        if line.startswith("{") and line.endswith("}"):
-            try:
-                data = json.loads(line)
-                if isinstance(data, dict):
-                    events.append(data)
-            except json.JSONDecodeError:
-                pass
-    return events
-
-
-def _find_event(stdout: str, event_type: str) -> dict[str, object]:
-    """Find a specific event envelope by event_type from newline-delimited JSON stdout."""
-    for event in _parse_events(stdout):
-        if event.get("event_type") == event_type:
-            return event
-    raise ValueError(f"Event '{event_type}' not found in stdout:\n{stdout}")
+from e2e.conftest import DovoPtyRunner, DovoRunner, find_event, write_blueprint
 
 
 @pytest.mark.e2e
@@ -54,13 +15,7 @@ class EngineOrchestrationCliTests:
     """E2E tests for engine step assertions, failure policies, loops, and process timeouts."""
 
     def test_step_assert_fails_when_assertions_fail(self, run_dovo: DovoRunner, initialized_project: Path) -> None:
-        """Scenario: Declarative step assertions mark the step failed when conditions are unmet.
-
-        Given an initialized workspace containing a blueprint step with unmet assert conditions
-        When dovo run is executed
-        Then the command exits with code 1 and outputs failed assertion diagnostics
-        """
-        _write_blueprint(
+        write_blueprint(
             initialized_project,
             "assert-fail-bp",
             """version: "1.0"
@@ -91,13 +46,7 @@ steps:
     def test_step_on_failure_continue_records_ignored_and_completes_downstream(
         self, run_dovo: DovoRunner, initialized_project: Path
     ) -> None:
-        """Scenario: Failing step with on_failure continue records status ignored and allows downstream steps to complete.
-
-        Given an initialized workspace containing a failing step configured with on_failure continue
-        When dovo run is executed with --format json
-        Then the run succeeds with status completed and downstream steps are executed
-        """
-        _write_blueprint(
+        write_blueprint(
             initialized_project,
             "on-failure-continue-bp",
             """version: "1.0"
@@ -119,7 +68,7 @@ steps:
         )
 
         assert result.exit_code == 0
-        envelope = _find_event(result.stdout, "RunSuccessEvent")
+        envelope = find_event(result.stdout, "RunSuccessEvent")
         payload = envelope.get("payload")
         assert isinstance(payload, dict)
         assert payload.get("status") == "completed"
@@ -129,13 +78,7 @@ steps:
         assert downstream_file.read_text().strip() == "downstream executed"
 
     def test_step_on_failure_retry_retries_and_succeeds(self, run_dovo: DovoRunner, initialized_project: Path) -> None:
-        """Scenario: Failing step configured with retry retries and succeeds, completing the session.
-
-        Given an initialized workspace containing a step that fails on its first attempt and succeeds on retry
-        When dovo run is executed with on_failure action retry
-        Then the step retries up to max_retries and completes the session successfully
-        """
-        _write_blueprint(
+        write_blueprint(
             initialized_project,
             "on-failure-retry-bp",
             """version: "1.0"
@@ -164,7 +107,7 @@ steps:
         )
 
         assert result.exit_code == 0
-        envelope = _find_event(result.stdout, "RunSuccessEvent")
+        envelope = find_event(result.stdout, "RunSuccessEvent")
         payload = envelope.get("payload")
         assert isinstance(payload, dict)
         assert payload.get("status") == "completed"
@@ -176,13 +119,7 @@ steps:
     def test_prompt_user_interactive_pty_retry_completes_run(
         self, run_dovo_pty: DovoPtyRunner, run_dovo: DovoRunner, initialized_project: Path
     ) -> None:
-        """Scenario: Failed prompt_user step accepts r through interactive PTY and retries to completion.
-
-        Given an initialized workspace containing a failing step with prompt_user policy
-        When dovo run is executed in an interactive PTY and the user responds with r
-        Then the step is retried and the run completes successfully
-        """
-        _write_blueprint(
+        write_blueprint(
             initialized_project,
             "prompt-retry-bp",
             """version: "1.0"
@@ -218,13 +155,7 @@ steps:
     def test_prompt_user_interactive_pty_continue_completes_run(
         self, run_dovo_pty: DovoPtyRunner, run_dovo: DovoRunner, initialized_project: Path
     ) -> None:
-        """Scenario: Failed prompt_user step accepts c through interactive PTY and continues the run.
-
-        Given an initialized workspace containing a failing step with prompt_user policy
-        When dovo run is executed in an interactive PTY and the user responds with c
-        Then the failure is ignored and downstream steps complete successfully
-        """
-        _write_blueprint(
+        write_blueprint(
             initialized_project,
             "prompt-continue-bp",
             """version: "1.0"
@@ -254,13 +185,7 @@ steps:
     def test_prompt_user_interactive_pty_abort_terminates_run(
         self, run_dovo_pty: DovoPtyRunner, run_dovo: DovoRunner, initialized_project: Path
     ) -> None:
-        """Scenario: Failed prompt_user step accepts a through interactive PTY and aborts the run.
-
-        Given an initialized workspace containing a failing step with prompt_user policy
-        When dovo run is executed in an interactive PTY and the user responds with a
-        Then the run is aborted with non-zero exit code and downstream steps are skipped
-        """
-        _write_blueprint(
+        write_blueprint(
             initialized_project,
             "prompt-abort-bp",
             """version: "1.0"
@@ -286,13 +211,7 @@ steps:
         assert not (initialized_project / "should_not_exist.txt").exists()
 
     def test_prompt_user_no_tty_aborts_without_stdin(self, run_dovo: DovoRunner, initialized_project: Path) -> None:
-        """Scenario: dovo run with --no-tty aborts a failed prompt_user step without waiting for stdin.
-
-        Given an initialized workspace containing a failing step with prompt_user policy
-        When dovo run is executed with --no-tty in non-interactive mode
-        Then the command aborts immediately with code 1 without waiting for input
-        """
-        _write_blueprint(
+        write_blueprint(
             initialized_project,
             "prompt-no-tty-bp",
             """version: "1.0"
@@ -318,13 +237,7 @@ steps:
     def test_loop_block_executes_until_condition_evaluates_true(
         self, run_dovo: DovoRunner, initialized_project: Path
     ) -> None:
-        """Scenario: Blueprint loop block executes body steps until the until expression evaluates to true.
-
-        Given an initialized workspace containing a blueprint with a loop block and dynamic termination condition
-        When dovo run is executed
-        Then body steps iterate repeatedly until the until condition is satisfied and the run completes
-        """
-        _write_blueprint(
+        write_blueprint(
             initialized_project,
             "loop-until-bp",
             """version: "1.0"
@@ -352,7 +265,7 @@ steps:
         )
 
         assert result.exit_code == 0
-        envelope = _find_event(result.stdout, "RunSuccessEvent")
+        envelope = find_event(result.stdout, "RunSuccessEvent")
         payload = envelope.get("payload")
         assert isinstance(payload, dict)
         assert payload.get("status") == "completed"
@@ -364,13 +277,7 @@ steps:
     def test_loop_block_max_iterations_ceiling_triggers_configured_policy(
         self, run_dovo: DovoRunner, initialized_project: Path
     ) -> None:
-        """Scenario: Loop block reaching max_iterations ceiling triggers its configured on_max_iterations policy.
-
-        Given an initialized workspace containing a loop block whose until condition is never satisfied
-        When dovo run is executed with on_max_iterations abort
-        Then the run terminates with code 1 upon reaching the iteration ceiling
-        """
-        _write_blueprint(
+        write_blueprint(
             initialized_project,
             "loop-ceiling-bp",
             """version: "1.0"
@@ -400,13 +307,7 @@ steps:
         assert "reached max_iterations" in combined_output
 
     def test_step_timeout_terminates_hanging_execution(self, run_dovo: DovoRunner, initialized_project: Path) -> None:
-        """Scenario: Hanging step exceeding timeout_seconds is terminated by the process supervisor.
-
-        Given an initialized workspace containing a step with a brief timeout_seconds duration
-        When dovo run is executed on a hanging process command
-        Then the command is terminated by the process supervisor and fails with a timeout error
-        """
-        _write_blueprint(
+        write_blueprint(
             initialized_project,
             "step-timeout-bp",
             """version: "1.0"

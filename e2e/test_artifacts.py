@@ -5,40 +5,11 @@ from __future__ import annotations
 import json
 import os
 import sqlite3
-import subprocess
 from pathlib import Path
 
 import pytest
 
-from e2e.conftest import DovoRunner
-
-
-def _write_blueprint(project: Path, name: str, content: str, *, runner: DovoRunner | None = None) -> Path:
-    """Write a blueprint YAML definition into the project repository catalog and commit it."""
-    blueprint_file = project / ".dovo" / "catalog" / "blueprints" / f"{name}.yml"
-    blueprint_file.parent.mkdir(parents=True, exist_ok=True)
-    blueprint_file.write_text(content, encoding="utf-8")
-    if runner is not None:
-        runner(["blueprint", "list"], cwd=project)
-    subprocess.run(["git", "add", "-A"], cwd=project, check=True, capture_output=True)
-    subprocess.run(
-        ["git", "commit", "-m", f"chore: add blueprint {name}"], cwd=project, check=True, capture_output=True
-    )
-    return blueprint_file
-
-
-def _parse_json(stdout: str) -> dict[str, object]:
-    """Extract and parse first JSON payload from command output."""
-    for line in stdout.splitlines():
-        trimmed = line.strip()
-        if trimmed.startswith("{") and trimmed.endswith("}"):
-            try:
-                data = json.loads(trimmed)
-                if isinstance(data, dict):
-                    return data
-            except json.JSONDecodeError:
-                pass
-    return json.loads(stdout)
+from e2e.conftest import DovoRunner, parse_json, write_blueprint
 
 
 @pytest.mark.e2e
@@ -51,13 +22,7 @@ class ArtifactsManagementCliTests:
         run_dovo: DovoRunner,
         initialized_project: Path,
     ) -> None:
-        """Scenario: Declarative step artifacts archives matching files to persistent storage on step success.
-
-        Given an initialized workspace with a blueprint defining declarative step artifacts
-        When dovo run is executed
-        Then matching files are archived upon step success and recorded in artifacts catalog
-        """
-        _write_blueprint(
+        write_blueprint(
             initialized_project,
             "decl-artifact-bp",
             """version: "1.0"
@@ -82,7 +47,7 @@ steps:
             cwd=initialized_project,
         )
         assert list_result.exit_code == 0
-        list_data = _parse_json(list_result.stdout)
+        list_data = parse_json(list_result.stdout)
         payload = list_data.get("payload", {})
         assert isinstance(payload, dict)
         artifacts = payload.get("artifacts", [])
@@ -95,7 +60,7 @@ steps:
         assert record.get("file_count") == 2
 
         dovo_home = Path(os.environ.get("DOVO_HOME", "/tmp/dovo-home"))
-        matching_manifests = list(dovo_home.glob(f"**/artifacts/{session_id}/build-dist/manifest.json"))
+        matching_manifests = list(dovo_home.glob(f"**/artifacts/{session_id}/build-dist/1/manifest.json"))
         assert len(matching_manifests) == 1
         assert matching_manifests[0].is_file()
 
@@ -113,13 +78,8 @@ steps:
         run_dovo: DovoRunner,
         initialized_project: Path,
     ) -> None:
-        """Scenario: Blueprint steps executing internal commands transfer artifact bundles within a session.
-
-        Given a blueprint using artifacts.upload and artifacts.download internal commands
-        When dovo run executes the blueprint
-        Then the artifact bundle is uploaded by the producer step and extracted by the consumer step
-        """
-        _write_blueprint(
+        """artifacts.upload and artifacts.download internal steps hand a bundle from producer to consumer."""
+        write_blueprint(
             initialized_project,
             "transfer-bp",
             """version: "1.0"
@@ -155,7 +115,7 @@ steps:
             cwd=initialized_project,
         )
         assert list_result.exit_code == 0
-        list_data = _parse_json(list_result.stdout)
+        list_data = parse_json(list_result.stdout)
         payload = list_data.get("payload", {})
         assert isinstance(payload, dict)
         artifacts = payload.get("artifacts", [])
@@ -168,13 +128,7 @@ steps:
         run_dovo: DovoRunner,
         initialized_project: Path,
     ) -> None:
-        """Scenario: dovo artifacts list displays published bundle names, file counts, and checksums with session filtering.
-
-        Given multiple sessions that published artifact bundles
-        When dovo artifacts list is invoked with and without the --session filter
-        Then all bundles are listed globally and filtered strictly when a session is specified
-        """
-        _write_blueprint(
+        write_blueprint(
             initialized_project,
             "bundle-one-bp",
             """version: "1.0"
@@ -189,7 +143,7 @@ steps:
 """,
             runner=run_dovo,
         )
-        _write_blueprint(
+        write_blueprint(
             initialized_project,
             "bundle-two-bp",
             """version: "1.0"
@@ -212,7 +166,7 @@ steps:
 
         global_list = run_dovo(["artifacts", "list", "--format", "json"], cwd=initialized_project)
         assert global_list.exit_code == 0
-        global_data = _parse_json(global_list.stdout)
+        global_data = parse_json(global_list.stdout)
         global_payload = global_data.get("payload", {})
         assert isinstance(global_payload, dict)
         all_artifacts = global_payload.get("artifacts", [])
@@ -226,7 +180,7 @@ steps:
             cwd=initialized_project,
         )
         assert filtered_list.exit_code == 0
-        filtered_data = _parse_json(filtered_list.stdout)
+        filtered_data = parse_json(filtered_list.stdout)
         filtered_payload = filtered_data.get("payload", {})
         assert isinstance(filtered_payload, dict)
         filtered_artifacts = filtered_payload.get("artifacts", [])
@@ -246,13 +200,7 @@ steps:
         initialized_project: Path,
         clean_e2e_env: Path,
     ) -> None:
-        """Scenario: dovo artifacts download extracts and verifies bundle integrity in the target directory.
-
-        Given a published artifact bundle from an executed session
-        When dovo artifacts download is run specifying the session ID, artifact name, and target destination
-        Then the artifact files are verified against the manifest checksums and extracted to the destination
-        """
-        _write_blueprint(
+        write_blueprint(
             initialized_project,
             "download-bp",
             """version: "1.0"
@@ -287,13 +235,8 @@ steps:
         run_dovo: DovoRunner,
         initialized_project: Path,
     ) -> None:
-        """Scenario: dovo artifacts prune detects expired bundles under dry-run and removes them with --force.
-
-        Given a published artifact bundle with an expiration timestamp in the past
-        When dovo artifacts prune is executed with --dry-run and then with --force
-        Then --dry-run detects the expired bundle without deleting it, and --force deletes it from disk and database
-        """
-        _write_blueprint(
+        """--dry-run reports the expired bundle without deleting it; --force deletes it from disk and database."""
+        write_blueprint(
             initialized_project,
             "prune-bp",
             """version: "1.0"
@@ -325,7 +268,7 @@ steps:
 
         dry_res = run_dovo(["artifacts", "prune", "--dry-run", "--force", "--format", "json"], cwd=initialized_project)
         assert dry_res.exit_code == 0
-        dry_data = _parse_json(dry_res.stdout)
+        dry_data = parse_json(dry_res.stdout)
         dry_payload = dry_data.get("payload", {})
         assert isinstance(dry_payload, dict)
         assert dry_payload.get("dry_run") is True
@@ -336,14 +279,15 @@ steps:
 
         list_after_dry = run_dovo(["artifacts", "list", "--format", "json"], cwd=initialized_project)
         assert list_after_dry.exit_code == 0
-        after_dry_data = _parse_json(list_after_dry.stdout)
+        after_dry_data = parse_json(list_after_dry.stdout)
         after_dry_payload = after_dry_data.get("payload", {})
         assert isinstance(after_dry_payload, dict)
         assert len(after_dry_payload.get("artifacts", [])) == 1
+        assert len(list(dovo_home.glob(f"**/artifacts/{session_id}/prune-target-bundle/1"))) == 1
 
         force_res = run_dovo(["artifacts", "prune", "--force", "--format", "json"], cwd=initialized_project)
         assert force_res.exit_code == 0
-        force_data = _parse_json(force_res.stdout)
+        force_data = parse_json(force_res.stdout)
         force_payload = force_data.get("payload", {})
         assert isinstance(force_payload, dict)
         assert force_payload.get("dry_run") is False
@@ -355,10 +299,10 @@ steps:
 
         list_after_force = run_dovo(["artifacts", "list", "--format", "json"], cwd=initialized_project)
         assert list_after_force.exit_code == 0
-        after_force_data = _parse_json(list_after_force.stdout)
+        after_force_data = parse_json(list_after_force.stdout)
         after_force_payload = after_force_data.get("payload", {})
         assert isinstance(after_force_payload, dict)
         assert len(after_force_payload.get("artifacts", [])) == 0
 
-        matching_dirs = list(dovo_home.glob(f"**/artifacts/{session_id}/prune-target-bundle"))
+        matching_dirs = list(dovo_home.glob(f"**/artifacts/{session_id}/prune-target-bundle/1"))
         assert len(matching_dirs) == 0

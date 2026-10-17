@@ -4,40 +4,11 @@ from __future__ import annotations
 
 import json
 import os
-import subprocess
 from pathlib import Path
 
 import pytest
 
-from e2e.conftest import DovoPtyRunner, DovoRunner
-
-
-def _write_blueprint(project: Path, name: str, content: str, *, runner: DovoRunner | None = None) -> Path:
-    """Write a blueprint YAML definition into the project repository catalog and commit it."""
-    blueprint_file = project / ".dovo" / "catalog" / "blueprints" / f"{name}.yml"
-    blueprint_file.parent.mkdir(parents=True, exist_ok=True)
-    blueprint_file.write_text(content, encoding="utf-8")
-    if runner is not None:
-        runner(["blueprint", "list"], cwd=project)
-    subprocess.run(["git", "add", "-A"], cwd=project, check=True, capture_output=True)
-    subprocess.run(
-        ["git", "commit", "-m", f"chore: add blueprint {name}"], cwd=project, check=True, capture_output=True
-    )
-    return blueprint_file
-
-
-def _parse_json(stdout: str) -> dict[str, object]:
-    """Extract and parse first JSON payload from command output."""
-    for line in stdout.splitlines():
-        trimmed = line.strip()
-        if trimmed.startswith("{") and trimmed.endswith("}"):
-            try:
-                data = json.loads(trimmed)
-                if isinstance(data, dict):
-                    return data
-            except json.JSONDecodeError:
-                pass
-    return json.loads(stdout)
+from e2e.conftest import DovoPtyRunner, DovoRunner, parse_json, write_blueprint
 
 
 @pytest.mark.e2e
@@ -51,13 +22,8 @@ class CheckpointAndResumeCliTests:
         run_dovo_pty: DovoPtyRunner,
         initialized_project: Path,
     ) -> None:
-        """Scenario: A failing deterministic blueprint saves a resumable checkpoint in database and state store.
-
-        Given an initialized project containing a blueprint step configured with on_failure: prompt_user that fails
-        When dovo run is executed interactively and interrupted while waiting for prompt decision
-        Then a resumable checkpoint is saved with status paused in database, state store, and history
-        """
-        _write_blueprint(
+        """Interrupting a prompt_user failure leaves the session paused in history and the state store."""
+        write_blueprint(
             initialized_project,
             "resumable-check-bp",
             """version: "1.0"
@@ -86,7 +52,7 @@ steps:
 
         history_result = run_dovo(["session", "show", session_id, "--format", "json"], cwd=initialized_project)
         assert history_result.exit_code == 0
-        history_data = _parse_json(history_result.stdout)
+        history_data = parse_json(history_result.stdout)
         session_payload = history_data.get("payload", {})
         assert isinstance(session_payload, dict)
         session_record = session_payload.get("session", {})
@@ -111,13 +77,7 @@ steps:
         run_dovo_pty: DovoPtyRunner,
         initialized_project: Path,
     ) -> None:
-        """Scenario: After a controlled correction, dovo resume without arguments finds and completes the latest paused checkpoint.
-
-        Given a paused blueprint session waiting on an unmet prerequisite condition
-        When the prerequisite is corrected and dovo resume is executed without arguments
-        Then the latest paused session is resumed, step retries successfully, downstream steps complete, and status transitions to completed
-        """
-        _write_blueprint(
+        write_blueprint(
             initialized_project,
             "resumable-default-bp",
             """version: "1.0"
@@ -144,7 +104,7 @@ steps:
         assert run_result.exit_code == 130
 
         before_resume = run_dovo(["session", "show", session_id, "--format", "json"], cwd=initialized_project)
-        before_data = _parse_json(before_resume.stdout)
+        before_data = parse_json(before_resume.stdout)
         session_info = before_data.get("payload", {}).get("session", {})  # pyright: ignore[reportAttributeAccessIssue]
         assert session_info.get("status") == "paused"
 
@@ -165,7 +125,7 @@ steps:
 
         after_resume = run_dovo(["session", "show", session_id, "--format", "json"], cwd=initialized_project)
         assert after_resume.exit_code == 0
-        after_data = _parse_json(after_resume.stdout)
+        after_data = parse_json(after_resume.stdout)
         after_session = after_data.get("payload", {}).get("session", {})  # pyright: ignore[reportAttributeAccessIssue]
         assert after_session.get("status") == "completed"
 
@@ -175,13 +135,7 @@ steps:
         run_dovo_pty: DovoPtyRunner,
         initialized_project: Path,
     ) -> None:
-        """Scenario: dovo resume with an explicit session identifier resumes and completes the targeted paused session.
-
-        Given multiple sessions including a specific paused session
-        When the prerequisite is corrected and dovo resume is executed targeting the explicit session identifier
-        Then the targeted session executes to completion and records completed status in history
-        """
-        _write_blueprint(
+        write_blueprint(
             initialized_project,
             "resumable-targeted-bp",
             """version: "1.0"
@@ -220,6 +174,6 @@ steps:
 
         show_result = run_dovo(["session", "show", session_id, "--format", "json"], cwd=initialized_project)
         assert show_result.exit_code == 0
-        show_data = _parse_json(show_result.stdout)
+        show_data = parse_json(show_result.stdout)
         session_info = show_data.get("payload", {}).get("session", {})  # pyright: ignore[reportAttributeAccessIssue]
         assert session_info.get("status") == "completed"

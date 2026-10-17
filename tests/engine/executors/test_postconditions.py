@@ -4,8 +4,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from dovo.common.filesystem.models import WorkspacePaths
-from dovo.core.artifacts import Artifacts
 from dovo.core.artifacts.store import ArtifactStore
 from dovo.core.catalog.definitions import StepDefinition
 from dovo.core.db.repositories.artifacts import ArtifactsRepository
@@ -24,11 +22,6 @@ def _step(**extra: object) -> StepDefinition:
     return StepDefinition.model_validate(
         {"id": "check", "name": "check", "type": "command", "command": "true", **extra}
     )
-
-
-def _store(paths: WorkspacePaths, repository: ArtifactsRepository) -> ArtifactStore:
-    """Build an ArtifactStore for session wf_1 over the engine workspace."""
-    return ArtifactStore(Artifacts(paths, repository), "wf_1")
 
 
 class AssertionPostconditionTests:
@@ -50,13 +43,13 @@ class AssertionPostconditionTests:
 
 class ArtifactPublishPostconditionTests:
     def test_declared_artifact_is_published_and_outcome_unchanged(
-        self, tmp_path: Path, engine_paths: WorkspacePaths, artifacts_repository: ArtifactsRepository
+        self, tmp_path: Path, artifacts_repository: ArtifactsRepository, artifact_store: ArtifactStore
     ) -> None:
         (tmp_path / "PLAN.md").write_text("plan", encoding="utf-8")
         postcondition = ArtifactPublishPostcondition(
             _step(artifacts=[{"name": "plan", "path": "PLAN.md"}]),
             worktree_path=tmp_path,
-            store=_store(engine_paths, artifacts_repository),
+            store=artifact_store,
             loop_iteration=None,
             warnings=[],
         )
@@ -64,13 +57,11 @@ class ArtifactPublishPostconditionTests:
         assert postcondition.apply(_COMPLETED, 1) == _COMPLETED
         assert [(record.session_id, record.revision) for record in artifacts_repository.list()] == [("wf_1", 1)]
 
-    def test_missing_required_artifact_returns_failed_copy(
-        self, tmp_path: Path, engine_paths: WorkspacePaths, artifacts_repository: ArtifactsRepository
-    ) -> None:
+    def test_missing_required_artifact_returns_failed_copy(self, tmp_path: Path, artifact_store: ArtifactStore) -> None:
         postcondition = ArtifactPublishPostcondition(
             _step(artifacts=[{"name": "plan", "path": "PLAN.md"}]),
             worktree_path=tmp_path,
-            store=_store(engine_paths, artifacts_repository),
+            store=artifact_store,
             loop_iteration=None,
             warnings=[],
         )
@@ -81,13 +72,13 @@ class ArtifactPublishPostconditionTests:
         assert outcome.error_message == "Artifact 'plan' matched no files at 'PLAN.md' (ARTIFACT_NOT_PRODUCED)."
 
     def test_optional_artifact_failure_appends_warning_and_keeps_outcome(
-        self, tmp_path: Path, engine_paths: WorkspacePaths, artifacts_repository: ArtifactsRepository
+        self, tmp_path: Path, artifact_store: ArtifactStore
     ) -> None:
         warnings: list[str] = []
         postcondition = ArtifactPublishPostcondition(
             _step(artifacts=[{"name": "plan", "path": "PLAN.md", "required": False}]),
             worktree_path=tmp_path,
-            store=_store(engine_paths, artifacts_repository),
+            store=artifact_store,
             loop_iteration=None,
             warnings=warnings,
         )

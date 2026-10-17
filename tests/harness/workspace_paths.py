@@ -8,6 +8,7 @@ from pathlib import Path
 from dovo.common.filesystem import Filesystem, WorkspacePaths
 from dovo.common.filesystem.models import RepositoryPaths
 from dovo.common.filesystem.services.global_root import resolve_global_paths
+from dovo.core.db import DovoDb
 from dovo.core.project.models import ProjectIdentity
 from dovo.core.project.services.storage import resolve_workspace_paths
 
@@ -22,3 +23,9 @@ def initialized_workspace_paths(root: Path, global_root: Path | None = None) -> 
         Filesystem.atomic_write_json(identity_file, identity.model_dump(mode="json"))
 
     return resolve_workspace_paths(RepositoryPaths.from_root(root), resolve_global_paths(global_root))
+
+
+def initialized_workspace_db(root: Path) -> DovoDb:
+    """Construct a DovoDb bound to root's resolved database file and project id."""
+    paths = initialized_workspace_paths(root)
+    return DovoDb(database_file=paths.database_file, project_id=paths.project_id)

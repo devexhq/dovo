@@ -154,7 +154,7 @@ def prune_worktrees(context: CliContext, dry_run: bool = False) -> WorktreePrune
 
 ```python
 class WorktreePruneCliIntegrationTests:
-    def test_prune_empty_returns_nothing_to_prune(self, cli_runner: CliRunner, worktree_workspace: Path) -> None:
+    def test_prune_empty_returns_nothing_to_prune(self, cli_runner: CliRunner, cli_workspace: Path) -> None:
         """Print 'Nothing to prune' and exit 0 when the worktrees directory is empty."""
         raise NotImplementedError
 ```

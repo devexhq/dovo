@@ -36,11 +36,6 @@ from tests.harness.workspace_paths import initialized_workspace_paths
 SESSION_ID = "state-1"
 
 
-def _paths_for(root: Path) -> WorkspacePaths:
-    """Resolve the WorkspacePaths snapshot for root, reflecting its current project.json."""
-    return initialized_workspace_paths(root)
-
-
 def _blueprint() -> Blueprint:
     """Blueprint with a linear step `setup` followed by loop `fix` whose do is [edit, verify]."""
     loop = LoopStepBlock(
@@ -76,7 +71,7 @@ class _Fixture:
 
     def __init__(self, tmp_path: Path) -> None:
         workspace = WorkspaceBuilder(tmp_path / "workspace").with_database().build()
-        self.paths = _paths_for(workspace)
+        self.paths = initialized_workspace_paths(workspace)
         self.sessions = SessionsRepository(db_path=self.paths.database_file, project_id=self.paths.project_id)
         self.sessions.create(SESSION_ID, blueprint_name="bp", blueprint_key="bp")
         self.manifest = _write_snapshot(self.paths, SESSION_ID)

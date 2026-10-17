@@ -87,14 +87,10 @@ def _drive(
     )
 
 
-def _paths_for(root: Path) -> WorkspacePaths:
-    return initialized_workspace_paths(root)
-
-
 @pytest.fixture
 def git_paths(tmp_path: Path) -> WorkspacePaths:
     """Return WorkspacePaths for a git-backed workspace where worktrees can be created."""
-    return _paths_for(WorkspaceBuilder(tmp_path / "git-workspace").with_git().with_database().build())
+    return initialized_workspace_paths(WorkspaceBuilder(tmp_path / "git-workspace").with_git().with_database().build())
 
 
 @pytest.fixture
@@ -474,7 +470,7 @@ class DriveRunCleanupTests:
             )
             .build()
         )
-        paths = _paths_for(workspace)
+        paths = initialized_workspace_paths(workspace)
         sessions = SessionsRepository(db_path=paths.database_file, project_id=paths.project_id)
         seed_new_session(paths, sessions, session_id="attempt-logs", steps=[_step("a", "echo a")])
 
@@ -684,7 +680,7 @@ def _agent_workspace(tmp_path: Path, agents: dict[str, object]) -> tuple[Workspa
         .with_config(data={"version": 1, "project": {"name": "session"}, "default_agent": "copilot", "agents": agents})
         .build()
     )
-    paths = _paths_for(workspace)
+    paths = initialized_workspace_paths(workspace)
     return paths, SessionsRepository(db_path=paths.database_file, project_id=paths.project_id)
 
 
@@ -830,7 +826,7 @@ class DriveRunAgentSettingsTests:
             )
             .build()
         )
-        paths = _paths_for(workspace)
+        paths = initialized_workspace_paths(workspace)
         sessions = SessionsRepository(db_path=paths.database_file, project_id=paths.project_id)
         seed_new_session(
             paths, sessions, session_id="env-run", steps=[_step("write", "echo pin=1234 > pin.txt")], use_worktree=True

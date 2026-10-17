@@ -4,30 +4,23 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any
 
 from typer.testing import CliRunner
 
 from dovo.cli import app
-from dovo.common.filesystem.models import WorkspacePaths
 from dovo.core.db import WorktreeStatus
-from dovo.core.worktree.models import WorktreeListStatus
+from dovo.core.worktree.models import WorktreeListResult, WorktreeListStatus
 from dovo.core.worktree.worktree import Worktree
 from tests.harness.workspace_paths import initialized_workspace_paths
-
-
-def _paths_for(root: Path) -> WorkspacePaths:
-    """Resolve the WorkspacePaths snapshot for root, reflecting its current project.json."""
-    return initialized_workspace_paths(root)
 
 
 class WorktreeListCliIntegrationTests:
     """Typer runner integration tests for dovo worktree list."""
 
     def test_worktree_list_cli_empty_workspace_renders_no_worktrees(
-        self, cli_runner: CliRunner, worktree_workspace: Path, dispatch_spy: list[Any]
+        self, cli_runner: CliRunner, cli_workspace: Path, dispatch_spy: list[WorktreeListResult]
     ) -> None:
-        result = cli_runner.invoke(app, ["-p", str(worktree_workspace), "worktree", "list"])
+        result = cli_runner.invoke(app, ["-p", str(cli_workspace), "worktree", "list"])
 
         assert result.exit_code == 0
         assert "No worktrees found." in result.stdout
@@ -37,13 +30,13 @@ class WorktreeListCliIntegrationTests:
         assert len(payload.worktrees) == 0
 
     def test_worktree_list_cli_renders_created_worktree_in_table(
-        self, cli_runner: CliRunner, worktree_workspace: Path, dispatch_spy: list[Any]
+        self, cli_runner: CliRunner, cli_workspace: Path, dispatch_spy: list[WorktreeListResult]
     ) -> None:
-        create_result = Worktree(paths=_paths_for(worktree_workspace)).create(name="listed")
+        create_result = Worktree(paths=initialized_workspace_paths(cli_workspace)).create(name="listed")
         assert create_result.session is not None
         session = create_result.session
 
-        result = cli_runner.invoke(app, ["-p", str(worktree_workspace), "worktree", "list"])
+        result = cli_runner.invoke(app, ["-p", str(cli_workspace), "worktree", "list"])
 
         assert result.exit_code == 0
         assert session.session_id in result.stdout
@@ -61,11 +54,11 @@ class WorktreeListCliIntegrationTests:
         assert worktree.status == WorktreeStatus.ACTIVE
 
     def test_worktree_list_cli_status_filter_excludes_non_matching(
-        self, cli_runner: CliRunner, worktree_workspace: Path, dispatch_spy: list[Any]
+        self, cli_runner: CliRunner, cli_workspace: Path, dispatch_spy: list[WorktreeListResult]
     ) -> None:
-        Worktree(paths=_paths_for(worktree_workspace)).create(name="listed")
+        Worktree(paths=initialized_workspace_paths(cli_workspace)).create(name="listed")
 
-        result = cli_runner.invoke(app, ["-p", str(worktree_workspace), "worktree", "list", "--status", "merged"])
+        result = cli_runner.invoke(app, ["-p", str(cli_workspace), "worktree", "list", "--status", "merged"])
 
         assert result.exit_code == 0
         assert "No worktrees found." in result.stdout
@@ -74,8 +67,8 @@ class WorktreeListCliIntegrationTests:
         assert payload.status == WorktreeListStatus.OK
         assert len(payload.worktrees) == 0
 
-    def test_worktree_list_cli_renders_json(self, cli_runner: CliRunner, worktree_workspace: Path) -> None:
-        result = cli_runner.invoke(app, ["-p", str(worktree_workspace), "worktree", "list", "--format", "json"])
+    def test_worktree_list_cli_renders_json(self, cli_runner: CliRunner, cli_workspace: Path) -> None:
+        result = cli_runner.invoke(app, ["-p", str(cli_workspace), "worktree", "list", "--format", "json"])
 
         assert result.exit_code == 0
         assert json.loads(result.stdout) == {

@@ -9,7 +9,6 @@ from pathlib import Path
 import pytest
 import yaml
 
-from dovo.common.filesystem.models import WorkspacePaths
 from dovo.core.catalog import Catalog
 from dovo.core.catalog.definitions import BlueprintDefinition, StepDefinition
 from dovo.core.catalog.models import CatalogItemType, CatalogValidateResult, CatalogValidateStatus
@@ -17,16 +16,11 @@ from tests.harness.catalog import write_runnable_blueprint
 from tests.harness.workspace_paths import initialized_workspace_paths
 
 
-def _paths_for(root: Path) -> WorkspacePaths:
-    """Resolve the WorkspacePaths snapshot for root, reflecting its current project.json."""
-    return initialized_workspace_paths(root)
-
-
 def _validate(
     target: str, *, path: Path, item_type: CatalogItemType | None = None, catalog: Catalog | None = None
 ) -> CatalogValidateResult:
     """Call Catalog.validate with the real BlueprintDefinition/StepDefinition schema classes."""
-    cat = catalog if catalog is not None else Catalog(_paths_for(path))
+    cat = catalog if catalog is not None else Catalog(initialized_workspace_paths(path))
     return cat.validate(
         target,
         item_type=item_type,
@@ -93,7 +87,7 @@ class CatalogValidateServiceTests:
         self, isolated_workspace: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         draft_path = _write_yaml(isolated_workspace / "draft.yml", {"name": "draft"})
-        catalog = Catalog(_paths_for(isolated_workspace))
+        catalog = Catalog(initialized_workspace_paths(isolated_workspace))
 
         def _fail_read_text(self: Path, *args: object, **kwargs: object) -> str:
             raise AssertionError("draft.yml contents must not be read before --type is validated")
