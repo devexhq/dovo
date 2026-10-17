@@ -75,7 +75,7 @@ Review the actual diff before writing a message: the message describes what the 
 
 ## PR description format
 
-Three sections, intent-focused, per `docs/agents/git-and-pr-conventions.md`:
+Three sections, intent-focused:
 
 ```markdown
 ## Why

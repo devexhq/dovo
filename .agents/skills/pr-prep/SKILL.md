@@ -44,8 +44,7 @@ mkdir -p .agentic
   changed and why. No file-by-file listing.
 - **`.agentic/pr-title`** — a single line, same imperative/semantic style as
   the commit title. Can match it exactly.
-- **`.agentic/pr-description`** — the three-section format from
-  `docs/agents/git-and-pr-conventions.md`:
+- **`.agentic/pr-description`** — the three-section intent-focused format:
 
   ```markdown
   ## Why

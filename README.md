@@ -126,8 +126,8 @@ uv run dovo run quality  # full quality gate (format check, lint, typecheck, doc
 
 ## Documentation
 
-- Schemas and entities: [docs/agents/schemas.md](docs/agents/schemas.md)
-- Architecture: [docs/agents/architecture.md](docs/agents/architecture.md)
+- User guide & CLI reference: [docs/](docs/)
+- Contributor & agent rules: [AGENTS.md](AGENTS.md)
 
 ## Project status
 
