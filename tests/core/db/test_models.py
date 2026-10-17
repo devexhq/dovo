@@ -11,13 +11,13 @@ from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, SQLModel, select
 
 from dovo.core.db.connection import get_engine
-from dovo.core.db.migrations import init_database
 from dovo.core.db.models import (
     ArtifactRecord,
     CostRecord,
     SessionRecord,
     WorktreeRecord,
 )
+from tests.harness.builders import init_test_database
 
 RecordClass = type[SessionRecord] | type[WorktreeRecord] | type[CostRecord] | type[ArtifactRecord]
 
@@ -26,7 +26,7 @@ RecordClass = type[SessionRecord] | type[WorktreeRecord] | type[CostRecord] | ty
 def migrated_engine(tmp_path: Path) -> Engine:
     """Engine bound to a freshly migrated, isolated SQLite database file."""
     db_path = tmp_path / "dovo.db"
-    init_database(db_path)
+    init_test_database(db_path)
     return get_engine(db_path)
 
 

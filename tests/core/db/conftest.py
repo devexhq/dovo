@@ -8,14 +8,14 @@ import pytest
 from sqlalchemy import Engine
 
 from dovo.core.db.connection import get_engine
-from dovo.core.db.migrations import init_database
+from tests.harness.builders import init_test_database
 
 
 @pytest.fixture
 def db_path(tmp_path: Path) -> Path:
     """Path to a freshly migrated, isolated SQLite database file."""
     path = tmp_path / "dovo.db"
-    init_database(path)
+    init_test_database(path)
     return path
 
 
