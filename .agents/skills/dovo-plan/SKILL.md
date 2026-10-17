@@ -24,7 +24,15 @@ Plan when the issue adds or changes a command, DTO/`*Result` model, status enum,
 - **Never plan from memory.** Every path, symbol and signature in the plan comes from a file read this session.
 - **Never plan a test whose contract is already pinned elsewhere.** Name what each new test uniquely pins.
 
-## 1. Reset the workspace
+## 1. Check the issue and reset the workspace
+
+A parent issue is never planned: its sub-issues are. Before touching `.agentic/`, check:
+
+```bash
+gh issue view <n> --json subIssues --jq '.subIssues.nodes[] | "#\(.number) \(.state) \(.title)"'
+```
+
+If this lists anything, stop: report the sub-issues, and name as the one to plan next the first open sub-issue whose blockers are all closed (`gh issue view <m> --json blockedBy --jq '.blockedBy.nodes[] | "#\(.number) \(.state)"'`). Otherwise reset:
 
 ```bash
 rm -rf .agentic && mkdir -p .agentic

@@ -15,7 +15,7 @@ gh issue view <number> --json number,title,body
 - Copy **literal** contracts verbatim into the `### Code` block of the phase that implements them: pre-determined data, models, enums, flags, JSON, and exact error and output strings. The implementing agent does not read the issue.
 - Turn each **Out of scope** item into a bullet under `## Traps`.
 - Absent an issue, quote the request in the opening paragraph and number the requirements you derive from it (`FR-1`, …) in a `## Requirements` list after `## What you're approving`.
-- Do not open or consult sibling issues.
+- Do not open or consult sibling or parent issues. A parent issue (one with sub-issues) is never planned; plan its sub-issues one at a time.
 - Plan zero backwards-compatibility shims, aliases, or dual code paths unless the issue explicitly demands them (R10).
 - If a detail is unspecified, choose the option matching the nearest existing pattern from Step 2, record the choice and rejected alternative in `### Decisions`, and add a numbered Open Question stating the assumed answer.
 
