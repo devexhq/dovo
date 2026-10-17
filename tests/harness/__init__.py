@@ -5,6 +5,7 @@ from tests.harness.builders import (
     BlueprintBuilder,
     StepBuilder,
     WorkspaceBuilder,
+    init_test_database,
 )
 from tests.harness.diffs import AGENT_ADAPTER_FACTORY, new_file_diff
 from tests.harness.fakes import (
@@ -44,6 +45,7 @@ __all__ = [
     "assert_json_payload_matches_published_shape",
     "assert_rich_render_shows_every_view_value",
     "assert_transform_derives_expected_view",
+    "init_test_database",
     "initialized_workspace_paths",
     "new_file_diff",
     "patch_claude_probe",

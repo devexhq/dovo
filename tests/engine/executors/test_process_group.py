@@ -9,6 +9,7 @@ from unittest.mock import patch
 
 import pytest
 
+from dovo.common.process import terminate_process_tree
 from dovo.engine.executors.models import StepExecutionContext
 from dovo.engine.executors.step_executor import StepExecution
 from tests.harness.builders import StepBuilder
@@ -40,7 +41,7 @@ def _sync_and_interrupt(pid_dir: Path, timeout: float = 10.0) -> None:
 class ProcessGroupEscalationTests:
     """Integration tests verifying process group isolation and escalation to SIGKILL."""
 
-    def test_timeout_escalates_from_sigterm_to_sigkill(self, tmp_path: Path) -> None:
+    def test_timeout_escalates_from_sigterm_to_sigkill(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         if sys.platform == "win32":
             pytest.skip("POSIX process groups and signal trapping required")
 
@@ -55,13 +56,17 @@ class ProcessGroupEscalationTests:
 
         start_time = time.monotonic()
         execution = StepExecution(StepExecutionContext(step=step, worktree_path=tmp_path))
+        monkeypatch.setattr(
+            "dovo.engine.executors.step_executor.terminate_process_tree",
+            lambda proc, *, grace_seconds=2.0, pgid=None: terminate_process_tree(proc, grace_seconds=0.2, pgid=pgid),
+        )
         result = execution.run()
         elapsed = time.monotonic() - start_time
 
         assert (result.status, result.exit_code) == ("failed", 124)
         assert result.error_message == "Command step execution timed out after 1 seconds."
-        assert result.duration_seconds >= 2.0
-        assert elapsed >= 2.0
+        assert result.duration_seconds >= 1.0
+        assert elapsed >= 1.0
 
         child_pid_file = tmp_path / "child.pid"
         assert child_pid_file.exists()

@@ -151,8 +151,8 @@ class StreamIsolatedProcessTests:
         outcome = _run_bounded(
             lambda: stream_isolated_process(
                 _python(PRINT_THEN_SLEEP_SCRIPT),
-                timeout_seconds=3.0,
-                grace_seconds=0.5,
+                timeout_seconds=0.2,
+                grace_seconds=0.1,
                 on_stdout_line=stdout_lines.append,
             )
         )
