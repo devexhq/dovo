@@ -47,7 +47,7 @@ Read before drafting:
 1. Rules R11-R16 in `AGENTS.md` and `docs/agents/testing.md`.
 2. **Data source**:
    - **Existing-code mode**: The source module and returned models/DTOs (follow imports for `BaseResult` subtypes).
-   - **Planning mode (`--plan`)**: The plan document (`## Contract`, `## Ground truth`, `## Artifact inventory`, and relevant `## FR-<n>`).
+   - **Planning mode (`--plan`)**: The issue named in the plan's `# Issue #<n>:` header (`gh issue view <n> --json body`) for the contract, and the plan's `## Traceability`, `## Artifact inventory` and relevant `## Phase <p>` section.
 
 ---
 
