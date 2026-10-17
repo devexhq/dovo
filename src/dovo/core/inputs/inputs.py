@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
-from typing import Any
+from collections.abc import Mapping
+
+from pydantic import BaseModel
 
 from dovo.core.inputs.models import InputResolveResult, InputType, ParameterInput
 from dovo.core.inputs.services.interpolate import (
+    ExecutionMetadataView,
     build_providers,
     interpolate_step_fields,
     interpolate_string,
@@ -50,19 +53,19 @@ class Inputs:
     def interpolate(
         template: str,
         *,
-        inputs: dict[str, Any] | None = None,
-        metadata: Any | None = None,
+        inputs: Mapping[str, object] | None = None,
+        metadata: ExecutionMetadataView | None = None,
     ) -> str:
         """Interpolate `${{ inputs.* }}` and execution variables in a string template."""
         return interpolate_string(template, build_providers(inputs=inputs, metadata=metadata))
 
     @staticmethod
-    def interpolate_step(
-        step: Any,
+    def interpolate_step[S: BaseModel](
+        step: S,
         *,
-        inputs: dict[str, Any] | None = None,
-        metadata: Any | None = None,
-    ) -> Any:
+        inputs: Mapping[str, object] | None = None,
+        metadata: ExecutionMetadataView | None = None,
+    ) -> S:
         """Interpolate variables across all templateable fields of a step."""
         return interpolate_step_fields(step, build_providers(inputs=inputs, metadata=metadata))
 

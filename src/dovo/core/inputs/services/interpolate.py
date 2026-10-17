@@ -6,6 +6,8 @@ import re
 from collections.abc import Mapping, Sequence
 from typing import Any, Protocol
 
+from pydantic import BaseModel
+
 _PLACEHOLDER_RE = re.compile(r"\$?\{\{\s*([^}]+?)\s*\}\}")
 _INTERPOLATED_FIELDS = ("command", "prompt", "script_path", "run")
 _STEP_ENTRY_FIELDS = {"id", "name", "index", "status", "exit_code"}
@@ -13,7 +15,7 @@ _STEPS_BRACKET_RE = re.compile(r"^steps\s*\[\s*(['\"]?)(.*?)\1\s*\]\s*\.\s*([A-Z
 _STEPS_OUTPUTS_BRACKET_RE = re.compile(r"^steps\s*\[\s*(['\"])(.*?)\1\s*\]\s*\.\s*outputs\s*\.\s*(.+)$")
 
 
-def _extract_iteration_index(meta: Any) -> str:
+def _extract_iteration_index(meta: object) -> str:
     """Extract the current iteration index from metadata or default to '1'."""
     iteration = getattr(meta, "iteration", None)
     if iteration is not None:
@@ -60,7 +62,7 @@ def _parse_steps_selector(key: str) -> tuple[str, str, bool] | None:
     return None
 
 
-def _resolve_step_entry_field(entry: Any | None, field_name: str) -> str:
+def _resolve_step_entry_field(entry: object, field_name: str) -> str:
     """Extract named attribute from step entry as a string."""
     if entry is None:
         return ""
@@ -68,7 +70,7 @@ def _resolve_step_entry_field(entry: Any | None, field_name: str) -> str:
     return str(value) if value is not None else ""
 
 
-def _find_step_by_id(steps: list[Any], step_id: str) -> Any | None:
+def _find_step_by_id(steps: Sequence[object], step_id: str) -> object:
     """Find the most recent step matching step_id in steps list."""
     for entry in reversed(steps):
         if getattr(entry, "id", None) == step_id:
@@ -133,7 +135,7 @@ class InputsProvider:
 
     namespace = "inputs"
 
-    def __init__(self, inputs: Mapping[str, Any]) -> None:
+    def __init__(self, inputs: Mapping[str, object]) -> None:
         self._inputs = inputs
 
     def resolve(self, path: str) -> str | None:
@@ -224,7 +226,7 @@ def metadata_providers(metadata: ExecutionMetadataView) -> list[NamespaceProvide
 
 def build_providers(
     *,
-    inputs: Mapping[str, Any] | None = None,
+    inputs: Mapping[str, object] | None = None,
     metadata: ExecutionMetadataView | None = None,
     artifacts: NamespaceProvider | None = None,
 ) -> list[NamespaceProvider]:
@@ -255,9 +257,9 @@ def interpolate_string(template: str, providers: Sequence[NamespaceProvider]) ->
     return _PLACEHOLDER_RE.sub(_replace, template)
 
 
-def _interpolated_field_updates(step: Any, providers: Sequence[NamespaceProvider]) -> dict[str, Any]:
+def _interpolated_field_updates(step: BaseModel, providers: Sequence[NamespaceProvider]) -> dict[str, object]:
     """Compute string field replacements for an executable step model."""
-    updates: dict[str, Any] = {}
+    updates: dict[str, object] = {}
     for field_name in _INTERPOLATED_FIELDS:
         value = getattr(step, field_name, None)
         if isinstance(value, str) and value:
@@ -267,7 +269,7 @@ def _interpolated_field_updates(step: Any, providers: Sequence[NamespaceProvider
     return updates
 
 
-def _interpolated_env(step: Any, providers: Sequence[NamespaceProvider]) -> dict[str, str] | None:
+def _interpolated_env(step: BaseModel, providers: Sequence[NamespaceProvider]) -> dict[str, str] | None:
     """Compute environment dictionary replacements for an executable step model."""
     env = getattr(step, "env", None)
     if not isinstance(env, dict) or not env:
@@ -278,7 +280,7 @@ def _interpolated_env(step: Any, providers: Sequence[NamespaceProvider]) -> dict
     return new_env if new_env != env else None
 
 
-def interpolate_step_fields(step: Any, providers: Sequence[NamespaceProvider]) -> Any:
+def interpolate_step_fields[S: BaseModel](step: S, providers: Sequence[NamespaceProvider]) -> S:
     """Return a copy of ``step`` with interpolatable string fields substituted.
 
     Supports ``command``, ``prompt``, ``script_path``, ``run``, and string values

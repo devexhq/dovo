@@ -4,12 +4,13 @@ from __future__ import annotations
 
 import json
 import operator
-from typing import Any
+from collections.abc import Callable
+from typing import TypeIs
 
 from dovo.core.catalog.definitions import parse_condition_expression, parse_literal
 from dovo.engine.executors.models import ConditionEvaluationResult, StepResult
 
-_NUMERIC_COMPARISON_OPERATORS = {
+_NUMERIC_COMPARISON_OPERATORS: dict[str, Callable[[float, float], bool]] = {
     ">=": operator.ge,
     "<=": operator.le,
     ">": operator.gt,
@@ -17,18 +18,18 @@ _NUMERIC_COMPARISON_OPERATORS = {
     "==": operator.eq,
     "!=": operator.ne,
 }
-_STRING_COMPARISON_OPERATORS = {
+_STRING_COMPARISON_OPERATORS: dict[str, Callable[[object, object], bool]] = {
     "==": operator.eq,
     "!=": operator.ne,
 }
 
 
-def _is_numeric(val: Any) -> bool:
+def _is_numeric(val: object) -> TypeIs[int | float]:
     """Check whether a value is numeric (int or float, excluding bool)."""
     return isinstance(val, (int, float)) and not isinstance(val, bool)
 
 
-def _resolve_json_path(root: Any, path: list[str]) -> Any:
+def _resolve_json_path(root: object, path: list[str]) -> object:
     """Traverse nested dictionary keys along a subpath."""
     current = root
     for segment in path:
@@ -38,7 +39,7 @@ def _resolve_json_path(root: Any, path: list[str]) -> Any:
     return current
 
 
-def _resolve_step_field(result: StepResult, field: str, subpath: list[str]) -> Any:
+def _resolve_step_field(result: StepResult, field: str, subpath: list[str]) -> object:
     """Extract step attribute or parsed JSON output subpath from a StepResult."""
     if field in ("exit_code", "status", "stdout"):
         return getattr(result, field)
@@ -58,7 +59,7 @@ def resolve_operand_value(
     *,
     iteration_index: int = 1,
     step_results: dict[str, StepResult] | None = None,
-) -> Any:
+) -> object:
     """Resolve an operand value against iteration index and step results."""
     token = operand.strip()
     if token in ("iteration.index", "iteration.attempt", "iteration"):
@@ -79,7 +80,7 @@ def resolve_operand_value(
     return parse_literal(token)
 
 
-def _compare_contains(actual: Any, expected: Any) -> bool:
+def _compare_contains(actual: object, expected: object) -> bool:
     """Check if expected element or substring is contained within actual value."""
     if actual is None or expected is None:
         return False
@@ -90,20 +91,20 @@ def _compare_contains(actual: Any, expected: Any) -> bool:
     return str(expected) in str(actual)
 
 
-def _compare_values(actual: Any, expected: Any, operator: str) -> bool:
+def _compare_values(actual: object, expected: object, operator: str) -> bool:
     """Evaluate comparison between actual and expected values under operator."""
     if actual is None or expected is None:
         return False
     if operator == "contains":
         return _compare_contains(actual, expected)
     if _is_numeric(actual) and _is_numeric(expected):
-        comparison_fn = _NUMERIC_COMPARISON_OPERATORS.get(operator)
-    else:
-        comparison_fn = _STRING_COMPARISON_OPERATORS.get(operator)
-    return bool(comparison_fn(actual, expected)) if comparison_fn else False
+        numeric_fn = _NUMERIC_COMPARISON_OPERATORS.get(operator)
+        return bool(numeric_fn(actual, expected)) if numeric_fn else False
+    string_fn = _STRING_COMPARISON_OPERATORS.get(operator)
+    return bool(string_fn(actual, expected)) if string_fn else False
 
 
-def _format_condition_detail(passed: bool, actual: Any) -> str:
+def _format_condition_detail(passed: bool, actual: object) -> str:
     """Format diagnostic string explaining condition evaluation status."""
     if passed:
         return "TRUE"
