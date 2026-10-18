@@ -26,13 +26,16 @@ class MutationGitError(RuntimeError):
     """Raised when a worktree git operation for a direct-mutation provider fails."""
 
 
-def _run_git(args: list[str], *, cwd: Path, env: dict[str, str] | None = None) -> subprocess.CompletedProcess[bytes]:
-    """Run git command in subprocess under cwd with timeout handling, using env when given."""
+def _run_git(
+    args: list[str], *, cwd: Path, env: dict[str, str] | None = None, stdin: bytes | None = None
+) -> subprocess.CompletedProcess[bytes]:
+    """Run git command in subprocess under cwd with timeout handling, using env and feeding stdin when given."""
     try:
         return subprocess.run(
             ["git", *args],
             cwd=str(cwd),
             env=env,
+            input=stdin,
             capture_output=True,
             check=False,
             timeout=GIT_SUBPROCESS_TIMEOUT_SECONDS,
@@ -127,7 +130,10 @@ def discard_since(worktree_path: Path, baseline: str) -> None:
     Every file returns to its content in ``baseline`` and files absent from it
     are removed. ``HEAD`` and its branch return to ``baseline`` for a clean-tree
     baseline, or to the snapshot's parent for a dirty-tree one, dropping any
-    commits the agent made; WIP that predated the agent stays uncommitted.
+    commits the agent made; WIP that predated the agent stays uncommitted. The
+    index matches the restored ``HEAD``, except that WIP files matched by
+    ``.gitignore`` (force-added before the baseline) stay staged, so git keeps
+    tracking them.
 
     Args:
         worktree_path: Worktree checkout to restore.
@@ -146,6 +152,24 @@ def discard_since(worktree_path: Path, baseline: str) -> None:
     if target != baseline_sha:
         index = _run_git(["read-tree", target], cwd=worktree_path)
         _require_ok(index, action="git read-tree (restore index)")
+        _restage_ignored_wip(worktree_path, target, baseline_sha)
+
+
+def _restage_ignored_wip(worktree_path: Path, target: str, snapshot: str) -> None:
+    """Stage the paths snapshot added over target that .gitignore matches, which an index reset would untrack."""
+    added = _run_git(["diff", "--name-only", "-z", "--diff-filter=A", target, snapshot], cwd=worktree_path)
+    _require_ok(added, action="git diff --name-only (snapshot additions)")
+    if not added.stdout:
+        return
+
+    ignored = _run_git(["check-ignore", "--no-index", "-z", "--stdin"], cwd=worktree_path, stdin=added.stdout)
+    if ignored.returncode == 1:
+        return
+    _require_ok(ignored, action="git check-ignore")
+
+    paths = [path for path in ignored.stdout.decode("utf-8", errors="surrogateescape").split("\x00") if path]
+    stage = _run_git(["update-index", "--add", "--", *paths], cwd=worktree_path)
+    _require_ok(stage, action="git update-index --add (ignored WIP)")
 
 
 def _is_worktree_clean(worktree_path: Path) -> bool:

@@ -56,13 +56,26 @@ def _worktree_files(repo: Path) -> dict[str, bytes]:
     }
 
 
+def _index_path(repo: Path) -> Path:
+    """Return the checkout's index file as git resolves it, which for a linked worktree is outside repo."""
+    index = Path(_git(repo, "rev-parse", "--git-path", "index"))
+    return index if index.is_absolute() else repo / index
+
+
+def _linked_worktree(repo: Path) -> Path:
+    """Add a linked worktree of repo on a new branch and return its path."""
+    linked = repo.parent / "linked"
+    _git(repo, "worktree", "add", "-q", "-b", "linked", str(linked))
+    return linked
+
+
 def _repository_state(repo: Path) -> tuple[str, str, str, bytes]:
     """Return HEAD, branch refs, porcelain status and the index file bytes."""
     return (
         _git(repo, "rev-parse", "HEAD"),
         _git(repo, "for-each-ref", "refs/heads"),
         _git(repo, "--no-optional-locks", "status", "--porcelain"),
-        (repo / ".git" / "index").read_bytes(),
+        _index_path(repo).read_bytes(),
     )
 
 
@@ -147,35 +160,41 @@ class ResolvePreAgentBaselineTests:
         assert _git(git_repo, "for-each-ref", "refs/heads") == refs_before
         assert _git(git_repo, "rev-list", "--all", "--count") == commit_count_before
 
+    @pytest.mark.parametrize("linked", [False, True], ids=["main", "linked"])
     @pytest.mark.parametrize("kind", DIRTY_KINDS)
-    def test_dirty_tree_returns_snapshot_of_worktree_on_head(self, git_repo: Path, kind: str) -> None:
-        """Return a commit whose `%P` is the prior HEAD, whose `%B` stripped is `dovo: pre-agent baseline`, and whose `ls-tree -r --name-only` and `git show <sha>:<path>` contents equal the worktree."""
-        _make_dirty(git_repo, kind)
-        head = _git(git_repo, "rev-parse", "HEAD")
-        worktree = _worktree_files(git_repo)
+    def test_dirty_tree_returns_snapshot_of_worktree_on_head(self, git_repo: Path, kind: str, linked: bool) -> None:
+        """Return a commit whose `%P` is the prior HEAD, whose `%B` stripped is `dovo: pre-agent baseline`, and whose `ls-tree -r --name-only` and `git show <sha>:<path>` contents equal the worktree, in a main checkout and a linked worktree."""
+        repo = _linked_worktree(git_repo) if linked else git_repo
+        _make_dirty(repo, kind)
+        head = _git(repo, "rev-parse", "HEAD")
+        worktree = _worktree_files(repo)
 
-        baseline = resolve_pre_agent_baseline(git_repo)
+        baseline = resolve_pre_agent_baseline(repo)
 
-        assert _git(git_repo, "show", "-s", "--format=%P", baseline) == head
-        assert _git(git_repo, "show", "-s", "--format=%B", baseline) == "dovo: pre-agent baseline"
-        assert sorted(_git(git_repo, "ls-tree", "-r", "--name-only", baseline).splitlines()) == sorted(worktree)
+        assert _git(repo, "show", "-s", "--format=%P", baseline) == head
+        assert _git(repo, "show", "-s", "--format=%B", baseline) == "dovo: pre-agent baseline"
+        assert sorted(_git(repo, "ls-tree", "-r", "--name-only", baseline).splitlines()) == sorted(worktree)
         snapshot = {
             name: subprocess.run(
-                ["git", "show", f"{baseline}:{name}"], cwd=str(git_repo), capture_output=True, check=True
+                ["git", "show", f"{baseline}:{name}"], cwd=str(repo), capture_output=True, check=True
             ).stdout
             for name in worktree
         }
         assert snapshot == worktree
 
+    @pytest.mark.parametrize("linked", [False, True], ids=["main", "linked"])
     @pytest.mark.parametrize("kind", DIRTY_KINDS)
-    def test_dirty_tree_leaves_head_refs_status_and_index_unchanged(self, git_repo: Path, kind: str) -> None:
-        """Keep `rev-parse HEAD`, `for-each-ref refs/heads`, `--no-optional-locks status --porcelain` and the `.git/index` bytes identical across the call."""
-        _make_dirty(git_repo, kind)
-        before = _repository_state(git_repo)
+    def test_dirty_tree_leaves_head_refs_status_and_index_unchanged(
+        self, git_repo: Path, kind: str, linked: bool
+    ) -> None:
+        """Keep `rev-parse HEAD`, `for-each-ref refs/heads`, `--no-optional-locks status --porcelain` and the index file bytes identical across the call, in a main checkout and a linked worktree."""
+        repo = _linked_worktree(git_repo) if linked else git_repo
+        _make_dirty(repo, kind)
+        before = _repository_state(repo)
 
-        resolve_pre_agent_baseline(git_repo)
+        resolve_pre_agent_baseline(repo)
 
-        assert _repository_state(git_repo) == before
+        assert _repository_state(repo) == before
 
     @pytest.mark.parametrize(
         ("subcommand", "action"),
@@ -200,13 +219,16 @@ class ResolvePreAgentBaselineTests:
             *,
             cwd: str,
             env: dict[str, str] | None,
+            input: bytes | None,
             capture_output: bool,
             check: bool,
             timeout: float,
         ) -> subprocess.CompletedProcess[bytes]:
             if args[1] == subcommand:
                 return subprocess.CompletedProcess(args, 1, b"", b"injected")
-            return real_run(args, cwd=cwd, env=env, capture_output=capture_output, check=check, timeout=timeout)
+            return real_run(
+                args, cwd=cwd, env=env, input=input, capture_output=capture_output, check=check, timeout=timeout
+            )
 
         monkeypatch.setattr(mutation_mod.subprocess, "run", _fail_subcommand)
         with pytest.raises(MutationGitError, match=f"{action} failed: injected"):
@@ -291,12 +313,13 @@ class DiscardSinceTests:
 
     @pytest.mark.parametrize("dirty", [False, True])
     def test_discard_restores_files_head_and_branch_to_baseline_time(self, git_repo: Path, dirty: bool) -> None:
-        """Restore README.md and (dirty) untracked `wip.py` and force-added ignored `notes.local` to baseline content, remove the agent's new file, and set HEAD and refs/heads/main to their pre-baseline SHA after an agent edit, new file and commit."""
+        """Restore README.md and (dirty) untracked `wip.py` and force-added ignored `notes.local` to baseline content, remove the agent's new file, set HEAD and refs/heads/main to their pre-baseline SHA and leave `git status` as it was before the baseline after an agent edit, new file and commit."""
         if dirty:
             _make_dirty(git_repo, "ignored_force_added")
             _make_dirty(git_repo, "untracked")
         head_before = _git(git_repo, "rev-parse", "HEAD")
         files_before = _worktree_files(git_repo)
+        status_before = _git(git_repo, "--no-optional-locks", "status", "--porcelain")
 
         baseline = resolve_pre_agent_baseline(git_repo)
         if dirty:
@@ -310,6 +333,21 @@ class DiscardSinceTests:
         assert _worktree_files(git_repo) == files_before
         assert _git(git_repo, "rev-parse", "HEAD") == head_before
         assert _git(git_repo, "rev-parse", "refs/heads/main") == head_before
+        assert _git(git_repo, "--no-optional-locks", "status", "--porcelain") == status_before
+
+    def test_force_added_ignored_wip_stays_tracked_after_discard(self, git_repo: Path) -> None:
+        """Capture an agent edit to a force-added ignored WIP file under a baseline taken after an earlier discard."""
+        _make_dirty(git_repo, "ignored_force_added")
+        first_baseline = resolve_pre_agent_baseline(git_repo)
+        (git_repo / "notes.local").write_text("rejected agent notes\n", encoding="utf-8")
+        discard_since(git_repo, first_baseline)
+
+        second_baseline = resolve_pre_agent_baseline(git_repo)
+        (git_repo / "notes.local").write_text("kept agent notes\n", encoding="utf-8")
+        diff, touched = capture_diff_since(git_repo, second_baseline)
+
+        assert touched == ["notes.local"]
+        assert "kept agent notes" in diff
 
     def test_raises_on_git_failure(self, git_repo: Path) -> None:
         with pytest.raises(MutationGitError, match="git rev-parse baseline failed"):
