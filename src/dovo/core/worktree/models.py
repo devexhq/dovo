@@ -70,6 +70,7 @@ class WorktreeCreateStatus(StrEnum):
     """Classified outcomes for creating a worktree."""
 
     OK = "ok"
+    ALREADY_EXISTS = "already_exists"
     CAPACITY_EXCEEDED = "capacity_exceeded"
     GIT_FAILED = "git_failed"
     GIT_TIMEOUT = "git_timeout"

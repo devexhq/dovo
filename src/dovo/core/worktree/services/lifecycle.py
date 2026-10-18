@@ -7,6 +7,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from dovo.common.constants import DEFAULT_MAXIMUM_WORKTREES_ALLOWED
+from dovo.common.error_codes import ErrorCode
 from dovo.common.filesystem import WorkspacePaths
 from dovo.common.lock import WorkspaceLock
 from dovo.common.session_id import new_session_id
@@ -40,6 +41,18 @@ def _extract_target_metadata(target: WorktreeSession | WorktreeRecord) -> tuple[
     if isinstance(target, WorktreeRecord):
         return Path(target.worktree_path), target.id, target.branch_name
     return target.worktree_path, target.session_id, target.target_branch
+
+
+def _already_exists(worktree_id: str) -> WorktreeCreateResult:
+    """Build the already_exists result for a worktree ID whose directory or branch is taken."""
+    return WorktreeCreateResult(
+        status=WorktreeCreateStatus.ALREADY_EXISTS,
+        error_code=ErrorCode.WORKTREE_PATH_CONFLICT,
+        errors=[f"Worktree '{worktree_id}' already exists (WORKTREE_PATH_CONFLICT)."],
+        fixes=[
+            f"Inspect it with `dovo worktree show {worktree_id}` or remove it with `dovo worktree delete {worktree_id}`"
+        ],
+    )
 
 
 class WorktreeLifecycle:
@@ -79,19 +92,27 @@ class WorktreeLifecycle:
             return []
         return [p for p in self.worktree_base_dir.iterdir() if p.is_dir()]
 
-    def discard_partial(self, worktree_path: Path, temp_branch: str) -> None:
-        """Best-effort removal of a partial worktree/branch after failed creation."""
-        if worktree_path.exists():
+    def discard_partial(
+        self,
+        worktree_path: Path,
+        temp_branch: str,
+        *,
+        created_dir: bool,
+        created_branch: bool,
+    ) -> None:
+        """Best-effort removal of only the directory and branch this create call made."""
+        if created_dir:
             try:
                 GitRunner.worktree_remove(self.path, worktree_path, force=True)
             except Exception:
                 # Best-effort fallback: remove directory directly if git worktree removal fails.
                 shutil.rmtree(worktree_path, ignore_errors=True)
-        try:
-            GitRunner.branch_delete(self.path, temp_branch, force=True)
-        except Exception:
-            # Best-effort cleanup: branch may not have been created yet.
-            pass
+        if created_branch:
+            try:
+                GitRunner.branch_delete(self.path, temp_branch, force=True)
+            except Exception:
+                # Best-effort cleanup: ignore errors deleting the created branch.
+                pass
         try:
             GitRunner.worktree_prune(self.path)
         except Exception:
@@ -121,6 +142,53 @@ class WorktreeLifecycle:
             return source_branch
         return default_base_ref
 
+    def _check_collision(self, worktree_path: Path, temp_branch: str) -> WorktreeCreateResult | None:
+        """Return already_exists when the target directory or branch exists, without running any git mutation.
+
+        worktree_path must be unresolved, so a dangling symlink at the target name counts as existing.
+        """
+        try:
+            path_taken = worktree_path.exists() or worktree_path.is_symlink()
+        except OSError as exc:
+            return WorktreeCreateResult(
+                status=WorktreeCreateStatus.GIT_FAILED,
+                errors=[f"Worktree path check failed (WORKTREE_GIT_FAILED): {exc}"],
+                fixes=[f"Check that '{worktree_path.parent}' is readable, then retry"],
+            )
+        if path_taken:
+            return _already_exists(worktree_path.name)
+        try:
+            branch_taken = GitRunner.branch_exists(self.path, temp_branch)
+        except GitPlumbingTimeoutError as exc:
+            return WorktreeCreateResult(
+                status=WorktreeCreateStatus.GIT_TIMEOUT,
+                errors=[f"Git worktree operation timed out (WORKTREE_GIT_TIMEOUT): {exc}"],
+                fixes=["Check for git lock files, credential prompts, or stuck git processes, then retry"],
+            )
+        except Exception as exc:
+            return WorktreeCreateResult(
+                status=WorktreeCreateStatus.GIT_FAILED,
+                errors=[f"Git worktree operation failed (WORKTREE_GIT_FAILED): {exc}"],
+                fixes=["Ensure this directory is a Git repository with a valid base ref"],
+            )
+        return _already_exists(worktree_path.name) if branch_taken else None
+
+    def _probe_created_branch(self, temp_branch: str) -> bool:
+        """Return True when temp_branch exists after a failed add; any probe failure returns False so cleanup never deletes on doubt."""
+        try:
+            return GitRunner.branch_exists(self.path, temp_branch)
+        except Exception:
+            return False
+
+    def _discard_failed_add(self, worktree_path: Path, temp_branch: str) -> None:
+        """Discard whatever a failed `git worktree add` left at names the collision check proved absent."""
+        self.discard_partial(
+            worktree_path,
+            temp_branch,
+            created_dir=worktree_path.exists(),
+            created_branch=self._probe_created_branch(temp_branch),
+        )
+
     def _create_worktree(
         self,
         worktree_path: Path,
@@ -132,14 +200,14 @@ class WorktreeLifecycle:
             GitRunner.worktree_add(self.path, worktree_path, temp_branch, base_ref)
             return None
         except GitPlumbingTimeoutError as exc:
-            self.discard_partial(worktree_path, temp_branch)
+            self._discard_failed_add(worktree_path, temp_branch)
             return WorktreeCreateResult(
                 status=WorktreeCreateStatus.GIT_TIMEOUT,
                 errors=[f"Git worktree operation timed out (WORKTREE_GIT_TIMEOUT): {exc}"],
                 fixes=["Check for git lock files, credential prompts, or stuck git processes, then retry"],
             )
         except Exception as exc:
-            self.discard_partial(worktree_path, temp_branch)
+            self._discard_failed_add(worktree_path, temp_branch)
             return WorktreeCreateResult(
                 status=WorktreeCreateStatus.GIT_FAILED,
                 errors=[f"Git worktree operation failed (WORKTREE_GIT_FAILED): {exc}"],
@@ -156,13 +224,13 @@ class WorktreeLifecycle:
             commit_sha = GitRunner.rev_parse(worktree_path, rev="HEAD")
             return commit_sha, None
         except GitPlumbingTimeoutError as exc:
-            self.discard_partial(worktree_path, temp_branch)
+            self.discard_partial(worktree_path, temp_branch, created_dir=True, created_branch=True)
             return "", WorktreeCreateResult(
                 status=WorktreeCreateStatus.GIT_TIMEOUT,
                 errors=[f"Git worktree operation timed out (WORKTREE_GIT_TIMEOUT): {exc}"],
             )
         except Exception as exc:
-            self.discard_partial(worktree_path, temp_branch)
+            self.discard_partial(worktree_path, temp_branch, created_dir=True, created_branch=True)
             return "", WorktreeCreateResult(
                 status=WorktreeCreateStatus.GIT_FAILED,
                 errors=[f"Git worktree operation failed (WORKTREE_GIT_FAILED): {exc}"],
@@ -178,14 +246,14 @@ class WorktreeLifecycle:
             paths = apply_wip_to_worktree(source_root=self.path, worktree_path=worktree_path)
             return paths, None
         except GitPlumbingTimeoutError as exc:
-            self.discard_partial(worktree_path, temp_branch)
+            self.discard_partial(worktree_path, temp_branch, created_dir=True, created_branch=True)
             return [], WorktreeCreateResult(
                 status=WorktreeCreateStatus.GIT_TIMEOUT,
                 errors=[f"Git timed out while overlaying uncommitted WIP (WORKTREE_GIT_TIMEOUT): {exc}"],
                 fixes=["Check for git lock files or retry without --wip"],
             )
         except Exception as exc:
-            self.discard_partial(worktree_path, temp_branch)
+            self.discard_partial(worktree_path, temp_branch, created_dir=True, created_branch=True)
             return [], WorktreeCreateResult(
                 status=WorktreeCreateStatus.WIP_FAILED,
                 errors=[f"Failed to overlay uncommitted WIP into worktree (WORKTREE_WIP_FAILED): {exc}"],
@@ -251,6 +319,9 @@ class WorktreeLifecycle:
         sid = session_id or new_session_id("dovo")
         worktree_path = (self.worktree_base_dir / sid).resolve()
         temp_branch = f"dovo/{sid}"
+        collision_err = self._check_collision(self.worktree_base_dir / sid, temp_branch)
+        if collision_err is not None:
+            return collision_err
         resolved_base = self._resolve_base_ref(override_base_ref, worktree_cfg.base_ref)
 
         worktree_err = self._create_worktree(worktree_path, temp_branch, resolved_base)

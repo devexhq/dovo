@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
 from typer.testing import CliRunner
 
 from dovo.cli import app
@@ -68,6 +69,23 @@ class WorktreeCreateCliIntegrationTests:
         assert event["event_type"] == "WorktreeCreateResult"
         assert event["payload"]["status"] == "ok"
         assert event["payload"]["session"]["name"] == "demo"
+
+    def test_worktree_create_cli_colliding_id_renders_already_exists_json_exits_one(
+        self, cli_runner: CliRunner, cli_workspace: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr("dovo.core.worktree.services.lifecycle.new_session_id", lambda _prefix: "dovo_collide1")
+        first = cli_runner.invoke(app, ["-p", str(cli_workspace), "worktree", "create"])
+        assert first.exit_code == 0
+
+        result = cli_runner.invoke(app, ["-p", str(cli_workspace), "worktree", "create", "--format", "json"])
+
+        assert result.exit_code == 1
+        payload = json.loads(result.stdout)["payload"]
+        assert payload["status"] == "already_exists"
+        assert payload["error_code"] == "WORKTREE_PATH_CONFLICT"
+        assert payload["errors"] == ["Worktree 'dovo_collide1' already exists (WORKTREE_PATH_CONFLICT)."]
+        assert (cli_workspace / ".dovo" / "worktrees" / "dovo_collide1").is_dir()
+        assert "dovo/dovo_collide1" in GitRunner.list_branches(cli_workspace)
 
     def test_worktree_create_cli_with_wip_flag_overlays_and_exits_zero(
         self, cli_runner: CliRunner, cli_workspace: Path, dispatch_spy: list[WorktreeCreateResult]

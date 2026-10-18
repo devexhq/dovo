@@ -40,6 +40,12 @@ class GitRunnerPlumbingTests:
         matching = [e for e in entries if e.path.resolve() == worktree_path.resolve()]
         assert matching == []
 
+    def test_branch_exists_reports_present_and_absent_local_branches(self, git_repo: Path) -> None:
+        GitRunner.run(["branch", "dovo/dovo_present"], path=git_repo)
+
+        assert GitRunner.branch_exists(git_repo, "dovo/dovo_present") is True
+        assert GitRunner.branch_exists(git_repo, "dovo/dovo_absent") is False
+
     def test_has_uncommitted_changes_detects_staged_and_unstaged_files(self, git_repo: Path) -> None:
         assert GitRunner.has_uncommitted_changes(git_repo) is False
 
