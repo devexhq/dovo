@@ -157,7 +157,9 @@ def discard_since(worktree_path: Path, baseline: str) -> None:
 
 def _restage_ignored_wip(worktree_path: Path, target: str, snapshot: str) -> None:
     """Stage the paths snapshot added over target that .gitignore matches, which an index reset would untrack."""
-    added = _run_git(["diff", "--name-only", "-z", "--diff-filter=A", target, snapshot], cwd=worktree_path)
+    added = _run_git(
+        ["diff", "--no-renames", "--name-only", "-z", "--diff-filter=A", target, snapshot], cwd=worktree_path
+    )
     _require_ok(added, action="git diff --name-only (snapshot additions)")
     if not added.stdout:
         return
@@ -167,8 +169,7 @@ def _restage_ignored_wip(worktree_path: Path, target: str, snapshot: str) -> Non
         return
     _require_ok(ignored, action="git check-ignore")
 
-    paths = [path for path in ignored.stdout.decode("utf-8", errors="surrogateescape").split("\x00") if path]
-    stage = _run_git(["update-index", "--add", "--", *paths], cwd=worktree_path)
+    stage = _run_git(["update-index", "--add", "-z", "--stdin"], cwd=worktree_path, stdin=ignored.stdout)
     _require_ok(stage, action="git update-index --add (ignored WIP)")
 
 

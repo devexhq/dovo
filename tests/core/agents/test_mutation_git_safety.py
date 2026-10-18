@@ -335,18 +335,25 @@ class DiscardSinceTests:
         assert _git(git_repo, "rev-parse", "refs/heads/main") == head_before
         assert _git(git_repo, "--no-optional-locks", "status", "--porcelain") == status_before
 
-    def test_force_added_ignored_wip_stays_tracked_after_discard(self, git_repo: Path) -> None:
-        """Capture an agent edit to a force-added ignored WIP file under a baseline taken after an earlier discard."""
-        _make_dirty(git_repo, "ignored_force_added")
+    @pytest.mark.parametrize("wip", ["force_added", "renamed"])
+    def test_force_added_ignored_wip_stays_tracked_after_discard(self, git_repo: Path, wip: str) -> None:
+        """Capture an agent edit to an ignored WIP file (force-added, or a tracked file renamed to an ignored name) under a baseline taken after an earlier discard."""
+        if wip == "force_added":
+            _make_dirty(git_repo, "ignored_force_added")
+            ignored_path = git_repo / "notes.local"
+        else:
+            _commit_file(git_repo, ".gitignore", "*.local\n")
+            _git(git_repo, "mv", "README.md", "moved.local")
+            ignored_path = git_repo / "moved.local"
         first_baseline = resolve_pre_agent_baseline(git_repo)
-        (git_repo / "notes.local").write_text("rejected agent notes\n", encoding="utf-8")
+        ignored_path.write_text("rejected agent notes\n", encoding="utf-8")
         discard_since(git_repo, first_baseline)
 
         second_baseline = resolve_pre_agent_baseline(git_repo)
-        (git_repo / "notes.local").write_text("kept agent notes\n", encoding="utf-8")
+        ignored_path.write_text("kept agent notes\n", encoding="utf-8")
         diff, touched = capture_diff_since(git_repo, second_baseline)
 
-        assert touched == ["notes.local"]
+        assert touched == [ignored_path.name]
         assert "kept agent notes" in diff
 
     def test_raises_on_git_failure(self, git_repo: Path) -> None:
