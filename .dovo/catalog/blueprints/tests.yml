@@ -38,5 +38,12 @@ steps:
       set -- "$TEST_PATH"
       case "$FAST_FAIL" in [Tt]rue) set -- "$@" -x ;; esac
       case "$COVERAGE" in [Tt]rue) set -- "$@" --cov=dovo --cov-report=term-missing --cov-fail-under=0 ;; esac
-      env $unset_args uv run python -m pytest "$@"
+      basetemp=$(mktemp -d /tmp/dovo-pytest.XXXXXX) || exit 1
+      # Remove the per-run base temp however the step ends; the signal traps make
+      # dash run the EXIT trap when the runner sends TERM on timeout or cancel.
+      trap 'rm -rf "$basetemp"' EXIT
+      trap 'exit 143' TERM
+      trap 'exit 130' INT
+      trap 'exit 129' HUP
+      env $unset_args uv run python -m pytest "$@" --basetemp="$basetemp"
     timeout_seconds: 900
