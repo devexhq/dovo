@@ -45,6 +45,7 @@ class SessionsRepository(BaseRepository):
         status: SessionStatus | str = SessionStatus.RUNNING,
         pid: int | None = None,
         *,
+        pid_started_at: str | None = None,
         blueprint_tier: str | None = None,
         commit_sha: str | None = None,
         use_worktree: bool = True,
@@ -65,6 +66,7 @@ class SessionsRepository(BaseRepository):
             branch_name=branch_name,
             status=status_enum,
             pid=pid,
+            pid_started_at=pid_started_at,
             blueprint_tier=blueprint_tier,
             commit_sha=commit_sha,
             use_worktree=use_worktree,
@@ -97,10 +99,11 @@ class SessionsRepository(BaseRepository):
         error_message: str | None = None,
         completed_at: str | None = None,
         pid: int | None = None,
+        pid_started_at: str | None = None,
         worktree_id: str | None = None,
         worktree_kept: bool | None = None,
     ) -> SessionRecord | None:
-        """Update status, optional timestamps, error message, PID, worktree id, and worktree-kept outcome."""
+        """Update status, optional timestamps, error message, worktree id and worktree-kept outcome; a given pid is written together with pid_started_at, None included."""
         status_enum = _coerce_status(status)
         if not isinstance(status_enum, SessionStatus):
             raise ValueError(f"Invalid status constraint: {status}")
@@ -120,6 +123,7 @@ class SessionsRepository(BaseRepository):
             record.error_message = _redacted_error_message(error_message)
             if pid is not None:
                 record.pid = pid
+                record.pid_started_at = pid_started_at
             if worktree_id is not None:
                 record.worktree_id = worktree_id
             if worktree_kept is not None:

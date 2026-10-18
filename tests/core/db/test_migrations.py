@@ -15,6 +15,7 @@ from dovo.core.db.migrations import (
     ARTIFACT_REVISIONS_REVISION,
     INITIAL_SCHEMA_REVISION,
     LATEST_SCHEMA_REVISION,
+    SESSION_DISCARD_REVISION,
     SESSIONS_RENAME_REVISION,
     init_database,
 )
@@ -98,10 +99,10 @@ class SessionsMigrationTests:
 
         connection = sqlite3.connect(database_file)
         try:
-            assert [row[:-1] for row in connection.execute("SELECT * FROM sessions ORDER BY id")] == rows_before
+            assert [row[:-2] for row in connection.execute("SELECT * FROM sessions ORDER BY id")] == rows_before
             columns_after = connection.execute("PRAGMA table_info(sessions)").fetchall()
-            assert [column[1] for column in columns_after][-1] == "discard"
-            assert columns_after[:-1] == columns_before
+            assert [column[1] for column in columns_after][-2:] == ["discard", "pid_started_at"]
+            assert columns_after[:-2] == columns_before
             unique_columns = [
                 connection.execute(f"PRAGMA index_info({index[1]})").fetchall()[0][2]
                 for index in connection.execute("PRAGMA index_list(sessions)").fetchall()
@@ -338,4 +339,50 @@ class SessionDiscardMigrationTests:
         finally:
             connection.close()
         assert "discard" not in columns
+        assert session_ids == [("wf_a",)]
+
+
+class SessionPidStartedAtMigrationTests:
+    def test_upgrade_adds_null_pid_started_at_and_keeps_rows(self, tmp_path: Path) -> None:
+        database_file = tmp_path / "dovo.db"
+        command.upgrade(_alembic_config(database_file), SESSION_DISCARD_REVISION)
+        connection = sqlite3.connect(database_file)
+        try:
+            _insert_session_row(connection, "wf_a")
+            _insert_session_row(connection, "wf_b")
+            connection.commit()
+            rows_before = connection.execute("SELECT * FROM sessions ORDER BY id").fetchall()
+        finally:
+            connection.close()
+
+        init_database(database_file)
+
+        connection = sqlite3.connect(database_file)
+        try:
+            rows_after = connection.execute("SELECT * FROM sessions ORDER BY id").fetchall()
+            columns = [row[1] for row in connection.execute("PRAGMA table_info(sessions)")]
+        finally:
+            connection.close()
+        assert columns[-1] == "pid_started_at"
+        assert [row[:-1] for row in rows_after] == rows_before
+        assert [row[-1] for row in rows_after] == [None, None]
+
+    def test_downgrade_drops_pid_started_at_and_keeps_rows(self, tmp_path: Path) -> None:
+        database_file = init_database(tmp_path / "dovo.db")
+        connection = sqlite3.connect(database_file)
+        try:
+            _insert_session_row(connection, "wf_a")
+            connection.commit()
+        finally:
+            connection.close()
+
+        command.downgrade(_alembic_config(database_file), SESSION_DISCARD_REVISION)
+
+        connection = sqlite3.connect(database_file)
+        try:
+            columns = {row[1] for row in connection.execute("PRAGMA table_info(sessions)")}
+            session_ids = connection.execute("SELECT session_id FROM sessions").fetchall()
+        finally:
+            connection.close()
+        assert "pid_started_at" not in columns
         assert session_ids == [("wf_a",)]

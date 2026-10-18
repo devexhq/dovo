@@ -17,6 +17,7 @@ from dovo.core.git.exceptions import GitError
 from dovo.core.git.runner import GitRunner
 from dovo.core.inputs import InputResolveResult
 from dovo.core.interaction import HeadlessAnswerInput
+from dovo.core.sessions import current_process_started_at
 from dovo.engine.exceptions import EngineInputError
 from dovo.engine.loader import EngineLoader
 from dovo.engine.models import (
@@ -237,6 +238,7 @@ class Engine:
             branch_name="",
             status=SessionStatus.RUNNING,
             pid=os.getpid(),
+            pid_started_at=current_process_started_at(),
             blueprint_tier=config.blueprint_tier,
             commit_sha=config.commit_sha,
             use_worktree=config.use_worktree,
@@ -264,6 +266,8 @@ class Engine:
     def _mark_running(self, session_id: str, warnings: list[str]) -> None:
         """Set the paused row back to running, or record a persistence warning; the caller holds the workspace lock."""
         try:
-            self.db.update_status(session_id, SessionStatus.RUNNING, pid=os.getpid())
+            self.db.update_status(
+                session_id, SessionStatus.RUNNING, pid=os.getpid(), pid_started_at=current_process_started_at()
+            )
         except Exception as exc:
             warnings.append(f"Failed to update run status in database: {exc}")

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import sqlite3
 from pathlib import Path
+from typing import TypedDict
 
 import pytest
 from sqlalchemy import Engine
@@ -154,6 +155,71 @@ class SessionsRepositoryConfigTests:
         record = repo.get("wf_a")
         assert record is not None
         assert record.worktree_id == "dovo_1"
+
+
+class _PidUpdate(TypedDict, total=False):
+    """Process-identity keyword arguments forwarded to update_status."""
+
+    pid: int
+    pid_started_at: str
+
+
+class SessionsRepositoryPidTests:
+    """Contract tests for the process identity (pid, pid_started_at) written by SessionsRepository."""
+
+    def test_create_persists_pid_started_at(self, db_path: Path, db_engine: Engine) -> None:
+        repo = SessionsRepository(db_path=db_path, db_engine=db_engine, project_id="proj-a")
+        repo.create(
+            session_id="wf_a",
+            blueprint_name="deploy",
+            blueprint_key="deploy",
+            pid=42,
+            pid_started_at="2026-10-18T04:04:09.250000+00:00",
+        )
+
+        record = repo.get("wf_a")
+
+        assert record is not None
+        assert (record.pid, record.pid_started_at) == (42, "2026-10-18T04:04:09.250000+00:00")
+
+    @pytest.mark.parametrize(
+        ("update", "expected"),
+        [
+            pytest.param(
+                {"pid": 7, "pid_started_at": "2026-10-18T05:00:00.000000+00:00"},
+                (7, "2026-10-18T05:00:00.000000+00:00"),
+                id="pid-with-time",
+            ),
+            pytest.param({"pid": 7}, (7, None), id="pid-clears-time"),
+            pytest.param({}, (42, "2026-10-18T04:04:09.250000+00:00"), id="no-pid-keeps-both"),
+            pytest.param(
+                {"pid_started_at": "2026-10-18T05:00:00.000000+00:00"},
+                (42, "2026-10-18T04:04:09.250000+00:00"),
+                id="time-without-pid-ignored",
+            ),
+        ],
+    )
+    def test_update_status_writes_pid_started_at_only_with_pid(
+        self,
+        db_path: Path,
+        db_engine: Engine,
+        update: _PidUpdate,
+        expected: tuple[int, str | None],
+    ) -> None:
+        repo = SessionsRepository(db_path=db_path, db_engine=db_engine, project_id="proj-a")
+        repo.create(
+            session_id="wf_a",
+            blueprint_name="deploy",
+            blueprint_key="deploy",
+            pid=42,
+            pid_started_at="2026-10-18T04:04:09.250000+00:00",
+        )
+
+        repo.update_status("wf_a", SessionStatus.RUNNING, **update)
+
+        record = repo.get("wf_a")
+        assert record is not None
+        assert (record.pid, record.pid_started_at) == expected
 
 
 class SessionsRepositoryExecutionStateTests:

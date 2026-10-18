@@ -15,7 +15,7 @@ from dovo.core.sessions.models import (
     SessionLogEventType,
     StepRunSummary,
 )
-from dovo.core.sessions.services.reconcile import reconcile_stale_sessions
+from dovo.core.sessions.services.reconcile import current_process_started_at, reconcile_stale_sessions
 from dovo.core.sessions.sessions import Session, SessionCollection, history_redactor
 
 __all__ = [
@@ -34,6 +34,7 @@ __all__ = [
     "SessionLogEvent",
     "SessionLogEventType",
     "StepRunSummary",
+    "current_process_started_at",
     "history_redactor",
     "reconcile_stale_sessions",
 ]

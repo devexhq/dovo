@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 import json
+import shlex
+import sqlite3
+import sys
 from pathlib import Path
 
 import pytest
@@ -324,3 +327,39 @@ class SessionResumeAskCliIntegrationTests:
             in result.stdout
         )
         assert _session_status(cli_workspace, session_id) == SessionStatus.PAUSED
+
+
+class SessionResumeReconcileCliIntegrationTests:
+    """Typer runner regression tests for a resumed session reconciled by a concurrent `dovo status`."""
+
+    def test_resumed_session_survives_status_run_by_its_own_step(
+        self, cli_runner: CliRunner, cli_workspace: Path
+    ) -> None:
+        """Resume a backdated session paused at an ask whose next step runs `dovo status`.
+
+        The resume exits 0, the row ends COMPLETED and status.out holds no reconciliation warning.
+        """
+        dovo = shlex.quote(str(Path(sys.executable).with_name("dovo")))
+        paths = initialized_workspace_paths(cli_workspace)
+        db = DovoDb(database_file=paths.database_file, project_id=paths.project_id)
+        seed_paused_ask_session(
+            paths,
+            db.sessions,
+            db.artifacts,
+            session_id="resumed",
+            steps=[_ASK_STEPS[0], {"id": "status", "type": "command", "command": f"{dovo} status > status.out 2>&1"}],
+        )
+        connection = sqlite3.connect(paths.database_file)
+        try:
+            connection.execute(
+                "UPDATE sessions SET started_at = '2000-01-01 00:00:00' WHERE session_id = ?", ("resumed",)
+            )
+            connection.commit()
+        finally:
+            connection.close()
+
+        result = cli_runner.invoke(app, ["-p", str(cli_workspace), "resume", "resumed", "--answer", "approve=approve"])
+
+        assert result.exit_code == 0, result.stdout
+        assert _session_status(cli_workspace, "resumed") == SessionStatus.COMPLETED
+        assert "Reconciled" not in (cli_workspace / "status.out").read_text(encoding="utf-8")

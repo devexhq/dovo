@@ -10,10 +10,11 @@ import psutil
 
 from dovo.common.filesystem.models import RepositoryPaths
 from dovo.common.lock import WorkspaceLock
-from dovo.core.db import SessionRecord, SessionsRepository, SessionStatus
+from dovo.core.db import SessionRecord, SessionsRepository, SessionStatus, parse_timestamp
 from dovo.core.sessions.models import ReconciliationResult
 
 STALE_RUN_ERROR_MESSAGE = "Session interrupted by abnormal process termination"
+PID_START_TOLERANCE = timedelta(seconds=1)
 
 
 def is_pid_alive(pid: int) -> bool:
@@ -43,33 +44,23 @@ def get_process_start_time(pid: int) -> datetime | None:
         return None
 
 
-def _parse_timestamp(timestamp_str: str) -> datetime | None:
-    """Parse UTC date string (%Y-%m-%d %H:%M:%S or ISO-8601) into timezone-aware datetime."""
-    try:
-        return datetime.strptime(timestamp_str, "%Y-%m-%d %H:%M:%S").replace(tzinfo=UTC)
-    except ValueError:
-        pass
-    try:
-        parsed = datetime.fromisoformat(timestamp_str)
-        return parsed if parsed.tzinfo is not None else parsed.replace(tzinfo=UTC)
-    except (ValueError, TypeError):
-        return None
+def current_process_started_at() -> str | None:
+    """Return this process's OS creation time as ISO-8601 UTC with microseconds, or None when it cannot be read."""
+    created = get_process_start_time(os.getpid())
+    return created.isoformat(timespec="microseconds") if created is not None else None
 
 
-def _is_pid_reused(pid: int, session_start: datetime | None, current_pid: int) -> bool:
-    """Check if an alive PID was recycled after session_start."""
-    if session_start is None:
+def _is_pid_reused(pid: int, pid_started_at: str | None) -> bool:
+    """Check whether live pid belongs to a process other than the one created at pid_started_at."""
+    recorded = parse_timestamp(pid_started_at)
+    if recorded is None:
         return False
 
-    if pid == current_pid:
-        current_start = get_process_start_time(current_pid)
-        return bool(current_start and current_start > session_start + timedelta(seconds=1))
-
-    proc_start = get_process_start_time(pid)
-    return bool(proc_start and proc_start > session_start + timedelta(seconds=1))
+    actual = get_process_start_time(pid)
+    return actual is not None and abs(actual - recorded) > PID_START_TOLERANCE
 
 
-def is_run_stale(run: SessionRecord, current_pid: int | None = None) -> bool:
+def is_run_stale(run: SessionRecord) -> bool:
     """Determine whether a RUNNING session record represents an interrupted or dead session."""
     if run.status != SessionStatus.RUNNING:
         return False
@@ -77,9 +68,7 @@ def is_run_stale(run: SessionRecord, current_pid: int | None = None) -> bool:
     if run.pid is None or not is_pid_alive(run.pid):
         return True
 
-    eff_current_pid = current_pid if current_pid is not None else os.getpid()
-    session_start = _parse_timestamp(run.started_at)
-    return _is_pid_reused(run.pid, session_start, eff_current_pid)
+    return _is_pid_reused(run.pid, run.pid_started_at)
 
 
 def _resolve_sessions_repo_and_root(
