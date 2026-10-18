@@ -1660,14 +1660,16 @@ class CoordinatorAskTests:
 
         assert seen == [(NodeState.PAUSED, prompter.requests[0], SessionStatus.PAUSED)]
 
-    def test_valid_answer_clears_pending_ask_and_completes_with_outputs(self, ask_run: AskRun) -> None:
+    def test_valid_answer_moves_pending_ask_to_the_attempt_and_completes_with_outputs(self, ask_run: AskRun) -> None:
         steps = [_approve_step(), _command("after", "echo '{{ steps.approve.outputs.selected }}' > got.txt")]
+        prompter = _ScriptedPrompter([_answer("approve")])
 
-        outcome = ask_run.start(steps, _ScriptedPrompter([_answer("approve")]))
+        outcome = ask_run.start(steps, prompter)
 
         leaf = ask_run.leaf("approve")
         assert outcome.status == SessionStatus.COMPLETED
         assert (leaf.state, leaf.pending_ask) == (NodeState.COMPLETED, None)
+        assert leaf.attempts[-1].ask == prompter.requests[0]
         assert leaf.attempts[-1].result is not None
         assert leaf.attempts[-1].result.outputs["selected"] == "approve"
         assert ask_run.row_status() == SessionStatus.RUNNING

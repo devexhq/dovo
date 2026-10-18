@@ -325,7 +325,7 @@ class RunCoordinator:
         answer: InteractionAnswer,
         slot: _AskSlot,
     ) -> NodeTransitionKind:
-        """Clear pending_ask, commit the run back to RUNNING, then settle the answered result through the normal attempt path."""
+        """Move pending_ask onto the attempt, commit the run back to RUNNING, then settle the answered result through the normal attempt path."""
         result = self._run.step_coordinator.complete_ask(
             self._context,
             step_def,
@@ -335,7 +335,9 @@ class RunCoordinator:
             total=slot.total,
             **self._ask_arguments(leaf, slot.loop),
         )
-        leaf.attempts[-1] = leaf.attempts[-1].model_copy(update={"completed_at": _now(), "result": result})
+        leaf.attempts[-1] = leaf.attempts[-1].model_copy(
+            update={"completed_at": _now(), "result": result, "ask": request}
+        )
         leaf.pending_ask = None
         leaf.state = NodeState.RUNNING
         if not self._commit(f"after prompt '{leaf.id}' answered", SessionStatus.RUNNING):
