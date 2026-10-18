@@ -117,13 +117,22 @@ def _ensure_required_subdirs(root_path: Path, result: BootstrapResult) -> bool:
 
 
 def _seed_local_gitignore(root_path: Path) -> bool:
-    """Write `.dovo/.gitignore` with DOVO_GITIGNORE_CONTENT if it does not already exist."""
-    gitignore_path = root_path / ".gitignore"
-    if gitignore_path.exists():
-        return False
+    """Write `.dovo/.gitignore` with DOVO_GITIGNORE_CONTENT, or append its missing entries to an existing file.
 
-    Filesystem.atomic_write_text(gitignore_path, DOVO_GITIGNORE_CONTENT)
-    return True
+    Existing lines are kept as they are. Returns True only when the file was created.
+    """
+    gitignore_path = root_path / ".gitignore"
+    if not gitignore_path.exists():
+        Filesystem.atomic_write_text(gitignore_path, DOVO_GITIGNORE_CONTENT)
+        return True
+
+    existing = gitignore_path.read_text(encoding="utf-8")
+    present = {line.strip() for line in existing.splitlines()}
+    missing = [entry for entry in DOVO_GITIGNORE_CONTENT.splitlines() if entry not in present]
+    if missing:
+        separator = "" if not existing or existing.endswith("\n") else "\n"
+        Filesystem.atomic_write_text(gitignore_path, existing + separator + "".join(f"{entry}\n" for entry in missing))
+    return False
 
 
 def _assert_layout_writable(root_path: Path, result: BootstrapResult) -> bool:

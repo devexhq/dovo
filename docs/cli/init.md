@@ -30,7 +30,7 @@ dovo init --id my-project --force   # only effective on a rerun that changes the
 
 ### `.dovo/.gitignore`
 
-`dovo init` creates `<repo>/.dovo/.gitignore` with the ignore rules for `.dovo/`. The repository-root `.gitignore` is never modified.
+`dovo init` creates `<repo>/.dovo/.gitignore` with the ignore rules for `.dovo/`. When the file already exists, `dovo init` appends any of those rules it is missing and keeps every existing line. The repository-root `.gitignore` is never modified.
 
 ### `--repair`
 
