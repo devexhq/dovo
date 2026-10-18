@@ -23,7 +23,7 @@ Canonical example of structure, depth, and tone: [examples/github-issue.md](exam
    - If scope is too large, split it per **Size and split** rather than parking optional work inside one body.
 
 2. **Greenfield cutover (no shims):**
-   - Do not require backward compatibility with internal APIs, error strings, or internal models unless explicitly mandated for a public contract (CLI flags, `config.json`, blueprint YAML, JSON wire envelope).
+   - Do not require backward compatibility with internal APIs, error strings, internal models, or the public surface. Dovo is greenfield until its first public release (`AGENTS.md` R9): when a CLI flag, `config.json` or blueprint key, or the JSON event envelope is wrong, the issue changes it outright.
    - When touching an existing shared surface, list it under **Shared surfaces changed** and require callers, tests, and docs to be updated in the same change (R10).
    - Never freeze existing internals with phrases like "X stays unchanged", "untouched", "alongside", or "keep old callers working."
 
