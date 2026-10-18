@@ -70,10 +70,16 @@ ID, with the `path:line` that breaks it.
 
 ### Compatibility and change shape
 
-- **R9. Never break the public surface:** CLI flags and arguments, the meaning
-  of `config.json` and blueprint keys, and the JSON event envelope. Changing one
-  needs an issue that mandates it. *Why:* scripts and blueprints outside this
-  repo depend on them.
+- **R9. Dovo is greenfield: its public surface is not yet a contract.** CLI
+  flags and arguments, the meaning of `config.json` and blueprint keys, and the
+  JSON event envelope have no external consumers until the first public
+  release. When one is wrong, fix it now: change it outright, update every
+  caller, test and doc in the same change (R10, R17), and name the change in
+  the PR. Never keep a wrong shape behind an alias, fallback or compatibility
+  shim. R8 still applies to migrations. This rule becomes "never break the
+  public surface" at the first public release (#914). *Why:* a contract
+  settled before release is one users never migrate off, and a shim added now
+  becomes permanent.
 - **R10. Replace internals outright.** No aliases, re-exports, fallbacks, dual
   paths or deprecation windows; update every caller in the same change, or in
   the planned phase that follows. *Why:* shims outlive their reason and the
