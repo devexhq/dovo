@@ -246,6 +246,17 @@ class GitRunner:
         return [line.strip() for line in output.splitlines() if line.strip()]
 
     @staticmethod
+    def branch_exists(path: Path, branch: str) -> bool:
+        """Return True when refs/heads/<branch> exists; raise for git failures other than a missing ref."""
+        try:
+            GitRunner.run(["show-ref", "--verify", "--quiet", f"refs/heads/{branch}"], path=path)
+        except GitCommandError as exc:
+            if exc.returncode == 1:
+                return False
+            raise
+        return True
+
+    @staticmethod
     def rev_parse(path: Path, rev: str = "HEAD") -> str:
         """Resolve a git revision into a commit SHA."""
         return GitRunner.run(["rev-parse", rev], path=path)
