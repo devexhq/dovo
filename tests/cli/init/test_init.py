@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 from typing import Any
 
+import pytest
 from typer.testing import CliRunner
 
 from dovo.cli import app
@@ -88,6 +89,31 @@ class InitCliIntegrationTests:
         assert event["event_type"] == "WorkspaceInitResult"
         assert event["payload"]["ok"] is True
         assert event["payload"]["project_id"] == "test-project"
+
+    def test_init_cli_in_global_home_parent_exits_one_with_json_refusal(
+        self, cli_runner: CliRunner, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Exit 1 for `-p <home> init --format json` with payload ok False, failure_mode preflight, the exact error and fix, and no file under DOVO_HOME."""
+        home = tmp_path / "home"
+        global_home = home / ".dovo"
+        global_home.mkdir(parents=True)
+        init_git_repository(home)
+        monkeypatch.setenv("DOVO_HOME", str(global_home))
+
+        result = cli_runner.invoke(app, ["-p", str(home), "init", "--format", "json"])
+
+        assert result.exit_code == 1
+        payload = json.loads(result.stdout)["payload"]
+        assert payload["ok"] is False
+        assert payload["failure_mode"] == "preflight"
+        assert payload["errors"] == [
+            f"Cannot initialize a workspace at '{home.resolve()}': its .dovo directory is the global Dovo home "
+            f"'{global_home.resolve()}'."
+        ]
+        assert payload["fixes"] == [
+            "Run 'dovo init' inside a project directory, or set DOVO_HOME to a different directory."
+        ]
+        assert list(global_home.iterdir()) == []
 
     def test_init_cli_with_id_flag_creates_project_json_with_explicit_id(
         self, cli_runner: CliRunner, tmp_path: Path

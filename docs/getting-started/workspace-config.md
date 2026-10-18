@@ -25,7 +25,15 @@ This creates:
     └── steps/
 ```
 
-Every command except `dovo init` requires this step first: without a valid `.dovo/project.json` it exits `1` with `Workspace is not initialized` and a `dovo init` prompt. `dovo run` initializes the workspace automatically.
+Every command except `dovo init` requires this step first: without a valid `.dovo/project.json` it exits `1` with `Workspace is not initialized` and a `dovo init` prompt. `dovo run` initializes the workspace automatically, except in a directory whose `.dovo` is `DOVO_HOME` (by default your home directory), where it exits `1` with the same `Workspace is not initialized` prompt.
+
+### How the workspace root is found
+
+Dovo walks up from the current directory and uses the nearest directory that contains a `.dovo/` directory or `.git`. When one directory has both, `.dovo/` is what marks it. If no ancestor has either, the current directory is the root.
+
+The walk skips the directory that holds the global Dovo home: the parent of `DOVO_HOME` (by default your home directory, which holds `~/.dovo`) and any directory whose `.dovo` is a symlink to `DOVO_HOME`. `DOVO_HOME` is compared after resolving `~`, relative paths and symlinks, so a directory under `$HOME` with no marked ancestor below `$HOME` resolves to itself, not to `$HOME`, even when `$HOME` is a Git repository. `dovo init` refuses to initialize a directory whose `.dovo` is the global Dovo home.
+
+Pass `-p/--path <dir>` (as in `dovo -p <dir> status`) to start the walk from another directory.
 
 ### Flags & Repair Options
 

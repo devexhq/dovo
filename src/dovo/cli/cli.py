@@ -90,7 +90,10 @@ def main(
         typer.Option(
             "--path",
             "-p",
-            help="Target workspace root directory (defaults to auto-discovering Dovo or git root).",
+            help=(
+                "Target workspace root directory (defaults to auto-discovering the nearest Dovo or git root, "
+                "skipping the directory that holds DOVO_HOME)."
+            ),
         ),
     ] = None,
     verbose: Annotated[
