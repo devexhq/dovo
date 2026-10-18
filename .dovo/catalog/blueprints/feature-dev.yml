@@ -181,13 +181,34 @@ steps:
         - { value: "yes", label: Open a PR }
         - { value: "no", label: Stop here }
 
-  - id: push
-    name: Commit, push and open the PR
+  - id: pr-prep
+    name: Draft the commit and PR text
     type: agent
     prompt: |
       The user's answer to "open a PR?" was: {{ steps.open-pr.outputs.selected }}
       If it is not "yes", do nothing and report that you did nothing.
-      Otherwise run /dovo-push (follow .agents/skills/dovo-push/SKILL.md if the slash
+      Otherwise run /pr-prep (follow .agents/skills/pr-prep/SKILL.md if the slash
       command is not recognized). The change implements issue ${{ inputs.issue }}.
+      Dovo commits the working tree before each agent step, so read the change with
+      `git diff $(git merge-base HEAD origin/main)` instead of the uncommitted diff, and
+      ignore `.dovo/run`. Also write .agentic/pr-branch: one line, a new branch name
+      `<username>/<short-description>`, with the username your own branches use.
     tools: { allow_all: true }
     timeout_seconds: 900
+
+  # A command step, not an agent step: it inherits the host environment, so git
+  # reaches the user's SSH agent, which agent steps never see.
+  - id: push
+    name: Commit, push and open the PR
+    env:
+      OPEN_PR: "{{ steps.open-pr.outputs.selected }}"
+    run: |
+      set -eu
+      if [ "$OPEN_PR" != "yes" ]; then echo "Not opening a PR."; exit 0; fi
+      branch=$(head -n 1 .agentic/pr-branch)
+      git fetch -q origin main
+      git switch -q -c "$branch"
+      git reset -q --soft "$(git merge-base HEAD origin/main)"
+      git rm -r -q --cached --ignore-unmatch .dovo/run
+      uv run python scripts/pr.py -- . ':!.dovo/run'
+    timeout_seconds: 600
