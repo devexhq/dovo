@@ -271,6 +271,14 @@ class ExecuteAgentStepOutputTests:
                 id="unfixable",
             ),
             pytest.param(
+                AgentResponseStatus.UNFIXABLE,
+                201,
+                "needs a human",
+                ["Discarded edit saved to /tmp/x.patch."],
+                "Agent reported the task unfixable: needs a human\nDiscarded edit saved to /tmp/x.patch.",
+                id="unfixable-with-diagnostics",
+            ),
+            pytest.param(
                 AgentResponseStatus.TIMEOUT,
                 202,
                 None,

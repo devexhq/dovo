@@ -4,7 +4,7 @@ An agent step (`type: agent`) sends its `prompt` to the configured provider. It 
 
 The provider edits the worktree directly. Nothing reaches your source checkout until you apply the worktree.
 
-The step's stdout is one JSON object with a `status` (see [Agent step outcomes](../reference/step-schema.md#agent-step-outcomes)). A planning or review prompt that changes no files finishes as `no_op` and puts its findings in `summary`. Any status other than `proposed_patch` or `no_op` fails the step through its `on_failure` policy.
+The step's stdout is one JSON object with a `status` (see [Agent step outcomes](../reference/step-schema.md#agent-step-outcomes)). A planning or review prompt that changes no files finishes as `no_op` and puts its findings in `summary`. Any status other than `proposed_patch` or `no_op` fails the step through its `on_failure` policy. An agent that cannot do the task reports it by writing `unfixable.txt` to its [private scratch](#private-scratch), so a step that did nothing because it could not is not mistaken for `no_op`.
 
 ---
 
@@ -201,6 +201,7 @@ Each agent attempt gets its own scratch directory under the run's session temp d
 - Every attempt gets a fresh directory, so retries, loop iterations and resumed runs never reuse one.
 - Only `scratch/` is shown to the agent (as `agent_scratch_path` in the prompt). `control/` is host-owned and never exposed.
 - Scratch keeps the agent's temporary files out of the proposed diff. It is not a permission boundary: an unrestricted agent can still create files in the checkout.
+- The prompt tells the agent to write the reason, in 100 words or less, to `<agent_scratch_path>/unfixable.txt` and stop when it cannot complete the instruction. A non-blank file makes the attempt `unfixable` (exit code `201`) with the stripped text as `unfixable_reason`, and the step fails with `Agent reported the task unfixable: <reason>`. Dovo keeps the whole text, whatever its length. A blank file is ignored; a file that cannot be read, a symlink, or anything other than a regular file (such as a FIFO) gives `provider_error`; a timeout or runner error wins over the file. Writing the file needs write access to the `scratch` root, which the default policy grants; a step whose `tools` policy withholds it cannot write the file and ends `blocked` or `no_op` instead.
 - If the session temp directory is missing, unwritable or overlaps the checkout, the step fails with exit code `203` before the provider runs:
 
 ```text
@@ -216,6 +217,8 @@ Fix:
 ## Rejected Edits
 
 When an agent edits the worktree and the result trips a patch limit (`max_files`, patch size, a binary change, or an unsafe path), Dovo saves the full change set as a patch before resetting the worktree, at `~/.dovo/storage/projects/<project_id>/sessions/<session_id>/rejected/<step_id>_attempt_<n>.patch` (`<step_id>_iter_<k>_attempt_<n>.patch` inside a loop; the root honors `DOVO_HOME`). The step error ends with `Discarded edit saved to <path>.`, and `dovo session show` lists the same path. Recover the work with `git apply <path>` from a worktree at the same baseline. If the patch cannot be written, the worktree keeps the agent's edits and the step fails with `Could not save the rejected edit (<reason>); the worktree was left unchanged.` Saved patches are kept as long as the session.
+
+Edits from an attempt whose agent reported the task [unfixable](#private-scratch) are saved and discarded the same way. The step error then starts with `Agent reported the task unfixable: <reason>`, followed by `Discarded edit saved to <path>.`
 
 ---
 

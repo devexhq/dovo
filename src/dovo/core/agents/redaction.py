@@ -25,11 +25,14 @@ def build_response_redactor(
 
 
 def redact_agent_response(response: AgentResponse, redactor: SecretRedactor) -> AgentResponse:
-    """Return a copy of ``response`` with every errors entry, raw_text, and summary masked and all other fields unchanged."""
+    """Return a copy of ``response`` with every errors entry, raw_text, summary, and unfixable_reason masked and all other fields unchanged."""
     return response.model_copy(
         update={
             "errors": [redactor.redact_text(error) for error in response.errors],
             "raw_text": None if response.raw_text is None else redactor.redact_text(response.raw_text),
             "summary": None if response.summary is None else redactor.redact_text(response.summary),
+            "unfixable_reason": (
+                None if response.unfixable_reason is None else redactor.redact_text(response.unfixable_reason)
+            ),
         }
     )

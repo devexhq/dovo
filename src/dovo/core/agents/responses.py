@@ -1,4 +1,4 @@
-"""Shared constructors for the timeout, provider-error, blocked, and no-op agent responses."""
+"""Shared constructors for the timeout, provider-error, blocked, unfixable, and no-op agent responses."""
 
 from __future__ import annotations
 
@@ -63,6 +63,25 @@ def no_op_response(
         duration_ms=duration_ms,
         raw_text=raw_text,
         mutation_baseline_ref=mutation_baseline_ref,
+    )
+
+
+def unfixable_response(
+    *,
+    reason: str,
+    duration_ms: int,
+    errors: Sequence[str] = (),
+    raw_text: str | None = None,
+    mutation_baseline_ref: str | None = None,
+) -> AgentResponse:
+    """Build the UNFIXABLE response carrying the agent's reason and any diagnostics from discarding its edit."""
+    return AgentResponse(
+        status=AgentResponseStatus.UNFIXABLE,
+        duration_ms=duration_ms,
+        unfixable_reason=reason,
+        raw_text=raw_text,
+        mutation_baseline_ref=mutation_baseline_ref,
+        errors=[*errors],
     )
 
 
