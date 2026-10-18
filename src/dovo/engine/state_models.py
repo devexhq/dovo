@@ -38,6 +38,7 @@ class StepAttemptRecord(BaseModel):
     started_at: str
     completed_at: str | None = None
     result: StepResult | None = None  # None while attempt is running; populated on complete/fail
+    ask: InteractionRequest | None = None  # The prompt an ask step's attempt was answered for; None otherwise
 
 
 class ExecutionLeafNode(BaseModel):

@@ -130,6 +130,8 @@ Fix: use one of: approve, revise, deny
 
 A comment supplied for an option whose policy is `disabled` is discarded with a warning. The flags are listed in [`dovo session resume`](../cli/session.md#dovo-session-resume).
 
+Once answered, the prompt (its message, mode, options, comment policy and artifact reference) stays in the saved run state under the step's attempt as `ask`, next to the outputs in `result`, so `session.json` records what was asked as well as the answer.
+
 ---
 
 ## Redaction
