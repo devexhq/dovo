@@ -20,13 +20,35 @@ class BootstrapDovoTests:
         assert result.dirs_created == [result.root_path / ".meta"]
         assert (result.root_path / ".gitignore").read_text(encoding="utf-8") == DOVO_GITIGNORE_CONTENT
 
-    def test_bootstrap_dovo_rerun_preserves_existing_gitignore(self, tmp_path: Path) -> None:
+    def test_bootstrap_dovo_rerun_appends_missing_entries_and_keeps_existing_lines(self, tmp_path: Path) -> None:
         root_path = tmp_path / ".dovo"
         first_result = bootstrap_dovo(root_path)
-        custom_content = "worktrees/\ncustom-entry\n"
-        (first_result.root_path / ".gitignore").write_text(custom_content, encoding="utf-8")
+        (first_result.root_path / ".gitignore").write_text("worktrees/\ncustom-entry\n", encoding="utf-8")
 
         result = bootstrap_dovo(root_path)
 
         assert result.gitignore_created is False
-        assert (result.root_path / ".gitignore").read_text(encoding="utf-8") == custom_content
+        assert (result.root_path / ".gitignore").read_text(encoding="utf-8") == (
+            "worktrees/\ncustom-entry\n.meta/\n.lock\nrun\n*.db\n*.db-journal\n*.db-wal\n"
+        )
+
+    def test_bootstrap_dovo_rerun_terminates_last_line_before_appending(self, tmp_path: Path) -> None:
+        root_path = tmp_path / ".dovo"
+        first_result = bootstrap_dovo(root_path)
+        complete_but_run = DOVO_GITIGNORE_CONTENT.replace("run\n", "").rstrip("\n")
+        (first_result.root_path / ".gitignore").write_text(complete_but_run, encoding="utf-8")
+
+        result = bootstrap_dovo(root_path)
+
+        assert (result.root_path / ".gitignore").read_text(encoding="utf-8") == complete_but_run + "\nrun\n"
+
+    def test_bootstrap_dovo_rerun_leaves_complete_gitignore_unchanged(self, tmp_path: Path) -> None:
+        root_path = tmp_path / ".dovo"
+        first_result = bootstrap_dovo(root_path)
+        complete_content = "# local\n" + DOVO_GITIGNORE_CONTENT + "catalog/index.json\n"
+        (first_result.root_path / ".gitignore").write_text(complete_content, encoding="utf-8")
+
+        result = bootstrap_dovo(root_path)
+
+        assert result.gitignore_created is False
+        assert (result.root_path / ".gitignore").read_text(encoding="utf-8") == complete_content
