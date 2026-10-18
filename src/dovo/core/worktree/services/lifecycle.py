@@ -43,15 +43,13 @@ def _extract_target_metadata(target: WorktreeSession | WorktreeRecord) -> tuple[
     return target.worktree_path, target.session_id, target.target_branch
 
 
-def _already_exists(worktree_id: str) -> WorktreeCreateResult:
+def _already_exists(worktree_id: str, fix: str) -> WorktreeCreateResult:
     """Build the already_exists result for a worktree ID whose directory or branch is taken."""
     return WorktreeCreateResult(
         status=WorktreeCreateStatus.ALREADY_EXISTS,
         error_code=ErrorCode.WORKTREE_PATH_CONFLICT,
         errors=[f"Worktree '{worktree_id}' already exists (WORKTREE_PATH_CONFLICT)."],
-        fixes=[
-            f"Inspect it with `dovo worktree show {worktree_id}` or remove it with `dovo worktree delete {worktree_id}`"
-        ],
+        fixes=[fix],
     )
 
 
@@ -156,7 +154,7 @@ class WorktreeLifecycle:
                 fixes=[f"Check that '{worktree_path.parent}' is readable, then retry"],
             )
         if path_taken:
-            return _already_exists(worktree_path.name)
+            return _already_exists(worktree_path.name, self._collision_fix(worktree_path, temp_branch, path_taken=True))
         try:
             branch_taken = GitRunner.branch_exists(self.path, temp_branch)
         except GitPlumbingTimeoutError as exc:
@@ -171,7 +169,25 @@ class WorktreeLifecycle:
                 errors=[f"Git worktree operation failed (WORKTREE_GIT_FAILED): {exc}"],
                 fixes=["Ensure this directory is a Git repository with a valid base ref"],
             )
-        return _already_exists(worktree_path.name) if branch_taken else None
+        if not branch_taken:
+            return None
+        return _already_exists(worktree_path.name, self._collision_fix(worktree_path, temp_branch, path_taken=False))
+
+    def _collision_fix(self, worktree_path: Path, temp_branch: str, *, path_taken: bool) -> str:
+        """Return show/delete advice when Dovo tracks the ID, else name the exact path or branch to clear by hand.
+
+        `dovo worktree delete` acts only on a row that is not cleaned, so any other collision gets manual advice.
+        """
+        worktree_id = worktree_path.name
+        row = self.db.get(worktree_id)
+        if row is not None and row.status is not WorktreeStatus.CLEANED:
+            return f"Inspect it with `dovo worktree show {worktree_id}` or remove it with `dovo worktree delete {worktree_id}`"
+        if path_taken:
+            return f"'{worktree_path}' is not tracked by Dovo; move or remove it, then retry"
+        return (
+            f"Branch '{temp_branch}' is not tracked by Dovo; "
+            f"delete it with `git branch -D {temp_branch}` if you no longer need it, then retry"
+        )
 
     def _probe_created_branch(self, temp_branch: str) -> bool:
         """Return True when temp_branch exists after a failed add; any probe failure returns False so cleanup never deletes on doubt."""
@@ -181,7 +197,11 @@ class WorktreeLifecycle:
             return False
 
     def _discard_failed_add(self, worktree_path: Path, temp_branch: str) -> None:
-        """Discard whatever a failed `git worktree add` left at names the collision check proved absent."""
+        """Discard whatever a failed `git worktree add` left at names the collision check proved absent.
+
+        Existence after the failure is taken as ownership. The check ran under WorkspaceLock, so no other dovo
+        process can create these names in between, and `dovo/<id>` is a namespace only dovo creates branches in.
+        """
         self.discard_partial(
             worktree_path,
             temp_branch,

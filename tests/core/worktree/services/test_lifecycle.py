@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 from dovo.common.filesystem import WorkspacePaths
-from dovo.core.db import WorktreesRepository
+from dovo.core.db import WorktreesRepository, WorktreeStatus
 from dovo.core.git.exceptions import GitCommandError, GitPlumbingTimeoutError
 from dovo.core.git.runner import GitRunner
 from dovo.core.worktree.models import WorktreeCreateStatus
@@ -216,9 +216,33 @@ class WorktreeLifecycleCollisionTests:
 
         assert result.status == WorktreeCreateStatus.ALREADY_EXISTS
         assert result.error_code == "WORKTREE_PATH_CONFLICT"
+        assert result.fixes == [f"'{worktree_path}' is not tracked by Dovo; move or remove it, then retry"]
         assert sentinel.read_text(encoding="utf-8") == "keep\n"
         assert GitRunner.branch_exists(worktree_workspace, "dovo/dovo_half") is False
         assert repo.list() == []
+
+    def test_create_over_cleaned_row_with_leftover_directory_advises_manual_removal(
+        self, worktree_workspace: Path
+    ) -> None:
+        paths = _paths(worktree_workspace)
+        repo = WorktreesRepository(db_path=paths.database_file, project_id=paths.project_id)
+        lifecycle = WorktreeLifecycle(paths, repo)
+        worktree_path = paths.worktrees_dir / "dovo_stale"
+        worktree_path.mkdir(parents=True)
+        repo.create(
+            id="dovo_stale",
+            name=None,
+            branch_name="dovo/dovo_stale",
+            base_commit=GitRunner.rev_parse(worktree_workspace, rev="HEAD"),
+            worktree_path=worktree_path,
+        )
+        repo.update_status("dovo_stale", WorktreeStatus.CLEANED)
+
+        result = lifecycle.create(session_id="dovo_stale")
+
+        assert result.status == WorktreeCreateStatus.ALREADY_EXISTS
+        assert result.fixes == [f"'{worktree_path}' is not tracked by Dovo; move or remove it, then retry"]
+        assert worktree_path.is_dir()
 
     def test_create_with_only_branch_returns_already_exists_and_keeps_it(self, worktree_workspace: Path) -> None:
         paths = _paths(worktree_workspace)
@@ -231,6 +255,10 @@ class WorktreeLifecycleCollisionTests:
 
         assert result.status == WorktreeCreateStatus.ALREADY_EXISTS
         assert result.error_code == "WORKTREE_PATH_CONFLICT"
+        assert result.fixes == [
+            "Branch 'dovo/dovo_half' is not tracked by Dovo; "
+            "delete it with `git branch -D dovo/dovo_half` if you no longer need it, then retry"
+        ]
         assert GitRunner.rev_parse(worktree_workspace, rev="dovo/dovo_half") == tip_before
         assert (paths.worktrees_dir / "dovo_half").exists() is False
         assert repo.list() == []
