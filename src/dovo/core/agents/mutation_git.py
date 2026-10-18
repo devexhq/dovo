@@ -2,29 +2,37 @@
 
 Direct-mutation providers (e.g. Cursor) edit worktree files on disk instead of
 returning a diff. These helpers baseline the worktree before the agent runs,
-capture what changed, and discard agent edits back to that baseline. All
-operations run with ``cwd`` set to the worktree path only — never the user's
-main worktree.
+capture what changed, and discard agent edits back to that baseline. A dirty
+worktree is baselined by a snapshot commit that no branch points to, built in a
+temporary index, so taking a baseline never moves ``HEAD``, a branch or the
+worktree's index. All operations run with ``cwd`` set to the worktree path
+only, never the user's main worktree.
 """
 
 from __future__ import annotations
 
+import os
+import shutil
 import subprocess
+import tempfile
 from pathlib import Path
 
 from dovo.common.constants import GIT_SUBPROCESS_TIMEOUT_SECONDS
+
+BASELINE_SNAPSHOT_MESSAGE = "dovo: pre-agent baseline"
 
 
 class MutationGitError(RuntimeError):
     """Raised when a worktree git operation for a direct-mutation provider fails."""
 
 
-def _run_git(args: list[str], *, cwd: Path) -> subprocess.CompletedProcess[bytes]:
-    """Run git command in subprocess under cwd with timeout handling."""
+def _run_git(args: list[str], *, cwd: Path, env: dict[str, str] | None = None) -> subprocess.CompletedProcess[bytes]:
+    """Run git command in subprocess under cwd with timeout handling, using env when given."""
     try:
         return subprocess.run(
             ["git", *args],
             cwd=str(cwd),
+            env=env,
             capture_output=True,
             check=False,
             timeout=GIT_SUBPROCESS_TIMEOUT_SECONDS,
@@ -45,38 +53,29 @@ def _require_ok(completed: subprocess.CompletedProcess[bytes], *, action: str) -
 
 
 def resolve_pre_agent_baseline(worktree_path: Path) -> str:
-    """Return a git ref that captures worktree state before an agent runs.
+    """Return a commit SHA that captures worktree state before an agent runs.
 
-    A clean tree baselines to ``HEAD``. A dirty tree (e.g. a ``--wip`` overlay
-    applied uncommitted changes) is baselined by an internal marker commit, so
-    a later reset to this ref never discards state that predates the agent.
+    A clean tree baselines to ``HEAD``. A dirty tree (modified, staged, deleted
+    or untracked files, e.g. from a ``--wip`` overlay or an earlier step) is
+    baselined by a snapshot commit whose tree is the worktree contents, whose
+    only parent is ``HEAD`` and which no branch points to. ``HEAD``, every
+    branch, the index and ``git status`` are unchanged by the call.
 
     Args:
         worktree_path: Worktree checkout to baseline.
 
     Returns:
-        A git commit SHA usable as a reset/diff target.
+        A commit SHA usable as a diff or discard target.
 
     Raises:
-        MutationGitError: When the underlying git commands fail.
+        MutationGitError: When the underlying git commands fail; the
+            repository is left as it was.
     """
-    status = _run_git(["status", "--porcelain"], cwd=worktree_path)
-    _require_ok(status, action="git status")
-    if not status.stdout.strip():
-        head = _run_git(["rev-parse", "HEAD"], cwd=worktree_path)
-        _require_ok(head, action="git rev-parse HEAD")
-        return head.stdout.decode("utf-8").strip()
-
-    add = _run_git(["add", "-A"], cwd=worktree_path)
-    _require_ok(add, action="git add -A (pre-agent baseline)")
-    commit = _run_git(
-        ["commit", "--no-verify", "-m", "dovo: pre-agent baseline"],
-        cwd=worktree_path,
-    )
-    _require_ok(commit, action="git commit (pre-agent baseline)")
-    head = _run_git(["rev-parse", "HEAD"], cwd=worktree_path)
-    _require_ok(head, action="git rev-parse HEAD")
-    return head.stdout.decode("utf-8").strip()
+    clean = _is_worktree_clean(worktree_path)
+    head = _head_sha(worktree_path)
+    if clean:
+        return head
+    return _snapshot_worktree(worktree_path, head)
 
 
 def capture_diff_since(worktree_path: Path, baseline: str) -> tuple[str, list[str]]:
@@ -123,19 +122,97 @@ def capture_binary_patch_since(worktree_path: Path, baseline: str) -> bytes:
 
 
 def discard_since(worktree_path: Path, baseline: str) -> None:
-    """Reset the worktree to ``baseline`` and remove untracked agent edits.
+    """Restore the worktree to ``baseline`` and move ``HEAD`` back to where it was when the baseline was taken.
 
-    Never resets to bare ``HEAD`` — always to the given baseline, so a WIP
-    overlay applied before the agent ran survives the discard.
+    Every file returns to its content in ``baseline`` and files absent from it
+    are removed. ``HEAD`` and its branch return to ``baseline`` for a clean-tree
+    baseline, or to the snapshot's parent for a dirty-tree one, dropping any
+    commits the agent made; WIP that predated the agent stays uncommitted.
 
     Args:
-        worktree_path: Worktree checkout to reset.
-        baseline: Ref returned by :func:`resolve_pre_agent_baseline`.
+        worktree_path: Worktree checkout to restore.
+        baseline: Commit returned by :func:`resolve_pre_agent_baseline`.
 
     Raises:
         MutationGitError: When the underlying git commands fail.
     """
-    reset = _run_git(["reset", "--hard", baseline], cwd=worktree_path)
-    _require_ok(reset, action="git reset --hard")
+    baseline_sha, target = _head_at_baseline(worktree_path, baseline)
+    restore = _run_git(["read-tree", "-u", "--reset", baseline_sha], cwd=worktree_path)
+    _require_ok(restore, action="git read-tree -u --reset")
     clean = _run_git(["clean", "-fd"], cwd=worktree_path)
     _require_ok(clean, action="git clean -fd")
+    move_head = _run_git(["update-ref", "HEAD", target], cwd=worktree_path)
+    _require_ok(move_head, action="git update-ref HEAD")
+    if target != baseline_sha:
+        index = _run_git(["read-tree", target], cwd=worktree_path)
+        _require_ok(index, action="git read-tree (restore index)")
+
+
+def _is_worktree_clean(worktree_path: Path) -> bool:
+    """Return whether git reports no changes, without letting the status probe rewrite the index."""
+    status = _run_git(["--no-optional-locks", "status", "--porcelain"], cwd=worktree_path)
+    _require_ok(status, action="git status")
+    return not status.stdout.strip()
+
+
+def _head_sha(worktree_path: Path) -> str:
+    """Return the commit SHA HEAD resolves to."""
+    head = _run_git(["rev-parse", "HEAD"], cwd=worktree_path)
+    _require_ok(head, action="git rev-parse HEAD")
+    return head.stdout.decode("utf-8").strip()
+
+
+def _snapshot_worktree(worktree_path: Path, head: str) -> str:
+    """Commit the worktree contents as a child of head through a temporary copy of the index, updating no ref."""
+    real_index = _real_index_path(worktree_path)
+    with tempfile.TemporaryDirectory(prefix="dovo-baseline-") as tmp:
+        temp_index = Path(tmp) / "index"
+        if real_index.exists():
+            shutil.copyfile(real_index, temp_index)
+        env = {**os.environ, "GIT_INDEX_FILE": str(temp_index)}
+        add = _run_git(["add", "-A"], cwd=worktree_path, env=env)
+        _require_ok(add, action="git add -A (pre-agent baseline)")
+        tree = _run_git(["write-tree"], cwd=worktree_path, env=env)
+        _require_ok(tree, action="git write-tree (pre-agent baseline)")
+
+    tree_sha = tree.stdout.decode("utf-8").strip()
+    snapshot = _run_git(
+        ["commit-tree", tree_sha, "-p", head, "-m", BASELINE_SNAPSHOT_MESSAGE],
+        cwd=worktree_path,
+    )
+    _require_ok(snapshot, action="git commit-tree (pre-agent baseline)")
+    return snapshot.stdout.decode("utf-8").strip()
+
+
+def _real_index_path(worktree_path: Path) -> Path:
+    """Return the absolute path of the worktree's index file, as git resolves it for linked worktrees."""
+    resolved = _run_git(["rev-parse", "--git-path", "index"], cwd=worktree_path)
+    _require_ok(resolved, action="git rev-parse --git-path index")
+    index = Path(resolved.stdout.decode("utf-8").strip())
+    return index if index.is_absolute() else worktree_path / index
+
+
+def _head_at_baseline(worktree_path: Path, baseline: str) -> tuple[str, str]:
+    """Return (baseline SHA, SHA HEAD held when baseline was taken): the parent of a snapshot, else baseline itself."""
+    resolved = _run_git(["rev-parse", "--verify", f"{baseline}^{{commit}}"], cwd=worktree_path)
+    _require_ok(resolved, action="git rev-parse baseline")
+    sha = resolved.stdout.decode("utf-8").strip()
+    if _is_ancestor_of_head(worktree_path, sha):
+        return sha, sha
+
+    shown = _run_git(["show", "-s", "--format=%P%x00%s", sha], cwd=worktree_path)
+    _require_ok(shown, action="git show baseline")
+    parents, _, subject = shown.stdout.decode("utf-8").strip().partition("\x00")
+    parent_shas = parents.split()
+    if subject == BASELINE_SNAPSHOT_MESSAGE and len(parent_shas) == 1:
+        return sha, parent_shas[0]
+    return sha, sha
+
+
+def _is_ancestor_of_head(worktree_path: Path, sha: str) -> bool:
+    """Return whether sha is HEAD or an ancestor of it; exit 1 means no, any other non-zero exit raises."""
+    check = _run_git(["merge-base", "--is-ancestor", sha, "HEAD"], cwd=worktree_path)
+    if check.returncode == 1:
+        return False
+    _require_ok(check, action="git merge-base --is-ancestor")
+    return True
