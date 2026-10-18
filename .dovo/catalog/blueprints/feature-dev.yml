@@ -1,7 +1,7 @@
 version: 1
 name: feature-dev
 id: feature-dev
-description: Plan a GitHub issue, implement it after approval, review and fix until approved, then optionally open a PR
+description: Plan and review a GitHub issue until approved, implement it after approval, review and fix until approved, then optionally open a PR
 summary: Issue to reviewed PR with human gates
 
 inputs:
@@ -23,6 +23,59 @@ steps:
     tools: { allow_all: true }
     timeout_seconds: 1800
     artifacts: [{ name: plan, path: .agentic/plan.md }]
+
+  - id: plan-loop
+    name: Review the plan until approved
+    type: loop
+    max_iterations: 2
+    until:
+      - steps.plan-verdict.exit_code == 0
+    on_max_iterations: prompt_user
+    do:
+      - id: plan-review
+        name: Review the plan
+        type: agent
+        prompt: |
+          /dovo-plan-review
+
+          Follow .agents/skills/dovo-plan-review/SKILL.md if the slash command is not recognized.
+          Review .agentic/plan.md and write findings to .agentic/plan-review.md.
+          Write APPROVE to .agentic/plan-verdict.txt if there are zero blocking findings; otherwise write CHANGES_REQUIRED.
+        tools: { allow_all: true }
+        timeout_seconds: 1800
+        artifacts: [{ name: plan-review, path: .agentic/plan-review.md }]
+
+      - id: plan-verdict
+        name: Check the plan review verdict
+        run: grep -qx APPROVE .agentic/plan-verdict.txt 2>/dev/null || grep -qx "\*\*Verdict:\*\* APPROVE" .agentic/plan-review.md
+        on_failure: continue
+
+      - id: approve-review
+        name: Approve the plan review
+        type: ask
+        interaction:
+          mode: confirm
+          message: Approve the plan review for issue ${{ inputs.issue }}?
+          artifact: plan-review
+          comment: { policy: optional, message: Instructions for folding in findings }
+          options:
+            - { value: "approve", label: "Approve" }
+            - { value: "stop", label: "Stop here", fail: true }
+
+      - id: fold-findings
+        name: Fold findings into the plan
+        type: agent
+        prompt: |
+          Check the review verdict in .agentic/plan-verdict.txt or .agentic/plan-review.md.
+          If the review verdict is APPROVE and there are no blocking findings:
+            Do nothing; the plan is already approved.
+          Otherwise:
+            Update .agentic/plan.md to address all findings in .agentic/plan-review.md.
+            Instructions from the approver: {{ steps.approve-review.outputs.comment }}
+            Do not implement any code, commit or push. Only update .agentic/plan.md.
+        tools: { allow_all: true }
+        timeout_seconds: 1800
+        artifacts: [{ name: plan, path: .agentic/plan.md }]
 
   - id: approve-plan
     name: Approve the plan
