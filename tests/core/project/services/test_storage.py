@@ -51,6 +51,24 @@ class ResolveWorkspacePathsTests:
 
         assert str(exc_info.value).endswith(FORCE_HINT)
 
+    def test_dovo_dir_that_is_global_home_raises_without_reading_its_identity(self, tmp_path: Path) -> None:
+        """Raise the not-initialized error without the force hint even when the global home holds a valid project.json."""
+        home = tmp_path / "home"
+        global_root = home / ".dovo"
+        identity_path = global_root / "project.json"
+        save_project_identity(
+            identity_path, ProjectIdentity(id="stray-id", created_at=datetime(2026, 1, 1, tzinfo=UTC))
+        )
+
+        with pytest.raises(WorkspaceNotInitializedError) as exc_info:
+            resolve_workspace_paths(RepositoryPaths.from_root(home), GlobalPaths.from_root(global_root))
+
+        assert str(exc_info.value) == (
+            f"Workspace is not initialized: no valid project identity at '{identity_path.resolve()}' "
+            "(WORKSPACE_NOT_INITIALIZED).\n"
+            "Fix: Run `dovo init` to initialize this workspace."
+        )
+
     def test_valid_identity_resolves_runtime_under_global_storage(self, tmp_path: Path) -> None:
         global_root = tmp_path / "global"
         repository = tmp_path / "repository"

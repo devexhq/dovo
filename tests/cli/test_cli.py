@@ -13,6 +13,7 @@ import dovo.cli.cli as cli_module
 from dovo.cli import app
 from dovo.cli.context import CliContext
 from dovo.cli.session.app import session_app
+from dovo.cli.ui import ErrorPanelEvent
 from dovo.common.lock import LockTimeoutError
 from dovo.core.config.generator import build_default_config
 from dovo.core.config.loader import ConfigLoadResult
@@ -196,6 +197,41 @@ class IdentityGuardCliTests:
 
         assert result.exit_code == 1
         assert "dovo init --id <project-id> --force" in result.stdout
+
+    def test_status_at_global_home_parent_ignores_stray_global_identity_and_config(
+        self, cli_runner: CliRunner, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, dispatch_spy: list[object]
+    ) -> None:
+        """Exit 1 for `-p <home> status` with the guard panel, even when <home>/.dovo holds a valid project.json and config.json."""
+        home = WorkspaceBuilder(tmp_path / "home").build()
+        global_home = home / ".dovo"
+        monkeypatch.setenv("DOVO_HOME", str(global_home))
+
+        result = cli_runner.invoke(app, ["-p", str(home), "status"])
+
+        assert result.exit_code == 1
+        panels = [event for event in dispatch_spy if isinstance(event, ErrorPanelEvent)]
+        assert len(panels) == 1
+        assert f"'{global_home.resolve() / 'project.json'}'" in panels[0].message
+        assert not any(isinstance(event, DovoStatusResult) for event in dispatch_spy)
+
+    def test_status_under_global_home_names_start_directory_identity(
+        self, cli_runner: CliRunner, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, dispatch_spy: list[object]
+    ) -> None:
+        """Exit 1 for `-p <home>/scratch/sub status` with the guard panel naming <home>/scratch/sub/.dovo/project.json, not <home>/.dovo/project.json."""
+        home = tmp_path / "home"
+        start = home / "scratch" / "sub"
+        start.mkdir(parents=True)
+        (home / ".dovo").mkdir()
+        (home / ".git").mkdir()
+        monkeypatch.setenv("DOVO_HOME", str(home / ".dovo"))
+
+        result = cli_runner.invoke(app, ["-p", str(start), "status"])
+
+        assert result.exit_code == 1
+        panels = [event for event in dispatch_spy if isinstance(event, ErrorPanelEvent)]
+        assert len(panels) == 1
+        assert f"'{start.resolve() / '.dovo' / 'project.json'}'" in panels[0].message
+        assert f"'{home.resolve() / '.dovo' / 'project.json'}'" not in panels[0].message
 
     def test_help_does_not_trip_the_guard_in_an_uninitialized_repo(self, cli_runner: CliRunner, git_repo: Path) -> None:
         result = cli_runner.invoke(app, ["-p", str(git_repo), "worktree", "list", "--help"])

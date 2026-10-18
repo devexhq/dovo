@@ -56,6 +56,17 @@ With `json`, emits structured NDJSON for scripts and tools.
 dovo init --format json
 ```
 
+## Errors
+
+Both errors exit with code `1` and report `failure_mode: "preflight"` in JSON output. Nothing is written.
+
+| Error | Fix |
+| --- | --- |
+| `The current directory is not a valid Git repository.` | Run `git init` before running `dovo init`. |
+| `Cannot initialize a workspace at '<root>': its .dovo directory is the global Dovo home '<DOVO_HOME>'.` | Run `dovo init` inside a project directory, or set `DOVO_HOME` to a different directory. |
+
+The global-home refusal applies to a directory whose `.dovo` is `DOVO_HOME` (by default your home directory, whose `.dovo` is `~/.dovo`), even when it is a Git repository, and is checked before the Git check.
+
 ## Examples
 
 ### Initializing a new repository

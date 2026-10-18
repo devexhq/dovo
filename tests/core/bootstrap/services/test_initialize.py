@@ -11,7 +11,48 @@ from dovo.common.filesystem.services.global_root import resolve_global_paths
 from dovo.core.bootstrap.models import BootstrapOutcome, InitFailureMode
 from dovo.core.bootstrap.services.initialize import initialize_workspace
 from dovo.core.project.models import ProjectIdentityProvisionStatus
-from tests.harness.builders import WorkspaceBuilder
+from tests.harness.builders import WorkspaceBuilder, init_git_repository
+
+
+class InitializeWorkspaceGlobalHomeTests:
+    @pytest.mark.parametrize(
+        ("start", "with_git"),
+        [
+            pytest.param("home", False, id="home-without-git"),
+            pytest.param("home", True, id="home-with-git"),
+            pytest.param("global-home", False, id="path-is-global-home"),
+            pytest.param("symlinked-home", True, id="symlinked-dot-dovo"),
+        ],
+    )
+    def test_target_whose_dovo_is_global_home_is_refused_and_writes_nothing(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, start: str, with_git: bool
+    ) -> None:
+        """Return ok False, PREFLIGHT, the exact global-home error and fix, and create no file under DOVO_HOME."""
+        home = tmp_path / "home"
+        if start == "symlinked-home":
+            global_home = tmp_path / "data" / "dovo"
+            global_home.mkdir(parents=True)
+            home.mkdir()
+            (home / ".dovo").symlink_to(global_home, target_is_directory=True)
+        else:
+            global_home = home / ".dovo"
+            global_home.mkdir(parents=True)
+        if with_git:
+            init_git_repository(home)
+        monkeypatch.setenv("DOVO_HOME", str(global_home))
+
+        result = initialize_workspace(global_home if start == "global-home" else home)
+
+        assert result.ok is False
+        assert result.failure_mode == InitFailureMode.PREFLIGHT
+        assert result.errors == [
+            f"Cannot initialize a workspace at '{home.resolve()}': its .dovo directory is the global Dovo home "
+            f"'{global_home.resolve()}'."
+        ]
+        assert result.fixes == [
+            "Run 'dovo init' inside a project directory, or set DOVO_HOME to a different directory."
+        ]
+        assert list(global_home.iterdir()) == []
 
 
 class InitializeWorkspaceTests:

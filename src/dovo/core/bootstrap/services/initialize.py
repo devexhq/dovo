@@ -30,12 +30,17 @@ def initialize_workspace(
 ) -> WorkspaceInitResult:
     """Initialize a local project workspace for Dovo CLI and desktop sync.
 
-    Performs git preflight, bootstraps the .dovo/ directory tree, provisions
+    Refuses a target whose .dovo is the global Dovo home, performs git
+    preflight, bootstraps the .dovo/ directory tree, provisions
     the project identity, generates canonical default configuration, initializes
     the SQLite state database, and seeds starter catalog templates.
     """
     fs = Filesystem(root)
     resolved_root = fs.root_dir
+
+    refusal = _refuse_global_home(fs)
+    if refusal is not None:
+        return refusal
 
     if not fs.is_git_repo():
         err = (
@@ -91,4 +96,19 @@ def initialize_workspace(
         seed_result=seed_result,
         errors=list(seed_result.errors),
         failure_mode=None,
+    )
+
+
+def _refuse_global_home(fs: Filesystem) -> WorkspaceInitResult | None:
+    """Return a preflight failure when fs's .dovo directory resolves to the global Dovo home, else None."""
+    global_root = resolve_global_paths().root
+    if fs.dovo_dir.resolve() != global_root:
+        return None
+    return WorkspaceInitResult(
+        errors=[
+            f"Cannot initialize a workspace at '{fs.root_dir}': its .dovo directory is the global Dovo home "
+            f"'{global_root}'."
+        ],
+        fixes=["Run 'dovo init' inside a project directory, or set DOVO_HOME to a different directory."],
+        failure_mode=InitFailureMode.PREFLIGHT,
     )

@@ -37,8 +37,14 @@ def build_workspace_paths(
 
 
 def resolve_workspace_paths(repository_paths: RepositoryPaths, global_paths: GlobalPaths) -> WorkspacePaths:
-    """Load the project identity once and build the invocation's paths; raises WorkspaceNotInitializedError when it is missing or unusable."""
+    """Load the project identity once and build the invocation's paths.
+
+    Raises WorkspaceNotInitializedError when the identity is missing or unusable, or when the .dovo
+    directory is the global Dovo home, whose files are never read as workspace files.
+    """
     identity_path = repository_paths.dovo_dir / "project.json"
+    if repository_paths.dovo_dir.resolve() == global_paths.root:
+        raise WorkspaceNotInitializedError(identity_path, identity_present=False)
     identity_result = load_project_identity(identity_path)
     if not identity_result.ok or identity_result.identity is None:
         raise WorkspaceNotInitializedError(identity_path, identity_present=identity_path.is_file())
