@@ -12,7 +12,6 @@ https://github.com/python/cpython/blob/v3.13.13/Lib/unittest/util.py
 from __future__ import annotations
 
 from os.path import commonprefix
-from typing import Any
 
 _MAX_LENGTH = 80
 _PLACEHOLDER_LEN = 12
@@ -22,7 +21,7 @@ _MIN_COMMON_LEN = 5
 _MIN_DIFF_LEN = _MAX_LENGTH - (_MIN_BEGIN_LEN + _PLACEHOLDER_LEN + _MIN_COMMON_LEN + _PLACEHOLDER_LEN + _MIN_END_LEN)
 
 
-def safe_repr(value: Any, *, short: bool = False) -> str:
+def safe_repr(value: object, *, short: bool = False) -> str:
     """Return ``repr(value)``, optionally hard-truncated when longer than ``_MAX_LENGTH``.
 
     Falls back to ``object.__repr__`` if ``repr`` raises. When ``short`` is true
@@ -51,7 +50,7 @@ def shorten(text: str, prefix_len: int, suffix_len: int) -> str:
     return text
 
 
-def common_shorten_repr(left: Any, right: Any) -> tuple[str, str]:
+def common_shorten_repr(left: object, right: object) -> tuple[str, str]:
     """Return paired reprs shortened around their first differing region.
 
     When either full ``repr`` is longer than ``_MAX_LENGTH``, shares a common
@@ -81,11 +80,11 @@ def common_shorten_repr(left: Any, right: Any) -> tuple[str, str]:
     )
 
 
-def short_repr(value: Any) -> str:
+def short_repr(value: object) -> str:
     """Single-value repr truncated like unittest failure output."""
     return safe_repr(value, short=True)
 
 
-def short_pair(actual: Any, expected: Any) -> tuple[str, str]:
+def short_pair(actual: object, expected: object) -> tuple[str, str]:
     """Paired reprs shortened around the first differing region (unittest-style)."""
     return common_shorten_repr(actual, expected)

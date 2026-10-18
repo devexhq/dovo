@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Callable
-from typing import Any
+from collections.abc import Callable, Container
+from typing import Any, TypeIs
 
 from dovo.engine.executors.assertions.assertion_helpers import short_pair, short_repr
 
@@ -35,12 +35,12 @@ def evaluate_json_match(config: dict[str, Any], stdout: str) -> list[str]:
     return comparator(actual, config["value"], path)
 
 
-def _is_numeric(value: Any) -> bool:
+def _is_numeric(value: object) -> TypeIs[int | float]:
     """Check whether a value is numeric (int or float, excluding bool)."""
     return isinstance(value, (int, float)) and not isinstance(value, bool)
 
 
-def _resolve_json_path(root: Any, path: str) -> Any:
+def _resolve_json_path(root: object, path: str) -> object:
     """Walk nested dict keys along ``path``. Return ``_PATH_NOT_FOUND`` if unresolved."""
     current = root
     for segment in path.split("."):
@@ -50,7 +50,7 @@ def _resolve_json_path(root: Any, path: str) -> Any:
     return current
 
 
-def _compare_eq(actual: Any, value: Any, path: str) -> list[str]:
+def _compare_eq(actual: object, value: object, path: str) -> list[str]:
     """Assert that actual value equals expected value."""
     if actual == value:
         return []
@@ -58,7 +58,7 @@ def _compare_eq(actual: Any, value: Any, path: str) -> list[str]:
     return [f"json_match: '{path}' was {actual_repr}, expected {expected_repr}"]
 
 
-def _compare_neq(actual: Any, value: Any, path: str) -> list[str]:
+def _compare_neq(actual: object, value: object, path: str) -> list[str]:
     """Assert that actual value does not equal expected value."""
     if actual != value:
         return []
@@ -66,10 +66,10 @@ def _compare_neq(actual: Any, value: Any, path: str) -> list[str]:
     return [f"json_match: '{path}' was {actual_repr}, expected not {expected_repr}"]
 
 
-def _compare_contains(actual: Any, value: Any, path: str) -> list[str]:
+def _compare_contains(actual: object, value: object, path: str) -> list[str]:
     """Assert that actual collection contains expected value."""
     try:
-        if value in actual:
+        if isinstance(actual, Container) and value in actual:
             return []
     except TypeError:
         pass
@@ -77,11 +77,11 @@ def _compare_contains(actual: Any, value: Any, path: str) -> list[str]:
 
 
 def _compare_ordered(
-    actual: Any,
-    value: Any,
+    actual: object,
+    value: object,
     path: str,
     operator: str,
-    predicate: Callable[[Any, Any], bool],
+    predicate: Callable[[float, float], bool],
     expected_phrase: str,
 ) -> list[str]:
     """Assert that numeric ordering comparison holds between actual and expected value."""
@@ -96,7 +96,7 @@ def _compare_ordered(
     return [f"json_match: '{path}' was {actual_repr}, expected {expected_phrase} {expected_repr}"]
 
 
-_JSON_MATCH_OPERATORS: dict[str, Callable[[Any, Any, str], list[str]]] = {
+_JSON_MATCH_OPERATORS: dict[str, Callable[[object, object, str], list[str]]] = {
     "eq": _compare_eq,
     "neq": _compare_neq,
     "contains": _compare_contains,

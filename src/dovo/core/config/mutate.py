@@ -8,6 +8,8 @@ from enum import StrEnum
 from pathlib import Path
 from typing import Any
 
+from pydantic import JsonValue
+
 from dovo.common.filesystem import Filesystem
 from dovo.common.models import BaseResult
 from dovo.common.schema_validation import CONFIG_VALIDATOR
@@ -77,7 +79,7 @@ class ConfigUnsetResult(BaseResult):
         return self.status == ConfigUnsetStatus.OK
 
 
-def set_nested_value(config_dict: dict[str, Any], dot_path: str, value: Any) -> None:
+def set_nested_value(config_dict: dict[str, Any], dot_path: str, value: object) -> None:
     """Set ``value`` at ``dot_path`` inside ``config_dict`` (in place).
 
     Intermediate missing segments are created as empty dicts. If an intermediate
@@ -145,7 +147,7 @@ def unset_nested_value(config_dict: dict[str, Any], dot_path: str) -> bool:
     return True
 
 
-def _peek_nested_value(config_dict: dict[str, Any], dot_path: str) -> Any:
+def _peek_nested_value(config_dict: dict[str, Any], dot_path: str) -> JsonValue:
     """Return the value at ``dot_path``, assuming the caller has already confirmed it exists."""
     current: Any = config_dict
     for key in dot_path.split("."):
@@ -214,7 +216,7 @@ def _validate_mutated_config(
     updated: dict[str, Any],
     path: Path,
     key: str,
-    value: Any = None,
+    value: JsonValue = None,
 ) -> ConfigSetResult | None:
     """Return a schema-invalid result, or ``None`` when mapping succeeds."""
     validation = CONFIG_VALIDATOR.validate(updated)
@@ -265,7 +267,7 @@ def _validate_mutated_config(
 
 def set_config_value_result(
     key: str,
-    value: Any,
+    value: JsonValue,
     *,
     config_path: Path,
 ) -> ConfigSetResult:

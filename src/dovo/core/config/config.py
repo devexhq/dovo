@@ -5,6 +5,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+from pydantic import JsonValue
+
 from dovo.common.filesystem import WorkspacePaths
 from dovo.core.config.exceptions import ConfigLoadError
 from dovo.core.config.generator import ConfigGenerationResult, generate_default_config
@@ -68,7 +70,7 @@ class Config:
         target_cfg = config_path if config_path is not None else self._paths.config_file
         return validate_config_result(target_cfg)
 
-    def set(self, key: str, value: Any) -> ConfigSetResult:
+    def set(self, key: str, value: JsonValue) -> ConfigSetResult:
         """Set a dot-path configuration key and persist to disk."""
         parsed_value = self.parse_value(value) if isinstance(value, str) else value
         result = set_config_value_result(key, parsed_value, config_path=self._paths.config_file)
@@ -159,7 +161,7 @@ class Config:
     # ------------------------------------------------------------------ #
 
     @staticmethod
-    def parse_value(value: str) -> Any:
+    def parse_value(value: str) -> JsonValue:
         """Parse string CLI token into typed Python object (bool, int, float, list, dict, str)."""
         return parse_config_value(value)
 

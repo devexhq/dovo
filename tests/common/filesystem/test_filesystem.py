@@ -28,14 +28,6 @@ class FilesystemPathPropertiesTests:
         assert fs.gitignore_file == resolved.gitignore_file
 
 
-class FilesystemDynamicAttributeLookupTests:
-    def test_unknown_attribute_raises_attribute_error(self, tmp_path: Path) -> None:
-        """Raise AttributeError naming the Filesystem type for an attribute absent from it and RepositoryPaths."""
-        fs = Filesystem(tmp_path)
-        with pytest.raises(AttributeError, match="Filesystem"):
-            _ = fs.definitely_not_a_real_attribute
-
-
 class FilesystemReprTests:
     def test_repr_includes_resolved_root_dir(self, tmp_path: Path) -> None:
         fs = Filesystem(tmp_path)

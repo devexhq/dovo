@@ -5,7 +5,6 @@ from __future__ import annotations
 import ast
 import re
 from dataclasses import dataclass
-from typing import Any
 
 _CONDITION_RE = re.compile(r"^\s*(?P<left>.+?)\s*(?P<op>==|!=|>=|<=|>|<|\bcontains\b)\s*(?P<right>.+?)\s*$")
 _VALID_OPERATORS = frozenset({"==", "!=", ">=", "<=", ">", "<", "contains"})
@@ -35,7 +34,7 @@ def parse_condition_expression(expression: str) -> ParsedCondition | None:
     return ParsedCondition(raw=expression, left=left, operator=op, right=right)
 
 
-def parse_literal(raw: str) -> Any:
+def parse_literal(raw: str) -> bool | int | float | str:
     """Parse a literal value from a condition operand string."""
     token = raw.strip()
     lower = token.lower()

@@ -85,13 +85,6 @@ class Filesystem:
         """Traversable resource path to bundled catalog templates."""
         return _get_catalog_templates_dir()
 
-    def __getattr__(self, name: str) -> Any:
-        """Delegate fallback attribute lookups directly to self.repository_paths."""
-        repository_paths = self.repository_paths
-        if hasattr(repository_paths, name):
-            return getattr(repository_paths, name)
-        raise AttributeError(f"'{type(self).__name__}' object has no attribute '{name}'")
-
     def __repr__(self) -> str:
         return f"Filesystem(root={self.repository_paths.root_dir!r})"
 

@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import json
-from typing import Any
+
+from pydantic import JsonValue
 
 BOOLEAN_ALIASES: dict[str, bool] = {
     "true": True,
@@ -13,7 +14,7 @@ BOOLEAN_ALIASES: dict[str, bool] = {
 }
 
 
-def parse_config_value(value: str) -> Any:
+def parse_config_value(value: str) -> JsonValue:
     """Parse a string input into its native Python type.
 
     Evaluates the input string in a strict, deterministic order:
