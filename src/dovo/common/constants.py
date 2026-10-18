@@ -7,6 +7,7 @@ DOVO_LOCAL_GITIGNORE_ENTRIES: dict[str, bool] = {
     ".meta/": True,
     ".lock": True,
     "worktrees/": True,
+    "run": True,
     "*.db": True,
     "*.db-journal": True,
     "*.db-wal": True,

@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import subprocess
 from pathlib import Path
 
 import pytest
 
+from dovo.common.constants import DOVO_GITIGNORE_CONTENT
 from dovo.common.filesystem.models import WorkspacePaths
 from dovo.engine import storage_bridge
 from dovo.engine.storage_bridge import create_storage_bridge, remove_storage_bridge
@@ -32,6 +34,25 @@ class CreateStorageBridgeTests:
         assert _bridge_path(worktree_path).is_symlink()
         assert _bridge_path(worktree_path).resolve() == engine_paths.session_dir(SESSION_ID).resolve()
         assert engine_paths.session_dir(SESSION_ID).is_dir()
+
+    def test_bridge_is_ignored_by_seeded_gitignore(self, engine_paths: WorkspacePaths, git_repo: Path) -> None:
+        (git_repo / ".dovo").mkdir()
+        (git_repo / ".dovo" / ".gitignore").write_text(DOVO_GITIGNORE_CONTENT, encoding="utf-8")
+        subprocess.run(["git", "add", ".dovo/.gitignore"], cwd=git_repo, check=True, capture_output=True)
+        subprocess.run(["git", "commit", "-m", "seed"], cwd=git_repo, check=True, capture_output=True)
+
+        message = create_storage_bridge(engine_paths, SESSION_ID, git_repo, [])
+
+        status = subprocess.run(
+            ["git", "status", "--porcelain", "--", ".dovo/run"],
+            cwd=git_repo,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        assert message is None
+        assert _bridge_path(git_repo).is_symlink()
+        assert status.stdout == ""
 
     def test_create_with_symlink_to_other_directory_replaces_link_and_preserves_old_target(
         self, engine_paths: WorkspacePaths, tmp_path: Path
