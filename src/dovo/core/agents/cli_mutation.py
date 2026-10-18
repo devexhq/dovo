@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import errno
 import json
+import os
+import stat
 import subprocess
 import time
 from collections.abc import Callable, Sequence
@@ -30,7 +33,13 @@ from dovo.core.agents.mutation_git import (
     discard_since,
     resolve_pre_agent_baseline,
 )
-from dovo.core.agents.responses import blocked_response, no_op_response, provider_error_response, timeout_response
+from dovo.core.agents.responses import (
+    blocked_response,
+    no_op_response,
+    provider_error_response,
+    timeout_response,
+    unfixable_response,
+)
 from dovo.core.agents.save_rejected_patch import save_rejected_patch
 from dovo.core.git import PatchApplyResult, PatchApplyStatus, validate_patch_text
 
@@ -171,13 +180,23 @@ _SCRATCH_PROMPT_LINES = (
     "- Put temporary files only in the directory named by agent_scratch_path; make source edits in this checkout.\n"
     "- Do not read or write logs, artifacts, or session directories.\n"
 )
+UNFIXABLE_FILE_NAME = "unfixable.txt"
+UNFIXABLE_REASON_MAX_CHARS = 1000
+
+
+def _unfixable_prompt_line(scratch_path: Path) -> str:
+    """Return the prompt line naming the literal unfixable-report path inside scratch_path."""
+    return (
+        "- If you cannot complete the instruction, write the reason, in 100 words or less, "
+        f"to {scratch_path / UNFIXABLE_FILE_NAME} and stop.\n"
+    )
 
 
 def build_mutation_prompt(request: AgentRequest) -> str:
-    """Build the agent prompt: direct mode carries the authored instruction only; remediation modes add the failure payload; a scratch path adds the scratch lines."""
+    """Build the agent prompt: direct mode carries the authored instruction only; remediation modes add the failure payload; a scratch path adds the scratch lines and the unfixable-report line."""
     header = _DIRECT_PROMPT_HEADER if request.mode == "direct" else _REMEDIATION_PROMPT_HEADER
     if request.agent_scratch_path is not None:
-        header += _SCRATCH_PROMPT_LINES + "\n"
+        header += _SCRATCH_PROMPT_LINES + _unfixable_prompt_line(request.agent_scratch_path) + "\n"
 
     return header + json.dumps(_prompt_body(request), indent=2, ensure_ascii=False)
 
@@ -209,6 +228,8 @@ class CliDirectMutationAdapter(BaseAgentProvider):
     """Base for providers that edit the worktree directly instead of returning a diff.
 
     Edits that fail patch validation are discarded from the worktree; a failed discard is reported in the response errors.
+    An agent that writes a non-blank `unfixable.txt` to its scratch directory gets UNFIXABLE, and its edits are saved and
+    discarded like a rejected edit.
     """
 
     def _default_run(self, request: CliMutationRunRequest) -> CliMutationOutcome:
@@ -282,7 +303,7 @@ class CliDirectMutationAdapter(BaseAgentProvider):
         baseline: str,
         duration_ms: int,
     ) -> AgentResponse:
-        """Classify a finished runner outcome into the timeout, provider-error, blocked, no-op, or proposal response; denials block only when the worktree diff is empty."""
+        """Classify a finished runner outcome into the timeout, provider-error, unfixable, blocked, no-op, or proposal response; denials block only when the worktree diff is empty."""
         if outcome.status == "timeout":
             return timeout_response(
                 provider=self._provider_name(),
@@ -309,6 +330,10 @@ class CliDirectMutationAdapter(BaseAgentProvider):
                 raw_text=outcome.result_text,
                 mutation_baseline_ref=baseline,
             )
+
+        unfixable = self._unfixable_outcome(request, diff, outcome, baseline, duration_ms)
+        if unfixable is not None:
+            return unfixable
 
         if not diff.strip() and outcome.denials:
             return blocked_response(
@@ -343,29 +368,46 @@ class CliDirectMutationAdapter(BaseAgentProvider):
         duration_ms: int,
     ) -> AgentResponse:
         """Save the rejected edit, then discard it and return PROVIDER_ERROR carrying the gate's errors, the saved path, and any discard failure; a failed save leaves the worktree untouched."""
-        saved, reason = _save_rejected_edit(request, baseline)
-        if reason is not None:
-            return provider_error_response(
-                duration_ms=duration_ms,
-                errors=[*gate.errors, f"Could not save the rejected edit ({reason}); the worktree was left unchanged."],
-                raw_text=outcome.result_text,
-                mutation_baseline_ref=baseline,
-            )
-
-        discard_detail: str | None = None
-        try:
-            discard_since(request.worktree_path, baseline)
-        except MutationGitError as exc:
-            discard_detail = f"Failed to discard rejected worktree edit: {exc}"
-
-        errors = list(gate.errors)
-        if saved is not None:
-            errors.append(f"Rejected edit saved to {saved}." if discard_detail else f"Discarded edit saved to {saved}.")
-
+        saved, notes, discard_detail = _save_and_discard(request, baseline)
         response = provider_error_response(
             duration_ms=duration_ms,
             detail=discard_detail,
-            errors=errors,
+            errors=[*gate.errors, *notes],
+            raw_text=outcome.result_text,
+            mutation_baseline_ref=baseline,
+        )
+
+        return response.model_copy(update={"rejected_patch_path": str(saved) if saved is not None else None})
+
+    def _unfixable_outcome(
+        self,
+        request: AgentRequest,
+        diff: str,
+        outcome: CliMutationOutcome,
+        baseline: str,
+        duration_ms: int,
+    ) -> AgentResponse | None:
+        """Return None without a non-blank unfixable report, PROVIDER_ERROR when it cannot be read, else UNFIXABLE after saving and discarding any edit in diff."""
+        reason, read_error = _read_unfixable_reason(request.agent_scratch_path)
+        if read_error is not None:
+            return provider_error_response(
+                duration_ms=duration_ms, detail=read_error, raw_text=outcome.result_text, mutation_baseline_ref=baseline
+            )
+
+        if reason is None:
+            return None
+
+        if not diff.strip():
+            return unfixable_response(
+                reason=reason, duration_ms=duration_ms, raw_text=outcome.result_text, mutation_baseline_ref=baseline
+            )
+
+        saved, notes, discard_detail = _save_and_discard(request, baseline)
+
+        response = unfixable_response(
+            reason=reason,
+            duration_ms=duration_ms,
+            errors=[*([discard_detail] if discard_detail is not None else []), *notes],
             raw_text=outcome.result_text,
             mutation_baseline_ref=baseline,
         )
@@ -398,3 +440,70 @@ def _save_rejected_edit(request: AgentRequest, baseline: str) -> tuple[Path | No
         return save_rejected_patch(request.worktree_path, baseline, request.rejected_patch_destination), None
     except MutationGitError as exc:
         return None, str(exc)
+
+
+def _read_unfixable_reason(scratch_path: Path | None) -> tuple[str | None, str | None]:
+    """Return ``(stripped reason, None)`` for a non-blank report, ``(None, None)`` without a scratch path or when the report is missing or blank, and ``(None, detail)`` when it is a symlink, not a regular file, or cannot be read.
+
+    The report is opened once without following symlinks or blocking, checked through that descriptor, and read only
+    up to its first ``UNFIXABLE_REASON_MAX_CHARS`` characters, so a swapped-in FIFO or an oversized file cannot hang or
+    exhaust the process.
+    """
+    if scratch_path is None:
+        return None, None
+
+    path = scratch_path / UNFIXABLE_FILE_NAME
+    try:
+        text = _read_report_prefix(path)
+    except FileNotFoundError:
+        return None, None
+    except OSError as exc:
+        detail = "it is a symlink" if exc.errno == errno.ELOOP else exc.strerror or str(exc)
+        return None, f"Failed to read {path}: {detail}"
+
+    if text is None:
+        return None, f"Failed to read {path}: it is not a regular file"
+
+    reason = text.strip()
+
+    return (reason or None), None
+
+
+def _read_report_prefix(path: Path) -> str | None:
+    """Return the first ``UNFIXABLE_REASON_MAX_CHARS`` characters of the regular file at path, or None when it is not one."""
+    fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    try:
+        is_regular = stat.S_ISREG(os.fstat(fd).st_mode)
+    except OSError:
+        os.close(fd)
+        raise
+
+    if not is_regular:
+        os.close(fd)
+        return None
+
+    with os.fdopen(fd, encoding="utf-8", errors="replace") as report:
+        return report.read(UNFIXABLE_REASON_MAX_CHARS)
+
+
+def _save_and_discard(request: AgentRequest, baseline: str) -> tuple[Path | None, list[str], str | None]:
+    """Save the edit since baseline, then discard it; return ``(saved path or None, notes, discard failure detail or None)``.
+
+    A failed save leaves the worktree untouched and returns only the could-not-save note.
+    """
+    saved, reason = _save_rejected_edit(request, baseline)
+    if reason is not None:
+        return None, [f"Could not save the rejected edit ({reason}); the worktree was left unchanged."], None
+
+    discard_detail: str | None = None
+    try:
+        discard_since(request.worktree_path, baseline)
+    except MutationGitError as exc:
+        discard_detail = f"Failed to discard rejected worktree edit: {exc}"
+
+    if saved is None:
+        return None, [], discard_detail
+
+    note = f"Rejected edit saved to {saved}." if discard_detail else f"Discarded edit saved to {saved}."
+
+    return saved, [note], discard_detail

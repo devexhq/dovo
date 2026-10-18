@@ -149,6 +149,8 @@ An agent step records one outcome per attempt.
 
 `blocked` means the provider refused a tool call under the step's `tools` policy and left the worktree unchanged. The error names the refused tool and says whether to grant the capability or to remove or narrow the matching `deny` rule. If the agent still made edits despite a refusal, the step continues as normal.
 
+A direct-mutation agent produces `unfixable` by writing `unfixable.txt` to its scratch directory (see [Private Scratch](../guides/agent-providers.md#private-scratch)).
+
 Preflight failures (inactive worktree, missing agent settings, blank prompt), provider exceptions, patches that fail to apply, and an output callback that raises all record `provider_error` with `203`.
 
 Stdout is always one JSON object followed by a newline, so `steps.<id>.outputs.status` can branch on it:

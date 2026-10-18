@@ -250,7 +250,9 @@ class ScratchPromptTests:
             "- Stay inside this working directory; do not push, open a PR, or touch remotes.\n"
             "- Do not modify files under .dovo/.\n\n"
             "- Put temporary files only in the directory named by agent_scratch_path; make source edits in this checkout.\n"
-            "- Do not read or write logs, artifacts, or session directories.\n\n"
+            "- Do not read or write logs, artifacts, or session directories.\n"
+            "- If you cannot complete the instruction, write the reason, in 100 words or less, "
+            f"to {invocation.scratch_path}/unfixable.txt and stop.\n\n"
         ) + json.dumps(expected_body, indent=2, ensure_ascii=False)
 
         prompt = build_mutation_prompt(_request_with_invocation(git_repo, invocation))
@@ -926,6 +928,216 @@ class RejectedPatchDiscardOrderTests:
             f"Rejected edit saved to {destination}.",
         ]
         assert response.rejected_patch_path == str(destination)
+
+
+def _unfixable_request(git_repo: Path, tmp_path: Path, destination: Path | None) -> AgentRequest:
+    """Build a request with a real scratch directory, saving a discarded edit to ``destination`` when given."""
+    builder = AgentRequestBuilder().with_worktree_path(git_repo).with_invocation(_invocation(tmp_path))
+    if destination is not None:
+        builder = builder.with_rejected_patch_destination(destination)
+
+    return builder.build()
+
+
+def _reporting_run(
+    content: str | None,
+    *,
+    edits: dict[str, str] | None = None,
+    status: CliMutationRunStatus = "finished",
+    denials: list[AgentDenial] | None = None,
+) -> CliMutationRunFn:
+    """Return a run that writes ``content`` to <scratch>/unfixable.txt (unless None), then behaves like ``_fake_run``."""
+    inner = _fake_run(edits=edits, status=status, error_detail="runner failed", denials=denials)
+
+    def _run(request: CliMutationRunRequest) -> CliMutationOutcome:
+        if content is not None:
+            assert request.invocation is not None
+            (request.invocation.scratch_path / "unfixable.txt").write_text(content, encoding="utf-8")
+        return inner(request)
+
+    return _run
+
+
+class UnfixableClassificationTests:
+    @pytest.mark.parametrize(
+        "denials",
+        [
+            pytest.param([], id="no-denials"),
+            pytest.param([AgentDenial(tool="bash", message="denied")], id="with-denials"),
+        ],
+    )
+    def test_unfixable_file_without_edits_returns_unfixable_with_stripped_reason(
+        self, git_repo: Path, tmp_path: Path, denials: list[AgentDenial]
+    ) -> None:
+        response = UnitTestAdapter(run_fn=_reporting_run("\n  no SSH key \n", denials=denials)).invoke(
+            _unfixable_request(git_repo, tmp_path, None)
+        )
+
+        assert response.status == AgentResponseStatus.UNFIXABLE
+        assert response.unfixable_reason == "no SSH key"
+        assert response.errors == []
+        assert response.rejected_patch_path is None
+        assert _porcelain(git_repo) == ""
+
+    def test_unfixable_reason_keeps_only_the_first_1000_characters(self, git_repo: Path, tmp_path: Path) -> None:
+        response = UnitTestAdapter(run_fn=_reporting_run("é" * 999 + "xy" + "z" * 5000)).invoke(
+            _unfixable_request(git_repo, tmp_path, None)
+        )
+
+        assert response.status == AgentResponseStatus.UNFIXABLE
+        assert response.unfixable_reason == "é" * 999 + "x"
+
+    def test_unfixable_file_with_edits_saves_patch_and_restores_baseline(self, git_repo: Path, tmp_path: Path) -> None:
+        destination = tmp_path / "rejected" / "code_attempt_1.patch"
+
+        response = UnitTestAdapter(run_fn=_reporting_run("no SSH key", edits={"a.txt": "edit\n"})).invoke(
+            _unfixable_request(git_repo, tmp_path, destination)
+        )
+
+        assert response.status == AgentResponseStatus.UNFIXABLE
+        assert response.unfixable_reason == "no SSH key"
+        assert response.errors == [f"Discarded edit saved to {destination}."]
+        assert response.rejected_patch_path == str(destination)
+        assert "a.txt" in destination.read_text(encoding="utf-8")
+        assert _porcelain(git_repo) == ""
+
+    def test_unfixable_save_failure_keeps_edits_and_stays_unfixable(self, git_repo: Path, tmp_path: Path) -> None:
+        response = UnitTestAdapter(run_fn=_reporting_run("no SSH key", edits={"a.txt": "edit\n"})).invoke(
+            _unfixable_request(git_repo, tmp_path, None)
+        )
+
+        assert response.status == AgentResponseStatus.UNFIXABLE
+        assert response.unfixable_reason == "no SSH key"
+        assert response.errors == [
+            "Could not save the rejected edit (no session storage directory is available); "
+            "the worktree was left unchanged."
+        ]
+        assert response.rejected_patch_path is None
+        assert (git_repo / "a.txt").read_text(encoding="utf-8") == "edit\n"
+
+    def test_unfixable_discard_failure_reports_rejected_line_and_keeps_path(
+        self, git_repo: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+
+        def _fail_discard(*args: object, **kwargs: object) -> None:
+            raise MutationGitError("git reset failed: index locked")
+
+        monkeypatch.setattr("dovo.core.agents.cli_mutation.discard_since", _fail_discard)
+        destination = tmp_path / "rejected" / "code_attempt_1.patch"
+
+        response = UnitTestAdapter(run_fn=_reporting_run("no SSH key", edits={"a.txt": "edit\n"})).invoke(
+            _unfixable_request(git_repo, tmp_path, destination)
+        )
+
+        assert response.status == AgentResponseStatus.UNFIXABLE
+        assert response.errors == [
+            "Failed to discard rejected worktree edit: git reset failed: index locked",
+            f"Rejected edit saved to {destination}.",
+        ]
+        assert response.rejected_patch_path == str(destination)
+
+    @pytest.mark.parametrize(
+        ("content", "edits", "denials", "expected"),
+        [
+            pytest.param(None, None, [], AgentResponseStatus.NO_OP, id="missing-no-op"),
+            pytest.param(None, {"a.txt": "edit\n"}, [], AgentResponseStatus.PROPOSED_PATCH, id="missing-proposed"),
+            pytest.param(
+                None,
+                None,
+                [AgentDenial(tool="bash", message="denied")],
+                AgentResponseStatus.BLOCKED,
+                id="missing-blocked",
+            ),
+            pytest.param("  \n\t", None, [], AgentResponseStatus.NO_OP, id="blank-no-op"),
+            pytest.param("  \n\t", {"a.txt": "edit\n"}, [], AgentResponseStatus.PROPOSED_PATCH, id="blank-proposed"),
+            pytest.param(
+                "  \n\t",
+                None,
+                [AgentDenial(tool="bash", message="denied")],
+                AgentResponseStatus.BLOCKED,
+                id="blank-blocked",
+            ),
+        ],
+    )
+    def test_missing_or_blank_unfixable_file_keeps_the_original_status(
+        self,
+        git_repo: Path,
+        tmp_path: Path,
+        content: str | None,
+        edits: dict[str, str] | None,
+        denials: list[AgentDenial],
+        expected: AgentResponseStatus,
+    ) -> None:
+        response = UnitTestAdapter(run_fn=_reporting_run(content, edits=edits, denials=denials)).invoke(
+            _unfixable_request(git_repo, tmp_path, None)
+        )
+
+        assert response.status == expected
+        assert response.unfixable_reason is None
+
+    @pytest.mark.parametrize(
+        ("kind", "reason"),
+        [
+            pytest.param("directory", "it is not a regular file", id="directory"),
+            pytest.param("symlink", "it is a symlink", id="symlink"),
+            pytest.param("dangling-symlink", "it is a symlink", id="dangling-symlink"),
+            pytest.param("fifo", "it is not a regular file", id="fifo"),
+            pytest.param(
+                "unreadable",
+                "Permission denied",
+                id="unreadable",
+                marks=pytest.mark.skipif(os.geteuid() == 0, reason="root ignores file permissions"),
+            ),
+        ],
+    )
+    def test_unreadable_unfixable_file_returns_provider_error_naming_the_file(
+        self, git_repo: Path, tmp_path: Path, kind: str, reason: str
+    ) -> None:
+        secret = tmp_path / "secret.txt"
+        secret.write_text("TOP-SECRET-VALUE\n", encoding="utf-8")
+
+        def _write(request: CliMutationRunRequest) -> CliMutationOutcome:
+            assert request.invocation is not None
+            report = request.invocation.scratch_path / "unfixable.txt"
+            if kind == "directory":
+                report.mkdir()
+            elif kind == "fifo":
+                os.mkfifo(report)
+            elif kind == "unreadable":
+                report.write_text("no SSH key\n", encoding="utf-8")
+                report.chmod(0)
+            else:
+                report.symlink_to(secret if kind == "symlink" else tmp_path / "missing.txt")
+            return CliMutationOutcome(status="finished", result_text="done")
+
+        request = _unfixable_request(git_repo, tmp_path, None)
+
+        response = UnitTestAdapter(run_fn=_write).invoke(request)
+
+        assert response.status == AgentResponseStatus.PROVIDER_ERROR
+        assert response.errors == [
+            f"Agent provider error (AGENT_PROVIDER_ERROR): Failed to read {request.agent_scratch_path}/unfixable.txt: "
+            f"{reason}"
+        ]
+        assert response.unfixable_reason is None
+        assert "TOP-SECRET-VALUE" not in response.model_dump_json()
+
+    @pytest.mark.parametrize(
+        ("status", "expected"),
+        [
+            pytest.param("timeout", AgentResponseStatus.TIMEOUT, id="timeout"),
+            pytest.param("error", AgentResponseStatus.PROVIDER_ERROR, id="error"),
+        ],
+    )
+    def test_timeout_or_runner_error_ignores_the_unfixable_file(
+        self, git_repo: Path, tmp_path: Path, status: CliMutationRunStatus, expected: AgentResponseStatus
+    ) -> None:
+        response = UnitTestAdapter(run_fn=_reporting_run("no SSH key", status=status)).invoke(
+            _unfixable_request(git_repo, tmp_path, None)
+        )
+
+        assert response.status == expected
+        assert response.unfixable_reason is None
 
 
 def _request(

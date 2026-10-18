@@ -35,7 +35,7 @@ class AgentResponseRedactionTests:
         assert masked.duration_ms == 42
         assert masked.mutation_baseline_ref == "abc123"
         assert masked.fixes == ["fix s3cr3t-value"]
-        assert masked.unfixable_reason == "why s3cr3t-value"
+        assert masked.unfixable_reason == "why [REDACTED:SVC_TOKEN]"
         assert masked.unified_diff == "+s3cr3t-value\n"
 
     def test_redact_agent_response_preserves_none_fields(self) -> None:

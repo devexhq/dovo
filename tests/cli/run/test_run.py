@@ -17,7 +17,7 @@ from dovo.core.config.models import ConfigTier
 from dovo.core.db import DovoDb, SessionStatus
 from dovo.core.git.runner import GitRunner
 from dovo.core.worktree import Worktree
-from tests.harness import FakeAgentRunner
+from tests.harness import FakeAgentRunner, UnfixableAgentRunner
 from tests.harness.catalog import write_runnable_blueprint
 from tests.harness.workspace_paths import initialized_workspace_paths
 
@@ -326,6 +326,35 @@ class RunCliRetentionIntegrationTests:
         assert f".dovo/worktrees/{session_id} (branch dovo/{session_id})" in output
         assert "Worktree: Kept at " in output
         assert f"remove it with `dovo worktree delete {session_id}`" in output
+
+
+class RunCliUnfixableAgentIntegrationTests:
+    """Typer runner integration tests for an agent step whose agent reports the task unfixable."""
+
+    def test_run_cli_agent_reporting_unfixable_fails_run_and_keeps_worktree(
+        self, cli_runner: CliRunner, cli_workspace: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("GH_TOKEN", "test-token")
+        runner = UnfixableAgentRunner("no SSH key\n").returning(stdout=_AGENT_STDOUT)
+        monkeypatch.setattr("dovo.core.agents.cli_mutation.stream_isolated_process", runner)
+        _write_agent_blueprint(cli_workspace)
+        paths = initialized_workspace_paths(cli_workspace)
+
+        result = cli_runner.invoke(app, ["-p", str(cli_workspace), "run", "agent-task", "--format", "json"])
+
+        events = [json.loads(line) for line in result.stdout.splitlines() if line.startswith("{")]
+        step_done = next(event["payload"] for event in events if event["event_type"] == "StepDoneEvent")
+        output_lines = [event["payload"]["line"] for event in events if event["event_type"] == "StepOutputEvent"]
+        summaries = [json.loads(line) for line in output_lines if line.startswith("{")]
+        row = DovoDb(database_file=paths.database_file, project_id=paths.project_id).sessions.list(limit=1)[0]
+        assert result.exit_code == 1
+        assert step_done["exit_code"] == 201
+        assert step_done["error_message"] == "Agent reported the task unfixable: no SSH key"
+        assert summaries == [
+            {"status": "unfixable", "summary": "ok", "unfixable_reason": "no SSH key", "touched_files": []}
+        ]
+        assert row.status == SessionStatus.FAILED
+        assert paths.worktree_dir(row.session_id).is_dir()
 
 
 class RunEnvFlagsCliIntegrationTests:

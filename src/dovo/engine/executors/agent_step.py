@@ -229,12 +229,13 @@ def _summary_line(attempt: AgentAttempt, *, status: AgentResponseStatus | None =
 
 
 def _failure_text(attempt: AgentAttempt) -> str:
-    """Join the attempt's diagnostics, or name the unfixable reason or status when none were given."""
+    """Name the unfixable reason followed by any diagnostics, else join the diagnostics, else name the status."""
+    if attempt.status == AgentResponseStatus.UNFIXABLE:
+        reason_line = f"Agent reported the task unfixable: {attempt.unfixable_reason or 'no reason given'}"
+        return "\n".join([reason_line, *attempt.diagnostics])
+
     if attempt.diagnostics:
         return "\n".join(attempt.diagnostics)
-
-    if attempt.status == AgentResponseStatus.UNFIXABLE:
-        return f"Agent reported the task unfixable: {attempt.unfixable_reason or 'no reason given'}"
 
     return f"Agent step ended with status '{attempt.status.value}'."
 

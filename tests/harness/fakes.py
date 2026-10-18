@@ -142,6 +142,30 @@ class EditingAgentRunner(FakeAgentRunner):
         return super().__call__(cmd, cwd=cwd, env=env, input_data=input_data, timeout_seconds=timeout_seconds, **kwargs)
 
 
+class UnfixableAgentRunner(FakeAgentRunner):
+    """FakeAgentRunner that writes reason to <agent_scratch_path>/unfixable.txt, read from the prompt's JSON body, before returning."""
+
+    def __init__(self, reason: str) -> None:
+        super().__init__()
+        self._reason = reason
+
+    def __call__(
+        self,
+        cmd: list[str],
+        *,
+        cwd: Path,
+        env: dict[str, str],
+        input_data: bytes,
+        timeout_seconds: float,
+        **kwargs: object,
+    ) -> subprocess.CompletedProcess[bytes]:
+        """Write the reason to the scratch path named in the prompt, then delegate to FakeAgentRunner."""
+        prompt = input_data.decode()
+        body = json.loads(prompt[prompt.index("{") :])
+        (Path(body["agent_scratch_path"]) / "unfixable.txt").write_text(self._reason, encoding="utf-8")
+        return super().__call__(cmd, cwd=cwd, env=env, input_data=input_data, timeout_seconds=timeout_seconds, **kwargs)
+
+
 def _claude_finished_stream(text: str) -> bytes:
     """Return a Claude Code stream-json run that finishes successfully with text as its result."""
     return json.dumps({"type": "result", "subtype": "success", "is_error": False, "result": text}).encode() + b"\n"

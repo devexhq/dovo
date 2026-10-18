@@ -16,6 +16,7 @@ from tests.harness.fakes import (
     FakeAgentRunnerCall,
     RecordingProgressSink,
     StreamingAgentRunner,
+    UnfixableAgentRunner,
     patch_claude_probe,
     real_invocation,
 )
@@ -41,6 +42,7 @@ __all__ = [
     "RecordingProgressSink",
     "StepBuilder",
     "StreamingAgentRunner",
+    "UnfixableAgentRunner",
     "WorkspaceBuilder",
     "assert_json_payload_matches_published_shape",
     "assert_rich_render_shows_every_view_value",

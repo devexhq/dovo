@@ -1,4 +1,4 @@
-"""Tests for the shared timeout, provider-error, blocked, and no-op agent response constructors."""
+"""Tests for the shared timeout, provider-error, blocked, unfixable, and no-op agent response constructors."""
 
 from __future__ import annotations
 
@@ -14,6 +14,7 @@ from dovo.core.agents.responses import (
     no_op_response,
     provider_error_response,
     timeout_response,
+    unfixable_response,
 )
 
 
@@ -157,6 +158,27 @@ class NoOpResponseTests:
         assert response.raw_text == "r"
         assert response.mutation_baseline_ref == "abc"
         assert response.duration_ms == 9
+
+
+class UnfixableResponseTests:
+    def test_unfixable_response_carries_reason_and_errors(self) -> None:
+        response = unfixable_response(
+            reason="no SSH key",
+            duration_ms=11,
+            errors=["Discarded edit saved to /tmp/x.patch."],
+            raw_text="r",
+            mutation_baseline_ref="abc",
+        )
+
+        assert response == AgentResponse(
+            status=AgentResponseStatus.UNFIXABLE,
+            duration_ms=11,
+            unfixable_reason="no SSH key",
+            errors=["Discarded edit saved to /tmp/x.patch."],
+            raw_text="r",
+            mutation_baseline_ref="abc",
+        )
+        assert response.fixes == []
 
 
 class DiagnosticsWithFixesTests:
