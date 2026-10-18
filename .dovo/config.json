@@ -9,8 +9,11 @@
     "max_active_worktrees": 3,
     "default_timeout_seconds": 900
   },
-  "default_agent": "copilot",
+  "default_agent": "claude",
   "agents": {
+    "claude": {
+      "model": "claude-opus-5-5"
+    },
     "copilot": {
       "model": "claude-sonnet-5.5",
       "endpoint": null,
