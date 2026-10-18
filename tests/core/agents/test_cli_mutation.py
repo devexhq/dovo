@@ -979,6 +979,14 @@ class UnfixableClassificationTests:
         assert response.rejected_patch_path is None
         assert _porcelain(git_repo) == ""
 
+    def test_unfixable_reason_keeps_only_the_first_1000_characters(self, git_repo: Path, tmp_path: Path) -> None:
+        response = UnitTestAdapter(run_fn=_reporting_run("é" * 999 + "xy" + "z" * 5000)).invoke(
+            _unfixable_request(git_repo, tmp_path, None)
+        )
+
+        assert response.status == AgentResponseStatus.UNFIXABLE
+        assert response.unfixable_reason == "é" * 999 + "x"
+
     def test_unfixable_file_with_edits_saves_patch_and_restores_baseline(self, git_repo: Path, tmp_path: Path) -> None:
         destination = tmp_path / "rejected" / "code_attempt_1.patch"
 
@@ -1070,10 +1078,16 @@ class UnfixableClassificationTests:
     @pytest.mark.parametrize(
         ("kind", "reason"),
         [
-            pytest.param("directory", "Is a directory", id="directory"),
+            pytest.param("directory", "it is not a regular file", id="directory"),
             pytest.param("symlink", "it is a symlink", id="symlink"),
             pytest.param("dangling-symlink", "it is a symlink", id="dangling-symlink"),
             pytest.param("fifo", "it is not a regular file", id="fifo"),
+            pytest.param(
+                "unreadable",
+                "Permission denied",
+                id="unreadable",
+                marks=pytest.mark.skipif(os.geteuid() == 0, reason="root ignores file permissions"),
+            ),
         ],
     )
     def test_unreadable_unfixable_file_returns_provider_error_naming_the_file(
@@ -1089,6 +1103,9 @@ class UnfixableClassificationTests:
                 report.mkdir()
             elif kind == "fifo":
                 os.mkfifo(report)
+            elif kind == "unreadable":
+                report.write_text("no SSH key\n", encoding="utf-8")
+                report.chmod(0)
             else:
                 report.symlink_to(secret if kind == "symlink" else tmp_path / "missing.txt")
             return CliMutationOutcome(status="finished", result_text="done")

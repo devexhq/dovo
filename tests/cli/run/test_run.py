@@ -350,7 +350,9 @@ class RunCliUnfixableAgentIntegrationTests:
         assert result.exit_code == 1
         assert step_done["exit_code"] == 201
         assert step_done["error_message"] == "Agent reported the task unfixable: no SSH key"
-        assert [summary["unfixable_reason"] for summary in summaries] == ["no SSH key"]
+        assert summaries == [
+            {"status": "unfixable", "summary": "ok", "unfixable_reason": "no SSH key", "touched_files": []}
+        ]
         assert row.status == SessionStatus.FAILED
         assert paths.worktree_dir(row.session_id).is_dir()
 

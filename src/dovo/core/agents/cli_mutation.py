@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import errno
 import json
+import os
+import stat
 import subprocess
 import time
 from collections.abc import Callable, Sequence
@@ -178,6 +181,7 @@ _SCRATCH_PROMPT_LINES = (
     "- Do not read or write logs, artifacts, or session directories.\n"
 )
 UNFIXABLE_FILE_NAME = "unfixable.txt"
+UNFIXABLE_REASON_MAX_CHARS = 1000
 
 
 def _unfixable_prompt_line(scratch_path: Path) -> str:
@@ -439,27 +443,47 @@ def _save_rejected_edit(request: AgentRequest, baseline: str) -> tuple[Path | No
 
 
 def _read_unfixable_reason(scratch_path: Path | None) -> tuple[str | None, str | None]:
-    """Return ``(stripped reason, None)`` for a non-blank report, ``(None, None)`` without a scratch path or when the report is missing or blank, and ``(None, detail)`` when it is a symlink, not a regular file, or cannot be read."""
+    """Return ``(stripped reason, None)`` for a non-blank report, ``(None, None)`` without a scratch path or when the report is missing or blank, and ``(None, detail)`` when it is a symlink, not a regular file, or cannot be read.
+
+    The report is opened once without following symlinks or blocking, checked through that descriptor, and read only
+    up to its first ``UNFIXABLE_REASON_MAX_CHARS`` characters, so a swapped-in FIFO or an oversized file cannot hang or
+    exhaust the process.
+    """
     if scratch_path is None:
         return None, None
 
     path = scratch_path / UNFIXABLE_FILE_NAME
-    if path.is_symlink():
-        return None, f"Failed to read {path}: it is a symlink"
-
-    if path.exists() and not (path.is_file() or path.is_dir()):
-        return None, f"Failed to read {path}: it is not a regular file"
-
     try:
-        text = path.read_text(encoding="utf-8", errors="replace")
+        text = _read_report_prefix(path)
     except FileNotFoundError:
         return None, None
     except OSError as exc:
-        return None, f"Failed to read {path}: {exc.strerror or exc}"
+        detail = "it is a symlink" if exc.errno == errno.ELOOP else exc.strerror or str(exc)
+        return None, f"Failed to read {path}: {detail}"
+
+    if text is None:
+        return None, f"Failed to read {path}: it is not a regular file"
 
     reason = text.strip()
 
     return (reason or None), None
+
+
+def _read_report_prefix(path: Path) -> str | None:
+    """Return the first ``UNFIXABLE_REASON_MAX_CHARS`` characters of the regular file at path, or None when it is not one."""
+    fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    try:
+        is_regular = stat.S_ISREG(os.fstat(fd).st_mode)
+    except OSError:
+        os.close(fd)
+        raise
+
+    if not is_regular:
+        os.close(fd)
+        return None
+
+    with os.fdopen(fd, encoding="utf-8", errors="replace") as report:
+        return report.read(UNFIXABLE_REASON_MAX_CHARS)
 
 
 def _save_and_discard(request: AgentRequest, baseline: str) -> tuple[Path | None, list[str], str | None]:
