@@ -33,7 +33,7 @@ ANSI_ESCAPE = re.compile(r"\x1b\[[0-9;?]*[A-Za-z]")
 
 @dataclass(frozen=True)
 class DovoRunResult:
-    """Subprocess result captured from a dovo CLI invocation."""
+    """Subprocess result captured from a dovo CLI invocation, with ANSI escape sequences removed."""
 
     stdout: str
     stderr: str
@@ -112,8 +112,8 @@ class DovoRunner:
         duration = time.monotonic() - start_time
 
         return DovoRunResult(
-            stdout=process.stdout,
-            stderr=process.stderr,
+            stdout=ANSI_ESCAPE.sub("", process.stdout),
+            stderr=ANSI_ESCAPE.sub("", process.stderr),
             exit_code=process.returncode,
             duration_seconds=duration,
         )
@@ -319,12 +319,15 @@ def default_subprocess_env() -> dict[str, str]:
     env = os.environ.copy()
     env["DOVO_HOME"] = str(DOVO_HOME)
     env["NO_COLOR"] = "1"
+    env["_TYPER_FORCE_DISABLE_TERMINAL"] = "1"
     env["COLUMNS"] = "160"
     env["PYTHONIOENCODING"] = "utf-8"
     env["UV_CACHE_DIR"] = str(E2E_CACHES / "uv")
     env["NPM_CONFIG_CACHE"] = str(E2E_CACHES / "npm")
     env.pop("GIT_DIR", None)
     env.pop("GIT_WORK_TREE", None)
+    env.pop("FORCE_COLOR", None)
+    env.pop("PY_COLORS", None)
     return env
 
 
