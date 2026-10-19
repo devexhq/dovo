@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
+import psutil
 import pytest
 
 from dovo.common.filesystem.models import WorkspacePaths
@@ -216,6 +218,52 @@ class EngineResumeFinalizationTests:
         row = sessions_repo.get("finalize")
         assert row is not None
         assert (row.status, row.completed_at) == (SessionStatus.RUNNING, None)
+
+
+class EngineProcessIdentityTests:
+    @pytest.mark.parametrize("entry", ["run", "resume"])
+    @pytest.mark.parametrize(
+        ("create_time", "expected"),
+        [
+            pytest.param(1792296249.25, "2026-10-18T04:04:09.250000+00:00", id="readable"),
+            pytest.param(psutil.AccessDenied(), None, id="unreadable"),
+        ],
+    )
+    def test_run_and_resume_record_pid_with_its_creation_time(
+        self,
+        engine_paths: WorkspacePaths,
+        sessions_repo: SessionsRepository,
+        stub_drive_run: StubDriveRun,
+        monkeypatch: pytest.MonkeyPatch,
+        entry: str,
+        create_time: float | Exception,
+        expected: str | None,
+    ) -> None:
+        def _create_time(_process: psutil.Process) -> float:
+            if isinstance(create_time, Exception):
+                raise create_time
+            return create_time
+
+        monkeypatch.setattr(psutil.Process, "create_time", _create_time)
+        stub_drive_run(None)
+        engine = _engine(engine_paths, sessions_repo)
+        if entry == "resume":
+            seed_paused_session(
+                engine_paths,
+                sessions_repo,
+                session_id="identity",
+                steps=[{"id": "a", "run": "true", "on_failure": "prompt_user"}],
+                paused_step_id="a",
+            )
+            outcome = engine.resume("identity")
+        else:
+            blueprint = _catalog_blueprint(engine_paths, "identity", [{"id": "a", "run": "true"}])
+            outcome = engine.run(blueprint, RunRequest(session_id="identity", use_worktree=False))
+
+        assert outcome.status == SessionStatus.COMPLETED
+        row = sessions_repo.get("identity")
+        assert row is not None
+        assert (row.pid, row.pid_started_at) == (os.getpid(), expected)
 
 
 class EngineRunSnapshotsDefinitionsTests:

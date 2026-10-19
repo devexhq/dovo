@@ -9,12 +9,14 @@ from collections.abc import Generator
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
+import psutil
 import pytest
 
 from dovo.core.db import SessionsRepository, SessionStatus
 from dovo.core.sessions import ReconciliationResult
 from dovo.core.sessions.services.reconcile import (
     STALE_RUN_ERROR_MESSAGE,
+    current_process_started_at,
     format_reconciliation_warning,
     get_process_start_time,
     is_pid_alive,
@@ -52,6 +54,24 @@ def child_process() -> Generator[subprocess.Popen[bytes]]:
     except subprocess.TimeoutExpired:
         child.kill()
         child.wait()
+
+
+def _child_started_at(child: subprocess.Popen[bytes], offset_seconds: float) -> str:
+    """Format the child's OS creation time shifted by offset_seconds as a pid_started_at value."""
+    child_start = get_process_start_time(child.pid)
+    assert child_start is not None
+    return (child_start + timedelta(seconds=offset_seconds)).isoformat(timespec="microseconds")
+
+
+def _create_time_returns(monkeypatch: pytest.MonkeyPatch, create_time: float | Exception) -> None:
+    """Make psutil.Process.create_time return create_time, or raise it when it is an exception."""
+
+    def _create_time(_process: psutil.Process) -> float:
+        if isinstance(create_time, Exception):
+            raise create_time
+        return create_time
+
+    monkeypatch.setattr(psutil.Process, "create_time", _create_time)
 
 
 class IsPidAliveTests:
@@ -105,6 +125,22 @@ class GetProcessStartTimeTests:
         assert get_process_start_time(child_process.pid) is None
 
 
+class CurrentProcessStartedAtTests:
+    @pytest.mark.parametrize(
+        ("create_time", "expected"),
+        [
+            pytest.param(1792296249.25, "2026-10-18T04:04:09.250000+00:00", id="readable"),
+            pytest.param(psutil.AccessDenied(), None, id="unreadable"),
+        ],
+    )
+    def test_returns_iso_utc_microseconds_or_none(
+        self, monkeypatch: pytest.MonkeyPatch, create_time: float | Exception, expected: str | None
+    ) -> None:
+        _create_time_returns(monkeypatch, create_time)
+
+        assert current_process_started_at() == expected
+
+
 class IsRunStaleTests:
     @pytest.mark.parametrize("status", [SessionStatus.COMPLETED, SessionStatus.FAILED])
     def test_non_running_status_is_not_stale(
@@ -123,30 +159,56 @@ class IsRunStaleTests:
         assert is_run_stale(run) is True
 
     @pytest.mark.parametrize(
-        ("session_offset_seconds", "expected"),
+        ("offset_seconds", "expected"),
         [
-            pytest.param(10, False, id="session-after-process"),
-            pytest.param(-10, True, id="session-before-process"),
+            pytest.param(0.0, False, id="within-same"),
+            pytest.param(0.5, False, id="within-later"),
+            pytest.param(-0.5, False, id="within-earlier"),
+            pytest.param(5.0, True, id="beyond-later"),
+            pytest.param(-5.0, True, id="beyond-earlier"),
         ],
     )
-    def test_running_child_is_stale_only_when_process_started_after_session_start(
+    def test_live_pid_staleness_follows_pid_started_at_not_started_at(
         self,
         isolated_workspace: Path,
         child_process: subprocess.Popen[bytes],
-        session_offset_seconds: int,
+        offset_seconds: float,
         expected: bool,
     ) -> None:
-        child_start = get_process_start_time(child_process.pid)
-        assert child_start is not None
-        started_at = (child_start + timedelta(seconds=session_offset_seconds)).strftime("%Y-%m-%d %H:%M:%S")
-        run = _sessions_for(isolated_workspace).create("session-1", "blueprint", "blueprint", pid=child_process.pid)
-        run = run.model_copy(update={"started_at": started_at})
+        run = _sessions_for(isolated_workspace).create(
+            "session-1",
+            "blueprint",
+            "blueprint",
+            pid=child_process.pid,
+            pid_started_at=_child_started_at(child_process, offset_seconds),
+        )
+        run = run.model_copy(update={"started_at": "2000-01-01 00:00:00"})
 
         assert is_run_stale(run) is expected
 
-    def test_unparseable_started_at_with_live_pid_is_not_stale(self, isolated_workspace: Path) -> None:
-        run = _sessions_for(isolated_workspace).create("session-1", "blueprint", "blueprint", pid=os.getpid())
-        run = run.model_copy(update={"started_at": "not-a-timestamp"})
+    @pytest.mark.parametrize(
+        "pid_started_at", [pytest.param(None, id="null"), pytest.param("not-a-timestamp", id="unparseable")]
+    )
+    def test_live_pid_without_comparable_pid_started_at_is_not_stale(
+        self, isolated_workspace: Path, child_process: subprocess.Popen[bytes], pid_started_at: str | None
+    ) -> None:
+        run = _sessions_for(isolated_workspace).create(
+            "session-1", "blueprint", "blueprint", pid=child_process.pid, pid_started_at=pid_started_at
+        )
+
+        assert is_run_stale(run) is False
+
+    def test_live_pid_with_unreadable_creation_time_is_not_stale(
+        self, isolated_workspace: Path, child_process: subprocess.Popen[bytes], monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        run = _sessions_for(isolated_workspace).create(
+            "session-1",
+            "blueprint",
+            "blueprint",
+            pid=child_process.pid,
+            pid_started_at="2000-01-01T00:00:00.000000+00:00",
+        )
+        _create_time_returns(monkeypatch, psutil.AccessDenied())
 
         assert is_run_stale(run) is False
 
@@ -170,12 +232,13 @@ class FormatReconciliationWarningTests:
 
 
 class ReconcileStaleRunsTests:
+    @pytest.mark.parametrize("pid_started_at", [None, "2026-10-18T04:04:09.250000+00:00"])
     def test_dead_pid_row_is_marked_failed_with_stale_message(
-        self, isolated_workspace: Path, monkeypatch: pytest.MonkeyPatch
+        self, isolated_workspace: Path, monkeypatch: pytest.MonkeyPatch, pid_started_at: str | None
     ) -> None:
         _kill_reports_no_such_process(monkeypatch)
         sessions = _sessions_for(isolated_workspace)
-        sessions.create("session-dead", "blueprint", "blueprint", pid=DEAD_PID)
+        sessions.create("session-dead", "blueprint", "blueprint", pid=DEAD_PID, pid_started_at=pid_started_at)
 
         result = reconcile_stale_sessions(sessions, path=isolated_workspace)
 
@@ -186,16 +249,36 @@ class ReconcileStaleRunsTests:
         assert result.reconciled == [stored]
         assert result.warning == "Reconciled 1 interrupted session (session_id: session-dead)."
 
-    def test_live_run_is_left_running(self, isolated_workspace: Path) -> None:
+    @pytest.mark.parametrize(
+        ("offset_seconds", "expected_status", "expected_error"),
+        [
+            pytest.param(0.0, SessionStatus.RUNNING, None, id="same-process"),
+            pytest.param(-3600.0, SessionStatus.FAILED, STALE_RUN_ERROR_MESSAGE, id="reused-pid"),
+        ],
+    )
+    def test_live_pid_row_is_reconciled_by_recorded_creation_time(
+        self,
+        isolated_workspace: Path,
+        child_process: subprocess.Popen[bytes],
+        offset_seconds: float,
+        expected_status: SessionStatus,
+        expected_error: str | None,
+    ) -> None:
         sessions = _sessions_for(isolated_workspace)
-        sessions.create("session-live", "blueprint", "blueprint", pid=os.getpid())
+        sessions.create(
+            "session-live",
+            "blueprint",
+            "blueprint",
+            pid=child_process.pid,
+            pid_started_at=_child_started_at(child_process, offset_seconds),
+        )
 
-        result = reconcile_stale_sessions(sessions, path=isolated_workspace)
+        reconcile_stale_sessions(sessions, path=isolated_workspace)
 
         stored = sessions.get("session-live")
         assert stored is not None
-        assert stored.status == SessionStatus.RUNNING
-        assert result == ReconciliationResult(reconciled=[], warning=None)
+        assert stored.status == expected_status
+        assert stored.error_message == expected_error
 
     def test_repository_failure_returns_empty_result(
         self, isolated_workspace: Path, monkeypatch: pytest.MonkeyPatch

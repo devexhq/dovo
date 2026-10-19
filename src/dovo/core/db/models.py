@@ -146,6 +146,7 @@ class SessionRecord(SQLModel, table=True):
     branch_name: str = Field(default="")
     status: SessionStatus = Field(default=SessionStatus.RUNNING, sa_type=SessionStatusType, index=True)
     pid: int | None = Field(default=None)
+    pid_started_at: str | None = Field(default=None)
     started_at: str = Field(default_factory=_now_utc_str, index=True)
     completed_at: str | None = Field(default=None)
     error_message: str | None = Field(default=None)
