@@ -210,5 +210,5 @@ steps:
       git switch -q -c "$branch"
       git reset -q --soft "$(git merge-base HEAD origin/main)"
       git rm -r -q --cached --ignore-unmatch .dovo/run
-      uv run python scripts/pr.py -- . ':!.dovo/run'
+      uv run python scripts/pr.py
     timeout_seconds: 600
