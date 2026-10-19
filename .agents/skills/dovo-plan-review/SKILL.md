@@ -5,7 +5,8 @@ description: >-
   current tree, hunt for existing behaviour and persisted formats it breaks or
   relies on, check that every requirement maps to a phase and a test, and check
   phasing and the AGENTS.md rules, then write findings to
-  .agentic/plan-review.md. Invoked as /dovo-plan-review [<plan-path>].
+  .agentic/plan-review.md and .agentic/plan-review.json. Invoked as
+  /dovo-plan-review [<plan-path>].
 disable-model-invocation: true
 ---
 
@@ -18,7 +19,7 @@ Review a plan written by `/dovo-plan`, in this order of importance:
 3. **Coverage**: does every requirement land in a phase and a test, and nothing more.
 4. **Shape and rules**: phasing per [planning.md](../../../docs/agents/planning.md), and the design against R1–R17 in [AGENTS.md](../../../AGENTS.md).
 
-Output goes to `.agentic/plan-review.md`. The plan's author applies the findings, and a human approves the plan before `/dovo-code` runs. Your job is to make that approval short. The findings that matter most come from reading the code, not from re-reading the plan.
+Output goes to `.agentic/plan-review.md`, paired with `.agentic/plan-review.json`. The plan's author applies the findings, and a human approves the plan before `/dovo-code` runs. Your job is to make that approval short. The findings that matter most come from reading the code, not from re-reading the plan.
 
 ## Hard boundaries
 
@@ -29,7 +30,7 @@ Output goes to `.agentic/plan-review.md`. The plan's author applies the findings
 
 ## 1. Resolve the input
 
-The plan is `<plan-path>` when given, otherwise `.agentic/plan.md`. If it is missing, stop and say so. Read it in full, then every file it links to (usually `.agentic/evidence.md`). Take the issue number from the `# Issue #<n>:` header and read the issue with `gh issue view <n> --json number,title,body`; it is the contract the plan answers to. Without an issue, the plan's `## Requirements` list is the contract.
+The plan is `<plan-path>` when given, otherwise `.agentic/plan.md`. If it is missing, stop and say so. Read it in full, then every file it links to (usually `.agentic/evidence.md`), and `plan.json` beside it. Take the issue number from the `# Issue #<n>:` header and read the issue with `gh issue view <n> --json number,title,body`; it is the contract the plan answers to. Without an issue, the plan's `## Requirements` list is the contract.
 
 ## 2. Review from a fresh context
 
@@ -61,7 +62,7 @@ A miss is Blocking when implementing the plan as written produces a bug, data lo
 - Every command the plan adds or changes has the R13 runner matrix: success, a failure path, `--format json` and each option it binds.
 - Nothing out of scope, or named under Traps as not touched, is planned.
 - Each planned test pins a contract no other test pins (R12), and sibling cases are planned as one parametrized test.
-- Each Open Question states the answer the plan assumes. A Decision that changes public surface or a persisted format without an Open Question is a finding.
+- Each Open Question states the answer the plan assumes, and `.agentic/plan.json` lists the same Open Questions with the same ids and assumed answers. A missing or disagreeing `plan.json` is a Warning: the blueprint asks the human from it. A Decision that changes public surface or a persisted format without an Open Question is a finding.
 
 ## 6. Check shape and rules
 
@@ -108,6 +109,40 @@ Write `.agentic/plan-review.md`, overwriting any earlier one, and echo the verdi
 
 An empty section keeps its heading with the line `none`. IDs are the tier letter plus a number from 1 within the tier, in row order. Say `APPROVE` only with zero Blocking findings.
 
-## 8. Hand off
+## 8. Emit the machine-readable findings
+
+Write `.agentic/plan-review.json` alongside the markdown, overwriting any earlier one. `.dovo/catalog/blueprints/feature-dev.yml` reads it to ask the human which findings to fold into the plan, so it must agree with `plan-review.md` row for row.
+
+```json
+{
+  "verdict": "CHANGES_REQUIRED",
+  "round": 1,
+  "provenance": "fresh_session",
+  "plan": ".agentic/plan.md",
+  "grounded_at": "8eb591cd",
+  "grounded_is_ancestor": true,
+  "counts": { "blocking": 1, "warnings": 0, "suggestions": 0 },
+  "findings": [
+    {
+      "id": "B1",
+      "severity": "BLOCKER",
+      "section": "Phase 2 instructions",
+      "evidence": "src/dovo/core/sessions/models.py:68",
+      "rule": null,
+      "summary": "SessionLogEvent is extra=\"forbid\", so logs written before the new field is added fail to load.",
+      "fix": "Give the field a default and plan a test that reads a log written without it."
+    }
+  ],
+  "coverage": { "unmapped_requirements": [], "commands_missing_r13": [] },
+  "for_human": ["OQ-1: the plan assumes discarded sessions stay hidden by default."]
+}
+```
+
+- `verdict` is exactly `APPROVE` or `CHANGES_REQUIRED`, and is `APPROVE` iff `counts.blocking` is `0`. `round` counts this skill's runs on the plan, from 1.
+- `provenance` is `fresh_session` or `same_session`. `grounded_at` and `grounded_is_ancestor` come from the **Plan** line.
+- `findings` lists every finding, Blocking first, then Warnings, then Suggestions, each with the `id` from its `plan-review.md` row. `severity` is `BLOCKER`, `WARNING` or `SUGGESTION`. `section`, `evidence` and `fix` copy the row's columns; `summary` is the row's Issue in one line. `rule` is an R-id when the finding is a rule violation, otherwise `null`.
+- `coverage` lists the IDs from the **Coverage** section (`"<command>: <case>"` strings for R13 gaps), `[]` for "none". `for_human` copies the **For the human** bullets, `[]` for "none".
+
+## 9. Hand off
 
 Report the report path and the verdict. On `CHANGES REQUIRED`, the plan's author applies the findings and this skill runs once more in a fresh session. **Cap at 2 rounds**; after that, the human decides on whatever is still open. Do not start `/dovo-code`: a human approves the plan first.

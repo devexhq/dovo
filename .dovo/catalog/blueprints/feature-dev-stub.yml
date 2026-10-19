@@ -7,7 +7,8 @@ summary: feature-dev wiring with stub agents
 # Mirrors feature-dev.yml step for step (loops, asks, artifacts, interpolation),
 # but each agent step runs one fixed shell command. Every loop fails its first
 # round and passes its second, so the retry paths run too:
-#   plan-loop    round 1 CHANGES_REQUIRED, round 2 APPROVE
+#   plan-loop    round 1 CHANGES_REQUIRED with finding B1 and open question OQ-1,
+#                round 2 APPROVE with neither
 #   code-loop    attempt 1 fails the stub gate, attempt 2 passes
 #   review-loop  round 1 has findings F1 and F2, round 2 approves with no findings
 # Nothing is committed or pushed; the push step is a dry run that stops before
@@ -25,8 +26,8 @@ steps:
     name: Clear stub outputs from earlier runs
     run: >-
       mkdir -p .agentic &&
-      rm -f .agentic/plan.md .agentic/plan-review.md .agentic/plan-verdict.txt
-      .agentic/gate.log .agentic/review.md .agentic/review.json .agentic/verdict.txt
+      rm -f .agentic/plan.md .agentic/plan.json .agentic/plan-review.md
+      .agentic/plan-review.json .agentic/plan-verdict.txt .agentic/gate.log .agentic/review.md .agentic/review.json .agentic/verdict.txt
       .agentic/stub-*
 
   - id: plan
@@ -36,10 +37,12 @@ steps:
       This is a stub step for testing a workflow. Do not read files, explore or plan.
       Run exactly this bash command, then reply "done" and stop:
 
-      printf '# Stub plan for issue %s\n\n- Phase 1: stub change\n' '${{ inputs.issue }}' > .agentic/plan.md
+      printf '# Stub plan for issue %s\n\n- Phase 1: stub change\n- OQ-1: stub question\n' '${{ inputs.issue }}' > .agentic/plan.md; echo '{"issue": "${{ inputs.issue }}", "plan": ".agentic/plan.md", "open_questions": [{"id": "OQ-1", "summary": "Stub open question (assumed: stub answer)", "assumed": "Stub assumed answer"}]}' > .agentic/plan.json
     tools: { allow_all: true }
     timeout_seconds: 300
-    artifacts: [{ name: plan, path: .agentic/plan.md }]
+    artifacts:
+      - { name: plan, path: .agentic/plan.md }
+      - { name: plan-questions, path: .agentic/plan.json }
 
   - id: plan-loop
     name: Review the plan until approved (stub)
@@ -47,6 +50,8 @@ steps:
     max_iterations: 2
     until:
       - steps.plan-verdict.exit_code == 0
+      - steps.triage-plan.outputs.selected_count == 0
+      - steps.answer-questions.outputs.selected_count == 0
     on_max_iterations: prompt_user
     do:
       - id: plan-review
@@ -56,44 +61,69 @@ steps:
           This is a stub step for testing a workflow. Do not read files, explore or review.
           Run exactly this bash command, then reply "done" and stop:
 
-          if [ -f .agentic/plan-review.md ]; then v=APPROVE; f='- none'; else v=CHANGES_REQUIRED; f='- P1 (blocking): stub finding'; fi; printf '# Stub plan review\n\n**Verdict:** %s\n\n%s\n' "$v" "$f" > .agentic/plan-review.md; echo "$v" > .agentic/plan-verdict.txt
+          if [ -f .agentic/plan-review.md ]; then v=APPROVE; f='- none'; j='{"verdict": "APPROVE", "findings": []}'; else v=CHANGES_REQUIRED; f='- B1 (blocking): stub finding'; j='{"verdict": "CHANGES_REQUIRED", "findings": [{"id": "B1", "severity": "BLOCKER", "summary": "Stub plan finding"}]}'; fi; printf '# Stub plan review\n\n**Verdict:** %s\n\n%s\n' "$v" "$f" > .agentic/plan-review.md; echo "$j" > .agentic/plan-review.json; echo "$v" > .agentic/plan-verdict.txt
         tools: { allow_all: true }
         timeout_seconds: 300
-        artifacts: [{ name: plan-review, path: .agentic/plan-review.md }]
+        artifacts:
+          - { name: plan-review, path: .agentic/plan-review.md }
+          - { name: plan-findings, path: .agentic/plan-review.json }
 
       - id: plan-verdict
         name: Check the plan review verdict
         run: grep -qx APPROVE .agentic/plan-verdict.txt 2>/dev/null || grep -qx "\*\*Verdict:\*\* APPROVE" .agentic/plan-review.md
         on_failure: continue
 
-      - id: approve-review
-        name: Approve the plan review
+      - id: triage-plan
+        name: Choose the plan review findings to address
         type: ask
         interaction:
-          mode: confirm
-          message: Approve the plan review for issue ${{ inputs.issue }}?
+          mode: multiselect
+          message: Which plan review findings should be folded into the plan for issue ${{ inputs.issue }}?
           artifact: plan-review
-          comment: { policy: optional, message: Instructions for folding in findings }
-          options:
-            - { value: "approve", label: "Approve" }
-            - { value: "stop", label: "Stop here", fail: true }
+          options_from:
+            artifact: plan-findings
+            file: .agentic/plan-review.json
+            items_path: findings
+            value_field: id
+            label_field: summary
+          comment: { policy: optional, message: Instructions for folding in the findings }
+
+      - id: answer-questions
+        name: Answer the plan's open questions
+        type: ask
+        interaction:
+          mode: multiselect
+          message: Which open questions do you want to answer instead of accepting the plan's assumed answer?
+          artifact: plan
+          options_from:
+            artifact: plan-questions
+            file: .agentic/plan.json
+            items_path: open_questions
+            value_field: id
+            label_field: summary
+          comment: { policy: optional, message: "Your answers, one per selected question (e.g. OQ-1: show them)" }
 
       - id: fold-findings
-        name: Fold findings into the plan (stub)
+        name: Fold the chosen findings and answers into the plan (stub)
         type: agent
         prompt: |
           This is a stub step for testing a workflow. Do not read files, explore or edit the plan.
-          Run exactly this bash command, then reply "done" and stop:
+          Run exactly these bash commands, then reply "done" and stop:
 
+          if [ '{{ steps.triage-plan.outputs.selected }}' = '[]' ] && [ '{{ steps.answer-questions.outputs.selected }}' = '[]' ]; then echo "nothing to fold"; exit 0; fi
           cat >> .agentic/plan.md <<'STUB_EOF'
 
           ## Folded review (stub)
 
-          Approver comment: {{ steps.approve-review.outputs.comment }}
+          Findings: {{ steps.triage-plan.outputs.selected }}; instructions: {{ steps.triage-plan.outputs.comment }}
+          Questions: {{ steps.answer-questions.outputs.selected }}; answers: {{ steps.answer-questions.outputs.comment }}
           STUB_EOF
+          echo '{"issue": "${{ inputs.issue }}", "plan": ".agentic/plan.md", "open_questions": []}' > .agentic/plan.json
         tools: { allow_all: true }
         timeout_seconds: 300
-        artifacts: [{ name: plan, path: .agentic/plan.md }]
+        artifacts:
+          - { name: plan, path: .agentic/plan.md }
+          - { name: plan-questions, path: .agentic/plan.json }
 
   - id: approve-plan
     name: Approve the plan
