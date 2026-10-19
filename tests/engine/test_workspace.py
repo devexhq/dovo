@@ -24,6 +24,7 @@ from dovo.engine.models import RunSettings
 from dovo.engine.workspace import Workspace
 from tests.engine.conftest import WorktreeSetupFactory
 from tests.harness.builders import WorkspaceBuilder
+from tests.harness.git_index import snapshot_index
 from tests.harness.sessions import RecordingRunObserver
 from tests.harness.workspace_paths import initialized_workspace_paths
 
@@ -525,22 +526,36 @@ class WorkspaceCaptureAndPersistDiffTests:
         assert "s3cr3t-value" not in patch_text
         assert warnings == []
 
-    def test_git_failure_appends_warning_instead_of_raising(
-        self, worktree_setup: WorktreeSetupFactory, monkeypatch: pytest.MonkeyPatch
+    def test_capture_leaves_worktree_index_and_status_unchanged(
+        self, worktree_setup: WorktreeSetupFactory, worktree_paths: WorkspacePaths
     ) -> None:
         workspace, _, _, session, _ = worktree_setup(session_id="sess-1")
         assert session is not None
-
-        def _raise(*args: object, **kwargs: object) -> str:
-            raise RuntimeError("git diff failed")
-
-        monkeypatch.setattr(GitRunner, "diff", staticmethod(_raise))
+        (session.worktree_path / "new.txt").write_text("untracked\n", encoding="utf-8")
+        before = snapshot_index(session.worktree_path)
         warnings: list[str] = []
 
         workspace.capture_and_persist_diff(session, warnings)
 
+        patch_text = (worktree_paths.session_dir("sess-1") / "diff.patch").read_text(encoding="utf-8")
+        assert "diff --git a/new.txt b/new.txt" in patch_text
+        assert warnings == []
+        assert snapshot_index(session.worktree_path) == before
+        assert "?? new.txt" in before.status.splitlines()
+
+    def test_git_failure_appends_warning_instead_of_raising(
+        self, worktree_setup: WorktreeSetupFactory, worktree_paths: WorkspacePaths
+    ) -> None:
+        workspace, _, _, session, _ = worktree_setup(session_id="sess-1")
+        assert session is not None
+        unknown_base = session.model_copy(update={"base_commit": "0" * 40})
+        warnings: list[str] = []
+
+        workspace.capture_and_persist_diff(unknown_base, warnings)
+
         assert len(warnings) == 1
-        assert "git diff failed" in warnings[0]
+        assert warnings[0].startswith("Failed to persist session diff artifact: ")
+        assert not (worktree_paths.session_dir("sess-1") / "diff.patch").exists()
 
 
 class WorkspaceFinalizeCleanupTests:

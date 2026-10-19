@@ -11,6 +11,7 @@ from dovo.core.git.exceptions import (
     GitPlumbingTimeoutError,
 )
 from dovo.core.git.runner import GitRunner
+from dovo.core.git.tree_diff import diff_work_tree
 from dovo.core.worktree.models import (
     WorktreeApplyResult,
     WorktreeApplyStatus,
@@ -202,12 +203,9 @@ class WorktreePatch:
         worktree_path: Path,
         base_commit: str,
     ) -> tuple[str, list[str], str]:
-        """Collect untracked changes with intent-to-add and compute unified diff, name list, and stat."""
-        GitRunner.add_intent_to_add(worktree_path, target=".")
-        diff_text = GitRunner.diff(worktree_path, base_commit=base_commit, binary=True)
-        touched_files = GitRunner.diff_name_only(worktree_path, base_commit=base_commit)
-        stat_text = GitRunner.diff_stat(worktree_path, base_commit=base_commit)
-        return diff_text, touched_files, stat_text
+        """Compute unified diff, touched files and diffstat against base_commit without touching the worktree index."""
+        delta = diff_work_tree(worktree_path, base_commit)
+        return delta.diff_text, delta.files, delta.stat_text
 
     def _collect_worktree_changes(
         self,

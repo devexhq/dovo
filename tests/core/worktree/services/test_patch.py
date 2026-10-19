@@ -15,6 +15,7 @@ from dovo.core.worktree.models import WorktreeApplyStatus, WorktreeApplyStrategy
 from dovo.core.worktree.services.lifecycle import WorktreeLifecycle
 from dovo.core.worktree.services.patch import WorktreePatch, extract_conflicts
 from tests.harness import WorkspaceBuilder
+from tests.harness.git_index import snapshot_index, temp_index_files
 
 
 class ExtractConflictsTests:
@@ -466,3 +467,93 @@ class WorktreeSquashScopeTests:
 
         assert result.status == WorktreeApplyStatus.OK
         assert _committed_paths(worktree_workspace) == ["new_name.txt", "old_name.txt"]
+
+
+_NEUTRALITY_FILES = ["committed.txt", "new.txt", "notes.txt"]
+
+
+def _create_worktree_with_untracked_file(paths: WorkspacePaths, worktree_id: str) -> Path:
+    """Create a worktree with committed committed.txt, modified tracked notes.txt and untracked new.txt."""
+    _seed_main_repo(paths.root_dir)
+    _create_worktree_with_changes(paths, worktree_id, write={"committed.txt": "committed\n"})
+    record = _repo(paths).get(worktree_id)
+    assert record is not None
+    worktree_path = Path(record.worktree_path)
+    (worktree_path / "notes.txt").write_text("notes edited\n", encoding="utf-8")
+    (worktree_path / "new.txt").write_text("untracked\n", encoding="utf-8")
+    return worktree_path
+
+
+def _remove_worktree_index(paths: WorkspacePaths, worktree_id: str) -> Path:
+    """Create a worktree with one committed change, delete its index file and return the worktree path."""
+    _create_worktree_with_change(paths, worktree_id)
+    record = _repo(paths).get(worktree_id)
+    assert record is not None
+    worktree_path = Path(record.worktree_path)
+    (worktree_path / GitRunner.run(["rev-parse", "--git-path", "index"], path=worktree_path)).unlink()
+    return worktree_path
+
+
+class WorktreePatchIndexNeutralityTests:
+    @pytest.mark.parametrize("stat", [pytest.param(False, id="default"), pytest.param(True, id="stat")])
+    def test_diff_leaves_worktree_index_and_status_unchanged(
+        self, worktree_workspace: Path, worktree_workspace_paths: WorkspacePaths, stat: bool
+    ) -> None:
+        worktree_path = _create_worktree_with_untracked_file(worktree_workspace_paths, "dovo_neutral_diff")
+        before = snapshot_index(worktree_path)
+        patch = WorktreePatch(worktree_workspace_paths, _repo(worktree_workspace_paths))
+
+        result = patch.diff("dovo_neutral_diff", stat=stat)
+
+        assert result.status == WorktreeDiffStatus.OK
+        assert result.files_changed == _NEUTRALITY_FILES
+        assert "diff --git a/new.txt b/new.txt" in result.diff_text
+        if stat:
+            for name in _NEUTRALITY_FILES:
+                assert name in result.stat_text
+        assert snapshot_index(worktree_path) == before
+        assert "?? new.txt" in before.status.splitlines()
+
+    @pytest.mark.parametrize("dry_run", [pytest.param(True, id="dry_run"), pytest.param(False, id="apply")])
+    def test_apply_leaves_worktree_index_and_status_unchanged(
+        self, worktree_workspace: Path, worktree_workspace_paths: WorkspacePaths, dry_run: bool
+    ) -> None:
+        worktree_path = _create_worktree_with_untracked_file(worktree_workspace_paths, "dovo_neutral_apply")
+        before = snapshot_index(worktree_path)
+        patch = WorktreePatch(worktree_workspace_paths, _repo(worktree_workspace_paths))
+
+        result = patch.apply("dovo_neutral_apply", dry_run=dry_run)
+
+        assert result.status == WorktreeApplyStatus.OK
+        assert result.touched_files == _NEUTRALITY_FILES
+        assert snapshot_index(worktree_path) == before
+
+
+class WorktreePatchDiffFailureTests:
+    def test_missing_worktree_index_returns_git_failed_and_leaves_no_temp_index(
+        self, worktree_workspace: Path, worktree_workspace_paths: WorkspacePaths
+    ) -> None:
+        worktree_path = _remove_worktree_index(worktree_workspace_paths, "dovo_noindex")
+        patch = WorktreePatch(worktree_workspace_paths, _repo(worktree_workspace_paths))
+
+        result = patch.diff("dovo_noindex")
+
+        assert result.status == WorktreeDiffStatus.GIT_FAILED
+        assert result.errors[0].startswith("Failed to generate diff for worktree 'dovo_noindex': ")
+        assert temp_index_files(worktree_path) == []
+
+    def test_apply_with_missing_worktree_index_returns_git_failed_and_leaves_main_repo_unchanged(
+        self, worktree_workspace: Path, worktree_workspace_paths: WorkspacePaths
+    ) -> None:
+        worktree_path = _remove_worktree_index(worktree_workspace_paths, "dovo_noindex_apply")
+        head_before = GitRunner.rev_parse(worktree_workspace, rev="HEAD")
+        status_before = GitRunner.status_porcelain(worktree_workspace)
+        patch = WorktreePatch(worktree_workspace_paths, _repo(worktree_workspace_paths))
+
+        result = patch.apply("dovo_noindex_apply")
+
+        assert result.status == WorktreeApplyStatus.GIT_FAILED
+        assert result.errors[0].startswith("Failed to generate diff from worktree: ")
+        assert GitRunner.rev_parse(worktree_workspace, rev="HEAD") == head_before
+        assert GitRunner.status_porcelain(worktree_workspace) == status_before
+        assert temp_index_files(worktree_path) == []

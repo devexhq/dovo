@@ -11,6 +11,7 @@ from dovo.cli import app
 from dovo.core.git.runner import GitRunner
 from dovo.core.worktree.models import WorktreeDiffResult, WorktreeDiffStatus, WorktreeSession
 from dovo.core.worktree.worktree import Worktree
+from tests.harness.git_index import snapshot_index
 from tests.harness.workspace_paths import initialized_workspace_paths
 
 
@@ -88,3 +89,14 @@ class WorktreeDiffCliIntegrationTests:
         assert event["event_type"] == "WorktreeDiffResult"
         assert event["payload"]["status"] == "ok"
         assert event["payload"]["files_changed"] == ["target.py"]
+
+    def test_worktree_diff_cli_keeps_untracked_file_untracked(self, cli_runner: CliRunner, cli_workspace: Path) -> None:
+        session = _create_worktree_with_committed_change(cli_workspace)
+        (session.worktree_path / "new.txt").write_text("untracked\n", encoding="utf-8")
+        before = snapshot_index(session.worktree_path)
+
+        result = cli_runner.invoke(app, ["-p", str(cli_workspace), "worktree", "diff", session.session_id])
+
+        assert result.exit_code == 0
+        assert "new.txt" in result.stdout
+        assert snapshot_index(session.worktree_path) == before
