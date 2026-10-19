@@ -108,13 +108,13 @@ class WorktreeCreateCliIntegrationTests:
         self, cli_runner: CliRunner, cli_workspace: Path, dispatch_spy: list[WorktreeCreateResult]
     ) -> None:
         (cli_workspace / "first.txt").write_text("first commit\n", encoding="utf-8")
-        GitRunner.add_all(cli_workspace)
-        GitRunner.commit(cli_workspace, "Add first.txt")
+        GitRunner.run(["add", "-A"], path=cli_workspace)
+        GitRunner.run(["commit", "-m", "Add first.txt"], path=cli_workspace)
         first_commit = GitRunner.rev_parse(cli_workspace, rev="HEAD")
 
         (cli_workspace / "second.txt").write_text("second commit\n", encoding="utf-8")
-        GitRunner.add_all(cli_workspace)
-        GitRunner.commit(cli_workspace, "Add second.txt")
+        GitRunner.run(["add", "-A"], path=cli_workspace)
+        GitRunner.run(["commit", "-m", "Add second.txt"], path=cli_workspace)
         current_head = GitRunner.rev_parse(cli_workspace, rev="HEAD")
         assert first_commit != current_head
 

@@ -188,6 +188,25 @@ class GitRunner:
         return bool(GitRunner.status_porcelain(path))
 
     @staticmethod
+    def dirty_paths(path: Path) -> list[str]:
+        """Return sorted unquoted paths with staged, unstaged or untracked changes, listing both sides of a rename or copy.
+
+        Raises:
+            GitNotFoundError: When git binary is not found.
+            GitPlumbingTimeoutError: When git status times out.
+            GitCommandError: When git status exits non-zero.
+        """
+        fields = iter(GitRunner.run(["status", "--porcelain=v1", "-z", "-uall"], path=path).split("\0"))
+        paths: set[str] = set()
+        for entry in fields:
+            if not entry:
+                continue
+            paths.add(entry[3:])
+            if entry[0] in "RC" or entry[1] in "RC":
+                paths.add(next(fields))
+        return sorted(paths)
+
+    @staticmethod
     def worktree_add(
         path: Path,
         target_path: Path,
@@ -290,6 +309,22 @@ class GitRunner:
         return [line.strip() for line in output.splitlines() if line.strip()]
 
     @staticmethod
+    def patch_paths(path: Path, diff_text: str) -> list[str]:
+        """Return sorted unquoted paths diff_text touches, listing both sides of a rename.
+
+        Reads the patch forwards for post-image names and in reverse for pre-image names,
+        so the result describes exactly the patch that is applied.
+
+        Raises:
+            GitCommandError: When git apply cannot parse diff_text.
+        """
+        paths: set[str] = set()
+        for args in (["apply", "--numstat", "-z", "-"], ["apply", "-R", "--numstat", "-z", "-"]):
+            output = GitRunner.run(args, path=path, input_text=diff_text + "\n")
+            paths.update(entry.split("\t", 2)[2] for entry in output.split("\0") if entry)
+        return sorted(paths)
+
+    @staticmethod
     def diff_stat(path: Path, base_commit: str) -> str:
         """Return diffstat summary against base_commit."""
         return GitRunner.run(["diff", "--stat", base_commit], path=path)
@@ -334,8 +369,9 @@ class GitRunner:
         diff_text: str,
         *,
         binary: bool = True,
+        index: bool = False,
     ) -> tuple[int, str, str]:
-        """Apply a patch to the working tree.
+        """Apply a patch to the working tree, and to the index too when index is True.
 
         Returns:
             Tuple of (returncode, stdout, stderr).
@@ -343,6 +379,8 @@ class GitRunner:
         cmd = ["git", "apply"]
         if binary:
             cmd.append("--binary")
+        if index:
+            cmd.append("--index")
         cmd.append("-")
 
         try:
@@ -363,11 +401,25 @@ class GitRunner:
             raise GitNotFoundError("Git execution failed: git not found") from exc
 
     @staticmethod
-    def add_all(path: Path) -> None:
-        """Stage all modifications and untracked files."""
-        GitRunner.run(["add", "-A"], path=path)
+    def commit(path: Path, message: str, *, paths: list[str]) -> None:
+        """Commit only the literal paths from the working tree, leaving every other index entry as it was.
 
-    @staticmethod
-    def commit(path: Path, message: str) -> None:
-        """Create a commit with the specified commit message."""
-        GitRunner.run(["commit", "-m", message], path=path)
+        Raises:
+            ValueError: When paths is empty, since an empty pathspec would commit the whole index.
+            GitCommandError: When git commit exits non-zero (for example a failing hook).
+        """
+        if not paths:
+            raise ValueError("GitRunner.commit requires at least one path")
+        GitRunner.run(
+            [
+                "--literal-pathspecs",
+                "commit",
+                "--only",
+                "-m",
+                message,
+                "--pathspec-from-file=-",
+                "--pathspec-file-nul",
+            ],
+            path=path,
+            input_text="\0".join(paths),
+        )

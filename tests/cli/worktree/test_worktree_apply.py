@@ -21,8 +21,8 @@ def _create_worktree_with_committed_change(cli_workspace: Path) -> WorktreeSessi
     session = create_result.session
 
     (session.worktree_path / "target.py").write_text("changed\n", encoding="utf-8")
-    GitRunner.add_all(session.worktree_path)
-    GitRunner.commit(session.worktree_path, "Worktree change to target.py")
+    GitRunner.run(["add", "-A"], path=session.worktree_path)
+    GitRunner.run(["commit", "-m", "Worktree change to target.py"], path=session.worktree_path)
 
     return session
 
@@ -69,3 +69,62 @@ class WorktreeApplyCliIntegrationTests:
         assert event["event_type"] == "WorktreeApplyResult"
         assert event["payload"]["status"] == "ok"
         assert event["payload"]["touched_files"] == ["target.py"]
+
+    def test_worktree_apply_cli_squash_allow_dirty_keeps_unrelated_changes(
+        self, cli_runner: CliRunner, cli_workspace: Path, dispatch_spy: list[WorktreeApplyResult]
+    ) -> None:
+        session = _create_worktree_with_committed_change(cli_workspace)
+        (cli_workspace / "scratch.txt").write_text("scratch\n", encoding="utf-8")
+
+        result = cli_runner.invoke(
+            app,
+            [
+                "-p",
+                str(cli_workspace),
+                "worktree",
+                "apply",
+                session.session_id,
+                "--strategy",
+                "squash",
+                "--allow-dirty",
+            ],
+        )
+
+        assert result.exit_code == 0
+        commit_sha = GitRunner.rev_parse(cli_workspace, rev="HEAD")
+        assert f"Applied worktree {session.session_id} to workspace (squash)" in result.stdout
+        assert f"• Commit: {commit_sha}" in result.stdout
+        assert dispatch_spy[0].commit_sha == commit_sha
+        committed = GitRunner.run(["diff-tree", "--no-commit-id", "--name-only", "-r", "HEAD"], path=cli_workspace)
+        assert committed == "target.py"
+        assert GitRunner.status_porcelain(cli_workspace) == ["?? scratch.txt"]
+
+    def test_worktree_apply_cli_squash_allow_dirty_overlap_exits_one(
+        self, cli_runner: CliRunner, cli_workspace: Path, dispatch_spy: list[WorktreeApplyResult]
+    ) -> None:
+        session = _create_worktree_with_committed_change(cli_workspace)
+        (cli_workspace / "target.py").write_text("user file\n", encoding="utf-8")
+
+        result = cli_runner.invoke(
+            app,
+            [
+                "-p",
+                str(cli_workspace),
+                "worktree",
+                "apply",
+                session.session_id,
+                "--strategy",
+                "squash",
+                "--allow-dirty",
+            ],
+        )
+
+        assert result.exit_code == 1
+        assert "target.py" in result.stdout
+        assert len(dispatch_spy) == 1
+        assert dispatch_spy[0].status == WorktreeApplyStatus.MAIN_REPO_DIRTY
+        assert dispatch_spy[0].errors == [
+            f"Cannot squash worktree {session.session_id}: the main repository has uncommitted changes in files the "
+            "worktree also changes.\nOverlapping files:\n  • target.py"
+        ]
+        assert (cli_workspace / "target.py").read_text(encoding="utf-8") == "user file\n"

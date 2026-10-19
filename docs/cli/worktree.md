@@ -58,8 +58,8 @@ dovo worktree apply <worktree-id> [OPTIONS]
 
 | Flag | Description |
 | --- | --- |
-| `--strategy <patch\|squash>` | Strategy for applying changes: `patch` (default: uncommitted working tree changes) or `squash` (stages and creates a single Git commit). |
-| `--allow-dirty` | Allow application even if the main workspace has uncommitted changes. |
+| `--strategy <patch\|squash>` | Strategy for applying changes: `patch` (default: uncommitted working tree changes) or `squash` (creates a single Git commit containing only the paths the worktree changed). |
+| `--allow-dirty` | Allow application even if the main workspace has uncommitted changes. With `--strategy squash`, those changes stay uncommitted and keep their staged, unstaged or untracked state, and the apply is refused if any of them is in a file the worktree also changes. |
 | `--dry-run` | Perform pre-apply conflict checks without modifying the workspace. |
 | `--delete`, `-d` | Delete the worktree and branch upon successful application. |
 | `--message <msg>`, `-m <msg>` | Custom commit message when using `--strategy squash`. |

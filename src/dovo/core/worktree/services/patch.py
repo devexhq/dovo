@@ -143,7 +143,7 @@ class WorktreePatch:
         allow_dirty: bool,
         worktree_id: str,
     ) -> WorktreeApplyResult | None:
-        """Check if main repository has uncommitted changes."""
+        """Refuse any uncommitted main-repository change; this blanket check applies only without --allow-dirty."""
         if allow_dirty:
             return None
 
@@ -158,6 +158,42 @@ class WorktreePatch:
             fixes=[
                 "Commit or stash local changes in the main workspace, or",
                 "Pass --allow-dirty to overlay changes anyway",
+            ],
+        )
+
+    def _check_squash_overlap(
+        self,
+        strategy: WorktreeApplyStrategy,
+        allow_dirty: bool,
+        patch_paths: list[str],
+        worktree_id: str,
+    ) -> WorktreeApplyResult | None:
+        """Refuse a squash that would commit main-repository changes to a path the patch also touches."""
+        if strategy != WorktreeApplyStrategy.SQUASH or not allow_dirty:
+            return None
+        try:
+            dirty = GitRunner.dirty_paths(self.path)
+        except Exception as exc:
+            return WorktreeApplyResult(
+                status=WorktreeApplyStatus.GIT_FAILED,
+                worktree_id=worktree_id,
+                strategy=strategy,
+                errors=[f"Failed to read main repository status: {exc}"],
+            )
+        overlapping = sorted(set(dirty) & set(patch_paths))
+        if not overlapping:
+            return None
+        return WorktreeApplyResult(
+            status=WorktreeApplyStatus.MAIN_REPO_DIRTY,
+            worktree_id=worktree_id,
+            strategy=strategy,
+            errors=[
+                f"Cannot squash worktree {worktree_id}: the main repository has uncommitted changes "
+                "in files the worktree also changes.\nOverlapping files:\n" + "\n".join(f"  • {p}" for p in overlapping)
+            ],
+            fixes=[
+                "Commit or stash those files in the main workspace, or",
+                "Use --strategy patch to overlay the changes without committing",
             ],
         )
 
@@ -176,13 +212,19 @@ class WorktreePatch:
     def _collect_worktree_changes(
         self,
         record: WorktreeRecord,
-    ) -> tuple[str, list[str], WorktreeApplyResult | None]:
-        """Generate unified diff and list of touched files."""
+        strategy: WorktreeApplyStrategy,
+    ) -> tuple[str, list[str], list[str], WorktreeApplyResult | None]:
+        """Generate unified diff, touched files, and for squash the patch paths (both sides of a rename)."""
+        worktree_path = Path(record.worktree_path)
+        patch_paths: list[str] = []
         try:
-            diff_text, touched_files, _ = self._collect_delta(Path(record.worktree_path), record.base_commit)
+            diff_text, touched_files, _ = self._collect_delta(worktree_path, record.base_commit)
+            if strategy == WorktreeApplyStrategy.SQUASH and diff_text.strip():
+                patch_paths = GitRunner.patch_paths(worktree_path, diff_text)
         except Exception as exc:
             return (
                 "",
+                [],
                 [],
                 WorktreeApplyResult(
                     status=WorktreeApplyStatus.GIT_FAILED,
@@ -195,6 +237,7 @@ class WorktreePatch:
             return (
                 "",
                 [],
+                [],
                 WorktreeApplyResult(
                     status=WorktreeApplyStatus.EMPTY_DIFF,
                     worktree_id=record.id,
@@ -202,7 +245,7 @@ class WorktreePatch:
                 ),
             )
 
-        return diff_text, touched_files, None
+        return diff_text, touched_files, patch_paths, None
 
     def _verify_patch_cleanliness(
         self,
@@ -254,10 +297,13 @@ class WorktreePatch:
         strategy: WorktreeApplyStrategy,
         message: str | None,
         worktree_id: str,
+        patch_paths: list[str],
     ) -> tuple[str | None, WorktreeApplyResult | None]:
-        """Apply patch to working directory and optionally commit if squash strategy."""
+        """Apply patch to working directory and, for squash, commit only the patch paths."""
         try:
-            returncode, _, stderr = GitRunner.apply(self.path, diff_text, binary=True)
+            returncode, _, stderr = GitRunner.apply(
+                self.path, diff_text, binary=True, index=strategy == WorktreeApplyStrategy.SQUASH
+            )
         except Exception as exc:
             return None, WorktreeApplyResult(
                 status=WorktreeApplyStatus.GIT_FAILED,
@@ -278,8 +324,7 @@ class WorktreePatch:
 
         commit_msg = message or f"dovo: apply changes from worktree {worktree_id}"
         try:
-            GitRunner.add_all(self.path)
-            GitRunner.commit(self.path, commit_msg)
+            GitRunner.commit(self.path, commit_msg, paths=patch_paths)
             commit_sha = GitRunner.rev_parse(self.path, rev="HEAD")
             return commit_sha, None
         except Exception as exc:
@@ -359,13 +404,16 @@ class WorktreePatch:
         if dirty_err is not None:
             return dirty_err
 
-        diff_text, touched_files, coll_err = self._collect_worktree_changes(record)
+        diff_text, touched_files, patch_paths, coll_err = self._collect_worktree_changes(record, strategy)
         if coll_err is not None:
             return coll_err
 
-        _, conflict_err = self._verify_patch_cleanliness(diff_text, worktree_id)
-        if conflict_err is not None:
-            return conflict_err
+        pre_err = (
+            self._check_squash_overlap(strategy, allow_dirty, patch_paths, worktree_id)
+            or self._verify_patch_cleanliness(diff_text, worktree_id)[1]
+        )
+        if pre_err is not None:
+            return pre_err
 
         if dry_run:
             return WorktreeApplyResult(
@@ -376,7 +424,7 @@ class WorktreePatch:
                 warnings=["Dry run validation succeeded. No files were modified."],
             )
 
-        commit_sha, apply_err = self._apply_patch_strategy(diff_text, strategy, message, worktree_id)
+        commit_sha, apply_err = self._apply_patch_strategy(diff_text, strategy, message, worktree_id, patch_paths)
         if apply_err is not None:
             return apply_err
 

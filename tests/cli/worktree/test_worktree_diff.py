@@ -21,8 +21,8 @@ def _create_worktree_with_committed_change(cli_workspace: Path) -> WorktreeSessi
     session = create_result.session
 
     (session.worktree_path / "target.py").write_text("changed\n", encoding="utf-8")
-    GitRunner.add_all(session.worktree_path)
-    GitRunner.commit(session.worktree_path, "Worktree change to target.py")
+    GitRunner.run(["add", "-A"], path=session.worktree_path)
+    GitRunner.run(["commit", "-m", "Worktree change to target.py"], path=session.worktree_path)
 
     return session
 
