@@ -173,17 +173,25 @@ class WorktreePatchApplyTests:
 
         assert result.status == WorktreeApplyStatus.ALREADY_MERGED
 
+    @pytest.mark.parametrize(
+        "strategy",
+        [
+            pytest.param(WorktreeApplyStrategy.PATCH, id="patch"),
+            pytest.param(WorktreeApplyStrategy.SQUASH, id="squash"),
+        ],
+    )
     def test_dirty_main_repo_without_allow_dirty_returns_main_repo_dirty(
-        self, worktree_workspace: Path, worktree_workspace_paths: WorkspacePaths
+        self, worktree_workspace: Path, worktree_workspace_paths: WorkspacePaths, strategy: WorktreeApplyStrategy
     ) -> None:
         db = _repo(worktree_workspace_paths)
         _create_worktree_with_change(worktree_workspace_paths, "dovo_dirty_main")
         (worktree_workspace / "uncommitted.txt").write_text("wip", encoding="utf-8")
         patch = WorktreePatch(worktree_workspace_paths, db)
 
-        result = patch.apply("dovo_dirty_main")
+        result = patch.apply("dovo_dirty_main", strategy=strategy)
 
         assert result.status == WorktreeApplyStatus.MAIN_REPO_DIRTY
+        assert result.errors == ["Cannot apply worktree dovo_dirty_main: main repository has uncommitted changes."]
 
     def test_worktree_with_no_changes_returns_empty_diff(
         self, worktree_workspace: Path, worktree_workspace_paths: WorkspacePaths
@@ -239,3 +247,222 @@ class WorktreePatchApplyTests:
         assert result.commit_sha is not None
         log_message = GitRunner.run(["log", "-1", "--format=%s"], path=worktree_workspace).strip()
         assert log_message == "dovo: apply changes from worktree dovo_squash"
+
+
+_SEED_FILES = {
+    "notes.txt": "notes\n",
+    "staged.txt": "staged\n",
+    "src/app.py": "app\n",
+    "old_name.txt": "rename me\n",
+    "gone.txt": "delete me\n",
+    "é_tracked.txt": "tracked\n",
+}
+
+
+def _seed_main_repo(workspace: Path) -> None:
+    """Commit the files every squash scope test's worktree base must contain."""
+    for relative_path, content in _SEED_FILES.items():
+        (workspace / relative_path).parent.mkdir(parents=True, exist_ok=True)
+        (workspace / relative_path).write_text(content, encoding="utf-8")
+    GitRunner.run(["add", "-A"], path=workspace)
+    GitRunner.run(["commit", "-m", "Seed squash scope files"], path=workspace)
+
+
+def _create_worktree_with_changes(
+    paths: WorkspacePaths,
+    worktree_id: str,
+    *,
+    write: dict[str, str],
+    delete: list[str] | None = None,
+    rename: dict[str, str] | None = None,
+) -> None:
+    """Create a real worktree and commit the given writes, deletions and renames inside it."""
+    result = WorktreeLifecycle(paths, _repo(paths)).create(session_id=worktree_id)
+    assert result.session is not None
+    worktree_path = result.session.worktree_path
+    for relative_path, content in write.items():
+        (worktree_path / relative_path).parent.mkdir(parents=True, exist_ok=True)
+        (worktree_path / relative_path).write_text(content, encoding="utf-8")
+    for relative_path in delete or []:
+        GitRunner.run(["rm", "-q", relative_path], path=worktree_path)
+    for source, destination in (rename or {}).items():
+        GitRunner.run(["mv", source, destination], path=worktree_path)
+    GitRunner.run(["add", "-A"], path=worktree_path)
+    GitRunner.run(["commit", "-m", "worktree changes"], path=worktree_path)
+
+
+def _make_unrelated_paths_dirty(workspace: Path) -> None:
+    """Leave notes.txt unstaged, staged.txt staged and scratch.txt untracked in the main repository."""
+    (workspace / "notes.txt").write_text("notes edited\n", encoding="utf-8")
+    (workspace / "staged.txt").write_text("staged edited\n", encoding="utf-8")
+    GitRunner.run(["add", "staged.txt"], path=workspace)
+    (workspace / "scratch.txt").write_text("scratch\n", encoding="utf-8")
+
+
+def _committed_paths(workspace: Path) -> list[str]:
+    """List the paths HEAD's commit records, both sides of a rename included."""
+    output = GitRunner.run(["diff-tree", "--no-commit-id", "--name-only", "-r", "--no-renames", "HEAD"], path=workspace)
+    return output.splitlines()
+
+
+def _overlap_ascii_mixed(workspace: Path) -> None:
+    (workspace / "gone.txt").write_text("user edit\n", encoding="utf-8")
+    (workspace / "src/app.py").write_text("user edit\n", encoding="utf-8")
+    GitRunner.run(["add", "src/app.py"], path=workspace)
+    (workspace / "src/new.py").write_text("user file\n", encoding="utf-8")
+
+
+def _overlap_non_ascii_staged(workspace: Path) -> None:
+    (workspace / "é_tracked.txt").write_text("user edit\n", encoding="utf-8")
+    GitRunner.run(["add", "é_tracked.txt"], path=workspace)
+
+
+def _overlap_non_ascii_unstaged(workspace: Path) -> None:
+    (workspace / "é_tracked.txt").write_text("user edit\n", encoding="utf-8")
+
+
+def _overlap_non_ascii_untracked(workspace: Path) -> None:
+    (workspace / "é_new.txt").write_text("user file\n", encoding="utf-8")
+
+
+_OVERLAP_CASES: dict[str, tuple[dict[str, str], list[str], Callable[[Path], None], str]] = {
+    "ascii_mixed": (
+        {"src/app.py": "worktree edit\n", "src/new.py": "worktree file\n"},
+        ["gone.txt"],
+        _overlap_ascii_mixed,
+        "  • gone.txt\n  • src/app.py\n  • src/new.py",
+    ),
+    "non_ascii_staged": ({"é_tracked.txt": "worktree edit\n"}, [], _overlap_non_ascii_staged, "  • é_tracked.txt"),
+    "non_ascii_unstaged": ({"é_tracked.txt": "worktree edit\n"}, [], _overlap_non_ascii_unstaged, "  • é_tracked.txt"),
+    "non_ascii_untracked": ({"é_new.txt": "worktree file\n"}, [], _overlap_non_ascii_untracked, "  • é_new.txt"),
+}
+
+
+class WorktreeSquashScopeTests:
+    def test_squash_commit_contains_exactly_patch_paths_including_both_sides_of_rename(
+        self, worktree_workspace: Path, worktree_workspace_paths: WorkspacePaths
+    ) -> None:
+        _seed_main_repo(worktree_workspace)
+        _create_worktree_with_changes(
+            worktree_workspace_paths,
+            "dovo_scope",
+            write={"src/app.py": "worktree edit\n", "src/new.py": "worktree file\n"},
+            delete=["gone.txt"],
+            rename={"old_name.txt": "new_name.txt"},
+        )
+        patch = WorktreePatch(worktree_workspace_paths, _repo(worktree_workspace_paths))
+
+        result = patch.apply("dovo_scope", strategy=WorktreeApplyStrategy.SQUASH)
+
+        assert result.status == WorktreeApplyStatus.OK
+        assert _committed_paths(worktree_workspace) == [
+            "gone.txt",
+            "new_name.txt",
+            "old_name.txt",
+            "src/app.py",
+            "src/new.py",
+        ]
+        assert GitRunner.status_porcelain(worktree_workspace) == []
+
+    def test_squash_with_allow_dirty_preserves_unrelated_staged_unstaged_and_untracked_paths(
+        self, worktree_workspace: Path, worktree_workspace_paths: WorkspacePaths
+    ) -> None:
+        _seed_main_repo(worktree_workspace)
+        _create_worktree_with_changes(worktree_workspace_paths, "dovo_unrelated", write={"src/app.py": "edit\n"})
+        _make_unrelated_paths_dirty(worktree_workspace)
+        patch = WorktreePatch(worktree_workspace_paths, _repo(worktree_workspace_paths))
+
+        result = patch.apply("dovo_unrelated", strategy=WorktreeApplyStrategy.SQUASH, allow_dirty=True)
+
+        assert result.status == WorktreeApplyStatus.OK
+        assert _committed_paths(worktree_workspace) == ["src/app.py"]
+        assert GitRunner.status_porcelain(worktree_workspace) == [" M notes.txt", "M  staged.txt", "?? scratch.txt"]
+        assert (worktree_workspace / "notes.txt").read_text(encoding="utf-8") == "notes edited\n"
+        assert (worktree_workspace / "staged.txt").read_text(encoding="utf-8") == "staged edited\n"
+        assert (worktree_workspace / "scratch.txt").read_text(encoding="utf-8") == "scratch\n"
+        assert GitRunner.run(["show", ":notes.txt"], path=worktree_workspace) == "notes"
+        assert GitRunner.run(["show", ":staged.txt"], path=worktree_workspace) == "staged edited"
+
+    @pytest.mark.parametrize("dry_run", [pytest.param(False, id="apply"), pytest.param(True, id="dry_run")])
+    @pytest.mark.parametrize(
+        "case",
+        [
+            pytest.param("ascii_mixed", id="ascii_mixed"),
+            pytest.param("non_ascii_staged", id="non_ascii_staged"),
+            pytest.param("non_ascii_unstaged", id="non_ascii_unstaged"),
+            pytest.param("non_ascii_untracked", id="non_ascii_untracked"),
+        ],
+    )
+    def test_squash_with_allow_dirty_refuses_overlapping_dirty_paths_without_changing_anything(
+        self, worktree_workspace: Path, worktree_workspace_paths: WorkspacePaths, dry_run: bool, case: str
+    ) -> None:
+        write, delete, make_overlap, expected_bullets = _OVERLAP_CASES[case]
+        _seed_main_repo(worktree_workspace)
+        _create_worktree_with_changes(worktree_workspace_paths, "dovo_overlap", write=write, delete=delete)
+        make_overlap(worktree_workspace)
+        head_before = GitRunner.rev_parse(worktree_workspace, rev="HEAD")
+        dirty_before = GitRunner.dirty_paths(worktree_workspace)
+        porcelain_before = GitRunner.status_porcelain(worktree_workspace)
+        db = _repo(worktree_workspace_paths)
+        patch = WorktreePatch(worktree_workspace_paths, db)
+
+        result = patch.apply("dovo_overlap", strategy=WorktreeApplyStrategy.SQUASH, allow_dirty=True, dry_run=dry_run)
+
+        assert result.status == WorktreeApplyStatus.MAIN_REPO_DIRTY
+        assert result.strategy == WorktreeApplyStrategy.SQUASH
+        assert result.errors == [
+            "Cannot squash worktree dovo_overlap: the main repository has uncommitted changes in files the worktree "
+            f"also changes.\nOverlapping files:\n{expected_bullets}"
+        ]
+        assert result.fixes == [
+            "Commit or stash those files in the main workspace, or",
+            "Use --strategy patch to overlay the changes without committing",
+        ]
+        assert GitRunner.rev_parse(worktree_workspace, rev="HEAD") == head_before
+        assert GitRunner.dirty_paths(worktree_workspace) == dirty_before
+        assert GitRunner.status_porcelain(worktree_workspace) == porcelain_before
+        record = db.get("dovo_overlap")
+        assert record is not None
+        assert record.status == WorktreeStatus.ACTIVE
+
+    def test_failed_squash_commit_returns_git_failed_and_creates_no_commit(
+        self, worktree_workspace: Path, worktree_workspace_paths: WorkspacePaths
+    ) -> None:
+        """Install the hook only after the worktree's own commit: linked worktrees share the hooks directory."""
+        _seed_main_repo(worktree_workspace)
+        _create_worktree_with_changes(worktree_workspace_paths, "dovo_hook", write={"src/app.py": "edit\n"})
+        _make_unrelated_paths_dirty(worktree_workspace)
+        hooks_dir = worktree_workspace / GitRunner.run(["rev-parse", "--git-path", "hooks"], path=worktree_workspace)
+        hooks_dir.mkdir(parents=True, exist_ok=True)
+        hook = hooks_dir / "pre-commit"
+        hook.write_text("#!/bin/sh\nexit 1\n", encoding="utf-8")
+        hook.chmod(0o755)
+        head_before = GitRunner.rev_parse(worktree_workspace, rev="HEAD")
+        patch = WorktreePatch(worktree_workspace_paths, _repo(worktree_workspace_paths))
+
+        result = patch.apply("dovo_hook", strategy=WorktreeApplyStrategy.SQUASH, allow_dirty=True)
+
+        assert result.status == WorktreeApplyStatus.GIT_FAILED
+        assert result.errors[0].startswith("Git squash commit failed: ")
+        assert GitRunner.rev_parse(worktree_workspace, rev="HEAD") == head_before
+        assert GitRunner.status_porcelain(worktree_workspace) == [
+            " M notes.txt",
+            "M  src/app.py",
+            "M  staged.txt",
+            "?? scratch.txt",
+        ]
+        assert GitRunner.run(["show", ":staged.txt"], path=worktree_workspace) == "staged edited"
+
+    def test_rename_only_squash_commits_old_and_new_path(
+        self, worktree_workspace: Path, worktree_workspace_paths: WorkspacePaths
+    ) -> None:
+        _seed_main_repo(worktree_workspace)
+        _create_worktree_with_changes(
+            worktree_workspace_paths, "dovo_rename", write={}, rename={"old_name.txt": "new_name.txt"}
+        )
+        patch = WorktreePatch(worktree_workspace_paths, _repo(worktree_workspace_paths))
+
+        result = patch.apply("dovo_rename", strategy=WorktreeApplyStrategy.SQUASH)
+
+        assert result.status == WorktreeApplyStatus.OK
+        assert _committed_paths(worktree_workspace) == ["new_name.txt", "old_name.txt"]

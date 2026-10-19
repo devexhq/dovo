@@ -54,12 +54,12 @@ class WorktreeSquashApplyTests:
         worktree_dir = worktree_workspace / ".dovo" / "worktrees" / "dovo_squash"
 
         (worktree_dir / "feature1.py").write_text("feature 1\n", encoding="utf-8")
-        GitRunner.add_all(worktree_dir)
-        GitRunner.commit(worktree_dir, "Commit 1 in worktree")
+        GitRunner.run(["add", "-A"], path=worktree_dir)
+        GitRunner.run(["commit", "-m", "Commit 1 in worktree"], path=worktree_dir)
 
         (worktree_dir / "feature2.py").write_text("feature 2\n", encoding="utf-8")
-        GitRunner.add_all(worktree_dir)
-        GitRunner.commit(worktree_dir, "Commit 2 in worktree")
+        GitRunner.run(["add", "-A"], path=worktree_dir)
+        GitRunner.run(["commit", "-m", "Commit 2 in worktree"], path=worktree_dir)
 
         result = patch_service.apply(
             "dovo_squash",
@@ -102,8 +102,8 @@ class WorktreeSquashApplyTests:
         worktree_dir = worktree_workspace / ".dovo" / "worktrees" / "dovo_squash_del"
 
         (worktree_dir / "feature.py").write_text("squash feature\n", encoding="utf-8")
-        GitRunner.add_all(worktree_dir)
-        GitRunner.commit(worktree_dir, "Add feature in worktree")
+        GitRunner.run(["add", "-A"], path=worktree_dir)
+        GitRunner.run(["commit", "-m", "Add feature in worktree"], path=worktree_dir)
 
         result = patch_service.apply(
             "dovo_squash_del",

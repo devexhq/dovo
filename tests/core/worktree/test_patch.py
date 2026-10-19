@@ -88,8 +88,8 @@ class WorktreeApplyRollbackTests:
         patch_service = WorktreePatch(worktree_workspace_paths, db, lifecycle=lifecycle)
 
         (worktree_workspace / "target.py").write_text("line 1\nline 2\nline 3\n", encoding="utf-8")
-        GitRunner.add_all(worktree_workspace)
-        GitRunner.commit(worktree_workspace, "Add target.py")
+        GitRunner.run(["add", "-A"], path=worktree_workspace)
+        GitRunner.run(["commit", "-m", "Add target.py"], path=worktree_workspace)
         initial_commit = GitRunner.rev_parse(worktree_workspace, rev="HEAD")
 
         create_result = lifecycle.create(session_id="dovo_conflict")
@@ -97,12 +97,12 @@ class WorktreeApplyRollbackTests:
 
         worktree_dir = worktree_workspace / ".dovo" / "worktrees" / "dovo_conflict"
         (worktree_dir / "target.py").write_text("line 1\nworktree edit\nline 3\n", encoding="utf-8")
-        GitRunner.add_all(worktree_dir)
-        GitRunner.commit(worktree_dir, "Worktree change to target.py")
+        GitRunner.run(["add", "-A"], path=worktree_dir)
+        GitRunner.run(["commit", "-m", "Worktree change to target.py"], path=worktree_dir)
 
         (worktree_workspace / "target.py").write_text("line 1\nconflicting main edit\nline 3\n", encoding="utf-8")
-        GitRunner.add_all(worktree_workspace)
-        GitRunner.commit(worktree_workspace, "Main change causing conflict")
+        GitRunner.run(["add", "-A"], path=worktree_workspace)
+        GitRunner.run(["commit", "-m", "Main change causing conflict"], path=worktree_workspace)
 
         initial_tree = (worktree_workspace / "target.py").read_text(encoding="utf-8")
 

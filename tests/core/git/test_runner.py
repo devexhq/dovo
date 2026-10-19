@@ -85,3 +85,50 @@ class GitRunnerPlumbingTests:
         GitRunner.run(["checkout", "--detach", "HEAD"], path=git_repo)
 
         assert GitRunner.get_current_branch(git_repo) == "HEAD (detached)"
+
+    def test_commit_records_only_literal_paths_and_keeps_other_index_entries(self, git_repo: Path) -> None:
+        (git_repo / "*.md").write_text("literal\n", encoding="utf-8")
+        GitRunner.run(["--literal-pathspecs", "add", "*.md"], path=git_repo)
+        (git_repo / "other.md").write_text("untracked\n", encoding="utf-8")
+        (git_repo / "README.md").write_text("# Unstaged edit\n", encoding="utf-8")
+        (git_repo / "staged.txt").write_text("staged\n", encoding="utf-8")
+        GitRunner.run(["add", "staged.txt"], path=git_repo)
+
+        GitRunner.commit(git_repo, "Commit literal path", paths=["*.md"])
+
+        committed = GitRunner.run(["diff-tree", "--no-commit-id", "--name-only", "-r", "HEAD"], path=git_repo)
+        assert committed == "*.md"
+        assert GitRunner.status_porcelain(git_repo) == [" M README.md", "A  staged.txt", "?? other.md"]
+
+    def test_dirty_paths_lists_unquoted_names_and_both_sides_of_rename(self, git_repo: Path) -> None:
+        (git_repo / "orig.txt").write_text("rename me\n", encoding="utf-8")
+        GitRunner.run(["add", "orig.txt"], path=git_repo)
+        GitRunner.run(["commit", "-m", "Add orig.txt"], path=git_repo)
+        GitRunner.run(["mv", "orig.txt", "moved.txt"], path=git_repo)
+        (git_repo / "é_staged.txt").write_text("staged\n", encoding="utf-8")
+        GitRunner.run(["add", "é_staged.txt"], path=git_repo)
+        (git_repo / "é_untracked.txt").write_text("untracked\n", encoding="utf-8")
+        readme = git_repo / "README.md"
+        content = readme.read_text(encoding="utf-8")
+        readme.unlink()
+        (git_repo / "README.rst").write_text(content, encoding="utf-8")
+        GitRunner.run(["add", "-N", "README.rst"], path=git_repo)
+
+        assert GitRunner.dirty_paths(git_repo) == [
+            "README.md",
+            "README.rst",
+            "moved.txt",
+            "orig.txt",
+            "é_staged.txt",
+            "é_untracked.txt",
+        ]
+
+    def test_patch_paths_lists_unquoted_names_and_both_sides_of_rename(self, git_repo: Path) -> None:
+        base_sha = GitRunner.rev_parse(git_repo, rev="HEAD")
+        GitRunner.run(["mv", "README.md", "é renamed.md"], path=git_repo)
+        (git_repo / "new\tfile.txt").write_text("new\n", encoding="utf-8")
+        GitRunner.run(["add", "-A"], path=git_repo)
+        diff_text = GitRunner.run(["diff", "--binary", "--cached", base_sha], path=git_repo)
+        (git_repo / "unrelated.txt").write_text("not in the patch\n", encoding="utf-8")
+
+        assert GitRunner.patch_paths(git_repo, diff_text) == ["README.md", "new\tfile.txt", "é renamed.md"]
