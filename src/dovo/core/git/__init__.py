@@ -7,9 +7,10 @@ from .exceptions import (
     GitPlumbingTimeoutError,
     MalformedDiffHeader,
 )
-from .models import GitWorktreeEntry, PatchApplyResult, PatchApplyStatus
+from .models import GitWorktreeEntry, PatchApplyResult, PatchApplyStatus, WorkTreeDiff
 from .patch import GitDiffParser, validate_patch_text
 from .runner import GitRunner, parse_worktree_porcelain
+from .tree_diff import diff_work_tree
 
 __all__ = [
     "GitCommandError",
@@ -22,6 +23,8 @@ __all__ = [
     "MalformedDiffHeader",
     "PatchApplyResult",
     "PatchApplyStatus",
+    "WorkTreeDiff",
+    "diff_work_tree",
     "parse_worktree_porcelain",
     "validate_patch_text",
 ]

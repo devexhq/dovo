@@ -25,6 +25,16 @@ class GitWorktreeEntry(BaseModel):
     prunable_reason: str | None = None
 
 
+class WorkTreeDiff(BaseModel):
+    """A worktree's working tree compared with a base commit."""
+
+    model_config = {"extra": "forbid", "strict": True}
+
+    diff_text: str = ""
+    files: list[str] = Field(default_factory=list)
+    stat_text: str = ""
+
+
 class PatchApplyStatus(StrEnum):
     """Classified outcomes for validating or applying a unified diff."""
 

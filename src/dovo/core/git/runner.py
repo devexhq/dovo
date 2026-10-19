@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import os
 import subprocess
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
@@ -112,17 +114,17 @@ class GitRunner:
         path: Path,
         *,
         input_text: str | None = None,
-        timeout: int = GIT_SUBPROCESS_TIMEOUT_SECONDS,
         check: bool = True,
+        env: Mapping[str, str] | None = None,
     ) -> str:
-        """Execute a git command in path and return stripped stdout.
+        """Execute a git command in path, bounded by GIT_SUBPROCESS_TIMEOUT_SECONDS, and return stripped stdout.
 
         Args:
             args: Command arguments after ``git``.
             path: Working directory for git command execution.
             input_text: Optional stdin input string.
-            timeout: Subprocess timeout in seconds.
             check: When True, raises GitCommandError if returncode != 0.
+            env: Extra environment variables merged over the process environment.
 
         Returns:
             Stripped stdout text.
@@ -140,14 +142,15 @@ class GitRunner:
                 capture_output=True,
                 text=True,
                 check=check,
-                timeout=timeout,
+                timeout=GIT_SUBPROCESS_TIMEOUT_SECONDS,
+                env={**os.environ, **env} if env else None,
             )
             return result.stdout.rstrip("\r\n")
         except FileNotFoundError as exc:
             raise GitNotFoundError(f"Git execution failed ('git {' '.join(args)}'): git not found") from exc
         except subprocess.TimeoutExpired as exc:
             raise GitPlumbingTimeoutError(
-                f"Git timed out after {timeout}s ('git {' '.join(args)}') (GIT_TIMEOUT)"
+                f"Git timed out after {GIT_SUBPROCESS_TIMEOUT_SECONDS}s ('git {' '.join(args)}') (GIT_TIMEOUT)"
             ) from exc
         except subprocess.CalledProcessError as exc:
             raise GitCommandError(
@@ -281,34 +284,6 @@ class GitRunner:
         return GitRunner.run(["rev-parse", rev], path=path)
 
     @staticmethod
-    def add_intent_to_add(path: Path, target: str = ".") -> None:
-        """Add untracked files to index with intent-to-add flag."""
-        try:
-            GitRunner.run(["add", "-N", target], path=path)
-        except (GitNotFoundError, GitCommandError):
-            pass
-
-    @staticmethod
-    def diff(
-        path: Path,
-        base_commit: str,
-        *,
-        binary: bool = True,
-    ) -> str:
-        """Generate diff against base_commit."""
-        cmd = ["diff"]
-        if binary:
-            cmd.append("--binary")
-        cmd.append(base_commit)
-        return GitRunner.run(cmd, path=path)
-
-    @staticmethod
-    def diff_name_only(path: Path, base_commit: str) -> list[str]:
-        """Return list of modified file paths relative to repository root."""
-        output = GitRunner.run(["diff", "--name-only", base_commit], path=path)
-        return [line.strip() for line in output.splitlines() if line.strip()]
-
-    @staticmethod
     def patch_paths(path: Path, diff_text: str) -> list[str]:
         """Return sorted unquoted paths diff_text touches, listing both sides of a rename.
 
@@ -323,11 +298,6 @@ class GitRunner:
             output = GitRunner.run(args, path=path, input_text=diff_text + "\n")
             paths.update(entry.split("\t", 2)[2] for entry in output.split("\0") if entry)
         return sorted(paths)
-
-    @staticmethod
-    def diff_stat(path: Path, base_commit: str) -> str:
-        """Return diffstat summary against base_commit."""
-        return GitRunner.run(["diff", "--stat", base_commit], path=path)
 
     @staticmethod
     def apply_check(

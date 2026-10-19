@@ -69,18 +69,6 @@ class GitRunnerPlumbingTests:
         readme.unlink()
         assert GitRunner.has_uncommitted_changes(git_repo) is True
 
-    def test_diff_generates_valid_unified_patch(self, git_repo: Path) -> None:
-        base_sha = GitRunner.rev_parse(git_repo, rev="HEAD")
-        readme = git_repo / "README.md"
-        readme.write_text("# Test Repo\n\nAdded line in patch\n", encoding="utf-8")
-
-        patch = GitRunner.diff(git_repo, base_commit=base_sha)
-
-        assert patch.startswith("diff --git a/README.md b/README.md")
-        assert "--- a/README.md" in patch
-        assert "+++ b/README.md" in patch
-        assert "+Added line in patch" in patch
-
     def test_get_current_branch_handles_detached_head_gracefully(self, git_repo: Path) -> None:
         GitRunner.run(["checkout", "--detach", "HEAD"], path=git_repo)
 
@@ -112,7 +100,7 @@ class GitRunnerPlumbingTests:
         content = readme.read_text(encoding="utf-8")
         readme.unlink()
         (git_repo / "README.rst").write_text(content, encoding="utf-8")
-        GitRunner.run(["add", "-N", "README.rst"], path=git_repo)
+        GitRunner.run(["add", "--intent-to-add", "README.rst"], path=git_repo)
 
         assert GitRunner.dirty_paths(git_repo) == [
             "README.md",

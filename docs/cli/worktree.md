@@ -79,7 +79,7 @@ dovo worktree apply dovo_8f2a1b9c --strategy squash --message "feat: implement a
 
 ### `dovo worktree diff`
 
-Inspect differences between the worktree and its base commit:
+Inspect differences between the worktree and its base commit. The diff covers commits on the worktree branch, staged, unstaged and deleted files, and untracked files not matched by `.gitignore`; computing it does not change the worktree's index or `git status`:
 
 ```bash
 dovo worktree diff <worktree-id> [OPTIONS]

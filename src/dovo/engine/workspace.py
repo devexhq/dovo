@@ -11,7 +11,7 @@ from dovo.core.artifacts.artifacts import Artifacts
 from dovo.core.artifacts.store import ArtifactStore
 from dovo.core.config import ConfigLoadError
 from dovo.core.db import SessionStatus, WorktreesRepository
-from dovo.core.git.runner import GitRunner
+from dovo.core.git.tree_diff import diff_work_tree
 from dovo.core.worktree import Worktree, WorktreeApplyStrategy, WorktreeCreateResult, WorktreeSession
 from dovo.engine.models import RunSettings
 from dovo.engine.notify import safe_notify
@@ -208,8 +208,7 @@ class Workspace:
 
         session_id = self.context.session_id
         try:
-            GitRunner.add_intent_to_add(session.worktree_path, target=".")
-            diff_text = GitRunner.diff(session.worktree_path, base_commit=session.base_commit, binary=True)
+            diff_text = diff_work_tree(session.worktree_path, session.base_commit).diff_text
             session_dir = get_session_dir(self.context.paths, session_id)
             redactor = SecretRedactor.from_environment(
                 credential_envs=self.context.sensitive_variables, env_file_dir=self.context.paths.root_dir
