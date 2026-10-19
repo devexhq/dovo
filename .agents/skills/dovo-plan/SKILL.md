@@ -5,7 +5,8 @@ description: >-
   contract, ground every artifact in the tree, size the work and split it into
   phases that each become one PR, declare per-phase test stubs and what each phase
   deletes, and write the plan to .agentic/plan.md (with citations split into
-  .agentic/evidence.md when non-trivial). Invoked as /dovo-plan [<issue-number>].
+  .agentic/evidence.md when non-trivial) and its open questions to
+  .agentic/plan.json. Invoked as /dovo-plan [<issue-number>].
 disable-model-invocation: true
 ---
 
@@ -54,7 +55,34 @@ Structure `.agentic/plan.md` per planning.md Step 4, in this order: What you're 
 
 When the issue leaves a detail unspecified, choose the option consistent with the nearest existing pattern, record the rejected alternative, and add a numbered Open Question stating the assumed answer rather than stalling. Ask at most one clarifying question when a tradeoff needs confirmation first.
 
-## 5. Hand off
+## 5. Emit the machine-readable open questions
+
+Write `.agentic/plan.json` alongside the markdown. `.dovo/catalog/blueprints/feature-dev.yml` reads it to ask the human which open questions to answer, so it must agree with the plan's **Open questions** block entry for entry.
+
+```json
+{
+  "issue": 914,
+  "plan": ".agentic/plan.md",
+  "grounded_at": "8eb591cd",
+  "phases": 2,
+  "open_questions": [
+    {
+      "id": "OQ-1",
+      "summary": "Should `dovo session list` include discarded sessions by default? (assumed: no)",
+      "assumed": "No: discarded sessions are hidden unless `--all` is passed.",
+      "why": "Matches `dovo worktree list`, which hides removed worktrees (`src/dovo/cli/worktree/commands/worktree_list.py`).",
+      "alternatives": ["Show them with a `discarded` status column."],
+      "phases": [1]
+    }
+  ]
+}
+```
+
+- `issue` is the issue number, or `null` when planning from a plain-language request. `grounded_at` is the short sha from the plan's "Grounded against" line. `phases` is the number of rows in the Phases table.
+- `open_questions` lists every numbered Open Question in order, each with the `OQ-<n>` id from `plan.md`. `summary` is the one-line question followed by ` (assumed: <short answer>)`, since it is the only text the blueprint's pick-list shows for the question; `assumed` is the full answer the plan is written against, `why` the reason with its `path:line`, `alternatives` the rejected answers (`[]` when none), and `phases` the phase numbers whose instructions change if the answer changes.
+- `open_questions` is `[]` when the plan says "None."
+
+## 6. Hand off
 
 Run planning.md Step 5. Report the paths written, the Phases table, a one-paragraph summary, every numbered Open Question restated in chat, and plainly that this was planning only: nothing was implemented, tested, committed or pushed.
 
