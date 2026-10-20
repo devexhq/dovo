@@ -1,4 +1,4 @@
-"""Per-step execution and failure-policy coordination for the multi-step run engine."""
+"""Per-step execution coordination for the multi-step run engine."""
 
 from __future__ import annotations
 
@@ -19,60 +19,15 @@ from dovo.engine.executors.models import (
     StepResult,
 )
 from dovo.engine.executors.session_log import append_session_log_event
-from dovo.engine.failure import (
-    failed_step_message,
-    mark_continued_after_prompt,
-    step_failure_diagnostic,
-)
-from dovo.engine.models import FailurePromptDecision, RunContext, RunSettings, StepAction
+from dovo.engine.models import RunContext, RunSettings
 from dovo.engine.notify import safe_notify
 
 
 @dataclass(frozen=True)
 class StepCoordinator:
-    """Per-step execution and failure-policy coordination for one run's context."""
+    """Per-step execution coordination for one run's context."""
 
     context: RunSettings
-
-    @property
-    def is_interactive(self) -> bool:
-        """Return True when the run has a failure prompter and is not running with no_tty."""
-        return not self.context.no_tty and self.context.failure_prompter is not None
-
-    def prompt_decision(
-        self,
-        step: StepDefinition,
-        result: StepResult,
-    ) -> tuple[FailurePromptDecision, str | None]:
-        """Ask the prompter for a decision, degrading to abort with a warning when non-interactive."""
-        diagnostic = step_failure_diagnostic(result)
-        if self.context.no_tty or self.context.failure_prompter is None:
-            if self.context.no_tty:
-                warning = f"Warning: step '{step.id}' requested prompt_user but the run is non-interactive; aborting."
-            else:
-                warning = (
-                    f"Warning: step '{step.id}' requested prompt_user but no failure prompter is configured; aborting."
-                )
-            return FailurePromptDecision.ABORT, warning
-
-        decision = self.context.failure_prompter.prompt_step_failure(
-            step=step,
-            result=result,
-            diagnostic=diagnostic,
-        )
-        return decision, None
-
-    @staticmethod
-    def apply_prompt_decision(
-        decision: FailurePromptDecision,
-        result: StepResult,
-    ) -> tuple[StepAction, StepResult | None, str | None]:
-        """Map a prompt decision to ``(StepAction, result_to_record, error_message)``."""
-        if decision == FailurePromptDecision.RETRY:
-            return StepAction.RETRY, None, None
-        if decision == FailurePromptDecision.CONTINUE:
-            return StepAction.CONTINUE, mark_continued_after_prompt(result), None
-        return StepAction.ABORT, result, failed_step_message(result)
 
     def run_attempt(
         self,

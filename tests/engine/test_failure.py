@@ -8,12 +8,16 @@ from dovo.common.models import FailurePolicy, OnFailureSpec
 from dovo.engine.executors.models import StepResult
 from dovo.engine.failure import (
     USER_CONTINUED_MARKER,
+    apply_prompt_decision,
     effective_terminal_policy,
     mark_continued_after_prompt,
+    prompt_failure_decision,
     resolve_terminal_action,
     step_failure_diagnostic,
 )
-from dovo.engine.models import StepAction
+from dovo.engine.models import FailurePromptDecision, StepAction
+from tests.harness.builders import StepBuilder
+from tests.harness.sessions import ScriptedFailurePrompter
 
 
 class FailurePolicyHelperTests:
@@ -96,3 +100,79 @@ class ResolveTerminalActionTests:
             assert recorded.error_message.endswith(f"({USER_CONTINUED_MARKER})")
         else:
             assert recorded == failed
+
+
+def _failed_result() -> StepResult:
+    return StepResult(
+        step_id="fail",
+        status="failed",
+        exit_code=1,
+        stdout="",
+        stderr="",
+        duration_seconds=0.0,
+        error_message="boom",
+    )
+
+
+_PROMPT_STEP = StepBuilder.command("exit 1").with_id("fail").with_on_failure(FailurePolicy.PROMPT_USER).build()
+
+
+class FailurePromptDecisionTests:
+    """Contract tests for prompt_failure_decision and apply_prompt_decision."""
+
+    @pytest.mark.parametrize(
+        ("no_tty", "prompter", "warning"),
+        [
+            pytest.param(
+                True,
+                ScriptedFailurePrompter(),
+                "Warning: step 'fail' requested prompt_user but the run is non-interactive; aborting.",
+                id="no-tty",
+            ),
+            pytest.param(
+                False,
+                None,
+                "Warning: step 'fail' requested prompt_user but no failure prompter is configured; aborting.",
+                id="no-prompter",
+            ),
+        ],
+    )
+    def test_prompt_failure_decision_aborts_with_warning_when_non_interactive(
+        self, no_tty: bool, prompter: ScriptedFailurePrompter | None, warning: str
+    ) -> None:
+        """Return (ABORT, warning) with the exact text and never consult the prompter."""
+        decision = prompt_failure_decision(prompter, _PROMPT_STEP, _failed_result(), no_tty=no_tty)
+
+        assert decision == (FailurePromptDecision.ABORT, warning)
+        if prompter is not None:
+            assert prompter.prompted == []
+
+    def test_prompt_failure_decision_returns_the_prompter_decision(self) -> None:
+        """Return (RETRY, None) from a prompter queued with RETRY, which saw the result's diagnostic 'boom'."""
+        prompter = ScriptedFailurePrompter([FailurePromptDecision.RETRY])
+        failed = _failed_result()
+
+        decision = prompt_failure_decision(prompter, _PROMPT_STEP, failed, no_tty=False)
+
+        assert decision == (FailurePromptDecision.RETRY, None)
+        assert prompter.prompted == [failed]
+        assert prompter.diagnostics == ["boom"]
+
+    @pytest.mark.parametrize(
+        ("decision", "expected_action", "records", "message"),
+        [
+            pytest.param(FailurePromptDecision.RETRY, StepAction.RETRY, "nothing", None, id="retry"),
+            pytest.param(FailurePromptDecision.CONTINUE, StepAction.CONTINUE, "continued", None, id="continue"),
+            pytest.param(
+                FailurePromptDecision.ABORT, StepAction.ABORT, "failed", "Step 'fail' failed: boom", id="abort"
+            ),
+        ],
+    )
+    def test_apply_prompt_decision_maps_each_decision(
+        self, decision: FailurePromptDecision, expected_action: StepAction, records: str, message: str | None
+    ) -> None:
+        """Map RETRY to no record, CONTINUE to mark_continued_after_prompt(result), ABORT to the failed result and its message."""
+        failed = _failed_result()
+        expected_records = {"nothing": None, "continued": mark_continued_after_prompt(failed), "failed": failed}
+
+        assert apply_prompt_decision(decision, failed) == (expected_action, expected_records[records], message)

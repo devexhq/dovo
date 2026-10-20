@@ -1356,6 +1356,23 @@ class CoordinatorLoopCeilingTests:
         assert (outcome.status, outcome.errors, outcome.warnings) == (status, errors, warnings)
         assert prompter.loop_prompts == ([] if no_tty else [(2, 3)])
 
+    def test_prompt_user_ceiling_without_a_prompter_fails_as_non_interactive(
+        self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository
+    ) -> None:
+        """Fail with "Loop 'loop' reached max_iterations (2) and run is non-interactive." when no failure prompter is set."""
+        outcome = _run_new(
+            engine_paths,
+            sessions_repo,
+            "loop-no-prompter",
+            [_loop("loop", [_step("s", "true")], until=["iteration.index >= 99"])],
+        )
+
+        assert (outcome.status, outcome.errors, outcome.warnings) == (
+            SessionStatus.FAILED,
+            ["Loop 'loop' reached max_iterations (2) and run is non-interactive."],
+            [],
+        )
+
     def test_grant_decision_persists_larger_ceiling_and_runs_more_iterations(
         self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository
     ) -> None:

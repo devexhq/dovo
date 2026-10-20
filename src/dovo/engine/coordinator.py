@@ -20,8 +20,10 @@ from dovo.core.interaction import Interaction, InteractionAnswer, InteractionReq
 from dovo.engine.exceptions import EngineSnapshotMissingError
 from dovo.engine.executors.models import ExecutionIdentity, PreviousStepMetadata, StepResult
 from dovo.engine.failure import (
+    apply_prompt_decision,
     effective_terminal_policy,
     failed_step_message,
+    prompt_failure_decision,
     resolve_terminal_action,
 )
 from dovo.engine.loop_events import LoopEventEmitter
@@ -127,6 +129,11 @@ class RunCoordinator:
         if self._loaded is None:
             raise RuntimeError("RunCoordinator used before its run state was loaded.")
         return self._loaded
+
+    @property
+    def _interactive(self) -> bool:
+        """Return True when the run has a failure prompter and is not running with no_tty."""
+        return not self._context.no_tty and self._prompter is not None
 
     @property
     def steps(self) -> list[StepDefinition | LoopStepBlock]:
@@ -580,7 +587,7 @@ class RunCoordinator:
         """Apply a prompt_user ceiling: grant three more iterations (None), continue, or abort."""
         self._in_flight = loop
         ceiling = loop.iteration_ceiling
-        if self._prompter is None or not self._run.step_coordinator.is_interactive:
+        if self._prompter is None or not self._interactive:
             diagnostic = f"Loop '{loop.id}' reached max_iterations ({ceiling}) and run is non-interactive."
             return self._finish_loop(loop, iteration, events, failed=True, diagnostic=diagnostic)
 
@@ -648,20 +655,19 @@ class RunCoordinator:
         result: StepResult,
     ) -> NodeTransitionKind:
         """Persist the PAUSED state, ask for a decision, and apply it as retry, continue, or abort."""
-        step_coordinator = self._run.step_coordinator
-        interactive = step_coordinator.is_interactive
+        interactive = self._interactive
         if interactive and not self._persist_paused(node, result):
             return NodeTransitionKind.FAILED
 
         try:
-            decision, warning = step_coordinator.prompt_decision(step_def, result)
+            decision, warning = prompt_failure_decision(self._prompter, step_def, result, no_tty=self._context.no_tty)
         except KeyboardInterrupt:
             self._errors.append(failed_step_message(result))
             return NodeTransitionKind.PAUSED
 
         if warning is not None:
             self._warnings.append(warning)
-        action, recorded, _ = step_coordinator.apply_prompt_decision(decision, result)
+        action, recorded, _ = apply_prompt_decision(decision, result)
         return self._apply_action(node, action, recorded or result, SessionStatus.RUNNING if interactive else None)
 
     def _persist_paused(self, node: ExecutionLeafNode, result: StepResult) -> bool:

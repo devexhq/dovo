@@ -13,7 +13,7 @@ from dovo.core.agents.models import ResolvedAgentSettings
 from dovo.core.worktree import WorktreeSession
 from dovo.engine.executors.models import AgentProgressUpdate, StepExecutionContext, StepResult
 from dovo.engine.executors.step_executor import StepExecution
-from dovo.engine.models import FailurePromptDecision, RunContext, RunSettings, StepAction
+from dovo.engine.models import RunContext, RunSettings
 from dovo.engine.step_coordinator import StepCoordinator
 from tests.engine.conftest import AgentRunnerBuild
 from tests.harness.builders import StepBuilder
@@ -245,32 +245,3 @@ class StepCoordinatorPrimitiveTests:
         StepCoordinator(context).run_attempt(_run_context(tmp_path), warnings, step, idx=1, total=1)
 
         assert warnings == ["w1"]
-
-    def test_prompt_decision_interactive_returns_prompter_decision(self, tmp_path: Path) -> None:
-        prompter = ScriptedFailurePrompter([FailurePromptDecision.RETRY])
-        context = RunSettings(
-            cwd=tmp_path, use_worktree=False, failure_prompter=prompter, paths=initialized_workspace_paths(tmp_path)
-        )
-        step = StepBuilder.command("exit 1").with_id("fail").with_on_failure(FailurePolicy.PROMPT_USER).build()
-        failed = StepResult(step_id="fail", status="failed", exit_code=1, stdout="", stderr="", duration_seconds=0.0)
-        coordinator = StepCoordinator(context)
-
-        assert coordinator.prompt_decision(step, failed) == (FailurePromptDecision.RETRY, None)
-        assert coordinator.is_interactive is True
-
-    def test_apply_prompt_decision_retry_records_nothing(self) -> None:
-        failed = StepResult(
-            step_id="fail",
-            status="failed",
-            exit_code=1,
-            stdout="",
-            stderr="",
-            duration_seconds=0.0,
-            error_message="boom",
-        )
-
-        assert StepCoordinator.apply_prompt_decision(FailurePromptDecision.RETRY, failed) == (
-            StepAction.RETRY,
-            None,
-            None,
-        )
