@@ -8,6 +8,7 @@ from pathlib import Path
 import pytest
 
 from dovo.common.constants import SESSION_LOG_FILENAME
+from dovo.common.filesystem import WorkspacePaths
 from dovo.common.models import FailurePolicy
 from dovo.core.agents import (
     AgentProgress,
@@ -19,7 +20,7 @@ from dovo.core.agents import (
 )
 from dovo.core.catalog.definitions import StepAssert, StepDefinition
 from dovo.core.sessions import SessionLogEvent, SessionLogEventType
-from dovo.engine.executors.agent_step import MISSING_SETTINGS_MESSAGE, build_agent_step_runner
+from dovo.engine.executors.agent_step import build_agent_step_runner
 from dovo.engine.executors.models import (
     AgentProgressSink,
     AgentProgressUpdate,
@@ -33,6 +34,7 @@ from dovo.engine.executors.models import (
 from dovo.engine.executors.step_executor import StepExecution
 from tests.harness import AGENT_ADAPTER_FACTORY, FakeAgentProvider
 from tests.harness.builders import StepBuilder
+from tests.harness.catalog import write_runnable_step
 
 
 def _settings() -> ResolvedAgentSettings:
@@ -150,16 +152,18 @@ class AgentStepRunnerTests:
 
 
 class StepExecutionAgentRunnerTests:
-    def test_agent_step_without_agent_runner_fails_with_missing_settings_message(self, git_repo: Path) -> None:
-        context = StepExecutionContext(step=StepBuilder.agent("plan").build(), worktree_path=git_repo)
+    def test_uses_step_resolving_to_agent_without_runner_raises(
+        self, engine_workspace: Path, engine_paths: WorkspacePaths, tmp_path: Path
+    ) -> None:
+        write_runnable_step(
+            engine_workspace, key="planner", definition={"id": "planner", "type": "agent", "prompt": "plan"}
+        )
+        context = StepExecutionContext(
+            step=StepDefinition(id="s1", uses="planner"), worktree_path=tmp_path, paths=engine_paths
+        )
 
-        result = StepExecution(context).run()
-
-        assert result.status == "failed"
-        assert result.exit_code == 1
-        assert result.error_message == MISSING_SETTINGS_MESSAGE
-        assert result.stdout == ""
-        assert result.stderr == ""
+        with pytest.raises(ValueError, match=r"Step 's1' is an agent step and requires an agent runner\."):
+            StepExecution(context).run()
 
 
 class AgentRunnerAttemptIdentityTests:

@@ -26,7 +26,6 @@ from dovo.core.catalog.services.resolve_step import resolve_step_definition
 from dovo.core.inputs.exceptions import NamespaceResolutionError
 from dovo.core.inputs.services.interpolate import NamespaceProvider, build_providers, interpolate_step_fields
 from dovo.engine.executors.agent_progress import AgentProgressReporter
-from dovo.engine.executors.agent_step import MISSING_SETTINGS_MESSAGE
 from dovo.engine.executors.artifact_namespace import ArtifactNamespaceProvider
 from dovo.engine.executors.internal_dispatch import INTERNAL_COMMAND_HANDLERS
 from dovo.engine.executors.metadata import (
@@ -43,6 +42,7 @@ from dovo.engine.executors.models import (
     StepDispatchOutcome,
     StepExecutionContext,
     StepResult,
+    require_agent_runner,
 )
 from dovo.engine.executors.postconditions import build_postconditions
 
@@ -347,9 +347,7 @@ class StepExecution:
 
     def _execute_agent(self, metadata: ExecutionMetadata) -> StepDispatchOutcome:
         """Execute an AGENT step through the injected runner, appending its masked provider lines to the attempt's stdout and stderr logs."""
-        if self.agent_runner is None:
-            return _failed_dispatch(MISSING_SETTINGS_MESSAGE)
-
+        runner = require_agent_runner(self.step, self.agent_runner)
         self._refresh_redactor(self._build_process_env(metadata))
         stdout_log, stderr_log = self._open_attempt_logs(metadata)
         # Each stream is written by its own reader thread, so each handle has a single writer.
@@ -370,7 +368,7 @@ class StepExecution:
         )
 
         try:
-            return self.agent_runner(
+            return runner(
                 self.step,
                 self.worktree_path,
                 self.on_output,
