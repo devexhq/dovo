@@ -1,8 +1,8 @@
 """Execution runner for diagnostic checks with containment, filtering, and timing."""
 
-import time
 from typing import Final
 
+from dovo.common.timing import Stopwatch
 from dovo.core.config.models import DovoConfig
 from dovo.core.diagnostics.models import (
     CheckCategory,
@@ -49,30 +49,30 @@ def execute_single_check(
     check: DiagnosticCheck,
     context: DiagnosticsContext,
 ) -> DiagnosticCheckResult:
-    """Execute a single check with exception containment, timing, and remediation enrichment."""
-    start_time = time.perf_counter()
+    """Execute a single check with exception containment, measured duration, and remediation enrichment."""
+    watch = Stopwatch.start()
     try:
         result = check.execute(context)
-        elapsed_ms = (time.perf_counter() - start_time) * 1000.0
-        if result.duration_ms == 0.0:
-            result = result.model_copy(update={"duration_ms": elapsed_ms})
-        return _with_remediations(result)
     except Exception as exc:
-        elapsed_ms = (time.perf_counter() - start_time) * 1000.0
-        result = DiagnosticCheckResult(
-            check_id=check.check_id,
-            name=check.name,
-            category=check.category,
-            status=CheckStatus.FAILED,
-            message=f"Unhandled exception during check execution: {exc}",
-            details={"exception": str(exc), "type": type(exc).__name__},
-            duration_ms=elapsed_ms,
-            error_code="DOCTOR_CHECK_CRASH",
-            errors=[f"Unhandled exception in {check.check_id}: {exc}"],
-            warnings=[],
-            fixes=[],
-        )
-        return _with_remediations(result)
+        result = _crash_result(check, exc)
+    watch.stop()
+    return _with_remediations(result.model_copy(update={"duration_seconds": watch.elapsed_seconds}))
+
+
+def _crash_result(check: DiagnosticCheck, exc: Exception) -> DiagnosticCheckResult:
+    """Return the FAILED DOCTOR_CHECK_CRASH result for a check that raised exc."""
+    return DiagnosticCheckResult(
+        check_id=check.check_id,
+        name=check.name,
+        category=check.category,
+        status=CheckStatus.FAILED,
+        message=f"Unhandled exception during check execution: {exc}",
+        details={"exception": str(exc), "type": type(exc).__name__},
+        error_code="DOCTOR_CHECK_CRASH",
+        errors=[f"Unhandled exception in {check.check_id}: {exc}"],
+        warnings=[],
+        fixes=[],
+    )
 
 
 def _with_remediations(result: DiagnosticCheckResult) -> DiagnosticCheckResult:
@@ -92,7 +92,7 @@ class DiagnosticRunner:
         categories: list[CheckCategory] | None = None,
     ) -> DiagnosticsReport:
         """Execute filtered checks against context, measuring durations and producing DiagnosticsReport."""
-        start_time = time.perf_counter()
+        watch = Stopwatch.start()
         candidate_checks = self.registry.all()
         checks_to_run = filter_checks_by_categories(candidate_checks, categories)
 
@@ -107,7 +107,6 @@ class DiagnosticRunner:
                         status=CheckStatus.SKIPPED,
                         message=f"Check '{check.check_id}' skipped by configuration.",
                         details={},
-                        duration_ms=0.0,
                         error_code=None,
                         errors=[],
                         warnings=[],
@@ -117,9 +116,9 @@ class DiagnosticRunner:
             else:
                 results.append(execute_single_check(check, context))
 
-        total_duration_ms = (time.perf_counter() - start_time) * 1000.0
+        watch.stop()
         return DiagnosticsReport(
             workspace_root=context.cwd,
             checks=results,
-            total_duration_ms=total_duration_ms,
+            duration_seconds=watch.elapsed_seconds,
         )

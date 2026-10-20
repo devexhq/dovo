@@ -96,14 +96,14 @@ class DoctorCliIntegrationTests:
         assert envelope["event_type"] == "DiagnosticsReport"
 
         payload = envelope["payload"]
-        total_duration_ms = payload.pop("total_duration_ms")
-        assert isinstance(total_duration_ms, float)
-        assert total_duration_ms >= 0.0
+        duration_seconds = payload.pop("duration_seconds")
+        assert isinstance(duration_seconds, float)
+        assert duration_seconds >= 0.0
 
         check_payload = payload["checks"][0]
-        check_duration_ms = check_payload.pop("duration_ms")
-        assert isinstance(check_duration_ms, float)
-        assert check_duration_ms >= 0.0
+        check_duration_seconds = check_payload.pop("duration_seconds")
+        assert isinstance(check_duration_seconds, float)
+        assert check_duration_seconds >= 0.0
 
         assert payload == {
             "ok": True,

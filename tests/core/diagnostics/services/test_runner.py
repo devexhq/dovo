@@ -26,6 +26,15 @@ from tests.harness.builders import StubCheck
 
 WorkspacePathsFactory = Callable[[Path, Path | None], WorkspacePaths]
 
+T0 = "2026-10-19T12:00:00+00:00"
+
+
+def _patch_clocks(monkeypatch: pytest.MonkeyPatch, ticks: list[float]) -> None:
+    """Patch dovo.common.timing.monotonic to return ticks in order and utc_now to return T0."""
+    tick_sequence = iter(ticks)
+    monkeypatch.setattr("dovo.common.timing.monotonic", lambda: next(tick_sequence))
+    monkeypatch.setattr("dovo.common.timing.utc_now", lambda: T0)
+
 
 class DiagnosticRunnerFilteringTests:
     """Unit tests for DiagnosticRunner category filtering contracts."""
@@ -151,6 +160,7 @@ class DiagnosticRunnerConfigToggleTests:
         assert res.name == check.name
         assert res.category == category
         assert res.status == CheckStatus.SKIPPED
+        assert res.duration_seconds == 0.0
         assert res.message == f"Check '{check_id}' skipped by configuration."
 
     def test_config_none_does_not_skip_checks(
@@ -233,7 +243,7 @@ class DiagnosticRunnerContainmentTests:
 class DiagnosticRunnerMetricsTests:
     """Unit tests for DiagnosticRunner execution duration metrics."""
 
-    def test_total_duration_ms_sums_check_execution_and_overhead(
+    def test_duration_seconds_measures_each_check_and_report_total(
         self,
         tmp_path: Path,
         monkeypatch: pytest.MonkeyPatch,
@@ -246,26 +256,45 @@ class DiagnosticRunnerMetricsTests:
         registry.register(check1)
         registry.register(check2)
 
-        # Sequence of 6 perf_counter ticks:
+        # Sequence of 6 monotonic ticks:
         # 1. run_checks start:          10.0s
-        # 2. check1 start:              11.0s (1000ms overhead before check1)
-        # 3. check1 end:                13.0s (2000ms execution time)
-        # 4. check2 start:              14.0s (1000ms overhead between checks)
-        # 5. check2 end:                17.0s (3000ms execution time)
-        # 6. run_checks finish:         20.0s (3000ms overhead after checks)
-        tick_sequence = iter([10.0, 11.0, 13.0, 14.0, 17.0, 20.0])
-        monkeypatch.setattr(
-            "dovo.core.diagnostics.services.runner.time.perf_counter",
-            lambda: next(tick_sequence),
-        )
+        # 2. check1 start:              11.0s (1s overhead before check1)
+        # 3. check1 end:                13.0s (2s execution time)
+        # 4. check2 start:              14.0s (1s overhead between checks)
+        # 5. check2 end:                17.0s (3s execution time)
+        # 6. run_checks finish:         20.0s (3s overhead after checks)
+        _patch_clocks(monkeypatch, [10.0, 11.0, 13.0, 14.0, 17.0, 20.0])
 
         runner = DiagnosticRunner(registry=registry)
         context = DiagnosticsContext(cwd=tmp_path, config=None, paths=workspace_paths_factory(tmp_path, None))
 
         report = runner.run_checks(context)
 
-        assert report.checks[0].duration_ms == 2000.0
-        assert report.checks[1].duration_ms == 3000.0
-        assert report.total_duration_ms == 10000.0
+        assert report.checks[0].duration_seconds == 2.0
+        assert report.checks[1].duration_seconds == 3.0
+        assert report.duration_seconds == 10.0
         assert [c.check_id for c in report.checks] == ["c1", "c2"]
         assert report.workspace_root == tmp_path
+
+    @pytest.mark.parametrize(
+        ("check", "ticks", "expected"),
+        [
+            pytest.param(StubCheck(duration_seconds=99.0), [1.0, 1.5], 0.5, id="self_reported"),
+            pytest.param(StubCheck(crash=RuntimeError("boom")), [5.0, 5.25], 0.25, id="crash"),
+        ],
+    )
+    def test_execute_single_check_reports_measured_duration(
+        self,
+        check: StubCheck,
+        ticks: list[float],
+        expected: float,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        workspace_paths_factory: WorkspacePathsFactory,
+    ) -> None:
+        _patch_clocks(monkeypatch, ticks)
+        context = DiagnosticsContext(cwd=tmp_path, config=None, paths=workspace_paths_factory(tmp_path, None))
+
+        result = execute_single_check(check, context)
+
+        assert result.duration_seconds == expected
