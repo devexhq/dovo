@@ -3,13 +3,13 @@ from pathlib import Path
 from types import MappingProxyType
 from typing import Any, Final, Protocol
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from dovo.common.filesystem import WorkspacePaths
 from dovo.common.models import BaseResult
 from dovo.core.agents.models import AgentProgress, AgentProgressKind, AgentResponseStatus
 from dovo.core.artifacts.store import ArtifactStore
-from dovo.core.catalog.definitions import StepDefinition
+from dovo.core.catalog.definitions import StepDefinition, StepType
 from dovo.core.interaction import InteractionRequest
 
 
@@ -169,6 +169,13 @@ AgentStepRunner = Callable[
 ]
 
 
+def require_agent_runner(step: StepDefinition, runner: AgentStepRunner | None) -> AgentStepRunner:
+    """Return runner, raising ValueError naming the step when an agent step has none."""
+    if runner is None:
+        raise ValueError(f"Step '{step.id}' is an agent step and requires an agent runner.")
+    return runner
+
+
 class StepExecutionContext(BaseModel):
     """Structured metadata for a step execution."""
 
@@ -195,6 +202,13 @@ class StepExecutionContext(BaseModel):
     paths: WorkspacePaths | None = None
     agent_runner: AgentStepRunner | None = None
     sensitive_variables: tuple[str, ...] = ()
+
+    @model_validator(mode="after")
+    def validate_agent_runner(self) -> "StepExecutionContext":
+        """Reject an agent step that has no agent runner."""
+        if self.step.type == StepType.AGENT:
+            require_agent_runner(self.step, self.agent_runner)
+        return self
 
 
 class InternalCommandContext(BaseModel):

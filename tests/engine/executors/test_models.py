@@ -2,11 +2,45 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 from pydantic import ValidationError
 
 from dovo.core.agents import AgentResponseStatus
-from dovo.engine.executors.models import AgentStepSummary
+from dovo.core.catalog.definitions import StepDefinition, StepType
+from dovo.engine.executors.models import (
+    AgentProgressSink,
+    AgentStepSummary,
+    ExecutionMetadata,
+    OutputCallback,
+    StepDispatchOutcome,
+    StepExecutionContext,
+)
+from tests.harness.builders import StepBuilder
+
+
+def _runner(
+    step: StepDefinition,
+    worktree: Path,
+    on_output: OutputCallback | None,
+    on_agent_line: OutputCallback | None,
+    progress: AgentProgressSink,
+    metadata: ExecutionMetadata,
+) -> StepDispatchOutcome:
+    return StepDispatchOutcome(status="completed", exit_code=0, stdout="", stderr="")
+
+
+def _non_agent_step(kind: str) -> StepDefinition:
+    if kind == "command":
+        return StepBuilder.command("echo ok").build()
+    if kind == "script":
+        return StepBuilder.script("run.sh").build()
+    if kind == "internal":
+        return StepDefinition(id="s1", type=StepType.INTERNAL, command="artifacts.upload")
+    return StepDefinition.model_validate(
+        {"id": "approve", "type": "ask", "interaction": {"mode": "confirm", "message": "Go?"}}
+    )
 
 
 class AgentStepSummaryTests:
@@ -36,3 +70,22 @@ class AgentStepSummaryTests:
         self, status: AgentResponseStatus, expected: bool
     ) -> None:
         assert AgentStepSummary(status=status).succeeded is expected
+
+
+class StepExecutionContextTests:
+    def test_agent_step_without_runner_raises_naming_step_id(self, tmp_path: Path) -> None:
+        step = StepBuilder.agent("plan").with_id("plan").build()
+
+        with pytest.raises(ValidationError, match=r"Step 'plan' is an agent step and requires an agent runner\."):
+            StepExecutionContext(step=step, worktree_path=tmp_path)
+
+    @pytest.mark.parametrize("with_runner", [True, False], ids=["with-runner", "without-runner"])
+    @pytest.mark.parametrize("kind", ["command", "script", "internal", "ask"])
+    def test_non_agent_step_constructs_with_or_without_runner(
+        self, tmp_path: Path, kind: str, with_runner: bool
+    ) -> None:
+        runner = _runner if with_runner else None
+
+        context = StepExecutionContext(step=_non_agent_step(kind), worktree_path=tmp_path, agent_runner=runner)
+
+        assert context.agent_runner is runner
