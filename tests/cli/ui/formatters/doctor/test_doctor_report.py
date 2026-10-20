@@ -31,7 +31,7 @@ OK_CHECK = DiagnosticCheckResult(
     status=CheckStatus.OK,
     message="Git repository detected at '/workspace/my-repo' on branch 'main'.",
     details={"root": "/workspace/my-repo", "branch": "main"},
-    duration_ms=2.1,
+    duration_seconds=0.0021,
     error_code=None,
     errors=[],
     warnings=[],
@@ -45,7 +45,7 @@ WARNING_CHECK = DiagnosticCheckResult(
     status=CheckStatus.WARNING,
     message="Agent provider 'copilot' has no model configured.",
     details={"provider": "copilot"},
-    duration_ms=0.5,
+    duration_seconds=0.0005,
     error_code="DOCTOR_AGENT_NO_MODEL",
     errors=[],
     warnings=["Agent provider 'copilot' has no model configured."],
@@ -72,7 +72,7 @@ FAILED_CHECK = DiagnosticCheckResult(
     status=CheckStatus.FAILED,
     message="Configuration file not found at '/workspace/my-repo/.dovo/config.json'.",
     details={},
-    duration_ms=0.3,
+    duration_seconds=0.0003,
     error_code="DOCTOR_CONFIG_NOT_FOUND",
     errors=["Configuration file not found at '/workspace/my-repo/.dovo/config.json'."],
     warnings=[],
@@ -96,7 +96,7 @@ SKIPPED_CHECK = DiagnosticCheckResult(
     status=CheckStatus.SKIPPED,
     message="Check 'worktree.refs' skipped by configuration.",
     details={},
-    duration_ms=0.0,
+    duration_seconds=0.0,
     error_code=None,
     errors=[],
     warnings=[],
@@ -113,7 +113,7 @@ def _check_view(check: DiagnosticCheckResult) -> DoctorCheckView:
         status=check.status,
         message=check.message,
         details=check.details,
-        duration_ms=check.duration_ms,
+        duration_seconds=check.duration_seconds,
         error_code=check.error_code,
         errors=check.errors,
         warnings=check.warnings,
@@ -125,13 +125,13 @@ MIXED_STATUS = FormatterCase(
     data=DiagnosticsReport(
         workspace_root=ROOT,
         checks=[OK_CHECK, WARNING_CHECK, FAILED_CHECK, SKIPPED_CHECK],
-        total_duration_ms=12.4,
+        duration_seconds=0.0124,
     ),
     view=DoctorReportView(
         ok=False,
         has_warnings=True,
         workspace_root=ROOT,
-        total_duration_ms=12.4,
+        duration_seconds=0.0124,
         checks=[_check_view(c) for c in (OK_CHECK, WARNING_CHECK, FAILED_CHECK, SKIPPED_CHECK)],
     ),
     render_expectations=[
@@ -143,7 +143,7 @@ MIXED_STATUS = FormatterCase(
         "FAILED",
         "worktree.refs",
         "SKIPPED",
-        "4 checks: 1 ok, 1 warning, 1 failed (12.4ms)",
+        "4 checks: 1 ok, 1 warning, 1 failed (0.012s)",
         "Configure agent model:",
         'dovo config set agents.copilot.model "<model>"',
         "Initialize Dovo workspace:",
@@ -152,9 +152,9 @@ MIXED_STATUS = FormatterCase(
 )
 
 EMPTY_CHECKS = FormatterCase(
-    data=DiagnosticsReport(workspace_root=ROOT, checks=[], total_duration_ms=0.0),
-    view=DoctorReportView(ok=True, has_warnings=False, workspace_root=ROOT, total_duration_ms=0.0, checks=[]),
-    render_expectations=["0 checks: 0 ok, 0 warning, 0 failed (0.0ms)"],
+    data=DiagnosticsReport(workspace_root=ROOT, checks=[], duration_seconds=0.0),
+    view=DoctorReportView(ok=True, has_warnings=False, workspace_root=ROOT, duration_seconds=0.0, checks=[]),
+    render_expectations=["0 checks: 0 ok, 0 warning, 0 failed (0.000s)"],
 )
 
 DOCTOR_REPORT_CASES = [
@@ -164,12 +164,12 @@ DOCTOR_REPORT_CASES = [
 
 DOCTOR_REPORT_PAYLOAD_CASES = [
     pytest.param(
-        DiagnosticsReport(workspace_root=ROOT, checks=[WARNING_CHECK, FAILED_CHECK], total_duration_ms=12.4),
+        DiagnosticsReport(workspace_root=ROOT, checks=[WARNING_CHECK, FAILED_CHECK], duration_seconds=0.0124),
         {
             "ok": False,
             "has_warnings": True,
             "workspace_root": "/workspace/my-repo",
-            "total_duration_ms": 12.4,
+            "duration_seconds": 0.0124,
             "checks": [
                 {
                     "check_id": "agent.setup",
@@ -178,7 +178,7 @@ DOCTOR_REPORT_PAYLOAD_CASES = [
                     "status": "warning",
                     "message": "Agent provider 'copilot' has no model configured.",
                     "details": {"provider": "copilot"},
-                    "duration_ms": 0.5,
+                    "duration_seconds": 0.0005,
                     "error_code": "DOCTOR_AGENT_NO_MODEL",
                     "errors": [],
                     "warnings": ["Agent provider 'copilot' has no model configured."],
@@ -204,7 +204,7 @@ DOCTOR_REPORT_PAYLOAD_CASES = [
                     "status": "failed",
                     "message": "Configuration file not found at '/workspace/my-repo/.dovo/config.json'.",
                     "details": {},
-                    "duration_ms": 0.3,
+                    "duration_seconds": 0.0003,
                     "error_code": "DOCTOR_CONFIG_NOT_FOUND",
                     "errors": ["Configuration file not found at '/workspace/my-repo/.dovo/config.json'."],
                     "warnings": [],
@@ -233,7 +233,7 @@ DOCTOR_REPORT_PAYLOAD_CASES = [
             "ok": True,
             "has_warnings": False,
             "workspace_root": "/workspace/my-repo",
-            "total_duration_ms": 0.0,
+            "duration_seconds": 0.0,
             "checks": [],
         },
         id="empty_checks",

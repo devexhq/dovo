@@ -24,7 +24,7 @@ def diagnostic_result(**overrides: object) -> DiagnosticCheckResult:
 
 
 class StubCheck(DiagnosticCheck):
-    """DiagnosticCheck that records its context and returns a result with its own identity, or raises crash."""
+    """DiagnosticCheck that records its context and returns a result with its own identity and duration_seconds, or raises crash."""
 
     def __init__(
         self,
@@ -34,12 +34,14 @@ class StubCheck(DiagnosticCheck):
         category: CheckCategory = CheckCategory.GIT,
         status: CheckStatus = CheckStatus.OK,
         crash: Exception | None = None,
+        duration_seconds: float = 0.0,
     ) -> None:
         self.check_id = check_id
         self.name = name
         self.category = category
         self.status = status
         self.crash = crash
+        self.duration_seconds = duration_seconds
         self.executed = False
         self.captured_context: DiagnosticsContext | None = None
 
@@ -55,4 +57,5 @@ class StubCheck(DiagnosticCheck):
             category=self.category,
             status=self.status,
             message=f"Executed {self.check_id}",
+            duration_seconds=self.duration_seconds,
         )

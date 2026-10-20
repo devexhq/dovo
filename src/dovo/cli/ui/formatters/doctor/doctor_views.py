@@ -21,7 +21,7 @@ class DoctorCheckView(BaseModel):
     status: CheckStatus
     message: str
     details: dict[str, Any]
-    duration_ms: float
+    duration_seconds: float
     error_code: str | None
     errors: list[str]
     warnings: list[str]
@@ -36,5 +36,5 @@ class DoctorReportView(BaseModel):
     ok: bool
     has_warnings: bool
     workspace_root: Path
-    total_duration_ms: float
+    duration_seconds: float
     checks: list[DoctorCheckView]

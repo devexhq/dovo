@@ -74,7 +74,7 @@ class DiagnosticCheckResult(BaseResult):
     status: CheckStatus
     message: str
     details: dict[str, Any] = Field(default_factory=dict)
-    duration_ms: float = 0.0
+    duration_seconds: float = 0.0
     remediations: list[Remediation] = Field(default_factory=list)
 
     @property
@@ -90,7 +90,7 @@ class DiagnosticsReport(BaseModel):
 
     workspace_root: Path
     checks: list[DiagnosticCheckResult]
-    total_duration_ms: float = 0.0
+    duration_seconds: float = 0.0
 
     @property
     def ok(self) -> bool:

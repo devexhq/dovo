@@ -41,13 +41,13 @@ def _build_checks_table(view: DoctorReportView) -> Table:
 
 
 def _summary_line(view: DoctorReportView) -> str:
-    """Return '{n} checks: {ok} ok, {warning} warning, {failed} failed ({total_duration_ms:.1f}ms)' counted from view.checks."""
+    """Return '{n} checks: {ok} ok, {warning} warning, {failed} failed ({duration_seconds:.3f}s)' counted from view.checks."""
     ok_count = sum(1 for check in view.checks if check.status == CheckStatus.OK)
     warning_count = sum(1 for check in view.checks if check.status == CheckStatus.WARNING)
     failed_count = sum(1 for check in view.checks if check.status == CheckStatus.FAILED)
     return (
         f"{len(view.checks)} checks: {ok_count} ok, {warning_count} warning, "
-        f"{failed_count} failed ({view.total_duration_ms:.1f}ms)"
+        f"{failed_count} failed ({view.duration_seconds:.3f}s)"
     )
 
 
@@ -65,7 +65,7 @@ class DoctorReportFormatter(ComponentFormatter[DiagnosticsReport, DoctorReportVi
             ok=data.ok,
             has_warnings=data.has_warnings,
             workspace_root=data.workspace_root,
-            total_duration_ms=data.total_duration_ms,
+            duration_seconds=data.duration_seconds,
             checks=[
                 DoctorCheckView(
                     check_id=check.check_id,
@@ -74,7 +74,7 @@ class DoctorReportFormatter(ComponentFormatter[DiagnosticsReport, DoctorReportVi
                     status=check.status,
                     message=check.message,
                     details=check.details,
-                    duration_ms=check.duration_ms,
+                    duration_seconds=check.duration_seconds,
                     error_code=check.error_code,
                     errors=check.errors,
                     warnings=check.warnings,

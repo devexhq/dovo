@@ -96,7 +96,7 @@ class DiagnosticsReportModelsTests:
         report = DiagnosticsReport(
             workspace_root=tmp_path,
             checks=[check1, check2],
-            total_duration_ms=1.0,
+            duration_seconds=1.0,
         )
 
         assert report.ok is True
@@ -108,7 +108,7 @@ class DiagnosticsReportModelsTests:
         report = DiagnosticsReport(
             workspace_root=tmp_path,
             checks=[check_ok, check_failed],
-            total_duration_ms=3.5,
+            duration_seconds=3.5,
         )
 
         assert report.ok is False
@@ -118,7 +118,7 @@ class DiagnosticsReportModelsTests:
         report = DiagnosticsReport(
             workspace_root=tmp_path,
             checks=[check_warn],
-            total_duration_ms=1.2,
+            duration_seconds=1.2,
         )
 
         assert report.ok is True
@@ -133,7 +133,7 @@ class DiagnosticsReportModelsTests:
         report = DiagnosticsReport(
             workspace_root=tmp_path,
             checks=[check_ok, check_warn, check_fail, check_skip],
-            total_duration_ms=5.0,
+            duration_seconds=5.0,
         )
 
         assert report.ok is False
