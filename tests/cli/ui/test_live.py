@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 import io
+from collections.abc import Callable
+from typing import ClassVar
 
 import pytest
-from rich.console import Console
+from rich.console import Console, RenderableType
+from rich.live import Live
 
 from dovo.cli.ui.dispatcher import UiDispatcher
 from dovo.cli.ui.events import LoopLifecycleEvent, StepDoneEvent, StepStartEvent
@@ -83,6 +86,29 @@ def _script_clock(monkeypatch: pytest.MonkeyPatch, readings: list[float]) -> Non
     monkeypatch.setattr("dovo.common.timing.monotonic", lambda: next(sequence))
 
 
+class _ManualLive(Live):
+    """Live without its refresh thread, so a test triggers each redraw the thread would make."""
+
+    instances: ClassVar[list[_ManualLive]] = []
+
+    def __init__(
+        self,
+        *,
+        console: Console,
+        refresh_per_second: float,
+        transient: bool,
+        get_renderable: Callable[[], RenderableType],
+    ) -> None:
+        super().__init__(
+            console=console,
+            auto_refresh=False,
+            refresh_per_second=refresh_per_second,
+            transient=transient,
+            get_renderable=get_renderable,
+        )
+        _ManualLive.instances.append(self)
+
+
 class LiveStepElapsedTests:
     def test_running_row_shows_live_stopwatch_seconds(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Render '2.5s' for a started step with readings [10.0, 12.5]."""
@@ -91,6 +117,23 @@ class LiveStepElapsedTests:
         manager.handle_step_start(StepStartEvent(idx=1, total=1, step_id="build", name="build"))
 
         rendered = render_rich(build_live_step_table(manager.steps))
+
+        assert "2.5s" in rendered
+
+    def test_live_redraw_without_an_event_advances_running_row(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Render '2.5s' when the Live display redraws at clock 12.5 for a step started at 10.0 with no event since."""
+        now = [10.0]
+        monkeypatch.setattr("dovo.common.timing.monotonic", lambda: now[0])
+        monkeypatch.setattr("dovo.cli.ui.live.Live", _ManualLive)
+        output = io.StringIO()
+        manager = LiveDisplayManager(_terminal_console(output))
+        manager.start()
+        manager.handle_step_start(StepStartEvent(idx=1, total=1, step_id="build", name="build"))
+
+        now[0] = 12.5
+        _ManualLive.instances[-1].refresh()
+        rendered = output.getvalue()
+        manager.stop()
 
         assert "2.5s" in rendered
 

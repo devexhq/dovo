@@ -211,10 +211,10 @@ class LiveDisplayManager:
         if self._live is not None:
             return
         self._live = Live(
-            self._build_renderable(),
             console=self.console,
             refresh_per_second=4,
             transient=False,
+            get_renderable=self._build_renderable,
         )
         self._live.__enter__()
 
@@ -224,7 +224,7 @@ class LiveDisplayManager:
             return
         self._active_step_name = None
         self._active_output.clear()
-        self._live.update(self._build_renderable())
+        self._live.refresh()
         self._live.__exit__(None, None, None)
         self._live = None
 
@@ -313,6 +313,6 @@ class LiveDisplayManager:
         )
 
     def _refresh(self) -> None:
-        """Update the active Live display instance with latest renderables."""
+        """Redraw the active Live display now; its auto-refresh also rebuilds the renderable between events."""
         if self._live is not None:
-            self._live.update(self._build_renderable())
+            self._live.refresh()

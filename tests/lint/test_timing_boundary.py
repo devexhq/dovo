@@ -11,7 +11,9 @@ import pytest
 from tests.lint.astlib import REPO_ROOT, SRC_ROOT, collect_python_files
 
 TIMING_MODULE: Final[Path] = SRC_ROOT / "common" / "timing.py"
-CLOCK_FUNCTIONS: Final[frozenset[str]] = frozenset({"monotonic", "perf_counter", "time"})
+CLOCK_FUNCTIONS: Final[frozenset[str]] = frozenset(
+    {"monotonic", "monotonic_ns", "perf_counter", "perf_counter_ns", "time", "time_ns"}
+)
 
 # Deadline polling not yet moved onto common/timing. Entries are only ever removed, never added.
 TIMING_ALLOWLIST: Final[frozenset[str]] = frozenset({"src/dovo/common/lock.py", "src/dovo/common/process.py"})
@@ -29,11 +31,44 @@ _FROM_IMPORT_FIXTURE: Final[str] = """
 from time import perf_counter
 """
 
+_NS_CLOCK_FIXTURE: Final[str] = """
+import time
+started = time.monotonic_ns()
+"""
+
+_ALIASED_IMPORT_FIXTURE: Final[str] = """
+import time as clock
+started = clock.monotonic()
+"""
+
+_REFERENCE_FIXTURE: Final[str] = """
+import time
+from dataclasses import dataclass, field
+
+
+@dataclass
+class Span:
+    started: float = field(default_factory=time.monotonic)
+"""
+
+
+def _time_module_names(tree: ast.Module) -> set[str]:
+    """Return the local names `import time` binds in tree, including `import time as <alias>`."""
+    return {
+        alias.asname or alias.name
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Import)
+        for alias in node.names
+        if alias.name == "time"
+    }
+
 
 def _clock_reads(source: str, rel_path: str) -> list[str]:
-    """Return '<rel_path>:<line>: reads time.<name>' for each `time.<clock>(...)` call and `from time import <clock>`."""
+    """Return '<rel_path>:<line>: reads time.<name>' for each `time.<clock>` reference, called or not, and `from time import <clock>`."""
+    tree = ast.parse(source, filename=rel_path)
+    time_names = _time_module_names(tree)
     reads: list[str] = []
-    for node in ast.walk(ast.parse(source, filename=rel_path)):
+    for node in ast.walk(tree):
         if isinstance(node, ast.ImportFrom) and node.module == "time":
             reads.extend(
                 f"{rel_path}:{node.lineno}: reads time.{alias.name}"
@@ -41,13 +76,12 @@ def _clock_reads(source: str, rel_path: str) -> list[str]:
                 if alias.name in CLOCK_FUNCTIONS
             )
         elif (
-            isinstance(node, ast.Call)
-            and isinstance(node.func, ast.Attribute)
-            and isinstance(node.func.value, ast.Name)
-            and node.func.value.id == "time"
-            and node.func.attr in CLOCK_FUNCTIONS
+            isinstance(node, ast.Attribute)
+            and isinstance(node.value, ast.Name)
+            and node.value.id in time_names
+            and node.attr in CLOCK_FUNCTIONS
         ):
-            reads.append(f"{rel_path}:{node.lineno}: reads time.{node.func.attr}")
+            reads.append(f"{rel_path}:{node.lineno}: reads time.{node.attr}")
     return reads
 
 
@@ -75,6 +109,9 @@ class TimingBoundaryTests:
         [
             pytest.param(_CLOCK_READ_FIXTURE, "src/dovo/fixture.py:7: reads time.monotonic", id="attribute-call"),
             pytest.param(_FROM_IMPORT_FIXTURE, "src/dovo/fixture.py:2: reads time.perf_counter", id="from-import"),
+            pytest.param(_NS_CLOCK_FIXTURE, "src/dovo/fixture.py:3: reads time.monotonic_ns", id="ns-variant"),
+            pytest.param(_ALIASED_IMPORT_FIXTURE, "src/dovo/fixture.py:3: reads time.monotonic", id="aliased-import"),
+            pytest.param(_REFERENCE_FIXTURE, "src/dovo/fixture.py:8: reads time.monotonic", id="bare-reference"),
         ],
     )
     def test_rule_flags_a_clock_read(self, source: str, expected: str) -> None:
