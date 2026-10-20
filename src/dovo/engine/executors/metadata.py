@@ -46,7 +46,6 @@ def build_execution_metadata(
     *,
     step_index: int = 1,
     attempt: int = 1,
-    iteration_index: int = 1,
     identity: ExecutionIdentity | None = None,
     previous_step: PreviousStepMetadata | None = None,
     steps: Sequence[PreviousStepMetadata] | None = None,
@@ -54,7 +53,7 @@ def build_execution_metadata(
     session_id: str = "",
     loop_iteration: int | None = None,
 ) -> ExecutionMetadata:
-    """Build structured execution metadata for a single step attempt."""
+    """Build structured execution metadata for a single step attempt; the iteration index is loop_iteration, or 1 outside a loop."""
     step_metadata = StepMetadata(
         id=step.id,
         name=step.name or "",
@@ -79,7 +78,7 @@ def build_execution_metadata(
         blueprint=blueprint_metadata,
         previous_step=prior_metadata,
         steps=historical_steps,
-        iteration=IterationMetadata(index=iteration_index),
+        iteration=IterationMetadata(index=1 if loop_iteration is None else loop_iteration),
         tmp=_build_tmp_metadata(session_tmp_dir, step.id),
         session_id=session_id,
         loop_iteration=loop_iteration,

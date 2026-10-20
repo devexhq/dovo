@@ -34,13 +34,6 @@ class StepCoordinator:
 
     context: RunSettings
 
-    def build_step_context(self) -> dict[str, object] | None:
-        """Return the per-step context dict (inputs only), or None when there are no inputs."""
-        step_context: dict[str, object] = {}
-        if self.context.inputs:
-            step_context["inputs"] = self.context.inputs
-        return step_context or None
-
     @property
     def is_interactive(self) -> bool:
         """Return True when the run has a failure prompter and is not running with no_tty."""
@@ -89,7 +82,6 @@ class StepCoordinator:
         *,
         idx: int,
         total: int,
-        step_context: dict[str, object] | None,
         previous_step: PreviousStepMetadata | None = None,
         steps: Sequence[PreviousStepMetadata] | None = None,
         initial_attempt: int = 1,
@@ -117,7 +109,6 @@ class StepCoordinator:
                 run_context,
                 step,
                 idx=idx,
-                step_context=step_context,
                 previous_step=previous_step,
                 steps=steps,
                 initial_attempt=initial_attempt,
@@ -137,7 +128,6 @@ class StepCoordinator:
         step: StepDefinition,
         *,
         idx: int,
-        step_context: dict[str, object] | None,
         previous_step: PreviousStepMetadata | None,
         steps: Sequence[PreviousStepMetadata] | None,
         initial_attempt: int,
@@ -151,7 +141,7 @@ class StepCoordinator:
         return StepExecutionContext(
             step=step,
             worktree_path=run_context.target_dir,
-            context=step_context,
+            inputs=self.context.inputs or None,
             on_output=on_output,
             on_progress=on_progress,
             step_index=idx,
@@ -240,7 +230,6 @@ class StepCoordinator:
         *,
         index: int,
         total: int,
-        step_context: dict[str, object] | None,
         previous_step: PreviousStepMetadata | None,
         steps: Sequence[PreviousStepMetadata] | None,
         attempt: int,
@@ -254,7 +243,6 @@ class StepCoordinator:
                 run_context,
                 step,
                 idx=index,
-                step_context=step_context,
                 previous_step=previous_step,
                 steps=steps,
                 initial_attempt=attempt,
@@ -275,7 +263,6 @@ class StepCoordinator:
         *,
         index: int,
         total: int,
-        step_context: dict[str, object] | None,
         previous_step: PreviousStepMetadata | None,
         steps: Sequence[PreviousStepMetadata] | None,
         attempt: int,
@@ -288,7 +275,6 @@ class StepCoordinator:
                 run_context,
                 step,
                 idx=index,
-                step_context=step_context,
                 previous_step=previous_step,
                 steps=steps,
                 initial_attempt=attempt,

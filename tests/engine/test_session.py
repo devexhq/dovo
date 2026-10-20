@@ -711,7 +711,6 @@ class DriveRunAgentSettingsTests:
     def test_fresh_run_threads_effective_config_into_step_execution_context(
         self,
         tmp_path: Path,
-        captured_contexts: list[StepExecutionContext],
         captured_builds: list[AgentRunnerBuild],
         noop_agent_provider: FakeAgentProvider,
         agents: dict[str, object],
@@ -725,7 +724,6 @@ class DriveRunAgentSettingsTests:
 
         assert outcome.status == SessionStatus.COMPLETED
         assert [build.agent for build in captured_builds] == [expected]
-        assert "agent" not in (captured_contexts[0].context or {})
 
     def test_open_resolves_sensitive_variables_into_run_context_and_workspace_settings(
         self,

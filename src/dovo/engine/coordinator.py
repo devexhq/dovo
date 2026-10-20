@@ -72,7 +72,6 @@ class NodeTransitionKind(StrEnum):
 class _AskArguments(TypedDict):
     """Step-context keyword arguments shared by the StepCoordinator ask methods."""
 
-    step_context: dict[str, object] | None
     previous_step: PreviousStepMetadata
     steps: list[PreviousStepMetadata]
     attempt: int
@@ -203,7 +202,6 @@ class RunCoordinator:
             step_def,
             idx=idx,
             total=total,
-            step_context=self._step_context(loop_iteration),
             previous_step=steps_metadata[-1] if steps_metadata else PreviousStepMetadata(),
             steps=steps_metadata,
             initial_attempt=leaf.attempts[-1].number,
@@ -263,7 +261,6 @@ class RunCoordinator:
         steps_metadata = terminal_step_metadata(self._run.state)
         loop_iteration = loop.iterations[-1].number if loop is not None else None
         return _AskArguments(
-            step_context=self._step_context(loop_iteration),
             previous_step=steps_metadata[-1] if steps_metadata else PreviousStepMetadata(),
             steps=steps_metadata,
             attempt=leaf.attempts[-1].number,
@@ -747,13 +744,6 @@ class RunCoordinator:
         self._run.state = saved.state
         self._warnings.extend(saved.warnings)
         return True
-
-    def _step_context(self, loop_iteration: int | None = None) -> dict[str, object] | None:
-        """Build the per-step context dict, adding iteration_index when loop_iteration is given."""
-        context = self._run.step_coordinator.build_step_context()
-        if loop_iteration is None:
-            return context
-        return {**(context or {}), "iteration_index": loop_iteration}
 
     def _outcome(self, status: SessionStatus) -> RunOutcome:
         """Build the RunOutcome for status from the flattened state, accumulated errors, warnings, and worktree identity."""

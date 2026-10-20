@@ -90,3 +90,17 @@ class MetadataSessionIdEnvTests:
         env = metadata_to_env(metadata)
 
         assert env["DOVO_SESSION_ID"] == "wf_abc123"
+
+
+class BuildExecutionMetadataIterationTests:
+    @pytest.mark.parametrize(
+        ("loop_iteration", "expected"), [(None, 1), (3, 3)], ids=["outside-loop", "third-iteration"]
+    )
+    def test_build_execution_metadata_iteration_index_follows_loop_iteration(
+        self, loop_iteration: int | None, expected: int
+    ) -> None:
+        step = StepDefinition(id="s1", type=StepType.COMMAND, command="echo hi")
+
+        metadata = build_execution_metadata(step, loop_iteration=loop_iteration)
+
+        assert metadata.iteration.index == expected

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import dataclasses
 from pathlib import Path
 
 import pytest
@@ -12,6 +13,7 @@ from dovo.core.catalog.definitions import StepDefinition, StepType
 from dovo.engine.executors.models import (
     AgentProgressSink,
     AgentStepSummary,
+    ExecutionIdentity,
     ExecutionMetadata,
     OutputCallback,
     StepDispatchOutcome,
@@ -76,7 +78,7 @@ class StepExecutionContextTests:
     def test_agent_step_without_runner_raises_naming_step_id(self, tmp_path: Path) -> None:
         step = StepBuilder.agent("plan").with_id("plan").build()
 
-        with pytest.raises(ValidationError, match=r"Step 'plan' is an agent step and requires an agent runner\."):
+        with pytest.raises(ValueError, match=r"Step 'plan' is an agent step and requires an agent runner\."):
             StepExecutionContext(step=step, worktree_path=tmp_path)
 
     @pytest.mark.parametrize("with_runner", [True, False], ids=["with-runner", "without-runner"])
@@ -89,3 +91,17 @@ class StepExecutionContextTests:
         context = StepExecutionContext(step=_non_agent_step(kind), worktree_path=tmp_path, agent_runner=runner)
 
         assert context.agent_runner is runner
+
+
+class FrozenExecutionModelsTests:
+    def test_assigning_a_step_execution_context_field_raises_frozen_instance_error(self, tmp_path: Path) -> None:
+        context = StepExecutionContext(step=StepBuilder.command("echo ok").build(), worktree_path=tmp_path)
+
+        with pytest.raises(dataclasses.FrozenInstanceError):
+            context.step_index = 2  # ty: ignore[invalid-assignment]  # intentional ill-typed test input: frozen-model write
+
+    def test_assigning_an_execution_identity_field_raises_frozen_instance_error(self) -> None:
+        identity = ExecutionIdentity(blueprint_name="ship")
+
+        with pytest.raises(dataclasses.FrozenInstanceError):
+            identity.blueprint_name = "other"  # ty: ignore[invalid-assignment]  # intentional ill-typed test input: frozen-model write

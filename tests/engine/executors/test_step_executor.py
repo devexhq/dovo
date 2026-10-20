@@ -1,4 +1,4 @@
-"""Contract tests for StepExecution shorthand resolution."""
+"""Contract tests for StepExecution shorthand resolution, context fields and durations."""
 
 from __future__ import annotations
 
@@ -52,6 +52,32 @@ class CommandScriptEnvironmentPreservedTests:
 
         assert result.status == "completed"
         assert result.stdout.strip() == "1|probe|from-step"
+
+
+class StepExecutionContextFieldsTests:
+    def test_inputs_interpolate_into_command(self, tmp_path: Path) -> None:
+        step = StepBuilder.command("echo ${{ inputs.feature }}").with_id("s1").build()
+
+        result = StepExecution(
+            StepExecutionContext(step=step, worktree_path=tmp_path, inputs={"feature": "export"})
+        ).run()
+
+        assert result.stdout == "export\n"
+
+    def test_missing_input_stays_literal_like_a_run_without_inputs(self, tmp_path: Path) -> None:
+        step = StepBuilder.command("echo '${{ inputs.x }}'").with_id("s1").build()
+
+        result = StepExecution(StepExecutionContext(step=step, worktree_path=tmp_path)).run()
+
+        assert result.status == "completed"
+        assert result.stdout == "${{ inputs.x }}\n"
+
+    def test_iteration_index_follows_loop_iteration(self, tmp_path: Path) -> None:
+        step = StepBuilder.command("echo $DOVO_ITERATION_INDEX ${{ iteration.index }}").with_id("s1").build()
+
+        result = StepExecution(StepExecutionContext(step=step, worktree_path=tmp_path, loop_iteration=3)).run()
+
+        assert result.stdout == "3 3\n"
 
 
 def _unread_clock() -> float:
