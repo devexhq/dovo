@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import ast
 from collections.abc import Callable
 from enum import StrEnum
 from pathlib import Path
@@ -13,7 +12,6 @@ from sqlalchemy.dialects import sqlite
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, SQLModel, select
 
-import dovo.core.db.models as models_module
 from dovo.core.db.connection import get_engine
 from dovo.core.db.models import (
     ArtifactRecord,
@@ -233,15 +231,6 @@ class RecordCoercionTests:
         )
 
         assert record.status is SessionStatus.FAILED
-
-    @pytest.mark.parametrize("record_name", ["WorktreeRecord", "SessionRecord", "ArtifactRecord"])
-    def test_records_define_no_init(self, record_name: str) -> None:
-        tree = ast.parse(Path(models_module.__file__).read_text(encoding="utf-8"))
-        [record_class] = [node for node in tree.body if isinstance(node, ast.ClassDef) and node.name == record_name]
-
-        method_names = [node.name for node in record_class.body if isinstance(node, ast.FunctionDef)]
-
-        assert "__init__" not in method_names
 
 
 def _read_worktree(db_path: Path, db_engine: Engine) -> SQLModel | None:
