@@ -23,7 +23,11 @@ class BlueprintRunResultTests:
         ],
     )
     def test_ok_requires_a_run_record_and_no_errors(self, has_record: bool, errors: list[str], expected: bool) -> None:
-        record = SessionRecord(session_id="s", blueprint_name="lint", blueprint_key="lint") if has_record else None
+        record = (
+            SessionRecord(project_id="proj-a", session_id="s", blueprint_name="lint", blueprint_key="lint")
+            if has_record
+            else None
+        )
 
         result = BlueprintRunResult(session_record=record, errors=errors)
 
