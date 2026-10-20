@@ -7,6 +7,7 @@ import pytest
 from dovo.common.filesystem.models import WorkspacePaths
 from dovo.common.models import FailurePolicy
 from dovo.common.redact import SecretRedactor
+from dovo.common.timing import TimeSpan
 from dovo.core.db import SessionRecord, SessionsRepository
 from dovo.core.sessions import StepRunSummary
 from dovo.engine.executors.models import StepResult
@@ -21,7 +22,7 @@ from dovo.engine.state_models import (
     NodeState,
     StepAttemptRecord,
 )
-from tests.harness.sessions import SEEDED_FAILURE, seed_failed_session
+from tests.harness.sessions import SEEDED_FAILURE, SEEDED_SPAN, seed_failed_session
 
 _MANIFEST = DefinitionsManifest(
     blueprint=DefinitionRef(ref="repo:blueprint:bp", sha="abc", resolved_at="2026-09-28T00:00:00+00:00")
@@ -43,7 +44,7 @@ def _attempt(
         error_message=error_message,
         outputs={"key": "OUTPUT-TEXT"},
     )
-    return StepAttemptRecord(number=number, started_at="t0", completed_at="t1", result=result)
+    return StepAttemptRecord(number=number, span=SEEDED_SPAN, result=result)
 
 
 def _record(nodes: list[ExecutionPlanNode]) -> SessionRecord:
@@ -100,7 +101,11 @@ class SummarizeSessionStepsTests:
         ("attempts", "expected_attempts"),
         [
             pytest.param([], 0, id="pending-leaf"),
-            pytest.param([StepAttemptRecord(number=1, started_at="t0")], 1, id="running-attempt-without-result"),
+            pytest.param(
+                [StepAttemptRecord(number=1, span=TimeSpan(started_at="2026-09-28T00:00:00+00:00"))],
+                1,
+                id="running-attempt-without-result",
+            ),
         ],
     )
     def test_leaf_without_results_has_none_values(

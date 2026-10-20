@@ -12,6 +12,7 @@ from typing import ClassVar
 import pytest
 
 from dovo.common.filesystem.models import WorkspacePaths
+from dovo.common.timing import TimeSpan
 from dovo.core.artifacts import Artifacts
 from dovo.core.artifacts.services.download import download_artifact
 from dovo.core.artifacts.store import ArtifactStore
@@ -54,6 +55,7 @@ from tests.harness.sessions import (
 )
 
 _FAIL_DETAIL = "Command failed with exit code 1."
+_SEEDED_START = "2026-09-28T00:00:00+00:00"
 
 
 def _timeline_entry(event: SessionLogEvent) -> tuple[str, dict[str, object]]:
@@ -289,7 +291,7 @@ class CoordinatorExecuteTests:
         state = _state(engine_paths, sessions_repo, "crash")
         interrupted = _leaf(state, "a")
         interrupted.state = NodeState.RUNNING
-        interrupted.attempts = [StepAttemptRecord(number=1, started_at="then")]
+        interrupted.attempts = [StepAttemptRecord(number=1, span=TimeSpan(started_at=_SEEDED_START))]
         assert store.save(state).ok
 
         outcome = _coordinator(engine_paths, sessions_repo, "crash").execute()
@@ -298,8 +300,38 @@ class CoordinatorExecuteTests:
         assert leaf.state == NodeState.FAILED
         assert _last_result(leaf).status == "failed"
         assert _last_result(leaf).error_message == "Step attempt was interrupted before it recorded a result."
+        assert leaf.attempts[-1].span.is_open is False
+        assert leaf.attempts[-1].span.started_at == _SEEDED_START
         assert outcome.status == SessionStatus.FAILED
         assert not (engine_workspace / "a.ran").exists()
+
+    @pytest.mark.parametrize(
+        ("steps", "decisions", "attempt_count"),
+        [
+            pytest.param([_step("a", "true")], [], 1, id="completed"),
+            pytest.param([_step("a", "exit 1")], [], 1, id="failed-abort"),
+            pytest.param([_step("a", "exit 1", on_failure="continue")], [], 1, id="continued"),
+            pytest.param(
+                [_step("a", "exit 1", on_failure="prompt_user")],
+                [FailurePromptDecision.RETRY, FailurePromptDecision.ABORT],
+                2,
+                id="prompt-retry-then-abort",
+            ),
+        ],
+    )
+    def test_settled_attempts_have_closed_spans(
+        self,
+        engine_paths: WorkspacePaths,
+        sessions_repo: SessionsRepository,
+        steps: list[dict[str, object]],
+        decisions: list[FailurePromptDecision],
+        attempt_count: int,
+    ) -> None:
+        """Persist attempt_count attempts on leaf 'a', every one with a closed span."""
+        _run_new(engine_paths, sessions_repo, "spans", steps, prompter=ScriptedFailurePrompter(decisions))
+
+        attempts = _leaf(_state(engine_paths, sessions_repo, "spans"), "a").attempts
+        assert [attempt.span.is_open for attempt in attempts] == [False] * attempt_count
 
     def test_keyboard_interrupt_during_step_cancels_run_and_marks_node_cancelled(
         self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository, monkeypatch: pytest.MonkeyPatch
@@ -1100,7 +1132,7 @@ class CoordinatorLoopResumeTests:
         loop.state = loop.iterations[0].state = NodeState.RUNNING
         leaf = loop.iterations[0].steps[0]
         leaf.state = NodeState.RUNNING
-        leaf.attempts = [StepAttemptRecord(number=1, started_at="t")]
+        leaf.attempts = [StepAttemptRecord(number=1, span=TimeSpan(started_at=_SEEDED_START))]
         assert SessionStateStore(sessions_repo, engine_paths, "loop-crashed").save(state).ok
         prompter = ScriptedFailurePrompter([FailurePromptDecision.CONTINUE])
 
@@ -1659,6 +1691,27 @@ class CoordinatorAskTests:
         ask_run.start([_approve_step()], prompter)
 
         assert seen == [(NodeState.PAUSED, prompter.requests[0], SessionStatus.PAUSED)]
+
+    @pytest.mark.parametrize(
+        ("answers", "open_after"),
+        [
+            pytest.param([_answer("approve")], False, id="answered"),
+            pytest.param([None], True, id="unanswered"),
+        ],
+    )
+    def test_ask_attempt_span_is_open_at_the_prompt_and_closed_only_once_answered(
+        self, ask_run: AskRun, answers: list[InteractionAnswer | BaseException | None], open_after: bool
+    ) -> None:
+        """Observe the persisted attempt span open when the prompter is consulted, then closed only when the answer was applied."""
+        seen: list[bool] = []
+
+        def inspect(request: InteractionRequest) -> None:
+            seen.append(ask_run.leaf("approve").attempts[-1].span.is_open)
+
+        ask_run.start([_approve_step()], _ScriptedPrompter(answers, on_ask=inspect))
+
+        assert seen == [True]
+        assert ask_run.leaf("approve").attempts[-1].span.is_open is open_after
 
     def test_valid_answer_moves_pending_ask_to_the_attempt_and_completes_with_outputs(self, ask_run: AskRun) -> None:
         steps = [_approve_step(), _command("after", "echo '{{ steps.approve.outputs.selected }}' > got.txt")]

@@ -17,7 +17,13 @@ from dovo.engine.state_models import (
     StepAttemptRecord,
 )
 from dovo.engine.writer import snapshot_blueprint_path
-from tests.harness.sessions import SEEDED_FAILURE, seed_new_session, seed_paused_ask_session, seed_paused_session
+from tests.harness.sessions import (
+    SEEDED_FAILURE,
+    SEEDED_SPAN,
+    seed_new_session,
+    seed_paused_ask_session,
+    seed_paused_session,
+)
 
 _STEPS: list[dict[str, object]] = [{"id": "a", "run": "true"}, {"id": "b", "run": "exit 1"}]
 _LOOP_STEPS: list[dict[str, object]] = [
@@ -86,7 +92,7 @@ def _seed_paused_loop(paths: WorkspacePaths, sessions: SessionsRepository) -> Se
             duration_seconds=0.0,
             error_message=None if status == "completed" else SEEDED_FAILURE,
         )
-        return StepAttemptRecord(number=1, started_at="t", completed_at="t", result=result)
+        return StepAttemptRecord(number=1, span=SEEDED_SPAN, result=result)
 
     loop.state = NodeState.RUNNING
     loop.iterations[0].state = NodeState.RUNNING
