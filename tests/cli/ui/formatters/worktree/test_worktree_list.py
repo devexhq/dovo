@@ -20,6 +20,7 @@ from tests.harness.formatter import (
 
 _RECORD = WorktreeRecord(
     id="dovo_list1234",
+    project_id="proj-a",
     name="list-worktree",
     branch_name="dovo/list",
     base_commit="abc1234",
@@ -52,6 +53,7 @@ WORKTREE_LIST_PAYLOAD_CASES = [
             "worktrees": [
                 {
                     "id": "dovo_list1234",
+                    "project_id": "proj-a",
                     "name": "list-worktree",
                     "branch_name": "dovo/list",
                     "base_commit": "abc1234",

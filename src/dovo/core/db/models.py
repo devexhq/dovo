@@ -71,45 +71,62 @@ class PathType(TypeDecorator[Path]):
         return Path(value)
 
 
-class WorktreeStatusType(TypeDecorator[WorktreeStatus]):
-    """SQLAlchemy type for coercing WorktreeStatus enums to strings and back."""
+class StrEnumType[E: StrEnum](TypeDecorator[E]):
+    """Generic SQLAlchemy type storing a StrEnum member as its string value."""
 
     impl = String
     cache_ok = True
 
-    def process_bind_param(self, value: WorktreeStatus | str | None, dialect: Dialect) -> str | None:
-        """Coerce incoming WorktreeStatus or str to string for SQLite storage."""
+    def __init__(self, enum_cls: type[E]) -> None:
+        """Bind the column to enum_cls; kept as a public attribute so it enters the type's cache key."""
+        super().__init__()
+        self.enum_cls = enum_cls
+
+    def process_bind_param(self, value: E | str | None, dialect: Dialect) -> str | None:
+        """Bind an enum_cls member or a str to its string value, and None to None."""
         if value is None:
             return None
-        return value.value if isinstance(value, WorktreeStatus) else str(value)
+        return value.value if isinstance(value, self.enum_cls) else str(value)
 
-    def process_result_value(self, value: str | None, dialect: Dialect) -> WorktreeStatus | None:
-        """Coerce retrieved database string value back into a WorktreeStatus instance."""
+    def process_result_value(self, value: str | None, dialect: Dialect) -> E | None:
+        """Load a stored string as its enum_cls member, None as None; a non-member raises ValueError."""
         if value is None:
             return None
-        return WorktreeStatus(value)
+        return self.enum_cls(value)
 
 
-class SessionStatusType(TypeDecorator[SessionStatus]):
-    """SQLAlchemy type for coercing SessionStatus enums to strings and back."""
-
-    impl = String
-    cache_ok = True
-
-    def process_bind_param(self, value: SessionStatus | str | None, dialect: Dialect) -> str | None:
-        """Coerce incoming SessionStatus or str to string for SQLite storage."""
-        if value is None:
-            return None
-        return value.value if isinstance(value, SessionStatus) else str(value)
-
-    def process_result_value(self, value: str | None, dialect: Dialect) -> SessionStatus | None:
-        """Coerce retrieved database string value back into a SessionStatus instance."""
-        if value is None:
-            return None
-        return SessionStatus(value)
+def _coercion_target(annotation: object) -> type[Path] | type[StrEnum] | None:
+    """Return Path or the StrEnum subclass a field annotation names exactly, else None."""
+    if annotation is Path:
+        return Path
+    if isinstance(annotation, type) and issubclass(annotation, StrEnum):
+        return annotation
+    return None
 
 
-class WorktreeRecord(SQLModel, table=True):
+def _coerce(target: type[Path] | type[StrEnum], value: object) -> object:
+    """Return target(value) when value is a str not already of target; otherwise value unchanged."""
+    if isinstance(value, str) and not isinstance(value, target):
+        return target(value)
+    return value
+
+
+class RecordModel(SQLModel):
+    """Base for table records that coerces str values of Path and StrEnum fields on construction."""
+
+    def model_post_init(self, context: object, /) -> None:
+        """Replace each str value of a Path or StrEnum field with the declared type, assigning only changed values; unknown enum values raise ValueError."""
+        for name, field in type(self).model_fields.items():
+            target = _coercion_target(field.annotation)
+            if target is None:
+                continue
+            value = getattr(self, name)
+            coerced = _coerce(target, value)
+            if coerced is not value:
+                setattr(self, name, coerced)
+
+
+class WorktreeRecord(RecordModel, table=True):
     """Row shape for the centralized `worktrees` table."""
 
     __tablename__: ClassVar[str] = "worktrees"
@@ -121,18 +138,16 @@ class WorktreeRecord(SQLModel, table=True):
     branch_name: str
     base_commit: str
     worktree_path: Path = Field(sa_type=PathType, unique=True)
-    status: WorktreeStatus = Field(default=WorktreeStatus.ACTIVE, sa_type=WorktreeStatusType, index=True)
+    status: WorktreeStatus = Field(
+        default=WorktreeStatus.ACTIVE,
+        sa_type=StrEnumType(WorktreeStatus),  # ty: ignore[invalid-argument-type]  # SQLModel stubs type sa_type as type[Any]; Column accepts a TypeEngine instance
+        index=True,
+    )
     created_at: str = Field(default_factory=_now_utc_str)
     updated_at: str = Field(default_factory=_now_utc_str)
 
-    def __init__(self, **data: object) -> None:
-        """Initialize WorktreeRecord, coercing string paths to Path instances."""
-        if "worktree_path" in data and isinstance(data["worktree_path"], str):
-            data["worktree_path"] = Path(data["worktree_path"])
-        super().__init__(**data)
 
-
-class SessionRecord(SQLModel, table=True):
+class SessionRecord(RecordModel, table=True):
     """Row shape for the centralized `sessions` table."""
 
     __tablename__: ClassVar[str] = "sessions"
@@ -144,7 +159,11 @@ class SessionRecord(SQLModel, table=True):
     blueprint_key: str
     blueprint_name: str
     branch_name: str = Field(default="")
-    status: SessionStatus = Field(default=SessionStatus.RUNNING, sa_type=SessionStatusType, index=True)
+    status: SessionStatus = Field(
+        default=SessionStatus.RUNNING,
+        sa_type=StrEnumType(SessionStatus),  # ty: ignore[invalid-argument-type]  # SQLModel stubs type sa_type as type[Any]; Column accepts a TypeEngine instance
+        index=True,
+    )
     pid: int | None = Field(default=None)
     pid_started_at: str | None = Field(default=None)
     started_at: str = Field(default_factory=_now_utc_str, index=True)
@@ -164,12 +183,6 @@ class SessionRecord(SQLModel, table=True):
     worktree_id: str | None = Field(default=None)
     worktree_kept: bool = Field(default=False)
 
-    def __init__(self, **data: object) -> None:
-        """Initialize SessionRecord, coercing string enums to Enum instances."""
-        if "status" in data and isinstance(data["status"], str):
-            data["status"] = SessionStatus(data["status"])
-        super().__init__(**data)
-
     @property
     def duration_seconds(self) -> float | None:
         """Elapsed execution duration in seconds, or None if unfinished or unparseable."""
@@ -183,7 +196,7 @@ class SessionRecord(SQLModel, table=True):
         return elapsed if elapsed >= 0 else None
 
 
-class ArtifactRecord(SQLModel, table=True):
+class ArtifactRecord(RecordModel, table=True):
     """Row shape for the centralized `artifacts` table."""
 
     __tablename__: ClassVar[str] = "artifacts"
@@ -208,12 +221,6 @@ class ArtifactRecord(SQLModel, table=True):
     file_count: int = Field(default=0)
     created_at: str = Field(default_factory=_now_utc_str)
     expires_at: str | None = Field(default=None, index=True)
-
-    def __init__(self, **data: object) -> None:
-        """Initialize ArtifactRecord, coercing a string path to a Path instance."""
-        if "path" in data and isinstance(data["path"], str):
-            data["path"] = Path(data["path"])
-        super().__init__(**data)
 
 
 class CostRecord(SQLModel, table=True):

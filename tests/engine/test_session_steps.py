@@ -50,7 +50,11 @@ def _record(nodes: list[ExecutionPlanNode]) -> SessionRecord:
     """Build a session row whose execution_state_json holds nodes."""
     tree = ExecutionStateTree(manifest=_MANIFEST, nodes=nodes)
     return SessionRecord(
-        session_id="s", blueprint_name="bp", blueprint_key="bp", execution_state_json=tree.model_dump_json()
+        project_id="proj-a",
+        session_id="s",
+        blueprint_name="bp",
+        blueprint_key="bp",
+        execution_state_json=tree.model_dump_json(),
     )
 
 
@@ -161,14 +165,20 @@ class SummarizeSessionStepsTests:
         assert all(text not in dumped for text in ("STDOUT-TEXT", "STDERR-TEXT", "OUTPUT-TEXT", "1234"))
 
     def test_missing_state_returns_warning_and_no_steps(self) -> None:
-        record = SessionRecord(session_id="s", blueprint_name="bp", blueprint_key="bp")
+        record = SessionRecord(project_id="proj-a", session_id="s", blueprint_name="bp", blueprint_key="bp")
 
         result = summarize_session_steps(record, _REDACTOR)
 
         assert result == SessionStepsResult(steps=[], warnings=[NO_STEP_DATA_WARNING])
 
     def test_unparseable_state_returns_reason_warning(self) -> None:
-        record = SessionRecord(session_id="s", blueprint_name="bp", blueprint_key="bp", execution_state_json="not json")
+        record = SessionRecord(
+            project_id="proj-a",
+            session_id="s",
+            blueprint_name="bp",
+            blueprint_key="bp",
+            execution_state_json="not json",
+        )
 
         result = summarize_session_steps(record, _REDACTOR)
 

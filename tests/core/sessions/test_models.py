@@ -76,7 +76,7 @@ class HistoryShowResultTests:
     )
     def test_ok_requires_run_record_and_no_errors(self, has_run: bool, errors: list[str], expected_ok: bool) -> None:
         session_record = SessionRecord(
-            session_id="s", blueprint_name="bp", blueprint_key="bp", status=SessionStatus.COMPLETED
+            project_id="proj-a", session_id="s", blueprint_name="bp", blueprint_key="bp", status=SessionStatus.COMPLETED
         )
 
         result = HistoryShowResult(
