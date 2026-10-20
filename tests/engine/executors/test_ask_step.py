@@ -27,20 +27,25 @@ _OPTIONS_FROM = {
 
 
 def _context(
-    paths: WorkspacePaths, store: ArtifactStore, interaction: Mapping[str, object], step_id: str = "approve"
+    paths: WorkspacePaths,
+    store: ArtifactStore,
+    interaction: Mapping[str, object],
+    step_id: str = "approve",
+    loop_iteration: int | None = None,
 ) -> StepExecutionContext:
     """Build an ask-step execution context for session wf_1 with feature input and a prior `plan` step."""
     step = StepDefinition.model_validate({"id": step_id, "type": "ask", "interaction": interaction})
     return StepExecutionContext(
         step=step,
         worktree_path=paths.root_dir,
-        context={"inputs": {"feature": "export"}},
+        inputs={"feature": "export"},
         previous_step=PreviousStepMetadata(id="plan", outputs={"title": "Export plan"}),
         steps=[PreviousStepMetadata(id="plan", outputs={"title": "Export plan"})],
         session_id="wf_1",
         artifact_store=store,
         paths=paths,
         sensitive_variables=("ASK_TEST_SECRET",),
+        loop_iteration=loop_iteration,
     )
 
 
@@ -74,6 +79,17 @@ class AskStepExecutorTests:
 
         assert resolution.request is not None
         assert resolution.request.message == "Approve export (Export plan, 1)?"
+
+    def test_message_iteration_index_follows_loop_iteration(
+        self, engine_paths: WorkspacePaths, artifact_store: ArtifactStore
+    ) -> None:
+        interaction = {"mode": "confirm", "message": "Round {{ iteration.index }}?"}
+        context = _context(engine_paths, artifact_store, interaction, loop_iteration=2)
+
+        resolution = resolve_ask_request(context)
+
+        assert resolution.request is not None
+        assert resolution.request.message == "Round 2?"
 
     def test_failed_resolution_becomes_failed_step_result_with_code(
         self, engine_paths: WorkspacePaths, artifact_store: ArtifactStore

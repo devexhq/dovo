@@ -25,21 +25,19 @@ def resolve_ask_request(context: StepExecutionContext) -> AskResolution:
     if spec is None:
         return _failed_resolution(step.id, f"Step '{step.id}' has no interaction to ask.")
 
-    step_context = context.context or {}
-    inputs = step_context.get("inputs")
     metadata = build_execution_metadata(
         step,
         step_index=context.step_index,
         attempt=context.initial_attempt,
-        iteration_index=int(step_context.get("iteration_index", context.iteration_index)),
         identity=context.identity,
         previous_step=context.previous_step,
         steps=context.steps,
         session_tmp_dir=context.session_tmp_dir,
         session_id=context.session_id or "",
+        loop_iteration=context.loop_iteration,
     )
     providers = build_providers(
-        inputs=inputs if isinstance(inputs, dict) else None,
+        inputs=context.inputs,
         metadata=metadata,
         artifacts=ArtifactNamespaceProvider(context.artifact_store),
     )

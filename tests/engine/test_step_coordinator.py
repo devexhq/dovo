@@ -41,27 +41,27 @@ def _run_context(tmp_path: Path) -> RunContext:
     )
 
 
-class BuildStepContextTests:
-    def test_no_agent_or_inputs_returns_none(self, tmp_path: Path) -> None:
-        context = RunSettings(cwd=tmp_path, use_worktree=False, paths=initialized_workspace_paths(tmp_path))
-
-        step_context = StepCoordinator(context).build_step_context()
-
-        assert step_context is None
-
-    def test_agent_set_without_inputs_returns_none(self, tmp_path: Path) -> None:
+class StepCoordinatorInputsTests:
+    @pytest.mark.parametrize(
+        ("inputs", "expected"),
+        [({"branch": "main"}, {"branch": "main"}), ({}, None), (None, None)],
+        ids=["inputs", "empty", "none"],
+    )
+    def test_run_attempt_passes_run_inputs_to_step_execution_context(
+        self,
+        tmp_path: Path,
+        captured_contexts: list[StepExecutionContext],
+        inputs: dict[str, str | int | bool] | None,
+        expected: dict[str, str | int | bool] | None,
+    ) -> None:
         context = RunSettings(
-            cwd=tmp_path, use_worktree=False, agent=_AGENT_SETTINGS, paths=initialized_workspace_paths(tmp_path)
+            cwd=tmp_path, use_worktree=False, inputs=inputs, paths=initialized_workspace_paths(tmp_path)
         )
+        step = StepBuilder.command("echo ok").with_id("ok").build()
 
-        assert StepCoordinator(context).build_step_context() is None
+        StepCoordinator(context).run_attempt(_run_context(tmp_path), [], step, idx=1, total=1)
 
-    def test_inputs_set_returns_inputs_only_dict(self, tmp_path: Path) -> None:
-        context = RunSettings(
-            cwd=tmp_path, use_worktree=False, inputs={"branch": "main"}, paths=initialized_workspace_paths(tmp_path)
-        )
-
-        assert StepCoordinator(context).build_step_context() == {"inputs": {"branch": "main"}}
+        assert [metadata.inputs for metadata in captured_contexts] == [expected]
 
 
 class StepCoordinatorAgentRunnerTests:
@@ -76,7 +76,7 @@ class StepCoordinatorAgentRunnerTests:
         )
         step = StepBuilder.command("echo ok").with_id("ok").build()
 
-        StepCoordinator(context).run_attempt(_run_context(tmp_path), [], step, idx=1, total=1, step_context=None)
+        StepCoordinator(context).run_attempt(_run_context(tmp_path), [], step, idx=1, total=1)
 
         assert len(captured_builds) == 1
         assert captured_builds[0].agent is _AGENT_SETTINGS
@@ -101,7 +101,7 @@ class StepCoordinatorAgentRunnerTests:
         context = RunSettings(cwd=tmp_path, use_worktree=has_worktree, paths=initialized_workspace_paths(tmp_path))
         step = StepBuilder.command("echo ok").with_id("ok").build()
 
-        StepCoordinator(context).run_attempt(run_context, [], step, idx=1, total=1, step_context=None)
+        StepCoordinator(context).run_attempt(run_context, [], step, idx=1, total=1)
 
         assert [build.worktree_active for build in captured_builds] == [expected]
 
@@ -119,7 +119,7 @@ class StepCoordinatorRunnerWiringTests:
         context = RunSettings(cwd=tmp_path, use_worktree=False, paths=paths)
         step = StepBuilder.command("echo ok").with_id("ok").build()
 
-        StepCoordinator(context).run_attempt(run_context, [], step, idx=1, total=1, step_context=None)
+        StepCoordinator(context).run_attempt(run_context, [], step, idx=1, total=1)
 
         assert [(b.session_tmp_dir, b.session_log_dir, b.main_checkout) for b in captured_builds] == [
             (session_tmp, session_log, paths.root_dir)
@@ -135,7 +135,7 @@ class StepCoordinatorRunnerWiringTests:
         context = RunSettings(cwd=tmp_path, use_worktree=False, paths=paths, session_id=session_id)
         step = StepBuilder.command("echo ok").with_id("ok").build()
 
-        StepCoordinator(context).run_attempt(_run_context(tmp_path), [], step, idx=1, total=1, step_context=None)
+        StepCoordinator(context).run_attempt(_run_context(tmp_path), [], step, idx=1, total=1)
 
         assert [build.session_dir for build in captured_builds] == [
             paths.session_dir(session_id) if session_id else None
@@ -147,7 +147,7 @@ class StepCoordinatorLoopIdTests:
         ("loop_id", "expected"),
         [pytest.param("code-loop", "code-loop", id="loop-step"), pytest.param(None, None, id="top-level-step")],
     )
-    def test_loop_step_context_carries_the_loop_id(
+    def test_loop_step_execution_context_carries_the_loop_id(
         self,
         tmp_path: Path,
         captured_contexts: list[StepExecutionContext],
@@ -158,7 +158,7 @@ class StepCoordinatorLoopIdTests:
         step = StepBuilder.command("echo ok").with_id("ok").build()
 
         StepCoordinator(context).run_attempt(
-            _run_context(tmp_path), [], step, idx=1, total=1, step_context=None, loop_iteration=2, loop_id=loop_id
+            _run_context(tmp_path), [], step, idx=1, total=1, loop_iteration=2, loop_id=loop_id
         )
 
         assert [metadata.loop_id for metadata in captured_contexts] == [expected]
@@ -174,7 +174,7 @@ class StepCoordinatorProgressWiringTests:
         )
         step = StepBuilder.command("echo ok").with_id("ok").build()
 
-        StepCoordinator(context).run_attempt(_run_context(tmp_path), [], step, idx=2, total=5, step_context=None)
+        StepCoordinator(context).run_attempt(_run_context(tmp_path), [], step, idx=2, total=5)
 
         [callback] = [metadata.on_progress for metadata in captured_contexts]
         assert callback is not None
@@ -188,7 +188,7 @@ class StepCoordinatorProgressWiringTests:
         context = RunSettings(cwd=tmp_path, use_worktree=False, paths=initialized_workspace_paths(tmp_path))
         step = StepBuilder.command("echo ok").with_id("ok").build()
 
-        StepCoordinator(context).run_attempt(_run_context(tmp_path), [], step, idx=1, total=1, step_context=None)
+        StepCoordinator(context).run_attempt(_run_context(tmp_path), [], step, idx=1, total=1)
 
         assert [metadata.on_progress for metadata in captured_contexts] == [None]
 
@@ -201,9 +201,7 @@ class StepCoordinatorPrimitiveTests:
         )
         step = StepBuilder.command("echo ok").with_id("ok").build()
 
-        result = StepCoordinator(context).run_attempt(
-            _run_context(tmp_path), [], step, idx=1, total=1, step_context=None
-        )
+        result = StepCoordinator(context).run_attempt(_run_context(tmp_path), [], step, idx=1, total=1)
 
         assert (result.status, result.attempts) == ("completed", 1)
         assert [call for call in observer.calls if call[0] != "step_output"] == [
@@ -218,9 +216,7 @@ class StepCoordinatorPrimitiveTests:
         )
         step = StepBuilder.command("exit 1").with_id("fail").with_on_failure(FailurePolicy.PROMPT_USER).build()
 
-        result = StepCoordinator(context).run_attempt(
-            _run_context(tmp_path), [], step, idx=1, total=1, step_context=None
-        )
+        result = StepCoordinator(context).run_attempt(_run_context(tmp_path), [], step, idx=1, total=1)
 
         assert result.status == "failed"
         assert prompter.prompted == []
@@ -246,7 +242,7 @@ class StepCoordinatorPrimitiveTests:
         step = StepBuilder.command("echo ok").with_id("ok").build()
         warnings: list[str] = []
 
-        StepCoordinator(context).run_attempt(_run_context(tmp_path), warnings, step, idx=1, total=1, step_context=None)
+        StepCoordinator(context).run_attempt(_run_context(tmp_path), warnings, step, idx=1, total=1)
 
         assert warnings == ["w1"]
 

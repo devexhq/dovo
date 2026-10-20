@@ -1,9 +1,10 @@
 from collections.abc import Callable, Mapping, Sequence
+from dataclasses import dataclass
 from pathlib import Path
 from types import MappingProxyType
 from typing import Any, Final, Protocol
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field
 
 from dovo.common.filesystem import WorkspacePaths
 from dovo.common.models import BaseResult
@@ -64,10 +65,9 @@ class PreviousStepMetadata(BaseModel):
     outputs: dict[str, str] = Field(default_factory=dict, exclude=True)
 
 
-class ExecutionIdentity(BaseModel):
+@dataclass(frozen=True, slots=True)
+class ExecutionIdentity:
     """Optional run-level identity passed into RunSettings."""
-
-    model_config = {"extra": "forbid", "strict": True}
 
     blueprint_name: str = ""
     blueprint_key: str = ""
@@ -176,19 +176,17 @@ def require_agent_runner(step: StepDefinition, runner: AgentStepRunner | None) -
     return runner
 
 
-class StepExecutionContext(BaseModel):
+@dataclass(frozen=True, slots=True)
+class StepExecutionContext:
     """Structured metadata for a step execution."""
-
-    model_config = {"extra": "forbid", "strict": True, "arbitrary_types_allowed": True}
 
     step: StepDefinition
     worktree_path: Path
-    context: dict[str, Any] | None = None
+    inputs: dict[str, str | int | bool] | None = None
     on_output: OutputCallback | None = None
     on_progress: ProgressCallback | None = None
     step_index: int = 1
     initial_attempt: int = 1
-    iteration_index: int = 1
     identity: ExecutionIdentity | None = None
     previous_step: PreviousStepMetadata | None = None
     steps: Sequence[PreviousStepMetadata] | None = None
@@ -203,12 +201,10 @@ class StepExecutionContext(BaseModel):
     agent_runner: AgentStepRunner | None = None
     sensitive_variables: tuple[str, ...] = ()
 
-    @model_validator(mode="after")
-    def validate_agent_runner(self) -> "StepExecutionContext":
+    def __post_init__(self) -> None:
         """Reject an agent step that has no agent runner."""
         if self.step.type == StepType.AGENT:
             require_agent_runner(self.step, self.agent_runner)
-        return self
 
 
 class InternalCommandContext(BaseModel):

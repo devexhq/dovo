@@ -10,7 +10,7 @@ import threading
 import time
 from collections.abc import Mapping, Sequence
 from pathlib import Path
-from typing import IO, Any
+from typing import IO
 
 from dovo.common.models import FailurePolicy
 from dovo.common.process import (
@@ -62,13 +62,6 @@ def _failed_dispatch(
         stderr=stderr,
         error_message=error_message,
     )
-
-
-def _int_from_context_or_default(context: dict[str, Any], key: str, default: int) -> int:
-    """Extract an integer field from execution context dictionary or return default."""
-    if default != 1 or key not in context:
-        return default
-    return int(context[key])
 
 
 _HEREDOC_START_RE = re.compile(r"^([^=<\s]+)<<(.+)$")
@@ -134,7 +127,7 @@ class StepExecution:
     def __init__(self, metadata: StepExecutionContext) -> None:
         self.step: StepDefinition = metadata.step
         self.worktree_path = metadata.worktree_path.resolve()
-        self.context = metadata.context or {}
+        self.inputs = metadata.inputs
         self._env_file_dir = metadata.paths.root_dir if metadata.paths is not None else None
         self._sensitive_variables = metadata.sensitive_variables
         self.redactor = SecretRedactor.from_environment(
@@ -142,15 +135,11 @@ class StepExecution:
         )
         self.on_output = self._masked_output_callback(metadata.on_output)
         self.on_progress = metadata.on_progress
-        self.step_index = _int_from_context_or_default(self.context, "step_index", metadata.step_index)
-        self.initial_attempt = _int_from_context_or_default(self.context, "initial_attempt", metadata.initial_attempt)
-        self.iteration_index = _int_from_context_or_default(self.context, "iteration_index", metadata.iteration_index)
-        self.identity = metadata.identity or self.context.get("identity")
-        raw_steps = metadata.steps or self.context.get("steps")
-        self.steps: Sequence[PreviousStepMetadata] = list(raw_steps) if raw_steps else []
-        self.previous_step = (
-            metadata.previous_step or self.context.get("previous_step") or (self.steps[-1] if self.steps else None)
-        )
+        self.step_index = metadata.step_index
+        self.initial_attempt = metadata.initial_attempt
+        self.identity = metadata.identity
+        self.steps: Sequence[PreviousStepMetadata] = list(metadata.steps) if metadata.steps else []
+        self.previous_step = metadata.previous_step or (self.steps[-1] if self.steps else None)
         self.session_tmp_dir = metadata.session_tmp_dir
         self.session_log_dir = metadata.session_log_dir
         self.save_attempt_logs = metadata.save_attempt_logs
@@ -231,10 +220,9 @@ class StepExecution:
         return outcome
 
     def _namespace_providers(self, metadata: ExecutionMetadata) -> list[NamespaceProvider]:
-        """Build the attempt's providers from context inputs, execution metadata and the artifact store."""
-        inputs = self.context.get("inputs")
+        """Build the attempt's providers from step inputs, execution metadata and the artifact store."""
         return build_providers(
-            inputs=inputs if isinstance(inputs, dict) else None,
+            inputs=self.inputs,
             metadata=metadata,
             artifacts=ArtifactNamespaceProvider(self.artifact_store),
         )
@@ -245,7 +233,6 @@ class StepExecution:
             self._uninterpolated_step,
             step_index=self.step_index,
             attempt=attempt,
-            iteration_index=self.iteration_index,
             identity=self.identity,
             previous_step=self.previous_step,
             steps=self.steps,

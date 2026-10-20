@@ -971,8 +971,11 @@ class CoordinatorLoopBodyParityTests:
     def test_iteration_index_and_attempt_logs_are_distinct_per_iteration(
         self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository
     ) -> None:
-        _run_new(engine_paths, sessions_repo, "loop-logs", [_loop("loop", [_step("s", "echo $DOVO_ITERATION_INDEX")])])
+        outcome = _run_new(
+            engine_paths, sessions_repo, "loop-logs", [_loop("loop", [_step("s", "echo $DOVO_ITERATION_INDEX")])]
+        )
 
+        assert [result.stdout for result in outcome.step_results] == ["1\n", "2\n"]
         names = sorted(path.name for path in (engine_paths.logs_dir / "loop-logs").glob("*.stdout.log"))
         assert names == ["01_s_iter_1_attempt_1.stdout.log", "01_s_iter_2_attempt_1.stdout.log"]
 
