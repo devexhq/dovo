@@ -24,7 +24,7 @@ class AgentRequestBuilder:
             trigger_status="failed",
             exit_code=1,
             timed_out=False,
-            duration_ms=10,
+            duration_seconds=10.0,
             stdout="boom",
             stderr="",
         )

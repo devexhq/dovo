@@ -4,11 +4,12 @@ from __future__ import annotations
 
 import io
 
+import pytest
 from rich.console import Console
 
 from dovo.cli.ui.dispatcher import UiDispatcher
 from dovo.cli.ui.events import LoopLifecycleEvent, StepDoneEvent, StepStartEvent
-from dovo.cli.ui.live import LiveDisplayManager, build_loop_status_panel
+from dovo.cli.ui.live import LiveDisplayManager, LiveStepItem, build_live_step_table, build_loop_status_panel
 from tests.harness.formatter import render_rich
 
 
@@ -74,6 +75,52 @@ class LiveDisplayManagerLoopTests:
             dispatcher.stop_live()
 
         assert "dev-cycle" in output.getvalue()
+
+
+def _script_clock(monkeypatch: pytest.MonkeyPatch, readings: list[float]) -> None:
+    """Patch the Stopwatch clock to return readings in order."""
+    sequence = iter(readings)
+    monkeypatch.setattr("dovo.common.timing.monotonic", lambda: next(sequence))
+
+
+class LiveStepElapsedTests:
+    def test_running_row_shows_live_stopwatch_seconds(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Render '2.5s' for a started step with readings [10.0, 12.5]."""
+        _script_clock(monkeypatch, [10.0, 12.5])
+        manager = _manager()
+        manager.handle_step_start(StepStartEvent(idx=1, total=1, step_id="build", name="build"))
+
+        rendered = render_rich(build_live_step_table(manager.steps))
+
+        assert "2.5s" in rendered
+
+    @pytest.mark.parametrize(
+        ("event_duration", "expected"),
+        [pytest.param(1.5, "1.50s", id="event-duration"), pytest.param(None, "3.00s", id="stopwatch-fallback")],
+    )
+    def test_finished_row_prefers_event_duration_else_stopwatch(
+        self, monkeypatch: pytest.MonkeyPatch, event_duration: float | None, expected: str
+    ) -> None:
+        """Render expected for a step started at reading 10.0 and done at 13.0 with StepDoneEvent.duration_seconds=event_duration."""
+        _script_clock(monkeypatch, [10.0, 13.0])
+        manager = _manager()
+        manager.handle_step_start(StepStartEvent(idx=1, total=1, step_id="build", name="build"))
+        manager.handle_step_done(
+            StepDoneEvent(idx=1, total=1, step_id="build", ok=True, exit_code=0, duration_seconds=event_duration)
+        )
+
+        rendered = render_rich(build_live_step_table(manager.steps))
+
+        assert expected in rendered
+
+    @pytest.mark.parametrize("status", ["pending", "completed"])
+    def test_row_without_a_duration_shows_a_dash(self, status: str) -> None:
+        """Render '-' in the Elapsed column for a LiveStepItem with no stopwatch and no duration_seconds."""
+        item = LiveStepItem(idx=1, total=1, name="build", command="make", status=status)
+
+        rendered = render_rich(build_live_step_table([item]))
+
+        assert " - " in rendered
 
 
 class BuildLoopStatusPanelTests:

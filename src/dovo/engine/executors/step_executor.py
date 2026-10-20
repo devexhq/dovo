@@ -19,6 +19,7 @@ from dovo.common.process import (
     terminate_process_tree,
 )
 from dovo.common.redact import SecretRedactor
+from dovo.common.timing import Stopwatch
 from dovo.core.catalog.definitions import StepDefinition, StepType
 from dovo.core.catalog.exceptions import StepValidationError
 from dovo.core.catalog.services.resolve_step import resolve_step_definition
@@ -175,9 +176,10 @@ class StepExecution:
             outcome = _failed_dispatch(f"Could not resolve step '{self.step.id}'.")
             return _step_result(self.redactor, self.step.id, outcome, 0.0)
 
-        start_time = time.monotonic()
+        watch = Stopwatch.start()
         outcome = self._run_attempts()
-        duration = time.monotonic() - start_time
+        watch.stop()
+        duration = watch.elapsed_seconds
         outputs, output_warnings = self._collect_step_outputs()
         output_warnings = [*self.log_warnings, *output_warnings]
 

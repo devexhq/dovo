@@ -22,7 +22,7 @@ class AgentResponseRedactionTests:
             unified_diff="+s3cr3t-value\n",
             unfixable_reason="why s3cr3t-value",
             fixes=["fix s3cr3t-value"],
-            duration_ms=42,
+            duration_seconds=42.0,
             mutation_baseline_ref="abc123",
         )
 
@@ -32,7 +32,7 @@ class AgentResponseRedactionTests:
         assert masked.raw_text == "raw [REDACTED:SVC_TOKEN]"
         assert masked.summary == "sum [REDACTED:SVC_TOKEN]"
         assert masked.status == AgentResponseStatus.PROPOSED_PATCH
-        assert masked.duration_ms == 42
+        assert masked.duration_seconds == 42.0
         assert masked.mutation_baseline_ref == "abc123"
         assert masked.fixes == ["fix s3cr3t-value"]
         assert masked.unfixable_reason == "why [REDACTED:SVC_TOKEN]"

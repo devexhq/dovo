@@ -152,7 +152,7 @@ class ExecuteAgentStepToolPolicyFailureTests:
             pytest.param(
                 blocked_response(
                     provider="copilot",
-                    duration_ms=1,
+                    duration_seconds=1.0,
                     denials=[AgentDenial(tool="bash", message="denied", capability=ToolCapability.SHELL)],
                 ),
                 204,
@@ -161,7 +161,7 @@ class ExecuteAgentStepToolPolicyFailureTests:
                 id="blocked",
             ),
             pytest.param(
-                provider_error_response(duration_ms=1, errors=[tool_policy_unsupported_message("copilot")]),
+                provider_error_response(duration_seconds=1.0, errors=[tool_policy_unsupported_message("copilot")]),
                 203,
                 "provider_error",
                 ["AGENT_TOOL_POLICY_UNSUPPORTED"],
@@ -756,16 +756,20 @@ _HEARTBEAT_WAIT_SECONDS = 20.0
 
 class ExecuteAgentStepHeartbeatTests:
     @staticmethod
-    def _use_fast_heartbeat(monkeypatch: pytest.MonkeyPatch, clock_values: list[float]) -> None:
-        """Shrink the heartbeat interval and script the module clock: the given values, then 91.0 forever."""
-        readings = itertools.chain(clock_values, itertools.repeat(91.0))
+    def _use_fast_heartbeat(monkeypatch: pytest.MonkeyPatch, beat_readings: list[float]) -> None:
+        """Shrink the heartbeat interval and script the Stopwatch clock: 0.0 off the heartbeat thread, the given readings then 91.0 forever on it."""
+        readings = itertools.chain(beat_readings, itertools.repeat(91.0))
+
+        def clock() -> float:
+            return next(readings) if threading.current_thread().name.startswith("agent-heartbeat-") else 0.0
+
         monkeypatch.setattr("dovo.engine.executors.agent_step.AGENT_HEARTBEAT_INTERVAL_SECONDS", 0.01)
-        monkeypatch.setattr("dovo.engine.executors.agent_step.monotonic", lambda: next(readings))
+        monkeypatch.setattr("dovo.common.timing.monotonic", clock)
 
     def test_running_attempt_emits_elapsed_heartbeats_before_the_final_summary(
         self, git_repo: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        self._use_fast_heartbeat(monkeypatch, [0.0, 30.4, 60.9])
+        self._use_fast_heartbeat(monkeypatch, [30.4, 60.9])
         lines: list[str] = []
         two_heartbeats_seen = threading.Event()
         provider_released: list[bool] = []
@@ -789,7 +793,7 @@ class ExecuteAgentStepHeartbeatTests:
     def test_heartbeat_thread_is_gone_after_the_step_returns(
         self, git_repo: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        self._use_fast_heartbeat(monkeypatch, [0.0, 30.4])
+        self._use_fast_heartbeat(monkeypatch, [30.4])
         lines: list[str] = []
         heartbeat_seen = threading.Event()
         names_during_attempt: list[list[str]] = []
@@ -813,7 +817,7 @@ class ExecuteAgentStepHeartbeatTests:
     def test_heartbeat_callback_failure_leaves_the_attempt_outcome_unchanged(
         self, git_repo: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        self._use_fast_heartbeat(monkeypatch, [0.0, 30.4])
+        self._use_fast_heartbeat(monkeypatch, [30.4])
         heartbeat_attempted = threading.Event()
 
         def on_output(stream_name: str, line: str) -> None:
@@ -860,7 +864,7 @@ class ExecuteAgentStepProgressTests:
     def test_heartbeat_follows_the_progress_quiet_window(
         self, git_repo: Path, monkeypatch: pytest.MonkeyPatch, quiet_seconds: float | None, heartbeat_expected: bool
     ) -> None:
-        ExecuteAgentStepHeartbeatTests._use_fast_heartbeat(monkeypatch, [0.0, 30.4])
+        ExecuteAgentStepHeartbeatTests._use_fast_heartbeat(monkeypatch, [30.4])
         second_tick_seen = threading.Event()
         lines: list[str] = []
 

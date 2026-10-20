@@ -5,9 +5,9 @@ from __future__ import annotations
 import threading
 from collections.abc import Callable
 from pathlib import Path
-from time import monotonic
 from typing import Final
 
+from dovo.common.timing import Stopwatch
 from dovo.core.agents import (
     AgentAttempt,
     AgentAttemptContext,
@@ -151,7 +151,7 @@ def _run_with_heartbeat(
     step_id: str, on_output: OutputCallback | None, progress: AgentProgressSink, run_attempt: Callable[[], AgentAttempt]
 ) -> AgentAttempt:
     """Run the attempt while a heartbeat thread reports elapsed whole seconds every interval it has seen no progress, and stop and join it before returning."""
-    started = monotonic()
+    watch = Stopwatch.start()
     completed = threading.Event()
 
     def _beat() -> None:
@@ -160,7 +160,7 @@ def _run_with_heartbeat(
             if quiet_seconds is not None and quiet_seconds < AGENT_HEARTBEAT_INTERVAL_SECONDS:
                 continue
 
-            _emit_output(on_output, "stdout", f"  agent running ({int(monotonic() - started)}s)\n")
+            _emit_output(on_output, "stdout", f"  agent running ({int(watch.elapsed_seconds)}s)\n")
 
     heartbeat = threading.Thread(target=_beat, name=f"agent-heartbeat-{step_id}", daemon=True)
     heartbeat.start()

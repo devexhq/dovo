@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import time
 from collections import deque
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
@@ -21,6 +20,7 @@ from dovo.cli.ui.events import (
     StepStartEvent,
     WorktreeLifecycleEvent,
 )
+from dovo.common.timing import Stopwatch
 
 DEFAULT_OUTPUT_BUFFER_SIZE = 8
 
@@ -34,8 +34,8 @@ class LiveStepItem:
     name: str
     command: str | None
     status: str = "pending"  # "pending" | "running" | "completed" | "failed"
-    start_time: float | None = None
-    duration: float | None = None
+    stopwatch: Stopwatch | None = None
+    duration_seconds: float | None = None
     error_message: str | None = None
 
 
@@ -50,20 +50,21 @@ def _format_step_glyph(status: str) -> str:
     return "[dim]○[/dim]"
 
 
-def _format_step_elapsed(item: LiveStepItem, now: float) -> str:
-    """Format elapsed execution duration string for a live step item."""
-    if item.status == "running" and item.start_time is not None:
-        return f"{now - item.start_time:.1f}s"
-    if item.duration is not None:
-        return f"{item.duration:.2f}s"
+def _format_step_elapsed(item: LiveStepItem) -> str:
+    """Format the live seconds of a running row, the finished duration of a done row, else '-'."""
+    if item.status == "running" and item.stopwatch is not None:
+        return f"{item.stopwatch.elapsed_seconds:.1f}s"
+    if item.duration_seconds is not None:
+        return f"{item.duration_seconds:.2f}s"
     return "-"
 
 
-def _resolve_step_duration(item: LiveStepItem, duration_seconds: float | None, now: float) -> float | None:
-    """Resolve elapsed duration when step concludes."""
-    if item.start_time is not None:
-        return max(0.0, now - item.start_time)
-    return duration_seconds
+def _resolve_step_duration(item: LiveStepItem, duration_seconds: float | None) -> float | None:
+    """Stop the row's stopwatch and return the event's duration when set, else the stopwatch's, else None."""
+    if item.stopwatch is None:
+        return duration_seconds
+    item.stopwatch.stop()
+    return duration_seconds if duration_seconds is not None else item.stopwatch.elapsed_seconds
 
 
 def _format_failure_detail(event: StepDoneEvent) -> str:
@@ -75,7 +76,6 @@ def build_live_step_table(
     steps: list[LiveStepItem],
     *,
     worktree_info: str | None = None,
-    now: float | None = None,
 ) -> Table:
     """Build the Rich table displaying dynamic step execution progress."""
     title = f"Blueprint Execution Progress ({worktree_info})" if worktree_info else "Blueprint Execution Progress"
@@ -85,10 +85,9 @@ def build_live_step_table(
     table.add_column("Command")
     table.add_column("Elapsed", justify="right")
 
-    current_time = now if now is not None else time.monotonic()
     for item in steps:
         glyph = _format_step_glyph(item.status)
-        elapsed = _format_step_elapsed(item, current_time)
+        elapsed = _format_step_elapsed(item)
         cmd_display = item.command or "[dim]-[/dim]"
         step_label = f"[{item.idx}/{item.total}] {item.name}"
         table.add_row(glyph, step_label, cmd_display, elapsed)
@@ -232,7 +231,6 @@ class LiveDisplayManager:
     def handle_step_start(self, event: StepStartEvent) -> None:
         """Record the start of a step and refresh live table."""
         step_label = event.name or event.step_id
-        now = time.monotonic()
         self._active_step_name = step_label
         self._active_output.clear()
         item = LiveStepItem(
@@ -241,7 +239,7 @@ class LiveDisplayManager:
             name=step_label,
             command=event.command,
             status="running",
-            start_time=now,
+            stopwatch=Stopwatch.start(),
         )
         self.steps.append(item)
         self._refresh()
@@ -257,7 +255,7 @@ class LiveDisplayManager:
         if self.steps:
             current = self.steps[-1]
             current.status = "completed" if event.ok else "failed"
-            current.duration = _resolve_step_duration(current, event.duration_seconds, time.monotonic())
+            current.duration_seconds = _resolve_step_duration(current, event.duration_seconds)
             if not event.ok:
                 current.error_message = _format_failure_detail(event)
         self._active_step_name = None

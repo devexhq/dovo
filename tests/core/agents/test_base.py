@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import abc
 import subprocess
-import time
 import urllib.request
 from collections.abc import Callable
 from pathlib import Path
@@ -21,7 +20,7 @@ from dovo.core.agents import (
     default_tool_policy,
     tool_policy_unsupported_message,
 )
-from dovo.core.agents.base import ProviderSpec, elapsed_ms
+from dovo.core.agents.base import ProviderSpec
 from dovo.core.agents.credentials import missing_credential_error
 from dovo.core.agents.registry import PROVIDERS
 from tests.harness import PROVIDER_FINISHED_STREAMS, AgentRequestBuilder, FakeAgentRunner, real_invocation
@@ -31,7 +30,7 @@ _CANONICAL_MISSING_CREDENTIAL_ERROR = (
     "missing TEST_CREDENTIAL_PRIMARY or TEST_CREDENTIAL_FALLBACK. "
     "Fix: export TEST_CREDENTIAL_PRIMARY=... or export TEST_CREDENTIAL_FALLBACK=..."
 )
-_PROVIDER_RESPONSE = AgentResponse(status=AgentResponseStatus.NO_OP, duration_ms=7)
+_PROVIDER_RESPONSE = AgentResponse(status=AgentResponseStatus.NO_OP, duration_seconds=7.0)
 
 
 class _DirectSubclassProvider(BaseAgentProvider):
@@ -80,21 +79,38 @@ def _clear_test_credentials(monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.delenv(name, raising=False)
 
 
-class ElapsedMillisecondsTests:
-    @pytest.mark.parametrize(
-        ("age_seconds", "minimum_ms"),
-        [
-            pytest.param(0.0, 0, id="just-started-is-non-negative"),
-            pytest.param(1.5, 1500, id="one-and-a-half-seconds-old"),
-        ],
-    )
-    def test_started_timestamp_age_returns_whole_milliseconds_at_least_age(
-        self, age_seconds: float, minimum_ms: int
-    ) -> None:
-        elapsed = elapsed_ms(time.monotonic() - age_seconds)
+def _preflight_failing_case(
+    preflight: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> tuple[_DirectSubclassProvider, AgentRequestBuilder]:
+    """Return a provider and request whose preflight fails at the named check."""
+    request = AgentRequestBuilder().with_worktree_path(tmp_path)
+    if preflight == "missing_credential":
+        _clear_test_credentials(monkeypatch)
+        return _DirectSubclassProvider(("TEST_CREDENTIAL_PRIMARY",)), request
 
-        assert type(elapsed) is int
-        assert elapsed >= minimum_ms
+    if preflight == "reserved_env_override":
+        monkeypatch.setenv("TEST_CREDENTIAL_PRIMARY", "xq7")
+        provider = _DirectSubclassProvider(("TEST_CREDENTIAL_PRIMARY",), control_envs=("TEST_CONTROL",))
+        return provider, request.with_env({"TEST_CONTROL": "x"})
+
+    return _DirectSubclassProvider(()), request.with_tools(_POLICIES["default"])
+
+
+class InvokeDurationTests:
+    @pytest.mark.parametrize("preflight", ["missing_credential", "reserved_env_override", "unenforceable_policy"])
+    def test_preflight_failure_carries_duration_measured_from_invoke_start(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, preflight: str
+    ) -> None:
+        """Return PROVIDER_ERROR with duration_seconds == 2.5 for monotonic readings [10.0, 12.5]."""
+        provider, request = _preflight_failing_case(preflight, tmp_path, monkeypatch)
+        readings = iter([10.0, 12.5])
+        monkeypatch.setattr("dovo.common.timing.monotonic", lambda: next(readings))
+
+        response = provider.invoke(request.build())
+
+        assert response.status == AgentResponseStatus.PROVIDER_ERROR
+        assert response.duration_seconds == 2.5
+        assert provider.invoke_calls == []
 
 
 class BaseAgentProviderTests:
@@ -449,7 +465,7 @@ def _response_containing_secret(status: AgentResponseStatus, secret: str) -> Age
         raw_text=f"raw {secret}",
         summary=f"summary {secret}",
         unified_diff=f"+{secret}\n",
-        duration_ms=7,
+        duration_seconds=7.0,
     )
 
 
@@ -538,7 +554,7 @@ class InvokeRedactionTests:
     ) -> None:
         monkeypatch.setenv("TEST_CREDENTIAL_PRIMARY", "xq7")
         expected = AgentResponse(
-            status=AgentResponseStatus.NO_OP, errors=["plain"], raw_text="raw", summary="done", duration_ms=3
+            status=AgentResponseStatus.NO_OP, errors=["plain"], raw_text="raw", summary="done", duration_seconds=3.0
         )
         provider = _DirectSubclassProvider(("TEST_CREDENTIAL_PRIMARY", "TEST_CREDENTIAL_FALLBACK"), expected)
 
