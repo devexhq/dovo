@@ -1,7 +1,7 @@
 version: 1
 name: feature-dev
 id: feature-dev
-description: Plan and review a GitHub issue until approved, implement it after approval, review and fix until approved, then optionally open a PR
+description: Plan a GitHub issue and review the plan once, implement it after approval, review and fix until approved, then optionally open a PR
 summary: Issue to reviewed PR with human gates
 
 inputs:
@@ -27,94 +27,78 @@ steps:
       - { name: plan, path: .agentic/plan.md }
       - { name: plan-questions, path: .agentic/plan.json }
 
-  # Each round ends when the review approves and the human picks no finding to
-  # address and no open question to answer; otherwise the plan is revised and
-  # reviewed again.
-  - id: plan-loop
-    name: Review the plan until approved
-    type: loop
-    max_iterations: 2
-    until:
-      - steps.plan-verdict.exit_code == 0
-      - steps.triage-plan.outputs.selected_count == 0
-      - steps.answer-questions.outputs.selected_count == 0
-    on_max_iterations: prompt_user
-    do:
-      - id: plan-review
-        name: Review the plan
-        type: agent
-        prompt: |
-          /dovo-plan-review
+  # One review pass: the human picks the findings to address and the open
+  # questions to answer, fold-findings applies them (changing nothing when none
+  # are picked), and approve-plan gates implementation.
+  - id: plan-review
+    name: Review the plan
+    type: agent
+    prompt: |
+      /dovo-plan-review
 
-          Follow .agents/skills/dovo-plan-review/SKILL.md if the slash command is not recognized.
-          Review .agentic/plan.md and write findings to .agentic/plan-review.md and
-          .agentic/plan-review.json.
-          Write APPROVE to .agentic/plan-verdict.txt if there are zero blocking findings; otherwise write CHANGES_REQUIRED.
-        tools: { allow_all: true }
-        timeout_seconds: 1800
-        artifacts:
-          - { name: plan-review, path: .agentic/plan-review.md }
-          - { name: plan-findings, path: .agentic/plan-review.json }
+      Follow .agents/skills/dovo-plan-review/SKILL.md if the slash command is not recognized.
+      Review .agentic/plan.md and write findings to .agentic/plan-review.md and
+      .agentic/plan-review.json.
+    tools: { allow_all: true }
+    timeout_seconds: 1800
+    artifacts:
+      - { name: plan-review, path: .agentic/plan-review.md }
+      - { name: plan-findings, path: .agentic/plan-review.json }
 
-      - id: plan-verdict
-        name: Check the plan review verdict
-        run: grep -qx APPROVE .agentic/plan-verdict.txt 2>/dev/null || grep -qx "\*\*Verdict:\*\* APPROVE" .agentic/plan-review.md
-        on_failure: continue
+  - id: triage-plan
+    name: Choose the plan review findings to address
+    type: ask
+    interaction:
+      mode: multiselect
+      message: Which plan review findings should be folded into the plan for issue ${{ inputs.issue }}?
+      artifact: plan-review
+      options_from:
+        artifact: plan-findings
+        file: .agentic/plan-review.json
+        items_path: findings
+        value_field: id
+        label_field: summary
+      comment: { policy: optional, message: Instructions for folding in the findings }
 
-      - id: triage-plan
-        name: Choose the plan review findings to address
-        type: ask
-        interaction:
-          mode: multiselect
-          message: Which plan review findings should be folded into the plan for issue ${{ inputs.issue }}?
-          artifact: plan-review
-          options_from:
-            artifact: plan-findings
-            file: .agentic/plan-review.json
-            items_path: findings
-            value_field: id
-            label_field: summary
-          comment: { policy: optional, message: Instructions for folding in the findings }
+  - id: answer-questions
+    name: Answer the plan's open questions
+    type: ask
+    interaction:
+      mode: multiselect
+      message: Which open questions do you want to answer instead of accepting the plan's assumed answer?
+      artifact: plan
+      options_from:
+        artifact: plan-questions
+        file: .agentic/plan.json
+        items_path: open_questions
+        value_field: id
+        label_field: summary
+      comment: { policy: optional, message: "Your answers, one per selected question (e.g. OQ-1: show them)" }
 
-      - id: answer-questions
-        name: Answer the plan's open questions
-        type: ask
-        interaction:
-          mode: multiselect
-          message: Which open questions do you want to answer instead of accepting the plan's assumed answer?
-          artifact: plan
-          options_from:
-            artifact: plan-questions
-            file: .agentic/plan.json
-            items_path: open_questions
-            value_field: id
-            label_field: summary
-          comment: { policy: optional, message: "Your answers, one per selected question (e.g. OQ-1: show them)" }
+  - id: fold-findings
+    name: Fold the chosen findings and answers into the plan
+    type: agent
+    prompt: |
+      Findings to address: {{ steps.triage-plan.outputs.selected }}
+      Instructions for the findings: {{ steps.triage-plan.outputs.comment }}
+      Open questions answered: {{ steps.answer-questions.outputs.selected }}
+      Answers: {{ steps.answer-questions.outputs.comment }}
 
-      - id: fold-findings
-        name: Fold the chosen findings and answers into the plan
-        type: agent
-        prompt: |
-          Findings to address: {{ steps.triage-plan.outputs.selected }}
-          Instructions for the findings: {{ steps.triage-plan.outputs.comment }}
-          Open questions answered: {{ steps.answer-questions.outputs.selected }}
-          Answers: {{ steps.answer-questions.outputs.comment }}
-
-          If both lists are empty, change nothing and report that you did nothing.
-          Otherwise update .agentic/plan.md and .agentic/plan.json:
-            - Address each listed finding, by id, as described in .agentic/plan-review.json. Leave
-              findings that are not listed as they are.
-            - For each answered question, rewrite the plan against the human's answer, move the
-              question from Open questions into Decisions as answered by the human, and remove it
-              from open_questions in .agentic/plan.json.
-            - Keep .agentic/plan.json in the shape the dovo-plan skill defines
-              (.agents/skills/dovo-plan/SKILL.md) and in agreement with .agentic/plan.md.
-          Do not implement any code, commit or push. Change only .agentic/plan.md and .agentic/plan.json.
-        tools: { allow_all: true }
-        timeout_seconds: 1800
-        artifacts:
-          - { name: plan, path: .agentic/plan.md }
-          - { name: plan-questions, path: .agentic/plan.json }
+      If both lists are empty, change nothing and report that you did nothing.
+      Otherwise update .agentic/plan.md and .agentic/plan.json:
+        - Address each listed finding, by id, as described in .agentic/plan-review.json. Leave
+          findings that are not listed as they are.
+        - For each answered question, rewrite the plan against the human's answer, move the
+          question from Open questions into Decisions as answered by the human, and remove it
+          from open_questions in .agentic/plan.json.
+        - Keep .agentic/plan.json in the shape the dovo-plan skill defines
+          (.agents/skills/dovo-plan/SKILL.md) and in agreement with .agentic/plan.md.
+      Do not implement any code, commit or push. Change only .agentic/plan.md and .agentic/plan.json.
+    tools: { allow_all: true }
+    timeout_seconds: 1800
+    artifacts:
+      - { name: plan, path: .agentic/plan.md }
+      - { name: plan-questions, path: .agentic/plan.json }
 
   - id: approve-plan
     name: Approve the plan
