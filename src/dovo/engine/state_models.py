@@ -8,6 +8,7 @@ from typing import Annotated, Literal
 from pydantic import BaseModel, Field
 
 from dovo.common.models import BaseResult, FailurePolicy
+from dovo.common.timing import TimeSpan
 from dovo.core.db import SessionStatus
 from dovo.core.interaction import InteractionRequest
 from dovo.engine.executors.models import StepResult
@@ -35,8 +36,7 @@ class StepAttemptRecord(BaseModel):
     model_config = {"extra": "forbid", "strict": True}
 
     number: int = Field(ge=1)
-    started_at: str
-    completed_at: str | None = None
+    span: TimeSpan
     result: StepResult | None = None  # None while attempt is running; populated on complete/fail
     ask: InteractionRequest | None = None  # The prompt an ask step's attempt was answered for; None otherwise
 

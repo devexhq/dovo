@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
@@ -25,9 +26,11 @@ from dovo.engine.state_models import (
     SessionJsonPayload,
     SessionStateLoadStatus,
     SessionStateWriteStatus,
+    StepAttemptRecord,
 )
 from dovo.engine.state_store import new_iteration
 from tests.harness.builders import BlueprintBuilder, StepBuilder, WorkspaceBuilder
+from tests.harness.sessions import SEEDED_SPAN
 from tests.harness.workspace_paths import initialized_workspace_paths
 
 SESSION_ID = "state-1"
@@ -328,6 +331,33 @@ class SessionStateStoreLoadTests:
             else ExecutionStateTree(revision=1, manifest=fixture.manifest).model_dump_json()
         )
         fixture.sessions.save_execution_state(SESSION_ID, document, expected_revision=0, next_revision=0)
+
+        result = fixture.store.load()
+
+        assert result.status == SessionStateLoadStatus.CORRUPT_STATE
+        assert result.state is None
+        assert not fixture.session_json.exists()
+
+    @pytest.mark.parametrize(
+        "legacy_fields",
+        [
+            pytest.param({"started_at": "2026-09-28T00:00:00+00:00", "completed_at": None}, id="legacy-shape"),
+            pytest.param({"completed_at": "2026-09-28T00:00:01+00:00"}, id="span-plus-completed-at"),
+        ],
+    )
+    def test_load_state_with_pre_span_attempt_fields_returns_corrupt_state(
+        self, tmp_path: Path, legacy_fields: dict[str, object]
+    ) -> None:
+        """Return CORRUPT_STATE with no state and no session.json for a revision-matching tree whose attempt carries started_at or completed_at."""
+        fixture = _Fixture(tmp_path)
+        leaf = ExecutionLeafNode(id="setup", attempts=[StepAttemptRecord(number=1, span=SEEDED_SPAN)])
+        base = ExecutionStateTree(revision=1, manifest=fixture.manifest, nodes=[leaf]).model_dump(mode="json")
+        ExecutionStateTree.model_validate_json(json.dumps(base))
+        attempt = base["nodes"][0]["attempts"][0]
+        if "started_at" in legacy_fields:
+            del attempt["span"]
+        attempt.update(legacy_fields)
+        fixture.sessions.save_execution_state(SESSION_ID, json.dumps(base), expected_revision=0, next_revision=1)
 
         result = fixture.store.load()
 

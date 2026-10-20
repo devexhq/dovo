@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Sequence
-from datetime import UTC, datetime
 from pathlib import Path
 
 from dovo.common.filesystem.models import WorkspacePaths
+from dovo.common.timing import TimeSpan
 from dovo.core.artifacts import Artifacts
 from dovo.core.artifacts.store import ArtifactStore
 from dovo.core.catalog import Catalog
@@ -23,6 +23,9 @@ from dovo.engine.writer import snapshot_definitions
 from tests.harness.catalog import write_runnable_blueprint
 
 SEEDED_FAILURE = "seeded failure"
+SEEDED_SPAN = TimeSpan(
+    started_at="2026-09-28T00:00:00+00:00", ended_at="2026-09-28T00:00:01+00:00", duration_seconds=1.0
+)
 
 
 class NoOpRunObserver(RunObserver):
@@ -279,7 +282,6 @@ def seed_paused_session(
     state = store.load().state
     assert state is not None
 
-    now = datetime.now(UTC).isoformat()
     for node in state.nodes:
         assert isinstance(node, ExecutionLeafNode)
         completed = node.id != paused_step_id
@@ -292,7 +294,7 @@ def seed_paused_session(
             duration_seconds=0.0,
             error_message=None if completed else SEEDED_FAILURE,
         )
-        node.attempts = [StepAttemptRecord(number=1, started_at=now, completed_at=now, result=result)]
+        node.attempts = [StepAttemptRecord(number=1, span=SEEDED_SPAN, result=result)]
         node.state = NodeState.COMPLETED if completed else NodeState.PAUSED
         if not completed:
             break
@@ -336,7 +338,6 @@ def seed_failed_session(
     state = store.load().state
     assert state is not None
 
-    now = datetime.now(UTC).isoformat()
     for node in state.nodes:
         assert isinstance(node, ExecutionLeafNode)
         completed = node.id != failed_step_id
@@ -350,7 +351,7 @@ def seed_failed_session(
             error_message=None if completed else _seeded_error_message(rejected_patch_path),
             rejected_patch_path=None if completed else rejected_patch_path,
         )
-        node.attempts = [StepAttemptRecord(number=1, started_at=now, completed_at=now, result=result)]
+        node.attempts = [StepAttemptRecord(number=1, span=SEEDED_SPAN, result=result)]
         node.state = NodeState.COMPLETED if completed else NodeState.FAILED
         if not completed:
             break

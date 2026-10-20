@@ -4,13 +4,13 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
-from datetime import UTC, datetime
 from enum import StrEnum
 from typing import TypedDict
 
 from dovo.common.lock import WorkspaceLock
 from dovo.common.models import FailurePolicy
 from dovo.common.process import process_registry
+from dovo.common.timing import TimeSpan
 from dovo.core.agents.models import ResolvedAgentSettings
 from dovo.core.catalog.blueprint import Blueprint
 from dovo.core.catalog.definitions import LoopStepBlock, StepDefinition, StepType
@@ -96,11 +96,6 @@ class _LoadedRun:
     state: ExecutionStateTree
     blueprint: Blueprint
     step_coordinator: StepCoordinator
-
-
-def _now() -> str:
-    """Return the current wall-clock time as an ISO-8601 UTC string."""
-    return datetime.now(UTC).isoformat()
 
 
 class RunCoordinator:
@@ -336,7 +331,7 @@ class RunCoordinator:
             **self._ask_arguments(leaf, slot.loop),
         )
         leaf.attempts[-1] = leaf.attempts[-1].model_copy(
-            update={"completed_at": _now(), "result": result, "ask": request}
+            update={"span": leaf.attempts[-1].span.close(), "result": result, "ask": request}
         )
         leaf.pending_ask = None
         leaf.state = NodeState.RUNNING
@@ -453,7 +448,7 @@ class RunCoordinator:
                 attempts=attempt.number,
                 error_message=_INTERRUPTED_MESSAGE,
             )
-            node.attempts[-1] = attempt.model_copy(update={"completed_at": _now(), "result": interrupted})
+            node.attempts[-1] = attempt.model_copy(update={"span": attempt.span.close(), "result": interrupted})
             node.state = NodeState.PAUSED
             recovered = True
 
@@ -611,8 +606,8 @@ class RunCoordinator:
         return self._finish_loop(loop, iteration, events, failed=True, diagnostic=diagnostic)
 
     def _begin_attempt(self, node: ExecutionLeafNode, number: int, run_status: SessionStatus | None = None) -> bool:
-        """Append an unfinished attempt, mark the node RUNNING, and commit before the attempt executes."""
-        node.attempts.append(StepAttemptRecord(number=number, started_at=_now()))
+        """Append an attempt with an open span, mark the node RUNNING, and commit before the attempt executes."""
+        node.attempts.append(StepAttemptRecord(number=number, span=TimeSpan.open()))
         node.state = NodeState.RUNNING
         return self._commit(f"before step '{node.id}' started", run_status)
 
@@ -622,10 +617,10 @@ class RunCoordinator:
         step_def: StepDefinition,
         result: StepResult,
     ) -> NodeTransitionKind:
-        """Record the attempt's result, commit terminal success, or hand a failed result to the failure gate."""
+        """Close the attempt's span and record its result, commit terminal success, or hand a failed result to the failure gate."""
         attempt = node.attempts[-1]
         node.attempts[-1] = attempt.model_copy(
-            update={"completed_at": _now(), "number": result.attempts, "result": result}
+            update={"span": attempt.span.close(), "number": result.attempts, "result": result}
         )
         if not result.ok:
             return self._resolve_failed_leaf(node, step_def)

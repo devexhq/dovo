@@ -21,6 +21,7 @@ from dovo.engine.state_models import (
     SessionLifecycle,
     StepAttemptRecord,
 )
+from tests.harness.sessions import SEEDED_SPAN
 
 _MANIFEST = DefinitionsManifest(blueprint=DefinitionRef(ref="repo:blueprint:demo", sha="sha", resolved_at="now"))
 
@@ -44,7 +45,7 @@ def _leaf(
     name: str | None = None,
 ) -> ExecutionLeafNode:
     attempts = [
-        StepAttemptRecord(number=number, started_at="t", completed_at="t", result=result)
+        StepAttemptRecord(number=number, span=SEEDED_SPAN, result=result)
         for number, result in enumerate(results or [], start=1)
     ]
     return ExecutionLeafNode(id=step_id, name=name, state=state, attempts=attempts)
