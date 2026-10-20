@@ -7,7 +7,6 @@ import json
 import os
 import stat
 import subprocess
-import time
 from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import Literal
@@ -16,8 +15,9 @@ from pydantic import BaseModel, Field
 
 from dovo.common.mcp_servers import McpServerDefinition
 from dovo.common.process import stream_isolated_process
+from dovo.common.timing import Stopwatch
 from dovo.common.tool_policy import ToolPolicy
-from dovo.core.agents.base import BaseAgentProvider, ProgressMapper, ProviderSpec, elapsed_ms
+from dovo.core.agents.base import BaseAgentProvider, ProgressMapper, ProviderSpec
 from dovo.core.agents.environment import build_agent_env, env_filtered_prompt_line, withheld_env_names
 from dovo.core.agents.models import (
     AgentDenial,
@@ -246,17 +246,19 @@ class CliDirectMutationAdapter(BaseAgentProvider):
 
     def _invoke(self, request: AgentRequest) -> AgentResponse:
         """Run the provider in the worktree; never raises for classified outcomes."""
-        started = time.monotonic()
+        watch = Stopwatch.start()
 
         preflight_error = self._preflight(request)
         if preflight_error is not None:
-            return provider_error_response(duration_ms=elapsed_ms(started), detail=preflight_error)
+            watch.stop()
+            return provider_error_response(duration_seconds=watch.elapsed_seconds, detail=preflight_error)
 
         try:
             baseline = resolve_pre_agent_baseline(request.worktree_path)
         except MutationGitError as exc:
+            watch.stop()
             return provider_error_response(
-                duration_ms=elapsed_ms(started), detail=f"Failed to resolve worktree baseline: {exc}"
+                duration_seconds=watch.elapsed_seconds, detail=f"Failed to resolve worktree baseline: {exc}"
             )
 
         spec = self._provider_spec()
@@ -281,8 +283,8 @@ class CliDirectMutationAdapter(BaseAgentProvider):
                 progress_mapper=_progress_mapper_for(spec),
             )
         )
-        duration_ms = elapsed_ms(started)
-        response = self._respond_to_outcome(request, outcome, baseline, duration_ms)
+        watch.stop()
+        response = self._respond_to_outcome(request, outcome, baseline, watch.elapsed_seconds)
 
         return response.model_copy(update={"env_withheld": withheld})
 
@@ -301,21 +303,21 @@ class CliDirectMutationAdapter(BaseAgentProvider):
         request: AgentRequest,
         outcome: CliMutationOutcome,
         baseline: str,
-        duration_ms: int,
+        duration_seconds: float,
     ) -> AgentResponse:
         """Classify a finished runner outcome into the timeout, provider-error, unfixable, blocked, no-op, or proposal response; denials block only when the worktree diff is empty."""
         if outcome.status == "timeout":
             return timeout_response(
                 provider=self._provider_name(),
                 timeout_seconds=request.timeout_seconds,
-                duration_ms=duration_ms,
+                duration_seconds=duration_seconds,
                 raw_text=outcome.result_text,
                 mutation_baseline_ref=baseline,
             )
 
         if outcome.status == "error":
             return provider_error_response(
-                duration_ms=duration_ms,
+                duration_seconds=duration_seconds,
                 detail=outcome.error_detail or "Direct-mutation runner returned error",
                 raw_text=outcome.result_text,
                 mutation_baseline_ref=baseline,
@@ -325,36 +327,38 @@ class CliDirectMutationAdapter(BaseAgentProvider):
             diff, _ = capture_diff_since(request.worktree_path, baseline)
         except MutationGitError as exc:
             return provider_error_response(
-                duration_ms=duration_ms,
+                duration_seconds=duration_seconds,
                 detail=f"Failed to capture worktree diff: {exc}",
                 raw_text=outcome.result_text,
                 mutation_baseline_ref=baseline,
             )
 
-        unfixable = self._unfixable_outcome(request, diff, outcome, baseline, duration_ms)
+        unfixable = self._unfixable_outcome(request, diff, outcome, baseline, duration_seconds)
         if unfixable is not None:
             return unfixable
 
         if not diff.strip() and outcome.denials:
             return blocked_response(
                 provider=self._provider_name(),
-                duration_ms=duration_ms,
+                duration_seconds=duration_seconds,
                 denials=outcome.denials,
                 raw_text=outcome.result_text,
                 mutation_baseline_ref=baseline,
             )
 
         if not diff.strip():
-            return no_op_response(duration_ms=duration_ms, raw_text=outcome.result_text, mutation_baseline_ref=baseline)
+            return no_op_response(
+                duration_seconds=duration_seconds, raw_text=outcome.result_text, mutation_baseline_ref=baseline
+            )
 
         gate = validate_request_patch(request, diff)
         if gate.status != PatchApplyStatus.CHECKED_OK:
-            return self._reject_gated_edit(request, gate, outcome, baseline, duration_ms)
+            return self._reject_gated_edit(request, gate, outcome, baseline, duration_seconds)
 
         return AgentResponse(
             status=AgentResponseStatus.PROPOSED_PATCH,
             unified_diff=diff,
-            duration_ms=duration_ms,
+            duration_seconds=duration_seconds,
             mutation_baseline_ref=baseline,
             raw_text=outcome.result_text,
         )
@@ -365,12 +369,12 @@ class CliDirectMutationAdapter(BaseAgentProvider):
         gate: PatchApplyResult,
         outcome: CliMutationOutcome,
         baseline: str,
-        duration_ms: int,
+        duration_seconds: float,
     ) -> AgentResponse:
         """Save the rejected edit, then discard it and return PROVIDER_ERROR carrying the gate's errors, the saved path, and any discard failure; a failed save leaves the worktree untouched."""
         saved, notes, discard_detail = _save_and_discard(request, baseline)
         response = provider_error_response(
-            duration_ms=duration_ms,
+            duration_seconds=duration_seconds,
             detail=discard_detail,
             errors=[*gate.errors, *notes],
             raw_text=outcome.result_text,
@@ -385,13 +389,16 @@ class CliDirectMutationAdapter(BaseAgentProvider):
         diff: str,
         outcome: CliMutationOutcome,
         baseline: str,
-        duration_ms: int,
+        duration_seconds: float,
     ) -> AgentResponse | None:
         """Return None without a non-blank unfixable report, PROVIDER_ERROR when it cannot be read, else UNFIXABLE after saving and discarding any edit in diff."""
         reason, read_error = _read_unfixable_reason(request.agent_scratch_path)
         if read_error is not None:
             return provider_error_response(
-                duration_ms=duration_ms, detail=read_error, raw_text=outcome.result_text, mutation_baseline_ref=baseline
+                duration_seconds=duration_seconds,
+                detail=read_error,
+                raw_text=outcome.result_text,
+                mutation_baseline_ref=baseline,
             )
 
         if reason is None:
@@ -399,14 +406,17 @@ class CliDirectMutationAdapter(BaseAgentProvider):
 
         if not diff.strip():
             return unfixable_response(
-                reason=reason, duration_ms=duration_ms, raw_text=outcome.result_text, mutation_baseline_ref=baseline
+                reason=reason,
+                duration_seconds=duration_seconds,
+                raw_text=outcome.result_text,
+                mutation_baseline_ref=baseline,
             )
 
         saved, notes, discard_detail = _save_and_discard(request, baseline)
 
         response = unfixable_response(
             reason=reason,
-            duration_ms=duration_ms,
+            duration_seconds=duration_seconds,
             errors=[*([discard_detail] if discard_detail is not None else []), *notes],
             raw_text=outcome.result_text,
             mutation_baseline_ref=baseline,

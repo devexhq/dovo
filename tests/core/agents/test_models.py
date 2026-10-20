@@ -15,6 +15,7 @@ from dovo.core.agents import (
     AgentFailurePayload,
     AgentInvocationContext,
     AgentRequest,
+    AgentResponse,
     AgentResponseStatus,
     AgentScratchResult,
     CliMutationRunRequest,
@@ -99,6 +100,14 @@ class AgentRequestContractTests:
                     "tools": default_tool_policy(),
                 }
             )
+
+
+class AgentResponseContractTests:
+    def test_response_serializes_duration_seconds(self) -> None:
+        """Dump AgentResponse(status=NO_OP, duration_seconds=1.5) with key 'duration_seconds' == 1.5."""
+        dumped = AgentResponse(status=AgentResponseStatus.NO_OP, duration_seconds=1.5).model_dump(mode="json")
+
+        assert dumped["duration_seconds"] == 1.5
 
 
 class AgentDenialContractTests:

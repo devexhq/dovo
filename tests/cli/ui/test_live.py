@@ -3,12 +3,16 @@
 from __future__ import annotations
 
 import io
+from collections.abc import Callable
+from typing import ClassVar
 
-from rich.console import Console
+import pytest
+from rich.console import Console, RenderableType
+from rich.live import Live
 
 from dovo.cli.ui.dispatcher import UiDispatcher
 from dovo.cli.ui.events import LoopLifecycleEvent, StepDoneEvent, StepStartEvent
-from dovo.cli.ui.live import LiveDisplayManager, build_loop_status_panel
+from dovo.cli.ui.live import LiveDisplayManager, LiveStepItem, build_live_step_table, build_loop_status_panel
 from tests.harness.formatter import render_rich
 
 
@@ -74,6 +78,92 @@ class LiveDisplayManagerLoopTests:
             dispatcher.stop_live()
 
         assert "dev-cycle" in output.getvalue()
+
+
+def _script_clock(monkeypatch: pytest.MonkeyPatch, readings: list[float]) -> None:
+    """Patch the Stopwatch clock to return readings in order."""
+    sequence = iter(readings)
+    monkeypatch.setattr("dovo.common.timing.monotonic", lambda: next(sequence))
+
+
+class _ManualLive(Live):
+    """Live without its refresh thread, so a test triggers each redraw the thread would make."""
+
+    instances: ClassVar[list[_ManualLive]] = []
+
+    def __init__(
+        self,
+        *,
+        console: Console,
+        refresh_per_second: float,
+        transient: bool,
+        get_renderable: Callable[[], RenderableType],
+    ) -> None:
+        super().__init__(
+            console=console,
+            auto_refresh=False,
+            refresh_per_second=refresh_per_second,
+            transient=transient,
+            get_renderable=get_renderable,
+        )
+        _ManualLive.instances.append(self)
+
+
+class LiveStepElapsedTests:
+    def test_running_row_shows_live_stopwatch_seconds(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Render '2.5s' for a started step with readings [10.0, 12.5]."""
+        _script_clock(monkeypatch, [10.0, 12.5])
+        manager = _manager()
+        manager.handle_step_start(StepStartEvent(idx=1, total=1, step_id="build", name="build"))
+
+        rendered = render_rich(build_live_step_table(manager.steps))
+
+        assert "2.5s" in rendered
+
+    def test_live_redraw_without_an_event_advances_running_row(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Render '2.5s' when the Live display redraws at clock 12.5 for a step started at 10.0 with no event since."""
+        now = [10.0]
+        monkeypatch.setattr("dovo.common.timing.monotonic", lambda: now[0])
+        monkeypatch.setattr("dovo.cli.ui.live.Live", _ManualLive)
+        output = io.StringIO()
+        manager = LiveDisplayManager(_terminal_console(output))
+        manager.start()
+        manager.handle_step_start(StepStartEvent(idx=1, total=1, step_id="build", name="build"))
+
+        now[0] = 12.5
+        _ManualLive.instances[-1].refresh()
+        rendered = output.getvalue()
+        manager.stop()
+
+        assert "2.5s" in rendered
+
+    @pytest.mark.parametrize(
+        ("event_duration", "expected"),
+        [pytest.param(1.5, "1.50s", id="event-duration"), pytest.param(None, "3.00s", id="stopwatch-fallback")],
+    )
+    def test_finished_row_prefers_event_duration_else_stopwatch(
+        self, monkeypatch: pytest.MonkeyPatch, event_duration: float | None, expected: str
+    ) -> None:
+        """Render expected for a step started at reading 10.0 and done at 13.0 with StepDoneEvent.duration_seconds=event_duration."""
+        _script_clock(monkeypatch, [10.0, 13.0])
+        manager = _manager()
+        manager.handle_step_start(StepStartEvent(idx=1, total=1, step_id="build", name="build"))
+        manager.handle_step_done(
+            StepDoneEvent(idx=1, total=1, step_id="build", ok=True, exit_code=0, duration_seconds=event_duration)
+        )
+
+        rendered = render_rich(build_live_step_table(manager.steps))
+
+        assert expected in rendered
+
+    @pytest.mark.parametrize("status", ["pending", "completed"])
+    def test_row_without_a_duration_shows_a_dash(self, status: str) -> None:
+        """Render '-' in the Elapsed column for a LiveStepItem with no stopwatch and no duration_seconds."""
+        item = LiveStepItem(idx=1, total=1, name="build", command="make", status=status)
+
+        rendered = render_rich(build_live_step_table([item]))
+
+        assert " - " in rendered
 
 
 class BuildLoopStatusPanelTests:

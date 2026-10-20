@@ -11,14 +11,14 @@ def timeout_response(
     *,
     provider: str,
     timeout_seconds: int,
-    duration_ms: int,
+    duration_seconds: float,
     raw_text: str | None = None,
     mutation_baseline_ref: str | None = None,
 ) -> AgentResponse:
     """Build the TIMEOUT response carrying the canonical timeout error and fix."""
     return AgentResponse(
         status=AgentResponseStatus.TIMEOUT,
-        duration_ms=duration_ms,
+        duration_seconds=duration_seconds,
         raw_text=raw_text,
         mutation_baseline_ref=mutation_baseline_ref,
         errors=[f"Agent timed out after {timeout_seconds}s (provider={provider})."],
@@ -28,7 +28,7 @@ def timeout_response(
 
 def provider_error_response(
     *,
-    duration_ms: int,
+    duration_seconds: float,
     detail: str | None = None,
     errors: Sequence[str] = (),
     raw_text: str | None = None,
@@ -44,7 +44,7 @@ def provider_error_response(
 
     return AgentResponse(
         status=AgentResponseStatus.PROVIDER_ERROR,
-        duration_ms=duration_ms,
+        duration_seconds=duration_seconds,
         raw_text=raw_text,
         mutation_baseline_ref=mutation_baseline_ref,
         errors=diagnostics,
@@ -53,14 +53,14 @@ def provider_error_response(
 
 def no_op_response(
     *,
-    duration_ms: int,
+    duration_seconds: float,
     raw_text: str | None = None,
     mutation_baseline_ref: str | None = None,
 ) -> AgentResponse:
     """Build the NO_OP response."""
     return AgentResponse(
         status=AgentResponseStatus.NO_OP,
-        duration_ms=duration_ms,
+        duration_seconds=duration_seconds,
         raw_text=raw_text,
         mutation_baseline_ref=mutation_baseline_ref,
     )
@@ -69,7 +69,7 @@ def no_op_response(
 def unfixable_response(
     *,
     reason: str,
-    duration_ms: int,
+    duration_seconds: float,
     errors: Sequence[str] = (),
     raw_text: str | None = None,
     mutation_baseline_ref: str | None = None,
@@ -77,7 +77,7 @@ def unfixable_response(
     """Build the UNFIXABLE response carrying the agent's reason and any diagnostics from discarding its edit."""
     return AgentResponse(
         status=AgentResponseStatus.UNFIXABLE,
-        duration_ms=duration_ms,
+        duration_seconds=duration_seconds,
         unfixable_reason=reason,
         raw_text=raw_text,
         mutation_baseline_ref=mutation_baseline_ref,
@@ -88,7 +88,7 @@ def unfixable_response(
 def blocked_response(
     *,
     provider: str,
-    duration_ms: int,
+    duration_seconds: float,
     denials: Sequence[AgentDenial],
     raw_text: str | None = None,
     mutation_baseline_ref: str | None = None,
@@ -120,7 +120,7 @@ def blocked_response(
 
     return AgentResponse(
         status=AgentResponseStatus.BLOCKED,
-        duration_ms=duration_ms,
+        duration_seconds=duration_seconds,
         raw_text=raw_text,
         mutation_baseline_ref=mutation_baseline_ref,
         errors=errors,

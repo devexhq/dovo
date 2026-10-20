@@ -599,6 +599,25 @@ class SharedMutationAdapterTests:
         assert not run_function_called
 
 
+class CliMutationDurationTests:
+    @pytest.mark.parametrize(
+        "path", [pytest.param("preflight", id="preflight"), pytest.param("completed_run", id="completed-run")]
+    )
+    def test_adapter_response_carries_the_adapter_invocation_duration(
+        self, git_repo: Path, monkeypatch: pytest.MonkeyPatch, path: str
+    ) -> None:
+        """Return duration_seconds == 2.5 for readings [0.0, 10.0, 12.5] (base start, adapter start, adapter stop)."""
+        readings = iter([0.0, 10.0, 12.5])
+        monkeypatch.setattr("dovo.common.timing.monotonic", lambda: next(readings))
+        adapter_type = PreflightAdapter if path == "preflight" else UnitTestAdapter
+        expected_status = AgentResponseStatus.PROVIDER_ERROR if path == "preflight" else AgentResponseStatus.NO_OP
+
+        resp = adapter_type(run_fn=_fake_run()).invoke(AgentRequestBuilder().with_worktree_path(git_repo).build())
+
+        assert resp.status == expected_status
+        assert resp.duration_seconds == 2.5
+
+
 class BlockedClassificationTests:
     @pytest.mark.parametrize(
         ("denials", "writes_file", "expected", "expected_errors"),

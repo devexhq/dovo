@@ -57,7 +57,7 @@ class AgentFailurePayload(BaseModel):
     trigger_status: str
     exit_code: int | None
     timed_out: bool
-    duration_ms: int | None = None
+    duration_seconds: float | None = None
     stdout: str | None = None
     stderr: str | None = None
     stdout_truncated: bool = False
@@ -237,7 +237,7 @@ class AgentResponse(BaseModel):
     summary: str | None = None
     unfixable_reason: str | None = None
     raw_text: str | None = None
-    duration_ms: int = 0
+    duration_seconds: float = 0.0
     errors: list[str] = Field(default_factory=list)
     fixes: list[str] = Field(default_factory=list)
     mutation_baseline_ref: str | None = None

@@ -3,22 +3,17 @@
 from __future__ import annotations
 
 import abc
-import time
 from collections.abc import Callable
 from dataclasses import dataclass
 
 from dovo.common.redact import SecretRedactor
+from dovo.common.timing import Stopwatch
 from dovo.core.agents.credentials import missing_credential_error, resolve_credential
 from dovo.core.agents.environment import forwarded_env_secrets, validate_agent_env_request
 from dovo.core.agents.models import AgentProgress, AgentRequest, AgentResponse
 from dovo.core.agents.redaction import build_response_redactor, redact_agent_response
 from dovo.core.agents.responses import provider_error_response
 from dovo.core.agents.tools import check_policy_support
-
-
-def elapsed_ms(started: float) -> int:
-    """Return elapsed milliseconds since the start timestamp."""
-    return int((time.monotonic() - started) * 1000)
 
 
 class BaseAgentProvider(abc.ABC):
@@ -30,27 +25,30 @@ class BaseAgentProvider(abc.ABC):
 
     def invoke(self, request: AgentRequest) -> AgentResponse:
         """Return the masked PROVIDER_ERROR when no credential is usable, an environment override is reserved, or the tool policy cannot be enforced, else the masked ``_invoke`` response."""
-        started = time.monotonic()
+        watch = Stopwatch.start()
         redactor = self._response_redactor(request)
 
-        failure = self._preflight_failure(request, started)
+        failure = self._preflight_failure(request, watch)
         response = self._invoke(request) if failure is None else failure
 
         return redact_agent_response(response, redactor)
 
-    def _preflight_failure(self, request: AgentRequest, started: float) -> AgentResponse | None:
-        """Return the PROVIDER_ERROR for a missing credential, a reserved environment override, or an unenforceable tool policy, else None."""
+    def _preflight_failure(self, request: AgentRequest, watch: Stopwatch) -> AgentResponse | None:
+        """Return the PROVIDER_ERROR, timed by watch, for a missing credential, a reserved environment override, or an unenforceable tool policy, else None."""
         missing = self._credential_preflight()
         if missing is not None:
-            return provider_error_response(duration_ms=elapsed_ms(started), detail=missing)
+            watch.stop()
+            return provider_error_response(duration_seconds=watch.elapsed_seconds, detail=missing)
 
         override_error = self._env_preflight(request)
         if override_error is not None:
-            return provider_error_response(duration_ms=elapsed_ms(started), errors=[override_error])
+            watch.stop()
+            return provider_error_response(duration_seconds=watch.elapsed_seconds, errors=[override_error])
 
         policy_error = self._tool_policy_preflight(request)
         if policy_error is not None:
-            return provider_error_response(duration_ms=elapsed_ms(started), errors=[policy_error])
+            watch.stop()
+            return provider_error_response(duration_seconds=watch.elapsed_seconds, errors=[policy_error])
 
         return None
 

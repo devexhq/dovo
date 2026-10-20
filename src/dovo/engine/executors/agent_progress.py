@@ -4,10 +4,10 @@ from __future__ import annotations
 
 import threading
 from pathlib import Path
-from time import monotonic
 from typing import Final
 
 from dovo.common.redact import SecretRedactor
+from dovo.common.timing import Stopwatch
 from dovo.core.agents.models import AgentProgress, AgentProgressKind
 from dovo.core.sessions import SessionLogEvent, SessionLogEventType
 from dovo.engine.executors.models import AgentProgressUpdate, ProgressCallback
@@ -50,7 +50,7 @@ class AgentProgressReporter:
         self._held_notes: list[str] = []
         self._call_kinds: dict[str, AgentProgressKind] = {}
         self._last_reported: tuple[AgentProgressKind, str] | None = None
-        self._last_report_at: float | None = None
+        self._since_last_report: Stopwatch | None = None
 
     def report(self, progress: AgentProgress) -> None:
         """Stamp the time, hold a note until the next action, and report any other item with the notes held before it.
@@ -60,7 +60,7 @@ class AgentProgressReporter:
         so the same action run again afterwards is shown again.
         """
         with self._lock:
-            self._last_report_at = monotonic()
+            self._since_last_report = Stopwatch.start()
             if progress.kind is AgentProgressKind.NOTE:
                 self._held_notes.append(self._mask_then_truncate(progress.target))
             elif progress.kind is AgentProgressKind.RESULT:
@@ -71,10 +71,10 @@ class AgentProgressReporter:
     def seconds_since_last_report(self) -> float | None:
         """Return whole seconds since the last reported item, or None when none has arrived."""
         with self._lock:
-            if self._last_report_at is None:
+            if self._since_last_report is None:
                 return None
 
-            return float(int(monotonic() - self._last_report_at))
+            return float(int(self._since_last_report.elapsed_seconds))
 
     def _report_action(self, progress: AgentProgress) -> None:
         """Report the held notes and then the action, remembering the action's kind under its call id when it was shown."""

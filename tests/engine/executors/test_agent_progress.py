@@ -139,7 +139,7 @@ class AgentProgressReporterTests:
 
     def test_seconds_since_last_report_is_none_until_the_first_item(self, monkeypatch: pytest.MonkeyPatch) -> None:
         readings = itertools.chain([100.0, 110.4], itertools.repeat(110.4))
-        monkeypatch.setattr("dovo.engine.executors.agent_progress.monotonic", lambda: next(readings))
+        monkeypatch.setattr("dovo.common.timing.monotonic", lambda: next(readings))
         reporter = _reporter()
 
         assert reporter.seconds_since_last_report() is None

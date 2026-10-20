@@ -52,3 +52,40 @@ class CommandScriptEnvironmentPreservedTests:
 
         assert result.status == "completed"
         assert result.stdout.strip() == "1|probe|from-step"
+
+
+def _unread_clock() -> float:
+    raise AssertionError("a step failing before dispatch must not read the clock")
+
+
+class StepExecutionDurationTests:
+    def test_completed_step_duration_is_the_attempts_stopwatch_duration(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Return a completed StepResult for `run: echo ok` with duration_seconds == 2.5 for readings [10.0, 12.5]."""
+        readings = iter([10.0, 12.5])
+        monkeypatch.setattr("dovo.common.timing.monotonic", lambda: next(readings))
+        step = StepDefinition(id="s1", run="echo ok")
+
+        result = StepExecution(StepExecutionContext(step=step, worktree_path=tmp_path)).run()
+
+        assert result.status == "completed"
+        assert result.duration_seconds == 2.5
+
+    @pytest.mark.parametrize("failure", ["missing_worktree", "unresolved_step"])
+    def test_step_failing_before_dispatch_has_zero_duration(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, failure: str
+    ) -> None:
+        """Return a failed StepResult with duration_seconds == 0.0 and read no clock (patched monotonic raises)."""
+        monkeypatch.setattr("dovo.common.timing.monotonic", _unread_clock)
+        if failure == "missing_worktree":
+            context = StepExecutionContext(
+                step=StepDefinition(id="s1", run="echo ok"), worktree_path=tmp_path / "missing"
+            )
+        else:
+            context = StepExecutionContext(step=StepDefinition(id="s1", uses="base-step"), worktree_path=tmp_path)
+
+        result = StepExecution(context).run()
+
+        assert result.status == "failed"
+        assert result.duration_seconds == 0.0

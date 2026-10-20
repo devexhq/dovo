@@ -23,14 +23,14 @@ class TimeoutResponseTests:
         response = timeout_response(
             provider="copilot",
             timeout_seconds=10,
-            duration_ms=250,
+            duration_seconds=250.0,
             raw_text="partial",
             mutation_baseline_ref="abc",
         )
 
         assert response == AgentResponse(
             status=AgentResponseStatus.TIMEOUT,
-            duration_ms=250,
+            duration_seconds=250.0,
             raw_text="partial",
             mutation_baseline_ref="abc",
             errors=["Agent timed out after 10s (provider=copilot)."],
@@ -38,7 +38,7 @@ class TimeoutResponseTests:
         )
 
     def test_timeout_response_without_metadata_leaves_it_none(self) -> None:
-        response = timeout_response(provider="copilot", timeout_seconds=10, duration_ms=250)
+        response = timeout_response(provider="copilot", timeout_seconds=10, duration_seconds=250.0)
 
         assert response.raw_text is None
         assert response.mutation_baseline_ref is None
@@ -49,7 +49,7 @@ class BlockedResponseContractTests:
     def test_blocked_response_carries_denials_then_fix(self) -> None:
         response = blocked_response(
             provider="claude",
-            duration_ms=7,
+            duration_seconds=7.0,
             denials=[
                 AgentDenial(tool="bash", message="no interactive user response", capability=ToolCapability.SHELL),
                 AgentDenial(
@@ -65,7 +65,7 @@ class BlockedResponseContractTests:
 
         assert response == AgentResponse(
             status=AgentResponseStatus.BLOCKED,
-            duration_ms=7,
+            duration_seconds=7.0,
             raw_text="partial",
             mutation_baseline_ref="abc",
             errors=[
@@ -94,14 +94,14 @@ class BlockedResponseContractTests:
     def test_blocked_response_lists_one_fix_per_distinct_known_cause(
         self, denials: list[AgentDenial], expected_fix_count: int
     ) -> None:
-        response = blocked_response(provider="copilot", duration_ms=1, denials=denials)
+        response = blocked_response(provider="copilot", duration_seconds=1.0, denials=denials)
 
         assert len(response.fixes) == expected_fix_count
         assert len(response.errors) == len(denials)
 
     def test_blocked_response_requires_at_least_one_denial(self) -> None:
         with pytest.raises(ValueError):
-            blocked_response(provider="copilot", duration_ms=1, denials=[])
+            blocked_response(provider="copilot", duration_seconds=1.0, denials=[])
 
 
 class ProviderErrorResponseTests:
@@ -128,7 +128,7 @@ class ProviderErrorResponseTests:
     def test_provider_error_response_orders_and_prefixes_diagnostics(
         self, detail: str | None, errors: Sequence[str], expected: list[str]
     ) -> None:
-        response = provider_error_response(duration_ms=1, detail=detail, errors=errors)
+        response = provider_error_response(duration_seconds=1.0, detail=detail, errors=errors)
 
         assert response.status == AgentResponseStatus.PROVIDER_ERROR
         assert response.errors == expected
@@ -136,35 +136,35 @@ class ProviderErrorResponseTests:
     def test_provider_error_response_does_not_mutate_input_errors(self) -> None:
         errors = ["a", "b"]
 
-        provider_error_response(duration_ms=1, detail="d", errors=errors)
+        provider_error_response(duration_seconds=1.0, detail="d", errors=errors)
 
         assert errors == ["a", "b"]
 
     def test_provider_error_response_preserves_metadata(self) -> None:
-        response = provider_error_response(duration_ms=7, detail="d", raw_text="r", mutation_baseline_ref="abc")
+        response = provider_error_response(duration_seconds=7.0, detail="d", raw_text="r", mutation_baseline_ref="abc")
 
-        assert response.duration_ms == 7
+        assert response.duration_seconds == 7.0
         assert response.raw_text == "r"
         assert response.mutation_baseline_ref == "abc"
 
 
 class NoOpResponseTests:
     def test_no_op_response_preserves_metadata_and_carries_no_diff_or_errors(self) -> None:
-        response = no_op_response(duration_ms=9, raw_text="r", mutation_baseline_ref="abc")
+        response = no_op_response(duration_seconds=9.0, raw_text="r", mutation_baseline_ref="abc")
 
         assert response.status == AgentResponseStatus.NO_OP
         assert response.unified_diff is None
         assert response.errors == []
         assert response.raw_text == "r"
         assert response.mutation_baseline_ref == "abc"
-        assert response.duration_ms == 9
+        assert response.duration_seconds == 9.0
 
 
 class UnfixableResponseTests:
     def test_unfixable_response_carries_reason_and_errors(self) -> None:
         response = unfixable_response(
             reason="no SSH key",
-            duration_ms=11,
+            duration_seconds=11.0,
             errors=["Discarded edit saved to /tmp/x.patch."],
             raw_text="r",
             mutation_baseline_ref="abc",
@@ -172,7 +172,7 @@ class UnfixableResponseTests:
 
         assert response == AgentResponse(
             status=AgentResponseStatus.UNFIXABLE,
-            duration_ms=11,
+            duration_seconds=11.0,
             unfixable_reason="no SSH key",
             errors=["Discarded edit saved to /tmp/x.patch."],
             raw_text="r",
