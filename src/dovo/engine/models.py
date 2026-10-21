@@ -19,7 +19,13 @@ from dovo.core.db import SessionRecord, SessionStatus
 from dovo.core.interaction import InteractionAnswer, InteractionRequest
 from dovo.core.sessions import StepRunSummary
 from dovo.core.worktree import WorktreeSession
-from dovo.engine.executors.models import AgentProgressUpdate, ConditionEvaluationResult, ExecutionIdentity, StepResult
+from dovo.engine.executors.models import (
+    AgentProgressUpdate,
+    ConditionEvaluationResult,
+    ExecutionIdentity,
+    PreviousStepMetadata,
+    StepResult,
+)
 
 
 class EngineResumeStatus(StrEnum):
@@ -158,9 +164,23 @@ class AgentSettingsResolution(BaseResult):
         return self.settings is not None
 
 
+@dataclass(frozen=True, slots=True)
+class StepInvocation:
+    """One step attempt's position and history."""
+
+    step: StepDefinition
+    idx: int
+    total: int
+    attempt: int = 1
+    loop_id: str | None = None
+    loop_iteration: int | None = None
+    previous_step: PreviousStepMetadata = field(default_factory=PreviousStepMetadata)
+    steps: tuple[PreviousStepMetadata, ...] = ()
+
+
 @dataclass(frozen=True)
 class RunSettings:
-    """Settings and collaborators resolved from the session row, consumed by Workspace and StepCoordinator."""
+    """Settings and collaborators resolved from the session row, consumed by Workspace and RunCoordinator."""
 
     cwd: Path
     use_worktree: bool = True

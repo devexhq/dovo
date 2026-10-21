@@ -148,7 +148,7 @@ def spy_save_execution_state(monkeypatch: pytest.MonkeyPatch) -> SpySaveExecutio
 
 @pytest.fixture
 def captured_contexts(monkeypatch: pytest.MonkeyPatch) -> list[StepExecutionContext]:
-    """Collect the contexts StepCoordinator hands to StepExecution, in construction order."""
+    """Collect the contexts RunCoordinator hands to StepExecution, in construction order."""
     captured: list[StepExecutionContext] = []
 
     class _CapturingStepExecution(StepExecution):
@@ -156,7 +156,7 @@ def captured_contexts(monkeypatch: pytest.MonkeyPatch) -> list[StepExecutionCont
             captured.append(metadata)
             super().__init__(metadata)
 
-    monkeypatch.setattr("dovo.engine.step_coordinator.StepExecution", _CapturingStepExecution)
+    monkeypatch.setattr("dovo.engine.coordinator.StepExecution", _CapturingStepExecution)
     return captured
 
 
@@ -174,7 +174,7 @@ class AgentRunnerBuild:
 
 @pytest.fixture
 def captured_builds(monkeypatch: pytest.MonkeyPatch) -> list[AgentRunnerBuild]:
-    """Record each build_agent_step_runner call StepCoordinator makes, then build the real runner."""
+    """Record each build_agent_step_runner call RunCoordinator makes, then build the real runner."""
     captured: list[AgentRunnerBuild] = []
 
     def _recording_build(
@@ -197,7 +197,7 @@ def captured_builds(monkeypatch: pytest.MonkeyPatch) -> list[AgentRunnerBuild]:
             session_dir=session_dir,
         )
 
-    monkeypatch.setattr("dovo.engine.step_coordinator.build_agent_step_runner", _recording_build)
+    monkeypatch.setattr("dovo.engine.coordinator.build_agent_step_runner", _recording_build)
     return captured
 
 
