@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import pytest
 
+from dovo.core.config.agent_settings import agent_settings
 from dovo.core.config.models import AgentSettings, DovoConfig
-from dovo.core.config.services.agent_settings import agent_settings
 
 
 def _config(agents: dict[str, object]) -> DovoConfig:

@@ -11,10 +11,14 @@ from dovo.common.filesystem import Filesystem, WorkspacePaths
 from dovo.common.mcp_servers import McpServerDefinition
 from dovo.core.config.config import Config
 from dovo.core.config.exceptions import ConfigLoadError
-from dovo.core.config.generator import build_default_config
-from dovo.core.config.models import AgentSettings, ConfigTier
+from dovo.core.config.generator import ConfigGenerationResult, build_default_config
+from dovo.core.config.loader import ConfigLoadStatus, load_config
+from dovo.core.config.models import AgentSettings, ConfigTier, DovoConfig
+from dovo.core.config.mutate import ConfigSetResult, ConfigUnsetResult
 
 WorkspacePathsFactory = Callable[[Path, Path | None], WorkspacePaths]
+WriteTierConfig = Callable[[ConfigTier, dict[str, Any] | str], Path]
+ConfigMutation = Callable[[Config], ConfigSetResult | ConfigUnsetResult | ConfigGenerationResult]
 
 
 @pytest.fixture
@@ -26,20 +30,90 @@ def workspace_paths_no_config(tmp_path: Path, workspace_paths_factory: Workspace
 
 
 class ConfigLoadTests:
-    def test_load_reflects_user_tier_override(
-        self,
-        isolated_workspace: Path,
-        write_tier_config: Callable[[ConfigTier, dict[str, Any] | str], Path],
-        workspace_paths_factory: WorkspacePathsFactory,
+    def test_repo_only_config_matches_flat_load_result(self, workspace_paths: WorkspacePaths) -> None:
+        config_path = workspace_paths.config_file
+        payload = build_default_config("demo-workspace")
+        Filesystem.atomic_write_json(config_path, payload)
+
+        result = Config(workspace_paths).load()
+
+        expected_config = DovoConfig.model_validate(payload)
+        assert result.status == ConfigLoadStatus.OK
+        assert result.config_path == config_path
+        assert result.config == expected_config
+        assert result.raw == expected_config.model_dump(mode="json")
+        assert result.errors == []
+
+    def test_global_and_user_tier_overrides_merge_over_repo_and_packaged(
+        self, workspace_paths: WorkspacePaths, write_tier_config: WriteTierConfig
     ) -> None:
-        write_tier_config(ConfigTier.USER, {"agents": {"copilot": {"model": "user-tier-model"}}})
-        paths = workspace_paths_factory(isolated_workspace, None)
-        Filesystem.atomic_write_json(paths.config_file, {"version": 1, "project": {"name": "demo-workspace"}})
+        write_tier_config(ConfigTier.GLOBAL, {"agents": {"copilot": {"temperature": 0.6}}})
+        write_tier_config(
+            ConfigTier.USER, {"agents": {"copilot": {"model": "user-model"}}, "worktree": {"base_ref": "develop"}}
+        )
 
-        result = Config(paths).load()
+        repo_payload = {
+            "version": 1,
+            "project": {"name": "demo-workspace"},
+            "worktree": {"base_ref": "main"},
+        }
+        Filesystem.atomic_write_json(workspace_paths.config_file, repo_payload)
 
+        result = Config(workspace_paths).load()
+
+        assert result.status == ConfigLoadStatus.OK
         assert result.config is not None
-        assert result.config.agents["copilot"].model == "user-tier-model"
+        assert result.config.agents["copilot"].temperature == 0.6
+        assert result.config.agents["copilot"].model == "user-model"
+        assert result.config.worktree.base_ref == "main"
+
+    @pytest.mark.parametrize(
+        ("repo_content", "expected_status"),
+        [
+            pytest.param(None, ConfigLoadStatus.NOT_FOUND, id="missing"),
+            pytest.param("{not valid json", ConfigLoadStatus.MALFORMED_JSON, id="malformed"),
+            pytest.param({"version": 1}, ConfigLoadStatus.SCHEMA_INVALID, id="schema_invalid"),
+        ],
+    )
+    def test_repo_failure_returns_repo_status_without_reading_tiers(
+        self,
+        workspace_paths: WorkspacePaths,
+        write_tier_config: WriteTierConfig,
+        repo_content: dict[str, int] | str | None,
+        expected_status: ConfigLoadStatus,
+    ) -> None:
+        write_tier_config(ConfigTier.USER, "{not valid json")
+        if isinstance(repo_content, str):
+            Filesystem.atomic_write_text(workspace_paths.config_file, repo_content)
+        elif repo_content is not None:
+            Filesystem.atomic_write_json(workspace_paths.config_file, repo_content)
+        flat_result = load_config(workspace_paths)
+
+        result = Config(workspace_paths).load()
+
+        assert result.status == expected_status
+        assert result.config is None
+        assert result.config_path == workspace_paths.config_file
+        assert result.errors == flat_result.errors
+
+    @pytest.mark.parametrize(
+        "tier", [pytest.param(ConfigTier.GLOBAL, id="global"), pytest.param(ConfigTier.USER, id="user")]
+    )
+    def test_invalid_global_or_user_tier_returns_tier_invalid(
+        self,
+        workspace_paths: WorkspacePaths,
+        write_tier_config: WriteTierConfig,
+        tier: ConfigTier,
+    ) -> None:
+        tier_config_path = write_tier_config(tier, "{not valid json")
+
+        Filesystem.atomic_write_json(workspace_paths.config_file, build_default_config("demo-workspace"))
+
+        result = Config(workspace_paths).load()
+
+        assert result.status == ConfigLoadStatus.TIER_INVALID
+        assert result.config_path == tier_config_path
+        assert result.errors[0].startswith(f"Invalid configuration in {tier} tier")
 
 
 class ConfigLoadRequiredTests:
@@ -50,45 +124,34 @@ class ConfigLoadRequiredTests:
             Config.load_required(workspace_paths_no_config)
 
 
-class ConfigLoadedConfigAccessorTests:
-    def test_loaded_config_raises_config_load_error_for_tier_invalid_status(
+class ConfigAccessorTests:
+    def test_accessor_raises_config_load_error_with_failed_result(
         self,
         isolated_workspace: Path,
-        write_tier_config: Callable[[ConfigTier, dict[str, Any] | str], Path],
+        write_tier_config: WriteTierConfig,
         workspace_paths_factory: WorkspacePathsFactory,
     ) -> None:
         write_tier_config(ConfigTier.USER, "{not valid json")
         paths = workspace_paths_factory(isolated_workspace, None)
         Filesystem.atomic_write_json(paths.config_file, build_default_config("demo-workspace"))
 
-        with pytest.raises(ConfigLoadError, match="Invalid configuration in user layer"):
-            _ = Config(paths)._loaded_config
+        with pytest.raises(ConfigLoadError, match="Invalid configuration in user tier") as exc_info:
+            _ = Config(paths).worktree
 
-    def test_loaded_config_raises_with_path_errors_and_fix_bullets_for_missing_config(
+        assert exc_info.value.result.status == ConfigLoadStatus.TIER_INVALID
+
+    def test_accessor_raises_with_path_errors_and_fix_bullets_for_missing_config(
         self, isolated_workspace: Path, workspace_paths_factory: WorkspacePathsFactory
     ) -> None:
         paths = workspace_paths_factory(isolated_workspace, None)
 
         with pytest.raises(ConfigLoadError) as exc_info:
-            _ = Config(paths)._loaded_config
+            _ = Config(paths).worktree
 
         message = str(exc_info.value)
         assert str(paths.root_dir) in message
         assert "CONFIG_NOT_FOUND" in message
         assert "Fix:\n- Run `dovo init` to create `.dovo/config.json`" in message
-
-    def test_loaded_config_is_cached_after_first_successful_load(
-        self, isolated_workspace: Path, workspace_paths_factory: WorkspacePathsFactory
-    ) -> None:
-        paths = workspace_paths_factory(isolated_workspace, None)
-        Filesystem.atomic_write_json(paths.config_file, build_default_config("cached-project"))
-        config = Config(paths)
-
-        first = config._loaded_config
-        paths.config_file.write_text("{not valid json", encoding="utf-8")
-        second = config._loaded_config
-
-        assert first is second
 
 
 class ConfigAccessorPropertyTests:
@@ -98,7 +161,8 @@ class ConfigAccessorPropertyTests:
         paths = workspace_paths_factory(isolated_workspace, None)
         Filesystem.atomic_write_json(paths.config_file, build_default_config("prop-project"))
         config = Config(paths)
-        loaded = config._loaded_config
+        loaded = config.load().config
+        assert loaded is not None
 
         assert config.version == loaded.version
         assert config.project == loaded.project
@@ -109,7 +173,8 @@ class ConfigAccessorPropertyTests:
         paths = workspace_paths_factory(isolated_workspace, None)
         Filesystem.atomic_write_json(paths.config_file, build_default_config("prop-project"))
         config = Config(paths)
-        loaded = config._loaded_config
+        loaded = config.load().config
+        assert loaded is not None
 
         assert config.worktree == loaded.worktree
         assert config.history == loaded.history
@@ -168,18 +233,76 @@ class ConfigGenerateTests:
         assert loaded is not None
         assert loaded.project.name == "original-name"
 
-    def test_generate_with_overwrite_replaces_existing_config_and_clears_cache(
+    def test_generate_with_overwrite_replaces_existing_config(
         self, isolated_workspace: Path, workspace_paths_factory: WorkspacePathsFactory
     ) -> None:
         paths = workspace_paths_factory(isolated_workspace, None)
         Filesystem.atomic_write_json(paths.config_file, build_default_config("original-name"))
-        config = Config(paths)
-        _ = config._loaded_config
 
-        result = config.generate(overwrite=True, project_name="replaced-name")
+        result = Config(paths).generate(overwrite=True, project_name="replaced-name")
 
         assert result.overwritten is True
-        assert config._loaded_config.project.name == "replaced-name"
+        loaded = Config(paths).load().config
+        assert loaded is not None
+        assert loaded.project.name == "replaced-name"
+
+
+def _write_config_with_base_ref(paths: WorkspacePaths, base_ref: str) -> None:
+    payload = build_default_config("cached-project")
+    payload["worktree"]["base_ref"] = base_ref
+    Filesystem.atomic_write_json(paths.config_file, payload)
+
+
+class ConfigCacheTests:
+    @pytest.mark.parametrize(
+        ("mutate", "expected_base_ref"),
+        [
+            pytest.param(lambda config: config.set("worktree.base_ref", "main"), "main", id="set"),
+            pytest.param(lambda config: config.unset("worktree.base_ref"), "HEAD", id="unset"),
+            pytest.param(lambda config: config.generate(overwrite=True, project_name="demo"), "HEAD", id="generate"),
+        ],
+    )
+    def test_successful_mutation_clears_cached_config(
+        self,
+        isolated_workspace: Path,
+        workspace_paths_factory: WorkspacePathsFactory,
+        mutate: ConfigMutation,
+        expected_base_ref: str,
+    ) -> None:
+        paths = workspace_paths_factory(isolated_workspace, None)
+        _write_config_with_base_ref(paths, "develop")
+        config = Config(paths)
+        assert config.worktree.base_ref == "develop"
+
+        result = mutate(config)
+
+        assert result.ok
+        assert config.worktree.base_ref == expected_base_ref
+
+    @pytest.mark.parametrize(
+        "mutate",
+        [
+            pytest.param(lambda config: config.set("worktree.base_ref", "main"), id="set"),
+            pytest.param(lambda config: config.unset("worktree.base_ref"), id="unset"),
+            pytest.param(lambda config: config.generate(repair=True), id="generate"),
+        ],
+    )
+    def test_failed_mutation_keeps_cached_config(
+        self,
+        isolated_workspace: Path,
+        workspace_paths_factory: WorkspacePathsFactory,
+        mutate: ConfigMutation,
+    ) -> None:
+        paths = workspace_paths_factory(isolated_workspace, None)
+        _write_config_with_base_ref(paths, "develop")
+        config = Config(paths)
+        assert config.worktree.base_ref == "develop"
+        Filesystem.atomic_write_text(paths.config_file, "{not valid json")
+
+        result = mutate(config)
+
+        assert not result.ok
+        assert config.worktree.base_ref == "develop"
 
 
 class AgentSettingsMcpServersTests:

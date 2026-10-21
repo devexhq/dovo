@@ -1,15 +1,16 @@
-"""Config generation, load, validate, models, and repository context."""
+"""Config generation, tiered load, validation, mutation and models."""
 
+from dovo.core.config.agent_settings import agent_settings
 from dovo.core.config.config import Config
 from dovo.core.config.exceptions import ConfigLoadError, ConfigTierValidationError
 from dovo.core.config.generator import ConfigGenerationResult
 from dovo.core.config.loader import ConfigLoadResult, ConfigLoadStatus
 from dovo.core.config.models import (
-    ConfigLayer,
     ConfigTier,
+    ConfigTierEntry,
     DovoConfig,
-    HierarchicalConfigLoadResult,
-    HierarchicalConfigLoadStatus,
+    TieredConfigLoadResult,
+    TieredConfigLoadStatus,
 )
 from dovo.core.config.mutate import (
     ConfigSetResult,
@@ -17,7 +18,6 @@ from dovo.core.config.mutate import (
     ConfigUnsetResult,
     ConfigUnsetStatus,
 )
-from dovo.core.config.services.agent_settings import agent_settings
 from dovo.core.config.validate import (
     ConfigValidationResult,
     ConfigValidationStatus,
@@ -26,20 +26,20 @@ from dovo.core.config.validate import (
 __all__ = [
     "Config",
     "ConfigGenerationResult",
-    "ConfigLayer",
     "ConfigLoadError",
     "ConfigLoadResult",
     "ConfigLoadStatus",
     "ConfigSetResult",
     "ConfigSetStatus",
     "ConfigTier",
+    "ConfigTierEntry",
     "ConfigTierValidationError",
     "ConfigUnsetResult",
     "ConfigUnsetStatus",
     "ConfigValidationResult",
     "ConfigValidationStatus",
     "DovoConfig",
-    "HierarchicalConfigLoadResult",
-    "HierarchicalConfigLoadStatus",
+    "TieredConfigLoadResult",
+    "TieredConfigLoadStatus",
     "agent_settings",
 ]

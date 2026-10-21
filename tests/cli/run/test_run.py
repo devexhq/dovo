@@ -210,7 +210,7 @@ class RunCliIntegrationTests:
 
         assert result.exit_code == 1
         assert "Config Error" in result.stdout
-        assert "Invalid configuration in user layer" in result.stdout
+        assert "Invalid configuration in user tier" in result.stdout
 
     def test_run_cli_config_show_and_run_observe_identical_merged_config(
         self,

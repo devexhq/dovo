@@ -170,7 +170,7 @@ class DovoConfig(BaseModel):
 
 
 class ConfigTier(StrEnum):
-    """Precedence tiers for hierarchical configuration resolution."""
+    """Precedence tiers for tiered configuration resolution."""
 
     PACKAGED = "packaged"
     GLOBAL = "global"
@@ -178,7 +178,7 @@ class ConfigTier(StrEnum):
     REPO = "repo"
 
 
-class ConfigLayer(BaseModel):
+class ConfigTierEntry(BaseModel):
     """One resolved configuration tier: its precedence, source path, and raw data."""
 
     model_config = {"extra": "forbid", "strict": True}
@@ -188,8 +188,8 @@ class ConfigLayer(BaseModel):
     data: dict[str, Any]
 
 
-class HierarchicalConfigLoadStatus(StrEnum):
-    """Classified outcomes for resolving and merging the hierarchical DovoConfig tiers."""
+class TieredConfigLoadStatus(StrEnum):
+    """Classified outcomes for resolving and merging the DovoConfig tiers."""
 
     OK = "ok"
     UNREADABLE = "unreadable"
@@ -198,10 +198,10 @@ class HierarchicalConfigLoadStatus(StrEnum):
     VALIDATION_FAILED = "validation_failed"
 
 
-class HierarchicalConfigLoadResult(BaseResult):
+class TieredConfigLoadResult(BaseResult):
     """Non-raising result of resolving and merging the Packaged, Global, User, and Repo config tiers."""
 
-    status: HierarchicalConfigLoadStatus
+    status: TieredConfigLoadStatus
     tier: ConfigTier | None = None
     path: Path | None = None
     config: DovoConfig | None = None
@@ -209,4 +209,4 @@ class HierarchicalConfigLoadResult(BaseResult):
     @property
     def ok(self) -> bool:
         """Return True when every tier read and validated successfully."""
-        return self.status == HierarchicalConfigLoadStatus.OK
+        return self.status == TieredConfigLoadStatus.OK
