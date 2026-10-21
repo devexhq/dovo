@@ -216,7 +216,7 @@ class MetadataProvider:
             return None
 
 
-def metadata_providers(metadata: ExecutionMetadataView) -> list[NamespaceProvider]:
+def _metadata_providers(metadata: ExecutionMetadataView) -> list[NamespaceProvider]:
     """Build one MetadataProvider per metadata namespace plus the StepsProvider."""
     namespaces = dict.fromkeys(key.partition(".")[0] for key in _METADATA_EXTRACTORS)
     providers: list[NamespaceProvider] = [MetadataProvider(namespace, metadata) for namespace in namespaces]
@@ -233,7 +233,7 @@ def build_providers(
     """Return providers in resolution order: metadata, steps, artifacts, then inputs; omit those not supplied."""
     providers: list[NamespaceProvider] = []
     if metadata is not None:
-        providers.extend(metadata_providers(metadata))
+        providers.extend(_metadata_providers(metadata))
     if artifacts is not None:
         providers.append(artifacts)
     if inputs:

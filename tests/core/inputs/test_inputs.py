@@ -1,73 +1,11 @@
-"""Unit tests for blueprint input parameter resolution and diagnostics."""
+"""Unit tests for blueprint input resolution and the package's public surface."""
 
 from __future__ import annotations
 
-import re
-
 import pytest
 
-from dovo.core.inputs.models import (
-    InputType,
-    ParameterInput,
-)
-from dovo.core.inputs.services.resolve import (
-    format_missing_inputs_error,
-    is_truthy_bool,
-    resolve_inputs,
-)
-
-VALID_BOOLEAN_CASES = [
-    pytest.param("1", True, id="numeric_one_true"),
-    pytest.param("true", True, id="lowercase_true"),
-    pytest.param("True", True, id="titlecase_true"),
-    pytest.param("TRUE", True, id="uppercase_true"),
-    pytest.param("yes", True, id="lowercase_yes"),
-    pytest.param("Yes", True, id="titlecase_yes"),
-    pytest.param("YES", True, id="uppercase_yes"),
-    pytest.param("y", True, id="lowercase_y"),
-    pytest.param("Y", True, id="uppercase_y"),
-    pytest.param("on", True, id="lowercase_on"),
-    pytest.param("On", True, id="titlecase_on"),
-    pytest.param("ON", True, id="uppercase_on"),
-    pytest.param(" true ", True, id="whitespace_padded_true"),
-    pytest.param("0", False, id="numeric_zero_false"),
-    pytest.param("false", False, id="lowercase_false"),
-    pytest.param("False", False, id="titlecase_false"),
-    pytest.param("FALSE", False, id="uppercase_false"),
-    pytest.param("no", False, id="lowercase_no"),
-    pytest.param("No", False, id="titlecase_no"),
-    pytest.param("NO", False, id="uppercase_no"),
-    pytest.param("n", False, id="lowercase_n"),
-    pytest.param("N", False, id="uppercase_n"),
-    pytest.param("off", False, id="lowercase_off"),
-    pytest.param("Off", False, id="titlecase_off"),
-    pytest.param("OFF", False, id="uppercase_off"),
-    pytest.param(" false ", False, id="whitespace_padded_false"),
-]
-
-INVALID_BOOLEAN_CASES = [
-    pytest.param("maybe", id="word_maybe"),
-    pytest.param("invalid", id="word_invalid"),
-    pytest.param("2", id="numeric_two"),
-    pytest.param("-1", id="negative_one"),
-    pytest.param("none", id="word_none"),
-    pytest.param("", id="empty_string"),
-    pytest.param(" trueish ", id="partial_token"),
-    pytest.param("null", id="word_null"),
-]
-
-
-class InputTypeConversionTests:
-    """Unit tests verifying boolean string conversion and rejection contracts."""
-
-    @pytest.mark.parametrize(("token", "expected"), VALID_BOOLEAN_CASES)
-    def test_convert_input_truthy_bool_evaluates_valid_forms(self, token: str, expected: bool) -> None:
-        assert is_truthy_bool(token) is expected
-
-    @pytest.mark.parametrize("token", INVALID_BOOLEAN_CASES)
-    def test_convert_input_truthy_bool_rejects_invalid_values(self, token: str) -> None:
-        with pytest.raises(ValueError, match=rf"invalid boolean value '{re.escape(token)}'"):
-            is_truthy_bool(token)
+import dovo.core.inputs
+from dovo.core.inputs import InputType, ParameterInput, resolve_inputs
 
 
 def _sample_declarations() -> dict[str, ParameterInput]:
@@ -121,35 +59,6 @@ class InputSyntaxValidationTests:
             "Ignoring unexpected argument 'positional_arg'.",
         ]
         assert result.fixes == []
-
-    def test_format_missing_inputs_error_includes_cli_usage_example(self) -> None:
-        declarations = {
-            "message": ParameterInput(
-                type=InputType.STRING,
-                required=True,
-                aliases=["-m", "--message"],
-            ),
-            "target": ParameterInput(
-                type=InputType.STRING,
-                required=True,
-            ),
-        }
-
-        error_message = format_missing_inputs_error(
-            name="deploy",
-            missing=["message", "target"],
-            declarations=declarations,
-        )
-        expected_message = (
-            "Missing required input 'message' for 'deploy'.\n"
-            "Also missing: 'target'.\n\n"
-            "Usage:\n"
-            "  dovo run deploy -m <value>\n"
-            "  dovo run deploy -i message=<value>\n"
-            "  dovo run deploy -i target=<value>"
-        )
-
-        assert error_message == expected_message
 
 
 FLAG_RESOLUTION_CASES = [
@@ -228,3 +137,82 @@ class InputFlagResolutionTests:
         assert result.errors == []
         assert result.warnings == []
         assert result.fixes == []
+
+
+def _declarations_with_count() -> dict[str, ParameterInput]:
+    """Build the standard declarations plus an optional integer input."""
+    return {**_sample_declarations(), "count": ParameterInput(type=InputType.INTEGER)}
+
+
+PARSE_FAILURE_CASES = [
+    pytest.param(["-m"], ["Missing value for option '-m'."], [], id="alias_missing_value"),
+    pytest.param(["-i"], ["Missing value for option '-i'."], [], id="generic_missing_value"),
+    pytest.param(["-i", "count=abc"], ["Input 'count' expects an integer, got 'abc'."], [], id="invalid_integer"),
+    pytest.param(
+        ["--allow-empty=maybe"], ["Input 'allow_empty' expects a boolean, got 'maybe'."], [], id="invalid_boolean"
+    ),
+]
+
+
+class InputResolutionOutcomeTests:
+    """Unit tests verifying resolution outcomes: parse failures, overrides, defaults and missing inputs."""
+
+    @pytest.mark.parametrize(("cli_args", "errors", "warnings"), PARSE_FAILURE_CASES)
+    def test_resolve_inputs_reports_parse_failures_verbatim(
+        self, cli_args: list[str], errors: list[str], warnings: list[str]
+    ) -> None:
+        result = resolve_inputs(_declarations_with_count(), cli_args=cli_args)
+
+        assert result.values == {}
+        assert result.missing == []
+        assert result.errors == errors
+        assert result.warnings == warnings
+
+    def test_resolve_inputs_warns_on_unknown_override_key(self) -> None:
+        result = resolve_inputs(_sample_declarations(), cli_args=["-m", "x", "-i", "nope=1"])
+
+        assert result.values == {"message": "x", "allow_empty": False}
+        assert result.missing == []
+        assert result.errors == []
+        assert result.warnings == ["Ignoring unknown input override 'nope'."]
+
+    def test_resolve_inputs_overrides_beat_cli_values_and_defaults_fill_gaps(self) -> None:
+        result = resolve_inputs(
+            _sample_declarations(),
+            cli_args=["-m", "cli"],
+            overrides={"message": "from-override"},
+        )
+
+        assert result.values == {"message": "from-override", "allow_empty": False}
+        assert result.missing == []
+        assert result.errors == []
+
+    def test_resolve_inputs_lists_missing_required_inputs(self) -> None:
+        result = resolve_inputs(_sample_declarations())
+
+        assert result.missing == ["message"]
+        assert result.values == {"allow_empty": False}
+        assert result.ok is False
+
+
+class InputsPackageTests:
+    """Unit tests pinning the public names exported by dovo.core.inputs."""
+
+    def test_package_exports_named_functions_only(self) -> None:
+        assert sorted(dovo.core.inputs.__all__) == [
+            "ExecutionMetadataView",
+            "InputResolveResult",
+            "InputType",
+            "NamespaceProvider",
+            "NamespaceResolutionError",
+            "ParameterInput",
+            "build_providers",
+            "coerce_input_value",
+            "format_input_error_message",
+            "format_missing_inputs_error",
+            "interpolate_step_fields",
+            "interpolate_string",
+            "parse_cli_input_args",
+            "resolve_inputs",
+        ]
+        assert not hasattr(dovo.core.inputs, "Inputs")

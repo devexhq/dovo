@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dovo.core.catalog.definitions import BlueprintDefinition, LoopStepBlock, StepDefinition
-from dovo.core.inputs.models import InputType, ParameterInput
+from dovo.core.inputs import InputType, ParameterInput
 from tests.harness.builders.step import StepBuilder
 
 

@@ -6,7 +6,7 @@ import pytest
 
 from dovo.core.artifacts.store import ArtifactStore
 from dovo.core.db.repositories.artifacts import ArtifactsRepository
-from dovo.core.inputs.exceptions import NamespaceResolutionError
+from dovo.core.inputs import NamespaceResolutionError
 from dovo.engine.executors.artifact_namespace import ArtifactNamespaceProvider
 from tests.conftest import PublishArtifact
 

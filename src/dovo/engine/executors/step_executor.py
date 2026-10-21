@@ -23,8 +23,7 @@ from dovo.common.timing import Stopwatch
 from dovo.core.catalog.definitions import StepDefinition, StepType
 from dovo.core.catalog.exceptions import StepValidationError
 from dovo.core.catalog.services.resolve_step import resolve_step_definition
-from dovo.core.inputs.exceptions import NamespaceResolutionError
-from dovo.core.inputs.services.interpolate import NamespaceProvider, build_providers, interpolate_step_fields
+from dovo.core.inputs import NamespaceProvider, NamespaceResolutionError, build_providers, interpolate_step_fields
 from dovo.engine.executors.agent_progress import AgentProgressReporter
 from dovo.engine.executors.artifact_namespace import ArtifactNamespaceProvider
 from dovo.engine.executors.internal_dispatch import INTERNAL_COMMAND_HANDLERS

@@ -8,11 +8,7 @@ from typing import TYPE_CHECKING, Any, ClassVar
 from dovo.core.catalog.definitions import BlueprintDefinition, LoopStepBlock, StepDefinition
 from dovo.core.catalog.exceptions import BlueprintLoadError, BlueprintNotFoundError
 from dovo.core.catalog.models import CatalogItemType
-from dovo.core.inputs import (
-    InputResolveResult,
-    Inputs,
-    ParameterInput,
-)
+from dovo.core.inputs import InputResolveResult, ParameterInput, resolve_inputs
 
 if TYPE_CHECKING:
     from dovo.core.catalog.catalog import Catalog
@@ -91,4 +87,4 @@ class Blueprint:
         overrides: dict[str, str | int | bool] | None = None,
     ) -> InputResolveResult:
         """Parse CLI args against this blueprint's declared inputs."""
-        return Inputs.resolve(self.inputs, cli_args=cli_args, overrides=overrides)
+        return resolve_inputs(self.inputs, cli_args=cli_args, overrides=overrides)
