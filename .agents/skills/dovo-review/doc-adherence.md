@@ -25,5 +25,5 @@ Walk the changed-file list against this table (and [docs/agents/documentation.md
 These are `AGENTS.md` directives about how the work was done. Report violations as findings, but do not block otherwise-correct code on them alone.
 
 - **Plan before code.** A change that adds surface needed a plan per `docs/agents/planning.md`. Skippable only for a single-file change adding no new surface.
-- **One phase per PR.** A diff that spans several plan phases, or runs well past the plan's size estimate, should have been split.
+- **Size against the plan.** A diff that runs well past the plan's summed size estimates should have been planned differently. `/dovo-code` lands every phase in one PR, so a diff that spans several phases is expected.
 - **Gates before commit.** `dovo run quality` had to pass before committing. This skill does not run them (`/dovo-code` owns the gate); ask whether they were run and report the answer as reported, never as verified.

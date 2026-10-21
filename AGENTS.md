@@ -16,11 +16,12 @@ they are not repeated here.
    The plan sizes the work and splits it into phases. Skip it for a single-file
    change that adds no surface. If a plan was created, review it
    (`/dovo-plan-review`) in a fresh session before a human approves it.
-2. **One phase, one PR.** Each phase is reviewable in one sitting (roughly 400
+2. **Phase the plan.** Each phase is reviewable in one sitting (roughly 400
    changed lines or less), passes the quality gate on its own and ships
    something. When a change replaces an internal, phase it as add, switch
    callers, delete, with the deletion phase planned up front (see R10).
-3. **Implement** a phase (`/dovo-code`), then **review** it (`/dovo-review`) in a
+3. **Implement** the plan (`/dovo-code`), which works through every phase in
+   order and lands them in one PR, then **review** it (`/dovo-review`) in a
    fresh session, then a human reviews and merges the PR.
 
 ## Rules

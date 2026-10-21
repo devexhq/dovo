@@ -13,7 +13,7 @@ disable-model-invocation: true
 Review a change set in `Dovo CLI`, in this order of importance:
 
 1. **Correctness**: bugs, regressions and broken edge cases in what the diff does.
-2. **Plan fidelity**: does the code implement `.agentic/plan.md`'s current phase, no more and no less.
+2. **Plan fidelity**: does the code implement every phase of `.agentic/plan.md`, no more and no less.
 3. **Rules**: does the diff break any of the 17 rules in [AGENTS.md](../../../AGENTS.md).
 4. **Docs**: did the change update the docs it had to, and nothing else.
 
@@ -42,7 +42,7 @@ A reviewer that shares the author's context inherits its blind spots. If this se
 
 ## 3. Load the context
 
-Read [AGENTS.md](../../../AGENTS.md), `.agentic/plan.md` if it exists (the phase under review is the contract), and `.agentic/implementation-report.md` if it exists. The report's **Plan deviations** are the author's claims to verify, never evidence that the code is correct. Read the exemplar nearest to each changed file, since R5 asks new code to look like it.
+Read [AGENTS.md](../../../AGENTS.md), `.agentic/plan.md` if it exists (all of its phases together are the contract), and `.agentic/implementation-report.md` if it exists. The report's **Plan deviations** are the author's claims to verify, never evidence that the code is correct. Read the exemplar nearest to each changed file, since R5 asks new code to look like it.
 
 ## 4. Hunt for bugs
 
@@ -60,10 +60,10 @@ A bug is Blocking when it can produce a wrong result, data loss, a crash or a br
 
 Skip this when `.agentic/plan.md` is absent, and say so.
 
-- Every FR in the phase landed, with the contracts written exactly: field names, types, defaults, status values, flags, help text, exit codes and messages. A "better" name than the plan's is a finding.
-- Nothing from a later phase, out of scope, or named as a trap landed.
-- Each test stub in the phase exists and asserts its stated contract, and every new test file traces back to a stub.
-- The phase's deletion ledger is executed.
+- Every FR in every phase landed, with the contracts written exactly: field names, types, defaults, status values, flags, help text, exit codes and messages. A "better" name than the plan's is a finding.
+- Nothing out of scope or named as a trap landed.
+- Each test stub in every phase exists and asserts its stated contract, and every new test file traces back to a stub.
+- Every phase's deletion ledger is executed.
 - Each difference from the plan appears under the report's Plan deviations. A documented deviation that is compliant goes under `Documented deviations`; one that breaks a rule or a literal contract is still a finding; an undocumented one is a finding for silent deviation.
 
 ## 6. Check the rules
@@ -85,7 +85,7 @@ Write `.agentic/review.md` (create `.agentic/` if needed), overwriting the previ
 
 **Verdict:** APPROVE | CHANGES REQUIRED
 **Scope:** <PR #n | uncommitted | origin/<default>...HEAD> (<k> files, <+a/-d> lines)
-**Plan:** `.agentic/plan.md` phase <p> | absent
+**Plan:** `.agentic/plan.md` (<n> phases) | absent
 **Provenance:** fresh session | same session that wrote the code
 
 ### Blocking

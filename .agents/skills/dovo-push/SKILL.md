@@ -17,7 +17,7 @@ Get the current branch's work committed and represented by an open PR. Nothing e
 - **Never run tests or tooling.** No `dovo run tests`, no `dovo run quality`, no `pytest`, no `ruff`, no `ty`, no `uv sync`. `/dovo-code` already gated the change; re-running here is not this skill's job. If you believe the gates were never run, say so and let the human decide rather than running them.
 - **Never write code.** No fixes, no formatting, no "while I'm here" edits. If the diff looks wrong, report it and stop.
 - **Never commit to the default branch.** If `HEAD` is on it, update against origin, create a branch and continue.
-- **Never stage or delete `.agentic/`.** The plan and review are working artifacts, not deliverables. Later phases still need the plan, and only `/dovo-plan` clears the directory, at the start of the next cycle. Step 2 and Step 3 check that nothing under it reaches a commit, which is the second guarantee behind the `/.agentic/` ignore rule. Leave `.dovo/` and `scratch/` alone.
+- **Never stage or delete `.agentic/`.** The plan and review are working artifacts, not deliverables. Later review rounds still need the plan, and only `/dovo-plan` clears the directory, at the start of the next cycle. Step 2 and Step 3 check that nothing under it reaches a commit, which is the second guarantee behind the `/.agentic/` ignore rule. Leave `.dovo/` and `scratch/` alone.
 - **Do not add reviewers** unless the user names them.
 
 ## Step 1: Read the state
@@ -41,7 +41,7 @@ Capture the issue number for later use in the PR description. `/dovo-plan` write
 head -1 .agentic/plan.md 2>/dev/null
 ```
 
-Leave every file under `.agentic/` in place: `/dovo-code --phase <n>` reads the plan for later phases, and `/dovo-plan` clears the whole directory before it starts the next cycle. Before staging anything, confirm that git neither tracks nor stages any of it:
+Leave every file under `.agentic/` in place: `/dovo-review` and `/dovo-code review` read the plan in later review rounds, and `/dovo-plan` clears the whole directory before it starts the next cycle. Before staging anything, confirm that git neither tracks nor stages any of it:
 
 ```bash
 git ls-files .agentic
