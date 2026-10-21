@@ -2,20 +2,23 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
+
 import pytest
 
 from dovo.core.catalog.definitions import StepDefinition, StepType
-from dovo.core.inputs.exceptions import NamespaceResolutionError
-from dovo.core.inputs.services.interpolate import (
+from dovo.core.inputs import (
+    ExecutionMetadataView,
+    NamespaceProvider,
+    NamespaceResolutionError,
     build_providers,
     interpolate_step_fields,
     interpolate_string,
-    metadata_providers,
 )
 from dovo.engine.executors.models import ExecutionMetadata, PreviousStepMetadata, StepMetadata
 
 
-class _MappingProvider:
+class _MappingProvider(NamespaceProvider):
     """NamespaceProvider answering exact paths from a fixed mapping."""
 
     def __init__(self, namespace: str, values: dict[str, str]) -> None:
@@ -26,7 +29,7 @@ class _MappingProvider:
         return self._values.get(path)
 
 
-class _RaisingProvider:
+class _RaisingProvider(NamespaceProvider):
     """NamespaceProvider that always fails with a user-facing message."""
 
     namespace = "boom"
@@ -35,14 +38,31 @@ class _RaisingProvider:
         raise NamespaceResolutionError("boom")
 
 
-class _BareMetadata:
+_BARE = object()
+
+
+class _BareMetadata(ExecutionMetadataView):
     """ExecutionMetadataView whose namespaces carry no fields."""
 
-    step = object()
-    blueprint = object()
-    previous_step = object()
-    iteration = object()
-    steps: tuple[object, ...] = ()
+    @property
+    def step(self) -> object:
+        return _BARE
+
+    @property
+    def blueprint(self) -> object:
+        return _BARE
+
+    @property
+    def previous_step(self) -> object:
+        return _BARE
+
+    @property
+    def iteration(self) -> object:
+        return _BARE
+
+    @property
+    def steps(self) -> Sequence[object]:
+        return ()
 
 
 def _metadata_with_step_a_outputs(outputs: dict[str, str]) -> ExecutionMetadata:
@@ -66,35 +86,35 @@ class InterpolateStepOutputsPlaceholderTests:
     def test_dot_form_resolves_matching_step_id_and_output_key(self) -> None:
         metadata = _metadata_with_step_a_outputs({"greeting": "hello"})
 
-        result = interpolate_string("${{ steps.step_a.outputs.greeting }}", metadata_providers(metadata))
+        result = interpolate_string("${{ steps.step_a.outputs.greeting }}", build_providers(metadata=metadata))
 
         assert result == "hello"
 
     def test_bracket_quoted_form_resolves_matching_step_id_and_output_key(self) -> None:
         metadata = _metadata_with_step_a_outputs({"greeting": "hello"})
 
-        result = interpolate_string("${{ steps['step_a'].outputs.greeting }}", metadata_providers(metadata))
+        result = interpolate_string("${{ steps['step_a'].outputs.greeting }}", build_providers(metadata=metadata))
 
         assert result == "hello"
 
     def test_unknown_step_id_resolves_to_empty_string(self) -> None:
         metadata = _metadata_with_step_a_outputs({"greeting": "hello"})
 
-        result = interpolate_string("${{ steps.missing_step.outputs.greeting }}", metadata_providers(metadata))
+        result = interpolate_string("${{ steps.missing_step.outputs.greeting }}", build_providers(metadata=metadata))
 
         assert result == ""
 
     def test_unknown_output_key_resolves_to_empty_string(self) -> None:
         metadata = _metadata_with_step_a_outputs({"greeting": "hello"})
 
-        result = interpolate_string("${{ steps.step_a.outputs.missing_key }}", metadata_providers(metadata))
+        result = interpolate_string("${{ steps.step_a.outputs.missing_key }}", build_providers(metadata=metadata))
 
         assert result == ""
 
     def test_non_outputs_steps_expression_still_resolves_via_existing_field_path(self) -> None:
         metadata = _metadata_with_step_a_outputs({"greeting": "hello"})
 
-        result = interpolate_string("${{ steps[0].status }}", metadata_providers(metadata))
+        result = interpolate_string("${{ steps[0].status }}", build_providers(metadata=metadata))
 
         assert result == "completed"
 
@@ -106,7 +126,7 @@ class InterpolateProvidersTests:
         assert interpolate_string("{{ x.y }}", providers) == "a"
 
     def test_placeholder_without_owning_provider_stays_literal(self) -> None:
-        providers = metadata_providers(_metadata_with_step_a_outputs({}))
+        providers = build_providers(metadata=_metadata_with_step_a_outputs({}))
 
         assert interpolate_string("{{ nope.field }}|{{ steps.nope }}", providers) == "{{ nope.field }}|{{ steps.nope }}"
 
@@ -129,7 +149,7 @@ class InterpolateProvidersTests:
         assert interpolate_string(template, build_providers(inputs={"branch": "main"})) == template
 
     def test_metadata_attribute_missing_from_namespace_stays_literal(self) -> None:
-        providers = metadata_providers(_BareMetadata())
+        providers = build_providers(metadata=_BareMetadata())
 
         assert interpolate_string("{{ step.id }}", providers) == "{{ step.id }}"
 

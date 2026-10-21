@@ -1,4 +1,4 @@
-"""CLI parsing and pre-execution resolution for blueprint inputs."""
+"""CLI token parsing and type coercion for blueprint inputs."""
 
 from __future__ import annotations
 
@@ -20,7 +20,7 @@ class _ParseState:
     index: int = 0
 
 
-def is_truthy_bool(raw: str) -> bool:
+def _is_truthy_bool(raw: str) -> bool:
     """Determine if the provided string is a truthy value.
 
     Raises ``ValueError`` if no match is found.
@@ -43,7 +43,7 @@ def coerce_input_value(raw: str, input_type: InputType, *, name: str) -> str | i
         except ValueError as exc:
             raise ValueError(f"Input '{name}' expects an integer, got '{raw}'.") from exc
     try:
-        return is_truthy_bool(raw)
+        return _is_truthy_bool(raw)
     except ValueError as exc:
         raise ValueError(f"Input '{name}' expects a boolean, got '{raw}'.") from exc
 
@@ -201,87 +201,3 @@ def parse_cli_input_args(
     while state.index < len(args) and _consume_one_token(args, state, declarations, aliases):
         pass
     return InputResolveResult(values=state.values, errors=state.errors, warnings=state.warnings)
-
-
-def _apply_defaults_and_overrides(
-    declarations: dict[str, ParameterInput],
-    values: dict[str, str | int | bool],
-    overrides: dict[str, str | int | bool] | None,
-) -> dict[str, str | int | bool]:
-    """Merge parsed values with caller overrides and declared default values."""
-    resolved = dict(values)
-    if overrides:
-        resolved.update(overrides)
-    for name, spec in declarations.items():
-        if name not in resolved and spec.default is not None:
-            resolved[name] = spec.default
-    return resolved
-
-
-def _missing_required(
-    declarations: dict[str, ParameterInput],
-    values: dict[str, str | int | bool],
-) -> list[str]:
-    """Return names of required parameter inputs that have no assigned value."""
-    return [
-        name for name, spec in declarations.items() if spec.required and (name not in values or values[name] is None)
-    ]
-
-
-def resolve_inputs(
-    declarations: dict[str, ParameterInput],
-    *,
-    cli_args: list[str] | None = None,
-    overrides: dict[str, str | int | bool] | None = None,
-) -> InputResolveResult:
-    """Parse CLI args, apply overrides/defaults, and collect missing required inputs."""
-    parsed = parse_cli_input_args(cli_args or [], declarations)
-    if parsed.errors:
-        return parsed
-
-    values = _apply_defaults_and_overrides(declarations, parsed.values, overrides)
-    return InputResolveResult(
-        values=values,
-        missing=_missing_required(declarations, values),
-        errors=list(parsed.errors),
-        warnings=list(parsed.warnings),
-    )
-
-
-def format_missing_inputs_error(
-    *,
-    name: str,
-    missing: list[str],
-    declarations: dict[str, ParameterInput],
-) -> str:
-    """Build the structured missing-input failure message with usage hints."""
-    primary = missing[0]
-    lines = [f"Missing required input '{primary}' for '{name}'."]
-    if len(missing) > 1:
-        extras = ", ".join(f"'{item}'" for item in missing[1:])
-        lines.append(f"Also missing: {extras}.")
-    lines.append("")
-    lines.append("Usage:")
-    for input_name in missing:
-        spec = declarations[input_name]
-        alias = next((a for a in spec.aliases if a.startswith("-")), None)
-        if alias is not None:
-            lines.append(f"  dovo run {name} {alias} <value>")
-        lines.append(f"  dovo run {name} -i {input_name}=<value>")
-    return "\n".join(lines)
-
-
-def format_input_error_message(
-    *,
-    name: str,
-    result: InputResolveResult,
-    declarations: dict[str, ParameterInput],
-) -> str:
-    """Return the first parse error, or the structured missing-input body."""
-    if result.errors:
-        return result.errors[0]
-    return format_missing_inputs_error(
-        name=name,
-        missing=result.missing,
-        declarations=declarations,
-    )

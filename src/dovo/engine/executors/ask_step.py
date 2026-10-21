@@ -5,8 +5,7 @@ from __future__ import annotations
 import json
 
 from dovo.common.redact import SecretRedactor
-from dovo.core.inputs.exceptions import NamespaceResolutionError
-from dovo.core.inputs.services.interpolate import build_providers, interpolate_string
+from dovo.core.inputs import NamespaceResolutionError, build_providers, interpolate_string
 from dovo.core.interaction import (
     Interaction,
     InteractionAnswer,

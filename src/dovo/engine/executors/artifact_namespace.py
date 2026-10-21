@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dovo.core.artifacts.store import ArtifactStore
-from dovo.core.inputs.exceptions import NamespaceResolutionError
+from dovo.core.inputs import NamespaceResolutionError
 
 
 def _parse_artifact_key(key: str) -> tuple[str, str] | None:

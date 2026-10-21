@@ -42,7 +42,7 @@ ANY_BUDGET: Final[dict[str, int]] = {
     "src/dovo/core/diagnostics/models.py": 1,
     "src/dovo/core/diagnostics/services/remediation.py": 1,
     "src/dovo/core/git/runner.py": 3,
-    "src/dovo/core/inputs/services/interpolate.py": 1,
+    "src/dovo/core/inputs/interpolate.py": 1,
     "src/dovo/core/status/models.py": 1,
     "src/dovo/engine/executors/assertions/json_match.py": 1,
     "src/dovo/engine/executors/models.py": 2,

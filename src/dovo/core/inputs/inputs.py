@@ -1,105 +1,51 @@
-"""Inputs domain entrypoint."""
+"""Top-level blueprint input resolution: CLI parsing, caller overrides, defaults and missing-required detection."""
 
 from __future__ import annotations
 
-from collections.abc import Mapping
-
-from pydantic import BaseModel
-
-from dovo.core.inputs.models import InputResolveResult, InputType, ParameterInput
-from dovo.core.inputs.services.interpolate import (
-    ExecutionMetadataView,
-    build_providers,
-    interpolate_step_fields,
-    interpolate_string,
-)
-from dovo.core.inputs.services.renderer import format_input_spec
-from dovo.core.inputs.services.resolve import (
-    coerce_input_value,
-    format_input_error_message,
-    format_missing_inputs_error,
-    parse_cli_input_args,
-    resolve_inputs,
-)
+from dovo.core.inputs.models import InputResolveResult, ParameterInput
+from dovo.core.inputs.parser import parse_cli_input_args
 
 
-class Inputs:
-    """Unified entrypoint for blueprint parameter inputs and variable interpolation."""
+def _apply_defaults_and_overrides(
+    declarations: dict[str, ParameterInput],
+    values: dict[str, str | int | bool],
+    overrides: dict[str, str | int | bool] | None,
+) -> dict[str, str | int | bool]:
+    """Merge parsed values with caller overrides and declared default values."""
+    resolved = dict(values)
+    if overrides:
+        resolved.update(overrides)
+    for name, spec in declarations.items():
+        if name not in resolved and spec.default is not None:
+            resolved[name] = spec.default
+    return resolved
 
-    @staticmethod
-    def resolve(
-        declarations: dict[str, ParameterInput],
-        *,
-        cli_args: list[str] | None = None,
-        overrides: dict[str, str | int | bool] | None = None,
-    ) -> InputResolveResult:
-        """Parse CLI args, apply overrides/defaults, and collect missing required inputs."""
-        return resolve_inputs(declarations, cli_args=cli_args, overrides=overrides)
 
-    @staticmethod
-    def parse_cli_args(
-        args: list[str],
-        declarations: dict[str, ParameterInput],
-    ) -> InputResolveResult:
-        """Parse trailing CLI tokens against declared input aliases and ``-i`` overrides."""
-        return parse_cli_input_args(args, declarations)
+def _missing_required(
+    declarations: dict[str, ParameterInput],
+    values: dict[str, str | int | bool],
+) -> list[str]:
+    """Return names of required parameter inputs that have no assigned value."""
+    return [
+        name for name, spec in declarations.items() if spec.required and (name not in values or values[name] is None)
+    ]
 
-    @staticmethod
-    def coerce(raw: str, input_type: InputType, *, name: str = "") -> str | int | bool:
-        """Coerce a CLI string into the declared input type."""
-        return coerce_input_value(raw, input_type, name=name)
 
-    @staticmethod
-    def interpolate(
-        template: str,
-        *,
-        inputs: Mapping[str, object] | None = None,
-        metadata: ExecutionMetadataView | None = None,
-    ) -> str:
-        """Interpolate `${{ inputs.* }}` and execution variables in a string template."""
-        return interpolate_string(template, build_providers(inputs=inputs, metadata=metadata))
+def resolve_inputs(
+    declarations: dict[str, ParameterInput],
+    *,
+    cli_args: list[str] | None = None,
+    overrides: dict[str, str | int | bool] | None = None,
+) -> InputResolveResult:
+    """Parse CLI args, apply overrides/defaults, and collect missing required inputs."""
+    parsed = parse_cli_input_args(cli_args or [], declarations)
+    if parsed.errors:
+        return parsed
 
-    @staticmethod
-    def interpolate_step[S: BaseModel](
-        step: S,
-        *,
-        inputs: Mapping[str, object] | None = None,
-        metadata: ExecutionMetadataView | None = None,
-    ) -> S:
-        """Interpolate variables across all templateable fields of a step."""
-        return interpolate_step_fields(step, build_providers(inputs=inputs, metadata=metadata))
-
-    @staticmethod
-    def format_spec(name: str, spec: ParameterInput) -> str:
-        """Format a single parameter specification into a readable string."""
-        return format_input_spec(name, spec)
-
-    @staticmethod
-    def format_error(
-        *,
-        name: str,
-        result: InputResolveResult,
-        declarations: dict[str, ParameterInput],
-        kind: str | None = None,
-    ) -> str:
-        """Return the first parse error, or the structured missing-input body."""
-        return format_input_error_message(
-            name=name,
-            result=result,
-            declarations=declarations,
-        )
-
-    @staticmethod
-    def format_missing_error(
-        *,
-        name: str,
-        missing: list[str],
-        declarations: dict[str, ParameterInput],
-        kind: str | None = None,
-    ) -> str:
-        """Build the structured missing-input failure message with usage hints."""
-        return format_missing_inputs_error(
-            name=name,
-            missing=missing,
-            declarations=declarations,
-        )
+    values = _apply_defaults_and_overrides(declarations, parsed.values, overrides)
+    return InputResolveResult(
+        values=values,
+        missing=_missing_required(declarations, values),
+        errors=list(parsed.errors),
+        warnings=list(parsed.warnings),
+    )
