@@ -230,6 +230,7 @@ def seed_new_session(
     discard: bool = False,
     auto_apply: bool = False,
     agent: str | None = None,
+    inputs_json: str | None = "{}",
 ) -> SessionRecord:
     """Write and snapshot a catalog blueprint, insert a RUNNING row, and initialize its all-pending state tree."""
     write_runnable_blueprint(paths.root_dir, key=session_id, steps=steps)
@@ -246,7 +247,7 @@ def seed_new_session(
         use_worktree=use_worktree,
         keep=keep,
         discard=discard,
-        inputs_json="{}",
+        inputs_json=inputs_json,
         auto_apply=auto_apply,
         agent=agent,
     )

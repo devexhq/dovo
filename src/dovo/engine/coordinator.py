@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
 from dataclasses import dataclass
 from enum import StrEnum
-from typing import TypedDict
 
 from dovo.common.lock import WorkspaceLock
 from dovo.common.models import FailurePolicy
@@ -17,8 +17,20 @@ from dovo.core.catalog.definitions import LoopStepBlock, StepDefinition, StepTyp
 from dovo.core.catalog.exceptions import BlueprintLoadError, BlueprintNotFoundError, BlueprintValidationError
 from dovo.core.db import SessionStatus
 from dovo.core.interaction import Interaction, InteractionAnswer, InteractionRequest
+from dovo.core.sessions import SessionLogEvent, SessionLogEventType
 from dovo.engine.exceptions import EngineSnapshotMissingError
-from dovo.engine.executors.models import ExecutionIdentity, PreviousStepMetadata, StepResult
+from dovo.engine.executors import StepExecution
+from dovo.engine.executors.agent_step import build_agent_step_runner
+from dovo.engine.executors.ask_step import complete_ask_step, resolve_ask_request
+from dovo.engine.executors.models import (
+    AskResolution,
+    ExecutionIdentity,
+    PreviousStepMetadata,
+    ProgressCallback,
+    StepExecutionContext,
+    StepResult,
+)
+from dovo.engine.executors.session_log import append_session_log_event
 from dovo.engine.failure import (
     apply_prompt_decision,
     effective_terminal_policy,
@@ -36,7 +48,9 @@ from dovo.engine.models import (
     RunOutcome,
     RunSettings,
     StepAction,
+    StepInvocation,
 )
+from dovo.engine.notify import safe_notify
 from dovo.engine.projection import (
     flatten_step_results,
     iter_leaves,
@@ -54,7 +68,6 @@ from dovo.engine.state_models import (
 )
 from dovo.engine.state_store import SessionStateStore, new_iteration
 from dovo.engine.state_validation import validate_loop_structure
-from dovo.engine.step_coordinator import StepCoordinator
 from dovo.engine.writer import load_blueprint_from_snapshot
 
 _INTERRUPTED_MESSAGE = "Step attempt was interrupted before it recorded a result."
@@ -71,32 +84,13 @@ class NodeTransitionKind(StrEnum):
     RETRY = "retry"
 
 
-class _AskArguments(TypedDict):
-    """Step-context keyword arguments shared by the StepCoordinator ask methods."""
-
-    previous_step: PreviousStepMetadata
-    steps: list[PreviousStepMetadata]
-    attempt: int
-    loop_iteration: int | None
-    loop_id: str | None
-
-
-@dataclass(frozen=True)
-class _AskSlot:
-    """Position of an ask leaf: 1-based index of total in its container, and the loop it belongs to."""
-
-    index: int
-    total: int
-    loop: ExecutionLoopNode | None
-
-
 @dataclass
 class _LoadedRun:
     """Durable state and definitions the coordinator drives, loaded once per execute()."""
 
     state: ExecutionStateTree
     blueprint: Blueprint
-    step_coordinator: StepCoordinator
+    settings: RunSettings
 
 
 class RunCoordinator:
@@ -195,26 +189,12 @@ class RunCoordinator:
         if step_def.type is StepType.ASK:
             return self._advance_ask(leaf, step_def, index=idx, total=total, loop=loop)
 
-        loop_id = loop.id if loop is not None else None
-        loop_iteration = loop.iterations[-1].number if loop is not None else None
         if leaf.state is NodeState.PAUSED:
             return self._resolve_failed_leaf(leaf, step_def)
         if leaf.state is NodeState.PENDING and not self._begin_attempt(leaf, 1):
             return NodeTransitionKind.FAILED
 
-        steps_metadata = terminal_step_metadata(self._run.state)
-        result = self._run.step_coordinator.run_attempt(
-            self._context,
-            self._warnings,
-            step_def,
-            idx=idx,
-            total=total,
-            previous_step=steps_metadata[-1] if steps_metadata else PreviousStepMetadata(),
-            steps=steps_metadata,
-            initial_attempt=leaf.attempts[-1].number,
-            loop_iteration=loop_iteration,
-            loop_id=loop_id,
-        )
+        result = self._run_attempt(self._invocation(leaf, step_def, idx=idx, total=total, loop=loop))
         return self._settle_attempt(leaf, step_def, result)
 
     def _advance_ask(
@@ -232,55 +212,28 @@ class RunCoordinator:
                 return self._resolve_failed_leaf(leaf, step_def)
             if Interaction.request_errors(leaf.pending_ask):
                 return self._fail_invalid_pending_ask(leaf)
-            return self._ask_pending(leaf, step_def, leaf.pending_ask, _AskSlot(index, total, loop))
+            invocation = self._invocation(leaf, step_def, idx=index, total=total, loop=loop)
+            return self._ask_pending(leaf, leaf.pending_ask, invocation)
 
         if leaf.state is NodeState.PENDING and not self._begin_attempt(leaf, 1):
             return NodeTransitionKind.FAILED
-        return self._start_ask(leaf, step_def, index=index, total=total, loop=loop)
+        return self._start_ask(leaf, self._invocation(leaf, step_def, idx=index, total=total, loop=loop))
 
-    def _start_ask(
-        self,
-        leaf: ExecutionLeafNode,
-        step_def: StepDefinition,
-        *,
-        index: int,
-        total: int,
-        loop: ExecutionLoopNode | None,
-    ) -> NodeTransitionKind:
+    def _start_ask(self, leaf: ExecutionLeafNode, invocation: StepInvocation) -> NodeTransitionKind:
         """Resolve the request of a fresh ask attempt and either settle it without a prompt or persist and ask it."""
-        resolution = self._run.step_coordinator.resolve_ask(
-            self._context,
-            step_def,
-            index=index,
-            total=total,
-            **self._ask_arguments(leaf, loop),
-        )
+        resolution = self._resolve_ask(invocation)
         if resolution.result is not None:
-            self._warnings.extend(resolution.result.warnings)
-            return self._settle_attempt(leaf, step_def, resolution.result)
+            return self._settle_attempt(leaf, invocation.step, resolution.result)
         if resolution.request is None:
             self._errors.append(f"Ask step '{leaf.id}' resolved neither a request nor a result.")
             return NodeTransitionKind.FAILED
-        return self._ask_pending(leaf, step_def, resolution.request, _AskSlot(index, total, loop))
-
-    def _ask_arguments(self, leaf: ExecutionLeafNode, loop: ExecutionLoopNode | None) -> _AskArguments:
-        """Return the step-context arguments StepCoordinator ask methods share."""
-        steps_metadata = terminal_step_metadata(self._run.state)
-        loop_iteration = loop.iterations[-1].number if loop is not None else None
-        return _AskArguments(
-            previous_step=steps_metadata[-1] if steps_metadata else PreviousStepMetadata(),
-            steps=steps_metadata,
-            attempt=leaf.attempts[-1].number,
-            loop_iteration=loop_iteration,
-            loop_id=loop.id if loop is not None else None,
-        )
+        return self._ask_pending(leaf, resolution.request, invocation)
 
     def _ask_pending(
         self,
         leaf: ExecutionLeafNode,
-        step_def: StepDefinition,
         request: InteractionRequest,
-        slot: _AskSlot,
+        invocation: StepInvocation,
     ) -> NodeTransitionKind:
         """Persist the pending ask, read an answer, and apply it or pause the run at the prompt."""
         if not self._persist_pending_ask(leaf, request):
@@ -289,7 +242,7 @@ class RunCoordinator:
         answer = self._read_answer(request)
         if answer is None:
             return self._pause_at_prompt(leaf)
-        return self._apply_answer(leaf, step_def, request, answer, slot)
+        return self._apply_answer(leaf, request, answer, invocation)
 
     def _persist_pending_ask(self, leaf: ExecutionLeafNode, request: InteractionRequest) -> bool:
         """Commit the leaf as PAUSED with pending_ask and the run as PAUSED before any input is read."""
@@ -319,21 +272,12 @@ class RunCoordinator:
     def _apply_answer(
         self,
         leaf: ExecutionLeafNode,
-        step_def: StepDefinition,
         request: InteractionRequest,
         answer: InteractionAnswer,
-        slot: _AskSlot,
+        invocation: StepInvocation,
     ) -> NodeTransitionKind:
         """Move pending_ask onto the attempt, commit the run back to RUNNING, then settle the answered result through the normal attempt path."""
-        result = self._run.step_coordinator.complete_ask(
-            self._context,
-            step_def,
-            request,
-            answer,
-            index=slot.index,
-            total=slot.total,
-            **self._ask_arguments(leaf, slot.loop),
-        )
+        result = self._complete_ask(invocation, request, answer)
         leaf.attempts[-1] = leaf.attempts[-1].model_copy(
             update={"span": leaf.attempts[-1].span.close(), "result": result, "ask": request}
         )
@@ -341,7 +285,149 @@ class RunCoordinator:
         leaf.state = NodeState.RUNNING
         if not self._commit(f"after prompt '{leaf.id}' answered", SessionStatus.RUNNING):
             return NodeTransitionKind.FAILED
-        return self._settle_attempt(leaf, step_def, result)
+        return self._settle_attempt(leaf, invocation.step, result)
+
+    def _invocation(
+        self,
+        leaf: ExecutionLeafNode,
+        step_def: StepDefinition,
+        *,
+        idx: int,
+        total: int,
+        loop: ExecutionLoopNode | None,
+    ) -> StepInvocation:
+        """Describe leaf's current attempt at 1-based idx of total, attributed to loop's last iteration, with every terminal step so far."""
+        steps = tuple(terminal_step_metadata(self._run.state))
+        return StepInvocation(
+            step=step_def,
+            idx=idx,
+            total=total,
+            attempt=leaf.attempts[-1].number,
+            loop_id=loop.id if loop is not None else None,
+            loop_iteration=loop.iterations[-1].number if loop is not None else None,
+            previous_step=steps[-1] if steps else PreviousStepMetadata(),
+            steps=steps,
+        )
+
+    def _run_attempt(self, invocation: StepInvocation) -> StepResult:
+        """Notify and log the start, run one StepExecution with observer-forwarding callbacks, notify and log the done, and append the result's warnings."""
+        self._log_step_start(invocation)
+        observer = self._run.settings.observer
+        step, idx, total = invocation.step, invocation.idx, invocation.total
+        on_output = (
+            (
+                lambda stream_name, line: safe_notify(
+                    observer, "on_step_output", idx, total, step, line, stream=stream_name
+                )
+            )
+            if observer is not None
+            else None
+        )
+        on_progress = (
+            (lambda update: safe_notify(observer, "on_step_progress", idx, total, step, update))
+            if observer is not None
+            else None
+        )
+        result = StepExecution(self._execution_context(invocation, on_output=on_output, on_progress=on_progress)).run()
+        self._log_step_done(invocation, result)
+        self._warnings.extend(result.warnings)
+        return result
+
+    def _resolve_ask(self, invocation: StepInvocation) -> AskResolution:
+        """Notify and log the ask's start and resolve its request; when it settles without a prompt, notify and log the done and append its warnings."""
+        self._log_step_start(invocation)
+        resolution = resolve_ask_request(self._execution_context(invocation))
+        if resolution.result is not None:
+            self._log_step_done(invocation, resolution.result)
+            self._warnings.extend(resolution.result.warnings)
+        return resolution
+
+    def _complete_ask(
+        self, invocation: StepInvocation, request: InteractionRequest, answer: InteractionAnswer
+    ) -> StepResult:
+        """Build the answered ask's result, notify and log the done, and append its warnings."""
+        result = complete_ask_step(self._execution_context(invocation), request, answer)
+        self._log_step_done(invocation, result)
+        self._warnings.extend(result.warnings)
+        return result
+
+    def _execution_context(
+        self,
+        invocation: StepInvocation,
+        on_output: Callable[[str, str], None] | None = None,
+        on_progress: ProgressCallback | None = None,
+    ) -> StepExecutionContext:
+        """Build the StepExecutionContext for invocation, with an agent runner for every step type except ask."""
+        settings = self._run.settings
+        session_dir = self._context.paths.session_dir(self._context.session_id)
+        return StepExecutionContext(
+            step=invocation.step,
+            worktree_path=self._context.target_dir,
+            inputs=settings.inputs or None,
+            on_output=on_output,
+            on_progress=on_progress,
+            step_index=invocation.idx,
+            initial_attempt=invocation.attempt,
+            identity=settings.identity,
+            previous_step=invocation.previous_step,
+            steps=invocation.steps,
+            session_tmp_dir=self._context.session_tmp_dir,
+            session_log_dir=self._context.session_log_dir,
+            save_attempt_logs=self._context.save_attempt_logs,
+            loop_iteration=invocation.loop_iteration,
+            loop_id=invocation.loop_id,
+            session_id=self._context.session_id,
+            artifact_store=self._context.artifact_store,
+            paths=settings.paths,
+            agent_runner=None
+            if invocation.step.type == StepType.ASK
+            else build_agent_step_runner(
+                settings.agent,
+                self._context.worktree is not None,
+                session_tmp_dir=self._context.session_tmp_dir,
+                main_checkout=settings.paths.root_dir,
+                session_log_dir=self._context.session_log_dir,
+                session_dir=session_dir,
+            ),
+            sensitive_variables=settings.sensitive_variables,
+        )
+
+    def _log_step_start(self, invocation: StepInvocation) -> None:
+        """Notify the observer and append STEP_START for invocation's attempt."""
+        step = invocation.step
+        safe_notify(self._run.settings.observer, "on_step_start", invocation.idx, invocation.total, step)
+        append_session_log_event(
+            self._context.session_log_dir,
+            SessionLogEvent(
+                event=SessionLogEventType.STEP_START,
+                step_index=invocation.idx,
+                step_id=step.id,
+                step_name=step.name,
+                attempt=invocation.attempt,
+                loop_id=invocation.loop_id,
+                iteration=invocation.loop_iteration,
+            ),
+        )
+
+    def _log_step_done(self, invocation: StepInvocation, result: StepResult) -> None:
+        """Notify the observer and append STEP_DONE for the settled result."""
+        step = invocation.step
+        safe_notify(self._run.settings.observer, "on_step_done", invocation.idx, invocation.total, step, result)
+        append_session_log_event(
+            self._context.session_log_dir,
+            SessionLogEvent(
+                event=SessionLogEventType.STEP_DONE,
+                step_index=invocation.idx,
+                step_id=step.id,
+                step_name=step.name,
+                attempt=result.attempts,
+                status=result.status,
+                exit_code=result.exit_code,
+                duration_seconds=result.duration_seconds,
+                loop_id=invocation.loop_id,
+                iteration=invocation.loop_iteration,
+            ),
+        )
 
     def _pause_at_prompt(self, leaf: ExecutionLeafNode) -> NodeTransitionKind:
         """Record the leaf's id as the paused prompt and return PAUSED without recording any result."""
@@ -381,7 +467,7 @@ class RunCoordinator:
         return self._outcome(SessionStatus.CANCELLED)
 
     def _start(self) -> bool:
-        """Load state, session row, and snapshot definitions and build the step coordinator; append the failure to _errors and return False when unavailable."""
+        """Load state, session row, and snapshot definitions and resolve the run settings; append the failure to _errors and return False when unavailable."""
         session_id = self._context.session_id
         loaded = self._state_store.load()
         if not loaded.ok or loaded.state is None:
@@ -412,24 +498,22 @@ class RunCoordinator:
             return False
 
         self._warnings.extend(loaded.warnings)
-        step_coordinator = StepCoordinator(
-            RunSettings(
-                cwd=self._context.target_dir,
-                use_worktree=row.use_worktree,
-                keep=row.keep,
-                agent=self._agent,
-                observer=self._observer,
-                inputs=json.loads(row.inputs_json) if row.inputs_json else None,
-                identity=ExecutionIdentity(blueprint_name=row.blueprint_name, blueprint_key=row.blueprint_key),
-                session_id=session_id,
-                no_tty=self._context.no_tty,
-                failure_prompter=self._prompter,
-                auto_apply=row.auto_apply,
-                sensitive_variables=self._context.sensitive_variables,
-                paths=self._context.paths,
-            )
+        settings = RunSettings(
+            cwd=self._context.target_dir,
+            use_worktree=row.use_worktree,
+            keep=row.keep,
+            agent=self._agent,
+            observer=self._observer,
+            inputs=json.loads(row.inputs_json) if row.inputs_json else None,
+            identity=ExecutionIdentity(blueprint_name=row.blueprint_name, blueprint_key=row.blueprint_key),
+            session_id=session_id,
+            no_tty=self._context.no_tty,
+            failure_prompter=self._prompter,
+            auto_apply=row.auto_apply,
+            sensitive_variables=self._context.sensitive_variables,
+            paths=self._context.paths,
         )
-        self._loaded = _LoadedRun(state=loaded.state, blueprint=blueprint, step_coordinator=step_coordinator)
+        self._loaded = _LoadedRun(state=loaded.state, blueprint=blueprint, settings=settings)
         return True
 
     def _recover_interrupted(self) -> bool:

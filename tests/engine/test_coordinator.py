@@ -13,6 +13,8 @@ import pytest
 
 from dovo.common.filesystem.models import WorkspacePaths
 from dovo.common.timing import TimeSpan
+from dovo.core.agents import AgentProgressKind, default_tool_policy
+from dovo.core.agents.models import ResolvedAgentSettings
 from dovo.core.artifacts import Artifacts
 from dovo.core.artifacts.services.download import download_artifact
 from dovo.core.artifacts.store import ArtifactStore
@@ -25,7 +27,7 @@ from dovo.core.sessions.services.read_logs import read_session_log_events
 from dovo.core.worktree.models import WorktreeSession
 from dovo.engine import RunCoordinator, SessionStateStore
 from dovo.engine.executors import StepExecution
-from dovo.engine.executors.models import StepResult
+from dovo.engine.executors.models import AgentProgressUpdate, AskResolution, StepExecutionContext, StepResult
 from dovo.engine.failure import USER_CONTINUED_MARKER
 from dovo.engine.models import (
     FailurePromptDecision,
@@ -44,7 +46,7 @@ from dovo.engine.state_models import (
     StepAttemptRecord,
 )
 from dovo.engine.writer import snapshot_blueprint_path
-from tests.engine.conftest import SpySaveExecutionState
+from tests.engine.conftest import AgentRunnerBuild, SpySaveExecutionState
 from tests.harness.sessions import (
     SEEDED_FAILURE,
     NoOpRunObserver,
@@ -156,12 +158,14 @@ def _coordinator(
     worktree: WorktreeSession | None = None,
     no_tty: bool = False,
     artifacts_db: ArtifactsRepository | None = None,
+    agent: ResolvedAgentSettings | None = None,
 ) -> RunCoordinator:
     return RunCoordinator(
         SessionStateStore(sessions, paths, session_id),
         _context(paths, session_id, worktree=worktree, no_tty=no_tty, artifacts_db=artifacts_db),
         observer=observer,
         prompter=prompter,
+        agent=agent,
     )
 
 
@@ -175,11 +179,19 @@ def _run_new(
     observer: RunObserver | None = None,
     no_tty: bool = False,
     artifacts_db: ArtifactsRepository | None = None,
+    agent: ResolvedAgentSettings | None = None,
 ) -> RunOutcome:
     """Seed a fresh run and execute it through RunCoordinator."""
     seed_new_session(paths, sessions, session_id=session_id, steps=steps)
     return _coordinator(
-        paths, sessions, session_id, prompter=prompter, observer=observer, no_tty=no_tty, artifacts_db=artifacts_db
+        paths,
+        sessions,
+        session_id,
+        prompter=prompter,
+        observer=observer,
+        no_tty=no_tty,
+        artifacts_db=artifacts_db,
+        agent=agent,
     ).execute()
 
 
@@ -387,7 +399,7 @@ class CoordinatorExecuteTests:
             pytest.param("echo hi > out.txt; exit 1", [], id="failing-publishes-nothing"),
         ],
     )
-    def test_completed_leaf_with_declared_artifacts_publishes_them_through_step_coordinator(
+    def test_completed_leaf_with_declared_artifacts_publishes_them(
         self,
         engine_paths: WorkspacePaths,
         sessions_repo: SessionsRepository,
@@ -1861,7 +1873,7 @@ class CoordinatorAskTests:
         outcome = ask_run.start([producer, triage], prompter)
 
         assert outcome.status == SessionStatus.COMPLETED
-        assert "No options to choose from for 'triage'; continuing with an empty selection." in outcome.warnings
+        assert outcome.warnings == ["No options to choose from for 'triage'; continuing with an empty selection."]
         assert prompter.requests == []
         assert ask_run.leaf("triage").state == NodeState.COMPLETED
 
@@ -1899,3 +1911,200 @@ class CoordinatorAskTests:
         assert [result.step_id for result in failure_prompter.prompted] == ["approve"]
         assert interaction_prompter.requests == []
         assert outcome.status == SessionStatus.FAILED
+
+    def test_ask_resolving_neither_request_nor_result_fails_the_run(
+        self, ask_run: AskRun, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Fail with ["Ask step 'approve' resolved neither a request nor a result."] when resolution is AskResolution()."""
+        monkeypatch.setattr("dovo.engine.coordinator.resolve_ask_request", lambda context: AskResolution())
+
+        outcome = ask_run.start([_approve_step()], _ScriptedPrompter([]))
+
+        assert outcome.status == SessionStatus.FAILED
+        assert outcome.errors == ["Ask step 'approve' resolved neither a request nor a result."]
+
+    @pytest.mark.parametrize(
+        ("steps", "scripted", "expected"),
+        [
+            pytest.param([_triage_step("nothing")], [], ["step_start", "step_done"], id="settles-without-prompt"),
+            pytest.param([_approve_step()], None, ["step_start"], id="paused"),
+            pytest.param([_approve_step()], [_answer("approve")], ["step_start", "step_done"], id="answered"),
+        ],
+    )
+    def test_ask_session_log_records_step_done_only_once_the_ask_settles(
+        self,
+        ask_run: AskRun,
+        steps: list[dict[str, object]],
+        scripted: list[InteractionAnswer | BaseException | None] | None,
+        expected: list[str],
+    ) -> None:
+        """Log exactly the expected step_start/step_done events for the ask step in session.log."""
+        prompter = None if scripted is None else _ScriptedPrompter(scripted)
+
+        ask_run.start(steps, prompter)
+
+        assert _step_events(ask_run.paths, str(steps[0]["id"])) == expected
+
+    def test_resumed_answer_logs_step_done_without_a_second_step_start(self, ask_run: AskRun) -> None:
+        """Log ["step_start", "step_done"] for 'approve' after pausing unanswered and resuming with an answer."""
+        ask_run.start([_approve_step()], None)
+
+        outcome = ask_run.execute(_ScriptedPrompter([_answer("approve")]))
+
+        assert outcome.status == SessionStatus.COMPLETED
+        assert _step_events(ask_run.paths, "approve") == ["step_start", "step_done"]
+
+
+def _step_events(paths: WorkspacePaths, step_id: str) -> list[object]:
+    """Return the session-log event names recorded for step_id, in order."""
+    return [entry["event"] for entry in _session_log(paths, _SESSION_ID) if entry.get("step_id") == step_id]
+
+
+_AGENT_SETTINGS = ResolvedAgentSettings(
+    provider="copilot",
+    model="test-model",
+    endpoint="http://127.0.0.1:9999",
+    temperature=0.7,
+    max_tokens=512,
+    tools=default_tool_policy(),
+)
+
+
+class CoordinatorStepWiringTests:
+    """Contract tests for the StepExecutionContext and agent runner RunCoordinator builds for each attempt."""
+
+    @pytest.mark.parametrize(
+        ("inputs_json", "expected"),
+        [
+            pytest.param('{"branch": "main"}', {"branch": "main"}, id="inputs"),
+            pytest.param("{}", None, id="empty"),
+            pytest.param(None, None, id="none"),
+        ],
+    )
+    def test_step_context_carries_the_run_inputs(
+        self,
+        engine_paths: WorkspacePaths,
+        sessions_repo: SessionsRepository,
+        captured_contexts: list[StepExecutionContext],
+        inputs_json: str | None,
+        expected: dict[str, str | int | bool] | None,
+    ) -> None:
+        """Hand the row's decoded inputs, or None when empty or unset, to the step's execution context."""
+        seed_new_session(
+            engine_paths, sessions_repo, session_id="inputs", steps=[_step("a", "true")], inputs_json=inputs_json
+        )
+
+        _coordinator(engine_paths, sessions_repo, "inputs").execute()
+
+        assert [context.inputs for context in captured_contexts] == [expected]
+
+    @pytest.mark.parametrize(
+        ("steps", "expected"),
+        [
+            pytest.param([_step("a", "true")], [None], id="top-level"),
+            pytest.param([_loop("loop", [_step("a", "true")])], ["loop", "loop"], id="loop-body"),
+        ],
+    )
+    def test_step_context_carries_the_loop_id(
+        self,
+        engine_paths: WorkspacePaths,
+        sessions_repo: SessionsRepository,
+        captured_contexts: list[StepExecutionContext],
+        steps: list[dict[str, object]],
+        expected: list[str | None],
+    ) -> None:
+        """Give every StepExecution context loop_id None at top level and the loop's id for each body iteration."""
+        _run_new(engine_paths, sessions_repo, "loop-id", steps)
+
+        assert [context.loop_id for context in captured_contexts] == expected
+
+    @pytest.mark.parametrize("has_worktree", [pytest.param(True, id="worktree"), pytest.param(False, id="no-worktree")])
+    def test_agent_runner_is_built_from_run_agent_session_dirs_and_worktree_flag(
+        self,
+        engine_paths: WorkspacePaths,
+        sessions_repo: SessionsRepository,
+        captured_builds: list[AgentRunnerBuild],
+        has_worktree: bool,
+    ) -> None:
+        """Build one runner from the run's agent settings, worktree flag, session tmp/log/storage dirs, and main checkout."""
+        worktree = (
+            WorktreeSession(
+                session_id="dovo_77",
+                target_branch="dovo/dovo_77",
+                worktree_path=engine_paths.root_dir,
+                base_commit="abc",
+                created_at="now",
+            )
+            if has_worktree
+            else None
+        )
+        seed_new_session(engine_paths, sessions_repo, session_id="runner", steps=[_step("a", "true")])
+
+        _coordinator(engine_paths, sessions_repo, "runner", agent=_AGENT_SETTINGS, worktree=worktree).execute()
+
+        assert captured_builds == [
+            AgentRunnerBuild(
+                agent=_AGENT_SETTINGS,
+                worktree_active=has_worktree,
+                session_tmp_dir=engine_paths.tmp_dir / "runner",
+                main_checkout=engine_paths.root_dir,
+                session_log_dir=engine_paths.logs_dir / "runner",
+                session_dir=engine_paths.session_dir("runner"),
+            )
+        ]
+
+    def test_ask_step_builds_no_agent_runner(self, ask_run: AskRun, captured_builds: list[AgentRunnerBuild]) -> None:
+        """Build no agent runner while resolving and pausing at an ask step."""
+        ask_run.start([_approve_step()], None)
+
+        assert captured_builds == []
+
+    def test_progress_callback_reaches_the_observer_at_the_step_position(
+        self,
+        engine_paths: WorkspacePaths,
+        sessions_repo: SessionsRepository,
+        captured_contexts: list[StepExecutionContext],
+    ) -> None:
+        """Forward step b's progress update to the observer as ("step_progress", 2, 2, "b", update)."""
+        observer = RecordingRunObserver()
+        update = AgentProgressUpdate(kind=AgentProgressKind.READ, target="x.py")
+        _run_new(engine_paths, sessions_repo, "progress", [_step("a", "true"), _step("b", "true")], observer=observer)
+        on_progress = captured_contexts[1].on_progress
+        assert on_progress is not None
+
+        on_progress(update)
+
+        assert [call for call in observer.calls if call[0] == "step_progress"] == [("step_progress", 2, 2, "b", update)]
+
+    def test_step_context_has_no_observer_callbacks_without_an_observer(
+        self,
+        engine_paths: WorkspacePaths,
+        sessions_repo: SessionsRepository,
+        captured_contexts: list[StepExecutionContext],
+    ) -> None:
+        """Give step b's context no on_output and no on_progress when the run has no observer."""
+        _run_new(engine_paths, sessions_repo, "no-observer", [_step("a", "true"), _step("b", "true")])
+
+        assert (captured_contexts[1].on_output, captured_contexts[1].on_progress) == (None, None)
+
+    def test_step_result_warnings_are_appended_to_run_warnings(
+        self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Return outcome.warnings == ["w1"] when StepExecution.run returns a completed result carrying warning "w1"."""
+
+        def run_with_warning(self: StepExecution) -> StepResult:
+            return StepResult(
+                step_id="a",
+                status="completed",
+                exit_code=0,
+                stdout="",
+                stderr="",
+                duration_seconds=0.0,
+                warnings=["w1"],
+            )
+
+        monkeypatch.setattr(StepExecution, "run", run_with_warning)
+
+        outcome = _run_new(engine_paths, sessions_repo, "warnings", [_step("a", "true")])
+
+        assert outcome.warnings == ["w1"]
