@@ -1,11 +1,11 @@
 ---
 name: dovo-code
 description: >-
-  Implement one phase of the approved plan in .agentic/plan.md for Dovo CLI,
-  following the rules and exemplars in AGENTS.md, running scoped tests while
-  building and the full quality gate once the phase is complete, and never
-  committing or pushing. Invoked as /dovo-code [--phase <n>] to implement a
-  phase, or /dovo-code review [--tiers blockers,warnings,suggestions,nits|all |
+  Implement the approved plan in .agentic/plan.md for Dovo CLI, working through
+  its phases one by one in order, following the rules and exemplars in
+  AGENTS.md, running scoped tests while building and the full quality gate once
+  every phase is complete, and never committing or pushing. Invoked as
+  /dovo-code to implement the plan, or /dovo-code review [--tiers blockers,warnings,suggestions,nits|all |
   --fix B1,W2,...] to address the findings in .agentic/review.md. Use when asked
   to implement a plan, write the code for a planned change, or fix review findings.
 disable-model-invocation: true
@@ -13,13 +13,13 @@ disable-model-invocation: true
 
 # dovo-code
 
-Turn one phase of `.agentic/plan.md` into working code, or in review mode, turn `.agentic/review.md` findings into fixes. Every run ends by writing or updating `.agentic/implementation-report.md`, which `/dovo-review` reads to tell documented plan deviations from silent ones.
+Turn every phase of `.agentic/plan.md` into working code, one phase after another, or in review mode, turn `.agentic/review.md` findings into fixes. Every run ends by writing or updating `.agentic/implementation-report.md`, which `/dovo-review` reads to tell documented plan deviations from silent ones.
 
 ## Modes
 
 | Invocation | Input | Job |
 |---|---|---|
-| `/dovo-code [--phase <n>]` | `.agentic/plan.md` | Implement one phase. Without `--phase`, the first phase in the plan's `## Phases` table whose artifacts are not yet in the tree; say which one you chose. |
+| `/dovo-code` | `.agentic/plan.md` | Implement every phase in the plan's `## Phases` table, in table order. Start at the first phase whose artifacts are not yet in the tree, so an interrupted run resumes where it stopped; say which phases you skipped as already present. |
 | `/dovo-code review [--tiers <tiers> \| --fix <ids>]` | `.agentic/review.md`, `.agentic/review.json` | Fix review findings by tier or by id |
 
 If the input file is missing, stop and say so. Do not reconstruct a plan from the conversation: run `/dovo-plan` first.
@@ -27,7 +27,7 @@ If the input file is missing, stop and say so. Do not reconstruct a plan from th
 ## Hard boundaries
 
 - **Never commit, stage, push, or touch PR state.** `/dovo-push` owns that.
-- **One phase per run.** Do not start the next phase's FRs, even when they look small. Each phase becomes its own PR.
+- **All phases, one at a time.** Finish a phase (its FRs, tests and deletion ledger, with its scoped tests green) before starting the next, and never interleave FRs across phases. The phases still order the work and bound each step; they all land in this one run and one PR.
 - **The plan's contracts are binding.** Field names, types, defaults, flag names, exit codes and message strings written as literal code in the plan are normative. Do not rename or extend them.
 - **Do not implement anything the plan marks out of scope or names as a trap**, and do not add test files the plan's `### Tests` stubs do not list.
 - **Never edit `.agentic/plan.md`, `.agentic/evidence.md`, `.agentic/review.md`, `.agentic/review.json` or `.agentic/verdict.txt`.** This skill writes only `.agentic/implementation-report.md`.
@@ -38,7 +38,7 @@ Read [AGENTS.md](../../../AGENTS.md): its rules R1–R17 are what the reviewer w
 
 ## Implementation loop
 
-Work one FR at a time, in the plan's order, within the chosen phase. For each:
+Work phase by phase, in the Phases table's order. Within a phase, work one FR at a time, in the plan's order. For each FR:
 
 1. Re-read the plan section, then the current contents of every file you are about to touch.
 2. Write the production code at the paths the plan names.
@@ -51,7 +51,9 @@ Work one FR at a time, in the plan's order, within the chosen phase. For each:
 
 5. Keep every docstring and doc sentence your change affects accurate (R17).
 
-Execute the phase's deletion ledger in the same change as the code that supersedes each entry, with no shim or alias left behind (R10).
+Execute each phase's deletion ledger in the same change as the code that supersedes each entry, with no shim or alias left behind (R10).
+
+Before moving to the next phase, re-run the scoped tests for everything the phase touched and `uv run ty check` on its changed files, and fix failures there rather than carrying them forward. A later phase may depend on an earlier one, so do not start it on a broken base.
 
 A check you add under `tests/lint/` must be able to fail: assert its input set is non-empty, and before calling it done, introduce the violation once, watch the check fail, then revert. An allowlist of known violations only ever shrinks.
 
@@ -61,7 +63,7 @@ If a contract cannot be implemented as written, or a cited symbol has moved or d
 
 ## Completion gate
 
-Run once the phase is complete, never mid-implementation and never concurrently with another gate or test command:
+Run once every phase is complete, never between phases or mid-implementation, and never concurrently with another gate or test command:
 
 ```bash
 uv run ruff format .
@@ -75,9 +77,9 @@ Fix failures in the code, never with a suppression, a baseline entry or a lowere
 
 Write it after the gate is green (or as green as it will get, with failures stated). Sections, in order:
 
-1. **Header**: plan title, the phase implemented, and one line stating nothing was committed or pushed.
-2. **Plan deviations**: every place the code differs from the plan, one numbered item each with the reason, including files touched outside the plan, unplanned helpers, and every 🚨. Write `none` only if you checked. A deviation not listed here is silent to the reviewer.
-3. **Implementation details**: what was built per package, and the deletions executed.
+1. **Header**: plan title, the phases implemented (and any skipped as already present), and one line stating nothing was committed or pushed.
+2. **Plan deviations**: every place the code differs from the plan, one numbered item each naming its phase, with the reason, including files touched outside the plan, unplanned helpers, and every 🚨. Write `none` only if you checked. A deviation not listed here is silent to the reviewer.
+3. **Implementation details**: one subsection per phase: what was built per package, and the deletions executed.
 4. **Quality gates**: each command with the number it observed.
 5. **Changed files**: from `git status --short`.
 
