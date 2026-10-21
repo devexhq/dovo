@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 from dovo.common.models import FailurePolicy, OnFailureSpec
+from dovo.core.catalog.definitions import StepDefinition
 from dovo.engine.executors.models import StepResult
-from dovo.engine.models import StepAction
+from dovo.engine.models import FailurePromptDecision, FailurePrompter, StepAction
 
 USER_CONTINUED_MARKER = "user continued after prompt_user"
 
@@ -40,6 +41,40 @@ def failed_step_message(result: StepResult) -> str:
     """Format diagnostic message describing step failure."""
     detail = step_failure_diagnostic(result)
     return f"Step '{result.step_id}' failed: {detail}"
+
+
+def prompt_failure_decision(
+    prompter: FailurePrompter | None,
+    step: StepDefinition,
+    result: StepResult,
+    *,
+    no_tty: bool,
+) -> tuple[FailurePromptDecision, str | None]:
+    """Ask prompter for a decision on step's failed result; abort with a warning when no_tty or prompter is None."""
+    if no_tty:
+        return (
+            FailurePromptDecision.ABORT,
+            f"Warning: step '{step.id}' requested prompt_user but the run is non-interactive; aborting.",
+        )
+    if prompter is None:
+        return (
+            FailurePromptDecision.ABORT,
+            f"Warning: step '{step.id}' requested prompt_user but no failure prompter is configured; aborting.",
+        )
+    decision = prompter.prompt_step_failure(step=step, result=result, diagnostic=step_failure_diagnostic(result))
+    return decision, None
+
+
+def apply_prompt_decision(
+    decision: FailurePromptDecision,
+    result: StepResult,
+) -> tuple[StepAction, StepResult | None, str | None]:
+    """Map a prompt decision to ``(StepAction, result_to_record, error_message)``."""
+    if decision == FailurePromptDecision.RETRY:
+        return StepAction.RETRY, None, None
+    if decision == FailurePromptDecision.CONTINUE:
+        return StepAction.CONTINUE, mark_continued_after_prompt(result), None
+    return StepAction.ABORT, result, failed_step_message(result)
 
 
 def resolve_terminal_action(
