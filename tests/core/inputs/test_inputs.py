@@ -186,6 +186,7 @@ class InputResolutionOutcomeTests:
         assert result.values == {"message": "from-override", "allow_empty": False}
         assert result.missing == []
         assert result.errors == []
+        assert result.warnings == []
 
     def test_resolve_inputs_lists_missing_required_inputs(self) -> None:
         result = resolve_inputs(_sample_declarations())
