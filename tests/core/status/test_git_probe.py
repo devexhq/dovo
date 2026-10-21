@@ -1,0 +1,100 @@
+"""Tests for the git probe through Status.collect()."""
+
+from __future__ import annotations
+
+import subprocess
+from pathlib import Path
+
+import pytest
+
+from dovo.core.git import GitNotFoundError, GitPlumbingTimeoutError, GitRunner
+from dovo.core.status import Status
+from tests.harness.status_workspace import BuildStatusWorkspace
+from tests.harness.workspace_paths import initialized_workspace_paths
+
+
+class GitProbeTests:
+    """Tests for git repository status collection."""
+
+    def test_collect_dirty_worktree_counts_uncommitted_files(self, status_workspace: BuildStatusWorkspace) -> None:
+        workspace = status_workspace(branch="feature-dirty")
+
+        untracked = workspace / "new_file.txt"
+        untracked.write_text("hello", encoding="utf-8")
+
+        result = Status(initialized_workspace_paths(workspace)).collect()
+
+        assert result.git.branch == "feature-dirty"
+        assert result.git.is_dirty is True
+        assert result.git.uncommitted_files == 1
+        assert result.warnings == ["Working tree has 1 uncommitted change(s)."]
+
+    def test_collect_detached_head_reports_detached_branch(self, status_workspace: BuildStatusWorkspace) -> None:
+        workspace = status_workspace(branch="feature-detached")
+
+        commit_hash = GitRunner.run(["rev-parse", "HEAD"], path=workspace).strip()
+        subprocess.run(["git", "checkout", commit_hash], cwd=workspace, check=True, capture_output=True)
+
+        result = Status(initialized_workspace_paths(workspace)).collect()
+
+        assert result.git.branch == "HEAD (detached)"
+        assert result.git.is_git_repo is True
+
+    def test_collect_non_git_directory_reports_not_a_repo(self, tmp_path: Path) -> None:
+        non_git_dir = tmp_path / "non_git"
+        non_git_dir.mkdir(parents=True, exist_ok=True)
+
+        result = Status(initialized_workspace_paths(non_git_dir)).collect()
+
+        assert result.is_initialized is False
+        assert result.git.is_git_repo is False
+        assert result.git.branch == "none"
+        assert result.config.is_valid is False
+        assert result.database.exists is False
+        assert result.warnings == ["Dovo workspace is not initialized. Run 'dovo init' to configure."]
+        assert result.fixes == [
+            "Run 'dovo init' to initialize Dovo in this repository.",
+            "Run 'git init' or navigate to a Git repository.",
+        ]
+
+    @pytest.mark.parametrize(
+        "git_error",
+        [
+            pytest.param(GitNotFoundError("git not found"), id="not_found"),
+            pytest.param(GitPlumbingTimeoutError("git timed out"), id="timeout"),
+        ],
+    )
+    def test_collect_git_error_reports_unknown_branch(
+        self,
+        status_workspace: BuildStatusWorkspace,
+        monkeypatch: pytest.MonkeyPatch,
+        git_error: Exception,
+    ) -> None:
+        workspace = status_workspace()
+
+        def mock_run(*args: object, **kwargs: object) -> str:
+            raise git_error
+
+        monkeypatch.setattr(GitRunner, "run", mock_run)
+
+        result = Status(initialized_workspace_paths(workspace)).collect()
+
+        assert result.git.is_git_repo is False
+        assert result.git.branch == "unknown"
+        assert result.fixes == ["Run 'git init' or navigate to a Git repository."]
+
+    def test_collect_rev_parse_not_true_reports_not_a_repo(
+        self, status_workspace: BuildStatusWorkspace, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        workspace = status_workspace()
+
+        def mock_run(*args: object, **kwargs: object) -> str:
+            return "false"
+
+        monkeypatch.setattr(GitRunner, "run", mock_run)
+
+        result = Status(initialized_workspace_paths(workspace)).collect()
+
+        assert result.git.is_git_repo is False
+        assert result.git.branch == "none"
+        assert result.fixes == ["Run 'git init' or navigate to a Git repository."]
