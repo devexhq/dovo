@@ -101,7 +101,6 @@ ANY_BUDGET: Final[dict[str, int]] = {
     "tests/core/config/test_loader.py": 1,
     "tests/core/config/test_mutate.py": 4,
     "tests/core/diagnostics/test_diagnostics.py": 1,
-    "tests/core/status/test_collector.py": 1,
     "tests/engine/executors/assertions/test_json_match.py": 3,
     "tests/harness/formatter.py": 9,
     "tests/lint/test_config_schema_parity.py": 1,
