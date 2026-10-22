@@ -23,6 +23,34 @@ dovo doctor [--category <name>] [--format terminal|json]
 
 The command exits `1` when at least one check has status `FAILED`, and `0` otherwise (including when checks have `WARNING` or `SKIPPED` status). Passing an unrecognized `--category` value exits `2` before any check runs.
 
+## Diagnostic logs
+
+When a catalog operation catches an unexpected error, Dovo writes one JSON file to `$DOVO_HOME/logs/<YYYY-MM-DD>/<event_id>.json`. With no `DOVO_HOME` set, that is `~/.dovo/logs/`. The date is your local date, and the file is readable only by you (mode `0600`). Catalog operations are creating, deleting and validating blueprints and steps, and loading a blueprint or step definition, for example during `dovo run`. Each file holds one JSON object with these fields:
+
+| Field | Description |
+| --- | --- |
+| `event_id` | Identifier of the form `exc_<12 hex characters>`; it is also the file name. |
+| `timestamp` | Local ISO-8601 time with its UTC offset, to the second. |
+| `level` | `error` for a failure Dovo reported, `debug` for one it recovered from, such as falling back to the built-in catalog skeleton when the packaged template cannot be read. |
+| `operation` | The internal operation that failed, for example `catalog.create`. |
+| `command` | The first CLI word of the invocation, for example `blueprint`, or `null` outside the CLI. |
+| `context` | A few identifying values for the operation, such as the item type and name. |
+| `exception_type` | The exception class name. |
+| `exception_message` | The exception message. |
+| `formatted_traceback` | The full traceback, including every chained exception. |
+
+Dovo keeps the 14 newest date directories and deletes older ones each time it writes a record. Other files and directories under `logs/` are left alone. If the file cannot be written, the command carries on and reports its original error.
+
+When an `error` record is written, the reported error message gains one more line, in terminal and `--format json` output alike:
+
+```text
+Details logged: /home/you/.dovo/logs/2026-10-19/exc_3f9a1c07b2de.json (event exc_3f9a1c07b2de)
+```
+
+To report the problem, open a bug report that quotes the event id, and attach that file after reviewing it.
+
+Records stay on your machine; Dovo never uploads them. They can contain file paths and error message text. Values of secret environment variables (names ending in `_KEY`, `_TOKEN`, `_SECRET`, `_PASSWORD` or `_AUTH`, with values of at least six characters) and known credential formats are masked as `[REDACTED:<name>]` or `[REDACTED]`. Review a record before you share it.
+
 ## Examples
 
 ```bash

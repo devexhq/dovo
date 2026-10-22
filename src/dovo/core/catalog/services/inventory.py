@@ -5,6 +5,7 @@ from __future__ import annotations
 from importlib.resources.abc import Traversable
 from pathlib import Path
 
+from dovo.common.diagnostic_log import DiagnosticLevel, record_exception
 from dovo.common.filesystem import Filesystem, WorkspacePaths, YamlFile
 from dovo.common.filesystem.services.operations import delete_file
 from dovo.common.lock import WorkspaceLock, resolve_lock_file_path
@@ -294,14 +295,22 @@ def resolve_catalog_record_path(record: CatalogRecord, paths: WorkspacePaths) ->
 
 
 def _get_initial_template_content(type_enum: CatalogItemType, stem: str, catalog_templates_dir: Traversable) -> str:
-    """Return initial template text for a catalog item or fall back to a default skeleton."""
+    """Return initial template text for a catalog item or fall back to a default skeleton.
+
+    A failed packaged read is logged at debug level and falls back to the built-in skeleton.
+    """
     template_path = catalog_templates_dir / f"{type_enum.value}s" / "default.yml"
     try:
         content = template_path.read_text(encoding="utf-8")
         placeholder = "my-step" if type_enum == CatalogItemType.STEP else "my-blueprint"
         return content.replace(placeholder, stem)
-    except Exception:
-        # Defensive fallback if the packaged resource is unreadable
+    except Exception as exc:
+        record_exception(
+            exc,
+            level=DiagnosticLevel.DEBUG,
+            operation="catalog.template_fallback",
+            context={"item_type": type_enum.value, "name": stem},
+        )
         if type_enum == CatalogItemType.BLUEPRINT:
             return f'version: "1.0"\nname: {stem}\ndescription: Custom blueprint\nsteps: []\n'
         return f"id: {stem}\nname: {stem}\ndescription: Custom step blueprint\nrun: echo 'Hello from {stem}'\n"

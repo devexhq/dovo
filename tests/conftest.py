@@ -25,6 +25,8 @@ from dovo.core.project.services.identity import generate_project_identity, save_
 from tests.harness import initialized_workspace_paths, patch_claude_probe
 from tests.harness.builders import WorkspaceBuilder, init_git_repository
 
+pytest_plugins = ["tests.harness.diagnostic_log"]
+
 PublishArtifact = Callable[[str, dict[str, str]], None]
 
 

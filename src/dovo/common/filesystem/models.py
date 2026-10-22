@@ -76,6 +76,7 @@ class GlobalPaths(BaseModel):
     user_catalog_dir: Path
     data_dir: Path
     storage_dir: Path
+    logs_dir: Path
 
     @classmethod
     def from_root(cls, root: Path) -> GlobalPaths:
@@ -89,6 +90,7 @@ class GlobalPaths(BaseModel):
             user_catalog_dir=canonical_root / "user" / "catalog",
             data_dir=canonical_root / "data",
             storage_dir=canonical_root / "storage",
+            logs_dir=canonical_root / "logs",
         )
 
 

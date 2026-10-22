@@ -4,6 +4,8 @@ The `dovo blueprint` command inspects, creates, deletes, and validates executabl
 
 `dovo blueprint` requires an explicit subcommand; there is no bare-invocation default.
 
+When `create`, `delete` or `validate` fails with an unexpected error, the error message ends with a `Details logged: <path> (event <event_id>)` line naming its [diagnostic log](doctor.md#diagnostic-logs) file.
+
 ## Tier precedence
 
 When a name or SHA matches more than one tier, the REPO copy wins, then USER, then GLOBAL, then PACKAGED. A REPO-tier blueprint shadowing a USER-tier one of the same name is normal; a duplicate match *within the same tier* produces a warning.

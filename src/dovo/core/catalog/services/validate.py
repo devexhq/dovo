@@ -11,6 +11,8 @@ import yaml
 from pydantic import ValidationError
 from pydantic_core import ErrorDetails
 
+from dovo.common.diagnostic_log import DiagnosticLevel, append_diagnostic_hint, record_exception
+from dovo.common.exceptions import DefinitionLoadError, DefinitionValidationError
 from dovo.core.catalog.exceptions import AskStepInvalidError
 from dovo.core.catalog.models import CatalogItemType, CatalogValidateResult, CatalogValidateStatus
 
@@ -180,14 +182,25 @@ def _validate_schema(
         definition = (
             from_document(parsed, key=key) if callable(from_document) else definition_cls.model_validate(parsed)
         )
-    except Exception as exc:
+    except (DefinitionLoadError, DefinitionValidationError, ValidationError) as exc:
         errors, fixes = _format_schema_exception(exc, key)
         return None, errors, fixes
+    except Exception as exc:
+        record = record_exception(
+            exc, level=DiagnosticLevel.ERROR, operation="catalog.validate_definition", context={"key": key}
+        )
+        return (
+            None,
+            [append_diagnostic_hint(f"{exc} (CATALOG_SCHEMA_INVALID).", record)],
+            [f"Fix the reported schema error for target '{key}'."],
+        )
 
     return definition, [], []
 
 
-def _format_schema_exception(exc: Exception, key: str) -> tuple[list[str], list[str]]:
+def _format_schema_exception(
+    exc: DefinitionLoadError | DefinitionValidationError | ValidationError, key: str
+) -> tuple[list[str], list[str]]:
     """Format a schema-validation exception into (errors, fixes)."""
     pydantic_error = _extract_validation_error(exc)
     if pydantic_error is not None:

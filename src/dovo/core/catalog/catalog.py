@@ -3,16 +3,20 @@
 from __future__ import annotations
 
 import builtins
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any, Protocol, Self
 
 import yaml
+from pydantic import ValidationError
 
+from dovo.common.diagnostic_log import DiagnosticLevel, append_diagnostic_hint, record_exception
 from dovo.common.exceptions import DefinitionLoadError, DefinitionValidationError
 from dovo.common.filesystem import Filesystem, WorkspacePaths
 from dovo.common.lock import WorkspaceLock
 from dovo.common.models import DefinitionResolutionResult, DefinitionResolutionStatus
 from dovo.core.catalog.exceptions import (
+    CatalogError,
     CatalogFileNotFoundError,
     CatalogWriteError,
     CatalogYamlError,
@@ -45,6 +49,22 @@ from dovo.core.catalog.services.inventory import (
 )
 from dovo.core.catalog.services.seeder import SeedResult, seed_all_catalog_templates
 from dovo.core.catalog.services.validate import validate_catalog_item
+
+_EXPECTED_MUTATION_ERRORS = (CatalogError, FileExistsError, ValueError)
+_EXPECTED_DEFINITION_ERRORS = (DefinitionLoadError, DefinitionValidationError, ValidationError)
+
+
+def _logged_message(
+    message: str,
+    exc: Exception,
+    *,
+    operation: str,
+    context: Mapping[str, str | int | float | bool | None],
+) -> str:
+    """Record exc at error level and return message with the diagnostic hint when the record was written."""
+    return append_diagnostic_hint(
+        message, record_exception(exc, level=DiagnosticLevel.ERROR, operation=operation, context=context)
+    )
 
 
 class _PydanticModel(Protocol):
@@ -198,8 +218,13 @@ class Catalog:
             record = create_catalog_item(coerce_catalog_item_type(item_type), name, tier, self.paths)
             resolved_path = resolve_catalog_record_path(record, self.paths)
             return CatalogCreateResult(item=record, resolved_path=resolved_path)
-        except Exception as exc:
+        except _EXPECTED_MUTATION_ERRORS as exc:
             return CatalogCreateResult(errors=[str(exc)])
+        except Exception as exc:
+            message = _logged_message(
+                str(exc), exc, operation="catalog.create", context={"item_type": str(item_type), "name": name}
+            )
+            return CatalogCreateResult(errors=[message])
 
     def delete(self, sha_or_name: str) -> CatalogDeleteResult:
         """Delete a REPO-tier catalog blueprint file and reindex, refusing dovo/-namespaced or non-REPO-tier matches."""
@@ -208,8 +233,11 @@ class Catalog:
             if deleted_item is None:
                 return CatalogDeleteResult(errors=[f"Catalog blueprint '{sha_or_name}' not found."])
             return CatalogDeleteResult(item=deleted_item, deleted=True)
-        except Exception as exc:
+        except _EXPECTED_MUTATION_ERRORS as exc:
             return CatalogDeleteResult(errors=[str(exc)])
+        except Exception as exc:
+            message = _logged_message(str(exc), exc, operation="catalog.delete", context={"sha_or_name": sha_or_name})
+            return CatalogDeleteResult(errors=[message])
 
     def save(
         self,
@@ -386,10 +414,23 @@ class Catalog:
                     errors=validation_errors,
                 )
 
+        return self._load_definition(
+            definition_cls, parsed_data, key=winner.key or sha_or_name, sha_or_name=sha_or_name
+        )
+
+    @staticmethod
+    def _load_definition(
+        definition_cls: type[_PydanticModel],
+        parsed_data: dict[str, object],
+        *,
+        key: str,
+        sha_or_name: str,
+    ) -> DefinitionValidationOutcome:
+        """Build definition_cls from parsed_data, recording an unexpected failure before reporting it as LOAD_ERROR."""
         try:
             from_document = getattr(definition_cls, "from_document", None)
             if callable(from_document):
-                definition = from_document(parsed_data, key=winner.key or sha_or_name)
+                definition = from_document(parsed_data, key=key)
             else:
                 definition = definition_cls.model_validate(parsed_data)
             return DefinitionValidationOutcome(
@@ -397,9 +438,21 @@ class Catalog:
                 status=DefinitionResolutionStatus.OK,
                 errors=[],
             )
-        except (Exception, DefinitionLoadError, DefinitionValidationError) as exc:
+        except _EXPECTED_DEFINITION_ERRORS as exc:
             return DefinitionValidationOutcome(
                 definition=None,
                 status=DefinitionResolutionStatus.LOAD_ERROR,
                 errors=[f"Model validation failed for '{sha_or_name}': {exc}"],
+            )
+        except Exception as exc:
+            message = _logged_message(
+                f"Model validation failed for '{sha_or_name}': {exc}",
+                exc,
+                operation="catalog.load_definition",
+                context={"key": key},
+            )
+            return DefinitionValidationOutcome(
+                definition=None,
+                status=DefinitionResolutionStatus.LOAD_ERROR,
+                errors=[message],
             )

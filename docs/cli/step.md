@@ -4,6 +4,8 @@ The `dovo step` command inspects, creates, deletes, and validates executable ste
 
 `dovo step` requires an explicit subcommand; there is no bare-invocation default.
 
+When `create`, `delete` or `validate` fails with an unexpected error, the error message ends with a `Details logged: <path> (event <event_id>)` line naming its [diagnostic log](doctor.md#diagnostic-logs) file.
+
 ## Subcommands
 
 ### `dovo step list` / `dovo step ls`

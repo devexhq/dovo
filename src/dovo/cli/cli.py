@@ -24,6 +24,7 @@ from dovo.cli.step.app import step_app
 from dovo.cli.ui.dispatcher import ui_dispatcher
 from dovo.cli.ui.events import ErrorPanelEvent, MessageEvent, WelcomeBannerEvent
 from dovo.cli.worktree.app import worktree_app
+from dovo.common.diagnostic_log import bind_cli_command, reset_cli_command
 from dovo.common.filesystem import Filesystem, WorkspaceNotInitializedError
 from dovo.common.lock import LockTimeoutError, WorkspaceLock
 from dovo.common.version import get_version
@@ -117,6 +118,8 @@ def main(
     """Global configuration wrapper managing shared application context."""
     # Stash verbose and path settings inside the runtime context dict for downstream commands
     ctx.ensure_object(dict)
+    token = bind_cli_command(ctx.invoked_subcommand)
+    ctx.call_on_close(lambda: reset_cli_command(token))
     ctx.obj["verbose"] = verbose
     ctx.obj["path"] = path
 
