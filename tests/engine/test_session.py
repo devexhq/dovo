@@ -39,6 +39,7 @@ from dovo.engine.writer import snapshot_blueprint_path
 from tests.engine.conftest import AgentRunnerBuild
 from tests.harness import AGENT_ADAPTER_FACTORY, FakeAgentProvider, new_file_diff
 from tests.harness.builders import WorkspaceBuilder
+from tests.harness.diagnostic_log import diagnostic_hint
 from tests.harness.sessions import (
     NoOpRunObserver,
     RecordingRunObserver,
@@ -302,7 +303,11 @@ class DriveRunCleanupTests:
         assert outcome.errors == (["Patch merge conflict in worktree apply"] if auto_apply else [])
 
     def test_cleanup_failure_after_step_failure_still_reports_failed(
-        self, git_paths: WorkspacePaths, git_runs: SessionsRepository, monkeypatch: pytest.MonkeyPatch
+        self,
+        git_paths: WorkspacePaths,
+        git_runs: SessionsRepository,
+        monkeypatch: pytest.MonkeyPatch,
+        frozen_diagnostic_clock: Path,
     ) -> None:
 
         def exploding_cleanup(self: Worktree, session: object, **kwargs: object) -> list[str]:
@@ -324,6 +329,7 @@ class DriveRunCleanupTests:
         assert outcome.worktree_kept is False
         assert outcome.warnings == [
             f"Failed to remove worktree '{outcome.worktree_path}': Cleanup filesystem removal failed"
+            f"{diagnostic_hint(frozen_diagnostic_clock)}"
         ]
         assert outcome.errors == ["Step 'fail' failed: Command failed with exit code 1."]
 
@@ -459,6 +465,37 @@ class DriveRunCleanupTests:
             ("step_output", 1, 1, "s1", "err\n", "stderr"),
             ("step_output", 1, 1, "s1", "out\n", "stdout"),
         ]
+
+
+class SessionRunnerDiagnosticLogTests:
+    def test_launch_failure_hints_run_warnings_not_session_state(
+        self,
+        git_paths: WorkspacePaths,
+        git_runs: SessionsRepository,
+        frozen_diagnostic_clock: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Fail the step unhinted, hold one hint in outcome.warnings and leave no 'Details logged:' text in the session's state."""
+
+        def _exec_format_error(*_args: object, **_kwargs: object) -> None:
+            raise OSError("exec format error")
+
+        monkeypatch.setattr("dovo.engine.executors.step_executor.subprocess.Popen", _exec_format_error)
+        seed_new_session(git_paths, git_runs, session_id="launch", steps=[_step("a", "true")], use_worktree=False)
+
+        outcome = _drive(git_paths, git_runs, "launch")
+
+        assert outcome.status == SessionStatus.FAILED
+        assert outcome.errors == ["Step 'a' failed: Command execution error: exec format error"]
+        assert [warning for warning in outcome.warnings if "Details logged:" in warning] == [
+            diagnostic_hint(frozen_diagnostic_clock).lstrip("\n")
+        ]
+        row = git_runs.get("launch")
+        assert row is not None
+        session_json = (git_paths.session_dir("launch") / "session.json").read_text(encoding="utf-8")
+        for persisted in (row.error_message or "", row.execution_state_json or "", session_json):
+            assert "Details logged:" not in persisted
+        assert "Command execution error: exec format error" in session_json
 
 
 class DriveRunObserverContractTests:

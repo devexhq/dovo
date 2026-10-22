@@ -2,6 +2,7 @@
 
 from typing import Final
 
+from dovo.common.diagnostic_log import DiagnosticLevel, DiagnosticRecord, append_diagnostic_hint, record_exception
 from dovo.common.timing import Stopwatch
 from dovo.core.config.models import DovoConfig
 from dovo.core.diagnostics.models import (
@@ -54,22 +55,28 @@ def execute_single_check(
     try:
         result = check.execute(context)
     except Exception as exc:
-        result = _crash_result(check, exc)
+        record = record_exception(
+            exc,
+            level=DiagnosticLevel.ERROR,
+            operation="doctor.check",
+            context={"check": check.check_id, "path": str(context.cwd)},
+        )
+        result = _crash_result(check, exc, record)
     watch.stop()
     return _with_remediations(result.model_copy(update={"duration_seconds": watch.elapsed_seconds}))
 
 
-def _crash_result(check: DiagnosticCheck, exc: Exception) -> DiagnosticCheckResult:
-    """Return the FAILED DOCTOR_CHECK_CRASH result for a check that raised exc."""
+def _crash_result(check: DiagnosticCheck, exc: Exception, record: DiagnosticRecord | None) -> DiagnosticCheckResult:
+    """Return the FAILED DOCTOR_CHECK_CRASH result for a check that raised exc, hinting its message and error."""
     return DiagnosticCheckResult(
         check_id=check.check_id,
         name=check.name,
         category=check.category,
         status=CheckStatus.FAILED,
-        message=f"Unhandled exception during check execution: {exc}",
+        message=append_diagnostic_hint(f"Unhandled exception during check execution: {exc}", record),
         details={"exception": str(exc), "type": type(exc).__name__},
         error_code="DOCTOR_CHECK_CRASH",
-        errors=[f"Unhandled exception in {check.check_id}: {exc}"],
+        errors=[append_diagnostic_hint(f"Unhandled exception in {check.check_id}: {exc}", record)],
         warnings=[],
         fixes=[],
     )

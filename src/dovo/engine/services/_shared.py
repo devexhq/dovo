@@ -5,6 +5,7 @@ from __future__ import annotations
 from dovo.core.agents.environment import env_passthrough_flag_error
 from dovo.core.agents.models import AgentEnvMode, AgentEnvOverrides
 from dovo.core.db import SessionRecord, SessionsRepository
+from dovo.engine.executors.failure_log import logged_failure
 from dovo.engine.models import BlueprintRunResult, RunOutcome
 
 
@@ -22,7 +23,14 @@ def load_record(sessions_db: SessionsRepository, warnings: list[str], session_id
     try:
         return sessions_db.get(session_id)
     except Exception as exc:
-        warnings.append(f"Failed to load session record for '{session_id}': {exc}")
+        warnings.append(
+            logged_failure(
+                f"Failed to load session record for '{session_id}': {exc}",
+                exc,
+                operation="engine.read_run",
+                context={"session_id": session_id},
+            )
+        )
         return None
 
 

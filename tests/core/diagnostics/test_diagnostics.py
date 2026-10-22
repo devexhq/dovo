@@ -4,7 +4,10 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
+import pytest
+
 from dovo.common.filesystem import Filesystem
+from dovo.core.config import Config
 from dovo.core.config.models import (
     ConfigTier,
     DoctorConfig,
@@ -19,6 +22,7 @@ from dovo.core.diagnostics.models import (
 )
 from dovo.core.diagnostics.services.registry import CheckRegistry, get_default_registry
 from tests.harness.builders import StubCheck
+from tests.harness.diagnostic_log import read_single_event
 from tests.harness.workspace_paths import initialized_workspace_paths
 
 
@@ -115,6 +119,29 @@ class DiagnosticsCoordinatorTests:
         assert len(report.checks) == 1
         assert report.checks[0].check_id == "config.schema"
         assert report.checks[0].status == CheckStatus.OK
+
+    def test_config_load_exception_records_debug_and_runs_with_no_config(
+        self, tmp_path: Path, frozen_diagnostic_clock: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Run checks with config None and write one doctor.check debug record when Config.load raises."""
+
+        def _broken(_self: Config) -> None:
+            raise RuntimeError("broken")
+
+        monkeypatch.setattr(Config, "load", _broken)
+        doctor = Diagnostics(initialized_workspace_paths(tmp_path), registry=CheckRegistry())
+        check = StubCheck(check_id="test.config", category=CheckCategory.GIT)
+        doctor.registry.register(check)
+
+        report = doctor.run_diagnostics()
+
+        assert [result.status for result in report.checks] == [CheckStatus.OK]
+        assert check.captured_context is not None
+        assert check.captured_context.config is None
+        event = read_single_event(frozen_diagnostic_clock)
+        assert event["level"] == "debug"
+        assert event["operation"] == "doctor.check"
+        assert event["context"] == {"path": str(tmp_path.resolve())}
 
 
 class DiagnosticsDefaultRegistryTests:

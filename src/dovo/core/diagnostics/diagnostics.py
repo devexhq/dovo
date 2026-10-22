@@ -1,5 +1,6 @@
 """Domain entrypoint coordinator for Dovo doctor diagnostics."""
 
+from dovo.common.diagnostic_log import DiagnosticLevel, record_exception
 from dovo.common.filesystem import WorkspacePaths
 from dovo.core.config import Config
 from dovo.core.config.models import DovoConfig
@@ -32,7 +33,13 @@ class Diagnostics:
                 load_result = Config(self.paths).load()
                 if load_result.ok:
                     active_config = load_result.config
-            except Exception:
+            except Exception as exc:
+                record_exception(
+                    exc,
+                    level=DiagnosticLevel.DEBUG,
+                    operation="doctor.check",
+                    context={"path": str(self.paths.root_dir)},
+                )
                 active_config = None
 
         context = DiagnosticsContext(cwd=self.paths.root_dir, config=active_config, paths=self.paths)

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from dovo.common.diagnostic_log import DiagnosticLevel, diagnostic_hint_line, record_exception
 from dovo.common.tool_policy import ToolPolicy
 from dovo.core.agents.factory import get_agent_adapter
 from dovo.core.agents.models import (
@@ -77,11 +78,32 @@ def _run_provider(request: AgentRequest, provider: str) -> AgentAttempt:
     """Resolve the adapter, call invoke once, and settle the response; any exception becomes provider_error."""
     try:
         adapter = get_agent_adapter(provider)
-        response = adapter.invoke(request)
-
-        return _settle(response)
-    except Exception as exc:
+    except ValueError as exc:
+        # No record: an unregistered provider is a configuration error the message names.
         return AgentAttempt(status=AgentResponseStatus.PROVIDER_ERROR, diagnostics=[f"Agent provider error: {exc}"])
+    except Exception as exc:
+        return _recorded_provider_error(exc, request, provider)
+
+    try:
+        return _settle(adapter.invoke(request))
+    except Exception as exc:
+        return _recorded_provider_error(exc, request, provider)
+
+
+def _recorded_provider_error(exc: Exception, request: AgentRequest, provider: str) -> AgentAttempt:
+    """Record exc at error level and return the provider_error attempt carrying the hint line as a warning."""
+    record = record_exception(
+        exc,
+        level=DiagnosticLevel.ERROR,
+        operation="agent.run",
+        context={"provider": provider, "path": str(request.worktree_path)},
+    )
+    line = diagnostic_hint_line(record)
+    return AgentAttempt(
+        status=AgentResponseStatus.PROVIDER_ERROR,
+        diagnostics=[f"Agent provider error: {exc}"],
+        warnings=[line] if line is not None else [],
+    )
 
 
 def _response_text(response: AgentResponse) -> str | None:

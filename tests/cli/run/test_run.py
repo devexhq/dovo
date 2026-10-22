@@ -17,8 +17,11 @@ from dovo.core.config.models import ConfigTier
 from dovo.core.db import DovoDb, SessionStatus
 from dovo.core.git.runner import GitRunner
 from dovo.core.worktree import Worktree
+from dovo.engine import SessionStateStore
+from dovo.engine.state_models import ExecutionStateTree, SessionStateWriteResult
 from tests.harness import FakeAgentRunner, UnfixableAgentRunner
 from tests.harness.catalog import write_runnable_blueprint
+from tests.harness.diagnostic_log import diagnostic_hint
 from tests.harness.workspace_paths import initialized_workspace_paths
 
 
@@ -182,6 +185,42 @@ class RunCliIntegrationTests:
         success_events = [e for e in events if e["event_type"] == "RunSuccessEvent"]
         assert len(success_events) == 1
         assert success_events[0]["payload"]["status"] == "completed"
+
+    def test_run_cli_json_finalization_failure_carries_hint_warning(
+        self,
+        cli_runner: CliRunner,
+        cli_workspace: Path,
+        frozen_diagnostic_clock: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Exit 0 and emit a WarningEvent carrying the hinted finalization failure under --format json."""
+        write_runnable_blueprint(cli_workspace, key="json-task", steps=[{"id": "s1", "run": "true"}])
+        original_save = SessionStateStore.save
+
+        def _finalize_disk_full(
+            self: SessionStateStore,
+            state: ExecutionStateTree,
+            run_status: SessionStatus | None = None,
+            error_message: str | None = None,
+            worktree_id: str | None = None,
+            worktree_kept: bool | None = None,
+        ) -> SessionStateWriteResult:
+            if worktree_kept is not None:
+                raise OSError("disk full")
+            return original_save(self, state, run_status, error_message, worktree_id)
+
+        monkeypatch.setattr(SessionStateStore, "save", _finalize_disk_full)
+
+        result = cli_runner.invoke(
+            app, ["-p", str(cli_workspace), "run", "json-task", "--no-worktree", "--format", "json"]
+        )
+
+        assert result.exit_code == 0
+        events = [json.loads(line) for line in result.stdout.splitlines() if line.strip()]
+        warnings = [e["payload"]["message"] for e in events if e["event_type"] == "WarningEvent"]
+        assert (
+            f"Failed to update run status in database: disk full{diagnostic_hint(frozen_diagnostic_clock)}" in warnings
+        )
 
     def test_run_cli_uninitialized_git_repo_auto_initializes_and_proceeds(
         self, cli_runner: CliRunner, git_repo: Path

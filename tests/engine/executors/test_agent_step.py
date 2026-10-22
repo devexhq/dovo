@@ -48,6 +48,7 @@ from dovo.engine.executors.models import (
 )
 from tests.harness import AGENT_ADAPTER_FACTORY, FakeAgentProvider, RecordingProgressSink, new_file_diff
 from tests.harness.builders import StepBuilder
+from tests.harness.diagnostic_log import diagnostic_hint, read_single_event
 
 _NO_OP_SUMMARY = "Inspected the repository; no edits were required."
 _METADATA = ExecutionMetadata(step=StepMetadata(id="plan", name="plan", index=1))
@@ -350,20 +351,39 @@ class ExecuteAgentStepOutputTests:
         assert received == [("stdout", outcome.stdout)]
 
     def test_callback_failure_fails_attempt_and_drops_success_classification(
-        self, git_repo: Path, monkeypatch: pytest.MonkeyPatch
+        self, git_repo: Path, frozen_diagnostic_clock: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
+        """Fail with the unhinted callback error, carry the hint in warnings and write one engine.step record."""
         _use_provider(monkeypatch, FakeAgentProvider(_patch("a.txt")))
+        step = _step()
 
         def _broken(stream: str, line: str) -> None:
             raise RuntimeError("ui down")
 
-        outcome = _run(git_repo, on_output=_broken)
+        outcome = _run(git_repo, step=step, on_output=_broken)
 
         assert outcome.status == "failed"
         assert outcome.exit_code == 203
         assert outcome.error_message == "Agent output callback error: ui down"
         assert _summary(outcome)["status"] == "provider_error"
         assert _summary(outcome)["touched_files"] == ["a.txt"]
+        assert outcome.warnings == [diagnostic_hint(frozen_diagnostic_clock).lstrip("\n")]
+        event = read_single_event(frozen_diagnostic_clock)
+        assert (event["level"], event["operation"], event["context"]) == (
+            "error",
+            "engine.step",
+            {"session_id": None, "step_id": step.id, "path": str(git_repo)},
+        )
+
+    def test_attempt_warnings_carry_into_outcome_warnings(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Copy AgentAttempt.warnings ['w'] onto the dispatch outcome's warnings unchanged."""
+        _stub_attempt(monkeypatch, AgentAttempt(status=AgentResponseStatus.PROVIDER_ERROR, warnings=["w"]))
+
+        outcome = _run(tmp_path)
+
+        assert outcome.warnings == ["w"]
 
 
 class ExecuteAgentStepScratchTests:

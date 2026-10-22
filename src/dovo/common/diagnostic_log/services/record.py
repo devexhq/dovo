@@ -89,9 +89,18 @@ def prune_log_days(logs_dir: Path) -> None:
             continue
 
 
+def diagnostic_hint_line(record: DiagnosticRecord | None) -> str | None:
+    """Return 'Details logged: <path> (event <id>)' for an error record, else None."""
+    if record is None or record.level is not DiagnosticLevel.ERROR:
+        return None
+
+    return f"Details logged: {record.log_path} (event {record.event_id})"
+
+
 def append_diagnostic_hint(message: str, record: DiagnosticRecord | None) -> str:
     """Return message with a 'Details logged: <path> (event <id>)' line for an error record, else message unchanged."""
-    if record is None or record.level is not DiagnosticLevel.ERROR:
+    line = diagnostic_hint_line(record)
+    if line is None:
         return message
 
-    return f"{message}\nDetails logged: {record.log_path} (event {record.event_id})"
+    return f"{message}\n{line}"

@@ -12,6 +12,8 @@ from dovo.cli import app
 from dovo.core.agents.registry import PROVIDERS
 from dovo.core.config.models import DEFAULT_AGENT
 from dovo.core.diagnostics import CheckStatus, DiagnosticsReport
+from dovo.core.diagnostics.checks.git_repo import GitRepoCheck
+from tests.harness.diagnostic_log import diagnostic_hint
 from tests.harness.workspace_paths import initialized_workspace_paths
 
 
@@ -124,3 +126,22 @@ class DoctorCliIntegrationTests:
                 }
             ],
         }
+
+    def test_doctor_cli_json_crashed_check_carries_hint(
+        self, cli_runner: CliRunner, cli_workspace: Path, frozen_diagnostic_clock: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Exit 1 and end the crashed check's JSON message with the hint when GitRepoCheck.execute raises."""
+
+        def _crash(_self: GitRepoCheck, _context: object) -> None:
+            raise RuntimeError("boom")
+
+        monkeypatch.setattr(GitRepoCheck, "execute", _crash)
+
+        result = cli_runner.invoke(app, ["-p", str(cli_workspace), "doctor", "--category", "git", "--format", "json"])
+
+        assert result.exit_code == 1
+        check_payload = json.loads(result.stdout)["payload"]["checks"][0]
+        assert check_payload["error_code"] == "DOCTOR_CHECK_CRASH"
+        assert check_payload["message"] == (
+            f"Unhandled exception during check execution: boom{diagnostic_hint(frozen_diagnostic_clock)}"
+        )

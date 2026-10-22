@@ -9,27 +9,30 @@ from pydantic import BaseModel, Field
 from dovo.core.artifacts.models import ArtifactProvenance, ArtifactUploadResult, ArtifactUploadStatus
 from dovo.core.artifacts.store import ArtifactStore
 from dovo.core.catalog.definitions import ArtifactPublishSpec, StepDefinition
+from dovo.engine.executors.failure_log import logged_hint
 
 
 class ArtifactPublishOutcome(BaseModel):
-    """Result of publishing a step's declared artifacts: the first required failure, plus non-fatal warnings."""
+    """Result of publishing a step's declared artifacts: the first required failure, non-fatal warnings and diagnostic hints."""
 
     model_config = {"extra": "forbid", "strict": True}
 
     error_message: str | None = None
     warnings: list[str] = Field(default_factory=list)
+    diagnostic_hints: list[str] = Field(default_factory=list)  # 'Details logged' lines for the run's warnings only.
 
 
 def _publish_one(
     spec: ArtifactPublishSpec,
     *,
+    step_id: str,
     worktree_path: Path,
     store: ArtifactStore,
     provenance: ArtifactProvenance,
-) -> ArtifactUploadResult:
-    """Publish one spec and return its result; an exception becomes an ERROR result, never raised."""
+) -> tuple[ArtifactUploadResult, str | None]:
+    """Publish one spec; an exception becomes an ERROR result plus the recorded event's hint line, never raised."""
     try:
-        return store.publish(
+        result = store.publish(
             worktree_path,
             name=spec.name,
             path_glob=spec.path,
@@ -37,7 +40,10 @@ def _publish_one(
             provenance=provenance,
         )
     except Exception as exc:
-        return ArtifactUploadResult(status=ArtifactUploadStatus.ERROR, errors=[str(exc)])
+        hint = logged_hint(exc, operation="engine.step", context={"step_id": step_id, "path": str(worktree_path)})
+        return ArtifactUploadResult(status=ArtifactUploadStatus.ERROR, errors=[str(exc)]), hint
+
+    return result, None
 
 
 def publish_declared_artifacts(
@@ -54,20 +60,37 @@ def publish_declared_artifacts(
 
     provenance = ArtifactProvenance(step_id=step.id, attempt=attempt, loop_iteration=loop_iteration)
     warnings: list[str] = []
+    hints: list[str] = []
     for spec in step.artifacts:
-        result = _publish_one(spec, worktree_path=worktree_path, store=store, provenance=provenance)
+        result, hint = _publish_one(
+            spec, step_id=step.id, worktree_path=worktree_path, store=store, provenance=provenance
+        )
+        if hint is not None:
+            hints.append(hint)
         if result.ok:
             continue
 
-        detail = "; ".join(result.errors) or "publish failed"
-        if not spec.required:
-            warnings.append(f"Failed to publish artifact '{spec.name}': {detail}")
-        elif result.status == ArtifactUploadStatus.NO_MATCHING_FILES:
-            return ArtifactPublishOutcome(error_message=detail, warnings=warnings)
-        else:
-            return ArtifactPublishOutcome(
-                error_message=f"Failed to publish artifact '{spec.name}': {detail} (ARTIFACT_PUBLISH_FAILED)",
-                warnings=warnings,
-            )
+        failure = _failed_publish(spec, result, warnings, hints)
+        if failure is not None:
+            return failure
 
-    return ArtifactPublishOutcome(warnings=warnings)
+    return ArtifactPublishOutcome(warnings=warnings, diagnostic_hints=hints)
+
+
+def _failed_publish(
+    spec: ArtifactPublishSpec, result: ArtifactUploadResult, warnings: list[str], hints: list[str]
+) -> ArtifactPublishOutcome | None:
+    """Append an optional spec's warning to warnings and return None; return the step-failing outcome for a required spec."""
+    detail = "; ".join(result.errors) or "publish failed"
+    if not spec.required:
+        warnings.append(f"Failed to publish artifact '{spec.name}': {detail}")
+        return None
+
+    if result.status == ArtifactUploadStatus.NO_MATCHING_FILES:
+        return ArtifactPublishOutcome(error_message=detail, warnings=warnings, diagnostic_hints=hints)
+
+    return ArtifactPublishOutcome(
+        error_message=f"Failed to publish artifact '{spec.name}': {detail} (ARTIFACT_PUBLISH_FAILED)",
+        warnings=warnings,
+        diagnostic_hints=hints,
+    )

@@ -10,20 +10,24 @@ from pathlib import Path
 import pytest
 
 from dovo.common.filesystem.models import WorkspacePaths
+from dovo.common.lock import LockTimeoutError
 from dovo.core.agents import AgentInvocationContext, allocate_invocation_paths, new_invocation_id
 from dovo.core.artifacts.models import ArtifactProvenance
 from dovo.core.config import ConfigLoadError
 from dovo.core.config.loader import ConfigLoadResult, ConfigLoadStatus
 from dovo.core.db import SessionStatus, WorktreesRepository, WorktreeStatus
 from dovo.core.db.repositories.artifacts import ArtifactsRepository
+from dovo.core.git.exceptions import GitError
 from dovo.core.git.runner import GitRunner
 from dovo.core.worktree import Worktree, WorktreeApplyResult, WorktreeApplyStatus, WorktreeSession
+from dovo.core.worktree.exceptions import WorktreeError
 from dovo.core.worktree.models import WorktreeCreateResult, WorktreeCreateStatus
 from dovo.engine.executors.models import ExecutionIdentity
 from dovo.engine.models import RunSettings
 from dovo.engine.workspace import Workspace
 from tests.engine.conftest import WorktreeSetupFactory
 from tests.harness.builders import WorkspaceBuilder
+from tests.harness.diagnostic_log import diagnostic_hint, read_single_event
 from tests.harness.git_index import snapshot_index
 from tests.harness.sessions import RecordingRunObserver
 from tests.harness.workspace_paths import initialized_workspace_paths
@@ -217,14 +221,29 @@ class WorkspaceCleanupTests:
         assert kept is False
         assert [call[:3] for call in observer.calls] == [("worktree_cleanup", False, tmp_path)]
 
+    @pytest.mark.parametrize(
+        ("error", "recorded"),
+        [
+            pytest.param(RuntimeError, True, id="runtime"),
+            pytest.param(LockTimeoutError, False, id="lock-timeout"),
+            pytest.param(GitError, False, id="git"),
+            pytest.param(WorktreeError, False, id="worktree"),
+        ],
+    )
     def test_removal_failure_appends_warning_with_path_and_returns_false(
-        self, worktree_setup: WorktreeSetupFactory, monkeypatch: pytest.MonkeyPatch
+        self,
+        worktree_setup: WorktreeSetupFactory,
+        monkeypatch: pytest.MonkeyPatch,
+        frozen_diagnostic_clock: Path,
+        error: type[Exception],
+        recorded: bool,
     ) -> None:
+        """Append the removal warning; only an unexpected error hints it and writes one engine.workspace record."""
         workspace, target_dir, manager, session, _ = worktree_setup()
         assert session is not None
 
         def _raise(self: Worktree, *args: object, **kwargs: object) -> list[str]:
-            raise RuntimeError("worktree removal failed")
+            raise error("worktree removal failed")
 
         monkeypatch.setattr(Worktree, "cleanup", _raise)
         warnings: list[str] = []
@@ -232,7 +251,14 @@ class WorkspaceCleanupTests:
         kept = workspace.cleanup(manager, session, target_dir, SessionStatus.COMPLETED, warnings)
 
         assert kept is False
-        assert warnings == [f"Failed to remove worktree '{session.worktree_path}': worktree removal failed"]
+        hint = diagnostic_hint(frozen_diagnostic_clock) if recorded else ""
+        assert warnings == [f"Failed to remove worktree '{session.worktree_path}': worktree removal failed{hint}"]
+        if recorded:
+            event = read_single_event(frozen_diagnostic_clock)
+            assert (event["level"], event["operation"]) == ("error", "engine.workspace")
+            assert event["context"] == {"session_id": None, "path": str(session.worktree_path)}
+        else:
+            assert not frozen_diagnostic_clock.parent.parent.exists()
 
     def test_removal_reporting_problems_appends_first_problem_and_returns_false(
         self, worktree_setup: WorktreeSetupFactory, monkeypatch: pytest.MonkeyPatch
@@ -543,9 +569,32 @@ class WorkspaceCaptureAndPersistDiffTests:
         assert snapshot_index(session.worktree_path) == before
         assert "?? new.txt" in before.status.splitlines()
 
-    def test_git_failure_appends_warning_instead_of_raising(
-        self, worktree_setup: WorktreeSetupFactory, worktree_paths: WorkspacePaths
+    def test_persist_failure_records_error_and_hints_warning(
+        self, worktree_setup: WorktreeSetupFactory, monkeypatch: pytest.MonkeyPatch, frozen_diagnostic_clock: Path
     ) -> None:
+        """Append the hinted persist failure and write one engine.workspace record when writing diff.patch raises."""
+        workspace, _, _, session, _ = worktree_setup(session_id="sess-1")
+        assert session is not None
+
+        def _disk_full(*args: object, **kwargs: object) -> None:
+            raise OSError("disk full")
+
+        monkeypatch.setattr("dovo.engine.workspace.write_session_diff", _disk_full)
+        warnings: list[str] = []
+
+        workspace.capture_and_persist_diff(session, warnings)
+
+        assert warnings == [
+            f"Failed to persist session diff artifact: disk full{diagnostic_hint(frozen_diagnostic_clock)}"
+        ]
+        event = read_single_event(frozen_diagnostic_clock)
+        assert (event["level"], event["operation"]) == ("error", "engine.workspace")
+        assert event["context"] == {"session_id": "sess-1", "path": str(session.worktree_path)}
+
+    def test_git_failure_keeps_warning_without_record(
+        self, worktree_setup: WorktreeSetupFactory, worktree_paths: WorkspacePaths, frozen_diagnostic_clock: Path
+    ) -> None:
+        """Append an unhinted warning, write no diff.patch and leave <DOVO_HOME>/logs absent for an unknown base commit."""
         workspace, _, _, session, _ = worktree_setup(session_id="sess-1")
         assert session is not None
         unknown_base = session.model_copy(update={"base_commit": "0" * 40})
@@ -555,7 +604,9 @@ class WorkspaceCaptureAndPersistDiffTests:
 
         assert len(warnings) == 1
         assert warnings[0].startswith("Failed to persist session diff artifact: ")
+        assert "Details logged:" not in warnings[0]
         assert not (worktree_paths.session_dir("sess-1") / "diff.patch").exists()
+        assert not frozen_diagnostic_clock.parent.parent.exists()
 
 
 class WorkspaceFinalizeCleanupTests:

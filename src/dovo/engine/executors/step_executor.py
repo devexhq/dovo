@@ -26,6 +26,7 @@ from dovo.core.catalog.services.resolve_step import resolve_step_definition
 from dovo.core.inputs import NamespaceProvider, NamespaceResolutionError, build_providers, interpolate_step_fields
 from dovo.engine.executors.agent_progress import AgentProgressReporter
 from dovo.engine.executors.artifact_namespace import ArtifactNamespaceProvider
+from dovo.engine.executors.failure_log import DiagnosticContext, logged_hint
 from dovo.engine.executors.internal_dispatch import INTERNAL_COMMAND_HANDLERS
 from dovo.engine.executors.metadata import (
     build_execution_metadata,
@@ -149,6 +150,8 @@ class StepExecution:
         self.paths = metadata.paths
         self.agent_runner = metadata.agent_runner
         self.log_warnings: list[str] = []
+        # 'Details logged' lines for the run's warnings; kept off the StepResult, which session state persists.
+        self.diagnostic_hints: list[str] = []
         self.step_scratch_dir: Path | None = None
         self.output_file: Path | None = None
         self.max_attempts = 1
@@ -245,9 +248,10 @@ class StepExecution:
             return _failed_dispatch(str(error)).model_copy(update={"attempts": attempt})
 
         self._reset_step_output_file()
-        outcome = self._dispatch_primitive(metadata)
-        outcome = outcome.model_copy(update={"attempts": attempt})
-        return self._apply_postconditions(outcome, attempt)
+        outcome = self._dispatch_primitive(metadata).model_copy(update={"attempts": attempt})
+        outcome = self._apply_postconditions(outcome, attempt)
+        self.diagnostic_hints.extend(outcome.warnings)
+        return outcome
 
     def _apply_postconditions(self, outcome: StepDispatchOutcome, attempt: int) -> StepDispatchOutcome:
         """Run each postcondition in order, stopping at the first non-completed outcome."""
@@ -297,6 +301,7 @@ class StepExecution:
         try:
             return handler(context)
         except Exception as exc:
+            self._record_failure(exc)
             return _failed_dispatch(f"Internal command '{command}' error: {exc}")
 
     def _execute_command(self, metadata: ExecutionMetadata) -> StepDispatchOutcome:
@@ -392,6 +397,16 @@ class StepExecution:
         process_env.update(self.step.env)
         return process_env
 
+    def _diagnostic_context(self) -> DiagnosticContext:
+        """Return the diagnostic log context naming this step's session, id and worktree."""
+        return {"session_id": self.session_id or None, "step_id": self.step.id, "path": str(self.worktree_path)}
+
+    def _record_failure(self, exc: Exception) -> None:
+        """Record exc at error level and add its 'Details logged' line to diagnostic_hints, never the step's result."""
+        hint = logged_hint(exc, operation="engine.step", context=self._diagnostic_context())
+        if hint is not None:
+            self.diagnostic_hints.append(hint)
+
     def _dispatch_pipe_line(
         self,
         line: str,
@@ -405,6 +420,8 @@ class StepExecution:
             try:
                 self.on_output(stream_name, line)
             except Exception as exc:
+                if not collected_errors:
+                    self._record_failure(exc)
                 collected_errors.append(f"Output callback error on {stream_name}: {exc}")
 
     def _append_log_line(self, log_file: IO[str] | None, line: str) -> IO[str] | None:
@@ -444,12 +461,14 @@ class StepExecution:
                 self._dispatch_pipe_line(line, stream_name, collected_lines, collected_errors)
                 log_file = self._append_log_line(log_file, line)
         except Exception as exc:
+            if not collected_errors:
+                self._record_failure(exc)
             collected_errors.append(f"Failed reading {stream_name} stream: {exc}")
         finally:
             try:
                 pipe.close()
             except Exception:
-                # Best-effort cleanup: closing stream pipe during termination.
+                # No record: closing a pipe during termination.
                 pass
             self._close_log_file(log_file)
 
@@ -528,6 +547,7 @@ class StepExecution:
         except Exception as exc:
             self._close_log_file(stdout_log)
             self._close_log_file(stderr_log)
+            self._record_failure(exc)
             return _failed_dispatch(f"{failure_label} execution error: {exc}")
 
         pgid = proc.pid
@@ -561,9 +581,10 @@ class StepExecution:
                 try:
                     exit_code = proc.wait(timeout=5)
                 except Exception:
-                    # Best-effort wait: process tree was killed; exit code defaults to 124.
+                    # No record: a timed-out step's exit code defaults to 124.
                     pass
             except BaseException:
+                # No record: the tree is terminated and the exception re-raised.
                 self._terminate_process_tree(proc, pgid=pgid, grace_seconds=0.5)
                 raise
         finally:

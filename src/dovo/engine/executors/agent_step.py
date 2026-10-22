@@ -21,6 +21,7 @@ from dovo.core.agents import (
 from dovo.core.agents.responses import diagnostics_with_fixes
 from dovo.core.catalog.definitions import StepDefinition
 from dovo.core.sessions import SessionLogEvent, SessionLogEventType
+from dovo.engine.executors.failure_log import DiagnosticContext, logged_hint
 from dovo.engine.executors.metadata import metadata_to_env
 from dovo.engine.executors.models import (
     AGENT_OUTCOME_EXIT_CODES,
@@ -61,14 +62,19 @@ def execute_agent_step(
     progress: AgentProgressSink,
 ) -> StepDispatchOutcome:
     """Run one agent attempt through its resolved provider and return the classified dispatch outcome."""
+    context: DiagnosticContext = {
+        "session_id": metadata.session_id or None,
+        "step_id": step.id,
+        "path": str(worktree_path),
+    }
     if not worktree_active:
-        return _to_outcome(_provider_error(WORKTREE_REQUIRED_MESSAGE), on_output)
+        return _to_outcome(_provider_error(WORKTREE_REQUIRED_MESSAGE), on_output, context=context)
 
     if agent is None:
-        return _to_outcome(_provider_error(MISSING_SETTINGS_MESSAGE), on_output)
+        return _to_outcome(_provider_error(MISSING_SETTINGS_MESSAGE), on_output, context=context)
 
     if not (step.prompt or "").strip():
-        return _to_outcome(_provider_error(BLANK_PROMPT_MESSAGE), on_output)
+        return _to_outcome(_provider_error(BLANK_PROMPT_MESSAGE), on_output, context=context)
 
     tools = resolve_tool_policy(step.tools, agent.tools)
     scratch = allocate_invocation_paths(
@@ -79,7 +85,9 @@ def execute_agent_step(
         main_checkout=main_checkout,
     )
     if not scratch.ok:
-        return _to_outcome(_provider_error(*diagnostics_with_fixes(scratch.errors, scratch.fixes)), on_output)
+        return _to_outcome(
+            _provider_error(*diagnostics_with_fixes(scratch.errors, scratch.fixes)), on_output, context=context
+        )
 
     attempt = _run_with_heartbeat(
         step.id,
@@ -107,7 +115,7 @@ def execute_agent_step(
     )
     _report_withheld_fix(attempt, agent.provider, on_output)
 
-    return _to_outcome(attempt, on_output)
+    return _to_outcome(attempt, on_output, context=context)
 
 
 def build_agent_step_runner(
@@ -240,33 +248,45 @@ def _failure_text(attempt: AgentAttempt) -> str:
     return f"Agent step ended with status '{attempt.status.value}'."
 
 
-def _emit_output(on_output: OutputCallback | None, stream_name: str, line: str) -> str | None:
-    """Send one line on ``stream_name`` through the output callback and return its error text, or None."""
+def _emit_output(on_output: OutputCallback | None, stream_name: str, line: str) -> Exception | None:
+    """Send one line on ``stream_name`` through the output callback and return the exception it raised, or None."""
     if on_output is None:
         return None
 
     try:
         on_output(stream_name, line)
     except Exception as exc:
-        return str(exc)
+        # Classified by the caller: _to_outcome records the summary-line failure; heartbeat and notices drop it.
+        return exc
 
     return None
 
 
-def _to_outcome(attempt: AgentAttempt, on_output: OutputCallback | None) -> StepDispatchOutcome:
-    """Convert an attempt into the completed or failed dispatch outcome, downgrading success when the callback fails."""
+def _to_outcome(
+    attempt: AgentAttempt, on_output: OutputCallback | None, *, context: DiagnosticContext
+) -> StepDispatchOutcome:
+    """Convert an attempt into its dispatch outcome carrying the attempt's warnings; a failing summary callback is recorded and downgrades success."""
     line = _summary_line(attempt)
     callback_error = _emit_output(on_output, "stdout", line)
+    hint = logged_hint(callback_error, operation="engine.step", context=context) if callback_error is not None else None
+    warnings = [*attempt.warnings, *([hint] if hint is not None else [])]
 
     if not attempt.completed:
         return _failed_outcome(
-            attempt.status, line, _failure_text(attempt), rejected_patch_path=attempt.rejected_patch_path
+            attempt.status,
+            line,
+            _failure_text(attempt),
+            rejected_patch_path=attempt.rejected_patch_path,
+            warnings=warnings,
         )
 
     if callback_error is not None:
         downgraded = _summary_line(attempt, status=AgentResponseStatus.PROVIDER_ERROR)
         return _failed_outcome(
-            AgentResponseStatus.PROVIDER_ERROR, downgraded, f"Agent output callback error: {callback_error}"
+            AgentResponseStatus.PROVIDER_ERROR,
+            downgraded,
+            f"Agent output callback error: {callback_error}",
+            warnings=warnings,
         )
 
     return StepDispatchOutcome(
@@ -275,13 +295,19 @@ def _to_outcome(attempt: AgentAttempt, on_output: OutputCallback | None) -> Step
         stdout=line,
         stderr="",
         error_message=None,
+        warnings=warnings,
     )
 
 
 def _failed_outcome(
-    status: AgentResponseStatus, line: str, message: str, *, rejected_patch_path: str | None = None
+    status: AgentResponseStatus,
+    line: str,
+    message: str,
+    *,
+    rejected_patch_path: str | None = None,
+    warnings: list[str],
 ) -> StepDispatchOutcome:
-    """Build the failed dispatch outcome carrying the mapped exit code for status, the summary line, the diagnostic, and any saved rejected-edit path."""
+    """Build the failed dispatch outcome carrying the mapped exit code for status, the summary line, the diagnostic, any saved rejected-edit path, and the diagnostic hint warnings."""
     return StepDispatchOutcome(
         status="failed",
         exit_code=AGENT_OUTCOME_EXIT_CODES[status],
@@ -289,4 +315,5 @@ def _failed_outcome(
         stderr=message,
         error_message=message,
         rejected_patch_path=rejected_patch_path,
+        warnings=warnings,
     )

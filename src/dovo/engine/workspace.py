@@ -6,13 +6,17 @@ import shutil
 from dataclasses import dataclass
 from pathlib import Path
 
+from dovo.common.lock import LockTimeoutError
 from dovo.common.redact import SecretRedactor
 from dovo.core.artifacts.artifacts import Artifacts
 from dovo.core.artifacts.store import ArtifactStore
 from dovo.core.config import ConfigLoadError
 from dovo.core.db import SessionStatus, WorktreesRepository
+from dovo.core.git.exceptions import GitError
 from dovo.core.git.tree_diff import diff_work_tree
 from dovo.core.worktree import Worktree, WorktreeApplyStrategy, WorktreeCreateResult, WorktreeSession
+from dovo.core.worktree.exceptions import WorktreeError
+from dovo.engine.executors.failure_log import logged_failure
 from dovo.engine.models import RunSettings
 from dovo.engine.notify import safe_notify
 from dovo.engine.storage_bridge import create_storage_bridge, remove_storage_bridge
@@ -113,6 +117,7 @@ class Workspace:
         if link_error is None:
             return None
 
+        # The discard failure is recorded by _discard_worktree; the bridge error is the reported cause.
         self._discard_worktree(manager, session)
         safe_notify(self.context.observer, "on_worktree_cleanup", kept=False, path=session.worktree_path)
         return f"Worktree storage bridge failed: {link_error}"
@@ -126,13 +131,22 @@ class Workspace:
 
     def _discard_worktree(self, manager: Worktree, session: WorktreeSession) -> str | None:
         """Remove the worktree and return `Failed to remove worktree '<path>': <detail>` when removal raised or reported a problem."""
+        message = f"Failed to remove worktree '{session.worktree_path}'"
         try:
             problems = manager.cleanup(session)
+        except (LockTimeoutError, GitError, WorktreeError) as exc:
+            # No record: lock contention and git or worktree failures are expected; the message names the cause.
+            return f"{message}: {exc}"
         except Exception as exc:
-            return f"Failed to remove worktree '{session.worktree_path}': {exc}"
+            return logged_failure(
+                f"{message}: {exc}",
+                exc,
+                operation="engine.workspace",
+                context={"session_id": self.context.session_id, "path": str(session.worktree_path)},
+            )
 
         if problems:
-            return f"Failed to remove worktree '{session.worktree_path}': {problems[0]}"
+            return f"{message}: {problems[0]}"
 
         return None
 
@@ -208,14 +222,28 @@ class Workspace:
 
         session_id = self.context.session_id
         try:
-            diff_text = diff_work_tree(session.worktree_path, session.base_commit).diff_text
-            session_dir = get_session_dir(self.context.paths, session_id)
-            redactor = SecretRedactor.from_environment(
-                credential_envs=self.context.sensitive_variables, env_file_dir=self.context.paths.root_dir
-            )
-            write_session_diff(session_dir, diff_text, redactor)
-        except Exception as exc:
+            self._persist_diff(session, session_id)
+        except GitError as exc:
+            # No record: git failures diffing the worktree are expected; the warning names the cause.
             warnings.append(f"Failed to persist session diff artifact: {exc}")
+        except Exception as exc:
+            warnings.append(
+                logged_failure(
+                    f"Failed to persist session diff artifact: {exc}",
+                    exc,
+                    operation="engine.workspace",
+                    context={"session_id": session_id, "path": str(session.worktree_path)},
+                )
+            )
+
+    def _persist_diff(self, session: WorktreeSession, session_id: str) -> None:
+        """Write the worktree's cumulative diff against its base commit to the session's diff.patch."""
+        diff_text = diff_work_tree(session.worktree_path, session.base_commit).diff_text
+        session_dir = get_session_dir(self.context.paths, session_id)
+        redactor = SecretRedactor.from_environment(
+            credential_envs=self.context.sensitive_variables, env_file_dir=self.context.paths.root_dir
+        )
+        write_session_diff(session_dir, diff_text, redactor)
 
     def finalize_cleanup(
         self,

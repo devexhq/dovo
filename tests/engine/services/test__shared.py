@@ -9,6 +9,7 @@ import pytest
 from dovo.core.db import SessionsRepository
 from dovo.engine.services._shared import load_record
 from tests.harness.builders import WorkspaceBuilder
+from tests.harness.diagnostic_log import diagnostic_hint, read_single_event
 from tests.harness.workspace_paths import initialized_workspace_paths
 
 
@@ -29,9 +30,10 @@ class SharedLoadRecordTests:
         assert record == created
         assert warnings == []
 
-    def test_load_record_appends_warning_and_returns_none_on_repository_error(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    def test_load_record_records_error_and_hints_warning(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, frozen_diagnostic_clock: Path
     ) -> None:
+        """Return None, append the hinted load failure and write one engine.read_run record."""
         repo = _repo(tmp_path)
 
         def raise_error(session_id: str) -> None:
@@ -43,4 +45,12 @@ class SharedLoadRecordTests:
         record = load_record(repo, warnings, "sess-2")
 
         assert record is None
-        assert warnings == ["Failed to load session record for 'sess-2': db unavailable"]
+        assert warnings == [
+            f"Failed to load session record for 'sess-2': db unavailable{diagnostic_hint(frozen_diagnostic_clock)}"
+        ]
+        event = read_single_event(frozen_diagnostic_clock)
+        assert (event["level"], event["operation"], event["context"]) == (
+            "error",
+            "engine.read_run",
+            {"session_id": "sess-2"},
+        )
