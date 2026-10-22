@@ -1,7 +1,7 @@
 version: 1
 name: feature-dev
 id: feature-dev
-description: Plan a GitHub issue, review and fold findings until none are picked, answer its open questions, implement it after approval, review and fix until approved, then optionally open a PR
+description: Plan a GitHub issue, review and fold findings until none are picked, answer its open questions, implement it after approval, review and fix until approved, then open a PR
 summary: Issue to reviewed PR with human gates
 
 inputs:
@@ -234,23 +234,11 @@ steps:
         tools: { allow_all: true }
         timeout_seconds: 3600
 
-  - id: open-pr
-    name: Open a pull request?
-    type: ask
-    interaction:
-      mode: confirm
-      message: Review approved. Commit, push and open a pull request for issue ${{ inputs.issue }}?
-      options:
-        - { value: "yes", label: Open a PR }
-        - { value: "no", label: Stop here }
-
   - id: pr-prep
     name: Draft the commit and PR text
     type: agent
     prompt: |
-      The user's answer to "open a PR?" was: {{ steps.open-pr.outputs.selected }}
-      If it is not "yes", do nothing and report that you did nothing.
-      Otherwise run /pr-prep (follow .agents/skills/pr-prep/SKILL.md if the slash
+      Run /pr-prep (follow .agents/skills/pr-prep/SKILL.md if the slash
       command is not recognized). The change implements issue ${{ inputs.issue }}.
       Dovo commits the working tree before each agent step, so read the change with
       `git diff $(git merge-base HEAD origin/main)` instead of the uncommitted diff, and
@@ -263,11 +251,8 @@ steps:
   # reaches the user's SSH agent, which agent steps never see.
   - id: push
     name: Commit, push and open the PR
-    env:
-      OPEN_PR: "{{ steps.open-pr.outputs.selected }}"
     run: |
       set -eu
-      if [ "$OPEN_PR" != "yes" ]; then echo "Not opening a PR."; exit 0; fi
       branch=$(head -n 1 .agentic/pr-branch)
       git fetch -q origin main
       git switch -q -c "$branch"
