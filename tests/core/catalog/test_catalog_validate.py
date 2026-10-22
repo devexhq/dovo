@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import stat
 from pathlib import Path
@@ -9,10 +10,12 @@ from pathlib import Path
 import pytest
 import yaml
 
+from dovo.common.filesystem import WorkspacePaths
 from dovo.core.catalog import Catalog
 from dovo.core.catalog.definitions import BlueprintDefinition, StepDefinition
 from dovo.core.catalog.models import CatalogItemType, CatalogValidateResult, CatalogValidateStatus
 from tests.harness.catalog import write_runnable_blueprint
+from tests.harness.diagnostic_log import FROZEN_EVENT_ID
 from tests.harness.workspace_paths import initialized_workspace_paths
 
 
@@ -369,3 +372,40 @@ class CatalogValidateAskTests:
 
         assert result.status == CatalogValidateStatus.INVALID
         assert all(error.endswith("(CATALOG_SCHEMA_INVALID).") for error in result.errors)
+
+
+class _ExplodingBlueprintDefinition(BlueprintDefinition):
+    """BlueprintDefinition whose document loading fails with an unexpected RuntimeError."""
+
+    @classmethod
+    def from_document(cls, raw: dict[str, object], *, key: str) -> BlueprintDefinition:
+        raise RuntimeError("boom")
+
+
+class CatalogValidateDiagnosticLogTests:
+    """Tests verifying an unexpected schema-check failure is recorded and named in the validate result."""
+
+    def test_unexpected_schema_failure_records_error_and_appends_hint(
+        self, workspace_paths: WorkspacePaths, frozen_diagnostic_clock: Path
+    ) -> None:
+        """Return valid False with '<exc> (CATALOG_SCHEMA_INVALID).' plus the hint when blueprint_cls.from_document raises RuntimeError, and record operation catalog.validate_definition."""
+        target_path = _write_yaml(
+            workspace_paths.root_dir / "demo.yml", {"name": "demo", "steps": [{"id": "s1", "run": "echo hi"}]}
+        )
+
+        result = Catalog(workspace_paths).validate(
+            str(target_path),
+            item_type=CatalogItemType.BLUEPRINT,
+            blueprint_cls=_ExplodingBlueprintDefinition,
+            step_cls=StepDefinition,
+        )
+
+        assert result.valid is False
+        assert result.errors == [
+            f"boom (CATALOG_SCHEMA_INVALID).\nDetails logged: {frozen_diagnostic_clock} (event {FROZEN_EVENT_ID})"
+        ]
+        event = json.loads(frozen_diagnostic_clock.read_text(encoding="utf-8"))
+        assert event["level"] == "error"
+        assert event["operation"] == "catalog.validate_definition"
+        assert event["context"] == {"key": "demo"}
+        assert event["exception_type"] == "RuntimeError"

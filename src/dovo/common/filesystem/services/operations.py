@@ -19,12 +19,14 @@ def delete_file(path: Path) -> bool:
     return existed
 
 
-def atomic_write_json(path: Path, data: dict[str, Any]) -> None:
-    """Write JSON atomically with indent=2, UTF-8, and trailing newline."""
+def atomic_write_json(path: Path, data: dict[str, Any], *, mode: int | None = None) -> None:
+    """Write JSON atomically with indent=2, UTF-8, and trailing newline, setting mode's permission bits before any byte is written when given."""
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp_path = path.with_name(f"{path.name}.tmp")
     try:
         with open(tmp_path, "w", encoding="utf-8") as f:
+            if mode is not None:
+                os.fchmod(f.fileno(), mode)
             json.dump(data, f, indent=2)
             f.write("\n")
             f.flush()

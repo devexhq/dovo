@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import hashlib
 import json
+import stat
+import sys
 from pathlib import Path
 
 import pytest
@@ -55,6 +57,16 @@ class FilesystemStaticHelperTests:
 
         assert text_target.read_text(encoding="utf-8") == "static-content"
         assert json.loads(json_target.read_text(encoding="utf-8")) == {"a": 1}
+
+    @pytest.mark.skipif(sys.platform == "win32", reason="POSIX file modes")
+    def test_atomic_write_json_mode_sets_permission_bits(self, tmp_path: Path) -> None:
+        """Write the JSON file with the given mode, 0o600."""
+        target = tmp_path / "private.json"
+
+        Filesystem.atomic_write_json(target, {"a": 1}, mode=0o600)
+
+        assert stat.S_IMODE(target.stat().st_mode) == 0o600
+        assert json.loads(target.read_text(encoding="utf-8")) == {"a": 1}
 
     def test_compute_checksum_returns_sha256_hex_digest(self) -> None:
         assert Filesystem.compute_checksum("payload") == hashlib.sha256(b"payload").hexdigest()

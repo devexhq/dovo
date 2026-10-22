@@ -32,6 +32,7 @@ class GlobalPathsTests:
         assert paths.user_catalog_dir == expected_root / "user" / "catalog"
         assert paths.data_dir == expected_root / "data"
         assert paths.storage_dir == expected_root / "storage"
+        assert paths.logs_dir == expected_root / "logs"
 
 
 class RepositoryPathsTests:

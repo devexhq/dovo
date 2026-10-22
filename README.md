@@ -115,6 +115,7 @@ Dovo reserves these paths under the repository-local `.dovo/` directory:
 Runtime session, artifact, log, and temporary data live outside the repository at:
 
 - `DOVO_HOME/storage/projects/<project-id>/sessions/` and `artifacts/` (`~/.dovo` when `DOVO_HOME` is unset)
+- `DOVO_HOME/logs/<YYYY-MM-DD>/`, diagnostic logs of caught unexpected errors (see [Diagnostic logs](docs/cli/doctor.md#diagnostic-logs))
 
 ## Development
 

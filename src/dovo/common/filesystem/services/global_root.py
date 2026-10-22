@@ -43,6 +43,7 @@ def ensure_global_layout(override_root: Path | None = None, *, ignore_global_roo
         paths.data_dir,
         paths.storage_dir,
         paths.storage_dir / "projects",
+        paths.logs_dir,
     )
     for directory in layout_directories:
         _ensure_layout_directory(directory)

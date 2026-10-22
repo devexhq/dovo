@@ -106,9 +106,9 @@ class Filesystem:
         _atomic_write_bytes(path, data)
 
     @staticmethod
-    def atomic_write_json(path: Path, data: dict[str, Any]) -> None:
-        """Write JSON content atomically with indent=2, UTF-8, and trailing newline."""
-        _atomic_write_json(path, data)
+    def atomic_write_json(path: Path, data: dict[str, Any], *, mode: int | None = None) -> None:
+        """Write JSON content atomically with indent=2, UTF-8, and trailing newline, at mode when given."""
+        _atomic_write_json(path, data, mode=mode)
 
     @staticmethod
     def compute_checksum(content: str) -> str:

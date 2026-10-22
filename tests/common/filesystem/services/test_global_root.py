@@ -23,6 +23,7 @@ REQUIRED_LAYOUT_RELATIVE_PATHS = (
     Path("data"),
     Path("storage"),
     Path("storage/projects"),
+    Path("logs"),
 )
 
 
