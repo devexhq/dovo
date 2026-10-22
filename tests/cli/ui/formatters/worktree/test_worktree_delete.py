@@ -26,6 +26,16 @@ DELETED = FormatterCase.identity(
     render_expectations=["dovo_del"],
 )
 
+DELETED_WITH_WARNINGS = FormatterCase.identity(
+    data=WorktreeDeleteResult(
+        status=WorktreeDeleteStatus.DELETED,
+        worktree_id="dovo_del",
+        deleted=True,
+        warnings=["Failed to delete branch 'dovo/dovo_del': boom"],
+    ),
+    render_expectations=["dovo_del", "Failed to delete branch 'dovo/dovo_del': boom"],
+)
+
 ALREADY_CLEANED = FormatterCase.identity(
     data=WorktreeDeleteResult(
         status=WorktreeDeleteStatus.ALREADY_CLEANED,
@@ -61,6 +71,7 @@ NOT_FOUND = FormatterCase.identity(
 
 WORKTREE_DELETE_CASES = [
     pytest.param(DELETED, id="deleted"),
+    pytest.param(DELETED_WITH_WARNINGS, id="deleted_with_warnings"),
     pytest.param(ALREADY_CLEANED, id="already_cleaned"),
     pytest.param(ABORTED, id="aborted"),
     pytest.param(NOT_FOUND, id="not_found"),
@@ -80,6 +91,20 @@ WORKTREE_DELETE_PAYLOAD_CASES = [
             "fixes": [],
         },
         id="deleted",
+    ),
+    pytest.param(
+        DELETED_WITH_WARNINGS,
+        {
+            "status": "deleted",
+            "worktree_id": "dovo_del",
+            "worktree": None,
+            "deleted": True,
+            "warnings": ["Failed to delete branch 'dovo/dovo_del': boom"],
+            "errors": [],
+            "error_code": None,
+            "fixes": [],
+        },
+        id="deleted_with_warnings",
     ),
     pytest.param(
         NOT_FOUND,

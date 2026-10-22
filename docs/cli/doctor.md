@@ -25,13 +25,13 @@ The command exits `1` when at least one check has status `FAILED`, and `0` other
 
 ## Diagnostic logs
 
-When a catalog operation catches an unexpected error, Dovo writes one JSON file to `$DOVO_HOME/logs/<YYYY-MM-DD>/<event_id>.json`. With no `DOVO_HOME` set, that is `~/.dovo/logs/`. The date is your local date, and the file is readable only by you (mode `0600`). Catalog operations are creating, deleting and validating blueprints and steps, and loading a blueprint or step definition, for example during `dovo run`. Each file holds one JSON object with these fields:
+When a catalog or worktree operation catches an unexpected error, Dovo writes one JSON file to `$DOVO_HOME/logs/<YYYY-MM-DD>/<event_id>.json`. With no `DOVO_HOME` set, that is `~/.dovo/logs/`. The date is your local date, and the file is readable only by you (mode `0600`). Catalog operations are creating, deleting and validating blueprints and steps, and loading a blueprint or step definition, for example during `dovo run`. Worktree operations are creating a worktree, applying a worktree, showing its diff, pruning stale worktrees and scanning for them during `dovo doctor`, and removing a worktree, through `dovo worktree delete`, `dovo worktree apply --delete` or at the end of `dovo run`. Each file holds one JSON object with these fields:
 
 | Field | Description |
 | --- | --- |
 | `event_id` | Identifier of the form `exc_<12 hex characters>`; it is also the file name. |
 | `timestamp` | Local ISO-8601 time with its UTC offset, to the second. |
-| `level` | `error` for a failure Dovo reported, `debug` for one it recovered from, such as falling back to the built-in catalog skeleton when the packaged template cannot be read. |
+| `level` | `error` for a failure Dovo reported, `debug` for one it recovered from, such as falling back to the built-in catalog skeleton when the packaged template cannot be read, or removing a worktree directory directly after `git worktree remove` fails. |
 | `operation` | The internal operation that failed, for example `catalog.create`. |
 | `command` | The first CLI word of the invocation, for example `blueprint`, or `null` outside the CLI. |
 | `context` | A few identifying values for the operation, such as the item type and name. |
@@ -46,6 +46,8 @@ When an `error` record is written, the reported error message gains one more lin
 ```text
 Details logged: /home/you/.dovo/logs/2026-10-19/exc_3f9a1c07b2de.json (event exc_3f9a1c07b2de)
 ```
+
+Two cases have no message to carry the line: a failed scan for stale worktree branches during `dovo worktree prune`, which Dovo records before skipping stale branches, and any worktree scan failure during `dovo doctor`, whose check reports only that detection could not complete.
 
 To report the problem, open a bug report that quotes the event id, and attach that file after reviewing it.
 

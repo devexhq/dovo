@@ -2,17 +2,23 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
+from typing import NoReturn
+from unittest.mock import Mock
 
 import pytest
 
 from dovo.common.filesystem import WorkspacePaths
+from dovo.common.filesystem.services import resolve_global_paths
 from dovo.core.db import WorktreesRepository, WorktreeStatus
 from dovo.core.git.exceptions import GitCommandError, GitPlumbingTimeoutError
 from dovo.core.git.runner import GitRunner
+from dovo.core.worktree.exceptions import WorktreeError
 from dovo.core.worktree.models import WorktreeCreateStatus
 from dovo.core.worktree.services.lifecycle import WorktreeLifecycle
 from tests.harness import WorkspaceBuilder
+from tests.harness.diagnostic_log import diagnostic_hint, read_single_event
 from tests.harness.workspace_paths import initialized_workspace_paths
 
 
@@ -401,3 +407,257 @@ class WorktreeLifecycleCollisionTests:
         assert result.status == WorktreeCreateStatus.GIT_FAILED
         assert (paths.worktrees_dir / "dovo_revfail").exists() is False
         assert GitRunner.branch_exists(worktree_workspace, "dovo/dovo_revfail") is False
+
+
+def _lifecycle(workspace: Path) -> WorktreeLifecycle:
+    """Build a WorktreeLifecycle over workspace's paths and worktree database."""
+    paths = _paths(workspace)
+    return WorktreeLifecycle(paths, WorktreesRepository(db_path=paths.database_file, project_id=paths.project_id))
+
+
+def _raise_boom(*args: object, **kwargs: object) -> NoReturn:
+    """Stand in for a GitRunner or repository call that fails with an unexpected RuntimeError("boom")."""
+    raise RuntimeError("boom")
+
+
+class WorktreeLifecycleDiagnosticLogTests:
+    @pytest.mark.parametrize(
+        ("target", "prefix"),
+        [
+            pytest.param(
+                "branch_exists", "Git worktree operation failed (WORKTREE_GIT_FAILED): boom", id="branch_exists"
+            ),
+            pytest.param(
+                "worktree_add", "Git worktree operation failed (WORKTREE_GIT_FAILED): boom", id="worktree_add"
+            ),
+            pytest.param("rev_parse", "Git worktree operation failed (WORKTREE_GIT_FAILED): boom", id="rev_parse"),
+        ],
+    )
+    def test_create_unexpected_failure_records_error_and_appends_hint(
+        self,
+        worktree_workspace: Path,
+        frozen_diagnostic_clock: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        target: str,
+        prefix: str,
+    ) -> None:
+        """Return git_failed and errors == [f"{prefix}\nDetails logged: {path} (event exc_3f9a1c07b2de)"], with one error record for worktree.create whose context is {worktree_id, branch, path}."""
+        lifecycle = _lifecycle(worktree_workspace)
+        monkeypatch.setattr(GitRunner, target, staticmethod(_raise_boom))
+        worktree_path = lifecycle.worktree_base_dir / "dovo_boom"
+        if target != "branch_exists":
+            worktree_path = worktree_path.resolve()
+
+        result = lifecycle.create(session_id="dovo_boom")
+
+        assert result.status == WorktreeCreateStatus.GIT_FAILED
+        assert result.errors == [f"{prefix}{diagnostic_hint(frozen_diagnostic_clock)}"]
+        event = read_single_event(frozen_diagnostic_clock)
+        assert event["level"] == "error"
+        assert event["operation"] == "worktree.create"
+        assert event["context"] == {"worktree_id": "dovo_boom", "branch": "dovo/dovo_boom", "path": str(worktree_path)}
+        assert event["exception_type"] == "RuntimeError"
+
+    @pytest.mark.skipif(os.geteuid() == 0, reason="root ignores file permission bits")
+    def test_wip_copy_failure_records_error_and_appends_hint(
+        self, worktree_workspace: Path, frozen_diagnostic_clock: Path
+    ) -> None:
+        """Return wip_failed with errors[0] starting "Failed to overlay uncommitted WIP into worktree (WORKTREE_WIP_FAILED): " and ending with the hint, and one error record for worktree.create with exception_type PermissionError, when create(include_wip=True) copies an untracked WIP file chmod 000."""
+        lifecycle = _lifecycle(worktree_workspace)
+        unreadable = worktree_workspace / "secret.txt"
+        unreadable.write_text("wip\n", encoding="utf-8")
+        unreadable.chmod(0o000)
+        try:
+            result = lifecycle.create(session_id="dovo_wip", include_wip=True)
+        finally:
+            unreadable.chmod(0o644)
+
+        assert result.status == WorktreeCreateStatus.WIP_FAILED
+        assert result.errors[0].startswith("Failed to overlay uncommitted WIP into worktree (WORKTREE_WIP_FAILED): ")
+        assert result.errors[0].endswith(diagnostic_hint(frozen_diagnostic_clock))
+        event = read_single_event(frozen_diagnostic_clock)
+        assert event["level"] == "error"
+        assert event["operation"] == "worktree.create"
+        assert event["exception_type"] == "PermissionError"
+
+    def test_wip_domain_error_writes_no_record(
+        self, worktree_workspace: Path, frozen_diagnostic_clock: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Return wip_failed with the unhinted error and leave <DOVO_HOME>/logs absent when apply_wip_to_worktree raises WorktreeError("worktree path does not exist: x") with no cause."""
+        lifecycle = _lifecycle(worktree_workspace)
+
+        def missing_worktree(*, source_root: Path, worktree_path: Path) -> list[str]:
+            raise WorktreeError("worktree path does not exist: x")
+
+        monkeypatch.setattr("dovo.core.worktree.services.lifecycle.apply_wip_to_worktree", missing_worktree)
+
+        result = lifecycle.create(session_id="dovo_wipdomain", include_wip=True)
+
+        assert result.status == WorktreeCreateStatus.WIP_FAILED
+        assert result.errors == [
+            "Failed to overlay uncommitted WIP into worktree (WORKTREE_WIP_FAILED): worktree path does not exist: x"
+        ]
+        assert not resolve_global_paths(None).logs_dir.exists()
+
+    def test_persist_failure_records_error_and_hints_warning(
+        self, worktree_workspace: Path, frozen_diagnostic_clock: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Return status ok with warnings == ["Failed to persist worktree metadata to the local database: boom\nDetails logged: ..."] when WorktreesRepository.create raises RuntimeError("boom")."""
+        lifecycle = _lifecycle(worktree_workspace)
+        monkeypatch.setattr(WorktreesRepository, "create", _raise_boom)
+
+        result = lifecycle.create(session_id="dovo_persist")
+
+        assert result.status == WorktreeCreateStatus.OK
+        assert result.warnings == [
+            f"Failed to persist worktree metadata to the local database: boom{diagnostic_hint(frozen_diagnostic_clock)}"
+        ]
+        assert result.session is not None
+        event = read_single_event(frozen_diagnostic_clock)
+        assert event["level"] == "error"
+        assert event["operation"] == "worktree.create"
+        assert event["context"] == {
+            "worktree_id": "dovo_persist",
+            "branch": "dovo/dovo_persist",
+            "path": str(result.session.worktree_path),
+        }
+
+    @pytest.mark.parametrize("target", ["worktree_remove", "branch_delete", "worktree_prune"])
+    def test_discard_partial_failure_records_debug_without_raising(
+        self, worktree_workspace: Path, frozen_diagnostic_clock: Path, monkeypatch: pytest.MonkeyPatch, target: str
+    ) -> None:
+        """Return None from discard_partial(created_dir=True, created_branch=True) when GitRunner.<target> raises RuntimeError, and write one debug record for worktree.create."""
+        lifecycle = _lifecycle(worktree_workspace)
+        worktree_path = lifecycle.worktree_base_dir / "dovo_partial"
+        GitRunner.worktree_add(worktree_workspace, worktree_path, "dovo/dovo_partial", "HEAD")
+        monkeypatch.setattr(GitRunner, target, staticmethod(_raise_boom))
+
+        outcome = lifecycle.discard_partial(worktree_path, "dovo/dovo_partial", created_dir=True, created_branch=True)
+
+        assert outcome is None
+        event = read_single_event(frozen_diagnostic_clock)
+        assert event["level"] == "debug"
+        assert event["operation"] == "worktree.create"
+        assert event["context"] == {"branch": "dovo/dovo_partial", "path": str(worktree_path)}
+        assert event["exception_type"] == "RuntimeError"
+
+    def test_branch_probe_failure_records_debug_and_keeps_git_failed(
+        self, worktree_workspace: Path, frozen_diagnostic_clock: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Return git_failed with an unhinted error when worktree_add raises GitCommandError and the follow-up branch probe raises RuntimeError, and write one debug record for worktree.create."""
+        lifecycle = _lifecycle(worktree_workspace)
+
+        def failing_add(path: Path, worktree_path: Path, branch: str, base_ref: str) -> None:
+            raise GitCommandError(cmd=["git", "worktree", "add"], returncode=128, stdout="", stderr="fatal")
+
+        monkeypatch.setattr(GitRunner, "worktree_add", staticmethod(failing_add))
+        monkeypatch.setattr(GitRunner, "branch_exists", Mock(side_effect=[False, RuntimeError("boom")]))
+
+        result = lifecycle.create(session_id="dovo_probe")
+
+        assert result.status == WorktreeCreateStatus.GIT_FAILED
+        assert len(result.errors) == 1
+        assert result.errors[0].startswith("Git worktree operation failed (WORKTREE_GIT_FAILED): ")
+        assert "Details logged:" not in result.errors[0]
+        event = read_single_event(frozen_diagnostic_clock)
+        assert event["level"] == "debug"
+        assert event["operation"] == "worktree.create"
+        assert event["context"] == {"branch": "dovo/dovo_probe"}
+        assert event["exception_type"] == "RuntimeError"
+
+    @pytest.mark.parametrize(
+        ("target", "prefix"),
+        [
+            pytest.param("branch_delete", "Failed to delete branch 'dovo/dovo_clean': boom", id="branch_delete"),
+            pytest.param(
+                "update_status",
+                "Failed to update database status to 'cleaned' for worktree 'dovo_clean': boom",
+                id="update_status",
+            ),
+            pytest.param("worktree_prune", "Failed to prune git worktrees: boom", id="worktree_prune"),
+        ],
+    )
+    def test_cleanup_unexpected_failure_records_error_and_hints_warning(
+        self,
+        worktree_workspace: Path,
+        frozen_diagnostic_clock: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        target: str,
+        prefix: str,
+    ) -> None:
+        """Return warnings == [f"{prefix}\nDetails logged: ..."] from cleanup() and write one error record for worktree.cleanup with context {worktree_id, branch, path}."""
+        lifecycle = _lifecycle(worktree_workspace)
+        session = lifecycle.create(session_id="dovo_clean").session
+        assert session is not None
+        if target == "update_status":
+            monkeypatch.setattr(WorktreesRepository, "update_status", _raise_boom)
+        else:
+            monkeypatch.setattr(GitRunner, target, staticmethod(_raise_boom))
+
+        warnings = lifecycle.cleanup(session)
+
+        assert warnings == [f"{prefix}{diagnostic_hint(frozen_diagnostic_clock)}"]
+        event = read_single_event(frozen_diagnostic_clock)
+        assert event["level"] == "error"
+        assert event["operation"] == "worktree.cleanup"
+        if target == "branch_delete":
+            assert event["context"] == {"branch": "dovo/dovo_clean"}
+        else:
+            assert event["context"] == {
+                "worktree_id": "dovo_clean",
+                "branch": "dovo/dovo_clean",
+                "path": str(session.worktree_path),
+            }
+
+    @pytest.mark.skipif(os.geteuid() == 0, reason="root ignores directory permission bits")
+    @pytest.mark.parametrize(
+        "rmtree_fails", [pytest.param(False, id="rmtree_succeeds"), pytest.param(True, id="rmtree_fails")]
+    )
+    def test_cleanup_directory_fallback_records_by_outcome(
+        self,
+        worktree_workspace: Path,
+        frozen_diagnostic_clock: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        rmtree_fails: bool,
+    ) -> None:
+        """With git worktree remove raising RuntimeError, return no directory warning and one debug record when rmtree succeeds, or a hinted directory warning and one error record when worktrees_dir is read-only."""
+        lifecycle = _lifecycle(worktree_workspace)
+        session = lifecycle.create(session_id="dovo_fallback").session
+        assert session is not None
+        monkeypatch.setattr(GitRunner, "worktree_remove", staticmethod(_raise_boom))
+        if rmtree_fails:
+            lifecycle.worktree_base_dir.chmod(0o555)
+        try:
+            warnings = lifecycle.cleanup(session)
+        finally:
+            lifecycle.worktree_base_dir.chmod(0o755)
+
+        event = read_single_event(frozen_diagnostic_clock)
+        assert event["operation"] == "worktree.cleanup"
+        assert event["context"] == {"path": str(session.worktree_path)}
+        dir_warnings = [warning for warning in warnings if warning.startswith("Failed to remove worktree directory")]
+        if rmtree_fails:
+            assert len(dir_warnings) == 1
+            assert dir_warnings[0].startswith(
+                f"Failed to remove worktree directory at '{session.worktree_path}': boom; fallback removal failed: "
+            )
+            assert dir_warnings[0].endswith(diagnostic_hint(frozen_diagnostic_clock))
+            assert event["level"] == "error"
+            assert event["exception_type"] == "PermissionError"
+        else:
+            assert dir_warnings == []
+            assert not session.worktree_path.exists()
+            assert event["level"] == "debug"
+            assert event["exception_type"] == "RuntimeError"
+
+    def test_repeated_cleanup_writes_no_record(self, worktree_workspace: Path, frozen_diagnostic_clock: Path) -> None:
+        """Return [] from a second cleanup() of the same worktree and leave <DOVO_HOME>/logs absent."""
+        lifecycle = _lifecycle(worktree_workspace)
+        session = lifecycle.create(session_id="dovo_twice").session
+        assert session is not None
+        lifecycle.cleanup(session)
+
+        warnings = lifecycle.cleanup(session)
+
+        assert warnings == []
+        assert not resolve_global_paths(None).logs_dir.exists()

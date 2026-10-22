@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from datetime import UTC, datetime, tzinfo
 from pathlib import Path
 from typing import Final
@@ -36,3 +37,14 @@ def frozen_diagnostic_clock(monkeypatch: pytest.MonkeyPatch) -> Path:
         lambda: UUID("3f9a1c07b2de" + "0" * 20),
     )
     return resolve_global_paths().logs_dir / FROZEN_DAY / f"{FROZEN_EVENT_ID}.json"
+
+
+def diagnostic_hint(event_file: Path) -> str:
+    """Return the hint line, with its leading newline, that names the frozen event file."""
+    return f"\nDetails logged: {event_file} (event {FROZEN_EVENT_ID})"
+
+
+def read_single_event(event_file: Path) -> dict[str, object]:
+    """Return the frozen event file's JSON, asserting it is the only record written that day."""
+    assert list(event_file.parent.iterdir()) == [event_file]
+    return json.loads(event_file.read_text(encoding="utf-8"))

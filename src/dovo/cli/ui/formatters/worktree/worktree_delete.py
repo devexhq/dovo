@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from rich.console import RenderableType
+from rich.console import Group, RenderableType
 from rich.panel import Panel
 from rich.text import Text
 
@@ -39,5 +39,8 @@ class WorktreeDeleteFormatter(ComponentFormatter[WorktreeDeleteResult]):
         if data.status == WorktreeDeleteStatus.ABORTED:
             return Text("Aborted.")
         if data.status == WorktreeDeleteStatus.DELETED or data.deleted:
-            return Text(f"Worktree deleted: {data.worktree_id}", style="green")
+            return Group(
+                Text(f"Worktree deleted: {data.worktree_id}", style="green"),
+                *(Text(f"   • {warning}", style="dim") for warning in data.warnings),
+            )
         return _format_delete_error_panel(data)

@@ -85,7 +85,7 @@ def worktree_delete_command(
         name=row.name,
         created_at=row.created_at,
     )
-    worktree.cleanup(session)
-    deleted = result.model_copy(update={"status": WorktreeDeleteStatus.DELETED, "deleted": True})
+    warnings = worktree.cleanup(session)
+    deleted = result.model_copy(update={"status": WorktreeDeleteStatus.DELETED, "deleted": True, "warnings": warnings})
     ui_dispatcher.dispatch(deleted, output_format=output_format)
     return deleted

@@ -14,6 +14,7 @@ from dovo.core.worktree.models import (
     WorktreeDetectionResult,
     WorktreeDetectionStatus,
 )
+from dovo.core.worktree.services.failure_log import logged_failure
 
 
 def _build_record_lookups(
@@ -102,7 +103,12 @@ class WorktreeDetector:
             return (
                 False,
                 0,
-                f"Unable to inspect git status for orphaned directory '{dir_path.name}': {exc}",
+                logged_failure(
+                    f"Unable to inspect git status for orphaned directory '{dir_path.name}': {exc}",
+                    exc,
+                    operation="worktree.detect",
+                    context={"path": str(dir_path)},
+                ),
             )
 
     def _create_orphaned_item(
@@ -188,7 +194,11 @@ class WorktreeDetector:
         """Identify temporary worktree branches not checked out or attached to active worktrees."""
         try:
             worktree_branches = GitRunner.list_branches(self.path, pattern="dovo/dovo_*")
-        except Exception:
+        except Exception as exc:
+            # No result entry carries this failure, so the hint is dropped.
+            logged_failure(
+                "Failed to list worktree branches", exc, operation="worktree.detect", context={"path": str(self.path)}
+            )
             return []
 
         active_branches = self._get_active_branch_names(worktree_entries, all_records)
@@ -219,7 +229,14 @@ class WorktreeDetector:
         except Exception as exc:
             return WorktreeDetectionResult(
                 status=WorktreeDetectionStatus.ERROR,
-                errors=[f"Unexpected error while listing git worktrees: {exc}"],
+                errors=[
+                    logged_failure(
+                        f"Unexpected error while listing git worktrees: {exc}",
+                        exc,
+                        operation="worktree.detect",
+                        context={"path": str(self.path)},
+                    )
+                ],
             )
 
         try:
@@ -227,7 +244,14 @@ class WorktreeDetector:
         except Exception as exc:
             return WorktreeDetectionResult(
                 status=WorktreeDetectionStatus.ERROR,
-                errors=[f"Failed to query worktrees from database: {exc}"],
+                errors=[
+                    logged_failure(
+                        f"Failed to query worktrees from database: {exc}",
+                        exc,
+                        operation="worktree.detect",
+                        context={"path": str(self.path)},
+                    )
+                ],
             )
 
         stale_worktrees = self._detect_stale_worktree_refs(worktree_entries)

@@ -2,6 +2,8 @@
 
 `dovo worktree` creates and manages isolated Git worktrees.
 
+When `create`, `apply`, `diff` or `prune` fails with an unexpected error, or `delete` hits one while removing the worktree, Dovo writes a [diagnostic log](doctor.md#diagnostic-logs) record. The error or warning message then ends with a `Details logged: <path> (event <event_id>)` line naming that file; if the record cannot be written, the line is absent. A failed scan for stale branches during `prune` is recorded without a message, so no line points to it.
+
 ## Subcommands
 
 ### `dovo worktree list`
@@ -43,6 +45,8 @@ Remove an isolated worktree when work is complete:
 ```bash
 dovo worktree delete <worktree-id> [--force] [--format terminal|json]
 ```
+
+If removing the directory, deleting the branch, updating the local database or pruning git's worktree list fails, the worktree is still reported as deleted and each failure is listed as a warning.
 
 This is also how a failed run's kept worktree is removed (see [`dovo run`](run.md#worktree-retention)). Kept worktrees count toward `worktree.max_active_worktrees`, and `dovo worktree prune` does not remove them.
 

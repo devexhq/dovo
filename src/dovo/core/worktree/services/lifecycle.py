@@ -20,11 +20,13 @@ from dovo.core.git.exceptions import (
     GitPlumbingTimeoutError,
 )
 from dovo.core.git.runner import GitRunner
+from dovo.core.worktree.exceptions import WorktreeError
 from dovo.core.worktree.models import (
     WorktreeCreateResult,
     WorktreeCreateStatus,
     WorktreeSession,
 )
+from dovo.core.worktree.services.failure_log import logged_failure, record_fallback
 from dovo.core.worktree.services.wip import apply_wip_to_worktree
 
 
@@ -41,6 +43,18 @@ def _extract_target_metadata(target: WorktreeSession | WorktreeRecord) -> tuple[
     if isinstance(target, WorktreeRecord):
         return Path(target.worktree_path), target.id, target.branch_name
     return target.worktree_path, target.session_id, target.target_branch
+
+
+def _wip_failure_cause(exc: Exception) -> Exception:
+    """Return the OSError a WIP-copy WorktreeError wraps, so logged_failure records it; else exc."""
+    if isinstance(exc, WorktreeError) and isinstance(exc.__cause__, OSError):
+        return exc.__cause__
+    return exc
+
+
+def _create_context(worktree_path: Path, temp_branch: str) -> dict[str, str | None]:
+    """Return the diagnostic context of a create step: worktree ID, branch and path."""
+    return {"worktree_id": worktree_path.name, "branch": temp_branch, "path": str(worktree_path)}
 
 
 def _already_exists(worktree_id: str, fix: str) -> WorktreeCreateResult:
@@ -99,23 +113,22 @@ class WorktreeLifecycle:
         created_branch: bool,
     ) -> None:
         """Best-effort removal of only the directory and branch this create call made."""
+        context = {"branch": temp_branch, "path": str(worktree_path)}
         if created_dir:
             try:
                 GitRunner.worktree_remove(self.path, worktree_path, force=True)
-            except Exception:
-                # Best-effort fallback: remove directory directly if git worktree removal fails.
+            except Exception as exc:
+                record_fallback(exc, operation="worktree.create", context=context)
                 shutil.rmtree(worktree_path, ignore_errors=True)
         if created_branch:
             try:
                 GitRunner.branch_delete(self.path, temp_branch, force=True)
-            except Exception:
-                # Best-effort cleanup: ignore errors deleting the created branch.
-                pass
+            except Exception as exc:
+                record_fallback(exc, operation="worktree.create", context=context)
         try:
             GitRunner.worktree_prune(self.path)
-        except Exception:
-            # Best-effort cleanup: ignore errors during worktree prune.
-            pass
+        except Exception as exc:
+            record_fallback(exc, operation="worktree.create", context=context)
 
     def _check_capacity(self, max_allowed: int = DEFAULT_MAXIMUM_WORKTREES_ALLOWED) -> WorktreeCreateResult | None:
         """Return an error result when active worktrees reach configured capacity."""
@@ -166,7 +179,14 @@ class WorktreeLifecycle:
         except Exception as exc:
             return WorktreeCreateResult(
                 status=WorktreeCreateStatus.GIT_FAILED,
-                errors=[f"Git worktree operation failed (WORKTREE_GIT_FAILED): {exc}"],
+                errors=[
+                    logged_failure(
+                        f"Git worktree operation failed (WORKTREE_GIT_FAILED): {exc}",
+                        exc,
+                        operation="worktree.create",
+                        context=_create_context(worktree_path, temp_branch),
+                    )
+                ],
                 fixes=["Ensure this directory is a Git repository with a valid base ref"],
             )
         if not branch_taken:
@@ -193,7 +213,8 @@ class WorktreeLifecycle:
         """Return True when temp_branch exists after a failed add; any probe failure returns False so cleanup never deletes on doubt."""
         try:
             return GitRunner.branch_exists(self.path, temp_branch)
-        except Exception:
+        except Exception as exc:
+            record_fallback(exc, operation="worktree.create", context={"branch": temp_branch})
             return False
 
     def _discard_failed_add(self, worktree_path: Path, temp_branch: str) -> None:
@@ -230,7 +251,14 @@ class WorktreeLifecycle:
             self._discard_failed_add(worktree_path, temp_branch)
             return WorktreeCreateResult(
                 status=WorktreeCreateStatus.GIT_FAILED,
-                errors=[f"Git worktree operation failed (WORKTREE_GIT_FAILED): {exc}"],
+                errors=[
+                    logged_failure(
+                        f"Git worktree operation failed (WORKTREE_GIT_FAILED): {exc}",
+                        exc,
+                        operation="worktree.create",
+                        context=_create_context(worktree_path, temp_branch),
+                    )
+                ],
                 fixes=["Ensure this directory is a Git repository with a valid base ref"],
             )
 
@@ -253,7 +281,14 @@ class WorktreeLifecycle:
             self.discard_partial(worktree_path, temp_branch, created_dir=True, created_branch=True)
             return "", WorktreeCreateResult(
                 status=WorktreeCreateStatus.GIT_FAILED,
-                errors=[f"Git worktree operation failed (WORKTREE_GIT_FAILED): {exc}"],
+                errors=[
+                    logged_failure(
+                        f"Git worktree operation failed (WORKTREE_GIT_FAILED): {exc}",
+                        exc,
+                        operation="worktree.create",
+                        context=_create_context(worktree_path, temp_branch),
+                    )
+                ],
             )
 
     def _overlay_wip(
@@ -276,7 +311,14 @@ class WorktreeLifecycle:
             self.discard_partial(worktree_path, temp_branch, created_dir=True, created_branch=True)
             return [], WorktreeCreateResult(
                 status=WorktreeCreateStatus.WIP_FAILED,
-                errors=[f"Failed to overlay uncommitted WIP into worktree (WORKTREE_WIP_FAILED): {exc}"],
+                errors=[
+                    logged_failure(
+                        f"Failed to overlay uncommitted WIP into worktree (WORKTREE_WIP_FAILED): {exc}",
+                        _wip_failure_cause(exc),
+                        operation="worktree.create",
+                        context=_create_context(worktree_path, temp_branch),
+                    )
+                ],
                 fixes=["Resolve local conflicts and retry, or commit changes first"],
             )
 
@@ -292,7 +334,19 @@ class WorktreeLifecycle:
             )
             return []
         except Exception as exc:
-            return [f"Failed to persist worktree metadata to the local database: {exc}"]
+            context = {
+                "worktree_id": session.session_id,
+                "branch": session.target_branch,
+                "path": str(session.worktree_path),
+            }
+            return [
+                logged_failure(
+                    f"Failed to persist worktree metadata to the local database: {exc}",
+                    exc,
+                    operation="worktree.create",
+                    context=context,
+                )
+            ]
 
     def create(
         self,
@@ -384,11 +438,18 @@ class WorktreeLifecycle:
             GitRunner.worktree_remove(self.path, worktree_path, force=force)
             return None
         except Exception as exc:
+            context = {"path": str(worktree_path)}
             try:
                 shutil.rmtree(worktree_path)
-                return None
             except Exception as rm_exc:
-                return f"Failed to remove worktree directory at '{worktree_path}': {exc}; fallback removal failed: {rm_exc}"
+                return logged_failure(
+                    f"Failed to remove worktree directory at '{worktree_path}': {exc}; fallback removal failed: {rm_exc}",
+                    rm_exc,
+                    operation="worktree.cleanup",
+                    context=context,
+                )
+            record_fallback(exc, operation="worktree.cleanup", context=context)
+            return None
 
     def _delete_branch(self, branch_name: str) -> str | None:
         """Delete temporary branch, ignoring expected idempotent not-found errors."""
@@ -399,7 +460,12 @@ class WorktreeLifecycle:
             # Best-effort: branch may already be deleted during idempotent cleanup.
             return None
         except Exception as exc:
-            return f"Failed to delete branch '{branch_name}': {exc}"
+            return logged_failure(
+                f"Failed to delete branch '{branch_name}': {exc}",
+                exc,
+                operation="worktree.cleanup",
+                context={"branch": branch_name},
+            )
 
     def cleanup(
         self,
@@ -418,6 +484,7 @@ class WorktreeLifecycle:
         """
         with WorkspaceLock(self.paths.lock_file):
             worktree_path, session_id, branch_name = _extract_target_metadata(target)
+            context = {"worktree_id": session_id, "branch": branch_name, "path": str(worktree_path)}
             warnings: list[str] = []
 
             dir_warning = self._remove_worktree_dir(worktree_path, force=force)
@@ -427,7 +494,14 @@ class WorktreeLifecycle:
             try:
                 self.db.update_status(session_id, WorktreeStatus.CLEANED)
             except Exception as exc:
-                warnings.append(f"Failed to update database status to 'cleaned' for worktree '{session_id}': {exc}")
+                warnings.append(
+                    logged_failure(
+                        f"Failed to update database status to 'cleaned' for worktree '{session_id}': {exc}",
+                        exc,
+                        operation="worktree.cleanup",
+                        context=context,
+                    )
+                )
 
             branch_warning = self._delete_branch(branch_name)
             if branch_warning:
@@ -436,7 +510,11 @@ class WorktreeLifecycle:
             try:
                 self.prune()
             except Exception as exc:
-                warnings.append(f"Failed to prune git worktrees: {exc}")
+                warnings.append(
+                    logged_failure(
+                        f"Failed to prune git worktrees: {exc}", exc, operation="worktree.cleanup", context=context
+                    )
+                )
 
             return warnings
 
