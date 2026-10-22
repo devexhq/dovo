@@ -22,7 +22,7 @@ class ConfigTierValidationError(Exception):
 
     def __init__(self, tier: ConfigTier, path: Path, details: str) -> None:
         """Format a tier-attributed validation message and retain its parts for callers."""
-        super().__init__(f"Invalid configuration in {tier} layer ({path}): {details}")
+        super().__init__(f"Invalid configuration in {tier} tier ({path}): {details}")
         self.tier = tier
         self.path = path
         self.details = details

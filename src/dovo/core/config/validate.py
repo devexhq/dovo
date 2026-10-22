@@ -9,9 +9,9 @@ from urllib.parse import urlparse
 
 from dovo.common.models import BaseResult
 from dovo.core.agents.registry import PROVIDERS, unsupported_provider_message
+from dovo.core.config.agent_settings import agent_settings
 from dovo.core.config.loader import ConfigLoadStatus
 from dovo.core.config.models import DovoConfig
-from dovo.core.config.services.agent_settings import agent_settings
 
 
 class ConfigValidationStatus(StrEnum):

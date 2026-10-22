@@ -1,8 +1,8 @@
 """Domain entrypoint coordinator for Dovo doctor diagnostics."""
 
 from dovo.common.filesystem import WorkspacePaths
+from dovo.core.config import Config
 from dovo.core.config.models import DovoConfig
-from dovo.core.config.services.resolve import resolve_effective_config
 from dovo.core.diagnostics.models import (
     CheckCategory,
     DiagnosticsContext,
@@ -29,7 +29,7 @@ class Diagnostics:
         active_config: DovoConfig | None = config
         if active_config is None:
             try:
-                load_result = resolve_effective_config(self.paths)
+                load_result = Config(self.paths).load()
                 if load_result.ok:
                     active_config = load_result.config
             except Exception:

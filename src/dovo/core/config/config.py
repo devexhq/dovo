@@ -3,14 +3,13 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
 
 from pydantic import JsonValue
 
 from dovo.common.filesystem import WorkspacePaths
 from dovo.core.config.exceptions import ConfigLoadError
 from dovo.core.config.generator import ConfigGenerationResult, generate_default_config
-from dovo.core.config.loader import ConfigLoadResult
+from dovo.core.config.loader import ConfigLoadResult, ConfigLoadStatus, load_config
 from dovo.core.config.models import (
     ConcurrencyConfig,
     DoctorConfig,
@@ -29,8 +28,7 @@ from dovo.core.config.mutate import (
     unset_config_value_result,
 )
 from dovo.core.config.parser import parse_config_value
-from dovo.core.config.serialize import as_json, serialize_config
-from dovo.core.config.services.resolve import resolve_effective_config
+from dovo.core.config.tiers import load_tiered_config
 from dovo.core.config.validate import (
     ConfigValidationResult,
     validate_config_result,
@@ -49,7 +47,7 @@ def _require_config(result: ConfigLoadResult, root_dir: Path) -> DovoConfig:
 
 
 class Config:
-    """Unified entrypoint for workspace configuration loading, validation, mutation, and serialization."""
+    """Unified entrypoint for workspace configuration loading, validation and mutation."""
 
     def __init__(self, paths: WorkspacePaths) -> None:
         """Bind this Config instance to a resolved WorkspacePaths snapshot."""
@@ -59,11 +57,29 @@ class Config:
     @classmethod
     def load_required(cls, paths: WorkspacePaths) -> DovoConfig:
         """Load and validate the effective config for paths, raising ConfigLoadError on failure."""
-        return _require_config(resolve_effective_config(paths), paths.root_dir)
+        return _require_config(cls(paths).load(), paths.root_dir)
 
     def load(self) -> ConfigLoadResult:
-        """Load the repo tier, merge Global/User tier overrides, and return a structured result."""
-        return resolve_effective_config(self._paths)
+        """Load the repo config, then merge the Packaged, Global, User and Repo tiers; never raises."""
+        repo_result = load_config(self._paths)
+        if not repo_result.ok:
+            return repo_result
+
+        tiered = load_tiered_config(self._paths)
+        if not tiered.ok or tiered.config is None:
+            return ConfigLoadResult(
+                status=ConfigLoadStatus.TIER_INVALID,
+                config_path=tiered.path or repo_result.config_path,
+                errors=list(tiered.errors),
+            )
+
+        return ConfigLoadResult(
+            status=ConfigLoadStatus.OK,
+            config_path=repo_result.config_path,
+            raw=tiered.config.model_dump(mode="json"),
+            config=tiered.config,
+            errors=[],
+        )
 
     def validate(self, *, config_path: Path | None = None) -> ConfigValidationResult:
         """Validate ``config.json`` against schema constraints and return structured report."""
@@ -72,7 +88,7 @@ class Config:
 
     def set(self, key: str, value: JsonValue) -> ConfigSetResult:
         """Set a dot-path configuration key and persist to disk."""
-        parsed_value = self.parse_value(value) if isinstance(value, str) else value
+        parsed_value = parse_config_value(value) if isinstance(value, str) else value
         result = set_config_value_result(key, parsed_value, config_path=self._paths.config_file)
         if result.ok:
             self._cached_config = None
@@ -155,22 +171,3 @@ class Config:
     def environment(self) -> EnvironmentConfig:
         """Return the environment section of the loaded config."""
         return self._loaded_config.environment
-
-    # ------------------------------------------------------------------ #
-    # Static and class-method helpers                                     #
-    # ------------------------------------------------------------------ #
-
-    @staticmethod
-    def parse_value(value: str) -> JsonValue:
-        """Parse string CLI token into typed Python object (bool, int, float, list, dict, str)."""
-        return parse_config_value(value)
-
-    @staticmethod
-    def dump(config: DovoConfig) -> str:
-        """Serialize DovoConfig instance into formatted JSON string."""
-        return as_json(config)
-
-    @staticmethod
-    def serialize(config: DovoConfig) -> dict[str, Any]:
-        """Serialize DovoConfig instance into JSON-ready dictionary."""
-        return serialize_config(config)

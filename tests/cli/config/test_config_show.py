@@ -77,4 +77,4 @@ class ConfigShowCliIntegrationTests:
 
         assert res.exit_code == 1
         assert "Config Error" in res.stdout
-        assert "Invalid configuration in user layer" in res.stdout
+        assert "Invalid configuration in user tier" in res.stdout

@@ -15,11 +15,11 @@ from dovo.common.schema_validation import format_validation_error
 from dovo.core.config.exceptions import ConfigTierValidationError
 from dovo.core.config.generator import CANONICAL_V1_DEFAULTS
 from dovo.core.config.models import (
-    ConfigLayer,
     ConfigTier,
+    ConfigTierEntry,
     DovoConfig,
-    HierarchicalConfigLoadResult,
-    HierarchicalConfigLoadStatus,
+    TieredConfigLoadResult,
+    TieredConfigLoadStatus,
 )
 
 
@@ -74,16 +74,16 @@ def _deep_merge(base: dict[str, Any], override: dict[str, Any], path: tuple[str,
     return result
 
 
-def _union_sensitive_variables(layers: Sequence[ConfigLayer]) -> list[str]:
-    """Return environment.sensitive_variables from every layer in precedence order, first occurrence kept."""
+def _union_sensitive_variables(entries: Sequence[ConfigTierEntry]) -> list[str]:
+    """Return environment.sensitive_variables from every tier in precedence order, first occurrence kept."""
     names: dict[str, None] = {}
-    for layer in layers:
-        for name in layer.data.get("environment", {}).get("sensitive_variables", []):
+    for entry in entries:
+        for name in entry.data.get("environment", {}).get("sensitive_variables", []):
             names.setdefault(name)
     return list(names)
 
 
-def _validate_merged_layer(tier: ConfigTier, path: Path, merged: dict[str, Any]) -> None:
+def _validate_merged_tier(tier: ConfigTier, path: Path, merged: dict[str, Any]) -> None:
     """Validate the running merged dict against DovoConfig, attributing failure to tier."""
     try:
         DovoConfig.model_validate(merged)
@@ -91,9 +91,9 @@ def _validate_merged_layer(tier: ConfigTier, path: Path, merged: dict[str, Any])
         raise ConfigTierValidationError(tier, path, format_validation_error(exc)) from exc
 
 
-def resolve_config_layers(paths: WorkspacePaths) -> list[ConfigLayer]:
-    """Resolve the Packaged, Global, User, and Repo config layers present on disk, in precedence order."""
-    layers = [ConfigLayer(tier=ConfigTier.PACKAGED, path=None, data=_packaged_defaults())]
+def resolve_config_tiers(paths: WorkspacePaths) -> list[ConfigTierEntry]:
+    """Resolve the Packaged, Global, User, and Repo config tiers present on disk, in precedence order."""
+    entries = [ConfigTierEntry(tier=ConfigTier.PACKAGED, path=None, data=_packaged_defaults())]
 
     tier_paths = (
         (ConfigTier.GLOBAL, paths.global_paths.global_dir / "config.json"),
@@ -103,42 +103,42 @@ def resolve_config_layers(paths: WorkspacePaths) -> list[ConfigLayer]:
     for tier, path in tier_paths:
         data = _read_tier_file(tier, path)
         if data is not None:
-            layers.append(ConfigLayer(tier=tier, path=path, data=data))
+            entries.append(ConfigTierEntry(tier=tier, path=path, data=data))
 
-    return layers
+    return entries
 
 
-def _classify_tier_error(details: str) -> HierarchicalConfigLoadStatus:
+def _classify_tier_error(details: str) -> TieredConfigLoadStatus:
     """Map a ConfigTierValidationError's details text to a load-result status."""
     if "Check file permissions and that the path is readable" in details:
-        return HierarchicalConfigLoadStatus.UNREADABLE
+        return TieredConfigLoadStatus.UNREADABLE
     if details == "root must be a JSON object":
-        return HierarchicalConfigLoadStatus.ROOT_NOT_OBJECT
+        return TieredConfigLoadStatus.ROOT_NOT_OBJECT
     if "line" in details and "column" in details:
-        return HierarchicalConfigLoadStatus.MALFORMED_JSON
-    return HierarchicalConfigLoadStatus.VALIDATION_FAILED
+        return TieredConfigLoadStatus.MALFORMED_JSON
+    return TieredConfigLoadStatus.VALIDATION_FAILED
 
 
-def load_hierarchical_config(paths: WorkspacePaths) -> HierarchicalConfigLoadResult:
+def load_tiered_config(paths: WorkspacePaths) -> TieredConfigLoadResult:
     """Merge Packaged, Global, User, and Repo config tiers into one validated DovoConfig, without raising."""
     try:
-        layers = resolve_config_layers(paths)
+        entries = resolve_config_tiers(paths)
 
-        merged = _deep_merge({}, layers[0].data)
-        for layer in layers[1:]:
-            merged = _deep_merge(merged, layer.data)
-            if layer.path is None:
+        merged = _deep_merge({}, entries[0].data)
+        for entry in entries[1:]:
+            merged = _deep_merge(merged, entry.data)
+            if entry.path is None:
                 continue
-            _validate_merged_layer(layer.tier, layer.path, merged)
+            _validate_merged_tier(entry.tier, entry.path, merged)
 
-        merged["environment"]["sensitive_variables"] = _union_sensitive_variables(layers)
+        merged["environment"]["sensitive_variables"] = _union_sensitive_variables(entries)
         config = DovoConfig.model_validate(merged)
     except ConfigTierValidationError as exc:
-        return HierarchicalConfigLoadResult(
+        return TieredConfigLoadResult(
             status=_classify_tier_error(exc.details),
             tier=exc.tier,
             path=exc.path,
             errors=[str(exc)],
         )
 
-    return HierarchicalConfigLoadResult(status=HierarchicalConfigLoadStatus.OK, config=config)
+    return TieredConfigLoadResult(status=TieredConfigLoadStatus.OK, config=config)
