@@ -4,13 +4,16 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import NoReturn
 
 import pytest
 from typer.testing import CliRunner
 
 from dovo.cli import app
+from dovo.core.git.runner import GitRunner
 from dovo.core.worktree.models import WorktreeDeleteResult, WorktreeDeleteStatus, WorktreeSession
 from dovo.core.worktree.worktree import Worktree
+from tests.harness.diagnostic_log import diagnostic_hint, read_single_event
 from tests.harness.workspace_paths import initialized_workspace_paths
 
 
@@ -99,3 +102,33 @@ class WorktreeDeleteCliIntegrationTests:
         assert event["event_type"] == "WorktreeDeleteResult"
         assert event["payload"]["status"] == "deleted"
         assert event["payload"]["worktree_id"] == session.session_id
+
+    def test_worktree_delete_cli_cleanup_failure_json_carries_warning_with_hint(
+        self,
+        cli_runner: CliRunner,
+        cli_workspace: Path,
+        frozen_diagnostic_clock: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Exit 0 for --force --format json with GitRunner.branch_delete raising RuntimeError("boom") after _create_worktree, emit status "deleted" and payload warnings == [f"Failed to delete branch '{branch}': boom\nDetails logged: {path} (event exc_3f9a1c07b2de)"], and write a record with command "worktree" and operation worktree.cleanup."""
+        session = _create_worktree(cli_workspace)
+
+        def failing_branch_delete(*args: object, **kwargs: object) -> NoReturn:
+            raise RuntimeError("boom")
+
+        monkeypatch.setattr(GitRunner, "branch_delete", staticmethod(failing_branch_delete))
+
+        result = cli_runner.invoke(
+            app,
+            ["-p", str(cli_workspace), "worktree", "delete", session.session_id, "--force", "--format", "json"],
+        )
+
+        assert result.exit_code == 0
+        payload = json.loads(result.stdout)["payload"]
+        assert payload["status"] == "deleted"
+        assert payload["warnings"] == [
+            f"Failed to delete branch '{session.target_branch}': boom{diagnostic_hint(frozen_diagnostic_clock)}"
+        ]
+        event = read_single_event(frozen_diagnostic_clock)
+        assert event["command"] == "worktree"
+        assert event["operation"] == "worktree.cleanup"

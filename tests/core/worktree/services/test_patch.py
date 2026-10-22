@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import shutil
 from collections.abc import Callable
 from pathlib import Path
+from typing import NoReturn
 
 import pytest
 
 from dovo.common.filesystem import WorkspacePaths
+from dovo.common.filesystem.services import resolve_global_paths
 from dovo.core.db import WorktreesRepository
 from dovo.core.db.models import WorktreeStatus
 from dovo.core.git.runner import GitRunner
@@ -15,6 +18,7 @@ from dovo.core.worktree.models import WorktreeApplyStatus, WorktreeApplyStrategy
 from dovo.core.worktree.services.lifecycle import WorktreeLifecycle
 from dovo.core.worktree.services.patch import WorktreePatch, extract_conflicts
 from tests.harness import WorkspaceBuilder
+from tests.harness.diagnostic_log import diagnostic_hint, read_single_event
 from tests.harness.git_index import snapshot_index, temp_index_files
 
 
@@ -557,3 +561,200 @@ class WorktreePatchDiffFailureTests:
         assert GitRunner.rev_parse(worktree_workspace, rev="HEAD") == head_before
         assert GitRunner.status_porcelain(worktree_workspace) == status_before
         assert temp_index_files(worktree_path) == []
+
+
+def _raise_boom(*args: object, **kwargs: object) -> NoReturn:
+    """Stand in for a GitRunner, diff or repository call that fails with an unexpected RuntimeError("boom")."""
+    raise RuntimeError("boom")
+
+
+def _create_conflicting_worktree(paths: WorkspacePaths, workspace: Path, worktree_id: str) -> None:
+    """Create a worktree adding new_file.txt, then commit a different new_file.txt in the main repository."""
+    _create_worktree_with_change(paths, worktree_id)
+    (workspace / "new_file.txt").write_text("main change\n", encoding="utf-8")
+    GitRunner.run(["add", "-A"], path=workspace)
+    GitRunner.run(["commit", "-m", "main change"], path=workspace)
+
+
+class WorktreePatchDiagnosticLogTests:
+    @pytest.mark.parametrize(
+        ("target", "strategy", "allow_dirty", "prefix", "context_has_path"),
+        [
+            pytest.param(
+                "diff_work_tree",
+                WorktreeApplyStrategy.PATCH,
+                False,
+                "Failed to generate diff from worktree: boom",
+                True,
+                id="diff_generation",
+            ),
+            pytest.param(
+                "dirty_paths",
+                WorktreeApplyStrategy.SQUASH,
+                True,
+                "Failed to read main repository status: boom",
+                False,
+                id="main_status_read",
+            ),
+            pytest.param(
+                "apply_check",
+                WorktreeApplyStrategy.PATCH,
+                False,
+                "Git failure during conflict check: boom",
+                False,
+                id="conflict_check",
+            ),
+            pytest.param(
+                "apply", WorktreeApplyStrategy.PATCH, False, "Git apply failed: boom", False, id="patch_application"
+            ),
+            pytest.param(
+                "commit",
+                WorktreeApplyStrategy.SQUASH,
+                False,
+                "Git squash commit failed: boom",
+                False,
+                id="squash_commit",
+            ),
+        ],
+    )
+    def test_apply_unexpected_failure_records_error_and_appends_hint(
+        self,
+        worktree_workspace_paths: WorkspacePaths,
+        frozen_diagnostic_clock: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        target: str,
+        strategy: WorktreeApplyStrategy,
+        allow_dirty: bool,
+        prefix: str,
+        context_has_path: bool,
+    ) -> None:
+        """Return git_failed with errors == [f"{prefix}\nDetails logged: ... (event exc_3f9a1c07b2de)"] and write one error record for worktree.apply with context worktree_id, plus path for diff generation."""
+        _create_worktree_with_change(worktree_workspace_paths, "dovo_boom")
+        record = _repo(worktree_workspace_paths).get("dovo_boom")
+        assert record is not None
+        expected_context = {"worktree_id": "dovo_boom"}
+        if context_has_path:
+            expected_context["path"] = str(record.worktree_path)
+        if target == "diff_work_tree":
+            monkeypatch.setattr("dovo.core.worktree.services.patch.diff_work_tree", _raise_boom)
+        else:
+            monkeypatch.setattr(GitRunner, target, staticmethod(_raise_boom))
+        patch = WorktreePatch(worktree_workspace_paths, _repo(worktree_workspace_paths))
+
+        result = patch.apply("dovo_boom", strategy=strategy, allow_dirty=allow_dirty)
+
+        assert result.status == WorktreeApplyStatus.GIT_FAILED
+        assert result.errors == [f"{prefix}{diagnostic_hint(frozen_diagnostic_clock)}"]
+        event = read_single_event(frozen_diagnostic_clock)
+        assert event["level"] == "error"
+        assert event["operation"] == "worktree.apply"
+        assert event["context"] == expected_context
+
+    def test_diff_unexpected_failure_records_error_and_appends_hint(
+        self, worktree_workspace_paths: WorkspacePaths, frozen_diagnostic_clock: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Return git_failed with errors == ["Failed to generate diff for worktree 'dovo_diff': boom\nDetails logged: ..."] and one error record for worktree.diff."""
+        _create_worktree_with_change(worktree_workspace_paths, "dovo_diff")
+        record = _repo(worktree_workspace_paths).get("dovo_diff")
+        assert record is not None
+        monkeypatch.setattr("dovo.core.worktree.services.patch.diff_work_tree", _raise_boom)
+        patch = WorktreePatch(worktree_workspace_paths, _repo(worktree_workspace_paths))
+
+        result = patch.diff("dovo_diff")
+
+        assert result.status == WorktreeDiffStatus.GIT_FAILED
+        assert result.errors == [
+            f"Failed to generate diff for worktree 'dovo_diff': boom{diagnostic_hint(frozen_diagnostic_clock)}"
+        ]
+        event = read_single_event(frozen_diagnostic_clock)
+        assert event["level"] == "error"
+        assert event["operation"] == "worktree.diff"
+        assert event["context"] == {"worktree_id": "dovo_diff", "path": str(record.worktree_path)}
+
+    def test_merged_status_write_failure_hints_warning(
+        self, worktree_workspace_paths: WorkspacePaths, frozen_diagnostic_clock: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Return ok with warnings == ["Failed to update database status to 'merged' for worktree 'dovo_merge': boom\nDetails logged: ..."] when update_status raises RuntimeError."""
+        _create_worktree_with_change(worktree_workspace_paths, "dovo_merge")
+        monkeypatch.setattr(WorktreesRepository, "update_status", _raise_boom)
+        patch = WorktreePatch(worktree_workspace_paths, _repo(worktree_workspace_paths))
+
+        result = patch.apply("dovo_merge")
+
+        assert result.status == WorktreeApplyStatus.OK
+        assert result.warnings == [
+            "Failed to update database status to 'merged' for worktree 'dovo_merge': boom"
+            f"{diagnostic_hint(frozen_diagnostic_clock)}"
+        ]
+        event = read_single_event(frozen_diagnostic_clock)
+        assert event["level"] == "error"
+        assert event["operation"] == "worktree.apply"
+        assert event["context"] == {"worktree_id": "dovo_merge"}
+
+    @pytest.mark.parametrize("entrypoint", ["diff", "apply"])
+    def test_reconcile_failure_records_debug_and_keeps_not_found(
+        self,
+        worktree_workspace_paths: WorkspacePaths,
+        frozen_diagnostic_clock: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        entrypoint: str,
+    ) -> None:
+        """Return not_found with the pre-change unhinted error when the worktree directory is gone and reconcile_stale_active raises, and write one debug record for worktree.<entrypoint>."""
+        db = _repo(worktree_workspace_paths)
+        _create_worktree_with_change(worktree_workspace_paths, "dovo_gone")
+        record = db.get("dovo_gone")
+        assert record is not None
+        shutil.rmtree(record.worktree_path)
+        monkeypatch.setattr(WorktreesRepository, "reconcile_stale_active", _raise_boom)
+        patch = WorktreePatch(worktree_workspace_paths, db)
+
+        if entrypoint == "diff":
+            diff_result = patch.diff("dovo_gone")
+            assert diff_result.status == WorktreeDiffStatus.NOT_FOUND
+            assert diff_result.errors == ["Worktree 'dovo_gone' directory is missing on disk."]
+        else:
+            apply_result = patch.apply("dovo_gone")
+            assert apply_result.status == WorktreeApplyStatus.NOT_FOUND
+            assert apply_result.errors == [
+                "Worktree 'dovo_gone' directory is missing on disk; reconciled status to 'cleaned'."
+            ]
+        event = read_single_event(frozen_diagnostic_clock)
+        assert event["level"] == "debug"
+        assert event["operation"] == f"worktree.{entrypoint}"
+        assert event["context"] == {"worktree_id": "dovo_gone", "path": str(record.worktree_path)}
+
+    def test_apply_conflict_writes_no_record(
+        self, worktree_workspace: Path, worktree_workspace_paths: WorkspacePaths, frozen_diagnostic_clock: Path
+    ) -> None:
+        """Return conflict with an unhinted error for a conflicting patch and leave <DOVO_HOME>/logs absent."""
+        _create_conflicting_worktree(worktree_workspace_paths, worktree_workspace, "dovo_conflict")
+        patch = WorktreePatch(worktree_workspace_paths, _repo(worktree_workspace_paths))
+
+        result = patch.apply("dovo_conflict")
+
+        assert result.status == WorktreeApplyStatus.CONFLICT
+        assert result.errors[0].startswith("Cannot apply worktree dovo_conflict: conflicts detected.")
+        assert "Details logged:" not in result.errors[0]
+        assert not resolve_global_paths(None).logs_dir.exists()
+
+    def test_conflict_status_write_failure_records_debug_and_keeps_conflict(
+        self,
+        worktree_workspace: Path,
+        worktree_workspace_paths: WorkspacePaths,
+        frozen_diagnostic_clock: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Return conflict with the unhinted error when update_status raises during conflict reporting, and write one debug record for worktree.apply."""
+        _create_conflicting_worktree(worktree_workspace_paths, worktree_workspace, "dovo_conflict")
+        monkeypatch.setattr(WorktreesRepository, "update_status", _raise_boom)
+        patch = WorktreePatch(worktree_workspace_paths, _repo(worktree_workspace_paths))
+
+        result = patch.apply("dovo_conflict")
+
+        assert result.status == WorktreeApplyStatus.CONFLICT
+        assert result.errors[0].startswith("Cannot apply worktree dovo_conflict: conflicts detected.")
+        assert "Details logged:" not in result.errors[0]
+        event = read_single_event(frozen_diagnostic_clock)
+        assert event["level"] == "debug"
+        assert event["operation"] == "worktree.apply"
+        assert event["context"] == {"worktree_id": "dovo_conflict"}

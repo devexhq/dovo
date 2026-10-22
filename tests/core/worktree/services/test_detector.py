@@ -19,6 +19,7 @@ from dovo.core.worktree.models import (
 )
 from dovo.core.worktree.services.detector import WorktreeDetector, detect_stale_worktrees
 from tests.harness import WorkspaceBuilder
+from tests.harness.diagnostic_log import diagnostic_hint, read_single_event
 from tests.harness.workspace_paths import initialized_workspace_paths
 
 
@@ -267,16 +268,73 @@ class WorktreeDetectorFailureTests:
             "Failed to list git worktrees (GIT_FAILED): Git execution failed ('git worktree list'): fatal error"
         ]
 
-    def test_detect_returns_error_on_database_failure(
+    @pytest.mark.parametrize(
+        ("target", "prefix"),
+        [
+            pytest.param("worktree_list", "Unexpected error while listing git worktrees: boom", id="worktree_list"),
+            pytest.param("db_list", "Failed to query worktrees from database: boom", id="db_list"),
+        ],
+    )
+    def test_detect_unexpected_failure_returns_error_with_hint(
         self,
         detector_workspace: Path,
         detector_workspace_paths: WorkspacePaths,
+        frozen_diagnostic_clock: Path,
+        target: str,
+        prefix: str,
     ) -> None:
+        """Return status error with errors == [f"{prefix}\nDetails logged: ... (event exc_3f9a1c07b2de)"] and one error record for worktree.detect."""
         db = _repo(detector_workspace_paths)
         detector = WorktreeDetector(detector_workspace, db)
+        owner, attribute = (GitRunner, "worktree_list") if target == "worktree_list" else (db, "list")
 
-        with patch.object(db, "list", side_effect=RuntimeError("database locked")):
+        with patch.object(owner, attribute, side_effect=RuntimeError("boom")):
             result = detector.detect()
 
         assert result.status == WorktreeDetectionStatus.ERROR
-        assert result.errors == ["Failed to query worktrees from database: database locked"]
+        assert result.errors == [f"{prefix}{diagnostic_hint(frozen_diagnostic_clock)}"]
+        event = read_single_event(frozen_diagnostic_clock)
+        assert event["level"] == "error"
+        assert event["operation"] == "worktree.detect"
+        assert event["context"] == {"path": str(detector.path)}
+
+
+class WorktreeDetectorDiagnosticLogTests:
+    def test_dirty_state_failure_hints_warning(
+        self, detector_workspace: Path, detector_workspace_paths: WorkspacePaths, frozen_diagnostic_clock: Path
+    ) -> None:
+        """Return ok with warnings == ["Unable to inspect git status for orphaned directory 'dovo_orphan': boom\nDetails logged: ..."] when status_porcelain raises RuntimeError."""
+        detector = WorktreeDetector(detector_workspace, _repo(detector_workspace_paths))
+        orphan_dir = detector.worktree_base_dir / "dovo_orphan"
+        orphan_dir.mkdir(parents=True)
+
+        with patch.object(GitRunner, "status_porcelain", side_effect=RuntimeError("boom")):
+            result = detector.detect()
+
+        assert result.status == WorktreeDetectionStatus.OK
+        assert result.warnings == [
+            "Unable to inspect git status for orphaned directory 'dovo_orphan': boom"
+            f"{diagnostic_hint(frozen_diagnostic_clock)}"
+        ]
+        event = read_single_event(frozen_diagnostic_clock)
+        assert event["level"] == "error"
+        assert event["operation"] == "worktree.detect"
+        assert event["context"] == {"path": str(orphan_dir)}
+
+    def test_branch_discovery_failure_records_error_and_keeps_result(
+        self, detector_workspace: Path, detector_workspace_paths: WorkspacePaths, frozen_diagnostic_clock: Path
+    ) -> None:
+        """Return ok with no stale_branch items and warnings == [] when list_branches raises RuntimeError, and write one error record for worktree.detect."""
+        GitRunner.run(["branch", "dovo/dovo_stale"], path=detector_workspace)
+        detector = WorktreeDetector(detector_workspace, _repo(detector_workspace_paths))
+
+        with patch.object(GitRunner, "list_branches", side_effect=RuntimeError("boom")):
+            result = detector.detect()
+
+        assert result.status == WorktreeDetectionStatus.OK
+        assert [item for item in result.items if item.category == StaleWorktreeCategory.STALE_BRANCH] == []
+        assert result.warnings == []
+        event = read_single_event(frozen_diagnostic_clock)
+        assert event["level"] == "error"
+        assert event["operation"] == "worktree.detect"
+        assert event["context"] == {"path": str(detector.path)}

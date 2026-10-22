@@ -19,6 +19,7 @@ from dovo.core.worktree.models import (
     WorktreeDiffResult,
     WorktreeDiffStatus,
 )
+from dovo.core.worktree.services.failure_log import logged_failure, record_fallback
 from dovo.core.worktree.services.lifecycle import WorktreeLifecycle
 from dovo.core.worktree.services.wip import list_wip_paths
 
@@ -94,9 +95,12 @@ class WorktreePatch:
         if not Path(record.worktree_path).is_dir():
             try:
                 self.db.reconcile_stale_active(worktree_id)
-            except Exception:
-                # Best-effort reconciliation when worktree directory is missing on disk.
-                pass
+            except Exception as exc:
+                record_fallback(
+                    exc,
+                    operation="worktree.diff",
+                    context={"worktree_id": worktree_id, "path": str(record.worktree_path)},
+                )
             return None, WorktreeDiffResult(
                 status=WorktreeDiffStatus.NOT_FOUND,
                 worktree_id=worktree_id,
@@ -121,9 +125,12 @@ class WorktreePatch:
         if not Path(record.worktree_path).is_dir():
             try:
                 self.db.reconcile_stale_active(worktree_id)
-            except Exception:
-                # Best-effort reconciliation when worktree directory is missing on disk.
-                pass
+            except Exception as exc:
+                record_fallback(
+                    exc,
+                    operation="worktree.apply",
+                    context={"worktree_id": worktree_id, "path": str(record.worktree_path)},
+                )
             return None, WorktreeApplyResult(
                 status=WorktreeApplyStatus.NOT_FOUND,
                 worktree_id=worktree_id,
@@ -179,7 +186,14 @@ class WorktreePatch:
                 status=WorktreeApplyStatus.GIT_FAILED,
                 worktree_id=worktree_id,
                 strategy=strategy,
-                errors=[f"Failed to read main repository status: {exc}"],
+                errors=[
+                    logged_failure(
+                        f"Failed to read main repository status: {exc}",
+                        exc,
+                        operation="worktree.apply",
+                        context={"worktree_id": worktree_id},
+                    )
+                ],
             )
         overlapping = sorted(set(dirty) & set(patch_paths))
         if not overlapping:
@@ -227,7 +241,14 @@ class WorktreePatch:
                 WorktreeApplyResult(
                     status=WorktreeApplyStatus.GIT_FAILED,
                     worktree_id=record.id,
-                    errors=[f"Failed to generate diff from worktree: {exc}"],
+                    errors=[
+                        logged_failure(
+                            f"Failed to generate diff from worktree: {exc}",
+                            exc,
+                            operation="worktree.apply",
+                            context={"worktree_id": record.id, "path": str(record.worktree_path)},
+                        )
+                    ],
                 ),
             )
 
@@ -263,16 +284,22 @@ class WorktreePatch:
             return [], WorktreeApplyResult(
                 status=WorktreeApplyStatus.GIT_FAILED,
                 worktree_id=worktree_id,
-                errors=[f"Git failure during conflict check: {exc}"],
+                errors=[
+                    logged_failure(
+                        f"Git failure during conflict check: {exc}",
+                        exc,
+                        operation="worktree.apply",
+                        context={"worktree_id": worktree_id},
+                    )
+                ],
             )
 
         if returncode != 0:
             conflicts = extract_conflicts(stderr)
             try:
                 self.db.update_status(worktree_id, WorktreeStatus.CONFLICT)
-            except Exception:
-                # Best-effort status update during conflict reporting.
-                pass
+            except Exception as exc:
+                record_fallback(exc, operation="worktree.apply", context={"worktree_id": worktree_id})
             conflict_bullets = "\n".join(f"  • {f}" for f in conflicts) if conflicts else f"  {stderr.strip()}"
             return conflicts, WorktreeApplyResult(
                 status=WorktreeApplyStatus.CONFLICT,
@@ -306,7 +333,14 @@ class WorktreePatch:
             return None, WorktreeApplyResult(
                 status=WorktreeApplyStatus.GIT_FAILED,
                 worktree_id=worktree_id,
-                errors=[f"Git apply failed: {exc}"],
+                errors=[
+                    logged_failure(
+                        f"Git apply failed: {exc}",
+                        exc,
+                        operation="worktree.apply",
+                        context={"worktree_id": worktree_id},
+                    )
+                ],
             )
 
         if returncode != 0:
@@ -329,7 +363,14 @@ class WorktreePatch:
             return None, WorktreeApplyResult(
                 status=WorktreeApplyStatus.GIT_FAILED,
                 worktree_id=worktree_id,
-                errors=[f"Git squash commit failed: {exc}"],
+                errors=[
+                    logged_failure(
+                        f"Git squash commit failed: {exc}",
+                        exc,
+                        operation="worktree.apply",
+                        context={"worktree_id": worktree_id},
+                    )
+                ],
             )
 
     def _cleanup_after_apply(self, record: WorktreeRecord, delete: bool) -> tuple[bool, list[str]]:
@@ -361,7 +402,14 @@ class WorktreePatch:
             return WorktreeDiffResult(
                 status=WorktreeDiffStatus.GIT_FAILED,
                 worktree_id=worktree_id,
-                errors=[f"Failed to generate diff for worktree '{worktree_id}': {exc}"],
+                errors=[
+                    logged_failure(
+                        f"Failed to generate diff for worktree '{worktree_id}': {exc}",
+                        exc,
+                        operation="worktree.diff",
+                        context={"worktree_id": worktree_id, "path": str(record.worktree_path)},
+                    )
+                ],
             )
 
         if not touched_files or not diff_text.strip():
@@ -433,7 +481,14 @@ class WorktreePatch:
         try:
             self.db.update_status(worktree_id, WorktreeStatus.MERGED)
         except Exception as exc:
-            warnings.append(f"Failed to update database status to 'merged' for worktree '{worktree_id}': {exc}")
+            warnings.append(
+                logged_failure(
+                    f"Failed to update database status to 'merged' for worktree '{worktree_id}': {exc}",
+                    exc,
+                    operation="worktree.apply",
+                    context={"worktree_id": worktree_id},
+                )
+            )
 
         return WorktreeApplyResult(
             status=WorktreeApplyStatus.OK,

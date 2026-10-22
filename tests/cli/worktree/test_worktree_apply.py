@@ -4,13 +4,16 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import NoReturn
 
+import pytest
 from typer.testing import CliRunner
 
 from dovo.cli import app
 from dovo.core.git.runner import GitRunner
 from dovo.core.worktree.models import WorktreeApplyResult, WorktreeApplyStatus, WorktreeApplyStrategy, WorktreeSession
 from dovo.core.worktree.worktree import Worktree
+from tests.harness.diagnostic_log import diagnostic_hint, read_single_event
 from tests.harness.workspace_paths import initialized_workspace_paths
 
 
@@ -128,3 +131,31 @@ class WorktreeApplyCliIntegrationTests:
             "worktree also changes.\nOverlapping files:\n  • target.py"
         ]
         assert (cli_workspace / "target.py").read_text(encoding="utf-8") == "user file\n"
+
+    def test_worktree_apply_cli_unexpected_failure_json_carries_hint(
+        self,
+        cli_runner: CliRunner,
+        cli_workspace: Path,
+        frozen_diagnostic_clock: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Exit 1 for --format json with diff_work_tree raising RuntimeError, emit errors[0] ending with the literal hint line, and write a record with command "worktree" and operation worktree.apply."""
+        session = _create_worktree_with_committed_change(cli_workspace)
+
+        def failing_diff(*args: object, **kwargs: object) -> NoReturn:
+            raise RuntimeError("boom")
+
+        monkeypatch.setattr("dovo.core.worktree.services.patch.diff_work_tree", failing_diff)
+
+        result = cli_runner.invoke(
+            app, ["-p", str(cli_workspace), "worktree", "apply", session.session_id, "--format", "json"]
+        )
+
+        assert result.exit_code == 1
+        payload = json.loads(result.stdout)
+        assert payload["payload"]["errors"] == [
+            f"Failed to generate diff from worktree: boom{diagnostic_hint(frozen_diagnostic_clock)}"
+        ]
+        event = read_single_event(frozen_diagnostic_clock)
+        assert event["command"] == "worktree"
+        assert event["operation"] == "worktree.apply"

@@ -19,6 +19,16 @@ from dovo.core.worktree.models import (
     WorktreePruneStatus,
 )
 from dovo.core.worktree.services.detector import WorktreeDetector
+from dovo.core.worktree.services.failure_log import DiagnosticContext, logged_failure, record_fallback
+
+
+def _item_context(item: StaleWorktreeItem) -> DiagnosticContext:
+    """Return the diagnostic context of a prune action: worktree ID, branch and path."""
+    return {
+        "worktree_id": item.session_id,
+        "branch": item.branch_name,
+        "path": str(item.path) if item.path else None,
+    }
 
 
 class WorktreePruner:
@@ -72,28 +82,40 @@ class WorktreePruner:
                 path=item.path,
                 branch_name=item.branch_name,
                 reason=item.reason,
-                error=f"Failed to prune git worktree ref: {exc}",
+                error=logged_failure(
+                    f"Failed to prune git worktree ref: {exc}",
+                    exc,
+                    operation="worktree.prune",
+                    context=_item_context(item),
+                ),
             )
 
-    def _remove_orphaned_dir(self, dir_path: Path) -> str | None:
-        """Attempt removal via git worktree remove and rmtree fallback."""
+    def _remove_orphaned_dir(self, dir_path: Path, *, context: DiagnosticContext) -> str | None:
+        """Remove dir_path with git worktree remove, falling back to rmtree; record the fallback or its failure."""
         if not dir_path.exists():
             return None
         try:
             GitRunner.worktree_remove(self.path, dir_path, force=True)
             return None
-        except Exception:
+        except Exception as exc:
             try:
                 shutil.rmtree(dir_path)
-                return None
             except Exception as rm_exc:
-                return f"Failed to remove directory '{dir_path}': {rm_exc}"
+                return logged_failure(
+                    f"Failed to remove directory '{dir_path}': {rm_exc}",
+                    rm_exc,
+                    operation="worktree.prune",
+                    context=context,
+                )
+            record_fallback(exc, operation="worktree.prune", context=context)
+            return None
 
     def _cleanup_orphaned_dir_and_db(self, item: StaleWorktreeItem) -> list[str]:
         """Perform disk deletion and database status update for an orphaned directory."""
         errors: list[str] = []
+        context = _item_context(item)
         if item.path is not None:
-            dir_err = self._remove_orphaned_dir(item.path)
+            dir_err = self._remove_orphaned_dir(item.path, context=context)
             if dir_err:
                 errors.append(dir_err)
 
@@ -101,12 +123,19 @@ class WorktreePruner:
             try:
                 self.db.update_status(item.session_id, WorktreeStatus.CLEANED)
             except Exception as db_exc:
-                errors.append(f"Failed to update database status for '{item.session_id}': {db_exc}")
+                errors.append(
+                    logged_failure(
+                        f"Failed to update database status for '{item.session_id}': {db_exc}",
+                        db_exc,
+                        operation="worktree.prune",
+                        context=context,
+                    )
+                )
 
         try:
             GitRunner.worktree_prune(self.path)
-        except Exception:
-            pass
+        except Exception as exc:
+            record_fallback(exc, operation="worktree.prune", context=context)
 
         return errors
 
@@ -196,7 +225,12 @@ class WorktreePruner:
                 branch_name=item.branch_name,
                 session_id=item.session_id,
                 reason=item.reason,
-                error=f"Failed to update database status for '{item.identifier}': {exc}",
+                error=logged_failure(
+                    f"Failed to update database status for '{item.identifier}': {exc}",
+                    exc,
+                    operation="worktree.prune",
+                    context=_item_context(item),
+                ),
             )
 
     def _prune_stale_branch(self, item: StaleWorktreeItem, *, dry_run: bool) -> PrunedItem:
@@ -226,7 +260,12 @@ class WorktreePruner:
                 action=PruneAction.FAILED,
                 branch_name=item.branch_name,
                 reason=item.reason,
-                error=f"Failed to delete branch '{item.identifier}': {exc}",
+                error=logged_failure(
+                    f"Failed to delete branch '{item.identifier}': {exc}",
+                    exc,
+                    operation="worktree.prune",
+                    context=_item_context(item),
+                ),
             )
 
     def _process_item(
