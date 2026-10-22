@@ -239,16 +239,6 @@ steps:
         tools: { allow_all: true }
         timeout_seconds: 300
 
-  - id: open-pr
-    name: Open a pull request?
-    type: ask
-    interaction:
-      mode: confirm
-      message: Review approved. Commit, push and open a pull request for issue ${{ inputs.issue }}? (stub; nothing is pushed)
-      options:
-        - { value: "yes", label: Open a PR }
-        - { value: "no", label: Stop here }
-
   - id: pr-prep
     name: Draft the commit and PR text (stub)
     type: agent
@@ -256,7 +246,7 @@ steps:
       This is a stub step for testing a workflow. Do not commit, push, open a PR, read files or explore.
       Run exactly this bash command, then reply "done" and stop:
 
-      printf 'open-pr answer: %s\nissue: %s\n' '{{ steps.open-pr.outputs.selected }}' '${{ inputs.issue }}' > .agentic/stub-push.md; printf 'chore(stub): stub commit\n' > .agentic/commit-msg; printf 'chore(stub): stub PR\n' > .agentic/pr-title; printf 'Stub PR description\n' > .agentic/pr-description; printf 'stub/feature-dev-${{ inputs.issue }}\n' > .agentic/pr-branch
+      printf 'issue: %s\n' '${{ inputs.issue }}' > .agentic/stub-push.md; printf 'chore(stub): stub commit\n' > .agentic/commit-msg; printf 'chore(stub): stub PR\n' > .agentic/pr-title; printf 'Stub PR description\n' > .agentic/pr-description; printf 'stub/feature-dev-${{ inputs.issue }}\n' > .agentic/pr-branch
     tools: { allow_all: true }
     timeout_seconds: 300
 
@@ -265,11 +255,8 @@ steps:
   # what would be committed and checks that git reaches origin over SSH.
   - id: push
     name: Commit, push and open the PR (stub; dry run)
-    env:
-      OPEN_PR: "{{ steps.open-pr.outputs.selected }}"
     run: |
       set -eu
-      if [ "$OPEN_PR" != "yes" ]; then echo "Not opening a PR."; exit 0; fi
       for f in commit-msg pr-title pr-description pr-branch; do test -s ".agentic/$f"; done
       echo "would push branch: $(head -n 1 .agentic/pr-branch)"
       git fetch -q origin main
