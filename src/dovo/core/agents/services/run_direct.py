@@ -15,6 +15,7 @@ from dovo.core.agents.models import (
     AgentResponseStatus,
     ResolvedAgentSettings,
 )
+from dovo.core.agents.registry import PROVIDERS
 from dovo.core.agents.responses import diagnostics_with_fixes
 from dovo.core.git import GitDiffParser
 
@@ -79,8 +80,10 @@ def _run_provider(request: AgentRequest, provider: str) -> AgentAttempt:
     try:
         adapter = get_agent_adapter(provider)
     except ValueError as exc:
-        # No record: an unregistered provider is a configuration error the message names.
-        return AgentAttempt(status=AgentResponseStatus.PROVIDER_ERROR, diagnostics=[f"Agent provider error: {exc}"])
+        if provider not in PROVIDERS:
+            # No record: an unregistered provider is a configuration error the message names.
+            return AgentAttempt(status=AgentResponseStatus.PROVIDER_ERROR, diagnostics=[f"Agent provider error: {exc}"])
+        return _recorded_provider_error(exc, request, provider)
     except Exception as exc:
         return _recorded_provider_error(exc, request, provider)
 

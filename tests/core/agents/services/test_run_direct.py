@@ -192,13 +192,18 @@ class RunDirectAttemptRequestTests:
             {"provider": "copilot", "path": str(git_repo)},
         )
 
+    @pytest.mark.parametrize("error_type", [RuntimeError, ValueError])
     def test_adapter_build_exception_records_error_and_returns_hint_warning(
-        self, git_repo: Path, frozen_diagnostic_clock: Path, monkeypatch: pytest.MonkeyPatch
+        self,
+        git_repo: Path,
+        frozen_diagnostic_clock: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        error_type: type[Exception],
     ) -> None:
         """Return provider_error with the hint as a warning and write one agent.run record when the spec's build raises."""
 
         def _build_failed() -> BaseAgentProvider:
-            raise RuntimeError("build failed")
+            raise error_type("build failed")
 
         monkeypatch.setitem(PROVIDERS, "copilot", replace(PROVIDERS["copilot"], build=_build_failed))
 
