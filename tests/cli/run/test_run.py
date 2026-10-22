@@ -218,9 +218,9 @@ class RunCliIntegrationTests:
         assert result.exit_code == 0
         events = [json.loads(line) for line in result.stdout.splitlines() if line.strip()]
         warnings = [e["payload"]["message"] for e in events if e["event_type"] == "WarningEvent"]
-        assert (
-            f"Failed to update run status in database: disk full{diagnostic_hint(frozen_diagnostic_clock)}" in warnings
-        )
+        assert warnings == [
+            f"Failed to update run status in database: disk full{diagnostic_hint(frozen_diagnostic_clock)}"
+        ]
 
     def test_run_cli_uninitialized_git_repo_auto_initializes_and_proceeds(
         self, cli_runner: CliRunner, git_repo: Path

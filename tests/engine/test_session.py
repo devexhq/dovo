@@ -493,8 +493,9 @@ class SessionRunnerDiagnosticLogTests:
         row = git_runs.get("launch")
         assert row is not None
         session_json = (git_paths.session_dir("launch") / "session.json").read_text(encoding="utf-8")
-        for persisted in (row.error_message or "", row.execution_state_json or "", session_json):
-            assert "Details logged:" not in persisted
+        assert "Details logged:" not in (row.error_message or "")
+        assert "Details logged:" not in (row.execution_state_json or "")
+        assert "Details logged:" not in session_json
         assert "Command execution error: exec format error" in session_json
 
 
