@@ -3,16 +3,12 @@
 from __future__ import annotations
 
 from dovo.core.agents.base import BaseAgentProvider
-from dovo.core.agents.registry import PROVIDERS, unsupported_provider_message
+from dovo.core.agents.registry import PROVIDERS
 
 
-def get_agent_adapter(provider: str) -> BaseAgentProvider:
-    """Return a new adapter for ``provider``.
-
-    Raises:
-        ValueError: When ``provider`` is not registered (``AGENT_PROVIDER_UNSUPPORTED``).
-    """
+def get_agent_adapter(provider: str) -> BaseAgentProvider | None:
+    """Return a new adapter for ``provider``, or None when ``provider`` is not registered."""
     spec = PROVIDERS.get(provider)
     if spec is None:
-        raise ValueError(unsupported_provider_message(provider))
+        return None
     return spec.build()

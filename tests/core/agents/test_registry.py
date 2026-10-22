@@ -72,14 +72,8 @@ class ProviderRegistryContractTests:
 
         assert type(get_agent_adapter(token)) is PROVIDERS[token].build
 
-    def test_unregistered_token_raises_classified_value_error(self) -> None:
-        with pytest.raises(ValueError) as exc:
-            get_agent_adapter("unregistered")
-
-        assert str(exc.value) == (
-            f"Unsupported agent provider 'unregistered' (AGENT_PROVIDER_UNSUPPORTED). "
-            f"Supported: {', '.join(sorted(PROVIDERS))}."
-        )
+    def test_unregistered_token_returns_none(self) -> None:
+        assert get_agent_adapter("unregistered") is None
 
 
 class ResolvedAgentSettingsTests:
