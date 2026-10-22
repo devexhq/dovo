@@ -1,0 +1,112 @@
+version: 1
+name: release
+id: release
+description: Tag the green main commit for a closed milestone, draft release notes for approval, then publish, draft or only push the tag
+summary: Closed milestone to tagged GitHub release with a human gate
+
+inputs:
+  version:
+    type: string
+    description: Release tag, matching the start of the milestone title (e.g. v0.8.0)
+    required: true
+    aliases: ["-v", "--version"]
+
+steps:
+  - id: resolve
+    name: Check the milestone and pick the commit
+    type: script
+    script_path: scripts/release/resolve.sh
+    env:
+      VERSION: ${{ inputs.version }}
+
+  - id: wait-ci
+    name: Wait for every workflow on the commit to pass
+    type: script
+    script_path: scripts/release/wait-ci.sh
+    env:
+      SHA: "{{ steps.resolve.outputs.sha }}"
+    timeout_seconds: 3600
+
+  - id: collect
+    name: Collect the merged pull requests since the previous tag
+    type: script
+    script_path: scripts/release/collect.sh
+    env:
+      SHA: "{{ steps.resolve.outputs.sha }}"
+      PREVIOUS: "{{ steps.resolve.outputs.previous }}"
+    timeout_seconds: 300
+
+  - id: notes-loop
+    name: Draft release notes until approved
+    type: loop
+    max_iterations: 4
+    until:
+      - steps.approve.outputs.selected != "revise"
+    on_max_iterations: prompt_user
+    do:
+      - id: notes
+        name: Draft the release notes
+        type: agent
+        prompt: |
+          Write GitHub release notes for {{ steps.resolve.outputs.title }} to .agentic/release-notes.md.
+
+          The merged pull requests are in .agentic/release-changes.md. Match the structure and tone
+          of the previous release in .agentic/release-previous.md: a "## What's Changed" heading, a
+          short paragraph on the theme, "###" groups by area, one bullet per change citing the
+          issue numbers it closes (the PR number when it closes none), and a final
+          "**Full Changelog**: https://github.com/devexhq/dovo/compare/{{ steps.resolve.outputs.previous }}...${{ inputs.version }}"
+          line. Leave out pull requests that only touch tests, agent skills or docs for contributors.
+
+          Previous draft, if any: {{ artifacts.release-notes.content }}
+          Feedback to address: {{ steps.approve.outputs.comment }}
+        tools:
+          allow:
+            - { capability: read }
+            - { capability: write, pattern: ".agentic/release-notes.md" }
+        timeout_seconds: 900
+        artifacts:
+          - { name: release-notes, path: .agentic/release-notes.md }
+
+      - id: approve
+        name: Approve the notes and choose how to release
+        type: ask
+        interaction:
+          mode: select
+          message: |
+            Release {{ steps.resolve.outputs.title }} from {{ steps.resolve.outputs.sha }}?
+            Publishing the release uploads it to PyPI, and a PyPI version can never be reused.
+          artifact: release-notes
+          comment: { policy: optional, message: "What should change in the notes?" }
+          options:
+            - { value: publish, label: "Tag and publish the release (uploads to PyPI)" }
+            - { value: draft, label: Tag and create a draft release }
+            - { value: tag-only, label: Push the tag only }
+            - { value: revise, label: Revise the notes, comment: required }
+            - { value: cancel, label: Cancel, fail: true }
+
+  - id: tag
+    name: Push the annotated tag
+    type: script
+    script_path: scripts/release/tag.sh
+    env:
+      VERSION: ${{ inputs.version }}
+      TITLE: "{{ steps.resolve.outputs.title }}"
+      SHA: "{{ steps.resolve.outputs.sha }}"
+
+  - id: release
+    name: Create the GitHub release
+    type: script
+    script_path: scripts/release/release.sh
+    env:
+      VERSION: ${{ inputs.version }}
+      TITLE: "{{ steps.resolve.outputs.title }}"
+      CHOICE: "{{ steps.approve.outputs.selected }}"
+
+  - id: pypi
+    name: Wait for the PyPI publish workflow
+    type: script
+    script_path: scripts/release/pypi.sh
+    env:
+      VERSION: ${{ inputs.version }}
+      CHOICE: "{{ steps.approve.outputs.selected }}"
+    timeout_seconds: 900
