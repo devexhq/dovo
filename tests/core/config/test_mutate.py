@@ -106,6 +106,47 @@ class ConfigMutationTests:
         assert collision_result.warnings == []
         assert collision_result.fixes == []
 
+    @pytest.mark.parametrize(
+        ("key", "raw_value", "expected"),
+        [
+            pytest.param("worktree.base_ref", '"12345"', "12345", id="quoted-numeric"),
+            pytest.param("worktree.max_active_worktrees", "5", 5, id="unquoted-int"),
+        ],
+    )
+    def test_set_stores_single_coercion_of_raw_value(
+        self, isolated_workspace: Path, key: str, raw_value: str, expected: object
+    ) -> None:
+        """Return OK with value == expected (same type) and write exactly that JSON value at key."""
+        config_path = isolated_workspace / ".dovo" / "config.json"
+        Filesystem.atomic_write_json(config_path, build_default_config("demo-workspace"))
+
+        result = set_config_value_result(key, raw_value, config_path=config_path)
+
+        assert result.status == ConfigSetStatus.OK
+        assert result.errors == []
+        assert result.value == expected
+        assert type(result.value) is type(expected)
+        section, field = key.split(".")
+        stored = json.loads(config_path.read_text())[section][field]
+        assert stored == expected
+        assert type(stored) is type(expected)
+
+    def test_set_unquoted_numeric_for_string_key_returns_schema_invalid(self, isolated_workspace: Path) -> None:
+        """Return SCHEMA_INVALID with value 12345 and the base_ref type error, leaving file bytes unchanged."""
+        config_path = isolated_workspace / ".dovo" / "config.json"
+        Filesystem.atomic_write_json(config_path, build_default_config("demo-workspace"))
+        before = config_path.read_bytes()
+
+        result = set_config_value_result("worktree.base_ref", "12345", config_path=config_path)
+
+        assert result.status == ConfigSetStatus.SCHEMA_INVALID
+        assert result.value == 12345
+        assert type(result.value) is int
+        assert result.errors == [
+            "Config schema validation failed (CONFIG_SCHEMA_INVALID):\n- worktree.base_ref: 12345 is not of type 'string'"
+        ]
+        assert config_path.read_bytes() == before
+
 
 class ConfigUnsetNestedValueTests:
     """Direct unit tests for unset_nested_value's dot-path removal semantics."""

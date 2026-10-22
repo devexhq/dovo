@@ -15,43 +15,44 @@ BOOLEAN_ALIASES: dict[str, bool] = {
 
 
 def parse_config_value(value: str) -> JsonValue:
-    """Parse a string input into its native Python type.
+    """Coerce a raw ``dovo config set`` token into its native type; the first matching rule wins.
 
-    Evaluates the input string in a strict, deterministic order:
-    1. Explicit string preservation (double-quoted input, e.g. ``'"true"'`` or ``'10'``)
-    2. Boolean aliases (case-insensitive match against ``true``, ``false``, ``yes``, ``no``)
-    3. Numeric strings (attempt ``int``, then ``float``)
-    4. JSON collections (arrays starting with ``[`` or objects starting with ``{``)
-    5. Fallback string (unmodified ``str``)
+    1. Double-quoted (``len >= 2``, starts and ends with ``"``): the text between the quotes, as ``str``,
+       with no further coercion (``'"12345"'`` → ``"12345"``)
+    2. Boolean aliases, case-insensitive: ``true``/``yes`` → ``True``, ``false``/``no`` → ``False``
+    3. ``int(value)`` succeeds → ``int``
+    4. ``float(value)`` succeeds → ``float``
+    5. Stripped value starts with ``[`` or ``{`` and ``json.loads`` returns a list or dict → that collection
+    6. Otherwise the unchanged ``str``
 
     Args:
-        value: Raw string input from CLI or caller.
+        value: Raw token from the command line.
 
     Returns:
         The native Python equivalent (bool, int, float, list, dict, or str).
     """
-    # 1. Explicit String Preservation (FR-5)
+    # 1. Double-quoted string preservation
     if len(value) >= 2 and value.startswith('"') and value.endswith('"'):
         return value[1:-1]
 
-    # 2. Boolean Check (FR-1)
+    # 2. Boolean aliases
     val_lower = value.lower()
     if val_lower in BOOLEAN_ALIASES:
         return BOOLEAN_ALIASES[val_lower]
 
-    # 3. Numeric Parsing - Integer Check (FR-2)
+    # 3. Integer
     try:
         return int(value)
     except ValueError:
         pass
 
-    # 4. Numeric Parsing - Float Check (FR-2)
+    # 4. Float
     try:
         return float(value)
     except ValueError:
         pass
 
-    # 5. JSON Collection Check (FR-3)
+    # 5. JSON array or object
     stripped = value.strip()
     if stripped.startswith(("[", "{")):
         try:
@@ -61,5 +62,5 @@ def parse_config_value(value: str) -> JsonValue:
         except (json.JSONDecodeError, ValueError, TypeError):
             pass
 
-    # 6. Fallback String (FR-4)
+    # 6. Fallback string
     return value

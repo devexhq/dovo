@@ -267,17 +267,17 @@ def _validate_mutated_config(
 
 def set_config_value_result(
     key: str,
-    value: JsonValue,
+    raw_value: str,
     *,
     config_path: Path,
 ) -> ConfigSetResult:
-    """Load config JSON, set a dot-path value, and persist on success.
+    """Load config JSON, coerce ``raw_value`` once, set it at a dot-path, and persist on success.
 
     Does not print or call ``sys.exit``. Enforces schema key allow-lists and V1 schema validation.
 
     Args:
         key: Dot-path key to set.
-        value: Native Python value (or string) to assign.
+        raw_value: Raw token from ``dovo config set``, coerced exactly once by ``parse_config_value``.
         config_path: Resolved configuration file path.
 
     Returns:
@@ -287,7 +287,7 @@ def set_config_value_result(
     if isinstance(loaded, ConfigSetResult):
         return loaded
 
-    parsed_value = parse_config_value(value) if isinstance(value, str) else value
+    parsed_value = parse_config_value(raw_value)
     updated = copy.deepcopy(loaded)
     try:
         set_nested_value(updated, key, parsed_value)

@@ -38,7 +38,7 @@ def config_set(
     ),
     value: str = typer.Argument(
         ...,
-        help="Value to store (string; typed parsing is separate).",
+        help="Value to store; coerced to bool, int, float, list or object unless wrapped in double quotes.",
     ),
     format: str = typer.Option(
         "terminal",
