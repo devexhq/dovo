@@ -4,7 +4,7 @@ description: >-
   Create or update an implementation-ready, self-contained GitHub issue for Dovo
   CLI with authoritative scope, numbered FR/NFR contracts, pre-determined data,
   error cases, and a non-redundant Definition of Done. Grounds the issue in the
-  code first and splits work larger than one user story or about two PRs into
+  code first and splits work larger than one user story or one PR into
   a parent issue with native sub-issues. Invoked as /dovo-issue.
   Use when asked to create, draft, or revise a GitHub issue.
 ---
@@ -43,19 +43,21 @@ Canonical example of structure, depth, and tone: [examples/github-issue.md](exam
 Before drafting, read the entry points of every surface the issue touches, and their callers. Record:
 - **Existing bugs on the path** the work builds on. Each becomes its own sub-issue, which blocks the work that depends on it.
 - **Persisted formats** the work changes (session state and manifests, `data.db`, `config.json`, catalog `index.json`, blueprint and step YAML). List each under **Shared surfaces changed**, with what happens to data written before the change.
+- **Call sites** when the work applies one pattern across many places (exception handlers, commands, callers of a replaced function): count them per package, for example with `git grep -c`, and size the issue from that count and the tests each site needs.
 
 Only read; never edit code or run tooling.
 
 ### 2. Size and split
 
-An issue is one user story that ships value on its own, and plans into one or two PRs. Split it when any of these hold:
-- the **I want** line joins independently valuable outcomes
-- more than about 6 FRs
+An issue is one user story that ships value on its own and lands as one PR of about 200 to 400 changed lines, tests included. `/dovo-code` implements every phase of a plan in one PR, so the issue is what bounds a PR's size. Split it when any of these hold:
+- the **I want** line, or the **As a** line, joins independently valuable outcomes or different users (for example someone running a blueprint and someone running `dovo doctor`)
+- more than about 6 FRs, counting an FR that lists separate cases as one FR per case
 - more than one new public surface (for example a command group *and* a schema field)
 - it changes a persisted format *and* adds CLI surface
-- you estimate more than about 800 changed lines, tests included
+- the same change applies across more than two packages or domain areas
+- you estimate more than about 400 changed lines, tests included
 
-Split by value delivered, never by layer: each child has its own user story and is useful once merged. Every split has a parent issue and native GitHub sub-issues:
+Split by value delivered, never by layer: each child has its own user story and is useful once merged. Size each child at 200 to 400 changed lines rather than splitting into many smaller ones; an issue under 200 lines that is the whole story stays whole. When the same change spans several domain areas, the first child ships whatever they share together with one area that proves it end to end, and each later child covers one area. Every split has a parent issue and native GitHub sub-issues:
 
 - **Parent:** the Goal / User Story, one short paragraph on why the children are ordered as they are, and an **Out of scope** list for the whole feature. No FRs, data, error cases or Definition of Done: GitHub tracks progress through the sub-issues. When splitting an existing issue, edit it into the parent (`gh issue edit <n> --body-file …`) so its number, links and discussion survive.
 - **Sub-issues:** full issues in the structure below, each self-contained. The planner reads only the sub-issue, never the parent or its siblings, so every requirement and literal contract it needs is in its own body. Create each with `gh issue create --parent <parent>`, adding `--blocked-by <n>` when it cannot ship before another sub-issue.
