@@ -91,19 +91,21 @@ class RecordExceptionTests:
         assert "KeyError: 'inner-key'" in formatted
         assert "RuntimeError: outer failure" in formatted
 
-    def test_redacts_token_value_in_message_and_traceback(
+    def test_redacts_token_value_in_context_message_and_traceback(
         self, frozen_diagnostic_clock: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """Replace a GH_TOKEN value with [REDACTED:GH_TOKEN] in exception_message and formatted_traceback, and never write the value."""
+        """Replace a GH_TOKEN value with [REDACTED:GH_TOKEN] in context strings, exception_message and formatted_traceback, keep non-string context values, and never write the value."""
         monkeypatch.setenv("GH_TOKEN", "s3cr3t-value")
 
         record_exception(
             _raised(RuntimeError("push failed with s3cr3t-value")),
             level=DiagnosticLevel.ERROR,
             operation="catalog.create",
+            context={"name": "s3cr3t-value", "attempt": 2, "dry_run": None},
         )
 
         event = _read_event(frozen_diagnostic_clock)
+        assert event["context"] == {"name": "[REDACTED:GH_TOKEN]", "attempt": 2, "dry_run": None}
         assert event["exception_message"] == "push failed with [REDACTED:GH_TOKEN]"
         assert "RuntimeError: push failed with [REDACTED:GH_TOKEN]" in str(event["formatted_traceback"])
         assert "s3cr3t-value" not in frozen_diagnostic_clock.read_text(encoding="utf-8")

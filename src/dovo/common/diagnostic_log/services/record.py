@@ -61,7 +61,9 @@ def _write_event(
         level=level,
         operation=operation,
         command=current_cli_command(),
-        context=dict(context),
+        context={
+            key: redactor.redact_text(value) if isinstance(value, str) else value for key, value in context.items()
+        },
         exception_type=type(exc).__name__,
         exception_message=redactor.redact_text(str(exc)),
         formatted_traceback=redactor.redact_text("".join(traceback.format_exception(exc))),

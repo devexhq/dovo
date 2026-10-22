@@ -49,7 +49,7 @@ Details logged: /home/you/.dovo/logs/2026-10-19/exc_3f9a1c07b2de.json (event exc
 
 To report the problem, open a bug report that quotes the event id, and attach that file after reviewing it.
 
-Records stay on your machine; Dovo never uploads them. They can contain file paths and error message text. Values of secret environment variables (names ending in `_KEY`, `_TOKEN`, `_SECRET`, `_PASSWORD` or `_AUTH`, with values of at least six characters) and known credential formats are masked as `[REDACTED:<name>]` or `[REDACTED]`. Review a record before you share it.
+Records stay on your machine; Dovo never uploads them. They can contain file paths and error message text. Values of secret environment variables (names ending in `_KEY`, `_TOKEN`, `_SECRET`, `_PASSWORD` or `_AUTH`, with values of at least six characters) and known credential formats are masked as `[REDACTED:<name>]` or `[REDACTED]` in `context` values, `exception_message` and `formatted_traceback`. Review a record before you share it.
 
 ## Examples
 
