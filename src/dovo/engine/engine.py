@@ -19,6 +19,7 @@ from dovo.core.inputs import InputResolveResult
 from dovo.core.interaction import HeadlessAnswerInput
 from dovo.core.sessions import current_process_started_at
 from dovo.engine.exceptions import EngineInputError
+from dovo.engine.executors.failure_log import logged_failure
 from dovo.engine.loader import EngineLoader
 from dovo.engine.models import (
     DefinitionsManifest,
@@ -126,15 +127,20 @@ class Engine:
     ) -> str | None:
         """Insert the RUNNING row and its initial execution state under the workspace lock; return a failure message or None."""
         with WorkspaceLock(self.paths.lock_file):
+            context = {"session_id": session_id}
             try:
                 self._insert_running(blueprint, session_id, config)
             except Exception as exc:
-                return f"Failed to record run start in database: {exc}"
+                return logged_failure(
+                    f"Failed to record run start in database: {exc}", exc, operation="engine.persist", context=context
+                )
 
             try:
                 initialized = SessionStateStore(self.db, self.paths, session_id).initialize(blueprint, manifest)
             except Exception as exc:
-                message = f"Failed to initialize run state: {exc}"
+                message = logged_failure(
+                    f"Failed to initialize run state: {exc}", exc, operation="engine.persist", context=context
+                )
             else:
                 if initialized.ok:
                     return None
@@ -142,9 +148,8 @@ class Engine:
 
             try:
                 self.db.update_status(session_id, SessionStatus.FAILED, error_message=message)
-            except Exception:
-                # Best-effort: the start failure is already reported to the caller.
-                pass
+            except Exception as exc:
+                message = logged_failure(message, exc, operation="engine.persist", context=context)
             return message
 
     def _failed_outcome(self, session_id: str, errors: list[str], warnings: list[str]) -> RunOutcome:
@@ -227,7 +232,7 @@ class Engine:
             try:
                 self._finalize_row(session_id, outcome, warnings)
             except Exception as exc:
-                warnings.append(f"Failed to update run status in database: {exc}")
+                warnings.append(_status_write_failure(exc, session_id))
 
     def _insert_running(self, blueprint: Blueprint, session_id: str, config: RunStartConfig) -> None:
         """Insert a RUNNING row carrying the resolved run configuration."""
@@ -270,4 +275,14 @@ class Engine:
                 session_id, SessionStatus.RUNNING, pid=os.getpid(), pid_started_at=current_process_started_at()
             )
         except Exception as exc:
-            warnings.append(f"Failed to update run status in database: {exc}")
+            warnings.append(_status_write_failure(exc, session_id))
+
+
+def _status_write_failure(exc: Exception, session_id: str) -> str:
+    """Record a failed run status write and return its warning with the 'Details logged' line."""
+    return logged_failure(
+        f"Failed to update run status in database: {exc}",
+        exc,
+        operation="engine.persist",
+        context={"session_id": session_id},
+    )

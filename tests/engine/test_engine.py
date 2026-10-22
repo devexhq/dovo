@@ -9,19 +9,26 @@ import psutil
 import pytest
 
 from dovo.common.filesystem.models import WorkspacePaths
+from dovo.common.filesystem.services import resolve_global_paths
 from dovo.core.catalog import Catalog
 from dovo.core.catalog.blueprint import Blueprint
 from dovo.core.db import SessionsRepository, SessionStatus
 from dovo.core.git.runner import GitRunner
 from dovo.engine import Engine, RunRequest, SessionStateStore
 from dovo.engine.models import FailurePromptDecision, RunOutcome
-from dovo.engine.state_models import SessionJsonPayload
+from dovo.engine.state_models import SessionJsonPayload, SessionStateWriteResult, SessionStateWriteStatus
 from dovo.engine.writer import get_session_dir
 from tests.engine.conftest import StubDriveRun
 from tests.harness.builders import BlueprintBuilder, StepBuilder, WorkspaceBuilder
 from tests.harness.catalog import write_runnable_blueprint, write_runnable_step
+from tests.harness.diagnostic_log import diagnostic_hint, read_single_event
 from tests.harness.sessions import ScriptedFailurePrompter, seed_paused_session
 from tests.harness.workspace_paths import initialized_workspace_paths
+
+
+def _raise_db_down(*args: object, **kwargs: object) -> None:
+    """Stand in for a SessionsRepository method whose database is down."""
+    raise RuntimeError("db down")
 
 
 def _engine(paths: WorkspacePaths, sessions: SessionsRepository) -> Engine:
@@ -35,15 +42,16 @@ def _catalog_blueprint(paths: WorkspacePaths, key: str, steps: list[dict[str, ob
 
 class EngineRunStartFailureTests:
     @pytest.mark.parametrize(
-        ("fault", "expected_error"),
+        ("fault", "expected_error", "recorded"),
         [
             pytest.param(
                 "snapshot",
                 "Failed to snapshot run definitions: blueprint 'uncataloged' not found in catalog.",
+                False,
                 id="snapshot",
             ),
-            pytest.param("insert", "Failed to record run start in database: db down", id="row-insert"),
-            pytest.param("initialize", "Failed to initialize run state: boom", id="state-initialize"),
+            pytest.param("insert", "Failed to record run start in database: db down", True, id="row-insert"),
+            pytest.param("initialize", "Failed to initialize run state: boom", True, id="state-initialize"),
         ],
     )
     def test_run_start_failure_returns_failed_outcome_without_executing_steps(
@@ -51,9 +59,12 @@ class EngineRunStartFailureTests:
         engine_paths: WorkspacePaths,
         sessions_repo: SessionsRepository,
         monkeypatch: pytest.MonkeyPatch,
+        frozen_diagnostic_clock: Path,
         fault: str,
         expected_error: str,
+        recorded: bool,
     ) -> None:
+        """Fail before any step runs; an unexpected start fault hints its message and writes one engine.persist record."""
         if fault == "snapshot":
             blueprint = Blueprint(
                 BlueprintBuilder("uncataloged")
@@ -64,14 +75,11 @@ class EngineRunStartFailureTests:
         else:
             blueprint = _catalog_blueprint(engine_paths, "start-fault", [{"id": "a", "run": "touch marker"}])
 
-        def raise_db_down(*args: object, **kwargs: object) -> None:
-            raise RuntimeError("db down")
-
         def raise_boom(*args: object, **kwargs: object) -> None:
             raise RuntimeError("boom")
 
         if fault == "insert":
-            monkeypatch.setattr(SessionsRepository, "create", raise_db_down)
+            monkeypatch.setattr(SessionsRepository, "create", _raise_db_down)
         if fault == "initialize":
             monkeypatch.setattr(SessionStateStore, "initialize", raise_boom)
 
@@ -80,10 +88,66 @@ class EngineRunStartFailureTests:
         )
 
         assert outcome.status == SessionStatus.FAILED
-        assert outcome.errors == [expected_error]
+        assert outcome.errors == [expected_error + (diagnostic_hint(frozen_diagnostic_clock) if recorded else "")]
         assert not (engine_paths.root_dir / "marker").exists()
         row = sessions_repo.get("start-1")
         assert (row.status if row is not None else None) == (SessionStatus.FAILED if fault == "initialize" else None)
+        if recorded:
+            event = read_single_event(frozen_diagnostic_clock)
+            assert (event["level"], event["operation"], event["context"]) == (
+                "error",
+                "engine.persist",
+                {"session_id": "start-1"},
+            )
+        else:
+            assert not frozen_diagnostic_clock.parent.parent.exists()
+
+    def test_mark_failed_fallback_records_error_and_hints_message(
+        self,
+        engine_paths: WorkspacePaths,
+        sessions_repo: SessionsRepository,
+        monkeypatch: pytest.MonkeyPatch,
+        frozen_diagnostic_clock: Path,
+    ) -> None:
+        """Hint the start message and write one engine.persist record when marking the row failed raises."""
+        blueprint = _catalog_blueprint(engine_paths, "mark-failed", [{"id": "a", "run": "touch marker"}])
+        monkeypatch.setattr(
+            SessionStateStore,
+            "initialize",
+            lambda *_args, **_kwargs: SessionStateWriteResult(
+                status=SessionStateWriteStatus.NOT_FOUND, errors=["state invalid"]
+            ),
+        )
+        monkeypatch.setattr(SessionsRepository, "update_status", _raise_db_down)
+
+        outcome = _engine(engine_paths, sessions_repo).run(
+            blueprint, RunRequest(session_id="start-1", use_worktree=False)
+        )
+
+        assert outcome.status == SessionStatus.FAILED
+        assert outcome.errors == [f"state invalid{diagnostic_hint(frozen_diagnostic_clock)}"]
+        event = read_single_event(frozen_diagnostic_clock)
+        assert (event["level"], event["operation"], event["exception_message"]) == (
+            "error",
+            "engine.persist",
+            "db down",
+        )
+
+    def test_start_failure_unchanged_when_recorder_cannot_write(
+        self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Return today's unhinted start message when <DOVO_HOME>/logs is a regular file."""
+        blueprint = _catalog_blueprint(engine_paths, "no-log", [{"id": "a", "run": "touch marker"}])
+        monkeypatch.setattr(SessionsRepository, "create", _raise_db_down)
+        logs_dir = resolve_global_paths().logs_dir
+        logs_dir.parent.mkdir(parents=True, exist_ok=True)
+        logs_dir.write_text("not a directory", encoding="utf-8")
+
+        outcome = _engine(engine_paths, sessions_repo).run(
+            blueprint, RunRequest(session_id="start-1", use_worktree=False)
+        )
+
+        assert outcome.errors == ["Failed to record run start in database: db down"]
 
 
 class EngineDispatchTests:
@@ -175,49 +239,47 @@ class EngineResumeFinalizationTests:
             paused_step_id="a",
         )
 
-    def test_resume_mark_running_failure_appends_warning_but_still_runs(
+    @pytest.mark.parametrize(
+        ("site", "failing_method", "expected_row"),
+        [
+            pytest.param("finish", "save_execution_state", (SessionStatus.RUNNING, False), id="finish"),
+            pytest.param("mark-running", "update_status", (SessionStatus.COMPLETED, True), id="mark-running"),
+        ],
+    )
+    def test_status_write_failure_records_error_and_hints_warning(
         self,
         engine_paths: WorkspacePaths,
         sessions_repo: SessionsRepository,
         monkeypatch: pytest.MonkeyPatch,
         stub_drive_run: StubDriveRun,
+        frozen_diagnostic_clock: Path,
+        site: str,
+        failing_method: str,
+        expected_row: tuple[SessionStatus, bool],
     ) -> None:
-        self._seed(engine_paths, sessions_repo, "mark-running")
+        """Keep resuming, end warnings with the hinted status-write failure and write one engine.persist record."""
+        self._seed(engine_paths, sessions_repo, site)
         stub_drive_run(None)
 
-        def locked(*args: object, **kwargs: object) -> None:
-            raise RuntimeError("locked")
+        def disk_full(*args: object, **kwargs: object) -> None:
+            raise OSError("disk full")
 
-        monkeypatch.setattr(SessionsRepository, "update_status", locked)
+        monkeypatch.setattr(SessionsRepository, failing_method, disk_full)
 
-        outcome = _engine(engine_paths, sessions_repo).resume("mark-running")
+        outcome = _engine(engine_paths, sessions_repo).resume(site)
 
-        assert outcome.warnings == ["Failed to update run status in database: locked"]
-        row = sessions_repo.get("mark-running")
+        assert outcome.warnings == [
+            f"Failed to update run status in database: disk full{diagnostic_hint(frozen_diagnostic_clock)}"
+        ]
+        row = sessions_repo.get(site)
         assert row is not None
-        assert row.status == SessionStatus.COMPLETED
-
-    def test_resume_finalize_failure_appends_warning_and_leaves_row_running(
-        self,
-        engine_paths: WorkspacePaths,
-        sessions_repo: SessionsRepository,
-        monkeypatch: pytest.MonkeyPatch,
-        stub_drive_run: StubDriveRun,
-    ) -> None:
-        self._seed(engine_paths, sessions_repo, "finalize")
-        stub_drive_run(None)
-
-        def locked(*args: object, **kwargs: object) -> None:
-            raise RuntimeError("locked")
-
-        monkeypatch.setattr(SessionsRepository, "save_execution_state", locked)
-
-        outcome = _engine(engine_paths, sessions_repo).resume("finalize")
-
-        assert outcome.warnings == ["Failed to update run status in database: locked"]
-        row = sessions_repo.get("finalize")
-        assert row is not None
-        assert (row.status, row.completed_at) == (SessionStatus.RUNNING, None)
+        assert (row.status, row.completed_at is not None) == expected_row
+        event = read_single_event(frozen_diagnostic_clock)
+        assert (event["level"], event["operation"], event["context"]) == (
+            "error",
+            "engine.persist",
+            {"session_id": site},
+        )
 
 
 class EngineProcessIdentityTests:

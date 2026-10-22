@@ -16,6 +16,7 @@ from dovo.common.diagnostic_log import (
     DiagnosticRecord,
     append_diagnostic_hint,
     bind_cli_command,
+    diagnostic_hint_line,
     record_exception,
     reset_cli_command,
 )
@@ -202,3 +203,17 @@ class AppendDiagnosticHintTests:
         hint = f"\nDetails logged: {log_path} (event exc_3f9a1c07b2de)" if has_hint else ""
 
         assert append_diagnostic_hint("disk on fire", record) == f"disk on fire{hint}"
+
+
+class DiagnosticHintLineTests:
+    @pytest.mark.parametrize("level", [DiagnosticLevel.DEBUG, None], ids=["debug", "none"])
+    def test_hint_line_names_error_record_and_skips_debug_or_none(
+        self, tmp_path: Path, level: DiagnosticLevel | None
+    ) -> None:
+        """Return 'Details logged: <log_path> (event exc_3f9a1c07b2de)' for an error record and None for a debug record or None."""
+        log_path = tmp_path / "logs" / "2026-10-19" / "exc_3f9a1c07b2de.json"
+        error_record = DiagnosticRecord(event_id="exc_3f9a1c07b2de", log_path=log_path, level=DiagnosticLevel.ERROR)
+        other = None if level is None else DiagnosticRecord(event_id="exc_3f9a1c07b2de", log_path=log_path, level=level)
+
+        assert diagnostic_hint_line(error_record) == f"Details logged: {log_path} (event exc_3f9a1c07b2de)"
+        assert diagnostic_hint_line(other) is None

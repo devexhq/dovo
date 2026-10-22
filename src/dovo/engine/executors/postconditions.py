@@ -68,7 +68,7 @@ class ArtifactPublishPostcondition:
         self._warnings = warnings
 
     def apply(self, outcome: StepDispatchOutcome, attempt: int) -> StepDispatchOutcome:
-        """Publish declared artifacts, appending non-fatal warnings to the shared list; fail on the first required failure."""
+        """Publish declared artifacts, appending non-fatal warnings to the shared list and diagnostic hints to the outcome's warnings; fail on the first required failure."""
         published = publish_declared_artifacts(
             self._step,
             worktree_path=self._worktree_path,
@@ -77,6 +77,7 @@ class ArtifactPublishPostcondition:
             loop_iteration=self._loop_iteration,
         )
         self._warnings.extend(published.warnings)
+        outcome = outcome.model_copy(update={"warnings": [*outcome.warnings, *published.diagnostic_hints]})
         if published.error_message is None:
             return outcome
 

@@ -119,6 +119,7 @@ class StepDispatchOutcome(BaseModel):
     error_message: str | None = None
     attempts: int = 1
     rejected_patch_path: str | None = None
+    warnings: list[str] = Field(default_factory=list)  # Diagnostic hints for the run's warnings; never persisted.
 
 
 class StepPostcondition(Protocol):

@@ -11,6 +11,7 @@ from dovo.core.artifacts.store import ArtifactStore
 from dovo.core.catalog.definitions import ArtifactPublishSpec, StepDefinition, StepType
 from dovo.core.db.repositories.artifacts import ArtifactsRepository
 from dovo.engine.executors.artifact_publish import ArtifactPublishOutcome, publish_declared_artifacts
+from tests.harness.diagnostic_log import diagnostic_hint, read_single_event
 
 
 def _step(*specs: ArtifactPublishSpec) -> StepDefinition:
@@ -31,45 +32,53 @@ class PublishDeclaredArtifactsTests:
     """Contract tests for publish_declared_artifacts."""
 
     @pytest.mark.parametrize(
-        ("required", "expected"),
+        ("required", "error_message", "warnings"),
         [
             pytest.param(
                 True,
-                ArtifactPublishOutcome(
-                    error_message="Failed to publish artifact 'plan': boom (ARTIFACT_PUBLISH_FAILED)"
-                ),
+                "Failed to publish artifact 'plan': boom (ARTIFACT_PUBLISH_FAILED)",
+                [],
                 id="required-fails-step",
             ),
-            pytest.param(
-                False,
-                ArtifactPublishOutcome(warnings=["Failed to publish artifact 'plan': boom"]),
-                id="optional-warns",
-            ),
+            pytest.param(False, None, ["Failed to publish artifact 'plan': boom"], id="optional-warns"),
         ],
     )
     def test_publish_exception_maps_by_required_flag(
         self,
         required: bool,
-        expected: ArtifactPublishOutcome,
+        error_message: str | None,
+        warnings: list[str],
         tmp_path: Path,
         monkeypatch: pytest.MonkeyPatch,
         artifact_store: ArtifactStore,
+        frozen_diagnostic_clock: Path,
     ) -> None:
+        """Map a raising publish by the required flag, carry the hint in diagnostic_hints and write one engine.step record."""
 
         def _raising_publish(*_args: object, **_kwargs: object) -> ArtifactUploadResult:
             raise ValueError("boom")
 
         monkeypatch.setattr("dovo.core.artifacts.artifacts.publish_artifact", _raising_publish)
+        worktree_path = _worktree(tmp_path, "PLAN.md")
 
         outcome = publish_declared_artifacts(
             _step(ArtifactPublishSpec(name="plan", path="PLAN.md", required=required)),
-            worktree_path=_worktree(tmp_path, "PLAN.md"),
+            worktree_path=worktree_path,
             store=artifact_store,
             attempt=1,
             loop_iteration=None,
         )
 
-        assert outcome == expected
+        hint = diagnostic_hint(frozen_diagnostic_clock).lstrip("\n")
+        assert outcome == ArtifactPublishOutcome(
+            error_message=error_message, warnings=warnings, diagnostic_hints=[hint]
+        )
+        event = read_single_event(frozen_diagnostic_clock)
+        assert (event["level"], event["operation"], event["context"]) == (
+            "error",
+            "engine.step",
+            {"step_id": "plan-step", "path": str(worktree_path)},
+        )
 
     def test_error_result_without_detail_uses_generic_text(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, artifact_store: ArtifactStore

@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 
 from dovo.common.filesystem import WorkspacePaths
+from dovo.common.filesystem.services import resolve_global_paths
 from dovo.core.config.models import (
     DoctorConfig,
     DovoConfig,
@@ -23,6 +24,7 @@ from dovo.core.diagnostics.services.runner import (
     execute_single_check,
 )
 from tests.harness.builders import StubCheck
+from tests.harness.diagnostic_log import diagnostic_hint, read_single_event
 
 WorkspacePathsFactory = Callable[[Path, Path | None], WorkspacePaths]
 
@@ -208,6 +210,39 @@ class DiagnosticRunnerContainmentTests:
         assert len(result.remediations) == 1
         assert result.remediations[0].code == "DOCTOR_CHECK_CRASH"
         assert result.remediations[0].action_type == RemediationType.MANUAL
+
+    def test_crashing_check_records_error_and_hints_message_and_errors(
+        self, tmp_path: Path, workspace_paths_factory: WorkspacePathsFactory, frozen_diagnostic_clock: Path
+    ) -> None:
+        """Append the hint to message and errors[0] and write one doctor.check error record naming the check."""
+        check = StubCheck(check_id="crashing.check", crash=RuntimeError("boom"))
+        context = DiagnosticsContext(cwd=tmp_path, config=None, paths=workspace_paths_factory(tmp_path, None))
+
+        result = execute_single_check(check, context)
+
+        hint = diagnostic_hint(frozen_diagnostic_clock)
+        assert result.message == f"Unhandled exception during check execution: boom{hint}"
+        assert result.errors == [f"Unhandled exception in crashing.check: boom{hint}"]
+        assert result.details == {"exception": "boom", "type": "RuntimeError"}
+        event = read_single_event(frozen_diagnostic_clock)
+        assert event["level"] == "error"
+        assert event["operation"] == "doctor.check"
+        assert event["context"] == {"check": "crashing.check", "path": str(tmp_path)}
+
+    def test_crashing_check_unchanged_when_recorder_cannot_write(
+        self, tmp_path: Path, workspace_paths_factory: WorkspacePathsFactory
+    ) -> None:
+        """Return today's message and errors[0] with no hint when <DOVO_HOME>/logs is a regular file."""
+        logs_dir = resolve_global_paths().logs_dir
+        logs_dir.parent.mkdir(parents=True, exist_ok=True)
+        logs_dir.write_text("not a directory", encoding="utf-8")
+        check = StubCheck(check_id="crashing.check", crash=RuntimeError("boom"))
+        context = DiagnosticsContext(cwd=tmp_path, config=None, paths=workspace_paths_factory(tmp_path, None))
+
+        result = execute_single_check(check, context)
+
+        assert result.message == "Unhandled exception during check execution: boom"
+        assert result.errors == ["Unhandled exception in crashing.check: boom"]
 
     def test_crashing_check_does_not_halt_subsequent_checks(
         self, tmp_path: Path, workspace_paths_factory: WorkspacePathsFactory

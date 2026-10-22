@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from dovo.core.catalog.definitions import StepDefinition
 from dovo.engine.notify import safe_notify
 from tests.harness.builders import StepBuilder
+from tests.harness.diagnostic_log import read_single_event
 from tests.harness.sessions import NoOpRunObserver
 
 
@@ -40,13 +43,20 @@ class SafeNotifyTests:
 
         assert result is None
 
-    def test_observer_method_exception_is_swallowed(self) -> None:
+    def test_observer_method_exception_records_debug_without_raising(self, frozen_diagnostic_clock: Path) -> None:
+        """Return None and write one engine.notify debug record naming the observer method."""
         observer = _ExplodingOnStepStartObserver()
         step = StepBuilder.command("echo test").build()
 
         result = safe_notify(observer, "on_step_start", 1, 2, step)
 
         assert result is None
+        event = read_single_event(frozen_diagnostic_clock)
+        assert (event["level"], event["operation"], event["context"]) == (
+            "debug",
+            "engine.notify",
+            {"method": "on_step_start"},
+        )
 
     def test_observer_method_called_with_exact_args_and_kwargs(self) -> None:
         observer = _RecordingOnStepStartObserver()

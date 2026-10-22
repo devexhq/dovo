@@ -108,6 +108,7 @@ def forward_stdout(request: CliMutationRunRequest) -> Callable[[str], None] | No
             for progress in mapper(line, worktree_path=request.worktree_path):
                 on_progress(progress)
         except Exception:
+            # No record: progress mapping runs per line and only feeds display.
             return
 
     return forward
@@ -433,6 +434,7 @@ def _notify_env_withheld(callback: Callable[[list[str]], None] | None, names: li
     try:
         callback(names)
     except Exception:
+        # No record: the callback only feeds the operator notice and the session-log timeline; the withheld names still reach the response.
         return
 
 

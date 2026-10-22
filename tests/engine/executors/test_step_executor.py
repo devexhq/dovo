@@ -2,14 +2,20 @@
 
 from __future__ import annotations
 
+import subprocess
 from pathlib import Path
 
 import pytest
 
-from dovo.core.catalog.definitions import StepDefinition
-from dovo.engine.executors.models import StepExecutionContext
+from dovo.common.filesystem.services import resolve_global_paths
+from dovo.core.artifacts.models import ArtifactUploadResult
+from dovo.core.artifacts.store import ArtifactStore
+from dovo.core.catalog.definitions import ArtifactPublishSpec, StepDefinition, StepType
+from dovo.engine.executors import step_executor
+from dovo.engine.executors.models import OutputCallback, StepExecutionContext
 from dovo.engine.executors.step_executor import StepExecution
 from tests.harness.builders import StepBuilder
+from tests.harness.diagnostic_log import diagnostic_hint, read_single_event
 
 
 class StepExecutionResolutionTests:
@@ -115,3 +121,147 @@ class StepExecutionDurationTests:
 
         assert result.status == "failed"
         assert result.duration_seconds == 0.0
+
+
+def _raise_exec_format_error(*_args: object, **_kwargs: object) -> subprocess.Popen[str]:
+    """Stand in for subprocess.Popen when the command cannot be executed."""
+    raise OSError("exec format error")
+
+
+class _TimingOutPopen(subprocess.Popen[str]):
+    """Popen whose first wait raises TimeoutExpired, standing in for a step that outlives its timeout."""
+
+    _timed_out = False
+
+    def wait(self, timeout: float | None = None) -> int:
+        if not self._timed_out:
+            self._timed_out = True
+            raise subprocess.TimeoutExpired(self.args, timeout or 0)
+        return super().wait(timeout)
+
+
+def _site_step(site: str, monkeypatch: pytest.MonkeyPatch) -> tuple[StepDefinition, OutputCallback | None, str]:
+    """Return the step, output callback and expected error message that induce one failure at site."""
+    if site == "launch":
+        monkeypatch.setattr("dovo.engine.executors.step_executor.subprocess.Popen", _raise_exec_format_error)
+        return StepBuilder.command("true").with_id("s1").build(), None, "Command execution error: exec format error"
+    if site == "stream-read":
+        return (
+            StepBuilder.command(r"printf '\377'").with_id("s1").build(),
+            None,
+            "Command pipe error: Failed reading stdout stream: "
+            "'utf-8' codec can't decode byte 0xff in position 0: invalid start byte",
+        )
+    if site == "output-callback":
+
+        def _crashing(_stream: str, _line: str) -> None:
+            raise RuntimeError("observer crashed")
+
+        return (
+            StepBuilder.command("echo one").with_id("s1").build(),
+            _crashing,
+            "Command pipe error: Output callback error on stdout: observer crashed",
+        )
+
+    def _broken_handler(_context: object) -> object:
+        raise RuntimeError("boom")
+
+    monkeypatch.setitem(step_executor.INTERNAL_COMMAND_HANDLERS, "artifacts.upload", _broken_handler)
+    return (
+        StepDefinition(id="s1", type=StepType.INTERNAL, command="artifacts.upload"),
+        None,
+        "Internal command 'artifacts.upload' error: boom",
+    )
+
+
+class StepExecutionDiagnosticLogTests:
+    @pytest.mark.parametrize("site", ["launch", "stream-read", "output-callback", "internal-handler"])
+    def test_step_failure_records_error_and_hints_warnings_only(
+        self, tmp_path: Path, frozen_diagnostic_clock: Path, monkeypatch: pytest.MonkeyPatch, site: str
+    ) -> None:
+        """Keep the step result unhinted, put exactly one hint in diagnostic_hints and write one engine.step record."""
+        step, on_output, expected_error = _site_step(site, monkeypatch)
+        execution = StepExecution(StepExecutionContext(step=step, worktree_path=tmp_path, on_output=on_output))
+
+        result = execution.run()
+
+        assert (result.status, result.error_message, result.warnings) == ("failed", expected_error, [])
+        assert execution.diagnostic_hints == [diagnostic_hint(frozen_diagnostic_clock).lstrip("\n")]
+        event = read_single_event(frozen_diagnostic_clock)
+        assert (event["level"], event["operation"], event["context"]) == (
+            "error",
+            "engine.step",
+            {"session_id": None, "step_id": "s1", "path": str(tmp_path.resolve())},
+        )
+
+    @pytest.mark.parametrize(
+        ("command", "popen", "expected_error"),
+        [
+            pytest.param("exit 1", subprocess.Popen, "Command failed with exit code 1.", id="nonzero"),
+            pytest.param("true", _TimingOutPopen, "Command step execution timed out after 1 seconds.", id="timeout"),
+        ],
+    )
+    def test_normal_step_outcomes_write_no_record(
+        self,
+        tmp_path: Path,
+        frozen_diagnostic_clock: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        command: str,
+        popen: type[subprocess.Popen[str]],
+        expected_error: str,
+    ) -> None:
+        """Return today's failed result and leave <DOVO_HOME>/logs absent for a nonzero exit and a timeout."""
+        monkeypatch.setattr("dovo.engine.executors.step_executor.subprocess.Popen", popen)
+        step = StepBuilder.command(command).with_id("s1").with_timeout(1).build()
+        execution = StepExecution(StepExecutionContext(step=step, worktree_path=tmp_path))
+
+        result = execution.run()
+
+        assert (result.status, result.error_message, result.warnings) == ("failed", expected_error, [])
+        assert execution.diagnostic_hints == []
+        assert not frozen_diagnostic_clock.parent.parent.exists()
+
+    def test_publish_failure_hint_reaches_diagnostic_hints_not_step_warnings(
+        self,
+        tmp_path: Path,
+        frozen_diagnostic_clock: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        artifact_store: ArtifactStore,
+    ) -> None:
+        """Keep the publish warning on the step result and carry its 'Details logged' line only in diagnostic_hints."""
+
+        def _raising_publish(*_args: object, **_kwargs: object) -> ArtifactUploadResult:
+            raise ValueError("boom")
+
+        monkeypatch.setattr("dovo.core.artifacts.artifacts.publish_artifact", _raising_publish)
+        (tmp_path / "PLAN.md").write_text("plan", encoding="utf-8")
+        step = StepDefinition(
+            id="s1",
+            type=StepType.COMMAND,
+            command="true",
+            artifacts=[ArtifactPublishSpec(name="plan", path="PLAN.md", required=False)],
+        )
+        execution = StepExecution(
+            StepExecutionContext(step=step, worktree_path=tmp_path, artifact_store=artifact_store)
+        )
+
+        result = execution.run()
+
+        assert (result.status, result.warnings) == ("completed", ["Failed to publish artifact 'plan': boom"])
+        assert execution.diagnostic_hints == [diagnostic_hint(frozen_diagnostic_clock).lstrip("\n")]
+
+    def test_launch_failure_unchanged_when_recorder_cannot_write(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Return error_message 'Command execution error: exec format error' and no warnings or hints when <DOVO_HOME>/logs is a regular file."""
+        monkeypatch.setattr("dovo.engine.executors.step_executor.subprocess.Popen", _raise_exec_format_error)
+        logs_dir = resolve_global_paths().logs_dir
+        logs_dir.parent.mkdir(parents=True, exist_ok=True)
+        logs_dir.write_text("not a directory", encoding="utf-8")
+        step = StepBuilder.command("true").with_id("s1").build()
+        execution = StepExecution(StepExecutionContext(step=step, worktree_path=tmp_path))
+
+        result = execution.run()
+
+        assert (result.error_message, result.warnings) == ("Command execution error: exec format error", [])
+        assert execution.diagnostic_hints == []

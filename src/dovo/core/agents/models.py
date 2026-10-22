@@ -252,7 +252,10 @@ class AgentResponse(BaseModel):
 
 @dataclass(frozen=True)
 class AgentAttempt:
-    """Classified result of one agent attempt before an adapter turns it into a caller-specific outcome."""
+    """Classified result of one agent attempt before an adapter turns it into a caller-specific outcome.
+
+    warnings carry diagnostic hints for the caller's warnings, never its error text.
+    """
 
     status: AgentResponseStatus
     summary: str | None = None
@@ -261,6 +264,7 @@ class AgentAttempt:
     diagnostics: list[str] = field(default_factory=list)
     env_withheld: list[str] = field(default_factory=list)
     rejected_patch_path: str | None = None
+    warnings: list[str] = field(default_factory=list)
 
     @property
     def completed(self) -> bool:

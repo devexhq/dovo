@@ -8,8 +8,9 @@ from pathlib import Path
 
 import psutil
 
+from dovo.common.diagnostic_log import DiagnosticLevel, diagnostic_hint_line, record_exception
 from dovo.common.filesystem.models import RepositoryPaths
-from dovo.common.lock import WorkspaceLock
+from dovo.common.lock import LockTimeoutError, WorkspaceLock
 from dovo.core.db import SessionRecord, SessionsRepository, SessionStatus, parse_timestamp
 from dovo.core.sessions.models import ReconciliationResult
 
@@ -101,14 +102,28 @@ def reconcile_stale_sessions(db: SessionsRepository, path: Path | None = None) -
     """Inspect and reconcile stale RUNNING session records into FAILED status."""
     try:
         sessions_repo, root_dir = _resolve_sessions_repo_and_root(db, path)
-        with WorkspaceLock(RepositoryPaths.from_root(root_dir).lock_file):
-            reconciled = _reconcile_stale_records(sessions_repo)
-
-        warning = format_reconciliation_warning(reconciled)
-        return ReconciliationResult(reconciled=reconciled, warning=warning)
-    except Exception:
-        # Best-effort reconciliation failure should not crash calling workflows.
+    except ValueError:
+        # No record: a detached repository has no workspace to reconcile.
         return ReconciliationResult()
+
+    try:
+        return _reconcile_under_lock(sessions_repo, root_dir)
+    except LockTimeoutError:
+        # No record: another dovo process holds the workspace lock; the next command reconciles.
+        return ReconciliationResult()
+    except Exception as exc:
+        record = record_exception(
+            exc, level=DiagnosticLevel.ERROR, operation="session.reconcile", context={"path": str(root_dir)}
+        )
+        return ReconciliationResult(warning=diagnostic_hint_line(record))
+
+
+def _reconcile_under_lock(sessions_repo: SessionsRepository, root_dir: Path) -> ReconciliationResult:
+    """Reconcile stale records while holding the workspace lock and return them with their warning."""
+    with WorkspaceLock(RepositoryPaths.from_root(root_dir).lock_file):
+        reconciled = _reconcile_stale_records(sessions_repo)
+
+    return ReconciliationResult(reconciled=reconciled, warning=format_reconciliation_warning(reconciled))
 
 
 def format_reconciliation_warning(reconciled: list[SessionRecord]) -> str | None:

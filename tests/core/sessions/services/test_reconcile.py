@@ -12,6 +12,8 @@ from pathlib import Path
 import psutil
 import pytest
 
+from dovo.common.filesystem.services import resolve_global_paths
+from dovo.common.lock import LockTimeoutError, WorkspaceLock
 from dovo.core.db import SessionsRepository, SessionStatus
 from dovo.core.sessions import ReconciliationResult
 from dovo.core.sessions.services.reconcile import (
@@ -23,9 +25,15 @@ from dovo.core.sessions.services.reconcile import (
     is_run_stale,
     reconcile_stale_sessions,
 )
+from tests.harness.diagnostic_log import diagnostic_hint, read_single_event
 from tests.harness.workspace_paths import initialized_workspace_paths
 
 DEAD_PID = 4242
+
+
+def _raise_db_unavailable(*_args: object, **_kwargs: object) -> None:
+    """Stand in for a SessionsRepository method whose database is unavailable."""
+    raise RuntimeError("db unavailable")
 
 
 def _sessions_for(root: Path) -> SessionsRepository:
@@ -280,21 +288,57 @@ class ReconcileStaleRunsTests:
         assert stored.status == expected_status
         assert stored.error_message == expected_error
 
-    def test_repository_failure_returns_empty_result(
-        self, isolated_workspace: Path, monkeypatch: pytest.MonkeyPatch
+    def test_repository_failure_records_error_and_returns_hint_warning(
+        self, isolated_workspace: Path, frozen_diagnostic_clock: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
+        """Return a hint-only warning and write one session.reconcile error record when SessionsRepository.list raises."""
+        sessions = _sessions_for(isolated_workspace)
+        monkeypatch.setattr(SessionsRepository, "list", _raise_db_unavailable)
+
+        result = reconcile_stale_sessions(sessions, path=isolated_workspace)
+
+        assert result == ReconciliationResult(
+            reconciled=[], warning=diagnostic_hint(frozen_diagnostic_clock).lstrip("\n")
+        )
+        event = read_single_event(frozen_diagnostic_clock)
+        assert event["level"] == "error"
+        assert event["operation"] == "session.reconcile"
+        assert event["context"] == {"path": str(isolated_workspace)}
+        assert event["exception_message"] == "db unavailable"
+
+    def test_lock_timeout_returns_empty_result_without_record(
+        self, isolated_workspace: Path, frozen_diagnostic_clock: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Return an empty result and leave <DOVO_HOME>/logs absent when the workspace lock raises LockTimeoutError."""
         sessions = _sessions_for(isolated_workspace)
 
-        def _boom(*_args: object, **_kwargs: object) -> None:
-            raise RuntimeError("db unavailable")
+        def _timeout(_self: WorkspaceLock) -> WorkspaceLock:
+            raise LockTimeoutError("lock held")
 
-        monkeypatch.setattr(SessionsRepository, "list", _boom)
+        monkeypatch.setattr(WorkspaceLock, "__enter__", _timeout)
 
         result = reconcile_stale_sessions(sessions, path=isolated_workspace)
 
         assert result == ReconciliationResult(reconciled=[], warning=None)
+        assert not frozen_diagnostic_clock.parent.parent.exists()
 
-    def test_detached_repository_without_path_returns_empty_result(self) -> None:
+    def test_detached_repository_without_path_returns_empty_result(self, frozen_diagnostic_clock: Path) -> None:
+        """Return an empty result and leave <DOVO_HOME>/logs absent for a detached repository without a path."""
         detached = SessionsRepository(path=None, auto_init=False)
 
         assert reconcile_stale_sessions(detached) == ReconciliationResult(reconciled=[], warning=None)
+        assert not frozen_diagnostic_clock.parent.parent.exists()
+
+    def test_repository_failure_unchanged_when_recorder_cannot_write(
+        self, isolated_workspace: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Return an empty result with no warning when <DOVO_HOME>/logs is a regular file."""
+        sessions = _sessions_for(isolated_workspace)
+        monkeypatch.setattr(SessionsRepository, "list", _raise_db_unavailable)
+        logs_dir = resolve_global_paths().logs_dir
+        logs_dir.parent.mkdir(parents=True, exist_ok=True)
+        logs_dir.write_text("not a directory", encoding="utf-8")
+
+        result = reconcile_stale_sessions(sessions, path=isolated_workspace)
+
+        assert result == ReconciliationResult(reconciled=[], warning=None)

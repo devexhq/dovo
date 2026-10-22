@@ -149,4 +149,5 @@ class AgentProgressReporter:
         try:
             self._on_progress(update)
         except Exception:
+            # No record: progress display, called per update.
             return

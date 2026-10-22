@@ -31,6 +31,7 @@ def safe_repr(value: object, *, short: bool = False) -> str:
     try:
         result = repr(value)
     except Exception:
+        # No record: falls back to object.__repr__ for display.
         result = object.__repr__(value)
     if not short or len(result) < _MAX_LENGTH:
         return result

@@ -310,7 +310,7 @@ class RunCoordinator:
         )
 
     def _run_attempt(self, invocation: StepInvocation) -> StepResult:
-        """Notify and log the start, run one StepExecution with observer-forwarding callbacks, notify and log the done, and append the result's warnings."""
+        """Notify and log the start, run one StepExecution with observer-forwarding callbacks, notify and log the done, and append the result's warnings and the execution's diagnostic hints."""
         self._log_step_start(invocation)
         observer = self._run.settings.observer
         step, idx, total = invocation.step, invocation.idx, invocation.total
@@ -328,9 +328,10 @@ class RunCoordinator:
             if observer is not None
             else None
         )
-        result = StepExecution(self._execution_context(invocation, on_output=on_output, on_progress=on_progress)).run()
+        execution = StepExecution(self._execution_context(invocation, on_output=on_output, on_progress=on_progress))
+        result = execution.run()
         self._log_step_done(invocation, result)
-        self._warnings.extend(result.warnings)
+        self._warnings.extend([*result.warnings, *execution.diagnostic_hints])
         return result
 
     def _resolve_ask(self, invocation: StepInvocation) -> AskResolution:
