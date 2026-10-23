@@ -30,7 +30,7 @@ If the input file is missing, stop and say so. Do not reconstruct a plan from th
 - **All phases, one at a time.** Finish a phase (its FRs, tests and deletion ledger, with its scoped tests green) before starting the next, and never interleave FRs across phases. The phases still order the work and bound each step; they all land in this one run and one PR.
 - **The plan's contracts are binding.** Field names, types, defaults, flag names, exit codes and message strings written as literal code in the plan are normative. Do not rename or extend them.
 - **Do not implement anything the plan marks out of scope or names as a trap**, and do not add test files the plan's `### Tests` stubs do not list.
-- **Never edit `.agentic/plan.md`, `.agentic/evidence.md`, `.agentic/review.md`, `.agentic/review.json` or `.agentic/verdict.txt`.** This skill writes only `.agentic/implementation-report.md`.
+- **Never edit `.agentic/plan.md`, `.agentic/evidence.md`, `.agentic/review.md`, `.agentic/review.json` or `.agentic/verdict.txt`.** This skill writes only `.agentic/implementation-report.md` and, in review mode, `.agentic/fix-commit-msg`.
 
 ## Before writing code
 
@@ -86,7 +86,7 @@ Write it after the gate is green (or as green as it will get, with failures stat
 ## Review mode (`/dovo-code review`)
 
 1. Read `.agentic/review.md` for the detail and `.agentic/review.json` for the ids. If either is absent, stop and say so.
-2. Choose the findings. Ids are `B#` Blocking, `W#` Warnings, `S#` Suggestions and `N#` Nits, renumbered every review round, so resolve them against the `review.json` on disk.
+2. Choose the findings. Ids are `B#` Blocking, `W#` Warnings, `S#` Suggestions and `N#` Nits, renumbered every review round, so resolve them against the `review.json` on disk. `review.json` `coverage` rows marked `unmet` arrive as BLOCKER findings; fix them like any other. Ignore `history`, `rejected` and `checks`: they are the reviewer's record.
    - **`--tiers <list>`**: comma-separated `blockers`, `warnings`, `suggestions`, `nits`, or `all`. Fix every finding in those tiers.
    - **`--fix <ids>`**: a comma-separated list (`B1,W2`) or a JSON array. Fix exactly those. An id not in `review.json` stops the run before any edit and names the valid ids.
    - `--tiers` and `--fix` cannot be combined. With neither, the default is `--tiers blockers`.
@@ -95,5 +95,13 @@ Write it after the gate is green (or as green as it will get, with failures stat
 5. Dispute rather than comply when a finding is wrong: state why it does not hold and flag it 🚨 for the human.
 6. Run the completion gate above.
 7. Update `.agentic/implementation-report.md` in place: add a `### Review round <n>` subsection listing each finding by id as fixed, disputed or deferred with the `path:line` changed, add new deviations, and refresh Quality gates and Changed files. Do not edit `review.md` or `review.json`.
+8. When this round changed any file, write `.agentic/fix-commit-msg`, overwriting any earlier one: a Conventional Commits title (`type(scope): imperative summary`, a type `scripts/check_commit_msg.py` accepts) naming what the fixes change in the code, never "address review findings"; a blank line; then one line per finding fixed, `- <id> (review round <n>): <what changed, with path>`. Findings disputed or deferred are not listed. When nothing changed, do not write the file.
+
+   ```text
+   fix(worktree): hold the workspace lock around the state write
+
+   - B1 (review round 1): src/dovo/core/worktree/worktree.py takes WorkspaceLock before atomic_write_json
+   - W2 (review round 1): tests/core/worktree/test_worktree.py asserts the lock timeout result
+   ```
 
 Report each addressed finding by id as fixed, disputed or deferred, with the `path:line` you changed.
