@@ -60,6 +60,76 @@ def _finding(finding_id: str, severity: str) -> dict[str, object]:
 
 
 FINDINGS = [_finding("B1", "BLOCKER"), _finding("W1", "WARNING"), _finding("S1", "SUGGESTION"), _finding("N1", "NIT")]
+CUTOFF = "2026-10-20T12:00:00Z"
+OWN_COMMENT: dict[str, object] = {
+    "id": 1,
+    "user": "me",
+    "body": f"{HEADER}Dovo session: `{SESSION}`\n\nx",
+    "url": "https://x/c1",
+    "created_at": "2026-10-19T09:00:00Z",
+    "updated_at": CUTOFF,
+}
+OTHER_COMMENT: dict[str, object] = {
+    "id": 2,
+    "user": "coderabbitai[bot]",
+    "body": "<!-- walkthrough -->\n## Walkthrough\nAdds comment items.",
+    "url": "https://x/c2",
+    "created_at": "2026-10-20T13:00:00Z",
+    "updated_at": "2026-10-20T13:00:00Z",
+}
+
+
+def _comment(comment_id: int, user: str | None, body: str, created: str, updated: str) -> dict[str, object]:
+    """Return a list_comments entry with comment_id, user, body and creation and update times."""
+    return {
+        "id": comment_id,
+        "user": user,
+        "body": body,
+        "url": f"https://x/c{comment_id}",
+        "created_at": created,
+        "updated_at": updated,
+    }
+
+
+def _review(
+    body: str, author: dict[str, object] | None, submitted: str | None, edited: str | None = None
+) -> dict[str, object]:
+    """Return a REVIEWS_QUERY node with body, author and submission and last edit times."""
+    return {
+        "author": author,
+        "body": body,
+        "url": f"https://x/r/{body[:3]}",
+        "submittedAt": submitted,
+        "lastEditedAt": edited,
+    }
+
+
+def _comment_item(item_id: str, author: str, url: str, body: str, summary: str) -> dict[str, object]:
+    """Return the `comment` item expected for a comment or review."""
+    return {
+        "id": item_id,
+        "source": "comment",
+        "author": author,
+        "url": url,
+        "path": None,
+        "line": None,
+        "summary": summary,
+        "body": body,
+    }
+
+
+def _check_item(item_id: str, name: str, conclusion: str, url: str) -> dict[str, object]:
+    """Return the `check` item expected for a failed check run."""
+    return {
+        "id": item_id,
+        "source": "check",
+        "author": None,
+        "url": url,
+        "path": None,
+        "line": None,
+        "summary": f"{name}: {conclusion}",
+        "body": f"{name}: {conclusion}",
+    }
 
 
 class PrFeedbackTests:
@@ -94,34 +164,44 @@ class PrFeedbackTests:
     @pytest.mark.parametrize(
         ("comments", "expected"),
         [
-            pytest.param(
-                [{"id": 1, "user": "me", "body": f"{HEADER}Dovo session: `{SESSION}`\n\nx"}],
-                SESSION,
-                id="own-with-session",
-            ),
+            pytest.param([OTHER_COMMENT, OWN_COMMENT], OWN_COMMENT, id="own-comment"),
             pytest.param(
                 [],
                 "no dovo-review comment on pull request #7; run /dovo-review 7 --post first",
                 id="no-comment",
             ),
             pytest.param(
-                [{"id": 1, "user": "other", "body": f"{HEADER}Dovo session: `{SESSION}`\n\nx"}],
+                [{**OWN_COMMENT, "user": "other"}],
                 "no dovo-review comment on pull request #7; run /dovo-review 7 --post first",
                 id="other-author-only",
             ),
+        ],
+    )
+    def test_review_comment(self, comments: list[dict[str, object]], expected: object) -> None:
+        if isinstance(expected, dict):
+            assert FEEDBACK.review_comment(comments, "me", 7) == expected
+            return
+        with pytest.raises(FEEDBACK.PrFeedbackError) as raised:
+            FEEDBACK.review_comment(comments, "me", 7)
+        assert str(raised.value) == expected
+
+    @pytest.mark.parametrize(
+        ("comment", "expected"),
+        [
+            pytest.param(OWN_COMMENT, SESSION, id="with-session"),
             pytest.param(
-                [{"id": 1, "user": "me", "body": f"{HEADER}\nx"}],
+                {**OWN_COMMENT, "body": f"{HEADER}\nx"},
                 "the dovo-review comment on pull request #7 names no dovo session",
                 id="no-session-line",
             ),
         ],
     )
-    def test_comment_session(self, comments: list[dict[str, object]], expected: str) -> None:
+    def test_comment_session(self, comment: dict[str, object], expected: str) -> None:
         if expected == SESSION:
-            assert FEEDBACK.comment_session(comments, "me", 7) == SESSION
+            assert FEEDBACK.comment_session(comment, 7) == SESSION
             return
         with pytest.raises(FEEDBACK.PrFeedbackError) as raised:
-            FEEDBACK.comment_session(comments, "me", 7)
+            FEEDBACK.comment_session(comment, 7)
         assert str(raised.value) == expected
 
     def test_artifact_problem(self) -> None:
@@ -149,8 +229,8 @@ class PrFeedbackTests:
             pytest.param("x" * 250, "x" * 200, id="over-200"),
         ],
     )
-    def test_thread_summary(self, body: str, expected: str) -> None:
-        assert FEEDBACK.thread_summary(body) == expected
+    def test_markdown_summary(self, body: str, expected: str) -> None:
+        assert FEEDBACK.markdown_summary(body) == expected
 
     def test_thread_items(self) -> None:
         threads = [
@@ -219,6 +299,95 @@ class PrFeedbackTests:
                 "body": "B1: B1 summary",
             }
             assert items[1]["body"] == "W1: W1 summary"
+
+    def test_comment_items(self) -> None:
+        comments = [
+            OWN_COMMENT,
+            _comment(3, "alice", "Old note", "2026-10-18T08:00:00Z", "2026-10-18T08:00:00Z"),
+            _comment(4, "alice", "Edited note", "2026-10-18T09:00:00Z", "2026-10-20T14:00:00Z"),
+            _comment(5, "bob", "At the cut-off", "2026-10-19T10:00:00Z", CUTOFF),
+            OTHER_COMMENT,
+            _comment(
+                6, "bob", "<!-- only -->\n<details>\n</details>\n", "2026-10-20T15:00:00Z", "2026-10-20T15:00:00Z"
+            ),
+            _comment(7, None, "Deleted user note", "2026-10-20T16:00:00Z", "2026-10-20T16:00:00Z"),
+        ]
+        reviews = [
+            _review(
+                "**Actionable** comments posted: 3", {"__typename": "User", "login": "carol"}, "2026-10-20T12:30:00Z"
+            ),
+            _review(
+                "Edited review", {"__typename": "User", "login": "dave"}, "2026-10-17T08:00:00Z", "2026-10-20T13:30:00Z"
+            ),
+            _review("Bot review", {"__typename": "Bot", "login": "copilot"}, "2026-10-20T17:00:00Z"),
+            _review("", {"__typename": "User", "login": "erin"}, "2026-10-20T18:00:00Z"),
+            _review("Pending review", {"__typename": "User", "login": "me"}, None),
+        ]
+
+        items = FEEDBACK.comment_items(comments, reviews, "me", CUTOFF)
+
+        assert items == [
+            _comment_item("C1", "dave", "https://x/r/Edi", "Edited review", "Edited review"),
+            _comment_item("C2", "alice", "https://x/c4", "Edited note", "Edited note"),
+            _comment_item(
+                "C3", "carol", "https://x/r/**A", "**Actionable** comments posted: 3", "Actionable comments posted: 3"
+            ),
+            _comment_item("C4", "coderabbitai[bot]", "https://x/c2", str(OTHER_COMMENT["body"]), "Walkthrough"),
+            _comment_item("C5", "ghost", "https://x/c7", "Deleted user note", "Deleted user note"),
+            _comment_item("C6", "copilot[bot]", "https://x/r/Bot", "Bot review", "Bot review"),
+        ]
+
+    def test_check_items(self) -> None:
+        checks = [
+            {"name": "Tests", "conclusion": "failure", "details_url": "https://ci/tests", "html_url": "https://gh/1"},
+            {"name": "Lint", "conclusion": "success", "details_url": "https://ci/lint", "html_url": "https://gh/2"},
+            {"name": "Build", "conclusion": "cancelled", "details_url": None, "html_url": "https://gh/3"},
+            {"name": "Docs", "conclusion": "neutral", "details_url": "https://ci/docs", "html_url": "https://gh/4"},
+            {
+                "name": "Tests",
+                "conclusion": "timed_out",
+                "details_url": "https://ci/tests2",
+                "html_url": "https://gh/5",
+            },
+            {"name": "Audit", "conclusion": "skipped", "details_url": "https://ci/audit", "html_url": "https://gh/6"},
+            {"name": "Deploy", "conclusion": None, "details_url": "https://ci/deploy", "html_url": "https://gh/7"},
+        ]
+
+        items = FEEDBACK.check_items(checks)
+
+        assert items == [
+            _check_item("K1", "Build", "cancelled", "https://gh/3"),
+            _check_item("K2", "Tests", "failure", "https://ci/tests"),
+            _check_item("K3", "Tests", "timed_out", "https://ci/tests2"),
+        ]
+
+    @pytest.mark.parametrize(
+        ("item", "expected"),
+        [
+            pytest.param(
+                {"id": "T1", "source": "review_thread", "author": "alice", "summary": "Fix one"},
+                "T1 [review_thread, alice] Fix one",
+                id="review-thread-author",
+            ),
+            pytest.param(
+                {"id": "R1", "source": "review_finding", "author": None, "summary": "B1 summary"},
+                "R1 [review_finding, dovo-review] B1 summary",
+                id="review-finding-null",
+            ),
+            pytest.param(
+                {"id": "C1", "source": "comment", "author": "coderabbitai[bot]", "summary": "Walkthrough"},
+                "C1 [comment, coderabbitai[bot]] Walkthrough",
+                id="comment-author",
+            ),
+            pytest.param(
+                {"id": "K1", "source": "check", "author": None, "summary": "Tests: failure"},
+                "K1 [check, ci] Tests: failure",
+                id="check-null",
+            ),
+        ],
+    )
+    def test_option_label(self, item: dict[str, object], expected: str) -> None:
+        assert FEEDBACK.option_label(item) == expected
 
     def test_feedback_document(self) -> None:
         items = FEEDBACK.thread_items(
@@ -321,24 +490,47 @@ class PrFeedbackTests:
 
         agentic = tmp_path / ".agentic"
         assert capsys.readouterr().out == (
-            f"Restored dovo session {SESSION} and collected 2 feedback items for pull request #7\n"
+            f"Restored dovo session {SESSION} and collected 4 feedback items for pull request #7\n"
         )
         document = json.loads((agentic / "feedback.json").read_text(encoding="utf-8"))
         assert (document["pr"], document["head"], document["session"]) == (7, HEAD, SESSION)
         assert [item["label"] for item in document["items"]] == [
             "T1 [review_thread, alice] Fix one",
             "R1 [review_finding, dovo-review] B1 summary",
+            "C1 [comment, coderabbitai[bot]] Walkthrough",
+            "K1 [check, ci] Tests: failure",
         ]
         assert (agentic / "pr-branch").read_text(encoding="utf-8") == "alice/fix\n"
         assert (agentic / "pr-url").read_text(encoding="utf-8") == f"{PR_URL}\n"
         assert ("git", "switch", "-q", "--detach", HEAD) in ran
 
+    def test_main_reports_unreadable_checks(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        monkeypatch.chdir(tmp_path)
+        monkeypatch.setattr(sys, "argv", ["pr_feedback.py", "--pr", "7"])
+        fake_run = _fake_run([], failing_checks=True)
+        monkeypatch.setattr(FEEDBACK, "run", fake_run)
+        monkeypatch.setattr(PUBLISH, "run", fake_run)
 
-def _fake_run(ran: list[tuple[str, ...]], *, failing_artifact: str | None = None) -> Callable[..., str]:
+        assert FEEDBACK.main() == 1
+        assert capsys.readouterr().err == (
+            "pr_feedback.py: command failed: gh api --hostname github.com --paginate "
+            f"repos/o/r/commits/{HEAD}/check-runs --jq .check_runs[] | {{name, conclusion, details_url, html_url}}\n"
+            "HTTP 403\n"
+        )
+        assert not (tmp_path / ".agentic" / "feedback.json").exists()
+
+
+def _fake_run(
+    ran: list[tuple[str, ...]], *, failing_artifact: str | None = None, failing_checks: bool = False
+) -> Callable[..., str]:
     """Return a `run` double answering the gh, dovo and git calls of one restore of PR #7, recording each in ran.
 
     Downloading the `review` artifact writes a CHANGES_REQUIRED .agentic/review.json, and downloading
-    failing_artifact raises CalledProcessError.
+    failing_artifact raises CalledProcessError. The GraphQL call answers one thread for `reviewThreads` and no
+    nodes for `reviews`; the check-runs call answers a failed `Tests` and a passed `Prek` run, or raises
+    CalledProcessError when failing_checks is set.
     """
 
     def fake_run(*args: str) -> str:
@@ -346,18 +538,27 @@ def _fake_run(ran: list[tuple[str, ...]], *, failing_artifact: str | None = None
         if args[:3] == ("gh", "pr", "view"):
             view = {"number": 7, "state": "OPEN", "headRefName": "alice/fix", "headRefOid": HEAD}
             return json.dumps({**view, "url": PR_URL, "isCrossRepository": False})
-        if args[-3:] == ("user", "--jq", ".login"):
-            return "me"
-        if "repos/o/r/issues/7/comments" in args:
-            return json.dumps({"id": 1, "user": "me", "body": f"{HEADER}Dovo session: `{SESSION}`\n\nx"})
         if args[:5] == ("uv", "run", "dovo", "artifacts", "download"):
             return _download(args, failing_artifact)
-        if args[:3] == ("gh", "api", "graphql"):
-            return json.dumps(_thread("Fix one", author={"__typename": "User", "login": "alice"}))
+        if args[:2] == ("gh", "api"):
+            return _gh_api(args, failing_checks)
         assert args[0] == "git", f"ran {args}"
         return ""
 
     return fake_run
+
+
+def _gh_api(args: tuple[str, ...], failing_checks: bool) -> str:
+    """Answer a `gh api` call of one restore of PR #7: the viewer, its comments, GraphQL nodes or check runs."""
+    if args[-3:] == ("user", "--jq", ".login"):
+        return "me"
+    if "repos/o/r/issues/7/comments" in args:
+        return f"{json.dumps(OWN_COMMENT)}\n{json.dumps(OTHER_COMMENT)}"
+    if args[2] == "graphql":
+        reviews = args[-1] == ".data.repository.pullRequest.reviews.nodes[]"
+        return "" if reviews else json.dumps(_thread("Fix one", author={"__typename": "User", "login": "alice"}))
+    assert f"repos/o/r/commits/{HEAD}/check-runs" in args, f"ran {args}"
+    return _checks(args, failing_checks)
 
 
 def _download(args: tuple[str, ...], failing_artifact: str | None) -> str:
@@ -370,3 +571,14 @@ def _download(args: tuple[str, ...], failing_artifact: str | None) -> str:
         Path(".agentic").mkdir(exist_ok=True)
         Path(".agentic/review.json").write_text(json.dumps(review), encoding="utf-8")
     return ""
+
+
+def _checks(args: tuple[str, ...], failing: bool) -> str:
+    """Answer a check-runs call with a failed `Tests` and a passed `Prek` run, or raise CalledProcessError when failing."""
+    if failing:
+        raise subprocess.CalledProcessError(1, list(args), stderr="HTTP 403")
+    runs = [
+        {"name": "Tests", "conclusion": "failure", "details_url": "https://ci/tests", "html_url": "https://gh/1"},
+        {"name": "Prek", "conclusion": "success", "details_url": "https://ci/prek", "html_url": "https://gh/2"},
+    ]
+    return "\n".join(json.dumps(check_run) for check_run in runs)

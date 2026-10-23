@@ -252,7 +252,10 @@ def pr_repository(url: str) -> tuple[str, str]:
 
 
 def list_comments(host: str, repository: str, number: int) -> list[dict[str, object]]:
-    """Return every comment on the pull request, one dict per comment."""
+    """Return every comment on the pull request, one dict per comment.
+
+    Each dict has its id, body, author login, URL and creation and update times.
+    """
     output = run(
         "gh",
         "api",
@@ -261,7 +264,7 @@ def list_comments(host: str, repository: str, number: int) -> list[dict[str, obj
         "--paginate",
         f"repos/{repository}/issues/{number}/comments",
         "--jq",
-        ".[] | {id, body, user: .user.login}",
+        ".[] | {id, body, user: .user.login, url: .html_url, created_at, updated_at}",
     )
     return [json.loads(line) for line in output.splitlines() if line.strip()]
 
