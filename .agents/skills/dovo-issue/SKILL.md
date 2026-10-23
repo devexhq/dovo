@@ -43,58 +43,35 @@ Canonical example of structure, depth, and tone: [examples/github-issue.md](exam
 Before drafting, read the entry points of every surface the issue touches, and their callers. Record:
 - **Existing bugs on the path** the work builds on. Each becomes its own sub-issue, which blocks the work that depends on it.
 - **Persisted formats** the work changes (session state and manifests, `data.db`, `config.json`, catalog `index.json`, blueprint and step YAML). List each under **Shared surfaces changed**, with what happens to data written before the change.
-- **Call sites** when the work applies one pattern across many places (exception handlers, commands, callers of a replaced function): count them per package, for example with `git grep -c`, and read the matches to drop comments, docs and tests from the count. Record which files and surfaces the sites fall in.
-- **Files and surfaces** the issue changes, including `scripts/`, `.agents/skills/` and `.dovo/catalog/`; the size label in **Size and split** is picked from them.
+- **Call sites** when the work applies one pattern across many places (exception handlers, commands, callers of a replaced function): count them per package, for example with `git grep -c`, and read the matches to drop comments, docs and tests from the count. The count shows which packages the work reaches.
 
 Only read; never edit code or run tooling that mutates or validates. Read-only `git`, read-only `gh`, `rg` and file reads are enough.
 
 ### 2. Size and split
 
-An issue has one responsibility and lands as one PR. What makes a PR hard to review is how many kinds of change it mixes, not how many lines it has: a focused 1,000-line conversion takes longer to review than a 400-line one, but not more effort per line. Each issue is exactly one of these kinds:
+An issue is one kind of change that a reviewer can describe in one sentence without "and". It lands as one PR. Review effort comes from how many kinds of change a PR mixes, not from its length: a focused 1,000-line conversion takes longer to read than a 400-line one, but it is not harder.
 
 | Kind | Changes | Never also |
 |---|---|---|
-| Fix | One wrong behaviour, or a batch of small wrong behaviours in one area, each with its own FR and regression test | Refactors around it |
-| Foundation | A new shared type, tool or rule adopted by two or more issues, with its contract tests | Converts callers |
-| Adopt | One package or one pipeline moves onto a foundation, deleting what it replaces there | Changes what users see beyond what the move requires |
-| Refactor | Structure only, with value of its own; observable behaviour is identical | Adds surface |
+| Fix | One wrong behaviour, or a few small ones in one area, each with its own regression test | Refactors around it |
+| Foundation | A new shared type, tool or rule that two or more issues adopt | Converts callers |
+| Adopt | One package, or one command's chain of steps, moves onto a foundation and deletes what it replaces | Changes what users see beyond what the move requires |
+| Refactor | Structure only, worth merging on its own; behaviour is identical | Adds surface |
 | Remove | Deletes what nothing uses any more | Anything else |
 | Feature | New user-facing surface | Restructures what it builds on |
 
-Split it when any of these hold:
-- it mixes two kinds (for example a foundation and its adoption, or a behaviour change and a refactor)
-- the **I want** line, or the **As a** line, joins independently valuable outcomes or different users (for example someone running a blueprint and someone running `dovo doctor`). A batch of small fixes in one area is one Fix issue, not several
-- more than one new public surface (for example a command group *and* a schema field)
-- it changes a persisted format *and* adds CLI surface
-- it adopts one foundation in more than one package, unless those packages form one pipeline (below)
+Three rules decide a split:
+- **Don't mix kinds.** A foundation and its adoption, or a behaviour change and a refactor, are separate issues. So are outcomes for different users (someone running a blueprint and someone running `dovo doctor`), two new public surfaces (a command group and a schema field), and a persisted-format change with new CLI surface.
+- **Don't split by size.** Line count, file count and layer are never reasons to split.
+- **Don't split if the halves need a bridge.** When one half would have to map the new shape back onto the old one so the other half still works, keep them as one issue.
 
-A **pipeline** is the ordered chain of steps that one public entrypoint runs for one command, each step in its own package. For example, `initialize_workspace` runs `dovo init` as bootstrap (`core/bootstrap`), project identity (`core/project`), config generation (`core/config`) and catalog seeding (`core/catalog`). Packages form one pipeline for an Adopt issue only when every changed function in them is called by that entrypoint's chain alone. A changed function that another entrypoint also calls belongs to its package's own Adopt issue, and the pipeline issue is blocked by it.
+Two kinds fold into another issue instead of standing alone. A refactor that only prepares one issue is that issue's first plan phase. A foundation with one adopter goes into the adopter's issue.
 
-Never split one responsibility to make the parts smaller. If the halves would need a temporary bridge between them (one half mapping the new shape back onto the old one so the other half still works), keep them as one issue.
+When one foundation is adopted across several packages, the split is the foundation, then one Adopt issue per package or per command's chain of steps, then any Remove issue. A shared function that other commands also call is converted with its own package, not inside one command's chain.
 
-Two kinds never become issues of their own:
-- **A preparatory refactor.** A refactor that only prepares one sibling issue is that issue's first plan phase. It has no user story and no adopters, so it is not a valid child. A Refactor issue stands only when it is worth merging on its own.
-- **A foundation with one adopter.** A shared type, tool or rule that exactly one issue adopts goes into that issue, which is then an Adopt issue that also adds what it adopts. A separate Foundation issue would ship an unused contract for its own review.
+Label every issue except a split's parent `dovo-size-s`, `dovo-size-m` or `dovo-size-l` for how long it takes to review: one area and a few files, a couple of areas, or many. An area is a `src/dovo/` package, a persisted format, a command group with its docs page, a skill, the catalog blueprints and steps, or `scripts/`. When in doubt, pick the larger label. An `l` issue names its one responsibility in its opening paragraph.
 
-Label every issue except a split's parent with its size, from the files and surfaces recorded in **Ground**. A surface is one of:
-- a package under `src/dovo/` (for example `core/worktree` or `cli/ui`)
-- a persisted format or schema
-- a CLI command group with its `docs/cli/` page
-- an agent skill under `.agents/skills/`
-- the catalog blueprints and steps under `.dovo/catalog/`
-- the scripts under `scripts/`
-
-Count the changed files in those surfaces; tests and other docs follow the code and are not counted.
-
-| Label | Surfaces | Files |
-|---|---|---|
-| `dovo-size-s` | 1 | 5 or fewer |
-| `dovo-size-m` | 1 with more than 5 files, or 2 | any |
-| `dovo-size-l` | 3 or more | any |
-
-An `l` issue states in its opening paragraph, in one sentence, the single responsibility that holds it together; if no such sentence is true, split it.
-
-Split by responsibility, never by layer or line count. A foundation child is valid when two or more children that adopt it are created in the same split and blocked by it; every other child has its own user story and is useful once merged. When one foundation is adopted across several packages, the split is the foundation, then one adopt child per package or pipeline, then any remove child for what the adoptions left unused. Every split has a parent issue and native GitHub sub-issues:
+Every split has a parent issue and native GitHub sub-issues:
 
 - **Parent:** the Goal / User Story, one short paragraph on why the children are ordered as they are, and an **Out of scope** list for the whole feature. No FRs, data, error cases or Definition of Done: GitHub tracks progress through the sub-issues. When splitting an existing issue, edit it into the parent (`gh issue edit <n> --body-file …`) so its number, links and discussion survive.
 - **Sub-issues:** full issues in the structure below, each self-contained. The planner reads only the sub-issue, never the parent or its siblings, so every requirement and literal contract it needs is in its own body. Create each with `gh issue create --parent <parent> --label dovo-size-<s|m|l>`, adding `--blocked-by <n>` when it cannot ship before another sub-issue. A parent gets no size label.
@@ -165,7 +142,7 @@ Before running `gh issue create` or `gh issue edit`:
 1. Scan the draft for shim-inducing words (`unchanged`, `untouched`, `as before`, `alongside`, `keep`, `compatib`, `shim`, `legacy`). Delete them or convert them into a **Shared surfaces changed** bullet and a grep removal bar in **Definition of done**.
 2. Confirm every new model or code path answers "what does this replace?" and mandates deleting the superseded path.
 3. Confirm **Definition of done** does not repeat individual FRs line-by-line.
-4. Re-run the **Size and split** checks on the finished draft. If one now holds, split before publishing. Confirm the draft is one kind from the table, carries a `dovo-size-*` label, and, if it is `l`, states its single responsibility in its opening paragraph.
+4. Re-check the finished draft against **Size and split**: it is one kind from the table, it breaks none of the three rules, it carries a `dovo-size-*` label, and, if it is `l`, its opening paragraph names its one responsibility.
 5. Scan FRs and **Pre-determined data** for private helper names, loop or call-site lists, and module paths that are not public surface. Delete them (principle 4).
 6. Confirm every bug and persisted-format change found in **Ground** appears as a blocker issue or under **Shared surfaces changed**.
 7. When publishing a split, create or edit the parent first, then the sub-issues in dependency order so each `--blocked-by` names an issue that exists. Confirm with `gh api repos/{owner}/{repo}/issues/<parent>/sub_issues --jq '.[].number'`.
