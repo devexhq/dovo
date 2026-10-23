@@ -42,7 +42,7 @@ dovo config set <key> <value>
 
 1. Wrapped in double quotes (`'"12345"'`, `'"true"'`, `'""'`): the text between the quotes, stored as a string with no further coercion.
 2. `true` or `yes` → `true`; `false` or `no` → `false` (case-insensitive).
-3. An integer, as Python's `int()` reads it (`42`, `-3`, `" 12 "`, `1_000`) → integer. Pass `--` before the key for a negative number (`dovo config set -- <key> -3`), otherwise `-3` is read as an option.
+3. An integer, as Python's `int()` reads it (`42`, `-3`, `' 12 '`, `1_000`) → integer. Pass `--` before the key for a negative number (`dovo config set -- <key> -3`), otherwise `-3` is read as an option.
 4. A float, as Python's `float()` reads it (`1.5`, `1e3`) → number.
 5. A JSON array or object (`'["A","B"]'`, `'{"a": 1}'`) → that array or object.
 6. Anything else, including `null` and `gpt-4.1`, is stored as a string.
