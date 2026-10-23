@@ -50,7 +50,10 @@ steps:
       - steps.fix.outputs.status != "timeout"
       - steps.fix.outputs.status != "provider_error"
       - steps.fix.outputs.status != "blocked"
-      - steps.verify.exit_code == 0
+      # Workaround for #1141: a failed verify is recorded as ignored with exit
+      # code 0, so only its status shows the failure. Revert to
+      # `steps.verify.exit_code == 0` when #1141 lands.
+      - steps.verify.status == "completed"
     on_max_iterations: prompt_user
     do:
       - id: fix

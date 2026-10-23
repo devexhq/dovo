@@ -118,7 +118,10 @@ steps:
       - steps.code.outputs.status != "timeout"
       - steps.code.outputs.status != "provider_error"
       - steps.code.outputs.status != "blocked"
-      - steps.verify.exit_code == 0
+      # Workaround for #1141: a failed verify is recorded as ignored with exit
+      # code 0, so only its status shows the failure. Revert to
+      # `steps.verify.exit_code == 0` when #1141 lands.
+      - steps.verify.status == "completed"
     on_max_iterations: prompt_user
     do:
       - id: code
@@ -180,7 +183,10 @@ steps:
     type: loop
     max_iterations: 5
     until:
-      - steps.remaining.exit_code == 0
+      # Workaround for #1141: a failed remaining is recorded as ignored with
+      # exit code 0, so only its status shows the failure. Revert to
+      # `steps.remaining.exit_code == 0` when #1141 lands.
+      - steps.remaining.status == "completed"
     on_max_iterations: prompt_user
     do:
       - id: review
