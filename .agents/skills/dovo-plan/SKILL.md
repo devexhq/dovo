@@ -3,7 +3,7 @@ name: dovo-plan
 description: >-
   Plan a Dovo CLI change before any code is written: trace the issue's
   contract, ground every artifact in the tree, size the work and split it into
-  phases that each become one PR, declare per-phase test stubs and what each phase
+  ordered phases that land together in one PR, declare per-phase test stubs and what each phase
   deletes, and write the plan to .agentic/plan.md (with citations split into
   .agentic/evidence.md when non-trivial) and its open questions to
   .agentic/plan.json. Invoked as /dovo-plan [<issue-number>].
@@ -47,7 +47,7 @@ Follow planning.md Steps 1-2: read the issue's contract (or the user's request, 
 
 ## 3. Size and phase
 
-Follow planning.md Step 3. Estimate the changed lines per FR and group FRs into phases of one concern each, roughly 400 changed lines or less, each passing the quality gate on its own. Replacing an internal is phased as add, switch callers, delete, with the deletion phase planned now. A change that fits one phase stays one phase.
+Follow planning.md Step 3. Estimate the changed lines per FR and group FRs into phases of one concern each, roughly 400 changed lines or less, each passing the quality gate on its own. Replacing an internal is phased as add, switch callers, delete, with the deletion phase planned now. A change that fits one phase stays one phase. All phases land in one PR, so their summed estimate should fit the issue's budget of about 400 changed lines. When it runs well past that, say so first under What you're approving and recommend splitting the issue with `/dovo-issue`.
 
 ## 4. Write the plan
 

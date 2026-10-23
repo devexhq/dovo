@@ -38,6 +38,7 @@ Group FRs into phases of one concern each (~400 changed lines or less, tests inc
 - Replacing an internal is phased as add, switch callers, delete, with the deletion phase planned up front in `### Deletion ledger` (R10).
 - Order phases by dependency, lower layers first (R1). A fix to existing behaviour that the change depends on is its own phase, first.
 - A phase over budget states, under the Phases table, why it cannot be split.
+- `/dovo-code` lands every phase in one PR, so the phases together should fit the issue's budget of about 400 changed lines. A plan whose total runs well past it says so first under **What you're approving** and recommends splitting the issue with `/dovo-issue`.
 - Resolve every check now: no instruction or ledger entry may be conditional on a `grep` the implementer runs later.
 
 ## Step 4: Write `.agentic/plan.md`
@@ -56,7 +57,7 @@ Group FRs into phases of one concern each (~400 changed lines or less, tests inc
 
 Planning only. Grounded against `<default branch>` at `<short sha>` (<YYYY-MM-DD>).
 
-The issue's contract is not repeated here; read it on #<n>. This plan covers how each requirement lands, in which PR, and how it is tested. [Traceability](#traceability) maps every requirement to its phase and test. [<Citations: `.agentic/evidence.md`>]
+The issue's contract is not repeated here; read it on #<n>. This plan covers how each requirement lands, in which phase, and how it is tested. [Traceability](#traceability) maps every requirement to its phase and test. [<Citations: `.agentic/evidence.md`>]
 
 ## What you're approving
 
@@ -94,7 +95,7 @@ The issue's contract is not repeated here; read it on #<n>. This plan covers how
 
 | Phase | Ships | FRs | Depends on | Est. changed lines | Risk, and where to look |
 |---|---|---|---|---|---|
-| 1 | <what a reviewer can check after this PR> | FR-1, FR-2 | none | <n> | **Low/Med/High.** <what to check> |
+| 1 | <what a reviewer can check after this phase> | FR-1, FR-2 | none | <n> | **Low/Med/High.** <what to check> |
 
 <Why an over-budget phase cannot be split; which phases are independent.>
 
