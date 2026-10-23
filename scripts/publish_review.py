@@ -6,8 +6,10 @@ skill) and publishes them as a single PR comment that starts with a marker line.
 Every later run edits that same comment instead of adding another. The header
 under the marker is stamped from review.json, never from the report's prose, and
 the comment is refused unless review.json's verdict, action and blocking count
-agree and the pull request head is the commit the review covered. Every API call
-targets the pull request's own repository.
+agree and the pull request head is the commit the review covered. With
+--session, the header also names the dovo session that produced the review, so
+pr-fix can restore that run's state. Every API call targets the pull request's
+own repository.
 """
 
 from __future__ import annotations
@@ -22,6 +24,7 @@ from urllib.parse import urlparse
 
 AGENTIC_DIR = Path(".agentic")
 MARKER = "<!-- dovo-review -->"
+SESSION_LABEL = "Dovo session: "
 MAX_COMMENT_CHARS = 65_536
 STAMPED_KEYS = ("head", "verdict", "action", "round")
 REQUIRED_KEYS = (*STAMPED_KEYS, "counts")
@@ -47,17 +50,19 @@ def run(*args: str) -> str:
     return subprocess.run(args, check=True, capture_output=True, text=True).stdout.strip()
 
 
-def comment_body(review: dict[str, object], report: str) -> str:
+def comment_body(review: dict[str, object], report: str, *, session: str | None) -> str:
     """Return the comment: the marker, a header stamped from review.json, a blank line, then review.md.
 
     The header is exactly:
         <!-- dovo-review -->
         Reviewed commit: `<head>`
         Verdict: <verdict> · Action: <action> · Round: <round>
+        Dovo session: `<session>`     (only when session is given)
 
     Args:
         review: The parsed review.json, holding every STAMPED_KEYS entry.
         report: The text of review.md.
+        session: The dovo session ID to stamp, or None for a three-line header.
 
     Returns:
         The full comment body.
@@ -67,6 +72,8 @@ def comment_body(review: dict[str, object], report: str) -> str:
         f"Reviewed commit: `{review['head']}`\n"
         f"Verdict: {review['verdict']} · Action: {review['action']} · Round: {review['round']}\n"
     )
+    if session is not None:
+        header += f"{SESSION_LABEL}`{session}`\n"
     return f"{header}\n{report}"
 
 
@@ -270,8 +277,8 @@ def write_comment(host: str, endpoint: list[str], body: str) -> str:
         body_file.unlink(missing_ok=True)
 
 
-def publish(pr: str) -> str:
-    """Post or update the review comment on pr and return the line to report.
+def publish(pr: str, *, session: str | None) -> str:
+    """Post or update the review comment on pr, stamped with session when given, and return the line to report.
 
     Raises:
         PublishReviewError: If the review is incomplete, inconsistent, stale or too long to post.
@@ -285,7 +292,7 @@ def publish(pr: str) -> str:
     body = ""
     problem = publish_problem(review, body, pr_head) or report_problem(review, report)
     if problem is None:
-        body = comment_body(review, report)
+        body = comment_body(review, report, session=session)
         problem = publish_problem(review, body, pr_head)
     if problem is not None:
         raise PublishReviewError(problem)
@@ -302,11 +309,16 @@ def main() -> int:
     """Publish .agentic/review.md to the pull request as its one dovo-review comment."""
     parser = argparse.ArgumentParser(description="Post or update the pull request's one dovo-review comment.")
     parser.add_argument("--pr", required=True, help="Pull request number, URL or branch.")
+    parser.add_argument("--session", metavar="SESSION", help="Dovo session ID to stamp on the comment header.")
     args = parser.parse_args()
     pr: str = args.pr
+    session: str | None = args.session
+    if session is not None and not session.strip():
+        sys.stderr.write("publish_review.py: --session must not be empty\n")
+        return 1
 
     try:
-        sys.stdout.write(publish(pr))
+        sys.stdout.write(publish(pr, session=session))
     except PublishReviewError as error:
         sys.stderr.write(f"publish_review.py: {error}\n")
         return 1
