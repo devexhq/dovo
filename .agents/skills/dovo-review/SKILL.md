@@ -174,7 +174,7 @@ On `CHANGES REQUIRED`, hand off to `/dovo-code review`, then re-run this skill a
 
 ## 9. Emit the machine-readable verdict
 
-Write `.agentic/review.json` and `.agentic/verdict.txt` alongside the markdown, and print `verdict`, `action`, `round`, `head` and `counts` as one minified JSON object on the last line of stdout. `.dovo/catalog/blueprints/feature-dev.yml` branches on these files, `scripts/pr_feedback.py` reads `review.json`'s findings, and `/dovo-code review` reads the ids.
+Write `.agentic/review.json` and `.agentic/verdict.txt` alongside the markdown, and print `verdict`, `action`, `round`, `head` and `counts` as one minified JSON object on the last line of stdout. `.dovo/catalog/blueprints/feature-dev.yml` fixes until `review.json` lists no `BLOCKER` or `WARNING` finding, `scripts/pr_feedback.py` reads `review.json`'s findings, and `/dovo-code review` reads the ids.
 
 ```json
 {
