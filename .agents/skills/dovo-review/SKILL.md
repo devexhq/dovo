@@ -85,7 +85,7 @@ A plan decision is not evidence of correctness. When code that follows the plan 
 
 From round 2, read the previous `.agentic/review.json` before you overwrite it, and `.agentic/implementation-report.md`'s latest `### Review round <n>` or `### Feedback round <n>`, which lists the author's claims. In a `### Feedback round <n>`, each `R#` maps to the previous finding its `.agentic/feedback.json` `body` names (`B1: ...`); `T#`, `C#` and `K#` items are review threads, comments and failed checks, not previous findings. Give every previous finding an outcome: `fixed` when the code at the reviewed commit resolves it, `disputed` when the author disputed it and the evidence supports them, or `still_open`, which you report again under its new id. An author's claim is a claim to verify, not evidence.
 
-Treat a `review.json` on disk as the previous round only when its `round` is one less than this round and its `head` is an ancestor of the reviewed commit (`git merge-base --is-ancestor <head> <reviewed-sha>`); a file left by an earlier, unrelated run makes this round 1.
+A `review.json` on disk is the previous round only when it reviewed this same change: it parses, its `round` is a positive integer, its `head` is a commit in `origin/<default>..<reviewed>` (`git merge-base --is-ancestor <head> <reviewed>` succeeds and `git merge-base --is-ancestor <head> origin/<default>` fails), and, when both it and this review are pull request scopes, its `scope.ref` is this pull request's `#<n>`. This round is then its `round` plus one. Otherwise, including when the file is missing or unreadable, its `head` is `null`, or its `head` is already on `<default>` because its pull request merged, this is round 1: Earlier rounds reads `none` and `history` is `[]`. In every scope, `<default>` is the repository's default branch (`gh repo view --json defaultBranchRef --jq .defaultBranchRef.name`, then `git fetch origin <default>`), never a pull request's base, and `<reviewed>` is the reviewed commit, or `HEAD` for an uncommitted scope.
 
 ## 6. Check the rules
 
@@ -207,7 +207,7 @@ Write `.agentic/review.json` and `.agentic/verdict.txt` alongside the markdown, 
 
 - `verdict` is exactly `APPROVE` or `CHANGES_REQUIRED`, and is `APPROVE` iff `counts.blocking` is `0`. `action` is `none`, `fix`, `replan` or `needs_human`, and is `none` iff `verdict` is `APPROVE`.
 - `head` is the full SHA of the reviewed commit (`git rev-parse HEAD` for a clean branch, the PR's head commit for a PR scope), or `null` when the scope is uncommitted.
-- `provenance` is `fresh_session` or `same_session`. `scope.kind` is `pr`, `uncommitted` or `branch`. `plan` is the plan path or `null`.
+- `provenance` is `fresh_session` or `same_session`. `scope.kind` is `pr`, `uncommitted` or `branch`, and `scope.ref` is `#<n>` for a `pr` scope and `origin/<default>...HEAD` for a `branch` scope. `plan` is the plan path or `null`.
 - `findings` lists every finding, Blocking first, each with the `id` from its `review.md` row. `severity` is `BLOCKER`, `WARNING`, `SUGGESTION` or `NIT`; `rule` is an R-id, `conventions`, or `null`.
 - `coverage` has one entry per Contract coverage row; `verdict` is `met`, `unmet` or `deferred`. It is `[]` without a plan.
 - `history` has one entry per previous-round finding; `outcome` is `fixed`, `disputed` or `still_open`, and `now` is its new id when `still_open`, otherwise `null`. It is `[]` in round 1.
