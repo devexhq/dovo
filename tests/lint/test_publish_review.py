@@ -109,10 +109,23 @@ class PublishReviewTests:
                 id="approve-with-blockers",
             ),
             pytest.param(
-                _review(drop="counts"),
+                _review(drop="counts"), "ok", "review.json has no 'counts'; run /dovo-review again", id="missing-counts"
+            ),
+            pytest.param(
+                _review(round=None), "ok", "review.json round None is not a positive integer", id="round-null"
+            ),
+            pytest.param(_review(round=0), "ok", "review.json round 0 is not a positive integer", id="round-zero"),
+            pytest.param(
+                _review(counts={"blocking": False}),
                 "ok",
-                "review.json says APPROVE with None blocking findings",
-                id="missing-counts",
+                "review.json counts.blocking False is not a non-negative integer",
+                id="blocking-bool",
+            ),
+            pytest.param(
+                _review(counts=[]),
+                "ok",
+                "review.json counts.blocking None is not a non-negative integer",
+                id="counts-not-object",
             ),
             pytest.param(
                 _review(verdict="CHANGES_REQUIRED", action="none", counts={"blocking": 1}),
@@ -130,6 +143,44 @@ class PublishReviewTests:
     )
     def test_publish_problem(self, review: dict[str, object], body: str, expected: str | None) -> None:
         assert PUBLISHER.publish_problem(review, body, PR_HEAD) == expected
+
+    @pytest.mark.parametrize(
+        ("review", "report", "expected"),
+        [
+            pytest.param(
+                _review(),
+                f"**Verdict:** APPROVE · **Action:** none\n**Reviewed commit:** `{PR_HEAD}`\n",
+                None,
+                id="agrees",
+            ),
+            pytest.param(
+                _review(verdict="CHANGES_REQUIRED", action="fix", counts={"blocking": 1}),
+                f"**Verdict:** CHANGES REQUIRED · **Action:** fix\n**Reviewed commit:** `{PR_HEAD}`\n",
+                None,
+                id="changes-required-spelled-with-space",
+            ),
+            pytest.param(
+                _review(),
+                f"**Verdict:** CHANGES REQUIRED · **Action:** fix\n**Reviewed commit:** `{PR_HEAD}`\n",
+                "review.md Verdict line disagrees with review.json: '**Verdict:** CHANGES REQUIRED · **Action:** fix'",
+                id="stale-verdict",
+            ),
+            pytest.param(
+                _review(),
+                f"**Verdict:** APPROVE · **Action:** none\n**Reviewed commit:** `{'b' * 40}`\n",
+                f"review.md Reviewed commit line disagrees with review.json: '**Reviewed commit:** `{'b' * 40}`'",
+                id="stale-commit",
+            ),
+            pytest.param(
+                _review(),
+                f"**Reviewed commit:** `{PR_HEAD}`\n",
+                "review.md has no Verdict line; run /dovo-review again",
+                id="no-verdict-line",
+            ),
+        ],
+    )
+    def test_report_problem(self, review: dict[str, object], report: str, expected: str | None) -> None:
+        assert PUBLISHER.report_problem(review, report) == expected
 
     @pytest.mark.parametrize(
         ("url", "expected"),

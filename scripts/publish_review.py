@@ -24,6 +24,7 @@ AGENTIC_DIR = Path(".agentic")
 MARKER = "<!-- dovo-review -->"
 MAX_COMMENT_CHARS = 65_536
 STAMPED_KEYS = ("head", "verdict", "action", "round")
+REQUIRED_KEYS = (*STAMPED_KEYS, "counts")
 VERDICTS = ("APPROVE", "CHANGES_REQUIRED")
 REVIEW_JSON = AGENTIC_DIR / "review.json"
 REVIEW_MD = AGENTIC_DIR / "review.md"
@@ -88,11 +89,34 @@ def find_own_comment(comments: list[dict[str, object]], viewer: str) -> int | No
     return None
 
 
+def _is_count(value: object) -> bool:
+    """Return whether value is a non-negative integer and not a bool."""
+    return isinstance(value, int) and not isinstance(value, bool) and value >= 0
+
+
+def _blocking(review: dict[str, object]) -> object:
+    """Return review.json's `counts.blocking`, or None when `counts` is not an object."""
+    counts = review["counts"]
+    return counts.get("blocking") if isinstance(counts, dict) else None
+
+
+def _shape_problem(review: dict[str, object]) -> str | None:
+    """Return why review.json's round or blocking count is not a usable number, or None when both are."""
+    round_number = review["round"]
+    if not _is_count(round_number) or round_number == 0:
+        return f"review.json round {round_number!r} is not a positive integer"
+    blocking = _blocking(review)
+    if not _is_count(blocking):
+        return f"review.json counts.blocking {blocking!r} is not a non-negative integer"
+    return None
+
+
 def record_problem(review: dict[str, object]) -> str | None:
     """Return why review.json cannot stamp a truthful header, or None when it can.
 
-    The header shows the verdict and action, so they must agree with each other
-    and with the blocking count, as the dovo-review skill defines them.
+    The header shows the verdict, action and round, so they must be well formed
+    and agree with each other and with the blocking count, as the dovo-review
+    skill defines them.
 
     Args:
         review: The parsed review.json.
@@ -100,19 +124,52 @@ def record_problem(review: dict[str, object]) -> str | None:
     Returns:
         The first problem found, or None when the record is consistent.
     """
-    for key in STAMPED_KEYS:
+    for key in REQUIRED_KEYS:
         if key not in review:
             return f"review.json has no {key!r}; run /dovo-review again"
     verdict = review["verdict"]
     if verdict not in VERDICTS:
         return f"review.json verdict {verdict!r} is not APPROVE or CHANGES_REQUIRED"
+    problem = _shape_problem(review)
+    if problem is not None:
+        return problem
     approved = verdict == "APPROVE"
-    counts = review.get("counts")
-    blocking = counts.get("blocking") if isinstance(counts, dict) else None
+    blocking = _blocking(review)
     if approved != (blocking == 0):
         return f"review.json says {verdict} with {blocking} blocking findings"
     if approved != (review["action"] == "none"):
         return f"review.json action {review['action']!r} contradicts verdict {verdict}"
+    return None
+
+
+def report_problem(review: dict[str, object], report: str) -> str | None:
+    """Return why review.md's own Verdict or Reviewed commit line disagrees with review.json, or None.
+
+    The comment shows both the stamped header and review.md, so a stale or
+    hand-edited review.md must not post a second, different verdict.
+
+    Args:
+        review: The parsed review.json, already accepted by record_problem.
+        report: The text of review.md.
+
+    Returns:
+        The first disagreement found, or None when both lines agree.
+    """
+    head = review["head"]
+    expected = {
+        "**Verdict:**": (
+            f"**Verdict:** {str(review['verdict']).replace('_', ' ')}",
+            f"**Action:** {review['action']}",
+        ),
+        "**Reviewed commit:**": (f"`{head}`" if head is not None else "uncommitted changes",),
+    }
+    lines = report.splitlines()
+    for label, fragments in expected.items():
+        line = next((line for line in lines if line.startswith(label)), None)
+        if line is None:
+            return f"review.md has no {label.strip('*:')} line; run /dovo-review again"
+        if not all(fragment in line for fragment in fragments):
+            return f"review.md {label.strip('*:')} line disagrees with review.json: {line!r}"
     return None
 
 
@@ -223,7 +280,7 @@ def publish(pr: str) -> str:
     host, repository = pr_repository(view["url"])
     # comment_body needs every stamped key, so check the review before building the body.
     body = ""
-    problem = publish_problem(review, body, pr_head)
+    problem = publish_problem(review, body, pr_head) or report_problem(review, report)
     if problem is None:
         body = comment_body(review, report)
         problem = publish_problem(review, body, pr_head)
