@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
 from typer.testing import CliRunner
 
 from dovo.cli import app
@@ -56,6 +57,40 @@ class ConfigSetCliIntegrationTests:
         assert res.exit_code == 0
         assert "(bool)" in res.stdout
         assert json.loads(config_path.read_text())["telemetry"]["enabled"] is True
+
+    @pytest.mark.parametrize(
+        ("key", "raw_value", "expected_value"),
+        [
+            pytest.param(
+                "worktree.base_ref",
+                '"12345"',
+                "worktree.base_ref = 12345 (str)",
+                id="quoted-numeric",
+            ),
+            pytest.param(
+                "agents.copilot.model",
+                '"true"',
+                "agents.copilot.model = true (str)",
+                id="quoted-bool",
+            ),
+        ],
+    )
+    def test_config_set_cli_keeps_quoted_token_as_string(
+        self, cli_runner: CliRunner, isolated_workspace: Path, key: str, raw_value: str, expected_value: str
+    ) -> None:
+        """Exit 0, report expected_value and store the unquoted text as a JSON string at key."""
+        config_path = isolated_workspace / ".dovo" / "config.json"
+        Filesystem.atomic_write_json(config_path, build_default_config("demo-workspace"))
+
+        res = cli_runner.invoke(app, ["-p", str(isolated_workspace), "config", "set", key, raw_value])
+
+        assert res.exit_code == 0
+        assert expected_value in res.stdout
+        stored: object = json.loads(config_path.read_text())
+        for part in key.split("."):
+            assert isinstance(stored, dict)
+            stored = stored[part]
+        assert stored == raw_value[1:-1]
 
     def test_config_set_cli_schema_violation_exits_one(self, cli_runner: CliRunner, isolated_workspace: Path) -> None:
         config_path = isolated_workspace / ".dovo" / "config.json"
