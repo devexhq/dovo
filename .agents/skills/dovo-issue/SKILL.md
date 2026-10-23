@@ -5,8 +5,10 @@ description: >-
   CLI with authoritative scope, numbered FR/NFR contracts, pre-determined data,
   error cases, and a non-redundant Definition of Done. Grounds the issue in the
   code first and splits work larger than one user story or one PR into
-  a parent issue with native sub-issues. Invoked as /dovo-issue.
-  Use when asked to create, draft, or revise a GitHub issue.
+  a parent issue with native sub-issues. Invoked as /dovo-issue; invoked as
+  /dovo-issue reground <number> to re-check a drafted issue against current main
+  and label its size and readiness before work starts. Use when asked to create,
+  draft, revise, or re-ground a GitHub issue.
 ---
 
 # dovo-issue
@@ -132,3 +134,70 @@ Before running `gh issue create` or `gh issue edit`:
 5. Scan FRs and **Pre-determined data** for private helper names, loop or call-site lists, and module paths that are not public surface. Delete them (principle 4).
 6. Confirm every bug and persisted-format change found in **Ground** appears as a blocker issue or under **Shared surfaces changed**.
 7. When publishing a split, create or edit the parent first, then the sub-issues in dependency order so each `--blocked-by` names an issue that exists. Confirm with `gh api repos/{owner}/{repo}/issues/<parent>/sub_issues --jq '.[].number'`.
+
+Drafting applies no `dovo-size-*` or status label; re-grounding does.
+
+## Re-ground mode
+
+`/dovo-issue reground <number>` runs right before work starts on an issue. It checks the issue against what has merged since it was drafted, corrects the body, and leaves the issue with exactly one size label and one status label. Only an issue labelled `dovo-ready` is picked up for implementation. A parent issue gets no labels; re-ground each sub-issue.
+
+### 1. Find the base
+
+The base is the commit the issue was last checked against: the SHA in its latest comment starting with `<!-- dovo-reground -->`, or, when there is none, the last `origin/main` commit before the issue was created:
+
+```bash
+git fetch origin main
+gh issue view <n> --json body,createdAt,labels,comments
+git rev-list -1 --before=<createdAt> origin/main
+```
+
+### 2. Re-ground
+
+Read what merged since the base (`git log --oneline <base>..origin/main`, then the diffs that touch the issue's surfaces), and re-run **Ground** against `origin/main`. Check every path, type, error code, config key, CLI copy and other literal in the body against current code, and whether merged work already delivered part of the scope. The code stays read-only as in **Ground**; the only writes are to the issue: its body, its labels and the comment in step 5.
+
+Edit the body with `gh issue edit <n> --body-file …` when anything is stale: fix stale literals, drop scope that has shipped, and add any new bug or persisted-format change. The edited body follows **Core Principles** and passes the **Pre-Publish Checklist**, including the split checks. When it must now be split, split it per **Size and split** and re-ground each sub-issue instead.
+
+### 3. Label size
+
+Remove any other `dovo-size-*` label and apply one:
+
+| Label | When |
+|---|---|
+| `dovo-size-s` | A few files on one surface, up to about 200 changed lines |
+| `dovo-size-m` | Several files or two surfaces, about 200 to 400 changed lines |
+| `dovo-size-l` | Several packages, schemas or surfaces, over about 400 changed lines |
+
+`dovo-size-l` fails **Size and split**, so an issue sized `l` is split before it can be `dovo-ready`; label it `dovo-blocked` when the split needs a human decision.
+
+### 4. Label status
+
+Remove any other status label and apply the first that holds:
+
+| Label | When |
+|---|---|
+| `dovo-blocked` | An issue it is blocked by is open, or the body needs a decision only a human can make. No agent can move it forward. |
+| `dovo-investigate` | An agent can make progress alone but not implement yet: a submitted bug whose cause is not confirmed in the code, or an open technical question (reproduce, root-cause, size). The investigation ends by rewriting the issue in the structure above and re-grounding it again. |
+| `dovo-ready` | The body matches `origin/main`, has no open question, and passes **Size and split**. |
+
+List the open issues it is blocked by with:
+
+```bash
+gh api repos/{owner}/{repo}/issues/<n>/dependencies/blocked_by --jq '.[] | select(.state == "open") | .number'
+```
+
+A submitted bug report that is not in the structure above gets `dovo-investigate` and is not rewritten until the investigation confirms its cause.
+
+Set both labels in one call, removing only the labels the issue has: `gh issue edit <n> --add-label dovo-size-m,dovo-ready --remove-label dovo-investigate`.
+
+### 5. Comment
+
+Post one comment recording the check, so the next re-ground and the implementing agent know where it stands:
+
+```markdown
+<!-- dovo-reground -->
+Re-grounded against `<full origin/main SHA>`.
+
+- **Body changes:** <each correction, or "none">
+- **Size:** `dovo-size-<s|m|l>`, <one-line reason>
+- **Status:** `dovo-<ready|investigate|blocked>`, <the blocking issue, the decision needed, or the question to investigate; omit the reason for ready>
+```
