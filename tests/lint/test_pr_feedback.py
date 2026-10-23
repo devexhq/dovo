@@ -6,6 +6,8 @@ import importlib.util
 import json
 import subprocess
 import sys
+from collections.abc import Callable
+from pathlib import Path
 from types import ModuleType
 
 import pytest
@@ -14,6 +16,7 @@ from tests.lint.astlib import REPO_ROOT
 
 HEAD = "a" * 40
 SESSION = "blueprint_abba01ee"
+PR_URL = "https://github.com/o/r/pull/7"
 HEADER = f"<!-- dovo-review -->\nReviewed commit: `{HEAD}`\nVerdict: APPROVE · Action: none · Round: 2\n"
 
 
@@ -28,7 +31,7 @@ def _load_script(name: str, module_name: str) -> ModuleType:
     return module
 
 
-_load_script("publish_review", "publish_review")
+PUBLISH = _load_script("publish_review", "publish_review")
 FEEDBACK = _load_script("pr_feedback", "pr_feedback_under_test")
 
 
@@ -61,15 +64,20 @@ FINDINGS = [_finding("B1", "BLOCKER"), _finding("W1", "WARNING"), _finding("S1",
 
 class PrFeedbackTests:
     @pytest.mark.parametrize(
-        ("state", "expected"),
+        ("view", "expected"),
         [
-            pytest.param("OPEN", None, id="open"),
-            pytest.param("CLOSED", "pull request #7 is not open", id="closed"),
-            pytest.param("MERGED", "pull request #7 is not open", id="merged"),
+            pytest.param({"state": "OPEN", "isCrossRepository": False}, None, id="open"),
+            pytest.param({"state": "CLOSED"}, "pull request #7 is not open", id="closed"),
+            pytest.param({"state": "MERGED"}, "pull request #7 is not open", id="merged"),
+            pytest.param(
+                {"state": "OPEN", "isCrossRepository": True},
+                "pull request #7 comes from another repository; pr-fix pushes only to origin",
+                id="cross-repository",
+            ),
         ],
     )
-    def test_pr_problem(self, state: str, expected: str | None) -> None:
-        assert FEEDBACK.pr_problem({"state": state}, 7) == expected
+    def test_pr_problem(self, view: dict[str, object], expected: str | None) -> None:
+        assert FEEDBACK.pr_problem(view, 7) == expected
 
     @pytest.mark.parametrize(
         ("body", "expected"),
@@ -283,3 +291,82 @@ class PrFeedbackTests:
 
         assert FEEDBACK.main() == 1
         assert capsys.readouterr().err == "pr_feedback.py: pull request #7 is not open\n"
+
+    def test_main_reports_artifact_problem(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        ran: list[tuple[str, ...]] = []
+        monkeypatch.chdir(tmp_path)
+        monkeypatch.setattr(sys, "argv", ["pr_feedback.py", "--pr", "7"])
+        fake_run = _fake_run(ran, failing_artifact="review")
+        monkeypatch.setattr(FEEDBACK, "run", fake_run)
+        monkeypatch.setattr(PUBLISH, "run", fake_run)
+
+        assert FEEDBACK.main() == 1
+        assert capsys.readouterr().err == f"pr_feedback.py: {FEEDBACK.artifact_problem(SESSION, 'review')}\n"
+        assert not [args for args in ran if args[0] == "git"]
+        assert not (tmp_path / ".agentic" / "feedback.json").exists()
+
+    def test_main_restores_and_collects(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        ran: list[tuple[str, ...]] = []
+        monkeypatch.chdir(tmp_path)
+        monkeypatch.setattr(sys, "argv", ["pr_feedback.py", "--pr", "7"])
+        fake_run = _fake_run(ran)
+        monkeypatch.setattr(FEEDBACK, "run", fake_run)
+        monkeypatch.setattr(PUBLISH, "run", fake_run)
+
+        assert FEEDBACK.main() == 0
+
+        agentic = tmp_path / ".agentic"
+        assert capsys.readouterr().out == (
+            f"Restored dovo session {SESSION} and collected 2 feedback items for pull request #7\n"
+        )
+        document = json.loads((agentic / "feedback.json").read_text(encoding="utf-8"))
+        assert (document["pr"], document["head"], document["session"]) == (7, HEAD, SESSION)
+        assert [item["label"] for item in document["items"]] == [
+            "T1 [review_thread, alice] Fix one",
+            "R1 [review_finding, dovo-review] B1 summary",
+        ]
+        assert (agentic / "pr-branch").read_text(encoding="utf-8") == "alice/fix\n"
+        assert (agentic / "pr-url").read_text(encoding="utf-8") == f"{PR_URL}\n"
+        assert ("git", "switch", "-q", "--detach", HEAD) in ran
+
+
+def _fake_run(ran: list[tuple[str, ...]], *, failing_artifact: str | None = None) -> Callable[..., str]:
+    """Return a `run` double answering the gh, dovo and git calls of one restore of PR #7, recording each in ran.
+
+    Downloading the `review` artifact writes a CHANGES_REQUIRED .agentic/review.json, and downloading
+    failing_artifact raises CalledProcessError.
+    """
+
+    def fake_run(*args: str) -> str:
+        ran.append(args)
+        if args[:3] == ("gh", "pr", "view"):
+            view = {"number": 7, "state": "OPEN", "headRefName": "alice/fix", "headRefOid": HEAD}
+            return json.dumps({**view, "url": PR_URL, "isCrossRepository": False})
+        if args[-3:] == ("user", "--jq", ".login"):
+            return "me"
+        if "repos/o/r/issues/7/comments" in args:
+            return json.dumps({"id": 1, "user": "me", "body": f"{HEADER}Dovo session: `{SESSION}`\n\nx"})
+        if args[:5] == ("uv", "run", "dovo", "artifacts", "download"):
+            return _download(args, failing_artifact)
+        if args[:3] == ("gh", "api", "graphql"):
+            return json.dumps(_thread("Fix one", author={"__typename": "User", "login": "alice"}))
+        assert args[0] == "git", f"ran {args}"
+        return ""
+
+    return fake_run
+
+
+def _download(args: tuple[str, ...], failing_artifact: str | None) -> str:
+    """Answer a `dovo artifacts download` call, writing review.json for `review` and failing for failing_artifact."""
+    name = args[6]
+    if name == failing_artifact:
+        raise subprocess.CalledProcessError(1, list(args), stderr="no such artifact")
+    if name == "review":
+        review = {"verdict": "CHANGES_REQUIRED", "findings": FINDINGS[:1]}
+        Path(".agentic").mkdir(exist_ok=True)
+        Path(".agentic/review.json").write_text(json.dumps(review), encoding="utf-8")
+    return ""

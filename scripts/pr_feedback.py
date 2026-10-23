@@ -4,7 +4,8 @@
 Reads the pull request's dovo-review comment by the authenticated `gh` user,
 takes the dovo session on its `Dovo session:` header line, downloads that
 session's plan, plan-questions, review and implementation-report artifacts into
-.agentic/, checks out the pull request's head commit, and writes
+.agentic/, checks out the pull request's head commit, records its head branch
+in .agentic/pr-branch and its URL in .agentic/pr-url, and writes
 .agentic/feedback.json: every unresolved review thread, then, when the restored
 review asks for changes, its blocking and warning findings.
 """
@@ -23,6 +24,7 @@ from publish_review import SESSION_LABEL, find_own_comment, list_comments, pr_re
 AGENTIC_DIR = Path(".agentic")
 FEEDBACK_JSON = AGENTIC_DIR / "feedback.json"
 PR_BRANCH = AGENTIC_DIR / "pr-branch"
+PR_URL = AGENTIC_DIR / "pr-url"
 REVIEW_JSON = AGENTIC_DIR / "review.json"
 RESTORED_ARTIFACTS = ("plan", "plan-questions", "review", "implementation-report")
 FINDING_SEVERITIES = ("BLOCKER", "WARNING")
@@ -58,10 +60,16 @@ class PrFeedbackError(RuntimeError):
 
 
 def pr_problem(view: dict[str, object], number: int) -> str | None:
-    """Return `pull request #<number> is not open` unless view's state is OPEN, else None."""
-    if view.get("state") == "OPEN":
-        return None
-    return f"pull request #{number} is not open"
+    """Return why pr-fix cannot work on the pull request in view, or None when it can.
+
+    The pull request must be open, and its head must live in the base
+    repository, because pr-fix fetches and pushes only through origin.
+    """
+    if view.get("state") != "OPEN":
+        return f"pull request #{number} is not open"
+    if view.get("isCrossRepository"):
+        return f"pull request #{number} comes from another repository; pr-fix pushes only to origin"
+    return None
 
 
 def session_from_comment(body: str) -> str | None:
@@ -226,13 +234,15 @@ def list_threads(host: str, repository: str, number: int) -> list[dict[str, obje
 
 
 def open_pull_request(pr: int) -> dict[str, object]:
-    """Return pr's number, state, head branch, head commit and URL.
+    """Return pr's number, state, head branch, head commit, URL and whether its head is in another repository.
 
     Raises:
-        PrFeedbackError: With error 2 when the pull request does not exist or is not open.
+        PrFeedbackError: With error 2 when the pull request does not exist or is not open, or
+            when its head is in another repository.
     """
+    fields = "number,state,headRefName,headRefOid,url,isCrossRepository"
     try:
-        view = json.loads(run("gh", "pr", "view", str(pr), "--json", "number,state,headRefName,headRefOid,url"))
+        view = json.loads(run("gh", "pr", "view", str(pr), "--json", fields))
     except subprocess.CalledProcessError as error:
         raise PrFeedbackError(f"pull request #{pr} is not open") from error
     problem = pr_problem(view, pr)
@@ -254,11 +264,16 @@ def download_artifacts(session: str) -> None:
             raise PrFeedbackError(artifact_problem(session, name)) from error
 
 
-def check_out_head(number: int, head_branch: str, head: str) -> None:
-    """Detach the worktree at the pull request's head commit and record its head branch in .agentic/pr-branch."""
+def check_out_head(number: int, head_branch: str, head: str, url: str) -> None:
+    """Detach the worktree at the pull request's head commit, and record its head branch and URL.
+
+    The head branch in .agentic/pr-branch is where the fixes are pushed; the URL
+    in .agentic/pr-url names the one pull request the review is posted to.
+    """
     run("git", "fetch", "-q", "origin", f"refs/pull/{number}/head")
     run("git", "switch", "-q", "--detach", head)
     PR_BRANCH.write_text(f"{head_branch}\n", encoding="utf-8")
+    PR_URL.write_text(f"{url}\n", encoding="utf-8")
 
 
 def collect(pr: int) -> str:
@@ -270,11 +285,12 @@ def collect(pr: int) -> str:
     view = open_pull_request(pr)
     number = int(str(view["number"]))
     head = str(view["headRefOid"])
-    host, repository = pr_repository(str(view["url"]))
+    url = str(view["url"])
+    host, repository = pr_repository(url)
     viewer = run("gh", "api", "--hostname", host, "user", "--jq", ".login")
     session = comment_session(list_comments(host, repository, number), viewer, number)
     download_artifacts(session)
-    check_out_head(number, str(view["headRefName"]), head)
+    check_out_head(number, str(view["headRefName"]), head, url)
     review = json.loads(REVIEW_JSON.read_text(encoding="utf-8"))
     items = thread_items(list_threads(host, repository, number)) + finding_items(review)
     document = feedback_document(number, head, session, items)
