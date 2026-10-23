@@ -56,7 +56,7 @@ An issue has one responsibility and lands as one PR. What makes a PR hard to rev
 |---|---|---|
 | Fix | One wrong behaviour, or a batch of small wrong behaviours in one area, each with its own FR and regression test | Refactors around it |
 | Foundation | A new shared type, tool or rule adopted by two or more issues, with its contract tests | Converts callers |
-| Adopt | One package or area moves onto a foundation, deleting what it replaces there | Changes what users see beyond what the move requires |
+| Adopt | One package or one pipeline moves onto a foundation, deleting what it replaces there | Changes what users see beyond what the move requires |
 | Refactor | Structure only, with value of its own; observable behaviour is identical | Adds surface |
 | Remove | Deletes what nothing uses any more | Anything else |
 | Feature | New user-facing surface | Restructures what it builds on |
@@ -66,7 +66,9 @@ Split it when any of these hold:
 - the **I want** line, or the **As a** line, joins independently valuable outcomes or different users (for example someone running a blueprint and someone running `dovo doctor`). A batch of small fixes in one area is one Fix issue, not several
 - more than one new public surface (for example a command group *and* a schema field)
 - it changes a persisted format *and* adds CLI surface
-- it adopts one foundation in more than one package or domain area
+- it adopts one foundation in more than one package, unless those packages form one pipeline (below)
+
+A **pipeline** is the ordered chain of steps that one public entrypoint runs for one command, each step in its own package. For example, `initialize_workspace` runs `dovo init` as bootstrap (`core/bootstrap`), project identity (`core/project`), config generation (`core/config`) and catalog seeding (`core/catalog`). Packages form one pipeline for an Adopt issue only when every changed function in them is called by that entrypoint's chain alone. A changed function that another entrypoint also calls belongs to its package's own Adopt issue, and the pipeline issue is blocked by it.
 
 Never split one responsibility to make the parts smaller. If the halves would need a temporary bridge between them (one half mapping the new shape back onto the old one so the other half still works), keep them as one issue.
 
@@ -92,7 +94,7 @@ Count the changed files in those surfaces; tests and other docs follow the code 
 
 An `l` issue states in its opening paragraph, in one sentence, the single responsibility that holds it together; if no such sentence is true, split it.
 
-Split by responsibility, never by layer or line count. A foundation child is valid when two or more children that adopt it are created in the same split and blocked by it; every other child has its own user story and is useful once merged. When one foundation is adopted across several packages, the split is the foundation, then one adopt child per package, then any remove child for what the adoptions left unused. Every split has a parent issue and native GitHub sub-issues:
+Split by responsibility, never by layer or line count. A foundation child is valid when two or more children that adopt it are created in the same split and blocked by it; every other child has its own user story and is useful once merged. When one foundation is adopted across several packages, the split is the foundation, then one adopt child per package or pipeline, then any remove child for what the adoptions left unused. Every split has a parent issue and native GitHub sub-issues:
 
 - **Parent:** the Goal / User Story, one short paragraph on why the children are ordered as they are, and an **Out of scope** list for the whole feature. No FRs, data, error cases or Definition of Done: GitHub tracks progress through the sub-issues. When splitting an existing issue, edit it into the parent (`gh issue edit <n> --body-file …`) so its number, links and discussion survive.
 - **Sub-issues:** full issues in the structure below, each self-contained. The planner reads only the sub-issue, never the parent or its siblings, so every requirement and literal contract it needs is in its own body. Create each with `gh issue create --parent <parent> --label dovo-size-<s|m|l>`, adding `--blocked-by <n>` when it cannot ship before another sub-issue. A parent gets no size label.
