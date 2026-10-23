@@ -6,8 +6,10 @@ takes the dovo session on its `Dovo session:` header line, downloads that
 session's plan, plan-questions, review and implementation-report artifacts into
 .agentic/, checks out the pull request's head commit, records its head branch
 in .agentic/pr-branch and its URL in .agentic/pr-url, and writes
-.agentic/feedback.json: every unresolved review thread, then, when the restored
-review asks for changes, its blocking and warning findings.
+.agentic/feedback.json: every unresolved review thread; when the restored
+review asks for changes, its blocking and warning findings; every comment and
+review summary by someone else touched since the dovo-review comment's last
+update; and every failed check on the head commit.
 """
 
 from __future__ import annotations
@@ -17,7 +19,9 @@ import json
 import re
 import subprocess
 import sys
+from datetime import datetime
 from pathlib import Path
+from typing import NamedTuple
 
 from publish_review import SESSION_LABEL, find_own_comment, list_comments, pr_repository, run
 
@@ -29,7 +33,8 @@ REVIEW_JSON = AGENTIC_DIR / "review.json"
 RESTORED_ARTIFACTS = ("plan", "plan-questions", "review", "implementation-report")
 FINDING_SEVERITIES = ("BLOCKER", "WARNING")
 SUMMARY_CHARS = 200
-NO_AUTHOR_LABEL = "dovo-review"
+NO_AUTHOR_LABELS = {"review_finding": "dovo-review", "check": "ci"}
+FAILED_CONCLUSIONS = ("failure", "cancelled", "timed_out")
 THREADS_QUERY = """
 query($owner: String!, $name: String!, $number: Int!, $endCursor: String) {
   repository(owner: $owner, name: $name) {
@@ -42,6 +47,18 @@ query($owner: String!, $name: String!, $number: Int!, $endCursor: String) {
           line
           comments(first: 1) { nodes { author { __typename login } body url } }
         }
+      }
+    }
+  }
+}
+"""
+REVIEWS_QUERY = """
+query($owner: String!, $name: String!, $number: Int!, $endCursor: String) {
+  repository(owner: $owner, name: $name) {
+    pullRequest(number: $number) {
+      reviews(first: 100, after: $endCursor) {
+        pageInfo { hasNextPage endCursor }
+        nodes { author { __typename login } body url submittedAt lastEditedAt }
       }
     }
   }
@@ -87,11 +104,11 @@ def session_from_comment(body: str) -> str | None:
     return None
 
 
-def comment_session(comments: list[dict[str, object]], viewer: str, number: int) -> str:
-    """Return the session named by viewer's dovo-review comment.
+def review_comment(comments: list[dict[str, object]], viewer: str, number: int) -> dict[str, object]:
+    """Return viewer's dovo-review comment among comments.
 
     Raises:
-        PrFeedbackError: With error 3 when there is no such comment, or error 4 when it names no session.
+        PrFeedbackError: With error 3 when there is no such comment.
     """
     comment_id = find_own_comment(comments, viewer)
     comment = next((comment for comment in comments if comment.get("id") == comment_id), None)
@@ -99,6 +116,15 @@ def comment_session(comments: list[dict[str, object]], viewer: str, number: int)
         raise PrFeedbackError(
             f"no dovo-review comment on pull request #{number}; run /dovo-review {number} --post first"
         )
+    return comment
+
+
+def comment_session(comment: dict[str, object], number: int) -> str:
+    """Return the session named by the dovo-review comment's header.
+
+    Raises:
+        PrFeedbackError: With error 4 when it names none.
+    """
     session = session_from_comment(str(comment.get("body", "")))
     if session is None:
         raise PrFeedbackError(f"the dovo-review comment on pull request #{number} names no dovo session")
@@ -123,7 +149,7 @@ def _plain_line(line: str) -> str:
     return " ".join(line.split())
 
 
-def thread_summary(body: str) -> str:
+def markdown_summary(body: str) -> str:
     """Return the first line of body that is non-empty once Markdown markup is removed, cut to SUMMARY_CHARS."""
     for line in HTML_COMMENT.sub("", body).splitlines():
         plain = _plain_line(line)
@@ -165,7 +191,7 @@ def thread_items(threads: list[dict[str, object]]) -> list[dict[str, object]]:
                 "url": comment.get("url"),
                 "path": thread.get("path"),
                 "line": thread.get("line"),
-                "summary": thread_summary(body),
+                "summary": markdown_summary(body),
                 "body": body,
             }
         )
@@ -193,9 +219,105 @@ def finding_items(review: dict[str, object]) -> list[dict[str, object]]:
     ]
 
 
+class _Entry(NamedTuple):
+    """An issue comment or submitted review, normalised: its author label, URL, body and creation and touch times."""
+
+    author: str
+    url: object
+    body: str
+    created: datetime
+    touched: datetime
+
+
+def _issue_comment_entry(comment: dict[str, object]) -> _Entry:
+    """Return a list_comments entry normalised, its REST login taken as is or `ghost` when GitHub returns none."""
+    user = comment.get("user")
+    return _Entry(
+        author=str(user) if user else "ghost",
+        url=comment.get("url"),
+        body=str(comment.get("body") or ""),
+        created=datetime.fromisoformat(str(comment["created_at"])),
+        touched=datetime.fromisoformat(str(comment["updated_at"])),
+    )
+
+
+def _review_entry(review: dict[str, object]) -> _Entry | None:
+    """Return a REVIEWS_QUERY node normalised, touched at the later of submission and last edit; None when pending."""
+    submitted = review.get("submittedAt")
+    if not submitted:
+        return None
+    created = datetime.fromisoformat(str(submitted))
+    edited = review.get("lastEditedAt")
+    touched = max(created, datetime.fromisoformat(str(edited))) if edited else created
+    return _Entry(
+        author=_author_login(review.get("author")),
+        url=review.get("url"),
+        body=str(review.get("body") or ""),
+        created=created,
+        touched=touched,
+    )
+
+
+def _after(entry: _Entry, viewer: str, since: datetime) -> bool:
+    """Return whether entry is by someone other than viewer, touched after since and non-empty once markup is removed."""
+    return entry.author != viewer and entry.touched > since and markdown_summary(entry.body) != ""
+
+
+def comment_items(
+    comments: list[dict[str, object]], reviews: list[dict[str, object]], viewer: str, since: str
+) -> list[dict[str, object]]:
+    """Return one `comment` item per comment and review by someone else touched after since, ids C1, C2, ...
+
+    Each issue comment and submitted review not by viewer, touched after since and non-empty once markup is
+    removed, is listed in creation order. comments are list_comments entries (REST: `user`, `url`, `body`, `created_at`, `updated_at`); reviews are
+    REVIEWS_QUERY nodes (GraphQL: `author`, `url`, `body`, `submittedAt`, `lastEditedAt`). A comment is created at
+    `created_at` and touched at `updated_at`; a review is created at `submittedAt` and touched at the later of
+    `submittedAt` and `lastEditedAt`. since is the dovo-review comment's `updated_at`.
+    """
+    cutoff = datetime.fromisoformat(since)
+    entries = [_issue_comment_entry(comment) for comment in comments] + [
+        entry for entry in map(_review_entry, reviews) if entry is not None
+    ]
+    selected = sorted((entry for entry in entries if _after(entry, viewer, cutoff)), key=lambda entry: entry.created)
+    return [
+        {
+            "id": f"C{index}",
+            "source": "comment",
+            "author": entry.author,
+            "url": entry.url,
+            "path": None,
+            "line": None,
+            "summary": markdown_summary(entry.body),
+            "body": entry.body,
+        }
+        for index, entry in enumerate(selected, start=1)
+    ]
+
+
+def check_items(checks: list[dict[str, object]]) -> list[dict[str, object]]:
+    """Return one `check` item per check run whose conclusion is in FAILED_CONCLUSIONS, ordered by name, ids K1, K2, ..."""
+    failed = sorted(
+        (check for check in checks if check.get("conclusion") in FAILED_CONCLUSIONS),
+        key=lambda check: str(check.get("name")),
+    )
+    return [
+        {
+            "id": f"K{index}",
+            "source": "check",
+            "author": None,
+            "url": check.get("details_url") or check.get("html_url"),
+            "path": None,
+            "line": None,
+            "summary": f"{check.get('name')}: {check.get('conclusion')}",
+            "body": f"{check.get('name')}: {check.get('conclusion')}",
+        }
+        for index, check in enumerate(failed, start=1)
+    ]
+
+
 def option_label(item: dict[str, object]) -> str:
-    """Return `<id> [<source>, <author>] <summary>`, with NO_AUTHOR_LABEL for a null author."""
-    author = item["author"] if item["author"] is not None else NO_AUTHOR_LABEL
+    """Return `<id> [<source>, <author>] <summary>`, with the source's NO_AUTHOR_LABELS entry for a null author."""
+    author = item["author"] if item["author"] is not None else NO_AUTHOR_LABELS[str(item["source"])]
     return f"{item['id']} [{item['source']}, {author}] {item['summary']}"
 
 
@@ -209,8 +331,8 @@ def feedback_document(pr: int, head: str, session: str, items: list[dict[str, ob
     }
 
 
-def list_threads(host: str, repository: str, number: int) -> list[dict[str, object]]:
-    """Return every review thread on the pull request, one dict per thread, through paginated GraphQL."""
+def list_pr_nodes(host: str, repository: str, number: int, query: str, connection: str) -> list[dict[str, object]]:
+    """Return every node of the pull request's GraphQL connection, one dict per node, through paginated query."""
     owner, name = repository.split("/", 1)
     output = run(
         "gh",
@@ -220,7 +342,7 @@ def list_threads(host: str, repository: str, number: int) -> list[dict[str, obje
         host,
         "--paginate",
         "-f",
-        f"query={THREADS_QUERY}",
+        f"query={query}",
         "-f",
         f"owner={owner}",
         "-f",
@@ -228,7 +350,26 @@ def list_threads(host: str, repository: str, number: int) -> list[dict[str, obje
         "-F",
         f"number={number}",
         "--jq",
-        ".data.repository.pullRequest.reviewThreads.nodes[]",
+        f".data.repository.pullRequest.{connection}.nodes[]",
+    )
+    return [json.loads(line) for line in output.splitlines() if line.strip()]
+
+
+def list_checks(host: str, repository: str, head: str) -> list[dict[str, object]]:
+    """Return the latest check run per name on commit head, each with name, conclusion, details_url and html_url.
+
+    Runs `gh api --hostname <host> --paginate repos/<repository>/commits/<head>/check-runs
+    --jq '.check_runs[] | {name, conclusion, details_url, html_url}'`.
+    """
+    output = run(
+        "gh",
+        "api",
+        "--hostname",
+        host,
+        "--paginate",
+        f"repos/{repository}/commits/{head}/check-runs",
+        "--jq",
+        ".check_runs[] | {name, conclusion, details_url, html_url}",
     )
     return [json.loads(line) for line in output.splitlines() if line.strip()]
 
@@ -281,6 +422,7 @@ def collect(pr: int) -> str:
 
     Raises:
         PrFeedbackError: For errors 2-5 of issue #1124.
+        subprocess.CalledProcessError: When a gh request fails, including reading the head commit's checks.
     """
     view = open_pull_request(pr)
     number = int(str(view["number"]))
@@ -288,11 +430,19 @@ def collect(pr: int) -> str:
     url = str(view["url"])
     host, repository = pr_repository(url)
     viewer = run("gh", "api", "--hostname", host, "user", "--jq", ".login")
-    session = comment_session(list_comments(host, repository, number), viewer, number)
+    comments = list_comments(host, repository, number)
+    own = review_comment(comments, viewer, number)
+    session = comment_session(own, number)
     download_artifacts(session)
     check_out_head(number, str(view["headRefName"]), head, url)
     review = json.loads(REVIEW_JSON.read_text(encoding="utf-8"))
-    items = thread_items(list_threads(host, repository, number)) + finding_items(review)
+    reviews = list_pr_nodes(host, repository, number, REVIEWS_QUERY, "reviews")
+    items = (
+        thread_items(list_pr_nodes(host, repository, number, THREADS_QUERY, "reviewThreads"))
+        + finding_items(review)
+        + comment_items(comments, reviews, viewer, str(own["updated_at"]))
+        + check_items(list_checks(host, repository, head))
+    )
     document = feedback_document(number, head, session, items)
     FEEDBACK_JSON.write_text(json.dumps(document, indent=2) + "\n", encoding="utf-8")
     return f"Restored dovo session {session} and collected {len(items)} feedback items for pull request #{number}\n"
