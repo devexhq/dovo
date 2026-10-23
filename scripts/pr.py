@@ -2,8 +2,9 @@
 """Commits, pushes, and opens/updates a PR from the .agentic/ handoff files.
 
 Reads .agentic/commit-msg, .agentic/pr-title, and .agentic/pr-description
-(written by the /pr-prep skill) and turns them into a real commit, a pushed
-branch, and a GitHub pull request via `gh`.
+(written by the /pr-prep skill) and turns them into a commit of any
+uncommitted change, a pushed branch, and a GitHub pull request via `gh`. A
+branch whose changes are already committed is pushed as it is.
 """
 
 from __future__ import annotations
@@ -148,6 +149,29 @@ def commit(commit_msg: str) -> str:
     return run("git", "rev-parse", "--short", "HEAD").stdout.strip()
 
 
+def has_commits_ahead(base: str) -> bool:
+    """Return whether HEAD has commits that origin/<base> does not."""
+    return run("git", "rev-list", "--count", f"origin/{base}..HEAD").stdout.strip() != "0"
+
+
+def commit_staged(commit_msg: str, branch: str, base: str) -> None:
+    """Commit the staged changes, or accept a branch that already has commits ahead of base.
+
+    Args:
+        commit_msg: Full commit message (title + optional body).
+        branch: The branch being committed to, for the progress line.
+        base: The PR's base branch.
+
+    Raises:
+        PrPrepError: If nothing is staged and the branch has no commits ahead of base.
+    """
+    if has_staged_changes():
+        sha = commit(commit_msg)
+        sys.stdout.write(f"Committed {sha} on {branch}.\n")
+    elif not has_commits_ahead(base):
+        raise PrPrepError(f"Nothing to commit and no commits ahead of origin/{base}.")
+
+
 def push_branch(branch: str) -> None:
     """Push the branch, setting the upstream if it has none yet."""
     upstream = run("git", "rev-parse", "--abbrev-ref", f"{branch}@{{upstream}}", check=False)
@@ -214,14 +238,11 @@ def main() -> int:
         pr_description = read_handoff_file(PR_DESCRIPTION_FILE)
 
         default_branch = get_default_branch()
+        resolved_base = base or default_branch
         branch = ensure_feature_branch(default_branch, pr_title)
 
         stage_changes(paths)
-        if not has_staged_changes():
-            raise PrPrepError("Nothing staged to commit. Is there anything uncommitted?")
-
-        sha = commit(commit_msg)
-        sys.stdout.write(f"Committed {sha} on {branch}.\n")
+        commit_staged(commit_msg, branch, resolved_base)
 
         push_branch(branch)
         sys.stdout.write(f"Pushed {branch} to origin.\n")
@@ -230,7 +251,6 @@ def main() -> int:
         if existing_url:
             sys.stdout.write(f"Open PR already exists: {existing_url}\n")
         else:
-            resolved_base = base or default_branch
             url = create_pr(branch, resolved_base, pr_title, pr_description)
             sys.stdout.write(f"Opened PR: {url}\n")
     except PrPrepError as exc:
