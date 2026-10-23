@@ -43,9 +43,9 @@ Canonical example of structure, depth, and tone: [examples/github-issue.md](exam
 Before drafting, read the entry points of every surface the issue touches, and their callers. Record:
 - **Existing bugs on the path** the work builds on. Each becomes its own sub-issue, which blocks the work that depends on it.
 - **Persisted formats** the work changes (session state and manifests, `data.db`, `config.json`, catalog `index.json`, blueprint and step YAML). List each under **Shared surfaces changed**, with what happens to data written before the change.
-- **Call sites** when the work applies one pattern across many places (exception handlers, commands, callers of a replaced function): count them per package, for example with `git grep -c`, and size the issue from that count and the tests each site needs.
+- **Call sites** when the work applies one pattern across many places (exception handlers, commands, callers of a replaced function): count them per package, for example with `git grep -c`, and read the matches to drop comments, docs and tests from the count. Size the issue from that count and the tests each site needs.
 
-Only read; never edit code or run tooling.
+Only read; never edit code or run tooling that mutates or validates. Read-only `git`, read-only `gh`, `rg` and file reads are enough.
 
 ### 2. Size and split
 
