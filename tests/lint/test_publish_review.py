@@ -103,6 +103,12 @@ class PublishReviewTests:
                 id="unknown-verdict",
             ),
             pytest.param(
+                _review(verdict="CHANGES_REQUIRED", action="banana", counts={"blocking": 1}),
+                "ok",
+                "review.json action 'banana' is not none, fix, replan or needs_human",
+                id="unknown-action",
+            ),
+            pytest.param(
                 _review(counts={"blocking": 2}),
                 "ok",
                 "review.json says APPROVE with 2 blocking findings",

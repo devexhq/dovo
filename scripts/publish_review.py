@@ -26,6 +26,7 @@ MAX_COMMENT_CHARS = 65_536
 STAMPED_KEYS = ("head", "verdict", "action", "round")
 REQUIRED_KEYS = (*STAMPED_KEYS, "counts")
 VERDICTS = ("APPROVE", "CHANGES_REQUIRED")
+ACTIONS = ("none", "fix", "replan", "needs_human")
 REVIEW_JSON = AGENTIC_DIR / "review.json"
 REVIEW_MD = AGENTIC_DIR / "review.md"
 
@@ -130,6 +131,8 @@ def record_problem(review: dict[str, object]) -> str | None:
     verdict = review["verdict"]
     if verdict not in VERDICTS:
         return f"review.json verdict {verdict!r} is not APPROVE or CHANGES_REQUIRED"
+    if review["action"] not in ACTIONS:
+        return f"review.json action {review['action']!r} is not none, fix, replan or needs_human"
     problem = _shape_problem(review)
     if problem is not None:
         return problem

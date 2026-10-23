@@ -195,17 +195,21 @@ steps:
     timeout_seconds: 900
 
   # A command step: it commits the implementation so each review round
-  # reviews, and stamps, a real commit. Nothing is squashed later.
+  # reviews, and stamps, a real commit. Nothing is squashed later. A retry
+  # after a failure stays on the branch the first attempt created, and a
+  # branch name that already exists elsewhere still fails the switch.
   - id: commit
     name: Commit the implementation
     run: |
       set -eu
+      branch=$(head -n 1 .agentic/pr-branch)
       git fetch -q origin main
-      git switch -q -c "$(head -n 1 .agentic/pr-branch)"
+      [ "$(git branch --show-current)" = "$branch" ] || git switch -q -c "$branch"
       git rm -r -q --cached --ignore-unmatch .dovo/run
       git add -A
       git commit -q -F .agentic/commit-msg
     timeout_seconds: 300
+    on_failure: prompt_user
 
   - id: review-loop
     name: Review and fix until approved
