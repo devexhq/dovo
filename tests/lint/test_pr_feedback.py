@@ -36,10 +36,16 @@ FEEDBACK = _load_script("pr_feedback", "pr_feedback_under_test")
 
 
 def _thread(
-    body: str, *, resolved: bool = False, author: dict[str, object] | None = None, line: int | None = 9
+    body: str,
+    *,
+    resolved: bool = False,
+    author: dict[str, object] | None = None,
+    line: int | None = 9,
+    thread_id: str = "PRRT_1",
 ) -> dict[str, object]:
-    """Return a GraphQL review thread node whose first comment has body and author."""
+    """Return a GraphQL review thread node with thread_id whose first comment has body and author."""
     return {
+        "id": thread_id,
         "isResolved": resolved,
         "path": "scripts/publish_review.py",
         "line": line,
@@ -109,6 +115,7 @@ def _comment_item(item_id: str, author: str, url: str, body: str, summary: str) 
     return {
         "id": item_id,
         "source": "comment",
+        "thread": None,
         "author": author,
         "url": url,
         "path": None,
@@ -123,6 +130,7 @@ def _check_item(item_id: str, name: str, conclusion: str, url: str) -> dict[str,
     return {
         "id": item_id,
         "source": "check",
+        "thread": None,
         "author": None,
         "url": url,
         "path": None,
@@ -246,6 +254,7 @@ class PrFeedbackTests:
             {
                 "id": "T1",
                 "source": "review_thread",
+                "thread": "PRRT_1",
                 "author": "coderabbitai[bot]",
                 "url": "https://x/Fix",
                 "path": "scripts/publish_review.py",
@@ -256,6 +265,7 @@ class PrFeedbackTests:
             {
                 "id": "T2",
                 "source": "review_thread",
+                "thread": "PRRT_1",
                 "author": "ghost",
                 "url": "https://x/Fix",
                 "path": "scripts/publish_review.py",
@@ -266,6 +276,7 @@ class PrFeedbackTests:
             {
                 "id": "T3",
                 "source": "review_thread",
+                "thread": "PRRT_1",
                 "author": "alice",
                 "url": "https://x/Fix",
                 "path": "scripts/publish_review.py",
@@ -291,6 +302,7 @@ class PrFeedbackTests:
             assert items[0] == {
                 "id": "R1",
                 "source": "review_finding",
+                "thread": None,
                 "author": None,
                 "url": None,
                 "path": "src/a.py",
@@ -404,6 +416,7 @@ class PrFeedbackTests:
                 {
                     "id": "T1",
                     "source": "review_thread",
+                    "thread": "PRRT_1",
                     "author": "coderabbitai[bot]",
                     "url": "https://x/Fix",
                     "path": "scripts/publish_review.py",
@@ -415,6 +428,7 @@ class PrFeedbackTests:
                 {
                     "id": "R1",
                     "source": "review_finding",
+                    "thread": None,
                     "author": None,
                     "url": None,
                     "path": "src/a.py",
@@ -500,6 +514,7 @@ class PrFeedbackTests:
             "C1 [comment, coderabbitai[bot]] Walkthrough",
             "K1 [check, ci] Tests: failure",
         ]
+        assert document["items"][0]["thread"] == "PRRT_1"
         assert (agentic / "pr-branch").read_text(encoding="utf-8") == "alice/fix\n"
         assert (agentic / "pr-url").read_text(encoding="utf-8") == f"{PR_URL}\n"
         assert ("git", "switch", "-q", "--detach", HEAD) in ran

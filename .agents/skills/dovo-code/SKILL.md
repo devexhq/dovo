@@ -33,7 +33,7 @@ If the input file is missing, stop and say so. Do not reconstruct a plan from th
 - **All phases, one at a time.** Finish a phase (its FRs, tests and deletion ledger, with its scoped tests green) before starting the next, and never interleave FRs across phases. The phases still order the work and bound each step; they all land in this one run and one PR.
 - **The plan's contracts are binding.** Field names, types, defaults, flag names, exit codes and message strings written as literal code in the plan are normative. Do not rename or extend them.
 - **Do not implement anything the plan marks out of scope or names as a trap**, and do not add test files the plan's `### Tests` stubs do not list.
-- **Never edit `.agentic/plan.md`, `.agentic/evidence.md`, `.agentic/review.md`, `.agentic/review.json`, `.agentic/verdict.txt` or `.agentic/feedback.json`.** This skill writes only `.agentic/implementation-report.md` and, in review and feedback mode, `.agentic/fix-commit-msg`.
+- **Never edit `.agentic/plan.md`, `.agentic/evidence.md`, `.agentic/review.md`, `.agentic/review.json`, `.agentic/verdict.txt` or `.agentic/feedback.json`.** This skill writes only `.agentic/implementation-report.md` and, in review and feedback mode, `.agentic/fix-commit-msg`, and in feedback mode `.agentic/feedback-outcomes.json`.
 
 ## Before writing code
 
@@ -119,7 +119,19 @@ Report each addressed finding by id as fixed, disputed or deferred, with the `pa
 6. Dispute rather than comply when an item is wrong: state why it does not hold and flag it 🚨 for the human.
 7. Run the completion gate above.
 8. Update `.agentic/implementation-report.md` in place: add a `### Feedback round <n>` subsection, `<n>` being one more than the number of `### Feedback round` subsections already there, listing each selected id as fixed, disputed or deferred with the `path:line` changed, and naming each `R#` item's source finding (`R1 (B1)`). Add new deviations, and refresh Quality gates and Changed files. Do not edit `feedback.json`, `review.md` or `review.json`.
-9. When this round changed any file, write `.agentic/fix-commit-msg`, overwriting any earlier one: a Conventional Commits title (`type(scope): imperative summary`, a type `scripts/check_commit_msg.py` accepts) naming what the fixes change in the code, never "address review feedback"; a blank line; then one line per item fixed, `- <id> (<source> by <author>): <what changed, with path>`, with `dovo-review` for a `review_finding` and `ci` for a `check`. Items disputed or deferred are not listed. When nothing changed, do not write the file.
+9. Write `.agentic/feedback-outcomes.json`, overwriting any earlier one, with `round` set to this run's `### Feedback round <n>` number and one entry per selected id, in selection order, carrying the outcome the report states for it. `outcome` is `fixed`, `disputed` or `deferred`; `note` is one sentence on what changed or why not, in your own words: never quote an item's `summary` or `body`, since `pr-fix` posts the note on the item's review thread. Skip this file only when the selection is empty.
+
+   ```json
+   {
+     "round": 2,
+     "items": [
+       { "id": "T1", "outcome": "fixed", "note": "publish_review.py refuses an unknown action." },
+       { "id": "T2", "outcome": "disputed", "note": "The plan keeps the full schema in the dovo-review skill; the publisher checks only what it stamps." }
+     ]
+   }
+   ```
+
+10. When this round changed any file, write `.agentic/fix-commit-msg`, overwriting any earlier one: a Conventional Commits title (`type(scope): imperative summary`, a type `scripts/check_commit_msg.py` accepts) naming what the fixes change in the code, never "address review feedback"; a blank line; then one line per item fixed, `- <id> (<source> by <author>): <what changed, with path>`, with `dovo-review` for a `review_finding` and `ci` for a `check`. Items disputed or deferred are not listed. When nothing changed, do not write the file.
 
    ```text
    fix(scripts): reject incomplete review records before publishing

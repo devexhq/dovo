@@ -1,7 +1,7 @@
 version: 1
 name: pr-fix
 id: pr-fix
-description: Restore a pull request's last dovo run state, collect its unresolved review threads and open review findings, fix the ones you pick, then gate, commit, push, re-review and post the review with this run's session
+description: Restore a pull request's last dovo run state, collect its unresolved review threads and open review findings, fix the ones you pick, then gate, commit, push, reply on the addressed threads, re-review and post the review with this run's session
 summary: One fix round on a pull request
 
 inputs:
@@ -83,6 +83,15 @@ steps:
   - id: push
     name: Push the fixes to the pull request
     run: git push -q origin "HEAD:refs/heads/$(head -n 1 .agentic/pr-branch)"
+    timeout_seconds: 300
+    on_failure: prompt_user
+
+  # Replies once on each selected review thread with its outcome from
+  # .agentic/feedback-outcomes.json and resolves the fixed ones. A retry skips
+  # threads that already hold this round's reply, so it posts only what is missing.
+  - id: reply
+    name: Reply on the addressed review threads
+    run: uv run python scripts/reply_threads.py --selected '{{ steps.triage.outputs.selected }}'
     timeout_seconds: 300
     on_failure: prompt_user
 
