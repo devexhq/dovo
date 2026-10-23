@@ -174,6 +174,7 @@ steps:
           state: read it, keep the existing work and fix what it reports.
         tools: { allow_all: true }
         timeout_seconds: 3600
+        artifacts: [{ name: implementation-report, path: .agentic/implementation-report.md }]
 
       - id: verify
         name: Run the quality gate
@@ -231,7 +232,7 @@ steps:
           and .agentic/verdict.txt.
         tools: { allow_all: true }
         timeout_seconds: 1800
-        artifacts: [{ name: review, path: .agentic/review.json }]
+        artifacts: [{ name: review, path: ".agentic/review.*" }]
 
       - id: verdict
         name: Check the review verdict
@@ -263,22 +264,10 @@ steps:
           Notes: {{ steps.triage.outputs.comment }}
         tools: { allow_all: true }
         timeout_seconds: 3600
+        artifacts: [{ name: implementation-report, path: .agentic/implementation-report.md }]
 
-      # Commits only when the fix changed files, with the message the fixer
-      # wrote; a change without one fails the step rather than committing a
-      # message that says nothing.
       - id: commit-fixes
-        name: Commit the review fixes
-        run: |
-          set -eu
-          git add -A
-          if git diff --cached --quiet; then rm -f .agentic/fix-commit-msg; exit 0; fi
-          test -s .agentic/fix-commit-msg || { echo "the fix changed files but wrote no .agentic/fix-commit-msg" >&2; exit 1; }
-          uv run python scripts/check_commit_msg.py .agentic/fix-commit-msg
-          git commit -q -F .agentic/fix-commit-msg
-          rm .agentic/fix-commit-msg
-        timeout_seconds: 300
-        on_failure: prompt_user
+        uses: commit-fixes
 
   # Written last, from everything committed, so the PR text matches the code
   # the final review saw rather than the code before the fix rounds.
@@ -308,7 +297,4 @@ steps:
   # GitHub error, or continue when the publisher refused a review that no
   # longer matches the PR head (a fix landed after the final review).
   - id: post-review
-    name: Post the final review to the PR
-    run: uv run python scripts/publish_review.py --pr "$(head -n 1 .agentic/pr-branch)"
-    timeout_seconds: 120
-    on_failure: prompt_user
+    uses: post-review

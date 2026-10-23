@@ -83,7 +83,7 @@ A plan decision is not evidence of correctness. When code that follows the plan 
 
 ## 5a. Account for the previous round
 
-From round 2, read the previous `.agentic/review.json` before you overwrite it, and `.agentic/implementation-report.md`'s latest `### Review round <n>`, which lists the author's claims. Give every previous finding an outcome: `fixed` when the code at the reviewed commit resolves it, `disputed` when the author disputed it and the evidence supports them, or `still_open`, which you report again under its new id. An author's claim is a claim to verify, not evidence.
+From round 2, read the previous `.agentic/review.json` before you overwrite it, and `.agentic/implementation-report.md`'s latest `### Review round <n>` or `### Feedback round <n>`, which lists the author's claims. In a `### Feedback round <n>`, each `R#` maps to the previous finding its `.agentic/feedback.json` `body` names (`B1: ...`); `T#` items are review threads, not previous findings. Give every previous finding an outcome: `fixed` when the code at the reviewed commit resolves it, `disputed` when the author disputed it and the evidence supports them, or `still_open`, which you report again under its new id. An author's claim is a claim to verify, not evidence.
 
 Treat a `review.json` on disk as the previous round only when its `round` is one less than this round and its `head` is an ancestor of the reviewed commit (`git merge-base --is-ancestor <head> <reviewed-sha>`); a file left by an earlier, unrelated run makes this round 1.
 
@@ -168,13 +168,13 @@ Contract coverage reads "No contract: `.agentic/plan.md` absent" when there is n
 
 Say `APPROVE` only with zero Blocking findings.
 
-With `--post` and a PR scope, run `uv run python scripts/publish_review.py --pr <n>`. It posts or edits this PR's one review comment, and refuses when the PR head is not the reviewed commit. Never `gh pr review --approve` or `--request-changes`.
+With `--post` and a PR scope, run `uv run python scripts/publish_review.py --pr <n>`. It posts or edits this PR's one review comment, and refuses when the PR head is not the reviewed commit. Never `gh pr review --approve` or `--request-changes`. A blueprint's `post-review` step adds `--session <id>`, which stamps a `Dovo session:` header line naming the run whose state `pr-fix` restores. A post without `--session` rewrites the header without that line, so the next `pr-fix` run stops until a blueprint posts again.
 
 On `CHANGES REQUIRED`, hand off to `/dovo-code review`, then re-run this skill as round n+1. **Cap at 3 rounds**; at the cap, list every unresolved finding under a `### Residual` heading and in `review.json` under `residual`, for the human.
 
 ## 9. Emit the machine-readable verdict
 
-Write `.agentic/review.json` and `.agentic/verdict.txt` alongside the markdown, and print `verdict`, `action`, `round`, `head` and `counts` as one minified JSON object on the last line of stdout. `.dovo/catalog/blueprints/feature-dev.yml` branches on these files, and `/dovo-code review` reads the ids.
+Write `.agentic/review.json` and `.agentic/verdict.txt` alongside the markdown, and print `verdict`, `action`, `round`, `head` and `counts` as one minified JSON object on the last line of stdout. `.dovo/catalog/blueprints/feature-dev.yml` branches on these files, `scripts/pr_feedback.py` reads `review.json`'s findings, and `/dovo-code review` reads the ids.
 
 ```json
 {

@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 import importlib.util
+import json
+import sys
+from pathlib import Path
 from types import ModuleType
 
 import pytest
@@ -42,18 +45,67 @@ def _review(head: str | None = PR_HEAD, drop: str | None = None, **overrides: ob
 
 
 class PublishReviewTests:
-    def test_comment_body_stamps_header(self) -> None:
+    @pytest.mark.parametrize(
+        ("session", "session_line"),
+        [
+            pytest.param("blueprint_abba01ee", "Dovo session: `blueprint_abba01ee`\n", id="with-session"),
+            pytest.param(None, "", id="without-session"),
+        ],
+    )
+    def test_comment_body_stamps_header(self, session: str | None, session_line: str) -> None:
         review = {"head": PR_HEAD, "verdict": "APPROVE", "action": "none", "round": 2}
 
-        body = PUBLISHER.comment_body(review, "## dovo-review - round 2\n")
+        body = PUBLISHER.comment_body(review, "## dovo-review - round 2\n", session=session)
 
         assert body == (
             "<!-- dovo-review -->\n"
             f"Reviewed commit: `{PR_HEAD}`\n"
             "Verdict: APPROVE · Action: none · Round: 2\n"
+            f"{session_line}"
             "\n"
             "## dovo-review - round 2\n"
         )
+
+    @pytest.mark.parametrize("session", [pytest.param("", id="empty"), pytest.param("  ", id="blank")])
+    def test_main_rejects_empty_session(
+        self, session: str, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        def no_run(*args: str) -> str:
+            pytest.fail(f"ran {args}")
+
+        monkeypatch.setattr(sys, "argv", ["publish_review.py", "--pr", "7", "--session", session])
+        monkeypatch.setattr(PUBLISHER, "run", no_run)
+
+        assert PUBLISHER.main() == 1
+        assert capsys.readouterr().err == "publish_review.py: --session must not be empty\n"
+
+    def test_main_stamps_session(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        agentic = tmp_path / ".agentic"
+        agentic.mkdir()
+        (agentic / "review.json").write_text(json.dumps(_review()), encoding="utf-8")
+        (agentic / "review.md").write_text(
+            f"**Verdict:** APPROVE · **Action:** none\n**Reviewed commit:** `{PR_HEAD}`\n", encoding="utf-8"
+        )
+        monkeypatch.chdir(tmp_path)
+        monkeypatch.setattr(sys, "argv", ["publish_review.py", "--pr", "7", "--session", "blueprint_abba01ee"])
+        posted: list[str] = []
+
+        def fake_run(*args: str) -> str:
+            if args[:3] == ("gh", "pr", "view"):
+                return json.dumps({"number": 7, "headRefOid": PR_HEAD, "url": "https://github.com/o/r/pull/7"})
+            if "user" in args:
+                return "me"
+            body_arg = next((arg for arg in args if arg.startswith("body=@")), None)
+            if body_arg is None:
+                return ""
+            posted.append(Path(body_arg.removeprefix("body=@")).read_text(encoding="utf-8"))
+            return "https://github.com/o/r/pull/7#issuecomment-1"
+
+        monkeypatch.setattr(PUBLISHER, "run", fake_run)
+
+        assert PUBLISHER.main() == 0
+        assert len(posted) == 1
+        assert posted[0].splitlines()[3] == "Dovo session: `blueprint_abba01ee`"
 
     @pytest.mark.parametrize(
         ("comments", "expected"),

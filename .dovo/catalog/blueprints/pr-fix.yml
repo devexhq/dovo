@@ -1,0 +1,103 @@
+version: 1
+name: pr-fix
+id: pr-fix
+description: Restore a pull request's last dovo run state, collect its unresolved review threads and open review findings, fix the ones you pick, then gate, commit, push, re-review and post the review with this run's session
+summary: One fix round on a pull request
+
+inputs:
+  pr:
+    type: string
+    description: Number of the pull request to address feedback on
+    required: true
+    aliases: ["-p", "--pr"]
+
+steps:
+  # Stops the run (errors 2-5) before anything is collected. Runs from the
+  # run's base, then leaves the worktree detached at the pull request's head,
+  # so every later step runs the pull request's own code.
+  - id: restore
+    name: Restore the run's state and collect feedback
+    run: uv run python scripts/pr_feedback.py --pr "$PR"
+    env: { PR: "${{ inputs.pr }}" }
+    timeout_seconds: 300
+    artifacts:
+      - { name: plan, path: .agentic/plan.md }
+      - { name: plan-questions, path: .agentic/plan.json }
+      - { name: feedback, path: .agentic/feedback.json }
+
+  - id: triage
+    name: Choose the feedback to fix
+    type: ask
+    interaction:
+      mode: multiselect
+      message: Which feedback on pull request ${{ inputs.pr }} should be fixed? Pick none to change nothing.
+      options_from:
+        artifact: feedback
+        file: .agentic/feedback.json
+        items_path: items
+        value_field: id
+        label_field: label
+      comment: { policy: optional, message: Notes for the fixer }
+
+  # An empty selection makes every step up to the review a no-op: the fixer
+  # changes nothing, the gate is skipped and there is nothing to commit or push.
+  - id: fix-loop
+    name: Fix until the quality gate passes
+    type: loop
+    max_iterations: 5
+    until:
+      - steps.fix.outputs.status != "unfixable"
+      - steps.fix.outputs.status != "timeout"
+      - steps.fix.outputs.status != "provider_error"
+      - steps.fix.outputs.status != "blocked"
+      - steps.verify.exit_code == 0
+    on_max_iterations: prompt_user
+    do:
+      - id: fix
+        name: Fix the selected feedback
+        type: agent
+        prompt: |
+          /dovo-code feedback --fix {{ steps.triage.outputs.selected }}
+
+          Follow .agents/skills/dovo-code/SKILL.md if the slash command is not recognized.
+          Do not commit, stage or push.
+          Notes: {{ steps.triage.outputs.comment }}
+          If .agentic/gate.log exists, a previous attempt left the working tree in a failing
+          state: read it, keep the existing work and fix what it reports.
+        tools: { allow_all: true }
+        timeout_seconds: 3600
+        artifacts:
+          - { name: implementation-report, path: .agentic/implementation-report.md }
+
+      - id: verify
+        name: Run the quality gate
+        run: '[ "{{ steps.triage.outputs.selected_count }}" = 0 ] || uv run dovo run quality > .agentic/gate.log 2>&1'
+        timeout_seconds: 1800
+        on_failure: continue
+
+  - id: commit-fixes
+    uses: commit-fixes
+
+  # A command step: it inherits the host environment, so git reaches the
+  # user's SSH agent. Never forced: a rejected push pauses with git's message.
+  - id: push
+    name: Push the fixes to the pull request
+    run: git push -q origin "HEAD:refs/heads/$(head -n 1 .agentic/pr-branch)"
+    timeout_seconds: 300
+    on_failure: prompt_user
+
+  - id: review
+    name: Review the pull request
+    type: agent
+    prompt: |
+      /dovo-review ${{ inputs.pr }}
+
+      Follow .agents/skills/dovo-review/SKILL.md if the slash command is not recognized.
+      Review pull request ${{ inputs.pr }} and write .agentic/review.md, .agentic/review.json
+      and .agentic/verdict.txt. Do not post: the next step does.
+    tools: { allow_all: true }
+    timeout_seconds: 1800
+    artifacts: [{ name: review, path: ".agentic/review.*" }]
+
+  - id: post-review
+    uses: post-review

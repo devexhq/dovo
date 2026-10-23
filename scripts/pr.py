@@ -4,7 +4,9 @@
 Reads .agentic/commit-msg, .agentic/pr-title, and .agentic/pr-description
 (written by the /pr-prep skill) and turns them into a commit of any
 uncommitted change, a pushed branch, and a GitHub pull request via `gh`. A
-branch whose changes are already committed is pushed as it is.
+branch whose changes are already committed is pushed as it is. The pull
+request's URL is written to .agentic/pr-url, so later steps post to that
+pull request rather than looking it up again by branch.
 """
 
 from __future__ import annotations
@@ -19,6 +21,7 @@ AGENTIC_DIR = Path(".agentic")
 COMMIT_MSG_FILE = AGENTIC_DIR / "commit-msg"
 PR_TITLE_FILE = AGENTIC_DIR / "pr-title"
 PR_DESCRIPTION_FILE = AGENTIC_DIR / "pr-description"
+PR_URL_FILE = AGENTIC_DIR / "pr-url"
 
 
 class PrPrepError(RuntimeError):
@@ -247,12 +250,13 @@ def main() -> int:
         push_branch(branch)
         sys.stdout.write(f"Pushed {branch} to origin.\n")
 
-        existing_url = find_existing_pr(branch)
-        if existing_url:
-            sys.stdout.write(f"Open PR already exists: {existing_url}\n")
+        url = find_existing_pr(branch)
+        if url:
+            sys.stdout.write(f"Open PR already exists: {url}\n")
         else:
             url = create_pr(branch, resolved_base, pr_title, pr_description)
             sys.stdout.write(f"Opened PR: {url}\n")
+        PR_URL_FILE.write_text(f"{url}\n", encoding="utf-8")
     except PrPrepError as exc:
         sys.stderr.write(f"pr.py: {exc}\n")
         return 1

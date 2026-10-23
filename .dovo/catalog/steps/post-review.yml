@@ -1,0 +1,10 @@
+id: post-review
+name: Post the review to the PR
+description: >-
+  Post or update the pull request's one dovo-review comment from .agentic/review.json and
+  review.md, stamped with this run's dovo session, for the pull request whose URL is the
+  first line of .agentic/pr-url
+type: command
+command: uv run python scripts/publish_review.py --pr "$(head -n 1 .agentic/pr-url)" --session "$DOVO_SESSION_ID"
+timeout_seconds: 120
+on_failure: prompt_user

@@ -1,0 +1,16 @@
+id: commit-fixes
+name: Commit the fixes
+description: >-
+  Commit the fixer's changes with the message it wrote in .agentic/fix-commit-msg, only when it
+  changed files; a change without that message fails rather than committing a message that says nothing
+type: command
+command: |
+  set -eu
+  git add -A
+  if git diff --cached --quiet; then rm -f .agentic/fix-commit-msg; exit 0; fi
+  test -s .agentic/fix-commit-msg || { echo "the fix changed files but wrote no .agentic/fix-commit-msg" >&2; exit 1; }
+  uv run python scripts/check_commit_msg.py .agentic/fix-commit-msg
+  git commit -q -F .agentic/fix-commit-msg
+  rm .agentic/fix-commit-msg
+timeout_seconds: 300
+on_failure: prompt_user
