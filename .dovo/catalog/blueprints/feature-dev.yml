@@ -1,7 +1,7 @@
 version: 1
 name: feature-dev
 id: feature-dev
-description: Plan a GitHub issue, review and fold findings until none are picked, answer its open questions, implement it after approval, review and fix until approved, then open a PR and post the final review to it
+description: Plan a GitHub issue, review it once and fold in every finding, answer its open questions, implement it after approval, review and fix blockers and warnings until none remain, then open a PR and post the final review to it
 summary: Issue to reviewed PR with human gates
 
 inputs:
@@ -12,10 +12,6 @@ inputs:
     aliases: ["-i", "--issue"]
 
 steps:
-  - id: reset
-    name: Clear declined plan findings from earlier runs
-    run: mkdir -p .agentic && rm -f .agentic/plan-review-declined.json
-
   - id: plan
     name: Plan the issue
     type: agent
@@ -31,79 +27,43 @@ steps:
       - { name: plan, path: .agentic/plan.md }
       - { name: plan-questions, path: .agentic/plan.json }
 
-  # Review, pick findings and fold them in until a round leaves nothing picked
-  # (a review with no findings continues with an empty selection), so the loop
-  # exits on a plan the last review saw. Declined findings are recorded so the
-  # next round does not raise them again.
-  - id: plan-review-loop
-    name: Review and fold until no findings are picked
-    type: loop
-    max_iterations: 5
-    until:
-      - steps.triage-plan.outputs.selected_count == 0
-    on_max_iterations: prompt_user
-    do:
-      - id: plan-review
-        name: Review the plan
-        type: agent
-        prompt: |
-          /dovo-plan-review
+  # One review, folded in whole without asking; the human weighs the result at
+  # the open questions and the plan approval that follow.
+  - id: plan-review
+    name: Review the plan
+    type: agent
+    prompt: |
+      /dovo-plan-review
 
-          Follow .agents/skills/dovo-plan-review/SKILL.md if the slash command is not recognized.
-          Review .agentic/plan.md and write findings to .agentic/plan-review.md and
-          .agentic/plan-review.json.
-          If .agentic/plan-review-declined.json exists, it lists findings the human declined in
-          earlier rounds: do not raise them again unless the plan has changed in a way that
-          makes them a new problem.
-        tools: { allow_all: true }
-        timeout_seconds: 1800
-        artifacts:
-          - { name: plan-review, path: .agentic/plan-review.md }
-          - { name: plan-findings, path: .agentic/plan-review.json }
+      Follow .agents/skills/dovo-plan-review/SKILL.md if the slash command is not recognized.
+      Review .agentic/plan.md and write findings to .agentic/plan-review.md and
+      .agentic/plan-review.json.
+    tools: { allow_all: true }
+    timeout_seconds: 1800
+    artifacts:
+      - { name: plan-review, path: .agentic/plan-review.md }
+      - { name: plan-findings, path: .agentic/plan-review.json }
 
-      - id: triage-plan
-        name: Choose the plan review findings to address
-        type: ask
-        interaction:
-          mode: multiselect
-          message: Which plan review findings should be folded into the plan for issue ${{ inputs.issue }}? Pick none to finish the review.
-          artifact: plan-review
-          options_from:
-            artifact: plan-findings
-            file: .agentic/plan-review.json
-            items_path: findings
-            value_field: id
-            label_field: summary
-          comment: { policy: optional, message: Instructions for folding in the findings }
+  - id: fold-findings
+    name: Fold every review finding into the plan
+    type: agent
+    prompt: |
+      If .agentic/plan-review.json lists no findings, change nothing and report that you did nothing.
+      Otherwise:
+        - Update .agentic/plan.md and .agentic/plan.json to address every finding in
+          .agentic/plan-review.json, by id, as each one describes.
+        - Addressing a finding may make an open question moot, change its assumed answer
+          or raise a new one: remove, rewrite or add entries under Open questions to match.
+        - Keep .agentic/plan.json in the shape the dovo-plan skill defines
+          (.agents/skills/dovo-plan/SKILL.md) and in agreement with .agentic/plan.md.
+      Do not implement any code, commit or push. Change only .agentic/plan.md and .agentic/plan.json.
+    tools: { allow_all: true }
+    timeout_seconds: 1800
+    artifacts:
+      - { name: plan, path: .agentic/plan.md }
+      - { name: plan-questions, path: .agentic/plan.json }
 
-      - id: fold-findings
-        name: Fold the chosen findings into the plan
-        type: agent
-        prompt: |
-          Findings to address: {{ steps.triage-plan.outputs.selected }}
-          Instructions for the findings: {{ steps.triage-plan.outputs.comment }}
-
-          If the list is empty, change nothing and report that you did nothing.
-          Otherwise:
-            - Update .agentic/plan.md and .agentic/plan.json to address each listed finding, by
-              id, as described in .agentic/plan-review.json.
-            - Addressing a finding may make an open question moot, change its assumed answer
-              or raise a new one: remove, rewrite or add entries under Open questions to match.
-            - Keep .agentic/plan.json in the shape the dovo-plan skill defines
-              (.agents/skills/dovo-plan/SKILL.md) and in agreement with .agentic/plan.md.
-            - Append every finding in .agentic/plan-review.json that is not listed to
-              .agentic/plan-review-declined.json, a JSON object {"declined": [...]} whose
-              entries copy each finding's id and summary; create it if it does not exist.
-          Do not implement any code, commit or push. Change only .agentic/plan.md,
-          .agentic/plan.json and .agentic/plan-review-declined.json.
-        tools: { allow_all: true }
-        timeout_seconds: 1800
-        artifacts:
-          - { name: plan, path: .agentic/plan.md }
-          - { name: plan-questions, path: .agentic/plan.json }
-
-  # Asked only after the review settles, so every question reflects the
-  # findings folded in above.
+  # Asked after the findings are folded in, so every question reflects them.
   - id: answer-questions
     name: Answer the plan's open questions
     type: ask
@@ -212,13 +172,15 @@ steps:
     timeout_seconds: 300
     on_failure: prompt_user
 
+  # Fixes every blocker and warning without asking, until a review reports
+  # none; suggestions and nits stay in the posted review for the human. The
+  # round that finds none still runs the fixer, which then changes nothing.
   - id: review-loop
-    name: Review and fix until approved
+    name: Review and fix until no blockers or warnings remain
     type: loop
     max_iterations: 5
     until:
-      - steps.verdict.exit_code == 0
-      - steps.triage.outputs.selected_count == 0
+      - steps.remaining.exit_code == 0
     on_max_iterations: prompt_user
     do:
       - id: review
@@ -234,34 +196,23 @@ steps:
         timeout_seconds: 1800
         artifacts: [{ name: review, path: ".agentic/review.*" }]
 
-      - id: verdict
-        name: Check the review verdict
-        run: grep -qx APPROVE .agentic/verdict.txt
+      - id: remaining
+        name: Check for blockers and warnings
+        run: >-
+          uv run python -c 'import json, sys;
+          findings = json.load(open(".agentic/review.json"))["findings"];
+          sys.exit(any(f["severity"] in ("BLOCKER", "WARNING") for f in findings))'
         on_failure: continue
 
-      - id: triage
-        name: Choose the findings to fix
-        type: ask
-        interaction:
-          mode: multiselect
-          message: Which findings should be fixed?
-          options_from:
-            artifact: review
-            file: .agentic/review.json
-            items_path: findings
-            value_field: id
-            label_field: summary
-          comment: { policy: optional, message: Notes for the fixer }
-
       - id: fix
-        name: Fix the selected findings
+        name: Fix the blockers and warnings
         type: agent
         prompt: |
-          /dovo-code review --fix {{ steps.triage.outputs.selected }}
+          /dovo-code review --tiers blockers,warnings
 
           Follow .agents/skills/dovo-code/SKILL.md if the slash command is not recognized.
-          Do not commit, stage or push.
-          Notes: {{ steps.triage.outputs.comment }}
+          If .agentic/review.json lists no BLOCKER or WARNING findings, change nothing and report
+          that you did nothing. Do not commit, stage or push.
         tools: { allow_all: true }
         timeout_seconds: 3600
         artifacts: [{ name: implementation-report, path: .agentic/implementation-report.md }]
