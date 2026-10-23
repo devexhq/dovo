@@ -6,9 +6,10 @@ Reads the selected feedback ids from --selected, each selected item from
 (written by /dovo-code feedback). Every selected review thread gets one reply,
 headed by a `<!-- dovo-pr-fix round <n> -->` marker, saying whether it was fixed
 (in the commit at HEAD), disputed or deferred, with the fixer's note; fixed
-threads are then resolved. A thread that already holds this round's reply from
-the authenticated `gh` user gets no second one, so a retry posts only what is
-missing. Nothing is posted unless every selected id has a valid outcome.
+threads are then resolved. A thread that already holds this exact reply (marker
+and outcome line) from the authenticated `gh` user gets no second one, so a
+retry posts only what is missing, while a reused round number with a changed
+outcome still gets its reply. Nothing is posted unless every selected id has a valid outcome.
 """
 
 from __future__ import annotations
@@ -123,14 +124,16 @@ def outcomes_problem(outcomes: object, selected: list[str]) -> str | None:
     return next((problem for problem in problems if problem is not None), None)
 
 
-def already_replied(comments: list[dict[str, object]], viewer: str, round_number: int) -> bool:
-    """Return whether a comment by viewer (GraphQL `author.login`) has reply_marker(round_number) as its first line."""
-    marker = reply_marker(round_number)
+def already_replied(comments: list[dict[str, object]], viewer: str, body: str) -> bool:
+    """Return whether a comment by viewer (GraphQL `author.login`) has body as its text, ignoring surrounding whitespace.
+
+    Matching the whole reply, not only its round marker, keeps a round number
+    reused by a later pr-fix run from hiding a changed outcome.
+    """
     for comment in comments:
         author = comment.get("author")
         login = author.get("login") if isinstance(author, dict) else None
-        lines = str(comment.get("body") or "").splitlines()
-        if login == viewer and lines and lines[0].strip() == marker:
+        if login == viewer and str(comment.get("body") or "").strip() == body:
             return True
     return False
 
@@ -202,9 +205,9 @@ def post_outcome(host: str, viewer: str, reply: ThreadReply, round_number: int, 
     """
     try:
         state = json.loads(_graphql(host, REPLIES_QUERY, reply.thread, jq=".data.node"))
-        replied = not already_replied(state["comments"]["nodes"], viewer, round_number)
+        body = reply_body(round_number, reply.outcome, reply.note, commit)
+        replied = not already_replied(state["comments"]["nodes"], viewer, body)
         if replied:
-            body = reply_body(round_number, reply.outcome, reply.note, commit)
             _graphql(
                 host,
                 REPLY_MUTATION,

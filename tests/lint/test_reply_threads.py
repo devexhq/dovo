@@ -114,7 +114,9 @@ class ReplyThreadsTests:
     @pytest.mark.parametrize(
         ("comments", "expected"),
         [
-            pytest.param([{"author": {"login": "me"}, "body": f"{MARKER}\nFixed in x: y"}], True, id="own-same-round"),
+            pytest.param(
+                [{"author": {"login": "me"}, "body": f"{MARKER}\nFixed in x: y\n"}], True, id="own-same-reply"
+            ),
             pytest.param([{"author": {"login": "bob"}, "body": f"{MARKER}\nFixed in x: y"}], False, id="other-author"),
             pytest.param(
                 [{"author": {"login": "me"}, "body": "<!-- dovo-pr-fix round 1 -->\nFixed in x: y"}],
@@ -122,12 +124,18 @@ class ReplyThreadsTests:
                 id="own-other-round",
             ),
             pytest.param(
-                [{"author": {"login": "me"}, "body": f"Quoting:\n{MARKER}"}], False, id="marker-not-first-line"
+                [{"author": {"login": "me"}, "body": f"{MARKER}\nNot changed: y"}], False, id="own-other-outcome"
+            ),
+            pytest.param(
+                [{"author": {"login": "me"}, "body": f"Quoting:\n{MARKER}\nFixed in x: y"}],
+                False,
+                id="marker-not-first-line",
             ),
         ],
     )
     def test_already_replied(self, comments: list[dict[str, object]], expected: bool) -> None:
-        assert REPLY.already_replied([{"author": None, "body": "x"}, *comments], "me", 2) is expected
+        body = f"{MARKER}\nFixed in x: y"
+        assert REPLY.already_replied([{"author": None, "body": "x"}, *comments], "me", body) is expected
 
     def test_main_replies_and_resolves(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
