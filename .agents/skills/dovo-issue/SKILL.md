@@ -43,7 +43,7 @@ Canonical example of structure, depth, and tone: [examples/github-issue.md](exam
 Before drafting, read the entry points of every surface the issue touches, and their callers. Record:
 - **Existing bugs on the path** the work builds on. Each becomes its own sub-issue, which blocks the work that depends on it.
 - **Persisted formats** the work changes (session state and manifests, `data.db`, `config.json`, catalog `index.json`, blueprint and step YAML). List each under **Shared surfaces changed**, with what happens to data written before the change.
-- **Call sites** when the work applies one pattern across many places (exception handlers, commands, callers of a replaced function): count them per package, for example with `git grep -c`, and read the matches to drop comments, docs and tests from the count. Pick the size label from that count and the tests each site needs.
+- **Call sites** when the work applies one pattern across many places (exception handlers, commands, callers of a replaced function): count them per package, for example with `git grep -c`, and read the matches to drop comments, docs and tests from the count. Record which `src/` files and surfaces the sites fall in; the size label in **Size and split** is picked from them.
 
 Only read; never edit code or run tooling that mutates or validates. Read-only `git`, read-only `gh`, `rg` and file reads are enough.
 
@@ -69,7 +69,15 @@ Split it when any of these hold:
 
 Never split one responsibility to make the parts smaller. If the halves would need a temporary bridge between them (one half mapping the new shape back onto the old one so the other half still works), keep them as one issue.
 
-Label every issue with its size, from the call-site counts recorded in **Ground**: `dovo-size-s` (a few files on one surface), `dovo-size-m` (several files or two surfaces) or `dovo-size-l` (several packages, schemas or surfaces). An `l` issue states in its opening paragraph, in one sentence, the single responsibility that holds it together; if no such sentence is true, split it.
+Label every issue except a split's parent with its size, from the `src/` files and surfaces recorded in **Ground**. A surface is one package under `src/dovo/` (for example `core/worktree` or `cli/ui`), one persisted format or schema, or one CLI command group with its `docs/cli/` page. Count `src/` files only; tests follow the code.
+
+| Label | Surfaces | `src/` files |
+|---|---|---|
+| `dovo-size-s` | 1 | 5 or fewer |
+| `dovo-size-m` | 1 with more than 5 files, or 2 | any |
+| `dovo-size-l` | 3 or more | any |
+
+An `l` issue states in its opening paragraph, in one sentence, the single responsibility that holds it together; if no such sentence is true, split it.
 
 Split by responsibility, never by layer or line count. A foundation child is valid when the children that adopt it are created in the same split and blocked by it; every other child has its own user story and is useful once merged. When one foundation is adopted across several packages, the split is the foundation, then one adopt child per package, then any remove child for what the adoptions left unused. Every split has a parent issue and native GitHub sub-issues:
 
