@@ -6,10 +6,10 @@ takes the dovo session on its `Dovo session:` header line, downloads that
 session's plan, plan-questions, review and implementation-report artifacts into
 .agentic/, checks out the pull request's head commit, records its head branch
 in .agentic/pr-branch and its URL in .agentic/pr-url, and writes
-.agentic/feedback.json: every unresolved review thread; when the restored
-review asks for changes, its blocking and warning findings; every comment and
-review summary by someone else touched since the dovo-review comment's last
-update; and every failed check on the head commit.
+.agentic/feedback.json: every unresolved review thread, with its thread id;
+when the restored review asks for changes, its blocking and warning findings;
+every comment and review summary by someone else touched since the dovo-review
+comment's last update; and every failed check on the head commit.
 """
 
 from __future__ import annotations
@@ -42,6 +42,7 @@ query($owner: String!, $name: String!, $number: Int!, $endCursor: String) {
       reviewThreads(first: 100, after: $endCursor) {
         pageInfo { hasNextPage endCursor }
         nodes {
+          id
           isResolved
           path
           line
@@ -187,6 +188,7 @@ def thread_items(threads: list[dict[str, object]]) -> list[dict[str, object]]:
             {
                 "id": f"T{len(items) + 1}",
                 "source": "review_thread",
+                "thread": thread.get("id"),
                 "author": _author_login(comment.get("author")),
                 "url": comment.get("url"),
                 "path": thread.get("path"),
@@ -208,6 +210,7 @@ def finding_items(review: dict[str, object]) -> list[dict[str, object]]:
         {
             "id": f"R{index}",
             "source": "review_finding",
+            "thread": None,
             "author": None,
             "url": None,
             "path": finding.get("path"),
@@ -283,6 +286,7 @@ def comment_items(
         {
             "id": f"C{index}",
             "source": "comment",
+            "thread": None,
             "author": entry.author,
             "url": entry.url,
             "path": None,
@@ -304,6 +308,7 @@ def check_items(checks: list[dict[str, object]]) -> list[dict[str, object]]:
         {
             "id": f"K{index}",
             "source": "check",
+            "thread": None,
             "author": None,
             "url": check.get("details_url") or check.get("html_url"),
             "path": None,
