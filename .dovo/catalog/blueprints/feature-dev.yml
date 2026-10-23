@@ -285,7 +285,8 @@ steps:
       Follow .agents/skills/pr-prep/SKILL.md (or run /pr-prep) to draft only .agentic/pr-title
       and .agentic/pr-description, overwriting both. The change implements issue ${{ inputs.issue }}.
       Everything is already committed, so read it with `git log --oneline origin/main..HEAD` and
-      `git diff origin/main...HEAD` instead of the uncommitted diff, and ignore `.dovo/run`.
+      `git diff origin/main...HEAD` instead of the uncommitted diff, and ignore `.dovo/run`. The
+      skill's stop when nothing is uncommitted does not apply here: always rewrite both files.
       Do not touch .agentic/commit-msg or .agentic/pr-branch, and do not commit, stage or push.
     tools: { allow_all: true }
     timeout_seconds: 900
@@ -299,8 +300,11 @@ steps:
     run: uv run python scripts/pr.py
     timeout_seconds: 600
 
+  # Pauses on failure rather than finishing without the comment: retry after a
+  # GitHub error, or continue when the publisher refused a review that no
+  # longer matches the PR head (a fix landed after the final review).
   - id: post-review
     name: Post the final review to the PR
     run: uv run python scripts/publish_review.py --pr "$(head -n 1 .agentic/pr-branch)"
     timeout_seconds: 120
-    on_failure: continue
+    on_failure: prompt_user

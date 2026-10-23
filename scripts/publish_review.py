@@ -5,8 +5,9 @@ Reads .agentic/review.json and .agentic/review.md (written by the /dovo-review
 skill) and publishes them as a single PR comment that starts with a marker line.
 Every later run edits that same comment instead of adding another. The header
 under the marker is stamped from review.json, never from the report's prose, and
-the comment is refused unless the pull request head is the commit the review
-covered.
+the comment is refused unless review.json's verdict, action and blocking count
+agree and the pull request head is the commit the review covered. Every API call
+targets the pull request's own repository.
 """
 
 from __future__ import annotations
@@ -17,11 +18,13 @@ import subprocess
 import sys
 import tempfile
 from pathlib import Path
+from urllib.parse import urlparse
 
 AGENTIC_DIR = Path(".agentic")
 MARKER = "<!-- dovo-review -->"
 MAX_COMMENT_CHARS = 65_536
 STAMPED_KEYS = ("head", "verdict", "action", "round")
+VERDICTS = ("APPROVE", "CHANGES_REQUIRED")
 REVIEW_JSON = AGENTIC_DIR / "review.json"
 REVIEW_MD = AGENTIC_DIR / "review.md"
 
@@ -85,6 +88,34 @@ def find_own_comment(comments: list[dict[str, object]], viewer: str) -> int | No
     return None
 
 
+def record_problem(review: dict[str, object]) -> str | None:
+    """Return why review.json cannot stamp a truthful header, or None when it can.
+
+    The header shows the verdict and action, so they must agree with each other
+    and with the blocking count, as the dovo-review skill defines them.
+
+    Args:
+        review: The parsed review.json.
+
+    Returns:
+        The first problem found, or None when the record is consistent.
+    """
+    for key in STAMPED_KEYS:
+        if key not in review:
+            return f"review.json has no {key!r}; run /dovo-review again"
+    verdict = review["verdict"]
+    if verdict not in VERDICTS:
+        return f"review.json verdict {verdict!r} is not APPROVE or CHANGES_REQUIRED"
+    approved = verdict == "APPROVE"
+    counts = review.get("counts")
+    blocking = counts.get("blocking") if isinstance(counts, dict) else None
+    if approved != (blocking == 0):
+        return f"review.json says {verdict} with {blocking} blocking findings"
+    if approved != (review["action"] == "none"):
+        return f"review.json action {review['action']!r} contradicts verdict {verdict}"
+    return None
+
+
 def publish_problem(review: dict[str, object], body: str, pr_head: str) -> str | None:
     """Return why body, built from review, must not be posted to a PR at pr_head, or None when it may be.
 
@@ -96,9 +127,9 @@ def publish_problem(review: dict[str, object], body: str, pr_head: str) -> str |
     Returns:
         The first problem found, or None when the comment may be posted.
     """
-    for key in STAMPED_KEYS:
-        if key not in review:
-            return f"review.json has no {key!r}; run /dovo-review again"
+    problem = record_problem(review)
+    if problem is not None:
+        return problem
     head = review["head"]
     if head is None:
         return "the review covered uncommitted changes; commit them and review again"
@@ -123,37 +154,58 @@ def read_review() -> tuple[dict[str, object], str]:
             raise PublishReviewError(f"Missing or empty {path}. Run /dovo-review first.")
     try:
         review = json.loads(REVIEW_JSON.read_text(encoding="utf-8"))
-    except json.JSONDecodeError as exc:
-        raise PublishReviewError(f"{REVIEW_JSON} is not valid JSON: {exc}") from exc
+    except json.JSONDecodeError as error:
+        raise PublishReviewError(f"{REVIEW_JSON} is not valid JSON: {error}") from error
     if not isinstance(review, dict):
         raise PublishReviewError(f"{REVIEW_JSON} must hold a JSON object.")
     return review, REVIEW_MD.read_text(encoding="utf-8")
 
 
-def list_comments(number: int) -> list[dict[str, object]]:
+def pr_repository(url: str) -> tuple[str, str]:
+    """Return the host and `owner/repo` of the pull request at url.
+
+    Every API call targets this repository, so the comment always lands on the
+    pull request whose head was checked, even when --pr names a PR in another
+    repository than the current checkout.
+
+    Args:
+        url: The pull request's web URL, such as https://github.com/owner/repo/pull/7.
+
+    Returns:
+        The host and the `owner/repo` path.
+
+    Raises:
+        PublishReviewError: If url is not a pull request URL.
+    """
+    parts = urlparse(url)
+    segments = parts.path.strip("/").split("/")
+    if not parts.hostname or len(segments) != 4 or segments[2] != "pull":
+        raise PublishReviewError(f"{url!r} is not a pull request URL")
+    return parts.hostname, f"{segments[0]}/{segments[1]}"
+
+
+def list_comments(host: str, repository: str, number: int) -> list[dict[str, object]]:
     """Return every comment on the pull request, one dict per comment."""
     output = run(
         "gh",
         "api",
+        "--hostname",
+        host,
         "--paginate",
-        f"repos/{{owner}}/{{repo}}/issues/{number}/comments",
+        f"repos/{repository}/issues/{number}/comments",
         "--jq",
         ".[] | {id, body, user: .user.login}",
     )
     return [json.loads(line) for line in output.splitlines() if line.strip()]
 
 
-def write_comment(number: int, comment_id: int | None, body: str) -> str:
-    """Create the comment, or edit comment_id in place, and return the comment's URL."""
+def write_comment(host: str, endpoint: list[str], body: str) -> str:
+    """Send body to the comment endpoint (method flags and path) on host and return the comment's URL."""
     with tempfile.NamedTemporaryFile("w", encoding="utf-8", suffix=".md", delete=False) as handle:
         handle.write(body)
     body_file = Path(handle.name)
     try:
-        if comment_id is None:
-            endpoint = ["gh", "api", f"repos/{{owner}}/{{repo}}/issues/{number}/comments"]
-        else:
-            endpoint = ["gh", "api", "-X", "PATCH", f"repos/{{owner}}/{{repo}}/issues/comments/{comment_id}"]
-        return run(*endpoint, "-F", f"body=@{body_file}", "--jq", ".html_url")
+        return run("gh", "api", "--hostname", host, *endpoint, "-F", f"body=@{body_file}", "--jq", ".html_url")
     finally:
         body_file.unlink(missing_ok=True)
 
@@ -162,12 +214,13 @@ def publish(pr: str) -> str:
     """Post or update the review comment on pr and return the line to report.
 
     Raises:
-        PublishReviewError: If the review is incomplete, stale or too long to post.
+        PublishReviewError: If the review is incomplete, inconsistent, stale or too long to post.
     """
     review, report = read_review()
-    view = json.loads(run("gh", "pr", "view", pr, "--json", "number,headRefOid"))
+    view = json.loads(run("gh", "pr", "view", pr, "--json", "number,headRefOid,url"))
     number: int = view["number"]
     pr_head: str = view["headRefOid"]
+    host, repository = pr_repository(view["url"])
     # comment_body needs every stamped key, so check the review before building the body.
     body = ""
     problem = publish_problem(review, body, pr_head)
@@ -176,10 +229,13 @@ def publish(pr: str) -> str:
         problem = publish_problem(review, body, pr_head)
     if problem is not None:
         raise PublishReviewError(problem)
-    viewer = run("gh", "api", "user", "--jq", ".login")
-    comment_id = find_own_comment(list_comments(number), viewer)
-    url = write_comment(number, comment_id, body)
-    return f"{'Updated' if comment_id is not None else 'Posted'} review comment: {url}\n"
+    viewer = run("gh", "api", "--hostname", host, "user", "--jq", ".login")
+    comment_id = find_own_comment(list_comments(host, repository, number), viewer)
+    if comment_id is None:
+        url = write_comment(host, [f"repos/{repository}/issues/{number}/comments"], body)
+        return f"Posted review comment: {url}\n"
+    url = write_comment(host, ["-X", "PATCH", f"repos/{repository}/issues/comments/{comment_id}"], body)
+    return f"Updated review comment: {url}\n"
 
 
 def main() -> int:
@@ -191,13 +247,13 @@ def main() -> int:
 
     try:
         sys.stdout.write(publish(pr))
-    except PublishReviewError as exc:
-        sys.stderr.write(f"publish_review.py: {exc}\n")
+    except PublishReviewError as error:
+        sys.stderr.write(f"publish_review.py: {error}\n")
         return 1
-    except subprocess.CalledProcessError as exc:
-        cmd: list[str] = exc.cmd
-        stderr: str = exc.stderr
-        sys.stderr.write(f"publish_review.py: command failed: {' '.join(cmd)}\n{stderr}\n")
+    except subprocess.CalledProcessError as error:
+        command: list[str] = error.cmd
+        stderr: str = error.stderr
+        sys.stderr.write(f"publish_review.py: command failed: {' '.join(command)}\n{stderr}\n")
         return 1
     return 0
 

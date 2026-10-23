@@ -26,9 +26,16 @@ def _load_publisher() -> ModuleType:
 PUBLISHER = _load_publisher()
 
 
-def _review(head: str | None = PR_HEAD, drop: str | None = None) -> dict[str, object]:
-    """Return a stamped review.json payload with head, minus the drop key when given."""
-    review: dict[str, object] = {"head": head, "verdict": "APPROVE", "action": "none", "round": 1}
+def _review(head: str | None = PR_HEAD, drop: str | None = None, **overrides: object) -> dict[str, object]:
+    """Return a consistent approving review.json payload with head and overrides, minus the drop key when given."""
+    review: dict[str, object] = {
+        "head": head,
+        "verdict": "APPROVE",
+        "action": "none",
+        "round": 1,
+        "counts": {"blocking": 0},
+    }
+    review.update(overrides)
     if drop is not None:
         del review[drop]
     return review
@@ -89,7 +96,53 @@ class PublishReviewTests:
                 "the comment is 65537 characters; GitHub accepts at most 65536",
                 id="too-long",
             ),
+            pytest.param(
+                _review(verdict="LGTM"),
+                "ok",
+                "review.json verdict 'LGTM' is not APPROVE or CHANGES_REQUIRED",
+                id="unknown-verdict",
+            ),
+            pytest.param(
+                _review(counts={"blocking": 2}),
+                "ok",
+                "review.json says APPROVE with 2 blocking findings",
+                id="approve-with-blockers",
+            ),
+            pytest.param(
+                _review(drop="counts"),
+                "ok",
+                "review.json says APPROVE with None blocking findings",
+                id="missing-counts",
+            ),
+            pytest.param(
+                _review(verdict="CHANGES_REQUIRED", action="none", counts={"blocking": 1}),
+                "ok",
+                "review.json action 'none' contradicts verdict CHANGES_REQUIRED",
+                id="action-contradicts-verdict",
+            ),
+            pytest.param(
+                _review(verdict="CHANGES_REQUIRED", action="fix", counts={"blocking": 1}),
+                "ok",
+                None,
+                id="changes-required",
+            ),
         ],
     )
     def test_publish_problem(self, review: dict[str, object], body: str, expected: str | None) -> None:
         assert PUBLISHER.publish_problem(review, body, PR_HEAD) == expected
+
+    @pytest.mark.parametrize(
+        ("url", "expected"),
+        [
+            pytest.param("https://github.com/devexhq/dovo/pull/1121", ("github.com", "devexhq/dovo"), id="github"),
+            pytest.param(
+                "https://ghe.example.com/team/tool/pull/3/", ("ghe.example.com", "team/tool"), id="enterprise"
+            ),
+        ],
+    )
+    def test_pr_repository(self, url: str, expected: tuple[str, str]) -> None:
+        assert PUBLISHER.pr_repository(url) == expected
+
+    def test_pr_repository_rejects_non_pr_url(self) -> None:
+        with pytest.raises(PUBLISHER.PublishReviewError, match="is not a pull request URL"):
+            PUBLISHER.pr_repository("https://github.com/devexhq/dovo/issues/5")
