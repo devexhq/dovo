@@ -47,7 +47,7 @@ Follow planning.md Steps 1-2: read the issue's contract (or the user's request, 
 
 ## 3. Size and phase
 
-Follow planning.md Step 3. Estimate the changed lines per FR and group FRs into phases of one concern each, roughly 400 changed lines or less, each passing the quality gate on its own. Replacing an internal is phased as add, switch callers, delete, with the deletion phase planned now. A change that fits one phase stays one phase. All phases land in one PR, so their summed estimate should fit the issue's budget of about 400 changed lines. When it runs well past that, say so first under What you're approving and recommend splitting the issue with `/dovo-issue`.
+Follow planning.md Step 3. Estimate the changed lines per FR and group FRs into phases of one concern each, roughly 400 changed lines or less, each passing the quality gate on its own. Replacing an internal is phased as add, switch callers, delete, with the deletion phase planned now. A change that fits one phase stays one phase. All phases land in one PR, so together they serve the issue's one responsibility. When grounding shows the issue mixes kinds of change (a foundation and its adoption, or a behaviour change and a refactor), say so first under What you're approving and recommend splitting the issue with `/dovo-issue`.
 
 ## 4. Write the plan
 

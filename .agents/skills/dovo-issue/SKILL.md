@@ -4,7 +4,7 @@ description: >-
   Create or update an implementation-ready, self-contained GitHub issue for Dovo
   CLI with authoritative scope, numbered FR/NFR contracts, pre-determined data,
   error cases, and a non-redundant Definition of Done. Grounds the issue in the
-  code first and splits work larger than one user story or one PR into
+  code first and splits work that mixes more than one responsibility into
   a parent issue with native sub-issues. Invoked as /dovo-issue.
   Use when asked to create, draft, or revise a GitHub issue.
 ---
@@ -14,13 +14,14 @@ description: >-
 Draft, create, or revise an authoritative, self-contained GitHub issue for Dovo CLI.
 Canonical example of structure, depth, and tone: [examples/github-issue.md](examples/github-issue.md).
 
+An issue is a working document. Aim for a sensible issue, not a perfect one: when planning or review shows it is mis-sized or mis-scoped, split or edit it then.
+
 ## Core Principles
 
 1. **Authoritative (no soft decisions):**
    - Everything in the issue body is **required** unless under **Out of scope**.
    - Never mark work as optional, stretch, nice-to-have, "if implemented," "consider," or "v1 maybe."
    - Never present unresolved product forks ("either X or Y"). Decide before writing; put the decision in Scope, FR/NFR, or Pre-determined data.
-   - If scope is too large, split it per **Size and split** rather than parking optional work inside one body.
 
 2. **Greenfield cutover (no shims):**
    - Do not require backward compatibility with internal APIs, error strings, internal models, or the public surface. Dovo is greenfield until its first public release (`AGENTS.md` R9): when a CLI flag, `config.json` or blueprint key, or the JSON event envelope is wrong, the issue changes it outright.
@@ -29,8 +30,8 @@ Canonical example of structure, depth, and tone: [examples/github-issue.md](exam
 
 3. **Self-contained (zero issue-tracker tours):**
    - Prefer **in-repo paths** (`AGENTS.md`, `src/dovo/...`, `schemas/v1/...`) over GitHub issue numbers.
-   - Default to **zero** issue links in the body. Only link another issue when it supersedes or duplicates a ticket. Parent and blocker relationships are set with `gh` flags (see **Size and split**), never written into the body.
-   - Write **Out of scope** as self-contained capability bullets (e.g., `- CLI subcommands (dovo config show|set)`), never `- Everything in #9–#20`. When a sibling issue covers the item, say so: `- Referencing prompts from agent steps (next issue in this split)`.
+   - Default to **zero** issue links in the body. Only link another issue when it supersedes or duplicates a ticket. Parent and blocker relationships are set with `gh` flags (see **Split**), never written into the body.
+   - Write **Out of scope** as capability bullets, never as issue ranges (`- Everything in #9–#20`).
 
 4. **Observable contracts only:**
    - FRs, error cases and **Pre-determined data** state what a test can observe without reading the implementation. For user-facing work, that means CLI commands, flags, output, exit codes, YAML and `config.json` fields, and files on disk. For an internal surface, it means the entrypoint's signature, result model and statuses.
@@ -43,24 +44,36 @@ Canonical example of structure, depth, and tone: [examples/github-issue.md](exam
 Before drafting, read the entry points of every surface the issue touches, and their callers. Record:
 - **Existing bugs on the path** the work builds on. Each becomes its own sub-issue, which blocks the work that depends on it.
 - **Persisted formats** the work changes (session state and manifests, `data.db`, `config.json`, catalog `index.json`, blueprint and step YAML). List each under **Shared surfaces changed**, with what happens to data written before the change.
-- **Call sites** when the work applies one pattern across many places (exception handlers, commands, callers of a replaced function): count them per package, for example with `git grep -c`, and read the matches to drop comments, docs and tests from the count. Size the issue from that count and the tests each site needs.
 
 Only read; never edit code or run tooling that mutates or validates. Read-only `git`, read-only `gh`, `rg` and file reads are enough.
 
-### 2. Size and split
+### 2. Split
 
-An issue is one user story that ships value on its own and lands as one PR of about 200 to 400 changed lines, tests included. `/dovo-code` implements every phase of a plan in one PR, so the issue is what bounds a PR's size. Split it when any of these hold:
-- the **I want** line, or the **As a** line, joins independently valuable outcomes or different users (for example someone running a blueprint and someone running `dovo doctor`)
-- more than about 6 FRs, counting an FR that lists separate cases as one FR per case
-- more than one new public surface (for example a command group *and* a schema field)
-- it changes a persisted format *and* adds CLI surface
-- the same change applies across more than two packages or domain areas
-- you estimate more than about 400 changed lines, tests included
+An issue is one kind of change that a reviewer can describe in one sentence without "and". It lands as one PR.
 
-Split by value delivered, never by layer: each child has its own user story and is useful once merged. Size each child at 200 to 400 changed lines rather than splitting into many smaller ones; an issue under 200 lines that is the whole story stays whole. When the same change spans several domain areas, the first child ships whatever they share together with one area that proves it end to end, and each later child covers one area. Every split has a parent issue and native GitHub sub-issues:
+Split issues by kind and by review load. Review load is the number of distinct decisions a reviewer must check, not the number of lines, files or packages. A package that needs its own codes, mappings or deletions is a decision of its own. Keep an issue to one kind and a load a reviewer can hold in one sitting; split where a new decision would start a second review.
+
+| Kind | Changes |
+|---|---|
+| Fix | One wrong behaviour, or a few small ones in one area, each with its own regression test |
+| Foundation | A new shared type, tool or rule that two or more issues adopt |
+| Adopt | One or more packages move onto a foundation and delete what it replaces |
+| Refactor | Structure only, worth merging on its own; behaviour is identical |
+| Remove | Deletes what nothing uses any more |
+| Feature | New user-facing surface |
+
+Two rules hold for every split:
+- **Don't mix kinds.** A foundation and its adoption, or a behaviour change and a refactor, are separate issues.
+- **Don't split if the halves need a bridge.** When one half would have to map the new shape back onto the old one so the other half still works, keep them as one issue.
+
+Two kinds fold into another issue instead of standing alone. A refactor that only prepares one issue is that issue's first plan phase. A foundation with one adopter goes into the adopter's issue.
+
+Label every issue except a split's parent `dovo-size-s`, `dovo-size-m` or `dovo-size-l` for its rough review time.
+
+Every split has a parent issue and native GitHub sub-issues:
 
 - **Parent:** the Goal / User Story, one short paragraph on why the children are ordered as they are, and an **Out of scope** list for the whole feature. No FRs, data, error cases or Definition of Done: GitHub tracks progress through the sub-issues. When splitting an existing issue, edit it into the parent (`gh issue edit <n> --body-file …`) so its number, links and discussion survive.
-- **Sub-issues:** full issues in the structure below, each self-contained. The planner reads only the sub-issue, never the parent or its siblings, so every requirement and literal contract it needs is in its own body. Create each with `gh issue create --parent <parent>`, adding `--blocked-by <n>` when it cannot ship before another sub-issue.
+- **Sub-issues:** full issues in the structure below, each self-contained. The planner reads only the sub-issue, never the parent or its siblings, so every requirement and literal contract it needs is in its own body. Create each with `gh issue create --parent <parent> --label dovo-size-<s|m|l>`, adding `--blocked-by <n>` when it cannot ship before another sub-issue.
 
 For example, "prompts as a catalog type that agent steps can reference" becomes a parent with three sub-issues: a bug fix on the shared catalog delete path; prompts as a catalog type with `dovo prompt` commands, blocked by the fix; and `prompt_file` on agent steps, blocked by the catalog type.
 
@@ -70,7 +83,7 @@ Write each issue in the structure below.
 
 ## Issue Structure
 
-Use the sections below in order. Omit a section only when it genuinely does not apply (e.g., no CLI copy for an internal refactor). Never add separate **Acceptance criteria**, **Dependencies**, or issue-list **References** sections.
+Use the sections below in order, and include a section only when it applies (e.g., no CLI copy for an internal refactor). Never add separate **Acceptance criteria**, **Dependencies**, or issue-list **References** sections.
 
 ```markdown
 ## Goal / User Story
@@ -104,13 +117,13 @@ Use the sections below in order. Omit a section only when it genuinely does not 
 
 ## Pre-determined data
 
-<Fenced code blocks or tables locking DTO/result shapes, status enums, error codes, config keys, paths, or function signatures the implementer must not invent.>
+<Only the contracts the implementer would otherwise have to invent: DTO/result shapes, status enums, error codes, config keys, paths, or function signatures, in fenced code blocks or tables.>
 
 ## CLI output expectations
 
 ### <scenario>
 ```text
-<exact or near-exact console copy, or omit for non-CLI changes>
+<exact or near-exact console copy>
 ```
 
 ## Error cases to handle
@@ -126,9 +139,5 @@ Use the sections below in order. Omit a section only when it genuinely does not 
 
 Before running `gh issue create` or `gh issue edit`:
 1. Scan the draft for shim-inducing words (`unchanged`, `untouched`, `as before`, `alongside`, `keep`, `compatib`, `shim`, `legacy`). Delete them or convert them into a **Shared surfaces changed** bullet and a grep removal bar in **Definition of done**.
-2. Confirm every new model or code path answers "what does this replace?" and mandates deleting the superseded path.
-3. Confirm **Definition of done** does not repeat individual FRs line-by-line.
-4. Re-run the **Size and split** checks on the finished draft. If one now holds, split before publishing.
-5. Scan FRs and **Pre-determined data** for private helper names, loop or call-site lists, and module paths that are not public surface. Delete them (principle 4).
-6. Confirm every bug and persisted-format change found in **Ground** appears as a blocker issue or under **Shared surfaces changed**.
-7. When publishing a split, create or edit the parent first, then the sub-issues in dependency order so each `--blocked-by` names an issue that exists. Confirm with `gh api repos/{owner}/{repo}/issues/<parent>/sub_issues --jq '.[].number'`.
+2. Re-check the finished draft against **Split**: one kind, neither rule broken, a review load that fits one sitting, and a `dovo-size-*` label.
+3. When publishing a split, create or edit the parent first, then the sub-issues in dependency order so each `--blocked-by` names an issue that exists. Confirm with `gh api repos/{owner}/{repo}/issues/<parent>/sub_issues --jq '.[].number'`.
