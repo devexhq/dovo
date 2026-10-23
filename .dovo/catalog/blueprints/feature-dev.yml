@@ -1,7 +1,7 @@
 version: 1
 name: feature-dev
 id: feature-dev
-description: Plan a GitHub issue, review and fold findings until none are picked, answer its open questions, implement it after approval, review and fix until approved, then open a PR
+description: Plan a GitHub issue, review and fold findings until none are picked, answer its open questions, implement it after approval, review and fix until approved, then open a PR and post the final review to it
 summary: Issue to reviewed PR with human gates
 
 inputs:
@@ -181,6 +181,36 @@ steps:
         timeout_seconds: 1800
         on_failure: continue
 
+  - id: pr-prep
+    name: Draft the commit message and branch name
+    type: agent
+    prompt: |
+      Run /pr-prep (follow .agents/skills/pr-prep/SKILL.md if the slash
+      command is not recognized). The change implements issue ${{ inputs.issue }}.
+      Read the change with `git status` and `git diff`, and ignore `.dovo/run` and `.agentic/`.
+      The commit message and branch name are used now; `pr-describe` rewrites the PR title and
+      description after review. Also write .agentic/pr-branch: one line, a new branch name
+      `<username>/<short-description>`, with the username your own branches use.
+    tools: { allow_all: true }
+    timeout_seconds: 900
+
+  # A command step: it commits the implementation so each review round
+  # reviews, and stamps, a real commit. Nothing is squashed later. A retry
+  # after a failure stays on the branch the first attempt created, and a
+  # branch name that already exists elsewhere still fails the switch.
+  - id: commit
+    name: Commit the implementation
+    run: |
+      set -eu
+      branch=$(head -n 1 .agentic/pr-branch)
+      git fetch -q origin main
+      [ "$(git branch --show-current)" = "$branch" ] || git switch -q -c "$branch"
+      git rm -r -q --cached --ignore-unmatch .dovo/run
+      git add -A
+      git commit -q -F .agentic/commit-msg
+    timeout_seconds: 300
+    on_failure: prompt_user
+
   - id: review-loop
     name: Review and fix until approved
     type: loop
@@ -197,7 +227,7 @@ steps:
           /dovo-review
 
           Follow .agents/skills/dovo-review/SKILL.md if the slash command is not recognized.
-          Review the uncommitted changes and write .agentic/review.md, .agentic/review.json
+          Review the commits on this branch against origin/main and write .agentic/review.md, .agentic/review.json
           and .agentic/verdict.txt.
         tools: { allow_all: true }
         timeout_seconds: 1800
@@ -234,29 +264,51 @@ steps:
         tools: { allow_all: true }
         timeout_seconds: 3600
 
-  - id: pr-prep
-    name: Draft the commit and PR text
+      # Commits only when the fix changed files, with the message the fixer
+      # wrote; a change without one fails the step rather than committing a
+      # message that says nothing.
+      - id: commit-fixes
+        name: Commit the review fixes
+        run: |
+          set -eu
+          git add -A
+          if git diff --cached --quiet; then rm -f .agentic/fix-commit-msg; exit 0; fi
+          test -s .agentic/fix-commit-msg || { echo "the fix changed files but wrote no .agentic/fix-commit-msg" >&2; exit 1; }
+          uv run python scripts/check_commit_msg.py .agentic/fix-commit-msg
+          git commit -q -F .agentic/fix-commit-msg
+          rm .agentic/fix-commit-msg
+        timeout_seconds: 300
+        on_failure: prompt_user
+
+  # Written last, from everything committed, so the PR text matches the code
+  # the final review saw rather than the code before the fix rounds.
+  - id: pr-describe
+    name: Describe the PR from the reviewed branch
     type: agent
     prompt: |
-      Run /pr-prep (follow .agents/skills/pr-prep/SKILL.md if the slash
-      command is not recognized). The change implements issue ${{ inputs.issue }}.
-      Dovo commits the working tree before each agent step, so read the change with
-      `git diff $(git merge-base HEAD origin/main)` instead of the uncommitted diff, and
-      ignore `.dovo/run`. Also write .agentic/pr-branch: one line, a new branch name
-      `<username>/<short-description>`, with the username your own branches use.
+      Follow .agents/skills/pr-prep/SKILL.md (or run /pr-prep) to draft only .agentic/pr-title
+      and .agentic/pr-description, overwriting both. The change implements issue ${{ inputs.issue }}.
+      Everything is already committed, so read it with `git log --oneline origin/main..HEAD` and
+      `git diff origin/main...HEAD` instead of the uncommitted diff, and ignore `.dovo/run`. The
+      skill's stop when nothing is uncommitted does not apply here: always rewrite both files.
+      Do not touch .agentic/commit-msg or .agentic/pr-branch, and do not commit, stage or push.
     tools: { allow_all: true }
     timeout_seconds: 900
+    artifacts:
+      - { name: pr-description, path: .agentic/pr-description }
 
   # A command step, not an agent step: it inherits the host environment, so git
   # reaches the user's SSH agent, which agent steps never see.
   - id: push
-    name: Commit, push and open the PR
-    run: |
-      set -eu
-      branch=$(head -n 1 .agentic/pr-branch)
-      git fetch -q origin main
-      git switch -q -c "$branch"
-      git reset -q --soft "$(git merge-base HEAD origin/main)"
-      git rm -r -q --cached --ignore-unmatch .dovo/run
-      uv run python scripts/pr.py
+    name: Push and open the PR
+    run: uv run python scripts/pr.py
     timeout_seconds: 600
+
+  # Pauses on failure rather than finishing without the comment: retry after a
+  # GitHub error, or continue when the publisher refused a review that no
+  # longer matches the PR head (a fix landed after the final review).
+  - id: post-review
+    name: Post the final review to the PR
+    run: uv run python scripts/publish_review.py --pr "$(head -n 1 .agentic/pr-branch)"
+    timeout_seconds: 120
+    on_failure: prompt_user

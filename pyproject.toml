@@ -110,7 +110,6 @@ exclude = [
     "dist",
     ".venv",
     "venv",
-    "bin",
 ]
 
 [tool.ruff.lint]
