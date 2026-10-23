@@ -4,7 +4,7 @@ description: >-
   Create or update an implementation-ready, self-contained GitHub issue for Dovo
   CLI with authoritative scope, numbered FR/NFR contracts, pre-determined data,
   error cases, and a non-redundant Definition of Done. Grounds the issue in the
-  code first and splits work larger than one user story or one PR into
+  code first and splits work that mixes more than one responsibility into
   a parent issue with native sub-issues. Invoked as /dovo-issue.
   Use when asked to create, draft, or revise a GitHub issue.
 ---
@@ -43,24 +43,38 @@ Canonical example of structure, depth, and tone: [examples/github-issue.md](exam
 Before drafting, read the entry points of every surface the issue touches, and their callers. Record:
 - **Existing bugs on the path** the work builds on. Each becomes its own sub-issue, which blocks the work that depends on it.
 - **Persisted formats** the work changes (session state and manifests, `data.db`, `config.json`, catalog `index.json`, blueprint and step YAML). List each under **Shared surfaces changed**, with what happens to data written before the change.
-- **Call sites** when the work applies one pattern across many places (exception handlers, commands, callers of a replaced function): count them per package, for example with `git grep -c`, and read the matches to drop comments, docs and tests from the count. Size the issue from that count and the tests each site needs.
+- **Call sites** when the work applies one pattern across many places (exception handlers, commands, callers of a replaced function): count them per package, for example with `git grep -c`, and read the matches to drop comments, docs and tests from the count. Pick the size label from that count and the tests each site needs.
 
 Only read; never edit code or run tooling that mutates or validates. Read-only `git`, read-only `gh`, `rg` and file reads are enough.
 
 ### 2. Size and split
 
-An issue is one user story that ships value on its own and lands as one PR of about 200 to 400 changed lines, tests included. `/dovo-code` implements every phase of a plan in one PR, so the issue is what bounds a PR's size. Split it when any of these hold:
+An issue has one responsibility and lands as one PR. What makes a PR hard to review is how many kinds of change it mixes, not how many lines it has: a focused 1,000-line conversion takes longer to review than a 400-line one, but not more effort per line. Each issue is exactly one of these kinds:
+
+| Kind | Changes | Never also |
+|---|---|---|
+| Fix | One wrong behaviour, with its regression test | Refactors around it |
+| Foundation | A new shared type, tool or rule, with its contract tests | Converts callers |
+| Adopt | One package or area moves onto a foundation, deleting what it replaces there | Changes what users see beyond what the move requires |
+| Refactor | Structure only; observable behaviour is identical | Adds surface |
+| Remove | Deletes what nothing uses any more | Anything else |
+| Feature | New user-facing surface | Restructures what it builds on |
+
+Split it when any of these hold:
+- it mixes two kinds (for example a foundation and its adoption, or a behaviour change and a refactor)
 - the **I want** line, or the **As a** line, joins independently valuable outcomes or different users (for example someone running a blueprint and someone running `dovo doctor`)
-- more than about 6 FRs, counting an FR that lists separate cases as one FR per case
 - more than one new public surface (for example a command group *and* a schema field)
 - it changes a persisted format *and* adds CLI surface
-- the same change applies across more than two packages or domain areas
-- you estimate more than about 400 changed lines, tests included
+- it adopts one foundation in more than one package or domain area
 
-Split by value delivered, never by layer: each child has its own user story and is useful once merged. Size each child at 200 to 400 changed lines rather than splitting into many smaller ones; an issue under 200 lines that is the whole story stays whole. When the same change spans several domain areas, the first child ships whatever they share together with one area that proves it end to end, and each later child covers one area. Every split has a parent issue and native GitHub sub-issues:
+Never split one responsibility to make the parts smaller. If the halves would need a temporary bridge between them (one half mapping the new shape back onto the old one so the other half still works), keep them as one issue.
+
+Label every issue with its size, from the call-site counts recorded in **Ground**: `dovo-size-s` (a few files on one surface), `dovo-size-m` (several files or two surfaces) or `dovo-size-l` (several packages, schemas or surfaces). An `l` issue states in its opening paragraph, in one sentence, the single responsibility that holds it together; if no such sentence is true, split it.
+
+Split by responsibility, never by layer or line count. A foundation child is valid when the children that adopt it are created in the same split and blocked by it; every other child has its own user story and is useful once merged. When one foundation is adopted across several packages, the split is the foundation, then one adopt child per package, then any remove child for what the adoptions left unused. Every split has a parent issue and native GitHub sub-issues:
 
 - **Parent:** the Goal / User Story, one short paragraph on why the children are ordered as they are, and an **Out of scope** list for the whole feature. No FRs, data, error cases or Definition of Done: GitHub tracks progress through the sub-issues. When splitting an existing issue, edit it into the parent (`gh issue edit <n> --body-file …`) so its number, links and discussion survive.
-- **Sub-issues:** full issues in the structure below, each self-contained. The planner reads only the sub-issue, never the parent or its siblings, so every requirement and literal contract it needs is in its own body. Create each with `gh issue create --parent <parent>`, adding `--blocked-by <n>` when it cannot ship before another sub-issue.
+- **Sub-issues:** full issues in the structure below, each self-contained. The planner reads only the sub-issue, never the parent or its siblings, so every requirement and literal contract it needs is in its own body. Create each with `gh issue create --parent <parent> --label dovo-size-<s|m|l>`, adding `--blocked-by <n>` when it cannot ship before another sub-issue. A parent gets no size label.
 
 For example, "prompts as a catalog type that agent steps can reference" becomes a parent with three sub-issues: a bug fix on the shared catalog delete path; prompts as a catalog type with `dovo prompt` commands, blocked by the fix; and `prompt_file` on agent steps, blocked by the catalog type.
 
@@ -128,7 +142,7 @@ Before running `gh issue create` or `gh issue edit`:
 1. Scan the draft for shim-inducing words (`unchanged`, `untouched`, `as before`, `alongside`, `keep`, `compatib`, `shim`, `legacy`). Delete them or convert them into a **Shared surfaces changed** bullet and a grep removal bar in **Definition of done**.
 2. Confirm every new model or code path answers "what does this replace?" and mandates deleting the superseded path.
 3. Confirm **Definition of done** does not repeat individual FRs line-by-line.
-4. Re-run the **Size and split** checks on the finished draft. If one now holds, split before publishing.
+4. Re-run the **Size and split** checks on the finished draft. If one now holds, split before publishing. Confirm the draft is one kind from the table, carries a `dovo-size-*` label, and, if it is `l`, states its single responsibility in its opening paragraph.
 5. Scan FRs and **Pre-determined data** for private helper names, loop or call-site lists, and module paths that are not public surface. Delete them (principle 4).
 6. Confirm every bug and persisted-format change found in **Ground** appears as a blocker issue or under **Shared surfaces changed**.
 7. When publishing a split, create or edit the parent first, then the sub-issues in dependency order so each `--blocked-by` names an issue that exists. Confirm with `gh api repos/{owner}/{repo}/issues/<parent>/sub_issues --jq '.[].number'`.

@@ -68,7 +68,7 @@ A miss is Blocking when implementing the plan as written produces a bug, data lo
 
 - The plan follows the template in [planning.md](../../../docs/agents/planning.md) Step 4, including the Phases table.
 - Each phase is one concern, roughly 400 changed lines or less, passes the gate on its own and ships something. A phase over budget states why it cannot be split.
-- The phases together fit about 400 changed lines, since they land in one PR. A total well past that, not flagged under What you're approving with a recommendation to split the issue, is a Warning.
+- The phases together serve one responsibility, since they land in one PR. A plan whose phases mix kinds of change (a foundation and its adoption, or a behaviour change and a refactor), not flagged under What you're approving with a recommendation to split the issue, is a Warning.
 - Phases are ordered by dependency, lower layers first, and replacing an internal is phased add, switch callers, delete, with the deletion phase in the ledger (R10).
 - The planned design against R1–R17: report **only violations**, each with the rule ID and the plan section that breaks it.
 - Numbers agree everywhere they appear: line estimates, totals, the Definition of Done.

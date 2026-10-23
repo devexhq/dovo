@@ -38,7 +38,7 @@ Group FRs into phases of one concern each (~400 changed lines or less, tests inc
 - Replacing an internal is phased as add, switch callers, delete, with the deletion phase planned up front in `### Deletion ledger` (R10).
 - Order phases by dependency, lower layers first (R1). A fix to existing behaviour that the change depends on is its own phase, first.
 - A phase over budget states, under the Phases table, why it cannot be split.
-- `/dovo-code` lands every phase in one PR, so the phases together should fit the issue's budget of about 400 changed lines. A plan whose total runs well past it says so first under **What you're approving** and recommends splitting the issue with `/dovo-issue`.
+- `/dovo-code` lands every phase in one PR, so the phases together serve the issue's one responsibility. A plan whose phases mix kinds of change (a foundation and its adoption, or a behaviour change and a refactor) says so first under **What you're approving** and recommends splitting the issue with `/dovo-issue`.
 - Resolve every check now: no instruction or ledger entry may be conditional on a `grep` the implementer runs later.
 
 ## Step 4: Write `.agentic/plan.md`
