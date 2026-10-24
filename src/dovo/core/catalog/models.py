@@ -186,9 +186,20 @@ class CatalogShowResult(BaseResult):
         return not self.errors and (self.item is not None or self.content is not None or bool(self.template_matches))
 
 
+class CatalogDeleteStatus(StrEnum):
+    """Classified outcomes for deleting a catalog blueprint or step."""
+
+    OK = "ok"
+    NOT_FOUND = "not_found"
+    PROTECTED = "protected"
+    WRONG_TIER = "wrong_tier"
+    CANCELLED = "cancelled"
+
+
 class CatalogDeleteResult(BaseResult):
     """Result of deleting a catalog blueprint."""
 
+    status: CatalogDeleteStatus
     item: CatalogRecord | None = None
     deleted: bool = False
     cancelled: bool = False
@@ -196,19 +207,30 @@ class CatalogDeleteResult(BaseResult):
     @property
     def ok(self) -> bool:
         """Return True if item deletion succeeded."""
-        return not self.errors and self.deleted
+        return self.status == CatalogDeleteStatus.OK and not self.errors
+
+
+class CatalogCreateStatus(StrEnum):
+    """Classified outcomes for creating a catalog blueprint or step."""
+
+    OK = "ok"
+    INVALID_TYPE = "invalid_type"
+    ALREADY_EXISTS = "already_exists"
+    WRITE_FAILED = "write_failed"
+    CONFLICTING_TIERS = "conflicting_tiers"
 
 
 class CatalogCreateResult(BaseResult):
     """Result of creating a catalog blueprint or step."""
 
+    status: CatalogCreateStatus
     item: CatalogRecord | None = None
     resolved_path: Path | None = None
 
     @property
     def ok(self) -> bool:
         """Return True if blueprint creation succeeded."""
-        return not self.errors and self.item is not None
+        return self.status == CatalogCreateStatus.OK and not self.errors
 
 
 class CatalogValidateStatus(StrEnum):

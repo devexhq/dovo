@@ -4,7 +4,9 @@ The `dovo step` command inspects, creates, deletes, and validates executable ste
 
 `dovo step` requires an explicit subcommand; there is no bare-invocation default.
 
-When `create`, `delete` or `validate` fails with an unexpected error and Dovo writes a [diagnostic log](doctor.md#diagnostic-logs) record for it, the error message ends with a `Details logged: <path> (event <event_id>)` line naming that file. If the record cannot be written, the line is absent.
+When `validate` fails with an unexpected error and Dovo writes a [diagnostic log](doctor.md#diagnostic-logs) record for it, the error message ends with a `Details logged: <path> (event <event_id>)` line naming that file. If the record cannot be written, the line is absent.
+
+If another Dovo process holds the workspace lock, `create` and `delete` exit with code 1 and print a Workspace Lock Timeout panel; wait for that process to finish and retry.
 
 ## Subcommands
 

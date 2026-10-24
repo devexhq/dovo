@@ -8,7 +8,14 @@ from typing import Any
 import pytest
 
 from dovo.cli.ui.formatters.catalog.catalog_delete import CatalogDeleteFormatter
-from dovo.core.catalog.models import CatalogDeleteResult, CatalogItemType, CatalogRecord, CatalogTier
+from dovo.common.error_codes import ErrorCode
+from dovo.core.catalog.models import (
+    CatalogDeleteResult,
+    CatalogDeleteStatus,
+    CatalogItemType,
+    CatalogRecord,
+    CatalogTier,
+)
 from tests.harness.formatter import (
     FormatterCase,
     assert_json_payload_matches_published_shape,
@@ -27,17 +34,21 @@ _RECORD = CatalogRecord(
 )
 
 DELETED = FormatterCase.identity(
-    data=CatalogDeleteResult(item=_RECORD, deleted=True, cancelled=False),
+    data=CatalogDeleteResult(status=CatalogDeleteStatus.OK, item=_RECORD, deleted=True, cancelled=False),
     render_expectations=[_RECORD.sha, str(_RECORD.path)],
 )
 
 CANCELLED = FormatterCase.identity(
-    data=CatalogDeleteResult(item=None, deleted=False, cancelled=True, errors=["Deletion cancelled."]),
+    data=CatalogDeleteResult(
+        status=CatalogDeleteStatus.CANCELLED, item=None, deleted=False, cancelled=True, errors=["Deletion cancelled."]
+    ),
     render_expectations=["Deletion cancelled."],
 )
 
 DELETE_ERROR = FormatterCase.identity(
     data=CatalogDeleteResult(
+        status=CatalogDeleteStatus.NOT_FOUND,
+        error_code=ErrorCode.CATALOG_NOT_FOUND,
         item=None,
         deleted=False,
         cancelled=False,
@@ -64,6 +75,7 @@ CATALOG_DELETE_PAYLOAD_CASES = [
             "warnings": [],
             "fixes": [],
             "error_code": None,
+            "status": "ok",
             "item": {
                 "key": "test-blueprint",
                 "sha": "blueprint_1234567",
@@ -85,7 +97,8 @@ CATALOG_DELETE_PAYLOAD_CASES = [
             "errors": ["Catalog blueprint 'missing' not found."],
             "warnings": [],
             "fixes": ["Run `dovo blueprint list` to inspect available items"],
-            "error_code": None,
+            "error_code": "CATALOG_NOT_FOUND",
+            "status": "not_found",
             "item": None,
             "deleted": False,
             "cancelled": False,

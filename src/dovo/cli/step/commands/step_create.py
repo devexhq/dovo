@@ -5,13 +5,15 @@ from __future__ import annotations
 from dovo.cli.context import CliContext
 from dovo.cli.ui.dispatcher import ui_dispatcher
 from dovo.core.catalog import Catalog
-from dovo.core.catalog.models import CatalogCreateResult, CatalogItemType, CatalogTier
+from dovo.core.catalog.models import CatalogCreateResult, CatalogCreateStatus, CatalogItemType, CatalogTier
 
 
 def _resolve_create_tier(*, user: bool, global_: bool) -> CatalogTier | CatalogCreateResult:
     """Coerce --user/--global flags into a CatalogTier, or a mutual-exclusion error result."""
     if user and global_:
-        return CatalogCreateResult(errors=["--user and --global are mutually exclusive."])
+        return CatalogCreateResult(
+            status=CatalogCreateStatus.CONFLICTING_TIERS, errors=["--user and --global are mutually exclusive."]
+        )
     if user:
         return CatalogTier.USER
     if global_:
