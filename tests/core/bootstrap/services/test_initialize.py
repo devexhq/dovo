@@ -284,3 +284,18 @@ class AutoInitializeWorkspaceTests:
             "boom",
             f"Could not roll back the partial workspace at {dovo_dir.as_posix()}: denied. Remove it, then rerun dovo run.",
         ]
+
+    def test_auto_initialize_workspace_raised_failure_removes_new_dovo_dir_and_reraises(
+        self, git_repo: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Re-raise an exception from database initialization unchanged and remove the new .dovo/."""
+
+        def _unwritable(_path: object) -> None:
+            raise PermissionError("unwritable data dir")
+
+        monkeypatch.setattr("dovo.core.bootstrap.services.initialize.init_database", _unwritable)
+
+        with pytest.raises(PermissionError, match=r"^unwritable data dir$"):
+            auto_initialize_workspace(git_repo)
+
+        assert not (git_repo / ".dovo").exists()

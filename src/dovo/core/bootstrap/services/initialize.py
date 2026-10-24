@@ -8,6 +8,7 @@ from dovo.common.filesystem import Filesystem
 from dovo.common.filesystem.services.global_root import resolve_global_paths
 from dovo.common.utils import display_path
 from dovo.core.bootstrap.models import (
+    DovoTreeSnapshot,
     InitFailureMode,
     WorkspaceInitResult,
 )
@@ -102,25 +103,43 @@ def initialize_workspace(
 
 
 def auto_initialize_workspace(root: Path | None = None) -> WorkspaceInitResult:
-    """Initialize the workspace for `dovo run`; on a failure after preflight, restore the project's .dovo to its state before the attempt."""
+    """Initialize the workspace for `dovo run`; on a failure after preflight, restore the project's .dovo to its state before the attempt.
+
+    A returned failure carries any rollback error in its errors. An exception
+    raised by initialization is re-raised after the rollback, with any rollback
+    error added as a note.
+    """
     fs = Filesystem(root)
     if _refuse_global_home(fs) is not None or not fs.is_git_repo():
         return initialize_workspace(root)
 
     snapshot = snapshot_dovo_tree(fs.dovo_dir)
-    result = initialize_workspace(root)
+    try:
+        result = initialize_workspace(root)
+    except BaseException as exc:
+        rollback_error = _rollback(snapshot)
+        if rollback_error is not None:
+            exc.add_note(rollback_error)
+        raise
     if result.ok:
         return result
 
+    rollback_error = _rollback(snapshot)
+    if rollback_error is not None:
+        return result.model_copy(update={"errors": [*result.errors, rollback_error]})
+    return result
+
+
+def _rollback(snapshot: DovoTreeSnapshot) -> str | None:
+    """Restore snapshot's .dovo tree; return the error to report when that fails, else None."""
     try:
         restore_dovo_tree(snapshot)
     except OSError as exc:
-        rollback_error = (
-            f"Could not roll back the partial workspace at {display_path(fs.dovo_dir)}: {exc}. "
+        return (
+            f"Could not roll back the partial workspace at {display_path(snapshot.dovo_dir)}: {exc}. "
             "Remove it, then rerun dovo run."
         )
-        return result.model_copy(update={"errors": [*result.errors, rollback_error]})
-    return result
+    return None
 
 
 def _refuse_global_home(fs: Filesystem) -> WorkspaceInitResult | None:
