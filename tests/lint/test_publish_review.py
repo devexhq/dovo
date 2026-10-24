@@ -192,10 +192,23 @@ class PublishReviewTests:
                 id="action-contradicts-verdict",
             ),
             pytest.param(
+                _review(action="fix"),
+                "ok",
+                "review.json action 'fix' contradicts verdict APPROVE",
+                id="approve-with-fix",
+            ),
+            pytest.param(_review(action="needs_human"), "ok", None, id="approve-needs-human"),
+            pytest.param(
                 _review(verdict="CHANGES_REQUIRED", action="fix", counts={"blocking": 1}),
                 "ok",
                 None,
                 id="changes-required",
+            ),
+            pytest.param(
+                _review(verdict="CHANGES_REQUIRED", action="needs_human", counts={"blocking": 1}),
+                "ok",
+                None,
+                id="changes-required-needs-human",
             ),
         ],
     )

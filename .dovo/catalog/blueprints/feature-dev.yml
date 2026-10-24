@@ -191,17 +191,19 @@ steps:
   # none or sets action needs_human or replan, which only a person can settle:
   # the run then opens the PR and the posted review carries that decision.
   # Suggestions and nits stay in the posted review for the human. The round
-  # that ends the loop still runs the fixer, which then changes nothing.
+  # that ends the loop still runs the fixer, which then changes nothing. After
+  # the last round the run still opens the PR, and the posted review lists what
+  # is left.
   - id: review-loop
     name: Review and fix until no blockers or warnings remain or a person must decide
     type: loop
-    max_iterations: 5
+    max_iterations: 3
     until:
       # Workaround for #1141: a failed remaining is recorded as ignored with
       # exit code 0, so only its status shows the failure. Revert to
       # `steps.remaining.exit_code == 0` when #1141 lands.
       - steps.remaining.status == "completed"
-    on_max_iterations: prompt_user
+    on_max_iterations: continue
     do:
       - id: review
         name: Review the change
