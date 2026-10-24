@@ -65,8 +65,15 @@ steps:
     name: Apply the edits, label the issue and comment
     run: |
       set -eu
-      if [ -f .agentic/issue-body.md ]; then
+      verdict=$(uv run --quiet python -c 'import json; print(json.load(open(".agentic/issue-ready.json"))["verdict"])')
+      if [ "$verdict" = "needs_edits" ]; then
+        for proposal in .agentic/issue-title .agentic/issue-body.md; do
+          [ -s "$proposal" ] || { echo "Verdict is needs_edits but $proposal is missing or empty; not labelling."; exit 1; }
+        done
         gh issue edit ${{ inputs.issue }} --title "$(head -n 1 .agentic/issue-title)" --body-file .agentic/issue-body.md
+      elif [ "$verdict" != "ready" ]; then
+        echo "Unexpected verdict '$verdict'; not labelling."
+        exit 1
       fi
       gh label create dovo:ready --color 0e8a16 --description "Re-grounded against main and ready to plan" --force
       gh issue edit ${{ inputs.issue }} --add-label dovo:ready
