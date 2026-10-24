@@ -1,7 +1,7 @@
 version: 1
 name: feature-dev
 id: feature-dev
-description: Plan a GitHub issue, review it once and fold in every finding, answer its open questions, implement it after approval, review and fix blockers and warnings until none remain, then open a PR and post the final review to it
+description: Plan a GitHub issue, review it once and fold in every finding, answer its open questions, implement it after approval, review and fix blockers and warnings until none remain or only a person can settle them, then open a PR and post the final review to it
 summary: Issue to reviewed PR with human gates
 
 inputs:
@@ -176,10 +176,12 @@ steps:
     on_failure: prompt_user
 
   # Fixes every blocker and warning without asking, until a review reports
-  # none; suggestions and nits stay in the posted review for the human. The
-  # round that finds none still runs the fixer, which then changes nothing.
+  # none or sets action needs_human or replan, which only a person can settle:
+  # the run then opens the PR and the posted review carries that decision.
+  # Suggestions and nits stay in the posted review for the human. The round
+  # that ends the loop still runs the fixer, which then changes nothing.
   - id: review-loop
-    name: Review and fix until no blockers or warnings remain
+    name: Review and fix until no blockers or warnings remain or a person must decide
     type: loop
     max_iterations: 5
     until:
@@ -203,11 +205,12 @@ steps:
         artifacts: [{ name: review, path: ".agentic/review.*" }]
 
       - id: remaining
-        name: Check for blockers and warnings
+        name: Check for blockers and warnings an agent can fix
         run: >-
           uv run python -c 'import json, sys;
-          findings = json.load(open(".agentic/review.json"))["findings"];
-          sys.exit(any(f["severity"] in ("BLOCKER", "WARNING") for f in findings))'
+          review = json.load(open(".agentic/review.json"));
+          needs_person = review.get("action") in ("needs_human", "replan");
+          sys.exit(not needs_person and any(f["severity"] in ("BLOCKER", "WARNING") for f in review["findings"]))'
         on_failure: continue
 
       - id: fix
@@ -217,8 +220,9 @@ steps:
           /dovo-code review --tiers blockers,warnings
 
           Follow .agents/skills/dovo-code/SKILL.md if the slash command is not recognized.
-          If .agentic/review.json lists no BLOCKER or WARNING findings, change nothing and report
-          that you did nothing. Do not commit, stage or push.
+          If .agentic/review.json lists no BLOCKER or WARNING findings, or its action is
+          needs_human or replan, change nothing and report that you did nothing. Do not commit,
+          stage or push.
         tools: { allow_all: true }
         timeout_seconds: 3600
         artifacts: [{ name: implementation-report, path: .agentic/implementation-report.md }]
