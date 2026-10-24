@@ -8,6 +8,7 @@ from dovo.common.filesystem import WorkspacePaths
 from dovo.core.agents.models import AgentEnvMode
 from dovo.core.catalog import Catalog
 from dovo.core.db import SessionsRepository
+from dovo.core.git.runner import GitRunner
 from dovo.core.interaction import HeadlessAnswerInput
 from dovo.engine.engine import Engine
 from dovo.engine.exceptions import EngineResumeError, EngineRuntimeError
@@ -21,6 +22,7 @@ class BlueprintResumeService:
 
     paths: WorkspacePaths
     db: SessionsRepository
+    git: GitRunner
     session_id: str | None = None
     no_tty: bool = False
     env_mode: AgentEnvMode | None = None
@@ -44,7 +46,7 @@ class BlueprintResumeService:
         catalog = Catalog(self.paths)
 
         try:
-            run_outcome = Engine(self.paths, db=self.db, catalog=catalog).resume(
+            run_outcome = Engine(self.paths, db=self.db, catalog=catalog, git=self.git).resume(
                 target_session_id,
                 observer=self.observer,
                 failure_prompter=self.failure_prompter,

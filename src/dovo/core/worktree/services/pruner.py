@@ -39,6 +39,8 @@ class WorktreePruner:
         path: Path,
         db: WorktreesRepository,
         sessions_db: SessionsRepository | None = None,
+        *,
+        git: GitRunner,
     ) -> None:
         """Initialize pruner bound to repository root and database.
 
@@ -46,11 +48,13 @@ class WorktreePruner:
             path: Repository root directory.
             db: WorktreesRepository instance.
             sessions_db: Optional SessionsRepository instance for run liveness checks.
+            git: Runner for every git command.
         """
         self.path = path.expanduser().resolve()
         self.db = db
         self.sessions_db = sessions_db
-        self.detector = WorktreeDetector(self.path, self.db, sessions_db=self.sessions_db)
+        self.git = git
+        self.detector = WorktreeDetector(self.path, self.db, sessions_db=self.sessions_db, git=git)
 
     def _prune_stale_worktree_ref(self, item: StaleWorktreeItem, *, dry_run: bool) -> PrunedItem:
         """Prune administrative worktree registrations."""
@@ -65,7 +69,7 @@ class WorktreePruner:
             )
 
         try:
-            GitRunner.worktree_prune(self.path)
+            self.git.worktree_prune(self.path)
             return PrunedItem(
                 category=item.category,
                 identifier=item.identifier,
@@ -95,7 +99,7 @@ class WorktreePruner:
         if not dir_path.exists():
             return None
         try:
-            GitRunner.worktree_remove(self.path, dir_path, force=True)
+            self.git.worktree_remove(self.path, dir_path, force=True)
             return None
         except Exception as exc:
             try:
@@ -133,7 +137,7 @@ class WorktreePruner:
                 )
 
         try:
-            GitRunner.worktree_prune(self.path)
+            self.git.worktree_prune(self.path)
         except Exception as exc:
             record_fallback(exc, operation="worktree.prune", context=context)
 
@@ -245,7 +249,7 @@ class WorktreePruner:
             )
 
         try:
-            GitRunner.branch_delete(self.path, item.identifier, force=True)
+            self.git.branch_delete(self.path, item.identifier, force=True)
             return PrunedItem(
                 category=item.category,
                 identifier=item.identifier,

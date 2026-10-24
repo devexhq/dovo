@@ -93,6 +93,7 @@ def run_command(
             name=name,
             paths=context.paths,
             sessions_db=context.db.sessions,
+            git=context.git,
             no_worktree=no_worktree,
             keep=keep,
             discard=discard,

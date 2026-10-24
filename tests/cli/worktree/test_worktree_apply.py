@@ -19,13 +19,13 @@ from tests.harness.workspace_paths import initialized_workspace_paths
 
 def _create_worktree_with_committed_change(cli_workspace: Path) -> WorktreeSession:
     """Create a worktree and commit one file change inside its worktree."""
-    create_result = Worktree(paths=initialized_workspace_paths(cli_workspace)).create(name="apply-me")
+    create_result = Worktree(paths=initialized_workspace_paths(cli_workspace), git=GitRunner()).create(name="apply-me")
     assert create_result.session is not None
     session = create_result.session
 
     (session.worktree_path / "target.py").write_text("changed\n", encoding="utf-8")
-    GitRunner.run(["add", "-A"], path=session.worktree_path)
-    GitRunner.run(["commit", "-m", "Worktree change to target.py"], path=session.worktree_path)
+    GitRunner().run(["add", "-A"], path=session.worktree_path)
+    GitRunner().run(["commit", "-m", "Worktree change to target.py"], path=session.worktree_path)
 
     return session
 
@@ -94,13 +94,13 @@ class WorktreeApplyCliIntegrationTests:
         )
 
         assert result.exit_code == 0
-        commit_sha = GitRunner.rev_parse(cli_workspace, rev="HEAD")
+        commit_sha = GitRunner().rev_parse(cli_workspace, rev="HEAD")
         assert f"Applied worktree {session.session_id} to workspace (squash)" in result.stdout
         assert f"• Commit: {commit_sha}" in result.stdout
         assert dispatch_spy[0].commit_sha == commit_sha
-        committed = GitRunner.run(["diff-tree", "--no-commit-id", "--name-only", "-r", "HEAD"], path=cli_workspace)
+        committed = GitRunner().run(["diff-tree", "--no-commit-id", "--name-only", "-r", "HEAD"], path=cli_workspace)
         assert committed == "target.py"
-        assert GitRunner.status_porcelain(cli_workspace) == ["?? scratch.txt"]
+        assert GitRunner().status_porcelain(cli_workspace) == ["?? scratch.txt"]
 
     def test_worktree_apply_cli_squash_allow_dirty_overlap_exits_one(
         self, cli_runner: CliRunner, cli_workspace: Path, dispatch_spy: list[WorktreeApplyResult]

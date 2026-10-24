@@ -25,6 +25,6 @@ def worktree_show_command(
         worktree_id: Worktree primary key to show.
         output_format: Presentation format ("terminal" or "json").
     """
-    result = Worktree(context.paths, db=context.db.worktrees).show(worktree_id)
+    result = Worktree(context.paths, git=context.git, db=context.db.worktrees).show(worktree_id)
     ui_dispatcher.dispatch(result, output_format=output_format)
     return result

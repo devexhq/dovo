@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import NoReturn
 
 import pytest
 from typer.testing import CliRunner
@@ -14,12 +13,13 @@ from dovo.core.git.runner import GitRunner
 from dovo.core.worktree.models import WorktreeDeleteResult, WorktreeDeleteStatus, WorktreeSession
 from dovo.core.worktree.worktree import Worktree
 from tests.harness.diagnostic_log import diagnostic_hint, read_single_event
+from tests.harness.fakes import FakeGitRunner, use_fake_git
 from tests.harness.workspace_paths import initialized_workspace_paths
 
 
 def _create_worktree(cli_workspace: Path) -> WorktreeSession:
     """Create a fresh worktree via the entrypoint for one delete test."""
-    create_result = Worktree(paths=initialized_workspace_paths(cli_workspace)).create(name="delete-me")
+    create_result = Worktree(paths=initialized_workspace_paths(cli_workspace), git=GitRunner()).create(name="delete-me")
     assert create_result.session is not None
     return create_result.session
 
@@ -110,13 +110,9 @@ class WorktreeDeleteCliIntegrationTests:
         frozen_diagnostic_clock: Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """Exit 0 for --force --format json with GitRunner.branch_delete raising RuntimeError("boom") after _create_worktree, emit status "deleted" and payload warnings == [f"Failed to delete branch '{branch}': boom\nDetails logged: {path} (event exc_3f9a1c07b2de)"], and write a record with command "worktree" and operation worktree.cleanup."""
+        """Exit 0 for --force --format json with git branch -D raising RuntimeError("boom") after _create_worktree, emit status "deleted" and payload warnings == [f"Failed to delete branch '{branch}': boom\nDetails logged: {path} (event exc_3f9a1c07b2de)"], and write a record with command "worktree" and operation worktree.cleanup."""
         session = _create_worktree(cli_workspace)
-
-        def failing_branch_delete(*args: object, **kwargs: object) -> NoReturn:
-            raise RuntimeError("boom")
-
-        monkeypatch.setattr(GitRunner, "branch_delete", staticmethod(failing_branch_delete))
+        use_fake_git(monkeypatch, FakeGitRunner({("branch", "-D"): RuntimeError("boom")}))
 
         result = cli_runner.invoke(
             app,

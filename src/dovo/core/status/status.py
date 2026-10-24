@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dovo.common.filesystem import WorkspacePaths
 from dovo.core.config import ConfigLoadStatus, agent_settings
+from dovo.core.git import GitRunner
 from dovo.core.status.catalog_probe import probe_catalog
 from dovo.core.status.config_probe import probe_config
 from dovo.core.status.database_probe import probe_database
@@ -130,14 +131,15 @@ def _collect_fixes(
 class Status:
     """Unified entrypoint for workspace status and runtime health collection."""
 
-    def __init__(self, paths: WorkspacePaths) -> None:
-        """Bind this Status instance to a resolved WorkspacePaths snapshot."""
+    def __init__(self, paths: WorkspacePaths, *, git: GitRunner) -> None:
+        """Bind this Status instance to a resolved WorkspacePaths snapshot and the git runner its probe uses."""
         self.paths = paths
+        self.git = git
 
     def collect(self) -> DovoStatusResult:
         """Probe git, config, catalog, database and worktrees, then derive warnings, fixes and initialization."""
         paths = self.paths
-        git_status = probe_git(paths.root_dir)
+        git_status = probe_git(paths.root_dir, git=self.git)
         config_status = probe_config(paths)
         catalog_status = probe_catalog(paths.catalog_dir)
         database_status = probe_database(paths)

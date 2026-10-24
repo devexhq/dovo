@@ -14,6 +14,7 @@ from dovo.core.agents.registry import PROVIDERS
 from dovo.core.config.models import DEFAULT_AGENT, AgentProvider, DovoConfig, ProjectConfig
 from dovo.core.diagnostics.checks.env_binaries import EnvBinariesCheck
 from dovo.core.diagnostics.models import CheckCategory, CheckStatus, DiagnosticsContext
+from dovo.core.git.runner import GitRunner
 
 WorkspacePathsFactory = Callable[[Path, Path | None], WorkspacePaths]
 
@@ -25,7 +26,7 @@ def _context_with_provider(
     cwd: Path, provider: str, workspace_paths_factory: WorkspacePathsFactory
 ) -> DiagnosticsContext:
     config = DovoConfig(version=1, project=ProjectConfig(name="demo"), default_agent=cast(AgentProvider, provider))
-    return DiagnosticsContext(cwd=cwd, config=config, paths=workspace_paths_factory(cwd, None))
+    return DiagnosticsContext(cwd=cwd, config=config, paths=workspace_paths_factory(cwd, None), git=GitRunner())
 
 
 def _which_only(*present: str) -> Callable[[str], str | None]:
@@ -41,7 +42,7 @@ class EnvBinariesCheckTests:
         provider_binary = PROVIDERS[DEFAULT_TOKEN].binary
         assert provider_binary is not None
         monkeypatch.setattr("dovo.core.diagnostics.checks.env_binaries.shutil.which", _which_only(provider_binary))
-        context = DiagnosticsContext(cwd=tmp_path, paths=workspace_paths_factory(tmp_path, None))
+        context = DiagnosticsContext(cwd=tmp_path, paths=workspace_paths_factory(tmp_path, None), git=GitRunner())
 
         result = EnvBinariesCheck().execute(context)
 

@@ -21,6 +21,7 @@ from dovo.core.config.models import DovoConfig
 from dovo.core.config.mutate import ConfigSetResult, ConfigSetStatus
 from dovo.core.config.validate import ConfigValidationResult
 from dovo.core.diagnostics.models import DiagnosticsReport
+from dovo.core.git.runner import GitRunner
 from dovo.core.status.models import DovoStatusResult
 from tests.harness.builders import WorkspaceBuilder
 
@@ -46,6 +47,14 @@ class CliContextBuildTests:
 
         assert context.paths.root_dir == workspace.resolve()
         assert context.config is None
+
+    def test_build_sets_a_git_runner(self, tmp_path: Path) -> None:
+        """Return a context whose git is exactly a GitRunner instance (type(context.git) is GitRunner)."""
+        workspace = WorkspaceBuilder(tmp_path / "workspace").without_config().build()
+
+        context = CliContext.build(path=workspace, load_config=False)
+
+        assert type(context.git) is GitRunner
 
     @pytest.mark.parametrize(
         ("names", "expected"),

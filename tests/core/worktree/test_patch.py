@@ -84,25 +84,25 @@ class WorktreeApplyRollbackTests:
         db = WorktreesRepository(
             db_path=worktree_workspace_paths.database_file, project_id=worktree_workspace_paths.project_id
         )
-        lifecycle = WorktreeLifecycle(worktree_workspace_paths, db)
-        patch_service = WorktreePatch(worktree_workspace_paths, db, lifecycle=lifecycle)
+        lifecycle = WorktreeLifecycle(worktree_workspace_paths, db, git=GitRunner())
+        patch_service = WorktreePatch(worktree_workspace_paths, db, lifecycle=lifecycle, git=GitRunner())
 
         (worktree_workspace / "target.py").write_text("line 1\nline 2\nline 3\n", encoding="utf-8")
-        GitRunner.run(["add", "-A"], path=worktree_workspace)
-        GitRunner.run(["commit", "-m", "Add target.py"], path=worktree_workspace)
-        initial_commit = GitRunner.rev_parse(worktree_workspace, rev="HEAD")
+        GitRunner().run(["add", "-A"], path=worktree_workspace)
+        GitRunner().run(["commit", "-m", "Add target.py"], path=worktree_workspace)
+        initial_commit = GitRunner().rev_parse(worktree_workspace, rev="HEAD")
 
         create_result = lifecycle.create(session_id="dovo_conflict")
         assert create_result.status == WorktreeCreateStatus.OK
 
         worktree_dir = worktree_workspace / ".dovo" / "worktrees" / "dovo_conflict"
         (worktree_dir / "target.py").write_text("line 1\nworktree edit\nline 3\n", encoding="utf-8")
-        GitRunner.run(["add", "-A"], path=worktree_dir)
-        GitRunner.run(["commit", "-m", "Worktree change to target.py"], path=worktree_dir)
+        GitRunner().run(["add", "-A"], path=worktree_dir)
+        GitRunner().run(["commit", "-m", "Worktree change to target.py"], path=worktree_dir)
 
         (worktree_workspace / "target.py").write_text("line 1\nconflicting main edit\nline 3\n", encoding="utf-8")
-        GitRunner.run(["add", "-A"], path=worktree_workspace)
-        GitRunner.run(["commit", "-m", "Main change causing conflict"], path=worktree_workspace)
+        GitRunner().run(["add", "-A"], path=worktree_workspace)
+        GitRunner().run(["commit", "-m", "Main change causing conflict"], path=worktree_workspace)
 
         initial_tree = (worktree_workspace / "target.py").read_text(encoding="utf-8")
 

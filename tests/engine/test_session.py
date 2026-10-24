@@ -74,7 +74,14 @@ def _drive(
     env_overrides: AgentEnvOverrides | None = None,
 ) -> RunOutcome:
     return drive_run(
-        paths, sessions, session_id, observer=observer, prompter=prompter, no_tty=False, env_overrides=env_overrides
+        paths,
+        sessions,
+        session_id,
+        observer=observer,
+        prompter=prompter,
+        no_tty=False,
+        env_overrides=env_overrides,
+        git=GitRunner(),
     )
 
 
@@ -95,7 +102,9 @@ class DriveRunWorktreeTests:
         self, git_paths: WorkspacePaths, git_runs: SessionsRepository
     ) -> None:
         created = Worktree(
-            git_paths, db=WorktreesRepository(db_path=git_paths.database_file, project_id=git_paths.project_id)
+            git_paths,
+            db=WorktreesRepository(db_path=git_paths.database_file, project_id=git_paths.project_id),
+            git=GitRunner(),
         ).create(session_id="retained")
         assert created.session is not None
         worktree_id = created.session.session_id
@@ -168,8 +177,8 @@ class DriveRunStorageBridgeTests:
         source_sentinel = git_paths.root_dir / ".dovo" / "run" / "sentinel.txt"
         source_sentinel.parent.mkdir(parents=True)
         source_sentinel.write_text("do not delete", encoding="utf-8")
-        GitRunner.run(["add", "-f", ".dovo/run/sentinel.txt"], path=git_paths.root_dir)
-        GitRunner.run(["commit", "-m", "Add storage bridge collision"], path=git_paths.root_dir)
+        GitRunner().run(["add", "-f", ".dovo/run/sentinel.txt"], path=git_paths.root_dir)
+        GitRunner().run(["commit", "-m", "Add storage bridge collision"], path=git_paths.root_dir)
         step_marker = git_paths.root_dir / "a.ran"
         seed_new_session(
             git_paths,

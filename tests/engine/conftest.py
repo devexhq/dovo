@@ -13,6 +13,7 @@ import pytest
 from dovo.common.filesystem.models import WorkspacePaths
 from dovo.core.agents.models import AgentEnvOverrides, ResolvedAgentSettings
 from dovo.core.db import SessionsRepository, SessionStatus
+from dovo.core.git.runner import GitRunner
 from dovo.core.worktree import Worktree, WorktreeSession
 from dovo.engine.executors.agent_step import build_agent_step_runner
 from dovo.engine.executors.models import AgentStepRunner, StepExecutionContext
@@ -71,6 +72,7 @@ def stub_drive_run(monkeypatch: pytest.MonkeyPatch) -> StubDriveRun:
             sessions: SessionsRepository,
             session_id: str,
             *,
+            git: GitRunner,
             observer: RunObserver | None,
             prompter: FailurePrompter | None,
             interaction_prompter: InteractionPrompter | None = None,
@@ -232,7 +234,7 @@ def worktree_setup(worktree_root: Path, worktree_paths: WorkspacePaths) -> Workt
 
     def _setup(**settings: object) -> WorktreeSetup:
         context = dataclasses.replace(
-            RunSettings(cwd=worktree_root, use_worktree=True, paths=worktree_paths), **settings
+            RunSettings(cwd=worktree_root, use_worktree=True, paths=worktree_paths, git=GitRunner()), **settings
         )
         workspace = Workspace(context)
         return WorktreeSetup(workspace, *workspace.setup())

@@ -14,6 +14,7 @@ from dovo.core.artifacts.services.upload import publish_artifact
 from dovo.core.db.repositories.artifacts import ArtifactsRepository
 from dovo.core.diagnostics.checks.artifacts_integrity import ArtifactsIntegrityCheck
 from dovo.core.diagnostics.models import CheckCategory, CheckStatus, DiagnosticsContext
+from dovo.core.git.runner import GitRunner
 from tests.harness import WorkspaceBuilder
 
 WorkspacePathsFactory = Callable[[Path, Path | None], WorkspacePaths]
@@ -63,7 +64,7 @@ class ArtifactsIntegrityCheckTests:
         _publish_plan(artifacts_integrity_paths, artifacts_repository, tmp_path, b"two")
 
         result = ArtifactsIntegrityCheck().execute(
-            DiagnosticsContext(cwd=artifacts_integrity_paths.root_dir, paths=artifacts_integrity_paths)
+            DiagnosticsContext(cwd=artifacts_integrity_paths.root_dir, paths=artifacts_integrity_paths, git=GitRunner())
         )
 
         assert (result.check_id, result.category) == ("artifacts.integrity", CheckCategory.ARTIFACTS)
@@ -79,7 +80,7 @@ class ArtifactsIntegrityCheckTests:
         shutil.copytree(revision_dir, orphan_dir)
 
         result = ArtifactsIntegrityCheck().execute(
-            DiagnosticsContext(cwd=artifacts_integrity_paths.root_dir, paths=artifacts_integrity_paths)
+            DiagnosticsContext(cwd=artifacts_integrity_paths.root_dir, paths=artifacts_integrity_paths, git=GitRunner())
         )
 
         assert result.status == CheckStatus.WARNING
@@ -93,7 +94,7 @@ class ArtifactsIntegrityCheckTests:
         shutil.rmtree(revision_dir)
 
         result = ArtifactsIntegrityCheck().execute(
-            DiagnosticsContext(cwd=artifacts_integrity_paths.root_dir, paths=artifacts_integrity_paths)
+            DiagnosticsContext(cwd=artifacts_integrity_paths.root_dir, paths=artifacts_integrity_paths, git=GitRunner())
         )
 
         assert result.status == CheckStatus.WARNING
@@ -110,7 +111,7 @@ class ArtifactsIntegrityCheckTests:
         shutil.copytree(second_dir, second_dir.parent / "3")
 
         result = ArtifactsIntegrityCheck().execute(
-            DiagnosticsContext(cwd=artifacts_integrity_paths.root_dir, paths=artifacts_integrity_paths)
+            DiagnosticsContext(cwd=artifacts_integrity_paths.root_dir, paths=artifacts_integrity_paths, git=GitRunner())
         )
 
         assert result.error_code == "DOCTOR_ARTIFACT_MISSING_DIR"
@@ -120,7 +121,7 @@ class ArtifactsIntegrityCheckTests:
     ) -> None:
         paths = workspace_paths_factory(tmp_path, None)
 
-        result = ArtifactsIntegrityCheck().execute(DiagnosticsContext(cwd=tmp_path, paths=paths))
+        result = ArtifactsIntegrityCheck().execute(DiagnosticsContext(cwd=tmp_path, paths=paths, git=GitRunner()))
 
         assert result.status == CheckStatus.OK
         assert result.details == {"verified_count": 0}
@@ -133,7 +134,7 @@ class ArtifactsIntegrityCheckTests:
         shutil.copytree(revision_dir, revision_dir.parent.parent / ".tmp-plan-abc123")
 
         result = ArtifactsIntegrityCheck().execute(
-            DiagnosticsContext(cwd=artifacts_integrity_paths.root_dir, paths=artifacts_integrity_paths)
+            DiagnosticsContext(cwd=artifacts_integrity_paths.root_dir, paths=artifacts_integrity_paths, git=GitRunner())
         )
 
         assert result.status == CheckStatus.OK
@@ -157,7 +158,7 @@ class ArtifactsIntegrityCheckTests:
         assert result.ok
 
         check_result = ArtifactsIntegrityCheck().execute(
-            DiagnosticsContext(cwd=artifacts_integrity_paths.root_dir, paths=artifacts_integrity_paths)
+            DiagnosticsContext(cwd=artifacts_integrity_paths.root_dir, paths=artifacts_integrity_paths, git=GitRunner())
         )
 
         assert check_result.status == CheckStatus.OK

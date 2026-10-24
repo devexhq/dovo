@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dovo.common.filesystem.services.global_root import resolve_global_paths
+from dovo.core.git.runner import GitRunner
 from dovo.core.status import Status
 from tests.harness.status_workspace import BuildStatusWorkspace
 from tests.harness.workspace_paths import initialized_workspace_paths
@@ -14,7 +15,7 @@ class DatabaseProbeTests:
     def test_collect_missing_database_reports_inaccessible(self, status_workspace: BuildStatusWorkspace) -> None:
         workspace = status_workspace(database=False)
 
-        result = Status(initialized_workspace_paths(workspace)).collect()
+        result = Status(initialized_workspace_paths(workspace), git=GitRunner()).collect()
 
         assert result.database.exists is False
         assert result.database.is_accessible is False
@@ -24,7 +25,7 @@ class DatabaseProbeTests:
 
         (resolve_global_paths(None).data_dir / "dovo.db").write_bytes(b"NOT A SQLITE DATABASE")
 
-        result = Status(initialized_workspace_paths(workspace)).collect()
+        result = Status(initialized_workspace_paths(workspace), git=GitRunner()).collect()
 
         assert result.database.exists is True
         assert result.database.is_accessible is False

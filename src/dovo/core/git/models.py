@@ -2,12 +2,22 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
 
 from pydantic import BaseModel, Field
 
 from dovo.common.models import BaseResult
+
+
+@dataclass(frozen=True, slots=True)
+class GitProcessOutput:
+    """Exit code and captured text output of one git subprocess."""
+
+    returncode: int
+    stdout: str
+    stderr: str
 
 
 class GitWorktreeEntry(BaseModel):

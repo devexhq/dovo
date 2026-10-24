@@ -63,7 +63,7 @@ class Workspace:
             name=record.name,
             created_at=record.created_at,
         )
-        manager = Worktree(self.context.paths, db=worktrees)
+        manager = Worktree(self.context.paths, git=self.context.git, db=worktrees)
         safe_notify(self.context.observer, "on_worktree_ready", path, active=True)
         return path, manager, session, None
 
@@ -84,6 +84,7 @@ class Workspace:
 
         manager = Worktree(
             self.context.paths,
+            git=self.context.git,
             db=WorktreesRepository(db_path=self.context.paths.database_file, project_id=self.context.paths.project_id),
         )
         try:
@@ -238,7 +239,7 @@ class Workspace:
 
     def _persist_diff(self, session: WorktreeSession, session_id: str) -> None:
         """Write the worktree's cumulative diff against its base commit to the session's diff.patch."""
-        diff_text = diff_work_tree(session.worktree_path, session.base_commit).diff_text
+        diff_text = diff_work_tree(session.worktree_path, session.base_commit, git=self.context.git).diff_text
         session_dir = get_session_dir(self.context.paths, session_id)
         redactor = SecretRedactor.from_environment(
             credential_envs=self.context.sensitive_variables, env_file_dir=self.context.paths.root_dir

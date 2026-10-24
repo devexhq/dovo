@@ -13,6 +13,7 @@ from dovo.core.bootstrap import WorkspaceInitResult, auto_initialize_workspace
 from dovo.core.config import Config
 from dovo.core.config.models import DovoConfig
 from dovo.core.db.db import DovoDb
+from dovo.core.git.runner import GitRunner
 from dovo.core.project.services.storage import resolve_workspace_paths
 
 
@@ -40,6 +41,7 @@ class CliContext:
 
     paths: WorkspacePaths
     db: DovoDb
+    git: GitRunner
     config: DovoConfig | None = None
 
     @property
@@ -58,5 +60,6 @@ class CliContext:
         paths = resolve_workspace_paths(repository_paths, global_paths)
         config = Config.load_required(paths) if load_config else None
         db = DovoDb(paths.database_file, project_id=paths.project_id)
+        git = GitRunner()
         WorkspaceLock.set_default_on_wait(default_lock_wait_notifier)
-        return cls(paths=paths, db=db, config=config)
+        return cls(paths=paths, db=db, git=git, config=config)

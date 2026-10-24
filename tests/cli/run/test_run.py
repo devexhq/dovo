@@ -87,7 +87,7 @@ class RunCliIntegrationTests:
             first = cli_runner.invoke(app, ["-p", str(cli_workspace), "run", "keep-task", "--keep"])
             assert first.exit_code == 0
         else:
-            Worktree(paths, db=db.worktrees).create(session_id="keep-task")
+            Worktree(paths, db=db.worktrees, git=GitRunner()).create(session_id="keep-task")
         earlier_ids = {row.id for row in db.worktrees.list()}
 
         result = cli_runner.invoke(app, ["-p", str(cli_workspace), "run", "keep-task", "--keep"])
@@ -97,7 +97,7 @@ class RunCliIntegrationTests:
         assert latest.worktree_id == latest.session_id
         assert latest.session_id not in earlier_ids
         assert paths.worktree_dir(latest.session_id).is_dir()
-        assert f"dovo/{latest.session_id}" in GitRunner.list_branches(cli_workspace)
+        assert f"dovo/{latest.session_id}" in GitRunner().list_branches(cli_workspace)
         assert all(paths.worktree_dir(earlier_id).is_dir() for earlier_id in earlier_ids)
 
     def test_run_cli_no_worktree_agent_step_exits_one_with_worktree_diagnostic(

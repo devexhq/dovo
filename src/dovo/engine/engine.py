@@ -45,11 +45,14 @@ class Engine:
         paths: WorkspacePaths,
         db: SessionsRepository,
         catalog: Catalog,
+        *,
+        git: GitRunner,
     ) -> None:
         self.paths = paths
         self.path = paths.root_dir
         self.db = db
         self.catalog = catalog
+        self.git = git
 
     def run(self, blueprint: Blueprint, request: RunRequest | None = None) -> RunOutcome:
         """Persist the session row and initial state for ``blueprint``, then execute it through ``drive_run``."""
@@ -74,6 +77,7 @@ class Engine:
             self.paths,
             self.db,
             sid,
+            git=self.git,
             observer=req.observer,
             prompter=req.failure_prompter,
             interaction_prompter=req.interaction_prompter,
@@ -108,6 +112,7 @@ class Engine:
             self.paths,
             self.db,
             session_id,
+            git=self.git,
             observer=observer,
             prompter=failure_prompter,
             interaction_prompter=interaction_prompter,
@@ -194,7 +199,7 @@ class Engine:
     def _head_commit_sha(self) -> str | None:
         """Return the repository HEAD commit SHA, or None when it cannot be resolved."""
         try:
-            return GitRunner.rev_parse(self.path)
+            return self.git.rev_parse(self.path)
         except GitError:
             return None
 

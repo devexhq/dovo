@@ -37,6 +37,8 @@ class WorktreeDetector:
         path: Path,
         db: WorktreesRepository,
         sessions_db: SessionsRepository | None = None,
+        *,
+        git: GitRunner,
     ) -> None:
         """Initialize detector bound to repository root and database.
 
@@ -44,11 +46,13 @@ class WorktreeDetector:
             path: Repository root directory.
             db: WorktreesRepository instance.
             sessions_db: Optional SessionsRepository instance for run liveness checks.
+            git: Runner for every git command.
         """
         self.path = path.expanduser().resolve()
         self.worktree_base_dir = self.path / ".dovo" / "worktrees"
         self.db = db
         self.sessions_db = sessions_db
+        self.git = git
 
     def _detect_stale_worktree_refs(self, worktree_entries: list[GitWorktreeEntry]) -> list[StaleWorktreeItem]:
         """Identify registered git worktree refs pointing to missing paths or prunable."""
@@ -95,7 +99,7 @@ class WorktreeDetector:
     def _inspect_directory_dirty_state(self, dir_path: Path) -> tuple[bool, int, str | None]:
         """Check whether an orphaned directory contains uncommitted or untracked changes."""
         try:
-            status_lines = GitRunner.status_porcelain(dir_path)
+            status_lines = self.git.status_porcelain(dir_path)
             if status_lines:
                 return True, len(status_lines), None
             return False, 0, None
@@ -193,7 +197,7 @@ class WorktreeDetector:
     ) -> list[StaleWorktreeItem]:
         """Identify temporary worktree branches not checked out or attached to active worktrees."""
         try:
-            worktree_branches = GitRunner.list_branches(self.path, pattern="dovo/dovo_*")
+            worktree_branches = self.git.list_branches(self.path, pattern="dovo/dovo_*")
         except Exception as exc:
             # No result entry carries this failure, so the hint is dropped.
             logged_failure(
@@ -220,7 +224,7 @@ class WorktreeDetector:
             Structured WorktreeDetectionResult containing all detected items.
         """
         try:
-            worktree_entries = GitRunner.worktree_list(self.path)
+            worktree_entries = self.git.worktree_list(self.path)
         except GitError as exc:
             return WorktreeDetectionResult(
                 status=WorktreeDetectionStatus.GIT_FAILED,
@@ -278,7 +282,9 @@ def detect_stale_worktrees(
     path: Path,
     db: WorktreesRepository,
     sessions_db: SessionsRepository | None = None,
+    *,
+    git: GitRunner,
 ) -> WorktreeDetectionResult:
     """Non-raising helper to scan and detect stale worktree resources."""
-    detector = WorktreeDetector(path, db, sessions_db=sessions_db)
+    detector = WorktreeDetector(path, db, sessions_db=sessions_db, git=git)
     return detector.detect()

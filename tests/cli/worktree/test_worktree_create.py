@@ -32,7 +32,7 @@ class WorktreeCreateCliIntegrationTests:
         session_id = worktree_dirs[0].name
         assert worktree_dirs[0].is_dir()
 
-        branches = GitRunner.list_branches(cli_workspace)
+        branches = GitRunner().list_branches(cli_workspace)
         assert f"dovo/{session_id}" in branches
 
         assert len(dispatch_spy) == 1
@@ -85,7 +85,7 @@ class WorktreeCreateCliIntegrationTests:
         assert payload["error_code"] == "WORKTREE_PATH_CONFLICT"
         assert payload["errors"] == ["Worktree 'dovo_collide1' already exists (WORKTREE_PATH_CONFLICT)."]
         assert (cli_workspace / ".dovo" / "worktrees" / "dovo_collide1").is_dir()
-        assert "dovo/dovo_collide1" in GitRunner.list_branches(cli_workspace)
+        assert "dovo/dovo_collide1" in GitRunner().list_branches(cli_workspace)
 
     def test_worktree_create_cli_with_wip_flag_overlays_and_exits_zero(
         self, cli_runner: CliRunner, cli_workspace: Path, dispatch_spy: list[WorktreeCreateResult]
@@ -108,14 +108,14 @@ class WorktreeCreateCliIntegrationTests:
         self, cli_runner: CliRunner, cli_workspace: Path, dispatch_spy: list[WorktreeCreateResult]
     ) -> None:
         (cli_workspace / "first.txt").write_text("first commit\n", encoding="utf-8")
-        GitRunner.run(["add", "-A"], path=cli_workspace)
-        GitRunner.run(["commit", "-m", "Add first.txt"], path=cli_workspace)
-        first_commit = GitRunner.rev_parse(cli_workspace, rev="HEAD")
+        GitRunner().run(["add", "-A"], path=cli_workspace)
+        GitRunner().run(["commit", "-m", "Add first.txt"], path=cli_workspace)
+        first_commit = GitRunner().rev_parse(cli_workspace, rev="HEAD")
 
         (cli_workspace / "second.txt").write_text("second commit\n", encoding="utf-8")
-        GitRunner.run(["add", "-A"], path=cli_workspace)
-        GitRunner.run(["commit", "-m", "Add second.txt"], path=cli_workspace)
-        current_head = GitRunner.rev_parse(cli_workspace, rev="HEAD")
+        GitRunner().run(["add", "-A"], path=cli_workspace)
+        GitRunner().run(["commit", "-m", "Add second.txt"], path=cli_workspace)
+        current_head = GitRunner().rev_parse(cli_workspace, rev="HEAD")
         assert first_commit != current_head
 
         result = cli_runner.invoke(

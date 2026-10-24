@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import os
 import subprocess
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
@@ -14,7 +14,7 @@ from dovo.core.git.exceptions import (
     GitNotFoundError,
     GitPlumbingTimeoutError,
 )
-from dovo.core.git.models import GitWorktreeEntry
+from dovo.core.git.models import GitProcessOutput, GitWorktreeEntry
 
 
 def _extract_branch_name(raw_branch: str) -> str:
@@ -106,10 +106,52 @@ def parse_worktree_porcelain(output: str) -> list[GitWorktreeEntry]:
 
 
 class GitRunner:
-    """Stateless utility class containing static methods for executing Git commands."""
+    """Executes git commands. Built once per process by CliContext.build."""
 
-    @staticmethod
+    def exec(
+        self,
+        args: Sequence[str],
+        path: Path,
+        *,
+        input_text: str | None = None,
+        env: Mapping[str, str] | None = None,
+    ) -> GitProcessOutput:
+        """Start `git <args>` in path, bounded by GIT_SUBPROCESS_TIMEOUT_SECONDS, and return its result for any exit code.
+
+        Args:
+            args: Command arguments after ``git``.
+            path: Working directory for git command execution.
+            input_text: Optional stdin input string.
+            env: Extra environment variables merged over the process environment.
+
+        Returns:
+            The exit code, stdout and stderr of the git process.
+
+        Raises:
+            GitNotFoundError: When git binary is not found.
+            GitPlumbingTimeoutError: When subprocess.run times out; the message ends `(GIT_TIMEOUT)`.
+        """
+        try:
+            proc = subprocess.run(
+                ["git", *args],
+                cwd=str(path),
+                input=input_text,
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=GIT_SUBPROCESS_TIMEOUT_SECONDS,
+                env={**os.environ, **env} if env else None,
+            )
+        except FileNotFoundError as exc:
+            raise GitNotFoundError(f"Git execution failed ('git {' '.join(args)}'): git not found") from exc
+        except subprocess.TimeoutExpired as exc:
+            raise GitPlumbingTimeoutError(
+                f"Git timed out after {GIT_SUBPROCESS_TIMEOUT_SECONDS}s ('git {' '.join(args)}') (GIT_TIMEOUT)"
+            ) from exc
+        return GitProcessOutput(returncode=proc.returncode, stdout=proc.stdout, stderr=proc.stderr)
+
     def run(
+        self,
         args: list[str],
         path: Path,
         *,
@@ -117,7 +159,7 @@ class GitRunner:
         check: bool = True,
         env: Mapping[str, str] | None = None,
     ) -> str:
-        """Execute a git command in path, bounded by GIT_SUBPROCESS_TIMEOUT_SECONDS, and return stripped stdout.
+        """Execute `git <args>` through exec and return stdout without trailing newlines.
 
         Args:
             args: Command arguments after ``git``.
@@ -131,55 +173,36 @@ class GitRunner:
 
         Raises:
             GitNotFoundError: When git binary is not found.
-            GitPlumbingTimeoutError: When subprocess times out.
-            GitCommandError: When git command exits non-zero and check is True.
+            GitPlumbingTimeoutError: When git times out.
+            GitCommandError: When git exits non-zero and check is True.
         """
-        try:
-            result = subprocess.run(
-                ["git", *args],
-                cwd=str(path),
-                input=input_text,
-                capture_output=True,
-                text=True,
-                check=check,
-                timeout=GIT_SUBPROCESS_TIMEOUT_SECONDS,
-                env={**os.environ, **env} if env else None,
-            )
-            return result.stdout.rstrip("\r\n")
-        except FileNotFoundError as exc:
-            raise GitNotFoundError(f"Git execution failed ('git {' '.join(args)}'): git not found") from exc
-        except subprocess.TimeoutExpired as exc:
-            raise GitPlumbingTimeoutError(
-                f"Git timed out after {GIT_SUBPROCESS_TIMEOUT_SECONDS}s ('git {' '.join(args)}') (GIT_TIMEOUT)"
-            ) from exc
-        except subprocess.CalledProcessError as exc:
+        result = self.exec(args, path, input_text=input_text, env=env)
+        if check and result.returncode != 0:
             raise GitCommandError(
                 cmd=["git", *args],
-                returncode=exc.returncode,
-                stdout=exc.stdout or "",
-                stderr=exc.stderr or "",
-            ) from exc
+                returncode=result.returncode,
+                stdout=result.stdout,
+                stderr=result.stderr,
+            )
+        return result.stdout.rstrip("\r\n")
 
-    @staticmethod
-    def get_current_branch(path: Path) -> str:
+    def get_current_branch(self, path: Path) -> str:
         """Extract current active Git branch, returning 'HEAD (detached)' or 'unknown' on error."""
         try:
-            branch = GitRunner.run(["branch", "--show-current"], path=path).strip()
+            branch = self.run(["branch", "--show-current"], path=path).strip()
             return branch if branch else "HEAD (detached)"
         except (GitNotFoundError, GitPlumbingTimeoutError, GitCommandError):
             return "unknown"
 
-    @staticmethod
-    def status_porcelain(path: Path) -> list[str]:
+    def status_porcelain(self, path: Path) -> list[str]:
         """Return raw status porcelain lines for tracked/untracked working tree modifications."""
         try:
-            output = GitRunner.run(["status", "--porcelain", "-u"], path=path)
+            output = self.run(["status", "--porcelain", "-u"], path=path)
             return [line for line in output.splitlines() if line.strip()]
         except (GitNotFoundError, GitCommandError):
             return []
 
-    @staticmethod
-    def has_uncommitted_changes(path: Path) -> bool:
+    def has_uncommitted_changes(self, path: Path) -> bool:
         """Check whether working tree has modified, staged, untracked, or deleted files.
 
         Args:
@@ -188,10 +211,9 @@ class GitRunner:
         Returns:
             True if uncommitted changes exist, False otherwise.
         """
-        return bool(GitRunner.status_porcelain(path))
+        return bool(self.status_porcelain(path))
 
-    @staticmethod
-    def dirty_paths(path: Path) -> list[str]:
+    def dirty_paths(self, path: Path) -> list[str]:
         """Return sorted unquoted paths with staged, unstaged or untracked changes, listing both sides of a rename or copy.
 
         Raises:
@@ -199,7 +221,7 @@ class GitRunner:
             GitPlumbingTimeoutError: When git status times out.
             GitCommandError: When git status exits non-zero.
         """
-        fields = iter(GitRunner.run(["status", "--porcelain=v1", "-z", "-uall"], path=path).split("\0"))
+        fields = iter(self.run(["status", "--porcelain=v1", "-z", "-uall"], path=path).split("\0"))
         paths: set[str] = set()
         for entry in fields:
             if not entry:
@@ -209,21 +231,21 @@ class GitRunner:
                 paths.add(next(fields))
         return sorted(paths)
 
-    @staticmethod
     def worktree_add(
+        self,
         path: Path,
         target_path: Path,
         branch: str,
         base_ref: str,
     ) -> None:
         """Add a new git worktree with a new branch."""
-        GitRunner.run(
+        self.run(
             ["worktree", "add", "-b", branch, str(target_path), base_ref],
             path=path,
         )
 
-    @staticmethod
     def worktree_remove(
+        self,
         path: Path,
         target_path: Path,
         *,
@@ -233,21 +255,19 @@ class GitRunner:
         cmd = ["worktree", "remove", str(target_path)]
         if force:
             cmd.append("--force")
-        GitRunner.run(cmd, path=path)
+        self.run(cmd, path=path)
 
-    @staticmethod
-    def worktree_prune(path: Path) -> None:
+    def worktree_prune(self, path: Path) -> None:
         """Prune stale git worktree administrative records."""
-        GitRunner.run(["worktree", "prune"], path=path)
+        self.run(["worktree", "prune"], path=path)
 
-    @staticmethod
-    def worktree_list(path: Path) -> list[GitWorktreeEntry]:
+    def worktree_list(self, path: Path) -> list[GitWorktreeEntry]:
         """Parse and return all registered worktrees via `git worktree list --porcelain`."""
-        output = GitRunner.run(["worktree", "list", "--porcelain"], path=path)
+        output = self.run(["worktree", "list", "--porcelain"], path=path)
         return parse_worktree_porcelain(output)
 
-    @staticmethod
     def branch_delete(
+        self,
         path: Path,
         branch: str,
         *,
@@ -255,36 +275,32 @@ class GitRunner:
     ) -> None:
         """Delete a git branch."""
         flag = "-D" if force else "-d"
-        GitRunner.run(["branch", flag, branch], path=path)
+        self.run(["branch", flag, branch], path=path)
 
-    @staticmethod
-    def list_branches(path: Path, pattern: str | None = None) -> list[str]:
+    def list_branches(self, path: Path, pattern: str | None = None) -> list[str]:
         """List local branch names matching optional pattern."""
         ref_pattern = f"refs/heads/{pattern}" if pattern else "refs/heads/"
-        output = GitRunner.run(
+        output = self.run(
             ["for-each-ref", "--format=%(refname:short)", ref_pattern],
             path=path,
         )
         return [line.strip() for line in output.splitlines() if line.strip()]
 
-    @staticmethod
-    def branch_exists(path: Path, branch: str) -> bool:
+    def branch_exists(self, path: Path, branch: str) -> bool:
         """Return True when refs/heads/<branch> exists; raise for git failures other than a missing ref."""
         try:
-            GitRunner.run(["show-ref", "--verify", "--quiet", f"refs/heads/{branch}"], path=path)
+            self.run(["show-ref", "--verify", "--quiet", f"refs/heads/{branch}"], path=path)
         except GitCommandError as exc:
             if exc.returncode == 1:
                 return False
             raise
         return True
 
-    @staticmethod
-    def rev_parse(path: Path, rev: str = "HEAD") -> str:
+    def rev_parse(self, path: Path, rev: str = "HEAD") -> str:
         """Resolve a git revision into a commit SHA."""
-        return GitRunner.run(["rev-parse", rev], path=path)
+        return self.run(["rev-parse", rev], path=path)
 
-    @staticmethod
-    def patch_paths(path: Path, diff_text: str) -> list[str]:
+    def patch_paths(self, path: Path, diff_text: str) -> list[str]:
         """Return sorted unquoted paths diff_text touches, listing both sides of a rename.
 
         Reads the patch forwards for post-image names and in reverse for pre-image names,
@@ -295,12 +311,12 @@ class GitRunner:
         """
         paths: set[str] = set()
         for args in (["apply", "--numstat", "-z", "-"], ["apply", "-R", "--numstat", "-z", "-"]):
-            output = GitRunner.run(args, path=path, input_text=diff_text + "\n")
+            output = self.run(args, path=path, input_text=diff_text + "\n")
             paths.update(entry.split("\t", 2)[2] for entry in output.split("\0") if entry)
         return sorted(paths)
 
-    @staticmethod
     def apply_check(
+        self,
         path: Path,
         diff_text: str,
         *,
@@ -311,30 +327,15 @@ class GitRunner:
         Returns:
             Tuple of (returncode, stdout, stderr).
         """
-        cmd = ["git", "apply", "--check"]
+        args = ["apply", "--check"]
         if binary:
-            cmd.append("--binary")
-        cmd.append("-")
+            args.append("--binary")
+        args.append("-")
+        result = self.exec(args, path, input_text=diff_text + "\n")
+        return result.returncode, result.stdout, result.stderr
 
-        try:
-            proc = subprocess.run(
-                cmd,
-                cwd=str(path),
-                input=diff_text + "\n",
-                capture_output=True,
-                text=True,
-                timeout=GIT_SUBPROCESS_TIMEOUT_SECONDS,
-            )
-            return proc.returncode, proc.stdout, proc.stderr
-        except subprocess.TimeoutExpired as exc:
-            raise GitPlumbingTimeoutError(
-                f"Git timed out after {GIT_SUBPROCESS_TIMEOUT_SECONDS}s ('git apply --check') (GIT_TIMEOUT)"
-            ) from exc
-        except FileNotFoundError as exc:
-            raise GitNotFoundError("Git execution failed: git not found") from exc
-
-    @staticmethod
     def apply(
+        self,
         path: Path,
         diff_text: str,
         *,
@@ -346,32 +347,16 @@ class GitRunner:
         Returns:
             Tuple of (returncode, stdout, stderr).
         """
-        cmd = ["git", "apply"]
+        args = ["apply"]
         if binary:
-            cmd.append("--binary")
+            args.append("--binary")
         if index:
-            cmd.append("--index")
-        cmd.append("-")
+            args.append("--index")
+        args.append("-")
+        result = self.exec(args, path, input_text=diff_text + "\n")
+        return result.returncode, result.stdout, result.stderr
 
-        try:
-            proc = subprocess.run(
-                cmd,
-                cwd=str(path),
-                input=diff_text + "\n",
-                capture_output=True,
-                text=True,
-                timeout=GIT_SUBPROCESS_TIMEOUT_SECONDS,
-            )
-            return proc.returncode, proc.stdout, proc.stderr
-        except subprocess.TimeoutExpired as exc:
-            raise GitPlumbingTimeoutError(
-                f"Git timed out after {GIT_SUBPROCESS_TIMEOUT_SECONDS}s ('git apply') (GIT_TIMEOUT)"
-            ) from exc
-        except FileNotFoundError as exc:
-            raise GitNotFoundError("Git execution failed: git not found") from exc
-
-    @staticmethod
-    def commit(path: Path, message: str, *, paths: list[str]) -> None:
+    def commit(self, path: Path, message: str, *, paths: list[str]) -> None:
         """Commit only the literal paths from the working tree, leaving every other index entry as it was.
 
         Raises:
@@ -380,7 +365,7 @@ class GitRunner:
         """
         if not paths:
             raise ValueError("GitRunner.commit requires at least one path")
-        GitRunner.run(
+        self.run(
             [
                 "--literal-pathspecs",
                 "commit",

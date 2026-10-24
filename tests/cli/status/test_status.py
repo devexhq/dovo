@@ -6,12 +6,15 @@ import json
 from pathlib import Path
 from typing import Any
 
+import pytest
 from typer.testing import CliRunner
 
 from dovo.cli import app
+from dovo.core.git import GitNotFoundError
 from dovo.core.status.models import (
     DovoStatusResult,
 )
+from tests.harness.fakes import FakeGitRunner, use_fake_git
 
 
 class StatusCliIntegrationTests:
@@ -55,3 +58,24 @@ class StatusCliIntegrationTests:
         assert event["event_type"] == "DovoStatusResult"
         assert event["payload"]["health"] == "ok"
         assert event["payload"]["root_dir"] == str(status_workspace)
+
+    def test_status_cli_json_reports_unknown_branch_when_git_is_missing(
+        self,
+        cli_runner: CliRunner,
+        status_workspace: Path,
+        dispatch_spy: list[object],
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Exit 0 for `status --format json` with use_fake_git raising GitNotFoundError for rev-parse --is-inside-work-tree, dispatch a result with git.branch "unknown" and git.is_git_repo False, and emit payload git_branch null."""
+        fake = FakeGitRunner({("rev-parse", "--is-inside-work-tree"): GitNotFoundError("git not found")})
+        use_fake_git(monkeypatch, fake)
+
+        result = cli_runner.invoke(app, ["-p", str(status_workspace), "status", "--format", "json"])
+
+        assert result.exit_code == 0
+        assert json.loads(result.stdout)["payload"]["git_branch"] is None
+        assert len(dispatch_spy) == 1
+        result_dto = dispatch_spy[0]
+        assert isinstance(result_dto, DovoStatusResult)
+        assert result_dto.git.branch == "unknown"
+        assert result_dto.git.is_git_repo is False
