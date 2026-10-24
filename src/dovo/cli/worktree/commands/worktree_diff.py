@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dovo.cli.context import CliContext
 from dovo.cli.ui.dispatcher import ui_dispatcher
+from dovo.common.models import OutputFormatOptions
 from dovo.core.worktree import Worktree
 from dovo.core.worktree.models import WorktreeDiffResult
 
@@ -13,7 +14,7 @@ def worktree_diff_command(
     worktree_id: str,
     *,
     stat: bool = False,
-    output_format: str = "terminal",
+    output_format: OutputFormatOptions = OutputFormatOptions.TERMINAL,
 ) -> WorktreeDiffResult:
     """Inspect unified diff or file summary statistics for a worktree.
 

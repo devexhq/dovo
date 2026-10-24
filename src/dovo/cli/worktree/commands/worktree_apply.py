@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dovo.cli.context import CliContext
 from dovo.cli.ui.dispatcher import ui_dispatcher
+from dovo.common.models import OutputFormatOptions
 from dovo.core.worktree import Worktree, WorktreeApplyResult, WorktreeApplyStrategy
 
 
@@ -16,7 +17,7 @@ def worktree_apply_command(
     dry_run: bool = False,
     delete: bool = False,
     message: str | None = None,
-    output_format: str = "terminal",
+    output_format: OutputFormatOptions = OutputFormatOptions.TERMINAL,
 ) -> WorktreeApplyResult:
     """Apply worktree changes back to main workspace.
 

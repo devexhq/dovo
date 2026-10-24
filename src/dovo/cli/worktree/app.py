@@ -3,6 +3,8 @@ from typing import Annotated
 import typer
 
 from dovo.cli.context import CliContext
+from dovo.cli.options import FormatOption
+from dovo.common.models import OutputFormatOptions
 from dovo.core.db import WorktreeStatus
 from dovo.core.worktree.models import WorktreeApplyStrategy
 
@@ -38,11 +40,7 @@ def worktree_create(
         "--wip/--no-wip",
         help=("Include uncommitted working-tree changes in the worktree (tracked + untracked; not ignored)."),
     ),
-    format: str = typer.Option(
-        "terminal",
-        "--format",
-        help="Presentation format ('terminal' or 'json').",
-    ),
+    format: FormatOption = OutputFormatOptions.TERMINAL,
 ):
     """Create an isolated git worktree."""
     context: CliContext = ctx.obj["context"]
@@ -62,11 +60,7 @@ def worktree_list(
             case_sensitive=False,
         ),
     ] = None,
-    format: str = typer.Option(
-        "terminal",
-        "--format",
-        help="Presentation format ('terminal' or 'json').",
-    ),
+    format: FormatOption = OutputFormatOptions.TERMINAL,
 ):
     """List tracked worktrees and their lifecycle status."""
     context: CliContext = ctx.obj["context"]
@@ -83,11 +77,7 @@ def worktree_list(
 def worktree_show(
     ctx: typer.Context,
     worktree_id: str = typer.Argument(..., help="Worktree id to show."),
-    format: str = typer.Option(
-        "terminal",
-        "--format",
-        help="Presentation format ('terminal' or 'json').",
-    ),
+    format: FormatOption = OutputFormatOptions.TERMINAL,
 ):
     """Show full detail for one tracked worktree."""
     context: CliContext = ctx.obj["context"]
@@ -109,11 +99,7 @@ def worktree_prune(
         "--force",
         help="Force deletion of dirty orphaned directories.",
     ),
-    format: str = typer.Option(
-        "terminal",
-        "--format",
-        help="Presentation format ('terminal' or 'json').",
-    ),
+    format: FormatOption = OutputFormatOptions.TERMINAL,
 ):
     """Safely prune stale worktrees, orphaned directories, and temporary branches."""
     context: CliContext = ctx.obj["context"]
@@ -131,11 +117,7 @@ def worktree_delete(
         "--force",
         help="Skip the confirmation prompt and delete immediately.",
     ),
-    format: str = typer.Option(
-        "terminal",
-        "--format",
-        help="Presentation format ('terminal' or 'json').",
-    ),
+    format: FormatOption = OutputFormatOptions.TERMINAL,
 ):
     """Delete a worktree and branch after confirmation."""
     context: CliContext = ctx.obj["context"]
@@ -178,11 +160,7 @@ def worktree_apply(
         "-m",
         help="Commit message when using squash strategy.",
     ),
-    format: str = typer.Option(
-        "terminal",
-        "--format",
-        help="Presentation format ('terminal' or 'json').",
-    ),
+    format: FormatOption = OutputFormatOptions.TERMINAL,
 ):
     """Apply changes from an isolated worktree back into the main workspace."""
     context: CliContext = ctx.obj["context"]
@@ -209,11 +187,7 @@ def worktree_diff(
         "--stat",
         help="Show diffstat summary instead of full unified diff.",
     ),
-    format: str = typer.Option(
-        "terminal",
-        "--format",
-        help="Presentation format ('terminal' or 'json').",
-    ),
+    format: FormatOption = OutputFormatOptions.TERMINAL,
 ):
     """Inspect differences between worktree and base commit."""
     context: CliContext = ctx.obj["context"]

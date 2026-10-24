@@ -27,7 +27,7 @@ dovo session resume [session_id] [OPTIONS]
 
 ## Latest session default
 
-When `session_id` is omitted, `show`, `logs` and `diff` act on the project's latest session: the greatest `started_at`, ties broken by the greatest session id, whatever its status. In terminal format, `show` and `logs` then start with `Session: <session_id> (latest)`, and `diff` uses that text as its header instead of the artifact path. The line is not printed with `--raw` or `--format json`; the resolved id is already in the JSON payload. With an explicit `session_id` the line is never printed.
+When `session_id` is omitted, `show`, `logs` and `diff` act on the project's latest session: the greatest `started_at`, ties broken by the greatest session id, whatever its status. In terminal format, `show` and `logs` then start with `Session: <session_id> (latest)`, and `diff` uses that text as its header instead of the artifact path. The line is not printed with `--patch` or `--format json`; the resolved id is already in the JSON payload. With an explicit `session_id` the line is never printed.
 
 If the project has no sessions, these commands print a **Session Not Found** panel (``Run `dovo run <blueprint>` to create a session``) and exit `1`. An explicit `session_id` that does not exist exits `1` with the not-found panel for that command.
 
@@ -149,7 +149,7 @@ Shows the syntax-highlighted diff recorded for a session.
 
 | Flag | Description |
 | --- | --- |
-| `--raw` | Print the plain patch to stdout, with no headers or colors and no truncation. |
+| `--patch` | Print the plain patch to stdout, with no header, colour or truncation. Cannot be combined with `--format json`. |
 | `--full` / `--no-full` | Show the whole formatted diff instead of truncating it in a terminal. |
 | `--format <terminal\|json>` | Presentation format (`terminal` or `json`). Defaults to `terminal`. |
 
@@ -166,14 +166,15 @@ Shows the syntax-highlighted diff recorded for a session.
    - If `diff.patch` is empty (0 bytes or whitespace-only): prints `No changes recorded for session <session_id>.` and exits with code `0`.
 3. **Rendering & Truncation**:
    - Interactive formatted output renders a header with the session ID and artifact path (or `(latest)` when the id was omitted), followed by syntax-highlighted diff text.
-   - In an interactive terminal (TTY), if formatted diff output exceeds 500 lines (and `--full` is not provided), output is truncated at line 500 followed by a dim notice banner with hints to view the complete diff, page with `less -R`, or view raw/artifact contents.
+   - In an interactive terminal (TTY), if formatted diff output exceeds 500 lines (and `--full` is not provided), output is truncated at line 500 followed by a dim notice banner with hints to view the complete diff, page with `less -R`, print the plain patch with `--patch`, or open the artifact.
    - Passing `--full` renders all formatted lines without truncation.
-   - Non-TTY stdout (e.g. piped to `cat` or redirected to a file) and `--raw` mode automatically bypass truncation limits.
-   - When `--raw` is passed, outputs the exact patch content directly to stdout for redirection or piping into `git apply` / `patch`.
+   - Non-TTY stdout (e.g. piped to `cat` or redirected to a file) and `--patch` bypass truncation.
+   - When `--patch` is passed, writes the exact patch content to stdout for redirection or piping into `git apply` / `patch`; an empty patch writes nothing.
 4. **Secret masking**: `diff.patch` is written with secret values replaced by `[REDACTED:<NAME>]` or `[REDACTED]`, so a masked line will not reproduce the original value when applied with `git apply` or `patch`. Names listed under `environment.sensitive_variables` in `.dovo/config.json` are masked at write time; a diff written before a name was listed is not re-masked.
 5. **Exit Codes**:
    - `0`: Diff successfully displayed, or empty diff.
    - `1`: Session not found, diff artifact not found, or read failure.
+   - `2`: `--patch` combined with `--format json`, or any other invalid option.
 
 ## `dovo session resume`
 
@@ -255,11 +256,11 @@ dovo session logs
 dovo session logs blueprint_a1b2c3d4 --step test --attempt 2 --stream stderr --tail 20
 ```
 
-View the latest session's diff, or write a specific session's raw patch to a file:
+View the latest session's diff, or write a specific session's plain patch to a file:
 
 ```bash
 dovo session diff
-dovo diff blueprint_a1b2c3d4 --raw > latest_fix.patch
+dovo diff blueprint_a1b2c3d4 --patch > latest_fix.patch
 ```
 
 Resume the latest paused session, or a specific one non-interactively:

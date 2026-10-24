@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dovo.cli.context import CliContext
 from dovo.cli.ui.dispatcher import ui_dispatcher
+from dovo.common.models import OutputFormatOptions
 from dovo.core.sessions import HistoryListResult, SessionCollection
 
 
@@ -11,7 +12,7 @@ def session_list_command(
     context: CliContext,
     limit: int | None = 20,
     status: str | None = None,
-    output_format: str = "terminal",
+    output_format: OutputFormatOptions = OutputFormatOptions.TERMINAL,
 ) -> HistoryListResult:
     """Execute session list query and dispatch results via UiDispatcher.
 

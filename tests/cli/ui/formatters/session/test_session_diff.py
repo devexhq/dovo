@@ -34,7 +34,6 @@ def make_diff_view(**overrides: object) -> SessionDiffView:
         "artifact_path": Path("/repo/.dovo/sessions/dovo_fmt_1/diff.patch"),
         "relative_path": "/repo/.dovo/sessions/dovo_fmt_1/diff.patch",
         "diff_text": _SAMPLE_DIFF,
-        "raw": False,
         "full": False,
         "max_lines": None,
         "total_lines": 6,
@@ -141,6 +140,7 @@ DIFF_WITH_TRUNCATED_TRUE = FormatterCase(
         "/repo/.dovo/sessions/dovo_truncated_true/diff.patch",
         "2",
         "6",
+        "dovo diff dovo_truncated_true --patch",
     ],
 )
 
@@ -160,7 +160,6 @@ DIFF_PAYLOAD_CASES = [
             "artifact_path": "/repo/.dovo/sessions/dovo_fmt_1/diff.patch",
             "relative_path": "/repo/.dovo/sessions/dovo_fmt_1/diff.patch",
             "diff_text": _SAMPLE_DIFF,
-            "raw": False,
             "full": False,
             "max_lines": None,
             "total_lines": 6,
@@ -180,7 +179,6 @@ DIFF_PAYLOAD_CASES = [
             "artifact_path": None,
             "relative_path": "<sessions_dir>/dovo_missing_99/diff.patch",
             "diff_text": "",
-            "raw": False,
             "full": False,
             "max_lines": None,
             "total_lines": 0,
@@ -191,84 +189,6 @@ DIFF_PAYLOAD_CASES = [
             "fixes": ["Run `dovo session list` to list valid session IDs"],
         },
         id="session_not_found",
-    ),
-]
-
-TO_RAW_CASES = [
-    pytest.param(
-        SessionDiffFormatter(),
-        DiffResult(
-            status=DiffStatus.OK,
-            session_id="dovo_raw_1",
-            artifact_path=Path("/repo/.dovo/sessions/dovo_raw_1/diff.patch"),
-            diff_text="diff --git a/a.txt b/a.txt\n+line\n",
-            raw=True,
-        ),
-        "diff --git a/a.txt b/a.txt\n+line\n",
-        [],
-        id="raw_flag_returns_exact_diff_text",
-    ),
-    pytest.param(
-        SessionDiffFormatter(),
-        DiffResult(
-            status=DiffStatus.EMPTY_DIFF,
-            session_id="dovo_raw_empty",
-            artifact_path=Path("/repo/.dovo/sessions/dovo_raw_empty/diff.patch"),
-            diff_text="",
-        ),
-        "No changes recorded for session dovo_raw_empty.",
-        [],
-        id="empty_diff_returns_notice",
-    ),
-    pytest.param(
-        SessionDiffFormatter(),
-        DiffResult(
-            status=DiffStatus.SESSION_NOT_FOUND,
-            session_id="dovo_missing_raw",
-            errors=["Session 'dovo_missing_raw' not found."],
-        ),
-        "Session 'dovo_missing_raw' not found",
-        [],
-        id="session_not_found_renders_error_panel_text",
-    ),
-    pytest.param(
-        SessionDiffFormatter(console=Console(force_terminal=True), max_lines=2),
-        DiffResult(
-            status=DiffStatus.OK,
-            session_id="dovo_trunc",
-            artifact_path=Path("/repo/.dovo/sessions/dovo_trunc/diff.patch"),
-            diff_text="line 1\nline 2\nline 3\nline 4\n",
-            raw=False,
-        ),
-        "line 1\nline 2",
-        ["line 3"],
-        id="terminal_truncates_at_max_lines",
-    ),
-    pytest.param(
-        SessionDiffFormatter(console=Console(force_terminal=True), max_lines=2, full=True),
-        DiffResult(
-            status=DiffStatus.OK,
-            session_id="dovo_trunc",
-            artifact_path=Path("/repo/.dovo/sessions/dovo_trunc/diff.patch"),
-            diff_text="line 1\nline 2\nline 3\nline 4\n",
-            raw=False,
-        ),
-        "line 1\nline 2\nline 3\nline 4\n",
-        [],
-        id="full_flag_bypasses_truncation",
-    ),
-    pytest.param(
-        SessionDiffFormatter(console=Console(force_terminal=False), max_lines=2),
-        DiffResult(
-            status=DiffStatus.OK,
-            session_id="dovo_trunc",
-            artifact_path=Path("/repo/.dovo/sessions/dovo_trunc/diff.patch"),
-            diff_text="line 1\nline 2\nline 3\nline 4\n",
-            raw=False,
-        ),
-        "line 1\nline 2\nline 3\nline 4\n",
-        [],
-        id="non_terminal_bypasses_truncation",
     ),
 ]
 
@@ -293,15 +213,3 @@ class SessionDiffFormatterTests:
     @pytest.mark.parametrize("case", DIFF_CASES)
     def test_rich_render_shows_every_view_value(self, case: FormatterCase[DiffResult, SessionDiffView]) -> None:
         assert_rich_render_shows_every_view_value(_TERMINAL_FORMATTER, case.data, case.render_expectations)
-
-    @pytest.mark.parametrize(("formatter", "result", "expected", "absent"), TO_RAW_CASES)
-    def test_to_raw_renders_expected_output(
-        self,
-        formatter: SessionDiffFormatter,
-        result: DiffResult,
-        expected: str,
-        absent: list[str],
-    ) -> None:
-        raw_output = formatter.to_raw(result)
-        assert expected in raw_output
-        assert [text for text in absent if text in raw_output] == []

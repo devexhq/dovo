@@ -155,7 +155,7 @@ def format_truncation_notice(
         Text("Hint:", style="dim"),
         Text(f"- run `{session_command} --full` to view complete formatted output", style="dim"),
         Text(f"- run `{session_command} --full | less -R` to page through formatted diff", style="dim"),
-        Text(f"- run `{session_command} --raw` to output unformatted patch text", style="dim"),
+        Text(f"- run `{session_command} --patch` to output the plain patch", style="dim"),
         Text(f"- inspect artifact at {relative_path}", style="dim"),
     ]
 

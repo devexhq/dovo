@@ -1,5 +1,6 @@
 from dovo.cli.context import CliContext
 from dovo.cli.ui.dispatcher import ui_dispatcher
+from dovo.common.models import OutputFormatOptions
 from dovo.core.worktree import Worktree
 from dovo.core.worktree.models import WorktreeCreateResult
 
@@ -9,7 +10,7 @@ def worktree_create_command(
     name: str | None = None,
     base_ref: str | None = None,
     wip: bool = False,
-    output_format: str = "terminal",
+    output_format: OutputFormatOptions = OutputFormatOptions.TERMINAL,
 ) -> WorktreeCreateResult:
     """Create an isolated git worktree.
 

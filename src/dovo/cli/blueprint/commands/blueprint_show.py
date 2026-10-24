@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dovo.cli.context import CliContext
 from dovo.cli.ui.dispatcher import ui_dispatcher
+from dovo.common.models import OutputFormatOptions
 from dovo.core.catalog import Catalog
 from dovo.core.catalog.models import CatalogItemType, CatalogShowResult
 
@@ -11,7 +12,7 @@ from dovo.core.catalog.models import CatalogItemType, CatalogShowResult
 def blueprint_show_command(
     context: CliContext,
     sha_or_name: str,
-    output_format: str = "terminal",
+    output_format: OutputFormatOptions = OutputFormatOptions.TERMINAL,
 ) -> CatalogShowResult:
     """Show details and definition content of a blueprint.
 

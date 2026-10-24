@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
 from typer.testing import CliRunner
 
 from dovo.cli import app
@@ -24,13 +25,18 @@ _PATCH_TEXT = (
 )
 
 
-def _write_session_diff(cli_workspace: Path, session_id: str) -> Path:
+_LONG_LINE_PATCH_TEXT = (
+    f"diff --git a/wide.txt b/wide.txt\n--- a/wide.txt\n+++ b/wide.txt\n@@ -1 +1 @@\n-short\n+{'x' * 200}\n"
+)
+
+
+def _write_session_diff(cli_workspace: Path, session_id: str, patch_text: str = _PATCH_TEXT) -> Path:
     """Persist a session record and a real unified-diff patch for session_id in the workspace's session storage."""
     paths = initialized_workspace_paths(cli_workspace)
     DovoDb(database_file=paths.database_file, project_id=paths.project_id).sessions.create(
         session_id=session_id, blueprint_name="bp", blueprint_key="bp", status=SessionStatus.COMPLETED
     )
-    return write_session_diff(get_session_dir(paths, session_id), _PATCH_TEXT, SecretRedactor([]))
+    return write_session_diff(get_session_dir(paths, session_id), patch_text, SecretRedactor([]))
 
 
 class SessionDiffCliIntegrationTests:
@@ -69,7 +75,6 @@ class SessionDiffCliIntegrationTests:
                 "artifact_path": str(patch_path),
                 "relative_path": str(patch_path),
                 "diff_text": _PATCH_TEXT,
-                "raw": False,
                 "full": False,
                 "max_lines": 500,
                 "total_lines": 7,
@@ -81,30 +86,29 @@ class SessionDiffCliIntegrationTests:
             },
         }
 
-    def test_diff_cli_raw_and_full_flags_bind_into_json_payload(
-        self, cli_runner: CliRunner, cli_workspace: Path
-    ) -> None:
+    def test_diff_cli_full_flag_binds_into_json_payload(self, cli_runner: CliRunner, cli_workspace: Path) -> None:
         _write_session_diff(cli_workspace, "sess-diff-1")
 
         result = cli_runner.invoke(
-            app, ["-p", str(cli_workspace), "session", "diff", "sess-diff-1", "--raw", "--full", "--format", "json"]
+            app, ["-p", str(cli_workspace), "session", "diff", "sess-diff-1", "--full", "--format", "json"]
         )
 
         payload = json.loads(result.stdout)["payload"]
         assert result.exit_code == 0
-        assert (payload["raw"], payload["full"], payload["max_lines"]) == (True, True, 500)
+        assert (payload["full"], payload["max_lines"]) == (True, 500)
+        assert "raw" not in payload
 
     def test_diff_cli_unknown_session_json_payload_keeps_default_display_options(
         self, cli_runner: CliRunner, cli_workspace: Path
     ) -> None:
         result = cli_runner.invoke(
-            app, ["-p", str(cli_workspace), "session", "diff", "unknown", "--raw", "--full", "--format", "json"]
+            app, ["-p", str(cli_workspace), "session", "diff", "unknown", "--full", "--format", "json"]
         )
 
         payload = json.loads(result.stdout)["payload"]
         assert result.exit_code == 1
         assert payload["status"] == "session_not_found"
-        assert (payload["raw"], payload["full"], payload["max_lines"]) == (False, False, None)
+        assert (payload["full"], payload["max_lines"]) == (False, None)
 
 
 class SessionDiffLatestCliIntegrationTests:
@@ -119,14 +123,66 @@ class SessionDiffLatestCliIntegrationTests:
         assert result.stdout.lstrip().startswith("Session: sess-diff-1 (latest)")
         assert str(patch_path) not in result.stdout
 
-    def test_diff_without_id_raw_and_json_omit_latest_line(self, cli_runner: CliRunner, cli_workspace: Path) -> None:
+    def test_diff_without_id_patch_and_json_omit_latest_line(self, cli_runner: CliRunner, cli_workspace: Path) -> None:
         _write_session_diff(cli_workspace, "sess-diff-1")
 
-        raw = cli_runner.invoke(app, ["-p", str(cli_workspace), "session", "diff", "--raw"])
+        patch = cli_runner.invoke(app, ["-p", str(cli_workspace), "session", "diff", "--patch"])
         wire = cli_runner.invoke(app, ["-p", str(cli_workspace), "session", "diff", "--format", "json"])
 
-        assert raw.exit_code == 0
-        assert raw.stdout.rstrip("\n") == _PATCH_TEXT.rstrip("\n")
+        assert patch.exit_code == 0
+        assert patch.stdout == _PATCH_TEXT
         assert wire.exit_code == 0
         assert "latest" not in json.loads(wire.stdout)["payload"]
-        assert "(latest)" not in raw.stdout + wire.stdout
+        assert "(latest)" not in patch.stdout + wire.stdout
+
+
+class SessionDiffPatchCliIntegrationTests:
+    """Typer runner integration tests for dovo session diff --patch."""
+
+    @pytest.mark.parametrize(
+        "command", [pytest.param(["session", "diff"], id="session"), pytest.param(["diff"], id="shortcut")]
+    )
+    def test_patch_writes_exact_patch_text(
+        self, cli_runner: CliRunner, cli_workspace: Path, command: list[str]
+    ) -> None:
+        _write_session_diff(cli_workspace, "sess-diff-1", _LONG_LINE_PATCH_TEXT)
+
+        result = cli_runner.invoke(app, ["-p", str(cli_workspace), *command, "sess-diff-1", "--patch"])
+
+        assert result.exit_code == 0
+        assert result.stdout == _LONG_LINE_PATCH_TEXT
+
+    def test_patch_with_empty_patch_writes_nothing(self, cli_runner: CliRunner, cli_workspace: Path) -> None:
+        _write_session_diff(cli_workspace, "sess-diff-1", "")
+
+        result = cli_runner.invoke(app, ["-p", str(cli_workspace), "session", "diff", "sess-diff-1", "--patch"])
+
+        assert result.exit_code == 0
+        assert result.stdout == ""
+
+    def test_patch_with_unknown_session_reports_not_found(self, cli_runner: CliRunner, cli_workspace: Path) -> None:
+        plain = cli_runner.invoke(app, ["-p", str(cli_workspace), "session", "diff", "unknown-session"])
+        patch = cli_runner.invoke(app, ["-p", str(cli_workspace), "session", "diff", "unknown-session", "--patch"])
+
+        assert (plain.exit_code, patch.exit_code) == (1, 1)
+        assert patch.stdout == plain.stdout
+        assert "Session Not Found" in patch.stdout
+
+    def test_patch_with_format_json_is_a_usage_error(self, cli_runner: CliRunner, cli_workspace: Path) -> None:
+        _write_session_diff(cli_workspace, "sess-diff-1")
+
+        result = cli_runner.invoke(
+            app, ["-p", str(cli_workspace), "diff", "sess-diff-1", "--patch", "--format", "json"]
+        )
+
+        assert result.exit_code == 2
+        assert result.stdout == ""
+        assert "--patch cannot be combined with --format json." in result.stderr
+        assert "Invalid value" not in result.stderr
+
+    def test_raw_flag_is_no_such_option(self, cli_runner: CliRunner, cli_workspace: Path) -> None:
+        result = cli_runner.invoke(app, ["-p", str(cli_workspace), "session", "diff", "--raw"])
+
+        assert result.exit_code == 2
+        assert result.stdout == ""
+        assert "No such option: --raw" in result.stderr

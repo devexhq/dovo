@@ -14,6 +14,7 @@ from dovo.cli import app
 from dovo.cli.ui.dispatcher import UiDispatcher, ui_dispatcher
 from dovo.common.filesystem import Filesystem
 from dovo.common.filesystem.services.global_root import resolve_global_paths
+from dovo.common.models import OutputFormatOptions
 from dovo.core.bootstrap import InitFailureMode, WorkspaceInitResult
 from dovo.core.catalog.models import SeedResult
 from dovo.core.config.models import ConfigTier
@@ -256,7 +257,7 @@ class RunCliIntegrationTests:
         The top-level callback resolves config before the run handler runs,
         so no blueprint is resolved and no session row is inserted.
         """
-        ui_dispatcher.set_output_format("terminal")
+        ui_dispatcher.set_output_format(OutputFormatOptions.TERMINAL)
         write_tier_config(ConfigTier.USER, "{not valid json")
 
         result = cli_runner.invoke(app, ["-p", str(cli_workspace), "run", "unresolved-task", "--no-worktree"])

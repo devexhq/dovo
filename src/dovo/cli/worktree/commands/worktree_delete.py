@@ -6,6 +6,7 @@ import typer
 
 from dovo.cli.context import CliContext
 from dovo.cli.ui.dispatcher import ui_dispatcher
+from dovo.common.models import OutputFormatOptions
 from dovo.core.worktree import (
     Worktree,
     WorktreeDeleteResult,
@@ -48,7 +49,7 @@ def worktree_delete_command(
     context: CliContext,
     worktree_id: str,
     force: bool = False,
-    output_format: str = "terminal",
+    output_format: OutputFormatOptions = OutputFormatOptions.TERMINAL,
 ) -> WorktreeDeleteResult:
     """Delete a tracked worktree and branch.
 

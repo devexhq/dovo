@@ -19,6 +19,8 @@ WRITE_METHODS: Final[frozenset[str]] = frozenset({"write_text", "write_bytes"})
 WRITE_EXCEPTIONS: Final[dict[tuple[str, str], int]] = {
     # Scratch buffer handed to the user's editor inside a TemporaryDirectory.
     ("src/dovo/cli/run/prompter.py", ".write_text"): 1,
+    # Not a file write: UiDispatcher.write_text sends the plain patch to stdout for `dovo diff --patch`.
+    ("src/dovo/cli/session/commands/diff.py", ".write_text"): 1,
     # Probe file that only tests whether a directory is writable.
     ("src/dovo/core/diagnostics/checks/filesystem_writable.py", ".write_text"): 1,
     # Attempt log streamed while a subprocess runs, and the step output file the step itself fills.

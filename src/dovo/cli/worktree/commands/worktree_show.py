@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dovo.cli.context import CliContext
 from dovo.cli.ui.dispatcher import ui_dispatcher
+from dovo.common.models import OutputFormatOptions
 from dovo.core.worktree import (
     Worktree,
 )
@@ -13,7 +14,7 @@ from dovo.core.worktree.models import WorktreeShowResult
 def worktree_show_command(
     context: CliContext,
     worktree_id: str,
-    output_format: str = "terminal",
+    output_format: OutputFormatOptions = OutputFormatOptions.TERMINAL,
 ) -> WorktreeShowResult:
     """Show detail for one tracked worktree.
 

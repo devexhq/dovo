@@ -4,13 +4,14 @@ from __future__ import annotations
 
 from dovo.cli.context import CliContext
 from dovo.cli.ui.dispatcher import ui_dispatcher
+from dovo.common.models import OutputFormatOptions
 from dovo.core.config import Config
 from dovo.core.config.loader import ConfigLoadResult
 
 
 def config_show_command(
     context: CliContext,
-    output_format: str = "terminal",
+    output_format: OutputFormatOptions = OutputFormatOptions.TERMINAL,
 ) -> ConfigLoadResult:
     """Print source metadata, then the effective configuration as pretty JSON.
 

@@ -7,6 +7,8 @@ from typing import Annotated
 import typer
 
 from dovo.cli.context import CliContext
+from dovo.cli.options import FormatOption
+from dovo.common.models import OutputFormatOptions
 from dovo.core.catalog.models import CatalogValidateStatus
 
 from .commands.step_create import step_create_command
@@ -25,11 +27,7 @@ step_app = typer.Typer(
 @step_app.command("ls")
 def step_list(
     ctx: typer.Context,
-    format: str = typer.Option(
-        "terminal",
-        "--format",
-        help="Presentation format ('terminal' or 'json').",
-    ),
+    format: FormatOption = OutputFormatOptions.TERMINAL,
 ):
     """List step catalog items across all tiers."""
     context: CliContext = ctx.obj["context"]
@@ -42,11 +40,7 @@ def step_list(
 def step_show(
     ctx: typer.Context,
     name: str = typer.Argument(..., help="Step SHA or name to show."),
-    format: str = typer.Option(
-        "terminal",
-        "--format",
-        help="Presentation format ('terminal' or 'json').",
-    ),
+    format: FormatOption = OutputFormatOptions.TERMINAL,
 ):
     """Show metadata and definition content of a step."""
     context: CliContext = ctx.obj["context"]
@@ -65,11 +59,7 @@ def step_create(
     global_: Annotated[
         bool, typer.Option("--global", help="Create in the shared global-tier catalog (~/.dovo/global/catalog/).")
     ] = False,
-    format: str = typer.Option(
-        "terminal",
-        "--format",
-        help="Presentation format ('terminal' or 'json').",
-    ),
+    format: FormatOption = OutputFormatOptions.TERMINAL,
 ):
     """Create a new step at the REPO tier by default, or at USER/GLOBAL tier with --user/--global."""
     context: CliContext = ctx.obj["context"]
@@ -87,11 +77,7 @@ def step_delete(
         "--force",
         help="Skip deletion confirmation prompt.",
     ),
-    format: str = typer.Option(
-        "terminal",
-        "--format",
-        help="Presentation format ('terminal' or 'json').",
-    ),
+    format: FormatOption = OutputFormatOptions.TERMINAL,
 ):
     """Delete a repo-tier step file and reindex."""
     context: CliContext = ctx.obj["context"]
@@ -104,11 +90,7 @@ def step_delete(
 def step_validate(
     ctx: typer.Context,
     target: str = typer.Argument(..., help="Step name, namespaced identifier, or file path to validate."),
-    format: str = typer.Option(
-        "terminal",
-        "--format",
-        help="Presentation format ('terminal' or 'json').",
-    ),
+    format: FormatOption = OutputFormatOptions.TERMINAL,
 ):
     """Validate a step definition without executing it."""
     context: CliContext = ctx.obj["context"]

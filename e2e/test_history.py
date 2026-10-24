@@ -108,7 +108,7 @@ steps:
         assert f"Session Metadata: {session_id}" in show_term.stdout
         assert "completed" in show_term.stdout
 
-    def test_diff_presents_latest_changeset_and_raw_format(
+    def test_diff_presents_latest_changeset_and_patch(
         self,
         run_dovo: DovoRunner,
         initialized_project: Path,
@@ -134,14 +134,14 @@ steps:
         assert diff_latest.exit_code == 0
         assert "sample_output.txt" in diff_latest.stdout
 
-        diff_raw = run_dovo(["diff", session_id, "--raw"], cwd=initialized_project)
-        assert diff_raw.exit_code == 0
-        assert "diff --git a/sample_output.txt b/sample_output.txt" in diff_raw.stdout
-        assert "+diff payload line" in diff_raw.stdout
+        diff_patch = run_dovo(["diff", session_id, "--patch"], cwd=initialized_project)
+        assert diff_patch.exit_code == 0
+        assert "diff --git a/sample_output.txt b/sample_output.txt" in diff_patch.stdout
+        assert "+diff payload line" in diff_patch.stdout
 
-        diff_grouped = run_dovo(["session", "diff", session_id, "--raw"], cwd=initialized_project)
+        diff_grouped = run_dovo(["session", "diff", session_id, "--patch"], cwd=initialized_project)
         assert diff_grouped.exit_code == 0
-        assert diff_grouped.stdout == diff_raw.stdout
+        assert diff_grouped.stdout == diff_patch.stdout
 
     def test_logs_displays_structured_event_timeline(
         self,
@@ -258,7 +258,7 @@ steps:
         assert secret_value not in logs_res.stdout
 
         diff_res = run_dovo(
-            ["diff", session_id, "--raw"],
+            ["diff", session_id, "--patch"],
             cwd=initialized_project,
             env=env_with_secret,
         )

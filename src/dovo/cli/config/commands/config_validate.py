@@ -4,13 +4,14 @@ from __future__ import annotations
 
 from dovo.cli.context import CliContext
 from dovo.cli.ui.dispatcher import ui_dispatcher
+from dovo.common.models import OutputFormatOptions
 from dovo.core.config import Config
 from dovo.core.config.validate import ConfigValidationResult
 
 
 def config_validate_command(
     context: CliContext,
-    output_format: str = "terminal",
+    output_format: OutputFormatOptions = OutputFormatOptions.TERMINAL,
 ) -> ConfigValidationResult:
     """Validate config and print the CLI validation report.
 

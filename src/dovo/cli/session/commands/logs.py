@@ -5,6 +5,7 @@ from __future__ import annotations
 from dovo.cli.context import CliContext
 from dovo.cli.ui.dispatcher import ui_dispatcher
 from dovo.cli.ui.events import MessageEvent
+from dovo.common.models import OutputFormatOptions
 from dovo.core.sessions import LogsShowResult, LogStreamFilter, Session, SessionCollection
 
 
@@ -16,7 +17,7 @@ def session_logs_command(
     attempt: int | None,
     stream: str,
     tail: int | None,
-    output_format: str = "terminal",
+    output_format: OutputFormatOptions = OutputFormatOptions.TERMINAL,
 ) -> LogsShowResult:
     """Execute session log query and dispatch results via UiDispatcher.
 
@@ -37,7 +38,7 @@ def session_logs_command(
         result = SessionCollection(
             context.paths, db=context.db.sessions, sensitive_variables=context.sensitive_variables
         ).latest_logs(step=step, attempt=attempt, stream=stream_filter, tail=tail)
-        if result.session_id is not None and output_format == "terminal":
+        if result.session_id is not None and output_format == OutputFormatOptions.TERMINAL:
             ui_dispatcher.dispatch(MessageEvent(message=f"Session: {result.session_id} (latest)"))
     else:
         result = Session(

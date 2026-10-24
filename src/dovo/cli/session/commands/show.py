@@ -5,6 +5,7 @@ from __future__ import annotations
 from dovo.cli.context import CliContext
 from dovo.cli.ui.dispatcher import ui_dispatcher
 from dovo.cli.ui.events import MessageEvent
+from dovo.common.models import OutputFormatOptions
 from dovo.core.sessions import HistoryShowResult, Session, SessionCollection, history_redactor
 from dovo.engine.session_steps import summarize_session_steps
 
@@ -24,7 +25,7 @@ def session_show_command(
     context: CliContext,
     session_id: str | None = None,
     logs: bool = False,
-    output_format: str = "terminal",
+    output_format: OutputFormatOptions = OutputFormatOptions.TERMINAL,
 ) -> HistoryShowResult:
     """Execute session show query and dispatch results via UiDispatcher.
 
@@ -41,7 +42,7 @@ def session_show_command(
         result = SessionCollection(
             context.paths, db=context.db.sessions, sensitive_variables=context.sensitive_variables
         ).latest_details(include_logs=logs)
-        if result.session_id is not None and output_format == "terminal":
+        if result.session_id is not None and output_format == OutputFormatOptions.TERMINAL:
             ui_dispatcher.dispatch(MessageEvent(message=f"Session: {result.session_id} (latest)"))
     else:
         result = Session(

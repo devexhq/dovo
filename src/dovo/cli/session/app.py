@@ -8,6 +8,7 @@ from typing import Annotated
 import typer
 
 from dovo.cli.context import CliContext
+from dovo.cli.options import FormatOption
 from dovo.common.models import AgentEnvModeOptions, DisplayFormatOptions, OutputFormatOptions
 from dovo.core.db import SessionStatus
 from dovo.core.sessions import LogStreamFilter
@@ -43,11 +44,7 @@ def session_callback(
             case_sensitive=False,
         ),
     ] = None,
-    format: str = typer.Option(
-        "terminal",
-        "--format",
-        help="Presentation format ('terminal' or 'json').",
-    ),
+    format: FormatOption = OutputFormatOptions.TERMINAL,
 ) -> None:
     """List, inspect and resume blueprint execution sessions; with no subcommand, list them."""
     if ctx.invoked_subcommand is None:
@@ -79,11 +76,7 @@ def session_list(
             case_sensitive=False,
         ),
     ] = None,
-    format: str = typer.Option(
-        "terminal",
-        "--format",
-        help="Presentation format ('terminal' or 'json').",
-    ),
+    format: FormatOption = OutputFormatOptions.TERMINAL,
 ) -> None:
     """List past blueprint execution sessions."""
     context: CliContext = ctx.obj["context"]
@@ -103,11 +96,7 @@ def session_show(
     logs: bool = typer.Option(
         False, "--logs", help="Display log file locations and recent log lines for this session."
     ),
-    format: str = typer.Option(
-        "terminal",
-        "--format",
-        help="Presentation format ('terminal' or 'json').",
-    ),
+    format: FormatOption = OutputFormatOptions.TERMINAL,
 ) -> None:
     """Show detailed metadata and error messages for a session."""
     context: CliContext = ctx.obj["context"]
@@ -133,11 +122,7 @@ def session_logs(
         ),
     ] = LogStreamFilter.BOTH,
     tail: int | None = typer.Option(None, "--tail", min=0, help="Show only the last N lines or events."),
-    format: str = typer.Option(
-        "terminal",
-        "--format",
-        help="Presentation format ('terminal' or 'json').",
-    ),
+    format: FormatOption = OutputFormatOptions.TERMINAL,
 ) -> None:
     """Show a session's timeline, or one step's raw stdout/stderr with --step."""
     context: CliContext = ctx.obj["context"]
@@ -160,28 +145,26 @@ def session_diff(
         None,
         help="Session identifier (e.g. dovo_a1b2c3d4). If omitted, displays the latest session diff.",
     ),
-    raw: bool = typer.Option(
+    patch: bool = typer.Option(
         False,
-        "--raw",
-        help="Output unformatted plain text diff directly to stdout.",
+        "--patch",
+        help="Write the session's plain patch to stdout, with no header, colour or truncation.",
     ),
     full: bool = typer.Option(
         False,
         "--full/--no-full",
         help="Bypass line truncation limits in interactive terminals.",
     ),
-    format: str = typer.Option(
-        "terminal",
-        "--format",
-        help="Presentation format ('terminal' or 'json').",
-    ),
+    format: FormatOption = OutputFormatOptions.TERMINAL,
 ) -> None:
     """View syntax-highlighted unified diff for a session."""
+    if patch and format == OutputFormatOptions.JSON:
+        ctx.fail("--patch cannot be combined with --format json.")
     context: CliContext = ctx.obj["context"]
     result = session_diff_command(
         context,
         session_id=session_id,
-        raw=raw,
+        patch=patch,
         full=full,
         output_format=format,
     )
@@ -230,9 +213,7 @@ def session_resume(
             help="JSON object with step_id, selected, comment and text; excludes the other answer flags.",
         ),
     ] = None,
-    format: Annotated[
-        OutputFormatOptions, typer.Option(help="Output format: 'terminal' or 'json'.")
-    ] = OutputFormatOptions.TERMINAL,
+    format: FormatOption = OutputFormatOptions.TERMINAL,
     display: Annotated[
         DisplayFormatOptions, typer.Option(help="Display format: 'ansi' or 'live'")
     ] = DisplayFormatOptions.ANSI,

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dovo.cli.context import CliContext
 from dovo.cli.ui.dispatcher import ui_dispatcher
+from dovo.common.models import OutputFormatOptions
 from dovo.core.catalog import Catalog
 from dovo.core.catalog.definitions import BlueprintDefinition, StepDefinition
 from dovo.core.catalog.models import CatalogItemType, CatalogValidateResult
@@ -12,7 +13,7 @@ from dovo.core.catalog.models import CatalogItemType, CatalogValidateResult
 def blueprint_validate_command(
     context: CliContext,
     target: str,
-    output_format: str = "terminal",
+    output_format: OutputFormatOptions = OutputFormatOptions.TERMINAL,
 ) -> CatalogValidateResult:
     """Validate a blueprint definition without executing it.
 
