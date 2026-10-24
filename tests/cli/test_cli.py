@@ -6,6 +6,7 @@ import dataclasses
 from pathlib import Path
 from typing import Any
 
+import click
 import pytest
 from typer.testing import CliRunner
 
@@ -465,8 +466,8 @@ class FormatOptionCliTests:
         result = cli_runner.invoke(app, ["-p", str(cli_workspace), *command, "--help"])
 
         assert result.exit_code == 0
-        assert "json|terminal" in result.stdout
-        assert "Output format: 'terminal' or 'json'." in result.stdout
+        assert "json|terminal" in click.unstyle(result.stdout)
+        assert "Output format: 'terminal' or 'json'." in click.unstyle(result.stdout)
 
     @pytest.mark.parametrize("command", COMMANDS_WITH_FORMAT)
     def test_invalid_format_is_rejected_on_every_command(
@@ -476,7 +477,7 @@ class FormatOptionCliTests:
 
         assert result.exit_code == 2
         assert result.stdout == ""
-        assert "Invalid value for '--format': 'yaml' is not one of 'json', 'terminal'." in result.stderr
+        assert "Invalid value for '--format': 'yaml' is not one of 'json', 'terminal'." in click.unstyle(result.stderr)
 
     @pytest.mark.parametrize("value", ["raw", "JSON", "yaml"])
     def test_invalid_format_values_are_rejected(self, cli_runner: CliRunner, cli_workspace: Path, value: str) -> None:
@@ -484,7 +485,9 @@ class FormatOptionCliTests:
 
         assert result.exit_code == 2
         assert result.stdout == ""
-        assert f"Invalid value for '--format': '{value}' is not one of 'json', 'terminal'." in result.stderr
+        assert f"Invalid value for '--format': '{value}' is not one of 'json', 'terminal'." in click.unstyle(
+            result.stderr
+        )
 
     @pytest.mark.parametrize(
         ("argv", "expected"),
@@ -506,4 +509,4 @@ class FormatOptionCliTests:
 
         assert result.exit_code == 2
         assert result.stdout == ""
-        assert expected in result.stderr
+        assert expected in click.unstyle(result.stderr)

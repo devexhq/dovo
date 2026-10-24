@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import click
 import pytest
 from typer.testing import CliRunner
 
@@ -177,12 +178,12 @@ class SessionDiffPatchCliIntegrationTests:
 
         assert result.exit_code == 2
         assert result.stdout == ""
-        assert "--patch cannot be combined with --format json." in result.stderr
-        assert "Invalid value" not in result.stderr
+        assert "--patch cannot be combined with --format json." in click.unstyle(result.stderr)
+        assert "Invalid value" not in click.unstyle(result.stderr)
 
     def test_raw_flag_is_no_such_option(self, cli_runner: CliRunner, cli_workspace: Path) -> None:
         result = cli_runner.invoke(app, ["-p", str(cli_workspace), "session", "diff", "--raw"])
 
         assert result.exit_code == 2
         assert result.stdout == ""
-        assert "No such option: --raw" in result.stderr
+        assert "No such option: --raw" in click.unstyle(result.stderr)
