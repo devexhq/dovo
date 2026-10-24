@@ -3,16 +3,16 @@
 from __future__ import annotations
 
 import json
-import os
 from pathlib import Path
 
 import pytest
 from typer.testing import CliRunner
 
 from dovo.cli import app
+from dovo.common.lock import LockTimeoutError, WorkspaceLock
 from dovo.core.catalog import Catalog
 from dovo.core.catalog.models import CatalogItemType
-from tests.harness.diagnostic_log import FROZEN_EVENT_ID
+from tests.harness.lock import raise_lock_timeout
 from tests.harness.workspace_paths import initialized_workspace_paths
 
 pytestmark = pytest.mark.usefixtures("workspace_config")
@@ -63,6 +63,7 @@ class BlueprintDeleteCliIntegrationTests:
         assert result.exit_code == 0
         payload = json.loads(result.stdout)
         assert payload["event_type"] == "CatalogDeleteResult"
+        assert payload["payload"]["status"] == "ok"
         assert payload["payload"]["deleted"] is True
 
     def test_blueprint_delete_cli_missing_exits_one(self, cli_runner: CliRunner, isolated_workspace: Path) -> None:
@@ -73,20 +74,15 @@ class BlueprintDeleteCliIntegrationTests:
         assert result.exit_code == 1
         assert "not found" in result.stdout
 
-    @pytest.mark.skipif(os.geteuid() == 0, reason="root ignores directory permission bits")
-    def test_blueprint_delete_cli_unexpected_failure_shows_hint(
-        self, cli_runner: CliRunner, isolated_workspace: Path, frozen_diagnostic_clock: Path
+    def test_blueprint_delete_cli_lock_timeout_propagates(
+        self, cli_runner: CliRunner, isolated_workspace: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """Exit 1 and print 'Details logged:' and exc_3f9a1c07b2de when the blueprints dir is read-only."""
+        """Exit 1 with result.exception a LockTimeoutError for `delete demo --force` and no 'Catalog Delete Failed' in stdout."""
         Catalog(initialized_workspace_paths(isolated_workspace)).create(CatalogItemType.BLUEPRINT, "demo")
-        blueprints_dir = isolated_workspace / ".dovo" / "catalog" / "blueprints"
-        blueprints_dir.chmod(0o555)
-        try:
-            result = cli_runner.invoke(app, ["-p", str(isolated_workspace), "blueprint", "delete", "demo", "--force"])
-        finally:
-            blueprints_dir.chmod(0o755)
+        monkeypatch.setattr(WorkspaceLock, "__enter__", raise_lock_timeout)
+
+        result = cli_runner.invoke(app, ["-p", str(isolated_workspace), "blueprint", "delete", "demo", "--force"])
 
         assert result.exit_code == 1
-        assert "Details logged:" in result.stdout
-        assert FROZEN_EVENT_ID in result.stdout
-        assert frozen_diagnostic_clock.is_file()
+        assert isinstance(result.exception, LockTimeoutError)
+        assert "Catalog Delete Failed" not in result.stdout

@@ -11,19 +11,23 @@ import yaml
 from pydantic import ValidationError
 
 from dovo.common.diagnostic_log import DiagnosticLevel, append_diagnostic_hint, record_exception
+from dovo.common.error_codes import ErrorCode
 from dovo.common.exceptions import DefinitionLoadError, DefinitionValidationError
 from dovo.common.filesystem import Filesystem, WorkspacePaths
 from dovo.common.lock import WorkspaceLock
 from dovo.common.models import DefinitionResolutionResult, DefinitionResolutionStatus
 from dovo.core.catalog.exceptions import (
-    CatalogError,
     CatalogFileNotFoundError,
+    CatalogProtectionError,
+    CatalogTierDeleteError,
     CatalogWriteError,
     CatalogYamlError,
 )
 from dovo.core.catalog.models import (
     CatalogCreateResult,
+    CatalogCreateStatus,
     CatalogDeleteResult,
+    CatalogDeleteStatus,
     CatalogItemType,
     CatalogListResult,
     CatalogRecord,
@@ -50,7 +54,6 @@ from dovo.core.catalog.services.inventory import (
 from dovo.core.catalog.services.seeder import SeedResult, seed_all_catalog_templates
 from dovo.core.catalog.services.validate import validate_catalog_item
 
-_EXPECTED_MUTATION_ERRORS = (CatalogError, FileExistsError, ValueError)
 _EXPECTED_DEFINITION_ERRORS = (DefinitionLoadError, DefinitionValidationError, ValidationError)
 
 
@@ -213,31 +216,57 @@ class Catalog:
         *,
         tier: CatalogTier = CatalogTier.REPO,
     ) -> CatalogCreateResult:
-        """Create a new catalog blueprint or step file at the selected tier and reindex."""
+        """Create a new catalog blueprint or step file at the selected tier and reindex.
+
+        Raises:
+            LockTimeoutError: If another process holds the tier's workspace lock.
+        """
         try:
-            record = create_catalog_item(coerce_catalog_item_type(item_type), name, tier, self.paths)
-            resolved_path = resolve_catalog_record_path(record, self.paths)
-            return CatalogCreateResult(item=record, resolved_path=resolved_path)
-        except _EXPECTED_MUTATION_ERRORS as exc:
-            return CatalogCreateResult(errors=[str(exc)])
-        except Exception as exc:
-            message = _logged_message(
-                str(exc), exc, operation="catalog.create", context={"item_type": str(item_type), "name": name}
+            type_enum = coerce_catalog_item_type(item_type)
+        except ValueError as exc:
+            return CatalogCreateResult(
+                status=CatalogCreateStatus.INVALID_TYPE, error_code=ErrorCode.CATALOG_TYPE_INVALID, errors=[str(exc)]
             )
-            return CatalogCreateResult(errors=[message])
+        try:
+            record = create_catalog_item(type_enum, name, tier, self.paths)
+        except FileExistsError as exc:
+            return CatalogCreateResult(
+                status=CatalogCreateStatus.ALREADY_EXISTS,
+                error_code=ErrorCode.CATALOG_ALREADY_EXISTS,
+                errors=[str(exc)],
+            )
+        except CatalogWriteError as exc:
+            return CatalogCreateResult(
+                status=CatalogCreateStatus.WRITE_FAILED, error_code=ErrorCode.CATALOG_WRITE_FAILED, errors=[str(exc)]
+            )
+        resolved_path = resolve_catalog_record_path(record, self.paths)
+        return CatalogCreateResult(status=CatalogCreateStatus.OK, item=record, resolved_path=resolved_path)
 
     def delete(self, sha_or_name: str) -> CatalogDeleteResult:
-        """Delete a REPO-tier catalog blueprint file and reindex, refusing dovo/-namespaced or non-REPO-tier matches."""
+        """Delete a REPO-tier catalog blueprint file and reindex, refusing dovo/-namespaced or non-REPO-tier matches.
+
+        Raises:
+            LockTimeoutError: If another process holds the workspace lock.
+        """
         try:
             deleted_item = delete_catalog_item_by_sha_or_name(sha_or_name, self.paths)
-            if deleted_item is None:
-                return CatalogDeleteResult(errors=[f"Catalog blueprint '{sha_or_name}' not found."])
-            return CatalogDeleteResult(item=deleted_item, deleted=True)
-        except _EXPECTED_MUTATION_ERRORS as exc:
-            return CatalogDeleteResult(errors=[str(exc)])
-        except Exception as exc:
-            message = _logged_message(str(exc), exc, operation="catalog.delete", context={"sha_or_name": sha_or_name})
-            return CatalogDeleteResult(errors=[message])
+        except CatalogProtectionError as exc:
+            return CatalogDeleteResult(
+                status=CatalogDeleteStatus.PROTECTED, error_code=ErrorCode.CATALOG_PROTECTED, errors=[str(exc)]
+            )
+        except CatalogTierDeleteError as exc:
+            return CatalogDeleteResult(
+                status=CatalogDeleteStatus.WRONG_TIER,
+                error_code=ErrorCode.CATALOG_TIER_DELETE_FORBIDDEN,
+                errors=[str(exc)],
+            )
+        if deleted_item is None:
+            return CatalogDeleteResult(
+                status=CatalogDeleteStatus.NOT_FOUND,
+                error_code=ErrorCode.CATALOG_NOT_FOUND,
+                errors=[f"Catalog blueprint '{sha_or_name}' not found."],
+            )
+        return CatalogDeleteResult(status=CatalogDeleteStatus.OK, item=deleted_item, deleted=True)
 
     def save(
         self,

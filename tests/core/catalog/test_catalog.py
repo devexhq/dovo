@@ -8,14 +8,25 @@ from pathlib import Path
 
 import pytest
 
+from dovo.common.error_codes import ErrorCode
 from dovo.common.filesystem import Filesystem, WorkspacePaths
 from dovo.common.filesystem.services.global_root import resolve_global_paths
+from dovo.common.lock import LockTimeoutError, WorkspaceLock
 from dovo.common.models import DefinitionResolutionStatus
 from dovo.core.catalog import Catalog
 from dovo.core.catalog.definitions import BlueprintDefinition
-from dovo.core.catalog.models import CatalogItemType, CatalogTier
+from dovo.core.catalog.models import (
+    CatalogCreateResult,
+    CatalogCreateStatus,
+    CatalogDeleteResult,
+    CatalogDeleteStatus,
+    CatalogItemType,
+    CatalogScanResult,
+    CatalogTier,
+)
 from dovo.core.catalog.services.inventory import compute_catalog_sha
 from tests.harness.diagnostic_log import FROZEN_EVENT_ID
+from tests.harness.lock import raise_lock_timeout
 
 
 class CatalogTemplateScaffoldingTests:
@@ -55,6 +66,8 @@ class CatalogTemplateScaffoldingTests:
         assert result.item.path == expected_rel_path
         assert result.item.checksum == expected_checksum
         assert result.item.tier == CatalogTier.REPO
+        assert result.status == CatalogCreateStatus.OK
+        assert result.error_code is None
         assert result.errors == []
         assert result.warnings == []
         assert result.fixes == []
@@ -270,65 +283,112 @@ def _write_user_blueprint(name: str) -> None:
     )
 
 
-class CatalogDiagnosticLogTests:
-    """Tests verifying unexpected catalog failures are recorded with a hint and expected ones are not."""
+def _run_classified_case(
+    catalog: Catalog, monkeypatch: pytest.MonkeyPatch, case: str
+) -> CatalogCreateResult | CatalogDeleteResult:
+    """Drive catalog into the failure named by case and return its result."""
+    if case == "invalid_type":
+        return catalog.create("widget", "demo")
+    if case == "collision":
+        catalog.create(CatalogItemType.BLUEPRINT, "demo")
+        return catalog.create(CatalogItemType.BLUEPRINT, "demo")
+    if case == "reindex_miss":
+        monkeypatch.setattr(
+            "dovo.core.catalog.services.inventory.scan_and_index_tier", lambda tier, paths: CatalogScanResult()
+        )
+        return catalog.create(CatalogItemType.BLUEPRINT, "demo")
+    if case == "protected_delete":
+        return catalog.delete("dovo/fix-tests")
+    if case == "tier_delete":
+        _write_user_blueprint("user-only")
+        return catalog.delete("user-only")
+    return catalog.delete("missing")
+
+
+class CatalogMutationOutcomeTests:
+    """Tests verifying create/delete classify business failures and let everything else propagate."""
+
+    @pytest.mark.parametrize(
+        ("case", "expected_status", "expected_code"),
+        [
+            pytest.param(
+                "invalid_type", CatalogCreateStatus.INVALID_TYPE, ErrorCode.CATALOG_TYPE_INVALID, id="invalid_type"
+            ),
+            pytest.param(
+                "collision", CatalogCreateStatus.ALREADY_EXISTS, ErrorCode.CATALOG_ALREADY_EXISTS, id="already_exists"
+            ),
+            pytest.param(
+                "reindex_miss", CatalogCreateStatus.WRITE_FAILED, ErrorCode.CATALOG_WRITE_FAILED, id="write_failed"
+            ),
+            pytest.param("not_found", CatalogDeleteStatus.NOT_FOUND, ErrorCode.CATALOG_NOT_FOUND, id="not_found"),
+            pytest.param(
+                "protected_delete", CatalogDeleteStatus.PROTECTED, ErrorCode.CATALOG_PROTECTED, id="protected"
+            ),
+            pytest.param(
+                "tier_delete", CatalogDeleteStatus.WRONG_TIER, ErrorCode.CATALOG_TIER_DELETE_FORBIDDEN, id="wrong_tier"
+            ),
+        ],
+    )
+    def test_classified_failure_returns_status_and_error_code(
+        self,
+        workspace_paths: WorkspacePaths,
+        monkeypatch: pytest.MonkeyPatch,
+        case: str,
+        expected_status: CatalogCreateStatus | CatalogDeleteStatus,
+        expected_code: ErrorCode,
+    ) -> None:
+        """Return (status, error_code) == (expected_status, expected_code) with one entry in errors, and leave <DOVO_HOME>/logs absent."""
+        result = _run_classified_case(Catalog(workspace_paths), monkeypatch, case)
+
+        assert (result.status, result.error_code) == (expected_status, expected_code)
+        assert len(result.errors) == 1
+        assert result.ok is False
+        assert not resolve_global_paths(None).logs_dir.exists()
+
+    @pytest.mark.parametrize("operation", ["create", "delete"])
+    def test_lock_timeout_propagates(
+        self, workspace_paths: WorkspacePaths, monkeypatch: pytest.MonkeyPatch, operation: str
+    ) -> None:
+        """Raise LockTimeoutError("lock held") unchanged from Catalog.create/delete when WorkspaceLock.__enter__ raises it, and leave <DOVO_HOME>/logs absent."""
+        catalog = Catalog(workspace_paths)
+        if operation == "delete":
+            catalog.create(CatalogItemType.BLUEPRINT, "demo")
+        monkeypatch.setattr(WorkspaceLock, "__enter__", raise_lock_timeout)
+
+        with pytest.raises(LockTimeoutError, match=r"^lock held$"):
+            if operation == "delete":
+                catalog.delete("demo")
+            else:
+                catalog.create(CatalogItemType.BLUEPRINT, "demo")
+
+        assert not resolve_global_paths(None).logs_dir.exists()
 
     @pytest.mark.skipif(os.geteuid() == 0, reason="root ignores directory permission bits")
-    @pytest.mark.parametrize("operation", ["catalog.create", "catalog.delete"])
-    def test_unexpected_mutation_failure_records_error_and_appends_hint(
-        self, workspace_paths: WorkspacePaths, frozen_diagnostic_clock: Path, operation: str
+    @pytest.mark.parametrize("operation", ["create", "delete"])
+    def test_unexpected_failure_propagates_without_record(
+        self, workspace_paths: WorkspacePaths, operation: str
     ) -> None:
-        """Return errors == [f"{permission message}\nDetails logged: {path} (event exc_3f9a1c07b2de)"] for a read-only blueprints dir and write an error record with that operation and context."""
+        """Raise PermissionError from Catalog.create/delete on a read-only blueprints dir and leave <DOVO_HOME>/logs absent."""
         catalog = Catalog(workspace_paths)
         blueprints_dir = workspace_paths.catalog_blueprints_dir
         blueprints_dir.mkdir(parents=True, exist_ok=True)
-        if operation == "catalog.delete":
+        if operation == "delete":
             catalog.create(CatalogItemType.BLUEPRINT, "demo")
-            denied_path, context = blueprints_dir / "demo.yml", {"sha_or_name": "demo"}
-        else:
-            denied_path, context = blueprints_dir / "demo.yml.tmp", {"item_type": "blueprint", "name": "demo"}
         blueprints_dir.chmod(0o555)
         try:
-            if operation == "catalog.delete":
-                errors = catalog.delete("demo").errors
-            else:
-                errors = catalog.create(CatalogItemType.BLUEPRINT, "demo").errors
+            with pytest.raises(PermissionError):
+                if operation == "delete":
+                    catalog.delete("demo")
+                else:
+                    catalog.create(CatalogItemType.BLUEPRINT, "demo")
         finally:
             blueprints_dir.chmod(0o755)
 
-        permission_message = f"[Errno 13] Permission denied: '{denied_path}'"
-        assert errors == [f"{permission_message}\nDetails logged: {frozen_diagnostic_clock} (event {FROZEN_EVENT_ID})"]
-        event = json.loads(frozen_diagnostic_clock.read_text(encoding="utf-8"))
-        assert event["level"] == "error"
-        assert event["operation"] == operation
-        assert event["context"] == context
-        assert event["exception_type"] == "PermissionError"
-        assert event["exception_message"] == permission_message
-
-    @pytest.mark.parametrize("case", ["collision", "invalid_type", "protected_delete", "tier_delete", "not_found"])
-    def test_expected_mutation_errors_are_not_recorded(self, workspace_paths: WorkspacePaths, case: str) -> None:
-        """Return today's literal error message with no hint and leave <DOVO_HOME>/logs absent."""
-        catalog = Catalog(workspace_paths)
-        if case == "collision":
-            catalog.create(CatalogItemType.BLUEPRINT, "demo")
-            errors = catalog.create(CatalogItemType.BLUEPRINT, "demo").errors
-            expected = "Catalog blueprint collision at path 'blueprints/demo.yml'"
-        elif case == "invalid_type":
-            errors = catalog.create("widget", "demo").errors
-            expected = "Invalid item_type 'widget'. Allowed choices: blueprint, step"
-        elif case == "protected_delete":
-            errors = catalog.delete("dovo/fix-tests").errors
-            expected = "Cannot delete bundled catalog template 'dovo/fix-tests'."
-        elif case == "tier_delete":
-            _write_user_blueprint("user-only")
-            errors = catalog.delete("user-only").errors
-            expected = "Catalog item 'user-only' resolved from tier 'user'; only repo-tier items can be deleted."
-        else:
-            errors = catalog.delete("missing").errors
-            expected = "Catalog blueprint 'missing' not found."
-
-        assert errors == [expected]
         assert not resolve_global_paths(None).logs_dir.exists()
+
+
+class CatalogDiagnosticLogTests:
+    """Tests verifying unexpected definition load failures are recorded with a hint and expected ones are not."""
 
     def test_unexpected_definition_load_failure_records_error(
         self, workspace_paths: WorkspacePaths, frozen_diagnostic_clock: Path

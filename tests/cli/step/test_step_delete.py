@@ -9,8 +9,10 @@ import pytest
 from typer.testing import CliRunner
 
 from dovo.cli import app
+from dovo.common.lock import LockTimeoutError, WorkspaceLock
 from dovo.core.catalog import Catalog
 from dovo.core.catalog.models import CatalogItemType
+from tests.harness.lock import raise_lock_timeout
 from tests.harness.workspace_paths import initialized_workspace_paths
 
 pytestmark = pytest.mark.usefixtures("workspace_config")
@@ -55,3 +57,16 @@ class StepDeleteCliIntegrationTests:
 
         assert result.exit_code == 1
         assert "not found" in result.stdout
+
+    def test_step_delete_cli_lock_timeout_propagates(
+        self, cli_runner: CliRunner, isolated_workspace: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Exit 1 with result.exception a LockTimeoutError for `delete demo --force` and no 'Catalog Delete Failed' in stdout."""
+        Catalog(initialized_workspace_paths(isolated_workspace)).create(CatalogItemType.STEP, "demo")
+        monkeypatch.setattr(WorkspaceLock, "__enter__", raise_lock_timeout)
+
+        result = cli_runner.invoke(app, ["-p", str(isolated_workspace), "step", "delete", "demo", "--force"])
+
+        assert result.exit_code == 1
+        assert isinstance(result.exception, LockTimeoutError)
+        assert "Catalog Delete Failed" not in result.stdout

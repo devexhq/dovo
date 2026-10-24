@@ -10,7 +10,9 @@ from dovo.core.catalog.exceptions import (
 )
 from dovo.core.catalog.models import (
     CatalogCreateResult,
+    CatalogCreateStatus,
     CatalogDeleteResult,
+    CatalogDeleteStatus,
     CatalogListResult,
     CatalogShowResult,
     CatalogValidateResult,
@@ -20,7 +22,9 @@ from dovo.core.catalog.models import (
 __all__ = [
     "Catalog",
     "CatalogCreateResult",
+    "CatalogCreateStatus",
     "CatalogDeleteResult",
+    "CatalogDeleteStatus",
     "CatalogError",
     "CatalogFileNotFoundError",
     "CatalogListResult",

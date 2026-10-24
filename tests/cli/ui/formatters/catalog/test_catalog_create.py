@@ -8,7 +8,14 @@ from typing import Any
 import pytest
 
 from dovo.cli.ui.formatters.catalog.catalog_create import CatalogCreateFormatter
-from dovo.core.catalog.models import CatalogCreateResult, CatalogItemType, CatalogRecord, CatalogTier
+from dovo.common.error_codes import ErrorCode
+from dovo.core.catalog.models import (
+    CatalogCreateResult,
+    CatalogCreateStatus,
+    CatalogItemType,
+    CatalogRecord,
+    CatalogTier,
+)
 from tests.harness.formatter import (
     FormatterCase,
     assert_json_payload_matches_published_shape,
@@ -40,17 +47,19 @@ _USER_RECORD = CatalogRecord(
 _USER_RESOLVED_PATH = Path("/home/user/.dovo/user/catalog/blueprints/user-blueprint.yml")
 
 CREATED_BLUEPRINT = FormatterCase.identity(
-    data=CatalogCreateResult(item=_RECORD, resolved_path=_REPO_RESOLVED_PATH),
+    data=CatalogCreateResult(status=CatalogCreateStatus.OK, item=_RECORD, resolved_path=_REPO_RESOLVED_PATH),
     render_expectations=["blueprint", "test-blueprint", "repo", ".dovo/catalog/blueprints/test-blueprint.yml"],
 )
 
 CREATED_USER_BLUEPRINT = FormatterCase.identity(
-    data=CatalogCreateResult(item=_USER_RECORD, resolved_path=_USER_RESOLVED_PATH),
+    data=CatalogCreateResult(status=CatalogCreateStatus.OK, item=_USER_RECORD, resolved_path=_USER_RESOLVED_PATH),
     render_expectations=["blueprint", "user-blueprint", "user", str(_USER_RESOLVED_PATH)],
 )
 
 CREATION_ERROR = FormatterCase.identity(
     data=CatalogCreateResult(
+        status=CatalogCreateStatus.ALREADY_EXISTS,
+        error_code=ErrorCode.CATALOG_ALREADY_EXISTS,
         item=None,
         errors=["Naming collision on blueprint."],
         fixes=["Choose a different name"],
@@ -72,6 +81,7 @@ CATALOG_CREATE_PAYLOAD_CASES = [
             "warnings": [],
             "fixes": [],
             "error_code": None,
+            "status": "ok",
             "item": {
                 "key": "test-blueprint",
                 "sha": "blueprint_1234567",
@@ -92,7 +102,8 @@ CATALOG_CREATE_PAYLOAD_CASES = [
             "errors": ["Naming collision on blueprint."],
             "warnings": [],
             "fixes": ["Choose a different name"],
-            "error_code": None,
+            "error_code": "CATALOG_ALREADY_EXISTS",
+            "status": "already_exists",
             "item": None,
             "resolved_path": None,
         },
