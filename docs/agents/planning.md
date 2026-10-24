@@ -13,7 +13,8 @@ gh issue view <number> --json number,title,body
 
 - Link the issue; do not copy its prose. Every `FR-*`, `NFR-*`, numbered error case and Definition of Done item appears by ID in the `## Traceability` table instead, as does every GWT scenario (`GWT-<n>`).
 - Copy **literal** contracts verbatim into the `### Code` block of the phase that implements them: pre-determined data, models, enums, flags, JSON, and exact error and output strings. The implementing agent does not read the issue.
-- Turn each **Out of scope** item into a bullet under `## Traps`.
+- Turn each **Out of scope** item into a bullet under `## Traps`. Out of scope means not required, not forbidden: an out-of-scope line the change would leave inconsistent is planned as a departure (below).
+- The issue's observable contracts bind the plan: CLI behaviour and output, exit codes, persisted formats, entrypoint signatures, result models and the literal values tests assert. Its internal shapes (helper names, module placement, type aliases, how far a change reaches) are the author's best guess before grounding. When Step 2 shows one is wrong, such as a new symbol that duplicates or shadows an existing one, or an injected dependency the change holds but bypasses with a direct call, plan the better design. Add an Open Question whose assumed answer is that design, cite the `path:line` that shows the issue's shape is wrong, and name the departure under **What you're approving**. Never write a Trap that tells the implementer to work around the issue's shape.
 - Absent an issue, quote the request in the opening paragraph and number the requirements you derive from it (`FR-1`, …) in a `## Requirements` list after `## What you're approving`.
 - Do not open or consult sibling or parent issues. A parent issue (one with sub-issues) is never planned; plan its sub-issues one at a time.
 - Plan zero backwards-compatibility shims, aliases, or dual code paths unless the issue explicitly demands them (R10).
@@ -27,7 +28,8 @@ gh issue view <number> --json number,title,body
 4. Look for what the change alters or depends on beyond the issue's text, and record each finding in the plan:
    - existing behaviour that changes for current users, and existing bugs on the path the change builds on → `## What you're approving`
    - persisted formats (session state and manifests, `data.db`, `config.json`, catalog `index.json`, blueprint and step YAML) and whether data written before the change still loads → `## What you're approving`
-   - exhaustive iterations over an enum or type list, field-by-field merge or override logic, lookalike symbols, stale docs → `## Traps`
+   - exhaustive iterations over an enum or type list, field-by-field merge or override logic, existing lookalike symbols, stale docs → `## Traps`
+   - a lookalike or bypass the issue's own shape would introduce → a departure (Step 1), not a Trap
 5. When the citations behind the plan are too many to keep inline, put a ground-truth table (`Surface`, `Location`, `What exists`) in `.agentic/evidence.md` and link it from the plan's opening paragraph. Every link in the plan must resolve to a file about this issue.
 
 ## Step 3: Enumerate every artifact and split into phases
