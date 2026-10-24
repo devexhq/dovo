@@ -5,8 +5,9 @@ description: >-
   CLI with authoritative scope, numbered FR/NFR contracts, pre-determined data,
   error cases, and a non-redundant Definition of Done. Grounds the issue in the
   code first and splits work that mixes more than one responsibility into
-  a parent issue with native sub-issues. Invoked as /dovo-issue.
-  Use when asked to create, draft, or revise a GitHub issue.
+  a parent issue with native sub-issues. Invoked as /dovo-issue; /dovo-issue
+  ready <n> re-grounds an existing issue against main and reports whether it is
+  ready to plan. Use when asked to create, draft, revise, or ready a GitHub issue.
 ---
 
 # dovo-issue
@@ -143,3 +144,40 @@ Before running `gh issue create` or `gh issue edit`:
 1. Scan the draft for shim-inducing words (`unchanged`, `untouched`, `as before`, `alongside`, `keep`, `compatib`, `shim`, `legacy`). Delete them or convert them into a **Shared surfaces changed** bullet and a grep removal bar in **Definition of done**.
 2. Re-check the finished draft against **Split**: one kind, neither rule broken, a review load that fits one sitting, and a `dovo-size-*` label.
 3. When publishing a split, create or edit the parent first, then the sub-issues in dependency order so each `--blocked-by` names an issue that exists. Confirm with `gh api repos/{owner}/{repo}/issues/<parent>/sub_issues --jq '.[].number'`.
+
+## Ready mode
+
+`/dovo-issue ready <n>` decides whether an existing issue is ready to plan, against `origin/main` as it is now. An issue is ready when it passes every gate below and re-grounding and re-checking find nothing to change. Ready mode never edits the issue, its labels or its comments: it writes its verdict, and any proposed title and body, to `.agentic/`, and the `ready-issue` blueprint applies them after a person approves. Run by hand, report the verdict and ask before applying anything.
+
+1. **Read.** Delete any earlier `.agentic/issue-*` files so a stale proposal is never applied. `git fetch origin main` and record `git rev-parse --short origin/main`. Read the issue with `gh issue view <n> --json number,title,body,labels,state`, its sub-issues and its blockers (the queries in `.agents/skills/dovo-plan/SKILL.md` step 1).
+2. **Gates.** Each failure is a finding a person must settle, so the verdict is `not_ready`:
+   - The issue is open.
+   - It has no sub-issues. For a parent, name the first open sub-issue whose blockers are all closed.
+   - Every blocker is closed.
+   - It has exactly one `dovo-size-*` label.
+3. **Re-ground.** Run **Workflow → Ground** against `origin/main` and compare what you find with the issue. Look for in-scope work that has already shipped, out-of-scope items that are now done, paths and symbols that moved or no longer exist, callers the issue does not account for, and internal shapes pinned where an observable contract would do (**Core Principles** 4), including new symbols that would shadow existing ones.
+4. **Re-check.** Check the body against **Core Principles**, **Split**, **Issue Structure** and the **Pre-Publish Checklist**. A finding that requires a split, or a product decision the issue cannot make for itself, makes the verdict `not_ready`: recommend the split or name the decision, and do not draft around it.
+5. **Propose.** When every finding can be fixed by editing the title or body, write the full new body to `.agentic/issue-body.md` and the title, on one line, to `.agentic/issue-title`, even when only one of them changes. The verdict is `needs_edits`. With no findings, write neither file; the verdict is `ready`.
+6. **Report.** Write `.agentic/issue-ready.md`: the verdict, the base sha, and one line per finding with its evidence and fix. Write `.agentic/issue-ready-comment.md`, the comment posted with the label: `Ready to plan at <sha> (<YYYY-MM-DD>).`, followed by one bullet per change the edit makes, or `No changes needed.` Write `.agentic/issue-ready.json` to agree with the report:
+
+```json
+{
+  "issue": 923,
+  "verdict": "needs_edits",
+  "grounded_at": "630086c0",
+  "findings": [
+    {
+      "id": "F1",
+      "kind": "stale",
+      "summary": "Out of scope lists making git execution injectable, which shipped in fa99a3eb.",
+      "evidence": "src/dovo/core/worktree/worktree.py:39",
+      "fix": "Delete the bullet."
+    }
+  ]
+}
+```
+
+- `verdict` is `ready` (no findings), `needs_edits` (the proposed title and body fix every finding) or `not_ready` (a gate failed or a finding needs a person).
+- `kind` is `gate`, `stale`, `prescriptive` or `structure`. `evidence` is a `path:line`, a sha or an issue number.
+
+Remove the `dovo:ready` label whenever the body is edited by hand: it certifies the body as of its comment's sha.

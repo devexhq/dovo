@@ -1,0 +1,74 @@
+version: 1
+name: ready-issue
+id: ready-issue
+description: Re-ground a GitHub issue against main and re-check it against /dovo-issue, then, once a person approves, apply the proposed edits and label it dovo:ready with a comment naming the sha it was checked at
+summary: Issue to dovo:ready with a human gate
+
+inputs:
+  issue:
+    type: string
+    description: GitHub issue number to ready
+    required: true
+    aliases: ["-i", "--issue"]
+
+steps:
+  # The session's own worktree, so moving it loses nothing: the check grounds
+  # against main as it is now, not the commit the session started from.
+  - id: base
+    name: Check out origin/main
+    run: git fetch -q origin main && git switch -q --detach origin/main
+    timeout_seconds: 120
+
+  - id: check
+    name: Re-ground and re-check the issue
+    type: agent
+    prompt: |
+      /dovo-issue ready ${{ inputs.issue }}
+
+      Follow the Ready mode section of .agents/skills/dovo-issue/SKILL.md if the slash command is
+      not recognized. Write .agentic/issue-ready.md, .agentic/issue-ready.json and
+      .agentic/issue-ready-comment.md, plus .agentic/issue-title and .agentic/issue-body.md when the
+      verdict is needs_edits. Do not edit the issue, its labels or its comments.
+    tools: { allow_all: true }
+    timeout_seconds: 1800
+    artifacts:
+      - { name: issue-ready, path: ".agentic/issue-*" }
+
+  # Stops the run before the person is asked: a not_ready issue needs a split,
+  # a decision or a closed blocker, which no edit here can supply. A label left
+  # from an earlier run is removed so it never vouches for a stale body.
+  - id: gate
+    name: Stop when the issue needs a person
+    run: |
+      set -eu
+      verdict=$(uv run python -c 'import json; print(json.load(open(".agentic/issue-ready.json"))["verdict"])')
+      echo "Verdict: $verdict"
+      [ "$verdict" != "not_ready" ] && exit 0
+      gh issue edit ${{ inputs.issue }} --remove-label dovo:ready > /dev/null 2>&1 || true
+      cat .agentic/issue-ready.md
+      exit 1
+    timeout_seconds: 120
+
+  # Asked on every run, including one with nothing to edit, since a step cannot
+  # be skipped; denying stops the run with the issue untouched.
+  - id: approve
+    name: Approve the edits and the label
+    type: ask
+    interaction:
+      mode: confirm
+      message: Apply the proposed edits, if any, to issue ${{ inputs.issue }} and label it dovo:ready?
+      artifact: issue-ready
+
+  # A command step: the writes to GitHub run exactly as approved, with the
+  # host's gh credentials.
+  - id: apply
+    name: Apply the edits, label the issue and comment
+    run: |
+      set -eu
+      if [ -f .agentic/issue-body.md ]; then
+        gh issue edit ${{ inputs.issue }} --title "$(head -n 1 .agentic/issue-title)" --body-file .agentic/issue-body.md
+      fi
+      gh label create dovo:ready --color 0e8a16 --description "Re-grounded against main and ready to plan" --force
+      gh issue edit ${{ inputs.issue }} --add-label dovo:ready
+      gh issue comment ${{ inputs.issue }} --body-file .agentic/issue-ready-comment.md
+    timeout_seconds: 300
