@@ -34,17 +34,23 @@ steps:
     artifacts:
       - { name: issue-ready, path: ".agentic/issue-*" }
 
-  # Stops the run before the person is asked: a not_ready issue needs a split,
-  # a decision or a closed blocker, which no edit here can supply. A label left
-  # from an earlier run is removed so it never vouches for a stale body.
+  # Any verdict but ready means the current body is stale, so a label left from
+  # an earlier run is removed and never vouches for it; apply adds it back after
+  # the edits. Stops the run before the person is asked unless the verdict is
+  # ready or needs_edits: a not_ready issue needs a split, a decision or a
+  # closed blocker, which no edit here can supply.
   - id: gate
     name: Stop when the issue needs a person
     run: |
       set -eu
       verdict=$(uv run --quiet python -c 'import json; print(json.load(open(".agentic/issue-ready.json"))["verdict"])')
       echo "Verdict: $verdict"
-      [ "$verdict" != "not_ready" ] && exit 0
-      gh issue edit ${{ inputs.issue }} --remove-label dovo:ready > /dev/null 2>&1 || true
+      [ "$verdict" = "ready" ] && exit 0
+      labels=$(gh issue view ${{ inputs.issue }} --json labels --jq '.labels[].name')
+      if printf '%s\n' "$labels" | grep -qx 'dovo:ready'; then
+        gh issue edit ${{ inputs.issue }} --remove-label dovo:ready
+      fi
+      [ "$verdict" = "needs_edits" ] && exit 0
       cat .agentic/issue-ready.md
       exit 1
     timeout_seconds: 120
