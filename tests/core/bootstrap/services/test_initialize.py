@@ -7,9 +7,12 @@ from pathlib import Path
 
 import pytest
 
+from dovo.common.constants import BOOTSTRAP_META_REL
 from dovo.common.filesystem.services.global_root import resolve_global_paths
 from dovo.core.bootstrap.models import BootstrapOutcome, InitFailureMode
-from dovo.core.bootstrap.services.initialize import initialize_workspace
+from dovo.core.bootstrap.services.initialize import auto_initialize_workspace, initialize_workspace
+from dovo.core.catalog.models import SeedResult
+from dovo.core.config.generator import ConfigGenerationResult
 from dovo.core.project.models import ProjectIdentityProvisionStatus
 from tests.harness.builders import WorkspaceBuilder, init_git_repository
 
@@ -159,3 +162,163 @@ class InitializeWorkspaceTests:
 
         assert result.ok is True
         assert (resolve_global_paths(None).data_dir / "dovo.db").is_file()
+
+
+def _fail_seeding(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Patch the seeding boundary so starter-blueprint seeding reports the error "boom"."""
+    monkeypatch.setattr(
+        "dovo.core.bootstrap.services.initialize.seed_all_catalog_templates",
+        lambda _paths: SeedResult(errors=["boom"]),
+    )
+
+
+def _tree_bytes(root: Path) -> dict[str, bytes | None]:
+    """Map every path under root (relative, as a string) to its bytes, or None for a directory."""
+    return {
+        str(path.relative_to(root)): None if path.is_dir() else path.read_bytes() for path in sorted(root.rglob("*"))
+    }
+
+
+class AutoInitializeWorkspaceTests:
+    """Service tests for auto_initialize_workspace's rollback contract."""
+
+    def test_auto_initialize_workspace_success_returns_initialize_result_unchanged(self, git_repo: Path) -> None:
+        """In a fresh Git repository the result is ok and project.json, config.json and .meta/bootstrap.json exist."""
+        result = auto_initialize_workspace(git_repo)
+
+        assert result.ok is True
+        assert (git_repo / ".dovo" / "project.json").is_file()
+        assert (git_repo / ".dovo" / "config.json").is_file()
+        assert (git_repo / ".dovo" / BOOTSTRAP_META_REL).is_file()
+
+    @pytest.mark.parametrize(
+        ("case", "failure_mode"),
+        [
+            pytest.param("non-git", InitFailureMode.PREFLIGHT, id="non-git"),
+            pytest.param("global-home", InitFailureMode.PREFLIGHT, id="global-home"),
+        ],
+    )
+    def test_auto_initialize_workspace_preflight_failure_is_returned_without_rollback(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, case: str, failure_mode: InitFailureMode
+    ) -> None:
+        """Return the preflight result with its errors unchanged and leave the target tree byte-for-byte unchanged."""
+        target = tmp_path / "target"
+        target.mkdir()
+        if case == "global-home":
+            (target / ".dovo").mkdir()
+            (target / ".dovo" / "sentinel.txt").write_text("keep\n", encoding="utf-8")
+            init_git_repository(target)
+            monkeypatch.setenv("DOVO_HOME", str(target / ".dovo"))
+        before = _tree_bytes(target)
+        expected = initialize_workspace(target)
+
+        result = auto_initialize_workspace(target)
+
+        assert result.failure_mode == failure_mode
+        assert result.errors == expected.errors
+        assert _tree_bytes(target) == before
+
+    @pytest.mark.parametrize(
+        ("patched", "failure_mode", "error"),
+        [
+            pytest.param("generate_default_config", InitFailureMode.CONFIG_GENERATION, "bad config", id="config"),
+            pytest.param("seed_all_catalog_templates", None, "boom", id="seed"),
+        ],
+    )
+    def test_auto_initialize_workspace_failure_after_preflight_removes_new_dovo_dir(
+        self,
+        git_repo: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        patched: str,
+        failure_mode: InitFailureMode | None,
+        error: str,
+    ) -> None:
+        """Return the failed result with its failure_mode and patched error, and remove the new .dovo/."""
+        failure = (
+            ConfigGenerationResult(errors=[error])
+            if patched == "generate_default_config"
+            else SeedResult(errors=[error])
+        )
+        monkeypatch.setattr(f"dovo.core.bootstrap.services.initialize.{patched}", lambda *_args, **_kwargs: failure)
+
+        result = auto_initialize_workspace(git_repo)
+
+        assert result.ok is False
+        assert result.failure_mode == failure_mode
+        assert result.errors == [error]
+        assert not (git_repo / ".dovo").exists()
+
+    def test_auto_initialize_workspace_failure_restores_preexisting_dovo_dir(
+        self, git_repo: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Keep a pre-existing user file and .gitignore bytes, and remove everything the failed attempt created."""
+        dovo_dir = git_repo / ".dovo"
+        dovo_dir.mkdir()
+        (dovo_dir / "notes.txt").write_text("mine\n", encoding="utf-8")
+        (dovo_dir / ".gitignore").write_text("custom\n", encoding="utf-8")
+        _fail_seeding(monkeypatch)
+
+        result = auto_initialize_workspace(git_repo)
+
+        assert result.ok is False
+        assert (dovo_dir / "notes.txt").read_text(encoding="utf-8") == "mine\n"
+        assert (dovo_dir / ".gitignore").read_bytes() == b"custom\n"
+        for created in ("project.json", "config.json", ".meta", "catalog"):
+            assert not (dovo_dir / created).exists()
+
+    def test_auto_initialize_workspace_reports_rollback_failure_in_errors(
+        self, git_repo: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Append the rollback error to the seed error when removing the new .dovo/ fails."""
+        _fail_seeding(monkeypatch)
+
+        def _denied(_path: object) -> None:
+            raise OSError("denied")
+
+        monkeypatch.setattr("dovo.core.bootstrap.services.rollback.shutil.rmtree", _denied)
+
+        result = auto_initialize_workspace(git_repo)
+
+        dovo_dir = (git_repo / ".dovo").resolve()
+        assert result.errors == [
+            "boom",
+            f"Could not roll back the partial workspace at {dovo_dir.as_posix()}: denied. Remove it, then rerun dovo run.",
+        ]
+
+    def test_auto_initialize_workspace_raised_failure_removes_new_dovo_dir_and_reraises(
+        self, git_repo: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Re-raise an exception from database initialization unchanged and remove the new .dovo/."""
+
+        def _unwritable(_path: object) -> None:
+            raise PermissionError("unwritable data dir")
+
+        monkeypatch.setattr("dovo.core.bootstrap.services.initialize.init_database", _unwritable)
+
+        with pytest.raises(PermissionError, match=r"^unwritable data dir$"):
+            auto_initialize_workspace(git_repo)
+
+        assert not (git_repo / ".dovo").exists()
+
+    def test_auto_initialize_workspace_raised_failure_notes_rollback_failure(
+        self, git_repo: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Re-raise the database exception with the rollback error as its only note when removing .dovo/ fails."""
+
+        def _unwritable(_path: object) -> None:
+            raise PermissionError("unwritable data dir")
+
+        def _denied(_path: object) -> None:
+            raise OSError("denied")
+
+        monkeypatch.setattr("dovo.core.bootstrap.services.initialize.init_database", _unwritable)
+        monkeypatch.setattr("dovo.core.bootstrap.services.rollback.shutil.rmtree", _denied)
+
+        with pytest.raises(PermissionError) as exc_info:
+            auto_initialize_workspace(git_repo)
+
+        dovo_dir = (git_repo / ".dovo").resolve()
+        assert str(exc_info.value) == "unwritable data dir"
+        assert exc_info.value.__notes__ == [
+            f"Could not roll back the partial workspace at {dovo_dir.as_posix()}: denied. Remove it, then rerun dovo run."
+        ]

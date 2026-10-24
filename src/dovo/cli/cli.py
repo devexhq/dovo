@@ -83,6 +83,14 @@ def version_callback(value: bool) -> None:
         raise typer.Exit()
 
 
+def _ensure_run_workspace(path: Path | None) -> None:
+    """Auto-initialize the workspace for `dovo run`; on failure render the init result and exit 1."""
+    result = ensure_lazy_project_init(Filesystem(path))
+    if result is not None and not result.ok:
+        ui_dispatcher.dispatch(result)
+        raise typer.Exit(code=1)
+
+
 @app.callback(invoke_without_command=True)
 def main(
     ctx: typer.Context,
@@ -138,9 +146,9 @@ def main(
 
     # 2. Build the shared CLI context for every real subcommand invocation
     if not ctx.obj.get("is_help", False) and ctx.invoked_subcommand != "init":
+        if ctx.invoked_subcommand == "run":
+            _ensure_run_workspace(path)
         try:
-            if ctx.invoked_subcommand == "run":
-                ensure_lazy_project_init(Filesystem(path))
             ctx.obj["context"] = CliContext.build(
                 path=path, load_config=ctx.invoked_subcommand not in NON_STRICT_CONFIG_COMMANDS
             )
@@ -154,6 +162,11 @@ def main(
             raise typer.Exit(code=1) from exc
 
 
+def _exception_details(exc: BaseException) -> str:
+    """Return exc's message followed by each note added to it, one per line."""
+    return "\n".join([str(exc), *getattr(exc, "__notes__", [])])
+
+
 def run_cli() -> None:
     """Main entrypoint with global crash protection."""
     try:
@@ -165,7 +178,7 @@ def run_cli() -> None:
         ui_dispatcher.dispatch(
             ErrorPanelEvent(
                 title="Workspace Lock Timeout",
-                message=str(exc),
+                message=_exception_details(exc),
                 border_style="red",
             )
         )
@@ -178,7 +191,7 @@ def run_cli() -> None:
         ui_dispatcher.dispatch(
             ErrorPanelEvent(
                 title="Fatal Error",
-                message=f"A fatal unexpected error occurred.\nDetails: {exc!s}",
+                message=f"A fatal unexpected error occurred.\nDetails: {_exception_details(exc)}",
                 border_style="red",
             )
         )

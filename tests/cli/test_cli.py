@@ -145,6 +145,32 @@ class RunCliCrashProtectionTests:
         assert exc_info.value.code == 1
         assert "Fatal Error" in capsys.readouterr().out
 
+    def test_run_cli_unexpected_exception_panel_lists_exception_notes(
+        self, monkeypatch: pytest.MonkeyPatch, dispatch_spy: list[object]
+    ) -> None:
+        """Append each note added to the exception to the Fatal Error panel's details, one per line."""
+
+        def _raise_with_note() -> None:
+            exc = PermissionError("unwritable data dir")
+            exc.add_note("Remove it, then rerun dovo run.")
+            raise exc
+
+        monkeypatch.setattr(cli_module, "app", _raise_with_note)
+
+        with pytest.raises(SystemExit) as exc_info:
+            cli_module.run_cli()
+
+        assert exc_info.value.code == 1
+        assert dispatch_spy == [
+            ErrorPanelEvent(
+                title="Fatal Error",
+                message=(
+                    "A fatal unexpected error occurred.\nDetails: unwritable data dir\nRemove it, then rerun dovo run."
+                ),
+                border_style="red",
+            )
+        ]
+
 
 GUARD_MESSAGE_HEAD = "Workspace is not initialized: no valid project identity at"
 GUARD_FIX = "Run `dovo init` to initialize this workspace."
