@@ -56,6 +56,23 @@ class ScanAndIndexTierTests:
         ]
         assert result.errors == []
 
+    @pytest.mark.parametrize("ancestor", ["steps", "blueprints"])
+    def test_scan_and_index_tier_keys_ignore_ancestor_named_like_item_type_directory(
+        self, tmp_path: Path, workspace_paths_factory: WorkspacePathsFactory, ancestor: str
+    ) -> None:
+        paths = workspace_paths_factory(tmp_path / ancestor / "repo", None)
+        tier_dir = tier_root(CatalogTier.REPO, paths)
+        _write_blueprint(tier_dir, "sample", 'version: "1.0"\nname: sample\ndescription: Sample\nsteps: []\n')
+        step_dir = tier_dir / "steps" / "team"
+        step_dir.mkdir(parents=True)
+        (step_dir / "lint.yml").write_text("name: lint\nrun: echo lint\n", encoding="utf-8")
+
+        result = scan_and_index_tier(CatalogTier.REPO, paths)
+
+        index = load_catalog_index(tier_dir)
+        assert [(entry.key, entry.namespace) for entry in index.items] == [("sample", None), ("team/lint", "team")]
+        assert result.errors == []
+
 
 class CatalogReindexSingleResolutionTests:
     """Reindexing consumes the workspace snapshot it is given."""

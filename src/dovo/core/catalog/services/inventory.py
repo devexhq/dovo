@@ -93,7 +93,7 @@ def _index_entry_for_file(
         return None, file_entry.error
     sha, checksum = compute_catalog_sha(item_type, str(file_entry.content))
     rel_path = file_entry.path.relative_to(tier_dir)
-    namespace = _catalog_namespace(file_entry.path, CatalogItemTypeDirectory[item_type.name])
+    namespace = _catalog_namespace(rel_path, CatalogItemTypeDirectory[item_type.name])
     entry = CatalogIndexEntry(
         sha=sha,
         key=_catalog_key(namespace, rel_path.stem),
