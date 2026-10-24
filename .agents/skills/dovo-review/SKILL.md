@@ -2,7 +2,7 @@
 name: dovo-review
 description: >-
   Review a Dovo CLI change for bugs and regressions first, then plan fidelity,
-  then violations of the AGENTS.md rules R1–R17, and write line-level findings
+  then violations of the AGENTS.md rules R1–R18, and write line-level findings
   to .agentic/review.md and a machine-readable verdict to .agentic/review.json.
   Invoked as /dovo-review [<pr-number>] [--post].
 disable-model-invocation: true
@@ -14,7 +14,7 @@ Review a change set in `Dovo CLI`, in this order of importance:
 
 1. **Correctness**: bugs, regressions and broken edge cases in what the diff does.
 2. **Plan fidelity**: does the code implement every phase of `.agentic/plan.md`, no more and no less.
-3. **Rules**: does the diff break any of the 17 rules in [AGENTS.md](../../../AGENTS.md).
+3. **Rules**: does the diff break any of the 18 rules in [AGENTS.md](../../../AGENTS.md).
 4. **Docs**: did the change update the docs it had to, and nothing else.
 
 Output goes to `.agentic/review.md`, which `/dovo-code review` consumes, paired with `.agentic/review.json` and `.agentic/verdict.txt`. A human reviews the PR after you; your job is to make that review short.
@@ -89,7 +89,7 @@ A `review.json` on disk is the previous round only when it reviewed this same ch
 
 ## 6. Check the rules
 
-Go through R1–R17 in [AGENTS.md](../../../AGENTS.md) and the conventions in [docs/agents/code-conventions.md](../../../docs/agents/code-conventions.md) (naming, model placement, `Any` and type-ignore rules) against the diff. Report **only violations**, each as a finding with the rule id (or `conventions` for a conventions-doc item) and the `path:line` that breaks it. Do not list rules that pass, and do not report a rule the diff cannot touch. A rule violation is Blocking unless it is cosmetic in context, in which case say why it is a Warning; a naming violation is a Nit. Copying a neighbour does not excuse a convention violation in new code: R5 asks new work to follow its neighbours' layout and idiom, not their mistakes.
+Go through R1–R18 in [AGENTS.md](../../../AGENTS.md) and the conventions in [docs/agents/code-conventions.md](../../../docs/agents/code-conventions.md) (naming, model placement, `Any` and type-ignore rules) against the diff. Report **only violations**, each as a finding with the rule id (or `conventions` for a conventions-doc item) and the `path:line` that breaks it. Do not list rules that pass, and do not report a rule the diff cannot touch. A rule violation is Blocking unless it is cosmetic in context, in which case say why it is a Warning; a naming violation is a Nit. Copying a neighbour does not excuse a convention violation in new code: R5 asks new work to follow its neighbours' layout and idiom, not their mistakes.
 
 Do not re-check what tooling enforces: import direction, output routing, direct file writes, model strictness, ignore reasons and docstring presence are covered by `tests/lint/`, ruff and ty. Ruff `ANN401` rejects `Any` as a parameter or return annotation, and `tests/lint/test_explicit_any.py` caps the remaining explicit `Any` per file, so a change that raises an `ANY_BUDGET` entry must justify each new `Any` against the permitted list in `docs/agents/code-conventions.md`. Do flag a change that weakens that tooling: a new allowlist or baseline entry, a new per-file ignore, or a suppression.
 

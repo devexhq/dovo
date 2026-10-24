@@ -116,6 +116,13 @@ ID, with the `path:line` that breaks it.
 - **R17. Document only shipped behaviour, and fix every doc or docstring
   sentence your change makes false**, in the same change. *Why:* agents trust
   docs, so a false sentence spreads.
+- **R18. User docs describe only what users type, see and configure.** Pages
+  under `docs/` outside `docs/agents/`, `README.md` and `mkdocs.yml` name no
+  classes, modules, source or test paths, internal libraries or the tests that
+  check them, and follow the user-docs rules in
+  [docs/agents/documentation.md](docs/agents/documentation.md#user-documentation).
+  *Why:* users read these pages, and every internal named there becomes a
+  rewrite when the code moves.
 
 ## Exemplars
 

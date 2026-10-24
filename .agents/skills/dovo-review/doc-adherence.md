@@ -16,8 +16,9 @@ Walk the changed-file list against this table (and [docs/agents/documentation.md
 
 ## Quality of any doc change in the diff
 
-- **No duplicated source.** A field table, model signature, or enum list hand-copied from source is a smell: link to the model file and class and document only what the type hints do not show. Flag new instances.
-- **Unavoidable field tables need a test.** When a table is the specification for something external (a JSON Schema, a stable CLI output format), a test must fail when table and source disagree.
+- **No duplicated source.** A field table, model signature, or enum list hand-copied from source is a smell. In contributor docs, link to the model file and class and document only what the type hints do not show; user docs never link to source (R18). Flag new instances.
+- **Unavoidable field tables need a test.** When a table is the specification for something external (a JSON Schema, a stable CLI output format), a test must fail when table and source disagree. The test names the doc it pins by a path constant; a user doc never names the test.
+- **User docs (R18).** Check every line the diff adds or changes under `docs/` outside `docs/agents/`, in `README.md` and in `mkdocs.yml` against `UDOC-001` to `UDOC-008` in [docs/agents/documentation.md](../../../docs/agents/documentation.md#user-documentation). Report each violation with rule `R18`, the UDOC ID and the `path:line`. Do not report lines the diff does not touch.
 - **Prefer deletion over accretion.** A stale bullet replaced is better than a parallel truth appended. Flag a doc that now states two contradictory things.
 
 ## Process directives

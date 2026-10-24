@@ -21,7 +21,7 @@ gh issue view <number> --json number,title,body
 
 ## Step 2: Ground yourself in the current code
 
-1. Read [AGENTS.md](../../AGENTS.md) (rules R1–R17 and exemplars).
+1. Read [AGENTS.md](../../AGENTS.md) (rules R1–R18 and exemplars).
 2. Ground against the current default branch and record its short sha and the date. Never ground against a branch whose base is not an ancestor of it.
 3. Read every function the change touches **and its callers**, and the mirrored tests. Name the closest existing implementation to mirror with `file:line` citations (signature + docstring only).
 4. Look for what the change alters or depends on beyond the issue's text, and record each finding in the plan:
@@ -167,6 +167,6 @@ class <TestClass>:  # <test file path>
 
 ## Step 5: Save and hand off
 
-1. Verify all planned paths, imports, stubs, and phases against R1–R17 in [AGENTS.md](../../AGENTS.md), and that every requirement ID and GWT scenario appears in `## Traceability`.
+1. Verify all planned paths, imports, stubs, and phases against R1–R18 in [AGENTS.md](../../AGENTS.md), and that every requirement ID and GWT scenario appears in `## Traceability`.
 2. Write `.agentic/plan.md` (and `.agentic/evidence.md` when used) and its open questions to `.agentic/plan.json` (schema in the `dovo-plan` skill), deleting any stale `.agentic/review*` and `.agentic/plan-review*`.
 3. Report the plan path, the Phases table, and every numbered Open Question.
