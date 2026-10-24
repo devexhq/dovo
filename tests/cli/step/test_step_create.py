@@ -11,13 +11,9 @@ from typer.testing import CliRunner
 from dovo.cli import app
 from dovo.common.filesystem.services.global_root import resolve_global_paths
 from dovo.common.lock import LockTimeoutError, WorkspaceLock
+from tests.harness.lock import raise_lock_timeout
 
 pytestmark = pytest.mark.usefixtures("workspace_config")
-
-
-def _raise_lock_timeout(_self: WorkspaceLock) -> WorkspaceLock:
-    """Stand in for WorkspaceLock.__enter__ when another process holds the lock."""
-    raise LockTimeoutError("lock held")
 
 
 class StepCreateCliIntegrationTests:
@@ -87,7 +83,7 @@ class StepCreateCliIntegrationTests:
         self, cli_runner: CliRunner, isolated_workspace: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """Exit 1 with result.exception a LockTimeoutError and no 'Catalog Creation Failed' in stdout."""
-        monkeypatch.setattr(WorkspaceLock, "__enter__", _raise_lock_timeout)
+        monkeypatch.setattr(WorkspaceLock, "__enter__", raise_lock_timeout)
 
         result = cli_runner.invoke(app, ["-p", str(isolated_workspace), "step", "create", "--name", "demo"])
 

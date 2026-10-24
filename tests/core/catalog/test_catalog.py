@@ -26,6 +26,7 @@ from dovo.core.catalog.models import (
 )
 from dovo.core.catalog.services.inventory import compute_catalog_sha
 from tests.harness.diagnostic_log import FROZEN_EVENT_ID
+from tests.harness.lock import raise_lock_timeout
 
 
 class CatalogTemplateScaffoldingTests:
@@ -304,11 +305,6 @@ def _run_classified_case(
     return catalog.delete("missing")
 
 
-def _raise_lock_timeout(_self: WorkspaceLock) -> WorkspaceLock:
-    """Stand in for WorkspaceLock.__enter__ when another process holds the lock."""
-    raise LockTimeoutError("lock held")
-
-
 class CatalogMutationOutcomeTests:
     """Tests verifying create/delete classify business failures and let everything else propagate."""
 
@@ -357,7 +353,7 @@ class CatalogMutationOutcomeTests:
         catalog = Catalog(workspace_paths)
         if operation == "delete":
             catalog.create(CatalogItemType.BLUEPRINT, "demo")
-        monkeypatch.setattr(WorkspaceLock, "__enter__", _raise_lock_timeout)
+        monkeypatch.setattr(WorkspaceLock, "__enter__", raise_lock_timeout)
 
         with pytest.raises(LockTimeoutError, match=r"^lock held$"):
             if operation == "delete":

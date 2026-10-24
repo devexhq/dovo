@@ -12,14 +12,10 @@ from dovo.cli import app
 from dovo.common.lock import LockTimeoutError, WorkspaceLock
 from dovo.core.catalog import Catalog
 from dovo.core.catalog.models import CatalogItemType
+from tests.harness.lock import raise_lock_timeout
 from tests.harness.workspace_paths import initialized_workspace_paths
 
 pytestmark = pytest.mark.usefixtures("workspace_config")
-
-
-def _raise_lock_timeout(_self: WorkspaceLock) -> WorkspaceLock:
-    """Stand in for WorkspaceLock.__enter__ when another process holds the lock."""
-    raise LockTimeoutError("lock held")
 
 
 class BlueprintDeleteCliIntegrationTests:
@@ -83,7 +79,7 @@ class BlueprintDeleteCliIntegrationTests:
     ) -> None:
         """Exit 1 with result.exception a LockTimeoutError for `delete demo --force` and no 'Catalog Delete Failed' in stdout."""
         Catalog(initialized_workspace_paths(isolated_workspace)).create(CatalogItemType.BLUEPRINT, "demo")
-        monkeypatch.setattr(WorkspaceLock, "__enter__", _raise_lock_timeout)
+        monkeypatch.setattr(WorkspaceLock, "__enter__", raise_lock_timeout)
 
         result = cli_runner.invoke(app, ["-p", str(isolated_workspace), "blueprint", "delete", "demo", "--force"])
 
