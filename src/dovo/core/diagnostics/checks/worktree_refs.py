@@ -22,7 +22,7 @@ class WorktreeRefsCheck:
             return _ok_result(self.check_id, self.name, self.category, verified_count=0)
 
         db = WorktreesRepository(db_path=db_path, project_id=context.paths.project_id, auto_init=False)
-        detection = detect_stale_worktrees(context.cwd, db, git=context.git)
+        detection = detect_stale_worktrees(context.paths, db, git=context.git)
 
         if detection.status != WorktreeDetectionStatus.OK:
             return _detection_unavailable_result(self.check_id, self.name, self.category, detection)

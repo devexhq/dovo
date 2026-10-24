@@ -5,7 +5,7 @@ from __future__ import annotations
 import shutil
 from pathlib import Path
 
-from dovo.common.filesystem.models import RepositoryPaths
+from dovo.common.filesystem import WorkspacePaths
 from dovo.common.lock import LockTimeoutError, WorkspaceLock
 from dovo.core.db import SessionsRepository, WorktreesRepository, WorktreeStatus
 from dovo.core.git.runner import GitRunner
@@ -36,25 +36,26 @@ class WorktreePruner:
 
     def __init__(
         self,
-        path: Path,
+        paths: WorkspacePaths,
         db: WorktreesRepository,
-        sessions_db: SessionsRepository | None = None,
         *,
         git: GitRunner,
+        sessions_db: SessionsRepository | None = None,
     ) -> None:
-        """Initialize pruner bound to repository root and database.
+        """Initialize pruner bound to the workspace paths and database.
 
         Args:
-            path: Repository root directory.
+            paths: Resolved command-invocation workspace paths; orphans are found under paths.worktrees_dir.
             db: WorktreesRepository instance.
-            sessions_db: Optional SessionsRepository instance for run liveness checks.
             git: Runner for every git command.
+            sessions_db: Optional SessionsRepository instance for run liveness checks.
         """
-        self.path = path.expanduser().resolve()
+        self.paths = paths
+        self.path = paths.root_dir
         self.db = db
         self.sessions_db = sessions_db
         self.git = git
-        self.detector = WorktreeDetector(self.path, self.db, sessions_db=self.sessions_db, git=git)
+        self.detector = WorktreeDetector(paths, db, git=git, sessions_db=sessions_db)
 
     def _prune_stale_worktree_ref(self, item: StaleWorktreeItem, *, dry_run: bool) -> PrunedItem:
         """Prune administrative worktree registrations."""
@@ -356,7 +357,7 @@ class WorktreePruner:
             return self._execute_prune(dry_run=True, force=force)
 
         try:
-            with WorkspaceLock(RepositoryPaths.from_root(self.path).lock_file):
+            with WorkspaceLock(self.paths.lock_file):
                 return self._execute_prune(dry_run=False, force=force)
         except LockTimeoutError as exc:
             return WorktreePruneResult(

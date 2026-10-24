@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from dovo.common.filesystem import WorkspacePaths
 from dovo.core.db import SessionsRepository, WorktreeRecord, WorktreesRepository, WorktreeStatus
 from dovo.core.git.exceptions import GitError
 from dovo.core.git.models import GitWorktreeEntry
@@ -34,22 +35,23 @@ class WorktreeDetector:
 
     def __init__(
         self,
-        path: Path,
+        paths: WorkspacePaths,
         db: WorktreesRepository,
-        sessions_db: SessionsRepository | None = None,
         *,
         git: GitRunner,
+        sessions_db: SessionsRepository | None = None,
     ) -> None:
-        """Initialize detector bound to repository root and database.
+        """Initialize detector bound to the workspace paths and database.
 
         Args:
-            path: Repository root directory.
+            paths: Resolved command-invocation workspace paths; worktrees are scanned under paths.worktrees_dir.
             db: WorktreesRepository instance.
-            sessions_db: Optional SessionsRepository instance for run liveness checks.
             git: Runner for every git command.
+            sessions_db: Optional SessionsRepository instance for run liveness checks.
         """
-        self.path = path.expanduser().resolve()
-        self.worktree_base_dir = self.path / ".dovo" / "worktrees"
+        self.paths = paths
+        self.path = paths.root_dir
+        self.worktree_base_dir = paths.worktrees_dir
         self.db = db
         self.sessions_db = sessions_db
         self.git = git
@@ -156,7 +158,7 @@ class WorktreeDetector:
     def _detect_orphaned_directories(
         self, all_records: list[WorktreeRecord]
     ) -> tuple[list[StaleWorktreeItem], int, list[str]]:
-        """Identify directories under `.dovo/worktrees` that are not active."""
+        """Identify directories under the workspace's worktrees directory that are not active."""
         if not self.worktree_base_dir.exists():
             return [], 0, []
 
@@ -279,12 +281,11 @@ class WorktreeDetector:
 
 
 def detect_stale_worktrees(
-    path: Path,
+    paths: WorkspacePaths,
     db: WorktreesRepository,
-    sessions_db: SessionsRepository | None = None,
     *,
     git: GitRunner,
+    sessions_db: SessionsRepository | None = None,
 ) -> WorktreeDetectionResult:
-    """Non-raising helper to scan and detect stale worktree resources."""
-    detector = WorktreeDetector(path, db, sessions_db=sessions_db, git=git)
-    return detector.detect()
+    """Non-raising helper to scan and detect stale worktree resources under paths.worktrees_dir."""
+    return WorktreeDetector(paths, db, git=git, sessions_db=sessions_db).detect()
