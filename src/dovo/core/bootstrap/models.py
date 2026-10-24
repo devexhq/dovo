@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from enum import Enum, StrEnum
 from pathlib import Path
 from typing import Self
@@ -127,3 +128,13 @@ class WorkspaceInitResult(BaseResult):
                 has_top_level_errors=bool(self.errors),
             )
         return self
+
+
+@dataclass(frozen=True)
+class DovoTreeSnapshot:
+    """The project's .dovo tree as it was before an automatic initialization attempt."""
+
+    dovo_dir: Path
+    existed: bool
+    paths: frozenset[Path]  # relative to dovo_dir
+    file_bytes: dict[Path, bytes]  # relative path -> bytes, for RESTORED_FILES that existed

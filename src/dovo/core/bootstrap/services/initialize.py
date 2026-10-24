@@ -6,11 +6,13 @@ from pathlib import Path
 
 from dovo.common.filesystem import Filesystem
 from dovo.common.filesystem.services.global_root import resolve_global_paths
+from dovo.common.utils import display_path
 from dovo.core.bootstrap.models import (
     InitFailureMode,
     WorkspaceInitResult,
 )
 from dovo.core.bootstrap.services.bootstrap import bootstrap_dovo
+from dovo.core.bootstrap.services.rollback import restore_dovo_tree, snapshot_dovo_tree
 from dovo.core.catalog.services.seeder import seed_all_catalog_templates
 from dovo.core.config.generator import generate_default_config
 from dovo.core.db import init_database
@@ -97,6 +99,28 @@ def initialize_workspace(
         errors=list(seed_result.errors),
         failure_mode=None,
     )
+
+
+def auto_initialize_workspace(root: Path | None = None) -> WorkspaceInitResult:
+    """Initialize the workspace for `dovo run`; on a failure after preflight, restore the project's .dovo to its state before the attempt."""
+    fs = Filesystem(root)
+    if _refuse_global_home(fs) is not None or not fs.is_git_repo():
+        return initialize_workspace(root)
+
+    snapshot = snapshot_dovo_tree(fs.dovo_dir)
+    result = initialize_workspace(root)
+    if result.ok:
+        return result
+
+    try:
+        restore_dovo_tree(snapshot)
+    except OSError as exc:
+        rollback_error = (
+            f"Could not roll back the partial workspace at {display_path(fs.dovo_dir)}: {exc}. "
+            "Remove it, then rerun dovo run."
+        )
+        return result.model_copy(update={"errors": [*result.errors, rollback_error]})
+    return result
 
 
 def _refuse_global_home(fs: Filesystem) -> WorkspaceInitResult | None:

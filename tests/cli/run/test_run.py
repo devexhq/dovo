@@ -13,6 +13,9 @@ from typer.testing import CliRunner
 from dovo.cli import app
 from dovo.cli.ui.dispatcher import UiDispatcher, ui_dispatcher
 from dovo.common.filesystem import Filesystem
+from dovo.common.filesystem.services.global_root import resolve_global_paths
+from dovo.core.bootstrap import InitFailureMode, WorkspaceInitResult
+from dovo.core.catalog.models import SeedResult
 from dovo.core.config.models import ConfigTier
 from dovo.core.db import DovoDb, SessionStatus
 from dovo.core.git.runner import GitRunner
@@ -20,9 +23,12 @@ from dovo.core.worktree import Worktree
 from dovo.engine import SessionStateStore
 from dovo.engine.state_models import ExecutionStateTree, SessionStateWriteResult
 from tests.harness import FakeAgentRunner, UnfixableAgentRunner
+from tests.harness.builders import init_git_repository
 from tests.harness.catalog import write_runnable_blueprint
 from tests.harness.diagnostic_log import diagnostic_hint
 from tests.harness.workspace_paths import initialized_workspace_paths
+
+GUARD_MESSAGE_HEAD = "Workspace is not initialized: no valid project identity at"
 
 
 def _raise_keyboard_interrupt(*_args: object, **_kwargs: object) -> str:
@@ -222,14 +228,19 @@ class RunCliIntegrationTests:
             f"Failed to update run status in database: disk full{diagnostic_hint(frozen_diagnostic_clock)}"
         ]
 
-    def test_run_cli_uninitialized_git_repo_auto_initializes_and_proceeds(
-        self, cli_runner: CliRunner, git_repo: Path
+    def test_run_cli_uninitialized_git_repo_auto_initializes_silently_and_proceeds(
+        self, cli_runner: CliRunner, git_repo: Path, dispatch_spy: list[object]
     ) -> None:
+        """Initialize .dovo/ without printing the init summary or the guard panel, then resolve the blueprint."""
         result = cli_runner.invoke(app, ["-p", str(git_repo), "run", "missing-blueprint", "--no-worktree"])
 
-        assert "CONFIG_NOT_FOUND" not in result.stdout
         assert (git_repo / ".dovo" / "project.json").exists()
         assert (git_repo / ".dovo" / "config.json").exists()
+        assert not any(isinstance(event, WorkspaceInitResult) for event in dispatch_spy)
+        assert "Initialized Dovo at" not in result.stdout
+        assert GUARD_MESSAGE_HEAD not in result.stdout
+        assert "missing-blueprint" in result.stdout
+        assert "not found" in result.stdout
 
     def test_run_cli_malformed_user_tier_exits_one_with_config_error_panel(
         self,
@@ -276,6 +287,132 @@ class RunCliIntegrationTests:
         assert run_result.exit_code == 0
         assert shown_config["history"]["save_attempt_logs"] is False
         assert not list((initialized_workspace_paths(cli_workspace).logs_dir / "cfg-1").glob("*attempt*"))
+
+
+def _tree_bytes(root: Path) -> dict[str, bytes | None]:
+    """Map every path under root (relative, as a string) to its bytes, or None for a directory."""
+    if not root.exists():
+        return {}
+    return {
+        str(path.relative_to(root)): None if path.is_dir() else path.read_bytes() for path in sorted(root.rglob("*"))
+    }
+
+
+def _failed_auto_init_target(case: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Path, Path]:
+    """Build the target directory for a failing auto-init case; return it and the effective DOVO_HOME."""
+    if case == "non-git":
+        target = tmp_path / "scratch"
+        target.mkdir()
+    elif case == "global-home":
+        target = tmp_path / "home"
+        (target / ".dovo").mkdir(parents=True)
+        init_git_repository(target)
+        monkeypatch.setenv("DOVO_HOME", str(target / ".dovo"))
+    else:
+        target = tmp_path / "repo"
+        target.mkdir()
+        init_git_repository(target)
+        (target / ".dovo").write_text("not a directory\n", encoding="utf-8")
+    return target, resolve_global_paths().root
+
+
+class RunCliAutoInitTests:
+    """Typer runner tests for dovo run's automatic workspace initialization."""
+
+    @pytest.mark.parametrize(
+        ("case", "failure_mode", "heading", "error_fragment"),
+        [
+            pytest.param(
+                "non-git",
+                InitFailureMode.PREFLIGHT,
+                "Initialization Failed!",
+                "not a valid Git repository",
+                id="non-git",
+            ),
+            pytest.param(
+                "global-home",
+                InitFailureMode.PREFLIGHT,
+                "Initialization Failed!",
+                "its .dovo directory is the global Dovo home",
+                id="global-home",
+            ),
+            pytest.param(
+                "bootstrap",
+                InitFailureMode.BOOTSTRAP,
+                "Failed to initialize Dovo:",
+                "exists but is a file, not a directory.",
+                id="bootstrap",
+            ),
+        ],
+    )
+    def test_run_cli_failed_auto_init_dispatches_init_result_and_exits_one(
+        self,
+        cli_runner: CliRunner,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        dispatch_spy: list[object],
+        case: str,
+        failure_mode: InitFailureMode,
+        heading: str,
+        error_fragment: str,
+    ) -> None:
+        """Exit 1 dispatching only the failed WorkspaceInitResult, with the target and DOVO_HOME trees unchanged."""
+        target, dovo_home = _failed_auto_init_target(case, tmp_path, monkeypatch)
+        target_before = _tree_bytes(target)
+        home_before = _tree_bytes(dovo_home)
+
+        result = cli_runner.invoke(app, ["-p", str(target), "run", "tests"])
+
+        assert result.exit_code == 1
+        assert len(dispatch_spy) == 1
+        init_result = dispatch_spy[0]
+        assert isinstance(init_result, WorkspaceInitResult)
+        assert init_result.ok is False
+        assert init_result.failure_mode == failure_mode
+        assert any(error_fragment in error for error in init_result.errors)
+        assert heading in result.stdout
+        assert GUARD_MESSAGE_HEAD not in result.stdout
+        assert _tree_bytes(target) == target_before
+        assert _tree_bytes(dovo_home) == home_before
+
+    def test_run_cli_seed_failure_during_auto_init_exits_one_and_rolls_back(
+        self, cli_runner: CliRunner, git_repo: Path, monkeypatch: pytest.MonkeyPatch, dispatch_spy: list[object]
+    ) -> None:
+        """Exit 1 with the seed-failure panel and no run output, and remove the new .dovo/, when seeding fails."""
+        monkeypatch.setattr(
+            "dovo.core.bootstrap.services.initialize.seed_all_catalog_templates",
+            lambda _paths: SeedResult(errors=["boom"]),
+        )
+
+        result = cli_runner.invoke(app, ["-p", str(git_repo), "run", "tests"])
+
+        assert result.exit_code == 1
+        assert "Starter blueprint seeding failed:" in result.stdout
+        assert len(dispatch_spy) == 1
+        init_result = dispatch_spy[0]
+        assert isinstance(init_result, WorkspaceInitResult)
+        assert init_result.errors == ["boom"]
+        assert init_result.failure_mode is None
+        assert not (git_repo / ".dovo").exists()
+
+    def test_run_cli_initialized_workspace_does_not_attempt_initialization(
+        self, cli_runner: CliRunner, cli_workspace: Path, monkeypatch: pytest.MonkeyPatch, dispatch_spy: list[object]
+    ) -> None:
+        """Exit 0 in an initialized workspace without attempting initialization or touching config.json."""
+        write_runnable_blueprint(cli_workspace, key="noop-task", steps=[{"id": "s1", "run": "true"}])
+        config_file = cli_workspace / ".dovo" / "config.json"
+        config_before = (config_file.read_bytes(), config_file.stat().st_mtime_ns)
+
+        def _not_attempted(*_args: object, **_kwargs: object) -> WorkspaceInitResult:
+            raise AssertionError("initialization was attempted")
+
+        monkeypatch.setattr("dovo.cli.context.auto_initialize_workspace", _not_attempted)
+
+        result = cli_runner.invoke(app, ["-p", str(cli_workspace), "run", "noop-task", "--no-worktree"])
+
+        assert result.exit_code == 0
+        assert not any(isinstance(event, WorkspaceInitResult) for event in dispatch_spy)
+        assert (config_file.read_bytes(), config_file.stat().st_mtime_ns) == config_before
 
 
 _AGENT_STDOUT = b'{"type":"assistant.message","data":{"content":"ok"}}\n{"type":"result","data":{"exitCode":0}}\n'

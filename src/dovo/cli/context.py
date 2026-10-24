@@ -9,7 +9,7 @@ from dovo.cli.ui.events import LockWaitEvent
 from dovo.common.filesystem import Filesystem, WorkspacePaths
 from dovo.common.filesystem.services.global_root import resolve_global_paths
 from dovo.common.lock import WorkspaceLock
-from dovo.core.bootstrap import initialize_workspace
+from dovo.core.bootstrap import WorkspaceInitResult, auto_initialize_workspace
 from dovo.core.config import Config
 from dovo.core.config.models import DovoConfig
 from dovo.core.db.db import DovoDb
@@ -27,11 +27,11 @@ def default_lock_wait_notifier(lock_path: Path, holder_pid: str | None, timeout_
     )
 
 
-def ensure_lazy_project_init(fs: Filesystem) -> None:
-    """Auto-initialize the workspace when no project identity exists yet under fs.repository_paths.dovo_dir."""
+def ensure_lazy_project_init(fs: Filesystem) -> WorkspaceInitResult | None:
+    """Auto-initialize the workspace (rolling back a failed attempt) when fs.dovo_dir has no project.json; return that result, or None when already initialized."""
     if (fs.dovo_dir / "project.json").exists():
-        return
-    initialize_workspace(fs.root_dir)
+        return None
+    return auto_initialize_workspace(fs.root_dir)
 
 
 @dataclass(frozen=True)

@@ -25,7 +25,7 @@ This creates:
     └── steps/
 ```
 
-Every command except `dovo init` requires this step first: without a valid `.dovo/project.json` it exits `1` with `Workspace is not initialized` and a `dovo init` prompt. `dovo run` initializes the workspace automatically, except in a directory whose `.dovo` is `DOVO_HOME` (by default your home directory), where it exits `1` with the same `Workspace is not initialized` prompt.
+Every command except `dovo init` requires this step first: without a valid `.dovo/project.json` it exits `1` with `Workspace is not initialized` and a `dovo init` prompt. `dovo run` initializes the workspace automatically. If that initialization fails, for example outside a Git repository or in a directory whose `.dovo` is `DOVO_HOME` (by default your home directory), it prints the same error and fix as `dovo init` and exits `1`, after removing what the failed attempt wrote under `.dovo/`.
 
 ### How the workspace root is found
 

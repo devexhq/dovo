@@ -19,7 +19,7 @@ from dovo.core.bootstrap.services.bootstrap import (
     load_existing_bootstrap_metadata,
     write_bootstrap_metadata,
 )
-from dovo.core.bootstrap.services.initialize import initialize_workspace
+from dovo.core.bootstrap.services.initialize import auto_initialize_workspace, initialize_workspace
 
 __all__ = [
     "BOOTSTRAP_META_REL",
@@ -31,6 +31,7 @@ __all__ = [
     "InitFailureMode",
     "WorkspaceInitResult",
     "assert_writable",
+    "auto_initialize_workspace",
     "bootstrap_dovo",
     "ensure_dir",
     "initialize_workspace",
