@@ -30,6 +30,8 @@ STAMPED_KEYS = ("head", "verdict", "action", "round")
 REQUIRED_KEYS = (*STAMPED_KEYS, "counts")
 VERDICTS = ("APPROVE", "CHANGES_REQUIRED")
 ACTIONS = ("none", "fix", "replan", "needs_human")
+APPROVED_ACTIONS = ("none", "needs_human")
+CHANGES_REQUIRED_ACTIONS = ("fix", "replan", "needs_human")
 REVIEW_JSON = AGENTIC_DIR / "review.json"
 REVIEW_MD = AGENTIC_DIR / "review.md"
 
@@ -147,7 +149,7 @@ def record_problem(review: dict[str, object]) -> str | None:
     blocking = _blocking(review)
     if approved != (blocking == 0):
         return f"review.json says {verdict} with {blocking} blocking findings"
-    if approved != (review["action"] == "none"):
+    if review["action"] not in (APPROVED_ACTIONS if approved else CHANGES_REQUIRED_ACTIONS):
         return f"review.json action {review['action']!r} contradicts verdict {verdict}"
     return None
 

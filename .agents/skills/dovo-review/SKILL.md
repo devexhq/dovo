@@ -162,7 +162,7 @@ Write `.agentic/review.md` (create `.agentic/` if needed), overwriting the previ
 
 Contract coverage reads "No contract: `.agentic/plan.md` absent" when there is no plan. Earlier rounds reads `none` in round 1.
 
-**Action** follows from the verdict: `none` exactly when the verdict is `APPROVE`; `fix` when every Blocking finding can be fixed inside the plan; `replan` when a Blocking finding needs a different design from the plan's; `needs_human` when only a person can settle what is left (a decision the plan does not make, or evidence no agent here can obtain), named in the one-sentence reason.
+**Action** follows from the verdict and what is left. On `APPROVE` it is `none`, or `needs_human` when a Warning is left that only a person can settle. On `CHANGES REQUIRED` it is `fix` when every Blocking finding can be fixed inside the plan, `replan` when a Blocking finding needs a different design from the plan's, and `needs_human` when only a person can settle what is left. Only a person can settle a finding whose fix needs a decision the plan does not make, goes back on a decision the plan made, or needs evidence no agent here can obtain; name that decision in the one-sentence reason. A finding you send to a person in the report always sets `needs_human`, because the `feature-dev` blueprint stops fixing only on `needs_human` or `replan`.
 
 `Rule` is an R-id, `conventions` for a `docs/agents/code-conventions.md` item, or `-` for a bug or plan finding with no rule behind it. An empty section keeps its heading with the line `none`. IDs are the tier letter plus a number from 1 within the tier, in row order, reassigned every round; `/dovo-code review --fix` consumes them.
 
@@ -205,7 +205,7 @@ Write `.agentic/review.json` and `.agentic/verdict.txt` alongside the markdown, 
 }
 ```
 
-- `verdict` is exactly `APPROVE` or `CHANGES_REQUIRED`, and is `APPROVE` iff `counts.blocking` is `0`. `action` is `none`, `fix`, `replan` or `needs_human`, and is `none` iff `verdict` is `APPROVE`.
+- `verdict` is exactly `APPROVE` or `CHANGES_REQUIRED`, and is `APPROVE` iff `counts.blocking` is `0`. `action` is `none` or `needs_human` when `verdict` is `APPROVE`, and `fix`, `replan` or `needs_human` otherwise.
 - `head` is the full SHA of the reviewed commit (`git rev-parse HEAD` for a clean branch, the PR's head commit for a PR scope), or `null` when the scope is uncommitted.
 - `provenance` is `fresh_session` or `same_session`. `scope.kind` is `pr`, `uncommitted` or `branch`, and `scope.ref` is `#<n>` for a `pr` scope and `origin/<default>...HEAD` for a `branch` scope. `plan` is the plan path or `null`.
 - `findings` lists every finding, Blocking first, each with the `id` from its `review.md` row. `severity` is `BLOCKER`, `WARNING`, `SUGGESTION` or `NIT`; `rule` is an R-id, `conventions`, or `null`.
