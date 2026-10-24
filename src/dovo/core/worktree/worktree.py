@@ -101,7 +101,7 @@ class Worktree:
         force: bool = False,
     ) -> WorktreePruneResult:
         """Safely prune stale worktrees, orphaned directories, and temporary branches."""
-        pruner = WorktreePruner(self.path, self.db, sessions_db=self.sessions_db, git=self.git)
+        pruner = WorktreePruner(self.paths, self.db, git=self.git, sessions_db=self.sessions_db)
         return pruner.prune(dry_run=dry_run, force=force)
 
     def apply(
@@ -136,5 +136,5 @@ class Worktree:
 
     def detect(self) -> WorktreeDetectionResult:
         """Scan repository for stale worktrees, orphaned directories, and dead refs."""
-        detector = WorktreeDetector(self.path, self.db, sessions_db=self.sessions_db, git=self.git)
+        detector = WorktreeDetector(self.paths, self.db, git=self.git, sessions_db=self.sessions_db)
         return detector.detect()

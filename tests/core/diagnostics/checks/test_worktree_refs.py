@@ -143,6 +143,23 @@ class WorktreeRefsCheckTests:
         assert result.details == {"orphan_directories": ["dovo_clean"]}
         assert result.warnings == ["1 orphaned worktree directory(s) detected."]
 
+    def test_execute_scans_context_paths_worktrees_dir(
+        self, worktree_refs_workspace: Path, worktree_refs_workspace_paths: WorkspacePaths, tmp_path: Path
+    ) -> None:
+        """Return DOCTOR_WORKTREE_ORPHAN with details == {"orphan_directories": ["orphan_1"]} when orphan_1 sits under a relocated context.paths.worktrees_dir."""
+        paths = worktree_refs_workspace_paths.model_copy(update={"worktrees_dir": tmp_path / "elsewhere"})
+        orphan_dir = paths.worktrees_dir / "orphan_1"
+        orphan_dir.mkdir(parents=True)
+        GitRunner().run(["init"], orphan_dir)
+        check = WorktreeRefsCheck()
+        context = DiagnosticsContext(cwd=worktree_refs_workspace, paths=paths, git=GitRunner())
+
+        result = check.execute(context)
+
+        assert result.status == CheckStatus.WARNING
+        assert result.error_code == "DOCTOR_WORKTREE_ORPHAN"
+        assert result.details == {"orphan_directories": ["orphan_1"]}
+
     def test_execute_stale_and_orphan_both_present_prioritizes_stale(
         self,
         worktree_refs_workspace: Path,
