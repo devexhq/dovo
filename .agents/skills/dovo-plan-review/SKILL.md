@@ -53,6 +53,7 @@ Read every function the plan changes, and its callers (`rg -n '\b<symbol>\b' src
 - **Merge, override and default semantics** that treat fields one at a time when the plan makes two fields depend on each other.
 - **Callers the plan does not list** for a signature it changes.
 - **Conditionals left to the implementer**, such as "delete X after grep confirms": run the check now and report the answer.
+- **Issue shapes the code contradicts**: the plan adopts an internal shape from the issue (a helper name, module, type alias or scope boundary) that the code shows is wrong, such as a symbol that duplicates or shadows an existing one, or an injected dependency the change holds but bypasses. A Trap that tells the implementer to work around the issue's shape is the usual sign. Take a position: report it as a Warning whose Fix is the better design and names the departure from the issue (planning.md Step 1). Never leave it as a neutral "confirm" under **For the human**.
 
 A miss is Blocking when implementing the plan as written produces a bug, data loss, a crash or a broken public surface; otherwise a Warning.
 
@@ -60,7 +61,7 @@ A miss is Blocking when implementing the plan as written produces a bug, data lo
 
 - Every FR, NFR, numbered error case, Definition of Done item and GWT scenario maps to a phase and to at least one planned test in `## Traceability`. List the gaps.
 - Every command the plan adds or changes has the R13 runner matrix: success, a failure path, `--format json` and each option it binds.
-- Nothing out of scope, or named under Traps as not touched, is planned.
+- Nothing out of scope, or named under Traps as not touched, is planned, except a departure the plan names under What you're approving with an Open Question.
 - Each planned test pins a contract no other test pins (R12), and sibling cases are planned as one parametrized test.
 - Each Open Question states the answer the plan assumes, and `.agentic/plan.json` lists the same Open Questions with the same ids and assumed answers. A missing or disagreeing `plan.json` is a Warning: the blueprint asks the human from it. A Decision that changes public surface or a persisted format without an Open Question is a finding.
 
@@ -105,7 +106,7 @@ Write `.agentic/plan-review.md`, overwriting any earlier one, and echo the verdi
 - Commands missing R13 cases: <command: case, or "none">
 
 ### For the human
-- <each decision only a human can make, with the plan's current assumption>
+- <each decision only a human can make, with the plan's current assumption and your recommendation>
 ```
 
 An empty section keeps its heading with the line `none`. IDs are the tier letter plus a number from 1 within the tier, in row order. Say `APPROVE` only with zero Blocking findings.

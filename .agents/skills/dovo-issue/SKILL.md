@@ -20,6 +20,7 @@ An issue is a working document. Aim for a sensible issue, not a perfect one: whe
 
 1. **Authoritative (no soft decisions):**
    - Everything in the issue body is **required** unless under **Out of scope**.
+   - **Out of scope** means not required, never forbidden. It bounds the work; it does not stop the planner from changing an out-of-scope line that the in-scope change would otherwise leave inconsistent.
    - Never mark work as optional, stretch, nice-to-have, "if implemented," "consider," or "v1 maybe."
    - Never present unresolved product forks ("either X or Y"). Decide before writing; put the decision in Scope, FR/NFR, or Pre-determined data.
 
@@ -36,6 +37,7 @@ An issue is a working document. Aim for a sensible issue, not a perfect one: whe
 4. **Observable contracts only:**
    - FRs, error cases and **Pre-determined data** state what a test can observe without reading the implementation. For user-facing work, that means CLI commands, flags, output, exit codes, YAML and `config.json` fields, and files on disk. For an internal surface, it means the entrypoint's signature, result model and statuses.
    - Never prescribe how: helper functions to call or reuse, which loops or call sites to update, module layout. The planner finds those in the code, and an issue that names them goes stale and doubles the plan.
+   - Only observable contracts bind the planner. When an internal shape must appear for the contract to read (a new helper's name, module or return type; a type alias), the planner treats it as a suggestion and replaces it when the code shows a better one. Before naming a new symbol, `rg` for an existing one with the same name: a lookalike means the shape is wrong.
 
 ## Workflow
 
@@ -117,7 +119,7 @@ Use the sections below in order, and include a section only when it applies (e.g
 
 ## Pre-determined data
 
-<Only the contracts the implementer would otherwise have to invent: DTO/result shapes, status enums, error codes, config keys, paths, or function signatures, in fenced code blocks or tables.>
+<Only the contracts the implementer would otherwise have to invent: DTO/result shapes, status enums, error codes, config keys, paths, entrypoint signatures, or the literal values tests assert, in fenced code blocks or tables.>
 
 ## CLI output expectations
 
