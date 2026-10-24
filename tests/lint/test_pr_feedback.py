@@ -287,18 +287,24 @@ class PrFeedbackTests:
         ]
 
     @pytest.mark.parametrize(
-        ("review", "expected_ids"),
+        ("review", "expected"),
         [
-            pytest.param({"verdict": "CHANGES_REQUIRED", "findings": FINDINGS}, ["R1", "R2"], id="changes-required"),
-            pytest.param({"verdict": "APPROVE", "findings": FINDINGS}, [], id="approve"),
+            pytest.param(
+                {"verdict": "CHANGES_REQUIRED", "findings": FINDINGS},
+                [("R1", "B1"), ("R2", "W1"), ("R3", "S1"), ("R4", "N1")],
+                id="changes-required",
+            ),
+            pytest.param({"verdict": "APPROVE", "findings": FINDINGS[2:]}, [("R1", "S1"), ("R2", "N1")], id="approve"),
             pytest.param({"verdict": "CHANGES_REQUIRED"}, [], id="no-findings"),
         ],
     )
-    def test_finding_items(self, review: dict[str, object], expected_ids: list[str]) -> None:
+    def test_finding_items(self, review: dict[str, object], expected: list[tuple[str, str]]) -> None:
         items = FEEDBACK.finding_items(review)
 
-        assert [item["id"] for item in items] == expected_ids
-        if expected_ids:
+        assert [(item["id"], item["body"]) for item in items] == [
+            (item_id, f"{finding_id}: {finding_id} summary") for item_id, finding_id in expected
+        ]
+        if expected:
             assert items[0] == {
                 "id": "R1",
                 "source": "review_finding",
@@ -307,10 +313,9 @@ class PrFeedbackTests:
                 "url": None,
                 "path": "src/a.py",
                 "line": 3,
-                "summary": "B1 summary",
-                "body": "B1: B1 summary",
+                "summary": f"{expected[0][1]} summary",
+                "body": f"{expected[0][1]}: {expected[0][1]} summary",
             }
-            assert items[1]["body"] == "W1: W1 summary"
 
     def test_comment_items(self) -> None:
         comments = [
