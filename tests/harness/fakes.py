@@ -16,6 +16,7 @@ from __future__ import annotations
 import json
 import subprocess
 from collections.abc import Callable, Mapping, Sequence
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Final, Self
 
@@ -290,3 +291,22 @@ class FakeGitRunner(GitRunner):
 def use_fake_git(monkeypatch: pytest.MonkeyPatch, fake: FakeGitRunner) -> None:
     """Make CliContext.build hand fake to every command, so CLI runner tests inject git at the composition root."""
     monkeypatch.setattr("dovo.cli.context.GitRunner", lambda: fake)
+
+
+FIXED_NOW: Final[datetime] = datetime(2026, 1, 2, 3, 4, 5, tzinfo=UTC)
+
+
+def fixed_clock() -> datetime:
+    """Return FIXED_NOW on every call."""
+    return FIXED_NOW
+
+
+def fixed_new_id(kind: str) -> str:
+    """Return f"{kind}_0000abcd" on every call."""
+    return f"{kind}_0000abcd"
+
+
+def use_fixed_clock_and_ids(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Make CliContext.build hand fixed_clock and fixed_new_id to every command."""
+    monkeypatch.setattr("dovo.cli.context.utc_now", fixed_clock)
+    monkeypatch.setattr("dovo.cli.context.new_session_id", fixed_new_id)

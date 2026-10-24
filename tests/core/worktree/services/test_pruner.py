@@ -28,7 +28,7 @@ from dovo.core.worktree.models import (
 from dovo.core.worktree.services.pruner import WorktreePruner
 from tests.harness import WorkspaceBuilder
 from tests.harness.diagnostic_log import diagnostic_hint, read_single_event
-from tests.harness.fakes import FakeGitRunner
+from tests.harness.fakes import FakeGitRunner, fixed_clock, fixed_new_id
 from tests.harness.workspace_paths import initialized_workspace_paths
 
 
@@ -371,7 +371,7 @@ class WorktreePrunerIdempotencyTests:
             capture_output=True,
         )
 
-        manager = Worktree(pruner_workspace_paths, db=db, git=GitRunner())
+        manager = Worktree(pruner_workspace_paths, db=db, git=GitRunner(), clock=fixed_clock, new_id=fixed_new_id)
         create_res = manager.create(session_id="dovo_protected")
         assert create_res.ok
 

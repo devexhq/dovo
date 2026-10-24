@@ -6,9 +6,11 @@ from typing import Self
 
 from dovo.cli.ui.dispatcher import ui_dispatcher
 from dovo.cli.ui.events import LockWaitEvent
+from dovo.common.clock import Clock, utc_now
 from dovo.common.filesystem import Filesystem, WorkspacePaths
 from dovo.common.filesystem.services.global_root import resolve_global_paths
 from dovo.common.lock import WorkspaceLock
+from dovo.common.session_id import SessionIdFactory, new_session_id
 from dovo.core.bootstrap import WorkspaceInitResult, auto_initialize_workspace
 from dovo.core.config import Config
 from dovo.core.config.models import DovoConfig
@@ -42,6 +44,8 @@ class CliContext:
     paths: WorkspacePaths
     db: DovoDb
     git: GitRunner
+    clock: Clock
+    new_id: SessionIdFactory
     config: DovoConfig | None = None
 
     @property
@@ -62,4 +66,4 @@ class CliContext:
         db = DovoDb(paths.database_file, project_id=paths.project_id)
         git = GitRunner()
         WorkspaceLock.set_default_on_wait(default_lock_wait_notifier)
-        return cls(paths=paths, db=db, git=git, config=config)
+        return cls(paths=paths, db=db, git=git, clock=utc_now, new_id=new_session_id, config=config)

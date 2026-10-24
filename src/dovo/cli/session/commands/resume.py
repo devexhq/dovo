@@ -121,6 +121,8 @@ def session_resume_command(
             paths=context.paths,
             db=context.db.sessions,
             git=context.git,
+            clock=context.clock,
+            new_id=context.new_id,
             session_id=session_id,
             no_tty=no_tty,
             env_mode=None if env_mode is None else env_mode.value,

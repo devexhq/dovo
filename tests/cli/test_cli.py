@@ -14,7 +14,9 @@ from dovo.cli import app
 from dovo.cli.context import CliContext
 from dovo.cli.session.app import session_app
 from dovo.cli.ui import ErrorPanelEvent
+from dovo.common.clock import utc_now
 from dovo.common.lock import LockTimeoutError
+from dovo.common.session_id import new_session_id
 from dovo.core.config.generator import build_default_config
 from dovo.core.config.loader import ConfigLoadResult
 from dovo.core.config.models import DovoConfig
@@ -55,6 +57,15 @@ class CliContextBuildTests:
         context = CliContext.build(path=workspace, load_config=False)
 
         assert type(context.git) is GitRunner
+
+    def test_build_sets_production_clock_and_id_generator(self, tmp_path: Path) -> None:
+        """Return a context whose clock is dovo.common.clock.utc_now and new_id is new_session_id."""
+        workspace = WorkspaceBuilder(tmp_path / "workspace").without_config().build()
+
+        context = CliContext.build(path=workspace, load_config=False)
+
+        assert context.clock is utc_now
+        assert context.new_id is new_session_id
 
     @pytest.mark.parametrize(
         ("names", "expected"),

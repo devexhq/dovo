@@ -14,12 +14,15 @@ from dovo.core.git.runner import GitRunner
 from dovo.core.worktree.models import WorktreeApplyResult, WorktreeApplyStatus, WorktreeApplyStrategy, WorktreeSession
 from dovo.core.worktree.worktree import Worktree
 from tests.harness.diagnostic_log import diagnostic_hint, read_single_event
+from tests.harness.fakes import fixed_clock, fixed_new_id
 from tests.harness.workspace_paths import initialized_workspace_paths
 
 
 def _create_worktree_with_committed_change(cli_workspace: Path) -> WorktreeSession:
     """Create a worktree and commit one file change inside its worktree."""
-    create_result = Worktree(paths=initialized_workspace_paths(cli_workspace), git=GitRunner()).create(name="apply-me")
+    create_result = Worktree(
+        paths=initialized_workspace_paths(cli_workspace), git=GitRunner(), clock=fixed_clock, new_id=fixed_new_id
+    ).create(name="apply-me")
     assert create_result.session is not None
     session = create_result.session
 

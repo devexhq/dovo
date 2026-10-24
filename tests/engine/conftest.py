@@ -10,7 +10,9 @@ from typing import NamedTuple
 
 import pytest
 
+from dovo.common.clock import Clock
 from dovo.common.filesystem.models import WorkspacePaths
+from dovo.common.session_id import SessionIdFactory
 from dovo.core.agents.models import AgentEnvOverrides, ResolvedAgentSettings
 from dovo.core.db import SessionsRepository, SessionStatus
 from dovo.core.git.runner import GitRunner
@@ -22,6 +24,7 @@ from dovo.engine.models import FailurePrompter, InteractionPrompter, RunObserver
 from dovo.engine.state_models import ExecutionStateTree
 from dovo.engine.workspace import Workspace
 from tests.harness.builders import WorkspaceBuilder
+from tests.harness.fakes import fixed_clock, fixed_new_id
 from tests.harness.workspace_paths import initialized_workspace_paths
 
 type DriveRunCall = Callable[[WorkspacePaths, SessionsRepository, str], RunOutcome]
@@ -73,6 +76,8 @@ def stub_drive_run(monkeypatch: pytest.MonkeyPatch) -> StubDriveRun:
             session_id: str,
             *,
             git: GitRunner,
+            clock: Clock,
+            new_id: SessionIdFactory,
             observer: RunObserver | None,
             prompter: FailurePrompter | None,
             interaction_prompter: InteractionPrompter | None = None,
@@ -234,7 +239,15 @@ def worktree_setup(worktree_root: Path, worktree_paths: WorkspacePaths) -> Workt
 
     def _setup(**settings: object) -> WorktreeSetup:
         context = dataclasses.replace(
-            RunSettings(cwd=worktree_root, use_worktree=True, paths=worktree_paths, git=GitRunner()), **settings
+            RunSettings(
+                cwd=worktree_root,
+                use_worktree=True,
+                paths=worktree_paths,
+                git=GitRunner(),
+                clock=fixed_clock,
+                new_id=fixed_new_id,
+            ),
+            **settings,
         )
         workspace = Workspace(context)
         return WorktreeSetup(workspace, *workspace.setup())

@@ -67,7 +67,7 @@ class WorktreePatch:
         db: WorktreesRepository,
         *,
         git: GitRunner,
-        lifecycle: WorktreeLifecycle | None = None,
+        lifecycle: WorktreeLifecycle,
     ) -> None:
         """Initialize patch service bound to repository root.
 
@@ -75,13 +75,13 @@ class WorktreePatch:
             paths: Resolved command-invocation workspace paths.
             db: Explicit WorktreesRepository instance.
             git: Runner for every git command.
-            lifecycle: Optional WorktreeLifecycle instance (constructed with git if None).
+            lifecycle: Lifecycle service whose cleanup removes a worktree after --delete.
         """
         self.paths = paths
         self.path = paths.root_dir
         self.db = db
         self.git = git
-        self.lifecycle = lifecycle or WorktreeLifecycle(self.paths, self.db, git=git)
+        self.lifecycle = lifecycle
 
     def _validate_for_diff(
         self,

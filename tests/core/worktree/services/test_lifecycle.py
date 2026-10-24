@@ -4,13 +4,16 @@ from __future__ import annotations
 
 import os
 from collections.abc import Mapping, Sequence
+from datetime import datetime
 from pathlib import Path
 from typing import NoReturn
 
 import pytest
 
+from dovo.common.clock import Clock
 from dovo.common.filesystem import WorkspacePaths
 from dovo.common.filesystem.services import resolve_global_paths
+from dovo.common.session_id import SessionIdFactory
 from dovo.core.db import WorktreesRepository, WorktreeStatus
 from dovo.core.git.exceptions import GitCommandError, GitPlumbingTimeoutError
 from dovo.core.git.models import GitProcessOutput
@@ -20,7 +23,7 @@ from dovo.core.worktree.models import WorktreeCreateStatus
 from dovo.core.worktree.services.lifecycle import WorktreeLifecycle
 from tests.harness import WorkspaceBuilder
 from tests.harness.diagnostic_log import diagnostic_hint, read_single_event
-from tests.harness.fakes import FakeGitRunner
+from tests.harness.fakes import FakeGitRunner, fixed_clock, fixed_new_id
 from tests.harness.workspace_paths import initialized_workspace_paths
 
 
@@ -39,7 +42,11 @@ class WorktreeLifecycleStorageIndependenceTests:
     def test_create_makes_no_run_symlink_and_no_session_directory(self, worktree_workspace: Path) -> None:
         paths = _paths(worktree_workspace)
         lifecycle = WorktreeLifecycle(
-            paths, WorktreesRepository(db_path=paths.database_file, project_id=paths.project_id), git=GitRunner()
+            paths,
+            WorktreesRepository(db_path=paths.database_file, project_id=paths.project_id),
+            git=GitRunner(),
+            clock=fixed_clock,
+            new_id=fixed_new_id,
         )
 
         result = lifecycle.create(session_id="dovo_independent")
@@ -55,7 +62,11 @@ class WorktreeLifecycleStorageIndependenceTests:
     ) -> None:
         paths = _paths(worktree_workspace)
         lifecycle = WorktreeLifecycle(
-            paths, WorktreesRepository(db_path=paths.database_file, project_id=paths.project_id), git=GitRunner()
+            paths,
+            WorktreesRepository(db_path=paths.database_file, project_id=paths.project_id),
+            git=GitRunner(),
+            clock=fixed_clock,
+            new_id=fixed_new_id,
         )
         create_result = lifecycle.create(session_id="dovo_linked_cleanup")
         assert create_result.session is not None
@@ -81,7 +92,11 @@ class WorktreeLifecycleCapacityTests:
     ) -> None:
         paths = _paths(worktree_workspace)
         lifecycle = WorktreeLifecycle(
-            paths, WorktreesRepository(db_path=paths.database_file, project_id=paths.project_id), git=GitRunner()
+            paths,
+            WorktreesRepository(db_path=paths.database_file, project_id=paths.project_id),
+            git=GitRunner(),
+            clock=fixed_clock,
+            new_id=fixed_new_id,
         )
         for i in range(3):
             result = lifecycle.create(session_id=f"dovo_cap_{i}")
@@ -94,11 +109,92 @@ class WorktreeLifecycleCapacityTests:
         assert "dovo/dovo_cap_overflow" not in GitRunner().list_branches(worktree_workspace)
 
 
+class WorktreeLifecycleInjectionTests:
+    def test_create_without_session_id_uses_new_id_for_id_path_and_branch(self, worktree_workspace: Path) -> None:
+        """Call new_id once with "dovo" and return session dovo_0000abcd at worktrees_dir/dovo_0000abcd on dovo/dovo_0000abcd."""
+        paths = _paths(worktree_workspace)
+        kinds: list[str] = []
+
+        def recording_new_id(kind: str) -> str:
+            kinds.append(kind)
+            return fixed_new_id(kind)
+
+        lifecycle = _lifecycle(worktree_workspace, new_id=recording_new_id)
+
+        result = lifecycle.create()
+
+        assert result.status == WorktreeCreateStatus.OK
+        assert result.session is not None
+        assert kinds == ["dovo"]
+        assert result.session.session_id == "dovo_0000abcd"
+        assert result.session.worktree_path == paths.worktrees_dir.resolve() / "dovo_0000abcd"
+        assert result.session.target_branch == "dovo/dovo_0000abcd"
+
+    def test_create_with_session_id_never_calls_new_id(self, worktree_workspace: Path) -> None:
+        """Create session dovo_explicit without calling new_id."""
+        kinds: list[str] = []
+
+        def recording_new_id(kind: str) -> str:
+            kinds.append(kind)
+            return fixed_new_id(kind)
+
+        lifecycle = _lifecycle(worktree_workspace, new_id=recording_new_id)
+
+        result = lifecycle.create(session_id="dovo_explicit")
+
+        assert result.status == WorktreeCreateStatus.OK
+        assert result.session is not None
+        assert result.session.session_id == "dovo_explicit"
+        assert kinds == []
+
+    def test_create_sets_created_at_from_one_clock_call(self, worktree_workspace: Path) -> None:
+        """Call clock exactly once and set created_at to "2026-01-02T03:04:05+00:00"."""
+        readings: list[datetime] = []
+
+        def recording_clock() -> datetime:
+            readings.append(fixed_clock())
+            return readings[-1]
+
+        lifecycle = _lifecycle(worktree_workspace, clock=recording_clock)
+
+        result = lifecycle.create(session_id="dovo_clocked")
+
+        assert result.session is not None
+        assert result.session.created_at == "2026-01-02T03:04:05+00:00"
+        assert len(readings) == 1
+
+    def test_create_at_capacity_calls_neither_new_id_nor_clock(self, worktree_workspace: Path) -> None:
+        """Return capacity_exceeded for create() at max_active_worktrees with zero new_id and clock calls after the fill."""
+        calls: list[str] = []
+
+        def recording_clock() -> datetime:
+            calls.append("clock")
+            return fixed_clock()
+
+        def recording_new_id(kind: str) -> str:
+            calls.append("new_id")
+            return fixed_new_id(kind)
+
+        lifecycle = _lifecycle(worktree_workspace, clock=recording_clock, new_id=recording_new_id)
+        for i in range(3):
+            assert lifecycle.create(session_id=f"dovo_fill_{i}").status == WorktreeCreateStatus.OK
+        calls.clear()
+
+        result = lifecycle.create()
+
+        assert result.status == WorktreeCreateStatus.CAPACITY_EXCEEDED
+        assert calls == []
+
+
 class WorktreeLifecycleCleanupTests:
     def test_cleanup_removes_dovo_directory_and_deletes_temporary_branch(self, worktree_workspace: Path) -> None:
         paths = _paths(worktree_workspace)
         lifecycle = WorktreeLifecycle(
-            paths, WorktreesRepository(db_path=paths.database_file, project_id=paths.project_id), git=GitRunner()
+            paths,
+            WorktreesRepository(db_path=paths.database_file, project_id=paths.project_id),
+            git=GitRunner(),
+            clock=fixed_clock,
+            new_id=fixed_new_id,
         )
         create_result = lifecycle.create(session_id="dovo_cleanup_branch")
         assert create_result.session is not None
@@ -114,7 +210,11 @@ class WorktreeLifecycleCleanupTests:
     def test_cleanup_of_already_removed_worktree_is_idempotent_and_warning_free(self, worktree_workspace: Path) -> None:
         paths = _paths(worktree_workspace)
         lifecycle = WorktreeLifecycle(
-            paths, WorktreesRepository(db_path=paths.database_file, project_id=paths.project_id), git=GitRunner()
+            paths,
+            WorktreesRepository(db_path=paths.database_file, project_id=paths.project_id),
+            git=GitRunner(),
+            clock=fixed_clock,
+            new_id=fixed_new_id,
         )
         create_result = lifecycle.create(session_id="dovo_cleanup_twice")
         assert create_result.session is not None
@@ -131,7 +231,11 @@ class WorktreeLifecycleDiscardPartialTests:
     def test_discard_partial_removes_dovo_directory_and_branch(self, worktree_workspace: Path) -> None:
         paths = _paths(worktree_workspace)
         lifecycle = WorktreeLifecycle(
-            paths, WorktreesRepository(db_path=paths.database_file, project_id=paths.project_id), git=GitRunner()
+            paths,
+            WorktreesRepository(db_path=paths.database_file, project_id=paths.project_id),
+            git=GitRunner(),
+            clock=fixed_clock,
+            new_id=fixed_new_id,
         )
         worktree_path = worktree_workspace / ".dovo" / "worktrees" / "dovo_discard"
         temp_branch = "dovo/dovo_discard"
@@ -146,7 +250,11 @@ class WorktreeLifecycleDiscardPartialTests:
     def test_discard_partial_on_nonexistent_branch_does_not_raise(self, worktree_workspace: Path) -> None:
         paths = _paths(worktree_workspace)
         lifecycle = WorktreeLifecycle(
-            paths, WorktreesRepository(db_path=paths.database_file, project_id=paths.project_id), git=GitRunner()
+            paths,
+            WorktreesRepository(db_path=paths.database_file, project_id=paths.project_id),
+            git=GitRunner(),
+            clock=fixed_clock,
+            new_id=fixed_new_id,
         )
 
         lifecycle.discard_partial(
@@ -169,7 +277,11 @@ class WorktreeLifecycleDiscardPartialTests:
     ) -> None:
         paths = _paths(worktree_workspace)
         lifecycle = WorktreeLifecycle(
-            paths, WorktreesRepository(db_path=paths.database_file, project_id=paths.project_id), git=GitRunner()
+            paths,
+            WorktreesRepository(db_path=paths.database_file, project_id=paths.project_id),
+            git=GitRunner(),
+            clock=fixed_clock,
+            new_id=fixed_new_id,
         )
         worktree_path = paths.worktrees_dir / "dovo_flagged"
         worktree_path.mkdir(parents=True)
@@ -190,7 +302,7 @@ class WorktreeLifecycleCollisionTests:
     ) -> None:
         paths = _paths(worktree_workspace)
         repo = WorktreesRepository(db_path=paths.database_file, project_id=paths.project_id)
-        lifecycle = WorktreeLifecycle(paths, repo, git=GitRunner())
+        lifecycle = WorktreeLifecycle(paths, repo, git=GitRunner(), clock=fixed_clock, new_id=fixed_new_id)
         first = lifecycle.create(session_id="dovo_keep")
         assert first.session is not None
         kept_file = first.session.worktree_path / "kept.txt"
@@ -214,7 +326,7 @@ class WorktreeLifecycleCollisionTests:
     def test_create_with_only_directory_returns_already_exists_and_keeps_it(self, worktree_workspace: Path) -> None:
         paths = _paths(worktree_workspace)
         repo = WorktreesRepository(db_path=paths.database_file, project_id=paths.project_id)
-        lifecycle = WorktreeLifecycle(paths, repo, git=GitRunner())
+        lifecycle = WorktreeLifecycle(paths, repo, git=GitRunner(), clock=fixed_clock, new_id=fixed_new_id)
         worktree_path = paths.worktrees_dir / "dovo_half"
         worktree_path.mkdir(parents=True)
         sentinel = worktree_path / "sentinel.txt"
@@ -234,7 +346,7 @@ class WorktreeLifecycleCollisionTests:
     ) -> None:
         paths = _paths(worktree_workspace)
         repo = WorktreesRepository(db_path=paths.database_file, project_id=paths.project_id)
-        lifecycle = WorktreeLifecycle(paths, repo, git=GitRunner())
+        lifecycle = WorktreeLifecycle(paths, repo, git=GitRunner(), clock=fixed_clock, new_id=fixed_new_id)
         worktree_path = paths.worktrees_dir / "dovo_stale"
         worktree_path.mkdir(parents=True)
         repo.create(
@@ -255,7 +367,7 @@ class WorktreeLifecycleCollisionTests:
     def test_create_with_only_branch_returns_already_exists_and_keeps_it(self, worktree_workspace: Path) -> None:
         paths = _paths(worktree_workspace)
         repo = WorktreesRepository(db_path=paths.database_file, project_id=paths.project_id)
-        lifecycle = WorktreeLifecycle(paths, repo, git=GitRunner())
+        lifecycle = WorktreeLifecycle(paths, repo, git=GitRunner(), clock=fixed_clock, new_id=fixed_new_id)
         GitRunner().run(["branch", "dovo/dovo_half"], path=worktree_workspace)
         tip_before = GitRunner().rev_parse(worktree_workspace, rev="HEAD")
 
@@ -276,7 +388,11 @@ class WorktreeLifecycleCollisionTests:
     ) -> None:
         paths = _paths(worktree_workspace)
         lifecycle = WorktreeLifecycle(
-            paths, WorktreesRepository(db_path=paths.database_file, project_id=paths.project_id), git=GitRunner()
+            paths,
+            WorktreesRepository(db_path=paths.database_file, project_id=paths.project_id),
+            git=GitRunner(),
+            clock=fixed_clock,
+            new_id=fixed_new_id,
         )
         paths.worktrees_dir.mkdir(parents=True, exist_ok=True)
         link_target = tmp_path / "outside-worktrees"
@@ -320,6 +436,8 @@ class WorktreeLifecycleCollisionTests:
             paths,
             WorktreesRepository(db_path=paths.database_file, project_id=paths.project_id),
             git=FakeGitRunner({("show-ref",): probe_error}),
+            clock=fixed_clock,
+            new_id=fixed_new_id,
         )
 
         result = lifecycle.create(session_id="dovo_probefail")
@@ -335,7 +453,11 @@ class WorktreeLifecycleCollisionTests:
     ) -> None:
         paths = _paths(worktree_workspace)
         lifecycle = WorktreeLifecycle(
-            paths, WorktreesRepository(db_path=paths.database_file, project_id=paths.project_id), git=GitRunner()
+            paths,
+            WorktreesRepository(db_path=paths.database_file, project_id=paths.project_id),
+            git=GitRunner(),
+            clock=fixed_clock,
+            new_id=fixed_new_id,
         )
         real_exists = Path.exists
 
@@ -380,6 +502,8 @@ class WorktreeLifecycleCollisionTests:
             paths,
             WorktreesRepository(db_path=paths.database_file, project_id=paths.project_id),
             git=_AddCreatesBranchThenFails(),
+            clock=fixed_clock,
+            new_id=fixed_new_id,
         )
 
         result = lifecycle.create(session_id="dovo_keepbranch")
@@ -392,7 +516,11 @@ class WorktreeLifecycleCollisionTests:
     ) -> None:
         paths = _paths(worktree_workspace)
         lifecycle = WorktreeLifecycle(
-            paths, WorktreesRepository(db_path=paths.database_file, project_id=paths.project_id), git=GitRunner()
+            paths,
+            WorktreesRepository(db_path=paths.database_file, project_id=paths.project_id),
+            git=GitRunner(),
+            clock=fixed_clock,
+            new_id=fixed_new_id,
         )
         sibling = lifecycle.create(session_id="dovo_sibling")
         assert sibling.session is not None
@@ -414,6 +542,8 @@ class WorktreeLifecycleCollisionTests:
             paths,
             WorktreesRepository(db_path=paths.database_file, project_id=paths.project_id),
             git=FakeGitRunner({("rev-parse", "HEAD"): failure}),
+            clock=fixed_clock,
+            new_id=fixed_new_id,
         )
 
         result = lifecycle.create(session_id="dovo_revfail")
@@ -423,13 +553,21 @@ class WorktreeLifecycleCollisionTests:
         assert GitRunner().branch_exists(worktree_workspace, "dovo/dovo_revfail") is False
 
 
-def _lifecycle(workspace: Path, git: GitRunner | None = None) -> WorktreeLifecycle:
+def _lifecycle(
+    workspace: Path,
+    git: GitRunner | None = None,
+    *,
+    clock: Clock = fixed_clock,
+    new_id: SessionIdFactory = fixed_new_id,
+) -> WorktreeLifecycle:
     """Build a WorktreeLifecycle over workspace's paths and worktree database, running git through git or a real GitRunner."""
     paths = _paths(workspace)
     return WorktreeLifecycle(
         paths,
         WorktreesRepository(db_path=paths.database_file, project_id=paths.project_id),
         git=git if git is not None else GitRunner(),
+        clock=clock,
+        new_id=new_id,
     )
 
 

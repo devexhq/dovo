@@ -4,7 +4,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+from dovo.common.clock import Clock
 from dovo.common.filesystem import WorkspacePaths
+from dovo.common.session_id import SessionIdFactory
 from dovo.core.agents.models import AgentEnvMode
 from dovo.core.catalog import Catalog
 from dovo.core.db import SessionsRepository
@@ -23,6 +25,8 @@ class BlueprintResumeService:
     paths: WorkspacePaths
     db: SessionsRepository
     git: GitRunner
+    clock: Clock
+    new_id: SessionIdFactory
     session_id: str | None = None
     no_tty: bool = False
     env_mode: AgentEnvMode | None = None
@@ -46,7 +50,9 @@ class BlueprintResumeService:
         catalog = Catalog(self.paths)
 
         try:
-            run_outcome = Engine(self.paths, db=self.db, catalog=catalog, git=self.git).resume(
+            run_outcome = Engine(
+                self.paths, db=self.db, catalog=catalog, git=self.git, clock=self.clock, new_id=self.new_id
+            ).resume(
                 target_session_id,
                 observer=self.observer,
                 failure_prompter=self.failure_prompter,

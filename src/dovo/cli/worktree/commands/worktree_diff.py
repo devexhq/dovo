@@ -23,7 +23,9 @@ def worktree_diff_command(
         stat: When True, show diffstat summary instead of full unified diff.
         output_format: Presentation format ("terminal" or "json").
     """
-    worktree = Worktree(context.paths, git=context.git, db=context.db.worktrees)
+    worktree = Worktree(
+        context.paths, git=context.git, clock=context.clock, new_id=context.new_id, db=context.db.worktrees
+    )
     result = worktree.diff(worktree_id, stat=stat)
 
     ui_dispatcher.dispatch(result, output_format=output_format)

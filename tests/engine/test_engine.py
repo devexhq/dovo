@@ -22,7 +22,7 @@ from tests.engine.conftest import StubDriveRun
 from tests.harness.builders import BlueprintBuilder, StepBuilder, WorkspaceBuilder
 from tests.harness.catalog import write_runnable_blueprint, write_runnable_step
 from tests.harness.diagnostic_log import diagnostic_hint, read_single_event
-from tests.harness.fakes import FakeGitRunner
+from tests.harness.fakes import FakeGitRunner, fixed_clock, fixed_new_id
 from tests.harness.sessions import ScriptedFailurePrompter, seed_paused_session
 from tests.harness.workspace_paths import initialized_workspace_paths
 
@@ -33,7 +33,7 @@ def _raise_db_down(*args: object, **kwargs: object) -> None:
 
 
 def _engine(paths: WorkspacePaths, sessions: SessionsRepository) -> Engine:
-    return Engine(paths, db=sessions, catalog=Catalog(paths), git=GitRunner())
+    return Engine(paths, db=sessions, catalog=Catalog(paths), git=GitRunner(), clock=fixed_clock, new_id=fixed_new_id)
 
 
 def _catalog_blueprint(paths: WorkspacePaths, key: str, steps: list[dict[str, object]]) -> Blueprint:
@@ -164,13 +164,33 @@ class EngineDispatchTests:
 
         monkeypatch.setattr("dovo.engine.engine.drive_run", _drive)
         fake = FakeGitRunner()
-        engine = Engine(engine_paths, db=sessions_repo, catalog=Catalog(engine_paths), git=fake)
+        engine = Engine(
+            engine_paths,
+            db=sessions_repo,
+            catalog=Catalog(engine_paths),
+            git=fake,
+            clock=fixed_clock,
+            new_id=fixed_new_id,
+        )
 
         engine.run(_catalog_blueprint(engine_paths, "head", [{"id": "a", "run": "true"}]))
 
         assert ("rev-parse", "HEAD") in fake.calls
         assert len(seen) == 1
         assert seen[0] is fake
+
+    def test_run_without_session_id_uses_injected_new_id(
+        self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository, stub_drive_run: StubDriveRun
+    ) -> None:
+        """Return outcome session_id "blueprint_0000abcd" from Engine(new_id=fixed_new_id).run() with no session_id."""
+        stub_drive_run(None)
+
+        outcome = _engine(engine_paths, sessions_repo).run(
+            _catalog_blueprint(engine_paths, "ids", [{"id": "a", "run": "true"}]), RunRequest(use_worktree=False)
+        )
+
+        assert outcome.session_id == "blueprint_0000abcd"
+        assert sessions_repo.get("blueprint_0000abcd") is not None
 
     def test_run_and_resume_both_complete_through_coordinator_and_finalize_row(
         self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository

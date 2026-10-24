@@ -13,13 +13,15 @@ from dovo.core.git.runner import GitRunner
 from dovo.core.worktree.models import WorktreeDeleteResult, WorktreeDeleteStatus, WorktreeSession
 from dovo.core.worktree.worktree import Worktree
 from tests.harness.diagnostic_log import diagnostic_hint, read_single_event
-from tests.harness.fakes import FakeGitRunner, use_fake_git
+from tests.harness.fakes import FakeGitRunner, fixed_clock, fixed_new_id, use_fake_git
 from tests.harness.workspace_paths import initialized_workspace_paths
 
 
 def _create_worktree(cli_workspace: Path) -> WorktreeSession:
     """Create a fresh worktree via the entrypoint for one delete test."""
-    create_result = Worktree(paths=initialized_workspace_paths(cli_workspace), git=GitRunner()).create(name="delete-me")
+    create_result = Worktree(
+        paths=initialized_workspace_paths(cli_workspace), git=GitRunner(), clock=fixed_clock, new_id=fixed_new_id
+    ).create(name="delete-me")
     assert create_result.session is not None
     return create_result.session
 

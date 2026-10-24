@@ -18,6 +18,7 @@ from dovo.core.worktree.models import (
 )
 from dovo.core.worktree.worktree import Worktree
 from tests.harness import WorkspaceBuilder
+from tests.harness.fakes import fixed_clock, fixed_new_id
 
 
 @pytest.fixture
@@ -34,11 +35,28 @@ def worktree_workspace_paths(
     return workspace_paths_factory(worktree_workspace, None)
 
 
+class WorktreeEntrypointInjectionTests:
+    def test_create_returns_literal_id_path_branch_and_created_at(
+        self, worktree_workspace_paths: WorkspacePaths
+    ) -> None:
+        """Return the issue's four literal values from Worktree(clock=fixed_clock, new_id=fixed_new_id).create()."""
+        worktree = Worktree(worktree_workspace_paths, git=GitRunner(), clock=fixed_clock, new_id=fixed_new_id)
+
+        result = worktree.create()
+
+        assert result.status == WorktreeCreateStatus.OK
+        assert result.session is not None
+        assert result.session.session_id == "dovo_0000abcd"
+        assert result.session.worktree_path == worktree_workspace_paths.worktrees_dir.resolve() / "dovo_0000abcd"
+        assert result.session.target_branch == "dovo/dovo_0000abcd"
+        assert result.session.created_at == "2026-01-02T03:04:05+00:00"
+
+
 class WorktreeCreateListShowDeleteDelegationTests:
     def test_create_persists_a_worktree_that_list_and_show_can_find(
         self, worktree_workspace_paths: WorkspacePaths
     ) -> None:
-        worktree = Worktree(worktree_workspace_paths, git=GitRunner())
+        worktree = Worktree(worktree_workspace_paths, git=GitRunner(), clock=fixed_clock, new_id=fixed_new_id)
 
         create_result = worktree.create(session_id="dovo_entrypoint_create")
         assert create_result.status == WorktreeCreateStatus.OK
@@ -55,7 +73,7 @@ class WorktreeCreateListShowDeleteDelegationTests:
     def test_delete_reflects_the_same_worktree_created_through_the_entrypoint(
         self, worktree_workspace_paths: WorkspacePaths
     ) -> None:
-        worktree = Worktree(worktree_workspace_paths, git=GitRunner())
+        worktree = Worktree(worktree_workspace_paths, git=GitRunner(), clock=fixed_clock, new_id=fixed_new_id)
         worktree.create(session_id="dovo_entrypoint_delete")
 
         delete_result = worktree.delete("dovo_entrypoint_delete")
@@ -66,7 +84,7 @@ class WorktreeCreateListShowDeleteDelegationTests:
 
 class WorktreeCleanupDelegationTests:
     def test_cleanup_removes_the_worktree_dovo_directory(self, worktree_workspace_paths: WorkspacePaths) -> None:
-        worktree = Worktree(worktree_workspace_paths, git=GitRunner())
+        worktree = Worktree(worktree_workspace_paths, git=GitRunner(), clock=fixed_clock, new_id=fixed_new_id)
         create_result = worktree.create(session_id="dovo_entrypoint_cleanup")
         assert create_result.session is not None
 
@@ -80,7 +98,7 @@ class WorktreeDiffApplyDelegationTests:
     def test_diff_on_freshly_created_worktree_reports_empty_diff(
         self, worktree_workspace_paths: WorkspacePaths
     ) -> None:
-        worktree = Worktree(worktree_workspace_paths, git=GitRunner())
+        worktree = Worktree(worktree_workspace_paths, git=GitRunner(), clock=fixed_clock, new_id=fixed_new_id)
         create_result = worktree.create(session_id="dovo_entrypoint_diff")
         assert create_result.status == WorktreeCreateStatus.OK
 
@@ -89,7 +107,7 @@ class WorktreeDiffApplyDelegationTests:
         assert diff_result.status == WorktreeDiffStatus.EMPTY_DIFF
 
     def test_apply_on_unknown_worktree_id_returns_not_found(self, worktree_workspace_paths: WorkspacePaths) -> None:
-        worktree = Worktree(worktree_workspace_paths, git=GitRunner())
+        worktree = Worktree(worktree_workspace_paths, git=GitRunner(), clock=fixed_clock, new_id=fixed_new_id)
 
         result = worktree.apply("missing_worktree")
 

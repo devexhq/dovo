@@ -27,7 +27,9 @@ def collect_worktree_delete(
     worktree_id: str,
 ) -> WorktreeDeleteResult:
     """Load config and look up one worktree for delete (no mutation)."""
-    return Worktree(context.paths, git=context.git, db=context.db.worktrees).delete(worktree_id)
+    return Worktree(
+        context.paths, git=context.git, clock=context.clock, new_id=context.new_id, db=context.db.worktrees
+    ).delete(worktree_id)
 
 
 def _confirm_or_abort(row: object) -> bool:
@@ -59,7 +61,9 @@ def worktree_delete_command(
         force: When True, skip the confirmation prompt.
         output_format: Presentation format ("terminal" or "json").
     """
-    worktree = Worktree(context.paths, git=context.git, db=context.db.worktrees)
+    worktree = Worktree(
+        context.paths, git=context.git, clock=context.clock, new_id=context.new_id, db=context.db.worktrees
+    )
     result = worktree.delete(worktree_id)
 
     if result.status is WorktreeDeleteStatus.NOT_FOUND or result.worktree is None:

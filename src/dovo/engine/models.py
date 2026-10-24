@@ -10,8 +10,10 @@ from typing import Protocol, runtime_checkable
 
 from pydantic import BaseModel, Field
 
+from dovo.common.clock import Clock
 from dovo.common.filesystem import WorkspacePaths
 from dovo.common.models import BaseResult
+from dovo.common.session_id import SessionIdFactory
 from dovo.core.agents.models import AgentEnvOverrides, ResolvedAgentSettings
 from dovo.core.artifacts.store import ArtifactStore
 from dovo.core.catalog.definitions import LoopStepBlock, StepDefinition
@@ -199,6 +201,8 @@ class RunSettings:
     sensitive_variables: tuple[str, ...] = ()
     paths: WorkspacePaths = field(kw_only=True)
     git: GitRunner = field(kw_only=True)
+    clock: Clock = field(kw_only=True)
+    new_id: SessionIdFactory = field(kw_only=True)
 
 
 @dataclass(frozen=True)
@@ -217,6 +221,8 @@ class RunContext:
     sensitive_variables: tuple[str, ...] = ()
     interaction_prompter: InteractionPrompter | None = None
     git: GitRunner = field(kw_only=True)
+    clock: Clock = field(kw_only=True)
+    new_id: SessionIdFactory = field(kw_only=True)
 
 
 @runtime_checkable

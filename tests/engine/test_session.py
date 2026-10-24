@@ -40,6 +40,7 @@ from tests.engine.conftest import AgentRunnerBuild
 from tests.harness import AGENT_ADAPTER_FACTORY, FakeAgentProvider, new_file_diff
 from tests.harness.builders import WorkspaceBuilder
 from tests.harness.diagnostic_log import diagnostic_hint
+from tests.harness.fakes import fixed_clock, fixed_new_id
 from tests.harness.sessions import (
     NoOpRunObserver,
     RecordingRunObserver,
@@ -82,6 +83,8 @@ def _drive(
         no_tty=False,
         env_overrides=env_overrides,
         git=GitRunner(),
+        clock=fixed_clock,
+        new_id=fixed_new_id,
     )
 
 
@@ -105,6 +108,8 @@ class DriveRunWorktreeTests:
             git_paths,
             db=WorktreesRepository(db_path=git_paths.database_file, project_id=git_paths.project_id),
             git=GitRunner(),
+            clock=fixed_clock,
+            new_id=fixed_new_id,
         ).create(session_id="retained")
         assert created.session is not None
         worktree_id = created.session.session_id

@@ -13,17 +13,18 @@ from dovo.engine.models import RunOutcome
 from dovo.engine.services.run import BlueprintRunService
 from tests.engine.conftest import StubDriveRun
 from tests.harness.catalog import write_runnable_blueprint
+from tests.harness.fakes import fixed_clock, fixed_new_id
 
 
 class BlueprintRunServiceExecuteTests:
-    def test_execute_passes_git_to_drive_run(
+    def test_execute_passes_git_clock_and_new_id_to_drive_run(
         self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """Hand drive_run the exact GitRunner instance given to BlueprintRunService(git=...)."""
+        """Hand drive_run the exact git, clock and new_id objects given to BlueprintRunService."""
         seen: list[object] = []
 
         def _drive(*args: object, **kwargs: object) -> RunOutcome:
-            seen.append(kwargs["git"])
+            seen.extend([kwargs["git"], kwargs["clock"], kwargs["new_id"]])
             return RunOutcome(status=SessionStatus.COMPLETED, worktree_path=engine_paths.root_dir)
 
         monkeypatch.setattr("dovo.engine.engine.drive_run", _drive)
@@ -31,11 +32,19 @@ class BlueprintRunServiceExecuteTests:
         git = GitRunner()
 
         BlueprintRunService(
-            name="lint", paths=engine_paths, sessions_db=sessions_repo, no_worktree=True, git=git
+            name="lint",
+            paths=engine_paths,
+            sessions_db=sessions_repo,
+            no_worktree=True,
+            git=git,
+            clock=fixed_clock,
+            new_id=fixed_new_id,
         ).execute()
 
-        assert len(seen) == 1
+        assert len(seen) == 3
         assert seen[0] is git
+        assert seen[1] is fixed_clock
+        assert seen[2] is fixed_new_id
 
     def test_execute_completed_run_returns_ok_result_with_run_record(
         self,
@@ -53,6 +62,8 @@ class BlueprintRunServiceExecuteTests:
             no_worktree=True,
             session_id="run-1",
             git=GitRunner(),
+            clock=fixed_clock,
+            new_id=fixed_new_id,
         ).execute()
 
         assert result.ok
@@ -84,6 +95,8 @@ class BlueprintRunServiceExecuteTests:
             no_worktree=True,
             session_id="run-2",
             git=GitRunner(),
+            clock=fixed_clock,
+            new_id=fixed_new_id,
         ).execute()
 
         assert not result.ok
@@ -94,7 +107,12 @@ class BlueprintRunServiceExecuteTests:
         self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository
     ) -> None:
         result = BlueprintRunService(
-            name="nope", paths=engine_paths, sessions_db=sessions_repo, git=GitRunner()
+            name="nope",
+            paths=engine_paths,
+            sessions_db=sessions_repo,
+            git=GitRunner(),
+            clock=fixed_clock,
+            new_id=fixed_new_id,
         ).execute()
 
         assert not result.ok
@@ -121,6 +139,8 @@ class BlueprintRunServiceExecuteTests:
             no_worktree=True,
             cli_args=[],
             git=GitRunner(),
+            clock=fixed_clock,
+            new_id=fixed_new_id,
         ).execute()
 
         assert not result.ok
@@ -141,7 +161,12 @@ class BlueprintRunServiceExecuteTests:
         )
 
         result = BlueprintRunService(
-            name="nope", paths=engine_paths, sessions_db=sessions_repo, git=GitRunner()
+            name="nope",
+            paths=engine_paths,
+            sessions_db=sessions_repo,
+            git=GitRunner(),
+            clock=fixed_clock,
+            new_id=fixed_new_id,
         ).execute()
 
         assert result.warnings == ["reconciled 1 stale run"]
@@ -156,7 +181,13 @@ class BlueprintRunServiceEnvTests:
         write_runnable_blueprint(engine_paths.root_dir, key="lint", steps=[{"id": "a", "run": "true"}])
 
         result = BlueprintRunService(
-            name="lint", paths=engine_paths, sessions_db=sessions_repo, env_passthrough=["A*B"], git=GitRunner()
+            name="lint",
+            paths=engine_paths,
+            sessions_db=sessions_repo,
+            env_passthrough=["A*B"],
+            git=GitRunner(),
+            clock=fixed_clock,
+            new_id=fixed_new_id,
         ).execute()
 
         assert not result.ok
@@ -202,6 +233,8 @@ class BlueprintRunServiceEnvTests:
             env_mode=env_mode,
             env_passthrough=env_passthrough,
             git=GitRunner(),
+            clock=fixed_clock,
+            new_id=fixed_new_id,
         ).execute()
 
         assert seen == [expected]

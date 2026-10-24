@@ -17,6 +17,7 @@ from dovo.core.git.runner import GitRunner
 from dovo.core.worktree import Worktree
 from tests.harness import FakeAgentRunner
 from tests.harness.catalog import write_runnable_step
+from tests.harness.fakes import fixed_clock, fixed_new_id
 from tests.harness.sessions import seed_paused_ask_session, seed_paused_session
 from tests.harness.workspace_paths import initialized_workspace_paths
 
@@ -49,7 +50,9 @@ def _fake_copilot(monkeypatch: pytest.MonkeyPatch) -> FakeAgentRunner:
 def _seed_paused_agent_session(workspace: Path, session_id: str) -> None:
     paths = initialized_workspace_paths(workspace)
     db = DovoDb(database_file=paths.database_file, project_id=paths.project_id)
-    Worktree(paths, db=db.worktrees, git=GitRunner()).create(session_id=session_id)
+    Worktree(paths, db=db.worktrees, git=GitRunner(), clock=fixed_clock, new_id=fixed_new_id).create(
+        session_id=session_id
+    )
     seed_paused_session(
         paths,
         db.sessions,
