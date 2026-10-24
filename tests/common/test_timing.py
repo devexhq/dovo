@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import NoReturn
 
 import pytest
@@ -17,7 +18,7 @@ T60 = "2026-10-19T12:01:00+00:00"
 def _patch_clocks(monkeypatch: pytest.MonkeyPatch, *, monotonic: list[float], utc: list[str]) -> None:
     """Patch dovo.common.timing.monotonic and utc_now to return the given readings in order."""
     monotonic_readings = iter(monotonic)
-    utc_readings = iter(utc)
+    utc_readings = iter(datetime.fromisoformat(reading) for reading in utc)
     monkeypatch.setattr("dovo.common.timing.monotonic", lambda: next(monotonic_readings))
     monkeypatch.setattr("dovo.common.timing.utc_now", lambda: next(utc_readings))
 

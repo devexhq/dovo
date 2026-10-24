@@ -48,6 +48,7 @@ from dovo.engine.state_models import (
 )
 from dovo.engine.writer import snapshot_blueprint_path
 from tests.engine.conftest import AgentRunnerBuild, SpySaveExecutionState
+from tests.harness.fakes import fixed_clock, fixed_new_id
 from tests.harness.sessions import (
     SEEDED_FAILURE,
     NoOpRunObserver,
@@ -147,6 +148,8 @@ def _context(
         no_tty=no_tty,
         interaction_prompter=interaction_prompter,
         git=GitRunner(),
+        clock=fixed_clock,
+        new_id=fixed_new_id,
     )
 
 

@@ -30,7 +30,9 @@ def worktree_apply_command(
         message: Optional commit message for squash strategy.
         output_format: Presentation format ("terminal" or "json").
     """
-    worktree = Worktree(context.paths, git=context.git, db=context.db.worktrees)
+    worktree = Worktree(
+        context.paths, git=context.git, clock=context.clock, new_id=context.new_id, db=context.db.worktrees
+    )
     result = worktree.apply(
         worktree_id=worktree_id,
         strategy=strategy,

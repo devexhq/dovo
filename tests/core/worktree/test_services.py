@@ -14,6 +14,7 @@ from dovo.core.worktree.models import (
 )
 from dovo.core.worktree.services.lifecycle import WorktreeLifecycle
 from tests.harness.builders import WorkspaceBuilder
+from tests.harness.fakes import fixed_clock, fixed_new_id
 
 
 @pytest.fixture
@@ -41,7 +42,9 @@ class WorktreeCreationTests:
         db = WorktreesRepository(
             db_path=worktree_workspace_paths.database_file, project_id=worktree_workspace_paths.project_id
         )
-        lifecycle = WorktreeLifecycle(worktree_workspace_paths, db, git=GitRunner())
+        lifecycle = WorktreeLifecycle(
+            worktree_workspace_paths, db, git=GitRunner(), clock=fixed_clock, new_id=fixed_new_id
+        )
 
         result = lifecycle.create(session_id="dovo_test001", name="test-worktree")
 
@@ -56,7 +59,7 @@ class WorktreeCreationTests:
         assert result.session.worktree_path == expected_worktree_path
         assert result.session.base_commit == head_commit
         assert result.session.name == "test-worktree"
-        assert result.session.created_at is not None
+        assert result.session.created_at == "2026-01-02T03:04:05+00:00"
         assert result.session.command_passed is None
         assert result.session.wip_applied is False
         assert result.session.wip_paths == []
@@ -89,7 +92,9 @@ class WorktreeCapacityTests:
         db = WorktreesRepository(
             db_path=worktree_workspace_paths.database_file, project_id=worktree_workspace_paths.project_id
         )
-        lifecycle = WorktreeLifecycle(worktree_workspace_paths, db, git=GitRunner())
+        lifecycle = WorktreeLifecycle(
+            worktree_workspace_paths, db, git=GitRunner(), clock=fixed_clock, new_id=fixed_new_id
+        )
 
         assert DEFAULT_MAXIMUM_WORKTREES_ALLOWED >= 1
         for idx in range(DEFAULT_MAXIMUM_WORKTREES_ALLOWED):

@@ -10,6 +10,7 @@ import pytest
 
 from dovo.common.filesystem.models import WorkspacePaths
 from dovo.common.filesystem.services import resolve_global_paths
+from dovo.common.session_id import SessionIdFactory
 from dovo.core.catalog import Catalog
 from dovo.core.catalog.blueprint import Blueprint
 from dovo.core.db import SessionsRepository, SessionStatus
@@ -22,7 +23,7 @@ from tests.engine.conftest import StubDriveRun
 from tests.harness.builders import BlueprintBuilder, StepBuilder, WorkspaceBuilder
 from tests.harness.catalog import write_runnable_blueprint, write_runnable_step
 from tests.harness.diagnostic_log import diagnostic_hint, read_single_event
-from tests.harness.fakes import FakeGitRunner
+from tests.harness.fakes import FakeGitRunner, SequentialIds, fixed_clock, fixed_new_id
 from tests.harness.sessions import ScriptedFailurePrompter, seed_paused_session
 from tests.harness.workspace_paths import initialized_workspace_paths
 
@@ -32,8 +33,8 @@ def _raise_db_down(*args: object, **kwargs: object) -> None:
     raise RuntimeError("db down")
 
 
-def _engine(paths: WorkspacePaths, sessions: SessionsRepository) -> Engine:
-    return Engine(paths, db=sessions, catalog=Catalog(paths), git=GitRunner())
+def _engine(paths: WorkspacePaths, sessions: SessionsRepository, *, new_id: SessionIdFactory = fixed_new_id) -> Engine:
+    return Engine(paths, db=sessions, catalog=Catalog(paths), git=GitRunner(), clock=fixed_clock, new_id=new_id)
 
 
 def _catalog_blueprint(paths: WorkspacePaths, key: str, steps: list[dict[str, object]]) -> Blueprint:
@@ -164,7 +165,14 @@ class EngineDispatchTests:
 
         monkeypatch.setattr("dovo.engine.engine.drive_run", _drive)
         fake = FakeGitRunner()
-        engine = Engine(engine_paths, db=sessions_repo, catalog=Catalog(engine_paths), git=fake)
+        engine = Engine(
+            engine_paths,
+            db=sessions_repo,
+            catalog=Catalog(engine_paths),
+            git=fake,
+            clock=fixed_clock,
+            new_id=fixed_new_id,
+        )
 
         engine.run(_catalog_blueprint(engine_paths, "head", [{"id": "a", "run": "true"}]))
 
@@ -208,11 +216,11 @@ class EngineDispatchTests:
         assert final.manifest == manifest.manifest
 
     @pytest.mark.parametrize(
-        ("entry", "expected_session_id"),
+        ("entry", "requested_session_id", "expected_session_id", "expected_kinds"),
         [
-            pytest.param("run-explicit", "explicit-1", id="run-explicit-id"),
-            pytest.param("run-generated", None, id="run-generated-id"),
-            pytest.param("resume", "resume-1", id="resume-id"),
+            pytest.param("run", "explicit-1", "explicit-1", [], id="run-explicit-id"),
+            pytest.param("run", None, "blueprint_0000abcd", ["blueprint"], id="run-generated-id"),
+            pytest.param("resume", "resume-1", "resume-1", [], id="resume-id"),
         ],
     )
     def test_run_and_resume_pass_their_session_id_to_drive_run(
@@ -221,8 +229,11 @@ class EngineDispatchTests:
         sessions_repo: SessionsRepository,
         stub_drive_run: StubDriveRun,
         entry: str,
-        expected_session_id: str | None,
+        requested_session_id: str | None,
+        expected_session_id: str,
+        expected_kinds: list[str],
     ) -> None:
+        """Persist and dispatch the explicit session id, or one new_id("blueprint") call's id when run gets none."""
         seen: list[str] = []
 
         def recording_drive_run(paths: WorkspacePaths, sessions: SessionsRepository, session_id: str) -> RunOutcome:
@@ -230,7 +241,8 @@ class EngineDispatchTests:
             return RunOutcome(status=SessionStatus.COMPLETED, worktree_path=paths.root_dir)
 
         stub_drive_run(recording_drive_run)
-        engine = _engine(engine_paths, sessions_repo)
+        ids = SequentialIds("0000abcd")
+        engine = _engine(engine_paths, sessions_repo, new_id=ids)
         if entry == "resume":
             seed_paused_session(
                 engine_paths,
@@ -242,11 +254,12 @@ class EngineDispatchTests:
             outcome = engine.resume("resume-1")
         else:
             blueprint = _catalog_blueprint(engine_paths, "ids", [{"id": "a", "run": "true"}])
-            outcome = engine.run(blueprint, RunRequest(session_id=expected_session_id, use_worktree=False))
+            outcome = engine.run(blueprint, RunRequest(session_id=requested_session_id, use_worktree=False))
 
-        assert outcome.session_id == seen[0]
-        assert expected_session_id is None or seen == [expected_session_id]
-        assert expected_session_id is not None or seen[0].startswith("blueprint_")
+        assert seen == [expected_session_id]
+        assert outcome.session_id == expected_session_id
+        assert ids.kinds == expected_kinds
+        assert sessions_repo.get(expected_session_id) is not None
 
 
 class EngineResumeFinalizationTests:

@@ -20,7 +20,7 @@ from dovo.core.worktree.models import (
 from dovo.core.worktree.services.detector import WorktreeDetector, detect_stale_worktrees
 from tests.harness import WorkspaceBuilder
 from tests.harness.diagnostic_log import diagnostic_hint, read_single_event
-from tests.harness.fakes import FakeGitRunner
+from tests.harness.fakes import FakeGitRunner, fixed_clock, fixed_new_id
 from tests.harness.workspace_paths import initialized_workspace_paths
 
 
@@ -65,7 +65,7 @@ class WorktreeDetectorBaselineTests:
         detector_workspace_paths: WorkspacePaths,
     ) -> None:
         db = _repo(detector_workspace_paths)
-        manager = Worktree(detector_workspace_paths, db=db, git=GitRunner())
+        manager = Worktree(detector_workspace_paths, db=db, git=GitRunner(), clock=fixed_clock, new_id=fixed_new_id)
 
         create_result = manager.create(session_id="dovo_active_123")
         assert create_result.ok
@@ -235,7 +235,7 @@ class WorktreeDetectorEntrypointTests:
         detector_workspace_paths: WorkspacePaths,
     ) -> None:
         db = _repo(detector_workspace_paths)
-        manager = Worktree(detector_workspace_paths, db=db, git=GitRunner())
+        manager = Worktree(detector_workspace_paths, db=db, git=GitRunner(), clock=fixed_clock, new_id=fixed_new_id)
 
         res_helper = detect_stale_worktrees(detector_workspace, db, git=GitRunner())
         res_manager = manager.detect()

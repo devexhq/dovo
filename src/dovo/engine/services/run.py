@@ -4,7 +4,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+from dovo.common.clock import Clock
 from dovo.common.filesystem import WorkspacePaths
+from dovo.common.session_id import SessionIdFactory
 from dovo.core.agents.models import AgentEnvMode
 from dovo.core.catalog import Catalog
 from dovo.core.catalog.blueprint import Blueprint
@@ -27,6 +29,8 @@ class BlueprintRunService:
     paths: WorkspacePaths
     sessions_db: SessionsRepository
     git: GitRunner
+    clock: Clock
+    new_id: SessionIdFactory
     no_worktree: bool = False
     keep: bool = False
     discard: bool = False
@@ -58,7 +62,9 @@ class BlueprintRunService:
             return fail_outcome or fail(self.warnings, f"Failed to load Blueprint '{self.name}'.")
 
         try:
-            run_outcome = Engine(self.paths, db=self.sessions_db, catalog=catalog, git=self.git).run(
+            run_outcome = Engine(
+                self.paths, db=self.sessions_db, catalog=catalog, git=self.git, clock=self.clock, new_id=self.new_id
+            ).run(
                 blueprint,
                 RunRequest(
                     cli_args=self.cli_args,

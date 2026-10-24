@@ -16,6 +16,7 @@ from dovo.core.worktree.models import (
 from dovo.core.worktree.services.lifecycle import WorktreeLifecycle
 from dovo.core.worktree.services.patch import WorktreePatch
 from tests.harness.builders import WorkspaceBuilder
+from tests.harness.fakes import fixed_clock, fixed_new_id
 
 
 @pytest.fixture
@@ -43,7 +44,9 @@ class WorktreeSquashApplyTests:
         db = WorktreesRepository(
             db_path=worktree_workspace_paths.database_file, project_id=worktree_workspace_paths.project_id
         )
-        lifecycle = WorktreeLifecycle(worktree_workspace_paths, db, git=GitRunner())
+        lifecycle = WorktreeLifecycle(
+            worktree_workspace_paths, db, git=GitRunner(), clock=fixed_clock, new_id=fixed_new_id
+        )
         patch_service = WorktreePatch(worktree_workspace_paths, db, lifecycle=lifecycle, git=GitRunner())
 
         head_before = GitRunner().rev_parse(worktree_workspace, rev="HEAD")
@@ -91,7 +94,9 @@ class WorktreeSquashApplyTests:
         db = WorktreesRepository(
             db_path=worktree_workspace_paths.database_file, project_id=worktree_workspace_paths.project_id
         )
-        lifecycle = WorktreeLifecycle(worktree_workspace_paths, db, git=GitRunner())
+        lifecycle = WorktreeLifecycle(
+            worktree_workspace_paths, db, git=GitRunner(), clock=fixed_clock, new_id=fixed_new_id
+        )
         patch_service = WorktreePatch(worktree_workspace_paths, db, lifecycle=lifecycle, git=GitRunner())
 
         initial_commit = GitRunner().rev_parse(worktree_workspace, rev="HEAD")

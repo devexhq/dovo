@@ -1,6 +1,7 @@
 """Unit tests for dovo.core.diagnostics.services.runner."""
 
 from collections.abc import Callable
+from datetime import datetime
 from pathlib import Path
 
 import pytest
@@ -36,7 +37,7 @@ def _patch_clocks(monkeypatch: pytest.MonkeyPatch, ticks: list[float]) -> None:
     """Patch dovo.common.timing.monotonic to return ticks in order and utc_now to return T0."""
     tick_sequence = iter(ticks)
     monkeypatch.setattr("dovo.common.timing.monotonic", lambda: next(tick_sequence))
-    monkeypatch.setattr("dovo.common.timing.utc_now", lambda: T0)
+    monkeypatch.setattr("dovo.common.timing.utc_now", lambda: datetime.fromisoformat(T0))
 
 
 class DiagnosticRunnerFilteringTests:

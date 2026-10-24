@@ -11,14 +11,21 @@ from typer.testing import CliRunner
 from dovo.cli import app
 from dovo.core.git.runner import GitRunner
 from dovo.core.worktree.models import WorktreeCreateResult, WorktreeCreateStatus
+from tests.harness.fakes import SequentialIds, use_fixed_clock_and_ids
 
 
 class WorktreeCreateCliIntegrationTests:
     """Typer runner integration tests for dovo worktree create."""
 
     def test_worktree_create_cli_creates_worktree_and_branch_exits_zero(
-        self, cli_runner: CliRunner, cli_workspace: Path, dispatch_spy: list[WorktreeCreateResult]
+        self,
+        cli_runner: CliRunner,
+        cli_workspace: Path,
+        dispatch_spy: list[WorktreeCreateResult],
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
+        use_fixed_clock_and_ids(monkeypatch)
+
         result = cli_runner.invoke(
             app,
             ["-p", str(cli_workspace), "worktree", "create", "--name", "demo"],
@@ -27,24 +34,28 @@ class WorktreeCreateCliIntegrationTests:
         assert result.exit_code == 0
         assert "Worktree created:" in result.stdout
 
-        worktree_dirs = list((cli_workspace / ".dovo" / "worktrees").iterdir())
-        assert len(worktree_dirs) == 1
-        session_id = worktree_dirs[0].name
-        assert worktree_dirs[0].is_dir()
-
-        branches = GitRunner().list_branches(cli_workspace)
-        assert f"dovo/{session_id}" in branches
+        worktree_dir = cli_workspace / ".dovo" / "worktrees" / "dovo_0000abcd"
+        assert list((cli_workspace / ".dovo" / "worktrees").iterdir()) == [worktree_dir]
+        assert worktree_dir.is_dir()
+        assert "dovo/dovo_0000abcd" in GitRunner().list_branches(cli_workspace)
 
         assert len(dispatch_spy) == 1
         payload = dispatch_spy[0]
         assert payload.status == WorktreeCreateStatus.OK
         assert payload.session is not None
-        assert payload.session.session_id == session_id
+        assert payload.session.session_id == "dovo_0000abcd"
+        assert payload.session.worktree_path == worktree_dir.resolve()
+        assert payload.session.target_branch == "dovo/dovo_0000abcd"
         assert payload.session.name == "demo"
 
     def test_worktree_create_cli_capacity_exceeded_exits_one(
-        self, cli_runner: CliRunner, cli_workspace: Path, dispatch_spy: list[WorktreeCreateResult]
+        self,
+        cli_runner: CliRunner,
+        cli_workspace: Path,
+        dispatch_spy: list[WorktreeCreateResult],
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
+        use_fixed_clock_and_ids(monkeypatch, new_id=SequentialIds("0000000a", "0000000b", "0000000c"))
         for _ in range(3):
             create_result = cli_runner.invoke(app, ["-p", str(cli_workspace), "worktree", "create"])
             assert create_result.exit_code == 0
@@ -58,7 +69,11 @@ class WorktreeCreateCliIntegrationTests:
         assert payload.status == WorktreeCreateStatus.CAPACITY_EXCEEDED
         assert payload.errors == ["Maximum active worktrees reached (3/3)."]
 
-    def test_worktree_create_cli_renders_json(self, cli_runner: CliRunner, cli_workspace: Path) -> None:
+    def test_worktree_create_cli_renders_json(
+        self, cli_runner: CliRunner, cli_workspace: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        use_fixed_clock_and_ids(monkeypatch)
+
         result = cli_runner.invoke(
             app,
             ["-p", str(cli_workspace), "worktree", "create", "--name", "demo", "--format", "json"],
@@ -69,11 +84,15 @@ class WorktreeCreateCliIntegrationTests:
         assert event["event_type"] == "WorktreeCreateResult"
         assert event["payload"]["status"] == "ok"
         assert event["payload"]["session"]["name"] == "demo"
+        assert event["payload"]["session"]["session_id"] == "dovo_0000abcd"
+        assert event["payload"]["session"]["created_at"] == "2026-01-02T03:04:05+00:00"
+        assert (cli_workspace / ".dovo" / "worktrees" / "dovo_0000abcd").is_dir()
+        assert "dovo/dovo_0000abcd" in GitRunner().list_branches(cli_workspace)
 
     def test_worktree_create_cli_colliding_id_renders_already_exists_json_exits_one(
         self, cli_runner: CliRunner, cli_workspace: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        monkeypatch.setattr("dovo.core.worktree.services.lifecycle.new_session_id", lambda _prefix: "dovo_collide1")
+        use_fixed_clock_and_ids(monkeypatch)
         first = cli_runner.invoke(app, ["-p", str(cli_workspace), "worktree", "create"])
         assert first.exit_code == 0
 
@@ -83,9 +102,9 @@ class WorktreeCreateCliIntegrationTests:
         payload = json.loads(result.stdout)["payload"]
         assert payload["status"] == "already_exists"
         assert payload["error_code"] == "WORKTREE_PATH_CONFLICT"
-        assert payload["errors"] == ["Worktree 'dovo_collide1' already exists (WORKTREE_PATH_CONFLICT)."]
-        assert (cli_workspace / ".dovo" / "worktrees" / "dovo_collide1").is_dir()
-        assert "dovo/dovo_collide1" in GitRunner().list_branches(cli_workspace)
+        assert payload["errors"] == ["Worktree 'dovo_0000abcd' already exists (WORKTREE_PATH_CONFLICT)."]
+        assert (cli_workspace / ".dovo" / "worktrees" / "dovo_0000abcd").is_dir()
+        assert "dovo/dovo_0000abcd" in GitRunner().list_branches(cli_workspace)
 
     def test_worktree_create_cli_with_wip_flag_overlays_and_exits_zero(
         self, cli_runner: CliRunner, cli_workspace: Path, dispatch_spy: list[WorktreeCreateResult]

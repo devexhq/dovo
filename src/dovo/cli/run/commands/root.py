@@ -94,6 +94,8 @@ def run_command(
             paths=context.paths,
             sessions_db=context.db.sessions,
             git=context.git,
+            clock=context.clock,
+            new_id=context.new_id,
             no_worktree=no_worktree,
             keep=keep,
             discard=discard,

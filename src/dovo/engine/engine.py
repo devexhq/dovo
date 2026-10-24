@@ -6,9 +6,10 @@ import json
 import os
 from collections.abc import Sequence
 
+from dovo.common.clock import Clock
 from dovo.common.filesystem import WorkspacePaths
 from dovo.common.lock import WorkspaceLock
-from dovo.common.session_id import new_session_id
+from dovo.common.session_id import SessionIdFactory
 from dovo.core.agents.models import AgentEnvOverrides
 from dovo.core.catalog import Catalog
 from dovo.core.catalog.blueprint import Blueprint
@@ -47,18 +48,22 @@ class Engine:
         catalog: Catalog,
         *,
         git: GitRunner,
+        clock: Clock,
+        new_id: SessionIdFactory,
     ) -> None:
         self.paths = paths
         self.path = paths.root_dir
         self.db = db
         self.catalog = catalog
         self.git = git
+        self.clock = clock
+        self.new_id = new_id
 
     def run(self, blueprint: Blueprint, request: RunRequest | None = None) -> RunOutcome:
         """Persist the session row and initial state for ``blueprint``, then execute it through ``drive_run``."""
         req = request or RunRequest()
         resolved = self._resolve_run_inputs(blueprint, req)
-        sid = req.session_id or new_session_id("blueprint")
+        sid = req.session_id or self.new_id("blueprint")
         engine_warnings: list[str] = list(resolved.warnings)
         snapshot_warnings: list[str] = []
         manifest = self._snapshot_definitions(blueprint, sid, snapshot_warnings)
@@ -78,6 +83,8 @@ class Engine:
             self.db,
             sid,
             git=self.git,
+            clock=self.clock,
+            new_id=self.new_id,
             observer=req.observer,
             prompter=req.failure_prompter,
             interaction_prompter=req.interaction_prompter,
@@ -113,6 +120,8 @@ class Engine:
             self.db,
             session_id,
             git=self.git,
+            clock=self.clock,
+            new_id=self.new_id,
             observer=observer,
             prompter=failure_prompter,
             interaction_prompter=interaction_prompter,

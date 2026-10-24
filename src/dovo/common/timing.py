@@ -2,15 +2,12 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import datetime
 from time import monotonic
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
-
-def utc_now() -> str:
-    """Return the current UTC time as an ISO-8601 string."""
-    return datetime.now(UTC).isoformat()
+from dovo.common.clock import utc_now
 
 
 def _require_utc(value: str) -> str:
@@ -48,7 +45,7 @@ class TimeSpan(BaseModel):
     @classmethod
     def open(cls) -> TimeSpan:
         """Return an open span starting now."""
-        return cls(started_at=utc_now())
+        return cls(started_at=utc_now().isoformat())
 
     @property
     def is_open(self) -> bool:
@@ -60,8 +57,8 @@ class TimeSpan(BaseModel):
         if not self.is_open:
             return self
         ended = utc_now()
-        seconds = (datetime.fromisoformat(ended) - datetime.fromisoformat(self.started_at)).total_seconds()
-        return TimeSpan(started_at=self.started_at, ended_at=ended, duration_seconds=max(0.0, seconds))
+        seconds = (ended - datetime.fromisoformat(self.started_at)).total_seconds()
+        return TimeSpan(started_at=self.started_at, ended_at=ended.isoformat(), duration_seconds=max(0.0, seconds))
 
 
 class Stopwatch:
@@ -78,7 +75,7 @@ class Stopwatch:
     def start(cls) -> Stopwatch:
         """Return a running stopwatch started now."""
         started = monotonic()
-        return cls(started, utc_now())
+        return cls(started, utc_now().isoformat())
 
     @property
     def elapsed_seconds(self) -> float:
@@ -92,7 +89,7 @@ class Stopwatch:
         if self._span is not None:
             return self._span
         elapsed = max(0.0, monotonic() - self._started)
-        span = TimeSpan(started_at=self._started_at, ended_at=utc_now(), duration_seconds=elapsed)
+        span = TimeSpan(started_at=self._started_at, ended_at=utc_now().isoformat(), duration_seconds=elapsed)
         self._elapsed = elapsed
         self._span = span
         return span

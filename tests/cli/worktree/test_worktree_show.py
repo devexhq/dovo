@@ -11,6 +11,7 @@ from dovo.cli import app
 from dovo.core.git.runner import GitRunner
 from dovo.core.worktree.models import WorktreeShowResult, WorktreeShowStatus
 from dovo.core.worktree.worktree import Worktree
+from tests.harness.fakes import fixed_clock, fixed_new_id
 from tests.harness.workspace_paths import initialized_workspace_paths
 
 
@@ -20,9 +21,9 @@ class WorktreeShowCliIntegrationTests:
     def test_worktree_show_cli_existing_worktree_exits_zero(
         self, cli_runner: CliRunner, cli_workspace: Path, dispatch_spy: list[object]
     ) -> None:
-        create_result = Worktree(paths=initialized_workspace_paths(cli_workspace), git=GitRunner()).create(
-            name="show-me"
-        )
+        create_result = Worktree(
+            paths=initialized_workspace_paths(cli_workspace), git=GitRunner(), clock=fixed_clock, new_id=fixed_new_id
+        ).create(name="show-me")
         assert create_result.session is not None
         session = create_result.session
 
@@ -52,9 +53,9 @@ class WorktreeShowCliIntegrationTests:
         assert result_dto.errors == ["Worktree 'missing-id' not found."]
 
     def test_worktree_show_cli_renders_json(self, cli_runner: CliRunner, cli_workspace: Path) -> None:
-        create_result = Worktree(paths=initialized_workspace_paths(cli_workspace), git=GitRunner()).create(
-            name="show-me"
-        )
+        create_result = Worktree(
+            paths=initialized_workspace_paths(cli_workspace), git=GitRunner(), clock=fixed_clock, new_id=fixed_new_id
+        ).create(name="show-me")
         assert create_result.session is not None
         session = create_result.session
 

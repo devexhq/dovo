@@ -26,6 +26,7 @@ from tests.harness import FakeAgentRunner, UnfixableAgentRunner
 from tests.harness.builders import init_git_repository
 from tests.harness.catalog import write_runnable_blueprint
 from tests.harness.diagnostic_log import diagnostic_hint
+from tests.harness.fakes import fixed_clock, fixed_new_id
 from tests.harness.workspace_paths import initialized_workspace_paths
 
 GUARD_MESSAGE_HEAD = "Workspace is not initialized: no valid project identity at"
@@ -87,7 +88,9 @@ class RunCliIntegrationTests:
             first = cli_runner.invoke(app, ["-p", str(cli_workspace), "run", "keep-task", "--keep"])
             assert first.exit_code == 0
         else:
-            Worktree(paths, db=db.worktrees, git=GitRunner()).create(session_id="keep-task")
+            Worktree(paths, db=db.worktrees, git=GitRunner(), clock=fixed_clock, new_id=fixed_new_id).create(
+                session_id="keep-task"
+            )
         earlier_ids = {row.id for row in db.worktrees.list()}
 
         result = cli_runner.invoke(app, ["-p", str(cli_workspace), "run", "keep-task", "--keep"])

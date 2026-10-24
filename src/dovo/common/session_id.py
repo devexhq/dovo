@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 import uuid
+from collections.abc import Callable
+
+type SessionIdFactory = Callable[[str], str]
 
 
 def new_session_id(kind: str) -> str:

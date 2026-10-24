@@ -63,7 +63,9 @@ class Workspace:
             name=record.name,
             created_at=record.created_at,
         )
-        manager = Worktree(self.context.paths, git=self.context.git, db=worktrees)
+        manager = Worktree(
+            self.context.paths, git=self.context.git, clock=self.context.clock, new_id=self.context.new_id, db=worktrees
+        )
         safe_notify(self.context.observer, "on_worktree_ready", path, active=True)
         return path, manager, session, None
 
@@ -85,6 +87,8 @@ class Workspace:
         manager = Worktree(
             self.context.paths,
             git=self.context.git,
+            clock=self.context.clock,
+            new_id=self.context.new_id,
             db=WorktreesRepository(db_path=self.context.paths.database_file, project_id=self.context.paths.project_id),
         )
         try:

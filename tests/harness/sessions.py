@@ -22,6 +22,7 @@ from dovo.engine.state_models import ExecutionLeafNode, NodeState, StepAttemptRe
 from dovo.engine.state_store import SessionStateStore
 from dovo.engine.writer import snapshot_definitions
 from tests.harness.catalog import write_runnable_blueprint
+from tests.harness.fakes import fixed_clock, fixed_new_id
 
 SEEDED_FAILURE = "seeded failure"
 SEEDED_SPAN = TimeSpan(
@@ -391,6 +392,8 @@ def seed_paused_ask_session(
         session_log_dir=session_log_dir,
         artifact_store=ArtifactStore(Artifacts(paths, artifacts), session_id),
         git=GitRunner(),
+        clock=fixed_clock,
+        new_id=fixed_new_id,
     )
     outcome = RunCoordinator(SessionStateStore(sessions, paths, session_id), context).execute()
     assert outcome.status is SessionStatus.PAUSED

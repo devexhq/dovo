@@ -514,6 +514,8 @@ class RunCoordinator:
             sensitive_variables=self._context.sensitive_variables,
             paths=self._context.paths,
             git=self._context.git,
+            clock=self._context.clock,
+            new_id=self._context.new_id,
         )
         self._loaded = _LoadedRun(state=loaded.state, blueprint=blueprint, settings=settings)
         return True

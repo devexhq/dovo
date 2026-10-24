@@ -28,6 +28,7 @@ from dovo.engine.workspace import Workspace
 from tests.engine.conftest import WorktreeSetupFactory
 from tests.harness.builders import WorkspaceBuilder
 from tests.harness.diagnostic_log import diagnostic_hint, read_single_event
+from tests.harness.fakes import fixed_clock, fixed_new_id
 from tests.harness.git_index import snapshot_index
 from tests.harness.sessions import RecordingRunObserver
 from tests.harness.workspace_paths import initialized_workspace_paths
@@ -58,6 +59,8 @@ class WorkspaceSetupTests:
             observer=observer,
             paths=initialized_workspace_paths(tmp_path),
             git=GitRunner(),
+            clock=fixed_clock,
+            new_id=fixed_new_id,
         )
 
         target_dir, manager, session, error = Workspace(context).setup()
@@ -76,6 +79,17 @@ class WorkspaceSetupTests:
         assert setup.target_dir == setup.session.worktree_path
         assert setup.target_dir.exists()
         assert observer.calls == [("worktree_ready", setup.target_dir, True)]
+
+    def test_setup_creates_session_with_id_and_created_at_from_settings(
+        self, worktree_setup: WorktreeSetupFactory
+    ) -> None:
+        """Return session "dovo_0000abcd" created at "2026-01-02T03:04:05+00:00" for RunSettings(clock=fixed_clock, new_id=fixed_new_id) with no session_id."""
+        setup = worktree_setup()
+
+        assert setup.error is None
+        assert setup.session is not None
+        assert setup.session.session_id == "dovo_0000abcd"
+        assert setup.session.created_at == "2026-01-02T03:04:05+00:00"
 
     def test_fresh_run_worktree_identity_is_session_id_not_blueprint_key(
         self, worktree_setup: WorktreeSetupFactory, worktree_paths: WorkspacePaths
@@ -145,12 +159,28 @@ class WorkspaceSetupTests:
         )
         paths = initialized_workspace_paths(workspace_root)
         first = Workspace(
-            RunSettings(cwd=workspace_root, use_worktree=True, session_id="first", paths=paths, git=GitRunner())
+            RunSettings(
+                cwd=workspace_root,
+                use_worktree=True,
+                session_id="first",
+                paths=paths,
+                git=GitRunner(),
+                clock=fixed_clock,
+                new_id=fixed_new_id,
+            )
         )
         assert first.setup()[3] is None
 
         _, manager, session, error = Workspace(
-            RunSettings(cwd=workspace_root, use_worktree=True, session_id="second", paths=paths, git=GitRunner())
+            RunSettings(
+                cwd=workspace_root,
+                use_worktree=True,
+                session_id="second",
+                paths=paths,
+                git=GitRunner(),
+                clock=fixed_clock,
+                new_id=fixed_new_id,
+            )
         ).setup()
 
         assert manager is None
@@ -167,7 +197,7 @@ class WorkspaceRetainedWorktreeTests:
         self, worktree_setup: WorktreeSetupFactory, worktree_paths: WorkspacePaths
     ) -> None:
         paths = worktree_paths
-        created = Worktree(paths, git=GitRunner()).create(name="retained")
+        created = Worktree(paths, git=GitRunner(), clock=fixed_clock, new_id=fixed_new_id).create(name="retained")
         assert created.session is not None
         retained_id = created.session.session_id
 
@@ -219,6 +249,8 @@ class WorkspaceCleanupTests:
             observer=observer,
             paths=initialized_workspace_paths(tmp_path),
             git=GitRunner(),
+            clock=fixed_clock,
+            new_id=fixed_new_id,
         )
 
         warnings: list[str] = []
@@ -431,7 +463,11 @@ class WorkspaceLinkSessionDirTests:
             setup = worktree_setup(use_worktree=False, session_id="link-skip")
         elif scenario == "retained-worktree":
             created = Worktree(
-                paths, db=WorktreesRepository(db_path=paths.database_file, project_id=paths.project_id), git=GitRunner()
+                paths,
+                db=WorktreesRepository(db_path=paths.database_file, project_id=paths.project_id),
+                git=GitRunner(),
+                clock=fixed_clock,
+                new_id=fixed_new_id,
             ).create(session_id="retained")
             assert created.session is not None
             setup = worktree_setup(session_id="link-skip", worktree_id=created.session.session_id)
@@ -456,6 +492,8 @@ class WorkspaceHandleAutoApplyTests:
             auto_apply=False,
             paths=initialized_workspace_paths(tmp_path),
             git=GitRunner(),
+            clock=fixed_clock,
+            new_id=fixed_new_id,
         )
         errors: list[str] = []
         warnings: list[str] = []
@@ -713,6 +751,8 @@ class WorkspacePrepareSessionDirTests:
             session_id=None,
             paths=initialized_workspace_paths(tmp_path),
             git=GitRunner(),
+            clock=fixed_clock,
+            new_id=fixed_new_id,
         )
         warnings: list[str] = []
 
@@ -723,7 +763,15 @@ class WorkspacePrepareSessionDirTests:
 
     def test_creates_and_returns_session_directory(self, tmp_path: Path, case: _PrepareSessionDirCase) -> None:
         paths = initialized_workspace_paths(tmp_path)
-        context = RunSettings(cwd=tmp_path, use_worktree=False, session_id="session-abc", paths=paths, git=GitRunner())
+        context = RunSettings(
+            cwd=tmp_path,
+            use_worktree=False,
+            session_id="session-abc",
+            paths=paths,
+            git=GitRunner(),
+            clock=fixed_clock,
+            new_id=fixed_new_id,
+        )
         warnings: list[str] = []
 
         result = case.prepare(Workspace(context), warnings)
@@ -741,6 +789,8 @@ class WorkspacePrepareSessionDirTests:
             session_id="session-abc",
             paths=initialized_workspace_paths(tmp_path),
             git=GitRunner(),
+            clock=fixed_clock,
+            new_id=fixed_new_id,
         )
 
         def _raise(self: Path, *args: object, **kwargs: object) -> None:
@@ -763,6 +813,8 @@ class WorkspacePrepareSessionArtifactsTests:
             session_id=None,
             paths=initialized_workspace_paths(tmp_path),
             git=GitRunner(),
+            clock=fixed_clock,
+            new_id=fixed_new_id,
         )
 
         assert Workspace(context).prepare_session_artifacts() is None
@@ -771,7 +823,13 @@ class WorkspacePrepareSessionArtifactsTests:
         workspace_root = WorkspaceBuilder(tmp_path / "artifacts_workspace").with_database().build()
         paths = initialized_workspace_paths(workspace_root)
         context = RunSettings(
-            cwd=workspace_root, use_worktree=False, session_id="session-abc", paths=paths, git=GitRunner()
+            cwd=workspace_root,
+            use_worktree=False,
+            session_id="session-abc",
+            paths=paths,
+            git=GitRunner(),
+            clock=fixed_clock,
+            new_id=fixed_new_id,
         )
         (workspace_root / "PLAN.md").write_text("plan", encoding="utf-8")
 
@@ -796,7 +854,13 @@ class WorkspaceSinglePathResolutionTests:
         workspace_root = WorkspaceBuilder(tmp_path / "path_snapshot_workspace").with_git().with_database().build()
         paths = initialized_workspace_paths(workspace_root)
         context = RunSettings(
-            cwd=workspace_root, use_worktree=False, session_id="path-snapshot", paths=paths, git=GitRunner()
+            cwd=workspace_root,
+            use_worktree=False,
+            session_id="path-snapshot",
+            paths=paths,
+            git=GitRunner(),
+            clock=fixed_clock,
+            new_id=fixed_new_id,
         )
 
         def _unexpected_resolution(*args: object, **kwargs: object) -> WorkspacePaths:
@@ -840,7 +904,12 @@ class ScratchLifecycleCleanupTests:
     def test_completed_unkept_run_removes_session_tree_including_invocation_directories(self, tmp_path: Path) -> None:
         session_tmp_dir, _ = self._allocate(tmp_path, "session-a")
         context = RunSettings(
-            cwd=tmp_path, use_worktree=False, paths=initialized_workspace_paths(tmp_path), git=GitRunner()
+            cwd=tmp_path,
+            use_worktree=False,
+            paths=initialized_workspace_paths(tmp_path),
+            git=GitRunner(),
+            clock=fixed_clock,
+            new_id=fixed_new_id,
         )
 
         Workspace(context).cleanup_session_tmp_dir(session_tmp_dir, keep=False, status=SessionStatus.COMPLETED)
@@ -859,7 +928,12 @@ class ScratchLifecycleCleanupTests:
     def test_retained_runs_keep_invocation_directories(self, tmp_path: Path, keep: bool, status: SessionStatus) -> None:
         session_tmp_dir, invocation = self._allocate(tmp_path, "session-a")
         context = RunSettings(
-            cwd=tmp_path, use_worktree=False, paths=initialized_workspace_paths(tmp_path), git=GitRunner()
+            cwd=tmp_path,
+            use_worktree=False,
+            paths=initialized_workspace_paths(tmp_path),
+            git=GitRunner(),
+            clock=fixed_clock,
+            new_id=fixed_new_id,
         )
 
         Workspace(context).cleanup_session_tmp_dir(session_tmp_dir, keep=keep, status=status)
@@ -870,7 +944,12 @@ class ScratchLifecycleCleanupTests:
     def test_removal_failure_is_swallowed(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         session_tmp_dir, _ = self._allocate(tmp_path, "session-a")
         context = RunSettings(
-            cwd=tmp_path, use_worktree=False, paths=initialized_workspace_paths(tmp_path), git=GitRunner()
+            cwd=tmp_path,
+            use_worktree=False,
+            paths=initialized_workspace_paths(tmp_path),
+            git=GitRunner(),
+            clock=fixed_clock,
+            new_id=fixed_new_id,
         )
 
         def _raise(*args: object, **kwargs: object) -> None:
@@ -887,7 +966,12 @@ class ScratchLifecycleCleanupTests:
         _, invocation_b = self._allocate(tmp_path, "session-b")
         (invocation_b.scratch_path / "notes.txt").write_text("keep", encoding="utf-8")
         context = RunSettings(
-            cwd=tmp_path, use_worktree=False, paths=initialized_workspace_paths(tmp_path), git=GitRunner()
+            cwd=tmp_path,
+            use_worktree=False,
+            paths=initialized_workspace_paths(tmp_path),
+            git=GitRunner(),
+            clock=fixed_clock,
+            new_id=fixed_new_id,
         )
 
         Workspace(context).cleanup_session_tmp_dir(session_a, keep=False, status=SessionStatus.COMPLETED)

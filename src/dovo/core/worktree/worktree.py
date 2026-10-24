@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import builtins
 
+from dovo.common.clock import Clock
 from dovo.common.filesystem import WorkspacePaths
 from dovo.common.lock import WorkspaceLock
+from dovo.common.session_id import SessionIdFactory
 from dovo.core.db import SessionsRepository, WorktreeRecord, WorktreesRepository, WorktreeStatus
 from dovo.core.git.runner import GitRunner
 from dovo.core.worktree.models import (
@@ -37,6 +39,8 @@ class Worktree:
         paths: WorkspacePaths,
         *,
         git: GitRunner,
+        clock: Clock,
+        new_id: SessionIdFactory,
         db: WorktreesRepository | None = None,
         sessions_db: SessionsRepository | None = None,
     ) -> None:
@@ -48,7 +52,7 @@ class Worktree:
         )
         self.sessions_db = sessions_db
         self.git = git
-        self.lifecycle = WorktreeLifecycle(self.paths, self.db, git=git)
+        self.lifecycle = WorktreeLifecycle(self.paths, self.db, git=git, clock=clock, new_id=new_id)
         self.patch = WorktreePatch(self.paths, self.db, git=git, lifecycle=self.lifecycle)
 
     def list(self, status: WorktreeStatus | str | None = None) -> WorktreeListResult:

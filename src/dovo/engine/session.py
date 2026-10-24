@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+from dovo.common.clock import Clock
 from dovo.common.filesystem import WorkspacePaths
 from dovo.common.process import process_registry
+from dovo.common.session_id import SessionIdFactory
 from dovo.core.agents import default_tool_policy
 from dovo.core.agents.models import AgentEnvMode, AgentEnvOverrides, ResolvedAgentSettings
 from dovo.core.config import Config, agent_settings
@@ -34,6 +36,8 @@ def drive_run(
     session_id: str,
     *,
     git: GitRunner,
+    clock: Clock,
+    new_id: SessionIdFactory,
     observer: RunObserver | None,
     prompter: FailurePrompter | None,
     interaction_prompter: InteractionPrompter | None = None,
@@ -59,7 +63,17 @@ def drive_run(
         return outcome
 
     opened = SessionRunner.open(
-        row, paths, sessions, observer, prompter, no_tty, resolution.settings, interaction_prompter, git=git
+        row,
+        paths,
+        sessions,
+        observer,
+        prompter,
+        no_tty,
+        resolution.settings,
+        interaction_prompter,
+        git=git,
+        clock=clock,
+        new_id=new_id,
     )
     outcome = opened.run() if isinstance(opened, SessionRunner) else opened
     safe_notify(observer, "on_run_completed", outcome)
@@ -114,6 +128,8 @@ def _workspace_context(
     observer: RunObserver | None,
     sensitive_variables: tuple[str, ...],
     git: GitRunner,
+    clock: Clock,
+    new_id: SessionIdFactory,
 ) -> RunSettings:
     """Build the Workspace input from the session row and the configured sensitive variable names."""
     return RunSettings(
@@ -128,6 +144,8 @@ def _workspace_context(
         sensitive_variables=sensitive_variables,
         paths=paths,
         git=git,
+        clock=clock,
+        new_id=new_id,
     )
 
 
@@ -175,11 +193,13 @@ class SessionRunner:
         interaction_prompter: InteractionPrompter | None = None,
         *,
         git: GitRunner,
+        clock: Clock,
+        new_id: SessionIdFactory,
     ) -> SessionRunner | RunOutcome:
         """Set up the worktree and session directories and return the session, or a FAILED outcome on setup error."""
         config = Config(paths)
         sensitive_variables = tuple(config.environment.sensitive_variables)
-        workspace = Workspace(_workspace_context(row, paths, observer, sensitive_variables, git))
+        workspace = Workspace(_workspace_context(row, paths, observer, sensitive_variables, git, clock, new_id))
         target_dir, manager, worktree, setup_error = workspace.setup()
         if setup_error is not None:
             return RunOutcome(
@@ -215,6 +235,8 @@ class SessionRunner:
             sensitive_variables=sensitive_variables,
             interaction_prompter=interaction_prompter,
             git=git,
+            clock=clock,
+            new_id=new_id,
         )
         return cls(
             row, paths, sessions, observer, prompter, workspace, context, manager, worktree, setup_warnings, agent

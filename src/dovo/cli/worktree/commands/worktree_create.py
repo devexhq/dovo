@@ -20,7 +20,9 @@ def worktree_create_command(
         wip: When True, overlay uncommitted working-tree changes.
         output_format: Presentation format ("terminal" or "json").
     """
-    result = Worktree(context.paths, git=context.git, db=context.db.worktrees).create(
+    result = Worktree(
+        context.paths, git=context.git, clock=context.clock, new_id=context.new_id, db=context.db.worktrees
+    ).create(
         name=name,
         base_ref=base_ref,
         include_wip=wip,
