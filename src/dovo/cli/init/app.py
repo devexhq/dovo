@@ -2,7 +2,9 @@ from typing import Annotated
 
 import typer
 
+from dovo.cli.options import FormatOption
 from dovo.common.filesystem import Filesystem
+from dovo.common.models import OutputFormatOptions
 from dovo.common.version import get_version
 from dovo.core.bootstrap import InitFailureMode
 
@@ -24,11 +26,7 @@ def init_callback(
         "--repair",
         help="Add missing required config keys without overwriting user values.",
     ),
-    format: str = typer.Option(
-        "terminal",
-        "--format",
-        help="Presentation format ('terminal' or 'json').",
-    ),
+    format: FormatOption = OutputFormatOptions.TERMINAL,
     id: Annotated[
         str | None,
         typer.Option(help="Explicit unique project ID slug."),

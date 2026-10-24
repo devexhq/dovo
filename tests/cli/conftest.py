@@ -8,6 +8,7 @@ import pytest
 
 from dovo.cli.ui.dispatcher import ui_dispatcher
 from dovo.common.filesystem import Filesystem
+from dovo.common.models import OutputFormatOptions
 from dovo.core.config.generator import build_default_config
 from tests.harness.builders import WorkspaceBuilder
 
@@ -39,7 +40,7 @@ def dispatch_spy(monkeypatch: pytest.MonkeyPatch) -> list[object]:
     captured: list[object] = []
     original_dispatch = ui_dispatcher.dispatch
 
-    def _spy_dispatch(data: object, output_format: str | None = None) -> None:
+    def _spy_dispatch(data: object, output_format: OutputFormatOptions | None = None) -> None:
         captured.append(data)
         original_dispatch(data, output_format)
 

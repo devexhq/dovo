@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from dovo.cli.ui.dispatcher import ui_dispatcher
+from dovo.common.models import OutputFormatOptions
 from dovo.core.bootstrap import WorkspaceInitResult, initialize_workspace
 
 
@@ -13,7 +14,7 @@ def init_command(
     tool_version: str | None = None,
     overwrite: bool = False,
     repair: bool = False,
-    output_format: str = "terminal",
+    output_format: OutputFormatOptions = OutputFormatOptions.TERMINAL,
     project_id: str | None = None,
     display_name: str | None = None,
     force: bool = False,

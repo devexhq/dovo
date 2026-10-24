@@ -6,6 +6,7 @@ import typer
 
 from dovo.cli.context import CliContext
 from dovo.cli.ui.dispatcher import ui_dispatcher
+from dovo.common.models import OutputFormatOptions
 from dovo.core.catalog import Catalog
 from dovo.core.catalog.models import CatalogDeleteResult, CatalogDeleteStatus
 
@@ -25,7 +26,7 @@ def blueprint_delete_command(
     context: CliContext,
     sha_or_name: str,
     force: bool = False,
-    output_format: str = "terminal",
+    output_format: OutputFormatOptions = OutputFormatOptions.TERMINAL,
 ) -> CatalogDeleteResult:
     """Delete a repo-tier blueprint file and reindex.
 

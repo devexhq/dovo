@@ -52,17 +52,6 @@ class ComponentFormatter[T, V: BaseModel = BaseModel](ABC):
             return view.model_dump(mode="json")
         raise TypeError(f"View model must be an instance of BaseModel, got {type(view).__name__}")
 
-    def to_raw(self, data: T) -> str:
-        """Render as raw text.
-
-        Args:
-            data: Domain data object to render to terminal output.
-
-        Returns:
-            A raw text string.
-        """
-        raise NotImplementedError
-
     @abstractmethod
     def to_rich(self, data: T) -> RenderableType:
         """Build the renderable from transform(data). No derivation permitted here.

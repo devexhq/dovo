@@ -6,6 +6,7 @@ from pathlib import Path
 
 from dovo.cli.context import CliContext
 from dovo.cli.ui.dispatcher import ui_dispatcher
+from dovo.common.models import OutputFormatOptions
 from dovo.core.artifacts import ArtifactDownloadResult, Artifacts
 
 
@@ -16,7 +17,7 @@ def artifacts_download_command(
     *,
     dest: str,
     revision: int | None = None,
-    output_format: str = "terminal",
+    output_format: OutputFormatOptions = OutputFormatOptions.TERMINAL,
 ) -> ArtifactDownloadResult:
     """Download and checksum-verify a named artifact revision (latest by default) into dest."""
     result = Artifacts(context.paths, db=context.db.artifacts).download(

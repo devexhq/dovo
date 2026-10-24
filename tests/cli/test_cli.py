@@ -6,6 +6,7 @@ import dataclasses
 from pathlib import Path
 from typing import Any
 
+import click
 import pytest
 from typer.testing import CliRunner
 
@@ -408,3 +409,104 @@ class SessionCliTests:
 
         for name in ("logs", "diff", "resume"):
             assert root_callbacks[name] is session_callbacks[name]
+
+
+_COMMANDS_WITH_FORMAT_ARGV = [
+    ["artifacts", "list"],
+    ["artifacts", "download", "s", "n", "--dest", "d"],
+    ["artifacts", "prune"],
+    ["blueprint", "list"],
+    ["blueprint", "ls"],
+    ["blueprint", "show", "x"],
+    ["blueprint", "create", "--name", "x"],
+    ["blueprint", "delete", "x"],
+    ["blueprint", "validate", "x"],
+    ["step", "list"],
+    ["step", "ls"],
+    ["step", "show", "x"],
+    ["step", "create", "--name", "x"],
+    ["step", "delete", "x"],
+    ["step", "validate", "x"],
+    ["config", "show"],
+    ["config", "set", "k", "v"],
+    ["config", "unset", "k"],
+    ["config", "validate"],
+    ["doctor"],
+    ["init"],
+    ["status"],
+    ["session"],
+    ["session", "list"],
+    ["session", "ls"],
+    ["session", "show"],
+    ["session", "logs"],
+    ["session", "diff"],
+    ["session", "resume"],
+    ["logs"],
+    ["diff"],
+    ["resume"],
+    ["worktree", "create"],
+    ["worktree", "list"],
+    ["worktree", "show", "x"],
+    ["worktree", "prune"],
+    ["worktree", "delete", "x"],
+    ["worktree", "apply", "x"],
+    ["worktree", "diff", "x"],
+    ["run", "x"],
+]
+COMMANDS_WITH_FORMAT = [pytest.param(command, id="-".join(command)) for command in _COMMANDS_WITH_FORMAT_ARGV]
+
+
+class FormatOptionCliTests:
+    """The shared --format option accepts only 'terminal' and 'json' on every command."""
+
+    @pytest.mark.parametrize("command", COMMANDS_WITH_FORMAT)
+    def test_help_lists_json_and_terminal_choices(
+        self, cli_runner: CliRunner, cli_workspace: Path, command: list[str]
+    ) -> None:
+        result = cli_runner.invoke(app, ["-p", str(cli_workspace), *command, "--help"])
+
+        assert result.exit_code == 0
+        assert "json|terminal" in click.unstyle(result.stdout)
+        assert "Output format: 'terminal' or 'json'." in click.unstyle(result.stdout)
+
+    @pytest.mark.parametrize("command", COMMANDS_WITH_FORMAT)
+    def test_invalid_format_is_rejected_on_every_command(
+        self, cli_runner: CliRunner, cli_workspace: Path, command: list[str]
+    ) -> None:
+        result = cli_runner.invoke(app, ["-p", str(cli_workspace), *command, "--format", "yaml"])
+
+        assert result.exit_code == 2
+        assert result.stdout == ""
+        assert "Invalid value for '--format': 'yaml' is not one of 'json', 'terminal'." in click.unstyle(result.stderr)
+
+    @pytest.mark.parametrize("value", ["raw", "JSON", "yaml"])
+    def test_invalid_format_values_are_rejected(self, cli_runner: CliRunner, cli_workspace: Path, value: str) -> None:
+        result = cli_runner.invoke(app, ["-p", str(cli_workspace), "session", "diff", "--format", value])
+
+        assert result.exit_code == 2
+        assert result.stdout == ""
+        assert f"Invalid value for '--format': '{value}' is not one of 'json', 'terminal'." in click.unstyle(
+            result.stderr
+        )
+
+    @pytest.mark.parametrize(
+        ("argv", "expected"),
+        [
+            pytest.param(
+                ["session", "diff", "--raw", "--format", "json"], "No such option: --raw", id="unknown-option-json"
+            ),
+            pytest.param(["worktree", "show"], "Missing argument", id="missing-argument-terminal"),
+            pytest.param(["worktree", "show", "--format", "json"], "Missing argument", id="missing-argument-json"),
+            pytest.param(
+                ["run", "x", "--keep", "--discard", "--format", "json"], "mutually exclusive", id="bad-parameter-json"
+            ),
+        ],
+    )
+    def test_usage_errors_write_only_to_stderr_and_exit_two(
+        self, cli_runner: CliRunner, cli_workspace: Path, argv: list[str], expected: str
+    ) -> None:
+        result = cli_runner.invoke(app, ["-p", str(cli_workspace), *argv])
+
+        assert result.exit_code == 2
+        assert result.stdout == ""
+        assert expected in click.unstyle(result.stderr)

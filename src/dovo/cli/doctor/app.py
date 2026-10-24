@@ -7,6 +7,8 @@ from typing import Annotated
 import typer
 
 from dovo.cli.context import CliContext
+from dovo.cli.options import FormatOption
+from dovo.common.models import OutputFormatOptions
 from dovo.core.diagnostics import CheckCategory
 
 from .commands.root import doctor_command
@@ -30,11 +32,7 @@ def doctor_callback(
             case_sensitive=False,
         ),
     ] = None,
-    format: str = typer.Option(
-        "terminal",
-        "--format",
-        help="Presentation format ('terminal' or 'json').",
-    ),
+    format: FormatOption = OutputFormatOptions.TERMINAL,
 ) -> None:
     """Run registered diagnostic checks, dispatch the report, and exit 1 when any check failed."""
     context: CliContext = ctx.obj["context"]

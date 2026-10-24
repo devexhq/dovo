@@ -12,6 +12,7 @@ if TYPE_CHECKING:
     from typer._click.core import Context
 
 from dovo.cli.context import CliContext
+from dovo.cli.options import FormatOption
 from dovo.common.models import AgentEnvModeOptions, DisplayFormatOptions, OutputFormatOptions
 
 from .commands.root import run_command
@@ -95,9 +96,7 @@ def run_callback(
             help="Forward a host variable name or trailing-'*' prefix to the agent for this invocation; repeatable.",
         ),
     ] = None,
-    format: Annotated[
-        OutputFormatOptions, typer.Option(help="Output format: 'terminal' or 'json'.")
-    ] = OutputFormatOptions.TERMINAL,
+    format: FormatOption = OutputFormatOptions.TERMINAL,
     display: Annotated[
         DisplayFormatOptions, typer.Option(help="Display format: 'ansi' or 'live'")
     ] = DisplayFormatOptions.ANSI,

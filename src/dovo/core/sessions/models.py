@@ -25,14 +25,13 @@ class DiffStatus(StrEnum):
 class DiffResult(BaseResult):
     """Structured result of diff collection before rendering.
 
-    ``raw``, ``full``, ``max_lines`` and ``latest`` are transient presentation flags set by the CLI, not domain facts.
+    ``full``, ``max_lines`` and ``latest`` are transient presentation flags set by the CLI, not domain facts.
     """
 
     status: DiffStatus
     session_id: str | None = None
     artifact_path: Path | None = None
     diff_text: str = ""
-    raw: bool = False
     full: bool = False
     max_lines: int | None = None
     latest: bool = False

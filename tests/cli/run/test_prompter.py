@@ -16,6 +16,7 @@ from dovo.cli.run.prompter import (
     paused_prompt_message,
 )
 from dovo.cli.ui.dispatcher import UiDispatcher
+from dovo.common.models import OutputFormatOptions
 from dovo.core.catalog.definitions import CommentPolicy, LoopStepBlock, StepDefinition
 from dovo.core.interaction import (
     InteractionAnswer,
@@ -28,7 +29,9 @@ from dovo.engine import FailurePromptDecision, LoopPromptDecision
 from dovo.engine.executors.models import StepResult
 
 
-def _buffered_dispatcher(*, force_terminal: bool, output_format: str = "terminal") -> tuple[UiDispatcher, io.StringIO]:
+def _buffered_dispatcher(
+    *, force_terminal: bool, output_format: OutputFormatOptions = OutputFormatOptions.TERMINAL
+) -> tuple[UiDispatcher, io.StringIO]:
     """Build a UiDispatcher whose Console writes to an inspectable StringIO buffer."""
     buffer = io.StringIO()
     console = Console(file=buffer, force_terminal=force_terminal, color_system=None, width=100)
@@ -127,7 +130,7 @@ class DispatcherFailurePrompterTests:
     def test_json_mode_aborts_without_blocking_and_events_carry_the_step_or_loop_id(
         self, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
     ) -> None:
-        prompter = DispatcherFailurePrompter(UiDispatcher(output_format="json"))
+        prompter = DispatcherFailurePrompter(UiDispatcher(output_format=OutputFormatOptions.JSON))
 
         def _fail_if_called(*_args: object, **_kwargs: object) -> str:
             raise AssertionError("input() must not be called in non-interactive json mode")
@@ -363,7 +366,7 @@ class DispatcherInteractionPrompterTests:
     ) -> None:
         terminal = _Terminal([])
         monkeypatch.setattr("builtins.input", terminal)
-        prompter = DispatcherInteractionPrompter(UiDispatcher(output_format="json"), no_tty=False)
+        prompter = DispatcherInteractionPrompter(UiDispatcher(output_format=OutputFormatOptions.JSON), no_tty=False)
 
         answer = prompter.ask(_select_request())
 
@@ -373,7 +376,7 @@ class DispatcherInteractionPrompterTests:
 
     def test_event_uses_one_based_keys_option_values_and_short_digest(self, capsys: pytest.CaptureFixture[str]) -> None:
         artifact = RequestArtifact(name="plan", revision=2, digest="b07d44aa11223344", preview=["line"])
-        prompter = DispatcherInteractionPrompter(UiDispatcher(output_format="json"), no_tty=True)
+        prompter = DispatcherInteractionPrompter(UiDispatcher(output_format=OutputFormatOptions.JSON), no_tty=True)
 
         prompter.ask(_select_request(policy="optional", artifact=artifact))
 
@@ -394,7 +397,7 @@ class DispatcherInteractionPrompterTests:
         ]
 
     def test_multiselect_event_displays_the_value_with_the_label(self, capsys: pytest.CaptureFixture[str]) -> None:
-        prompter = DispatcherInteractionPrompter(UiDispatcher(output_format="json"), no_tty=True)
+        prompter = DispatcherInteractionPrompter(UiDispatcher(output_format=OutputFormatOptions.JSON), no_tty=True)
 
         prompter.ask(_multiselect_request())
         prompter.ask(_select_request())

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dovo.cli.context import CliContext
 from dovo.cli.ui.dispatcher import ui_dispatcher
+from dovo.common.models import OutputFormatOptions
 from dovo.core.artifacts import Artifacts, ArtifactsPruneResult
 
 
@@ -12,7 +13,7 @@ def artifacts_prune_command(
     *,
     dry_run: bool = False,
     force: bool = False,
-    output_format: str = "terminal",
+    output_format: OutputFormatOptions = OutputFormatOptions.TERMINAL,
 ) -> ArtifactsPruneResult:
     """Delete expired artifact bundles per prune.remove_expired_artifacts, or preview under dry_run.
 

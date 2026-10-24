@@ -88,7 +88,6 @@ class SessionDiffView(BaseModel):
     artifact_path: Path | None = None
     relative_path: str = ""
     diff_text: str = ""
-    raw: bool = False
     full: bool = False
     max_lines: int | None = None
     # Presentation-only header switch; excluded so it never reaches the JSON wire payload.

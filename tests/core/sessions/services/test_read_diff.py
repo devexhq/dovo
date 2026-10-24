@@ -75,7 +75,7 @@ class ReadSessionDiffTests:
 
         assert result.status == DiffStatus.OK
         assert result.diff_text == patch_text
-        assert (result.raw, result.full, result.max_lines) == (False, False, None)
+        assert (result.full, result.max_lines) == (False, None)
 
     def test_read_session_diff_with_unreadable_patch_returns_read_failure(
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path, workspace_paths_factory: WorkspacePathsFactory

@@ -5,6 +5,8 @@ from __future__ import annotations
 import typer
 
 from dovo.cli.context import CliContext
+from dovo.cli.options import FormatOption
+from dovo.common.models import OutputFormatOptions
 
 from .commands.artifacts_download import artifacts_download_command
 from .commands.artifacts_list import artifacts_list_command
@@ -20,11 +22,7 @@ artifacts_app = typer.Typer(
 def artifacts_list(
     ctx: typer.Context,
     session: str | None = typer.Option(None, "--session", help="Restrict the listing to one session ID."),
-    format: str = typer.Option(
-        "terminal",
-        "--format",
-        help="Presentation format ('terminal' or 'json').",
-    ),
+    format: FormatOption = OutputFormatOptions.TERMINAL,
 ) -> None:
     """List published artifacts for the current project."""
     context: CliContext = ctx.obj["context"]
@@ -42,11 +40,7 @@ def artifacts_download(
     revision: int | None = typer.Option(
         None, "--revision", min=1, help="Revision number to download (default: latest)."
     ),
-    format: str = typer.Option(
-        "terminal",
-        "--format",
-        help="Presentation format ('terminal' or 'json').",
-    ),
+    format: FormatOption = OutputFormatOptions.TERMINAL,
 ) -> None:
     """Download and checksum-verify a published artifact revision (latest by default)."""
     context: CliContext = ctx.obj["context"]
@@ -68,11 +62,7 @@ def artifacts_prune(
         "--force",
         help="Prune expired artifacts even when disabled by config.",
     ),
-    format: str = typer.Option(
-        "terminal",
-        "--format",
-        help="Presentation format ('terminal' or 'json').",
-    ),
+    format: FormatOption = OutputFormatOptions.TERMINAL,
 ) -> None:
     """Delete expired artifact bundles per prune.remove_expired_artifacts, or preview with --dry-run."""
     context: CliContext = ctx.obj["context"]

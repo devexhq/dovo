@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dovo.cli.context import CliContext
 from dovo.cli.ui.dispatcher import ui_dispatcher
+from dovo.common.models import OutputFormatOptions
 from dovo.core.catalog import Catalog
 from dovo.core.catalog.models import CatalogCreateResult, CatalogCreateStatus, CatalogItemType, CatalogTier
 
@@ -26,7 +27,7 @@ def step_create_command(
     name: str,
     user: bool = False,
     global_: bool = False,
-    output_format: str = "terminal",
+    output_format: OutputFormatOptions = OutputFormatOptions.TERMINAL,
 ) -> CatalogCreateResult:
     """Create a new step file at the selected tier and reindex.
 

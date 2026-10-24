@@ -1,6 +1,8 @@
 import typer
 
 from dovo.cli.context import CliContext
+from dovo.cli.options import FormatOption
+from dovo.common.models import OutputFormatOptions
 
 from .commands.config_set import config_set_command
 from .commands.config_show import config_show_command
@@ -16,11 +18,7 @@ config_app = typer.Typer(
 @config_app.command("show")
 def config_show(
     ctx: typer.Context,
-    format: str = typer.Option(
-        "terminal",
-        "--format",
-        help="Presentation format ('terminal' or 'json').",
-    ),
+    format: FormatOption = OutputFormatOptions.TERMINAL,
 ):
     """Display the full normalized effective configuration as JSON."""
     context: CliContext = ctx.obj["context"]
@@ -40,11 +38,7 @@ def config_set(
         ...,
         help="Value to store; coerced to bool, int, float, list or object unless wrapped in double quotes.",
     ),
-    format: str = typer.Option(
-        "terminal",
-        "--format",
-        help="Presentation format ('terminal' or 'json').",
-    ),
+    format: FormatOption = OutputFormatOptions.TERMINAL,
 ):
     """Set a configuration value by key or nested dot-path."""
     context: CliContext = ctx.obj["context"]
@@ -60,11 +54,7 @@ def config_unset(
         ...,
         help="Config key or nested dot-path (e.g. agents.copilot.model).",
     ),
-    format: str = typer.Option(
-        "terminal",
-        "--format",
-        help="Presentation format ('terminal' or 'json').",
-    ),
+    format: FormatOption = OutputFormatOptions.TERMINAL,
 ):
     """Remove a configuration value by key or nested dot-path, falling back to its schema default."""
     context: CliContext = ctx.obj["context"]
@@ -76,11 +66,7 @@ def config_unset(
 @config_app.command("validate")
 def config_validate(
     ctx: typer.Context,
-    format: str = typer.Option(
-        "terminal",
-        "--format",
-        help="Presentation format ('terminal' or 'json').",
-    ),
+    format: FormatOption = OutputFormatOptions.TERMINAL,
 ):
     """Validate .dovo/config.json against the V1 schema and semantic rules."""
     context: CliContext = ctx.obj["context"]

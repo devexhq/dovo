@@ -18,6 +18,7 @@ from dovo.cli.ui.events import (
 from dovo.cli.ui.formatters.base import ComponentFormatter
 from dovo.cli.ui.live import LiveDisplayManager
 from dovo.cli.ui.tail import CollapsingTailDisplay
+from dovo.common.models import OutputFormatOptions
 
 T = TypeVar("T")
 F = TypeVar("F", bound=ComponentFormatter[Any] | type[ComponentFormatter[Any]])
@@ -26,16 +27,18 @@ F = TypeVar("F", bound=ComponentFormatter[Any] | type[ComponentFormatter[Any]])
 class UiDispatcher:
     """Central UI dispatcher routing domain data to appropriate formatters."""
 
-    def __init__(self, console: Console | None = None, output_format: str = "terminal") -> None:
+    def __init__(
+        self, console: Console | None = None, output_format: OutputFormatOptions = OutputFormatOptions.TERMINAL
+    ) -> None:
         """Initialize dispatcher.
 
         Args:
             console: Rich Console instance to use for terminal output. Defaults to None.
-            output_format: Default output format ("terminal" or "json"). Defaults to "terminal".
+            output_format: Default output format. Defaults to terminal.
         """
         self._custom_console: Console | None = console
         self._registry: dict[type[object], ComponentFormatter[Any]] = {}
-        self._output_format: str = output_format
+        self._output_format: OutputFormatOptions = output_format
         self._live_display: LiveDisplayManager | None = None
         self._tail_display: CollapsingTailDisplay | None = None
         self._register_default_formatters()
@@ -61,18 +64,18 @@ class UiDispatcher:
     @property
     def is_terminal_format(self) -> bool:
         """Whether the active output format is terminal."""
-        return self._output_format == "terminal"
+        return self._output_format == OutputFormatOptions.TERMINAL
 
     @property
-    def output_format(self) -> str:
+    def output_format(self) -> OutputFormatOptions:
         """Get current output format."""
         return self._output_format
 
-    def set_output_format(self, output_format: str) -> None:
-        """Set output format ("terminal" or "json").
+    def set_output_format(self, output_format: OutputFormatOptions) -> None:
+        """Set the default output format.
 
         Args:
-            output_format: Presentation format ("terminal" or "json").
+            output_format: Output format to use when dispatch is not given one.
         """
         self._output_format = output_format
 
@@ -116,12 +119,12 @@ class UiDispatcher:
             return decorator(formatter)
         return decorator
 
-    def dispatch(self, data: object, output_format: str | None = None) -> None:
+    def dispatch(self, data: object, output_format: OutputFormatOptions | None = None) -> None:
         """Dispatch domain data to registered formatter according to output format.
 
         Args:
             data: Domain data object to render.
-            output_format: Presentation format ("terminal" or "json"). Defaults to None.
+            output_format: Output format for this call. Defaults to the dispatcher's current format.
 
         Raises:
             ValueError: If no formatter is registered for the data's type.
@@ -132,19 +135,25 @@ class UiDispatcher:
         if formatter is None:
             raise ValueError(f"No formatter registered for type: {data_type.__name__}")
 
-        if effective_format == "json":
+        if effective_format == OutputFormatOptions.JSON:
             envelope = {
                 "event_type": data_type.__name__,
                 "payload": formatter.to_json_serializable(data),
             }
             sys.stdout.write(json.dumps(envelope) + "\n")
             sys.stdout.flush()
-        elif effective_format == "raw":
-            sys.stdout.write(formatter.to_raw(data))
-            sys.stdout.flush()
         elif not self._dispatch_interactive(data, formatter):
             rich_renderable = formatter.to_rich(data)
             self._console.print(rich_renderable)
+
+    def write_text(self, text: str) -> None:
+        """Write text to stdout verbatim, bypassing formatters, the console and the output format.
+
+        Args:
+            text: Exact text to write.
+        """
+        sys.stdout.write(text)
+        sys.stdout.flush()
 
     def _dispatch_interactive(self, data: object, formatter: ComponentFormatter[Any]) -> bool:
         """Route event to active live or collapsing-tail display if one is running."""
