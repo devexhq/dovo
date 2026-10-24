@@ -292,14 +292,18 @@ class WorktreeLifecycleCollisionTests:
         assert GitRunner().branch_exists(worktree_workspace, "dovo/dovo_link") is False
 
     @pytest.mark.parametrize(
-        ("probe_error", "expected_status"),
+        ("probe_error", "expected_status", "expected_error_prefix"),
         [
             pytest.param(
-                GitPlumbingTimeoutError("show-ref timed out"), WorktreeCreateStatus.GIT_TIMEOUT, id="probe_timeout"
+                GitPlumbingTimeoutError("show-ref timed out"),
+                WorktreeCreateStatus.GIT_TIMEOUT,
+                "Git worktree operation timed out (WORKTREE_GIT_TIMEOUT): show-ref timed out",
+                id="probe_timeout",
             ),
             pytest.param(
                 GitCommandError(cmd=["git", "show-ref"], returncode=128, stdout="", stderr="fatal"),
                 WorktreeCreateStatus.GIT_FAILED,
+                "Git worktree operation failed (WORKTREE_GIT_FAILED): ",
                 id="probe_fatal_exit_128",
             ),
         ],
@@ -309,6 +313,7 @@ class WorktreeLifecycleCollisionTests:
         worktree_workspace: Path,
         probe_error: Exception,
         expected_status: WorktreeCreateStatus,
+        expected_error_prefix: str,
     ) -> None:
         paths = _paths(worktree_workspace)
         lifecycle = WorktreeLifecycle(
@@ -320,6 +325,8 @@ class WorktreeLifecycleCollisionTests:
         result = lifecycle.create(session_id="dovo_probefail")
 
         assert result.status == expected_status
+        assert len(result.errors) == 1
+        assert result.errors[0].startswith(expected_error_prefix)
         assert (paths.worktrees_dir / "dovo_probefail").exists() is False
         assert "dovo/dovo_probefail" not in GitRunner().list_branches(worktree_workspace)
 
