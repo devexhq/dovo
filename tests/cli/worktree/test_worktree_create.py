@@ -11,7 +11,7 @@ from typer.testing import CliRunner
 from dovo.cli import app
 from dovo.core.git.runner import GitRunner
 from dovo.core.worktree.models import WorktreeCreateResult, WorktreeCreateStatus
-from tests.harness.fakes import use_fixed_clock_and_ids
+from tests.harness.fakes import SequentialIds, use_fixed_clock_and_ids
 
 
 class WorktreeCreateCliIntegrationTests:
@@ -49,8 +49,13 @@ class WorktreeCreateCliIntegrationTests:
         assert payload.session.name == "demo"
 
     def test_worktree_create_cli_capacity_exceeded_exits_one(
-        self, cli_runner: CliRunner, cli_workspace: Path, dispatch_spy: list[WorktreeCreateResult]
+        self,
+        cli_runner: CliRunner,
+        cli_workspace: Path,
+        dispatch_spy: list[WorktreeCreateResult],
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
+        use_fixed_clock_and_ids(monkeypatch, new_id=SequentialIds("0000000a", "0000000b", "0000000c"))
         for _ in range(3):
             create_result = cli_runner.invoke(app, ["-p", str(cli_workspace), "worktree", "create"])
             assert create_result.exit_code == 0

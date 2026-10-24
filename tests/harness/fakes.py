@@ -23,6 +23,7 @@ from typing import Final, Self
 import pytest
 from pydantic import BaseModel
 
+from dovo.common.session_id import SessionIdFactory
 from dovo.core.agents import (
     AgentInvocationContext,
     AgentProgress,
@@ -306,7 +307,19 @@ def fixed_new_id(kind: str) -> str:
     return f"{kind}_0000abcd"
 
 
-def use_fixed_clock_and_ids(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Make CliContext.build hand fixed_clock and fixed_new_id to every command."""
+class SequentialIds:
+    """Session-ID generator returning f"{kind}_{suffix}" for each suffix in order, recording every kind requested."""
+
+    def __init__(self, *suffixes: str) -> None:
+        self._suffixes = iter(suffixes)
+        self.kinds: list[str] = []
+
+    def __call__(self, kind: str) -> str:
+        self.kinds.append(kind)
+        return f"{kind}_{next(self._suffixes)}"
+
+
+def use_fixed_clock_and_ids(monkeypatch: pytest.MonkeyPatch, *, new_id: SessionIdFactory = fixed_new_id) -> None:
+    """Make CliContext.build hand fixed_clock and new_id (fixed_new_id unless given) to every command."""
     monkeypatch.setattr("dovo.cli.context.utc_now", fixed_clock)
-    monkeypatch.setattr("dovo.cli.context.new_session_id", fixed_new_id)
+    monkeypatch.setattr("dovo.cli.context.new_session_id", new_id)
