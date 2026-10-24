@@ -21,7 +21,7 @@ def status_command(
     """
     reconciliation_result = reconcile_stale_sessions(context.db.sessions, path=context.paths.root_dir)
 
-    result = Status(context.paths).collect()
+    result = Status(context.paths, git=context.git).collect()
 
     if reconciliation_result.warning and reconciliation_result.warning not in result.warnings:
         result.warnings.insert(0, reconciliation_result.warning)

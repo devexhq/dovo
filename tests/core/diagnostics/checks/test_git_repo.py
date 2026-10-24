@@ -9,6 +9,8 @@ from dovo.common.filesystem import WorkspacePaths
 from dovo.core.diagnostics.checks.git_repo import GitRepoCheck
 from dovo.core.diagnostics.models import CheckCategory, CheckStatus, DiagnosticsContext
 from dovo.core.git import GitNotFoundError
+from dovo.core.git.runner import GitRunner
+from tests.harness.fakes import FakeGitRunner
 
 WorkspacePathsFactory = Callable[[Path, Path | None], WorkspacePaths]
 
@@ -21,7 +23,7 @@ class GitRepoCheckTests:
     ) -> None:
         monkeypatch.setattr("dovo.core.diagnostics.checks.git_repo.shutil.which", lambda _name: None)
         check = GitRepoCheck()
-        context = DiagnosticsContext(cwd=tmp_path, paths=workspace_paths_factory(tmp_path, None))
+        context = DiagnosticsContext(cwd=tmp_path, paths=workspace_paths_factory(tmp_path, None), git=GitRunner())
 
         result = check.execute(context)
 
@@ -35,13 +37,9 @@ class GitRepoCheckTests:
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, workspace_paths_factory: WorkspacePathsFactory
     ) -> None:
         monkeypatch.setattr("dovo.core.diagnostics.checks.git_repo.shutil.which", lambda _name: "/usr/bin/git")
-
-        def _raise_not_found(*_args: object, **_kwargs: object) -> str:
-            raise GitNotFoundError("git not found")
-
-        monkeypatch.setattr("dovo.core.diagnostics.checks.git_repo.GitRunner.run", _raise_not_found)
+        fake = FakeGitRunner({("rev-parse", "--is-inside-work-tree"): GitNotFoundError("git not found")})
         check = GitRepoCheck()
-        context = DiagnosticsContext(cwd=tmp_path, paths=workspace_paths_factory(tmp_path, None))
+        context = DiagnosticsContext(cwd=tmp_path, paths=workspace_paths_factory(tmp_path, None), git=fake)
 
         result = check.execute(context)
 
@@ -55,7 +53,7 @@ class GitRepoCheckTests:
         self, tmp_path: Path, workspace_paths_factory: WorkspacePathsFactory
     ) -> None:
         check = GitRepoCheck()
-        context = DiagnosticsContext(cwd=tmp_path, paths=workspace_paths_factory(tmp_path, None))
+        context = DiagnosticsContext(cwd=tmp_path, paths=workspace_paths_factory(tmp_path, None), git=GitRunner())
 
         result = check.execute(context)
 
@@ -69,7 +67,7 @@ class GitRepoCheckTests:
         self, git_repo: Path, workspace_paths_factory: WorkspacePathsFactory
     ) -> None:
         check = GitRepoCheck()
-        context = DiagnosticsContext(cwd=git_repo, paths=workspace_paths_factory(git_repo, None))
+        context = DiagnosticsContext(cwd=git_repo, paths=workspace_paths_factory(git_repo, None), git=GitRunner())
 
         result = check.execute(context)
 

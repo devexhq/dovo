@@ -25,6 +25,6 @@ def worktree_list_command(
         status: Optional status filter validated by Typer at the CLI layer.
         output_format: Presentation format ("terminal" or "json").
     """
-    result = Worktree(context.paths, db=context.db.worktrees).list(status=status)
+    result = Worktree(context.paths, git=context.git, db=context.db.worktrees).list(status=status)
     ui_dispatcher.dispatch(result, output_format=output_format)
     return result

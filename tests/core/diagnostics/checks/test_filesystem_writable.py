@@ -12,6 +12,7 @@ from dovo.common.filesystem import WorkspacePaths
 from dovo.core.config.models import DovoConfig, ProjectConfig
 from dovo.core.diagnostics.checks.filesystem_writable import FilesystemWritableCheck
 from dovo.core.diagnostics.models import CheckCategory, CheckStatus, DiagnosticsContext
+from dovo.core.git.runner import GitRunner
 from dovo.core.project.models import ProjectIdentity
 from dovo.core.project.services.identity import save_project_identity
 
@@ -27,7 +28,7 @@ class FilesystemWritableCheckTests:
         config = DovoConfig(version=1, project=ProjectConfig(name="demo"))
         check = FilesystemWritableCheck()
         paths = workspace_paths_factory(tmp_path, None)
-        context = DiagnosticsContext(cwd=tmp_path, config=config, paths=paths)
+        context = DiagnosticsContext(cwd=tmp_path, config=config, paths=paths, git=GitRunner())
 
         result = check.execute(context)
 
@@ -55,7 +56,7 @@ class FilesystemWritableCheckTests:
         config = DovoConfig(version=1, project=ProjectConfig(name="demo"))
         check = FilesystemWritableCheck()
         paths = workspace_paths_factory(tmp_path, None)
-        context = DiagnosticsContext(cwd=tmp_path, config=config, paths=paths)
+        context = DiagnosticsContext(cwd=tmp_path, config=config, paths=paths, git=GitRunner())
 
         try:
             result = check.execute(context)
@@ -78,7 +79,7 @@ class FilesystemWritableCheckTests:
         paths = workspace_paths_factory(tmp_path, None)
         dovo_dir = tmp_path / ".dovo"
         dovo_dir.chmod(0o500)
-        context = DiagnosticsContext(cwd=tmp_path, config=config, paths=paths)
+        context = DiagnosticsContext(cwd=tmp_path, config=config, paths=paths, git=GitRunner())
 
         try:
             result = check.execute(context)
@@ -102,7 +103,7 @@ class FilesystemWritableCheckTests:
     ) -> None:
         check = FilesystemWritableCheck()
         paths = workspace_paths_factory(tmp_path, None)
-        context = DiagnosticsContext(cwd=tmp_path, config=None, paths=paths)
+        context = DiagnosticsContext(cwd=tmp_path, config=None, paths=paths, git=GitRunner())
 
         result = check.execute(context)
 
@@ -130,7 +131,9 @@ class FilesystemWritableCheckTests:
         save_project_identity(tmp_path / ".dovo" / "project.json", identity)
         paths = workspace_paths_factory(tmp_path, None)
 
-        result = FilesystemWritableCheck().execute(DiagnosticsContext(cwd=tmp_path, config=config, paths=paths))
+        result = FilesystemWritableCheck().execute(
+            DiagnosticsContext(cwd=tmp_path, config=config, paths=paths, git=GitRunner())
+        )
 
         project_storage = global_root / "storage" / "projects" / "project-626"
         assert result.status == CheckStatus.OK

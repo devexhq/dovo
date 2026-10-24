@@ -7,6 +7,7 @@ import builtins
 from dovo.common.filesystem import WorkspacePaths
 from dovo.common.lock import WorkspaceLock
 from dovo.core.db import SessionsRepository, WorktreeRecord, WorktreesRepository, WorktreeStatus
+from dovo.core.git.runner import GitRunner
 from dovo.core.worktree.models import (
     WorktreeApplyResult,
     WorktreeApplyStrategy,
@@ -34,6 +35,8 @@ class Worktree:
     def __init__(
         self,
         paths: WorkspacePaths,
+        *,
+        git: GitRunner,
         db: WorktreesRepository | None = None,
         sessions_db: SessionsRepository | None = None,
     ) -> None:
@@ -44,8 +47,9 @@ class Worktree:
             db if db is not None else WorktreesRepository(db_path=paths.database_file, project_id=paths.project_id)
         )
         self.sessions_db = sessions_db
-        self.lifecycle = WorktreeLifecycle(self.paths, self.db)
-        self.patch = WorktreePatch(self.paths, self.db, lifecycle=self.lifecycle)
+        self.git = git
+        self.lifecycle = WorktreeLifecycle(self.paths, self.db, git=git)
+        self.patch = WorktreePatch(self.paths, self.db, git=git, lifecycle=self.lifecycle)
 
     def list(self, status: WorktreeStatus | str | None = None) -> WorktreeListResult:
         """List tracked worktrees with lifecycle status, reconciling stale directories."""
@@ -93,7 +97,7 @@ class Worktree:
         force: bool = False,
     ) -> WorktreePruneResult:
         """Safely prune stale worktrees, orphaned directories, and temporary branches."""
-        pruner = WorktreePruner(self.path, self.db, sessions_db=self.sessions_db)
+        pruner = WorktreePruner(self.path, self.db, sessions_db=self.sessions_db, git=self.git)
         return pruner.prune(dry_run=dry_run, force=force)
 
     def apply(
@@ -128,5 +132,5 @@ class Worktree:
 
     def detect(self) -> WorktreeDetectionResult:
         """Scan repository for stale worktrees, orphaned directories, and dead refs."""
-        detector = WorktreeDetector(self.path, self.db, sessions_db=self.sessions_db)
+        detector = WorktreeDetector(self.path, self.db, sessions_db=self.sessions_db, git=self.git)
         return detector.detect()

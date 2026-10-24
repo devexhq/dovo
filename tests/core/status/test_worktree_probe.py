@@ -6,6 +6,7 @@ import pytest
 
 from dovo.common.filesystem import Filesystem
 from dovo.core.db import SessionsRepository, SessionStatus, WorktreesRepository
+from dovo.core.git.runner import GitRunner
 from dovo.core.status import Status
 from tests.harness.status_workspace import BuildStatusWorkspace, status_config_payload
 from tests.harness.workspace_paths import initialized_workspace_paths
@@ -23,7 +24,7 @@ class WorktreeProbeTests:
         (fs.worktrees_dir / "sb-1").mkdir(parents=True, exist_ok=True)
         (fs.worktrees_dir / "sb-2").mkdir(parents=True, exist_ok=True)
 
-        result = Status(initialized_workspace_paths(workspace)).collect()
+        result = Status(initialized_workspace_paths(workspace), git=GitRunner()).collect()
 
         assert result.database.exists is False
         assert result.worktrees.active_worktrees == 2
@@ -53,7 +54,7 @@ class WorktreeProbeTests:
 
         monkeypatch.setattr(WorktreesRepository, "list", mock_list)
 
-        result = Status(paths).collect()
+        result = Status(paths, git=GitRunner()).collect()
 
         assert result.database.total_sessions == 1
         assert result.worktrees.active_worktrees == 1

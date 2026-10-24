@@ -22,6 +22,7 @@ from tests.engine.conftest import StubDriveRun
 from tests.harness.builders import BlueprintBuilder, StepBuilder, WorkspaceBuilder
 from tests.harness.catalog import write_runnable_blueprint, write_runnable_step
 from tests.harness.diagnostic_log import diagnostic_hint, read_single_event
+from tests.harness.fakes import FakeGitRunner
 from tests.harness.sessions import ScriptedFailurePrompter, seed_paused_session
 from tests.harness.workspace_paths import initialized_workspace_paths
 
@@ -32,7 +33,7 @@ def _raise_db_down(*args: object, **kwargs: object) -> None:
 
 
 def _engine(paths: WorkspacePaths, sessions: SessionsRepository) -> Engine:
-    return Engine(paths, db=sessions, catalog=Catalog(paths))
+    return Engine(paths, db=sessions, catalog=Catalog(paths), git=GitRunner())
 
 
 def _catalog_blueprint(paths: WorkspacePaths, key: str, steps: list[dict[str, object]]) -> Blueprint:
@@ -151,6 +152,26 @@ class EngineRunStartFailureTests:
 
 
 class EngineDispatchTests:
+    def test_run_resolves_head_through_injected_git(
+        self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Record ("rev-parse", "HEAD") in the FakeGitRunner's calls and hand drive_run the same git instance, seen by a local drive_run spy."""
+        seen: list[object] = []
+
+        def _drive(*args: object, **kwargs: object) -> RunOutcome:
+            seen.append(kwargs["git"])
+            return RunOutcome(status=SessionStatus.COMPLETED, worktree_path=engine_paths.root_dir)
+
+        monkeypatch.setattr("dovo.engine.engine.drive_run", _drive)
+        fake = FakeGitRunner()
+        engine = Engine(engine_paths, db=sessions_repo, catalog=Catalog(engine_paths), git=fake)
+
+        engine.run(_catalog_blueprint(engine_paths, "head", [{"id": "a", "run": "true"}]))
+
+        assert ("rev-parse", "HEAD") in fake.calls
+        assert len(seen) == 1
+        assert seen[0] is fake
+
     def test_run_and_resume_both_complete_through_coordinator_and_finalize_row(
         self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository
     ) -> None:
@@ -464,7 +485,7 @@ class EngineRunConfigPersistenceTests:
             row.inputs_json,
             row.blueprint_tier,
             row.commit_sha,
-        ) == (False, keep, discard, "claude", True, '{"env": "prod"}', "repo", GitRunner.rev_parse(workspace))
+        ) == (False, keep, discard, "claude", True, '{"env": "prod"}', "repo", GitRunner().rev_parse(workspace))
 
     def test_run_outside_git_repository_stores_null_commit_sha(
         self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository, stub_drive_run: StubDriveRun

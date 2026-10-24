@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 import os
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import NoReturn
-from unittest.mock import Mock
 
 import pytest
 
@@ -13,12 +13,14 @@ from dovo.common.filesystem import WorkspacePaths
 from dovo.common.filesystem.services import resolve_global_paths
 from dovo.core.db import WorktreesRepository, WorktreeStatus
 from dovo.core.git.exceptions import GitCommandError, GitPlumbingTimeoutError
+from dovo.core.git.models import GitProcessOutput
 from dovo.core.git.runner import GitRunner
 from dovo.core.worktree.exceptions import WorktreeError
 from dovo.core.worktree.models import WorktreeCreateStatus
 from dovo.core.worktree.services.lifecycle import WorktreeLifecycle
 from tests.harness import WorkspaceBuilder
 from tests.harness.diagnostic_log import diagnostic_hint, read_single_event
+from tests.harness.fakes import FakeGitRunner
 from tests.harness.workspace_paths import initialized_workspace_paths
 
 
@@ -37,7 +39,7 @@ class WorktreeLifecycleStorageIndependenceTests:
     def test_create_makes_no_run_symlink_and_no_session_directory(self, worktree_workspace: Path) -> None:
         paths = _paths(worktree_workspace)
         lifecycle = WorktreeLifecycle(
-            paths, WorktreesRepository(db_path=paths.database_file, project_id=paths.project_id)
+            paths, WorktreesRepository(db_path=paths.database_file, project_id=paths.project_id), git=GitRunner()
         )
 
         result = lifecycle.create(session_id="dovo_independent")
@@ -53,7 +55,7 @@ class WorktreeLifecycleStorageIndependenceTests:
     ) -> None:
         paths = _paths(worktree_workspace)
         lifecycle = WorktreeLifecycle(
-            paths, WorktreesRepository(db_path=paths.database_file, project_id=paths.project_id)
+            paths, WorktreesRepository(db_path=paths.database_file, project_id=paths.project_id), git=GitRunner()
         )
         create_result = lifecycle.create(session_id="dovo_linked_cleanup")
         assert create_result.session is not None
@@ -79,7 +81,7 @@ class WorktreeLifecycleCapacityTests:
     ) -> None:
         paths = _paths(worktree_workspace)
         lifecycle = WorktreeLifecycle(
-            paths, WorktreesRepository(db_path=paths.database_file, project_id=paths.project_id)
+            paths, WorktreesRepository(db_path=paths.database_file, project_id=paths.project_id), git=GitRunner()
         )
         for i in range(3):
             result = lifecycle.create(session_id=f"dovo_cap_{i}")
@@ -89,30 +91,30 @@ class WorktreeLifecycleCapacityTests:
 
         assert result.status == WorktreeCreateStatus.CAPACITY_EXCEEDED
         assert not (worktree_workspace / ".dovo" / "worktrees" / "dovo_cap_overflow").exists()
-        assert "dovo/dovo_cap_overflow" not in GitRunner.list_branches(worktree_workspace)
+        assert "dovo/dovo_cap_overflow" not in GitRunner().list_branches(worktree_workspace)
 
 
 class WorktreeLifecycleCleanupTests:
     def test_cleanup_removes_dovo_directory_and_deletes_temporary_branch(self, worktree_workspace: Path) -> None:
         paths = _paths(worktree_workspace)
         lifecycle = WorktreeLifecycle(
-            paths, WorktreesRepository(db_path=paths.database_file, project_id=paths.project_id)
+            paths, WorktreesRepository(db_path=paths.database_file, project_id=paths.project_id), git=GitRunner()
         )
         create_result = lifecycle.create(session_id="dovo_cleanup_branch")
         assert create_result.session is not None
         session = create_result.session
-        assert "dovo/dovo_cleanup_branch" in GitRunner.list_branches(worktree_workspace)
+        assert "dovo/dovo_cleanup_branch" in GitRunner().list_branches(worktree_workspace)
 
         warnings = lifecycle.cleanup(session)
 
         assert warnings == []
         assert not session.worktree_path.exists()
-        assert "dovo/dovo_cleanup_branch" not in GitRunner.list_branches(worktree_workspace)
+        assert "dovo/dovo_cleanup_branch" not in GitRunner().list_branches(worktree_workspace)
 
     def test_cleanup_of_already_removed_worktree_is_idempotent_and_warning_free(self, worktree_workspace: Path) -> None:
         paths = _paths(worktree_workspace)
         lifecycle = WorktreeLifecycle(
-            paths, WorktreesRepository(db_path=paths.database_file, project_id=paths.project_id)
+            paths, WorktreesRepository(db_path=paths.database_file, project_id=paths.project_id), git=GitRunner()
         )
         create_result = lifecycle.create(session_id="dovo_cleanup_twice")
         assert create_result.session is not None
@@ -129,22 +131,22 @@ class WorktreeLifecycleDiscardPartialTests:
     def test_discard_partial_removes_dovo_directory_and_branch(self, worktree_workspace: Path) -> None:
         paths = _paths(worktree_workspace)
         lifecycle = WorktreeLifecycle(
-            paths, WorktreesRepository(db_path=paths.database_file, project_id=paths.project_id)
+            paths, WorktreesRepository(db_path=paths.database_file, project_id=paths.project_id), git=GitRunner()
         )
         worktree_path = worktree_workspace / ".dovo" / "worktrees" / "dovo_discard"
         temp_branch = "dovo/dovo_discard"
-        GitRunner.worktree_add(worktree_workspace, worktree_path, temp_branch, "HEAD")
+        GitRunner().worktree_add(worktree_workspace, worktree_path, temp_branch, "HEAD")
         assert worktree_path.is_dir()
 
         lifecycle.discard_partial(worktree_path, temp_branch, created_dir=True, created_branch=True)
 
         assert not worktree_path.exists()
-        assert temp_branch not in GitRunner.list_branches(worktree_workspace)
+        assert temp_branch not in GitRunner().list_branches(worktree_workspace)
 
     def test_discard_partial_on_nonexistent_branch_does_not_raise(self, worktree_workspace: Path) -> None:
         paths = _paths(worktree_workspace)
         lifecycle = WorktreeLifecycle(
-            paths, WorktreesRepository(db_path=paths.database_file, project_id=paths.project_id)
+            paths, WorktreesRepository(db_path=paths.database_file, project_id=paths.project_id), git=GitRunner()
         )
 
         lifecycle.discard_partial(
@@ -167,19 +169,19 @@ class WorktreeLifecycleDiscardPartialTests:
     ) -> None:
         paths = _paths(worktree_workspace)
         lifecycle = WorktreeLifecycle(
-            paths, WorktreesRepository(db_path=paths.database_file, project_id=paths.project_id)
+            paths, WorktreesRepository(db_path=paths.database_file, project_id=paths.project_id), git=GitRunner()
         )
         worktree_path = paths.worktrees_dir / "dovo_flagged"
         worktree_path.mkdir(parents=True)
         sentinel = worktree_path / "sentinel.txt"
         sentinel.write_text("keep\n", encoding="utf-8")
         temp_branch = "dovo/dovo_flagged"
-        GitRunner.run(["branch", temp_branch], path=worktree_workspace)
+        GitRunner().run(["branch", temp_branch], path=worktree_workspace)
 
         lifecycle.discard_partial(worktree_path, temp_branch, created_dir=created_dir, created_branch=created_branch)
 
         assert sentinel.exists() is not created_dir
-        assert GitRunner.branch_exists(worktree_workspace, temp_branch) is not created_branch
+        assert GitRunner().branch_exists(worktree_workspace, temp_branch) is not created_branch
 
 
 class WorktreeLifecycleCollisionTests:
@@ -188,13 +190,13 @@ class WorktreeLifecycleCollisionTests:
     ) -> None:
         paths = _paths(worktree_workspace)
         repo = WorktreesRepository(db_path=paths.database_file, project_id=paths.project_id)
-        lifecycle = WorktreeLifecycle(paths, repo)
+        lifecycle = WorktreeLifecycle(paths, repo, git=GitRunner())
         first = lifecycle.create(session_id="dovo_keep")
         assert first.session is not None
         kept_file = first.session.worktree_path / "kept.txt"
         kept_file.write_text("work in progress\n", encoding="utf-8")
-        tip_before = GitRunner.rev_parse(worktree_workspace, rev="dovo/dovo_keep")
-        list_before = GitRunner.run(["worktree", "list", "--porcelain"], path=worktree_workspace)
+        tip_before = GitRunner().rev_parse(worktree_workspace, rev="dovo/dovo_keep")
+        list_before = GitRunner().run(["worktree", "list", "--porcelain"], path=worktree_workspace)
 
         result = lifecycle.create(session_id="dovo_keep")
 
@@ -205,14 +207,14 @@ class WorktreeLifecycleCollisionTests:
             "Inspect it with `dovo worktree show dovo_keep` or remove it with `dovo worktree delete dovo_keep`"
         ]
         assert kept_file.read_text(encoding="utf-8") == "work in progress\n"
-        assert GitRunner.rev_parse(worktree_workspace, rev="dovo/dovo_keep") == tip_before
-        assert GitRunner.run(["worktree", "list", "--porcelain"], path=worktree_workspace) == list_before
+        assert GitRunner().rev_parse(worktree_workspace, rev="dovo/dovo_keep") == tip_before
+        assert GitRunner().run(["worktree", "list", "--porcelain"], path=worktree_workspace) == list_before
         assert [record.id for record in repo.list()] == ["dovo_keep"]
 
     def test_create_with_only_directory_returns_already_exists_and_keeps_it(self, worktree_workspace: Path) -> None:
         paths = _paths(worktree_workspace)
         repo = WorktreesRepository(db_path=paths.database_file, project_id=paths.project_id)
-        lifecycle = WorktreeLifecycle(paths, repo)
+        lifecycle = WorktreeLifecycle(paths, repo, git=GitRunner())
         worktree_path = paths.worktrees_dir / "dovo_half"
         worktree_path.mkdir(parents=True)
         sentinel = worktree_path / "sentinel.txt"
@@ -224,7 +226,7 @@ class WorktreeLifecycleCollisionTests:
         assert result.error_code == "WORKTREE_PATH_CONFLICT"
         assert result.fixes == [f"'{worktree_path}' is not tracked by Dovo; move or remove it, then retry"]
         assert sentinel.read_text(encoding="utf-8") == "keep\n"
-        assert GitRunner.branch_exists(worktree_workspace, "dovo/dovo_half") is False
+        assert GitRunner().branch_exists(worktree_workspace, "dovo/dovo_half") is False
         assert repo.list() == []
 
     def test_create_over_cleaned_row_with_leftover_directory_advises_manual_removal(
@@ -232,14 +234,14 @@ class WorktreeLifecycleCollisionTests:
     ) -> None:
         paths = _paths(worktree_workspace)
         repo = WorktreesRepository(db_path=paths.database_file, project_id=paths.project_id)
-        lifecycle = WorktreeLifecycle(paths, repo)
+        lifecycle = WorktreeLifecycle(paths, repo, git=GitRunner())
         worktree_path = paths.worktrees_dir / "dovo_stale"
         worktree_path.mkdir(parents=True)
         repo.create(
             id="dovo_stale",
             name=None,
             branch_name="dovo/dovo_stale",
-            base_commit=GitRunner.rev_parse(worktree_workspace, rev="HEAD"),
+            base_commit=GitRunner().rev_parse(worktree_workspace, rev="HEAD"),
             worktree_path=worktree_path,
         )
         repo.update_status("dovo_stale", WorktreeStatus.CLEANED)
@@ -253,9 +255,9 @@ class WorktreeLifecycleCollisionTests:
     def test_create_with_only_branch_returns_already_exists_and_keeps_it(self, worktree_workspace: Path) -> None:
         paths = _paths(worktree_workspace)
         repo = WorktreesRepository(db_path=paths.database_file, project_id=paths.project_id)
-        lifecycle = WorktreeLifecycle(paths, repo)
-        GitRunner.run(["branch", "dovo/dovo_half"], path=worktree_workspace)
-        tip_before = GitRunner.rev_parse(worktree_workspace, rev="HEAD")
+        lifecycle = WorktreeLifecycle(paths, repo, git=GitRunner())
+        GitRunner().run(["branch", "dovo/dovo_half"], path=worktree_workspace)
+        tip_before = GitRunner().rev_parse(worktree_workspace, rev="HEAD")
 
         result = lifecycle.create(session_id="dovo_half")
 
@@ -265,7 +267,7 @@ class WorktreeLifecycleCollisionTests:
             "Branch 'dovo/dovo_half' is not tracked by Dovo; "
             "delete it with `git branch -D dovo/dovo_half` if you no longer need it, then retry"
         ]
-        assert GitRunner.rev_parse(worktree_workspace, rev="dovo/dovo_half") == tip_before
+        assert GitRunner().rev_parse(worktree_workspace, rev="dovo/dovo_half") == tip_before
         assert (paths.worktrees_dir / "dovo_half").exists() is False
         assert repo.list() == []
 
@@ -274,7 +276,7 @@ class WorktreeLifecycleCollisionTests:
     ) -> None:
         paths = _paths(worktree_workspace)
         lifecycle = WorktreeLifecycle(
-            paths, WorktreesRepository(db_path=paths.database_file, project_id=paths.project_id)
+            paths, WorktreesRepository(db_path=paths.database_file, project_id=paths.project_id), git=GitRunner()
         )
         paths.worktrees_dir.mkdir(parents=True, exist_ok=True)
         link_target = tmp_path / "outside-worktrees"
@@ -287,17 +289,21 @@ class WorktreeLifecycleCollisionTests:
         assert result.error_code == "WORKTREE_PATH_CONFLICT"
         assert link_path.is_symlink() is True
         assert link_target.exists() is False
-        assert GitRunner.branch_exists(worktree_workspace, "dovo/dovo_link") is False
+        assert GitRunner().branch_exists(worktree_workspace, "dovo/dovo_link") is False
 
     @pytest.mark.parametrize(
-        ("probe_error", "expected_status"),
+        ("probe_error", "expected_status", "expected_error_prefix"),
         [
             pytest.param(
-                GitPlumbingTimeoutError("show-ref timed out"), WorktreeCreateStatus.GIT_TIMEOUT, id="probe_timeout"
+                GitPlumbingTimeoutError("show-ref timed out"),
+                WorktreeCreateStatus.GIT_TIMEOUT,
+                "Git worktree operation timed out (WORKTREE_GIT_TIMEOUT): show-ref timed out",
+                id="probe_timeout",
             ),
             pytest.param(
                 GitCommandError(cmd=["git", "show-ref"], returncode=128, stdout="", stderr="fatal"),
                 WorktreeCreateStatus.GIT_FAILED,
+                "Git worktree operation failed (WORKTREE_GIT_FAILED): ",
                 id="probe_fatal_exit_128",
             ),
         ],
@@ -305,32 +311,31 @@ class WorktreeLifecycleCollisionTests:
     def test_create_when_branch_probe_fails_returns_error_status_and_creates_nothing(
         self,
         worktree_workspace: Path,
-        monkeypatch: pytest.MonkeyPatch,
         probe_error: Exception,
         expected_status: WorktreeCreateStatus,
+        expected_error_prefix: str,
     ) -> None:
         paths = _paths(worktree_workspace)
         lifecycle = WorktreeLifecycle(
-            paths, WorktreesRepository(db_path=paths.database_file, project_id=paths.project_id)
+            paths,
+            WorktreesRepository(db_path=paths.database_file, project_id=paths.project_id),
+            git=FakeGitRunner({("show-ref",): probe_error}),
         )
-
-        def failing_branch_exists(path: Path, branch: str) -> bool:
-            raise probe_error
-
-        monkeypatch.setattr(GitRunner, "branch_exists", staticmethod(failing_branch_exists))
 
         result = lifecycle.create(session_id="dovo_probefail")
 
         assert result.status == expected_status
+        assert len(result.errors) == 1
+        assert result.errors[0].startswith(expected_error_prefix)
         assert (paths.worktrees_dir / "dovo_probefail").exists() is False
-        assert "dovo/dovo_probefail" not in GitRunner.list_branches(worktree_workspace)
+        assert "dovo/dovo_probefail" not in GitRunner().list_branches(worktree_workspace)
 
     def test_create_when_path_check_raises_oserror_returns_git_failed_path_check_message(
         self, worktree_workspace: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         paths = _paths(worktree_workspace)
         lifecycle = WorktreeLifecycle(
-            paths, WorktreesRepository(db_path=paths.database_file, project_id=paths.project_id)
+            paths, WorktreesRepository(db_path=paths.database_file, project_id=paths.project_id), git=GitRunner()
         )
         real_exists = Path.exists
 
@@ -346,37 +351,48 @@ class WorktreeLifecycleCollisionTests:
         assert result.status == WorktreeCreateStatus.GIT_FAILED
         assert result.errors == ["Worktree path check failed (WORKTREE_GIT_FAILED): permission denied"]
         assert result.fixes == [f"Check that '{paths.worktrees_dir}' is readable, then retry"]
-        assert "dovo/dovo_denied" not in GitRunner.list_branches(worktree_workspace)
+        assert "dovo/dovo_denied" not in GitRunner().list_branches(worktree_workspace)
 
-    def test_create_when_add_fails_and_branch_probe_raises_keeps_branch(
-        self, worktree_workspace: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_create_when_add_fails_and_branch_probe_raises_keeps_branch(self, worktree_workspace: Path) -> None:
         paths = _paths(worktree_workspace)
+
+        class _AddCreatesBranchThenFails(FakeGitRunner):
+            added = False
+
+            def exec(
+                self,
+                args: Sequence[str],
+                path: Path,
+                *,
+                input_text: str | None = None,
+                env: Mapping[str, str] | None = None,
+            ) -> GitProcessOutput:
+                if tuple(args[:2]) == ("worktree", "add"):
+                    _, _, _, branch, _, base_ref = args
+                    super().exec(["branch", branch, base_ref], path)
+                    self.added = True
+                    raise GitCommandError(cmd=["git", "worktree", "add"], returncode=128, stdout="", stderr="boom")
+                if self.added and args[0] == "show-ref":
+                    raise GitCommandError(cmd=["git", "show-ref"], returncode=128, stdout="", stderr="fatal")
+                return super().exec(args, path, input_text=input_text, env=env)
+
         lifecycle = WorktreeLifecycle(
-            paths, WorktreesRepository(db_path=paths.database_file, project_id=paths.project_id)
+            paths,
+            WorktreesRepository(db_path=paths.database_file, project_id=paths.project_id),
+            git=_AddCreatesBranchThenFails(),
         )
-
-        def failing_branch_exists(path: Path, branch: str) -> bool:
-            raise GitCommandError(cmd=["git", "show-ref"], returncode=128, stdout="", stderr="fatal")
-
-        def add_creates_branch_then_fails(path: Path, worktree_path: Path, branch: str, base_ref: str) -> None:
-            GitRunner.run(["branch", branch, base_ref], path=path)
-            monkeypatch.setattr(GitRunner, "branch_exists", staticmethod(failing_branch_exists))
-            raise GitCommandError(cmd=["git", "worktree", "add"], returncode=128, stdout="", stderr="boom")
-
-        monkeypatch.setattr(GitRunner, "worktree_add", staticmethod(add_creates_branch_then_fails))
 
         result = lifecycle.create(session_id="dovo_keepbranch")
 
         assert result.status == WorktreeCreateStatus.GIT_FAILED
-        assert "dovo/dovo_keepbranch" in GitRunner.list_branches(worktree_workspace)
+        assert "dovo/dovo_keepbranch" in GitRunner().list_branches(worktree_workspace)
 
     def test_create_with_bad_base_ref_on_fresh_id_returns_git_failed_and_leaves_nothing(
         self, worktree_workspace: Path
     ) -> None:
         paths = _paths(worktree_workspace)
         lifecycle = WorktreeLifecycle(
-            paths, WorktreesRepository(db_path=paths.database_file, project_id=paths.project_id)
+            paths, WorktreesRepository(db_path=paths.database_file, project_id=paths.project_id), git=GitRunner()
         )
         sibling = lifecycle.create(session_id="dovo_sibling")
         assert sibling.session is not None
@@ -385,39 +401,51 @@ class WorktreeLifecycleCollisionTests:
 
         assert result.status == WorktreeCreateStatus.GIT_FAILED
         assert (paths.worktrees_dir / "dovo_fresh").exists() is False
-        assert GitRunner.branch_exists(worktree_workspace, "dovo/dovo_fresh") is False
+        assert GitRunner().branch_exists(worktree_workspace, "dovo/dovo_fresh") is False
         assert sibling.session.worktree_path.is_dir()
-        assert GitRunner.branch_exists(worktree_workspace, "dovo/dovo_sibling") is True
+        assert GitRunner().branch_exists(worktree_workspace, "dovo/dovo_sibling") is True
 
     def test_create_when_rev_parse_fails_after_add_removes_created_worktree_and_branch(
-        self, worktree_workspace: Path, monkeypatch: pytest.MonkeyPatch
+        self, worktree_workspace: Path
     ) -> None:
         paths = _paths(worktree_workspace)
+        failure = GitCommandError(cmd=["git", "rev-parse", "HEAD"], returncode=128, stdout="", stderr="boom")
         lifecycle = WorktreeLifecycle(
-            paths, WorktreesRepository(db_path=paths.database_file, project_id=paths.project_id)
+            paths,
+            WorktreesRepository(db_path=paths.database_file, project_id=paths.project_id),
+            git=FakeGitRunner({("rev-parse", "HEAD"): failure}),
         )
-
-        def failing_rev_parse(path: Path, rev: str = "HEAD") -> str:
-            raise GitCommandError(cmd=["git", "rev-parse", rev], returncode=128, stdout="", stderr="boom")
-
-        monkeypatch.setattr(GitRunner, "rev_parse", staticmethod(failing_rev_parse))
 
         result = lifecycle.create(session_id="dovo_revfail")
 
         assert result.status == WorktreeCreateStatus.GIT_FAILED
         assert (paths.worktrees_dir / "dovo_revfail").exists() is False
-        assert GitRunner.branch_exists(worktree_workspace, "dovo/dovo_revfail") is False
+        assert GitRunner().branch_exists(worktree_workspace, "dovo/dovo_revfail") is False
 
 
-def _lifecycle(workspace: Path) -> WorktreeLifecycle:
-    """Build a WorktreeLifecycle over workspace's paths and worktree database."""
+def _lifecycle(workspace: Path, git: GitRunner | None = None) -> WorktreeLifecycle:
+    """Build a WorktreeLifecycle over workspace's paths and worktree database, running git through git or a real GitRunner."""
     paths = _paths(workspace)
-    return WorktreeLifecycle(paths, WorktreesRepository(db_path=paths.database_file, project_id=paths.project_id))
+    return WorktreeLifecycle(
+        paths,
+        WorktreesRepository(db_path=paths.database_file, project_id=paths.project_id),
+        git=git if git is not None else GitRunner(),
+    )
 
 
 def _raise_boom(*args: object, **kwargs: object) -> NoReturn:
-    """Stand in for a GitRunner or repository call that fails with an unexpected RuntimeError("boom")."""
+    """Stand in for a repository call that fails with an unexpected RuntimeError("boom")."""
     raise RuntimeError("boom")
+
+
+_GIT_KEYS: dict[str, tuple[str, ...]] = {
+    "branch_exists": ("show-ref",),
+    "worktree_add": ("worktree", "add"),
+    "worktree_remove": ("worktree", "remove"),
+    "worktree_prune": ("worktree", "prune"),
+    "branch_delete": ("branch", "-D"),
+    "rev_parse": ("rev-parse", "HEAD"),
+}
 
 
 class WorktreeLifecycleDiagnosticLogTests:
@@ -437,13 +465,11 @@ class WorktreeLifecycleDiagnosticLogTests:
         self,
         worktree_workspace: Path,
         frozen_diagnostic_clock: Path,
-        monkeypatch: pytest.MonkeyPatch,
         target: str,
         prefix: str,
     ) -> None:
         """Return git_failed and errors == [f"{prefix}\nDetails logged: {path} (event exc_3f9a1c07b2de)"], with one error record for worktree.create whose context is {worktree_id, branch, path}."""
-        lifecycle = _lifecycle(worktree_workspace)
-        monkeypatch.setattr(GitRunner, target, staticmethod(_raise_boom))
+        lifecycle = _lifecycle(worktree_workspace, FakeGitRunner({_GIT_KEYS[target]: RuntimeError("boom")}))
         worktree_path = lifecycle.worktree_base_dir / "dovo_boom"
         if target != "branch_exists":
             worktree_path = worktree_path.resolve()
@@ -486,7 +512,7 @@ class WorktreeLifecycleDiagnosticLogTests:
         """Return wip_failed with the unhinted error and leave <DOVO_HOME>/logs absent when apply_wip_to_worktree raises WorktreeError("worktree path does not exist: x") with no cause."""
         lifecycle = _lifecycle(worktree_workspace)
 
-        def missing_worktree(*, source_root: Path, worktree_path: Path) -> list[str]:
+        def missing_worktree(*, git: GitRunner, source_root: Path, worktree_path: Path) -> list[str]:
             raise WorktreeError("worktree path does not exist: x")
 
         monkeypatch.setattr("dovo.core.worktree.services.lifecycle.apply_wip_to_worktree", missing_worktree)
@@ -524,13 +550,14 @@ class WorktreeLifecycleDiagnosticLogTests:
 
     @pytest.mark.parametrize("target", ["worktree_remove", "branch_delete", "worktree_prune"])
     def test_discard_partial_failure_records_debug_without_raising(
-        self, worktree_workspace: Path, frozen_diagnostic_clock: Path, monkeypatch: pytest.MonkeyPatch, target: str
+        self, worktree_workspace: Path, frozen_diagnostic_clock: Path, target: str
     ) -> None:
-        """Return None from discard_partial(created_dir=True, created_branch=True) when GitRunner.<target> raises RuntimeError, and write one debug record for worktree.create."""
-        lifecycle = _lifecycle(worktree_workspace)
+        """Return None from discard_partial(created_dir=True, created_branch=True) when the git command behind <target> raises RuntimeError, and write one debug record for worktree.create."""
+        fake = FakeGitRunner()
+        lifecycle = _lifecycle(worktree_workspace, fake)
         worktree_path = lifecycle.worktree_base_dir / "dovo_partial"
-        GitRunner.worktree_add(worktree_workspace, worktree_path, "dovo/dovo_partial", "HEAD")
-        monkeypatch.setattr(GitRunner, target, staticmethod(_raise_boom))
+        GitRunner().worktree_add(worktree_workspace, worktree_path, "dovo/dovo_partial", "HEAD")
+        fake.responses[_GIT_KEYS[target]] = RuntimeError("boom")
 
         outcome = lifecycle.discard_partial(worktree_path, "dovo/dovo_partial", created_dir=True, created_branch=True)
 
@@ -542,16 +569,30 @@ class WorktreeLifecycleDiagnosticLogTests:
         assert event["exception_type"] == "RuntimeError"
 
     def test_branch_probe_failure_records_debug_and_keeps_git_failed(
-        self, worktree_workspace: Path, frozen_diagnostic_clock: Path, monkeypatch: pytest.MonkeyPatch
+        self, worktree_workspace: Path, frozen_diagnostic_clock: Path
     ) -> None:
         """Return git_failed with an unhinted error when worktree_add raises GitCommandError and the follow-up branch probe raises RuntimeError, and write one debug record for worktree.create."""
-        lifecycle = _lifecycle(worktree_workspace)
 
-        def failing_add(path: Path, worktree_path: Path, branch: str, base_ref: str) -> None:
-            raise GitCommandError(cmd=["git", "worktree", "add"], returncode=128, stdout="", stderr="fatal")
+        class _SecondProbeFails(FakeGitRunner):
+            probes = 0
 
-        monkeypatch.setattr(GitRunner, "worktree_add", staticmethod(failing_add))
-        monkeypatch.setattr(GitRunner, "branch_exists", Mock(side_effect=[False, RuntimeError("boom")]))
+            def exec(
+                self,
+                args: Sequence[str],
+                path: Path,
+                *,
+                input_text: str | None = None,
+                env: Mapping[str, str] | None = None,
+            ) -> GitProcessOutput:
+                if args[0] == "show-ref":
+                    self.probes += 1
+                    if self.probes == 1:
+                        return GitProcessOutput(1, "", "")
+                    raise RuntimeError("boom")
+                return super().exec(args, path, input_text=input_text, env=env)
+
+        failure = GitCommandError(cmd=["git", "worktree", "add"], returncode=128, stdout="", stderr="fatal")
+        lifecycle = _lifecycle(worktree_workspace, _SecondProbeFails({("worktree", "add"): failure}))
 
         result = lifecycle.create(session_id="dovo_probe")
 
@@ -586,13 +627,14 @@ class WorktreeLifecycleDiagnosticLogTests:
         prefix: str,
     ) -> None:
         """Return warnings == [f"{prefix}\nDetails logged: ..."] from cleanup() and write one error record for worktree.cleanup with context {worktree_id, branch, path}."""
-        lifecycle = _lifecycle(worktree_workspace)
+        fake = FakeGitRunner()
+        lifecycle = _lifecycle(worktree_workspace, fake)
         session = lifecycle.create(session_id="dovo_clean").session
         assert session is not None
         if target == "update_status":
             monkeypatch.setattr(WorktreesRepository, "update_status", _raise_boom)
         else:
-            monkeypatch.setattr(GitRunner, target, staticmethod(_raise_boom))
+            fake.responses[_GIT_KEYS[target]] = RuntimeError("boom")
 
         warnings = lifecycle.cleanup(session)
 
@@ -617,14 +659,14 @@ class WorktreeLifecycleDiagnosticLogTests:
         self,
         worktree_workspace: Path,
         frozen_diagnostic_clock: Path,
-        monkeypatch: pytest.MonkeyPatch,
         rmtree_fails: bool,
     ) -> None:
         """With git worktree remove raising RuntimeError, return no directory warning and one debug record when rmtree succeeds, or a hinted directory warning and one error record when worktrees_dir is read-only."""
-        lifecycle = _lifecycle(worktree_workspace)
+        fake = FakeGitRunner()
+        lifecycle = _lifecycle(worktree_workspace, fake)
         session = lifecycle.create(session_id="dovo_fallback").session
         assert session is not None
-        monkeypatch.setattr(GitRunner, "worktree_remove", staticmethod(_raise_boom))
+        fake.responses[("worktree", "remove")] = RuntimeError("boom")
         if rmtree_fails:
             lifecycle.worktree_base_dir.chmod(0o555)
         try:

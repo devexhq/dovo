@@ -41,13 +41,13 @@ class WorktreeCreationTests:
         db = WorktreesRepository(
             db_path=worktree_workspace_paths.database_file, project_id=worktree_workspace_paths.project_id
         )
-        lifecycle = WorktreeLifecycle(worktree_workspace_paths, db)
+        lifecycle = WorktreeLifecycle(worktree_workspace_paths, db, git=GitRunner())
 
         result = lifecycle.create(session_id="dovo_test001", name="test-worktree")
 
         expected_worktree_path = (worktree_workspace / ".dovo" / "worktrees" / "dovo_test001").resolve()
         expected_branch = "dovo/dovo_test001"
-        head_commit = GitRunner.rev_parse(worktree_workspace, rev="HEAD")
+        head_commit = GitRunner().rev_parse(worktree_workspace, rev="HEAD")
 
         assert result.status == WorktreeCreateStatus.OK
         assert result.session is not None
@@ -64,7 +64,7 @@ class WorktreeCreationTests:
         assert result.errors == []
         assert result.fixes == []
         assert expected_worktree_path.is_dir()
-        assert expected_branch in GitRunner.list_branches(worktree_workspace)
+        assert expected_branch in GitRunner().list_branches(worktree_workspace)
 
         record = db.get("dovo_test001")
         assert record is not None
@@ -89,7 +89,7 @@ class WorktreeCapacityTests:
         db = WorktreesRepository(
             db_path=worktree_workspace_paths.database_file, project_id=worktree_workspace_paths.project_id
         )
-        lifecycle = WorktreeLifecycle(worktree_workspace_paths, db)
+        lifecycle = WorktreeLifecycle(worktree_workspace_paths, db, git=GitRunner())
 
         assert DEFAULT_MAXIMUM_WORKTREES_ALLOWED >= 1
         for idx in range(DEFAULT_MAXIMUM_WORKTREES_ALLOWED):
@@ -109,5 +109,5 @@ class WorktreeCapacityTests:
             "Raise worktree.max_active_worktrees in .dovo/config.json",
         ]
         assert not (worktree_workspace / ".dovo" / "worktrees" / overflow_id).exists()
-        assert f"dovo/{overflow_id}" not in GitRunner.list_branches(worktree_workspace)
+        assert f"dovo/{overflow_id}" not in GitRunner().list_branches(worktree_workspace)
         assert db.get(overflow_id) is None

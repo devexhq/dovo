@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 import shutil
 import subprocess
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import NoReturn
 from unittest.mock import patch
@@ -14,6 +15,7 @@ import pytest
 from dovo.common.filesystem import WorkspacePaths
 from dovo.common.lock import LockTimeoutError
 from dovo.core.db import WorktreesRepository, WorktreeStatus
+from dovo.core.git.models import GitProcessOutput
 from dovo.core.git.runner import GitRunner
 from dovo.core.worktree import Worktree
 from dovo.core.worktree.models import (
@@ -26,6 +28,7 @@ from dovo.core.worktree.models import (
 from dovo.core.worktree.services.pruner import WorktreePruner
 from tests.harness import WorkspaceBuilder
 from tests.harness.diagnostic_log import diagnostic_hint, read_single_event
+from tests.harness.fakes import FakeGitRunner
 from tests.harness.workspace_paths import initialized_workspace_paths
 
 
@@ -53,7 +56,7 @@ class WorktreePrunerBaselineTests:
         self, pruner_workspace: Path, pruner_workspace_paths: WorkspacePaths
     ) -> None:
         db = _repo(pruner_workspace_paths)
-        pruner = WorktreePruner(pruner_workspace, db)
+        pruner = WorktreePruner(pruner_workspace, db, git=GitRunner())
 
         result = pruner.prune()
 
@@ -76,7 +79,7 @@ class WorktreePrunerBaselineTests:
         clean_dir.mkdir()
 
         dirty_dir = worktrees_dir / "dovo_dirty"
-        GitRunner.worktree_add(
+        GitRunner().worktree_add(
             pruner_workspace,
             target_path=dirty_dir,
             branch="dovo/dovo_dirty",
@@ -99,7 +102,7 @@ class WorktreePrunerBaselineTests:
             capture_output=True,
         )
 
-        pruner = WorktreePruner(pruner_workspace, db)
+        pruner = WorktreePruner(pruner_workspace, db, git=GitRunner())
 
         result = pruner.prune(dry_run=True, force=False)
 
@@ -144,7 +147,7 @@ class WorktreePrunerBaselineTests:
         assert dirty_dir.exists()
         record = db.get("dovo_missing")
         assert record is not None and record.status == WorktreeStatus.ACTIVE
-        branches = GitRunner.list_branches(pruner_workspace, pattern="dovo/dovo_*")
+        branches = GitRunner().list_branches(pruner_workspace, pattern="dovo/dovo_*")
         assert "dovo/dovo_dead" in branches
 
 
@@ -159,7 +162,7 @@ class WorktreePrunerSafetyTests:
         worktrees_dir.mkdir(parents=True, exist_ok=True)
 
         dirty_dir = worktrees_dir / "dovo_dirty_orphan"
-        GitRunner.worktree_add(
+        GitRunner().worktree_add(
             pruner_workspace,
             target_path=dirty_dir,
             branch="dovo/dovo_dirty_orphan",
@@ -167,7 +170,7 @@ class WorktreePrunerSafetyTests:
         )
         (dirty_dir / "wip.txt").write_text("changes", encoding="utf-8")
 
-        pruner = WorktreePruner(pruner_workspace, db)
+        pruner = WorktreePruner(pruner_workspace, db, git=GitRunner())
 
         result = pruner.prune(force=False)
 
@@ -192,7 +195,7 @@ class WorktreePrunerSafetyTests:
         worktrees_dir.mkdir(parents=True, exist_ok=True)
 
         dirty_dir = worktrees_dir / "dovo_dirty_forced"
-        GitRunner.worktree_add(
+        GitRunner().worktree_add(
             pruner_workspace,
             target_path=dirty_dir,
             branch="dovo/dovo_dirty_forced",
@@ -200,7 +203,7 @@ class WorktreePrunerSafetyTests:
         )
         (dirty_dir / "wip.txt").write_text("changes", encoding="utf-8")
 
-        pruner = WorktreePruner(pruner_workspace, db)
+        pruner = WorktreePruner(pruner_workspace, db, git=GitRunner())
 
         result = pruner.prune(force=True)
 
@@ -226,7 +229,7 @@ class WorktreePrunerSafetyTests:
         clean_dir = worktrees_dir / "dovo_clean_orphan"
         clean_dir.mkdir()
 
-        pruner = WorktreePruner(pruner_workspace, db)
+        pruner = WorktreePruner(pruner_workspace, db, git=GitRunner())
 
         result = pruner.prune(force=False)
 
@@ -248,7 +251,7 @@ class WorktreePrunerCategoryTests:
     def test_stale_worktree_ref_is_pruned(self, pruner_workspace: Path, pruner_workspace_paths: WorkspacePaths) -> None:
         db = _repo(pruner_workspace_paths)
         target = pruner_workspace / ".dovo" / "worktrees" / "dovo_stale"
-        GitRunner.worktree_add(
+        GitRunner().worktree_add(
             pruner_workspace,
             target_path=target,
             branch="dovo/dovo_stale",
@@ -256,7 +259,7 @@ class WorktreePrunerCategoryTests:
         )
         shutil.rmtree(target)
 
-        pruner = WorktreePruner(pruner_workspace, db)
+        pruner = WorktreePruner(pruner_workspace, db, git=GitRunner())
 
         result = pruner.prune()
 
@@ -288,7 +291,7 @@ class WorktreePrunerCategoryTests:
             worktree_path=missing_path,
         )
 
-        pruner = WorktreePruner(pruner_workspace, db)
+        pruner = WorktreePruner(pruner_workspace, db, git=GitRunner())
 
         result = pruner.prune()
 
@@ -323,7 +326,7 @@ class WorktreePrunerCategoryTests:
             capture_output=True,
         )
 
-        pruner = WorktreePruner(pruner_workspace, db)
+        pruner = WorktreePruner(pruner_workspace, db, git=GitRunner())
 
         result = pruner.prune()
 
@@ -336,7 +339,7 @@ class WorktreePrunerCategoryTests:
         assert item.action == PruneAction.PRUNED
         assert item.branch_name == branch_name
         assert item.reason == f"Worktree branch '{branch_name}' is not attached to any active worktree"
-        branches = GitRunner.list_branches(pruner_workspace, pattern="dovo/dovo_*")
+        branches = GitRunner().list_branches(pruner_workspace, pattern="dovo/dovo_*")
         assert branch_name not in branches
 
 
@@ -368,7 +371,7 @@ class WorktreePrunerIdempotencyTests:
             capture_output=True,
         )
 
-        manager = Worktree(pruner_workspace_paths, db)
+        manager = Worktree(pruner_workspace_paths, db=db, git=GitRunner())
         create_res = manager.create(session_id="dovo_protected")
         assert create_res.ok
 
@@ -410,7 +413,7 @@ class WorktreePrunerFailureTests:
         pruner_workspace_paths: WorkspacePaths,
     ) -> None:
         db = _repo(pruner_workspace_paths)
-        pruner = WorktreePruner(pruner_workspace, db)
+        pruner = WorktreePruner(pruner_workspace, db, git=GitRunner())
 
         with patch.object(
             pruner.detector,
@@ -435,7 +438,7 @@ class WorktreePrunerFailureTests:
         pruner_workspace_paths: WorkspacePaths,
     ) -> None:
         db = _repo(pruner_workspace_paths)
-        pruner = WorktreePruner(pruner_workspace, db)
+        pruner = WorktreePruner(pruner_workspace, db, git=GitRunner())
 
         with patch(
             "dovo.core.worktree.services.pruner.WorkspaceLock.__enter__",
@@ -462,14 +465,11 @@ class WorktreePrunerFailureTests:
             capture_output=True,
         )
 
-        pruner = WorktreePruner(pruner_workspace, db)
+        pruner = WorktreePruner(
+            pruner_workspace, db, git=FakeGitRunner({("branch", "-D"): RuntimeError("Permission denied")})
+        )
 
-        with patch.object(
-            GitRunner,
-            "branch_delete",
-            side_effect=RuntimeError("Permission denied"),
-        ):
-            result = pruner.prune()
+        result = pruner.prune()
 
         assert result.status == WorktreePruneStatus.PARTIAL_SUCCESS
         assert len(result.items) == 1
@@ -493,13 +493,26 @@ class WorktreePrunerFailureTests:
 
 
 def _raise_boom(*args: object, **kwargs: object) -> NoReturn:
-    """Stand in for a GitRunner or repository call that fails with an unexpected RuntimeError("boom")."""
+    """Stand in for a repository call that fails with an unexpected RuntimeError("boom")."""
     raise RuntimeError("boom")
 
 
-def _remove_directory(path: Path, target_path: Path, *, force: bool = False) -> None:
-    """Stand in for a successful git worktree remove by deleting target_path."""
-    shutil.rmtree(target_path)
+class _RemovesDirectory(FakeGitRunner):
+    """FakeGitRunner that stands in for a successful git worktree remove by deleting its target directory."""
+
+    def exec(
+        self,
+        args: Sequence[str],
+        path: Path,
+        *,
+        input_text: str | None = None,
+        env: Mapping[str, str] | None = None,
+    ) -> GitProcessOutput:
+        if tuple(args[:2]) == ("worktree", "remove"):
+            self.calls.append(tuple(args))
+            shutil.rmtree(args[2])
+            return GitProcessOutput(0, "", "")
+        return super().exec(args, path, input_text=input_text, env=env)
 
 
 def _make_untracked_orphan(workspace: Path, worktree_id: str) -> Path:
@@ -536,12 +549,13 @@ class WorktreePrunerDiagnosticLogTests:
         """Return partial_success with the item failed and item.error == f"{prefix}\nDetails logged: ..." and one error record for worktree.prune."""
         db = _repo(pruner_workspace_paths)
         worktrees_dir = pruner_workspace / ".dovo" / "worktrees"
+        fake = _RemovesDirectory()
         if category == "stale_worktree_ref":
             target = worktrees_dir / "dovo_gone"
-            GitRunner.worktree_add(pruner_workspace, target_path=target, branch="dovo/dovo_gone", base_ref="main")
+            GitRunner().worktree_add(pruner_workspace, target_path=target, branch="dovo/dovo_gone", base_ref="main")
             shutil.rmtree(target)
             expected_category = StaleWorktreeCategory.STALE_WORKTREE_REF
-            monkeypatch.setattr(GitRunner, "worktree_prune", staticmethod(_raise_boom))
+            fake.responses[("worktree", "prune")] = RuntimeError("boom")
         elif category == "stale_db_record":
             db.create(
                 id="dovo_gone",
@@ -556,10 +570,9 @@ class WorktreePrunerDiagnosticLogTests:
             db.create(id="dovo_orphan", branch_name="dovo/dovo_orphan", base_commit="abc", worktree_path=orphan_dir)
             db.update_status("dovo_orphan", WorktreeStatus.CLEANED)
             expected_category = StaleWorktreeCategory.ORPHANED_DIRECTORY
-            monkeypatch.setattr(GitRunner, "worktree_remove", staticmethod(_remove_directory))
             monkeypatch.setattr(db, "update_status", _raise_boom)
 
-        result = WorktreePruner(pruner_workspace, db).prune()
+        result = WorktreePruner(pruner_workspace, db, git=fake).prune()
 
         assert result.status == WorktreePruneStatus.PARTIAL_SUCCESS
         item = next(i for i in result.items if i.category == expected_category)
@@ -576,7 +589,7 @@ class WorktreePrunerDiagnosticLogTests:
         """Return ok with the orphan pruned, its directory gone, no hint in any entry, and one debug record for worktree.prune with exception_type GitCommandError."""
         orphan_dir = _make_untracked_orphan(pruner_workspace, "dovo_orphan")
 
-        result = WorktreePruner(pruner_workspace, _repo(pruner_workspace_paths)).prune()
+        result = WorktreePruner(pruner_workspace, _repo(pruner_workspace_paths), git=GitRunner()).prune()
 
         assert result.status == WorktreePruneStatus.OK
         assert [(item.identifier, item.action, item.error) for item in result.items] == [
@@ -598,7 +611,7 @@ class WorktreePrunerDiagnosticLogTests:
         orphan_dir = _make_untracked_orphan(pruner_workspace, "dovo_orphan")
         orphan_dir.parent.chmod(0o555)
         try:
-            result = WorktreePruner(pruner_workspace, _repo(pruner_workspace_paths)).prune()
+            result = WorktreePruner(pruner_workspace, _repo(pruner_workspace_paths), git=GitRunner()).prune()
         finally:
             orphan_dir.parent.chmod(0o755)
 
@@ -618,14 +631,12 @@ class WorktreePrunerDiagnosticLogTests:
         pruner_workspace: Path,
         pruner_workspace_paths: WorkspacePaths,
         frozen_diagnostic_clock: Path,
-        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """Return ok with the orphan pruned when worktree_remove succeeds and worktree_prune raises RuntimeError, and write one debug record for worktree.prune."""
+        """Return ok with the orphan pruned when git worktree remove succeeds and git worktree prune raises RuntimeError, and write one debug record for worktree.prune."""
         orphan_dir = _make_untracked_orphan(pruner_workspace, "dovo_orphan")
-        monkeypatch.setattr(GitRunner, "worktree_remove", staticmethod(_remove_directory))
-        monkeypatch.setattr(GitRunner, "worktree_prune", staticmethod(_raise_boom))
+        fake = _RemovesDirectory({("worktree", "prune"): RuntimeError("boom")})
 
-        result = WorktreePruner(pruner_workspace, _repo(pruner_workspace_paths)).prune()
+        result = WorktreePruner(pruner_workspace, _repo(pruner_workspace_paths), git=fake).prune()
 
         assert result.status == WorktreePruneStatus.OK
         assert [(item.identifier, item.action) for item in result.items] == [("dovo_orphan", PruneAction.PRUNED)]

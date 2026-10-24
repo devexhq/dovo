@@ -7,6 +7,7 @@ import pytest
 from dovo.common.filesystem.models import WorkspacePaths
 from dovo.core.agents.models import AgentEnvMode, AgentEnvOverrides
 from dovo.core.db import SessionsRepository, SessionStatus
+from dovo.core.git.runner import GitRunner
 from dovo.core.sessions import ReconciliationResult
 from dovo.engine.models import RunOutcome
 from dovo.engine.services.run import BlueprintRunService
@@ -15,6 +16,27 @@ from tests.harness.catalog import write_runnable_blueprint
 
 
 class BlueprintRunServiceExecuteTests:
+    def test_execute_passes_git_to_drive_run(
+        self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Hand drive_run the exact GitRunner instance given to BlueprintRunService(git=...)."""
+        seen: list[object] = []
+
+        def _drive(*args: object, **kwargs: object) -> RunOutcome:
+            seen.append(kwargs["git"])
+            return RunOutcome(status=SessionStatus.COMPLETED, worktree_path=engine_paths.root_dir)
+
+        monkeypatch.setattr("dovo.engine.engine.drive_run", _drive)
+        write_runnable_blueprint(engine_paths.root_dir, key="lint", steps=[{"id": "a", "run": "true"}])
+        git = GitRunner()
+
+        BlueprintRunService(
+            name="lint", paths=engine_paths, sessions_db=sessions_repo, no_worktree=True, git=git
+        ).execute()
+
+        assert len(seen) == 1
+        assert seen[0] is git
+
     def test_execute_completed_run_returns_ok_result_with_run_record(
         self,
         engine_paths: WorkspacePaths,
@@ -25,7 +47,12 @@ class BlueprintRunServiceExecuteTests:
         stub_drive_run(None)
 
         result = BlueprintRunService(
-            name="lint", paths=engine_paths, sessions_db=sessions_repo, no_worktree=True, session_id="run-1"
+            name="lint",
+            paths=engine_paths,
+            sessions_db=sessions_repo,
+            no_worktree=True,
+            session_id="run-1",
+            git=GitRunner(),
         ).execute()
 
         assert result.ok
@@ -51,7 +78,12 @@ class BlueprintRunServiceExecuteTests:
         )
 
         result = BlueprintRunService(
-            name="lint", paths=engine_paths, sessions_db=sessions_repo, no_worktree=True, session_id="run-2"
+            name="lint",
+            paths=engine_paths,
+            sessions_db=sessions_repo,
+            no_worktree=True,
+            session_id="run-2",
+            git=GitRunner(),
         ).execute()
 
         assert not result.ok
@@ -61,7 +93,9 @@ class BlueprintRunServiceExecuteTests:
     def test_execute_unknown_blueprint_returns_failed_result_without_run_record(
         self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository
     ) -> None:
-        result = BlueprintRunService(name="nope", paths=engine_paths, sessions_db=sessions_repo).execute()
+        result = BlueprintRunService(
+            name="nope", paths=engine_paths, sessions_db=sessions_repo, git=GitRunner()
+        ).execute()
 
         assert not result.ok
         assert result.session_record is None
@@ -81,7 +115,12 @@ class BlueprintRunServiceExecuteTests:
         )
 
         result = BlueprintRunService(
-            name="needs-input", paths=engine_paths, sessions_db=sessions_repo, no_worktree=True, cli_args=[]
+            name="needs-input",
+            paths=engine_paths,
+            sessions_db=sessions_repo,
+            no_worktree=True,
+            cli_args=[],
+            git=GitRunner(),
         ).execute()
 
         assert not result.ok
@@ -101,7 +140,9 @@ class BlueprintRunServiceExecuteTests:
             lambda sessions_db, *, path: ReconciliationResult(warning="reconciled 1 stale run"),
         )
 
-        result = BlueprintRunService(name="nope", paths=engine_paths, sessions_db=sessions_repo).execute()
+        result = BlueprintRunService(
+            name="nope", paths=engine_paths, sessions_db=sessions_repo, git=GitRunner()
+        ).execute()
 
         assert result.warnings == ["reconciled 1 stale run"]
 
@@ -115,7 +156,7 @@ class BlueprintRunServiceEnvTests:
         write_runnable_blueprint(engine_paths.root_dir, key="lint", steps=[{"id": "a", "run": "true"}])
 
         result = BlueprintRunService(
-            name="lint", paths=engine_paths, sessions_db=sessions_repo, env_passthrough=["A*B"]
+            name="lint", paths=engine_paths, sessions_db=sessions_repo, env_passthrough=["A*B"], git=GitRunner()
         ).execute()
 
         assert not result.ok
@@ -160,6 +201,7 @@ class BlueprintRunServiceEnvTests:
             no_worktree=True,
             env_mode=env_mode,
             env_passthrough=env_passthrough,
+            git=GitRunner(),
         ).execute()
 
         assert seen == [expected]

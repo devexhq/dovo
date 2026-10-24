@@ -21,6 +21,7 @@ from dovo.core.artifacts.store import ArtifactStore
 from dovo.core.catalog.definitions import StepDefinition
 from dovo.core.db import SessionsRepository, SessionStatus
 from dovo.core.db.repositories.artifacts import ArtifactsRepository
+from dovo.core.git.runner import GitRunner
 from dovo.core.interaction import InteractionAnswer, InteractionRequest, RequestOption
 from dovo.core.sessions import SessionLogEvent, SessionLogEventType
 from dovo.core.sessions.services.read_logs import read_session_log_events
@@ -145,6 +146,7 @@ def _context(
         worktree=worktree,
         no_tty=no_tty,
         interaction_prompter=interaction_prompter,
+        git=GitRunner(),
     )
 
 

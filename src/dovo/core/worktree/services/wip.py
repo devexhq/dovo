@@ -14,12 +14,12 @@ def normalize_repo_rel(path: str) -> str:
     return path.strip().replace("\\", "/")
 
 
-def list_wip_paths(path: Path) -> list[str]:
+def list_wip_paths(path: Path, *, git: GitRunner) -> list[str]:
     """Return sorted repository-relative paths with uncommitted changes.
 
     Includes tracked modifications/deletions and untracked non-ignored files.
     """
-    raw_lines = GitRunner.status_porcelain(path)
+    raw_lines = git.status_porcelain(path)
     paths: set[str] = set()
     for raw in raw_lines:
         if len(raw) < 4:
@@ -69,6 +69,7 @@ def copy_wip_file(source_root: Path, dest_root: Path, rel: str) -> None:
 
 def apply_wip_to_worktree(
     *,
+    git: GitRunner,
     source_root: Path,
     worktree_path: Path,
 ) -> list[str]:
@@ -78,6 +79,7 @@ def apply_wip_to_worktree(
     worktree_path. Deleted tracked files are removed in the worktree.
 
     Args:
+        git: Runner for the git status call.
         source_root: Primary repository checkout (WIP source).
         worktree_path: worktree path.
 
@@ -93,7 +95,7 @@ def apply_wip_to_worktree(
     if not dest.is_dir():
         raise WorktreeError(f"worktree path does not exist: {dest}")
 
-    paths = list_wip_paths(root)
+    paths = list_wip_paths(root, git=git)
     try:
         for rel in paths:
             copy_wip_file(root, dest, rel)

@@ -11,6 +11,7 @@ import pytest
 from dovo.common.filesystem import Filesystem
 from dovo.core.config.loader import ConfigLoadStatus
 from dovo.core.db import SessionsRepository, SessionStatus, WorktreesRepository
+from dovo.core.git.runner import GitRunner
 from dovo.core.status import Status
 from tests.harness.status_workspace import BuildStatusWorkspace, status_config_payload
 from tests.harness.workspace_paths import initialized_workspace_paths
@@ -48,7 +49,7 @@ class StatusCollectTests:
             worktree_path=fs.worktrees_dir / "sb-001",
         )
 
-        result = Status(paths).collect()
+        result = Status(paths, git=GitRunner()).collect()
 
         assert result.root_dir == workspace
         assert result.is_initialized is True
@@ -78,7 +79,7 @@ class StatusCollectTests:
         paths = initialized_workspace_paths(tmp_path)
         before = _tree_listing(tmp_path)
 
-        Status(paths).collect()
+        Status(paths, git=GitRunner()).collect()
 
         assert _tree_listing(tmp_path) == before
 
@@ -106,7 +107,7 @@ class StatusCollectTests:
         worktrees_before = [record.model_dump() for record in worktrees_repo.list()]
         listing_before = _tree_listing(workspace)
 
-        Status(paths).collect()
+        Status(paths, git=GitRunner()).collect()
 
         assert [record.model_dump() for record in sessions_repo.list()] == sessions_before
         assert [record.model_dump() for record in worktrees_repo.list()] == worktrees_before
@@ -125,7 +126,7 @@ class StatusWarningsOrderingTests:
         (workspace / "dirty.txt").write_text("dirty content", encoding="utf-8")
         Filesystem.atomic_write_text(fs.catalog_blueprints_dir / "broken.yml", "bad: [yaml\n")
 
-        result = Status(paths).collect()
+        result = Status(paths, git=GitRunner()).collect()
 
         assert result.warnings == [
             "Dovo workspace is not initialized. Run 'dovo init' to configure.",
@@ -139,7 +140,7 @@ class StatusWarningsOrderingTests:
             status_config_payload(model=None, max_active_worktrees=8),
         )
 
-        result2 = Status(paths).collect()
+        result2 = Status(paths, git=GitRunner()).collect()
 
         assert result2.warnings == [
             "Active branch is 'main'. Automated workflows on primary branches are discouraged.",
@@ -156,7 +157,7 @@ class StatusFixesRemediationTests:
     def test_collect_fixes_for_uninitialized_workspace(self, status_workspace: BuildStatusWorkspace) -> None:
         workspace = status_workspace(config=None)
 
-        result = Status(initialized_workspace_paths(workspace)).collect()
+        result = Status(initialized_workspace_paths(workspace), git=GitRunner()).collect()
 
         assert result.fixes == ["Run 'dovo init' to initialize Dovo in this repository."]
 
@@ -165,7 +166,7 @@ class StatusFixesRemediationTests:
         fs = Filesystem(non_git_dir)
         Filesystem.atomic_write_json(fs.config_file, status_config_payload(model="gpt-4o"))
 
-        result = Status(initialized_workspace_paths(non_git_dir)).collect()
+        result = Status(initialized_workspace_paths(non_git_dir), git=GitRunner()).collect()
 
         assert result.fixes == ["Run 'git init' or navigate to a Git repository."]
 
@@ -197,7 +198,7 @@ class StatusFixesRemediationTests:
     ) -> None:
         workspace = status_workspace(config=payload)
 
-        result = Status(initialized_workspace_paths(workspace)).collect()
+        result = Status(initialized_workspace_paths(workspace), git=GitRunner()).collect()
 
         assert result.fixes == [expected_fix]
 
@@ -207,7 +208,7 @@ class StatusFixesRemediationTests:
 
         fs.config_file.mkdir(parents=True, exist_ok=True)
 
-        result = Status(initialized_workspace_paths(workspace)).collect()
+        result = Status(initialized_workspace_paths(workspace), git=GitRunner()).collect()
 
         assert result.fixes == ["Remove directory at .dovo/config.json and run 'dovo init'."]
 
@@ -220,7 +221,7 @@ class StatusFixesRemediationTests:
         try:
             if os.access(fs.config_file, os.R_OK):
                 pytest.skip("filesystem still allows reading unreadable mode")
-            result = Status(initialized_workspace_paths(workspace)).collect()
+            result = Status(initialized_workspace_paths(workspace), git=GitRunner()).collect()
             assert result.fixes == ["Check file permissions for .dovo/config.json."]
         finally:
             fs.config_file.chmod(stat.S_IRUSR | stat.S_IWUSR)

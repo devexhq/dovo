@@ -43,10 +43,10 @@ class WorktreeSquashApplyTests:
         db = WorktreesRepository(
             db_path=worktree_workspace_paths.database_file, project_id=worktree_workspace_paths.project_id
         )
-        lifecycle = WorktreeLifecycle(worktree_workspace_paths, db)
-        patch_service = WorktreePatch(worktree_workspace_paths, db, lifecycle=lifecycle)
+        lifecycle = WorktreeLifecycle(worktree_workspace_paths, db, git=GitRunner())
+        patch_service = WorktreePatch(worktree_workspace_paths, db, lifecycle=lifecycle, git=GitRunner())
 
-        head_before = GitRunner.rev_parse(worktree_workspace, rev="HEAD")
+        head_before = GitRunner().rev_parse(worktree_workspace, rev="HEAD")
 
         create_result = lifecycle.create(session_id="dovo_squash")
         assert create_result.status == WorktreeCreateStatus.OK
@@ -54,12 +54,12 @@ class WorktreeSquashApplyTests:
         worktree_dir = worktree_workspace / ".dovo" / "worktrees" / "dovo_squash"
 
         (worktree_dir / "feature1.py").write_text("feature 1\n", encoding="utf-8")
-        GitRunner.run(["add", "-A"], path=worktree_dir)
-        GitRunner.run(["commit", "-m", "Commit 1 in worktree"], path=worktree_dir)
+        GitRunner().run(["add", "-A"], path=worktree_dir)
+        GitRunner().run(["commit", "-m", "Commit 1 in worktree"], path=worktree_dir)
 
         (worktree_dir / "feature2.py").write_text("feature 2\n", encoding="utf-8")
-        GitRunner.run(["add", "-A"], path=worktree_dir)
-        GitRunner.run(["commit", "-m", "Commit 2 in worktree"], path=worktree_dir)
+        GitRunner().run(["add", "-A"], path=worktree_dir)
+        GitRunner().run(["commit", "-m", "Commit 2 in worktree"], path=worktree_dir)
 
         result = patch_service.apply(
             "dovo_squash",
@@ -77,9 +77,9 @@ class WorktreeSquashApplyTests:
         assert result.errors == []
         assert result.warnings == []
         assert result.fixes == []
-        assert GitRunner.rev_parse(worktree_workspace, rev="HEAD") == result.commit_sha
-        assert GitRunner.run(["log", "-1", "--format=%B"], worktree_workspace).strip() == "Squash worktree feature"
-        assert GitRunner.rev_parse(worktree_workspace, rev="HEAD~1") == head_before
+        assert GitRunner().rev_parse(worktree_workspace, rev="HEAD") == result.commit_sha
+        assert GitRunner().run(["log", "-1", "--format=%B"], worktree_workspace).strip() == "Squash worktree feature"
+        assert GitRunner().rev_parse(worktree_workspace, rev="HEAD~1") == head_before
         assert (worktree_workspace / "feature1.py").read_text(encoding="utf-8") == "feature 1\n"
         assert (worktree_workspace / "feature2.py").read_text(encoding="utf-8") == "feature 2\n"
 
@@ -91,10 +91,10 @@ class WorktreeSquashApplyTests:
         db = WorktreesRepository(
             db_path=worktree_workspace_paths.database_file, project_id=worktree_workspace_paths.project_id
         )
-        lifecycle = WorktreeLifecycle(worktree_workspace_paths, db)
-        patch_service = WorktreePatch(worktree_workspace_paths, db, lifecycle=lifecycle)
+        lifecycle = WorktreeLifecycle(worktree_workspace_paths, db, git=GitRunner())
+        patch_service = WorktreePatch(worktree_workspace_paths, db, lifecycle=lifecycle, git=GitRunner())
 
-        initial_commit = GitRunner.rev_parse(worktree_workspace, rev="HEAD")
+        initial_commit = GitRunner().rev_parse(worktree_workspace, rev="HEAD")
 
         create_result = lifecycle.create(session_id="dovo_squash_del")
         assert create_result.status == WorktreeCreateStatus.OK
@@ -102,8 +102,8 @@ class WorktreeSquashApplyTests:
         worktree_dir = worktree_workspace / ".dovo" / "worktrees" / "dovo_squash_del"
 
         (worktree_dir / "feature.py").write_text("squash feature\n", encoding="utf-8")
-        GitRunner.run(["add", "-A"], path=worktree_dir)
-        GitRunner.run(["commit", "-m", "Add feature in worktree"], path=worktree_dir)
+        GitRunner().run(["add", "-A"], path=worktree_dir)
+        GitRunner().run(["commit", "-m", "Add feature in worktree"], path=worktree_dir)
 
         result = patch_service.apply(
             "dovo_squash_del",
@@ -123,7 +123,7 @@ class WorktreeSquashApplyTests:
         assert result.warnings == []
         assert result.fixes == []
 
-        assert "dovo/dovo_squash_del" not in GitRunner.list_branches(worktree_workspace)
+        assert "dovo/dovo_squash_del" not in GitRunner().list_branches(worktree_workspace)
         assert not (worktree_workspace / ".dovo" / "worktrees" / "dovo_squash_del").exists()
 
         record = db.get("dovo_squash_del")

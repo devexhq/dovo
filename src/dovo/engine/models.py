@@ -16,6 +16,7 @@ from dovo.core.agents.models import AgentEnvOverrides, ResolvedAgentSettings
 from dovo.core.artifacts.store import ArtifactStore
 from dovo.core.catalog.definitions import LoopStepBlock, StepDefinition
 from dovo.core.db import SessionRecord, SessionStatus
+from dovo.core.git.runner import GitRunner
 from dovo.core.interaction import InteractionAnswer, InteractionRequest
 from dovo.core.sessions import StepRunSummary
 from dovo.core.worktree import WorktreeSession
@@ -197,6 +198,7 @@ class RunSettings:
     worktree_id: str | None = None
     sensitive_variables: tuple[str, ...] = ()
     paths: WorkspacePaths = field(kw_only=True)
+    git: GitRunner = field(kw_only=True)
 
 
 @dataclass(frozen=True)
@@ -214,6 +216,7 @@ class RunContext:
     save_attempt_logs: bool = True
     sensitive_variables: tuple[str, ...] = ()
     interaction_prompter: InteractionPrompter | None = None
+    git: GitRunner = field(kw_only=True)
 
 
 @runtime_checkable

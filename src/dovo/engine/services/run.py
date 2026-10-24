@@ -10,6 +10,7 @@ from dovo.core.catalog import Catalog
 from dovo.core.catalog.blueprint import Blueprint
 from dovo.core.catalog.exceptions import BlueprintLoadError, BlueprintNotFoundError, BlueprintValidationError
 from dovo.core.db import SessionsRepository
+from dovo.core.git.runner import GitRunner
 from dovo.core.inputs import format_input_error_message
 from dovo.core.sessions import reconcile_stale_sessions
 from dovo.engine.engine import Engine
@@ -25,6 +26,7 @@ class BlueprintRunService:
     name: str
     paths: WorkspacePaths
     sessions_db: SessionsRepository
+    git: GitRunner
     no_worktree: bool = False
     keep: bool = False
     discard: bool = False
@@ -56,7 +58,7 @@ class BlueprintRunService:
             return fail_outcome or fail(self.warnings, f"Failed to load Blueprint '{self.name}'.")
 
         try:
-            run_outcome = Engine(self.paths, db=self.sessions_db, catalog=catalog).run(
+            run_outcome = Engine(self.paths, db=self.sessions_db, catalog=catalog, git=self.git).run(
                 blueprint,
                 RunRequest(
                     cli_args=self.cli_args,

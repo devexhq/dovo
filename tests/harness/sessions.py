@@ -14,6 +14,7 @@ from dovo.core.catalog.blueprint import Blueprint
 from dovo.core.catalog.definitions import LoopStepBlock, StepDefinition
 from dovo.core.db import SessionRecord, SessionsRepository, SessionStatus
 from dovo.core.db.repositories.artifacts import ArtifactsRepository
+from dovo.core.git.runner import GitRunner
 from dovo.engine import RunCoordinator, RunObserver, RunOutcome
 from dovo.engine.executors.models import AgentProgressUpdate, ConditionEvaluationResult, StepResult
 from dovo.engine.models import FailurePromptDecision, FailurePrompter, LoopPromptDecision, RunContext
@@ -389,6 +390,7 @@ def seed_paused_ask_session(
         session_tmp_dir=session_tmp_dir,
         session_log_dir=session_log_dir,
         artifact_store=ArtifactStore(Artifacts(paths, artifacts), session_id),
+        git=GitRunner(),
     )
     outcome = RunCoordinator(SessionStateStore(sessions, paths, session_id), context).execute()
     assert outcome.status is SessionStatus.PAUSED

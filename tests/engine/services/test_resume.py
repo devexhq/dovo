@@ -11,6 +11,7 @@ from dovo.common.filesystem.models import WorkspacePaths
 from dovo.core.agents.models import AgentEnvOverrides
 from dovo.core.db import SessionsRepository, SessionStatus
 from dovo.core.db.repositories.artifacts import ArtifactsRepository
+from dovo.core.git.runner import GitRunner
 from dovo.core.interaction import HeadlessAnswerInput
 from dovo.engine import BlueprintRunService
 from dovo.engine.models import BlueprintRunResult, RunOutcome
@@ -32,6 +33,25 @@ def _seed(paths: WorkspacePaths, sessions: SessionsRepository, session_id: str) 
 
 
 class BlueprintResumeServiceExecuteTests:
+    def test_execute_passes_git_to_drive_run(
+        self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Hand drive_run the exact GitRunner instance given to BlueprintResumeService(git=...)."""
+        seen: list[object] = []
+
+        def _drive(*args: object, **kwargs: object) -> RunOutcome:
+            seen.append(kwargs["git"])
+            return RunOutcome(status=SessionStatus.COMPLETED, worktree_path=engine_paths.root_dir)
+
+        monkeypatch.setattr("dovo.engine.engine.drive_run", _drive)
+        _seed(engine_paths, sessions_repo, "paused-1")
+        git = GitRunner()
+
+        BlueprintResumeService(paths=engine_paths, db=sessions_repo, session_id="paused-1", git=git).execute()
+
+        assert len(seen) == 1
+        assert seen[0] is git
+
     def test_execute_with_explicit_session_resumes_it_and_returns_its_record(
         self,
         engine_paths: WorkspacePaths,
@@ -41,7 +61,9 @@ class BlueprintResumeServiceExecuteTests:
         _seed(engine_paths, sessions_repo, "paused-1")
         stub_drive_run(None)
 
-        result = BlueprintResumeService(paths=engine_paths, db=sessions_repo, session_id="paused-1").execute()
+        result = BlueprintResumeService(
+            paths=engine_paths, db=sessions_repo, session_id="paused-1", git=GitRunner()
+        ).execute()
 
         assert result.ok
         assert result.session_record is not None
@@ -59,7 +81,7 @@ class BlueprintResumeServiceExecuteTests:
         assert latest is not None
         stub_drive_run(None)
 
-        result = BlueprintResumeService(paths=engine_paths, db=sessions_repo).execute()
+        result = BlueprintResumeService(paths=engine_paths, db=sessions_repo, git=GitRunner()).execute()
 
         assert result.session_record is not None
         assert result.session_record.session_id == latest.session_id
@@ -67,7 +89,7 @@ class BlueprintResumeServiceExecuteTests:
     def test_execute_without_session_and_no_paused_run_returns_failed_result(
         self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository
     ) -> None:
-        result = BlueprintResumeService(paths=engine_paths, db=sessions_repo).execute()
+        result = BlueprintResumeService(paths=engine_paths, db=sessions_repo, git=GitRunner()).execute()
 
         assert not result.ok
         assert result.session_record is None
@@ -76,7 +98,9 @@ class BlueprintResumeServiceExecuteTests:
     def test_execute_unknown_session_returns_the_engine_resume_error_message(
         self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository
     ) -> None:
-        result = BlueprintResumeService(paths=engine_paths, db=sessions_repo, session_id="ghost").execute()
+        result = BlueprintResumeService(
+            paths=engine_paths, db=sessions_repo, session_id="ghost", git=GitRunner()
+        ).execute()
 
         assert not result.ok
         assert result.session_record is None
@@ -93,7 +117,7 @@ class BlueprintResumeServiceEnvTests:
         _seed(engine_paths, sessions_repo, "paused-1")
 
         result = BlueprintResumeService(
-            paths=engine_paths, db=sessions_repo, session_id="paused-1", env_passthrough=["*"]
+            paths=engine_paths, db=sessions_repo, session_id="paused-1", env_passthrough=["*"], git=GitRunner()
         ).execute()
 
         assert not result.ok
@@ -124,6 +148,7 @@ class BlueprintResumeServiceEnvTests:
             session_id="paused-1",
             env_mode="allowlist",
             env_passthrough=["NAME"],
+            git=GitRunner(),
         ).execute()
 
         assert seen == [AgentEnvOverrides(env_mode="allowlist", env_passthrough=["NAME"])]
@@ -166,6 +191,7 @@ class BlueprintResumeAnswerTests:
             db=sessions_repo,
             session_id="ask-1",
             answers=[HeadlessAnswerInput(step_id="approve", value="approve")],
+            git=GitRunner(),
         ).execute()
 
         assert result.ok
@@ -188,6 +214,7 @@ class BlueprintResumeAnswerTests:
             db=sessions_repo,
             session_id="ask-1",
             answers=[HeadlessAnswerInput(step_id="approve", value="maybe")],
+            git=GitRunner(),
         ).execute()
 
         assert result.errors == [
@@ -208,6 +235,7 @@ class BlueprintResumeAnswerTests:
             db=sessions_repo,
             session_id="paused-1",
             answers=[HeadlessAnswerInput(step_id="a", value="x")],
+            git=GitRunner(),
         ).execute()
 
         assert result.errors == ["No prompt is pending for session 'paused-1'."]
@@ -229,6 +257,7 @@ class BlueprintResumeAnswerTests:
             db=sessions_repo,
             session_id="ask-1",
             answers=[HeadlessAnswerInput(step_id="first", value="approve")],
+            git=GitRunner(),
         ).execute()
 
         assert result.ok
@@ -250,13 +279,18 @@ class AskWorkspace:
         """Write steps as blueprint key and run it with --no-tty, so it pauses at its first ask."""
         write_runnable_blueprint(self.paths.root_dir, key=key, steps=steps)
         return BlueprintRunService(
-            name=key, paths=self.paths, sessions_db=self.sessions, no_worktree=True, no_tty=True
+            name=key, paths=self.paths, sessions_db=self.sessions, no_worktree=True, no_tty=True, git=GitRunner()
         ).execute()
 
     def resume(self, session_id: str, *answers: HeadlessAnswerInput) -> BlueprintRunResult:
         """Resume session_id with --no-tty and the given headless answers."""
         return BlueprintResumeService(
-            paths=self.paths, db=self.sessions, session_id=session_id, no_tty=True, answers=list(answers)
+            paths=self.paths,
+            db=self.sessions,
+            session_id=session_id,
+            no_tty=True,
+            answers=list(answers),
+            git=GitRunner(),
         ).execute()
 
     def lines(self, name: str) -> list[str]:

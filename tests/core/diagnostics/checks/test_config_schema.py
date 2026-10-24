@@ -7,6 +7,7 @@ from dovo.common.filesystem import Filesystem, WorkspacePaths
 from dovo.core.config.generator import build_default_config
 from dovo.core.diagnostics.checks.config_schema import ConfigSchemaCheck
 from dovo.core.diagnostics.models import CheckCategory, CheckStatus, DiagnosticsContext
+from dovo.core.git.runner import GitRunner
 
 WorkspacePathsFactory = Callable[[Path, Path | None], WorkspacePaths]
 
@@ -18,7 +19,9 @@ class ConfigSchemaCheckTests:
         self, isolated_workspace: Path, workspace_paths_factory: WorkspacePathsFactory
     ) -> None:
         check = ConfigSchemaCheck()
-        context = DiagnosticsContext(cwd=isolated_workspace, paths=workspace_paths_factory(isolated_workspace, None))
+        context = DiagnosticsContext(
+            cwd=isolated_workspace, paths=workspace_paths_factory(isolated_workspace, None), git=GitRunner()
+        )
 
         result = check.execute(context)
 
@@ -36,7 +39,9 @@ class ConfigSchemaCheckTests:
         config_path = isolated_workspace / ".dovo" / "config.json"
         config_path.write_text("{not valid json", encoding="utf-8")
         check = ConfigSchemaCheck()
-        context = DiagnosticsContext(cwd=isolated_workspace, paths=workspace_paths_factory(isolated_workspace, None))
+        context = DiagnosticsContext(
+            cwd=isolated_workspace, paths=workspace_paths_factory(isolated_workspace, None), git=GitRunner()
+        )
 
         result = check.execute(context)
 
@@ -53,7 +58,9 @@ class ConfigSchemaCheckTests:
         config_path = isolated_workspace / ".dovo" / "config.json"
         Filesystem.atomic_write_json(config_path, {})
         check = ConfigSchemaCheck()
-        context = DiagnosticsContext(cwd=isolated_workspace, paths=workspace_paths_factory(isolated_workspace, None))
+        context = DiagnosticsContext(
+            cwd=isolated_workspace, paths=workspace_paths_factory(isolated_workspace, None), git=GitRunner()
+        )
 
         result = check.execute(context)
 
@@ -71,7 +78,9 @@ class ConfigSchemaCheckTests:
         config_path = isolated_workspace / ".dovo" / "config.json"
         Filesystem.atomic_write_json(config_path, build_default_config("demo-workspace"))
         check = ConfigSchemaCheck()
-        context = DiagnosticsContext(cwd=isolated_workspace, paths=workspace_paths_factory(isolated_workspace, None))
+        context = DiagnosticsContext(
+            cwd=isolated_workspace, paths=workspace_paths_factory(isolated_workspace, None), git=GitRunner()
+        )
 
         result = check.execute(context)
 

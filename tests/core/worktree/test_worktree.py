@@ -8,6 +8,7 @@ from pathlib import Path
 import pytest
 
 from dovo.common.filesystem import WorkspacePaths
+from dovo.core.git.runner import GitRunner
 from dovo.core.worktree.models import (
     WorktreeApplyStatus,
     WorktreeCreateStatus,
@@ -37,7 +38,7 @@ class WorktreeCreateListShowDeleteDelegationTests:
     def test_create_persists_a_worktree_that_list_and_show_can_find(
         self, worktree_workspace_paths: WorkspacePaths
     ) -> None:
-        worktree = Worktree(worktree_workspace_paths)
+        worktree = Worktree(worktree_workspace_paths, git=GitRunner())
 
         create_result = worktree.create(session_id="dovo_entrypoint_create")
         assert create_result.status == WorktreeCreateStatus.OK
@@ -54,7 +55,7 @@ class WorktreeCreateListShowDeleteDelegationTests:
     def test_delete_reflects_the_same_worktree_created_through_the_entrypoint(
         self, worktree_workspace_paths: WorkspacePaths
     ) -> None:
-        worktree = Worktree(worktree_workspace_paths)
+        worktree = Worktree(worktree_workspace_paths, git=GitRunner())
         worktree.create(session_id="dovo_entrypoint_delete")
 
         delete_result = worktree.delete("dovo_entrypoint_delete")
@@ -65,7 +66,7 @@ class WorktreeCreateListShowDeleteDelegationTests:
 
 class WorktreeCleanupDelegationTests:
     def test_cleanup_removes_the_worktree_dovo_directory(self, worktree_workspace_paths: WorkspacePaths) -> None:
-        worktree = Worktree(worktree_workspace_paths)
+        worktree = Worktree(worktree_workspace_paths, git=GitRunner())
         create_result = worktree.create(session_id="dovo_entrypoint_cleanup")
         assert create_result.session is not None
 
@@ -79,7 +80,7 @@ class WorktreeDiffApplyDelegationTests:
     def test_diff_on_freshly_created_worktree_reports_empty_diff(
         self, worktree_workspace_paths: WorkspacePaths
     ) -> None:
-        worktree = Worktree(worktree_workspace_paths)
+        worktree = Worktree(worktree_workspace_paths, git=GitRunner())
         create_result = worktree.create(session_id="dovo_entrypoint_diff")
         assert create_result.status == WorktreeCreateStatus.OK
 
@@ -88,7 +89,7 @@ class WorktreeDiffApplyDelegationTests:
         assert diff_result.status == WorktreeDiffStatus.EMPTY_DIFF
 
     def test_apply_on_unknown_worktree_id_returns_not_found(self, worktree_workspace_paths: WorkspacePaths) -> None:
-        worktree = Worktree(worktree_workspace_paths)
+        worktree = Worktree(worktree_workspace_paths, git=GitRunner())
 
         result = worktree.apply("missing_worktree")
 

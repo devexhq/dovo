@@ -9,6 +9,7 @@ from typer.testing import CliRunner
 
 from dovo.cli import app
 from dovo.core.db import WorktreeStatus
+from dovo.core.git.runner import GitRunner
 from dovo.core.worktree.models import WorktreeListResult, WorktreeListStatus
 from dovo.core.worktree.worktree import Worktree
 from tests.harness.workspace_paths import initialized_workspace_paths
@@ -32,7 +33,9 @@ class WorktreeListCliIntegrationTests:
     def test_worktree_list_cli_renders_created_worktree_in_table(
         self, cli_runner: CliRunner, cli_workspace: Path, dispatch_spy: list[WorktreeListResult]
     ) -> None:
-        create_result = Worktree(paths=initialized_workspace_paths(cli_workspace)).create(name="listed")
+        create_result = Worktree(paths=initialized_workspace_paths(cli_workspace), git=GitRunner()).create(
+            name="listed"
+        )
         assert create_result.session is not None
         session = create_result.session
 
@@ -56,7 +59,7 @@ class WorktreeListCliIntegrationTests:
     def test_worktree_list_cli_status_filter_excludes_non_matching(
         self, cli_runner: CliRunner, cli_workspace: Path, dispatch_spy: list[WorktreeListResult]
     ) -> None:
-        Worktree(paths=initialized_workspace_paths(cli_workspace)).create(name="listed")
+        Worktree(paths=initialized_workspace_paths(cli_workspace), git=GitRunner()).create(name="listed")
 
         result = cli_runner.invoke(app, ["-p", str(cli_workspace), "worktree", "list", "--status", "merged"])
 

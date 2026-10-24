@@ -13,7 +13,9 @@ from dovo.core.agents.registry import PROVIDERS
 from dovo.core.config.models import DEFAULT_AGENT
 from dovo.core.diagnostics import CheckStatus, DiagnosticsReport
 from dovo.core.diagnostics.checks.git_repo import GitRepoCheck
+from dovo.core.git import GitCommandError
 from tests.harness.diagnostic_log import diagnostic_hint
+from tests.harness.fakes import FakeGitRunner, use_fake_git
 from tests.harness.workspace_paths import initialized_workspace_paths
 
 
@@ -126,6 +128,20 @@ class DoctorCliIntegrationTests:
                 }
             ],
         }
+
+    def test_doctor_cli_json_reports_not_repo_from_injected_git(
+        self, cli_runner: CliRunner, cli_workspace: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Exit 1 for `doctor --category git --format json` with use_fake_git raising GitCommandError for rev-parse --is-inside-work-tree, and report git.repo error_code "DOCTOR_GIT_NOT_REPO"."""
+        failure = GitCommandError(["git", "rev-parse", "--is-inside-work-tree"], 128, "", "fatal: not a git repository")
+        use_fake_git(monkeypatch, FakeGitRunner({("rev-parse", "--is-inside-work-tree"): failure}))
+
+        result = cli_runner.invoke(app, ["-p", str(cli_workspace), "doctor", "--category", "git", "--format", "json"])
+
+        assert result.exit_code == 1
+        check_payload = json.loads(result.stdout)["payload"]["checks"][0]
+        assert check_payload["check_id"] == "git.repo"
+        assert check_payload["error_code"] == "DOCTOR_GIT_NOT_REPO"
 
     def test_doctor_cli_json_crashed_check_carries_hint(
         self, cli_runner: CliRunner, cli_workspace: Path, frozen_diagnostic_clock: Path, monkeypatch: pytest.MonkeyPatch

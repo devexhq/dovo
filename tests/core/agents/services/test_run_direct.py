@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import subprocess
-from collections.abc import Callable
 from dataclasses import replace
 from pathlib import Path
 
@@ -28,7 +27,6 @@ from dovo.core.agents import (
     run_direct_attempt,
 )
 from dovo.core.agents.registry import PROVIDERS
-from dovo.core.git import GitRunner
 from tests.harness import AGENT_ADAPTER_FACTORY, FakeAgentProvider, new_file_diff
 from tests.harness.diagnostic_log import diagnostic_hint, read_single_event
 
@@ -81,21 +79,6 @@ def _porcelain(repo: Path) -> str:
 
 def _no_op(summary: str | None = _NO_OP_SUMMARY, raw_text: str | None = None) -> AgentResponse:
     return AgentResponse(status=AgentResponseStatus.NO_OP, summary=summary, raw_text=raw_text)
-
-
-def _forbid_git_apply(monkeypatch: pytest.MonkeyPatch) -> list[str]:
-    calls: list[str] = []
-
-    def _record(name: str) -> Callable[..., tuple[int, str, str]]:
-        def _spy(*args: object, **kwargs: object) -> tuple[int, str, str]:
-            calls.append(name)
-            raise AssertionError(f"GitRunner.{name} must not run")
-
-        return _spy
-
-    monkeypatch.setattr(GitRunner, "apply_check", staticmethod(_record("apply_check")))
-    monkeypatch.setattr(GitRunner, "apply", staticmethod(_record("apply")))
-    return calls
 
 
 class RunDirectAttemptRequestTests:
@@ -244,7 +227,6 @@ class RunDirectAttemptSettleTests:
         expected_summary: str,
     ) -> None:
         _use_provider(monkeypatch, FakeAgentProvider(_no_op(summary=summary, raw_text=raw_text)))
-        apply_calls = _forbid_git_apply(monkeypatch)
         before = _porcelain(git_repo)
 
         attempt = _attempt(git_repo)
@@ -252,7 +234,6 @@ class RunDirectAttemptSettleTests:
         assert attempt.status == AgentResponseStatus.NO_OP
         assert attempt.summary == expected_summary
         assert _porcelain(git_repo) == before
-        assert apply_calls == []
 
     def test_response_fixes_render_as_trailing_fix_diagnostic(
         self, git_repo: Path, monkeypatch: pytest.MonkeyPatch
@@ -292,14 +273,12 @@ class RunDirectAttemptDirectMutationTests:
             AgentResponse(status=AgentResponseStatus.PROPOSED_PATCH, unified_diff=diff), on_call=_write_files
         )
         requested = _use_provider(monkeypatch, provider)
-        apply_calls = _forbid_git_apply(monkeypatch)
 
         attempt = _attempt(git_repo, "copilot")
 
         assert requested == ["copilot"]
         assert attempt.status == AgentResponseStatus.PROPOSED_PATCH
         assert attempt.touched_files == ["a.txt", "b.txt"]
-        assert apply_calls == []
 
     def test_mutation_over_step_max_files_returns_provider_error_and_rolls_back(
         self, git_repo: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch

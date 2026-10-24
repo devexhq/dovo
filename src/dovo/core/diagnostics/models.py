@@ -9,6 +9,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from dovo.common.filesystem import WorkspacePaths
 from dovo.common.models import BaseResult
 from dovo.core.config.models import DovoConfig
+from dovo.core.git import GitRunner
 
 
 class CheckStatus(StrEnum):
@@ -35,11 +36,12 @@ class CheckCategory(StrEnum):
 class DiagnosticsContext(BaseModel):
     """Contextual environment supplied to diagnostic checks during execution."""
 
-    model_config = ConfigDict(extra="forbid", strict=True)
+    model_config = ConfigDict(extra="forbid", strict=True, arbitrary_types_allowed=True)
 
     cwd: Path
     config: DovoConfig | None = None
     paths: WorkspacePaths
+    git: GitRunner
 
 
 class RemediationType(StrEnum):

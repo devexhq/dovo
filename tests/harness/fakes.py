@@ -6,13 +6,16 @@ hand-rolling a `fake_run` closure with an ad-hoc captured dict per test file. Co
 to return a canned CompletedProcess via `.returning(...)`, or to raise a canned exception
 via `.raising(...)`; every call is recorded on `.calls`/`.last_call` as a FakeAgentRunnerCall,
 a pydantic model for inspecting call arguments.
+
+FakeGitRunner is a GitRunner that records every git command and answers configured
+argument prefixes with a canned GitProcessOutput or exception, running real git otherwise.
 """
 
 from __future__ import annotations
 
 import json
 import subprocess
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 from typing import Final, Self
 
@@ -26,6 +29,7 @@ from dovo.core.agents import (
     AgentResponse,
     BaseAgentProvider,
 )
+from dovo.core.git import GitProcessOutput, GitRunner
 
 
 class _ClaudeSubprocess:
@@ -255,3 +259,34 @@ class RecordingProgressSink:
     def seconds_since_last_report(self) -> float | None:
         """Return the scripted quiet window."""
         return self._seconds_since_last_report
+
+
+class FakeGitRunner(GitRunner):
+    """GitRunner that records every exec call and answers configured args prefixes, delegating the rest to real git."""
+
+    def __init__(self, responses: dict[tuple[str, ...], GitProcessOutput | Exception] | None = None) -> None:
+        self.responses = dict(responses or {})
+        self.calls: list[tuple[str, ...]] = []
+
+    def exec(
+        self,
+        args: Sequence[str],
+        path: Path,
+        *,
+        input_text: str | None = None,
+        env: Mapping[str, str] | None = None,
+    ) -> GitProcessOutput:
+        """Record args, then raise or return the response of the first key that prefixes args, else run real git."""
+        called = tuple(args)
+        self.calls.append(called)
+        for key, response in self.responses.items():
+            if called[: len(key)] == key:
+                if isinstance(response, Exception):
+                    raise response
+                return response
+        return super().exec(args, path, input_text=input_text, env=env)
+
+
+def use_fake_git(monkeypatch: pytest.MonkeyPatch, fake: FakeGitRunner) -> None:
+    """Make CliContext.build hand fake to every command, so CLI runner tests inject git at the composition root."""
+    monkeypatch.setattr("dovo.cli.context.GitRunner", lambda: fake)

@@ -23,6 +23,7 @@ from dovo.core.diagnostics.services.runner import (
     DiagnosticRunner,
     execute_single_check,
 )
+from dovo.core.git.runner import GitRunner
 from tests.harness.builders import StubCheck
 from tests.harness.diagnostic_log import diagnostic_hint, read_single_event
 
@@ -54,7 +55,9 @@ class DiagnosticRunnerFilteringTests:
         registry.register(agent_check)
 
         runner = DiagnosticRunner(registry=registry)
-        context = DiagnosticsContext(cwd=tmp_path, config=None, paths=workspace_paths_factory(tmp_path, None))
+        context = DiagnosticsContext(
+            cwd=tmp_path, config=None, paths=workspace_paths_factory(tmp_path, None), git=GitRunner()
+        )
 
         report = runner.run_checks(context, categories=[CheckCategory.GIT, CheckCategory.AGENT])
 
@@ -87,7 +90,9 @@ class DiagnosticRunnerFilteringTests:
         registry.register(check2)
 
         runner = DiagnosticRunner(registry=registry)
-        context = DiagnosticsContext(cwd=tmp_path, config=None, paths=workspace_paths_factory(tmp_path, None))
+        context = DiagnosticsContext(
+            cwd=tmp_path, config=None, paths=workspace_paths_factory(tmp_path, None), git=GitRunner()
+        )
 
         report = runner.run_checks(context, categories=categories)
 
@@ -151,7 +156,9 @@ class DiagnosticRunnerConfigToggleTests:
         )
 
         runner = DiagnosticRunner(registry=registry)
-        context = DiagnosticsContext(cwd=tmp_path, config=config, paths=workspace_paths_factory(tmp_path, None))
+        context = DiagnosticsContext(
+            cwd=tmp_path, config=config, paths=workspace_paths_factory(tmp_path, None), git=GitRunner()
+        )
 
         report = runner.run_checks(context)
 
@@ -173,7 +180,9 @@ class DiagnosticRunnerConfigToggleTests:
         registry.register(check)
 
         runner = DiagnosticRunner(registry=registry)
-        context = DiagnosticsContext(cwd=tmp_path, config=None, paths=workspace_paths_factory(tmp_path, None))
+        context = DiagnosticsContext(
+            cwd=tmp_path, config=None, paths=workspace_paths_factory(tmp_path, None), git=GitRunner()
+        )
 
         report = runner.run_checks(context)
 
@@ -193,7 +202,9 @@ class DiagnosticRunnerContainmentTests:
             category=CheckCategory.WORKTREE,
             crash=RuntimeError("Simulated crash in worktree inspection"),
         )
-        context = DiagnosticsContext(cwd=tmp_path, config=None, paths=workspace_paths_factory(tmp_path, None))
+        context = DiagnosticsContext(
+            cwd=tmp_path, config=None, paths=workspace_paths_factory(tmp_path, None), git=GitRunner()
+        )
 
         result = execute_single_check(check, context)
 
@@ -216,7 +227,9 @@ class DiagnosticRunnerContainmentTests:
     ) -> None:
         """Append the hint to message and errors[0] and write one doctor.check error record naming the check."""
         check = StubCheck(check_id="crashing.check", crash=RuntimeError("boom"))
-        context = DiagnosticsContext(cwd=tmp_path, config=None, paths=workspace_paths_factory(tmp_path, None))
+        context = DiagnosticsContext(
+            cwd=tmp_path, config=None, paths=workspace_paths_factory(tmp_path, None), git=GitRunner()
+        )
 
         result = execute_single_check(check, context)
 
@@ -237,7 +250,9 @@ class DiagnosticRunnerContainmentTests:
         logs_dir.parent.mkdir(parents=True, exist_ok=True)
         logs_dir.write_text("not a directory", encoding="utf-8")
         check = StubCheck(check_id="crashing.check", crash=RuntimeError("boom"))
-        context = DiagnosticsContext(cwd=tmp_path, config=None, paths=workspace_paths_factory(tmp_path, None))
+        context = DiagnosticsContext(
+            cwd=tmp_path, config=None, paths=workspace_paths_factory(tmp_path, None), git=GitRunner()
+        )
 
         result = execute_single_check(check, context)
 
@@ -262,7 +277,9 @@ class DiagnosticRunnerContainmentTests:
         registry.register(healthy_check)
 
         runner = DiagnosticRunner(registry=registry)
-        context = DiagnosticsContext(cwd=tmp_path, config=None, paths=workspace_paths_factory(tmp_path, None))
+        context = DiagnosticsContext(
+            cwd=tmp_path, config=None, paths=workspace_paths_factory(tmp_path, None), git=GitRunner()
+        )
 
         report = runner.run_checks(context)
 
@@ -301,7 +318,9 @@ class DiagnosticRunnerMetricsTests:
         _patch_clocks(monkeypatch, [10.0, 11.0, 13.0, 14.0, 17.0, 20.0])
 
         runner = DiagnosticRunner(registry=registry)
-        context = DiagnosticsContext(cwd=tmp_path, config=None, paths=workspace_paths_factory(tmp_path, None))
+        context = DiagnosticsContext(
+            cwd=tmp_path, config=None, paths=workspace_paths_factory(tmp_path, None), git=GitRunner()
+        )
 
         report = runner.run_checks(context)
 
@@ -328,7 +347,9 @@ class DiagnosticRunnerMetricsTests:
         workspace_paths_factory: WorkspacePathsFactory,
     ) -> None:
         _patch_clocks(monkeypatch, ticks)
-        context = DiagnosticsContext(cwd=tmp_path, config=None, paths=workspace_paths_factory(tmp_path, None))
+        context = DiagnosticsContext(
+            cwd=tmp_path, config=None, paths=workspace_paths_factory(tmp_path, None), git=GitRunner()
+        )
 
         result = execute_single_check(check, context)
 

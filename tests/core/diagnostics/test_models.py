@@ -16,6 +16,7 @@ from dovo.core.diagnostics.models import (
     DiagnosticsContext,
     DiagnosticsReport,
 )
+from dovo.core.git.runner import GitRunner
 from tests.harness.builders import diagnostic_result
 
 WorkspacePathsFactory = Callable[[Path, Path | None], WorkspacePaths]
@@ -64,17 +65,21 @@ class DiagnosticsModelsTests:
         self, tmp_path: Path, workspace_paths_factory: WorkspacePathsFactory
     ) -> None:
         paths = workspace_paths_factory(tmp_path, None)
-        context = DiagnosticsContext(cwd=tmp_path, config=None, paths=paths)
+        context = DiagnosticsContext(cwd=tmp_path, config=None, paths=paths, git=GitRunner())
         assert context.cwd == tmp_path
         assert context.config is None
 
         # Verify strict validation forbids unknown extra fields
         with pytest.raises(ValidationError):
-            DiagnosticsContext.model_validate({"cwd": str(tmp_path), "paths": paths, "unknown_field": "disallowed"})
+            DiagnosticsContext.model_validate(
+                {"cwd": tmp_path, "paths": paths, "git": GitRunner(), "unknown_field": "disallowed"}
+            )
 
     def test_doctor_context_with_config(self, tmp_path: Path, workspace_paths_factory: WorkspacePathsFactory) -> None:
         config = DovoConfig(version=1, project=ProjectConfig(name="test-project"))
-        context = DiagnosticsContext(cwd=tmp_path, config=config, paths=workspace_paths_factory(tmp_path, None))
+        context = DiagnosticsContext(
+            cwd=tmp_path, config=config, paths=workspace_paths_factory(tmp_path, None), git=GitRunner()
+        )
 
         assert context.cwd == tmp_path
         assert context.config == config

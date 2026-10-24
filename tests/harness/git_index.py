@@ -21,13 +21,13 @@ class IndexSnapshot(BaseModel):
 
 def _git_path(worktree_path: Path, args: list[str]) -> Path:
     """Run `git rev-parse <args>` in worktree_path and return the result as an absolute path."""
-    resolved = Path(GitRunner.run(["rev-parse", *args], path=worktree_path))
+    resolved = Path(GitRunner().run(["rev-parse", *args], path=worktree_path))
     return resolved if resolved.is_absolute() else worktree_path / resolved
 
 
 def snapshot_index(worktree_path: Path) -> IndexSnapshot:
     """Read `git --no-optional-locks status --porcelain`, then the index bytes at `git rev-parse --git-path index`."""
-    status = GitRunner.run(["--no-optional-locks", "status", "--porcelain"], path=worktree_path)
+    status = GitRunner().run(["--no-optional-locks", "status", "--porcelain"], path=worktree_path)
     index = _git_path(worktree_path, ["--git-path", "index"]).read_bytes()
     return IndexSnapshot(index=index, status=status)
 

@@ -7,8 +7,9 @@ from pathlib import Path
 
 import pytest
 
-from dovo.core.git import GitNotFoundError, GitPlumbingTimeoutError, GitRunner
+from dovo.core.git import GitCommandError, GitNotFoundError, GitPlumbingTimeoutError, GitProcessOutput, GitRunner
 from dovo.core.status import Status
+from tests.harness.fakes import FakeGitRunner
 from tests.harness.status_workspace import BuildStatusWorkspace
 from tests.harness.workspace_paths import initialized_workspace_paths
 
@@ -22,7 +23,7 @@ class GitProbeTests:
         untracked = workspace / "new_file.txt"
         untracked.write_text("hello", encoding="utf-8")
 
-        result = Status(initialized_workspace_paths(workspace)).collect()
+        result = Status(initialized_workspace_paths(workspace), git=GitRunner()).collect()
 
         assert result.git.branch == "feature-dirty"
         assert result.git.is_dirty is True
@@ -32,10 +33,10 @@ class GitProbeTests:
     def test_collect_detached_head_reports_detached_branch(self, status_workspace: BuildStatusWorkspace) -> None:
         workspace = status_workspace(branch="feature-detached")
 
-        commit_hash = GitRunner.run(["rev-parse", "HEAD"], path=workspace).strip()
+        commit_hash = GitRunner().run(["rev-parse", "HEAD"], path=workspace).strip()
         subprocess.run(["git", "checkout", commit_hash], cwd=workspace, check=True, capture_output=True)
 
-        result = Status(initialized_workspace_paths(workspace)).collect()
+        result = Status(initialized_workspace_paths(workspace), git=GitRunner()).collect()
 
         assert result.git.branch == "HEAD (detached)"
         assert result.git.is_git_repo is True
@@ -44,7 +45,7 @@ class GitProbeTests:
         non_git_dir = tmp_path / "non_git"
         non_git_dir.mkdir(parents=True, exist_ok=True)
 
-        result = Status(initialized_workspace_paths(non_git_dir)).collect()
+        result = Status(initialized_workspace_paths(non_git_dir), git=GitRunner()).collect()
 
         assert result.is_initialized is False
         assert result.git.is_git_repo is False
@@ -65,35 +66,34 @@ class GitProbeTests:
         ],
     )
     def test_collect_git_error_reports_unknown_branch(
-        self,
-        status_workspace: BuildStatusWorkspace,
-        monkeypatch: pytest.MonkeyPatch,
-        git_error: Exception,
+        self, status_workspace: BuildStatusWorkspace, git_error: Exception
     ) -> None:
+        """Return is_git_repo False, branch "unknown" and fixes == ["Run 'git init' or navigate to a Git repository."] when the fake raises git_error for rev-parse --is-inside-work-tree."""
         workspace = status_workspace()
+        fake = FakeGitRunner({("rev-parse", "--is-inside-work-tree"): git_error})
 
-        def mock_run(*args: object, **kwargs: object) -> str:
-            raise git_error
-
-        monkeypatch.setattr(GitRunner, "run", mock_run)
-
-        result = Status(initialized_workspace_paths(workspace)).collect()
+        result = Status(initialized_workspace_paths(workspace), git=fake).collect()
 
         assert result.git.is_git_repo is False
         assert result.git.branch == "unknown"
         assert result.fixes == ["Run 'git init' or navigate to a Git repository."]
 
-    def test_collect_rev_parse_not_true_reports_not_a_repo(
-        self, status_workspace: BuildStatusWorkspace, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_collect_git_command_error_reports_no_branch(self, status_workspace: BuildStatusWorkspace) -> None:
+        """Return is_git_repo False and branch "none" when the fake raises GitCommandError for rev-parse --is-inside-work-tree."""
         workspace = status_workspace()
+        failure = GitCommandError(["git", "rev-parse", "--is-inside-work-tree"], 128, "", "fatal: not a git repository")
+        fake = FakeGitRunner({("rev-parse", "--is-inside-work-tree"): failure})
 
-        def mock_run(*args: object, **kwargs: object) -> str:
-            return "false"
+        result = Status(initialized_workspace_paths(workspace), git=fake).collect()
 
-        monkeypatch.setattr(GitRunner, "run", mock_run)
+        assert result.git.is_git_repo is False
+        assert result.git.branch == "none"
 
-        result = Status(initialized_workspace_paths(workspace)).collect()
+    def test_collect_rev_parse_not_true_reports_not_a_repo(self, status_workspace: BuildStatusWorkspace) -> None:
+        workspace = status_workspace()
+        fake = FakeGitRunner({("rev-parse", "--is-inside-work-tree"): GitProcessOutput(0, "false\n", "")})
+
+        result = Status(initialized_workspace_paths(workspace), git=fake).collect()
 
         assert result.git.is_git_repo is False
         assert result.git.branch == "none"

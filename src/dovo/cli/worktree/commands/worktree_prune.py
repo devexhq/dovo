@@ -28,6 +28,7 @@ def worktree_prune_command(
     """
     result = Worktree(
         context.paths,
+        git=context.git,
         db=context.db.worktrees,
         sessions_db=context.db.sessions,
     ).prune(

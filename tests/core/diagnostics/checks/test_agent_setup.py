@@ -15,6 +15,7 @@ from dovo.core.agents.registry import PROVIDERS
 from dovo.core.config.models import DEFAULT_AGENT, AgentProvider, AgentSettings, DovoConfig, ProjectConfig
 from dovo.core.diagnostics.checks.agent_setup import AgentSetupCheck
 from dovo.core.diagnostics.models import CheckCategory, CheckStatus, DiagnosticsContext
+from dovo.core.git.runner import GitRunner
 from tests.harness import patch_claude_probe
 
 WorkspacePathsFactory = Callable[[Path, Path | None], WorkspacePaths]
@@ -38,7 +39,7 @@ def _context_with_agent(
         default_agent=token,
         agents={token: AgentSettings(model=model)},
     )
-    return DiagnosticsContext(cwd=cwd, config=config, paths=workspace_paths_factory(cwd, None))
+    return DiagnosticsContext(cwd=cwd, config=config, paths=workspace_paths_factory(cwd, None), git=GitRunner())
 
 
 def _stub_logged_in(monkeypatch: pytest.MonkeyPatch, *, logged_in: bool) -> None:
@@ -66,7 +67,7 @@ class AgentSetupCheckTests:
         _clear_credential_envs(monkeypatch, DEFAULT_TOKEN)
         monkeypatch.setenv(PROVIDERS[DEFAULT_TOKEN].credential_envs[0], "fake-token")
         check = AgentSetupCheck()
-        context = DiagnosticsContext(cwd=tmp_path, paths=workspace_paths_factory(tmp_path, None))
+        context = DiagnosticsContext(cwd=tmp_path, paths=workspace_paths_factory(tmp_path, None), git=GitRunner())
 
         result = check.execute(context)
 
@@ -256,7 +257,9 @@ class AgentSetupCheckTests:
             default_agent="claude",
             agents={"copilot": AgentSettings(model="copilot-model"), "claude": AgentSettings(model="claude-model")},
         )
-        context = DiagnosticsContext(cwd=tmp_path, config=config, paths=workspace_paths_factory(tmp_path, None))
+        context = DiagnosticsContext(
+            cwd=tmp_path, config=config, paths=workspace_paths_factory(tmp_path, None), git=GitRunner()
+        )
 
         result = AgentSetupCheck().execute(context)
 

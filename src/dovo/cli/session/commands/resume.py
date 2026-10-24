@@ -120,6 +120,7 @@ def session_resume_command(
         result = BlueprintResumeService(
             paths=context.paths,
             db=context.db.sessions,
+            git=context.git,
             session_id=session_id,
             no_tty=no_tty,
             env_mode=None if env_mode is None else env_mode.value,

@@ -10,7 +10,6 @@ from dovo.core.git import (
     GitCommandError,
     GitNotFoundError,
     GitPlumbingTimeoutError,
-    GitRunner,
 )
 
 
@@ -27,7 +26,7 @@ class GitRepoCheck:
             return _binary_missing_result(self.check_id, self.name, self.category)
 
         try:
-            is_inside_work_tree = GitRunner.run(["rev-parse", "--is-inside-work-tree"], path=context.cwd)
+            is_inside_work_tree = context.git.run(["rev-parse", "--is-inside-work-tree"], path=context.cwd)
         except GitNotFoundError:
             return _binary_missing_result(self.check_id, self.name, self.category)
         except (GitCommandError, GitPlumbingTimeoutError):
@@ -37,11 +36,11 @@ class GitRepoCheck:
             return _not_repo_result(self.check_id, self.name, self.category, context.cwd)
 
         try:
-            root = GitRunner.run(["rev-parse", "--show-toplevel"], path=context.cwd)
+            root = context.git.run(["rev-parse", "--show-toplevel"], path=context.cwd)
         except (GitNotFoundError, GitCommandError, GitPlumbingTimeoutError):
             return _not_repo_result(self.check_id, self.name, self.category, context.cwd)
 
-        branch = GitRunner.get_current_branch(context.cwd)
+        branch = context.git.get_current_branch(context.cwd)
 
         return _ok_result(self.check_id, self.name, self.category, root, branch)
 

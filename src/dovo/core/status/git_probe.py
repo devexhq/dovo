@@ -13,10 +13,10 @@ from dovo.core.git import (
 from dovo.core.status.models import GitStatusInfo
 
 
-def probe_git(root_dir: Path) -> GitStatusInfo:
+def probe_git(root_dir: Path, *, git: GitRunner) -> GitStatusInfo:
     """Return the branch, dirty state and uncommitted file count of root_dir, or a not-a-repo info when git is unavailable."""
     try:
-        is_inside = GitRunner.run(["rev-parse", "--is-inside-work-tree"], path=root_dir).strip()
+        is_inside = git.run(["rev-parse", "--is-inside-work-tree"], path=root_dir).strip()
         if is_inside != "true":
             return GitStatusInfo(
                 is_git_repo=False,
@@ -24,8 +24,8 @@ def probe_git(root_dir: Path) -> GitStatusInfo:
                 is_dirty=False,
                 uncommitted_files=0,
             )
-        branch = GitRunner.get_current_branch(root_dir)
-        status_lines = GitRunner.status_porcelain(root_dir)
+        branch = git.get_current_branch(root_dir)
+        status_lines = git.status_porcelain(root_dir)
         return GitStatusInfo(
             is_git_repo=True,
             branch=branch,

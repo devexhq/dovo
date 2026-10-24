@@ -16,6 +16,7 @@ from dovo.core.diagnostics.models import CheckCategory, CheckStatus, Diagnostics
 from dovo.core.git.exceptions import GitCommandError
 from dovo.core.git.runner import GitRunner
 from tests.harness import WorkspaceBuilder
+from tests.harness.fakes import FakeGitRunner
 
 WorkspacePathsFactory = Callable[[Path, Path | None], WorkspacePaths]
 
@@ -51,7 +52,7 @@ class WorktreeRefsCheckTests:
     ) -> None:
         check = WorktreeRefsCheck()
         paths = workspace_paths_factory(tmp_path, None)
-        context = DiagnosticsContext(cwd=tmp_path, paths=paths)
+        context = DiagnosticsContext(cwd=tmp_path, paths=paths, git=GitRunner())
 
         result = check.execute(context)
 
@@ -66,7 +67,7 @@ class WorktreeRefsCheckTests:
         self, worktree_refs_workspace: Path, worktree_refs_workspace_paths: WorkspacePaths
     ) -> None:
         check = WorktreeRefsCheck()
-        context = DiagnosticsContext(cwd=worktree_refs_workspace, paths=worktree_refs_workspace_paths)
+        context = DiagnosticsContext(cwd=worktree_refs_workspace, paths=worktree_refs_workspace_paths, git=GitRunner())
 
         result = check.execute(context)
 
@@ -80,7 +81,7 @@ class WorktreeRefsCheckTests:
         self, worktree_refs_workspace: Path, worktree_refs_workspace_paths: WorkspacePaths
     ) -> None:
         target = worktree_refs_workspace / ".dovo" / "worktrees" / "dovo_stale1"
-        GitRunner.worktree_add(
+        GitRunner().worktree_add(
             worktree_refs_workspace,
             target_path=target,
             branch="dovo/dovo_stale1",
@@ -88,7 +89,7 @@ class WorktreeRefsCheckTests:
         )
         shutil.rmtree(target)
         check = WorktreeRefsCheck()
-        context = DiagnosticsContext(cwd=worktree_refs_workspace, paths=worktree_refs_workspace_paths)
+        context = DiagnosticsContext(cwd=worktree_refs_workspace, paths=worktree_refs_workspace_paths, git=GitRunner())
 
         result = check.execute(context)
 
@@ -113,7 +114,7 @@ class WorktreeRefsCheckTests:
             worktree_path=missing_path,
         )
         check = WorktreeRefsCheck()
-        context = DiagnosticsContext(cwd=worktree_refs_workspace, paths=worktree_refs_workspace_paths)
+        context = DiagnosticsContext(cwd=worktree_refs_workspace, paths=worktree_refs_workspace_paths, git=GitRunner())
 
         result = check.execute(context)
 
@@ -131,7 +132,7 @@ class WorktreeRefsCheckTests:
         worktrees_dir.mkdir(parents=True, exist_ok=True)
         (worktrees_dir / "dovo_clean").mkdir()
         check = WorktreeRefsCheck()
-        context = DiagnosticsContext(cwd=worktree_refs_workspace, paths=worktree_refs_workspace_paths)
+        context = DiagnosticsContext(cwd=worktree_refs_workspace, paths=worktree_refs_workspace_paths, git=GitRunner())
 
         result = check.execute(context)
 
@@ -159,7 +160,7 @@ class WorktreeRefsCheckTests:
             worktree_path=missing_path,
         )
         check = WorktreeRefsCheck()
-        context = DiagnosticsContext(cwd=worktree_refs_workspace, paths=worktree_refs_workspace_paths)
+        context = DiagnosticsContext(cwd=worktree_refs_workspace, paths=worktree_refs_workspace_paths, git=GitRunner())
 
         result = check.execute(context)
 
@@ -174,15 +175,11 @@ class WorktreeRefsCheckTests:
         self,
         worktree_refs_workspace: Path,
         worktree_refs_workspace_paths: WorkspacePaths,
-        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-
-        def _raise_command_error(_path: Path) -> list[object]:
-            raise GitCommandError(["git", "worktree", "list"], 1, "", "fatal error")
-
-        monkeypatch.setattr(GitRunner, "worktree_list", _raise_command_error)
+        failure = GitCommandError(["git", "worktree", "list"], 1, "", "fatal error")
+        fake = FakeGitRunner({("worktree", "list"): failure})
         check = WorktreeRefsCheck()
-        context = DiagnosticsContext(cwd=worktree_refs_workspace, paths=worktree_refs_workspace_paths)
+        context = DiagnosticsContext(cwd=worktree_refs_workspace, paths=worktree_refs_workspace_paths, git=fake)
 
         result = check.execute(context)
 
@@ -199,7 +196,7 @@ class WorktreeRefsCheckRepositoryConstructionTests:
         self, worktree_refs_workspace: Path, worktree_refs_workspace_paths: WorkspacePaths
     ) -> None:
         check = WorktreeRefsCheck()
-        context = DiagnosticsContext(cwd=worktree_refs_workspace, paths=worktree_refs_workspace_paths)
+        context = DiagnosticsContext(cwd=worktree_refs_workspace, paths=worktree_refs_workspace_paths, git=GitRunner())
 
         result = check.execute(context)
 

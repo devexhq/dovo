@@ -74,16 +74,20 @@ class WorktreeLifecycle:
         self,
         paths: WorkspacePaths,
         db: WorktreesRepository,
+        *,
+        git: GitRunner,
     ) -> None:
         """Initialize lifecycle manager.
 
         Args:
             paths: Resolved command-invocation workspace paths.
             db: Explicit WorktreesRepository instance.
+            git: Runner for every git command.
         """
         self.paths = paths
         self.path = paths.root_dir
         self.db = db
+        self.git = git
 
     @property
     def worktree_base_dir(self) -> Path:
@@ -116,17 +120,17 @@ class WorktreeLifecycle:
         context = {"branch": temp_branch, "path": str(worktree_path)}
         if created_dir:
             try:
-                GitRunner.worktree_remove(self.path, worktree_path, force=True)
+                self.git.worktree_remove(self.path, worktree_path, force=True)
             except Exception as exc:
                 record_fallback(exc, operation="worktree.create", context=context)
                 shutil.rmtree(worktree_path, ignore_errors=True)
         if created_branch:
             try:
-                GitRunner.branch_delete(self.path, temp_branch, force=True)
+                self.git.branch_delete(self.path, temp_branch, force=True)
             except Exception as exc:
                 record_fallback(exc, operation="worktree.create", context=context)
         try:
-            GitRunner.worktree_prune(self.path)
+            self.git.worktree_prune(self.path)
         except Exception as exc:
             record_fallback(exc, operation="worktree.create", context=context)
 
@@ -148,7 +152,7 @@ class WorktreeLifecycle:
         """Return the git ref to branch the worktree from."""
         if override_base_ref is not None:
             return override_base_ref
-        source_branch = GitRunner.get_current_branch(self.path)
+        source_branch = self.git.get_current_branch(self.path)
         if source_branch not in ("unknown", "HEAD (detached)"):
             return source_branch
         return default_base_ref
@@ -169,7 +173,7 @@ class WorktreeLifecycle:
         if path_taken:
             return _already_exists(worktree_path.name, self._collision_fix(worktree_path, temp_branch, path_taken=True))
         try:
-            branch_taken = GitRunner.branch_exists(self.path, temp_branch)
+            branch_taken = self.git.branch_exists(self.path, temp_branch)
         except GitPlumbingTimeoutError as exc:
             return WorktreeCreateResult(
                 status=WorktreeCreateStatus.GIT_TIMEOUT,
@@ -212,7 +216,7 @@ class WorktreeLifecycle:
     def _probe_created_branch(self, temp_branch: str) -> bool:
         """Return True when temp_branch exists after a failed add; any probe failure returns False so cleanup never deletes on doubt."""
         try:
-            return GitRunner.branch_exists(self.path, temp_branch)
+            return self.git.branch_exists(self.path, temp_branch)
         except Exception as exc:
             record_fallback(exc, operation="worktree.create", context={"branch": temp_branch})
             return False
@@ -238,7 +242,7 @@ class WorktreeLifecycle:
     ) -> WorktreeCreateResult | None:
         """Create git worktree and branch, discarding on failure."""
         try:
-            GitRunner.worktree_add(self.path, worktree_path, temp_branch, base_ref)
+            self.git.worktree_add(self.path, worktree_path, temp_branch, base_ref)
             return None
         except GitPlumbingTimeoutError as exc:
             self._discard_failed_add(worktree_path, temp_branch)
@@ -269,7 +273,7 @@ class WorktreeLifecycle:
     ) -> tuple[str, WorktreeCreateResult | None]:
         """Determine base commit SHA for the created worktree."""
         try:
-            commit_sha = GitRunner.rev_parse(worktree_path, rev="HEAD")
+            commit_sha = self.git.rev_parse(worktree_path, rev="HEAD")
             return commit_sha, None
         except GitPlumbingTimeoutError as exc:
             self.discard_partial(worktree_path, temp_branch, created_dir=True, created_branch=True)
@@ -298,7 +302,7 @@ class WorktreeLifecycle:
     ) -> tuple[list[str], WorktreeCreateResult | None]:
         """Overlay uncommitted working tree changes into worktree."""
         try:
-            paths = apply_wip_to_worktree(source_root=self.path, worktree_path=worktree_path)
+            paths = apply_wip_to_worktree(git=self.git, source_root=self.path, worktree_path=worktree_path)
             return paths, None
         except GitPlumbingTimeoutError as exc:
             self.discard_partial(worktree_path, temp_branch, created_dir=True, created_branch=True)
@@ -435,7 +439,7 @@ class WorktreeLifecycle:
         if not worktree_path.exists():
             return None
         try:
-            GitRunner.worktree_remove(self.path, worktree_path, force=force)
+            self.git.worktree_remove(self.path, worktree_path, force=force)
             return None
         except Exception as exc:
             context = {"path": str(worktree_path)}
@@ -454,7 +458,7 @@ class WorktreeLifecycle:
     def _delete_branch(self, branch_name: str) -> str | None:
         """Delete temporary branch, ignoring expected idempotent not-found errors."""
         try:
-            GitRunner.branch_delete(self.path, branch_name, force=True)
+            self.git.branch_delete(self.path, branch_name, force=True)
             return None
         except (GitCommandError, GitNotFoundError):
             # Best-effort: branch may already be deleted during idempotent cleanup.
@@ -521,7 +525,7 @@ class WorktreeLifecycle:
     def prune(self) -> None:
         """Prune stale Git worktree administrative records."""
         try:
-            GitRunner.worktree_prune(self.path)
+            self.git.worktree_prune(self.path)
         except (GitCommandError, GitNotFoundError):
             # Best-effort: ignore harmless git errors during administrative worktree prune.
             pass

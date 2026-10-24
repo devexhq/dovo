@@ -17,13 +17,13 @@ from tests.harness.workspace_paths import initialized_workspace_paths
 
 def _create_worktree_with_committed_change(cli_workspace: Path) -> WorktreeSession:
     """Create a worktree and commit one file change inside its worktree."""
-    create_result = Worktree(paths=initialized_workspace_paths(cli_workspace)).create(name="diff-me")
+    create_result = Worktree(paths=initialized_workspace_paths(cli_workspace), git=GitRunner()).create(name="diff-me")
     assert create_result.session is not None
     session = create_result.session
 
     (session.worktree_path / "target.py").write_text("changed\n", encoding="utf-8")
-    GitRunner.run(["add", "-A"], path=session.worktree_path)
-    GitRunner.run(["commit", "-m", "Worktree change to target.py"], path=session.worktree_path)
+    GitRunner().run(["add", "-A"], path=session.worktree_path)
+    GitRunner().run(["commit", "-m", "Worktree change to target.py"], path=session.worktree_path)
 
     return session
 

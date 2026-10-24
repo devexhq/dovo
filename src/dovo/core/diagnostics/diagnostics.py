@@ -11,14 +11,16 @@ from dovo.core.diagnostics.models import (
 )
 from dovo.core.diagnostics.services.registry import CheckRegistry, get_default_registry
 from dovo.core.diagnostics.services.runner import DiagnosticRunner
+from dovo.core.git import GitRunner
 
 
 class Diagnostics:
     """Domain entrypoint coordinator for Dovo doctor diagnostics."""
 
-    def __init__(self, paths: WorkspacePaths, registry: CheckRegistry | None = None) -> None:
-        """Initialize the coordinator's workspace paths, defaulting its check registry to the built-in check set."""
+    def __init__(self, paths: WorkspacePaths, *, git: GitRunner, registry: CheckRegistry | None = None) -> None:
+        """Initialize the coordinator's workspace paths and git runner, defaulting its check registry to the built-in check set."""
         self.paths = paths
+        self.git = git
         self.registry = registry if registry is not None else get_default_registry()
 
     def run_diagnostics(
@@ -42,7 +44,7 @@ class Diagnostics:
                 )
                 active_config = None
 
-        context = DiagnosticsContext(cwd=self.paths.root_dir, config=active_config, paths=self.paths)
+        context = DiagnosticsContext(cwd=self.paths.root_dir, config=active_config, paths=self.paths, git=self.git)
         runner = DiagnosticRunner(registry=self.registry)
 
         return runner.run_checks(context=context, categories=categories)

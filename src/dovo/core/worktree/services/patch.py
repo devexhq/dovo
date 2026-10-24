@@ -66,6 +66,7 @@ class WorktreePatch:
         paths: WorkspacePaths,
         db: WorktreesRepository,
         *,
+        git: GitRunner,
         lifecycle: WorktreeLifecycle | None = None,
     ) -> None:
         """Initialize patch service bound to repository root.
@@ -73,12 +74,14 @@ class WorktreePatch:
         Args:
             paths: Resolved command-invocation workspace paths.
             db: Explicit WorktreesRepository instance.
-            lifecycle: Optional WorktreeLifecycle instance (constructed if None).
+            git: Runner for every git command.
+            lifecycle: Optional WorktreeLifecycle instance (constructed with git if None).
         """
         self.paths = paths
         self.path = paths.root_dir
         self.db = db
-        self.lifecycle = lifecycle or WorktreeLifecycle(self.paths, self.db)
+        self.git = git
+        self.lifecycle = lifecycle or WorktreeLifecycle(self.paths, self.db, git=git)
 
     def _validate_for_diff(
         self,
@@ -155,7 +158,7 @@ class WorktreePatch:
         if allow_dirty:
             return None
 
-        dirty_paths = list_wip_paths(self.path)
+        dirty_paths = list_wip_paths(self.path, git=self.git)
         if not dirty_paths:
             return None
 
@@ -180,7 +183,7 @@ class WorktreePatch:
         if strategy != WorktreeApplyStrategy.SQUASH or not allow_dirty:
             return None
         try:
-            dirty = GitRunner.dirty_paths(self.path)
+            dirty = self.git.dirty_paths(self.path)
         except Exception as exc:
             return WorktreeApplyResult(
                 status=WorktreeApplyStatus.GIT_FAILED,
@@ -218,7 +221,7 @@ class WorktreePatch:
         base_commit: str,
     ) -> tuple[str, list[str], str]:
         """Compute unified diff, touched files and diffstat against base_commit without touching the worktree index."""
-        delta = diff_work_tree(worktree_path, base_commit)
+        delta = diff_work_tree(worktree_path, base_commit, git=self.git)
         return delta.diff_text, delta.files, delta.stat_text
 
     def _collect_worktree_changes(
@@ -232,7 +235,7 @@ class WorktreePatch:
         try:
             diff_text, touched_files, _ = self._collect_delta(worktree_path, record.base_commit)
             if strategy == WorktreeApplyStrategy.SQUASH and diff_text.strip():
-                patch_paths = GitRunner.patch_paths(worktree_path, diff_text)
+                patch_paths = self.git.patch_paths(worktree_path, diff_text)
         except Exception as exc:
             return (
                 "",
@@ -273,7 +276,7 @@ class WorktreePatch:
     ) -> tuple[list[str], WorktreeApplyResult | None]:
         """Perform dry-run conflict check with git apply --check."""
         try:
-            returncode, _, stderr = GitRunner.apply_check(self.path, diff_text, binary=True)
+            returncode, _, stderr = self.git.apply_check(self.path, diff_text, binary=True)
         except GitPlumbingTimeoutError as exc:
             return [], WorktreeApplyResult(
                 status=WorktreeApplyStatus.GIT_FAILED,
@@ -326,7 +329,7 @@ class WorktreePatch:
     ) -> tuple[str | None, WorktreeApplyResult | None]:
         """Apply patch to working directory and, for squash, commit only the patch paths."""
         try:
-            returncode, _, stderr = GitRunner.apply(
+            returncode, _, stderr = self.git.apply(
                 self.path, diff_text, binary=True, index=strategy == WorktreeApplyStrategy.SQUASH
             )
         except Exception as exc:
@@ -356,8 +359,8 @@ class WorktreePatch:
 
         commit_msg = message or f"dovo: apply changes from worktree {worktree_id}"
         try:
-            GitRunner.commit(self.path, commit_msg, paths=patch_paths)
-            commit_sha = GitRunner.rev_parse(self.path, rev="HEAD")
+            self.git.commit(self.path, commit_msg, paths=patch_paths)
+            commit_sha = self.git.rev_parse(self.path, rev="HEAD")
             return commit_sha, None
         except Exception as exc:
             return None, WorktreeApplyResult(
