@@ -37,7 +37,7 @@ If the input file is missing, stop and say so. Do not reconstruct a plan from th
 
 ## Before writing code
 
-Read [AGENTS.md](../../../AGENTS.md): its rules R1–R17 are what the reviewer will check, and its exemplars are what new code should look like. Then read the code you are about to change and its nearest exemplar. The plan's `.agentic/evidence.md`, when present, holds citations behind the plan; consult it to verify a claim, not as required reading.
+Read [AGENTS.md](../../../AGENTS.md): its rules R1–R18 are what the reviewer will check, and its exemplars are what new code should look like. Then read the code you are about to change and its nearest exemplar. The plan's `.agentic/evidence.md`, when present, holds citations behind the plan; consult it to verify a claim, not as required reading.
 
 ## Implementation loop
 

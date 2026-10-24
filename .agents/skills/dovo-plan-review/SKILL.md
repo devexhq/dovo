@@ -17,7 +17,7 @@ Review a plan written by `/dovo-plan`, in this order of importance:
 1. **Grounding**: does the plan describe the code as it is today.
 2. **Missed behaviour**: what the planned change breaks or depends on that the plan does not say.
 3. **Coverage**: does every requirement land in a phase and a test, and nothing more.
-4. **Shape and rules**: phasing per [planning.md](../../../docs/agents/planning.md), and the design against R1–R17 in [AGENTS.md](../../../AGENTS.md).
+4. **Shape and rules**: phasing per [planning.md](../../../docs/agents/planning.md), and the design against R1–R18 in [AGENTS.md](../../../AGENTS.md).
 
 Output goes to `.agentic/plan-review.md`, paired with `.agentic/plan-review.json`. The plan's author applies the findings, and a human approves the plan before `/dovo-code` runs. Your job is to make that approval short. The findings that matter most come from reading the code, not from re-reading the plan.
 
@@ -70,7 +70,7 @@ A miss is Blocking when implementing the plan as written produces a bug, data lo
 - Each phase is one concern, roughly 400 changed lines or less, passes the gate on its own and ships something. A phase over budget states why it cannot be split.
 - The phases together serve one responsibility, since they land in one PR. A plan whose phases mix kinds of change (a foundation and its adoption, or a behaviour change and a refactor), not flagged under What you're approving with a recommendation to split the issue, is a Warning.
 - Phases are ordered by dependency, lower layers first, and replacing an internal is phased add, switch callers, delete, with the deletion phase in the ledger (R10).
-- The planned design against R1–R17: report **only violations**, each with the rule ID and the plan section that breaks it.
+- The planned design against R1–R18: report **only violations**, each with the rule ID and the plan section that breaks it.
 - Numbers agree everywhere they appear: line estimates, totals, the Definition of Done.
 
 ## 7. Write the report
