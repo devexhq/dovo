@@ -1,7 +1,7 @@
 version: 1
 name: feature-dev
 id: feature-dev
-description: Plan a GitHub issue, review it once and fold in every finding, answer its open questions, implement it after approval, review and fix blockers and warnings until none remain or only a person can settle them, then open a PR and post the final review to it
+description: Check a GitHub issue is labelled dovo:ready, plan it, review the plan once and fold in every finding, answer its open questions, implement it after approval, review and fix blockers and warnings until none remain or only a person can settle them, then open a PR and post the final review to it
 summary: Issue to reviewed PR with human gates
 
 inputs:
@@ -12,6 +12,18 @@ inputs:
     aliases: ["-i", "--issue"]
 
 steps:
+  # Pauses rather than refusing: a person can continue on an issue that has not
+  # been through the ready-issue blueprint.
+  - id: ready
+    name: Check the issue is labelled dovo:ready
+    run: |
+      gh issue view ${{ inputs.issue }} --json labels --jq '.labels[].name' | grep -qx 'dovo:ready' || {
+        echo "Issue ${{ inputs.issue }} is not labelled dovo:ready. Run: dovo run ready-issue -i ${{ inputs.issue }}"
+        exit 1
+      }
+    timeout_seconds: 120
+    on_failure: prompt_user
+
   - id: plan
     name: Plan the issue
     type: agent

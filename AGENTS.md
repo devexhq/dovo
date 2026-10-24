@@ -11,16 +11,20 @@ they are not repeated here.
 
 ## How work flows
 
-1. **Plan** (`/dovo-plan`) anything that adds surface: a command, flag, result
+1. **Ready** the issue (`/dovo-issue ready <n>`, or `dovo run ready-issue -i <n>`
+   to apply the approved edits and label it): it is re-grounded against main
+   and re-checked against `/dovo-issue`, and labelled `dovo:ready` with the sha
+   it was checked at. `feature-dev` pauses on an issue without the label.
+2. **Plan** (`/dovo-plan`) anything that adds surface: a command, flag, result
    model, status enum, service, formatter, config key, schema field or table.
    The plan sizes the work and splits it into phases. Skip it for a single-file
    change that adds no surface. If a plan was created, review it
    (`/dovo-plan-review`) in a fresh session before a human approves it.
-2. **Phase the plan.** Each phase is reviewable in one sitting (roughly 400
+3. **Phase the plan.** Each phase is reviewable in one sitting (roughly 400
    changed lines or less), passes the quality gate on its own and ships
    something. When a change replaces an internal, phase it as add, switch
    callers, delete, with the deletion phase planned up front (see R10).
-3. **Implement** the plan (`/dovo-code`), which works through every phase in
+4. **Implement** the plan (`/dovo-code`), which works through every phase in
    order and lands them in one PR, then **review** it (`/dovo-review`) in a
    fresh session, then a human reviews and merges the PR.
 
