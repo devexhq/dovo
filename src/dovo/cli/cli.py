@@ -162,6 +162,11 @@ def main(
             raise typer.Exit(code=1) from exc
 
 
+def _exception_details(exc: BaseException) -> str:
+    """Return exc's message followed by each note added to it, one per line."""
+    return "\n".join([str(exc), *getattr(exc, "__notes__", [])])
+
+
 def run_cli() -> None:
     """Main entrypoint with global crash protection."""
     try:
@@ -173,7 +178,7 @@ def run_cli() -> None:
         ui_dispatcher.dispatch(
             ErrorPanelEvent(
                 title="Workspace Lock Timeout",
-                message=str(exc),
+                message=_exception_details(exc),
                 border_style="red",
             )
         )
@@ -186,7 +191,7 @@ def run_cli() -> None:
         ui_dispatcher.dispatch(
             ErrorPanelEvent(
                 title="Fatal Error",
-                message=f"A fatal unexpected error occurred.\nDetails: {exc!s}",
+                message=f"A fatal unexpected error occurred.\nDetails: {_exception_details(exc)}",
                 border_style="red",
             )
         )
