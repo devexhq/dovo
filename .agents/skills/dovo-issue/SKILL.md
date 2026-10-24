@@ -149,7 +149,7 @@ Before running `gh issue create` or `gh issue edit`:
 
 `/dovo-issue ready <n>` decides whether an existing issue is ready to plan, against `origin/main` as it is now. An issue is ready when it passes every gate below and re-grounding and re-checking find nothing to change. Ready mode never edits the issue, its labels or its comments: it writes its verdict, and any proposed title and body, to `.agentic/`, and the `ready-issue` blueprint applies them after a person approves. Run by hand, report the verdict and ask before applying anything.
 
-1. **Read.** Delete any earlier `.agentic/issue-*` files so a stale proposal is never applied. `git fetch origin main` and record `git rev-parse --short origin/main`. Read the issue with `gh issue view <n> --json number,title,body,labels,state`, its sub-issues and its blockers (the queries in `.agents/skills/dovo-plan/SKILL.md` step 1).
+1. **Read.** Delete any earlier `.agentic/issue-*` files so a stale proposal is never applied. `git fetch origin main` and record `git rev-parse --short origin/main`. Under the `ready-issue` blueprint the `base` step has already fetched and checked out `origin/main`, so a fetch the agent sandbox refuses changes nothing; do not report it. Read the issue with `gh issue view <n> --json number,title,body,labels,state`, its sub-issues and its blockers (the queries in `.agents/skills/dovo-plan/SKILL.md` step 1).
 2. **Gates.** Each failure is a finding a person must settle, so the verdict is `not_ready`:
    - The issue is open.
    - It has no sub-issues. For a parent, name the first open sub-issue whose blockers are all closed.

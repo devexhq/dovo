@@ -41,7 +41,7 @@ steps:
     name: Stop when the issue needs a person
     run: |
       set -eu
-      verdict=$(uv run python -c 'import json; print(json.load(open(".agentic/issue-ready.json"))["verdict"])')
+      verdict=$(uv run --quiet python -c 'import json; print(json.load(open(".agentic/issue-ready.json"))["verdict"])')
       echo "Verdict: $verdict"
       [ "$verdict" != "not_ready" ] && exit 0
       gh issue edit ${{ inputs.issue }} --remove-label dovo:ready > /dev/null 2>&1 || true
