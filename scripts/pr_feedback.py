@@ -7,7 +7,7 @@ session's plan, plan-questions, review and implementation-report artifacts into
 .agentic/, checks out the pull request's head commit, records its head branch
 in .agentic/pr-branch and its URL in .agentic/pr-url, and writes
 .agentic/feedback.json: every unresolved review thread, with its thread id;
-when the restored review asks for changes, its blocking and warning findings;
+every finding of the restored review, whatever its verdict and severity;
 every comment and review summary by someone else touched since the dovo-review
 comment's last update; and every failed check on the head commit.
 """
@@ -31,7 +31,6 @@ PR_BRANCH = AGENTIC_DIR / "pr-branch"
 PR_URL = AGENTIC_DIR / "pr-url"
 REVIEW_JSON = AGENTIC_DIR / "review.json"
 RESTORED_ARTIFACTS = ("plan", "plan-questions", "review", "implementation-report")
-FINDING_SEVERITIES = ("BLOCKER", "WARNING")
 SUMMARY_CHARS = 200
 NO_AUTHOR_LABELS = {"review_finding": "dovo-review", "check": "ci"}
 FAILED_CONCLUSIONS = ("failure", "cancelled", "timed_out")
@@ -201,11 +200,14 @@ def thread_items(threads: list[dict[str, object]]) -> list[dict[str, object]]:
 
 
 def finding_items(review: dict[str, object]) -> list[dict[str, object]]:
-    """Return one `review_finding` item per BLOCKER or WARNING finding when the verdict is CHANGES_REQUIRED, ids R1, R2, ...; else []."""
+    """Return one `review_finding` item per finding of any severity, whatever the verdict, ids R1, R2, ...
+
+    Triage picks which ones to fix, so a suggestion on an approved review is listed too.
+    """
     findings = review.get("findings")
-    if review.get("verdict") != "CHANGES_REQUIRED" or not isinstance(findings, list):
+    if not isinstance(findings, list):
         return []
-    selected = [f for f in findings if isinstance(f, dict) and f.get("severity") in FINDING_SEVERITIES]
+    selected = [finding for finding in findings if isinstance(finding, dict)]
     return [
         {
             "id": f"R{index}",
