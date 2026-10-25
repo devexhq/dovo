@@ -103,10 +103,11 @@ REMEDIATION_RESOLUTION_CASES = [
             error_code="DOCTOR_CONFIG_MALFORMED",
         ),
         [
+            Remediation(message="Edit '.dovo/config.json' by hand to fix the invalid JSON syntax."),
             Remediation(
-                message="Run 'dovo init --repair' to restore missing schema keys, or edit '.dovo/config.json' by hand to fix the invalid JSON syntax.",
-                command="dovo init --repair",
-            )
+                message="Run 'dovo init --overwrite' to replace it with a default configuration, discarding its contents.",
+                command="dovo init --overwrite",
+            ),
         ],
         id="config_malformed",
     ),

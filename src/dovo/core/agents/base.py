@@ -20,7 +20,7 @@ class BaseAgentProvider(abc.ABC):
     """Provider-agnostic contract for invoking an agent.
 
     ``invoke`` checks the descriptor's credentials before delegating to ``_invoke`` and masks secrets in the response's
-    errors, raw_text, summary, and unfixable_reason; subclasses implement ``_invoke`` and never override ``invoke``.
+    errors, remediations, raw_text, summary, and unfixable_reason; subclasses implement ``_invoke`` and never override ``invoke``.
     """
 
     def invoke(self, request: AgentRequest) -> AgentResponse:

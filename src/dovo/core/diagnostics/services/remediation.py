@@ -63,15 +63,13 @@ def _config_not_found(result: DiagnosticCheckResult) -> list[Remediation]:
 
 
 def _config_malformed(result: DiagnosticCheckResult) -> list[Remediation]:
-    """Return the remediation for a '.dovo/config.json' with invalid JSON syntax (DOCTOR_CONFIG_MALFORMED)."""
+    """Return the manual-fix and overwrite remediations for a '.dovo/config.json' with invalid JSON syntax (DOCTOR_CONFIG_MALFORMED)."""
     return [
+        Remediation(message="Edit '.dovo/config.json' by hand to fix the invalid JSON syntax."),
         Remediation(
-            message=(
-                "Run 'dovo init --repair' to restore missing schema keys, or edit '.dovo/config.json' by hand "
-                "to fix the invalid JSON syntax."
-            ),
-            command="dovo init --repair",
-        )
+            message="Run 'dovo init --overwrite' to replace it with a default configuration, discarding its contents.",
+            command="dovo init --overwrite",
+        ),
     ]
 
 

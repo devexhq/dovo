@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import shlex
 import shutil
 from dataclasses import dataclass
 from pathlib import Path
@@ -37,9 +38,10 @@ def _creation_failure_message(create_result: WorktreeCreateResult) -> str:
 
 
 def _kept_remediations(path: str, worktree_id: str) -> list[Remediation]:
-    """Return the inspect and remove steps for a run worktree kept for inspection."""
+    """Return the inspect and remove steps for a run worktree kept for inspection, shell-quoting path in the inspect command."""
+    inspect_command = f"git -C {shlex.quote(path)} status"
     return [
-        Remediation(message=f"Inspect it with 'git -C {path} status'", command=f"git -C {path} status"),
+        Remediation(message=f"Inspect it with '{inspect_command}'", command=inspect_command),
         Remediation(
             message=f"Remove it with 'dovo worktree delete {worktree_id}'",
             command=f"dovo worktree delete {worktree_id}",
