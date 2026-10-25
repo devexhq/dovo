@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
+
+import pytest
 
 from dovo.common.models import Remediation
 from dovo.common.schema_validation import CONFIG_VALIDATOR
@@ -35,6 +38,7 @@ class GenerateDefaultConfigRepairTests:
 
 
 class GenerateDefaultConfigRemediationTests:
+    @pytest.mark.skipif(os.geteuid() == 0, reason="root ignores directory permission bits")
     def test_unwritable_parent_returns_write_permission_remediation(self, tmp_path: Path) -> None:
         """Return the not-writable error with the write-permissions remediation naming the parent directory."""
         parent = tmp_path / "locked"
