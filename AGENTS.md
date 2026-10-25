@@ -13,8 +13,8 @@ they are not repeated here.
 
 1. **Ready** the issue (`/dovo-issue ready <n>`, or `dovo run ready-issue -i <n>`
    to apply the approved edits and label it): it is re-grounded against main
-   and re-checked against `/dovo-issue`, and labelled `dovo:ready` with the sha
-   it was checked at. `feature-dev` pauses on an issue without the label.
+   and re-checked against `/dovo-issue` and the rules below, and labelled
+   `dovo:ready` with the sha it was checked at. `feature-dev` pauses on an issue without the label.
 2. **Plan** (`/dovo-plan`) anything that adds surface: a command, flag, result
    model, status enum, service, formatter, config key, schema field or table.
    The plan sizes the work and splits it into phases. Skip it for a single-file
@@ -36,7 +36,7 @@ ID, with the `path:line` that breaks it.
 ### Architecture
 
 - **R1. Imports flow one way: common → core → engine → cli.** Within `core/`,
-  packages follow `core/project → core/{db,git,worktree,catalog,inputs,sessions,status,artifacts,interaction} → core/agents → core/diagnostics`.
+  packages follow `core/{project,db,git,inputs} → core/{agents,catalog,sessions} → core/config → core/{worktree,status,artifacts} → core/interaction → core/{bootstrap,diagnostics}`.
   *Why:* each layer can be tested and changed without the ones above it.
   `tests/lint/test_layer_direction.py` enforces the table; design with it rather
   than discovering it at the gate.

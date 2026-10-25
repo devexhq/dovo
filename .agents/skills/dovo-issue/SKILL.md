@@ -157,8 +157,19 @@ Before running `gh issue create` or `gh issue edit`:
    - It has exactly one `dovo-size-*` label.
 3. **Re-ground.** Run **Workflow → Ground** against `origin/main` and compare what you find with the issue. Look for in-scope work that has already shipped, out-of-scope items that are now done, paths and symbols that moved or no longer exist, callers the issue does not account for, and internal shapes pinned where an observable contract would do (**Core Principles** 4), including new symbols that would shadow existing ones.
 4. **Re-check.** Check the body against **Core Principles**, **Split**, **Issue Structure** and the **Pre-Publish Checklist**. A finding that requires a split, or a product decision the issue cannot make for itself, makes the verdict `not_ready`: recommend the split or name the decision, and do not draft around it.
-5. **Propose.** When every finding can be fixed by editing the title or body, write the full new body to `.agentic/issue-body.md` and the title, on one line, to `.agentic/issue-title`, even when only one of them changes. The verdict is `needs_edits`. With no findings, write neither file; the verdict is `ready`.
-6. **Report.** Write `.agentic/issue-ready.md`: the verdict, the base sha, and one line per finding with its evidence and fix. Write `.agentic/issue-ready-comment.md`, the comment posted with the label: `Ready to plan at <sha> (<YYYY-MM-DD>).`, followed by one bullet per change the edit makes, or `No changes needed.` Write `.agentic/issue-ready.json` to agree with the report:
+5. **Rules.** Read every rule in `AGENTS.md`, then check the body against those the change can touch:
+   - R1, R3 to R6, R9 to R14, R16 and R17 always apply. R2 applies when the issue touches `cli/` handlers, R7 when it reads secrets or writes log or diagnostic context, R8 when it adds a migration, R15 when it prescribes a test double, and R18 when it changes a page under `docs/` outside `docs/agents/`.
+   - Ground in the code the rules that depend on it:
+     - R1: check against `LAYER_RULES` in `tests/lint/test_layer_direction.py`.
+     - R4: check the issue's catch sites, results and any mapping of one status or error code onto another against `docs/agents/code-conventions.md`.
+     - R6: check the issue's lock handling against `WorkspaceLock`, `LockTimeoutError` and `catch_failure`.
+     - R17: search `docs/` and the docstrings of the changed symbols for sentences the change makes false.
+   - Also check the body against itself. An FR that contradicts **Out of scope**, another FR, or a field an output requirement relies on is a finding.
+   - A finding quotes the issue text and either the rule clause it breaks or the sentence it contradicts. Silence is a finding only when following the issue literally breaks the clause. A shape you would prefer, but no rule requires, is not a finding.
+   - Fix each finding with an observable contract where one exists (**Core Principles** 4), not with the implementation steps that would satisfy the rule.
+   - Report findings only, never a clause-by-clause table.
+6. **Propose.** When every finding can be fixed by editing the title or body, write the full new body to `.agentic/issue-body.md` and the title, on one line, to `.agentic/issue-title`, even when only one of them changes. The verdict is `needs_edits`. With no findings, write neither file; the verdict is `ready`.
+7. **Report.** Write `.agentic/issue-ready.md`: the verdict, the base sha, and one line per finding with its evidence and fix. Write `.agentic/issue-ready-comment.md`, the comment posted with the label: `Ready to plan at <sha> (<YYYY-MM-DD>).`, followed by one bullet per change the edit makes, or `No changes needed.` Write `.agentic/issue-ready.json` to agree with the report:
 
 ```json
 {
@@ -178,6 +189,6 @@ Before running `gh issue create` or `gh issue edit`:
 ```
 
 - `verdict` is `ready` (no findings), `needs_edits` (the proposed title and body fix every finding) or `not_ready` (a gate failed or a finding needs a person).
-- `kind` is `gate`, `stale`, `prescriptive` or `structure`. `evidence` is a `path:line`, a sha or an issue number.
+- `kind` is `gate`, `stale`, `prescriptive`, `structure`, `rule` or `contradiction`. A `rule` finding's `summary` starts with the rule ID (`R4: …`). `evidence` is a `path:line`, a sha or an issue number; for a `contradiction`, the two section names (`FR-15, FR-18`).
 
 Remove the `dovo:ready` label whenever the body is edited by hand: it certifies the body as of its comment's sha.
