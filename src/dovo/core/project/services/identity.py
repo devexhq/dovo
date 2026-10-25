@@ -34,7 +34,7 @@ def generate_project_identity(
 
 def validate_project_id(project_id: str) -> None:
     """Raise PROJECT_ID_INVALID when project_id does not match PROJECT_ID_REGEX."""
-    if re.match(PROJECT_ID_REGEX, project_id) is None:
+    if re.fullmatch(PROJECT_ID_REGEX, project_id) is None:
         raise ProjectIdentityError(
             ErrorCode.PROJECT_ID_INVALID,
             f"Invalid project ID: must match {PROJECT_ID_REGEX}",

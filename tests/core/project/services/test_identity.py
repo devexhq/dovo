@@ -175,7 +175,7 @@ class ProjectIdentityServiceTests:
         assert raised.value.remediations == ()
         assert not path.exists()
 
-    @pytest.mark.parametrize("project_id", ["Bad Id!", "ab", "-leading-dash"])
+    @pytest.mark.parametrize("project_id", ["Bad Id!", "ab", "-leading-dash", "abc\n"])
     def test_validate_project_id_invalid_raises_project_id_invalid(self, project_id: str) -> None:
         with pytest.raises(ProjectIdentityError) as raised:
             validate_project_id(project_id)
