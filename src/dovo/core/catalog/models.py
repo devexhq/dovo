@@ -176,70 +176,34 @@ class CatalogShowResult(BaseResult):
         return not self.errors and (self.item is not None or self.content is not None or bool(self.template_matches))
 
 
-class CatalogDeleteStatus(StrEnum):
-    """Classified outcomes for deleting a catalog blueprint or step."""
-
-    OK = "ok"
-    NOT_FOUND = "not_found"
-    PROTECTED = "protected"
-    WRONG_TIER = "wrong_tier"
-    CANCELLED = "cancelled"
-    WRITE_FAILED = "write_failed"
-    INTERNAL_ERROR = "internal_error"
-
-
 class CatalogDeleteResult(BaseResult):
-    """Result of deleting a catalog blueprint."""
+    """Result of deleting a catalog blueprint or step."""
 
-    status: CatalogDeleteStatus
     item: CatalogRecord | None = None
     deleted: bool = False
     cancelled: bool = False
 
     @property
     def ok(self) -> bool:
-        """Return True if item deletion succeeded."""
-        return self.status == CatalogDeleteStatus.OK and not self.errors
-
-
-class CatalogCreateStatus(StrEnum):
-    """Classified outcomes for creating a catalog blueprint or step."""
-
-    OK = "ok"
-    INVALID_TYPE = "invalid_type"
-    ALREADY_EXISTS = "already_exists"
-    WRITE_FAILED = "write_failed"
-    INTERNAL_ERROR = "internal_error"
+        """Return True unless the delete failed; a declined confirmation is ok."""
+        return self.error_code is None
 
 
 class CatalogCreateResult(BaseResult):
     """Result of creating a catalog blueprint or step."""
 
-    status: CatalogCreateStatus
     item: CatalogRecord | None = None
     resolved_path: Path | None = None
 
     @property
     def ok(self) -> bool:
-        """Return True if blueprint creation succeeded."""
-        return self.status == CatalogCreateStatus.OK and not self.errors
-
-
-class CatalogValidateStatus(StrEnum):
-    """Classified outcomes for validating a catalog blueprint or step definition."""
-
-    OK = "ok"
-    INVALID = "invalid"
-    SYNTAX_ERROR = "syntax_error"
-    NOT_FOUND = "not_found"
-    UNREADABLE = "unreadable"
-    TYPE_REQUIRED = "type_required"
+        """Return True unless the create failed."""
+        return self.error_code is None
 
 
 class CatalogValidateResult(BaseResult):
     """Non-raising result of validating one catalog blueprint or step definition."""
 
-    status: CatalogValidateStatus
     valid: bool
     target: str
     resolved_path: Path | None = None
@@ -247,5 +211,5 @@ class CatalogValidateResult(BaseResult):
 
     @property
     def ok(self) -> bool:
-        """Return True when the item is valid and carries no errors."""
-        return self.valid and not self.errors
+        """Return True when validation found no failure; equals valid."""
+        return self.error_code is None

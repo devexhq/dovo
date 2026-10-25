@@ -39,7 +39,6 @@ class BlueprintCreateCliIntegrationTests:
         assert result.exit_code == 0
         payload = json.loads(result.stdout)
         assert payload["event_type"] == "CatalogCreateResult"
-        assert payload["payload"]["status"] == "ok"
         assert payload["payload"]["item"]["tier"] == "repo"
         assert payload["payload"]["item"]["item_type"] == "blueprint"
 
@@ -113,10 +112,8 @@ class BlueprintCreateCliTests:
         assert not (global_paths.user_catalog_dir / "blueprints" / "both-blueprint.yml").exists()
         assert not (global_paths.global_catalog_dir / "blueprints" / "both-blueprint.yml").exists()
 
-    def test_collision_json_has_already_exists_status_and_code(
-        self, cli_runner: CliRunner, isolated_workspace: Path
-    ) -> None:
-        """Exit 1 with payload status 'already_exists' and error_code CATALOG_ALREADY_EXISTS."""
+    def test_collision_json_has_already_exists_code(self, cli_runner: CliRunner, isolated_workspace: Path) -> None:
+        """Exit 1 with error_code CATALOG_ALREADY_EXISTS."""
         cli_runner.invoke(app, ["-p", str(isolated_workspace), "blueprint", "create", "--name", "dup-blueprint"])
 
         result = cli_runner.invoke(
@@ -126,7 +123,6 @@ class BlueprintCreateCliTests:
 
         assert result.exit_code == 1
         payload = json.loads(result.stdout)["payload"]
-        assert payload["status"] == "already_exists"
         assert payload["error_code"] == "CATALOG_ALREADY_EXISTS"
 
     def test_unexpected_error_reports_internal_error_json(
@@ -136,7 +132,7 @@ class BlueprintCreateCliTests:
         monkeypatch: pytest.MonkeyPatch,
         frozen_diagnostic_clock: Path,
     ) -> None:
-        """With scan_and_index_tier raising TypeError("bad"), exit 1 with internal_error, INTERNAL_ERROR, the hint, and a catalog.create event with a traceback."""
+        """With scan_and_index_tier raising TypeError("bad"), exit 1 with INTERNAL_ERROR, the hint, and a catalog.create event with a traceback."""
 
         def _explode(*args: object) -> None:
             raise TypeError("bad")
@@ -149,7 +145,6 @@ class BlueprintCreateCliTests:
 
         assert result.exit_code == 1
         payload = json.loads(result.stdout)["payload"]
-        assert payload["status"] == "internal_error"
         assert payload["error_code"] == "INTERNAL_ERROR"
         assert payload["errors"][0].endswith(diagnostic_hint(frozen_diagnostic_clock))
         event = read_single_event(frozen_diagnostic_clock)

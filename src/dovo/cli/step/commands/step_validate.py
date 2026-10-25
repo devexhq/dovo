@@ -23,7 +23,7 @@ def step_validate_command(
         output_format: Presentation format ("terminal" or "json").
 
     Returns:
-        CatalogValidateResult containing status, resolved path, errors, and warnings.
+        CatalogValidateResult containing validity, resolved path, error code, errors, and warnings.
     """
     result = Catalog(context.paths).validate(
         target,

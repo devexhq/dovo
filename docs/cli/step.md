@@ -37,7 +37,7 @@ dovo step show <sha_or_name> [--format terminal|json]
 
 ### `dovo step delete`
 
-Deletes a REPO-tier step file and reindexes that tier. A match resolved from USER or GLOBAL tier is refused rather than deleted. Bundled templates in the `dovo/` namespace are protected and cannot be deleted regardless of tier.
+Deletes a REPO-tier step file and reindexes that tier. A match resolved from USER or GLOBAL tier is refused rather than deleted. Bundled templates in the `dovo/` namespace are protected and cannot be deleted regardless of tier. Without `--force`, it asks for confirmation first. Declining, or closing the prompt without an answer, deletes nothing, exits `0` and prints `Deletion cancelled.`; with `--format json`, the payload has `cancelled: true`.
 
 ```bash
 dovo step delete <sha_or_name> [--force] [--format terminal|json]
@@ -51,4 +51,6 @@ Validates a step definition (YAML syntax, schema, and semantic invariants such a
 dovo step validate <target> [--format terminal|json]
 ```
 
-`target` is a catalog name or namespaced identifier, or a relative/absolute file path. There is no `--type` option.
+`target` is a catalog name or namespaced identifier, or a relative/absolute file path. A catalog name matches steps only. There is no `--type` option.
+
+Exits `0` when the definition is valid and `1` on any failure, including a target that names no catalog item.

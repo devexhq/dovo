@@ -17,9 +17,7 @@ from dovo.core.catalog import Catalog, CatalogError
 from dovo.core.catalog.definitions import BlueprintDefinition
 from dovo.core.catalog.models import (
     CatalogCreateResult,
-    CatalogCreateStatus,
     CatalogDeleteResult,
-    CatalogDeleteStatus,
     CatalogItemType,
     CatalogScan,
     CatalogTier,
@@ -66,8 +64,8 @@ class CatalogTemplateScaffoldingTests:
         assert result.item.path == expected_rel_path
         assert result.item.checksum == expected_checksum
         assert result.item.tier == CatalogTier.REPO
-        assert result.status == CatalogCreateStatus.OK
         assert result.error_code is None
+        assert result.ok
         assert result.errors == []
         assert result.warnings == []
         assert result.remediations == []
@@ -298,7 +296,7 @@ class CatalogShowTests:
     def test_show_unreadable_file_records_cause_and_appends_hint(
         self, workspace_paths: WorkspacePaths, monkeypatch: pytest.MonkeyPatch, frozen_diagnostic_clock: Path
     ) -> None:
-        """Return error_code CATALOG_SYNTAX_ERROR and the read error plus hint, with one error event under operation catalog.show."""
+        """Return error_code CATALOG_FILE_UNREADABLE and the read error plus hint, with one error event under operation catalog.show."""
         catalog = Catalog(workspace_paths)
         catalog.create(CatalogItemType.BLUEPRINT, "demo")
         # Keep the index written by create, so demo stays indexed after its file becomes unreadable.
@@ -314,7 +312,7 @@ class CatalogShowTests:
             blueprint_file.chmod(0o644)
 
         event = read_single_event(frozen_diagnostic_clock)
-        assert result.error_code == ErrorCode.CATALOG_SYNTAX_ERROR
+        assert result.error_code == ErrorCode.CATALOG_FILE_UNREADABLE
         assert result.errors == [
             f"Failed to read file for catalog blueprint 'demo': {event['exception_message']}"
             f"{diagnostic_hint(frozen_diagnostic_clock)}"
@@ -415,41 +413,45 @@ class CatalogMutationOutcomeTests:
     """Tests verifying create/delete classify business failures and let everything else propagate."""
 
     @pytest.mark.parametrize(
-        ("case", "expected_status", "expected_code"),
+        ("case", "expected_code"),
         [
-            pytest.param(
-                "invalid_type", CatalogCreateStatus.INVALID_TYPE, ErrorCode.CATALOG_TYPE_INVALID, id="invalid_type"
-            ),
-            pytest.param(
-                "collision", CatalogCreateStatus.ALREADY_EXISTS, ErrorCode.CATALOG_ALREADY_EXISTS, id="already_exists"
-            ),
-            pytest.param(
-                "reindex_miss", CatalogCreateStatus.WRITE_FAILED, ErrorCode.CATALOG_WRITE_FAILED, id="write_failed"
-            ),
-            pytest.param("not_found", CatalogDeleteStatus.NOT_FOUND, ErrorCode.CATALOG_NOT_FOUND, id="not_found"),
-            pytest.param(
-                "protected_delete", CatalogDeleteStatus.PROTECTED, ErrorCode.CATALOG_PROTECTED, id="protected"
-            ),
-            pytest.param(
-                "tier_delete", CatalogDeleteStatus.WRONG_TIER, ErrorCode.CATALOG_TIER_DELETE_FORBIDDEN, id="wrong_tier"
-            ),
+            pytest.param("invalid_type", ErrorCode.CATALOG_TYPE_INVALID, id="invalid_type"),
+            pytest.param("collision", ErrorCode.CATALOG_ALREADY_EXISTS, id="already_exists"),
+            pytest.param("reindex_miss", ErrorCode.CATALOG_WRITE_FAILED, id="write_failed"),
+            pytest.param("not_found", ErrorCode.CATALOG_NOT_FOUND, id="not_found"),
+            pytest.param("protected_delete", ErrorCode.CATALOG_PROTECTED, id="protected"),
+            pytest.param("tier_delete", ErrorCode.CATALOG_TIER_DELETE_FORBIDDEN, id="wrong_tier"),
         ],
     )
-    def test_classified_failure_returns_status_and_error_code(
+    def test_classified_failure_returns_error_code(
         self,
         workspace_paths: WorkspacePaths,
         monkeypatch: pytest.MonkeyPatch,
         case: str,
-        expected_status: CatalogCreateStatus | CatalogDeleteStatus,
         expected_code: ErrorCode,
     ) -> None:
-        """Return (status, error_code) == (expected_status, expected_code) with one entry in errors, and leave <DOVO_HOME>/logs absent."""
+        """Return error_code == expected_code with one entry in errors, and leave <DOVO_HOME>/logs absent."""
         result = _run_classified_case(Catalog(workspace_paths), monkeypatch, case)
 
-        assert (result.status, result.error_code) == (expected_status, expected_code)
+        assert result.error_code == expected_code
         assert len(result.errors) == 1
         assert result.ok is False
         assert not resolve_global_paths(None).logs_dir.exists()
+
+    def test_delete_success_result_is_ok(self, workspace_paths: WorkspacePaths) -> None:
+        """Return error_code None, errors [], deleted True, cancelled False, item.key 'demo' and ok True for a deleted REPO blueprint."""
+        catalog = Catalog(workspace_paths)
+        catalog.create(CatalogItemType.BLUEPRINT, "demo")
+
+        result = catalog.delete("demo")
+
+        assert result.error_code is None
+        assert result.errors == []
+        assert result.deleted is True
+        assert result.cancelled is False
+        assert result.item is not None
+        assert result.item.key == "demo"
+        assert result.ok is True
 
     @pytest.mark.parametrize("operation", ["create", "delete"])
     def test_lock_timeout_propagates(
@@ -480,7 +482,7 @@ class CatalogMutationOutcomeTests:
     def test_write_failure_is_catalog_write_failed_with_hint(
         self, workspace_paths: WorkspacePaths, frozen_diagnostic_clock: Path, operation: str, message_start: str
     ) -> None:
-        """On a read-only blueprints dir, return write_failed and CATALOG_WRITE_FAILED with the hint and one catalog.<operation> event; create leaves no file, delete keeps it."""
+        """On a read-only blueprints dir, return CATALOG_WRITE_FAILED with the hint and one catalog.<operation> event; create leaves no file, delete keeps it."""
         catalog = Catalog(workspace_paths)
         blueprints_dir = workspace_paths.catalog_blueprints_dir
         blueprints_dir.mkdir(parents=True, exist_ok=True)
@@ -494,7 +496,6 @@ class CatalogMutationOutcomeTests:
         finally:
             blueprints_dir.chmod(0o755)
 
-        assert result.status == "write_failed"
         assert result.error_code == ErrorCode.CATALOG_WRITE_FAILED
         assert len(result.errors) == 1
         assert result.errors[0].startswith(message_start)
@@ -509,20 +510,10 @@ class CatalogMutationOutcomeTests:
             assert sorted(path.name for path in blueprints_dir.iterdir()) == []
 
     @pytest.mark.parametrize(
-        ("operation", "patched", "expected_status"),
+        ("operation", "patched"),
         [
-            pytest.param(
-                "create",
-                "dovo.core.catalog.services.inventory.scan_and_index_tier",
-                CatalogCreateStatus.INTERNAL_ERROR,
-                id="create",
-            ),
-            pytest.param(
-                "delete",
-                "dovo.core.catalog.services.inventory.delete_file",
-                CatalogDeleteStatus.INTERNAL_ERROR,
-                id="delete",
-            ),
+            pytest.param("create", "dovo.core.catalog.services.inventory.scan_and_index_tier", id="create"),
+            pytest.param("delete", "dovo.core.catalog.services.inventory.delete_file", id="delete"),
         ],
     )
     def test_unexpected_failure_is_internal_error_and_recorded(
@@ -532,9 +523,8 @@ class CatalogMutationOutcomeTests:
         frozen_diagnostic_clock: Path,
         operation: str,
         patched: str,
-        expected_status: CatalogCreateStatus | CatalogDeleteStatus,
     ) -> None:
-        """With scan_and_index_tier/delete_file raising TypeError("bad"), return internal_error and INTERNAL_ERROR with the hint, and one catalog.<operation> event."""
+        """With scan_and_index_tier/delete_file raising TypeError("bad"), return INTERNAL_ERROR with the hint, and one catalog.<operation> event."""
         catalog = Catalog(workspace_paths)
         if operation == "delete":
             catalog.create(CatalogItemType.BLUEPRINT, "demo")
@@ -546,7 +536,6 @@ class CatalogMutationOutcomeTests:
 
         result = catalog.delete("demo") if operation == "delete" else catalog.create(CatalogItemType.BLUEPRINT, "demo")
 
-        assert result.status == expected_status
         assert result.error_code == ErrorCode.INTERNAL_ERROR
         assert result.errors == [
             f"Unexpected error during catalog.{operation}: bad{diagnostic_hint(frozen_diagnostic_clock)}"

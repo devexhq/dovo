@@ -90,14 +90,14 @@ class CatalogItemCliTests:
     def test_validate_exit_codes_for_invalid_schema_and_missing_target(
         self, run_dovo: DovoRunner, initialized_project: Path, kind: CatalogKind
     ) -> None:
-        """An invalid schema exits 1; a missing catalog item exits 2."""
+        """An invalid schema and a missing catalog item both exit 1."""
         bad_path = initialized_project / kind.invalid_file_name
         bad_path.write_text(kind.invalid_content, encoding="utf-8")
         invalid_res = run_dovo([kind.command, "validate", str(bad_path)], cwd=initialized_project)
         assert invalid_res.exit_code == 1
 
         missing_res = run_dovo([kind.command, "validate", kind.missing_target], cwd=initialized_project)
-        assert missing_res.exit_code == 2
+        assert missing_res.exit_code == 1
 
     def test_list_includes_created_item(
         self, run_dovo: DovoRunner, initialized_project: Path, kind: CatalogKind

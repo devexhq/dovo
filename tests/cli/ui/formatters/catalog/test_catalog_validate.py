@@ -9,8 +9,9 @@ import pytest
 
 from dovo.cli.ui.formatters.catalog.catalog_validate import CatalogValidateFormatter
 from dovo.cli.ui.formatters.catalog.catalog_views import CatalogValidateView
+from dovo.common.error_codes import ErrorCode
 from dovo.common.models import Remediation
-from dovo.core.catalog.models import CatalogValidateResult, CatalogValidateStatus
+from dovo.core.catalog.models import CatalogValidateResult
 from tests.harness.formatter import (
     FormatterCase,
     assert_json_payload_matches_published_shape,
@@ -20,7 +21,6 @@ from tests.harness.formatter import (
 
 VALID_CASE = FormatterCase(
     data=CatalogValidateResult(
-        status=CatalogValidateStatus.OK,
         valid=True,
         target="my-flow",
         resolved_path=Path(".dovo/catalog/blueprints/my-flow.yml"),
@@ -30,7 +30,6 @@ VALID_CASE = FormatterCase(
         remediations=[],
     ),
     view=CatalogValidateView(
-        status="ok",
         valid=True,
         status_label="PASSED",
         target="my-flow",
@@ -45,8 +44,8 @@ VALID_CASE = FormatterCase(
 
 INVALID_CASE = FormatterCase(
     data=CatalogValidateResult(
-        status=CatalogValidateStatus.INVALID,
         valid=False,
+        error_code=ErrorCode.CATALOG_SCHEMA_INVALID,
         target="dup.yml",
         resolved_path=Path("/workspace/dup.yml"),
         item_type="blueprint",
@@ -59,9 +58,9 @@ INVALID_CASE = FormatterCase(
         ],
     ),
     view=CatalogValidateView(
-        status="invalid",
         valid=False,
         status_label="FAILED",
+        error_code="CATALOG_SCHEMA_INVALID",
         target="dup.yml",
         resolved_path="/workspace/dup.yml",
         item_type="blueprint",
@@ -84,8 +83,8 @@ INVALID_CASE = FormatterCase(
 
 MORE_ERRORS_THAN_REMEDIATIONS_CASE = FormatterCase(
     data=CatalogValidateResult(
-        status=CatalogValidateStatus.INVALID,
         valid=False,
+        error_code=ErrorCode.CATALOG_SCHEMA_INVALID,
         target="two.yml",
         resolved_path=Path("/workspace/two.yml"),
         item_type="blueprint",
@@ -96,9 +95,9 @@ MORE_ERRORS_THAN_REMEDIATIONS_CASE = FormatterCase(
         remediations=[Remediation(message="Rename one of the 'build' steps")],
     ),
     view=CatalogValidateView(
-        status="invalid",
         valid=False,
         status_label="FAILED",
+        error_code="CATALOG_SCHEMA_INVALID",
         target="two.yml",
         resolved_path="/workspace/two.yml",
         item_type="blueprint",
@@ -126,7 +125,6 @@ PAYLOAD_CASES = [
     pytest.param(
         VALID_CASE,
         {
-            "status": "ok",
             "valid": True,
             "status_label": "PASSED",
             "target": "my-flow",
@@ -142,13 +140,12 @@ PAYLOAD_CASES = [
     pytest.param(
         INVALID_CASE,
         {
-            "status": "invalid",
             "valid": False,
             "status_label": "FAILED",
             "target": "dup.yml",
             "resolved_path": "/workspace/dup.yml",
             "item_type": "blueprint",
-            "error_code": None,
+            "error_code": "CATALOG_SCHEMA_INVALID",
             "errors": ["Step id 'run-tests' is used by more than one step (CATALOG_DUPLICATE_STEP_ID)."],
             "warnings": ["Step 's1' script_path 'scripts/none.sh' does not exist on disk (CATALOG_SCRIPT_NOT_FOUND)."],
             "remediations": [

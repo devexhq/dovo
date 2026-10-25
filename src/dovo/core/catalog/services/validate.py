@@ -11,10 +11,11 @@ import yaml
 from pydantic import ValidationError
 from pydantic_core import ErrorDetails
 
+from dovo.common.error_codes import ErrorCode
 from dovo.common.exceptions import DefinitionLoadError, DefinitionValidationError
 from dovo.common.models import Remediation
 from dovo.core.catalog.exceptions import AskStepInvalidError
-from dovo.core.catalog.models import CatalogItemType, CatalogValidateResult, CatalogValidateStatus
+from dovo.core.catalog.models import CatalogItemType, CatalogValidateResult
 
 _PLACEHOLDER_RE = re.compile(r"\$\{\{\s*inputs\.([a-zA-Z0-9_-]+)\s*\}\}")
 _PLACEHOLDER_FIELDS: Final[tuple[str, ...]] = ("run", "command", "prompt", "script_path")
@@ -74,11 +75,11 @@ def _validate_resolved_target(
     )
     if schema_errors:
         return CatalogValidateResult(
-            status=CatalogValidateStatus.INVALID,
             valid=False,
             target=target,
             resolved_path=resolved_path,
             item_type=item_type,
+            error_code=ErrorCode.CATALOG_SCHEMA_INVALID,
             errors=schema_errors,
             warnings=[],
             remediations=schema_remediations,
@@ -87,18 +88,17 @@ def _validate_resolved_target(
     semantic_errors, semantic_remediations, warnings = _run_semantic_audits(item_type, definition, repo_root)
     if semantic_errors:
         return CatalogValidateResult(
-            status=CatalogValidateStatus.INVALID,
             valid=False,
             target=target,
             resolved_path=resolved_path,
             item_type=item_type,
+            error_code=ErrorCode.CATALOG_SCHEMA_INVALID,
             errors=semantic_errors,
             warnings=warnings,
             remediations=semantic_remediations,
         )
 
     return CatalogValidateResult(
-        status=CatalogValidateStatus.OK,
         valid=True,
         target=target,
         resolved_path=resolved_path,
@@ -113,16 +113,16 @@ def _read_and_parse_target_yaml(
     resolved_path: Path,
     item_type: str,
 ) -> CatalogValidateResult | dict[str, Any]:
-    """Read and YAML-parse resolved_path, or return a terminal unreadable/syntax_error/invalid-root result."""
+    """Read and YAML-parse resolved_path, or return a terminal unreadable, syntax-error or non-mapping-root result."""
     try:
         content = resolved_path.read_text(encoding="utf-8")
     except OSError as exc:
         return CatalogValidateResult(
-            status=CatalogValidateStatus.UNREADABLE,
             valid=False,
             target=target,
             resolved_path=resolved_path,
             item_type=item_type,
+            error_code=ErrorCode.CATALOG_FILE_UNREADABLE,
             errors=[f"Failed to read '{resolved_path}': {exc} (CATALOG_FILE_UNREADABLE)."],
             warnings=[],
             remediations=[Remediation(message=f"Check that '{resolved_path}' exists and is readable.")],
@@ -133,11 +133,11 @@ def _read_and_parse_target_yaml(
     except yaml.YAMLError as exc:
         location = _format_yaml_error_location(exc)
         return CatalogValidateResult(
-            status=CatalogValidateStatus.SYNTAX_ERROR,
             valid=False,
             target=target,
             resolved_path=resolved_path,
             item_type=item_type,
+            error_code=ErrorCode.CATALOG_SYNTAX_ERROR,
             errors=[f"YAML syntax error in '{resolved_path}' at {location}: {exc} (CATALOG_YAML_SYNTAX_ERROR)."],
             warnings=[],
             remediations=[Remediation(message=f"Fix the YAML syntax error at {location} in '{resolved_path}'.")],
@@ -145,11 +145,11 @@ def _read_and_parse_target_yaml(
 
     if not isinstance(parsed, dict):
         return CatalogValidateResult(
-            status=CatalogValidateStatus.INVALID,
             valid=False,
             target=target,
             resolved_path=resolved_path,
             item_type=item_type,
+            error_code=ErrorCode.CATALOG_SYNTAX_ERROR,
             errors=[f"'{resolved_path}' root content must be a YAML mapping (CATALOG_ROOT_NOT_OBJECT)."],
             warnings=[],
             remediations=[

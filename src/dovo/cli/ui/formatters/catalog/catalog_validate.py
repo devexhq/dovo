@@ -11,7 +11,6 @@ from rich.text import Text
 from dovo.cli.ui.formatters.base import ComponentFormatter
 from dovo.cli.ui.formatters.catalog.catalog_views import CatalogValidateView
 from dovo.common.models import Remediation
-from dovo.common.utils import enum_value
 from dovo.core.catalog.models import CatalogValidateResult
 
 _CODE_SUFFIX_RE = re.compile(r"\s*\(([A-Z][A-Z0-9_]*)\)\.?\s*$")
@@ -74,7 +73,6 @@ class CatalogValidateFormatter(ComponentFormatter[CatalogValidateResult, Catalog
             CatalogValidateView with flat, JSON-faithful fields.
         """
         return CatalogValidateView(
-            status=enum_value(data.status),
             valid=data.valid,
             status_label="PASSED" if data.ok else "FAILED",
             target=data.target,

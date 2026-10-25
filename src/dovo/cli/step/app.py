@@ -9,7 +9,6 @@ import typer
 from dovo.cli.context import CliContext
 from dovo.cli.options import FormatOption
 from dovo.common.models import OutputFormatOptions
-from dovo.core.catalog.models import CatalogValidateStatus
 
 from .commands.step_create import step_create_command
 from .commands.step_delete import step_delete_command
@@ -98,11 +97,5 @@ def step_validate(
     """Validate a step definition without executing it."""
     context: CliContext = ctx.obj["context"]
     result = step_validate_command(context, target, output_format=format)
-    if result.status in (
-        CatalogValidateStatus.NOT_FOUND,
-        CatalogValidateStatus.UNREADABLE,
-        CatalogValidateStatus.TYPE_REQUIRED,
-    ):
-        raise typer.Exit(code=2)
     if not result.ok:
         raise typer.Exit(code=1)

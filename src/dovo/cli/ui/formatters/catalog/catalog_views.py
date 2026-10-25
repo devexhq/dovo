@@ -61,7 +61,6 @@ class CatalogValidateView(BaseModel):
 
     model_config = {"extra": "forbid", "strict": True}
 
-    status: str
     valid: bool
     status_label: str
     target: str

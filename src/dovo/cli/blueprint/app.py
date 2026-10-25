@@ -9,7 +9,6 @@ import typer
 from dovo.cli.context import CliContext
 from dovo.cli.options import FormatOption
 from dovo.common.models import OutputFormatOptions
-from dovo.core.catalog.models import CatalogValidateStatus
 
 from .commands.blueprint_create import blueprint_create_command
 from .commands.blueprint_delete import blueprint_delete_command
@@ -98,11 +97,5 @@ def blueprint_validate(
     """Validate a blueprint definition without executing it."""
     context: CliContext = ctx.obj["context"]
     result = blueprint_validate_command(context, target, output_format=format)
-    if result.status in (
-        CatalogValidateStatus.NOT_FOUND,
-        CatalogValidateStatus.UNREADABLE,
-        CatalogValidateStatus.TYPE_REQUIRED,
-    ):
-        raise typer.Exit(code=2)
     if not result.ok:
         raise typer.Exit(code=1)
