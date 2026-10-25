@@ -7,13 +7,17 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from pydantic import ValidationError
 from typer.testing import CliRunner
 
 from dovo.cli import app
 from dovo.common.constants import DOVO_GITIGNORE_TRACKED_ENTRIES
+from dovo.common.filesystem import Filesystem
 from dovo.common.filesystem.services.global_root import resolve_global_paths
 from dovo.core.bootstrap.models import BootstrapOutcome
+from dovo.core.project.models import PROJECT_ID_REGEX, ProjectIdentity
 from tests.harness.builders import init_git_repository
+from tests.harness.diagnostic_log import diagnostic_hint
 
 
 def _dovo_dir(workspace: Path) -> Path:
@@ -129,6 +133,96 @@ class InitCliIntegrationTests:
         assert "Invalid project ID: must match" in result.stdout
         assert "Pass a valid '--id' matching" in result.stdout
         assert not (_dovo_dir(tmp_path) / "project.json").exists()
+
+    def test_init_cli_with_invalid_id_json_payload_exits_two(self, cli_runner: CliRunner, tmp_path: Path) -> None:
+        """Exit 2 with failure_mode invalid_project_id, the identity path, the invalid-id error and remediation."""
+        init_git_repository(tmp_path)
+
+        result = cli_runner.invoke(app, ["-p", str(tmp_path), "init", "--id", "Bad Id!", "--format", "json"])
+
+        assert result.exit_code == 2
+        payload = json.loads(result.stdout)["payload"]
+        assert payload["failure_mode"] == "invalid_project_id"
+        assert payload["identity_path_relative"] == ".dovo/project.json"
+        assert payload["errors"] == [f"Invalid project ID: must match {PROJECT_ID_REGEX}"]
+        assert payload["remediations"] == [
+            {
+                "message": f"Pass a valid '--id' matching '{PROJECT_ID_REGEX}', or omit '--id' to generate one.",
+                "command": None,
+            }
+        ]
+        assert not (_dovo_dir(tmp_path) / "project.json").exists()
+
+    def test_init_cli_invalid_identity_schema_exits_one_with_json_failure(
+        self, cli_runner: CliRunner, tmp_path: Path
+    ) -> None:
+        """Exit 1 with failure_mode bootstrap, the invalid-schema error without a Details logged line, and no config.json."""
+        init_git_repository(tmp_path)
+        identity_path = Filesystem(tmp_path).dovo_dir / "project.json"
+        identity_path.parent.mkdir()
+        identity_path.write_text("{not-json", encoding="utf-8")
+        with pytest.raises(ValidationError) as validation:
+            ProjectIdentity.model_validate_json("{not-json")
+
+        result = cli_runner.invoke(app, ["-p", str(tmp_path), "init", "--format", "json"])
+
+        assert result.exit_code == 1
+        payload = json.loads(result.stdout)["payload"]
+        assert payload["failure_mode"] == "bootstrap"
+        assert payload["errors"] == [
+            f"Project identity at '{identity_path}' is invalid: {validation.value} (PROJECT_IDENTITY_INVALID_SCHEMA)."
+        ]
+        assert payload["remediations"] == [
+            {"message": "Resolve the path conflict above, then rerun 'dovo init'", "command": None}
+        ]
+        assert not (_dovo_dir(tmp_path) / "config.json").exists()
+
+    def test_init_cli_unexpected_provisioning_error_exits_one_with_json_failure(
+        self, cli_runner: CliRunner, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, frozen_diagnostic_clock: Path
+    ) -> None:
+        """Exit 1 with failure_mode bootstrap and the unexpected error plus its Details logged line, and no traceback."""
+        init_git_repository(tmp_path)
+
+        def _boom(*_args: object, **_kwargs: object) -> None:
+            raise TypeError("boom")
+
+        monkeypatch.setattr("dovo.core.project.services.identity.generate_project_identity", _boom)
+
+        result = cli_runner.invoke(app, ["-p", str(tmp_path), "init", "--format", "json"])
+
+        assert result.exit_code == 1
+        payload = json.loads(result.stdout)["payload"]
+        assert payload["failure_mode"] == "bootstrap"
+        assert payload["errors"] == [
+            "Unexpected error during bootstrap.provision_identity: boom" + diagnostic_hint(frozen_diagnostic_clock)
+        ]
+        assert "Traceback" not in result.stdout
+
+    def test_init_cli_overwrite_repair_rerun_orders_warnings(self, cli_runner: CliRunner, tmp_path: Path) -> None:
+        """Exit 0 for a second `init --overwrite --repair --format json` with the preserve warning first."""
+        init_git_repository(tmp_path)
+        cli_runner.invoke(app, ["-p", str(tmp_path), "init", "--id", "first-id"])
+
+        result = cli_runner.invoke(app, ["-p", str(tmp_path), "init", "--overwrite", "--repair", "--format", "json"])
+
+        assert result.exit_code == 0
+        assert json.loads(result.stdout)["payload"]["warnings"] == [
+            "Project identity already exists (id=first-id); preserving existing identity. "
+            "Rerun with --id <new-id> --force to replace it.",
+            "repair ignored when overwrite=True",
+        ]
+
+    def test_init_cli_with_id_and_display_name_writes_display_name(self, cli_runner: CliRunner, tmp_path: Path) -> None:
+        init_git_repository(tmp_path)
+
+        result = cli_runner.invoke(
+            app, ["-p", str(tmp_path), "init", "--id", "custom-id", "--display-name", "My Project"]
+        )
+
+        assert result.exit_code == 0
+        project_json = json.loads((_dovo_dir(tmp_path) / "project.json").read_text(encoding="utf-8"))
+        assert project_json["id"] == "custom-id"
+        assert project_json["display_name"] == "My Project"
 
     def test_init_cli_force_with_id_overwrites_identity_only(self, cli_runner: CliRunner, tmp_path: Path) -> None:
         init_git_repository(tmp_path)

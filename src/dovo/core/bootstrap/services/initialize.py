@@ -4,11 +4,14 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from dovo.common.diagnostic_log import append_diagnostic_hint
+from dovo.common.exceptions import Failure, catch_failure
 from dovo.common.filesystem import Filesystem
 from dovo.common.filesystem.services.global_root import resolve_global_paths
 from dovo.common.models import Remediation
 from dovo.common.utils import display_path
 from dovo.core.bootstrap.models import (
+    BootstrapResult,
     DovoTreeSnapshot,
     InitFailureMode,
     WorkspaceInitResult,
@@ -18,7 +21,8 @@ from dovo.core.bootstrap.services.rollback import restore_dovo_tree, snapshot_do
 from dovo.core.catalog.services.seeder import seed_all_catalog_templates
 from dovo.core.config.generator import generate_default_config
 from dovo.core.db import init_database
-from dovo.core.project.services.identity import provision_project_identity
+from dovo.core.project.models import ProvisionedProjectIdentity
+from dovo.core.project.services.identity import provision_project_identity, validate_project_id
 from dovo.core.project.services.storage import build_workspace_paths
 
 _BOOTSTRAP_REMEDIATION = Remediation(message="Resolve the path conflict above, then rerun 'dovo init'")
@@ -64,19 +68,12 @@ def initialize_workspace(
             failure_mode=InitFailureMode.BOOTSTRAP,
         )
 
-    identity_result = provision_project_identity(
-        fs.dovo_dir,
-        project_id=project_id,
-        display_name=display_name,
-        force=force,
+    provisioned = _provision_identity(
+        fs.dovo_dir, result, project_id=project_id, display_name=display_name, force=force
     )
-    if not identity_result.ok or identity_result.identity is None:
-        return WorkspaceInitResult(
-            bootstrap_result=result,
-            identity_result=identity_result,
-            errors=list(identity_result.errors),
-            remediations=list(identity_result.remediations) or [_BOOTSTRAP_REMEDIATION],
-        )
+    if isinstance(provisioned, WorkspaceInitResult):
+        return provisioned
+    identity_warnings = [provisioned.warning] if provisioned.warning is not None else []
 
     config_result = generate_default_config(
         fs.config_file,
@@ -87,23 +84,85 @@ def initialize_workspace(
     if not config_result.ok:
         return WorkspaceInitResult(
             bootstrap_result=result,
-            identity_result=identity_result,
+            project_identity=provisioned.identity,
+            identity_path=provisioned.path,
+            identity_outcome=provisioned.outcome,
             config_result=config_result,
             errors=list(config_result.errors),
+            warnings=[*identity_warnings, *config_result.warnings],
             failure_mode=InitFailureMode.CONFIG_GENERATION,
         )
 
-    paths = build_workspace_paths(fs.repository_paths, resolve_global_paths(), identity_result.identity.id)
+    paths = build_workspace_paths(fs.repository_paths, resolve_global_paths(), provisioned.identity.id)
     init_database(paths.database_file)
 
     seed_result = seed_all_catalog_templates(paths)
     return WorkspaceInitResult(
         bootstrap_result=result,
-        identity_result=identity_result,
+        project_identity=provisioned.identity,
+        identity_path=provisioned.path,
+        identity_outcome=provisioned.outcome,
         config_result=config_result,
         seed_result=seed_result,
         errors=list(seed_result.errors),
+        warnings=[*identity_warnings, *config_result.warnings, *seed_result.warnings],
         failure_mode=None,
+    )
+
+
+def _provision_identity(
+    dovo_dir: Path,
+    bootstrap_result: BootstrapResult,
+    *,
+    project_id: str | None,
+    display_name: str | None,
+    force: bool,
+) -> ProvisionedProjectIdentity | WorkspaceInitResult:
+    """Validate --id, then provision the identity, each in its own catch_failure block; return the identity or the init failure."""
+    identity_path = dovo_dir / "project.json"
+    if project_id is not None:
+        with catch_failure("bootstrap.validate_project_id", path=str(identity_path)) as caught:
+            validate_project_id(project_id)
+        if caught.failure is not None:
+            return _identity_failure(
+                bootstrap_result,
+                identity_path,
+                caught.failure,
+                failure_mode=InitFailureMode.INVALID_PROJECT_ID,
+                remediations=list(caught.failure.remediations),
+            )
+
+    with catch_failure("bootstrap.provision_identity", path=str(identity_path)) as caught:
+        provisioned = provision_project_identity(
+            dovo_dir, project_id=project_id, display_name=display_name, force=force
+        )
+    if caught.failure is not None:
+        return _identity_failure(
+            bootstrap_result,
+            identity_path,
+            caught.failure,
+            failure_mode=InitFailureMode.BOOTSTRAP,
+            remediations=[_BOOTSTRAP_REMEDIATION],
+        )
+    return provisioned
+
+
+def _identity_failure(
+    bootstrap_result: BootstrapResult,
+    identity_path: Path,
+    failure: Failure,
+    *,
+    failure_mode: InitFailureMode,
+    remediations: list[Remediation],
+) -> WorkspaceInitResult:
+    """Build the init failure for an identity failure: its code, its message with any Details logged line, and remediations."""
+    return WorkspaceInitResult(
+        bootstrap_result=bootstrap_result,
+        identity_path=identity_path,
+        error_code=failure.error_code,
+        errors=[append_diagnostic_hint(failure.message, failure.diagnostic)],
+        remediations=remediations,
+        failure_mode=failure_mode,
     )
 
 

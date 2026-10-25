@@ -4,18 +4,25 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from unittest.mock import MagicMock
 
 import pytest
+from pydantic import ValidationError
 
 from dovo.common.constants import BOOTSTRAP_META_REL
+from dovo.common.error_codes import ErrorCode
+from dovo.common.filesystem import Filesystem
 from dovo.common.filesystem.services.global_root import resolve_global_paths
+from dovo.common.lock import LockTimeoutError
 from dovo.common.models import Remediation
 from dovo.core.bootstrap.models import BootstrapOutcome, InitFailureMode
 from dovo.core.bootstrap.services.initialize import auto_initialize_workspace, initialize_workspace
 from dovo.core.catalog.models import SeedResult
 from dovo.core.config.generator import ConfigGenerationResult
-from dovo.core.project.models import ProjectIdentityProvisionStatus
+from dovo.core.project.models import PROJECT_ID_REGEX, ProjectIdentity, ProjectIdentityOutcome
+from dovo.core.project.services.identity import generate_project_identity, save_project_identity
 from tests.harness.builders import WorkspaceBuilder, init_git_repository
+from tests.harness.diagnostic_log import diagnostic_hint, read_single_event
 
 
 class InitializeWorkspaceGlobalHomeTests:
@@ -60,6 +67,13 @@ class InitializeWorkspaceGlobalHomeTests:
         assert list(global_home.iterdir()) == []
 
 
+_IDENTITY_CASES: dict[str, tuple[str | None, bool, ProjectIdentityOutcome]] = {
+    "fresh": (None, False, ProjectIdentityOutcome.CREATED),
+    "rerun_preserves": (None, False, ProjectIdentityOutcome.PRESERVED),
+    "id_and_force_overwrites": ("new-id", True, ProjectIdentityOutcome.OVERWRITTEN),
+}
+
+
 class InitializeWorkspaceTests:
     """Contract tests for initialize_workspace preflight and idempotency."""
 
@@ -92,44 +106,36 @@ class InitializeWorkspaceTests:
         persisted = json.loads(config_path.read_text(encoding="utf-8"))
         assert persisted["project"]["name"] == "custom-project-name"
 
-    def test_initialize_workspace_fresh_repo_creates_identity_with_generated_slug(self, git_repo: Path) -> None:
-        result = initialize_workspace(git_repo)
+    @pytest.mark.parametrize("case", ["fresh", "rerun_preserves", "id_and_force_overwrites"])
+    def test_initialize_workspace_provisions_identity_fields(self, git_repo: Path, case: str) -> None:
+        """Set project_identity (id on disk), identity_path and identity_outcome CREATED, PRESERVED or OVERWRITTEN."""
+        project_id, force, expected_outcome = _IDENTITY_CASES[case]
+        if case != "fresh":
+            initialize_workspace(git_repo)
 
+        result = initialize_workspace(git_repo, project_id=project_id, force=force)
+
+        identity_path = Filesystem(git_repo).dovo_dir / "project.json"
+        on_disk = ProjectIdentity.model_validate_json(identity_path.read_text(encoding="utf-8"))
         assert result.ok is True
-        assert result.identity_result is not None
-        assert result.identity_result.status == ProjectIdentityProvisionStatus.CREATED
-        assert (git_repo / ".dovo" / "project.json").exists()
-
-    def test_initialize_workspace_rerun_without_force_preserves_identity(self, git_repo: Path) -> None:
-        first = initialize_workspace(git_repo)
-        assert first.identity_result is not None
-        assert first.identity_result.identity is not None
-        original_id = first.identity_result.identity.id
-
-        second = initialize_workspace(git_repo)
-
-        assert second.ok is True
-        assert second.identity_result is not None
-        assert second.identity_result.status == ProjectIdentityProvisionStatus.PRESERVED
-        assert second.identity_result.identity is not None
-        assert second.identity_result.identity.id == original_id
-
-    def test_initialize_workspace_rerun_with_id_and_force_overwrites_identity(self, git_repo: Path) -> None:
-        initialize_workspace(git_repo)
-
-        result = initialize_workspace(git_repo, project_id="new-id", force=True)
-
-        assert result.ok is True
-        assert result.identity_result is not None
-        assert result.identity_result.status == ProjectIdentityProvisionStatus.OVERWRITTEN
-        assert result.identity_result.identity is not None
-        assert result.identity_result.identity.id == "new-id"
+        assert result.project_identity == on_disk
+        assert result.identity_path == identity_path
+        assert result.identity_outcome == expected_outcome
+        assert project_id is None or on_disk.id == project_id
 
     def test_initialize_workspace_invalid_project_id_sets_invalid_project_id_failure_mode(self, git_repo: Path) -> None:
         result = initialize_workspace(git_repo, project_id="Bad Id!")
 
         assert result.ok is False
         assert result.failure_mode == InitFailureMode.INVALID_PROJECT_ID
+        assert result.error_code == ErrorCode.PROJECT_ID_INVALID
+        assert result.errors == ["Invalid project ID: must match ^[a-z0-9][a-z0-9-_]{2,62}$"]
+        assert result.remediations == [
+            Remediation(message=f"Pass a valid '--id' matching '{PROJECT_ID_REGEX}', or omit '--id' to generate one.")
+        ]
+        assert result.identity_path == Filesystem(git_repo).dovo_dir / "project.json"
+        assert result.project_identity is None
+        assert result.identity_outcome is None
         assert result.config_result is None
         assert not (git_repo / ".dovo" / "project.json").exists()
 
@@ -179,6 +185,138 @@ def _tree_bytes(root: Path) -> dict[str, bytes | None]:
     return {
         str(path.relative_to(root)): None if path.is_dir() else path.read_bytes() for path in sorted(root.rglob("*"))
     }
+
+
+def _fail_identity_io(monkeypatch: pytest.MonkeyPatch, repo: Path, failure: str) -> None:
+    """Make provisioning repo's project.json fail as failure names, touching no other file."""
+    identity_path = Filesystem(repo).dovo_dir / "project.json"
+    if failure == "invalid_schema":
+        identity_path.parent.mkdir(parents=True, exist_ok=True)
+        identity_path.write_text("{not-json", encoding="utf-8")
+    elif failure == "unreadable":
+        save_project_identity(identity_path, generate_project_identity("existing-id"))
+        real_read_text = Path.read_text
+
+        def _denied_read(
+            self: Path, encoding: str | None = None, errors: str | None = None, newline: str | None = None
+        ) -> str:
+            if self.name == "project.json":
+                raise PermissionError("denied")
+            return real_read_text(self, encoding=encoding, errors=errors, newline=newline)
+
+        monkeypatch.setattr(Path, "read_text", _denied_read)
+    elif failure == "write_failed":
+        real_write = Filesystem.atomic_write_json
+
+        def _full_disk(path: Path, data: dict[str, object], *, mode: int | None = None) -> None:
+            if path.name == "project.json":
+                raise OSError("disk full")
+            real_write(path, data, mode=mode)
+
+        monkeypatch.setattr("dovo.core.project.services.identity.Filesystem.atomic_write_json", _full_disk)
+    elif failure == "locked":
+        monkeypatch.setattr(
+            "dovo.core.project.services.identity.WorkspaceLock.__enter__",
+            MagicMock(side_effect=LockTimeoutError("lock held")),
+        )
+    else:
+
+        def _boom(*_args: object, **_kwargs: object) -> None:
+            raise TypeError("boom")
+
+        monkeypatch.setattr("dovo.core.project.services.identity.generate_project_identity", _boom)
+
+
+def _expected_identity_message(identity_path: Path, failure: str) -> str:
+    """Return the identity error message failure produces, before any Details logged line."""
+    if failure == "invalid_schema":
+        with pytest.raises(ValidationError) as validation:
+            ProjectIdentity.model_validate_json("{not-json")
+        return (
+            f"Project identity at '{identity_path}' is invalid: {validation.value} (PROJECT_IDENTITY_INVALID_SCHEMA)."
+        )
+    if failure == "unreadable":
+        return f"Unable to read project identity at '{identity_path}': denied (PROJECT_IDENTITY_UNREADABLE)."
+    if failure == "write_failed":
+        return f"Unable to write project identity at '{identity_path}': disk full (PROJECT_IDENTITY_WRITE_FAILED)."
+    return f"Unable to acquire project identity lock at '{identity_path}': lock held (PROJECT_IDENTITY_LOCKED)."
+
+
+class InitializeIdentityFailureTests:
+    """Contract tests for identity failures caught once in initialize_workspace."""
+
+    @pytest.mark.parametrize(
+        ("failure", "error_code", "logged"),
+        [
+            pytest.param("invalid_schema", ErrorCode.PROJECT_IDENTITY_INVALID_SCHEMA, False, id="invalid_schema"),
+            pytest.param("unreadable", ErrorCode.PROJECT_IDENTITY_UNREADABLE, True, id="unreadable"),
+            pytest.param("write_failed", ErrorCode.PROJECT_IDENTITY_WRITE_FAILED, True, id="write_failed"),
+            pytest.param("locked", ErrorCode.PROJECT_IDENTITY_LOCKED, False, id="locked"),
+        ],
+    )
+    def test_identity_domain_failure_is_reported_as_bootstrap(
+        self,
+        git_repo: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        frozen_diagnostic_clock: Path,
+        failure: str,
+        error_code: ErrorCode,
+        logged: bool,
+    ) -> None:
+        """Return a BOOTSTRAP failure with the identity error code, its message and any Details logged line."""
+        identity_path = Filesystem(git_repo).dovo_dir / "project.json"
+        _fail_identity_io(monkeypatch, git_repo, failure)
+
+        result = initialize_workspace(git_repo)
+
+        hint = diagnostic_hint(frozen_diagnostic_clock) if logged else ""
+        assert result.ok is False
+        assert result.failure_mode == InitFailureMode.BOOTSTRAP
+        assert result.error_code == error_code
+        assert result.errors == [_expected_identity_message(identity_path, failure) + hint]
+        assert result.remediations == [Remediation(message="Resolve the path conflict above, then rerun 'dovo init'")]
+        assert result.identity_path == identity_path
+        assert result.project_identity is None
+        assert result.identity_outcome is None
+        assert result.config_result is None
+        assert result.seed_result is None
+        assert frozen_diagnostic_clock.exists() is logged
+        assert not (git_repo / ".dovo" / "config.json").exists()
+
+    def test_unexpected_provisioning_error_is_internal_error(
+        self, git_repo: Path, monkeypatch: pytest.MonkeyPatch, frozen_diagnostic_clock: Path
+    ) -> None:
+        """Return an INTERNAL_ERROR BOOTSTRAP failure naming the operation, and record one event for it."""
+        identity_path = Filesystem(git_repo).dovo_dir / "project.json"
+        _fail_identity_io(monkeypatch, git_repo, "unexpected")
+
+        result = initialize_workspace(git_repo)
+
+        assert result.ok is False
+        assert result.failure_mode == InitFailureMode.BOOTSTRAP
+        assert result.error_code == ErrorCode.INTERNAL_ERROR
+        assert result.errors == [
+            "Unexpected error during bootstrap.provision_identity: boom" + diagnostic_hint(frozen_diagnostic_clock)
+        ]
+        assert result.remediations == [Remediation(message="Resolve the path conflict above, then rerun 'dovo init'")]
+        assert result.identity_path == identity_path
+        event = read_single_event(frozen_diagnostic_clock)
+        assert event["operation"] == "bootstrap.provision_identity"
+        assert event["exception_type"] == "TypeError"
+
+    def test_overwrite_repair_rerun_orders_identity_warning_first(self, git_repo: Path) -> None:
+        """Return the preserve warning with the existing id, then the config warning."""
+        first = initialize_workspace(git_repo)
+        assert first.project_identity is not None
+
+        result = initialize_workspace(git_repo, overwrite=True, repair=True)
+
+        assert result.ok is True
+        assert result.warnings == [
+            f"Project identity already exists (id={first.project_identity.id}); preserving existing identity. "
+            "Rerun with --id <new-id> --force to replace it.",
+            "repair ignored when overwrite=True",
+        ]
 
 
 class AutoInitializeWorkspaceTests:
@@ -286,6 +424,20 @@ class AutoInitializeWorkspaceTests:
             "boom",
             f"Could not roll back the partial workspace at {dovo_dir.as_posix()}: denied. Remove it, then rerun dovo run.",
         ]
+
+    def test_auto_initialize_workspace_unexpected_provisioning_error_rolls_back(
+        self, git_repo: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Return the INTERNAL_ERROR failure instead of raising, and remove the new .dovo/."""
+        _fail_identity_io(monkeypatch, git_repo, "unexpected")
+
+        result = auto_initialize_workspace(git_repo)
+
+        assert result.ok is False
+        assert result.failure_mode == InitFailureMode.BOOTSTRAP
+        assert result.error_code == ErrorCode.INTERNAL_ERROR
+        assert result.errors[0].startswith("Unexpected error during bootstrap.provision_identity: boom")
+        assert not (git_repo / ".dovo").exists()
 
     def test_auto_initialize_workspace_raised_failure_removes_new_dovo_dir_and_reraises(
         self, git_repo: Path, monkeypatch: pytest.MonkeyPatch
