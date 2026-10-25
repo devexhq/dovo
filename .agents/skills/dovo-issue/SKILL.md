@@ -43,7 +43,7 @@ An issue is a working document. Aim for a sensible issue, not a perfect one: whe
 5. **Changes and guards:**
    - A **change** is what the issue exists to deliver ("`validate_patch_text` raises `GitError` with a `PATCH_*` code"). It binds the planner exactly as written.
    - A **guard** says what must not regress ("the agent step reports today's outcome"). It binds what a user or caller relies on: outcome, status, exit code, `error_code`, persisted data, and text that a doc or a test outside the change depends on. Name that text when it matters; never guard incidental wording with "same as today".
-   - A guard never excludes the behaviour of the foundation an Adopt issue adopts. When adopting `catch_failure` adds a `Details logged:` line to a failure caused by an `OSError`, that line is part of the adoption, and a guard that forbids it is wrong.
+   - A guard never excludes the behaviour of the foundation an Adopt issue adopts. When adopting `catch_failure` adds a `Details logged:` line to a failure caused by an `OSError` on Dovo's own state (`docs/agents/code-conventions.md`, Domain errors), that line is part of the adoption, and a guard that forbids it is wrong.
    - The planner may depart from a guard, never from a change, with an Open Question that names the departure ([planning.md](../../../docs/agents/planning.md) Step 1).
 
 ## Workflow
