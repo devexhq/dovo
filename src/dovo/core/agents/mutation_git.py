@@ -31,6 +31,13 @@ class MutationGitError(AgentError):
         super().__init__(ErrorCode.AGENT_MUTATION_GIT_FAILED, message)
 
 
+class MutationGitTimeoutError(MutationGitError):
+    """Raised when a worktree git operation for a direct-mutation provider exceeds its timeout."""
+
+    def __init__(self, message: str) -> None:
+        AgentError.__init__(self, ErrorCode.GIT_TIMEOUT, message)
+
+
 def _run_git(
     args: list[str], *, cwd: Path, env: dict[str, str] | None = None, stdin: bytes | None = None
 ) -> subprocess.CompletedProcess[bytes]:
@@ -46,11 +53,12 @@ def _run_git(
             timeout=GIT_SUBPROCESS_TIMEOUT_SECONDS,
         )
     except subprocess.TimeoutExpired as exc:
-        raise MutationGitError(
+        raise MutationGitTimeoutError(
             f"git {' '.join(args)} timed out after {GIT_SUBPROCESS_TIMEOUT_SECONDS}s (GIT_TIMEOUT)"
         ) from exc
     except OSError as exc:
-        raise MutationGitError(f"failed to run git {' '.join(args)}: {exc}") from exc
+        # Not chained: the message names the failure, so catch_failure leaves no event file.
+        raise MutationGitError(f"failed to run git {' '.join(args)}: {exc}") from None
 
 
 def _require_ok(completed: subprocess.CompletedProcess[bytes], *, action: str) -> None:

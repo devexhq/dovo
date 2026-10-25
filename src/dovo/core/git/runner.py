@@ -142,8 +142,9 @@ class GitRunner:
                 timeout=GIT_SUBPROCESS_TIMEOUT_SECONDS,
                 env={**os.environ, **env} if env else None,
             )
-        except FileNotFoundError as exc:
-            raise GitNotFoundError(f"Git execution failed ('git {' '.join(args)}'): git not found") from exc
+        except FileNotFoundError:
+            # Not chained: a missing git binary is fully named by its code, so catch_failure leaves no event file.
+            raise GitNotFoundError(f"Git execution failed ('git {' '.join(args)}'): git not found") from None
         except subprocess.TimeoutExpired as exc:
             raise GitPlumbingTimeoutError(
                 f"Git timed out after {GIT_SUBPROCESS_TIMEOUT_SECONDS}s ('git {' '.join(args)}') (GIT_TIMEOUT)"

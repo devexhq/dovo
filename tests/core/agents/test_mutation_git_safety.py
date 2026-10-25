@@ -7,6 +7,7 @@ import pytest
 
 import dovo.core.agents.mutation_git as mutation_mod
 from dovo.common.error_codes import ErrorCode
+from dovo.common.exceptions import catch_failure
 from dovo.core.agents.mutation_git import (
     MutationGitError,
     capture_binary_patch_since,
@@ -254,8 +255,28 @@ class ResolvePreAgentBaselineTests:
 
         monkeypatch.setattr(mutation_mod.subprocess, "run", _timeout)
 
-        with pytest.raises(MutationGitError, match="GIT_TIMEOUT"):
+        with pytest.raises(MutationGitError, match="GIT_TIMEOUT") as raised:
             resolve_pre_agent_baseline(git_repo)
+
+        assert raised.value.error_code == ErrorCode.GIT_TIMEOUT
+
+    def test_git_that_cannot_start_caught_with_catch_failure_leaves_no_event_file(
+        self, git_repo: Path, monkeypatch: pytest.MonkeyPatch, frozen_diagnostic_clock: Path
+    ) -> None:
+        """Copy AGENT_MUTATION_GIT_FAILED into caught.failure with no diagnostic when git cannot be started, and create no logs directory."""
+
+        def _cannot_start(*_args: object, **_kwargs: object) -> object:
+            raise PermissionError("git")
+
+        monkeypatch.setattr(mutation_mod.subprocess, "run", _cannot_start)
+
+        with catch_failure("agent.attempt") as caught:
+            resolve_pre_agent_baseline(git_repo)
+
+        assert caught.failure is not None
+        assert caught.failure.error_code == ErrorCode.AGENT_MUTATION_GIT_FAILED
+        assert caught.failure.diagnostic is None
+        assert not frozen_diagnostic_clock.parent.parent.exists()
 
 
 class CaptureDiffSinceTests:
