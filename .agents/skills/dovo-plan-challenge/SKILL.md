@@ -97,18 +97,18 @@ Write `.agentic/plan-challenge.json` alongside the markdown, overwriting any ear
   "plan": ".agentic/plan.md",
   "grounded_at": "603dd408",
   "provenance": "fresh_session",
-  "steelman": "The plan raises AgentError from None so the step error matches FR-4.",
+  "steelman": "The plan stores the discard flag on the session row so list filtering stays one SQL query.",
   "challenges": [
     {
       "id": "C1",
-      "lens": "unwritten_pattern",
-      "section": "OQ-1",
-      "claim": "Raising the scratch AgentError from None hides the OSError that catch_failure exists to record.",
-      "evidence": "src/dovo/core/project/services/identity.py:64",
-      "failure": "A permission error on the session temp directory leaves no diagnostic record.",
-      "alternative": "Chain from exc and add the Details logged line to the step error.",
-      "route": "ask",
-      "rule_proposal": "docs/agents/code-conventions.md: a DomainError raised while handling an OSError chains it with from exc."
+      "lens": "failure_path",
+      "section": "Phase 2 instructions",
+      "claim": "The plan deletes the session directory before it commits the row update, so an interrupted discard leaves a row pointing at nothing.",
+      "evidence": "src/dovo/core/sessions/services/discard.py:41",
+      "failure": "A run killed between the two writes shows the session in dovo session list, and dovo session show fails on it.",
+      "alternative": "Commit the row update first and delete the directory after; a leftover directory is reclaimed by prune.",
+      "route": "fold",
+      "rule_proposal": null
     }
   ]
 }
