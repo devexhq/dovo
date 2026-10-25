@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dovo.common.filesystem import WorkspacePaths
+from dovo.common.models import Remediation
 from dovo.core.db import WorktreesRepository, WorktreeStatus
 from dovo.core.worktree.models import WorktreeDeleteResult, WorktreeDeleteStatus
 
@@ -20,7 +21,9 @@ def collect_worktree_delete(
             status=WorktreeDeleteStatus.NOT_FOUND,
             worktree_id=worktree_id,
             errors=[f"Worktree '{worktree_id}' not found."],
-            fixes=["Run `dovo worktree list` to see known worktrees"],
+            remediations=[
+                Remediation(message="Run 'dovo worktree list' to see known worktrees", command="dovo worktree list")
+            ],
         )
 
     if row.status is WorktreeStatus.CLEANED:

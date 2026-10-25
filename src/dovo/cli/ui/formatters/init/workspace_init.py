@@ -19,7 +19,7 @@ from dovo.cli.ui.formatters.init.common import (
 )
 from dovo.cli.ui.formatters.init.init_view import WorkspaceInitView
 from dovo.common.constants import DOVO_GITIGNORE_TRACKED_ENTRIES
-from dovo.common.models import BaseResult
+from dovo.common.models import BaseResult, Remediation
 from dovo.common.utils import display_path
 from dovo.core.bootstrap.models import (
     BootstrapOutcome,
@@ -112,12 +112,12 @@ def _extract_seed_fields(result: SeedResult | None, cwd: Path) -> tuple[list[str
     )
 
 
-def _collect_messages(
-    primary: list[str],
+def _collect_messages[T](
+    primary: list[T],
     data: WorkspaceInitResult,
-    getter: Callable[[BaseResult], list[str]],
-) -> list[str]:
-    """Collect top-level messages or fallback to nested results."""
+    getter: Callable[[BaseResult], list[T]],
+) -> list[T]:
+    """Collect top-level messages or fall back to nested results."""
     messages = list(primary)
     if not messages:
         for sub_result in (data.bootstrap_result, data.identity_result, data.config_result, data.seed_result):
@@ -136,9 +136,9 @@ def _collect_warnings(data: WorkspaceInitResult) -> list[str]:
     return _collect_messages(data.warnings, data, lambda sub_result: sub_result.warnings)
 
 
-def _collect_fixes(data: WorkspaceInitResult) -> list[str]:
-    """Collect remediation hints across top-level and nested results."""
-    return _collect_messages(data.fixes, data, lambda sub_result: sub_result.fixes)
+def _collect_remediations(data: WorkspaceInitResult) -> list[Remediation]:
+    """Collect remediations across top-level and nested results."""
+    return _collect_messages(data.remediations, data, lambda sub_result: sub_result.remediations)
 
 
 class WorkspaceInitFormatter(ComponentFormatter[WorkspaceInitResult, WorkspaceInitView]):
@@ -186,7 +186,7 @@ class WorkspaceInitFormatter(ComponentFormatter[WorkspaceInitResult, WorkspaceIn
             failure_mode=data.failure_mode,
             errors=_collect_errors(data),
             warnings=_collect_warnings(data),
-            fixes=_collect_fixes(data),
+            remediations=_collect_remediations(data),
         )
 
     def to_rich(self, data: WorkspaceInitResult) -> RenderableType:

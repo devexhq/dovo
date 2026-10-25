@@ -64,7 +64,7 @@ BLUEPRINT_FOUND = FormatterCase(
         catalog_path_relative=".dovo/catalog/blueprints/test-blueprint.yml",
         errors=[],
         warnings=[],
-        fixes=[],
+        remediations=[],
     ),
     render_expectations=[
         "test-blueprint",
@@ -93,7 +93,7 @@ STEP_FOUND = FormatterCase(
         catalog_path_relative=".dovo/catalog/steps/test-step.yml",
         errors=[],
         warnings=[],
-        fixes=[],
+        remediations=[],
     ),
     render_expectations=["test-step", "step_1234567", "Step:", "abcdef1234567890"],
 )
@@ -110,7 +110,7 @@ TEMPLATE_MATCH = FormatterCase(
         catalog_path_relative=None,
         errors=[],
         warnings=[],
-        fixes=[],
+        remediations=[],
     ),
     render_expectations=["blueprints/default.yml", "name: default-blueprint"],
 )
@@ -124,7 +124,7 @@ ERRORS = FormatterCase(
         catalog_path_relative=None,
         errors=["Catalog blueprint 'missing' not found."],
         warnings=[],
-        fixes=[],
+        remediations=[],
     ),
     render_expectations=["Catalog blueprint 'missing' not found."],
 )
@@ -142,7 +142,7 @@ PAYLOAD_CASES = [
         {
             "errors": [],
             "warnings": [],
-            "fixes": [],
+            "remediations": [],
             "item": {
                 "sha": "blueprint_1234567",
                 "item_type": "blueprint",
@@ -162,7 +162,7 @@ PAYLOAD_CASES = [
         {
             "errors": ["Catalog blueprint 'missing' not found."],
             "warnings": [],
-            "fixes": [],
+            "remediations": [],
             "item": None,
             "content": None,
             "template_matches": [],
@@ -175,7 +175,7 @@ PAYLOAD_CASES = [
         {
             "errors": [],
             "warnings": [],
-            "fixes": [],
+            "remediations": [],
             "item": None,
             "content": "name: default-blueprint\n",
             "template_matches": [{"item_type": "template", "path": "blueprints/default.yml"}],

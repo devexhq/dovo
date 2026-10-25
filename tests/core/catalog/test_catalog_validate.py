@@ -11,6 +11,7 @@ import pytest
 import yaml
 
 from dovo.common.filesystem import WorkspacePaths
+from dovo.common.models import Remediation
 from dovo.core.catalog import Catalog
 from dovo.core.catalog.definitions import BlueprintDefinition, StepDefinition
 from dovo.core.catalog.models import CatalogItemType, CatalogValidateResult, CatalogValidateStatus
@@ -56,7 +57,7 @@ class CatalogValidateServiceTests:
         assert result.item_type == "blueprint"
         assert result.errors == []
         assert result.warnings == []
-        assert result.fixes == []
+        assert result.remediations == []
 
     def test_validate_catalog_name_resolves_via_get(self, isolated_workspace: Path) -> None:
         write_runnable_blueprint(isolated_workspace, key="sample-flow", steps=[{"id": "s1", "run": "echo hi"}])
@@ -70,7 +71,7 @@ class CatalogValidateServiceTests:
         assert result.item_type == "blueprint"
         assert result.errors == []
         assert result.warnings == []
-        assert result.fixes == []
+        assert result.remediations == []
 
     def test_validate_unknown_name_returns_not_found(self, isolated_workspace: Path) -> None:
         result = _validate("nonexistent-flow", path=isolated_workspace)
@@ -82,8 +83,10 @@ class CatalogValidateServiceTests:
         assert result.item_type is None
         assert result.errors == ["Catalog item 'nonexistent-flow' not found (CATALOG_ITEM_NOT_FOUND)."]
         assert result.warnings == []
-        assert result.fixes == [
-            "Check that 'nonexistent-flow' names an indexed catalog item, or pass a file path instead."
+        assert result.remediations == [
+            Remediation(
+                message="Check that 'nonexistent-flow' names an indexed catalog item, or pass a file path instead."
+            )
         ]
 
     def test_validate_file_target_without_type_returns_type_required(
@@ -106,7 +109,9 @@ class CatalogValidateServiceTests:
         assert result.item_type is None
         assert result.errors == ["'--type' is required to validate file target 'draft.yml' (CATALOG_TYPE_REQUIRED)."]
         assert result.warnings == []
-        assert result.fixes == ["Pass --type blueprint or --type step for a file target."]
+        assert result.remediations == [
+            Remediation(message="Pass '--type blueprint' or '--type step' for a file target.")
+        ]
 
     def test_validate_unreadable_file_returns_unreadable_status(self, isolated_workspace: Path) -> None:
         target_path = _write_yaml(isolated_workspace / "noperm.yml", {"name": "noperm"})
@@ -128,7 +133,7 @@ class CatalogValidateServiceTests:
             f"Failed to read '{target_path}': [Errno 13] Permission denied: '{target_path}' (CATALOG_FILE_UNREADABLE)."
         ]
         assert result.warnings == []
-        assert result.fixes == [f"Check that '{target_path}' exists and is readable."]
+        assert result.remediations == [Remediation(message=f"Check that '{target_path}' exists and is readable.")]
 
     def test_validate_yaml_syntax_error_reports_line_and_column(self, isolated_workspace: Path) -> None:
         target_path = isolated_workspace / "bad.yml"
@@ -155,7 +160,9 @@ class CatalogValidateServiceTests:
         assert result.item_type == "blueprint"
         assert result.errors == [f"'{target_path}' root content must be a YAML mapping (CATALOG_ROOT_NOT_OBJECT)."]
         assert result.warnings == []
-        assert result.fixes == [f"Rewrite '{target_path}' with a top-level YAML mapping (key: value pairs)."]
+        assert result.remediations == [
+            Remediation(message=f"Rewrite '{target_path}' with a top-level YAML mapping (key: value pairs).")
+        ]
 
     def test_validate_schema_invalid_blueprint_reports_field_paths(self, isolated_workspace: Path) -> None:
         _write_yaml(
@@ -198,7 +205,7 @@ class CatalogValidateServiceTests:
         assert result.item_type == "step"
         assert result.errors == ["id: Field required (CATALOG_SCHEMA_INVALID)."]
         assert result.warnings == []
-        assert result.fixes == ["Fix the reported schema error for target 'missing_id'."]
+        assert result.remediations == [Remediation(message="Fix the reported schema error for target 'missing_id'.")]
 
     def test_validate_duplicate_step_id_reports_error(self, isolated_workspace: Path) -> None:
         _write_yaml(
@@ -215,9 +222,12 @@ class CatalogValidateServiceTests:
         assert result.item_type == "blueprint"
         assert result.errors == ["Step id 'run-tests' is used by more than one step (CATALOG_DUPLICATE_STEP_ID)."]
         assert result.warnings == []
-        assert result.fixes == [
-            "Resolve: Step id 'run-tests' is used by more than one step (CATALOG_DUPLICATE_STEP_ID)."
+        assert result.remediations == [
+            Remediation(
+                message="Resolve: Step id 'run-tests' is used by more than one step (CATALOG_DUPLICATE_STEP_ID)."
+            )
         ]
+        assert len(result.remediations) == len(result.errors)
 
     def test_validate_duplicate_step_id_in_nested_loop_reports_error(self, isolated_workspace: Path) -> None:
         _write_yaml(
@@ -266,8 +276,10 @@ class CatalogValidateServiceTests:
         assert result.item_type == "blueprint"
         assert result.errors == ["Alias '-f' is declared by both 'foo' and 'bar' (CATALOG_DUPLICATE_INPUT_ALIAS)."]
         assert result.warnings == []
-        assert result.fixes == [
-            "Resolve: Alias '-f' is declared by both 'foo' and 'bar' (CATALOG_DUPLICATE_INPUT_ALIAS)."
+        assert result.remediations == [
+            Remediation(
+                message="Resolve: Alias '-f' is declared by both 'foo' and 'bar' (CATALOG_DUPLICATE_INPUT_ALIAS)."
+            )
         ]
 
     def test_validate_undeclared_placeholder_reports_warning(self, isolated_workspace: Path) -> None:
@@ -287,7 +299,7 @@ class CatalogValidateServiceTests:
         assert result.warnings == [
             "Placeholder 'inputs.missing' is not declared in 'inputs:' (CATALOG_UNDECLARED_INPUT_PLACEHOLDER)."
         ]
-        assert result.fixes == []
+        assert result.remediations == []
 
     def test_validate_unsafe_script_path_reports_error(self, isolated_workspace: Path) -> None:
         _write_yaml(
@@ -306,8 +318,10 @@ class CatalogValidateServiceTests:
             "Step 's1' script_path '../escape.sh' is not a safe relative path (CATALOG_UNSAFE_SCRIPT_PATH)."
         ]
         assert result.warnings == []
-        assert result.fixes == [
-            "Resolve: Step 's1' script_path '../escape.sh' is not a safe relative path (CATALOG_UNSAFE_SCRIPT_PATH)."
+        assert result.remediations == [
+            Remediation(
+                message="Resolve: Step 's1' script_path '../escape.sh' is not a safe relative path (CATALOG_UNSAFE_SCRIPT_PATH)."
+            )
         ]
 
     def test_validate_missing_script_file_reports_warning(self, isolated_workspace: Path) -> None:
@@ -327,7 +341,7 @@ class CatalogValidateServiceTests:
         assert result.warnings == [
             "Step 's1' script_path 'scripts/none.sh' does not exist on disk (CATALOG_SCRIPT_NOT_FOUND)."
         ]
-        assert result.fixes == []
+        assert result.remediations == []
 
     def test_validate_valid_blueprint_returns_ok_status(self, isolated_workspace: Path) -> None:
         write_runnable_blueprint(isolated_workspace, key="clean-flow", steps=[{"id": "s1", "run": "echo hi"}])

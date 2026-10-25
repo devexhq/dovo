@@ -91,7 +91,7 @@ class SessionLogsCliIntegrationTests:
         assert result.exit_code == 1
         assert "Logs Not Found" in result.stdout
         assert "No logs found for session 'ghost-session'" in result.stdout
-        assert "Run `dovo session list`" in result.stdout
+        assert "- Run 'dovo session list'" in result.stdout
 
     def test_logs_command_format_json_matches_wire_schema(self, cli_runner: CliRunner, cli_workspace: Path) -> None:
         _seed_session(cli_workspace)
@@ -162,4 +162,4 @@ class SessionLogsLatestCliIntegrationTests:
 
         assert result.exit_code == 1
         assert "Session Not Found" in result.stdout
-        assert "Run `dovo run <blueprint>` to create a session" in result.stdout
+        assert "- Run 'dovo run <blueprint>' to create a session" in result.stdout

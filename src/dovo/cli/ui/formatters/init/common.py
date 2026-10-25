@@ -9,9 +9,9 @@ from rich.text import Text
 from dovo.cli.ui.formatters.common import (
     ERROR_PANEL_STYLE,
     render_list_errors,
-    render_list_fixes,
 )
 from dovo.cli.ui.formatters.init.init_view import WorkspaceInitView
+from dovo.common.formatters import format_remediations
 from dovo.core.bootstrap.models import BootstrapOutcome, InitFailureMode
 
 
@@ -109,27 +109,24 @@ def render_seed_lines(view: WorkspaceInitView) -> list[RenderableType]:
 def render_preflight_failure(view: WorkspaceInitView) -> Panel:
     """Render panel when initialization preflight checks fail."""
     lines = render_list_errors(view.errors, separator="\n")
-    if fixes_message := render_list_fixes(view.fixes, bullet="  "):
-        lines = f"{lines}\n{fixes_message}"
+    if remediations_message := format_remediations(view.remediations):
+        lines = f"{lines}\n{remediations_message}"
     return Panel.fit(f"[bold red]Initialization Failed![/bold red]\n{lines}", border_style=ERROR_PANEL_STYLE)
 
 
 def render_bootstrap_failure(view: WorkspaceInitView) -> Panel:
     """Render panel when bootstrap step fails."""
     lines = "\n".join(f"  {error}" for error in view.errors)
-    fixes = view.fixes or ["Resolve the path conflict above, then rerun [bold cyan]dovo init[/bold cyan]."]
-    remediation = render_list_fixes(fixes, bullet="  ")
-    return Panel.fit(
-        f"[bold red]Failed to initialize Dovo:[/bold red]\n{lines}\n{remediation}",
-        border_style=ERROR_PANEL_STYLE,
-    )
+    if remediations_message := format_remediations(view.remediations):
+        lines = f"{lines}\n{remediations_message}"
+    return Panel.fit(f"[bold red]Failed to initialize Dovo:[/bold red]\n{lines}", border_style=ERROR_PANEL_STYLE)
 
 
 def render_config_failure(view: WorkspaceInitView) -> Panel:
     """Render panel when configuration generation fails."""
     lines = "\n".join(f"- {error}" for error in view.errors)
-    if fixes_message := render_list_fixes(view.fixes, bullet="  "):
-        lines = f"{lines}\n{fixes_message}"
+    if remediations_message := format_remediations(view.remediations):
+        lines = f"{lines}\n{remediations_message}"
     return Panel.fit(f"[bold red]Failed to generate config:[/bold red]\n{lines}", border_style=ERROR_PANEL_STYLE)
 
 

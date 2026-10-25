@@ -13,6 +13,7 @@ from dovo.cli.ui.formatters.init import (
     WorkspaceInitView,
 )
 from dovo.common.constants import DOVO_GITIGNORE_TRACKED_ENTRIES
+from dovo.common.models import Remediation
 from dovo.core.bootstrap.models import (
     BootstrapOutcome,
     BootstrapResult,
@@ -65,7 +66,7 @@ def make_init_view(**overrides: object) -> WorkspaceInitView:
         "failure_mode": None,
         "errors": [],
         "warnings": [],
-        "fixes": [],
+        "remediations": [],
     }
     return WorkspaceInitView.model_validate({**defaults, **overrides})
 
@@ -235,7 +236,7 @@ SEEDING_ERROR = FormatterCase(
 PREFLIGHT_FAILURE = FormatterCase(
     data=WorkspaceInitResult(
         errors=["The current directory is not a valid Git repository."],
-        fixes=["Run 'git init' before running 'dovo init'."],
+        remediations=[Remediation(message="Run 'git init' before running 'dovo init'.", command="git init")],
         failure_mode=InitFailureMode.PREFLIGHT,
     ),
     view=make_init_view(
@@ -251,11 +252,12 @@ PREFLIGHT_FAILURE = FormatterCase(
         seeded_files=[],
         failure_mode=InitFailureMode.PREFLIGHT,
         errors=["The current directory is not a valid Git repository."],
-        fixes=["Run 'git init' before running 'dovo init'."],
+        remediations=[Remediation(message="Run 'git init' before running 'dovo init'.", command="git init")],
     ),
     render_expectations=[
         "The current directory is not a valid Git repository.",
-        "Run 'git init' before running 'dovo init'.",
+        "Fix:",
+        "- Run 'git init' before running 'dovo init'.",
     ],
 )
 
@@ -264,10 +266,9 @@ BOOTSTRAP_FAILURE = FormatterCase(
         bootstrap_result=BootstrapResult(
             root_path=DOVO,
             errors=["path conflict: .dovo is a file"],
-            fixes=["Remove the conflicting file."],
         ),
         errors=["path conflict: .dovo is a file"],
-        fixes=["Remove the conflicting file."],
+        remediations=[Remediation(message="Resolve the path conflict above, then rerun 'dovo init'")],
         failure_mode=InitFailureMode.BOOTSTRAP,
     ),
     view=make_init_view(
@@ -279,11 +280,12 @@ BOOTSTRAP_FAILURE = FormatterCase(
         seeded_files=[],
         failure_mode=InitFailureMode.BOOTSTRAP,
         errors=["path conflict: .dovo is a file"],
-        fixes=["Remove the conflicting file."],
+        remediations=[Remediation(message="Resolve the path conflict above, then rerun 'dovo init'")],
     ),
     render_expectations=[
         "path conflict: .dovo is a file",
-        "Remove the conflicting file.",
+        "Fix:",
+        "- Resolve the path conflict above, then rerun 'dovo init'",
     ],
 )
 
@@ -293,10 +295,10 @@ CONFIG_GENERATION_FAILURE = FormatterCase(
         config_result=ConfigGenerationResult(
             config_path=CONFIG_PATH,
             errors=["CONFIG_WRITE_FAILED: permission denied"],
-            fixes=["Check file permissions for .dovo/config.json."],
+            remediations=[Remediation(message="Check file permissions for '.dovo/config.json'.")],
         ),
         errors=["CONFIG_WRITE_FAILED: permission denied"],
-        fixes=["Check file permissions for .dovo/config.json."],
+        remediations=[Remediation(message="Check file permissions for '.dovo/config.json'.")],
         failure_mode=InitFailureMode.CONFIG_GENERATION,
     ),
     view=make_init_view(
@@ -308,11 +310,12 @@ CONFIG_GENERATION_FAILURE = FormatterCase(
         seeded_files=[],
         failure_mode=InitFailureMode.CONFIG_GENERATION,
         errors=["CONFIG_WRITE_FAILED: permission denied"],
-        fixes=["Check file permissions for .dovo/config.json."],
+        remediations=[Remediation(message="Check file permissions for '.dovo/config.json'.")],
     ),
     render_expectations=[
         "CONFIG_WRITE_FAILED: permission denied",
-        "Check file permissions for .dovo/config.json.",
+        "Fix:",
+        "- Check file permissions for '.dovo/config.json'.",
     ],
 )
 
@@ -354,7 +357,7 @@ INIT_PAYLOAD_CASES = [
             "failure_mode": None,
             "errors": [],
             "warnings": [],
-            "fixes": [],
+            "remediations": [],
         },
         id="initialized_payload",
     ),
@@ -383,7 +386,7 @@ INIT_PAYLOAD_CASES = [
             "failure_mode": "preflight",
             "errors": ["The current directory is not a valid Git repository."],
             "warnings": [],
-            "fixes": ["Run 'git init' before running 'dovo init'."],
+            "remediations": [{"message": "Run 'git init' before running 'dovo init'.", "command": "git init"}],
         },
         id="preflight_failure_payload",
     ),

@@ -6,6 +6,7 @@ import re
 from pathlib import Path
 
 from dovo.common.filesystem import WorkspacePaths
+from dovo.common.models import Remediation
 from dovo.core.db import WorktreeRecord, WorktreesRepository, WorktreeStatus
 from dovo.core.git.exceptions import (
     GitPlumbingTimeoutError,
@@ -122,7 +123,9 @@ class WorktreePatch:
                 status=WorktreeApplyStatus.NOT_FOUND,
                 worktree_id=worktree_id,
                 errors=[f"Worktree '{worktree_id}' not found."],
-                fixes=["Run `dovo worktree list` to see known worktrees"],
+                remediations=[
+                    Remediation(message="Run 'dovo worktree list' to see known worktrees", command="dovo worktree list")
+                ],
             )
 
         if not Path(record.worktree_path).is_dir():
@@ -166,9 +169,9 @@ class WorktreePatch:
             status=WorktreeApplyStatus.MAIN_REPO_DIRTY,
             worktree_id=worktree_id,
             errors=[f"Cannot apply worktree {worktree_id}: main repository has uncommitted changes."],
-            fixes=[
-                "Commit or stash local changes in the main workspace, or",
-                "Pass --allow-dirty to overlay changes anyway",
+            remediations=[
+                Remediation(message="Commit or stash local changes in the main workspace"),
+                Remediation(message="Pass '--allow-dirty' to overlay changes anyway"),
             ],
         )
 
@@ -209,9 +212,9 @@ class WorktreePatch:
                 f"Cannot squash worktree {worktree_id}: the main repository has uncommitted changes "
                 "in files the worktree also changes.\nOverlapping files:\n" + "\n".join(f"  • {p}" for p in overlapping)
             ],
-            fixes=[
-                "Commit or stash those files in the main workspace, or",
-                "Use --strategy patch to overlay the changes without committing",
+            remediations=[
+                Remediation(message="Commit or stash those files in the main workspace"),
+                Remediation(message="Use '--strategy patch' to overlay the changes without committing"),
             ],
         )
 
@@ -311,9 +314,12 @@ class WorktreePatch:
                 errors=[
                     f"Cannot apply worktree {worktree_id}: conflicts detected.\nConflicting files:\n{conflict_bullets}"
                 ],
-                fixes=[
-                    f"Inspect worktree differences with `dovo worktree diff {worktree_id}`",
-                    "Resolve conflicts in the main workspace or worktree",
+                remediations=[
+                    Remediation(
+                        message=f"Inspect worktree differences with 'dovo worktree diff {worktree_id}'",
+                        command=f"dovo worktree diff {worktree_id}",
+                    ),
+                    Remediation(message="Resolve conflicts in the main workspace or worktree"),
                 ],
             )
 

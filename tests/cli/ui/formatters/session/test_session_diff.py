@@ -9,6 +9,7 @@ import pytest
 from rich.console import Console
 
 from dovo.cli.ui.formatters.session import SessionDiffFormatter, SessionDiffView
+from dovo.common.models import Remediation
 from dovo.core.sessions import DiffResult, DiffStatus
 from tests.harness.formatter import (
     FormatterCase,
@@ -41,7 +42,7 @@ def make_diff_view(**overrides: object) -> SessionDiffView:
         "truncated_lines": 0,
         "errors": [],
         "warnings": [],
-        "fixes": [],
+        "remediations": [],
     }
     return SessionDiffView.model_validate({**defaults, **overrides})
 
@@ -94,7 +95,9 @@ SESSION_NOT_FOUND_DATA = DiffResult(
     status=DiffStatus.SESSION_NOT_FOUND,
     session_id="dovo_missing_99",
     errors=["Session 'dovo_missing_99' not found."],
-    fixes=["Run `dovo session list` to list valid session IDs"],
+    remediations=[
+        Remediation(message="Run 'dovo session list' to list valid session IDs", command="dovo session list")
+    ],
 )
 SESSION_NOT_FOUND = FormatterCase(
     data=SESSION_NOT_FOUND_DATA,
@@ -106,12 +109,15 @@ SESSION_NOT_FOUND = FormatterCase(
         diff_text="",
         total_lines=0,
         errors=["Session 'dovo_missing_99' not found."],
-        fixes=["Run `dovo session list` to list valid session IDs"],
+        remediations=[
+            Remediation(message="Run 'dovo session list' to list valid session IDs", command="dovo session list")
+        ],
     ),
     render_expectations=[
         "dovo_missing_99",
         "Session 'dovo_missing_99' not found.",
-        "Run `dovo session list` to list valid session IDs",
+        "Fix:",
+        "- Run 'dovo session list' to list valid session IDs",
     ],
 )
 
@@ -167,7 +173,7 @@ DIFF_PAYLOAD_CASES = [
             "truncated_lines": 0,
             "errors": [],
             "warnings": ["Non-critical warning"],
-            "fixes": [],
+            "remediations": [],
         },
         id="ok_populated_diff",
     ),
@@ -186,7 +192,9 @@ DIFF_PAYLOAD_CASES = [
             "truncated_lines": 0,
             "errors": ["Session 'dovo_missing_99' not found."],
             "warnings": [],
-            "fixes": ["Run `dovo session list` to list valid session IDs"],
+            "remediations": [
+                {"message": "Run 'dovo session list' to list valid session IDs", "command": "dovo session list"}
+            ],
         },
         id="session_not_found",
     ),

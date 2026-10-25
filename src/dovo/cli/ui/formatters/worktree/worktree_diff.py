@@ -23,7 +23,7 @@ class WorktreeDiffFormatter(ComponentFormatter[WorktreeDiffResult]):
                 "Worktree Diff Failed",
                 data.errors,
                 "Failed to generate diff.",
-                data.fixes,
+                remediations=data.remediations,
             )
 
         if data.stat_text:

@@ -31,7 +31,7 @@ def _make_session_show_view(**overrides: object) -> SessionShowView:
         "steps": [],
         "errors": [],
         "warnings": [],
-        "fixes": [],
+        "remediations": [],
     }
     return SessionShowView.model_validate({**defaults, **overrides})
 
@@ -294,7 +294,7 @@ HISTORY_SHOW_PAYLOAD_CASES = [
             "worktree_path": None,
             "errors": [],
             "warnings": [],
-            "fixes": [],
+            "remediations": [],
         },
         id="run_with_steps",
     ),
@@ -311,7 +311,7 @@ HISTORY_SHOW_PAYLOAD_CASES = [
             "worktree_path": None,
             "errors": [],
             "warnings": [],
-            "fixes": [],
+            "remediations": [],
         },
         id="not_found",
     ),

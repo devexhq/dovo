@@ -21,6 +21,7 @@ from dovo.core.agents import (
     tool_policy_unsupported_message,
 )
 from dovo.core.agents.base import ProviderSpec
+from dovo.core.agents.claude import CLAUDE_AUTH_FIX
 from dovo.core.agents.credentials import missing_credential_error
 from dovo.core.agents.registry import PROVIDERS
 from tests.harness import PROVIDER_FINISHED_STREAMS, AgentRequestBuilder, FakeAgentRunner, real_invocation
@@ -280,7 +281,7 @@ def _isolated_credentials(monkeypatch: pytest.MonkeyPatch) -> None:
 
 def _missing_credential_suffix(spec: ProviderSpec) -> str:
     """Return the text a provider's missing-credential error must end with."""
-    return f"Fix: {spec.auth_fix}" if spec.auth_fix is not None else missing_credential_error(spec)
+    return f"Fix: {CLAUDE_AUTH_FIX}" if spec.token == "claude" else missing_credential_error(spec)
 
 
 @pytest.mark.usefixtures("_isolated_credentials")

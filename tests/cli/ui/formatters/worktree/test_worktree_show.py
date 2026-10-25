@@ -7,6 +7,7 @@ from typing import Any
 import pytest
 
 from dovo.cli.ui.formatters.worktree.worktree_show import WorktreeShowFormatter
+from dovo.common.models import Remediation
 from dovo.core.db import WorktreeRecord, WorktreeStatus
 from dovo.core.worktree.models import (
     WorktreeShowResult,
@@ -53,9 +54,15 @@ NOT_FOUND = FormatterCase.identity(
     data=WorktreeShowResult(
         status=WorktreeShowStatus.NOT_FOUND,
         errors=["Worktree 'dovo_missing' not found."],
-        fixes=["Run `dovo worktree list` to see known worktrees"],
+        remediations=[
+            Remediation(message="Run 'dovo worktree list' to see known worktrees", command="dovo worktree list")
+        ],
     ),
-    render_expectations=["Worktree 'dovo_missing' not found.", "Run `dovo worktree list` to see known worktrees"],
+    render_expectations=[
+        "Worktree 'dovo_missing' not found.",
+        "Fix:",
+        "- Run 'dovo worktree list' to see known worktrees",
+    ],
 )
 
 WORKTREE_SHOW_CASES = [
@@ -85,7 +92,7 @@ WORKTREE_SHOW_PAYLOAD_CASES = [
             "warnings": [],
             "errors": [],
             "error_code": None,
-            "fixes": [],
+            "remediations": [],
         },
         id="found_active",
     ),
@@ -99,7 +106,9 @@ WORKTREE_SHOW_PAYLOAD_CASES = [
             "warnings": [],
             "errors": ["Worktree 'dovo_missing' not found."],
             "error_code": None,
-            "fixes": ["Run `dovo worktree list` to see known worktrees"],
+            "remediations": [
+                {"message": "Run 'dovo worktree list' to see known worktrees", "command": "dovo worktree list"}
+            ],
         },
         id="not_found",
     ),

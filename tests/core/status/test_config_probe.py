@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dovo.common.models import Remediation
 from dovo.core.config.loader import ConfigLoadStatus
 from dovo.core.git.runner import GitRunner
 from dovo.core.status import Status
@@ -23,7 +24,9 @@ class ConfigProbeTests:
         assert result.git.branch == "feature-uninit"
         assert result.config.is_valid is False
         assert result.warnings == ["Dovo workspace is not initialized. Run 'dovo init' to configure."]
-        assert result.fixes == ["Run 'dovo init' to initialize Dovo in this repository."]
+        assert result.remediations == [
+            Remediation(message="Run 'dovo init' to initialize Dovo in this repository.", command="dovo init")
+        ]
 
     def test_collect_malformed_config_reports_malformed_json(self, status_workspace: BuildStatusWorkspace) -> None:
         workspace = status_workspace(config="{invalid_json: true")
@@ -33,6 +36,8 @@ class ConfigProbeTests:
         assert result.config.status == ConfigLoadStatus.MALFORMED_JSON
         assert result.config.is_valid is False
         assert any("CONFIG_MALFORMED_JSON" in err for err in result.config.errors)
-        assert result.config.fixes == ["Repair JSON syntax, or restore from backup"]
+        assert result.config.remediations == [Remediation(message="Repair JSON syntax, or restore from backup")]
         assert any("Malformed config.json" in w for w in result.warnings)
-        assert result.fixes == ["Repair JSON syntax in .dovo/config.json or restore from backup."]
+        assert result.remediations == [
+            Remediation(message="Repair JSON syntax in '.dovo/config.json' or restore from backup.")
+        ]

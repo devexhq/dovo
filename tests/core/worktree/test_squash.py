@@ -79,7 +79,6 @@ class WorktreeSquashApplyTests:
         assert result.commit_sha is not None
         assert result.errors == []
         assert result.warnings == []
-        assert result.fixes == []
         assert GitRunner().rev_parse(worktree_workspace, rev="HEAD") == result.commit_sha
         assert GitRunner().run(["log", "-1", "--format=%B"], worktree_workspace).strip() == "Squash worktree feature"
         assert GitRunner().rev_parse(worktree_workspace, rev="HEAD~1") == head_before
@@ -126,7 +125,6 @@ class WorktreeSquashApplyTests:
         assert result.commit_sha is not None
         assert result.errors == []
         assert result.warnings == []
-        assert result.fixes == []
 
         assert "dovo/dovo_squash_del" not in GitRunner().list_branches(worktree_workspace)
         assert not (worktree_workspace / ".dovo" / "worktrees" / "dovo_squash_del").exists()

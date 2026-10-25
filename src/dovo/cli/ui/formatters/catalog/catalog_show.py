@@ -86,7 +86,7 @@ class CatalogShowFormatter(ComponentFormatter[CatalogShowResult, CatalogShowView
             catalog_path_relative=catalog_path_relative,
             errors=data.errors,
             warnings=data.warnings,
-            fixes=data.fixes,
+            remediations=data.remediations,
         )
 
     def to_rich(self, data: CatalogShowResult) -> RenderableType:
@@ -98,7 +98,7 @@ class CatalogShowFormatter(ComponentFormatter[CatalogShowResult, CatalogShowView
                 "Catalog Show Failed",
                 view.errors,
                 "Catalog blueprint not found.",
-                view.fixes,
+                remediations=view.remediations,
             )
 
         if view.template_matches:

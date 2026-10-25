@@ -12,7 +12,6 @@ from dovo.cli.ui.formatters.common import build_error_panel
 from dovo.cli.ui.formatters.session.common import (
     format_truncation_notice,
     resolve_diff_rel_path,
-    unresolved_diff_path,
 )
 from dovo.cli.ui.formatters.session.session_views import SessionDiffView
 from dovo.common.constants import DEFAULT_MAX_DIFF_LINES
@@ -22,22 +21,21 @@ from dovo.core.sessions import DiffResult, DiffStatus
 def _format_session_not_found_panel(data: DiffResult | SessionDiffView) -> Panel:
     """Format error panel when session is missing."""
     default = f"Session '{data.session_id}' not found." if data.session_id else "No sessions found."
-    fixes = data.fixes or ["Run `dovo session list` to list valid session IDs"]
-    return build_error_panel("Session Not Found", data.errors, default, fixes)
+    return build_error_panel("Session Not Found", data.errors, default, remediations=data.remediations)
 
 
 def _format_diff_not_found_panel(data: DiffResult | SessionDiffView) -> Panel:
     """Format error panel when diff artifact is missing."""
     session_label = data.session_id or "unknown"
     default = f"Session '{session_label}' has no diff artifact."
-    fixes = data.fixes or [f"Verify the session generated a diff artifact at {unresolved_diff_path(data.session_id)}"]
-    return build_error_panel("Diff Not Found", data.errors, default, fixes)
+    return build_error_panel("Diff Not Found", data.errors, default, remediations=data.remediations)
 
 
 def _format_read_failure_panel(data: DiffResult | SessionDiffView) -> Panel:
     """Format error panel when diff artifact cannot be read."""
-    fixes = data.fixes or ["Check file permissions and that the artifact is readable"]
-    return build_error_panel("Read Failure", data.errors, "Failed to read diff artifact.", fixes)
+    return build_error_panel(
+        "Read Failure", data.errors, "Failed to read diff artifact.", remediations=data.remediations
+    )
 
 
 def _format_diff_error_panel(data: DiffResult | SessionDiffView) -> Panel:
@@ -49,7 +47,7 @@ def _format_diff_error_panel(data: DiffResult | SessionDiffView) -> Panel:
     if data.status == DiffStatus.READ_FAILURE:
         return _format_read_failure_panel(data)
 
-    return build_error_panel("Diff Failed", data.errors, "Diff operation failed.", data.fixes)
+    return build_error_panel("Diff Failed", data.errors, "Diff operation failed.", remediations=data.remediations)
 
 
 class SessionDiffFormatter(ComponentFormatter[DiffResult, SessionDiffView]):
@@ -113,7 +111,7 @@ class SessionDiffFormatter(ComponentFormatter[DiffResult, SessionDiffView]):
             truncated_lines=limit if should_truncate else 0,
             errors=list(data.errors),
             warnings=list(data.warnings),
-            fixes=list(data.fixes),
+            remediations=list(data.remediations),
         )
 
     def to_rich(self, data: DiffResult) -> RenderableType:

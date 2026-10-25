@@ -8,6 +8,7 @@ from typing import Any
 import pytest
 
 from dovo.cli.ui.formatters.worktree.worktree_create import WorktreeCreateFormatter
+from dovo.common.models import Remediation
 from dovo.core.worktree.models import (
     WorktreeCreateResult,
     WorktreeCreateStatus,
@@ -36,9 +37,9 @@ FAILED_GIT = FormatterCase.identity(
     data=WorktreeCreateResult(
         status=WorktreeCreateStatus.GIT_FAILED,
         errors=["Git checkout failed."],
-        fixes=["Check git status and branch name"],
+        remediations=[Remediation(message="Check git status and branch name")],
     ),
-    render_expectations=["Git checkout failed.", "Check git status and branch name"],
+    render_expectations=["Git checkout failed.", "Fix:", "- Check git status and branch name"],
 )
 
 WORKTREE_CREATE_CASES = [
@@ -65,7 +66,7 @@ WORKTREE_CREATE_PAYLOAD_CASES = [
             "warnings": [],
             "errors": [],
             "error_code": None,
-            "fixes": [],
+            "remediations": [],
         },
         id="created_ok",
     ),
@@ -77,7 +78,7 @@ WORKTREE_CREATE_PAYLOAD_CASES = [
             "warnings": [],
             "errors": ["Git checkout failed."],
             "error_code": None,
-            "fixes": ["Check git status and branch name"],
+            "remediations": [{"message": "Check git status and branch name", "command": None}],
         },
         id="failed_git",
     ),

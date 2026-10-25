@@ -19,7 +19,6 @@ from dovo.core.agents import (
     tool_policy_unsupported_message,
 )
 from dovo.core.agents.claude import (
-    CLAUDE_AUTH_FIX,
     ClaudeAgentAdapter,
     claude_auth_label,
     claude_cli_logged_in,
@@ -51,7 +50,7 @@ class ClaudeDescriptorTests:
         )
         assert (spec.supports_tool_policy, spec.supports_os_sandbox) == (True, False)
         assert (spec.binary, spec.progress_mapper, spec.build) == ("claude", map_claude_line, ClaudeAgentAdapter)
-        assert (spec.auth_label, spec.auth_fix) == (claude_auth_label, CLAUDE_AUTH_FIX)
+        assert spec.auth_label == claude_auth_label
         assert spec.control_envs == (
             "ANTHROPIC_BASE_URL",
             "ANTHROPIC_AUTH_TOKEN",

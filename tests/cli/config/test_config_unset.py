@@ -85,6 +85,6 @@ class ConfigUnsetCliIntegrationTests:
                 "error_code": None,
                 "errors": [],
                 "warnings": [],
-                "fixes": [],
+                "remediations": [],
             },
         }

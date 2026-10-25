@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from pydantic import BaseModel, Field
 
+from dovo.common.models import Remediation
+
 
 class CatalogItemView(BaseModel):
     """Semantic view of an indexed blueprint record."""
@@ -36,7 +38,7 @@ class CatalogListView(BaseModel):
     total_items: int = 0
     errors: list[str] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
-    fixes: list[str] = Field(default_factory=list)
+    remediations: list[Remediation] = Field(default_factory=list)
 
 
 class CatalogShowView(BaseModel):
@@ -50,7 +52,7 @@ class CatalogShowView(BaseModel):
     catalog_path_relative: str | None = None
     errors: list[str] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
-    fixes: list[str] = Field(default_factory=list)
+    remediations: list[Remediation] = Field(default_factory=list)
 
 
 class CatalogValidateView(BaseModel):
@@ -66,4 +68,4 @@ class CatalogValidateView(BaseModel):
     item_type: str | None = None
     errors: list[str] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
-    fixes: list[str] = Field(default_factory=list)
+    remediations: list[Remediation] = Field(default_factory=list)

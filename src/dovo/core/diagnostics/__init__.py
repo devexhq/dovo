@@ -9,8 +9,6 @@ from dovo.core.diagnostics.models import (
     DiagnosticCheckResult,
     DiagnosticsContext,
     DiagnosticsReport,
-    Remediation,
-    RemediationType,
 )
 
 __all__ = [
@@ -23,6 +21,4 @@ __all__ = [
     "DiagnosticsContext",
     "DiagnosticsError",
     "DiagnosticsReport",
-    "Remediation",
-    "RemediationType",
 ]

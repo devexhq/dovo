@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from pydantic import BaseModel, Field, SerializerFunctionWrapHandler, model_serializer
 
+from dovo.common.models import Remediation
 from dovo.core.agents import AgentProgressKind
 from dovo.core.db import SessionStatus
 
@@ -135,6 +136,7 @@ class WorktreeLifecycleEvent(BaseModel):
     kept: bool | None = None
     worktree_id: str | None = None
     branch: str | None = None
+    remediations: list[Remediation] = []
 
 
 class LoopConditionView(BaseModel):

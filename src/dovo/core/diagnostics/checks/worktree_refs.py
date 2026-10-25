@@ -57,7 +57,6 @@ def _detection_unavailable_result(
         error_code=None,
         errors=[],
         warnings=[message],
-        fixes=[],
     )
 
 
@@ -74,7 +73,6 @@ def _stale_result(check_id: str, name: str, category: CheckCategory, stale_ids: 
         error_code="DOCTOR_WORKTREE_STALE",
         errors=[],
         warnings=[message],
-        fixes=[],
     )
 
 
@@ -91,7 +89,6 @@ def _orphan_result(check_id: str, name: str, category: CheckCategory, orphan_dir
         error_code="DOCTOR_WORKTREE_ORPHAN",
         errors=[],
         warnings=[message],
-        fixes=[],
     )
 
 
@@ -107,5 +104,4 @@ def _ok_result(check_id: str, name: str, category: CheckCategory, verified_count
         error_code=None,
         errors=[],
         warnings=[],
-        fixes=[],
     )

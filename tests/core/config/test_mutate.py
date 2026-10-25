@@ -9,6 +9,7 @@ from typing import Any
 import pytest
 
 from dovo.common.filesystem import Filesystem
+from dovo.common.models import Remediation
 from dovo.core.config.generator import build_default_config
 from dovo.core.config.mutate import (
     ConfigSetStatus,
@@ -38,7 +39,7 @@ class ConfigMutationTests:
         assert result.value == "m"
         assert result.errors == []
         assert result.warnings == []
-        assert result.fixes == []
+        assert result.remediations == []
 
         data = json.loads(config_path.read_text())
         assert data["agents"] == {"copilot": {"model": "m"}}
@@ -71,7 +72,7 @@ class ConfigMutationTests:
         assert bool_result.value is True
         assert bool_result.errors == []
         assert bool_result.warnings == []
-        assert bool_result.fixes == []
+        assert bool_result.remediations == []
         assert json.loads(config_path.read_text())["telemetry"]["enabled"] is True
 
         schema_error_result = set_config_value_result(
@@ -84,9 +85,12 @@ class ConfigMutationTests:
         assert schema_error_result.errors == [
             "Config schema validation failed (CONFIG_SCHEMA_INVALID):\n- worktree.max_active_worktrees: 'not_an_int' is not of type 'integer'"
         ]
-        assert schema_error_result.fixes == [
-            "Run `dovo config validate` for details",
-            "Or `dovo init --repair` to insert missing keys without overwriting values",
+        assert schema_error_result.remediations == [
+            Remediation(message="Run 'dovo config validate' for details", command="dovo config validate"),
+            Remediation(
+                message="Run 'dovo init --repair' to insert missing keys without overwriting values",
+                command="dovo init --repair",
+            ),
         ]
         assert schema_error_result.warnings == []
         assert json.loads(config_path.read_text())["worktree"]["max_active_worktrees"] == 3
@@ -104,7 +108,7 @@ class ConfigMutationTests:
             "Cannot set 'agents.copilot.model'. 'agents' is already defined as a scalar value."
         ]
         assert collision_result.warnings == []
-        assert collision_result.fixes == []
+        assert collision_result.remediations == []
 
     @pytest.mark.parametrize(
         ("key", "raw_value", "expected"),
@@ -231,7 +235,7 @@ class ConfigUnsetMutationTests:
         assert result.previous_value == "gpt-4.1"
         assert result.errors == []
         assert result.warnings == []
-        assert result.fixes == []
+        assert result.remediations == []
         data = json.loads(config_path.read_text())
         assert data["agents"] == {"copilot": {}}
         assert validate_config_result(config_path).status == ConfigValidationStatus.VALID
@@ -251,7 +255,7 @@ class ConfigUnsetMutationTests:
         assert result.previous_value is None
         assert result.errors == []
         assert result.warnings == []
-        assert result.fixes == []
+        assert result.remediations == []
         assert config_path.read_bytes() == before
 
     def test_unset_missing_config_returns_not_found(self, isolated_workspace: Path) -> None:
@@ -266,7 +270,9 @@ class ConfigUnsetMutationTests:
         assert result.previous_value is None
         assert result.errors == [f"Configuration file not found at '{config_path}' (CONFIG_NOT_FOUND)."]
         assert result.warnings == []
-        assert result.fixes == ["Run `dovo init` to create `.dovo/config.json`"]
+        assert result.remediations == [
+            Remediation(message="Run 'dovo init' to create '.dovo/config.json'", command="dovo init")
+        ]
 
     def test_unset_config_path_is_directory_returns_path_is_directory(self, isolated_workspace: Path) -> None:
         config_path = isolated_workspace / ".dovo" / "config.json"
@@ -281,7 +287,7 @@ class ConfigUnsetMutationTests:
         assert result.previous_value is None
         assert result.errors == [f"Config path is a directory, not a file: '{config_path}' (CONFIG_PATH_IS_DIRECTORY)."]
         assert result.warnings == []
-        assert result.fixes == ["Remove the directory or point config_path at a file"]
+        assert result.remediations == [Remediation(message="Remove the directory or point config_path at a file")]
 
     def test_unset_malformed_json_returns_malformed_json(self, isolated_workspace: Path) -> None:
         config_path = isolated_workspace / ".dovo" / "config.json"
@@ -300,7 +306,7 @@ class ConfigUnsetMutationTests:
             "(CONFIG_MALFORMED_JSON)."
         ]
         assert result.warnings == []
-        assert result.fixes == ["Repair JSON syntax, or restore from backup"]
+        assert result.remediations == [Remediation(message="Repair JSON syntax, or restore from backup")]
 
     def test_unset_root_not_object_returns_root_not_object(self, isolated_workspace: Path) -> None:
         config_path = isolated_workspace / ".dovo" / "config.json"
@@ -317,7 +323,9 @@ class ConfigUnsetMutationTests:
             f"Malformed config.json at '{config_path}': root must be an object (CONFIG_ROOT_NOT_OBJECT)."
         ]
         assert result.warnings == []
-        assert result.fixes == ["Ensure config.json is a JSON object, not an array or scalar"]
+        assert result.remediations == [
+            Remediation(message="Ensure 'config.json' is a JSON object, not an array or scalar")
+        ]
 
     def test_unset_schema_invalid_removal_rejected_without_write(self, isolated_workspace: Path) -> None:
         config_path = isolated_workspace / ".dovo" / "config.json"
@@ -336,9 +344,12 @@ class ConfigUnsetMutationTests:
             "Config schema validation failed (CONFIG_SCHEMA_INVALID):\n- (root): 'project' is a required property"
         ]
         assert result.warnings == []
-        assert result.fixes == [
-            "Run `dovo config validate` for details",
-            "Or `dovo init --repair` to insert missing keys without overwriting values",
+        assert result.remediations == [
+            Remediation(message="Run 'dovo config validate' for details", command="dovo config validate"),
+            Remediation(
+                message="Run 'dovo init --repair' to insert missing keys without overwriting values",
+                command="dovo init --repair",
+            ),
         ]
         assert config_path.read_bytes() == before
 
@@ -364,7 +375,7 @@ class ConfigUnsetMutationTests:
         assert result.previous_value == "gpt-4.1"
         assert result.errors == [f"Unable to write config.json at '{config_path}': disk full (CONFIG_WRITE_FAILED)."]
         assert result.warnings == []
-        assert result.fixes == ["Check file permissions and free disk space"]
+        assert result.remediations == [Remediation(message="Check file permissions and free disk space")]
 
     def test_unset_empty_path_returns_invalid_path(self, isolated_workspace: Path) -> None:
         config_path = isolated_workspace / ".dovo" / "config.json"
@@ -380,7 +391,7 @@ class ConfigUnsetMutationTests:
         assert result.previous_value is None
         assert result.errors == ["Cannot unset '': config key path must be a non-empty dot path."]
         assert result.warnings == []
-        assert result.fixes == []
+        assert result.remediations == []
 
     def test_unset_type_collision_returns_type_collision(self, isolated_workspace: Path) -> None:
         config_path = isolated_workspace / ".dovo" / "config.json"
@@ -398,5 +409,5 @@ class ConfigUnsetMutationTests:
         assert result.previous_value is None
         assert result.errors == ["Cannot unset 'agents.copilot.model'. 'agents' is already defined as a scalar value."]
         assert result.warnings == []
-        assert result.fixes == []
+        assert result.remediations == []
         assert config_path.read_bytes() == before

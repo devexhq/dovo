@@ -6,8 +6,11 @@ import shutil
 from dataclasses import dataclass
 from pathlib import Path
 
+from dovo.common.formatters import format_remediations
 from dovo.common.lock import LockTimeoutError
+from dovo.common.models import Remediation
 from dovo.common.redact import SecretRedactor
+from dovo.common.utils import display_path
 from dovo.core.artifacts.artifacts import Artifacts
 from dovo.core.artifacts.store import ArtifactStore
 from dovo.core.config import ConfigLoadError
@@ -24,13 +27,24 @@ from dovo.engine.writer import get_session_dir, write_session_diff
 
 
 def _creation_failure_message(create_result: WorktreeCreateResult) -> str:
-    """Return `Git worktree creation failed: <detail>` plus a `Fix:` line built from the result's fixes when present."""
+    """Return `Git worktree creation failed: <detail>` plus the result's `Fix:` block when it has remediations."""
     detail = create_result.errors[0] if create_result.errors else "Worktree creation failed."
     message = f"Git worktree creation failed: {detail}"
-    if create_result.fixes:
-        message += f"\nFix: {' '.join(create_result.fixes)}"
+    if create_result.remediations:
+        message += "\n" + format_remediations(create_result.remediations)
 
     return message
+
+
+def _kept_remediations(path: str, worktree_id: str) -> list[Remediation]:
+    """Return the inspect and remove steps for a run worktree kept for inspection."""
+    return [
+        Remediation(message=f"Inspect it with 'git -C {path} status'", command=f"git -C {path} status"),
+        Remediation(
+            message=f"Remove it with 'dovo worktree delete {worktree_id}'",
+            command=f"dovo worktree delete {worktree_id}",
+        ),
+    ]
 
 
 @dataclass(frozen=True)
@@ -176,6 +190,7 @@ class Workspace:
                 path=session.worktree_path,
                 worktree_id=session.session_id,
                 branch=session.target_branch,
+                remediations=_kept_remediations(display_path(session.worktree_path, Path.cwd()), session.session_id),
             )
             return True
 

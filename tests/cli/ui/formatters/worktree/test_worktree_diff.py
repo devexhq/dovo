@@ -7,6 +7,7 @@ from typing import Any
 import pytest
 
 from dovo.cli.ui.formatters.worktree.worktree_diff import WorktreeDiffFormatter
+from dovo.common.models import Remediation
 from dovo.core.worktree.models import (
     WorktreeDiffResult,
     WorktreeDiffStatus,
@@ -39,12 +40,15 @@ NOT_FOUND = FormatterCase.identity(
         status=WorktreeDiffStatus.NOT_FOUND,
         worktree_id="dovo_missing",
         errors=["Worktree 'dovo_missing' not found."],
-        fixes=["Run `dovo worktree list` to see known worktrees"],
+        remediations=[
+            Remediation(message="Run 'dovo worktree list' to see known worktrees", command="dovo worktree list")
+        ],
     ),
     render_expectations=[
         "dovo_missing",
         "Worktree 'dovo_missing' not found.",
-        "Run `dovo worktree list` to see known worktrees",
+        "Fix:",
+        "- Run 'dovo worktree list' to see known worktrees",
     ],
 )
 
@@ -66,7 +70,7 @@ WORKTREE_DIFF_PAYLOAD_CASES = [
             "warnings": [],
             "errors": [],
             "error_code": None,
-            "fixes": [],
+            "remediations": [],
         },
         id="ok_with_diff",
     ),
@@ -81,7 +85,7 @@ WORKTREE_DIFF_PAYLOAD_CASES = [
             "warnings": [],
             "errors": [],
             "error_code": None,
-            "fixes": [],
+            "remediations": [],
         },
         id="empty_diff",
     ),
@@ -96,7 +100,9 @@ WORKTREE_DIFF_PAYLOAD_CASES = [
             "warnings": [],
             "errors": ["Worktree 'dovo_missing' not found."],
             "error_code": None,
-            "fixes": ["Run `dovo worktree list` to see known worktrees"],
+            "remediations": [
+                {"message": "Run 'dovo worktree list' to see known worktrees", "command": "dovo worktree list"}
+            ],
         },
         id="not_found",
     ),

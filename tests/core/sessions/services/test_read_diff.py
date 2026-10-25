@@ -8,6 +8,7 @@ from pathlib import Path
 import pytest
 
 from dovo.common.filesystem import WorkspacePaths
+from dovo.common.models import Remediation
 from dovo.core.sessions import DiffStatus
 from dovo.core.sessions.services.read_diff import read_session_diff
 
@@ -60,8 +61,10 @@ class ReadSessionDiffTests:
 
         result = read_session_diff(paths, "session-5")
 
-        assert result.fixes == [
-            f"Verify the session generated a diff artifact at {paths.session_dir('session-5') / 'diff.patch'}"
+        assert result.remediations == [
+            Remediation(
+                message=f"Verify the session generated a diff artifact at '{paths.session_dir('session-5') / 'diff.patch'}'"
+            )
         ]
 
     def test_read_session_diff_with_written_patch_returns_ok_with_exact_text(

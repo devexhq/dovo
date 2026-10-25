@@ -5,6 +5,7 @@ from pathlib import Path
 
 from pydantic import BaseModel, Field
 
+from dovo.common.models import Remediation
 from dovo.core.config.loader import ConfigLoadStatus
 
 
@@ -37,4 +38,4 @@ class StatusView(BaseModel):
     total_sessions: int
     errors: list[str] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
-    remediations: list[str] = Field(default_factory=list)
+    remediations: list[Remediation] = Field(default_factory=list)

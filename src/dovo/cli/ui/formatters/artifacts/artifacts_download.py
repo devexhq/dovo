@@ -24,5 +24,5 @@ class ArtifactDownloadFormatter(ComponentFormatter[ArtifactDownloadResult]):
             "Artifact Download Failed",
             data.errors,
             f"Failed to download artifact '{data.name}' for session '{data.session_id}'.",
-            data.fixes,
+            remediations=data.remediations,
         )

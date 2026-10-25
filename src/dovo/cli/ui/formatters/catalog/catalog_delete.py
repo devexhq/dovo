@@ -23,7 +23,7 @@ class CatalogDeleteFormatter(ComponentFormatter[CatalogDeleteResult]):
                 "Catalog Delete Failed",
                 data.errors,
                 "Catalog delete failed.",
-                data.fixes,
+                remediations=data.remediations,
             )
 
         if data.deleted and data.item is not None:

@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
+from dovo.common.formatters import format_remediations
+from dovo.common.models import Remediation
 from dovo.core.agents.models import AgentDenial, AgentResponse, AgentResponseStatus
 
 
@@ -15,14 +17,14 @@ def timeout_response(
     raw_text: str | None = None,
     mutation_baseline_ref: str | None = None,
 ) -> AgentResponse:
-    """Build the TIMEOUT response carrying the canonical timeout error and fix."""
+    """Build the TIMEOUT response carrying the canonical timeout error and remediation."""
     return AgentResponse(
         status=AgentResponseStatus.TIMEOUT,
         duration_seconds=duration_seconds,
         raw_text=raw_text,
         mutation_baseline_ref=mutation_baseline_ref,
         errors=[f"Agent timed out after {timeout_seconds}s (provider={provider})."],
-        fixes=["Raise timeout_seconds on the agent step"],
+        remediations=[Remediation(message="Raise 'timeout_seconds' on the agent step")],
     )
 
 
@@ -93,7 +95,7 @@ def blocked_response(
     raw_text: str | None = None,
     mutation_baseline_ref: str | None = None,
 ) -> AgentResponse:
-    """Build the BLOCKED response whose grant fix names agents.<provider>.tools.
+    """Build the BLOCKED response whose grant remediation names agents.<provider>.tools.
 
     ``denials`` must be non-empty.
     """
@@ -102,21 +104,26 @@ def blocked_response(
         f"Agent run was blocked by tool permissions (AGENT_PERMISSION_BLOCKED): {first.tool}: {first.message}",
         *(f"{denial.tool}: {denial.message}" for denial in rest),
     ]
-    fixes: list[str] = []
+    remediations: list[Remediation] = []
     for denial in denials:
         if denial.by_rule:
-            fix = f"Remove or narrow the deny rule that blocked '{denial.tool}': {denial.message}"
+            remediation = Remediation(
+                message=f"Remove or narrow the deny rule that blocked '{denial.tool}': {denial.message}"
+            )
         elif denial.capability is not None:
-            fix = (
-                f"Grant it in the step's tools policy, e.g. tools: {{allow: [{{capability: {denial.capability.value}}}]}}, "
-                f"or set it once under agents.{provider}.tools in .dovo/config.json "
-                "(see docs/guides/agent-providers.md#tool-policy-profiles)"
+            remediation = Remediation(
+                message=(
+                    "Grant it in the step's tools policy, e.g. "
+                    f"'tools: {{allow: [{{capability: {denial.capability.value}}}]}}', "
+                    f"or set it once under 'agents.{provider}.tools' in '.dovo/config.json' "
+                    "(see 'docs/guides/agent-providers.md#tool-policy-profiles')"
+                )
             )
         else:
             continue
 
-        if fix not in fixes:
-            fixes.append(fix)
+        if remediation not in remediations:
+            remediations.append(remediation)
 
     return AgentResponse(
         status=AgentResponseStatus.BLOCKED,
@@ -124,14 +131,14 @@ def blocked_response(
         raw_text=raw_text,
         mutation_baseline_ref=mutation_baseline_ref,
         errors=errors,
-        fixes=fixes,
+        remediations=remediations,
     )
 
 
-def diagnostics_with_fixes(errors: Sequence[str], fixes: Sequence[str]) -> list[str]:
-    """Return the errors followed by one trailing ``Fix:`` block when fixes are present."""
+def diagnostics_with_remediations(errors: Sequence[str], remediations: Sequence[Remediation]) -> list[str]:
+    """Return the errors followed by one trailing Fix: block when remediations are present."""
     diagnostics = list(errors)
-    if fixes:
-        diagnostics.append("Fix:\n" + "\n".join(f"- {fix}" for fix in fixes))
+    if remediations:
+        diagnostics.append(format_remediations(remediations))
 
     return diagnostics

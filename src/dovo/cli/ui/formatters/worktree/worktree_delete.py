@@ -14,18 +14,17 @@ from dovo.core.worktree.models import WorktreeDeleteResult, WorktreeDeleteStatus
 def _format_delete_error_panel(data: WorktreeDeleteResult) -> Panel:
     """Format error panel for non-ok worktree delete results."""
     if data.status == WorktreeDeleteStatus.NOT_FOUND:
-        fixes = data.fixes or ["Run `dovo worktree list` to see known worktrees"]
         return build_error_panel(
             "Worktree Not Found",
             data.errors,
             f"Worktree '{data.worktree_id}' not found.",
-            fixes,
+            remediations=data.remediations,
         )
     return build_error_panel(
         "Worktree Delete Failed",
         data.errors,
         "Worktree delete failed.",
-        data.fixes,
+        remediations=data.remediations,
     )
 
 

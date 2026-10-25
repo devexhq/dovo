@@ -10,6 +10,7 @@ import pytest
 from freezegun import freeze_time
 
 from dovo.common.lock import LockTimeoutError
+from dovo.common.models import Remediation
 from dovo.core.project.models import (
     PROJECT_ID_REGEX,
     ProjectIdentity,
@@ -201,7 +202,9 @@ class ProjectIdentityServiceTests:
 
         assert result.status == ProjectIdentityProvisionStatus.INVALID_ID
         assert result.errors == [f"Invalid project ID: must match {PROJECT_ID_REGEX}"]
-        assert result.fixes == [f"Pass a valid --id matching {PROJECT_ID_REGEX}, or omit --id to generate one."]
+        assert result.remediations == [
+            Remediation(message=f"Pass a valid '--id' matching '{PROJECT_ID_REGEX}', or omit '--id' to generate one.")
+        ]
         assert not (tmp_path / "project.json").exists()
 
     def test_provision_project_identity_existing_without_force_preserves_identity(self, tmp_path: Path) -> None:

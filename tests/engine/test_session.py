@@ -538,7 +538,7 @@ class DriveRunObserverContractTests:
             ("step_done", 2, 3, "b", "completed"),
             ("step_start", 3, 3, "c"),
             ("step_done", 3, 3, "c", "completed"),
-            ("worktree_cleanup", False, root, None, None),
+            ("worktree_cleanup", False, root, None, None, []),
             ("run_completed", outcome),
         ]
 

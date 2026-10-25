@@ -70,7 +70,7 @@ class CatalogTemplateScaffoldingTests:
         assert result.error_code is None
         assert result.errors == []
         assert result.warnings == []
-        assert result.fixes == []
+        assert result.remediations == []
 
 
 class CatalogProtectionTests:
@@ -94,7 +94,7 @@ class CatalogProtectionTests:
         assert result.cancelled is False
         assert result.errors == [f"Cannot delete bundled catalog template '{template_name}'."]
         assert result.warnings == []
-        assert result.fixes == []
+        assert result.remediations == []
 
 
 class CatalogDiscoveryFallbackTests:
@@ -122,7 +122,7 @@ class CatalogDiscoveryFallbackTests:
         assert result.template_matches == [("blueprints/dovo/fix-tests.yml", expected_content)]
         assert result.errors == []
         assert result.warnings == []
-        assert result.fixes == []
+        assert result.remediations == []
 
 
 class CatalogCollisionTests:
@@ -163,7 +163,7 @@ class CatalogCollisionTests:
         assert result_second.item is None
         assert result_second.errors == [f"Catalog blueprint collision at path '{expected_rel_path.as_posix()}'"]
         assert result_second.warnings == []
-        assert result_second.fixes == []
+        assert result_second.remediations == []
 
 
 class CatalogNamespaceSplittingTests:

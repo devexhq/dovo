@@ -127,7 +127,7 @@ class InitCliIntegrationTests:
 
         assert result.exit_code == 2
         assert "Invalid project ID: must match" in result.stdout
-        assert "Pass a valid --id matching" in result.stdout
+        assert "Pass a valid '--id' matching" in result.stdout
         assert not (_dovo_dir(tmp_path) / "project.json").exists()
 
     def test_init_cli_force_with_id_overwrites_identity_only(self, cli_runner: CliRunner, tmp_path: Path) -> None:

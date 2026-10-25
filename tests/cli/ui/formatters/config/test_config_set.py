@@ -8,6 +8,7 @@ from typing import Any
 import pytest
 
 from dovo.cli.ui.formatters.config import ConfigSetFormatter, ConfigSetView
+from dovo.common.models import Remediation
 from dovo.core.config.mutate import ConfigSetResult, ConfigSetStatus
 from tests.harness.formatter import (
     FormatterCase,
@@ -26,7 +27,7 @@ SUCCESS_STR_CASE = FormatterCase(
         value="qwen2.5-coder",
         errors=[],
         warnings=[],
-        fixes=[],
+        remediations=[],
     ),
     view=ConfigSetView(
         status=ConfigSetStatus.OK,
@@ -37,7 +38,7 @@ SUCCESS_STR_CASE = FormatterCase(
         value_type="str",
         errors=[],
         warnings=[],
-        fixes=[],
+        remediations=[],
     ),
     render_expectations=["agents.copilot.model", "qwen2.5-coder", "str"],
 )
@@ -50,7 +51,7 @@ SUCCESS_BOOL_CASE = FormatterCase(
         value=True,
         errors=[],
         warnings=[],
-        fixes=[],
+        remediations=[],
     ),
     view=ConfigSetView(
         status=ConfigSetStatus.OK,
@@ -61,7 +62,7 @@ SUCCESS_BOOL_CASE = FormatterCase(
         value_type="bool",
         errors=[],
         warnings=[],
-        fixes=[],
+        remediations=[],
     ),
     render_expectations=["telemetry.enabled", "true", "bool"],
 )
@@ -74,7 +75,7 @@ SUCCESS_INT_CASE = FormatterCase(
         value=5,
         errors=[],
         warnings=[],
-        fixes=[],
+        remediations=[],
     ),
     view=ConfigSetView(
         status=ConfigSetStatus.OK,
@@ -85,7 +86,7 @@ SUCCESS_INT_CASE = FormatterCase(
         value_type="int",
         errors=[],
         warnings=[],
-        fixes=[],
+        remediations=[],
     ),
     render_expectations=["worktree.max_active_worktrees", "5", "int"],
 )
@@ -98,7 +99,7 @@ SUCCESS_DICT_CASE = FormatterCase(
         value={"name": "my-app"},
         errors=[],
         warnings=[],
-        fixes=[],
+        remediations=[],
     ),
     view=ConfigSetView(
         status=ConfigSetStatus.OK,
@@ -109,7 +110,7 @@ SUCCESS_DICT_CASE = FormatterCase(
         value_type="dict",
         errors=[],
         warnings=[],
-        fixes=[],
+        remediations=[],
     ),
     render_expectations=["project", '{"name": "my-app"}', "dict"],
 )
@@ -122,7 +123,7 @@ ERROR_SCHEMA_INVALID_CASE = FormatterCase(
         value=None,
         errors=["Config schema validation failed (CONFIG_SCHEMA_INVALID): extra property not allowed"],
         warnings=[],
-        fixes=["Run `dovo config validate` for details"],
+        remediations=[Remediation(message="Run 'dovo config validate' for details", command="dovo config validate")],
     ),
     view=ConfigSetView(
         status=ConfigSetStatus.SCHEMA_INVALID,
@@ -133,11 +134,12 @@ ERROR_SCHEMA_INVALID_CASE = FormatterCase(
         value_type="NoneType",
         errors=["Config schema validation failed (CONFIG_SCHEMA_INVALID): extra property not allowed"],
         warnings=[],
-        fixes=["Run `dovo config validate` for details"],
+        remediations=[Remediation(message="Run 'dovo config validate' for details", command="dovo config validate")],
     ),
     render_expectations=[
         "Config schema validation failed (CONFIG_SCHEMA_INVALID): extra property not allowed",
-        "Run `dovo config validate` for details",
+        "Fix:",
+        "- Run 'dovo config validate' for details",
     ],
 )
 
@@ -161,7 +163,7 @@ SET_PAYLOAD_CASES = [
             "value_type": "str",
             "errors": [],
             "warnings": [],
-            "fixes": [],
+            "remediations": [],
         },
         id="success_str_payload",
     ),
@@ -176,7 +178,7 @@ SET_PAYLOAD_CASES = [
             "value_type": "NoneType",
             "errors": ["Config schema validation failed (CONFIG_SCHEMA_INVALID): extra property not allowed"],
             "warnings": [],
-            "fixes": ["Run `dovo config validate` for details"],
+            "remediations": [{"message": "Run 'dovo config validate' for details", "command": "dovo config validate"}],
         },
         id="error_schema_invalid_payload",
     ),

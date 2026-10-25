@@ -6,6 +6,7 @@ from collections.abc import Sequence
 from pathlib import Path
 
 from dovo.common.filesystem import WorkspacePaths
+from dovo.common.models import Remediation
 from dovo.common.redact import SecretRedactor
 from dovo.core.db import SessionRecord, SessionsRepository, SessionStatus
 from dovo.core.sessions.models import (
@@ -24,7 +25,12 @@ from dovo.core.sessions.services.read_diff import read_session_diff
 from dovo.core.sessions.services.read_logs import list_session_log_files, read_session_log_events, read_step_logs
 from dovo.core.sessions.services.reconcile import reconcile_stale_sessions
 
-_NO_SESSIONS_FIX = "Run `dovo run <blueprint>` to create a session"
+_NO_SESSIONS_REMEDIATION = Remediation(
+    message="Run 'dovo run <blueprint>' to create a session", command="dovo run <blueprint>"
+)
+_SESSION_LIST_REMEDIATION = Remediation(
+    message="Run 'dovo session list' to view past sessions", command="dovo session list"
+)
 
 
 def _render_run_log_line(event: SessionLogEvent) -> str:
@@ -87,7 +93,11 @@ class Session:
                 status=DiffStatus.SESSION_NOT_FOUND,
                 session_id=self.session_id,
                 errors=[f"Session '{self.session_id}' not found."],
-                fixes=["Run `dovo session list` to list valid session IDs"],
+                remediations=[
+                    Remediation(
+                        message="Run 'dovo session list' to list valid session IDs", command="dovo session list"
+                    )
+                ],
             )
 
         return read_session_diff(self.paths, self.session_id)
@@ -106,11 +116,19 @@ class Session:
         because session.log records carry neither concept. An unreadable log file is reported in ``errors``.
         """
         if self.db.get(self.session_id) is None:
-            return LogsShowResult(status=LogsShowStatus.SESSION_NOT_FOUND, session_id=self.session_id)
+            return LogsShowResult(
+                status=LogsShowStatus.SESSION_NOT_FOUND,
+                session_id=self.session_id,
+                remediations=[_SESSION_LIST_REMEDIATION],
+            )
 
         session_log_dir = self.paths.logs_dir / self.session_id
         if not session_log_dir.is_dir():
-            return LogsShowResult(status=LogsShowStatus.SESSION_NOT_FOUND, session_id=self.session_id)
+            return LogsShowResult(
+                status=LogsShowStatus.SESSION_NOT_FOUND,
+                session_id=self.session_id,
+                remediations=[_SESSION_LIST_REMEDIATION],
+            )
 
         if step is None:
             try:
@@ -129,7 +147,11 @@ class Session:
         """Look up the session's session record, plus log file paths and a session.log tail when requested."""
         row = self.db.get(self.session_id)
         if row is None:
-            return HistoryShowResult(status=HistoryShowStatus.NOT_FOUND, session_id=self.session_id)
+            return HistoryShowResult(
+                status=HistoryShowStatus.NOT_FOUND,
+                session_id=self.session_id,
+                remediations=[_SESSION_LIST_REMEDIATION],
+            )
 
         row = _mask_record(row, history_redactor(self.paths, self.sensitive_variables))
         worktree_kept, worktree_path = _worktree_outcome(row, self.paths)
@@ -241,7 +263,9 @@ class SessionCollection:
         record = self.db.get_latest()
         if record is None:
             return HistoryShowResult(
-                status=HistoryShowStatus.NOT_FOUND, errors=["No sessions found."], fixes=[_NO_SESSIONS_FIX]
+                status=HistoryShowStatus.NOT_FOUND,
+                errors=["No sessions found."],
+                remediations=[_NO_SESSIONS_REMEDIATION],
             )
 
         return self.get(record.session_id).details(include_logs=include_logs)
@@ -258,7 +282,9 @@ class SessionCollection:
         record = self.db.get_latest()
         if record is None:
             return LogsShowResult(
-                status=LogsShowStatus.SESSION_NOT_FOUND, errors=["No sessions found."], fixes=[_NO_SESSIONS_FIX]
+                status=LogsShowStatus.SESSION_NOT_FOUND,
+                errors=["No sessions found."],
+                remediations=[_NO_SESSIONS_REMEDIATION],
             )
 
         return self.get(record.session_id).logs(step=step, attempt=attempt, stream=stream, tail=tail)
@@ -268,7 +294,9 @@ class SessionCollection:
         record = self.db.get_latest()
         if record is None:
             return DiffResult(
-                status=DiffStatus.SESSION_NOT_FOUND, errors=["No sessions found."], fixes=[_NO_SESSIONS_FIX]
+                status=DiffStatus.SESSION_NOT_FOUND,
+                errors=["No sessions found."],
+                remediations=[_NO_SESSIONS_REMEDIATION],
             )
 
         return read_session_diff(self.paths, record.session_id)

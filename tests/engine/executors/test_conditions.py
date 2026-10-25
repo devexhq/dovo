@@ -36,7 +36,6 @@ class ConditionExpressionEvaluatorTests:
         assert result.detail == "TRUE"
         assert result.errors == []
         assert result.warnings == []
-        assert result.fixes == []
 
     @pytest.mark.parametrize(
         ("literal", "passed", "detail"),

@@ -34,7 +34,7 @@ class CatalogCreateFormatter(ComponentFormatter[CatalogCreateResult]):
                 "Catalog Creation Failed",
                 data.errors,
                 "Catalog creation failed.",
-                data.fixes,
+                remediations=data.remediations,
             )
 
         item_type = enum_value(data.item.item_type)

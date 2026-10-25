@@ -29,7 +29,7 @@ dovo session resume [session_id] [OPTIONS]
 
 When `session_id` is omitted, `show`, `logs` and `diff` act on the project's latest session: the greatest `started_at`, ties broken by the greatest session id, whatever its status. In terminal format, `show` and `logs` then start with `Session: <session_id> (latest)`, and `diff` uses that text as its header instead of the artifact path. The line is not printed with `--patch` or `--format json`; the resolved id is already in the JSON payload. With an explicit `session_id` the line is never printed.
 
-If the project has no sessions, these commands print a **Session Not Found** panel (``Run `dovo run <blueprint>` to create a session``) and exit `1`. An explicit `session_id` that does not exist exits `1` with the not-found panel for that command.
+If the project has no sessions, these commands print a **Session Not Found** panel (`Run 'dovo run <blueprint>' to create a session`) and exit `1`. An explicit `session_id` that does not exist exits `1` with the not-found panel for that command.
 
 `resume` keeps its own rule: with no `session_id` it resumes the latest paused session.
 

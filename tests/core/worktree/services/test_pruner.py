@@ -424,7 +424,6 @@ class WorktreePrunerFailureTests:
                 items=[],
                 active_worktree_count=0,
                 warnings=[],
-                fixes=[],
             ),
         ):
             result = pruner.prune()

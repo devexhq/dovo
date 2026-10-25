@@ -6,6 +6,7 @@ from pathlib import Path
 
 from pydantic import BaseModel, Field
 
+from dovo.common.models import Remediation
 from dovo.core.sessions import (
     DiffStatus,
     HistoryListStatus,
@@ -41,7 +42,7 @@ class SessionListView(BaseModel):
     total_sessions: int = 0
     errors: list[str] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
-    fixes: list[str] = Field(default_factory=list)
+    remediations: list[Remediation] = Field(default_factory=list)
 
 
 class SessionShowView(BaseModel):
@@ -59,7 +60,7 @@ class SessionShowView(BaseModel):
     worktree_path: str | None = None
     errors: list[str] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
-    fixes: list[str] = Field(default_factory=list)
+    remediations: list[Remediation] = Field(default_factory=list)
 
 
 class SessionLogsView(BaseModel):
@@ -75,7 +76,7 @@ class SessionLogsView(BaseModel):
     available_attempts: list[int] = Field(default_factory=list)
     errors: list[str] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
-    fixes: list[str] = Field(default_factory=list)
+    remediations: list[Remediation] = Field(default_factory=list)
 
 
 class SessionDiffView(BaseModel):
@@ -97,4 +98,4 @@ class SessionDiffView(BaseModel):
     truncated_lines: int = 0
     errors: list[str] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
-    fixes: list[str] = Field(default_factory=list)
+    remediations: list[Remediation] = Field(default_factory=list)

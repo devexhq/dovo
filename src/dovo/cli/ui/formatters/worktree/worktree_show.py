@@ -15,19 +15,18 @@ from dovo.core.worktree.models import WorktreeShowResult, WorktreeShowStatus
 def _format_show_error_panel(data: WorktreeShowResult) -> Panel:
     """Format error panel for non-ok worktree show results."""
     if data.status == WorktreeShowStatus.NOT_FOUND:
-        fixes = data.fixes or ["Run `dovo worktree list` to see known worktrees"]
         return build_error_panel(
             "Worktree Not Found",
             data.errors,
             "Worktree not found.",
-            fixes,
+            remediations=data.remediations,
         )
 
     return build_error_panel(
         "Worktree Show Failed",
         data.errors,
         "Failed to show worktree.",
-        data.fixes,
+        remediations=data.remediations,
     )
 
 

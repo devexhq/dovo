@@ -58,7 +58,6 @@ def _binary_missing_result(check_id: str, name: str, category: CheckCategory) ->
         error_code="DOCTOR_GIT_BINARY_MISSING",
         errors=[message],
         warnings=[],
-        fixes=[],
     )
 
 
@@ -75,7 +74,6 @@ def _not_repo_result(check_id: str, name: str, category: CheckCategory, cwd: Pat
         error_code="DOCTOR_GIT_NOT_REPO",
         errors=[message],
         warnings=[],
-        fixes=[],
     )
 
 
@@ -98,5 +96,4 @@ def _ok_result(
         error_code=None,
         errors=[],
         warnings=[],
-        fixes=[],
     )

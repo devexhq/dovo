@@ -70,7 +70,6 @@ def _key_missing_result(
         error_code="DOCTOR_AGENT_KEY_MISSING",
         errors=[message],
         warnings=[],
-        fixes=[] if spec.auth_fix is None else [spec.auth_fix],
     )
 
 
@@ -92,7 +91,6 @@ def _no_model_result(
         error_code="DOCTOR_AGENT_NO_MODEL",
         errors=[],
         warnings=[message],
-        fixes=[],
     )
 
 
@@ -110,5 +108,4 @@ def _ok_result(
         error_code=None,
         errors=[],
         warnings=[],
-        fixes=[],
     )

@@ -79,5 +79,12 @@ class WorktreeListCliIntegrationTests:
         assert result.exit_code == 0
         assert json.loads(result.stdout) == {
             "event_type": "WorktreeListResult",
-            "payload": {"status": "ok", "worktrees": [], "error_code": None, "errors": [], "warnings": [], "fixes": []},
+            "payload": {
+                "status": "ok",
+                "worktrees": [],
+                "error_code": None,
+                "errors": [],
+                "warnings": [],
+                "remediations": [],
+            },
         }

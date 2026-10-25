@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+from dovo.common.models import Remediation
 from dovo.core.git.exceptions import MalformedDiffHeader
 from dovo.core.git.models import PatchApplyResult, PatchApplyStatus
 
@@ -248,7 +249,7 @@ def _empty_or_large_patch_result(
         return PatchApplyResult(
             status=PatchApplyStatus.EMPTY_DIFF,
             errors=["Patch is empty or whitespace-only."],
-            fixes=["Ensure the agent returned a non-empty unified diff"],
+            remediations=[Remediation(message="Ensure the agent returned a non-empty unified diff")],
         )
     if max_patch_kb is None:
         return None
@@ -274,13 +275,15 @@ def _patch_parse_and_limits_result(
         return [], PatchApplyResult(
             status=PatchApplyStatus.INVALID_DIFF,
             errors=[f"Patch is not a valid unified diff: {parse_error}"],
-            fixes=["Return a standard unified diff (diff --git / --- +++ / @@ hunks)"],
+            remediations=[
+                Remediation(message="Return a standard unified diff ('diff --git' / '--- +++' / '@@' hunks)")
+            ],
         )
     if max_files is not None and len(touched) > max_files:
         return touched, PatchApplyResult(
             status=PatchApplyStatus.TOO_MANY_FILES,
             errors=[f"Patch touches {len(touched)} files; max_files is {max_files}."],
-            fixes=["Set max_files on the agent step."],
+            remediations=[Remediation(message="Set 'max_files' on the agent step.")],
         )
     if reject_binary_changes and binary_paths:
         joined = ", ".join(binary_paths) if binary_paths else "(binary change)"
@@ -288,7 +291,11 @@ def _patch_parse_and_limits_result(
             status=PatchApplyStatus.BINARY_REJECTED,
             touched_files=list(touched),
             errors=[f"Patch includes binary file changes which are rejected: {joined}."],
-            fixes=["Avoid binary edits in the agent patch, or set reject_binary_changes=false when allowed"],
+            remediations=[
+                Remediation(
+                    message="Avoid binary edits in the agent patch, or set 'reject_binary_changes=false' when allowed"
+                )
+            ],
         )
     return touched, None
 
@@ -307,7 +314,7 @@ def _worktree_path_safety_result(
             status=PatchApplyStatus.WORKTREE_MISSING,
             touched_files=list(touched),
             errors=[f"Worktree path does not exist or is not a directory: '{worktree_path}'."],
-            fixes=["Create the worktree before applying a patch"],
+            remediations=[Remediation(message="Create the worktree before applying a patch")],
         )
     for rel in touched:
         if _is_unsafe_path(rel, worktree_path):
@@ -315,7 +322,9 @@ def _worktree_path_safety_result(
                 status=PatchApplyStatus.UNSAFE_PATH,
                 touched_files=list(touched),
                 errors=[f"Patch path is absolute or escapes the worktree: '{rel}'."],
-                fixes=["Use worktree-relative paths only (no absolute paths or '..' segments)"],
+                remediations=[
+                    Remediation(message="Use worktree-relative paths only (no absolute paths or '..' segments)")
+                ],
             )
     return None
 

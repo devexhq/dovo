@@ -53,7 +53,7 @@ class SessionShowCliIntegrationTests:
 
         assert result.exit_code == 1
         assert "not found" in result.stdout
-        assert "Run `dovo session list`" in result.stdout
+        assert "- Run 'dovo session list'" in result.stdout
 
     def test_session_show_cli_format_json_emits_result_event(self, cli_runner: CliRunner, cli_workspace: Path) -> None:
         initialized_workspace_db(cli_workspace).sessions.create(

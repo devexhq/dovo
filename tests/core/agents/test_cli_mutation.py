@@ -11,6 +11,7 @@ from typing import Literal
 
 import pytest
 
+from dovo.common.models import Remediation
 from dovo.core.agents import (
     AgentInvocationContext,
     AgentProgress,
@@ -453,7 +454,7 @@ class ValidateRequestPatchTests:
         result = validate_request_patch(request, diff)
 
         assert result.status == PatchApplyStatus.TOO_MANY_FILES
-        assert result.fixes == ["Set max_files on the agent step."]
+        assert result.remediations == [Remediation(message="Set 'max_files' on the agent step.")]
 
 
 class SharedMutationAdapterTests:
@@ -488,7 +489,7 @@ class SharedMutationAdapterTests:
         assert resp.raw_text == "done"
         assert resp.mutation_baseline_ref is not None
         assert resp.errors == ["Agent timed out after 10s (provider=unit-test)."]
-        assert resp.fixes == ["Raise timeout_seconds on the agent step"]
+        assert resp.remediations == [Remediation(message="Raise 'timeout_seconds' on the agent step")]
 
     def test_provider_error(self, git_repo: Path) -> None:
         adapter = UnitTestAdapter(run_fn=_fake_run(status="error", error_detail="boom"))

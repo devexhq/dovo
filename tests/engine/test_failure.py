@@ -45,7 +45,6 @@ class FailurePolicyHelperTests:
             error_message="boom",
             errors=[],
             warnings=[],
-            fixes=[],
         )
 
         updated = mark_continued_after_prompt(original)

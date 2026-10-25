@@ -8,6 +8,7 @@ from typing import Any
 import pytest
 
 from dovo.cli.ui.formatters.config.config_unset import ConfigUnsetFormatter
+from dovo.common.models import Remediation
 from dovo.core.config.mutate import ConfigUnsetResult, ConfigUnsetStatus
 from tests.harness.formatter import (
     FormatterCase,
@@ -36,9 +37,12 @@ SCHEMA_INVALID = FormatterCase.identity(
         existed=True,
         previous_value={"name": "demo-workspace", "initialized_at": None},
         errors=["Config schema validation failed (CONFIG_SCHEMA_INVALID):\n- (root): 'project' is a required property"],
-        fixes=[
-            "Run `dovo config validate` for details",
-            "Or `dovo init --repair` to insert missing keys without overwriting values",
+        remediations=[
+            Remediation(message="Run 'dovo config validate' for details", command="dovo config validate"),
+            Remediation(
+                message="Run 'dovo init --repair' to insert missing keys without overwriting values",
+                command="dovo init --repair",
+            ),
         ],
     ),
     render_expectations=["'project' is a required property"],
@@ -61,7 +65,7 @@ CONFIG_UNSET_PAYLOAD_CASES = [
             "warnings": [],
             "errors": [],
             "error_code": None,
-            "fixes": [],
+            "remediations": [],
         },
         id="ok_existed",
     ),
@@ -78,9 +82,12 @@ CONFIG_UNSET_PAYLOAD_CASES = [
                 "Config schema validation failed (CONFIG_SCHEMA_INVALID):\n- (root): 'project' is a required property"
             ],
             "error_code": None,
-            "fixes": [
-                "Run `dovo config validate` for details",
-                "Or `dovo init --repair` to insert missing keys without overwriting values",
+            "remediations": [
+                {"message": "Run 'dovo config validate' for details", "command": "dovo config validate"},
+                {
+                    "message": "Run 'dovo init --repair' to insert missing keys without overwriting values",
+                    "command": "dovo init --repair",
+                },
             ],
         },
         id="schema_invalid",

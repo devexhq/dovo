@@ -7,6 +7,7 @@ from typing import Any
 import pytest
 
 from dovo.cli.ui.formatters.worktree.worktree_apply import WorktreeApplyFormatter
+from dovo.common.models import Remediation
 from dovo.core.worktree.models import (
     WorktreeApplyResult,
     WorktreeApplyStatus,
@@ -47,9 +48,9 @@ FAILED_CONFLICT = FormatterCase.identity(
         strategy=WorktreeApplyStrategy.SQUASH,
         conflicting_files=["src/conflict.py"],
         errors=["Merge conflict in src/conflict.py"],
-        fixes=["Resolve manually"],
+        remediations=[Remediation(message="Resolve manually")],
     ),
-    render_expectations=["Merge conflict in src/conflict.py", "Resolve manually"],
+    render_expectations=["Merge conflict in src/conflict.py", "Fix:", "- Resolve manually"],
 )
 
 WORKTREE_APPLY_CASES = [
@@ -72,7 +73,7 @@ WORKTREE_APPLY_PAYLOAD_CASES = [
             "warnings": [],
             "errors": [],
             "error_code": None,
-            "fixes": [],
+            "remediations": [],
         },
         id="applied_squash",
     ),
@@ -89,7 +90,7 @@ WORKTREE_APPLY_PAYLOAD_CASES = [
             "warnings": [],
             "errors": ["Merge conflict in src/conflict.py"],
             "error_code": None,
-            "fixes": ["Resolve manually"],
+            "remediations": [{"message": "Resolve manually", "command": None}],
         },
         id="failed_conflict",
     ),

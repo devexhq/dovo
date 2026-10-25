@@ -8,6 +8,7 @@ from pydantic import ValidationError
 
 from dovo.common.filesystem.filesystem import Filesystem
 from dovo.common.lock import LockTimeoutError, WorkspaceLock, resolve_lock_file_path
+from dovo.common.models import Remediation
 from dovo.core.project.models import (
     PROJECT_ID_REGEX,
     ProjectIdentity,
@@ -201,7 +202,11 @@ def provision_project_identity(
                 status=ProjectIdentityProvisionStatus.INVALID_ID,
                 path=path,
                 errors=[format_error],
-                fixes=[f"Pass a valid --id matching {PROJECT_ID_REGEX}, or omit --id to generate one."],
+                remediations=[
+                    Remediation(
+                        message=f"Pass a valid '--id' matching '{PROJECT_ID_REGEX}', or omit '--id' to generate one."
+                    )
+                ],
             )
 
     if not path.exists():

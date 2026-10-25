@@ -10,6 +10,7 @@ import pytest
 from sqlmodel import select
 
 from dovo.common.filesystem.models import WorkspacePaths
+from dovo.common.models import Remediation
 from dovo.core.db import SessionRecord, SessionsRepository, SessionStatus
 from dovo.core.sessions import (
     DiffStatus,
@@ -121,7 +122,9 @@ class SessionDiffTests:
 
         assert result.status == DiffStatus.SESSION_NOT_FOUND
         assert result.errors == ["Session 'orphan' not found."]
-        assert result.fixes == ["Run `dovo session list` to list valid session IDs"]
+        assert result.remediations == [
+            Remediation(message="Run 'dovo session list' to list valid session IDs", command="dovo session list")
+        ]
         assert result.artifact_path is None
 
 
@@ -162,7 +165,9 @@ class SessionCollectionLatestDiffTests:
         assert result.status == DiffStatus.SESSION_NOT_FOUND
         assert result.session_id is None
         assert result.errors == ["No sessions found."]
-        assert result.fixes == ["Run `dovo run <blueprint>` to create a session"]
+        assert result.remediations == [
+            Remediation(message="Run 'dovo run <blueprint>' to create a session", command="dovo run <blueprint>")
+        ]
 
 
 class SessionCollectionLatestTests:
@@ -199,7 +204,9 @@ class SessionCollectionLatestTests:
         assert result.status == expected_status
         assert result.session_id is None
         assert result.errors == ["No sessions found."]
-        assert result.fixes == ["Run `dovo run <blueprint>` to create a session"]
+        assert result.remediations == [
+            Remediation(message="Run 'dovo run <blueprint>' to create a session", command="dovo run <blueprint>")
+        ]
 
 
 class SessionLogsTests:
@@ -578,3 +585,46 @@ class SessionHistoryRedactionTests:
         result = session.logs(step="build")
 
         assert result.lines == ["[REDACTED:SVC_TOKEN]"]
+
+
+def _details_of_missing_row(workspace: Path) -> HistoryShowResult:
+    """Return details() for a session id that has no session record."""
+    return Session(initialized_workspace_paths(workspace), "ghost").details()
+
+
+def _logs_of_missing_row(workspace: Path) -> LogsShowResult:
+    """Return logs() for a session id that has no session record."""
+    return Session(initialized_workspace_paths(workspace), "ghost").logs()
+
+
+def _logs_of_missing_log_dir(workspace: Path) -> LogsShowResult:
+    """Return logs() for a session record whose log directory was never created."""
+    session = Session(initialized_workspace_paths(workspace), "no-logs")
+    _create(session.db, "no-logs")
+    return session.logs()
+
+
+class SessionNotFoundRemediationTests:
+    """Domain tests pinning the session-list remediation on not-found session results."""
+
+    @pytest.mark.parametrize(
+        ("call", "expected_status"),
+        [
+            pytest.param(_details_of_missing_row, HistoryShowStatus.NOT_FOUND, id="details-missing-row"),
+            pytest.param(_logs_of_missing_row, LogsShowStatus.SESSION_NOT_FOUND, id="logs-missing-row"),
+            pytest.param(_logs_of_missing_log_dir, LogsShowStatus.SESSION_NOT_FOUND, id="logs-missing-dir"),
+        ],
+    )
+    def test_not_found_results_carry_session_list_remediation(
+        self,
+        isolated_workspace: Path,
+        call: Callable[[Path], HistoryShowResult | LogsShowResult],
+        expected_status: HistoryShowStatus | LogsShowStatus,
+    ) -> None:
+        """Return the not-found status with remediations == [Remediation(message="Run 'dovo session list' to view past sessions", command="dovo session list")]."""
+        result = call(isolated_workspace)
+
+        assert result.status == expected_status
+        assert result.remediations == [
+            Remediation(message="Run 'dovo session list' to view past sessions", command="dovo session list")
+        ]

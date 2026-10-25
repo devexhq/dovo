@@ -7,7 +7,8 @@ from typing import Any
 
 from pydantic import BaseModel
 
-from dovo.core.diagnostics import CheckCategory, CheckStatus, Remediation
+from dovo.common.models import Remediation
+from dovo.core.diagnostics import CheckCategory, CheckStatus
 
 
 class DoctorCheckView(BaseModel):

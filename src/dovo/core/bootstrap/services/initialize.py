@@ -6,6 +6,7 @@ from pathlib import Path
 
 from dovo.common.filesystem import Filesystem
 from dovo.common.filesystem.services.global_root import resolve_global_paths
+from dovo.common.models import Remediation
 from dovo.common.utils import display_path
 from dovo.core.bootstrap.models import (
     DovoTreeSnapshot,
@@ -19,6 +20,8 @@ from dovo.core.config.generator import generate_default_config
 from dovo.core.db import init_database
 from dovo.core.project.services.identity import provision_project_identity
 from dovo.core.project.services.storage import build_workspace_paths
+
+_BOOTSTRAP_REMEDIATION = Remediation(message="Resolve the path conflict above, then rerun 'dovo init'")
 
 
 def initialize_workspace(
@@ -57,6 +60,7 @@ def initialize_workspace(
         return WorkspaceInitResult(
             bootstrap_result=result,
             errors=list(result.errors),
+            remediations=[_BOOTSTRAP_REMEDIATION],
             failure_mode=InitFailureMode.BOOTSTRAP,
         )
 
@@ -71,6 +75,7 @@ def initialize_workspace(
             bootstrap_result=result,
             identity_result=identity_result,
             errors=list(identity_result.errors),
+            remediations=list(identity_result.remediations) or [_BOOTSTRAP_REMEDIATION],
         )
 
     config_result = generate_default_config(
@@ -152,6 +157,9 @@ def _refuse_global_home(fs: Filesystem) -> WorkspaceInitResult | None:
             f"Cannot initialize a workspace at '{fs.root_dir}': its .dovo directory is the global Dovo home "
             f"'{global_root}'."
         ],
-        fixes=["Run 'dovo init' inside a project directory, or set DOVO_HOME to a different directory."],
+        remediations=[
+            Remediation(message="Run 'dovo init' inside a project directory"),
+            Remediation(message="Set 'DOVO_HOME' to a different directory."),
+        ],
         failure_mode=InitFailureMode.PREFLIGHT,
     )

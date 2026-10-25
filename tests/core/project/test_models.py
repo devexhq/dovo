@@ -131,5 +131,5 @@ class ProjectIdentityModelsTests:
     def test_persistence_results_inherit_empty_base_result_envelope(
         self, result: ProjectIdentityLoadResult | ProjectIdentitySaveResult
     ) -> None:
-        assert (result.errors, result.warnings, result.fixes, result.error_code) == ([], [], [], None)
+        assert (result.errors, result.warnings, result.remediations, result.error_code) == ([], [], [], None)
         assert result.ok

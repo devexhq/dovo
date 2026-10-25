@@ -38,6 +38,15 @@ class DefinitionResolutionStatus(StrEnum):
     DISCOVERY_FAILED = "discovery_failed"
 
 
+class Remediation(BaseModel):
+    """One recovery step for a failed or warning result: what to do, and the command that does it when there is one."""
+
+    model_config = {"extra": "forbid", "strict": True}
+
+    message: str = Field(min_length=1)
+    command: str | None = Field(default=None, min_length=1)
+
+
 class BaseResult(BaseModel):
     """Base DTO for operation results."""
 
@@ -45,12 +54,12 @@ class BaseResult(BaseModel):
 
     errors: list[str] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
-    fixes: list[str] = Field(default_factory=list)
+    remediations: list[Remediation] = Field(default_factory=list)
     error_code: str | None = None
 
     @model_validator(mode="after")
     def validate_error_code_presence(self) -> Self:
-        """Require error_code when errors or remediations are present; enforcement is short-circuited pending #641 (see plan Decisions)."""
+        """Require error_code when errors or remediations are present; enforcement is not enabled yet."""
         return self
 
 

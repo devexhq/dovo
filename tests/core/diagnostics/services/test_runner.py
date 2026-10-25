@@ -8,6 +8,7 @@ import pytest
 
 from dovo.common.filesystem import WorkspacePaths
 from dovo.common.filesystem.services import resolve_global_paths
+from dovo.common.models import Remediation
 from dovo.core.config.models import (
     DoctorConfig,
     DovoConfig,
@@ -17,7 +18,6 @@ from dovo.core.diagnostics.models import (
     CheckCategory,
     CheckStatus,
     DiagnosticsContext,
-    RemediationType,
 )
 from dovo.core.diagnostics.services.registry import CheckRegistry
 from dovo.core.diagnostics.services.runner import (
@@ -219,9 +219,15 @@ class DiagnosticRunnerContainmentTests:
             "exception": "Simulated crash in worktree inspection",
             "type": "RuntimeError",
         }
-        assert len(result.remediations) == 1
-        assert result.remediations[0].code == "DOCTOR_CHECK_CRASH"
-        assert result.remediations[0].action_type == RemediationType.MANUAL
+        assert result.remediations == [
+            Remediation(
+                message=(
+                    "No deterministic remediation is registered for check 'crashing.check' "
+                    "(error_code='DOCTOR_CHECK_CRASH'). Review the check message and details to diagnose and resolve "
+                    "the issue."
+                )
+            )
+        ]
 
     def test_crashing_check_records_error_and_hints_message_and_errors(
         self, tmp_path: Path, workspace_paths_factory: WorkspacePathsFactory, frozen_diagnostic_clock: Path

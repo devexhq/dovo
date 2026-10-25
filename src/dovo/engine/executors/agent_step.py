@@ -18,7 +18,7 @@ from dovo.core.agents import (
     resolve_tool_policy,
     run_direct_attempt,
 )
-from dovo.core.agents.responses import diagnostics_with_fixes
+from dovo.core.agents.responses import diagnostics_with_remediations
 from dovo.core.catalog.definitions import StepDefinition
 from dovo.core.sessions import SessionLogEvent, SessionLogEventType
 from dovo.engine.executors.failure_log import DiagnosticContext, logged_hint
@@ -86,7 +86,9 @@ def execute_agent_step(
     )
     if not scratch.ok:
         return _to_outcome(
-            _provider_error(*diagnostics_with_fixes(scratch.errors, scratch.fixes)), on_output, context=context
+            _provider_error(*diagnostics_with_remediations(scratch.errors, scratch.remediations)),
+            on_output,
+            context=context,
         )
 
     attempt = _run_with_heartbeat(

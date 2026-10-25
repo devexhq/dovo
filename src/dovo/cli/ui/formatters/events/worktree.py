@@ -6,6 +6,7 @@ from rich.text import Text
 
 from dovo.cli.ui.events import WorktreeLifecycleEvent
 from dovo.cli.ui.formatters.base import ComponentFormatter
+from dovo.common.formatters import format_remediations
 
 
 class WorktreeLifecycleFormatter(ComponentFormatter[WorktreeLifecycleEvent]):
@@ -27,8 +28,8 @@ class WorktreeLifecycleFormatter(ComponentFormatter[WorktreeLifecycleEvent]):
 
 
 def _render_kept(data: WorktreeLifecycleEvent) -> Text:
-    """Render `Worktree: Kept at <path> (branch <branch>)` and the inspect/remove `Fix:` line for a kept run worktree."""
-    return Text(
-        f"Worktree: Kept at {data.path} (branch {data.branch})\n"
-        f"Fix: inspect it with `git -C {data.path} status`, remove it with `dovo worktree delete {data.worktree_id}`."
-    )
+    """Render `Worktree: Kept at <path> (branch <branch>)`, then the event's remediations as the shared `Fix:` block."""
+    text = f"Worktree: Kept at {data.path} (branch {data.branch})"
+    if data.remediations:
+        text += "\n" + format_remediations(data.remediations)
+    return Text(text)

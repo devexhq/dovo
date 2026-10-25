@@ -9,6 +9,7 @@ from pathlib import Path
 import pytest
 
 from dovo.common.mcp_servers import McpServerDefinition
+from dovo.common.models import Remediation
 from dovo.common.tool_policy import ToolCapability, ToolPolicy, ToolRule
 from dovo.core.agents import (
     AgentAttempt,
@@ -235,16 +236,20 @@ class RunDirectAttemptSettleTests:
         assert attempt.summary == expected_summary
         assert _porcelain(git_repo) == before
 
-    def test_response_fixes_render_as_trailing_fix_diagnostic(
+    def test_response_remediations_render_as_trailing_fix_diagnostic(
         self, git_repo: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        response = AgentResponse(status=AgentResponseStatus.TIMEOUT, errors=["e"], fixes=["f1", "f2"])
+        response = AgentResponse(
+            status=AgentResponseStatus.TIMEOUT,
+            errors=["e"],
+            remediations=[Remediation(message="Do one"), Remediation(message="Run 'two'", command="two")],
+        )
         _use_provider(monkeypatch, FakeAgentProvider(response))
 
         attempt = _attempt(git_repo)
 
         assert attempt.status == AgentResponseStatus.TIMEOUT
-        assert attempt.diagnostics == ["e", "Fix:\n- f1\n- f2"]
+        assert attempt.diagnostics == ["e", "Fix:\n- Do one\n- Run 'two'"]
 
 
 class _EditingAdapter(CliDirectMutationAdapter):

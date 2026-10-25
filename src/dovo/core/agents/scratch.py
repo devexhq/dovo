@@ -6,10 +6,11 @@ import re
 import uuid
 from pathlib import Path
 
+from dovo.common.models import Remediation
 from dovo.core.agents.models import AgentInvocationContext, AgentScratchResult
 
 _INVOCATION_ID_PATTERN = re.compile(r"^[0-9a-f]{32}$")
-_FIX = "restore access to the session temp directory or correct its storage path."
+_REMEDIATION = Remediation(message="Restore access to the session temp directory or correct its storage path.")
 
 
 def new_invocation_id() -> str:
@@ -56,7 +57,7 @@ def _unavailable(invocation_id: str, step_id: str, detail: str) -> AgentScratchR
     return AgentScratchResult(
         invocation_id=invocation_id,
         errors=[scratch_unavailable_message(step_id, detail)],
-        fixes=[_FIX],
+        remediations=[_REMEDIATION],
         error_code="AGENT_SCRATCH_UNAVAILABLE",
     )
 

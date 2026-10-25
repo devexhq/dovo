@@ -8,6 +8,7 @@ import pytest
 from pydantic import ValidationError
 
 from dovo.common.filesystem import Filesystem
+from dovo.common.models import Remediation
 from dovo.common.schema_validation import CONFIG_VALIDATOR
 from dovo.core.agents.registry import PROVIDERS
 from dovo.core.config.generator import build_default_config
@@ -36,7 +37,7 @@ class ConfigSemanticValidationTests:
         assert result.warnings == [
             "default_agent 'copilot' requires agents.copilot.model but it is missing (CONFIG_WARN_AGENT_MODEL_MISSING)."
         ]
-        assert result.fixes == ["Set agents.copilot.model"]
+        assert result.remediations == [Remediation(message="Set 'agents.copilot.model'")]
 
     def test_validate_does_not_warn_missing_model_for_non_default_provider(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -61,7 +62,7 @@ class ConfigSemanticValidationTests:
 
         assert result.status == ConfigValidationStatus.VALID
         assert result.warnings == []
-        assert result.fixes == []
+        assert result.remediations == []
 
     @pytest.mark.parametrize(
         "provider", [pytest.param("copilot", id="default-agent"), pytest.param("claude", id="non-default-agent")]
@@ -85,7 +86,9 @@ class ConfigSemanticValidationTests:
         assert result.warnings == [
             f"agents.{provider}.endpoint is not an absolute http(s) URL: 'ftp://x' (CONFIG_WARN_AGENT_ENDPOINT)."
         ]
-        assert result.fixes == [f"Set agents.{provider}.endpoint to an absolute http:// or https:// URL, or null"]
+        assert result.remediations == [
+            Remediation(message=f"Set 'agents.{provider}.endpoint' to an absolute http:// or https:// URL, or null")
+        ]
 
     def test_validate_config_warns_when_worktree_limit_exceeds_threshold(self, tmp_path: Path) -> None:
         payload = build_default_config("demo")
@@ -101,9 +104,9 @@ class ConfigSemanticValidationTests:
         assert result.config == DovoConfig.model_validate(payload)
         assert result.errors == []
         assert result.warnings == ["worktree.max_active_worktrees (11) exceeds 10 (CONFIG_WARN_WORKTREE_LIMIT)."]
-        assert result.fixes == ["Lower worktree.max_active_worktrees to 10 or fewer"]
+        assert result.remediations == [Remediation(message="Lower 'worktree.max_active_worktrees' to 10 or fewer")]
 
-    def test_validate_schema_violation_carries_load_raw_errors_and_fixes(self, tmp_path: Path) -> None:
+    def test_validate_schema_violation_carries_load_raw_errors_and_remediations(self, tmp_path: Path) -> None:
         payload = {"version": 1}
         config_path = tmp_path / "config.json"
         Filesystem.atomic_write_json(config_path, payload)
@@ -118,9 +121,12 @@ class ConfigSemanticValidationTests:
             "Config schema validation failed (CONFIG_SCHEMA_INVALID):\n- (root): 'project' is a required property"
         ]
         assert result.warnings == []
-        assert result.fixes == [
-            "Run `dovo config validate` for details",
-            "Or `dovo init --repair` to insert missing keys without overwriting values",
+        assert result.remediations == [
+            Remediation(message="Run 'dovo config validate' for details", command="dovo config validate"),
+            Remediation(
+                message="Run 'dovo init --repair' to insert missing keys without overwriting values",
+                command="dovo init --repair",
+            ),
         ]
 
 
@@ -146,7 +152,9 @@ class ConfigProviderRegistryValidationTests:
         assert result.errors == [
             "default_agent: Unsupported agent provider 'copilot' (AGENT_PROVIDER_UNSUPPORTED). Supported: claude, fake."
         ]
-        assert result.fixes == ["Set default_agent to one of the supported providers named in the error"]
+        assert result.remediations == [
+            Remediation(message="Set 'default_agent' to one of the supported providers named in the error")
+        ]
         assert result.warnings == []
 
     @pytest.mark.parametrize("token", list(PROVIDERS))

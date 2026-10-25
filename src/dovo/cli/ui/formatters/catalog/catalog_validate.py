@@ -10,6 +10,7 @@ from rich.text import Text
 
 from dovo.cli.ui.formatters.base import ComponentFormatter
 from dovo.cli.ui.formatters.catalog.catalog_views import CatalogValidateView
+from dovo.common.models import Remediation
 from dovo.common.utils import enum_value
 from dovo.core.catalog.models import CatalogValidateResult
 
@@ -39,8 +40,10 @@ def _build_status_banner(view: CatalogValidateView) -> Text:
     return Text.from_markup("\n".join(lines))
 
 
-def _build_issues_table(title: str, messages: list[str], fixes: list[str], *, show_remediation: bool) -> Table:
-    """Build a Code/Details[/Remediation] Rich table from validate messages."""
+def _build_issues_table(
+    title: str, messages: list[str], remediations: list[Remediation], *, show_remediation: bool
+) -> Table:
+    """Build a Code/Details[/Remediation] Rich table, pairing remediations[i].message with messages[i]."""
     table = Table(title=title, title_justify="left", show_header=True)
     table.add_column("Code", no_wrap=True)
     table.add_column("Details")
@@ -50,8 +53,8 @@ def _build_issues_table(title: str, messages: list[str], fixes: list[str], *, sh
     for index, message in enumerate(messages):
         code, detail = _split_issue_code(message)
         if show_remediation:
-            fix = fixes[index] if index < len(fixes) else ""
-            table.add_row(code, detail, fix)
+            remediation = remediations[index].message if index < len(remediations) else ""
+            table.add_row(code, detail, remediation)
         else:
             table.add_row(code, detail)
 
@@ -79,7 +82,7 @@ class CatalogValidateFormatter(ComponentFormatter[CatalogValidateResult, Catalog
             item_type=data.item_type,
             errors=list(data.errors),
             warnings=list(data.warnings),
-            fixes=list(data.fixes),
+            remediations=list(data.remediations),
         )
 
     def to_rich(self, data: CatalogValidateResult) -> RenderableType:
@@ -87,7 +90,7 @@ class CatalogValidateFormatter(ComponentFormatter[CatalogValidateResult, Catalog
         view = self.transform(data)
         renderables: list[RenderableType] = [_build_status_banner(view)]
         if view.errors:
-            renderables.append(_build_issues_table("Errors", view.errors, view.fixes, show_remediation=True))
+            renderables.append(_build_issues_table("Errors", view.errors, view.remediations, show_remediation=True))
         if view.warnings:
             renderables.append(_build_issues_table("Warnings", view.warnings, [], show_remediation=False))
         return Group(*renderables)

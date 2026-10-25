@@ -6,11 +6,12 @@ from collections.abc import Sequence
 
 import pytest
 
+from dovo.common.models import Remediation
 from dovo.common.tool_policy import ToolCapability
 from dovo.core.agents.models import AgentDenial, AgentResponse, AgentResponseStatus
 from dovo.core.agents.responses import (
     blocked_response,
-    diagnostics_with_fixes,
+    diagnostics_with_remediations,
     no_op_response,
     provider_error_response,
     timeout_response,
@@ -34,7 +35,7 @@ class TimeoutResponseTests:
             raw_text="partial",
             mutation_baseline_ref="abc",
             errors=["Agent timed out after 10s (provider=copilot)."],
-            fixes=["Raise timeout_seconds on the agent step"],
+            remediations=[Remediation(message="Raise 'timeout_seconds' on the agent step")],
         )
 
     def test_timeout_response_without_metadata_leaves_it_none(self) -> None:
@@ -46,7 +47,7 @@ class TimeoutResponseTests:
 
 
 class BlockedResponseContractTests:
-    def test_blocked_response_carries_denials_then_fix(self) -> None:
+    def test_blocked_response_carries_denials_then_remediations(self) -> None:
         response = blocked_response(
             provider="claude",
             duration_seconds=7.0,
@@ -72,31 +73,37 @@ class BlockedResponseContractTests:
                 "Agent run was blocked by tool permissions (AGENT_PERMISSION_BLOCKED): bash: no interactive user response",
                 "edit: denied due to the following rules",
             ],
-            fixes=[
-                "Grant it in the step's tools policy, e.g. tools: {allow: [{capability: shell}]}, "
-                "or set it once under agents.claude.tools in .dovo/config.json "
-                "(see docs/guides/agent-providers.md#tool-policy-profiles)",
-                "Remove or narrow the deny rule that blocked 'edit': denied due to the following rules",
+            remediations=[
+                Remediation(
+                    message=(
+                        "Grant it in the step's tools policy, e.g. 'tools: {allow: [{capability: shell}]}', "
+                        "or set it once under 'agents.claude.tools' in '.dovo/config.json' "
+                        "(see 'docs/guides/agent-providers.md#tool-policy-profiles')"
+                    )
+                ),
+                Remediation(
+                    message="Remove or narrow the deny rule that blocked 'edit': denied due to the following rules"
+                ),
             ],
         )
 
     @pytest.mark.parametrize(
-        ("denials", "expected_fix_count"),
+        ("denials", "expected_remediation_count"),
         [
             pytest.param(
                 [AgentDenial(tool="bash", message="m", capability=ToolCapability.SHELL)] * 2,
                 1,
                 id="same-cause-listed-once",
             ),
-            pytest.param([AgentDenial(tool="mystery", message="m")], 0, id="unknown-capability-has-no-fix"),
+            pytest.param([AgentDenial(tool="mystery", message="m")], 0, id="unknown-capability-has-no-remediation"),
         ],
     )
-    def test_blocked_response_lists_one_fix_per_distinct_known_cause(
-        self, denials: list[AgentDenial], expected_fix_count: int
+    def test_blocked_response_lists_one_remediation_per_distinct_known_cause(
+        self, denials: list[AgentDenial], expected_remediation_count: int
     ) -> None:
         response = blocked_response(provider="copilot", duration_seconds=1.0, denials=denials)
 
-        assert len(response.fixes) == expected_fix_count
+        assert len(response.remediations) == expected_remediation_count
         assert len(response.errors) == len(denials)
 
     def test_blocked_response_requires_at_least_one_denial(self) -> None:
@@ -178,17 +185,24 @@ class UnfixableResponseTests:
             raw_text="r",
             mutation_baseline_ref="abc",
         )
-        assert response.fixes == []
 
 
-class DiagnosticsWithFixesTests:
+class DiagnosticsWithRemediationsTests:
     @pytest.mark.parametrize(
-        ("errors", "fixes", "expected"),
+        ("errors", "remediations", "expected"),
         [
-            pytest.param(["e"], ["f1", "f2"], ["e", "Fix:\n- f1\n- f2"], id="errors-and-fixes"),
-            pytest.param(["e1", "e2"], [], ["e1", "e2"], id="no-fixes"),
-            pytest.param([], ["f"], ["Fix:\n- f"], id="fixes-only"),
+            pytest.param(
+                ["e"],
+                [Remediation(message="Do one"), Remediation(message="Run 'two'", command="two")],
+                ["e", "Fix:\n- Do one\n- Run 'two'"],
+                id="errors-and-remediations",
+            ),
+            pytest.param(["e1", "e2"], [], ["e1", "e2"], id="errors-only"),
+            pytest.param([], [Remediation(message="Do it")], ["Fix:\n- Do it"], id="remediations-only"),
         ],
     )
-    def test_fixes_form_one_trailing_block(self, errors: list[str], fixes: list[str], expected: list[str]) -> None:
-        assert diagnostics_with_fixes(errors, fixes) == expected
+    def test_appends_one_fix_block(
+        self, errors: list[str], remediations: list[Remediation], expected: list[str]
+    ) -> None:
+        """Return errors plus 'Fix:\\n- <m1>\\n- <m2>' only when remediations are present."""
+        assert diagnostics_with_remediations(errors, remediations) == expected

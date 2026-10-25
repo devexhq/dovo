@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
-from dovo.common.models import BaseResult
+from dovo.common.models import BaseResult, Remediation
 from dovo.core.agents.registry import PROVIDERS, unsupported_provider_message
 from dovo.core.config.agent_settings import agent_settings
 from dovo.core.config.loader import ConfigLoadStatus
@@ -76,7 +76,7 @@ def validate_config_result(config_path: Path) -> ConfigValidationResult:
             config=None,
             errors=list(loaded.errors),
             warnings=[],
-            fixes=list(loaded.fixes),
+            remediations=list(loaded.remediations),
         )
 
     if loaded.config is None:
@@ -90,7 +90,6 @@ def validate_config_result(config_path: Path) -> ConfigValidationResult:
                 f"(CONFIG_INTERNAL_INVARIANT)."
             ],
             warnings=[],
-            fixes=[],
         )
 
     provider_error = _unregistered_provider_error(loaded.config)
@@ -102,10 +101,12 @@ def validate_config_result(config_path: Path) -> ConfigValidationResult:
             config=None,
             errors=[provider_error],
             warnings=[],
-            fixes=["Set default_agent to one of the supported providers named in the error"],
+            remediations=[
+                Remediation(message="Set 'default_agent' to one of the supported providers named in the error")
+            ],
         )
 
-    warnings, warning_fixes = _semantic_warnings(loaded.config)
+    warnings, warning_remediations = _semantic_warnings(loaded.config)
 
     return ConfigValidationResult(
         status=ConfigValidationStatus.VALID,
@@ -114,7 +115,7 @@ def validate_config_result(config_path: Path) -> ConfigValidationResult:
         config=loaded.config,
         errors=[],
         warnings=warnings,
-        fixes=warning_fixes,
+        remediations=warning_remediations,
     )
 
 
@@ -132,8 +133,8 @@ def _provider_requires_model(provider: str) -> bool:
     return spec is not None and spec.requires_model
 
 
-def _model_warnings(config: DovoConfig) -> tuple[list[str], list[str]]:
-    """Return the missing-model warning and fix for the default_agent block."""
+def _model_warnings(config: DovoConfig) -> tuple[list[str], list[Remediation]]:
+    """Return the missing-model warning and remediation for the default_agent block."""
     provider = config.default_agent
     if not _provider_requires_model(provider) or agent_settings(config).model is not None:
         return [], []
@@ -143,14 +144,14 @@ def _model_warnings(config: DovoConfig) -> tuple[list[str], list[str]]:
             f"default_agent '{provider}' requires agents.{provider}.model but it is missing "
             f"(CONFIG_WARN_AGENT_MODEL_MISSING)."
         ],
-        [f"Set agents.{provider}.model"],
+        [Remediation(message=f"Set 'agents.{provider}.model'")],
     )
 
 
-def _endpoint_warnings(config: DovoConfig) -> tuple[list[str], list[str]]:
-    """Return one non-absolute-endpoint warning and fix per agents block, in config order."""
+def _endpoint_warnings(config: DovoConfig) -> tuple[list[str], list[Remediation]]:
+    """Return one non-absolute-endpoint warning and remediation per agents block, in config order."""
     warnings: list[str] = []
-    fixes: list[str] = []
+    remediations: list[Remediation] = []
 
     for provider, settings in config.agents.items():
         endpoint = settings.endpoint
@@ -159,33 +160,39 @@ def _endpoint_warnings(config: DovoConfig) -> tuple[list[str], list[str]]:
         warnings.append(
             f"agents.{provider}.endpoint is not an absolute http(s) URL: '{endpoint}' (CONFIG_WARN_AGENT_ENDPOINT)."
         )
-        fixes.append(f"Set agents.{provider}.endpoint to an absolute http:// or https:// URL, or null")
+        remediations.append(
+            Remediation(message=f"Set 'agents.{provider}.endpoint' to an absolute http:// or https:// URL, or null")
+        )
 
-    return warnings, fixes
+    return warnings, remediations
 
 
-def _worktree_warnings(config: DovoConfig) -> tuple[list[str], list[str]]:
-    """Return the worktree-limit warning and fix for a max_active_worktrees above 10."""
+def _worktree_warnings(config: DovoConfig) -> tuple[list[str], list[Remediation]]:
+    """Return the worktree-limit warning and remediation for a max_active_worktrees above 10."""
     max_active = config.worktree.max_active_worktrees
     if max_active <= 10:
         return [], []
 
     return (
         [f"worktree.max_active_worktrees ({max_active}) exceeds 10 (CONFIG_WARN_WORKTREE_LIMIT)."],
-        ["Lower worktree.max_active_worktrees to 10 or fewer"],
+        [Remediation(message="Lower 'worktree.max_active_worktrees' to 10 or fewer")],
     )
 
 
-def _semantic_warnings(config: DovoConfig) -> tuple[list[str], list[str]]:
-    """Return semantic warnings and fixes in FR-7 rule order."""
+def _semantic_warnings(config: DovoConfig) -> tuple[list[str], list[Remediation]]:
+    """Return semantic warnings and remediations in FR-7 rule order."""
     warnings: list[str] = []
-    fixes: list[str] = []
+    remediations: list[Remediation] = []
 
-    for rule_warnings, rule_fixes in (_model_warnings(config), _endpoint_warnings(config), _worktree_warnings(config)):
+    for rule_warnings, rule_remediations in (
+        _model_warnings(config),
+        _endpoint_warnings(config),
+        _worktree_warnings(config),
+    ):
         warnings.extend(rule_warnings)
-        fixes.extend(rule_fixes)
+        remediations.extend(rule_remediations)
 
-    return warnings, fixes
+    return warnings, remediations
 
 
 def _is_absolute_http_url(value: str) -> bool:

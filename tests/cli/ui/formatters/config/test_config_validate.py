@@ -11,6 +11,7 @@ from dovo.cli.ui.formatters.config import (
     ConfigValidateFormatter,
     ConfigValidationView,
 )
+from dovo.common.models import Remediation
 from dovo.core.config.models import DovoConfig, ProjectConfig
 from dovo.core.config.validate import (
     ConfigValidationResult,
@@ -35,7 +36,7 @@ VALID_CASE = FormatterCase(
         config=VALID_CONFIG,
         warnings=[],
         errors=[],
-        fixes=[],
+        remediations=[],
     ),
     view=ConfigValidationView(
         status=ConfigValidationStatus.VALID,
@@ -45,7 +46,7 @@ VALID_CASE = FormatterCase(
         config=VALID_CONFIG,
         errors=[],
         warnings=[],
-        fixes=[],
+        remediations=[],
     ),
     render_expectations=[CONFIG_PATH.as_posix(), "valid"],
 )
@@ -59,7 +60,7 @@ VALID_WITH_WARNINGS_CASE = FormatterCase(
             "default_agent 'copilot' requires agents.copilot.model but it is missing (CONFIG_WARN_AGENT_MODEL_MISSING)."
         ],
         errors=[],
-        fixes=["Set agents.copilot.model in .dovo/config.json"],
+        remediations=[Remediation(message="Set agents.copilot.model in .dovo/config.json")],
     ),
     view=ConfigValidationView(
         status=ConfigValidationStatus.VALID,
@@ -71,7 +72,7 @@ VALID_WITH_WARNINGS_CASE = FormatterCase(
         warnings=[
             "default_agent 'copilot' requires agents.copilot.model but it is missing (CONFIG_WARN_AGENT_MODEL_MISSING)."
         ],
-        fixes=["Set agents.copilot.model in .dovo/config.json"],
+        remediations=[Remediation(message="Set agents.copilot.model in .dovo/config.json")],
     ),
     render_expectations=[
         CONFIG_PATH.as_posix(),
@@ -87,7 +88,7 @@ INVALID_CASE = FormatterCase(
         config_path=CONFIG_PATH,
         errors=["semantic failure (CONFIG_ERROR)."],
         warnings=["warning message (CONFIG_WARN)."],
-        fixes=["Fix the reported configuration error"],
+        remediations=[Remediation(message="Fix the reported configuration error")],
     ),
     view=ConfigValidationView(
         status=ConfigValidationStatus.INVALID,
@@ -97,7 +98,7 @@ INVALID_CASE = FormatterCase(
         config=None,
         errors=["semantic failure (CONFIG_ERROR)."],
         warnings=["warning message (CONFIG_WARN)."],
-        fixes=["Fix the reported configuration error"],
+        remediations=[Remediation(message="Fix the reported configuration error")],
     ),
     render_expectations=[
         "semantic failure (CONFIG_ERROR).",
@@ -159,7 +160,7 @@ VALIDATION_PAYLOAD_CASES = [
             },
             "errors": [],
             "warnings": [],
-            "fixes": [],
+            "remediations": [],
         },
         id="valid_payload",
     ),
@@ -173,7 +174,7 @@ VALIDATION_PAYLOAD_CASES = [
             "config": None,
             "errors": ["semantic failure (CONFIG_ERROR)."],
             "warnings": ["warning message (CONFIG_WARN)."],
-            "fixes": ["Fix the reported configuration error"],
+            "remediations": [{"message": "Fix the reported configuration error", "command": None}],
         },
         id="invalid_payload",
     ),

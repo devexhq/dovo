@@ -6,6 +6,7 @@ from pathlib import Path
 
 from pydantic import BaseModel, Field
 
+from dovo.common.models import Remediation
 from dovo.core.bootstrap.models import BootstrapOutcome, InitFailureMode
 
 
@@ -36,4 +37,4 @@ class WorkspaceInitView(BaseModel):
     failure_mode: InitFailureMode | None = None
     errors: list[str] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
-    fixes: list[str] = Field(default_factory=list)
+    remediations: list[Remediation] = Field(default_factory=list)

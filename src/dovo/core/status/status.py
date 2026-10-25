@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dovo.common.filesystem import WorkspacePaths
+from dovo.common.models import Remediation
 from dovo.core.config import ConfigLoadStatus, agent_settings
 from dovo.core.git import GitRunner
 from dovo.core.status.catalog_probe import probe_catalog
@@ -94,38 +95,44 @@ def _collect_warnings(
     return warnings
 
 
-CONFIG_REMEDIATION_MAP: dict[ConfigLoadStatus, str] = {
-    ConfigLoadStatus.NOT_FOUND: "Run 'dovo init' to initialize Dovo in this repository.",
-    ConfigLoadStatus.MALFORMED_JSON: "Repair JSON syntax in .dovo/config.json or restore from backup.",
-    ConfigLoadStatus.SCHEMA_INVALID: (
-        "Run 'dovo config validate' to inspect schema errors or 'dovo init --repair' to insert missing keys."
-    ),
-    ConfigLoadStatus.ROOT_NOT_OBJECT: "Ensure .dovo/config.json contains a JSON object root.",
-    ConfigLoadStatus.PATH_IS_DIRECTORY: "Remove directory at .dovo/config.json and run 'dovo init'.",
-    ConfigLoadStatus.UNREADABLE: "Check file permissions for .dovo/config.json.",
+_CONFIG_REMEDIATIONS: dict[ConfigLoadStatus, list[Remediation]] = {
+    ConfigLoadStatus.NOT_FOUND: [
+        Remediation(message="Run 'dovo init' to initialize Dovo in this repository.", command="dovo init")
+    ],
+    ConfigLoadStatus.MALFORMED_JSON: [
+        Remediation(message="Repair JSON syntax in '.dovo/config.json' or restore from backup.")
+    ],
+    ConfigLoadStatus.SCHEMA_INVALID: [
+        Remediation(message="Run 'dovo config validate' to inspect schema errors", command="dovo config validate"),
+        Remediation(message="Run 'dovo init --repair' to insert missing keys", command="dovo init --repair"),
+    ],
+    ConfigLoadStatus.ROOT_NOT_OBJECT: [Remediation(message="Ensure '.dovo/config.json' contains a JSON object root.")],
+    ConfigLoadStatus.PATH_IS_DIRECTORY: [
+        Remediation(message="Remove directory at '.dovo/config.json' and run 'dovo init'.")
+    ],
+    ConfigLoadStatus.UNREADABLE: [Remediation(message="Check file permissions for '.dovo/config.json'.")],
 }
 
 
-def _collect_fixes(
+def _collect_remediations(
     *,
     git: GitStatusInfo,
     config: ConfigStatusInfo,
-) -> list[str]:
-    """Aggregate actionable remediation command hints in deterministic order.
+) -> list[Remediation]:
+    """Aggregate the config load status remediations, then the git step, in deterministic order.
 
     Args:
         git: Git repository status information.
         config: Configuration status information.
 
     Returns:
-        List of suggested remediation action strings.
+        List of remediation steps.
     """
-    fixes: list[str] = []
-    if config.status in CONFIG_REMEDIATION_MAP:
-        fixes.append(CONFIG_REMEDIATION_MAP[config.status])
+    remediations: list[Remediation] = []
+    remediations.extend(_CONFIG_REMEDIATIONS.get(config.status, []))
     if not git.is_git_repo:
-        fixes.append("Run 'git init' or navigate to a Git repository.")
-    return fixes
+        remediations.append(Remediation(message="Run 'git init' or navigate to a Git repository.", command="git init"))
+    return remediations
 
 
 class Status:
@@ -137,7 +144,7 @@ class Status:
         self.git = git
 
     def collect(self) -> DovoStatusResult:
-        """Probe git, config, catalog, database and worktrees, then derive warnings, fixes and initialization."""
+        """Probe git, config, catalog, database and worktrees, then derive warnings, remediations and initialization."""
         paths = self.paths
         git_status = probe_git(paths.root_dir, git=self.git)
         config_status = probe_config(paths)
@@ -154,7 +161,7 @@ class Status:
             catalog=catalog_status,
             worktrees=worktree_status,
         )
-        fixes = _collect_fixes(
+        remediations = _collect_remediations(
             git=git_status,
             config=config_status,
         )
@@ -170,5 +177,5 @@ class Status:
             database=database_status,
             worktrees=worktree_status,
             warnings=warnings,
-            fixes=fixes,
+            remediations=remediations,
         )

@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 
 from dovo.common.filesystem import WorkspacePaths
+from dovo.common.models import Remediation
 from dovo.core.db import WorktreesRepository, WorktreeStatus
 from dovo.core.git.runner import GitRunner
 from dovo.core.worktree.models import (
@@ -122,9 +123,12 @@ class WorktreeApplyRollbackTests:
             "Cannot apply worktree dovo_conflict: conflicts detected.\nConflicting files:\n  • target.py"
         ]
         assert result.warnings == []
-        assert result.fixes == [
-            "Inspect worktree differences with `dovo worktree diff dovo_conflict`",
-            "Resolve conflicts in the main workspace or worktree",
+        assert result.remediations == [
+            Remediation(
+                message="Inspect worktree differences with 'dovo worktree diff dovo_conflict'",
+                command="dovo worktree diff dovo_conflict",
+            ),
+            Remediation(message="Resolve conflicts in the main workspace or worktree"),
         ]
 
         assert (worktree_workspace / "target.py").read_text(encoding="utf-8") == initial_tree

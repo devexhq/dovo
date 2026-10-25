@@ -11,6 +11,7 @@ from dovo.cli.ui.formatters.worktree.worktree_views import (
     PrunedItemView,
     WorktreePruneView,
 )
+from dovo.common.models import Remediation
 from dovo.core.worktree.models import (
     PruneAction,
     PrunedItem,
@@ -55,7 +56,7 @@ def _make_prune_view(**overrides: object) -> WorktreePruneView:
         "failed_count": 0,
         "errors": [],
         "warnings": [],
-        "fixes": [],
+        "remediations": [],
     }
     return WorktreePruneView.model_validate({**defaults, **overrides})
 
@@ -163,17 +164,17 @@ DRY_RUN_PRUNE = FormatterCase(
     render_expectations=["feature/dry"],
 )
 
-WITH_WARNINGS_AND_FIXES = FormatterCase(
+WITH_WARNINGS_AND_REMEDIATIONS = FormatterCase(
     data=WorktreePruneResult(
         status=WorktreePruneStatus.OK,
         dry_run=False,
         force=False,
         warnings=["Warning message"],
-        fixes=["Fix suggestion"],
+        remediations=[Remediation(message="Fix suggestion")],
     ),
     view=_make_prune_view(
         warnings=["Warning message"],
-        fixes=["Fix suggestion"],
+        remediations=[Remediation(message="Fix suggestion")],
     ),
     render_expectations=["No stale worktrees found."],
 )
@@ -182,7 +183,7 @@ PRUNE_CASES = [
     pytest.param(EMPTY_PRUNE, id="empty_prune"),
     pytest.param(PRUNED_MULTIPLE_ITEMS, id="pruned_multiple_items"),
     pytest.param(DRY_RUN_PRUNE, id="dry_run_prune"),
-    pytest.param(WITH_WARNINGS_AND_FIXES, id="with_warnings_and_fixes"),
+    pytest.param(WITH_WARNINGS_AND_REMEDIATIONS, id="with_warnings_and_remediations"),
 ]
 
 PRUNE_PAYLOAD_CASES = [
@@ -198,7 +199,7 @@ PRUNE_PAYLOAD_CASES = [
             "failed_count": 0,
             "errors": [],
             "warnings": [],
-            "fixes": [],
+            "remediations": [],
         },
         id="empty_prune",
     ),
@@ -251,7 +252,7 @@ PRUNE_PAYLOAD_CASES = [
             "failed_count": 1,
             "errors": ["Ref lock failure"],
             "warnings": [],
-            "fixes": [],
+            "remediations": [],
         },
         id="pruned_multiple_items",
     ),
