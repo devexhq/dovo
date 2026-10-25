@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import shlex
 import shutil
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -11,6 +12,8 @@ import pytest
 
 from dovo.common.filesystem.models import WorkspacePaths
 from dovo.common.lock import LockTimeoutError
+from dovo.common.models import Remediation
+from dovo.common.utils import display_path
 from dovo.core.agents import AgentInvocationContext, allocate_invocation_paths, new_invocation_id
 from dovo.core.artifacts.models import ArtifactProvenance
 from dovo.core.config import ConfigLoadError
@@ -187,8 +190,9 @@ class WorkspaceSetupTests:
         assert session is None
         assert error == (
             "Git worktree creation failed: Maximum active worktrees reached (1/1).\n"
-            "Fix: Remove a kept worktree with `dovo worktree delete <worktree-id>` (see `dovo worktree list`), "
-            "or Raise worktree.max_active_worktrees in .dovo/config.json"
+            "Fix:\n"
+            "- Remove a kept worktree with 'dovo worktree delete <worktree-id>' (see 'dovo worktree list')\n"
+            "- Raise 'worktree.max_active_worktrees' in '.dovo/config.json'"
         )
 
 
@@ -319,8 +323,18 @@ class WorkspaceCleanupTests:
 
         kept = workspace.cleanup(manager, session, target_dir, SessionStatus.FAILED, [])
 
+        inspect_command = f"git -C {shlex.quote(display_path(session.worktree_path, Path.cwd()))} status"
         assert kept is True
-        assert observer.calls[-1][3:] == ("kept-run", "dovo/kept-run")
+        assert observer.calls[-1][3:] == (
+            "kept-run",
+            "dovo/kept-run",
+            [
+                Remediation(message=f"Inspect it with '{inspect_command}'", command=inspect_command),
+                Remediation(
+                    message="Remove it with 'dovo worktree delete kept-run'", command="dovo worktree delete kept-run"
+                ),
+            ],
+        )
 
     def test_cleanup_of_linked_worktree_preserves_session_contents(
         self, worktree_setup: WorktreeSetupFactory, worktree_paths: WorkspacePaths

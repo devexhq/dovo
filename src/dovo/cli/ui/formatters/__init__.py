@@ -18,7 +18,6 @@ from dovo.cli.ui.formatters.common import (
     DispatcherProtocol,
     build_error_panel,
     render_list_errors,
-    render_list_fixes,
 )
 from dovo.cli.ui.formatters.config import (
     ConfigLoadFormatter,
@@ -116,5 +115,4 @@ __all__ = [
     "build_error_panel",
     "register_all_formatters",
     "render_list_errors",
-    "render_list_fixes",
 ]

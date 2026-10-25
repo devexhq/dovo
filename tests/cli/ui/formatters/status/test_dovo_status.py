@@ -12,6 +12,7 @@ from dovo.cli.ui.formatters.status import (
     StatusHealth,
     StatusView,
 )
+from dovo.common.models import Remediation
 from dovo.core.config.loader import ConfigLoadStatus
 from dovo.core.config.models import AgentSettings, DovoConfig, ProjectConfig
 from dovo.core.status.models import (
@@ -43,7 +44,7 @@ def _make_status_result(
     database: DatabaseStatusInfo | None = None,
     worktrees: WorktreeStatusInfo | None = None,
     warnings: list[str] | None = None,
-    fixes: list[str] | None = None,
+    remediations: list[Remediation] | None = None,
     errors: list[str] | None = None,
 ) -> DovoStatusResult:
     """Construct a valid DovoStatusResult with test defaults."""
@@ -93,7 +94,7 @@ def _make_status_result(
             max_active_worktrees=5,
         ),
         warnings=warnings or [],
-        fixes=fixes or [],
+        remediations=remediations or [],
         errors=errors or [],
     )
 
@@ -140,9 +141,9 @@ UNINITIALIZED_NON_GIT = FormatterCase(
             config=None,
         ),
         warnings=["Dovo workspace is not initialized. Run 'dovo init' to configure."],
-        fixes=[
-            "Run 'dovo init' to initialize Dovo in this repository.",
-            "Run 'git init' or navigate to a Git repository.",
+        remediations=[
+            Remediation(message="Run 'dovo init' to initialize Dovo in this repository.", command="dovo init"),
+            Remediation(message="Run 'git init' or navigate to a Git repository.", command="git init"),
         ],
     ),
     view=_make_status_view(
@@ -157,22 +158,23 @@ UNINITIALIZED_NON_GIT = FormatterCase(
         total_catalog_items=None,
         warnings=["Dovo workspace is not initialized. Run 'dovo init' to configure."],
         remediations=[
-            "Run 'dovo init' to initialize Dovo in this repository.",
-            "Run 'git init' or navigate to a Git repository.",
+            Remediation(message="Run 'dovo init' to initialize Dovo in this repository.", command="dovo init"),
+            Remediation(message="Run 'git init' or navigate to a Git repository.", command="git init"),
         ],
     ),
     render_expectations=[
         "Dovo workspace is not initialized. Run 'dovo init' to configure.",
-        "Run 'dovo init' to initialize Dovo in this repository.",
-        "Run 'git init' or navigate to a Git repository.",
+        "Fix:",
+        "- Run 'dovo init' to initialize Dovo in this repository.",
+        "- Run 'git init' or navigate to a Git repository.",
     ],
 )
 
 
 def _degraded_config_case(
-    status: ConfigLoadStatus, warning: str, fix: str
+    status: ConfigLoadStatus, warning: str, remediations: list[Remediation]
 ) -> FormatterCase[DovoStatusResult, StatusView]:
-    """Build a degraded-config case: config-derived fields blank, branch still shown, warning and fix surfaced."""
+    """Build a degraded-config case: config-derived fields blank, branch still shown, warning and Fix: block surfaced."""
     return FormatterCase(
         data=_make_status_result(
             root_dir=ROOT,
@@ -180,7 +182,7 @@ def _degraded_config_case(
                 status=status, config_path=CONFIG_PATH, is_valid=False, config=None, errors=[warning]
             ),
             warnings=[warning],
-            fixes=[fix],
+            remediations=remediations,
         ),
         view=_make_status_view(
             health=StatusHealth.DEGRADED,
@@ -192,9 +194,9 @@ def _degraded_config_case(
             valid_catalog_items=None,
             total_catalog_items=None,
             warnings=[warning],
-            remediations=[fix],
+            remediations=remediations,
         ),
-        render_expectations=["feature/status-cmd", warning, fix],
+        render_expectations=["feature/status-cmd", warning, "Fix:", *(f"- {r.message}" for r in remediations)],
     )
 
 
@@ -203,7 +205,12 @@ DEGRADED_CONFIG_CASES = [
         _degraded_config_case(
             ConfigLoadStatus.SCHEMA_INVALID,
             "Invalid value: expected string",
-            "Run 'dovo config validate' to inspect schema errors or 'dovo init --repair' to insert missing keys.",
+            [
+                Remediation(
+                    message="Run 'dovo config validate' to inspect schema errors", command="dovo config validate"
+                ),
+                Remediation(message="Run 'dovo init --repair' to insert missing keys", command="dovo init --repair"),
+            ],
         ),
         id="degraded_schema_invalid",
     ),
@@ -211,7 +218,7 @@ DEGRADED_CONFIG_CASES = [
         _degraded_config_case(
             ConfigLoadStatus.MALFORMED_JSON,
             "Malformed config.json",
-            "Repair JSON syntax in .dovo/config.json or restore from backup.",
+            [Remediation(message="Repair JSON syntax in '.dovo/config.json' or restore from backup.")],
         ),
         id="degraded_malformed_json",
     ),
@@ -219,7 +226,7 @@ DEGRADED_CONFIG_CASES = [
         _degraded_config_case(
             ConfigLoadStatus.ROOT_NOT_OBJECT,
             "Malformed config.json: root must be an object",
-            "Ensure .dovo/config.json contains a JSON object root.",
+            [Remediation(message="Ensure '.dovo/config.json' contains a JSON object root.")],
         ),
         id="degraded_root_not_object",
     ),
@@ -227,7 +234,7 @@ DEGRADED_CONFIG_CASES = [
         _degraded_config_case(
             ConfigLoadStatus.PATH_IS_DIRECTORY,
             "Config path is a directory, not a file",
-            "Remove directory at .dovo/config.json and run 'dovo init'.",
+            [Remediation(message="Remove directory at '.dovo/config.json' and run 'dovo init'.")],
         ),
         id="degraded_path_is_directory",
     ),
@@ -235,7 +242,7 @@ DEGRADED_CONFIG_CASES = [
         _degraded_config_case(
             ConfigLoadStatus.UNREADABLE,
             "Unable to read config.json: Permission denied",
-            "Check file permissions for .dovo/config.json.",
+            [Remediation(message="Check file permissions for '.dovo/config.json'.")],
         ),
         id="degraded_unreadable",
     ),
@@ -259,12 +266,12 @@ NOT_A_GIT_REPO = FormatterCase(
     data=_make_status_result(
         root_dir=ROOT,
         git=GitStatusInfo(is_git_repo=False, branch="none", is_dirty=False, uncommitted_files=0),
-        fixes=["Run 'git init' or navigate to a Git repository."],
+        remediations=[Remediation(message="Run 'git init' or navigate to a Git repository.", command="git init")],
     ),
     view=_make_status_view(
         health=StatusHealth.DEGRADED,
         git_branch=None,
-        remediations=["Run 'git init' or navigate to a Git repository."],
+        remediations=[Remediation(message="Run 'git init' or navigate to a Git repository.", command="git init")],
     ),
     render_expectations=[
         "dovo",
@@ -273,7 +280,8 @@ NOT_A_GIT_REPO = FormatterCase(
         "5",
         "2",
         "2",
-        "Run 'git init' or navigate to a Git repository.",
+        "Fix:",
+        "- Run 'git init' or navigate to a Git repository.",
     ],
 )
 
@@ -357,15 +365,15 @@ INVALID_CATALOG_ITEMS = FormatterCase(
     render_expectations=["dovo", "feature/status-cmd", "test-model", "1", "5", "3", "5"],
 )
 
-WITH_WARNINGS_AND_FIXES = FormatterCase(
+WITH_WARNINGS_AND_REMEDIATIONS = FormatterCase(
     data=_make_status_result(
         root_dir=ROOT,
         warnings=["max_active_worktrees (10) is unusually high."],
-        fixes=["Reduce max_active_worktrees in .dovo/config.json."],
+        remediations=[Remediation(message="Reduce 'max_active_worktrees' in '.dovo/config.json'.")],
     ),
     view=_make_status_view(
         warnings=["max_active_worktrees (10) is unusually high."],
-        remediations=["Reduce max_active_worktrees in .dovo/config.json."],
+        remediations=[Remediation(message="Reduce 'max_active_worktrees' in '.dovo/config.json'.")],
     ),
     render_expectations=[
         "dovo",
@@ -376,7 +384,8 @@ WITH_WARNINGS_AND_FIXES = FormatterCase(
         "2",
         "2",
         "max_active_worktrees (10) is unusually high.",
-        "Reduce max_active_worktrees in .dovo/config.json.",
+        "Fix:",
+        "- Reduce 'max_active_worktrees' in '.dovo/config.json'.",
     ],
 )
 
@@ -392,7 +401,7 @@ DEGRADED_RAW_CONFIG_PROJECT = FormatterCase(
             errors=["Invalid schema"],
         ),
         warnings=["Invalid schema"],
-        fixes=["Fix schema errors"],
+        remediations=[Remediation(message="Fix schema errors")],
     ),
     view=_make_status_view(
         health=StatusHealth.DEGRADED,
@@ -404,9 +413,9 @@ DEGRADED_RAW_CONFIG_PROJECT = FormatterCase(
         valid_catalog_items=None,
         total_catalog_items=None,
         warnings=["Invalid schema"],
-        remediations=["Fix schema errors"],
+        remediations=[Remediation(message="Fix schema errors")],
     ),
-    render_expectations=["raw-project", "feature/status-cmd", "Invalid schema", "Fix schema errors"],
+    render_expectations=["raw-project", "feature/status-cmd", "Invalid schema", "Fix:", "- Fix schema errors"],
 )
 
 STATUS_CASES = [
@@ -419,7 +428,7 @@ STATUS_CASES = [
     pytest.param(AGENT_MODEL_UNSET, id="agent_model_unset"),
     pytest.param(EMPTY_CATALOG, id="empty_catalog"),
     pytest.param(INVALID_CATALOG_ITEMS, id="invalid_catalog_items"),
-    pytest.param(WITH_WARNINGS_AND_FIXES, id="with_warnings_and_fixes"),
+    pytest.param(WITH_WARNINGS_AND_REMEDIATIONS, id="with_warnings_and_remediations"),
     pytest.param(DEGRADED_RAW_CONFIG_PROJECT, id="degraded_raw_config_project"),
 ]
 
@@ -467,8 +476,8 @@ STATUS_PAYLOAD_CASES = [
             "errors": [],
             "warnings": ["Dovo workspace is not initialized. Run 'dovo init' to configure."],
             "remediations": [
-                "Run 'dovo init' to initialize Dovo in this repository.",
-                "Run 'git init' or navigate to a Git repository.",
+                {"message": "Run 'dovo init' to initialize Dovo in this repository.", "command": "dovo init"},
+                {"message": "Run 'git init' or navigate to a Git repository.", "command": "git init"},
             ],
         },
         id="uninitialized_non_git",

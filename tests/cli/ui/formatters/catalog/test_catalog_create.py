@@ -9,6 +9,7 @@ import pytest
 
 from dovo.cli.ui.formatters.catalog.catalog_create import CatalogCreateFormatter
 from dovo.common.error_codes import ErrorCode
+from dovo.common.models import Remediation
 from dovo.core.catalog.models import (
     CatalogCreateResult,
     CatalogCreateStatus,
@@ -62,7 +63,7 @@ CREATION_ERROR = FormatterCase.identity(
         error_code=ErrorCode.CATALOG_ALREADY_EXISTS,
         item=None,
         errors=["Naming collision on blueprint."],
-        fixes=["Choose a different name"],
+        remediations=[Remediation(message="Choose a different name")],
     ),
     render_expectations=["Naming collision on blueprint.", "Choose a different name"],
 )
@@ -79,7 +80,7 @@ CATALOG_CREATE_PAYLOAD_CASES = [
         {
             "errors": [],
             "warnings": [],
-            "fixes": [],
+            "remediations": [],
             "error_code": None,
             "status": "ok",
             "item": {
@@ -101,7 +102,7 @@ CATALOG_CREATE_PAYLOAD_CASES = [
         {
             "errors": ["Naming collision on blueprint."],
             "warnings": [],
-            "fixes": ["Choose a different name"],
+            "remediations": [{"message": "Choose a different name", "command": None}],
             "error_code": "CATALOG_ALREADY_EXISTS",
             "status": "already_exists",
             "item": None,

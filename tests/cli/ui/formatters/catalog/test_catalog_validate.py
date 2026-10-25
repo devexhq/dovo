@@ -9,6 +9,7 @@ import pytest
 
 from dovo.cli.ui.formatters.catalog.catalog_validate import CatalogValidateFormatter
 from dovo.cli.ui.formatters.catalog.catalog_views import CatalogValidateView
+from dovo.common.models import Remediation
 from dovo.core.catalog.models import CatalogValidateResult, CatalogValidateStatus
 from tests.harness.formatter import (
     FormatterCase,
@@ -26,7 +27,7 @@ VALID_CASE = FormatterCase(
         item_type="blueprint",
         errors=[],
         warnings=[],
-        fixes=[],
+        remediations=[],
     ),
     view=CatalogValidateView(
         status="ok",
@@ -37,7 +38,7 @@ VALID_CASE = FormatterCase(
         item_type="blueprint",
         errors=[],
         warnings=[],
-        fixes=[],
+        remediations=[],
     ),
     render_expectations=["PASSED", "my-flow", "blueprint", "blueprints/my-flow.yml"],
 )
@@ -51,7 +52,11 @@ INVALID_CASE = FormatterCase(
         item_type="blueprint",
         errors=["Step id 'run-tests' is used by more than one step (CATALOG_DUPLICATE_STEP_ID)."],
         warnings=["Step 's1' script_path 'scripts/none.sh' does not exist on disk (CATALOG_SCRIPT_NOT_FOUND)."],
-        fixes=["Resolve: Step id 'run-tests' is used by more than one step (CATALOG_DUPLICATE_STEP_ID)."],
+        remediations=[
+            Remediation(
+                message="Resolve: Step id 'run-tests' is used by more than one step (CATALOG_DUPLICATE_STEP_ID)."
+            )
+        ],
     ),
     view=CatalogValidateView(
         status="invalid",
@@ -62,7 +67,11 @@ INVALID_CASE = FormatterCase(
         item_type="blueprint",
         errors=["Step id 'run-tests' is used by more than one step (CATALOG_DUPLICATE_STEP_ID)."],
         warnings=["Step 's1' script_path 'scripts/none.sh' does not exist on disk (CATALOG_SCRIPT_NOT_FOUND)."],
-        fixes=["Resolve: Step id 'run-tests' is used by more than one step (CATALOG_DUPLICATE_STEP_ID)."],
+        remediations=[
+            Remediation(
+                message="Resolve: Step id 'run-tests' is used by more than one step (CATALOG_DUPLICATE_STEP_ID)."
+            )
+        ],
     ),
     render_expectations=[
         "FAILED",
@@ -73,9 +82,44 @@ INVALID_CASE = FormatterCase(
     ],
 )
 
+MORE_ERRORS_THAN_REMEDIATIONS_CASE = FormatterCase(
+    data=CatalogValidateResult(
+        status=CatalogValidateStatus.INVALID,
+        valid=False,
+        target="two.yml",
+        resolved_path=Path("/workspace/two.yml"),
+        item_type="blueprint",
+        errors=[
+            "Step id 'build' is used by more than one step (CATALOG_DUPLICATE_STEP_ID).",
+            "Alias '-f' is declared by both 'foo' and 'bar' (CATALOG_DUPLICATE_INPUT_ALIAS).",
+        ],
+        remediations=[Remediation(message="Rename one of the 'build' steps")],
+    ),
+    view=CatalogValidateView(
+        status="invalid",
+        valid=False,
+        status_label="FAILED",
+        target="two.yml",
+        resolved_path="/workspace/two.yml",
+        item_type="blueprint",
+        errors=[
+            "Step id 'build' is used by more than one step (CATALOG_DUPLICATE_STEP_ID).",
+            "Alias '-f' is declared by both 'foo' and 'bar' (CATALOG_DUPLICATE_INPUT_ALIAS).",
+        ],
+        remediations=[Remediation(message="Rename one of the 'build' steps")],
+    ),
+    render_expectations=[
+        "FAILED",
+        "CATALOG_DUPLICATE_STEP_ID",
+        "CATALOG_DUPLICATE_INPUT_ALIAS",
+        "Rename one of the 'build' steps",
+    ],
+)
+
 VALIDATE_CASES = [
     pytest.param(VALID_CASE, id="valid"),
     pytest.param(INVALID_CASE, id="invalid"),
+    pytest.param(MORE_ERRORS_THAN_REMEDIATIONS_CASE, id="more-errors-than-remediations"),
 ]
 
 PAYLOAD_CASES = [
@@ -90,7 +134,7 @@ PAYLOAD_CASES = [
             "item_type": "blueprint",
             "errors": [],
             "warnings": [],
-            "fixes": [],
+            "remediations": [],
         },
         id="valid_payload",
     ),
@@ -105,7 +149,12 @@ PAYLOAD_CASES = [
             "item_type": "blueprint",
             "errors": ["Step id 'run-tests' is used by more than one step (CATALOG_DUPLICATE_STEP_ID)."],
             "warnings": ["Step 's1' script_path 'scripts/none.sh' does not exist on disk (CATALOG_SCRIPT_NOT_FOUND)."],
-            "fixes": ["Resolve: Step id 'run-tests' is used by more than one step (CATALOG_DUPLICATE_STEP_ID)."],
+            "remediations": [
+                {
+                    "message": "Resolve: Step id 'run-tests' is used by more than one step (CATALOG_DUPLICATE_STEP_ID).",
+                    "command": None,
+                }
+            ],
         },
         id="invalid_payload",
     ),

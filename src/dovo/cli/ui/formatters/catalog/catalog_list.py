@@ -76,7 +76,7 @@ class CatalogListFormatter(ComponentFormatter[CatalogListResult, CatalogListView
             total_items=len(data.items),
             errors=data.errors,
             warnings=data.warnings,
-            fixes=data.fixes,
+            remediations=data.remediations,
         )
 
     def to_rich(self, data: CatalogListResult) -> RenderableType:
@@ -84,7 +84,7 @@ class CatalogListFormatter(ComponentFormatter[CatalogListResult, CatalogListView
         view = self.transform(data)
 
         if view.errors:
-            return build_error_panel("Catalog Filter Error", view.errors, fixes=view.fixes)
+            return build_error_panel("Catalog Filter Error", view.errors, remediations=view.remediations)
 
         if view.templates:
             return build_catalog_template_table(view.templates)

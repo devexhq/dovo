@@ -40,7 +40,9 @@ A kept failed worktree prints where it is and how to inspect or remove it:
 
 ```text
 Worktree: Kept at .dovo/worktrees/blueprint_a3cb925b (branch dovo/blueprint_a3cb925b)
-Fix: inspect it with `git -C .dovo/worktrees/blueprint_a3cb925b status`, remove it with `dovo worktree delete blueprint_a3cb925b`.
+Fix:
+- Inspect it with 'git -C .dovo/worktrees/blueprint_a3cb925b status'
+- Remove it with 'dovo worktree delete blueprint_a3cb925b'
 ```
 
 Kept worktrees count toward `worktree.max_active_worktrees`; when the limit is reached a new run fails with a `Fix:` naming `dovo worktree delete`. Pass `--discard` in CI and scripts to restore the old cleanup of failed runs. If removal fails, the run status is unchanged and a `Failed to remove worktree '<path>': <detail>` warning is added.

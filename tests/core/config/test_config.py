@@ -151,7 +151,7 @@ class ConfigAccessorTests:
         message = str(exc_info.value)
         assert str(paths.root_dir) in message
         assert "CONFIG_NOT_FOUND" in message
-        assert "Fix:\n- Run `dovo init` to create `.dovo/config.json`" in message
+        assert "Fix:\n- Run 'dovo init' to create '.dovo/config.json'" in message
 
 
 class ConfigAccessorPropertyTests:

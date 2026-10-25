@@ -24,28 +24,28 @@ def _render_error_panel(view: SessionLogsView) -> Panel | None:
         return build_error_panel(
             "Session Not Found",
             default="No sessions found.",
-            fixes=view.fixes or ["Run `dovo session list` to view past sessions"],
+            remediations=view.remediations,
         )
     if view.status == LogsShowStatus.SESSION_NOT_FOUND:
         return build_error_panel(
             "Logs Not Found",
             default=f"No logs found for session '{view.session_id}'",
-            fixes=view.fixes or ["Run `dovo session list` to view past sessions"],
+            remediations=view.remediations,
         )
     if view.status == LogsShowStatus.STEP_NOT_FOUND:
         return build_error_panel(
             "Step Not Found",
             default=f"Available steps: {', '.join(view.available_steps) or 'none'}",
-            fixes=view.fixes,
+            remediations=view.remediations,
         )
     if view.status == LogsShowStatus.ATTEMPT_NOT_FOUND:
         return build_error_panel(
             "Attempt Not Found",
             default=f"Available attempts: {', '.join(str(a) for a in view.available_attempts)}",
-            fixes=view.fixes,
+            remediations=view.remediations,
         )
     if view.errors:
-        return build_error_panel("Logs Show Failed", errors=view.errors, fixes=view.fixes)
+        return build_error_panel("Logs Show Failed", errors=view.errors, remediations=view.remediations)
     return None
 
 
@@ -74,7 +74,7 @@ class SessionLogsFormatter(ComponentFormatter[LogsShowResult, SessionLogsView]):
             available_attempts=list(data.available_attempts),
             errors=list(data.errors),
             warnings=list(data.warnings),
-            fixes=list(data.fixes),
+            remediations=list(data.remediations),
         )
 
     def to_rich(self, data: LogsShowResult) -> RenderableType:

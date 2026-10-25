@@ -19,7 +19,7 @@ from dovo.cli.ui.events import (
     StepStartEvent,
     WorktreeLifecycleEvent,
 )
-from dovo.common.models import DisplayFormatOptions, OutputFormatOptions
+from dovo.common.models import DisplayFormatOptions, OutputFormatOptions, Remediation
 from dovo.common.utils import display_path
 from dovo.core.catalog.definitions import LoopStepBlock, StepDefinition, StepType
 from dovo.engine import RunObserver, RunOutcome
@@ -191,7 +191,12 @@ class DispatcherRunObserver(RunObserver):
         )
 
     def on_worktree_cleanup(
-        self, kept: bool, path: Path, worktree_id: str | None = None, branch: str | None = None
+        self,
+        kept: bool,
+        path: Path,
+        worktree_id: str | None = None,
+        branch: str | None = None,
+        remediations: Sequence[Remediation] = (),
     ) -> None:
         """Dispatch worktree cleanup event."""
         self._dispatcher.dispatch(
@@ -201,6 +206,7 @@ class DispatcherRunObserver(RunObserver):
                 kept=kept,
                 worktree_id=worktree_id,
                 branch=branch,
+                remediations=list(remediations),
             )
         )
 

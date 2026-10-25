@@ -268,6 +268,5 @@ CLAUDE_PROVIDER_SPEC = ProviderSpec(
     binary="claude",
     control_envs=CLAUDE_CONTROL_ENVS,
     auth_label=claude_auth_label,
-    auth_fix=CLAUDE_AUTH_FIX,
     progress_mapper=map_claude_line,
 )

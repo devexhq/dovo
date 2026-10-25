@@ -20,7 +20,7 @@ class BaseAgentProvider(abc.ABC):
     """Provider-agnostic contract for invoking an agent.
 
     ``invoke`` checks the descriptor's credentials before delegating to ``_invoke`` and masks secrets in the response's
-    errors, raw_text, summary, and unfixable_reason; subclasses implement ``_invoke`` and never override ``invoke``.
+    errors, remediations, raw_text, summary, and unfixable_reason; subclasses implement ``_invoke`` and never override ``invoke``.
     """
 
     def invoke(self, request: AgentRequest) -> AgentResponse:
@@ -116,7 +116,6 @@ class ProviderSpec:
     ``credential_envs`` are alternatives (any one suffices; empty means none required),
     ``auth_label`` names the authentication in use, including a login that needs no credential variable,
     and returns ``None`` when there is none (``None`` means the provider has no such login),
-    ``auth_fix`` is the remediation text reported when none is usable,
     ``binary`` is set only for a fixed executable,
     ``control_envs`` are adapter-owned variables no environment layer may forward or override,
     ``progress_mapper`` maps one stdout line to live progress items (``None`` means the provider reports no progress;
@@ -134,4 +133,3 @@ class ProviderSpec:
     control_envs: tuple[str, ...] = ()
     progress_mapper: ProgressMapper | None = None
     auth_label: Callable[[], str | None] | None = None
-    auth_fix: str | None = None

@@ -47,5 +47,5 @@ class WorktreeApplyFormatter(ComponentFormatter[WorktreeApplyResult]):
             "Worktree Apply Failed",
             data.errors,
             "Worktree apply failed.",
-            data.fixes,
+            remediations=data.remediations,
         )

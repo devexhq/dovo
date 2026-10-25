@@ -6,9 +6,9 @@ from rich.console import Group, RenderableType
 from rich.text import Text
 
 from dovo.cli.ui.formatters.base import ComponentFormatter
-from dovo.cli.ui.formatters.common import build_error_panel, render_list_fixes
+from dovo.cli.ui.formatters.common import build_error_panel
 from dovo.cli.ui.formatters.config.config_views import ConfigValidationView
-from dovo.common.formatters import format_warning_bullets
+from dovo.common.formatters import format_remediations, format_warning_bullets
 from dovo.core.config.validate import ConfigValidationResult, ConfigValidationStatus
 
 
@@ -20,7 +20,7 @@ def _derive_status_label(data: ConfigValidationResult) -> str:
 
 
 def _format_valid_config(view: ConfigValidationView) -> Text:
-    """Format successful configuration validation output with optional warnings and fixes."""
+    """Format successful configuration validation output with optional warnings and the Fix: block."""
     lines = [
         f"Config: {view.config_path.as_posix()}",
         f"Status: {view.status_label}",
@@ -30,8 +30,8 @@ def _format_valid_config(view: ConfigValidationView) -> Text:
         lines.append("Warnings:")
         lines.extend(format_warning_bullets(view.warnings))
         lines.append("")
-    if fixes_message := render_list_fixes(view.fixes):
-        lines.append(fixes_message)
+    if remediations_message := format_remediations(view.remediations):
+        lines.append(remediations_message)
         lines.append("")
     lines.append("Config is valid.")
     return Text("\n".join(lines))
@@ -43,7 +43,7 @@ def _format_invalid_config(view: ConfigValidationView) -> RenderableType:
         "Config Validation Failed",
         view.errors,
         "Configuration validation failed.",
-        view.fixes,
+        remediations=view.remediations,
     )
     if view.warnings:
         warning_block = "Warnings:\n" + "\n".join(format_warning_bullets(view.warnings))
@@ -71,7 +71,7 @@ class ConfigValidateFormatter(ComponentFormatter[ConfigValidationResult, ConfigV
             config=data.config,
             errors=list(data.errors),
             warnings=list(data.warnings),
-            fixes=list(data.fixes),
+            remediations=list(data.remediations),
         )
 
     def to_rich(self, data: ConfigValidationResult) -> RenderableType:

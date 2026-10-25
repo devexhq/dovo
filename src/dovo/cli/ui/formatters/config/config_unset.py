@@ -22,5 +22,5 @@ class ConfigUnsetFormatter(ComponentFormatter[ConfigUnsetResult]):
             "Config Error",
             data.errors,
             "Failed to update configuration.",
-            data.fixes,
+            remediations=data.remediations,
         )

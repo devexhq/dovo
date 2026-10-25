@@ -54,7 +54,6 @@ def _missing_result(check_id: str, name: str, category: CheckCategory, missing: 
         error_code="DOCTOR_BINARY_MISSING",
         errors=[],
         warnings=[message],
-        fixes=[],
     )
 
 
@@ -70,5 +69,4 @@ def _ok_result(check_id: str, name: str, category: CheckCategory, verified: list
         error_code=None,
         errors=[],
         warnings=[],
-        fixes=[],
     )

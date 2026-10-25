@@ -23,7 +23,7 @@ It shows:
 - **Agent Model**: Configured agent model name.
 - **Active Worktrees**: Active worktrees count and concurrency ceiling (`active / max`).
 - **Catalog Items**: Total valid blueprints and inventory breakdown (`valid / total`).
-- **Warnings**: Configuration warnings and suggested fixes.
+- **Warnings**: Configuration warnings and remediation steps.
 
 ## Examples
 
@@ -70,8 +70,8 @@ Dovo Workspace Status (Uninitialized)
 ⚠️ Configuration & Context Warnings:
   • Dovo workspace is not initialized. Run 'dovo init' to configure.
 
-Next Steps & Remediation:
-  • Run 'dovo init' to initialize Dovo in this repository.
+Fix:
+- Run 'dovo init' to initialize Dovo in this repository.
 ```
 
 ### Degraded workspace output
@@ -94,8 +94,8 @@ Dovo Workspace Status (Degraded)
 ⚠️ Configuration & Context Warnings:
   • Malformed config.json: Expecting property name enclosed in double quotes (line 2 col 1)
 
-Next Steps & Remediation:
-  • Repair JSON syntax in .dovo/config.json or restore from backup.
+Fix:
+- Repair JSON syntax in '.dovo/config.json' or restore from backup.
 ```
 
 ### JSON structured output

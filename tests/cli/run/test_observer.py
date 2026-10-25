@@ -9,6 +9,7 @@ import pytest
 from dovo.cli.run.observer import DispatcherRunObserver
 from dovo.cli.ui.dispatcher import UiDispatcher
 from dovo.cli.ui.events import AgentProgressEvent, AgentSummaryView, StepOutputEvent, WorktreeLifecycleEvent
+from dovo.common.models import Remediation
 from dovo.core.agents import AgentProgressKind
 from dovo.core.catalog.definitions import StepDefinition
 from dovo.engine.executors.models import AgentProgressUpdate
@@ -136,10 +137,15 @@ class DispatcherRunObserverCleanupTests:
     def test_cleanup_event_forwards_kept_id_and_branch(self, tmp_path: Path) -> None:
         dispatcher = _RecordingDispatcher()
 
+        remediation = Remediation(
+            message="Remove it with 'dovo worktree delete run-1'", command="dovo worktree delete run-1"
+        )
+
         DispatcherRunObserver(dispatcher).on_worktree_cleanup(
-            kept=True, path=tmp_path / "run-1", worktree_id="run-1", branch="dovo/run-1"
+            kept=True, path=tmp_path / "run-1", worktree_id="run-1", branch="dovo/run-1", remediations=[remediation]
         )
 
         [event] = dispatcher.events
         assert isinstance(event, WorktreeLifecycleEvent)
         assert (event.action, event.kept, event.worktree_id, event.branch) == ("cleanup", True, "run-1", "dovo/run-1")
+        assert event.remediations == [remediation]

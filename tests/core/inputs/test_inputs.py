@@ -43,7 +43,6 @@ class InputSyntaxValidationTests:
         assert result.missing == []
         assert result.errors == ["Invalid input syntax 'malformed_token'. Expected key=value (e.g. -i message=value)."]
         assert result.warnings == []
-        assert result.fixes == []
 
     def test_resolve_inputs_warns_on_unrecognized_cli_options(self) -> None:
         result = resolve_inputs(
@@ -58,7 +57,6 @@ class InputSyntaxValidationTests:
             "Ignoring unrecognized option '--unrecognized-option'.",
             "Ignoring unexpected argument 'positional_arg'.",
         ]
-        assert result.fixes == []
 
 
 FLAG_RESOLUTION_CASES = [
@@ -120,7 +118,6 @@ class InputFlagResolutionTests:
         assert result.missing == []
         assert result.errors == []
         assert result.warnings == []
-        assert result.fixes == []
 
     def test_resolve_prioritizes_declared_alias_matching_generic_flag(self) -> None:
         inputs = {
@@ -136,7 +133,6 @@ class InputFlagResolutionTests:
         assert result.missing == []
         assert result.errors == []
         assert result.warnings == []
-        assert result.fixes == []
 
 
 def _declarations_with_count() -> dict[str, ParameterInput]:

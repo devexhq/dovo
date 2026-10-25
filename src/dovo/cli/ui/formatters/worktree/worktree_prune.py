@@ -58,7 +58,7 @@ class WorktreePruneFormatter(ComponentFormatter[WorktreePruneResult, WorktreePru
             failed_count=data.failed_count,
             errors=list(data.errors),
             warnings=list(data.warnings),
-            fixes=list(data.fixes),
+            remediations=list(data.remediations),
         )
 
     def to_rich(self, data: WorktreePruneResult) -> RenderableType:

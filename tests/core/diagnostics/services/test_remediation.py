@@ -4,26 +4,19 @@ from __future__ import annotations
 
 import pytest
 
-from dovo.core.diagnostics.models import (
-    CheckCategory,
-    CheckStatus,
-    DiagnosticCheckResult,
-    Remediation,
-    RemediationType,
-)
-from dovo.core.diagnostics.services.remediation import format_remediation_summary, resolve_remediations
+from dovo.common.models import Remediation
+from dovo.core.diagnostics.models import CheckCategory, CheckStatus, DiagnosticCheckResult
+from dovo.core.diagnostics.services.remediation import resolve_remediations
 
 
 def _export_remediation(env_var: str) -> Remediation:
     """Return the DOCTOR_AGENT_KEY_MISSING export remediation for one credential name."""
     return Remediation(
-        code="DOCTOR_AGENT_KEY_MISSING",
-        title="Export agent API key",
-        action_type=RemediationType.COMMAND,
+        message=(
+            f"Run 'export {env_var}=\"<your-api-key>\"' in your active shell, or set '{env_var}' in your "
+            "'.env' file, so the configured agent provider can authenticate."
+        ),
         command=f'export {env_var}="<your-api-key>"',
-        description=f"Set the {env_var} environment variable in your active shell or `.env` file so the configured agent provider can authenticate.",
-        doc_path="docs/guides/agent-providers.md",
-        is_automated=False,
     )
 
 
@@ -61,13 +54,8 @@ REMEDIATION_RESOLUTION_CASES = [
         ),
         [
             Remediation(
-                code="DOCTOR_GIT_NOT_REPO",
-                title="Initialize Git repository",
-                action_type=RemediationType.COMMAND,
+                message="Run 'git init' from the workspace root to create the Git repository worktree operations require.",
                 command="git init",
-                description="Run `git init` from the workspace root to create the Git repository worktree operations require.",
-                doc_path=None,
-                is_automated=False,
             )
         ],
         id="git_not_repo",
@@ -83,13 +71,7 @@ REMEDIATION_RESOLUTION_CASES = [
         ),
         [
             Remediation(
-                code="DOCTOR_GIT_BINARY_MISSING",
-                title="Install Git",
-                action_type=RemediationType.MANUAL,
-                command=None,
-                description="Install Git via your operating system's package manager and ensure the `git` executable is available on PATH.",
-                doc_path=None,
-                is_automated=False,
+                message="Install Git via your operating system's package manager and ensure the 'git' executable is available on 'PATH'."
             )
         ],
         id="git_binary_missing",
@@ -105,13 +87,8 @@ REMEDIATION_RESOLUTION_CASES = [
         ),
         [
             Remediation(
-                code="DOCTOR_CONFIG_NOT_FOUND",
-                title="Initialize Dovo workspace",
-                action_type=RemediationType.COMMAND,
+                message="Run 'dovo init' to create '.dovo/config.json' and the required workspace directory structure.",
                 command="dovo init",
-                description="Run `dovo init` to create `.dovo/config.json` and the required workspace directory structure.",
-                doc_path="docs/cli/init.md",
-                is_automated=False,
             )
         ],
         id="config_not_found",
@@ -126,15 +103,11 @@ REMEDIATION_RESOLUTION_CASES = [
             error_code="DOCTOR_CONFIG_MALFORMED",
         ),
         [
+            Remediation(message="Edit '.dovo/config.json' by hand to fix the invalid JSON syntax."),
             Remediation(
-                code="DOCTOR_CONFIG_MALFORMED",
-                title="Repair configuration file",
-                action_type=RemediationType.COMMAND,
-                command="dovo init --repair",
-                description="Run `dovo init --repair` to restore missing schema keys, or edit `.dovo/config.json` by hand to fix the invalid JSON syntax.",
-                doc_path="docs/cli/init.md",
-                is_automated=False,
-            )
+                message="Run 'dovo init --overwrite' to replace it with a default configuration, discarding its contents.",
+                command="dovo init --overwrite",
+            ),
         ],
         id="config_malformed",
     ),
@@ -149,13 +122,8 @@ REMEDIATION_RESOLUTION_CASES = [
         ),
         [
             Remediation(
-                code="DOCTOR_CONFIG_SCHEMA_INVALID",
-                title="Validate and repair configuration",
-                action_type=RemediationType.COMMAND,
+                message="Run 'dovo config validate' to see detailed schema errors, then fix '.dovo/config.json' or run 'dovo init --repair' to restore missing defaults.",
                 command="dovo config validate",
-                description="Run `dovo config validate` to see detailed schema errors, then fix `.dovo/config.json` or run `dovo init --repair` to restore missing defaults.",
-                doc_path="docs/cli/config.md",
-                is_automated=False,
             )
         ],
         id="config_schema_invalid",
@@ -172,22 +140,12 @@ REMEDIATION_RESOLUTION_CASES = [
         ),
         [
             Remediation(
-                code="DOCTOR_FS_UNWRITABLE",
-                title="Fix directory permissions",
-                action_type=RemediationType.COMMAND,
+                message="Run 'chmod u+w /repo/.dovo' to grant the current user write access to '/repo/.dovo' so Dovo can create and update workspace state.",
                 command="chmod u+w /repo/.dovo",
-                description="Grant the current user write access to '/repo/.dovo' so Dovo can create and update workspace state.",
-                doc_path=None,
-                is_automated=False,
             ),
             Remediation(
-                code="DOCTOR_FS_UNWRITABLE",
-                title="Fix directory permissions",
-                action_type=RemediationType.COMMAND,
+                message="Run 'chmod u+w /repo/.dovo/sessions' to grant the current user write access to '/repo/.dovo/sessions' so Dovo can create and update workspace state.",
                 command="chmod u+w /repo/.dovo/sessions",
-                description="Grant the current user write access to '/repo/.dovo/sessions' so Dovo can create and update workspace state.",
-                doc_path=None,
-                is_automated=False,
             ),
         ],
         id="fs_unwritable_with_paths",
@@ -203,13 +161,8 @@ REMEDIATION_RESOLUTION_CASES = [
         ),
         [
             Remediation(
-                code="DOCTOR_FS_UNWRITABLE",
-                title="Fix directory permissions",
-                action_type=RemediationType.COMMAND,
+                message="Run 'chmod u+w .dovo' to grant the current user write access to '.dovo' so Dovo can create and update workspace state.",
                 command="chmod u+w .dovo",
-                description="Grant the current user write access to '.dovo' so Dovo can create and update workspace state.",
-                doc_path=None,
-                is_automated=False,
             ),
         ],
         id="fs_unwritable_missing_details_fallback",
@@ -225,13 +178,8 @@ REMEDIATION_RESOLUTION_CASES = [
         ),
         [
             Remediation(
-                code="DOCTOR_WORKTREE_STALE",
-                title="Prune stale worktrees",
-                action_type=RemediationType.COMMAND,
+                message="Run 'dovo worktree prune' to reconcile worktree database records that no longer match a live Git worktree.",
                 command="dovo worktree prune",
-                description="Run `dovo worktree prune` to reconcile worktree database records that no longer match a live Git worktree.",
-                doc_path="docs/cli/worktree.md",
-                is_automated=False,
             )
         ],
         id="worktree_stale",
@@ -247,13 +195,8 @@ REMEDIATION_RESOLUTION_CASES = [
         ),
         [
             Remediation(
-                code="DOCTOR_WORKTREE_ORPHAN",
-                title="Prune orphan worktree directories",
-                action_type=RemediationType.COMMAND,
+                message="Run 'dovo worktree prune' to remove worktree directories that have no matching database record.",
                 command="dovo worktree prune",
-                description="Run `dovo worktree prune` to remove worktree directories that have no matching database record.",
-                doc_path="docs/cli/worktree.md",
-                is_automated=False,
             )
         ],
         id="worktree_orphan",
@@ -268,17 +211,7 @@ REMEDIATION_RESOLUTION_CASES = [
             details={"missing_binaries": ["gh"]},
             error_code="DOCTOR_BINARY_MISSING",
         ),
-        [
-            Remediation(
-                code="DOCTOR_BINARY_MISSING",
-                title="Install required binary",
-                action_type=RemediationType.MANUAL,
-                command=None,
-                description="Install 'gh' via your package manager and ensure it is available on PATH.",
-                doc_path=None,
-                is_automated=False,
-            )
-        ],
+        [Remediation(message="Install 'gh' via your package manager and ensure it is available on 'PATH'.")],
         id="binary_missing_with_details",
     ),
     pytest.param(
@@ -290,17 +223,7 @@ REMEDIATION_RESOLUTION_CASES = [
             message="required binary(s) not found on PATH.",
             error_code="DOCTOR_BINARY_MISSING",
         ),
-        [
-            Remediation(
-                code="DOCTOR_BINARY_MISSING",
-                title="Install required binary",
-                action_type=RemediationType.MANUAL,
-                command=None,
-                description="Install '<binary>' via your package manager and ensure it is available on PATH.",
-                doc_path=None,
-                is_automated=False,
-            )
-        ],
+        [Remediation(message="Install '<binary>' via your package manager and ensure it is available on 'PATH'.")],
         id="binary_missing_missing_details_fallback",
     ),
     pytest.param(
@@ -315,13 +238,8 @@ REMEDIATION_RESOLUTION_CASES = [
         ),
         [
             Remediation(
-                code="DOCTOR_AGENT_KEY_MISSING",
-                title="Export agent API key",
-                action_type=RemediationType.COMMAND,
+                message="Run 'export GH_TOKEN=\"<your-api-key>\"' in your active shell, or set 'GH_TOKEN' in your '.env' file, so the configured agent provider can authenticate.",
                 command='export GH_TOKEN="<your-api-key>"',
-                description="Set the GH_TOKEN environment variable in your active shell or `.env` file so the configured agent provider can authenticate.",
-                doc_path="docs/guides/agent-providers.md",
-                is_automated=False,
             )
         ],
         id="agent_key_missing_with_details",
@@ -337,13 +255,8 @@ REMEDIATION_RESOLUTION_CASES = [
         ),
         [
             Remediation(
-                code="DOCTOR_AGENT_KEY_MISSING",
-                title="Export agent API key",
-                action_type=RemediationType.COMMAND,
+                message="Run 'export <PROVIDER>_API_KEY=\"<your-api-key>\"' in your active shell, or set '<PROVIDER>_API_KEY' in your '.env' file, so the configured agent provider can authenticate.",
                 command='export <PROVIDER>_API_KEY="<your-api-key>"',
-                description="Set the <PROVIDER>_API_KEY environment variable in your active shell or `.env` file so the configured agent provider can authenticate.",
-                doc_path="docs/guides/agent-providers.md",
-                is_automated=False,
             )
         ],
         id="agent_key_missing_missing_details_fallback",
@@ -366,13 +279,7 @@ REMEDIATION_RESOLUTION_CASES = [
             _export_remediation("CLAUDE_CODE_OAUTH_TOKEN"),
             _export_remediation("ANTHROPIC_API_KEY"),
             Remediation(
-                code="DOCTOR_AGENT_KEY_MISSING",
-                title="Log in to Claude Code",
-                action_type=RemediationType.MANUAL,
-                command=None,
-                description="Run `claude auth login`, or export CLAUDE_CODE_OAUTH_TOKEN from `claude setup-token`, so Claude Code authenticates without an API key.",
-                doc_path="docs/guides/agent-providers.md",
-                is_automated=False,
+                message="Run 'claude auth login', or export 'CLAUDE_CODE_OAUTH_TOKEN' from 'claude setup-token', so Claude Code authenticates without an API key."
             ),
         ],
         id="agent_key_missing_claude_exports_each_name_then_login",
@@ -419,13 +326,8 @@ REMEDIATION_RESOLUTION_CASES = [
         ),
         [
             Remediation(
-                code="DOCTOR_AGENT_NO_MODEL",
-                title="Configure agent model",
-                action_type=RemediationType.COMMAND,
+                message="Run 'dovo config set agents.copilot.model \"<model>\"' to set 'agents.copilot.model' in '.dovo/config.json' to a model supported by that provider.",
                 command='dovo config set agents.copilot.model "<model>"',
-                description="Set `agents.copilot.model` in `.dovo/config.json` to a model supported by that provider, e.g. `dovo config set agents.copilot.model <model-name>`.",
-                doc_path="docs/cli/config.md",
-                is_automated=False,
             )
         ],
         id="agent_no_model",
@@ -441,13 +343,8 @@ REMEDIATION_RESOLUTION_CASES = [
         ),
         [
             Remediation(
-                code="DOCTOR_AGENT_NO_MODEL",
-                title="Configure agent model",
-                action_type=RemediationType.COMMAND,
+                message="Run 'dovo config set agents.<provider>.model \"<model>\"' to set 'agents.<provider>.model' in '.dovo/config.json' to a model supported by that provider.",
                 command='dovo config set agents.<provider>.model "<model>"',
-                description="Set `agents.<provider>.model` in `.dovo/config.json` to a model supported by that provider, e.g. `dovo config set agents.<provider>.model <model-name>`.",
-                doc_path="docs/cli/config.md",
-                is_automated=False,
             )
         ],
         id="agent_no_model_missing_details_fallback",
@@ -463,16 +360,7 @@ REMEDIATION_RESOLUTION_CASES = [
         ),
         [
             Remediation(
-                code="DOCTOR_UNKNOWN",
-                title="Investigate check failure manually",
-                action_type=RemediationType.MANUAL,
-                command=None,
-                description=(
-                    "No deterministic remediation is registered for check 'worktree.refs' "
-                    "(error_code='DOCTOR_UNKNOWN'). Review the check message and details to diagnose and resolve the issue."
-                ),
-                doc_path=None,
-                is_automated=False,
+                message="No deterministic remediation is registered for check 'worktree.refs' (error_code='DOCTOR_UNKNOWN'). Review the check message and details to diagnose and resolve the issue."
             )
         ],
         id="none_error_code_falls_back",
@@ -488,16 +376,7 @@ REMEDIATION_RESOLUTION_CASES = [
         ),
         [
             Remediation(
-                code="DOCTOR_CHECK_CRASH",
-                title="Investigate check failure manually",
-                action_type=RemediationType.MANUAL,
-                command=None,
-                description=(
-                    "No deterministic remediation is registered for check 'crashing.check' "
-                    "(error_code='DOCTOR_CHECK_CRASH'). Review the check message and details to diagnose and resolve the issue."
-                ),
-                doc_path=None,
-                is_automated=False,
+                message="No deterministic remediation is registered for check 'crashing.check' (error_code='DOCTOR_CHECK_CRASH'). Review the check message and details to diagnose and resolve the issue."
             )
         ],
         id="unmapped_string_code_falls_back",
@@ -513,72 +392,3 @@ class ResolveRemediationsTests:
         self, result: DiagnosticCheckResult, expected: list[Remediation]
     ) -> None:
         assert resolve_remediations(result) == expected
-
-
-FORMAT_SUMMARY_CASES = [
-    pytest.param([], "", id="empty_list_returns_empty_string"),
-    pytest.param(
-        [
-            Remediation(
-                code="DOCTOR_GIT_NOT_REPO",
-                title="Initialize Git repository",
-                action_type=RemediationType.COMMAND,
-                command="git init",
-                description="Run `git init` ...",
-                doc_path=None,
-                is_automated=False,
-            )
-        ],
-        "Fix:\n  • Initialize Git repository:\n    git init",
-        id="single_command_remediation",
-    ),
-    pytest.param(
-        [
-            Remediation(
-                code="DOCTOR_GIT_BINARY_MISSING",
-                title="Install Git",
-                action_type=RemediationType.MANUAL,
-                command=None,
-                description="Install Git via your operating system's package manager.",
-                doc_path=None,
-                is_automated=False,
-            )
-        ],
-        "Fix:\n  • Install Git:\n    Install Git via your operating system's package manager.",
-        id="single_manual_remediation_uses_description",
-    ),
-    pytest.param(
-        [
-            Remediation(
-                code="DOCTOR_FS_UNWRITABLE",
-                title="Fix directory permissions",
-                action_type=RemediationType.COMMAND,
-                command="chmod u+w /a",
-                description="Grant write access to '/a'.",
-                doc_path=None,
-                is_automated=False,
-            ),
-            Remediation(
-                code="DOCTOR_FS_UNWRITABLE",
-                title="Fix directory permissions",
-                action_type=RemediationType.COMMAND,
-                command="chmod u+w /b",
-                description="Grant write access to '/b'.",
-                doc_path=None,
-                is_automated=False,
-            ),
-        ],
-        "Fix:\n  • Fix directory permissions:\n    chmod u+w /a\n  • Fix directory permissions:\n    chmod u+w /b",
-        id="multiple_remediations_render_multiple_bullets",
-    ),
-]
-
-
-class FormatRemediationSummaryTests:
-    """Unit tests for format_remediation_summary text rendering."""
-
-    @pytest.mark.parametrize(("remediations", "expected"), FORMAT_SUMMARY_CASES)
-    def test_format_remediation_summary_returns_exact_text(
-        self, remediations: list[Remediation], expected: str
-    ) -> None:
-        assert format_remediation_summary(remediations) == expected

@@ -8,6 +8,7 @@ from rich.text import Text
 from dovo.cli.ui.formatters.base import ComponentFormatter
 from dovo.cli.ui.formatters.status.common import build_status_table
 from dovo.cli.ui.formatters.status.status_view import StatusHealth, StatusView
+from dovo.common.formatters import format_remediations
 from dovo.common.utils import display_path
 from dovo.core.config import agent_settings
 from dovo.core.config.loader import ConfigLoadStatus
@@ -76,11 +77,11 @@ class DovoStatusFormatter(ComponentFormatter[DovoStatusResult, StatusView]):
             total_sessions=data.database.total_sessions,
             errors=list(data.errors),
             warnings=list(data.warnings),
-            remediations=list(data.fixes),
+            remediations=list(data.remediations),
         )
 
     def to_rich(self, data: DovoStatusResult) -> RenderableType:
-        """Render status summary table, warnings, and remediation hints from transform(data)."""
+        """Render status summary table, warnings, and the remediation Fix: block from transform(data)."""
         view = self.transform(data)
         table = build_status_table(view)
         renderables: list[RenderableType] = [table]
@@ -93,8 +94,6 @@ class DovoStatusFormatter(ComponentFormatter[DovoStatusResult, StatusView]):
 
         if view.remediations:
             renderables.append(Text(""))
-            renderables.append(Text("Next Steps & Remediation:"))
-            for remediation in view.remediations:
-                renderables.append(Text.from_markup(f"  [dim]•[/dim] {remediation}"))
+            renderables.append(Text(format_remediations(view.remediations)))
 
         return Group(*renderables) if len(renderables) > 1 else renderables[0]

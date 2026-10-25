@@ -11,6 +11,7 @@ import pytest
 
 from dovo.common.filesystem import WorkspacePaths
 from dovo.common.filesystem.services import resolve_global_paths
+from dovo.common.models import Remediation
 from dovo.core.db import WorktreesRepository
 from dovo.core.db.models import WorktreeStatus
 from dovo.core.git.runner import GitRunner
@@ -434,9 +435,9 @@ class WorktreeSquashScopeTests:
             "Cannot squash worktree dovo_overlap: the main repository has uncommitted changes in files the worktree "
             f"also changes.\nOverlapping files:\n{expected_bullets}"
         ]
-        assert result.fixes == [
-            "Commit or stash those files in the main workspace, or",
-            "Use --strategy patch to overlay the changes without committing",
+        assert result.remediations == [
+            Remediation(message="Commit or stash those files in the main workspace"),
+            Remediation(message="Use '--strategy patch' to overlay the changes without committing"),
         ]
         assert GitRunner().rev_parse(worktree_workspace, rev="HEAD") == head_before
         assert GitRunner().dirty_paths(worktree_workspace) == dirty_before

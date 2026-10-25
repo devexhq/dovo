@@ -9,6 +9,7 @@ import pytest
 
 from dovo.common.constants import BOOTSTRAP_META_REL
 from dovo.common.filesystem.services.global_root import resolve_global_paths
+from dovo.common.models import Remediation
 from dovo.core.bootstrap.models import BootstrapOutcome, InitFailureMode
 from dovo.core.bootstrap.services.initialize import auto_initialize_workspace, initialize_workspace
 from dovo.core.catalog.models import SeedResult
@@ -52,8 +53,9 @@ class InitializeWorkspaceGlobalHomeTests:
             f"Cannot initialize a workspace at '{home.resolve()}': its .dovo directory is the global Dovo home "
             f"'{global_home.resolve()}'."
         ]
-        assert result.fixes == [
-            "Run 'dovo init' inside a project directory, or set DOVO_HOME to a different directory."
+        assert result.remediations == [
+            Remediation(message="Run 'dovo init' inside a project directory"),
+            Remediation(message="Set 'DOVO_HOME' to a different directory."),
         ]
         assert list(global_home.iterdir()) == []
 
@@ -322,3 +324,18 @@ class AutoInitializeWorkspaceTests:
         assert exc_info.value.__notes__ == [
             f"Could not roll back the partial workspace at {dovo_dir.as_posix()}: denied. Remove it, then rerun dovo run."
         ]
+
+
+class InitializeBootstrapRemediationTests:
+    """Contract tests for the remediation a bootstrap failure carries."""
+
+    def test_bootstrap_failure_carries_rerun_remediation(self, tmp_path: Path) -> None:
+        """Return failure_mode BOOTSTRAP with remediations == [Remediation(message="Resolve the path conflict above, then rerun 'dovo init'")]."""
+        init_git_repository(tmp_path)
+        (tmp_path / ".dovo").write_text("not a directory", encoding="utf-8")
+
+        result = initialize_workspace(tmp_path)
+
+        assert result.ok is False
+        assert result.failure_mode == InitFailureMode.BOOTSTRAP
+        assert result.remediations == [Remediation(message="Resolve the path conflict above, then rerun 'dovo init'")]

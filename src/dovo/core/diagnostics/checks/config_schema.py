@@ -55,7 +55,6 @@ def _failure_result(
         error_code=error_code,
         errors=loaded.errors,
         warnings=[],
-        fixes=[],
     )
 
 
@@ -71,5 +70,4 @@ def _ok_result(check_id: str, name: str, category: CheckCategory) -> DiagnosticC
         error_code=None,
         errors=[],
         warnings=[],
-        fixes=[],
     )

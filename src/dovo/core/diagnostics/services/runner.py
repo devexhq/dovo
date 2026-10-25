@@ -78,7 +78,6 @@ def _crash_result(check: DiagnosticCheck, exc: Exception, record: DiagnosticReco
         error_code="DOCTOR_CHECK_CRASH",
         errors=[append_diagnostic_hint(f"Unhandled exception in {check.check_id}: {exc}", record)],
         warnings=[],
-        fixes=[],
     )
 
 
@@ -117,7 +116,6 @@ class DiagnosticRunner:
                         error_code=None,
                         errors=[],
                         warnings=[],
-                        fixes=[],
                     )
                 )
             else:

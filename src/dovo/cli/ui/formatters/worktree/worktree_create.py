@@ -35,5 +35,5 @@ class WorktreeCreateFormatter(ComponentFormatter[WorktreeCreateResult]):
             "Worktree Create Failed",
             data.errors,
             "Worktree creation failed.",
-            data.fixes,
+            remediations=data.remediations,
         )

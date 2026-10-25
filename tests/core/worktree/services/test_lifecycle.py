@@ -13,6 +13,7 @@ import pytest
 from dovo.common.clock import Clock
 from dovo.common.filesystem import WorkspacePaths
 from dovo.common.filesystem.services import resolve_global_paths
+from dovo.common.models import Remediation
 from dovo.common.session_id import SessionIdFactory
 from dovo.core.db import WorktreesRepository, WorktreeStatus
 from dovo.core.git.exceptions import GitCommandError, GitPlumbingTimeoutError
@@ -315,8 +316,13 @@ class WorktreeLifecycleCollisionTests:
         assert result.status == WorktreeCreateStatus.ALREADY_EXISTS
         assert result.error_code == "WORKTREE_PATH_CONFLICT"
         assert result.errors == ["Worktree 'dovo_keep' already exists (WORKTREE_PATH_CONFLICT)."]
-        assert result.fixes == [
-            "Inspect it with `dovo worktree show dovo_keep` or remove it with `dovo worktree delete dovo_keep`"
+        assert result.remediations == [
+            Remediation(
+                message="Inspect it with 'dovo worktree show dovo_keep'", command="dovo worktree show dovo_keep"
+            ),
+            Remediation(
+                message="Remove it with 'dovo worktree delete dovo_keep'", command="dovo worktree delete dovo_keep"
+            ),
         ]
         assert kept_file.read_text(encoding="utf-8") == "work in progress\n"
         assert GitRunner().rev_parse(worktree_workspace, rev="dovo/dovo_keep") == tip_before
@@ -336,7 +342,9 @@ class WorktreeLifecycleCollisionTests:
 
         assert result.status == WorktreeCreateStatus.ALREADY_EXISTS
         assert result.error_code == "WORKTREE_PATH_CONFLICT"
-        assert result.fixes == [f"'{worktree_path}' is not tracked by Dovo; move or remove it, then retry"]
+        assert result.remediations == [
+            Remediation(message=f"Path '{worktree_path}' is not tracked by Dovo; move or remove it, then retry")
+        ]
         assert sentinel.read_text(encoding="utf-8") == "keep\n"
         assert GitRunner().branch_exists(worktree_workspace, "dovo/dovo_half") is False
         assert repo.list() == []
@@ -361,7 +369,9 @@ class WorktreeLifecycleCollisionTests:
         result = lifecycle.create(session_id="dovo_stale")
 
         assert result.status == WorktreeCreateStatus.ALREADY_EXISTS
-        assert result.fixes == [f"'{worktree_path}' is not tracked by Dovo; move or remove it, then retry"]
+        assert result.remediations == [
+            Remediation(message=f"Path '{worktree_path}' is not tracked by Dovo; move or remove it, then retry")
+        ]
         assert worktree_path.is_dir()
 
     def test_create_with_only_branch_returns_already_exists_and_keeps_it(self, worktree_workspace: Path) -> None:
@@ -375,9 +385,14 @@ class WorktreeLifecycleCollisionTests:
 
         assert result.status == WorktreeCreateStatus.ALREADY_EXISTS
         assert result.error_code == "WORKTREE_PATH_CONFLICT"
-        assert result.fixes == [
-            "Branch 'dovo/dovo_half' is not tracked by Dovo; "
-            "delete it with `git branch -D dovo/dovo_half` if you no longer need it, then retry"
+        assert result.remediations == [
+            Remediation(
+                message=(
+                    "Branch 'dovo/dovo_half' is not tracked by Dovo; "
+                    "delete it with 'git branch -D dovo/dovo_half' if you no longer need it, then retry"
+                ),
+                command="git branch -D dovo/dovo_half",
+            )
         ]
         assert GitRunner().rev_parse(worktree_workspace, rev="dovo/dovo_half") == tip_before
         assert (paths.worktrees_dir / "dovo_half").exists() is False
@@ -472,7 +487,9 @@ class WorktreeLifecycleCollisionTests:
 
         assert result.status == WorktreeCreateStatus.GIT_FAILED
         assert result.errors == ["Worktree path check failed (WORKTREE_GIT_FAILED): permission denied"]
-        assert result.fixes == [f"Check that '{paths.worktrees_dir}' is readable, then retry"]
+        assert result.remediations == [
+            Remediation(message=f"Check that '{paths.worktrees_dir}' is readable, then retry")
+        ]
         assert "dovo/dovo_denied" not in GitRunner().list_branches(worktree_workspace)
 
     def test_create_when_add_fails_and_branch_probe_raises_keeps_branch(self, worktree_workspace: Path) -> None:

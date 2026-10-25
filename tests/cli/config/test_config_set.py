@@ -145,6 +145,6 @@ class ConfigSetCliIntegrationTests:
                 "value_type": "str",
                 "errors": [],
                 "warnings": [],
-                "fixes": [],
+                "remediations": [],
             },
         }

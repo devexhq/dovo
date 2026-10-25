@@ -19,7 +19,7 @@ dovo doctor [--category <name>] [--format terminal|json]
 
 ## Description
 
-`dovo doctor` runs every registered diagnostic check (or, with `--category`, only the checks in that category) and reports one row per check: its id, category, status, and message. Below the table it prints a one-line summary of how many checks are `OK`, `WARNING`, or `FAILED` and the total run time in seconds, and — when any check surfaced a remediation — a `Fixes:` section listing one actionable step per check.
+`dovo doctor` runs every registered diagnostic check (or, with `--category`, only the checks in that category) and reports one row per check: its id, category, status, and message. Below the table it prints a one-line summary of how many checks are `OK`, `WARNING`, or `FAILED` and the total run time in seconds, and — when any check surfaced a remediation — a `Fix:` block with one line per remediation, in check order.
 
 The command exits `1` when at least one check has status `FAILED`, and `0` otherwise (including when checks have `WARNING` or `SKIPPED` status). Passing an unrecognized `--category` value exits `2` before any check runs.
 
@@ -94,9 +94,8 @@ Dovo Doctor Report
 │ agent.setup  │ agent       │ WARNING │ Agent provider 'copilot' has no model configured.    │
 └──────────────┴─────────────┴─────────┴────────────────────────────────────────────────────┘
 2 checks: 1 ok, 1 warning, 0 failed (0.004s)
-
-Fixes:
-  • agent.setup: Configure `agents.copilot.model` in `.dovo/config.json`
+Fix:
+- Run 'dovo config set agents.copilot.model "<model>"' to set 'agents.copilot.model' in '.dovo/config.json' to a model supported by that provider.
 ```
 
 ### Failures present output
@@ -110,9 +109,8 @@ Dovo Doctor Report
 │ config.schema│ config  │ FAILED │ Configuration file not found at '/repo/.dovo/config.json'. │
 └──────────────┴─────────┴────────┴──────────────────────────────────────────────────────────────┘
 2 checks: 1 ok, 0 warning, 1 failed (0.003s)
-
-Fixes:
-  • config.schema: Run `dovo init` to create `.dovo/config.json`
+Fix:
+- Run 'dovo init' to create '.dovo/config.json' and the required workspace directory structure.
 ```
 
 Running `dovo doctor` against this workspace exits with status code `1`.
@@ -126,7 +124,7 @@ dovo doctor --format json
 Emits one JSON payload for automation:
 
 ```json
-{"event_type": "DiagnosticsReport", "payload": {"ok": false, "has_warnings": true, "workspace_root": "/abs/path/to/repo", "duration_seconds": 0.0124, "checks": [{"check_id": "git.repo", "name": "Git Repository Check", "category": "git", "status": "ok", "message": "Git repository detected at '/abs/path/to/repo' on branch 'main'.", "details": {"root": "/abs/path/to/repo", "branch": "main"}, "duration_seconds": 0.0021, "error_code": null, "errors": [], "warnings": [], "remediations": []}, {"check_id": "agent.setup", "name": "Agent Setup Check", "category": "agent", "status": "failed", "message": "Missing required credential for agent provider 'copilot': GH_TOKEN or GITHUB_TOKEN.", "details": {"provider": "copilot", "missing_env_var": "GH_TOKEN or GITHUB_TOKEN", "credential_envs": ["GH_TOKEN", "GITHUB_TOKEN"]}, "duration_seconds": 0.0003, "error_code": "DOCTOR_AGENT_KEY_MISSING", "errors": ["Missing required credential for agent provider 'copilot': GH_TOKEN or GITHUB_TOKEN."], "warnings": [], "remediations": ["Export GH_TOKEN", "Export GITHUB_TOKEN"]}]}}
+{"event_type": "DiagnosticsReport", "payload": {"ok": false, "has_warnings": true, "workspace_root": "/abs/path/to/repo", "duration_seconds": 0.0124, "checks": [{"check_id": "git.repo", "name": "Git Repository Check", "category": "git", "status": "ok", "message": "Git repository detected at '/abs/path/to/repo' on branch 'main'.", "details": {"root": "/abs/path/to/repo", "branch": "main"}, "duration_seconds": 0.0021, "error_code": null, "errors": [], "warnings": [], "remediations": []}, {"check_id": "agent.setup", "name": "Agent Setup Check", "category": "agent", "status": "failed", "message": "Missing required credential for agent provider 'copilot': GH_TOKEN or GITHUB_TOKEN.", "details": {"provider": "copilot", "missing_env_var": "GH_TOKEN or GITHUB_TOKEN", "credential_envs": ["GH_TOKEN", "GITHUB_TOKEN"]}, "duration_seconds": 0.0003, "error_code": "DOCTOR_AGENT_KEY_MISSING", "errors": ["Missing required credential for agent provider 'copilot': GH_TOKEN or GITHUB_TOKEN."], "warnings": [], "remediations": [{"message": "Run 'export GH_TOKEN=\"<your-api-key>\"' in your active shell, or set 'GH_TOKEN' in your '.env' file, so the configured agent provider can authenticate.", "command": "export GH_TOKEN=\"<your-api-key>\""}, {"message": "Run 'export GITHUB_TOKEN=\"<your-api-key>\"' in your active shell, or set 'GITHUB_TOKEN' in your '.env' file, so the configured agent provider can authenticate.", "command": "export GITHUB_TOKEN=\"<your-api-key>\""}]}]}}
 ```
 
 `duration_seconds` on the payload is the wall time of the whole run, and `duration_seconds` on each check is that check's run time, both in seconds as measured by Dovo. A check skipped by configuration reports `0.0`.

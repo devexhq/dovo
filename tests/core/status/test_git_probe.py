@@ -7,6 +7,7 @@ from pathlib import Path
 
 import pytest
 
+from dovo.common.models import Remediation
 from dovo.core.git import GitCommandError, GitNotFoundError, GitPlumbingTimeoutError, GitProcessOutput, GitRunner
 from dovo.core.status import Status
 from tests.harness.fakes import FakeGitRunner
@@ -53,9 +54,9 @@ class GitProbeTests:
         assert result.config.is_valid is False
         assert result.database.exists is False
         assert result.warnings == ["Dovo workspace is not initialized. Run 'dovo init' to configure."]
-        assert result.fixes == [
-            "Run 'dovo init' to initialize Dovo in this repository.",
-            "Run 'git init' or navigate to a Git repository.",
+        assert result.remediations == [
+            Remediation(message="Run 'dovo init' to initialize Dovo in this repository.", command="dovo init"),
+            Remediation(message="Run 'git init' or navigate to a Git repository.", command="git init"),
         ]
 
     @pytest.mark.parametrize(
@@ -68,7 +69,7 @@ class GitProbeTests:
     def test_collect_git_error_reports_unknown_branch(
         self, status_workspace: BuildStatusWorkspace, git_error: Exception
     ) -> None:
-        """Return is_git_repo False, branch "unknown" and fixes == ["Run 'git init' or navigate to a Git repository."] when the fake raises git_error for rev-parse --is-inside-work-tree."""
+        """Return is_git_repo False, branch "unknown" and remediations == [Remediation(message="Run 'git init' or navigate to a Git repository.", command="git init")] when the fake raises git_error for rev-parse --is-inside-work-tree."""
         workspace = status_workspace()
         fake = FakeGitRunner({("rev-parse", "--is-inside-work-tree"): git_error})
 
@@ -76,7 +77,9 @@ class GitProbeTests:
 
         assert result.git.is_git_repo is False
         assert result.git.branch == "unknown"
-        assert result.fixes == ["Run 'git init' or navigate to a Git repository."]
+        assert result.remediations == [
+            Remediation(message="Run 'git init' or navigate to a Git repository.", command="git init")
+        ]
 
     def test_collect_git_command_error_reports_no_branch(self, status_workspace: BuildStatusWorkspace) -> None:
         """Return is_git_repo False and branch "none" when the fake raises GitCommandError for rev-parse --is-inside-work-tree."""
@@ -97,4 +100,6 @@ class GitProbeTests:
 
         assert result.git.is_git_repo is False
         assert result.git.branch == "none"
-        assert result.fixes == ["Run 'git init' or navigate to a Git repository."]
+        assert result.remediations == [
+            Remediation(message="Run 'git init' or navigate to a Git repository.", command="git init")
+        ]

@@ -13,6 +13,7 @@ from pydantic_core import ErrorDetails
 
 from dovo.common.diagnostic_log import DiagnosticLevel, append_diagnostic_hint, record_exception
 from dovo.common.exceptions import DefinitionLoadError, DefinitionValidationError
+from dovo.common.models import Remediation
 from dovo.core.catalog.exceptions import AskStepInvalidError
 from dovo.core.catalog.models import CatalogItemType, CatalogValidateResult, CatalogValidateStatus
 
@@ -69,7 +70,7 @@ def _validate_resolved_target(
     if isinstance(parse_outcome, CatalogValidateResult):
         return parse_outcome
 
-    definition, schema_errors, schema_fixes = _validate_schema(
+    definition, schema_errors, schema_remediations = _validate_schema(
         item_type, parse_outcome, key, blueprint_cls=blueprint_cls, step_cls=step_cls
     )
     if schema_errors:
@@ -81,10 +82,10 @@ def _validate_resolved_target(
             item_type=item_type,
             errors=schema_errors,
             warnings=[],
-            fixes=schema_fixes,
+            remediations=schema_remediations,
         )
 
-    semantic_errors, semantic_fixes, warnings = _run_semantic_audits(item_type, definition, repo_root)
+    semantic_errors, semantic_remediations, warnings = _run_semantic_audits(item_type, definition, repo_root)
     if semantic_errors:
         return CatalogValidateResult(
             status=CatalogValidateStatus.INVALID,
@@ -94,7 +95,7 @@ def _validate_resolved_target(
             item_type=item_type,
             errors=semantic_errors,
             warnings=warnings,
-            fixes=semantic_fixes,
+            remediations=semantic_remediations,
         )
 
     return CatalogValidateResult(
@@ -105,7 +106,6 @@ def _validate_resolved_target(
         item_type=item_type,
         errors=[],
         warnings=warnings,
-        fixes=[],
     )
 
 
@@ -126,7 +126,7 @@ def _read_and_parse_target_yaml(
             item_type=item_type,
             errors=[f"Failed to read '{resolved_path}': {exc} (CATALOG_FILE_UNREADABLE)."],
             warnings=[],
-            fixes=[f"Check that '{resolved_path}' exists and is readable."],
+            remediations=[Remediation(message=f"Check that '{resolved_path}' exists and is readable.")],
         )
 
     try:
@@ -141,7 +141,7 @@ def _read_and_parse_target_yaml(
             item_type=item_type,
             errors=[f"YAML syntax error in '{resolved_path}' at {location}: {exc} (CATALOG_YAML_SYNTAX_ERROR)."],
             warnings=[],
-            fixes=[f"Fix the YAML syntax error at {location} in '{resolved_path}'."],
+            remediations=[Remediation(message=f"Fix the YAML syntax error at {location} in '{resolved_path}'.")],
         )
 
     if not isinstance(parsed, dict):
@@ -153,7 +153,9 @@ def _read_and_parse_target_yaml(
             item_type=item_type,
             errors=[f"'{resolved_path}' root content must be a YAML mapping (CATALOG_ROOT_NOT_OBJECT)."],
             warnings=[],
-            fixes=[f"Rewrite '{resolved_path}' with a top-level YAML mapping (key: value pairs)."],
+            remediations=[
+                Remediation(message=f"Rewrite '{resolved_path}' with a top-level YAML mapping (key: value pairs).")
+            ],
         )
 
     return parsed
@@ -174,8 +176,8 @@ def _validate_schema(
     *,
     blueprint_cls: type[_PydanticModel],
     step_cls: type[_PydanticModel],
-) -> tuple[object | None, list[str], list[str]]:
-    """Validate parsed against the already-known schema class for item_type; return (definition, errors, fixes)."""
+) -> tuple[object | None, list[str], list[Remediation]]:
+    """Validate parsed against the already-known schema class for item_type; return (definition, errors, remediations)."""
     definition_cls = step_cls if item_type == CatalogItemType.STEP.value else blueprint_cls
     try:
         from_document = getattr(definition_cls, "from_document", None)
@@ -183,8 +185,8 @@ def _validate_schema(
             from_document(parsed, key=key) if callable(from_document) else definition_cls.model_validate(parsed)
         )
     except (DefinitionLoadError, DefinitionValidationError, ValidationError) as exc:
-        errors, fixes = _format_schema_exception(exc, key)
-        return None, errors, fixes
+        errors, remediations = _format_schema_exception(exc, key)
+        return None, errors, remediations
     except Exception as exc:
         record = record_exception(
             exc, level=DiagnosticLevel.ERROR, operation="catalog.validate_definition", context={"key": key}
@@ -192,7 +194,7 @@ def _validate_schema(
         return (
             None,
             [append_diagnostic_hint(f"{exc} (CATALOG_SCHEMA_INVALID).", record)],
-            [f"Fix the reported schema error for target '{key}'."],
+            [_schema_remediation(key)],
         )
 
     return definition, [], []
@@ -200,13 +202,18 @@ def _validate_schema(
 
 def _format_schema_exception(
     exc: DefinitionLoadError | DefinitionValidationError | ValidationError, key: str
-) -> tuple[list[str], list[str]]:
-    """Format a schema-validation exception into (errors, fixes)."""
+) -> tuple[list[str], list[Remediation]]:
+    """Format a schema-validation exception into (errors, remediations), one remediation per error."""
     pydantic_error = _extract_validation_error(exc)
     if pydantic_error is not None:
         messages = [_format_pydantic_error(error) for error in pydantic_error.errors()]
-        return messages, [f"Fix the reported schema error for target '{key}'." for _ in messages]
-    return [f"{exc} (CATALOG_SCHEMA_INVALID)."], [f"Fix the reported schema error for target '{key}'."]
+        return messages, [_schema_remediation(key) for _ in messages]
+    return [f"{exc} (CATALOG_SCHEMA_INVALID)."], [_schema_remediation(key)]
+
+
+def _schema_remediation(key: str) -> Remediation:
+    """Return the remediation paired with one schema error for target key."""
+    return Remediation(message=f"Fix the reported schema error for target '{key}'.")
 
 
 def _extract_validation_error(exc: Exception) -> ValidationError | None:
@@ -328,12 +335,13 @@ def _audit_script_paths(flat_steps: list[object], repo_root: Path) -> tuple[list
     return errors, warnings
 
 
-def _run_semantic_audits(item_type: str, definition: object, repo_root: Path) -> tuple[list[str], list[str], list[str]]:
-    """Run the FR-4 + Scope semantic audits appropriate to item_type; return (errors, fixes, warnings)."""
+def _run_semantic_audits(
+    item_type: str, definition: object, repo_root: Path
+) -> tuple[list[str], list[Remediation], list[str]]:
+    """Run the FR-4 + Scope semantic audits appropriate to item_type; return (errors, remediations, warnings)."""
     if item_type == CatalogItemType.STEP.value:
         script_errors, script_warnings = _audit_script_paths([definition], repo_root)
-        fixes = [f"Resolve: {error}" for error in script_errors]
-        return script_errors, fixes, script_warnings
+        return script_errors, _resolve_remediations(script_errors), script_warnings
 
     steps = getattr(definition, "steps", None) or []
     inputs = getattr(definition, "inputs", None) or {}
@@ -346,5 +354,9 @@ def _run_semantic_audits(item_type: str, definition: object, repo_root: Path) ->
     referenced = _collect_placeholder_references(flat_steps)
     warnings.extend(_audit_undeclared_placeholders(referenced, set(inputs)))
 
-    fixes = [f"Resolve: {error}" for error in errors]
-    return errors, fixes, warnings
+    return errors, _resolve_remediations(errors), warnings
+
+
+def _resolve_remediations(errors: list[str]) -> list[Remediation]:
+    """Return one 'Resolve: <error>' remediation per semantic error, in error order."""
+    return [Remediation(message=f"Resolve: {error}") for error in errors]

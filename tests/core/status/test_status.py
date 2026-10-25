@@ -1,4 +1,4 @@
-"""Tests for the Status entrypoint: full-result assembly, warning order and remediation fixes."""
+"""Tests for the Status entrypoint: full-result assembly, warning order and remediations."""
 
 from __future__ import annotations
 
@@ -9,6 +9,7 @@ from pathlib import Path
 import pytest
 
 from dovo.common.filesystem import Filesystem
+from dovo.common.models import Remediation
 from dovo.core.config.loader import ConfigLoadStatus
 from dovo.core.db import SessionsRepository, SessionStatus, WorktreesRepository
 from dovo.core.git.runner import GitRunner
@@ -73,7 +74,7 @@ class StatusCollectTests:
         assert result.worktrees.total_worktrees == 1
         assert result.worktrees.max_active_worktrees == 3
         assert result.warnings == []
-        assert result.fixes == []
+        assert result.remediations == []
 
     def test_collect_on_plain_directory_writes_nothing(self, tmp_path: Path) -> None:
         paths = initialized_workspace_paths(tmp_path)
@@ -152,57 +153,68 @@ class StatusWarningsOrderingTests:
 
 
 class StatusFixesRemediationTests:
-    """Tests for actionable remediation fixes."""
+    """Tests for actionable remediations."""
 
-    def test_collect_fixes_for_uninitialized_workspace(self, status_workspace: BuildStatusWorkspace) -> None:
+    def test_collect_remediations_for_uninitialized_workspace(self, status_workspace: BuildStatusWorkspace) -> None:
         workspace = status_workspace(config=None)
 
         result = Status(initialized_workspace_paths(workspace), git=GitRunner()).collect()
 
-        assert result.fixes == ["Run 'dovo init' to initialize Dovo in this repository."]
+        assert result.remediations == [
+            Remediation(message="Run 'dovo init' to initialize Dovo in this repository.", command="dovo init")
+        ]
 
-    def test_collect_fixes_for_non_git_repo(self, tmp_path: Path) -> None:
+    def test_collect_remediations_for_non_git_repo(self, tmp_path: Path) -> None:
         non_git_dir = tmp_path / "non_git_repo"
         fs = Filesystem(non_git_dir)
         Filesystem.atomic_write_json(fs.config_file, status_config_payload(model="gpt-4o"))
 
         result = Status(initialized_workspace_paths(non_git_dir), git=GitRunner()).collect()
 
-        assert result.fixes == ["Run 'git init' or navigate to a Git repository."]
+        assert result.remediations == [
+            Remediation(message="Run 'git init' or navigate to a Git repository.", command="git init")
+        ]
 
     @pytest.mark.parametrize(
-        ("payload", "expected_fix"),
+        ("payload", "expected_remediations"),
         [
             pytest.param(
                 "{bad json: true",
-                "Repair JSON syntax in .dovo/config.json or restore from backup.",
+                [Remediation(message="Repair JSON syntax in '.dovo/config.json' or restore from backup.")],
                 id="malformed_json",
             ),
             pytest.param(
                 "{}",
-                "Run 'dovo config validate' to inspect schema errors or 'dovo init --repair' to insert missing keys.",
+                [
+                    Remediation(
+                        message="Run 'dovo config validate' to inspect schema errors", command="dovo config validate"
+                    ),
+                    Remediation(
+                        message="Run 'dovo init --repair' to insert missing keys", command="dovo init --repair"
+                    ),
+                ],
                 id="schema_invalid",
             ),
             pytest.param(
                 '["not", "an", "object"]',
-                "Ensure .dovo/config.json contains a JSON object root.",
+                [Remediation(message="Ensure '.dovo/config.json' contains a JSON object root.")],
                 id="root_not_object",
             ),
         ],
     )
-    def test_collect_fixes_for_invalid_config_payload(
+    def test_collect_remediations_for_invalid_config_payload(
         self,
         status_workspace: BuildStatusWorkspace,
         payload: str,
-        expected_fix: str,
+        expected_remediations: list[Remediation],
     ) -> None:
         workspace = status_workspace(config=payload)
 
         result = Status(initialized_workspace_paths(workspace), git=GitRunner()).collect()
 
-        assert result.fixes == [expected_fix]
+        assert result.remediations == expected_remediations
 
-    def test_collect_fixes_for_path_is_directory(self, status_workspace: BuildStatusWorkspace) -> None:
+    def test_collect_remediations_for_path_is_directory(self, status_workspace: BuildStatusWorkspace) -> None:
         workspace = status_workspace(config=None)
         fs = Filesystem(workspace)
 
@@ -210,9 +222,11 @@ class StatusFixesRemediationTests:
 
         result = Status(initialized_workspace_paths(workspace), git=GitRunner()).collect()
 
-        assert result.fixes == ["Remove directory at .dovo/config.json and run 'dovo init'."]
+        assert result.remediations == [
+            Remediation(message="Remove directory at '.dovo/config.json' and run 'dovo init'.")
+        ]
 
-    def test_collect_fixes_for_unreadable(self, status_workspace: BuildStatusWorkspace) -> None:
+    def test_collect_remediations_for_unreadable(self, status_workspace: BuildStatusWorkspace) -> None:
         workspace = status_workspace(config="{}")
         fs = Filesystem(workspace)
 
@@ -222,6 +236,6 @@ class StatusFixesRemediationTests:
             if os.access(fs.config_file, os.R_OK):
                 pytest.skip("filesystem still allows reading unreadable mode")
             result = Status(initialized_workspace_paths(workspace), git=GitRunner()).collect()
-            assert result.fixes == ["Check file permissions for .dovo/config.json."]
+            assert result.remediations == [Remediation(message="Check file permissions for '.dovo/config.json'.")]
         finally:
             fs.config_file.chmod(stat.S_IRUSR | stat.S_IWUSR)

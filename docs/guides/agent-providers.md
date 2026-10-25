@@ -207,7 +207,7 @@ Each agent attempt gets its own scratch directory under the run's session temp d
 ```text
 Cannot prepare private scratch for agent step '<step_id>' (AGENT_SCRATCH_UNAVAILABLE): <detail>
 Fix:
-- restore access to the session temp directory or correct its storage path.
+- Restore access to the session temp directory or correct its storage path.
 ```
 
 - Completed runs remove the session temp directory. Failed, paused, cancelled and `--keep` runs retain it for inspection.

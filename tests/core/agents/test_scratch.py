@@ -9,11 +9,12 @@ from pathlib import Path
 
 import pytest
 
+from dovo.common.models import Remediation
 from dovo.core.agents import AgentScratchResult, allocate_invocation_paths, new_invocation_id
 from dovo.core.agents.scratch import scratch_unavailable_message
 
 _INVOCATION_ID = "0123456789abcdef0123456789abcdef"
-_FIX = "restore access to the session temp directory or correct its storage path."
+_REMEDIATION = Remediation(message="Restore access to the session temp directory or correct its storage path.")
 
 
 def _layout(tmp_path: Path) -> tuple[Path, Path, Path]:
@@ -120,7 +121,7 @@ class AllocateInvocationPathsTests:
             "Cannot prepare private scratch for agent step 'build' (AGENT_SCRATCH_UNAVAILABLE): "
             "the session temp directory is unavailable"
         ]
-        assert result.fixes == [_FIX]
+        assert result.remediations == [_REMEDIATION]
 
     def test_nonexistent_session_tmp_dir_is_not_created(self, tmp_path: Path) -> None:
         _, worktree, main_checkout = _layout(tmp_path)

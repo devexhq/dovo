@@ -9,6 +9,7 @@ import pytest
 
 from dovo.cli.ui.formatters.catalog.catalog_delete import CatalogDeleteFormatter
 from dovo.common.error_codes import ErrorCode
+from dovo.common.models import Remediation
 from dovo.core.catalog.models import (
     CatalogDeleteResult,
     CatalogDeleteStatus,
@@ -53,11 +54,14 @@ DELETE_ERROR = FormatterCase.identity(
         deleted=False,
         cancelled=False,
         errors=["Catalog blueprint 'missing' not found."],
-        fixes=["Run `dovo blueprint list` to inspect available items"],
+        remediations=[
+            Remediation(message="Run 'dovo blueprint list' to inspect available items", command="dovo blueprint list")
+        ],
     ),
     render_expectations=[
         "Catalog blueprint 'missing' not found.",
-        "Run `dovo blueprint list` to inspect available items",
+        "Fix:",
+        "- Run 'dovo blueprint list' to inspect available items",
     ],
 )
 
@@ -73,7 +77,7 @@ CATALOG_DELETE_PAYLOAD_CASES = [
         {
             "errors": [],
             "warnings": [],
-            "fixes": [],
+            "remediations": [],
             "error_code": None,
             "status": "ok",
             "item": {
@@ -96,7 +100,9 @@ CATALOG_DELETE_PAYLOAD_CASES = [
         {
             "errors": ["Catalog blueprint 'missing' not found."],
             "warnings": [],
-            "fixes": ["Run `dovo blueprint list` to inspect available items"],
+            "remediations": [
+                {"message": "Run 'dovo blueprint list' to inspect available items", "command": "dovo blueprint list"}
+            ],
             "error_code": "CATALOG_NOT_FOUND",
             "status": "not_found",
             "item": None,

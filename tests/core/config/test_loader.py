@@ -7,6 +7,7 @@ from typing import Any
 import pytest
 
 from dovo.common.filesystem import Filesystem, WorkspacePaths
+from dovo.common.models import Remediation
 from dovo.core.config.generator import build_default_config
 from dovo.core.config.loader import (
     ConfigLoadStatus,
@@ -60,7 +61,7 @@ class ConfigLoaderTests:
         assert result.config == DovoConfig.model_validate(payload)
         assert result.errors == []
         assert result.warnings == []
-        assert result.fixes == []
+        assert result.remediations == []
 
     def test_load_missing_config_returns_failure_result(self, workspace_paths: WorkspacePaths) -> None:
         config_path = workspace_paths.config_file
@@ -73,7 +74,9 @@ class ConfigLoaderTests:
         assert result.config is None
         assert result.errors == [f"Configuration file not found at '{config_path}' (CONFIG_NOT_FOUND)."]
         assert result.warnings == []
-        assert result.fixes == ["Run `dovo init` to create `.dovo/config.json`"]
+        assert result.remediations == [
+            Remediation(message="Run 'dovo init' to create '.dovo/config.json'", command="dovo init")
+        ]
 
     def test_load_config_defaults_ignore_global_root_error_to_false(self, workspace_paths: WorkspacePaths) -> None:
         config_path = workspace_paths.config_file
@@ -126,9 +129,12 @@ class ConfigLoaderTests:
         assert result.config is None
         assert result.errors == [expected_error]
         assert result.warnings == []
-        assert result.fixes == [
-            "Run `dovo config validate` for details",
-            "Or `dovo init --repair` to insert missing keys without overwriting values",
+        assert result.remediations == [
+            Remediation(message="Run 'dovo config validate' for details", command="dovo config validate"),
+            Remediation(
+                message="Run 'dovo init --repair' to insert missing keys without overwriting values",
+                command="dovo init --repair",
+            ),
         ]
 
     def test_load_malformed_json_returns_malformed_json_status_with_location_detail(
@@ -143,7 +149,7 @@ class ConfigLoaderTests:
         assert result.raw is None
         assert result.config is None
         assert f"Malformed config.json at '{config_path}'" in result.errors[0]
-        assert result.fixes == ["Repair JSON syntax, or restore from backup"]
+        assert result.remediations == [Remediation(message="Repair JSON syntax, or restore from backup")]
 
 
 class LoadConfigTests:

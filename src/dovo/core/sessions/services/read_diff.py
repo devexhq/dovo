@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dovo.common.filesystem import WorkspacePaths
+from dovo.common.models import Remediation
 from dovo.core.sessions.models import DiffResult, DiffStatus
 
 
@@ -15,7 +16,7 @@ def read_session_diff(paths: WorkspacePaths, session_id: str) -> DiffResult:
             session_id=session_id,
             artifact_path=patch_file,
             errors=[f"Session '{session_id}' has no diff artifact."],
-            fixes=[f"Verify the session generated a diff artifact at {patch_file}"],
+            remediations=[Remediation(message=f"Verify the session generated a diff artifact at '{patch_file}'")],
         )
 
     try:
@@ -26,7 +27,7 @@ def read_session_diff(paths: WorkspacePaths, session_id: str) -> DiffResult:
             session_id=session_id,
             artifact_path=patch_file,
             errors=[f"Failed to read diff artifact at '{patch_file}': {exc}"],
-            fixes=["Check file permissions and that the artifact is readable"],
+            remediations=[Remediation(message="Check file permissions and that the artifact is readable")],
         )
 
     if not diff_text.strip():

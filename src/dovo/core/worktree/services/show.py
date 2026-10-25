@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from dovo.common.filesystem import WorkspacePaths
+from dovo.common.models import Remediation
 from dovo.core.db import (
     WorktreesRepository,
     WorktreeStatus,
@@ -35,7 +36,9 @@ def collect_worktree_show(
         return WorktreeShowResult(
             status=WorktreeShowStatus.NOT_FOUND,
             errors=[f"Worktree '{worktree_id}' not found."],
-            fixes=["Run `dovo worktree list` to see known worktrees"],
+            remediations=[
+                Remediation(message="Run 'dovo worktree list' to see known worktrees", command="dovo worktree list")
+            ],
         )
 
     reconciled = False

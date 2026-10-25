@@ -58,7 +58,7 @@ class SessionDiffCliIntegrationTests:
 
         assert result.exit_code == 1
         assert "not found." in result.stdout
-        assert "Run `dovo session list`" in result.stdout
+        assert "- Run 'dovo session list'" in result.stdout
 
     def test_diff_cli_json_emits_literal_wire_payload(self, cli_runner: CliRunner, cli_workspace: Path) -> None:
         patch_path = _write_session_diff(cli_workspace, "sess-diff-1")
@@ -83,7 +83,7 @@ class SessionDiffCliIntegrationTests:
                 "truncated_lines": 0,
                 "errors": [],
                 "warnings": [],
-                "fixes": [],
+                "remediations": [],
             },
         }
 

@@ -7,13 +7,12 @@ from pathlib import Path
 import pytest
 
 from dovo.cli.ui.formatters.doctor import DoctorCheckView, DoctorReportFormatter, DoctorReportView
+from dovo.common.models import Remediation
 from dovo.core.diagnostics import (
     CheckCategory,
     CheckStatus,
     DiagnosticCheckResult,
     DiagnosticsReport,
-    Remediation,
-    RemediationType,
 )
 from tests.harness.formatter import (
     FormatterCase,
@@ -23,6 +22,13 @@ from tests.harness.formatter import (
 )
 
 ROOT = Path("/workspace/my-repo")
+NO_MODEL_MESSAGE = (
+    "Run 'dovo config set agents.copilot.model \"<model>\"' to set 'agents.copilot.model' in "
+    "'.dovo/config.json' to a model supported by that provider."
+)
+CONFIG_NOT_FOUND_MESSAGE = (
+    "Run 'dovo init' to create '.dovo/config.json' and the required workspace directory structure."
+)
 
 OK_CHECK = DiagnosticCheckResult(
     check_id="git.repo",
@@ -51,16 +57,8 @@ WARNING_CHECK = DiagnosticCheckResult(
     warnings=["Agent provider 'copilot' has no model configured."],
     remediations=[
         Remediation(
-            code="DOCTOR_AGENT_NO_MODEL",
-            title="Configure agent model",
-            action_type=RemediationType.COMMAND,
+            message=NO_MODEL_MESSAGE,
             command='dovo config set agents.copilot.model "<model>"',
-            description=(
-                "Set `agents.copilot.model` in `.dovo/config.json` to a model supported by that provider, "
-                "e.g. `dovo config set agents.copilot.model <model-name>`."
-            ),
-            doc_path="docs/cli/config.md",
-            is_automated=False,
         )
     ],
 )
@@ -76,17 +74,7 @@ FAILED_CHECK = DiagnosticCheckResult(
     error_code="DOCTOR_CONFIG_NOT_FOUND",
     errors=["Configuration file not found at '/workspace/my-repo/.dovo/config.json'."],
     warnings=[],
-    remediations=[
-        Remediation(
-            code="DOCTOR_CONFIG_NOT_FOUND",
-            title="Initialize Dovo workspace",
-            action_type=RemediationType.COMMAND,
-            command="dovo init",
-            description="Run `dovo init` to create `.dovo/config.json` and the required workspace directory structure.",
-            doc_path="docs/cli/init.md",
-            is_automated=False,
-        )
-    ],
+    remediations=[Remediation(message=CONFIG_NOT_FOUND_MESSAGE, command="dovo init")],
 )
 
 SKIPPED_CHECK = DiagnosticCheckResult(
@@ -144,10 +132,9 @@ MIXED_STATUS = FormatterCase(
         "worktree.refs",
         "SKIPPED",
         "4 checks: 1 ok, 1 warning, 1 failed (0.012s)",
-        "Configure agent model:",
-        'dovo config set agents.copilot.model "<model>"',
-        "Initialize Dovo workspace:",
-        "dovo init",
+        "Fix:",
+        f"- {NO_MODEL_MESSAGE}",
+        f"- {CONFIG_NOT_FOUND_MESSAGE}",
     ],
 )
 
@@ -183,18 +170,7 @@ DOCTOR_REPORT_PAYLOAD_CASES = [
                     "errors": [],
                     "warnings": ["Agent provider 'copilot' has no model configured."],
                     "remediations": [
-                        {
-                            "code": "DOCTOR_AGENT_NO_MODEL",
-                            "title": "Configure agent model",
-                            "action_type": "command",
-                            "command": 'dovo config set agents.copilot.model "<model>"',
-                            "description": (
-                                "Set `agents.copilot.model` in `.dovo/config.json` to a model supported by that provider, "
-                                "e.g. `dovo config set agents.copilot.model <model-name>`."
-                            ),
-                            "doc_path": "docs/cli/config.md",
-                            "is_automated": False,
-                        }
+                        {"message": NO_MODEL_MESSAGE, "command": 'dovo config set agents.copilot.model "<model>"'}
                     ],
                 },
                 {
@@ -208,20 +184,7 @@ DOCTOR_REPORT_PAYLOAD_CASES = [
                     "error_code": "DOCTOR_CONFIG_NOT_FOUND",
                     "errors": ["Configuration file not found at '/workspace/my-repo/.dovo/config.json'."],
                     "warnings": [],
-                    "remediations": [
-                        {
-                            "code": "DOCTOR_CONFIG_NOT_FOUND",
-                            "title": "Initialize Dovo workspace",
-                            "action_type": "command",
-                            "command": "dovo init",
-                            "description": (
-                                "Run `dovo init` to create `.dovo/config.json` and the required workspace "
-                                "directory structure."
-                            ),
-                            "doc_path": "docs/cli/init.md",
-                            "is_automated": False,
-                        }
-                    ],
+                    "remediations": [{"message": CONFIG_NOT_FOUND_MESSAGE, "command": "dovo init"}],
                 },
             ],
         },
@@ -256,5 +219,5 @@ class DoctorReportFormatterTests:
 
     @pytest.mark.parametrize("case", DOCTOR_REPORT_CASES)
     def test_rich_render_shows_every_view_value(self, case: FormatterCase[DiagnosticsReport, DoctorReportView]) -> None:
-        """Render every non-null view value: check ids, upper-cased statuses, summary counts and fix bullets."""
+        """Render every non-null view value: check ids, upper-cased statuses, summary counts and the Fix: block."""
         assert_rich_render_shows_every_view_value(DoctorReportFormatter, case.data, case.render_expectations)

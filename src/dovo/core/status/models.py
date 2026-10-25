@@ -7,7 +7,7 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
-from dovo.common.models import BaseResult
+from dovo.common.models import BaseResult, Remediation
 from dovo.core.config.loader import ConfigLoadStatus
 from dovo.core.config.models import DovoConfig
 
@@ -34,7 +34,7 @@ class ConfigStatusInfo(BaseModel):
     raw: dict[str, Any] | None = None
     config: DovoConfig | None = None
     errors: list[str] = Field(default_factory=list)
-    fixes: list[str] = Field(default_factory=list)
+    remediations: list[Remediation] = Field(default_factory=list)
 
 
 class CatalogStatusInfo(BaseModel):

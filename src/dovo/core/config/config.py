@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from dovo.common.filesystem import WorkspacePaths
+from dovo.common.formatters import format_remediations
 from dovo.core.config.exceptions import ConfigLoadError
 from dovo.core.config.generator import ConfigGenerationResult, generate_default_config
 from dovo.core.config.loader import ConfigLoadResult, ConfigLoadStatus, load_config
@@ -33,11 +34,11 @@ from dovo.core.config.validate import (
 
 
 def _require_config(result: ConfigLoadResult, root_dir: Path) -> DovoConfig:
-    """Return result.config or raise ConfigLoadError with its errors/fixes formatted into the message."""
+    """Return result.config or raise ConfigLoadError with its errors and Fix: block formatted into the message."""
     if not result.ok or result.config is None:
         parts = list(result.errors)
-        if result.fixes:
-            parts.append("Fix:\n" + "\n".join(f"- {f}" for f in result.fixes))
+        if result.remediations:
+            parts.append(format_remediations(result.remediations))
         errors = "; ".join(parts) if parts else "unknown error"
         raise ConfigLoadError(f"Failed to load config at '{root_dir}': {errors}", result)
     return result.config

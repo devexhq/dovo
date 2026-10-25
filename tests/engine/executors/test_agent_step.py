@@ -432,7 +432,7 @@ class ExecuteAgentStepScratchTests:
         assert outcome.exit_code == 203
         assert outcome.error_message == (
             scratch_unavailable_message(step.id, "the session temp directory is unavailable")
-            + "\nFix:\n- restore access to the session temp directory or correct its storage path."
+            + "\nFix:\n- Restore access to the session temp directory or correct its storage path."
         )
         assert requested == []
 

@@ -12,7 +12,7 @@ from typing import Any
 from pydantic import ValidationError
 
 from dovo.common.filesystem import WorkspacePaths
-from dovo.common.models import BaseResult
+from dovo.common.models import BaseResult, Remediation
 from dovo.common.schema_validation import CONFIG_VALIDATOR, format_validation_error
 from dovo.core.config.models import DovoConfig
 
@@ -84,7 +84,7 @@ def _read_and_validate_disk_config(target_path: Path) -> ConfigLoadResult:
             status=ConfigLoadStatus.UNREADABLE,
             config_path=target_path,
             errors=[f"Unable to read config.json at '{target_path}': {exc} (CONFIG_UNREADABLE)."],
-            fixes=["Check file permissions and that the path is readable"],
+            remediations=[Remediation(message="Check file permissions and that the path is readable")],
         )
 
     try:
@@ -97,7 +97,7 @@ def _read_and_validate_disk_config(target_path: Path) -> ConfigLoadResult:
             status=ConfigLoadStatus.MALFORMED_JSON,
             config_path=target_path,
             errors=[f"Malformed config.json at '{target_path}': {detail} (CONFIG_MALFORMED_JSON)."],
-            fixes=["Repair JSON syntax, or restore from backup"],
+            remediations=[Remediation(message="Repair JSON syntax, or restore from backup")],
         )
 
     if not isinstance(data, dict):
@@ -105,7 +105,7 @@ def _read_and_validate_disk_config(target_path: Path) -> ConfigLoadResult:
             status=ConfigLoadStatus.ROOT_NOT_OBJECT,
             config_path=target_path,
             errors=[f"Malformed config.json at '{target_path}': root must be an object (CONFIG_ROOT_NOT_OBJECT)."],
-            fixes=["Ensure config.json is a JSON object, not an array or scalar"],
+            remediations=[Remediation(message="Ensure 'config.json' is a JSON object, not an array or scalar")],
         )
 
     validation = CONFIG_VALIDATOR.validate(data)
@@ -122,9 +122,12 @@ def _read_and_validate_disk_config(target_path: Path) -> ConfigLoadResult:
                     ]
                 )
             ],
-            fixes=[
-                "Run `dovo config validate` for details",
-                "Or `dovo init --repair` to insert missing keys without overwriting values",
+            remediations=[
+                Remediation(message="Run 'dovo config validate' for details", command="dovo config validate"),
+                Remediation(
+                    message="Run 'dovo init --repair' to insert missing keys without overwriting values",
+                    command="dovo init --repair",
+                ),
             ],
         )
 
@@ -143,9 +146,12 @@ def _read_and_validate_disk_config(target_path: Path) -> ConfigLoadResult:
                     ]
                 )
             ],
-            fixes=[
-                "Run `dovo config validate` for details",
-                "Or `dovo init --repair` to insert missing keys without overwriting values",
+            remediations=[
+                Remediation(message="Run 'dovo config validate' for details", command="dovo config validate"),
+                Remediation(
+                    message="Run 'dovo init --repair' to insert missing keys without overwriting values",
+                    command="dovo init --repair",
+                ),
             ],
         )
 
@@ -166,7 +172,7 @@ def _check_path_existence(target_path: Path) -> ConfigLoadResult | None:
             status=ConfigLoadStatus.PATH_IS_DIRECTORY,
             config_path=target_path,
             errors=[f"Config path is a directory, not a file: '{target_path}' (CONFIG_PATH_IS_DIRECTORY)."],
-            fixes=["Remove the directory or point config_path at a file"],
+            remediations=[Remediation(message="Remove the directory or point config_path at a file")],
         )
 
     if not target_path.exists():
@@ -175,7 +181,7 @@ def _check_path_existence(target_path: Path) -> ConfigLoadResult | None:
             status=ConfigLoadStatus.NOT_FOUND,
             config_path=target_path,
             errors=[f"Configuration file not found at '{target_path}' (CONFIG_NOT_FOUND)."],
-            fixes=["Run `dovo init` to create `.dovo/config.json`"],
+            remediations=[Remediation(message="Run 'dovo init' to create '.dovo/config.json'", command="dovo init")],
         )
     return None
 

@@ -44,27 +44,6 @@ class DiagnosticsContext(BaseModel):
     git: GitRunner
 
 
-class RemediationType(StrEnum):
-    """Classification of how a Remediation should be carried out."""
-
-    COMMAND = "command"
-    MANUAL = "manual"
-
-
-class Remediation(BaseModel):
-    """Deterministic, copy-pasteable remediation action for a failing or warning diagnostic check."""
-
-    model_config = {"extra": "forbid", "strict": True}
-
-    code: str
-    title: str
-    action_type: RemediationType
-    command: str | None = None
-    description: str
-    doc_path: str | None = None
-    is_automated: bool = False
-
-
 class DiagnosticCheckResult(BaseResult):
     """Individual diagnostic check outcome."""
 
@@ -77,7 +56,6 @@ class DiagnosticCheckResult(BaseResult):
     message: str
     details: dict[str, Any] = Field(default_factory=dict)
     duration_seconds: float = 0.0
-    remediations: list[Remediation] = Field(default_factory=list)
 
     @property
     def ok(self) -> bool:

@@ -51,6 +51,24 @@ class WorktreeShowCliIntegrationTests:
         assert isinstance(result_dto, WorktreeShowResult)
         assert result_dto.status == WorktreeShowStatus.NOT_FOUND
         assert result_dto.errors == ["Worktree 'missing-id' not found."]
+        assert "Fix:" in result.stdout
+        assert "- Run 'dovo worktree list' to see known worktrees" in result.stdout
+
+    def test_worktree_show_cli_missing_worktree_json_carries_remediation(
+        self, cli_runner: CliRunner, cli_workspace: Path
+    ) -> None:
+        """Publish the core not-found remediation as a message/command object and no fixes entry."""
+        result = cli_runner.invoke(
+            app, ["-p", str(cli_workspace), "worktree", "show", "missing-id", "--format", "json"]
+        )
+
+        assert result.exit_code == 1
+        payload = json.loads(result.stdout)["payload"]
+        assert payload["status"] == "not_found"
+        assert payload["remediations"] == [
+            {"message": "Run 'dovo worktree list' to see known worktrees", "command": "dovo worktree list"}
+        ]
+        assert "fixes" not in payload
 
     def test_worktree_show_cli_renders_json(self, cli_runner: CliRunner, cli_workspace: Path) -> None:
         create_result = Worktree(

@@ -81,8 +81,8 @@ class DoctorCliIntegrationTests:
 
         assert result.exit_code == 1
         assert "FAILED" in result.stdout
-        assert "Initialize Git repository" in result.stdout
-        assert "git init" in result.stdout
+        assert "Fix:" in result.stdout
+        assert "- Run 'git init'" in result.stdout
         assert len(dispatch_spy) == 1
         report = dispatch_spy[0]
         assert isinstance(report, DiagnosticsReport)

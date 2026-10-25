@@ -17,29 +17,29 @@ from dovo.cli.ui.formatters.session.common import (
     build_steps_table,
 )
 from dovo.cli.ui.formatters.session.session_views import SessionShowView
+from dovo.common.models import Remediation
 from dovo.common.utils import display_path
 from dovo.core.sessions import HistoryShowResult, HistoryShowStatus
 
 
-def _render_show_not_found(session_id: str | None, fixes: list[str] | None = None) -> Panel:
+def _render_show_not_found(session_id: str | None, remediations: list[Remediation]) -> Panel:
     """Render error panel when requested session record is not found."""
     default = f"Session '{session_id}' not found." if session_id else "No sessions found."
-    fix_list = fixes or ["Run `dovo session list` to view past sessions"]
-    return build_error_panel("Session Not Found", default=default, fixes=fix_list)
+    return build_error_panel("Session Not Found", default=default, remediations=remediations)
 
 
-def _render_show_error(errors: list[str], fixes: list[str] | None = None) -> Panel:
+def _render_show_error(errors: list[str], remediations: list[Remediation]) -> Panel:
     """Render error panel when session show encounters errors."""
-    return build_error_panel("Session Show Failed", errors=errors, fixes=fixes)
+    return build_error_panel("Session Show Failed", errors=errors, remediations=remediations)
 
 
 def _render_show_error_panel(view: SessionShowView) -> Panel | None:
     """Check and render error panels for session show operation."""
     if view.status == HistoryShowStatus.NOT_FOUND or (view.session is None and not view.errors):
-        return _render_show_not_found(view.session_id, view.fixes)
+        return _render_show_not_found(view.session_id, view.remediations)
 
     if view.errors:
-        return _render_show_error(view.errors, view.fixes)
+        return _render_show_error(view.errors, view.remediations)
 
     return None
 
@@ -109,7 +109,7 @@ class SessionShowFormatter(ComponentFormatter[HistoryShowResult, SessionShowView
             worktree_path=display_path(data.worktree_path, Path.cwd()) if data.worktree_path is not None else None,
             errors=list(data.errors),
             warnings=list(data.warnings),
-            fixes=list(data.fixes),
+            remediations=list(data.remediations),
         )
 
     def to_rich(self, data: HistoryShowResult) -> RenderableType:

@@ -23,10 +23,6 @@ WorkspacePathsFactory = Callable[[Path, Path | None], WorkspacePaths]
 CREDENTIALED_TOKENS = sorted(token for token, spec in PROVIDERS.items() if spec.credential_envs)
 DEFAULT_TOKEN = DEFAULT_AGENT
 _EXPECTED_AUTH_DETAILS = {"claude": {"auth": "ANTHROPIC_API_KEY"}}
-_CLAUDE_AUTH_FIX = (
-    "run `claude auth login`, export CLAUDE_CODE_OAUTH_TOKEN=... (from `claude setup-token`) "
-    "or export ANTHROPIC_API_KEY=..."
-)
 
 
 def _context_with_agent(
@@ -218,10 +214,10 @@ class AgentSetupCheckTests:
         assert (result.status, result.details["auth"]) == (CheckStatus.OK, label)
         assert result.message == f"Agent provider 'claude' is configured with model 'm' (authentication: {label})."
 
-    def test_execute_nothing_to_authenticate_returns_failed_with_fix_text(
+    def test_execute_nothing_to_authenticate_returns_failed_key_missing(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, workspace_paths_factory: WorkspacePathsFactory
     ) -> None:
-        """Return FAILED DOCTOR_AGENT_KEY_MISSING with fixes == [the Claude authentication fix] for a logged-out CLI."""
+        """Return FAILED DOCTOR_AGENT_KEY_MISSING for a logged-out CLI."""
         _clear_credential_envs(monkeypatch, "claude")
         _stub_logged_in(monkeypatch, logged_in=False)
         context = _context_with_agent(tmp_path, "claude", "m", workspace_paths_factory)
@@ -229,20 +225,19 @@ class AgentSetupCheckTests:
         result = AgentSetupCheck().execute(context)
 
         assert (result.status, result.error_code) == (CheckStatus.FAILED, "DOCTOR_AGENT_KEY_MISSING")
-        assert result.fixes == [_CLAUDE_AUTH_FIX]
 
     def test_execute_provider_without_probe_is_unchanged(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, workspace_paths_factory: WorkspacePathsFactory
     ) -> None:
-        """Return FAILED with empty fixes and no auth detail for a credentialed spec without auth_label or auth_fix."""
+        """Return FAILED with no auth detail for a credentialed spec without auth_label."""
         _clear_credential_envs(monkeypatch, DEFAULT_TOKEN)
-        spec = dataclasses.replace(PROVIDERS[DEFAULT_TOKEN], auth_label=None, auth_fix=None)
+        spec = dataclasses.replace(PROVIDERS[DEFAULT_TOKEN], auth_label=None)
         monkeypatch.setitem(PROVIDERS, DEFAULT_TOKEN, spec)
         context = _context_with_agent(tmp_path, DEFAULT_TOKEN, "m", workspace_paths_factory)
 
         result = AgentSetupCheck().execute(context)
 
-        assert (result.status, result.fixes) == (CheckStatus.FAILED, [])
+        assert result.status == CheckStatus.FAILED
         assert "auth" not in result.details
 
     def test_execute_reads_default_agent_block_model(

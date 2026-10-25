@@ -93,7 +93,7 @@ class ArtifactsDownloadCliIntegrationTests:
                 "errors": [],
                 "warnings": [],
                 "error_code": None,
-                "fixes": [],
+                "remediations": [],
             },
         }
 

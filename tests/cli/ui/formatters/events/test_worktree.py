@@ -8,6 +8,7 @@ import pytest
 
 from dovo.cli.ui.events import WorktreeLifecycleEvent
 from dovo.cli.ui.formatters.events.worktree import WorktreeLifecycleFormatter
+from dovo.common.models import Remediation
 from tests.harness.formatter import (
     FormatterCase,
     assert_json_payload_matches_published_shape,
@@ -36,11 +37,23 @@ CLEANUP_CLEANED = FormatterCase.identity(
 
 CLEANUP_KEPT_WITH_FIX = FormatterCase.identity(
     data=WorktreeLifecycleEvent(
-        action="cleanup", path=".dovo/worktrees/s1", kept=True, worktree_id="s1", branch="dovo/s1"
+        action="cleanup",
+        path=".dovo/worktrees/s1",
+        kept=True,
+        worktree_id="s1",
+        branch="dovo/s1",
+        remediations=[
+            Remediation(
+                message="Inspect it with 'git -C .dovo/worktrees/s1 status'", command="git -C .dovo/worktrees/s1 status"
+            ),
+            Remediation(message="Remove it with 'dovo worktree delete s1'", command="dovo worktree delete s1"),
+        ],
     ),
     render_expectations=[
         "Worktree: Kept at .dovo/worktrees/s1 (branch dovo/s1)",
-        "Fix: inspect it with `git -C .dovo/worktrees/s1 status`, remove it with `dovo worktree delete s1`.",
+        "Fix:",
+        "- Inspect it with 'git -C .dovo/worktrees/s1 status'",
+        "- Remove it with 'dovo worktree delete s1'",
     ],
 )
 
@@ -62,6 +75,7 @@ WORKTREE_PAYLOAD_CASES = [
             "kept": None,
             "worktree_id": None,
             "branch": None,
+            "remediations": [],
         },
         id="ready_in_place",
     ),
@@ -74,6 +88,13 @@ WORKTREE_PAYLOAD_CASES = [
             "kept": True,
             "worktree_id": "s1",
             "branch": "dovo/s1",
+            "remediations": [
+                {
+                    "message": "Inspect it with 'git -C .dovo/worktrees/s1 status'",
+                    "command": "git -C .dovo/worktrees/s1 status",
+                },
+                {"message": "Remove it with 'dovo worktree delete s1'", "command": "dovo worktree delete s1"},
+            ],
         },
         id="cleanup_kept_with_fix",
     ),

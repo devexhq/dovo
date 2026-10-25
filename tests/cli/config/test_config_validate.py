@@ -72,6 +72,6 @@ class ConfigValidateCliIntegrationTests:
                 "config": raw_payload,
                 "errors": [],
                 "warnings": [],
-                "fixes": [],
+                "remediations": [],
             },
         }

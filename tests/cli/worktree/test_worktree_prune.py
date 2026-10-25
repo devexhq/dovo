@@ -63,6 +63,6 @@ class WorktreePruneCliIntegrationTests:
                 "failed_count": 0,
                 "errors": [],
                 "warnings": [],
-                "fixes": [],
+                "remediations": [],
             },
         }

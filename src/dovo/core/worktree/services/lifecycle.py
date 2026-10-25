@@ -10,6 +10,7 @@ from dovo.common.constants import DEFAULT_MAXIMUM_WORKTREES_ALLOWED
 from dovo.common.error_codes import ErrorCode
 from dovo.common.filesystem import WorkspacePaths
 from dovo.common.lock import WorkspaceLock
+from dovo.common.models import Remediation
 from dovo.common.session_id import SessionIdFactory
 from dovo.core.config import Config
 from dovo.core.config.models import WorktreeConfig
@@ -57,13 +58,13 @@ def _create_context(worktree_path: Path, temp_branch: str) -> dict[str, str | No
     return {"worktree_id": worktree_path.name, "branch": temp_branch, "path": str(worktree_path)}
 
 
-def _already_exists(worktree_id: str, fix: str) -> WorktreeCreateResult:
+def _already_exists(worktree_id: str, remediations: list[Remediation]) -> WorktreeCreateResult:
     """Build the already_exists result for a worktree ID whose directory or branch is taken."""
     return WorktreeCreateResult(
         status=WorktreeCreateStatus.ALREADY_EXISTS,
         error_code=ErrorCode.WORKTREE_PATH_CONFLICT,
         errors=[f"Worktree '{worktree_id}' already exists (WORKTREE_PATH_CONFLICT)."],
-        fixes=[fix],
+        remediations=remediations,
     )
 
 
@@ -147,9 +148,14 @@ class WorktreeLifecycle:
             return WorktreeCreateResult(
                 status=WorktreeCreateStatus.CAPACITY_EXCEEDED,
                 errors=[f"Maximum active worktrees reached ({len(active)}/{max_allowed})."],
-                fixes=[
-                    "Remove a kept worktree with `dovo worktree delete <worktree-id>` (see `dovo worktree list`), or",
-                    "Raise worktree.max_active_worktrees in .dovo/config.json",
+                remediations=[
+                    Remediation(
+                        message=(
+                            "Remove a kept worktree with 'dovo worktree delete <worktree-id>' (see 'dovo worktree list')"
+                        ),
+                        command="dovo worktree delete <worktree-id>",
+                    ),
+                    Remediation(message="Raise 'worktree.max_active_worktrees' in '.dovo/config.json'"),
                 ],
             )
         return None
@@ -174,17 +180,23 @@ class WorktreeLifecycle:
             return WorktreeCreateResult(
                 status=WorktreeCreateStatus.GIT_FAILED,
                 errors=[f"Worktree path check failed (WORKTREE_GIT_FAILED): {exc}"],
-                fixes=[f"Check that '{worktree_path.parent}' is readable, then retry"],
+                remediations=[Remediation(message=f"Check that '{worktree_path.parent}' is readable, then retry")],
             )
         if path_taken:
-            return _already_exists(worktree_path.name, self._collision_fix(worktree_path, temp_branch, path_taken=True))
+            return _already_exists(
+                worktree_path.name, self._collision_remediations(worktree_path, temp_branch, path_taken=True)
+            )
         try:
             branch_taken = self.git.branch_exists(self.path, temp_branch)
         except GitPlumbingTimeoutError as exc:
             return WorktreeCreateResult(
                 status=WorktreeCreateStatus.GIT_TIMEOUT,
                 errors=[f"Git worktree operation timed out (WORKTREE_GIT_TIMEOUT): {exc}"],
-                fixes=["Check for git lock files, credential prompts, or stuck git processes, then retry"],
+                remediations=[
+                    Remediation(
+                        message="Check for git lock files, credential prompts, or stuck git processes, then retry"
+                    )
+                ],
             )
         except Exception as exc:
             return WorktreeCreateResult(
@@ -197,27 +209,45 @@ class WorktreeLifecycle:
                         context=_create_context(worktree_path, temp_branch),
                     )
                 ],
-                fixes=["Ensure this directory is a Git repository with a valid base ref"],
+                remediations=[Remediation(message="Ensure this directory is a Git repository with a valid base ref")],
             )
         if not branch_taken:
             return None
-        return _already_exists(worktree_path.name, self._collision_fix(worktree_path, temp_branch, path_taken=False))
+        return _already_exists(
+            worktree_path.name, self._collision_remediations(worktree_path, temp_branch, path_taken=False)
+        )
 
-    def _collision_fix(self, worktree_path: Path, temp_branch: str, *, path_taken: bool) -> str:
-        """Return show/delete advice when Dovo tracks the ID, else name the exact path or branch to clear by hand.
+    def _collision_remediations(self, worktree_path: Path, temp_branch: str, *, path_taken: bool) -> list[Remediation]:
+        """Return show/delete steps when Dovo tracks the ID, else the exact path or branch to clear by hand.
 
         `dovo worktree delete` acts only on a row that is not cleaned, so any other collision gets manual advice.
         """
         worktree_id = worktree_path.name
         row = self.db.get(worktree_id)
         if row is not None and row.status is not WorktreeStatus.CLEANED:
-            return f"Inspect it with `dovo worktree show {worktree_id}` or remove it with `dovo worktree delete {worktree_id}`"
+            return [
+                Remediation(
+                    message=f"Inspect it with 'dovo worktree show {worktree_id}'",
+                    command=f"dovo worktree show {worktree_id}",
+                ),
+                Remediation(
+                    message=f"Remove it with 'dovo worktree delete {worktree_id}'",
+                    command=f"dovo worktree delete {worktree_id}",
+                ),
+            ]
         if path_taken:
-            return f"'{worktree_path}' is not tracked by Dovo; move or remove it, then retry"
-        return (
-            f"Branch '{temp_branch}' is not tracked by Dovo; "
-            f"delete it with `git branch -D {temp_branch}` if you no longer need it, then retry"
-        )
+            return [
+                Remediation(message=f"Path '{worktree_path}' is not tracked by Dovo; move or remove it, then retry")
+            ]
+        return [
+            Remediation(
+                message=(
+                    f"Branch '{temp_branch}' is not tracked by Dovo; "
+                    f"delete it with 'git branch -D {temp_branch}' if you no longer need it, then retry"
+                ),
+                command=f"git branch -D {temp_branch}",
+            )
+        ]
 
     def _probe_created_branch(self, temp_branch: str) -> bool:
         """Return True when temp_branch exists after a failed add; any probe failure returns False so cleanup never deletes on doubt."""
@@ -255,7 +285,11 @@ class WorktreeLifecycle:
             return WorktreeCreateResult(
                 status=WorktreeCreateStatus.GIT_TIMEOUT,
                 errors=[f"Git worktree operation timed out (WORKTREE_GIT_TIMEOUT): {exc}"],
-                fixes=["Check for git lock files, credential prompts, or stuck git processes, then retry"],
+                remediations=[
+                    Remediation(
+                        message="Check for git lock files, credential prompts, or stuck git processes, then retry"
+                    )
+                ],
             )
         except Exception as exc:
             self._discard_failed_add(worktree_path, temp_branch)
@@ -269,7 +303,7 @@ class WorktreeLifecycle:
                         context=_create_context(worktree_path, temp_branch),
                     )
                 ],
-                fixes=["Ensure this directory is a Git repository with a valid base ref"],
+                remediations=[Remediation(message="Ensure this directory is a Git repository with a valid base ref")],
             )
 
     def _resolve_base_commit(
@@ -315,7 +349,7 @@ class WorktreeLifecycle:
             return [], WorktreeCreateResult(
                 status=WorktreeCreateStatus.GIT_TIMEOUT,
                 errors=[f"Git timed out while overlaying uncommitted WIP (WORKTREE_GIT_TIMEOUT): {exc}"],
-                fixes=["Check for git lock files or retry without --wip"],
+                remediations=[Remediation(message="Check for git lock files or retry without '--wip'")],
             )
         except Exception as exc:
             self.discard_partial(worktree_path, temp_branch, created_dir=True, created_branch=True)
@@ -329,7 +363,7 @@ class WorktreeLifecycle:
                         context=_create_context(worktree_path, temp_branch),
                     )
                 ],
-                fixes=["Resolve local conflicts and retry, or commit changes first"],
+                remediations=[Remediation(message="Resolve local conflicts and retry, or commit changes first")],
             )
 
     def _persist_session(self, session: WorktreeSession) -> list[str]:

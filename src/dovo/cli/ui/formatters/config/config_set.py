@@ -33,7 +33,7 @@ class ConfigSetFormatter(ComponentFormatter[ConfigSetResult, ConfigSetView]):
             value_type=type(data.value).__name__,
             errors=list(data.errors),
             warnings=list(data.warnings),
-            fixes=list(data.fixes),
+            remediations=list(data.remediations),
         )
 
     def to_rich(self, data: ConfigSetResult) -> RenderableType:
@@ -48,5 +48,5 @@ class ConfigSetFormatter(ComponentFormatter[ConfigSetResult, ConfigSetView]):
             "Config Error",
             view.errors,
             "Failed to update configuration.",
-            view.fixes,
+            remediations=view.remediations,
         )

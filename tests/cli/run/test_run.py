@@ -505,7 +505,7 @@ class RunCliRetentionIntegrationTests:
         assert result.exit_code == 1
         assert f".dovo/worktrees/{session_id} (branch dovo/{session_id})" in output
         assert "Worktree: Kept at " in output
-        assert f"remove it with `dovo worktree delete {session_id}`" in output
+        assert f"Remove it with 'dovo worktree delete {session_id}'" in output
 
 
 class RunCliUnfixableAgentIntegrationTests:

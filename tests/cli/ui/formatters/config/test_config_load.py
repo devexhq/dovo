@@ -8,6 +8,7 @@ from typing import Any
 import pytest
 
 from dovo.cli.ui.formatters.config.config_load import ConfigLoadFormatter
+from dovo.common.models import Remediation
 from dovo.core.config.loader import ConfigLoadResult, ConfigLoadStatus
 from dovo.core.config.models import DovoConfig, ProjectConfig
 from tests.harness.formatter import (
@@ -32,11 +33,12 @@ NOT_FOUND = FormatterCase.identity(
         status=ConfigLoadStatus.NOT_FOUND,
         config_path=_CONFIG_PATH,
         errors=["Configuration file not found at '/workspace/.dovo/config.json' (CONFIG_NOT_FOUND)."],
-        fixes=["Run `dovo init` to initialize Dovo"],
+        remediations=[Remediation(message="Run 'dovo init' to initialize Dovo", command="dovo init")],
     ),
     render_expectations=[
         "Configuration file not found at '/workspace/.dovo/config.json' (CONFIG_NOT_FOUND).",
-        "Run `dovo init` to initialize Dovo",
+        "Fix:",
+        "- Run 'dovo init' to initialize Dovo",
     ],
 )
 
@@ -97,7 +99,7 @@ CONFIG_LOAD_PAYLOAD_CASES = [
             },
             "warnings": [],
             "errors": [],
-            "fixes": [],
+            "remediations": [],
             "error_code": None,
         },
         id="valid_config",
@@ -111,7 +113,7 @@ CONFIG_LOAD_PAYLOAD_CASES = [
             "config": None,
             "warnings": [],
             "errors": ["Configuration file not found at '/workspace/.dovo/config.json' (CONFIG_NOT_FOUND)."],
-            "fixes": ["Run `dovo init` to initialize Dovo"],
+            "remediations": [{"message": "Run 'dovo init' to initialize Dovo", "command": "dovo init"}],
             "error_code": None,
         },
         id="not_found",

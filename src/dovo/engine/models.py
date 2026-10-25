@@ -12,7 +12,7 @@ from pydantic import BaseModel, Field
 
 from dovo.common.clock import Clock
 from dovo.common.filesystem import WorkspacePaths
-from dovo.common.models import BaseResult
+from dovo.common.models import BaseResult, Remediation
 from dovo.common.session_id import SessionIdFactory
 from dovo.core.agents.models import AgentEnvOverrides, ResolvedAgentSettings
 from dovo.core.artifacts.store import ArtifactStore
@@ -279,9 +279,14 @@ class RunObserver(Protocol):
         ...
 
     def on_worktree_cleanup(
-        self, kept: bool, path: Path, worktree_id: str | None = None, branch: str | None = None
+        self,
+        kept: bool,
+        path: Path,
+        worktree_id: str | None = None,
+        branch: str | None = None,
+        remediations: Sequence[Remediation] = (),
     ) -> None:
-        """Called after worktree cleanup/keep decision is applied; worktree_id and branch are set when a run's worktree is kept for inspection."""
+        """Called after worktree cleanup/keep decision is applied; worktree_id, branch and remediations are set when a run's worktree is kept for inspection."""
         ...
 
     def on_run_started(self, steps: Sequence[StepDefinition | LoopStepBlock]) -> None:

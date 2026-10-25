@@ -40,7 +40,6 @@ class FilesystemWritableCheck:
                 error_code="DOCTOR_FS_UNWRITABLE",
                 errors=[message],
                 warnings=[],
-                fixes=[],
             )
 
         return DiagnosticCheckResult(
@@ -53,7 +52,6 @@ class FilesystemWritableCheck:
             error_code=None,
             errors=[],
             warnings=[],
-            fixes=[],
         )
 
 

@@ -21,4 +21,4 @@ class ConfigLoadFormatter(ComponentFormatter[ConfigLoadResult]):
             return Text(payload)
 
         fallback = f"Configuration failed to load ({data.status.value.upper()})."
-        return build_error_panel("Config Error", data.errors, fallback, data.fixes)
+        return build_error_panel("Config Error", data.errors, fallback, remediations=data.remediations)

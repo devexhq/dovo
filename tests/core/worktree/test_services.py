@@ -7,6 +7,7 @@ import pytest
 
 from dovo.common.constants import DEFAULT_MAXIMUM_WORKTREES_ALLOWED
 from dovo.common.filesystem import WorkspacePaths
+from dovo.common.models import Remediation
 from dovo.core.db import WorktreesRepository, WorktreeStatus
 from dovo.core.git.runner import GitRunner
 from dovo.core.worktree.models import (
@@ -65,7 +66,6 @@ class WorktreeCreationTests:
         assert result.session.wip_paths == []
         assert result.warnings == []
         assert result.errors == []
-        assert result.fixes == []
         assert expected_worktree_path.is_dir()
         assert expected_branch in GitRunner().list_branches(worktree_workspace)
 
@@ -109,9 +109,12 @@ class WorktreeCapacityTests:
             f"Maximum active worktrees reached ({DEFAULT_MAXIMUM_WORKTREES_ALLOWED}/{DEFAULT_MAXIMUM_WORKTREES_ALLOWED})."
         ]
         assert overflow.warnings == []
-        assert overflow.fixes == [
-            "Remove a kept worktree with `dovo worktree delete <worktree-id>` (see `dovo worktree list`), or",
-            "Raise worktree.max_active_worktrees in .dovo/config.json",
+        assert overflow.remediations == [
+            Remediation(
+                message="Remove a kept worktree with 'dovo worktree delete <worktree-id>' (see 'dovo worktree list')",
+                command="dovo worktree delete <worktree-id>",
+            ),
+            Remediation(message="Raise 'worktree.max_active_worktrees' in '.dovo/config.json'"),
         ]
         assert not (worktree_workspace / ".dovo" / "worktrees" / overflow_id).exists()
         assert f"dovo/{overflow_id}" not in GitRunner().list_branches(worktree_workspace)

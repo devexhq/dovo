@@ -5,7 +5,8 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any, Final
 
-from dovo.core.diagnostics.models import CheckStatus, DiagnosticCheckResult, Remediation, RemediationType
+from dovo.common.models import Remediation
+from dovo.core.diagnostics.models import CheckStatus, DiagnosticCheckResult
 
 
 def resolve_remediations(result: DiagnosticCheckResult) -> list[Remediation]:
@@ -18,34 +19,14 @@ def resolve_remediations(result: DiagnosticCheckResult) -> list[Remediation]:
     return builder(result)
 
 
-def format_remediation_summary(remediations: list[Remediation]) -> str:
-    """Format a list of remediations into user-facing text hints."""
-    if not remediations:
-        return ""
-    lines = ["Fix:"]
-    for remediation in remediations:
-        lines.append(f"  • {remediation.title}:")
-        if remediation.action_type == RemediationType.COMMAND and remediation.command:
-            lines.append(f"    {remediation.command}")
-        else:
-            lines.append(f"    {remediation.description}")
-    return "\n".join(lines)
-
-
 def _fallback_remediation(result: DiagnosticCheckResult) -> Remediation:
     """Return the generic manual-inspection remediation for a check with no mapped error code."""
     code = result.error_code or "DOCTOR_UNKNOWN"
     return Remediation(
-        code=code,
-        title="Investigate check failure manually",
-        action_type=RemediationType.MANUAL,
-        command=None,
-        description=(
+        message=(
             f"No deterministic remediation is registered for check '{result.check_id}' "
             f"(error_code='{code}'). Review the check message and details to diagnose and resolve the issue."
         ),
-        doc_path=None,
-        is_automated=False,
     )
 
 
@@ -53,13 +34,8 @@ def _git_not_repo(result: DiagnosticCheckResult) -> list[Remediation]:
     """Return the remediation for a workspace that is not a Git repository (DOCTOR_GIT_NOT_REPO)."""
     return [
         Remediation(
-            code="DOCTOR_GIT_NOT_REPO",
-            title="Initialize Git repository",
-            action_type=RemediationType.COMMAND,
+            message="Run 'git init' from the workspace root to create the Git repository worktree operations require.",
             command="git init",
-            description="Run `git init` from the workspace root to create the Git repository worktree operations require.",
-            doc_path=None,
-            is_automated=False,
         )
     ]
 
@@ -68,58 +44,44 @@ def _git_binary_missing(result: DiagnosticCheckResult) -> list[Remediation]:
     """Return the remediation for a missing git executable on PATH (DOCTOR_GIT_BINARY_MISSING)."""
     return [
         Remediation(
-            code="DOCTOR_GIT_BINARY_MISSING",
-            title="Install Git",
-            action_type=RemediationType.MANUAL,
-            command=None,
-            description="Install Git via your operating system's package manager and ensure the `git` executable is available on PATH.",
-            doc_path=None,
-            is_automated=False,
+            message=(
+                "Install Git via your operating system's package manager and ensure the 'git' executable "
+                "is available on 'PATH'."
+            ),
         )
     ]
 
 
 def _config_not_found(result: DiagnosticCheckResult) -> list[Remediation]:
-    """Return the remediation for a missing `.dovo/config.json` (DOCTOR_CONFIG_NOT_FOUND)."""
+    """Return the remediation for a missing '.dovo/config.json' (DOCTOR_CONFIG_NOT_FOUND)."""
     return [
         Remediation(
-            code="DOCTOR_CONFIG_NOT_FOUND",
-            title="Initialize Dovo workspace",
-            action_type=RemediationType.COMMAND,
+            message="Run 'dovo init' to create '.dovo/config.json' and the required workspace directory structure.",
             command="dovo init",
-            description="Run `dovo init` to create `.dovo/config.json` and the required workspace directory structure.",
-            doc_path="docs/cli/init.md",
-            is_automated=False,
         )
     ]
 
 
 def _config_malformed(result: DiagnosticCheckResult) -> list[Remediation]:
-    """Return the remediation for a `.dovo/config.json` with invalid JSON syntax (DOCTOR_CONFIG_MALFORMED)."""
+    """Return the manual-fix and overwrite remediations for a '.dovo/config.json' with invalid JSON syntax (DOCTOR_CONFIG_MALFORMED)."""
     return [
+        Remediation(message="Edit '.dovo/config.json' by hand to fix the invalid JSON syntax."),
         Remediation(
-            code="DOCTOR_CONFIG_MALFORMED",
-            title="Repair configuration file",
-            action_type=RemediationType.COMMAND,
-            command="dovo init --repair",
-            description="Run `dovo init --repair` to restore missing schema keys, or edit `.dovo/config.json` by hand to fix the invalid JSON syntax.",
-            doc_path="docs/cli/init.md",
-            is_automated=False,
-        )
+            message="Run 'dovo init --overwrite' to replace it with a default configuration, discarding its contents.",
+            command="dovo init --overwrite",
+        ),
     ]
 
 
 def _config_schema_invalid(result: DiagnosticCheckResult) -> list[Remediation]:
-    """Return the remediation for a `.dovo/config.json` failing schema V1 validation (DOCTOR_CONFIG_SCHEMA_INVALID)."""
+    """Return the remediation for a '.dovo/config.json' failing schema V1 validation (DOCTOR_CONFIG_SCHEMA_INVALID)."""
     return [
         Remediation(
-            code="DOCTOR_CONFIG_SCHEMA_INVALID",
-            title="Validate and repair configuration",
-            action_type=RemediationType.COMMAND,
+            message=(
+                "Run 'dovo config validate' to see detailed schema errors, then fix '.dovo/config.json' "
+                "or run 'dovo init --repair' to restore missing defaults."
+            ),
             command="dovo config validate",
-            description="Run `dovo config validate` to see detailed schema errors, then fix `.dovo/config.json` or run `dovo init --repair` to restore missing defaults.",
-            doc_path="docs/cli/config.md",
-            is_automated=False,
         )
     ]
 
@@ -130,13 +92,11 @@ def _fs_unwritable(result: DiagnosticCheckResult) -> list[Remediation]:
     paths = unwritable_paths if isinstance(unwritable_paths, list) and unwritable_paths else [".dovo"]
     return [
         Remediation(
-            code="DOCTOR_FS_UNWRITABLE",
-            title="Fix directory permissions",
-            action_type=RemediationType.COMMAND,
+            message=(
+                f"Run 'chmod u+w {path}' to grant the current user write access to '{path}' "
+                "so Dovo can create and update workspace state."
+            ),
             command=f"chmod u+w {path}",
-            description=f"Grant the current user write access to '{path}' so Dovo can create and update workspace state.",
-            doc_path=None,
-            is_automated=False,
         )
         for path in paths
     ]
@@ -146,13 +106,8 @@ def _worktree_stale(result: DiagnosticCheckResult) -> list[Remediation]:
     """Return the remediation for stale worktree database references (DOCTOR_WORKTREE_STALE)."""
     return [
         Remediation(
-            code="DOCTOR_WORKTREE_STALE",
-            title="Prune stale worktrees",
-            action_type=RemediationType.COMMAND,
+            message="Run 'dovo worktree prune' to reconcile worktree database records that no longer match a live Git worktree.",
             command="dovo worktree prune",
-            description="Run `dovo worktree prune` to reconcile worktree database records that no longer match a live Git worktree.",
-            doc_path="docs/cli/worktree.md",
-            is_automated=False,
         )
     ]
 
@@ -161,13 +116,8 @@ def _worktree_orphan(result: DiagnosticCheckResult) -> list[Remediation]:
     """Return the remediation for orphaned worktree directories (DOCTOR_WORKTREE_ORPHAN)."""
     return [
         Remediation(
-            code="DOCTOR_WORKTREE_ORPHAN",
-            title="Prune orphan worktree directories",
-            action_type=RemediationType.COMMAND,
+            message="Run 'dovo worktree prune' to remove worktree directories that have no matching database record.",
             command="dovo worktree prune",
-            description="Run `dovo worktree prune` to remove worktree directories that have no matching database record.",
-            doc_path="docs/cli/worktree.md",
-            is_automated=False,
         )
     ]
 
@@ -177,15 +127,7 @@ def _binary_missing(result: DiagnosticCheckResult) -> list[Remediation]:
     missing_binaries = result.details.get("missing_binaries")
     binaries = missing_binaries if isinstance(missing_binaries, list) and missing_binaries else ["<binary>"]
     return [
-        Remediation(
-            code="DOCTOR_BINARY_MISSING",
-            title="Install required binary",
-            action_type=RemediationType.MANUAL,
-            command=None,
-            description=f"Install '{binary}' via your package manager and ensure it is available on PATH.",
-            doc_path=None,
-            is_automated=False,
-        )
+        Remediation(message=f"Install '{binary}' via your package manager and ensure it is available on 'PATH'.")
         for binary in binaries
     ]
 
@@ -206,15 +148,12 @@ def _credential_names(details: dict[str, Any]) -> list[str]:
 
 
 def _claude_login_remediation() -> Remediation:
-    """Return the manual remediation for authenticating Claude Code through `claude auth login`."""
+    """Return the manual remediation for authenticating Claude Code through 'claude auth login'."""
     return Remediation(
-        code="DOCTOR_AGENT_KEY_MISSING",
-        title="Log in to Claude Code",
-        action_type=RemediationType.MANUAL,
-        command=None,
-        description="Run `claude auth login`, or export CLAUDE_CODE_OAUTH_TOKEN from `claude setup-token`, so Claude Code authenticates without an API key.",
-        doc_path="docs/guides/agent-providers.md",
-        is_automated=False,
+        message=(
+            "Run 'claude auth login', or export 'CLAUDE_CODE_OAUTH_TOKEN' from 'claude setup-token', "
+            "so Claude Code authenticates without an API key."
+        ),
     )
 
 
@@ -222,13 +161,11 @@ def _agent_key_missing(result: DiagnosticCheckResult) -> list[Remediation]:
     """Return one export remediation per missing credential name, plus the Claude login remediation for claude (DOCTOR_AGENT_KEY_MISSING)."""
     remediations = [
         Remediation(
-            code="DOCTOR_AGENT_KEY_MISSING",
-            title="Export agent API key",
-            action_type=RemediationType.COMMAND,
+            message=(
+                f"Run 'export {env_var}=\"<your-api-key>\"' in your active shell, or set '{env_var}' in your "
+                "'.env' file, so the configured agent provider can authenticate."
+            ),
             command=f'export {env_var}="<your-api-key>"',
-            description=f"Set the {env_var} environment variable in your active shell or `.env` file so the configured agent provider can authenticate.",
-            doc_path="docs/guides/agent-providers.md",
-            is_automated=False,
         )
         for env_var in _credential_names(result.details)
     ]
@@ -243,13 +180,11 @@ def _agent_no_model(result: DiagnosticCheckResult) -> list[Remediation]:
     provider = result.details.get("provider", "<provider>")
     return [
         Remediation(
-            code="DOCTOR_AGENT_NO_MODEL",
-            title="Configure agent model",
-            action_type=RemediationType.COMMAND,
+            message=(
+                f"Run 'dovo config set agents.{provider}.model \"<model>\"' to set 'agents.{provider}.model' "
+                "in '.dovo/config.json' to a model supported by that provider."
+            ),
             command=f'dovo config set agents.{provider}.model "<model>"',
-            description=f"Set `agents.{provider}.model` in `.dovo/config.json` to a model supported by that provider, e.g. `dovo config set agents.{provider}.model <model-name>`.",
-            doc_path="docs/cli/config.md",
-            is_automated=False,
         )
     ]
 

@@ -15,7 +15,7 @@ from dovo.common.error_codes import ErrorCode
 from dovo.common.exceptions import DefinitionLoadError, DefinitionValidationError
 from dovo.common.filesystem import Filesystem, WorkspacePaths
 from dovo.common.lock import WorkspaceLock
-from dovo.common.models import DefinitionResolutionResult, DefinitionResolutionStatus
+from dovo.common.models import DefinitionResolutionResult, DefinitionResolutionStatus, Remediation
 from dovo.core.catalog.exceptions import (
     CatalogFileNotFoundError,
     CatalogProtectionError,
@@ -364,7 +364,7 @@ class Catalog:
                     item_type=None,
                     errors=[f"'--type' is required to validate file target '{target}' (CATALOG_TYPE_REQUIRED)."],
                     warnings=[],
-                    fixes=["Pass --type blueprint or --type step for a file target."],
+                    remediations=[Remediation(message="Pass '--type blueprint' or '--type step' for a file target.")],
                 )
             return file_candidate, item_type.value, file_candidate.stem, []
 
@@ -378,7 +378,11 @@ class Catalog:
                 item_type=None,
                 errors=[f"Catalog item '{target}' not found (CATALOG_ITEM_NOT_FOUND)."],
                 warnings=[],
-                fixes=[f"Check that '{target}' names an indexed catalog item, or pass a file path instead."],
+                remediations=[
+                    Remediation(
+                        message=f"Check that '{target}' names an indexed catalog item, or pass a file path instead."
+                    )
+                ],
             )
 
         record = resolution.resolved

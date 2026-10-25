@@ -10,8 +10,9 @@ from rich.text import Text
 
 from dovo.cli.ui.formatters.base import ComponentFormatter
 from dovo.cli.ui.formatters.doctor.doctor_views import DoctorCheckView, DoctorReportView
-from dovo.core.diagnostics import CheckStatus, DiagnosticsReport, Remediation
-from dovo.core.diagnostics.services.remediation import format_remediation_summary
+from dovo.common.formatters import format_remediations
+from dovo.common.models import Remediation
+from dovo.core.diagnostics import CheckStatus, DiagnosticsReport
 
 _STATUS_STYLE: Final[dict[CheckStatus, str]] = {
     CheckStatus.OK: "green",
@@ -85,11 +86,11 @@ class DoctorReportFormatter(ComponentFormatter[DiagnosticsReport, DoctorReportVi
         )
 
     def to_rich(self, data: DiagnosticsReport) -> RenderableType:
-        """Render the checks table, summary line, and (when any check has remediations) a Fix: summary from transform(data)."""
+        """Render the checks table, summary line, and (when any check has remediations) one Fix: block with every remediation in check order, from transform(data)."""
         view = self.transform(data)
         renderables: list[RenderableType] = [_build_checks_table(view), Text(_summary_line(view))]
 
-        remediation_summary = format_remediation_summary(_all_remediations(view))
+        remediation_summary = format_remediations(_all_remediations(view))
         if remediation_summary:
             renderables.append(Text(remediation_summary))
 

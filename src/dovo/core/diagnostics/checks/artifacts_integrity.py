@@ -62,7 +62,6 @@ def _orphan_result(check: ArtifactsIntegrityCheck, orphan_dirs: list[str]) -> Di
         error_code="DOCTOR_ARTIFACT_ORPHAN_DIR",
         errors=[],
         warnings=[message],
-        fixes=[],
     )
 
 
@@ -79,7 +78,6 @@ def _missing_result(check: ArtifactsIntegrityCheck, missing: list[str]) -> Diagn
         error_code="DOCTOR_ARTIFACT_MISSING_DIR",
         errors=[],
         warnings=[message],
-        fixes=[],
     )
 
 
@@ -95,5 +93,4 @@ def _ok_result(check: ArtifactsIntegrityCheck, verified_count: int) -> Diagnosti
         error_code=None,
         errors=[],
         warnings=[],
-        fixes=[],
     )

@@ -11,7 +11,7 @@ from typing import Any
 from pydantic import JsonValue
 
 from dovo.common.filesystem import Filesystem
-from dovo.common.models import BaseResult
+from dovo.common.models import BaseResult, Remediation
 from dovo.common.schema_validation import CONFIG_VALIDATOR
 from dovo.core.config.loader import (
     _map_dovo_config,
@@ -163,7 +163,7 @@ def _read_config_object(path: Path, key: str) -> dict[str, Any] | ConfigSetResul
             config_path=path,
             key=key,
             errors=[f"Config path is a directory, not a file: '{path}' (CONFIG_PATH_IS_DIRECTORY)."],
-            fixes=["Remove the directory or point config_path at a file"],
+            remediations=[Remediation(message="Remove the directory or point config_path at a file")],
         )
 
     if not path.exists():
@@ -172,7 +172,7 @@ def _read_config_object(path: Path, key: str) -> dict[str, Any] | ConfigSetResul
             config_path=path,
             key=key,
             errors=[f"Configuration file not found at '{path}' (CONFIG_NOT_FOUND)."],
-            fixes=["Run `dovo init` to create `.dovo/config.json`"],
+            remediations=[Remediation(message="Run 'dovo init' to create '.dovo/config.json'", command="dovo init")],
         )
 
     try:
@@ -183,7 +183,7 @@ def _read_config_object(path: Path, key: str) -> dict[str, Any] | ConfigSetResul
             config_path=path,
             key=key,
             errors=[f"Unable to read config.json at '{path}': {exc} (CONFIG_UNREADABLE)."],
-            fixes=["Check file permissions and that the path is readable"],
+            remediations=[Remediation(message="Check file permissions and that the path is readable")],
         )
 
     try:
@@ -197,7 +197,7 @@ def _read_config_object(path: Path, key: str) -> dict[str, Any] | ConfigSetResul
             config_path=path,
             key=key,
             errors=[f"Malformed config.json at '{path}': {detail} (CONFIG_MALFORMED_JSON)."],
-            fixes=["Repair JSON syntax, or restore from backup"],
+            remediations=[Remediation(message="Repair JSON syntax, or restore from backup")],
         )
 
     if not isinstance(data, dict):
@@ -206,7 +206,7 @@ def _read_config_object(path: Path, key: str) -> dict[str, Any] | ConfigSetResul
             config_path=path,
             key=key,
             errors=[f"Malformed config.json at '{path}': root must be an object (CONFIG_ROOT_NOT_OBJECT)."],
-            fixes=["Ensure config.json is a JSON object, not an array or scalar"],
+            remediations=[Remediation(message="Ensure 'config.json' is a JSON object, not an array or scalar")],
         )
 
     return data
@@ -234,9 +234,12 @@ def _validate_mutated_config(
                     ]
                 )
             ],
-            fixes=[
-                "Run `dovo config validate` for details",
-                "Or `dovo init --repair` to insert missing keys without overwriting values",
+            remediations=[
+                Remediation(message="Run 'dovo config validate' for details", command="dovo config validate"),
+                Remediation(
+                    message="Run 'dovo init --repair' to insert missing keys without overwriting values",
+                    command="dovo init --repair",
+                ),
             ],
         )
 
@@ -256,9 +259,12 @@ def _validate_mutated_config(
                     ]
                 )
             ],
-            fixes=[
-                "Run `dovo config validate` for details",
-                "Or `dovo init --repair` to insert missing keys without overwriting values",
+            remediations=[
+                Remediation(message="Run 'dovo config validate' for details", command="dovo config validate"),
+                Remediation(
+                    message="Run 'dovo init --repair' to insert missing keys without overwriting values",
+                    command="dovo init --repair",
+                ),
             ],
         )
 
@@ -319,7 +325,7 @@ def set_config_value_result(
             key=key,
             value=parsed_value,
             errors=[f"Unable to write config.json at '{config_path}': {exc} (CONFIG_WRITE_FAILED)."],
-            fixes=["Check file permissions and free disk space"],
+            remediations=[Remediation(message="Check file permissions and free disk space")],
         )
 
     clear_config_cache(config_path)
@@ -358,7 +364,7 @@ def unset_config_value_result(
             key=key,
             existed=False,
             errors=loaded.errors,
-            fixes=loaded.fixes,
+            remediations=list(loaded.remediations),
         )
 
     updated = copy.deepcopy(loaded)
@@ -398,7 +404,7 @@ def unset_config_value_result(
             existed=True,
             previous_value=previous_value,
             errors=schema_error.errors,
-            fixes=schema_error.fixes,
+            remediations=schema_error.remediations,
         )
 
     try:
@@ -411,7 +417,7 @@ def unset_config_value_result(
             existed=True,
             previous_value=previous_value,
             errors=[f"Unable to write config.json at '{config_path}': {exc} (CONFIG_WRITE_FAILED)."],
-            fixes=["Check file permissions and free disk space"],
+            remediations=[Remediation(message="Check file permissions and free disk space")],
         )
 
     clear_config_cache(config_path)

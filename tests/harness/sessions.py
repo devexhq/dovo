@@ -6,6 +6,7 @@ from collections.abc import Callable, Sequence
 from pathlib import Path
 
 from dovo.common.filesystem.models import WorkspacePaths
+from dovo.common.models import Remediation
 from dovo.common.timing import TimeSpan
 from dovo.core.artifacts import Artifacts
 from dovo.core.artifacts.store import ArtifactStore
@@ -74,7 +75,12 @@ class NoOpRunObserver(RunObserver):
         pass
 
     def on_worktree_cleanup(
-        self, kept: bool, path: Path, worktree_id: str | None = None, branch: str | None = None
+        self,
+        kept: bool,
+        path: Path,
+        worktree_id: str | None = None,
+        branch: str | None = None,
+        remediations: Sequence[Remediation] = (),
     ) -> None:
         pass
 
@@ -153,9 +159,14 @@ class RecordingRunObserver(NoOpRunObserver):
         self._record("loop_done", loop_id, status, total_iterations)
 
     def on_worktree_cleanup(
-        self, kept: bool, path: Path, worktree_id: str | None = None, branch: str | None = None
+        self,
+        kept: bool,
+        path: Path,
+        worktree_id: str | None = None,
+        branch: str | None = None,
+        remediations: Sequence[Remediation] = (),
     ) -> None:
-        self._record("worktree_cleanup", kept, path, worktree_id, branch)
+        self._record("worktree_cleanup", kept, path, worktree_id, branch, list(remediations))
 
     def on_run_started(self, steps: Sequence[StepDefinition | LoopStepBlock]) -> None:
         self._record("run_started", steps)

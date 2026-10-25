@@ -6,12 +6,15 @@ from typing import TYPE_CHECKING, Any, Protocol
 
 from rich.panel import Panel
 
+from dovo.common.formatters import format_remediations
+
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
     from pydantic import BaseModel
 
     from dovo.cli.ui.formatters.base import ComponentFormatter
+    from dovo.common.models import Remediation
 
 DEFAULT_PANEL_STYLE = "blue"
 ERROR_PANEL_STYLE = "red"
@@ -40,44 +43,22 @@ def render_list_errors(
     return default
 
 
-def render_list_fixes(
-    fixes: Sequence[str] | None = None,
-    *,
-    header: str = "Fix:",
-    bullet: str = "- ",
-) -> str:
-    """Render a sequence of remediation fixes with a header and bullet points.
-
-    Args:
-        fixes: Sequence of fix remediation strings.
-        header: Header text before the fixes list. Defaults to "Fix:".
-        bullet: Bullet prefix for each fix item. Defaults to "- ".
-
-    Returns:
-        Formatted fix block string, or empty string if fixes is empty or None.
-    """
-    if not fixes:
-        return ""
-    bullet_lines = "\n".join(f"{bullet}{fix}" for fix in fixes)
-    return f"{header}\n{bullet_lines}"
-
-
 def build_error_panel(
     title: str,
     errors: Sequence[str] | None = None,
     default: str = "",
-    fixes: Sequence[str] | None = None,
+    remediations: Sequence[Remediation] = (),
     *,
     border_style: str = ERROR_PANEL_STYLE,
     fit: bool = False,
 ) -> Panel:
-    """Build a standardized Rich error panel combining formatted errors and remediation fixes.
+    """Build a standardized Rich error panel combining formatted errors and the remediation Fix: block.
 
     Args:
         title: Panel title header.
         errors: Sequence of error strings.
         default: Fallback error message if errors is empty or None.
-        fixes: Optional sequence of remediation fix strings.
+        remediations: Remediations rendered as the shared Fix: block.
         border_style: Border style color. Defaults to ERROR_PANEL_STYLE ("red").
         fit: Whether to use Panel.fit instead of Panel. Defaults to False.
 
@@ -85,8 +66,8 @@ def build_error_panel(
         Configured Rich Panel.
     """
     error_msg = render_list_errors(errors, default=default)
-    fixes_msg = render_list_fixes(fixes)
-    message = f"{error_msg}\n{fixes_msg}" if fixes_msg else error_msg
+    remediations_msg = format_remediations(remediations)
+    message = f"{error_msg}\n{remediations_msg}" if remediations_msg else error_msg
     panel_cls = Panel.fit if fit else Panel
     return panel_cls(message, title=title, border_style=border_style)
 
@@ -111,5 +92,4 @@ __all__ = [
     "DispatcherProtocol",
     "build_error_panel",
     "render_list_errors",
-    "render_list_fixes",
 ]

@@ -11,7 +11,7 @@ from typing import Annotated, Literal
 from pydantic import BaseModel, Field, StringConstraints, model_validator
 
 from dovo.common.mcp_servers import McpServerDefinition
-from dovo.common.models import BaseResult
+from dovo.common.models import BaseResult, Remediation
 from dovo.common.tool_policy import ToolCapability, ToolPolicy
 
 OmissionReason = Literal[
@@ -239,7 +239,7 @@ class AgentResponse(BaseModel):
     raw_text: str | None = None
     duration_seconds: float = 0.0
     errors: list[str] = Field(default_factory=list)
-    fixes: list[str] = Field(default_factory=list)
+    remediations: list[Remediation] = Field(default_factory=list)
     mutation_baseline_ref: str | None = None
     env_withheld: list[str] = Field(default_factory=list)
     rejected_patch_path: str | None = None

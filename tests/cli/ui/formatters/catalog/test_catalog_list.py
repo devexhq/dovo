@@ -46,7 +46,9 @@ def _item_view(name: str, item_type: str) -> CatalogItemView:
     )
 
 
-_EMPTY_VIEW = CatalogListView(items=[], type_filter=None, templates=[], total_items=0, errors=[], warnings=[], fixes=[])
+_EMPTY_VIEW = CatalogListView(
+    items=[], type_filter=None, templates=[], total_items=0, errors=[], warnings=[], remediations=[]
+)
 
 
 WITH_ITEMS = FormatterCase(
@@ -118,7 +120,7 @@ PAYLOAD_CASES = [
         {
             "errors": [],
             "warnings": ["Failed to parse corrupted.yml"],
-            "fixes": [],
+            "remediations": [],
             "items": [
                 {
                     "sha": "blueprint_1234567",
@@ -140,7 +142,7 @@ PAYLOAD_CASES = [
         {
             "errors": [],
             "warnings": [],
-            "fixes": [],
+            "remediations": [],
             "items": [],
             "type_filter": None,
             "templates": [],
