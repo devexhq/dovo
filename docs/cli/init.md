@@ -67,7 +67,7 @@ Both errors exit with code `1` and report `failure_mode: "preflight"` in JSON ou
 
 The global-home refusal applies to a directory whose `.dovo` is `DOVO_HOME` (by default your home directory, whose `.dovo` is `~/.dovo`), even when it is a Git repository, and is checked before the Git check.
 
-When `dovo init` fails with an unexpected error while setting up the project identity, or cannot read or write `.dovo/project.json`, Dovo writes a [diagnostic log](doctor.md#diagnostic-logs) record. The error message then ends with a `Details logged: <path> (event <event_id>)` line naming that file; if the record cannot be written, the line is absent. These failures exit with code `1` and report `failure_mode: "bootstrap"`.
+When `dovo init` fails with an unexpected error while setting up the project identity, or the operating system refuses to read or write `.dovo/project.json` (for example, a permission error), Dovo writes a [diagnostic log](doctor.md#diagnostic-logs) record. The error message then ends with a `Details logged: <path> (event <event_id>)` line naming that file; if the record cannot be written, the line is absent. These failures exit with code `1` and report `failure_mode: "bootstrap"`.
 
 ## Examples
 
