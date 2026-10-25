@@ -6,6 +6,9 @@ from enum import StrEnum
 class ErrorCode(StrEnum):
     """Canonical machine-readable error codes for Dovo operations."""
 
+    # Internal
+    INTERNAL_ERROR = "INTERNAL_ERROR"
+
     # Config
     CONFIG_NOT_FOUND = "CONFIG_NOT_FOUND"
     CONFIG_MALFORMED_JSON = "CONFIG_MALFORMED_JSON"

@@ -47,11 +47,24 @@ ID, with the `path:line` that breaks it.
   category, warnings, remediation text and health rules come from the result;
   `cli/ui/` only reshapes them for display. *Why:* terminal and JSON output must
   agree, so both derive from the same result.
-- **R4. Business failures are returned, not raised.** Return a `*Result`
-  subclassing `BaseResult` whose `status` and `errors` (or `.ok`, where the
-  result defines it) the caller branches on. Raise only for programmer errors
-  and broken invariants. *Why:* exit codes, the JSON envelope and every caller
-  branch on the result, and an exception skips all of them.
+- **R4. Business failures reach the caller as a result, not an exception.**
+  A public entrypoint (a method of the entrypoint class in
+  `core/<pkg>/<pkg>.py`, or an `engine/services/` runner, called from a layer
+  above) returns a `*Result` subclassing `BaseResult` whose `status`,
+  `error_code` and `errors` (or `.ok`, where the result defines it) the caller
+  branches on. Code behind an entrypoint returns plain values and signals a
+  business failure by raising its package's one `DomainError` subclass, which
+  carries an `ErrorCode`, a message and remediations; the entrypoint catches it
+  once, with `catch_failure`, and copies the failure into its result.
+  `catch_failure` also records any unexpected exception in the diagnostic log,
+  so code behind an entrypoint does not catch broad `Exception` to report it.
+  Only a site that recovers or collects per-item failures and continues
+  catches there, and it records what it caught. Helpers get no `*Result` or `*Status`
+  of their own, and no table maps one status or error code onto another. Raise
+  anything else only for programmer errors and broken invariants. *Why:* exit
+  codes, the JSON envelope and every caller branch on the entrypoint's result,
+  and a failure that carries the `ErrorCode` it was raised with needs no
+  re-encoding at each hop.
 - **R5. New work follows its neighbours and the exemplars.** Match the layout,
   naming and idiom of the package you are in. When two existing patterns
   disagree, follow the exemplar and say so in the PR. *Why:* agents copy what

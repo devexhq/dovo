@@ -19,11 +19,11 @@ The block below is the issue body only (title: `Implement config loader`).
 - Resolve the default config path to `<repo>/.dovo/config.json`
 - Load raw JSON from disk with stable, classified failures
 - Validate against config schema v1 and map into typed `DovoConfig`
-- Expose a non-raising `ConfigLoadResult` API as the primary load surface
-- Distinct load statuses for: missing file, malformed JSON, wrong root type, schema validation failure, path-is-directory, unreadable path
+- Expose a non-raising `Config.load` entrypoint returning `ConfigLoadResult` as the primary load surface; helpers behind it raise `ConfigError`, the package's `DomainError`, and `Config.load` catches it once with `catch_failure`
+- Distinct error codes for: missing file, malformed JSON, wrong root type, schema validation failure, path-is-directory, unreadable path
 - Stable error code strings suitable for tests and doctor checks
 - No console output, no `sys.exit`, no file creation or mutation inside the loader
-- Unit tests for the success path and every load status
+- Unit tests for the success path and every load error code
 - Update in-tree callers and tests to the new API in the same change
 
 ### Out of scope
@@ -44,7 +44,7 @@ Given repository root `cwd`, or an explicit `config_path`:
 
 ### FR-2: Success path
 When the file exists, is a regular file, and contains a JSON object that passes config schema v1:
-- `status` is `ok`
+- `ok` is true and `error_code` is `None`
 - `raw` is the parsed `dict[str, Any]`
 - `config` is a populated `DovoConfig`
 - `errors` is empty
@@ -52,28 +52,28 @@ When the file exists, is a regular file, and contains a JSON object that passes 
 
 ### FR-3: Missing config
 When the file does not exist (including missing parent `.dovo/`):
-- `status` is `not_found`
-- `errors` includes `CONFIG_NOT_FOUND` guidance that names the resolved path and tells the user to run `dovo init`
+- `error_code` is `CONFIG_NOT_FOUND`
+- `errors` names the resolved path and tells the user to run `dovo init`
 
 ### FR-4: Malformed JSON
 When the file exists but is not valid JSON:
-- `status` is `malformed_json`
-- `errors` includes `CONFIG_MALFORMED_JSON` with path and parse detail (line/col when available)
+- `error_code` is `CONFIG_MALFORMED_JSON`
+- `errors` carries the path and parse detail (line/col when available)
 
 ### FR-5: Wrong root type
 When JSON parses but the root is not an object:
-- `status` is `root_not_object`
-- `errors` includes `CONFIG_ROOT_NOT_OBJECT`
+- `error_code` is `CONFIG_ROOT_NOT_OBJECT`
+- `errors` names the path
 - schema validation is not run on non-objects
 
 ### FR-6: Schema validation failure
 When the root is an object that fails config schema v1 or Pydantic mapping:
-- `status` is `schema_invalid`
+- `error_code` is `CONFIG_SCHEMA_INVALID`
 - `errors` is a non-empty list of human-readable messages (jsonschema paths/messages)
 
 ### FR-7: Path collisions and read failures
-- Path exists and is a directory → `status` is `path_is_directory`, code `CONFIG_PATH_IS_DIRECTORY`
-- Open/read fails (permissions or OS error) → `status` is `unreadable`, code `CONFIG_UNREADABLE`
+- Path exists and is a directory → `error_code` is `CONFIG_PATH_IS_DIRECTORY`
+- Open/read fails (permissions or OS error) → `error_code` is `CONFIG_UNREADABLE`
 - Include path and a short Fix hint in `errors`
 
 ---
@@ -93,17 +93,13 @@ Replace superseded load helpers and call sites in the same change. Do not keep d
 
 ## Pre-determined data
 
-### Status enum
+### Domain error
+
+In `core/config/exceptions.py`:
 
 ```python
-class ConfigLoadStatus(StrEnum):
-    OK = "ok"
-    NOT_FOUND = "not_found"
-    MALFORMED_JSON = "malformed_json"
-    ROOT_NOT_OBJECT = "root_not_object"
-    SCHEMA_INVALID = "schema_invalid"
-    PATH_IS_DIRECTORY = "path_is_directory"
-    UNREADABLE = "unreadable"
+class ConfigError(DomainError):
+    """The config package's one business-failure exception."""
 ```
 
 ### Result model
@@ -112,14 +108,13 @@ class ConfigLoadStatus(StrEnum):
 class ConfigLoadResult(BaseResult):
     model_config = ConfigDict(extra="forbid", strict=True)
 
-    status: ConfigLoadStatus
     config_path: Path
     raw: dict[str, Any] | None = None
     config: DovoConfig | None = None
 
     @property
     def ok(self) -> bool:
-        return self.status == ConfigLoadStatus.OK
+        return self.error_code is None
 ```
 
 ---
@@ -137,16 +132,16 @@ Fix:
 
 ## Error cases to handle
 
-1. Config file missing or parent `.dovo/` missing → `not_found` + `CONFIG_NOT_FOUND` + init guidance
-2. `config.json` path is a directory → `path_is_directory`
-3. Permission denied on read → `unreadable`
-4. Empty file / truncated JSON → `malformed_json`
-5. JSON root array or scalar → `root_not_object`
-6. Object missing required V1 keys or wrong field types → `schema_invalid` with per-error list
+1. Config file missing or parent `.dovo/` missing → `CONFIG_NOT_FOUND` + init guidance
+2. `config.json` path is a directory → `CONFIG_PATH_IS_DIRECTORY`
+3. Permission denied on read → `CONFIG_UNREADABLE`
+4. Empty file / truncated JSON → `CONFIG_MALFORMED_JSON`
+5. JSON root array or scalar → `CONFIG_ROOT_NOT_OBJECT`
+6. Object missing required V1 keys or wrong field types → `CONFIG_SCHEMA_INVALID` with per-error list
 
 ---
 
 ## Definition of done
 
-- After `dovo init`, `load_config` succeeds on the generated file
+- After `dovo init`, `Config.load` returns an ok result on the generated file
 - Zero references to superseded config load helpers remain in `src/` or `tests/`

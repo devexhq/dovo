@@ -187,7 +187,7 @@ Write `.agentic/review.json` and `.agentic/verdict.txt` alongside the markdown, 
   "plan": ".agentic/plan.md",
   "counts": { "blocking": 1, "warnings": 1, "suggestions": 0, "nits": 0 },
   "findings": [
-    { "id": "B1", "severity": "BLOCKER", "path": "src/dovo/core/sessions/sessions.py", "line": 42, "rule": "R4", "summary": "Raises SessionNotFound instead of returning a NOT_FOUND result." }
+    { "id": "B1", "severity": "BLOCKER", "path": "src/dovo/core/sessions/sessions.py", "line": 146, "rule": "R4", "summary": "Session.details lets SessionNotFound escape instead of returning a NOT_FOUND result." }
   ],
   "coverage": [
     { "requirement": "FR-1", "verdict": "met", "evidence": "tests/cli/session/test_session_show.py::test_missing asserts exit 2" }
