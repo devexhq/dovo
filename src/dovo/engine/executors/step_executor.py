@@ -205,15 +205,21 @@ class StepExecution:
         return None
 
     def _resolve_shorthand(self) -> StepDefinition | str:
-        """Resolve a uses/run step in one catch_failure, or return the step error with any Details logged line."""
+        """Resolve a uses/run step, catching a uses step's catalog load once, or return the step error with any Details logged line."""
+        if self.step.uses is None:
+            return self._resolve_step()
         with catch_failure("catalog.load_definition", step=self.step.uses) as caught:
-            try:
-                resolved: StepDefinition | str = resolve_step_definition(self.step, paths=self.paths)
-            except StepValidationError:
-                resolved = f"Could not resolve step '{self.step.id}'."
+            resolved = self._resolve_step()
         if caught.failure is None:
             return resolved
         return append_diagnostic_hint(caught.failure.message, caught.failure.diagnostic)
+
+    def _resolve_step(self) -> StepDefinition | str:
+        """Resolve the step's shorthand, or return the step error when it cannot be resolved."""
+        try:
+            return resolve_step_definition(self.step, paths=self.paths)
+        except StepValidationError:
+            return f"Could not resolve step '{self.step.id}'."
 
     def _run_attempts(self) -> StepDispatchOutcome:
         """Run attempts up to max_attempts times, sleeping backoff_ms between failures."""

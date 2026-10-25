@@ -72,6 +72,7 @@ class StepValidateCliIntegrationTests:
         assert result.exit_code == 2
         payload = json.loads(result.stdout)["payload"]
         assert payload["status"] == "not_found"
+        assert payload["error_code"] == "CATALOG_NOT_FOUND"
         assert payload["errors"] == ["Catalog item 'missing-step' not found."]
 
 

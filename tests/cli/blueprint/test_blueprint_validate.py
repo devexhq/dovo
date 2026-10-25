@@ -61,6 +61,7 @@ class BlueprintValidateCliIntegrationTests:
         assert result.exit_code == 2
         payload = json.loads(result.stdout)["payload"]
         assert payload["status"] == "not_found"
+        assert payload["error_code"] == "CATALOG_NOT_FOUND"
         assert payload["errors"] == ["Catalog item 'missing-blueprint' not found."]
 
 
@@ -111,6 +112,7 @@ class BlueprintValidateCliTests:
         assert result.exit_code == 1
         payload = json.loads(result.stdout)["payload"]
         assert payload["status"] == "invalid"
+        assert payload["error_code"] == "INTERNAL_ERROR"
         assert payload["errors"] == [
             f"Unexpected error during catalog.validate: boom{diagnostic_hint(frozen_diagnostic_clock)}"
         ]

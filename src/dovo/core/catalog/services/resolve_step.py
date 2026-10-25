@@ -109,7 +109,11 @@ def resolve_step_definition(
     paths: WorkspacePaths | None = None,
     catalog: Catalog | None = None,
 ) -> StepDefinition:
-    """Resolve a step's 'run' or 'uses' shorthand into a concrete StepDefinition, raising StepValidationError when it cannot."""
+    """Resolve a step's 'run' or 'uses' shorthand into a concrete StepDefinition.
+
+    Raises StepValidationError when the step cannot be resolved, and CatalogError when its 'uses'
+    reference is missing, unparsable or fails validation.
+    """
     if isinstance(step, dict):
         try:
             step_definition = StepDefinition.model_validate(step)
@@ -135,7 +139,7 @@ def _resolve_or_none(
     paths: WorkspacePaths | None = None,
     catalog: Catalog | None = None,
 ) -> StepDefinition | None:
-    """Resolve a step following its 'run'/'uses'/'type' mode, or None when unresolvable."""
+    """Resolve a step following its 'run'/'uses'/'type' mode, or None when it names no mode or has no paths for 'uses'; a bad 'uses' reference raises CatalogError."""
     if step.run is not None:
         return _resolve_run(step)
 
@@ -172,7 +176,7 @@ def _resolve_from_uses(
     paths: WorkspacePaths | None = None,
     catalog: Catalog | None = None,
 ) -> StepDefinition | None:
-    """Load the referenced step and apply only fields explicitly set in this step."""
+    """Load the referenced step and apply only fields explicitly set in this step, raising CatalogError when it cannot be loaded."""
     if step.uses is None:
         return None
     if paths is None and catalog is None:

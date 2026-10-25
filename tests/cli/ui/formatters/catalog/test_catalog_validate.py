@@ -132,6 +132,7 @@ PAYLOAD_CASES = [
             "target": "my-flow",
             "resolved_path": ".dovo/catalog/blueprints/my-flow.yml",
             "item_type": "blueprint",
+            "error_code": None,
             "errors": [],
             "warnings": [],
             "remediations": [],
@@ -147,6 +148,7 @@ PAYLOAD_CASES = [
             "target": "dup.yml",
             "resolved_path": "/workspace/dup.yml",
             "item_type": "blueprint",
+            "error_code": None,
             "errors": ["Step id 'run-tests' is used by more than one step (CATALOG_DUPLICATE_STEP_ID)."],
             "warnings": ["Step 's1' script_path 'scripts/none.sh' does not exist on disk (CATALOG_SCRIPT_NOT_FOUND)."],
             "remediations": [

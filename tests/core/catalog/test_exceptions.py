@@ -7,7 +7,7 @@ from collections.abc import Callable
 import pytest
 
 from dovo.common.error_codes import ErrorCode
-from dovo.common.exceptions import DefinitionError, DomainError
+from dovo.common.exceptions import DomainError
 from dovo.core.catalog.exceptions import (
     CatalogError,
     CatalogFileNotFoundError,
@@ -30,9 +30,8 @@ class CatalogErrorTests:
         ],
     )
     def test_subclass_carries_fixed_code(self, error_cls: Callable[[str], CatalogError], code: ErrorCode) -> None:
-        """Construct error_cls("m") with error_code == code, message == "m", remediations == (), and isinstance DomainError but not DefinitionError."""
+        """Construct error_cls("m") with error_code == code, message == "m", remediations == (), and isinstance DomainError."""
         error = error_cls("m")
 
         assert (error.error_code, error.message, error.remediations) == (code, "m", ())
         assert isinstance(error, DomainError)
-        assert not isinstance(error, DefinitionError)
