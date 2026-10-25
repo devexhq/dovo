@@ -40,6 +40,12 @@ An issue is a working document. Aim for a sensible issue, not a perfect one: whe
    - Never prescribe how: helper functions to call or reuse, which loops or call sites to update, module layout. The planner finds those in the code, and an issue that names them goes stale and doubles the plan.
    - Only observable contracts bind the planner. When an internal shape must appear for the contract to read (a new helper's name, module or return type; a type alias), the planner treats it as a suggestion and replaces it when the code shows a better one. Before naming a new symbol, `rg` for an existing one with the same name: a lookalike means the shape is wrong.
 
+5. **Changes and guards:**
+   - A **change** is what the issue exists to deliver ("`validate_patch_text` raises `GitError` with a `PATCH_*` code"). It binds the planner exactly as written.
+   - A **guard** says what must not regress ("the agent step reports today's outcome"). It binds what a user or caller relies on: outcome, status, exit code, `error_code`, persisted data, and text that a doc or a test outside the change depends on. Name that text when it matters; never guard incidental wording with "same as today".
+   - A guard never excludes the behaviour of the foundation an Adopt issue adopts. When adopting `catch_failure` adds a `Details logged:` line to a failure caused by an `OSError` on Dovo's own state (`docs/agents/code-conventions.md`, Domain errors), that line is part of the adoption, and a guard that forbids it is wrong.
+   - The planner may depart from a guard, never from a change, with an Open Question that names the departure ([planning.md](../../../docs/agents/planning.md) Step 1).
+
 ## Workflow
 
 ### 1. Ground
@@ -60,7 +66,7 @@ Split issues by kind and by review load. Review load is the number of distinct d
 |---|---|
 | Fix | One wrong behaviour, or a few small ones in one area, each with its own regression test |
 | Foundation | A new shared type, tool or rule that two or more issues adopt |
-| Adopt | One or more packages move onto a foundation and delete what it replaces |
+| Adopt | One or more packages move onto a foundation and delete what it replaces; they take on the foundation's behaviour with it |
 | Refactor | Structure only, worth merging on its own; behaviour is identical |
 | Remove | Deletes what nothing uses any more |
 | Feature | New user-facing surface |
@@ -141,7 +147,7 @@ Use the sections below in order, and include a section only when it applies (e.g
 ## Pre-Publish Checklist
 
 Before running `gh issue create` or `gh issue edit`:
-1. Scan the draft for shim-inducing words (`unchanged`, `untouched`, `as before`, `alongside`, `keep`, `compatib`, `shim`, `legacy`). Delete them or convert them into a **Shared surfaces changed** bullet and a grep removal bar in **Definition of done**.
+1. Scan the draft for shim-inducing words (`unchanged`, `untouched`, `as before`, `alongside`, `keep`, `compatib`, `shim`, `legacy`). Delete them or convert them into a **Shared surfaces changed** bullet and a grep removal bar in **Definition of done**. Scan also for guard words (`today`, `same`, `identical`, `does not change`): rewrite each guard to name what a user or caller relies on (**Core Principles** 5).
 2. Re-check the finished draft against **Split**: one kind, neither rule broken, a review load that fits one sitting, and a `dovo-size-*` label.
 3. When publishing a split, create or edit the parent first, then the sub-issues in dependency order so each `--blocked-by` names an issue that exists. Confirm with `gh api repos/{owner}/{repo}/issues/<parent>/sub_issues --jq '.[].number'`.
 
@@ -165,6 +171,7 @@ Before running `gh issue create` or `gh issue edit`:
      - R6: check the issue's lock handling against `WorkspaceLock`, `LockTimeoutError` and `catch_failure`.
      - R17: search `docs/` and the docstrings of the changed symbols for sentences the change makes false.
    - Also check the body against itself. An FR that contradicts **Out of scope**, another FR, or a field an output requirement relies on is a finding.
+   - A guard that pins incidental wording, or that forbids behaviour of the foundation an Adopt issue adopts, is a finding (**Core Principles** 5). Quote the guard and the foundation behaviour it excludes, such as `catch_failure` recording an `OSError` cause (`src/dovo/common/exceptions.py`).
    - A finding quotes the issue text and either the rule clause it breaks or the sentence it contradicts. Silence is a finding only when following the issue literally breaks the clause. A shape you would prefer, but no rule requires, is not a finding.
    - Fix each finding with an observable contract where one exists (**Core Principles** 4), not with the implementation steps that would satisfy the rule.
    - Report findings only, never a clause-by-clause table.

@@ -1,7 +1,7 @@
 version: 1
 name: feature-dev
 id: feature-dev
-description: Check a GitHub issue is labelled dovo:ready, plan it, review the plan once and fold in every finding, answer its open questions, implement it after approval, review and fix blockers and warnings until none remain or only a person can settle them, then open a PR and post the final review to it
+description: Check a GitHub issue is labelled dovo:ready, plan it, review and challenge the plan once and fold in every finding and fold-routed challenge, answer its open questions, implement it after approval, review and fix blockers and warnings until none remain or only a person can settle them, then open a PR and post the final review to it
 summary: Issue to reviewed PR with human gates
 
 inputs:
@@ -56,16 +56,43 @@ steps:
       - { name: plan-review, path: .agentic/plan-review.md }
       - { name: plan-findings, path: .agentic/plan-review.json }
 
-  - id: fold-findings
-    name: Fold every review finding into the plan
+  # Challenges the design rather than its compliance, without reading the
+  # review. Challenges routed fold are folded below; those routed ask become
+  # open questions, so a human settles every trade-off and issue departure.
+  - id: plan-challenge
+    name: Challenge the plan's design
     type: agent
     prompt: |
-      If .agentic/plan-review.json lists no findings, change nothing and report that you did nothing.
-      Otherwise:
-        - Update .agentic/plan.md and .agentic/plan.json to address every finding in
-          .agentic/plan-review.json, by id, as each one describes.
-        - Addressing a finding may make an open question moot, change its assumed answer
-          or raise a new one: remove, rewrite or add entries under Open questions to match.
+      /dovo-plan-challenge
+
+      Follow .agents/skills/dovo-plan-challenge/SKILL.md if the slash command is not recognized.
+      Challenge .agentic/plan.md and write challenges to .agentic/plan-challenge.md and
+      .agentic/plan-challenge.json. Do not read .agentic/plan-review.md or .agentic/plan-review.json.
+    tools: { allow_all: true }
+    timeout_seconds: 1800
+    artifacts:
+      - { name: plan-challenge, path: .agentic/plan-challenge.md }
+      - { name: plan-challenges, path: .agentic/plan-challenge.json }
+
+  - id: fold-findings
+    name: Fold the review findings and challenges into the plan
+    type: agent
+    prompt: |
+      If .agentic/plan-review.json lists no findings and .agentic/plan-challenge.json lists no
+      challenges, change nothing and report that you did nothing.
+      Otherwise update .agentic/plan.md and .agentic/plan.json:
+        - Address every finding in .agentic/plan-review.json, by id, as each one describes.
+        - Fold every challenge in .agentic/plan-challenge.json routed "fold" by planning its
+          alternative.
+        - For every challenge routed "ask", add an open question, or rewrite the one it
+          concerns, that keeps the plan's current answer as the assumed answer and lists the
+          challenge's alternative under alternatives. End its summary with
+          "(assumed: <plan's answer>; challenged: <alternative>)" and cite the challenge id
+          and its evidence in why.
+        - When a challenge contradicts a review finding, fold neither: raise one open question
+          that states both positions with their ids.
+        - Addressing a finding or challenge may make an open question moot, change its assumed
+          answer or raise a new one: remove, rewrite or add entries under Open questions to match.
         - Keep .agentic/plan.json in the shape the dovo-plan skill defines
           (.agents/skills/dovo-plan/SKILL.md) and in agreement with .agentic/plan.md.
       Do not implement any code, commit or push. Change only .agentic/plan.md and .agentic/plan.json.
