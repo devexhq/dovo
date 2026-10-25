@@ -24,20 +24,6 @@ from dovo.core.agents.exceptions import AgentError
 BASELINE_SNAPSHOT_MESSAGE = "dovo: pre-agent baseline"
 
 
-class MutationGitError(AgentError):
-    """Raised when a worktree git operation for a direct-mutation provider fails."""
-
-    def __init__(self, message: str) -> None:
-        super().__init__(ErrorCode.AGENT_MUTATION_GIT_FAILED, message)
-
-
-class MutationGitTimeoutError(MutationGitError):
-    """Raised when a worktree git operation for a direct-mutation provider exceeds its timeout."""
-
-    def __init__(self, message: str) -> None:
-        AgentError.__init__(self, ErrorCode.GIT_TIMEOUT, message)
-
-
 def _run_git(
     args: list[str], *, cwd: Path, env: dict[str, str] | None = None, stdin: bytes | None = None
 ) -> subprocess.CompletedProcess[bytes]:
@@ -53,19 +39,24 @@ def _run_git(
             timeout=GIT_SUBPROCESS_TIMEOUT_SECONDS,
         )
     except subprocess.TimeoutExpired as exc:
-        raise MutationGitTimeoutError(
-            f"git {' '.join(args)} timed out after {GIT_SUBPROCESS_TIMEOUT_SECONDS}s (GIT_TIMEOUT)"
+        raise AgentError(
+            ErrorCode.GIT_TIMEOUT,
+            f"git {' '.join(args)} timed out after {GIT_SUBPROCESS_TIMEOUT_SECONDS}s (GIT_TIMEOUT)",
         ) from exc
     except OSError as exc:
-        # Not chained: the message names the failure, so catch_failure leaves no event file.
-        raise MutationGitError(f"failed to run git {' '.join(args)}: {exc}") from None
+        message = f"failed to run git {' '.join(args)}: {exc}"
+        if not cwd.is_dir():
+            # Chained: a vanished worktree is a broken workspace, so catch_failure records it.
+            raise AgentError(ErrorCode.AGENT_MUTATION_GIT_FAILED, message) from exc
+        # Not chained: git itself could not start, which the message names, so catch_failure leaves no event file.
+        raise AgentError(ErrorCode.AGENT_MUTATION_GIT_FAILED, message) from None
 
 
 def _require_ok(completed: subprocess.CompletedProcess[bytes], *, action: str) -> None:
-    """Verify that subprocess exit code is zero or raise MutationGitError."""
+    """Verify that subprocess exit code is zero or raise AgentError(AGENT_MUTATION_GIT_FAILED)."""
     if completed.returncode != 0:
         detail = completed.stderr.decode("utf-8", errors="replace").strip()
-        raise MutationGitError(f"{action} failed: {detail or completed.returncode}")
+        raise AgentError(ErrorCode.AGENT_MUTATION_GIT_FAILED, f"{action} failed: {detail or completed.returncode}")
 
 
 def resolve_pre_agent_baseline(worktree_path: Path) -> str:
@@ -84,7 +75,7 @@ def resolve_pre_agent_baseline(worktree_path: Path) -> str:
         A commit SHA usable as a diff or discard target.
 
     Raises:
-        MutationGitError: When the underlying git commands fail; the
+        AgentError: When the underlying git commands fail; the
             repository is left as it was.
     """
     clean = _is_worktree_clean(worktree_path)
@@ -109,7 +100,7 @@ def capture_diff_since(worktree_path: Path, baseline: str) -> tuple[str, list[st
         Tuple of ``(unified_diff, touched_files)``.
 
     Raises:
-        MutationGitError: When the underlying git commands fail.
+        AgentError: When the underlying git commands fail.
     """
     add = _run_git(["add", "-A"], cwd=worktree_path)
     _require_ok(add, action="git add -A (capture diff)")
@@ -127,7 +118,7 @@ def capture_binary_patch_since(worktree_path: Path, baseline: str) -> bytes:
     """Stage all worktree changes and return ``git diff --cached --binary`` against ``baseline`` as raw bytes.
 
     Raises:
-        MutationGitError: When the underlying git commands fail.
+        AgentError: When the underlying git commands fail.
     """
     add = _run_git(["add", "-A"], cwd=worktree_path)
     _require_ok(add, action="git add -A (capture patch)")
@@ -153,7 +144,7 @@ def discard_since(worktree_path: Path, baseline: str) -> None:
         baseline: Commit returned by :func:`resolve_pre_agent_baseline`.
 
     Raises:
-        MutationGitError: When the underlying git commands fail.
+        AgentError: When the underlying git commands fail.
     """
     baseline_sha, target = _head_at_baseline(worktree_path, baseline)
     restore = _run_git(["read-tree", "-u", "--reset", baseline_sha], cwd=worktree_path)

@@ -21,6 +21,7 @@ from dovo.common.timing import Stopwatch
 from dovo.common.tool_policy import ToolPolicy
 from dovo.core.agents.base import BaseAgentProvider, ProgressMapper, ProviderSpec
 from dovo.core.agents.environment import build_agent_env, env_filtered_prompt_line, withheld_env_names
+from dovo.core.agents.exceptions import AgentError
 from dovo.core.agents.models import (
     AgentDenial,
     AgentInvocationContext,
@@ -30,7 +31,6 @@ from dovo.core.agents.models import (
     AgentResponseStatus,
 )
 from dovo.core.agents.mutation_git import (
-    MutationGitError,
     capture_diff_since,
     discard_since,
     resolve_pre_agent_baseline,
@@ -262,7 +262,7 @@ class CliDirectMutationAdapter(BaseAgentProvider):
 
         try:
             baseline = resolve_pre_agent_baseline(request.worktree_path)
-        except MutationGitError as exc:
+        except AgentError as exc:
             watch.stop()
             return provider_error_response(
                 duration_seconds=watch.elapsed_seconds, detail=f"Failed to resolve worktree baseline: {exc}"
@@ -332,7 +332,7 @@ class CliDirectMutationAdapter(BaseAgentProvider):
 
         try:
             diff, _ = capture_diff_since(request.worktree_path, baseline)
-        except MutationGitError as exc:
+        except AgentError as exc:
             return provider_error_response(
                 duration_seconds=duration_seconds,
                 detail=f"Failed to capture worktree diff: {exc}",
@@ -457,7 +457,7 @@ def _save_rejected_edit(request: AgentRequest, baseline: str) -> tuple[Path | No
 
     try:
         return save_rejected_patch(request.worktree_path, baseline, request.rejected_patch_destination), None
-    except MutationGitError as exc:
+    except AgentError as exc:
         return None, str(exc)
 
 
@@ -517,7 +517,7 @@ def _save_and_discard(request: AgentRequest, baseline: str) -> tuple[Path | None
     discard_detail: str | None = None
     try:
         discard_since(request.worktree_path, baseline)
-    except MutationGitError as exc:
+    except AgentError as exc:
         discard_detail = f"Failed to discard rejected worktree edit: {exc}"
 
     if saved is None:

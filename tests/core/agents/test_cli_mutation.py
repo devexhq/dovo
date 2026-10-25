@@ -37,9 +37,9 @@ from dovo.core.agents.cli_mutation import (
     validate_request_patch,
 )
 from dovo.core.agents.environment import env_filtered_prompt_line
+from dovo.core.agents.exceptions import AgentError
 from dovo.core.agents.models import AgentDenial
 from dovo.core.agents.mutation_git import (
-    MutationGitError,
     capture_diff_since,
     discard_since,
     resolve_pre_agent_baseline,
@@ -514,7 +514,7 @@ class SharedMutationAdapterTests:
         adapter = UnitTestAdapter(run_fn=_fake_run(edits={"a.txt": "1\n", "b.txt": "2\n"}))
 
         def _fail_discard(*a: object, **k: object) -> None:
-            raise MutationGitError("git reset failed: index locked")
+            raise AgentError(ErrorCode.AGENT_MUTATION_GIT_FAILED, "git reset failed: index locked")
 
         monkeypatch.setattr("dovo.core.agents.cli_mutation.discard_since", _fail_discard)
 
@@ -552,7 +552,7 @@ class SharedMutationAdapterTests:
     ) -> None:
 
         def _fail_git(*a: object, **k: object) -> None:
-            raise MutationGitError("git broke")
+            raise AgentError(ErrorCode.AGENT_MUTATION_GIT_FAILED, "git broke")
 
         monkeypatch.setattr(f"dovo.core.agents.cli_mutation.{patched_name}", _fail_git)
         adapter = UnitTestAdapter(run_fn=_fake_run())
@@ -948,7 +948,7 @@ class RejectedPatchDiscardOrderTests:
     ) -> None:
 
         def _fail_discard(*args: object, **kwargs: object) -> None:
-            raise MutationGitError("git reset failed: index locked")
+            raise AgentError(ErrorCode.AGENT_MUTATION_GIT_FAILED, "git reset failed: index locked")
 
         monkeypatch.setattr("dovo.core.agents.cli_mutation.discard_since", _fail_discard)
         destination = tmp_path / "rejected" / "code_attempt_1.patch"
@@ -1056,7 +1056,7 @@ class UnfixableClassificationTests:
     ) -> None:
 
         def _fail_discard(*args: object, **kwargs: object) -> None:
-            raise MutationGitError("git reset failed: index locked")
+            raise AgentError(ErrorCode.AGENT_MUTATION_GIT_FAILED, "git reset failed: index locked")
 
         monkeypatch.setattr("dovo.core.agents.cli_mutation.discard_since", _fail_discard)
         destination = tmp_path / "rejected" / "code_attempt_1.patch"
