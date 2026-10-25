@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 
+from dovo.common.error_codes import ErrorCode
 from dovo.core.agents.mutation_git import MutationGitError, resolve_pre_agent_baseline
 from dovo.core.agents.save_rejected_patch import save_rejected_patch
 
@@ -41,7 +42,8 @@ class SaveRejectedPatchTests:
         blocker = tmp_path / "blocker"
         blocker.write_text("file", encoding="utf-8")
 
-        with pytest.raises(MutationGitError, match="cannot write"):
+        with pytest.raises(MutationGitError, match="cannot write") as raised:
             save_rejected_patch(git_repo, baseline, blocker / "code_attempt_1.patch")
 
+        assert raised.value.error_code == ErrorCode.AGENT_MUTATION_GIT_FAILED
         assert (git_repo / "README.md").read_text(encoding="utf-8") == "agent text\n"

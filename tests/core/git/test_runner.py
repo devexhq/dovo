@@ -7,6 +7,7 @@ from pathlib import Path
 
 import pytest
 
+from dovo.common.error_codes import ErrorCode
 from dovo.core.git.exceptions import GitCommandError, GitNotFoundError, GitPlumbingTimeoutError
 from dovo.core.git.models import GitProcessOutput, GitWorktreeEntry
 from dovo.core.git.runner import GitRunner
@@ -146,6 +147,7 @@ class GitRunnerExecTests:
             GitRunner().exec(["status"], git_repo)
 
         assert str(excinfo.value) == "Git execution failed ('git status'): git not found"
+        assert excinfo.value.error_code == ErrorCode.GIT_BINARY_MISSING
 
     def test_exec_raises_timeout_ending_git_timeout(self, git_repo: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """Raise GitPlumbingTimeoutError whose message ends "('git status') (GIT_TIMEOUT)" when dovo.core.git.runner.subprocess.run raises TimeoutExpired."""
@@ -159,6 +161,7 @@ class GitRunnerExecTests:
             GitRunner().exec(["status"], git_repo)
 
         assert str(excinfo.value).endswith("('git status') (GIT_TIMEOUT)")
+        assert excinfo.value.error_code == ErrorCode.GIT_TIMEOUT
 
     def test_run_raises_command_error_on_nonzero_exit_when_checked(self, git_repo: Path) -> None:
         """Raise GitCommandError with cmd ["git", "rev-parse", "--verify", "nope"] and returncode 128 from run."""
@@ -167,6 +170,7 @@ class GitRunnerExecTests:
 
         assert excinfo.value.cmd == ["git", "rev-parse", "--verify", "nope"]
         assert excinfo.value.returncode == 128
+        assert excinfo.value.error_code == ErrorCode.GIT_FAILED
 
     def test_run_returns_stdout_on_nonzero_exit_when_unchecked(self, git_repo: Path) -> None:
         """Return "" from run(["show-ref", "--verify", "--quiet", "refs/heads/absent"], check=False)."""

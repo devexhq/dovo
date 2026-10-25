@@ -438,7 +438,7 @@ class ExecuteAgentStepScratchTests:
 
     @pytest.mark.skipif(os.geteuid() == 0, reason="root ignores directory permission bits")
     def test_directory_creation_failure_leaves_worktree_files_unchanged(
-        self, git_repo: Path, monkeypatch: pytest.MonkeyPatch
+        self, git_repo: Path, monkeypatch: pytest.MonkeyPatch, frozen_diagnostic_clock: Path
     ) -> None:
         requested = _use_provider(monkeypatch, FakeAgentProvider(_patch("a.txt")))
         session_tmp = _session_tmp_dir(git_repo)
@@ -452,6 +452,12 @@ class ExecuteAgentStepScratchTests:
 
         assert outcome.exit_code == 203
         assert "AGENT_SCRATCH_UNAVAILABLE" in (outcome.error_message or "")
+        assert (outcome.error_message or "").splitlines()[1:] == [
+            diagnostic_hint(frozen_diagnostic_clock).lstrip("\n"),
+            "Fix:",
+            "- Restore access to the session temp directory or correct its storage path.",
+        ]
+        assert read_single_event(frozen_diagnostic_clock)["operation"] == "engine.step"
         assert requested == []
         assert (git_repo / "README.md").read_bytes() == readme_before
         assert not (git_repo / "a.txt").exists()

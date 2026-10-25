@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 
 import dovo.core.agents.mutation_git as mutation_mod
+from dovo.common.error_codes import ErrorCode
 from dovo.core.agents.mutation_git import (
     MutationGitError,
     capture_binary_patch_since,
@@ -231,10 +232,11 @@ class ResolvePreAgentBaselineTests:
             )
 
         monkeypatch.setattr(mutation_mod.subprocess, "run", _fail_subcommand)
-        with pytest.raises(MutationGitError, match=f"{action} failed: injected"):
+        with pytest.raises(MutationGitError, match=f"{action} failed: injected") as raised:
             resolve_pre_agent_baseline(git_repo)
         monkeypatch.undo()
 
+        assert raised.value.error_code == ErrorCode.AGENT_MUTATION_GIT_FAILED
         assert _repository_state(git_repo) == state_before
         assert _worktree_files(git_repo) == worktree_before
         assert _git_dir_listing(git_repo) == git_dir_before

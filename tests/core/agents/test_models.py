@@ -17,7 +17,6 @@ from dovo.core.agents import (
     AgentRequest,
     AgentResponse,
     AgentResponseStatus,
-    AgentScratchResult,
     CliMutationRunRequest,
     default_tool_policy,
 )
@@ -262,16 +261,6 @@ class InvocationContextModelTests:
         assert unset.agent_scratch_path is None
         with pytest.raises(ValidationError):
             AgentRequest.model_validate({**base, "invocation": context, "agent_scratch_path": tmp_path / "other"})
-
-
-class AgentScratchResultTests:
-    def test_ok_requires_a_context(self, tmp_path: Path) -> None:
-        success = AgentScratchResult(invocation_id="a" * 32, context=_context(tmp_path))
-        failure = AgentScratchResult(invocation_id="a" * 32, errors=["x"], error_code="AGENT_SCRATCH_UNAVAILABLE")
-
-        assert success.ok
-        assert not failure.ok
-        assert failure.invocation_id == "a" * 32
 
 
 class AgentRequestToolsContractTests:

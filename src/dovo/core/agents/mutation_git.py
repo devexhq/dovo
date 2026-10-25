@@ -18,12 +18,17 @@ import tempfile
 from pathlib import Path
 
 from dovo.common.constants import GIT_SUBPROCESS_TIMEOUT_SECONDS
+from dovo.common.error_codes import ErrorCode
+from dovo.core.agents.exceptions import AgentError
 
 BASELINE_SNAPSHOT_MESSAGE = "dovo: pre-agent baseline"
 
 
-class MutationGitError(RuntimeError):
+class MutationGitError(AgentError):
     """Raised when a worktree git operation for a direct-mutation provider fails."""
+
+    def __init__(self, message: str) -> None:
+        super().__init__(ErrorCode.AGENT_MUTATION_GIT_FAILED, message)
 
 
 def _run_git(

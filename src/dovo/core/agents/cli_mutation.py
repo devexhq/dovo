@@ -13,6 +13,8 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
+from dovo.common.diagnostic_log import append_diagnostic_hint
+from dovo.common.exceptions import Failure, catch_failure
 from dovo.common.mcp_servers import McpServerDefinition
 from dovo.common.process import stream_isolated_process
 from dovo.common.timing import Stopwatch
@@ -41,7 +43,7 @@ from dovo.core.agents.responses import (
     unfixable_response,
 )
 from dovo.core.agents.save_rejected_patch import save_rejected_patch
-from dovo.core.git import PatchApplyResult, PatchApplyStatus, validate_patch_text
+from dovo.core.git import validate_patch_text
 
 CliMutationRunStatus = Literal["finished", "timeout", "error"]
 
@@ -214,8 +216,12 @@ def _prompt_body(request: AgentRequest) -> dict[str, object]:
     return body
 
 
-def validate_request_patch(request: AgentRequest, diff: str) -> PatchApplyResult:
-    """Run the shared patch gate on ``diff`` with the request's bounds; every bound the request leaves unset is not enforced."""
+def validate_request_patch(request: AgentRequest, diff: str) -> list[str]:
+    """Run the shared patch gate on ``diff`` with the request's bounds and return the touched files; every bound the request leaves unset is not enforced.
+
+    Raises:
+        GitError: When the diff fails a bound, is malformed, or escapes the worktree.
+    """
     return validate_patch_text(
         diff,
         max_files=request.max_files,
@@ -352,9 +358,10 @@ class CliDirectMutationAdapter(BaseAgentProvider):
                 duration_seconds=duration_seconds, raw_text=outcome.result_text, mutation_baseline_ref=baseline
             )
 
-        gate = validate_request_patch(request, diff)
-        if gate.status != PatchApplyStatus.CHECKED_OK:
-            return self._reject_gated_edit(request, gate, outcome, baseline, duration_seconds)
+        with catch_failure("agent.validate_patch", path=str(request.worktree_path)) as caught:
+            validate_request_patch(request, diff)
+        if caught.failure is not None:
+            return self._reject_gated_edit(request, caught.failure, outcome, baseline, duration_seconds)
 
         return AgentResponse(
             status=AgentResponseStatus.PROPOSED_PATCH,
@@ -367,17 +374,17 @@ class CliDirectMutationAdapter(BaseAgentProvider):
     def _reject_gated_edit(
         self,
         request: AgentRequest,
-        gate: PatchApplyResult,
+        failure: Failure,
         outcome: CliMutationOutcome,
         baseline: str,
         duration_seconds: float,
     ) -> AgentResponse:
-        """Save the rejected edit, then discard it and return PROVIDER_ERROR carrying the gate's errors, the saved path, and any discard failure; a failed save leaves the worktree untouched."""
+        """Save the rejected edit, then discard it and return PROVIDER_ERROR carrying the validation failure's message and any Details logged line, the saved path, and any discard failure; a failed save leaves the worktree untouched."""
         saved, notes, discard_detail = _save_and_discard(request, baseline)
         response = provider_error_response(
             duration_seconds=duration_seconds,
             detail=discard_detail,
-            errors=[*gate.errors, *notes],
+            errors=[append_diagnostic_hint(failure.message, failure.diagnostic), *notes],
             raw_text=outcome.result_text,
             mutation_baseline_ref=baseline,
         )

@@ -11,7 +11,7 @@ from typing import Annotated, Literal
 from pydantic import BaseModel, Field, StringConstraints, model_validator
 
 from dovo.common.mcp_servers import McpServerDefinition
-from dovo.common.models import BaseResult, Remediation
+from dovo.common.models import Remediation
 from dovo.common.tool_policy import ToolCapability, ToolPolicy
 
 OmissionReason = Literal[
@@ -161,18 +161,6 @@ class AgentAttemptContext(BaseModel):
     on_line: Callable[[str, str], None] | None = Field(default=None, exclude=True)
     on_progress: Callable[[AgentProgress], None] | None = Field(default=None, exclude=True)
     on_env_withheld: Callable[[list[str]], None] | None = Field(default=None, exclude=True)
-
-
-class AgentScratchResult(BaseResult):
-    """Outcome of allocating one attempt's scratch and control directories; the id is retained on failure."""
-
-    invocation_id: str
-    context: AgentInvocationContext | None = None
-
-    @property
-    def ok(self) -> bool:
-        """Return True when both directories were created and verified."""
-        return self.context is not None
 
 
 class AgentRequest(BaseModel):

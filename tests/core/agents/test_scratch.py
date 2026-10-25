@@ -9,8 +9,9 @@ from pathlib import Path
 
 import pytest
 
+from dovo.common.error_codes import ErrorCode
 from dovo.common.models import Remediation
-from dovo.core.agents import AgentScratchResult, allocate_invocation_paths, new_invocation_id
+from dovo.core.agents import AgentError, AgentInvocationContext, allocate_invocation_paths, new_invocation_id
 from dovo.core.agents.scratch import scratch_unavailable_message
 
 _INVOCATION_ID = "0123456789abcdef0123456789abcdef"
@@ -34,7 +35,7 @@ class AllocateInvocationPathsTests:
     ) -> None:
         session_tmp, worktree, main_checkout = _layout(tmp_path)
 
-        result = allocate_invocation_paths(
+        context = allocate_invocation_paths(
             invocation_id=_INVOCATION_ID,
             session_tmp_dir=session_tmp,
             step_id="build",
@@ -43,14 +44,13 @@ class AllocateInvocationPathsTests:
         )
 
         invocation_root = session_tmp.resolve() / "steps" / "build" / "agent" / _INVOCATION_ID
-        assert result.ok
-        assert result.invocation_id == _INVOCATION_ID
-        assert result.context is not None
-        assert result.context.invocation_id == _INVOCATION_ID
-        assert result.context.scratch_path == invocation_root / "scratch"
-        assert result.context.control_path == invocation_root / "control"
-        assert result.context.scratch_path.is_dir()
-        assert result.context.control_path.is_dir()
+        assert context == AgentInvocationContext(
+            invocation_id=_INVOCATION_ID,
+            scratch_path=invocation_root / "scratch",
+            control_path=invocation_root / "control",
+        )
+        assert context.scratch_path.is_dir()
+        assert context.control_path.is_dir()
 
     def test_new_invocation_id_is_32_lowercase_hex_and_unique(self) -> None:
         first, second = new_invocation_id(), new_invocation_id()
@@ -74,68 +74,69 @@ class AllocateInvocationPathsTests:
     def test_unsafe_step_ids_fail_without_creating_anything(self, tmp_path: Path, step_id: str) -> None:
         session_tmp, worktree, main_checkout = _layout(tmp_path)
 
-        result = allocate_invocation_paths(
-            invocation_id=_INVOCATION_ID,
-            session_tmp_dir=session_tmp,
-            step_id=step_id,
-            worktree_path=worktree,
-            main_checkout=main_checkout,
-        )
+        with pytest.raises(AgentError) as raised:
+            allocate_invocation_paths(
+                invocation_id=_INVOCATION_ID,
+                session_tmp_dir=session_tmp,
+                step_id=step_id,
+                worktree_path=worktree,
+                main_checkout=main_checkout,
+            )
 
-        assert not result.ok
-        assert result.invocation_id == _INVOCATION_ID
-        assert result.errors[0].startswith("Cannot prepare private scratch for agent step")
+        assert raised.value.error_code == ErrorCode.AGENT_SCRATCH_UNAVAILABLE
+        assert raised.value.message.startswith("Cannot prepare private scratch for agent step")
         assert list(session_tmp.iterdir()) == []
         assert sorted(tmp_path.iterdir()) == sorted([session_tmp, worktree, main_checkout])
 
-    def test_invalid_invocation_id_fails_instead_of_raising(self, tmp_path: Path) -> None:
+    def test_invalid_invocation_id_raises_without_creating_anything(self, tmp_path: Path) -> None:
         session_tmp, worktree, main_checkout = _layout(tmp_path)
 
-        result = allocate_invocation_paths(
-            invocation_id="../escape",
-            session_tmp_dir=session_tmp,
-            step_id="build",
-            worktree_path=worktree,
-            main_checkout=main_checkout,
-        )
+        with pytest.raises(AgentError) as raised:
+            allocate_invocation_paths(
+                invocation_id="../escape",
+                session_tmp_dir=session_tmp,
+                step_id="build",
+                worktree_path=worktree,
+                main_checkout=main_checkout,
+            )
 
-        assert not result.ok
-        assert result.invocation_id == "../escape"
+        assert raised.value.error_code == ErrorCode.AGENT_SCRATCH_UNAVAILABLE
         assert list(session_tmp.iterdir()) == []
 
-    def test_missing_session_tmp_dir_fails_with_exact_diagnostic_and_separate_fix(self, tmp_path: Path) -> None:
+    def test_missing_session_tmp_dir_raises_exact_message_and_fix(self, tmp_path: Path) -> None:
         _, worktree, main_checkout = _layout(tmp_path)
 
-        result = allocate_invocation_paths(
-            invocation_id=_INVOCATION_ID,
-            session_tmp_dir=None,
-            step_id="build",
-            worktree_path=worktree,
-            main_checkout=main_checkout,
-        )
+        with pytest.raises(AgentError) as raised:
+            allocate_invocation_paths(
+                invocation_id=_INVOCATION_ID,
+                session_tmp_dir=None,
+                step_id="build",
+                worktree_path=worktree,
+                main_checkout=main_checkout,
+            )
 
-        assert not result.ok
-        assert result.error_code == "AGENT_SCRATCH_UNAVAILABLE"
-        assert result.errors == [scratch_unavailable_message("build", "the session temp directory is unavailable")]
-        assert result.errors == [
+        assert raised.value.error_code == ErrorCode.AGENT_SCRATCH_UNAVAILABLE
+        assert raised.value.message == scratch_unavailable_message("build", "the session temp directory is unavailable")
+        assert raised.value.message == (
             "Cannot prepare private scratch for agent step 'build' (AGENT_SCRATCH_UNAVAILABLE): "
             "the session temp directory is unavailable"
-        ]
-        assert result.remediations == [_REMEDIATION]
+        )
+        assert raised.value.remediations == (_REMEDIATION,)
 
     def test_nonexistent_session_tmp_dir_is_not_created(self, tmp_path: Path) -> None:
         _, worktree, main_checkout = _layout(tmp_path)
         missing = tmp_path / "never-prepared"
 
-        result = allocate_invocation_paths(
-            invocation_id=_INVOCATION_ID,
-            session_tmp_dir=missing,
-            step_id="build",
-            worktree_path=worktree,
-            main_checkout=main_checkout,
-        )
+        with pytest.raises(AgentError) as raised:
+            allocate_invocation_paths(
+                invocation_id=_INVOCATION_ID,
+                session_tmp_dir=missing,
+                step_id="build",
+                worktree_path=worktree,
+                main_checkout=main_checkout,
+            )
 
-        assert not result.ok
+        assert raised.value.error_code == ErrorCode.AGENT_SCRATCH_UNAVAILABLE
         assert not missing.exists()
 
     def test_symlinked_step_directory_is_rejected_and_nothing_is_written_through_it(self, tmp_path: Path) -> None:
@@ -145,16 +146,16 @@ class AllocateInvocationPathsTests:
         (session_tmp / "steps").mkdir()
         (session_tmp / "steps" / "build").symlink_to(outside, target_is_directory=True)
 
-        result = allocate_invocation_paths(
-            invocation_id=_INVOCATION_ID,
-            session_tmp_dir=session_tmp,
-            step_id="build",
-            worktree_path=worktree,
-            main_checkout=main_checkout,
-        )
+        with pytest.raises(AgentError) as raised:
+            allocate_invocation_paths(
+                invocation_id=_INVOCATION_ID,
+                session_tmp_dir=session_tmp,
+                step_id="build",
+                worktree_path=worktree,
+                main_checkout=main_checkout,
+            )
 
-        assert not result.ok
-        assert result.error_code == "AGENT_SCRATCH_UNAVAILABLE"
+        assert raised.value.error_code == ErrorCode.AGENT_SCRATCH_UNAVAILABLE
         assert list(outside.iterdir()) == []
 
     @pytest.mark.parametrize(
@@ -182,22 +183,22 @@ class AllocateInvocationPathsTests:
         session_tmp, worktree, main_checkout = place(*_layout(tmp_path))
         session_tmp.mkdir(parents=True, exist_ok=True)
 
-        result = allocate_invocation_paths(
-            invocation_id=_INVOCATION_ID,
-            session_tmp_dir=session_tmp,
-            step_id="build",
-            worktree_path=worktree,
-            main_checkout=main_checkout,
-        )
+        with pytest.raises(AgentError) as raised:
+            allocate_invocation_paths(
+                invocation_id=_INVOCATION_ID,
+                session_tmp_dir=session_tmp,
+                step_id="build",
+                worktree_path=worktree,
+                main_checkout=main_checkout,
+            )
 
-        assert not result.ok
-        assert result.error_code == "AGENT_SCRATCH_UNAVAILABLE"
+        assert raised.value.error_code == ErrorCode.AGENT_SCRATCH_UNAVAILABLE
         assert not (session_tmp / "steps").exists()
 
     def test_existing_invocation_directory_is_never_reused(self, tmp_path: Path) -> None:
         session_tmp, worktree, main_checkout = _layout(tmp_path)
 
-        def _allocate() -> AgentScratchResult:
+        def _allocate() -> AgentInvocationContext:
             return allocate_invocation_paths(
                 invocation_id=_INVOCATION_ID,
                 session_tmp_dir=session_tmp,
@@ -206,33 +207,31 @@ class AllocateInvocationPathsTests:
                 main_checkout=main_checkout,
             )
 
-        first = _allocate()
-        assert first.context is not None
-        marker = first.context.scratch_path / "keep.txt"
+        marker = _allocate().scratch_path / "keep.txt"
         marker.write_text("first", encoding="utf-8")
 
-        second = _allocate()
+        with pytest.raises(AgentError) as raised:
+            _allocate()
 
-        assert not second.ok
-        assert second.invocation_id == _INVOCATION_ID
+        assert raised.value.error_code == ErrorCode.AGENT_SCRATCH_UNAVAILABLE
         assert marker.read_text(encoding="utf-8") == "first"
 
     @pytest.mark.skipif(os.geteuid() == 0, reason="root ignores directory permission bits")
-    def test_unwritable_session_root_returns_diagnostic_with_retained_id(self, tmp_path: Path) -> None:
+    def test_unwritable_session_root_raises_permission_denied_diagnostic(self, tmp_path: Path) -> None:
         session_tmp, worktree, main_checkout = _layout(tmp_path)
         session_tmp.chmod(0o500)
 
         try:
-            result = allocate_invocation_paths(
-                invocation_id=_INVOCATION_ID,
-                session_tmp_dir=session_tmp,
-                step_id="build",
-                worktree_path=worktree,
-                main_checkout=main_checkout,
-            )
+            with pytest.raises(AgentError) as raised:
+                allocate_invocation_paths(
+                    invocation_id=_INVOCATION_ID,
+                    session_tmp_dir=session_tmp,
+                    step_id="build",
+                    worktree_path=worktree,
+                    main_checkout=main_checkout,
+                )
         finally:
             session_tmp.chmod(0o700)
 
-        assert not result.ok
-        assert result.invocation_id == _INVOCATION_ID
-        assert "Permission denied" in result.errors[0]
+        assert raised.value.error_code == ErrorCode.AGENT_SCRATCH_UNAVAILABLE
+        assert "Permission denied" in raised.value.message
