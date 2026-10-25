@@ -12,7 +12,7 @@ from pydantic import Field, model_validator
 from dovo.common.models import BaseResult
 from dovo.core.catalog.models import SeedResult
 from dovo.core.config.generator import ConfigGenerationResult
-from dovo.core.project.models import ProjectIdentityProvisionResult, ProjectIdentityProvisionStatus
+from dovo.core.project.models import ProjectIdentity, ProjectIdentityOutcome
 
 
 class DirEnsureOutcome(Enum):
@@ -75,7 +75,6 @@ class BootstrapResult(BaseResult):
 def _classify_init_failure_mode(
     *,
     bootstrap_result: BootstrapResult | None,
-    identity_result: ProjectIdentityProvisionResult | None,
     config_result: ConfigGenerationResult | None,
     has_top_level_errors: bool,
 ) -> InitFailureMode | None:
@@ -83,10 +82,6 @@ def _classify_init_failure_mode(
     if bootstrap_result is None:
         return InitFailureMode.PREFLIGHT if has_top_level_errors else None
     if not bootstrap_result.ok:
-        return InitFailureMode.BOOTSTRAP
-    if identity_result is not None and identity_result.status == ProjectIdentityProvisionStatus.INVALID_ID:
-        return InitFailureMode.INVALID_PROJECT_ID
-    if identity_result is not None and not identity_result.ok:
         return InitFailureMode.BOOTSTRAP
     if config_result is not None and not config_result.ok:
         return InitFailureMode.CONFIG_GENERATION
@@ -97,7 +92,9 @@ class WorkspaceInitResult(BaseResult):
     """Structured outcome of initializing a project workspace."""
 
     bootstrap_result: BootstrapResult | None = None
-    identity_result: ProjectIdentityProvisionResult | None = None
+    project_identity: ProjectIdentity | None = None
+    identity_path: Path | None = None
+    identity_outcome: ProjectIdentityOutcome | None = None
     config_result: ConfigGenerationResult | None = None
     seed_result: SeedResult | None = None
     failure_mode: InitFailureMode | None = None
@@ -109,8 +106,7 @@ class WorkspaceInitResult(BaseResult):
             not self.errors
             and self.bootstrap_result is not None
             and self.bootstrap_result.ok
-            and self.identity_result is not None
-            and self.identity_result.ok
+            and self.project_identity is not None
             and self.config_result is not None
             and self.config_result.ok
             and self.seed_result is not None
@@ -123,7 +119,6 @@ class WorkspaceInitResult(BaseResult):
         if "failure_mode" not in self.model_fields_set:
             self.failure_mode = _classify_init_failure_mode(
                 bootstrap_result=self.bootstrap_result,
-                identity_result=self.identity_result,
                 config_result=self.config_result,
                 has_top_level_errors=bool(self.errors),
             )

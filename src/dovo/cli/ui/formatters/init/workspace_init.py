@@ -28,7 +28,7 @@ from dovo.core.bootstrap.models import (
 )
 from dovo.core.catalog.models import SeedResult
 from dovo.core.config.generator import ConfigGenerationResult
-from dovo.core.project.models import ProjectIdentityProvisionResult, ProjectIdentityProvisionStatus
+from dovo.core.project.models import ProjectIdentityOutcome
 
 
 class _ConfigPresentation(NamedTuple):
@@ -67,15 +67,11 @@ def _extract_gitignore_fields(result: BootstrapResult | None, cwd: Path) -> tupl
     return gitignore_path_relative, list(DOVO_GITIGNORE_TRACKED_ENTRIES)
 
 
-def _extract_identity_fields(
-    result: ProjectIdentityProvisionResult | None, cwd: Path
-) -> tuple[str | None, str | None, bool]:
+def _extract_identity_fields(data: WorkspaceInitResult, cwd: Path) -> tuple[str | None, str | None, bool]:
     """Extract project id, relative identity path, and whether it was preserved."""
-    if result is None:
-        return None, None, False
-    project_id = result.identity.id if result.identity is not None else None
-    identity_path_relative = display_path(result.path, cwd)
-    identity_preserved = result.status == ProjectIdentityProvisionStatus.PRESERVED
+    project_id = data.project_identity.id if data.project_identity is not None else None
+    identity_path_relative = display_path(data.identity_path, cwd) if data.identity_path is not None else None
+    identity_preserved = data.identity_outcome == ProjectIdentityOutcome.PRESERVED
     return project_id, identity_path_relative, identity_preserved
 
 
@@ -120,7 +116,7 @@ def _collect_messages[T](
     """Collect top-level messages or fall back to nested results."""
     messages = list(primary)
     if not messages:
-        for sub_result in (data.bootstrap_result, data.identity_result, data.config_result, data.seed_result):
+        for sub_result in (data.bootstrap_result, data.config_result, data.seed_result):
             if sub_result is not None:
                 messages.extend(getter(sub_result))
     return messages
@@ -159,7 +155,7 @@ class WorkspaceInitFormatter(ComponentFormatter[WorkspaceInitResult, WorkspaceIn
             data.bootstrap_result, cwd
         )
         gitignore_path_relative, gitignore_tracked_entries = _extract_gitignore_fields(data.bootstrap_result, cwd)
-        project_id, identity_path_relative, identity_preserved = _extract_identity_fields(data.identity_result, cwd)
+        project_id, identity_path_relative, identity_preserved = _extract_identity_fields(data, cwd)
         config_presentation = _extract_config_presentation(data.config_result, cwd)
         seeded_files, skipped_seed_files, overwritten_seed_files = _extract_seed_fields(data.seed_result, cwd)
 

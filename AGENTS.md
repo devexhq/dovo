@@ -151,6 +151,7 @@ Model new work on these.
 | Mutating command | `src/dovo/cli/worktree/commands/worktree_create.py`; the lock is taken in `src/dovo/core/worktree/worktree.py` |
 | Formatter and view model | `src/dovo/cli/ui/formatters/session/session_list.py`, `session_views.py` |
 | Core package | `src/dovo/core/sessions/` (`models.py`, `sessions.py`, `services/`) |
+| Domain error | `ProjectIdentityError` in `src/dovo/core/project/exceptions.py`, raised by `src/dovo/core/project/services/identity.py` and caught once with `catch_failure` in `src/dovo/core/bootstrap/services/initialize.py` |
 | Repository | `src/dovo/core/db/repositories/worktrees.py` on `base.py` |
 | Migration | `src/dovo/core/db/alembic/versions/0004_session_discard.py`, tested in `tests/core/db/test_migrations.py` |
 | Command tests | `tests/cli/worktree/test_worktree_show.py` |

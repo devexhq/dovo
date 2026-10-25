@@ -8,26 +8,34 @@ from unittest.mock import patch
 
 import pytest
 from freezegun import freeze_time
+from pydantic import ValidationError
 
+from dovo.common.error_codes import ErrorCode
 from dovo.common.lock import LockTimeoutError
 from dovo.common.models import Remediation
-from dovo.core.project.models import (
-    PROJECT_ID_REGEX,
-    ProjectIdentity,
-    ProjectIdentityErrorType,
-    ProjectIdentityLoadStatus,
-    ProjectIdentityProvisionStatus,
-    ProjectIdentitySaveStatus,
-)
+from dovo.core.project.exceptions import ProjectIdentityError
+from dovo.core.project.models import PROJECT_ID_REGEX, ProjectIdentity, ProjectIdentityOutcome
 from dovo.core.project.services import identity as identity_service
 from dovo.core.project.services.identity import (
     generate_project_identity,
     load_project_identity,
     provision_project_identity,
     save_project_identity,
+    validate_project_id,
 )
 
 UTC_TIMESTAMP = datetime(2026, 1, 2, 3, 4, 5, tzinfo=UTC)
+
+
+def _write_identity(path: Path, identity: ProjectIdentity) -> None:
+    path.write_text(identity.model_dump_json(), encoding="utf-8")
+
+
+def _fail_atomic_write(monkeypatch: pytest.MonkeyPatch) -> None:
+    def raise_write_error(_path: Path, _data: dict[str, object]) -> None:
+        raise OSError("disk full")
+
+    monkeypatch.setattr(identity_service.Filesystem, "atomic_write_json", raise_write_error)
 
 
 class ProjectIdentityServiceTests:
@@ -49,29 +57,22 @@ class ProjectIdentityServiceTests:
         assert identity.id == "calm-otter"
         assert identity.created_at.utcoffset() == UTC_TIMESTAMP.utcoffset()
 
-    def test_load_project_identity_valid_json_returns_ok_result(self, tmp_path: Path) -> None:
+    def test_load_project_identity_valid_json_returns_identity(self, tmp_path: Path) -> None:
         path = tmp_path / "project.json"
         identity = ProjectIdentity(id="project-624", display_name="Project 624", created_at=UTC_TIMESTAMP)
-        path.write_text(identity.model_dump_json(), encoding="utf-8")
+        _write_identity(path, identity)
 
-        result = load_project_identity(path)
+        assert load_project_identity(path) == identity
 
-        assert result.status == ProjectIdentityLoadStatus.OK
-        assert result.path == path
-        assert result.identity == identity
-        assert result.error is None
-
-    def test_load_project_identity_missing_path_returns_not_found_result(self, tmp_path: Path) -> None:
+    def test_load_project_identity_missing_path_raises_not_found(self, tmp_path: Path) -> None:
         path = tmp_path / "project.json"
 
-        result = load_project_identity(path)
+        with pytest.raises(ProjectIdentityError) as raised:
+            load_project_identity(path)
 
-        assert result.status == ProjectIdentityLoadStatus.NOT_FOUND
-        assert result.path == path
-        assert result.error is not None
-        assert result.error.error_type == ProjectIdentityErrorType.NOT_FOUND
-        assert result.error.path == str(path)
-        assert result.errors == [result.error.message]
+        assert raised.value.error_code == ErrorCode.PROJECT_IDENTITY_NOT_FOUND
+        assert raised.value.message == f"Project identity file not found at '{path}' (PROJECT_IDENTITY_NOT_FOUND)."
+        assert raised.value.remediations == ()
 
     @pytest.mark.parametrize(
         "contents",
@@ -80,215 +81,214 @@ class ProjectIdentityServiceTests:
             pytest.param('{"id": "Bad", "created_at": "2026-01-02T03:04:05Z"}', id="invalid_identity"),
         ],
     )
-    def test_load_project_identity_invalid_content_returns_invalid_schema_result(
-        self, tmp_path: Path, contents: str
-    ) -> None:
+    def test_load_project_identity_invalid_content_raises_invalid_schema(self, tmp_path: Path, contents: str) -> None:
         path = tmp_path / "project.json"
         path.write_text(contents, encoding="utf-8")
+        with pytest.raises(ValidationError) as validation:
+            ProjectIdentity.model_validate_json(contents)
 
-        result = load_project_identity(path)
+        with pytest.raises(ProjectIdentityError) as raised:
+            load_project_identity(path)
 
-        assert result.status == ProjectIdentityLoadStatus.INVALID_SCHEMA
-        assert result.path == path
-        assert result.error is not None
-        assert result.error.error_type == ProjectIdentityErrorType.INVALID_SCHEMA
-        assert result.error.path == str(path)
-        assert result.errors == [result.error.message]
+        assert raised.value.error_code == ErrorCode.PROJECT_IDENTITY_INVALID_SCHEMA
+        assert raised.value.message == (
+            f"Project identity at '{path}' is invalid: {validation.value} (PROJECT_IDENTITY_INVALID_SCHEMA)."
+        )
+        assert raised.value.remediations == ()
 
-    def test_load_project_identity_unreadable_path_returns_unreadable_result(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    @pytest.mark.parametrize("failure", ["oserror", "invalid_utf8"])
+    def test_load_project_identity_unreadable_raises_unreadable_from_cause(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, failure: str
     ) -> None:
         path = tmp_path / "project.json"
-        path.write_text("{}", encoding="utf-8")
+        if failure == "oserror":
+            path.write_text("{}", encoding="utf-8")
+            cause: Exception = OSError("permission denied")
 
-        def raise_read_error(_path: Path, *args: object, **kwargs: object) -> str:
-            raise OSError("permission denied")
+            def raise_read_error(_path: Path, *args: object, **kwargs: object) -> str:
+                raise cause
 
-        monkeypatch.setattr(Path, "read_text", raise_read_error)
+            monkeypatch.setattr(Path, "read_text", raise_read_error)
+            expected_type: type[Exception] = OSError
+        else:
+            path.write_bytes(b"\xff\xfe\x00invalid")
+            expected_type = UnicodeDecodeError
 
-        result = load_project_identity(path)
+        with pytest.raises(ProjectIdentityError) as raised:
+            load_project_identity(path)
 
-        assert result.status == ProjectIdentityLoadStatus.UNREADABLE
-        assert result.path == path
-        assert result.error is not None
-        assert result.error.error_type == ProjectIdentityErrorType.UNREADABLE
-        assert result.error.path == str(path)
-        assert result.errors == [result.error.message]
+        assert raised.value.error_code == ErrorCode.PROJECT_IDENTITY_UNREADABLE
+        assert type(raised.value.__cause__) is expected_type
+        assert raised.value.message == (
+            f"Unable to read project identity at '{path}': {raised.value.__cause__} (PROJECT_IDENTITY_UNREADABLE)."
+        )
+        assert raised.value.remediations == ()
 
-    def test_load_project_identity_invalid_utf8_bytes_returns_unreadable_result(self, tmp_path: Path) -> None:
-        path = tmp_path / "project.json"
-        path.write_bytes(b"\xff\xfe\x00invalid")
-
-        result = load_project_identity(path)
-
-        assert result.status == ProjectIdentityLoadStatus.UNREADABLE
-        assert result.path == path
-        assert result.error is not None
-        assert result.error.error_type == ProjectIdentityErrorType.UNREADABLE
-        assert result.error.path == str(path)
-        assert result.errors == [result.error.message]
-
-    def test_save_project_identity_writes_indented_json_without_temp_sibling(self, tmp_path: Path) -> None:
+    def test_save_project_identity_writes_indented_json_and_returns_none(self, tmp_path: Path) -> None:
         path = tmp_path / "project.json"
         identity = ProjectIdentity(id="project-624", display_name="Project 624", created_at=UTC_TIMESTAMP)
 
-        result = save_project_identity(path, identity)
+        returned = save_project_identity(path, identity)
         contents = path.read_text(encoding="utf-8")
 
-        assert result.status == ProjectIdentitySaveStatus.OK
-        assert result.path == path
+        assert returned is None
         assert json.loads(contents) == identity.model_dump(mode="json")
         assert contents.startswith("{\n  ")
         assert contents.endswith("\n")
         assert not (tmp_path / "project.json.tmp").exists()
 
-    def test_save_project_identity_atomic_write_oserror_returns_write_failed_result(
+    def test_save_project_identity_lock_timeout_raises_locked_and_writes_nothing(self, tmp_path: Path) -> None:
+        path = tmp_path / "project.json"
+        identity = ProjectIdentity(id="project-624", display_name="Project 624", created_at=UTC_TIMESTAMP)
+
+        with (
+            patch(
+                "dovo.core.project.services.identity.WorkspaceLock.__enter__",
+                side_effect=LockTimeoutError("lock held"),
+            ),
+            pytest.raises(ProjectIdentityError) as raised,
+        ):
+            save_project_identity(path, identity)
+
+        assert raised.value.error_code == ErrorCode.PROJECT_IDENTITY_LOCKED
+        assert raised.value.message == (
+            f"Unable to acquire project identity lock at '{path}': lock held (PROJECT_IDENTITY_LOCKED)."
+        )
+        assert raised.value.remediations == ()
+        assert not path.exists()
+
+    def test_save_project_identity_write_oserror_raises_write_failed_from_cause(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         path = tmp_path / "project.json"
         identity = ProjectIdentity(id="project-624", display_name="Project 624", created_at=UTC_TIMESTAMP)
+        _fail_atomic_write(monkeypatch)
 
-        def raise_write_error(_path: Path, _data: dict[str, object]) -> None:
-            raise OSError("disk full")
+        with pytest.raises(ProjectIdentityError) as raised:
+            save_project_identity(path, identity)
 
-        monkeypatch.setattr(identity_service.Filesystem, "atomic_write_json", raise_write_error)
+        assert raised.value.error_code == ErrorCode.PROJECT_IDENTITY_WRITE_FAILED
+        assert raised.value.message == (
+            f"Unable to write project identity at '{path}': disk full (PROJECT_IDENTITY_WRITE_FAILED)."
+        )
+        assert type(raised.value.__cause__) is OSError
+        assert raised.value.remediations == ()
+        assert not path.exists()
 
-        result = save_project_identity(path, identity)
+    @pytest.mark.parametrize("project_id", ["Bad Id!", "ab", "-leading-dash"])
+    def test_validate_project_id_invalid_raises_project_id_invalid(self, project_id: str) -> None:
+        with pytest.raises(ProjectIdentityError) as raised:
+            validate_project_id(project_id)
 
-        assert result.status == ProjectIdentitySaveStatus.WRITE_FAILED
-        assert result.path == path
-        assert result.error is not None
-        assert result.error.error_type == ProjectIdentityErrorType.WRITE_FAILED
-        assert result.error.path == str(path)
-        assert "disk full" in result.error.message
-        assert result.errors == [result.error.message]
+        assert raised.value.error_code == ErrorCode.PROJECT_ID_INVALID
+        assert raised.value.message == "Invalid project ID: must match ^[a-z0-9][a-z0-9-_]{2,62}$"
+        assert raised.value.remediations == (
+            Remediation(message=f"Pass a valid '--id' matching '{PROJECT_ID_REGEX}', or omit '--id' to generate one."),
+        )
+        assert raised.value.remediations[0].command is None
 
-    def test_save_project_identity_lock_timeout_returns_locked_result(self, tmp_path: Path) -> None:
-        path = tmp_path / "project.json"
-        identity = ProjectIdentity(id="project-624", display_name="Project 624", created_at=UTC_TIMESTAMP)
+    def test_validate_project_id_valid_returns_none(self) -> None:
+        assert validate_project_id("custom-id") is None
 
-        with patch(
-            "dovo.core.project.services.identity.WorkspaceLock.__enter__",
-            side_effect=LockTimeoutError("lock held"),
-        ):
-            result = save_project_identity(path, identity)
-
-        assert result.status == ProjectIdentitySaveStatus.LOCKED
-        assert result.path == path
-        assert result.error is not None
-        assert result.error.error_type == ProjectIdentityErrorType.LOCKED
-        assert result.error.path == str(path)
-        assert "lock held" in result.error.message
-        assert result.errors == [result.error.message]
-
-    def test_provision_project_identity_without_id_generates_slug_and_creates(self, tmp_path: Path) -> None:
-        result = provision_project_identity(tmp_path)
-
-        assert result.status == ProjectIdentityProvisionStatus.CREATED
-        assert result.identity is not None
-        assert re.match(PROJECT_ID_REGEX, result.identity.id) is not None
-        assert (tmp_path / "project.json").exists()
-
-    def test_provision_project_identity_with_valid_id_creates_with_explicit_id(self, tmp_path: Path) -> None:
-        result = provision_project_identity(tmp_path, project_id="custom-id", display_name="Custom")
-
-        assert result.status == ProjectIdentityProvisionStatus.CREATED
-        assert result.identity is not None
-        assert result.identity.id == "custom-id"
-        assert result.identity.display_name == "Custom"
-
-    def test_provision_project_identity_with_invalid_id_returns_invalid_id_status(self, tmp_path: Path) -> None:
-        result = provision_project_identity(tmp_path, project_id="Bad Id!")
-
-        assert result.status == ProjectIdentityProvisionStatus.INVALID_ID
-        assert result.errors == [f"Invalid project ID: must match {PROJECT_ID_REGEX}"]
-        assert result.remediations == [
-            Remediation(message=f"Pass a valid '--id' matching '{PROJECT_ID_REGEX}', or omit '--id' to generate one.")
-        ]
-        assert not (tmp_path / "project.json").exists()
-
-    def test_provision_project_identity_existing_without_force_preserves_identity(self, tmp_path: Path) -> None:
-        existing = ProjectIdentity(id="existing-id", display_name="Existing", created_at=UTC_TIMESTAMP)
-        path = tmp_path / "project.json"
-        path.write_text(existing.model_dump_json(), encoding="utf-8")
-        before = path.read_text(encoding="utf-8")
-
-        result = provision_project_identity(tmp_path)
-
-        assert result.status == ProjectIdentityProvisionStatus.PRESERVED
-        assert result.identity == existing
-        assert result.warnings == [
-            "Project identity already exists (id=existing-id); preserving existing identity. "
-            "Rerun with --id <new-id> --force to replace it."
-        ]
-        assert path.read_text(encoding="utf-8") == before
-
-    def test_provision_project_identity_existing_with_id_no_force_ignores_id_and_preserves(
-        self, tmp_path: Path
+    @pytest.mark.parametrize(
+        ("project_id", "force"),
+        [(None, False), ("custom-id", False), (None, True)],
+        ids=["generated", "explicit_id", "force_without_id"],
+    )
+    def test_provision_project_identity_missing_file_creates(
+        self, tmp_path: Path, project_id: str | None, force: bool
     ) -> None:
-        existing = ProjectIdentity(id="existing-id", display_name="Existing", created_at=UTC_TIMESTAMP)
+        provisioned = provision_project_identity(tmp_path, project_id=project_id, force=force)
+
         path = tmp_path / "project.json"
-        path.write_text(existing.model_dump_json(), encoding="utf-8")
-
-        result = provision_project_identity(tmp_path, project_id="new-id")
-
-        assert result.status == ProjectIdentityProvisionStatus.PRESERVED
-        assert result.identity is not None
-        assert result.identity.id == "existing-id"
-        assert result.warnings == [
-            "Project identity already exists (id=existing-id); ignoring --id 'new-id' since --force "
-            "was not passed. Rerun with --id new-id --force to replace it."
-        ]
-
-    def test_provision_project_identity_existing_with_force_no_id_preserves(self, tmp_path: Path) -> None:
-        existing = ProjectIdentity(id="existing-id", display_name="Existing", created_at=UTC_TIMESTAMP)
-        path = tmp_path / "project.json"
-        path.write_text(existing.model_dump_json(), encoding="utf-8")
-
-        result = provision_project_identity(tmp_path, force=True)
-
-        assert result.status == ProjectIdentityProvisionStatus.PRESERVED
-        assert result.identity is not None
-        assert result.identity.id == "existing-id"
-        assert result.warnings == [
-            "Project identity already exists (id=existing-id); --force has no effect without --id, "
-            "so the existing identity was preserved."
-        ]
+        assert provisioned.outcome == ProjectIdentityOutcome.CREATED
+        assert provisioned.warning is None
+        assert provisioned.path == path
+        assert provisioned.identity == ProjectIdentity.model_validate_json(path.read_text(encoding="utf-8"))
+        assert re.match(PROJECT_ID_REGEX, provisioned.identity.id) is not None
+        if project_id is not None:
+            assert provisioned.identity.id == project_id
 
     @freeze_time(UTC_TIMESTAMP)
-    def test_provision_project_identity_existing_with_id_and_force_overwrites_identity(self, tmp_path: Path) -> None:
+    @pytest.mark.parametrize("existing", ["valid", "corrupt"])
+    def test_provision_project_identity_with_id_and_force_overwrites(self, tmp_path: Path, existing: str) -> None:
+        path = tmp_path / "project.json"
+        if existing == "valid":
+            _write_identity(path, ProjectIdentity(id="existing-id", display_name="Existing", created_at=UTC_TIMESTAMP))
+        else:
+            path.write_text("{not-json", encoding="utf-8")
+
+        provisioned = provision_project_identity(tmp_path, project_id="new-id", force=True)
+
+        assert provisioned.outcome == ProjectIdentityOutcome.OVERWRITTEN
+        assert provisioned.warning is None
+        assert provisioned.identity.id == "new-id"
+        assert ProjectIdentity.model_validate_json(path.read_text(encoding="utf-8")).id == "new-id"
+
+    @pytest.mark.parametrize(
+        ("project_id", "force", "warning"),
+        [
+            pytest.param(
+                None,
+                False,
+                "Project identity already exists (id=existing-id); preserving existing identity. "
+                "Rerun with --id <new-id> --force to replace it.",
+                id="rerun",
+            ),
+            pytest.param(
+                "new-id",
+                False,
+                "Project identity already exists (id=existing-id); ignoring --id 'new-id' since --force "
+                "was not passed. Rerun with --id new-id --force to replace it.",
+                id="id_without_force",
+            ),
+            pytest.param(
+                None,
+                True,
+                "Project identity already exists (id=existing-id); --force has no effect without --id, "
+                "so the existing identity was preserved.",
+                id="force_without_id",
+            ),
+        ],
+    )
+    def test_provision_project_identity_existing_preserves_with_warning(
+        self, tmp_path: Path, project_id: str | None, force: bool, warning: str
+    ) -> None:
         existing = ProjectIdentity(id="existing-id", display_name="Existing", created_at=UTC_TIMESTAMP)
         path = tmp_path / "project.json"
-        path.write_text(existing.model_dump_json(), encoding="utf-8")
+        _write_identity(path, existing)
+        before = path.read_bytes()
 
-        result = provision_project_identity(tmp_path, project_id="new-id", force=True)
+        provisioned = provision_project_identity(tmp_path, project_id=project_id, force=force)
 
-        assert result.status == ProjectIdentityProvisionStatus.OVERWRITTEN
-        assert result.identity is not None
-        assert result.identity.id == "new-id"
-        persisted = ProjectIdentity.model_validate_json(path.read_text(encoding="utf-8"))
-        assert persisted.id == "new-id"
+        assert provisioned.outcome == ProjectIdentityOutcome.PRESERVED
+        assert provisioned.identity == existing
+        assert provisioned.warning == warning
+        assert path.read_bytes() == before
 
-    def test_provision_project_identity_existing_corrupt_without_force_returns_failed_status(
-        self, tmp_path: Path
+    @pytest.mark.parametrize("failure", ["corrupt_existing", "write_failed"])
+    def test_provision_project_identity_propagates_load_and_save_errors(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, failure: str
     ) -> None:
         path = tmp_path / "project.json"
-        path.write_text("{not-json", encoding="utf-8")
+        if failure == "corrupt_existing":
+            path.write_text("{not-json", encoding="utf-8")
+            with pytest.raises(ValidationError) as validation:
+                ProjectIdentity.model_validate_json("{not-json")
+            expected_code = ErrorCode.PROJECT_IDENTITY_INVALID_SCHEMA
+            expected_message = (
+                f"Project identity at '{path}' is invalid: {validation.value} (PROJECT_IDENTITY_INVALID_SCHEMA)."
+            )
+        else:
+            _fail_atomic_write(monkeypatch)
+            expected_code = ErrorCode.PROJECT_IDENTITY_WRITE_FAILED
+            expected_message = (
+                f"Unable to write project identity at '{path}': disk full (PROJECT_IDENTITY_WRITE_FAILED)."
+            )
 
-        result = provision_project_identity(tmp_path)
+        with pytest.raises(ProjectIdentityError) as raised:
+            provision_project_identity(tmp_path)
 
-        assert result.status == ProjectIdentityProvisionStatus.FAILED
-        assert result.errors
-        assert path.read_text(encoding="utf-8") == "{not-json"
-
-    def test_provision_project_identity_existing_corrupt_with_id_and_force_recovers(self, tmp_path: Path) -> None:
-        path = tmp_path / "project.json"
-        path.write_text("{not-json", encoding="utf-8")
-
-        result = provision_project_identity(tmp_path, project_id="new-id", force=True)
-
-        assert result.status == ProjectIdentityProvisionStatus.OVERWRITTEN
-        assert result.identity is not None
-        assert result.identity.id == "new-id"
-        persisted = ProjectIdentity.model_validate_json(path.read_text(encoding="utf-8"))
-        assert persisted.id == "new-id"
+        assert raised.value.error_code == expected_code
+        assert raised.value.message == expected_message
+        assert raised.value.remediations == ()
