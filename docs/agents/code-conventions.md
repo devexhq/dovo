@@ -25,7 +25,7 @@ Standard package skeleton for domain logic under `src/dovo/core/`:
 core/<domain>/
   __init__.py       # Re-export public API only
   models.py         # BaseModel, StrEnum, dataclasses, Protocols
-  exceptions.py     # Domain exceptions
+  exceptions.py     # The package's one DomainError subclass
   <domain>.py       # Domain entrypoint (named after the domain, e.g. prune.py; never facade.py)
   services/         # Imperative operations
     <verb>.py       # loader, runner, renderer, resolver, etc.
@@ -38,8 +38,9 @@ core/<domain>/
 
 ## Models and Result/Outcome Pattern
 
-- **External / Wire / Command Results:** Operations whose outcome reaches a domain entrypoint, command handler, formatter, or wire format return a Pydantic `BaseResult` subclass (`extra="forbid"`, `strict=True`). Scoped exceptions (`extra="ignore"` on hand-authored YAML models `BlueprintDefinition` and `LoopStepBlock`) must carry a justifying comment (`tests/lint/test_model_strictness.py`).
-- **Internal Helpers:** Single-caller internal helpers and in-memory specs/context hops should return plain values, `@dataclass(frozen=True, slots=True)`, or `str | None` rather than inventing one-off Pydantic wrappers.
+- **Entrypoint results:** A public entrypoint (a method of the entrypoint class in `core/<pkg>/<pkg>.py`, or an `engine/services/` runner, called from a layer above) returns a Pydantic `BaseResult` subclass (`extra="forbid"`, `strict=True`), one per public command. Scoped exceptions (`extra="ignore"` on hand-authored YAML models `BlueprintDefinition` and `LoopStepBlock`) must carry a justifying comment (`tests/lint/test_model_strictness.py`).
+- **Internal helpers:** Services and helpers behind an entrypoint return plain values, domain models, or `@dataclass(frozen=True, slots=True)`. They never return a `*Result`, and never define a `*Status` enum to classify their own failures.
+- **Domain errors:** Each package defines one `DomainError` subclass in `exceptions.py`. Helpers raise it with an `ErrorCode`, a message and remediations. The entrypoint, or a caller in another package, catches it once with `catch_failure` (`dovo.common.exceptions`) and copies the failure's `error_code`, `message` and `remediations` into its result, with the `Details logged:` line for its `diagnostic` when one was recorded. `catch_failure` records unexpected exceptions in the diagnostic log, so helpers do not catch broad `Exception` to report it; a helper that recovers from a failure, or collects per-item failures and continues, records each exception it catches with `record_exception` (`dovo.common.diagnostic_log`). No module maps one status enum or error code onto another.
 
 ---
 
