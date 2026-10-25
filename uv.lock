@@ -294,6 +294,7 @@ dependencies = [
     { name = "psutil" },
     { name = "pydantic" },
     { name = "pyyaml" },
+    { name = "rich" },
     { name = "sqlmodel" },
     { name = "typer" },
 ]
@@ -337,6 +338,7 @@ requires-dist = [
     { name = "pytest-env", marker = "extra == 'dev'", specifier = ">=1.1.0" },
     { name = "pytest-xdist", marker = "extra == 'dev'", specifier = ">=3.5.0" },
     { name = "pyyaml", specifier = ">=6.0.0" },
+    { name = "rich", specifier = ">=13.0.0" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.6.0" },
     { name = "sqlmodel", specifier = ">=0.0.22" },
     { name = "ty", marker = "extra == 'dev'", specifier = "==0.0.89" },
