@@ -9,8 +9,10 @@ from pathlib import Path
 from typing import Any
 
 from dovo.common.constants import GIT_SUBPROCESS_TIMEOUT_SECONDS
+from dovo.common.error_codes import ErrorCode
 from dovo.core.git.exceptions import (
     GitCommandError,
+    GitError,
     GitNotFoundError,
     GitPlumbingTimeoutError,
 )
@@ -128,6 +130,7 @@ class GitRunner:
             The exit code, stdout and stderr of the git process.
 
         Raises:
+            GitError: With FS_NOT_FOUND when path is not a directory, chained to the OSError.
             GitNotFoundError: When git binary is not found.
             GitPlumbingTimeoutError: When subprocess.run times out; the message ends `(GIT_TIMEOUT)`.
         """
@@ -143,7 +146,14 @@ class GitRunner:
                 env={**os.environ, **env} if env else None,
             )
         except FileNotFoundError as exc:
-            raise GitNotFoundError(f"Git execution failed ('git {' '.join(args)}'): git not found") from exc
+            if not path.is_dir():
+                # Chained: a vanished working directory is a broken workspace, so catch_failure records it.
+                raise GitError(
+                    ErrorCode.FS_NOT_FOUND,
+                    f"Git execution failed ('git {' '.join(args)}'): working directory '{path}' does not exist",
+                ) from exc
+            # Not chained: a missing git binary is fully named by its code, so catch_failure leaves no event file.
+            raise GitNotFoundError(f"Git execution failed ('git {' '.join(args)}'): git not found") from None
         except subprocess.TimeoutExpired as exc:
             raise GitPlumbingTimeoutError(
                 f"Git timed out after {GIT_SUBPROCESS_TIMEOUT_SECONDS}s ('git {' '.join(args)}') (GIT_TIMEOUT)"

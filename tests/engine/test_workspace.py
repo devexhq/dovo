@@ -20,7 +20,7 @@ from dovo.core.config import ConfigLoadError
 from dovo.core.config.loader import ConfigLoadResult, ConfigLoadStatus
 from dovo.core.db import SessionStatus, WorktreesRepository, WorktreeStatus
 from dovo.core.db.repositories.artifacts import ArtifactsRepository
-from dovo.core.git.exceptions import GitError
+from dovo.core.git.exceptions import GitPlumbingTimeoutError
 from dovo.core.git.runner import GitRunner
 from dovo.core.worktree import Worktree, WorktreeApplyResult, WorktreeApplyStatus, WorktreeSession
 from dovo.core.worktree.exceptions import WorktreeError
@@ -269,7 +269,7 @@ class WorkspaceCleanupTests:
         [
             pytest.param(RuntimeError, True, id="runtime"),
             pytest.param(LockTimeoutError, False, id="lock-timeout"),
-            pytest.param(GitError, False, id="git"),
+            pytest.param(GitPlumbingTimeoutError, False, id="git"),
             pytest.param(WorktreeError, False, id="worktree"),
         ],
     )
@@ -904,16 +904,15 @@ class ScratchLifecycleCleanupTests:
     def _allocate(tmp_path: Path, session_name: str) -> tuple[Path, AgentInvocationContext]:
         session_tmp_dir = tmp_path / session_name
         session_tmp_dir.mkdir()
-        result = allocate_invocation_paths(
+        context = allocate_invocation_paths(
             invocation_id=new_invocation_id(),
             session_tmp_dir=session_tmp_dir,
             step_id="build",
             worktree_path=tmp_path / "worktree",
             main_checkout=tmp_path / "main",
         )
-        assert result.context is not None
 
-        return session_tmp_dir, result.context
+        return session_tmp_dir, context
 
     def test_completed_unkept_run_removes_session_tree_including_invocation_directories(self, tmp_path: Path) -> None:
         session_tmp_dir, _ = self._allocate(tmp_path, "session-a")

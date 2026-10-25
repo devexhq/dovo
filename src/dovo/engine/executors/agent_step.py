@@ -7,10 +7,13 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Final
 
+from dovo.common.diagnostic_log import append_diagnostic_hint
+from dovo.common.exceptions import catch_failure
 from dovo.common.timing import Stopwatch
 from dovo.core.agents import (
     AgentAttempt,
     AgentAttemptContext,
+    AgentInvocationContext,
     AgentResponseStatus,
     ResolvedAgentSettings,
     allocate_invocation_paths,
@@ -77,19 +80,15 @@ def execute_agent_step(
         return _to_outcome(_provider_error(BLANK_PROMPT_MESSAGE), on_output, context=context)
 
     tools = resolve_tool_policy(step.tools, agent.tools)
-    scratch = allocate_invocation_paths(
-        invocation_id=new_invocation_id(),
+    invocation = _allocate_scratch(
+        step.id,
         session_tmp_dir=session_tmp_dir,
-        step_id=step.id,
         worktree_path=worktree_path,
         main_checkout=main_checkout,
+        context=context,
     )
-    if not scratch.ok:
-        return _to_outcome(
-            _provider_error(*diagnostics_with_remediations(scratch.errors, scratch.remediations)),
-            on_output,
-            context=context,
-        )
+    if isinstance(invocation, AgentAttempt):
+        return _to_outcome(invocation, on_output, context=context)
 
     attempt = _run_with_heartbeat(
         step.id,
@@ -103,7 +102,7 @@ def execute_agent_step(
             tools=tools,
             max_files=step.max_files,
             context=AgentAttemptContext(
-                invocation=scratch.context,
+                invocation=invocation,
                 env=step.env,
                 metadata_env=metadata_to_env(metadata),
                 rejected_patch_destination=_rejected_patch_destination(
@@ -118,6 +117,29 @@ def execute_agent_step(
     _report_withheld_fix(attempt, agent.provider, on_output)
 
     return _to_outcome(attempt, on_output, context=context)
+
+
+def _allocate_scratch(
+    step_id: str,
+    *,
+    session_tmp_dir: Path | None,
+    worktree_path: Path,
+    main_checkout: Path,
+    context: DiagnosticContext,
+) -> AgentInvocationContext | AgentAttempt:
+    """Return the attempt's private paths, or the provider_error attempt carrying the failure's message, any Details logged line, and its Fix: block."""
+    with catch_failure("engine.step", **context) as caught:
+        invocation = allocate_invocation_paths(
+            invocation_id=new_invocation_id(),
+            session_tmp_dir=session_tmp_dir,
+            step_id=step_id,
+            worktree_path=worktree_path,
+            main_checkout=main_checkout,
+        )
+    if caught.failure is not None:
+        message = append_diagnostic_hint(caught.failure.message, caught.failure.diagnostic)
+        return _provider_error(*diagnostics_with_remediations([message], caught.failure.remediations))
+    return invocation
 
 
 def build_agent_step_runner(

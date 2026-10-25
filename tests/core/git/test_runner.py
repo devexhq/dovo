@@ -7,9 +7,12 @@ from pathlib import Path
 
 import pytest
 
+from dovo.common.error_codes import ErrorCode
+from dovo.common.exceptions import Failure, catch_failure
 from dovo.core.git.exceptions import GitCommandError, GitNotFoundError, GitPlumbingTimeoutError
 from dovo.core.git.models import GitProcessOutput, GitWorktreeEntry
 from dovo.core.git.runner import GitRunner
+from tests.harness.diagnostic_log import read_single_event
 from tests.harness.fakes import FakeGitRunner
 
 
@@ -146,6 +149,40 @@ class GitRunnerExecTests:
             GitRunner().exec(["status"], git_repo)
 
         assert str(excinfo.value) == "Git execution failed ('git status'): git not found"
+        assert excinfo.value.error_code == ErrorCode.GIT_BINARY_MISSING
+
+    def test_missing_git_caught_with_catch_failure_leaves_no_event_file(
+        self, git_repo: Path, monkeypatch: pytest.MonkeyPatch, tmp_path: Path, frozen_diagnostic_clock: Path
+    ) -> None:
+        """Copy GIT_BINARY_MISSING and the message into caught.failure with no diagnostic, and create no logs directory."""
+        empty_bin = tmp_path / "empty-bin"
+        empty_bin.mkdir()
+        monkeypatch.setenv("PATH", str(empty_bin))
+
+        with catch_failure("worktree.create") as caught:
+            GitRunner().exec(["status"], git_repo)
+
+        assert caught.failure == Failure(
+            ErrorCode.GIT_BINARY_MISSING, "Git execution failed ('git status'): git not found", (), None
+        )
+        assert not frozen_diagnostic_clock.parent.parent.exists()
+
+    def test_missing_working_directory_raises_fs_not_found_and_is_recorded(
+        self, tmp_path: Path, frozen_diagnostic_clock: Path
+    ) -> None:
+        """Report FS_NOT_FOUND naming the directory, not GIT_BINARY_MISSING, and record the OSError cause when path does not exist."""
+        missing = tmp_path / "gone"
+
+        with catch_failure("worktree.create") as caught:
+            GitRunner().exec(["status"], missing)
+
+        assert caught.failure is not None
+        assert caught.failure.error_code == ErrorCode.FS_NOT_FOUND
+        assert caught.failure.message == (
+            f"Git execution failed ('git status'): working directory '{missing}' does not exist"
+        )
+        assert caught.failure.diagnostic is not None
+        assert read_single_event(frozen_diagnostic_clock)["operation"] == "worktree.create"
 
     def test_exec_raises_timeout_ending_git_timeout(self, git_repo: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """Raise GitPlumbingTimeoutError whose message ends "('git status') (GIT_TIMEOUT)" when dovo.core.git.runner.subprocess.run raises TimeoutExpired."""
@@ -159,6 +196,7 @@ class GitRunnerExecTests:
             GitRunner().exec(["status"], git_repo)
 
         assert str(excinfo.value).endswith("('git status') (GIT_TIMEOUT)")
+        assert excinfo.value.error_code == ErrorCode.GIT_TIMEOUT
 
     def test_run_raises_command_error_on_nonzero_exit_when_checked(self, git_repo: Path) -> None:
         """Raise GitCommandError with cmd ["git", "rev-parse", "--verify", "nope"] and returncode 128 from run."""
@@ -167,6 +205,7 @@ class GitRunnerExecTests:
 
         assert excinfo.value.cmd == ["git", "rev-parse", "--verify", "nope"]
         assert excinfo.value.returncode == 128
+        assert excinfo.value.error_code == ErrorCode.GIT_FAILED
 
     def test_run_returns_stdout_on_nonzero_exit_when_unchecked(self, git_repo: Path) -> None:
         """Return "" from run(["show-ref", "--verify", "--quiet", "refs/heads/absent"], check=False)."""

@@ -11,6 +11,7 @@ from typing import Literal
 
 import pytest
 
+from dovo.common.error_codes import ErrorCode
 from dovo.common.models import Remediation
 from dovo.core.agents import (
     AgentInvocationContext,
@@ -36,14 +37,14 @@ from dovo.core.agents.cli_mutation import (
     validate_request_patch,
 )
 from dovo.core.agents.environment import env_filtered_prompt_line
+from dovo.core.agents.exceptions import AgentError
 from dovo.core.agents.models import AgentDenial
 from dovo.core.agents.mutation_git import (
-    MutationGitError,
     capture_diff_since,
     discard_since,
     resolve_pre_agent_baseline,
 )
-from dovo.core.git import PatchApplyResult, PatchApplyStatus
+from dovo.core.git import GitError
 from tests.harness import (
     AgentRequestBuilder,
     FakeAgentRunner,
@@ -400,21 +401,27 @@ class ValidateRequestPatchTests:
             + "diff --git a/logo.png b/logo.png\nBinary files a/logo.png and b/logo.png differ\n"
         )
 
-        result = validate_request_patch(request, diff)
-
-        assert result.status == PatchApplyStatus.CHECKED_OK
-        assert len(result.touched_files) == 33
+        assert len(validate_request_patch(request, diff)) == 33
 
     @pytest.mark.parametrize(
-        ("max_patch_kb", "reject_binary_changes", "diff", "status"),
+        ("max_patch_kb", "reject_binary_changes", "max_files", "diff", "error_code"),
         [
-            pytest.param(1, None, new_file_diff("a.txt", "x" * 2048), PatchApplyStatus.TOO_LARGE, id="size"),
+            pytest.param(1, None, None, new_file_diff("a.txt", "x" * 2048), ErrorCode.PATCH_SIZE_EXCEEDED, id="size"),
             pytest.param(
                 None,
                 True,
+                None,
                 "diff --git a/logo.png b/logo.png\nBinary files a/logo.png and b/logo.png differ\n",
-                PatchApplyStatus.BINARY_REJECTED,
+                ErrorCode.PATCH_BINARY_DISALLOWED,
                 id="binary",
+            ),
+            pytest.param(
+                None,
+                None,
+                1,
+                new_file_diff("a.txt") + new_file_diff("b.txt"),
+                ErrorCode.PATCH_FILE_COUNT_EXCEEDED,
+                id="files",
             ),
         ],
     )
@@ -423,38 +430,25 @@ class ValidateRequestPatchTests:
         git_repo: Path,
         max_patch_kb: int | None,
         reject_binary_changes: bool | None,
+        max_files: int | None,
         diff: str,
-        status: PatchApplyStatus,
+        error_code: ErrorCode,
     ) -> None:
         request = AgentRequest(
             mode="direct",
             instruction="go",
             worktree_path=git_repo,
             timeout_seconds=10,
+            max_files=max_files,
             max_patch_kb=max_patch_kb,
             reject_binary_changes=reject_binary_changes,
             tools=default_tool_policy(),
         )
 
-        result = validate_request_patch(request, diff)
+        with pytest.raises(GitError) as raised:
+            validate_request_patch(request, diff)
 
-        assert result.status == status
-
-    def test_explicit_step_bound_rejects_diff_over_limit_with_agent_step_fix(self, git_repo: Path) -> None:
-        request = AgentRequest(
-            mode="direct",
-            instruction="go",
-            worktree_path=git_repo,
-            timeout_seconds=10,
-            max_files=1,
-            tools=default_tool_policy(),
-        )
-        diff = new_file_diff("a.txt") + new_file_diff("b.txt")
-
-        result = validate_request_patch(request, diff)
-
-        assert result.status == PatchApplyStatus.TOO_MANY_FILES
-        assert result.remediations == [Remediation(message="Set 'max_files' on the agent step.")]
+        assert raised.value.error_code == error_code
 
 
 class SharedMutationAdapterTests:
@@ -520,7 +514,7 @@ class SharedMutationAdapterTests:
         adapter = UnitTestAdapter(run_fn=_fake_run(edits={"a.txt": "1\n", "b.txt": "2\n"}))
 
         def _fail_discard(*a: object, **k: object) -> None:
-            raise MutationGitError("git reset failed: index locked")
+            raise AgentError(ErrorCode.AGENT_MUTATION_GIT_FAILED, "git reset failed: index locked")
 
         monkeypatch.setattr("dovo.core.agents.cli_mutation.discard_since", _fail_discard)
 
@@ -558,7 +552,7 @@ class SharedMutationAdapterTests:
     ) -> None:
 
         def _fail_git(*a: object, **k: object) -> None:
-            raise MutationGitError("git broke")
+            raise AgentError(ErrorCode.AGENT_MUTATION_GIT_FAILED, "git broke")
 
         monkeypatch.setattr(f"dovo.core.agents.cli_mutation.{patched_name}", _fail_git)
         adapter = UnitTestAdapter(run_fn=_fake_run())
@@ -824,23 +818,43 @@ class RejectedPatchSaveTests:
         assert {name: (git_repo / name).read_bytes() for name in expected} == expected
 
     @pytest.mark.parametrize(
-        "status",
+        "error_code",
         [
-            pytest.param(PatchApplyStatus.TOO_LARGE, id="too-large"),
-            pytest.param(PatchApplyStatus.TOO_MANY_FILES, id="too-many-files"),
-            pytest.param(PatchApplyStatus.BINARY_REJECTED, id="binary-rejected"),
-            pytest.param(PatchApplyStatus.UNSAFE_PATH, id="unsafe-path"),
-            pytest.param(PatchApplyStatus.INVALID_DIFF, id="invalid-diff"),
-            pytest.param(PatchApplyStatus.WORKTREE_MISSING, id="worktree-missing"),
+            pytest.param(ErrorCode.PATCH_EMPTY, id="empty"),
+            pytest.param(ErrorCode.PATCH_SIZE_EXCEEDED, id="too-large"),
+            pytest.param(ErrorCode.PATCH_FILE_COUNT_EXCEEDED, id="too-many-files"),
+            pytest.param(ErrorCode.PATCH_BINARY_DISALLOWED, id="binary-rejected"),
+            pytest.param(ErrorCode.PATCH_UNSAFE_PATH, id="unsafe-path"),
+            pytest.param(ErrorCode.PATCH_CORRUPT, id="invalid-diff"),
+            pytest.param(ErrorCode.PATCH_WORKTREE_MISSING, id="worktree-missing"),
         ],
     )
-    def test_every_gate_status_saves_then_discards(
-        self, git_repo: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, status: PatchApplyStatus
+    def test_every_patch_rejection_saves_then_discards(
+        self, git_repo: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, error_code: ErrorCode
     ) -> None:
-        monkeypatch.setattr(
-            "dovo.core.agents.cli_mutation.validate_request_patch",
-            lambda request, diff: PatchApplyResult(status=status, errors=["gate said no"]),
+        def _reject(request: AgentRequest, diff: str) -> list[str]:
+            raise GitError(error_code, "gate said no")
+
+        monkeypatch.setattr("dovo.core.agents.cli_mutation.validate_request_patch", _reject)
+        destination = tmp_path / "rejected" / "code_attempt_1.patch"
+
+        response = UnitTestAdapter(run_fn=_fake_run(edits={"agent.txt": "agent\n"})).invoke(
+            AgentRequestBuilder().with_worktree_path(git_repo).with_rejected_patch_destination(destination).build()
         )
+
+        assert response.status == AgentResponseStatus.PROVIDER_ERROR
+        assert response.errors[0] == "gate said no"
+        assert response.rejected_patch_path == str(destination)
+        assert "agent.txt" in destination.read_text(encoding="utf-8")
+        assert not (git_repo / "agent.txt").exists()
+
+    def test_unexpected_validation_error_saves_then_discards_with_details_logged(
+        self, git_repo: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        def _boom(request: AgentRequest, diff: str) -> list[str]:
+            raise RuntimeError("boom")
+
+        monkeypatch.setattr("dovo.core.agents.cli_mutation.validate_request_patch", _boom)
         destination = tmp_path / "rejected" / "code_attempt_1.patch"
 
         response = UnitTestAdapter(run_fn=_fake_run(edits={"agent.txt": "agent\n"})).invoke(
@@ -849,8 +863,10 @@ class RejectedPatchSaveTests:
 
         assert response.status == AgentResponseStatus.PROVIDER_ERROR
         assert response.rejected_patch_path == str(destination)
-        assert "agent.txt" in destination.read_text(encoding="utf-8")
         assert not (git_repo / "agent.txt").exists()
+        assert response.errors[0].splitlines()[0] == "Unexpected error during agent.validate_patch: boom"
+        assert response.errors[0].splitlines()[1].startswith("Details logged: ")
+        assert response.errors[1] == f"Discarded edit saved to {destination}."
 
     def test_saved_rejection_errors_are_gate_error_then_discarded_line(self, git_repo: Path, tmp_path: Path) -> None:
         destination = tmp_path / "rejected" / "code_attempt_1.patch"
@@ -932,7 +948,7 @@ class RejectedPatchDiscardOrderTests:
     ) -> None:
 
         def _fail_discard(*args: object, **kwargs: object) -> None:
-            raise MutationGitError("git reset failed: index locked")
+            raise AgentError(ErrorCode.AGENT_MUTATION_GIT_FAILED, "git reset failed: index locked")
 
         monkeypatch.setattr("dovo.core.agents.cli_mutation.discard_since", _fail_discard)
         destination = tmp_path / "rejected" / "code_attempt_1.patch"
@@ -1040,7 +1056,7 @@ class UnfixableClassificationTests:
     ) -> None:
 
         def _fail_discard(*args: object, **kwargs: object) -> None:
-            raise MutationGitError("git reset failed: index locked")
+            raise AgentError(ErrorCode.AGENT_MUTATION_GIT_FAILED, "git reset failed: index locked")
 
         monkeypatch.setattr("dovo.core.agents.cli_mutation.discard_since", _fail_discard)
         destination = tmp_path / "rejected" / "code_attempt_1.patch"

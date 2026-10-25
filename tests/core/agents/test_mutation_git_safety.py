@@ -6,13 +6,16 @@ from pathlib import Path
 import pytest
 
 import dovo.core.agents.mutation_git as mutation_mod
+from dovo.common.error_codes import ErrorCode
+from dovo.common.exceptions import catch_failure
+from dovo.core.agents.exceptions import AgentError
 from dovo.core.agents.mutation_git import (
-    MutationGitError,
     capture_binary_patch_since,
     capture_diff_since,
     discard_since,
     resolve_pre_agent_baseline,
 )
+from tests.harness.diagnostic_log import read_single_event
 
 DIRTY_KINDS = ["modified", "staged", "deleted", "untracked", "ignored_force_added"]
 
@@ -207,7 +210,7 @@ class ResolvePreAgentBaselineTests:
     def test_failed_snapshot_raises_and_leaves_repository_unchanged(
         self, git_repo: Path, monkeypatch: pytest.MonkeyPatch, subcommand: str, action: str
     ) -> None:
-        """Raise MutationGitError matching `{action} failed` with HEAD, refs, index bytes, status, the worktree listing and the `.git` listing outside `objects/` unchanged when that git subcommand exits non-zero."""
+        """Raise AgentError(AGENT_MUTATION_GIT_FAILED) matching `{action} failed` with HEAD, refs, index bytes, status, the worktree listing and the `.git` listing outside `objects/` unchanged when that git subcommand exits non-zero."""
         _make_dirty(git_repo, "untracked")
         state_before = _repository_state(git_repo)
         worktree_before = _worktree_files(git_repo)
@@ -231,10 +234,11 @@ class ResolvePreAgentBaselineTests:
             )
 
         monkeypatch.setattr(mutation_mod.subprocess, "run", _fail_subcommand)
-        with pytest.raises(MutationGitError, match=f"{action} failed: injected"):
+        with pytest.raises(AgentError, match=f"{action} failed: injected") as raised:
             resolve_pre_agent_baseline(git_repo)
         monkeypatch.undo()
 
+        assert raised.value.error_code == ErrorCode.AGENT_MUTATION_GIT_FAILED
         assert _repository_state(git_repo) == state_before
         assert _worktree_files(git_repo) == worktree_before
         assert _git_dir_listing(git_repo) == git_dir_before
@@ -243,7 +247,7 @@ class ResolvePreAgentBaselineTests:
         not_a_repo = tmp_path / "not-a-repo"
         not_a_repo.mkdir()
 
-        with pytest.raises(MutationGitError):
+        with pytest.raises(AgentError):
             resolve_pre_agent_baseline(not_a_repo)
 
     def test_raises_on_git_timeout(self, git_repo: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -252,8 +256,40 @@ class ResolvePreAgentBaselineTests:
 
         monkeypatch.setattr(mutation_mod.subprocess, "run", _timeout)
 
-        with pytest.raises(MutationGitError, match="GIT_TIMEOUT"):
+        with pytest.raises(AgentError, match="GIT_TIMEOUT") as raised:
             resolve_pre_agent_baseline(git_repo)
+
+        assert raised.value.error_code == ErrorCode.GIT_TIMEOUT
+
+    def test_git_that_cannot_start_caught_with_catch_failure_leaves_no_event_file(
+        self, git_repo: Path, monkeypatch: pytest.MonkeyPatch, frozen_diagnostic_clock: Path
+    ) -> None:
+        """Copy AGENT_MUTATION_GIT_FAILED into caught.failure with no diagnostic when git cannot be started, and create no logs directory."""
+
+        def _cannot_start(*_args: object, **_kwargs: object) -> object:
+            raise PermissionError("git")
+
+        monkeypatch.setattr(mutation_mod.subprocess, "run", _cannot_start)
+
+        with catch_failure("agent.attempt") as caught:
+            resolve_pre_agent_baseline(git_repo)
+
+        assert caught.failure is not None
+        assert caught.failure.error_code == ErrorCode.AGENT_MUTATION_GIT_FAILED
+        assert caught.failure.diagnostic is None
+        assert not frozen_diagnostic_clock.parent.parent.exists()
+
+    def test_missing_worktree_caught_with_catch_failure_records_the_cause(
+        self, tmp_path: Path, frozen_diagnostic_clock: Path
+    ) -> None:
+        """Copy AGENT_MUTATION_GIT_FAILED into caught.failure and record the OSError when the worktree directory does not exist."""
+        with catch_failure("agent.attempt") as caught:
+            resolve_pre_agent_baseline(tmp_path / "gone")
+
+        assert caught.failure is not None
+        assert caught.failure.error_code == ErrorCode.AGENT_MUTATION_GIT_FAILED
+        assert caught.failure.diagnostic is not None
+        assert read_single_event(frozen_diagnostic_clock)["operation"] == "agent.attempt"
 
 
 class CaptureDiffSinceTests:
@@ -357,7 +393,7 @@ class DiscardSinceTests:
         assert "kept agent notes" in diff
 
     def test_raises_on_git_failure(self, git_repo: Path) -> None:
-        with pytest.raises(MutationGitError, match="git rev-parse baseline failed"):
+        with pytest.raises(AgentError, match="git rev-parse baseline failed"):
             discard_since(git_repo, "not-a-real-ref")
 
 
@@ -395,5 +431,5 @@ class CaptureBinaryPatchSinceTests:
         assert b"wip.py" not in patch
 
     def test_unknown_baseline_raises_mutation_git_error(self, git_repo: Path) -> None:
-        with pytest.raises(MutationGitError):
+        with pytest.raises(AgentError):
             capture_binary_patch_since(git_repo, "not-a-real-ref")

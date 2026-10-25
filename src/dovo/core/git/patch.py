@@ -5,9 +5,9 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+from dovo.common.error_codes import ErrorCode
 from dovo.common.models import Remediation
-from dovo.core.git.exceptions import MalformedDiffHeader
-from dovo.core.git.models import PatchApplyResult, PatchApplyStatus
+from dovo.core.git.exceptions import GitError, MalformedDiffHeader
 
 _DIFF_GIT_RE = re.compile(r"^diff --git a/(.+) b/(.+)$")
 _MINUS_RE = re.compile(r"^--- (?:a/)?(.+)$")
@@ -239,94 +239,76 @@ def _is_unsafe_path(rel_path: str, worktree_path: Path) -> bool:
     return False
 
 
-def _empty_or_large_patch_result(
-    unified_diff: object,
-    *,
-    max_patch_kb: int | None,
-) -> PatchApplyResult | None:
-    """Return an early failure for empty/oversized patches, else None."""
+def _check_size(unified_diff: object, *, max_patch_kb: int | None) -> None:
+    """Raise PATCH_EMPTY for an empty or whitespace-only diff, and PATCH_SIZE_EXCEEDED when it exceeds max_patch_kb."""
     if not isinstance(unified_diff, str) or not unified_diff.strip():
-        return PatchApplyResult(
-            status=PatchApplyStatus.EMPTY_DIFF,
-            errors=["Patch is empty or whitespace-only."],
-            remediations=[Remediation(message="Ensure the agent returned a non-empty unified diff")],
+        raise GitError(
+            ErrorCode.PATCH_EMPTY,
+            "Patch is empty or whitespace-only.",
+            [Remediation(message="Ensure the agent returned a non-empty unified diff")],
         )
     if max_patch_kb is None:
-        return None
+        return
     size_bytes = len(unified_diff.encode("utf-8"))
     if size_bytes > max_patch_kb * 1024:
-        return PatchApplyResult(
-            status=PatchApplyStatus.TOO_LARGE,
-            errors=[f"Patch exceeds max_patch_kb ({max_patch_kb} KiB) (size={size_bytes} bytes)."],
+        raise GitError(
+            ErrorCode.PATCH_SIZE_EXCEEDED,
+            f"Patch exceeds max_patch_kb ({max_patch_kb} KiB) (size={size_bytes} bytes).",
         )
-    return None
 
 
-def _patch_parse_and_limits_result(
+def _parse_and_check_limits(
     unified_diff: str,
     *,
     max_files: int | None,
     reject_binary_changes: bool | None,
-) -> tuple[list[str], PatchApplyResult | None]:
-    """Parse diff headers and enforce file-count / binary gates."""
-    git_diff_parser = GitDiffParser(unified_diff)
-    touched, binary_paths, parse_error = git_diff_parser.parse()
+) -> list[str]:
+    """Return the sorted touched paths, raising PATCH_CORRUPT, PATCH_FILE_COUNT_EXCEEDED or PATCH_BINARY_DISALLOWED."""
+    touched, binary_paths, parse_error = GitDiffParser(unified_diff).parse()
     if parse_error is not None:
-        return [], PatchApplyResult(
-            status=PatchApplyStatus.INVALID_DIFF,
-            errors=[f"Patch is not a valid unified diff: {parse_error}"],
-            remediations=[
-                Remediation(message="Return a standard unified diff ('diff --git' / '--- +++' / '@@' hunks)")
-            ],
+        raise GitError(
+            ErrorCode.PATCH_CORRUPT,
+            f"Patch is not a valid unified diff: {parse_error}",
+            [Remediation(message="Return a standard unified diff ('diff --git' / '--- +++' / '@@' hunks)")],
         )
     if max_files is not None and len(touched) > max_files:
-        return touched, PatchApplyResult(
-            status=PatchApplyStatus.TOO_MANY_FILES,
-            errors=[f"Patch touches {len(touched)} files; max_files is {max_files}."],
-            remediations=[Remediation(message="Set 'max_files' on the agent step.")],
+        raise GitError(
+            ErrorCode.PATCH_FILE_COUNT_EXCEEDED,
+            f"Patch touches {len(touched)} files; max_files is {max_files}.",
+            [Remediation(message="Set 'max_files' on the agent step.")],
         )
     if reject_binary_changes and binary_paths:
-        joined = ", ".join(binary_paths) if binary_paths else "(binary change)"
-        return touched, PatchApplyResult(
-            status=PatchApplyStatus.BINARY_REJECTED,
-            touched_files=list(touched),
-            errors=[f"Patch includes binary file changes which are rejected: {joined}."],
-            remediations=[
+        raise GitError(
+            ErrorCode.PATCH_BINARY_DISALLOWED,
+            f"Patch includes binary file changes which are rejected: {', '.join(binary_paths)}.",
+            [
                 Remediation(
                     message="Avoid binary edits in the agent patch, or set 'reject_binary_changes=false' when allowed"
                 )
             ],
         )
-    return touched, None
+    return touched
 
 
-def _worktree_path_safety_result(
-    touched: list[str],
-    worktree_path: Path,
-) -> PatchApplyResult | None:
-    """Reject missing worktrees and paths that escape the worktree root."""
+def _check_worktree_paths(touched: list[str], worktree_path: Path) -> None:
+    """Raise PATCH_WORKTREE_MISSING for a missing worktree and PATCH_UNSAFE_PATH for a path that escapes it."""
     try:
         worktree_ok = worktree_path.is_dir()
     except OSError:
         worktree_ok = False
     if not worktree_ok:
-        return PatchApplyResult(
-            status=PatchApplyStatus.WORKTREE_MISSING,
-            touched_files=list(touched),
-            errors=[f"Worktree path does not exist or is not a directory: '{worktree_path}'."],
-            remediations=[Remediation(message="Create the worktree before applying a patch")],
+        raise GitError(
+            ErrorCode.PATCH_WORKTREE_MISSING,
+            f"Worktree path does not exist or is not a directory: '{worktree_path}'.",
+            [Remediation(message="Create the worktree before applying a patch")],
         )
     for rel in touched:
         if _is_unsafe_path(rel, worktree_path):
-            return PatchApplyResult(
-                status=PatchApplyStatus.UNSAFE_PATH,
-                touched_files=list(touched),
-                errors=[f"Patch path is absolute or escapes the worktree: '{rel}'."],
-                remediations=[
-                    Remediation(message="Use worktree-relative paths only (no absolute paths or '..' segments)")
-                ],
+            raise GitError(
+                ErrorCode.PATCH_UNSAFE_PATH,
+                f"Patch path is absolute or escapes the worktree: '{rel}'.",
+                [Remediation(message="Use worktree-relative paths only (no absolute paths or '..' segments)")],
             )
-    return None
 
 
 def validate_patch_text(
@@ -336,13 +318,11 @@ def validate_patch_text(
     max_patch_kb: int | None,
     reject_binary_changes: bool | None,
     worktree_path: Path,
-) -> PatchApplyResult:
-    """Validate diff text against size/count/binary/path limits, no git apply.
+) -> list[str]:
+    """Validate diff text against size/count/binary/path limits, no git apply, and return the sorted touched files.
 
-    Returns ``PatchApplyResult(status=CHECKED_OK, touched_files=...)`` when all
-    checks pass; otherwise a result carrying the failing status. Used as the
-    post-hoc gate for direct-mutation providers, whose changes are already
-    reflected on disk.
+    Used as the post-hoc gate for direct-mutation providers, whose changes are
+    already reflected on disk.
 
     Args:
         unified_diff: Full unified diff text.
@@ -352,25 +332,16 @@ def validate_patch_text(
         worktree_path: Worktree root used for the unsafe-path check.
 
     Returns:
-        Structured :class:`PatchApplyResult` with status, touched files, errors.
-    """
-    early = _empty_or_large_patch_result(unified_diff, max_patch_kb=max_patch_kb)
-    if early is not None:
-        return early
+        The touched worktree-relative paths, sorted.
 
-    touched, limit_result = _patch_parse_and_limits_result(
+    Raises:
+        GitError: With a ``PATCH_*`` error code, message and remediations for the first check that fails.
+    """
+    _check_size(unified_diff, max_patch_kb=max_patch_kb)
+    touched = _parse_and_check_limits(
         unified_diff,
         max_files=max_files,
         reject_binary_changes=reject_binary_changes,
     )
-    if limit_result is not None:
-        return limit_result
-
-    safety = _worktree_path_safety_result(touched, worktree_path)
-    if safety is not None:
-        return safety
-
-    return PatchApplyResult(
-        status=PatchApplyStatus.CHECKED_OK,
-        touched_files=list(touched),
-    )
+    _check_worktree_paths(touched, worktree_path)
+    return list(touched)

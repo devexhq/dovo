@@ -11,6 +11,7 @@ from dovo.core.agents.cli_mutation import (
     validate_request_patch,
 )
 from dovo.core.agents.copilot import CopilotAgentAdapter
+from dovo.core.agents.exceptions import AgentError
 from dovo.core.agents.factory import get_agent_adapter
 from dovo.core.agents.models import (
     AgentAttempt,
@@ -24,7 +25,6 @@ from dovo.core.agents.models import (
     AgentRequest,
     AgentResponse,
     AgentResponseStatus,
-    AgentScratchResult,
     EnvPassthroughEntry,
     PayloadFile,
     PayloadOmission,
@@ -50,6 +50,7 @@ __all__ = [
     "AgentAttemptContext",
     "AgentEnvMode",
     "AgentEnvOverrides",
+    "AgentError",
     "AgentFailurePayload",
     "AgentInvocationContext",
     "AgentProgress",
@@ -57,7 +58,6 @@ __all__ = [
     "AgentRequest",
     "AgentResponse",
     "AgentResponseStatus",
-    "AgentScratchResult",
     "BaseAgentProvider",
     "ClaudeAgentAdapter",
     "CliDirectMutationAdapter",

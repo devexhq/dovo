@@ -6,8 +6,10 @@ import re
 import uuid
 from pathlib import Path
 
+from dovo.common.error_codes import ErrorCode
 from dovo.common.models import Remediation
-from dovo.core.agents.models import AgentInvocationContext, AgentScratchResult
+from dovo.core.agents.exceptions import AgentError
+from dovo.core.agents.models import AgentInvocationContext
 
 _INVOCATION_ID_PATTERN = re.compile(r"^[0-9a-f]{32}$")
 _REMEDIATION = Remediation(message="Restore access to the session temp directory or correct its storage path.")
@@ -30,53 +32,49 @@ def allocate_invocation_paths(
     step_id: str,
     worktree_path: Path,
     main_checkout: Path,
-) -> AgentScratchResult:
-    """Create and verify the invocation's scratch and control directories, returning the context or a classified diagnostic.
+) -> AgentInvocationContext:
+    """Create and verify the invocation's scratch and control directories and return their context.
 
-    Never raises and never creates session_tmp_dir or anything above its steps/ directory.
+    Never creates session_tmp_dir or anything above its steps/ directory.
+
+    Raises:
+        AgentError: AGENT_SCRATCH_UNAVAILABLE, with the step's diagnostic and the storage remediation, when the step
+            or invocation id is unusable, the session temp directory is missing, overlaps a checkout, or cannot hold
+            the directories.
     """
     detail = _unsafe_step_id(step_id)
     if detail is None and _INVOCATION_ID_PATTERN.fullmatch(invocation_id) is None:
         detail = f"invocation id {invocation_id!r} is not 32 lowercase hex characters"
 
     if detail is not None:
-        return _unavailable(invocation_id, step_id, detail)
+        raise _unavailable(step_id, detail)
 
     if session_tmp_dir is None:
-        return _unavailable(invocation_id, step_id, "the session temp directory is unavailable")
+        raise _unavailable(step_id, "the session temp directory is unavailable")
 
-    allocated = _allocate(invocation_id, session_tmp_dir, step_id, worktree_path, main_checkout)
-    if isinstance(allocated, str):
-        return _unavailable(invocation_id, step_id, allocated)
-
-    return AgentScratchResult(invocation_id=invocation_id, context=allocated)
+    return _allocate(invocation_id, session_tmp_dir, step_id, worktree_path, main_checkout)
 
 
-def _unavailable(invocation_id: str, step_id: str, detail: str) -> AgentScratchResult:
-    """Return the failed AGENT_SCRATCH_UNAVAILABLE result for detail."""
-    return AgentScratchResult(
-        invocation_id=invocation_id,
-        errors=[scratch_unavailable_message(step_id, detail)],
-        remediations=[_REMEDIATION],
-        error_code="AGENT_SCRATCH_UNAVAILABLE",
-    )
+def _unavailable(step_id: str, detail: str) -> AgentError:
+    """Return the AGENT_SCRATCH_UNAVAILABLE error for detail."""
+    return AgentError(ErrorCode.AGENT_SCRATCH_UNAVAILABLE, scratch_unavailable_message(step_id, detail), [_REMEDIATION])
 
 
 def _allocate(
     invocation_id: str, session_tmp_dir: Path, step_id: str, worktree_path: Path, main_checkout: Path
-) -> AgentInvocationContext | str:
-    """Resolve the invocation root, reject checkout overlap, and create its directories; return the context or an error detail."""
+) -> AgentInvocationContext:
+    """Resolve the invocation root, reject checkout overlap, and create its directories, raising AGENT_SCRATCH_UNAVAILABLE."""
     try:
         session_root = session_tmp_dir.resolve(strict=True)
         invocation_root = session_root / "steps" / step_id / "agent" / invocation_id
         overlap = _overlap_error(invocation_root, worktree_path.resolve(), main_checkout.resolve())
     except OSError as exc:
-        return f"cannot resolve the session temp directory: {exc}"
+        raise _unavailable(step_id, f"cannot resolve the session temp directory: {exc}") from exc
 
     if overlap is not None:
-        return overlap
+        raise _unavailable(step_id, overlap)
 
-    return _create_invocation_dirs(invocation_root)
+    return _create_invocation_dirs(invocation_root, step_id)
 
 
 def _unsafe_step_id(step_id: str) -> str | None:
@@ -99,15 +97,15 @@ def _overlap_error(invocation_root: Path, worktree_path: Path, main_checkout: Pa
     return None
 
 
-def _create_invocation_dirs(invocation_root: Path) -> AgentInvocationContext | str:
-    """Create invocation_root, scratch, and control without reusing an existing directory, and return the verified context or an error detail."""
+def _create_invocation_dirs(invocation_root: Path, step_id: str) -> AgentInvocationContext:
+    """Create invocation_root, scratch, and control without reusing an existing directory, and return the verified context, raising AGENT_SCRATCH_UNAVAILABLE."""
     scratch_path = invocation_root / "scratch"
     control_path = invocation_root / "control"
 
     try:
         for shared in invocation_root.parents[:3]:
             if shared.is_symlink():
-                return f"{shared} is a symlink"
+                raise _unavailable(step_id, f"{shared} is a symlink")
 
         invocation_root.parent.mkdir(parents=True, exist_ok=True)
         invocation_root.mkdir()
@@ -116,9 +114,9 @@ def _create_invocation_dirs(invocation_root: Path) -> AgentInvocationContext | s
 
         for created in (invocation_root, scratch_path, control_path):
             if created.resolve(strict=True) != created:
-                return f"{created} resolves outside the session temp directory"
+                raise _unavailable(step_id, f"{created} resolves outside the session temp directory")
     except OSError as exc:
-        return f"cannot create {invocation_root}: {exc}"
+        raise _unavailable(step_id, f"cannot create {invocation_root}: {exc}") from exc
 
     return AgentInvocationContext(
         invocation_id=invocation_root.name, scratch_path=scratch_path, control_path=control_path

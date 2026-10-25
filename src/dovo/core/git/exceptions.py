@@ -1,18 +1,27 @@
-"""Exceptions for low-level Git execution and unified-diff parsing."""
+"""The git package's domain error, its fixed-code subclasses for git execution, and the diff-header parse exception."""
 
 from __future__ import annotations
 
+from dovo.common.error_codes import ErrorCode
+from dovo.common.exceptions import DomainError
 
-class GitError(RuntimeError):
-    """Base exception for Git command execution failures."""
+
+class GitError(DomainError):
+    """Business failure running git or validating a unified diff."""
 
 
 class GitPlumbingTimeoutError(GitError):
     """Raised when an internal git plumbing subprocess exceeds its timeout."""
 
+    def __init__(self, message: str) -> None:
+        super().__init__(ErrorCode.GIT_TIMEOUT, message)
+
 
 class GitNotFoundError(GitError):
     """Raised when the git executable is not available on PATH."""
+
+    def __init__(self, message: str) -> None:
+        super().__init__(ErrorCode.GIT_BINARY_MISSING, message)
 
 
 class GitCommandError(GitError):
@@ -30,7 +39,7 @@ class GitCommandError(GitError):
         self.stdout = stdout
         self.stderr = stderr
         message = stderr.strip() or stdout.strip() or f"git command failed with exit code {returncode}"
-        super().__init__(f"Git execution failed ('git {' '.join(cmd)}'): {message}")
+        super().__init__(ErrorCode.GIT_FAILED, f"Git execution failed ('git {' '.join(cmd)}'): {message}")
 
 
 class MalformedDiffHeader(Exception):
