@@ -6,15 +6,11 @@ from dovo.cli.context import CliContext
 from dovo.cli.ui.dispatcher import ui_dispatcher
 from dovo.common.models import OutputFormatOptions
 from dovo.core.catalog import Catalog
-from dovo.core.catalog.models import CatalogCreateResult, CatalogCreateStatus, CatalogItemType, CatalogTier
+from dovo.core.catalog.models import CatalogCreateResult, CatalogItemType, CatalogTier
 
 
-def _resolve_create_tier(*, user: bool, global_: bool) -> CatalogTier | CatalogCreateResult:
-    """Coerce --user/--global flags into a CatalogTier, or a mutual-exclusion error result."""
-    if user and global_:
-        return CatalogCreateResult(
-            status=CatalogCreateStatus.CONFLICTING_TIERS, errors=["--user and --global are mutually exclusive."]
-        )
+def _resolve_create_tier(*, user: bool, global_: bool) -> CatalogTier:
+    """Coerce the --user/--global flags, which the handler has already checked are not both set, into a CatalogTier."""
     if user:
         return CatalogTier.USER
     if global_:
@@ -41,11 +37,7 @@ def step_create_command(
     Returns:
         CatalogCreateResult containing created record or errors.
     """
-    tier_or_error = _resolve_create_tier(user=user, global_=global_)
-    if isinstance(tier_or_error, CatalogCreateResult):
-        ui_dispatcher.dispatch(tier_or_error, output_format=output_format)
-        return tier_or_error
-
-    result = Catalog(context.paths).create(item_type=CatalogItemType.STEP, name=name, tier=tier_or_error)
+    tier = _resolve_create_tier(user=user, global_=global_)
+    result = Catalog(context.paths).create(item_type=CatalogItemType.STEP, name=name, tier=tier)
     ui_dispatcher.dispatch(result, output_format=output_format)
     return result

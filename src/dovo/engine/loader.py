@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 
 from dovo.common.filesystem import WorkspacePaths
-from dovo.core.catalog.exceptions import BlueprintLoadError, BlueprintNotFoundError, BlueprintValidationError
+from dovo.core.catalog.exceptions import BlueprintLoadError, BlueprintValidationError
 from dovo.core.db import SessionRecord, SessionsRepository, SessionStatus
 from dovo.core.interaction import HeadlessAnswerInput, Interaction, InteractionAnswer
 from dovo.engine.exceptions import EngineResumeError, EngineSnapshotMissingError
@@ -135,7 +135,7 @@ class EngineLoader:
                 EngineResumeStatus.MISSING_SNAPSHOT,
                 f"Cannot resume session '{session_id}': {exc}",
             ) from exc
-        except (BlueprintNotFoundError, BlueprintLoadError, BlueprintValidationError) as exc:
+        except (BlueprintLoadError, BlueprintValidationError) as exc:
             raise EngineResumeError(
                 EngineResumeStatus.FAILED,
                 f"Cannot resume session '{session_id}': {exc}",

@@ -4,7 +4,7 @@ The `dovo blueprint` command inspects, creates, deletes, and validates executabl
 
 `dovo blueprint` requires an explicit subcommand; there is no bare-invocation default.
 
-When `validate` fails with an unexpected error and Dovo writes a [diagnostic log](doctor.md#diagnostic-logs) record for it, the error message ends with a `Details logged: <path> (event <event_id>)` line naming that file. If the record cannot be written, the line is absent.
+When `list`, `show`, `create`, `delete` or `validate` fails with an unexpected error, or with an operating-system error writing or deleting a catalog file or reading the file to show, and Dovo writes a [diagnostic log](doctor.md#diagnostic-logs) record for it, the error message ends with a `Details logged: <path> (event <event_id>)` line naming that file. If the record cannot be written, the line is absent.
 
 If another Dovo process holds the workspace lock, `create` and `delete` exit with code 1 and print a Workspace Lock Timeout panel; wait for that process to finish and retry.
 
@@ -25,7 +25,7 @@ dovo blueprint ls [--format terminal|json]
 
 ### `dovo blueprint create`
 
-Creates a new blueprint file, seeded from the packaged `default.yml` scaffold. By default it writes under the REPO tier (`.dovo/catalog/blueprints/<name>.yml`). Pass `--user` to write into the USER tier (`~/.dovo/user/catalog/blueprints/<name>.yml`) or `--global` for the GLOBAL tier (`~/.dovo/global/catalog/blueprints/<name>.yml`) instead; the two flags are mutually exclusive.
+Creates a new blueprint file, seeded from the packaged `default.yml` scaffold. By default it writes under the REPO tier (`.dovo/catalog/blueprints/<name>.yml`). Pass `--user` to write into the USER tier (`~/.dovo/user/catalog/blueprints/<name>.yml`) or `--global` for the GLOBAL tier (`~/.dovo/global/catalog/blueprints/<name>.yml`) instead; the two flags are mutually exclusive: passing both exits `2` with a usage error and writes no file.
 
 ```bash
 dovo blueprint create --name <name> [--user | --global] [--format terminal|json]

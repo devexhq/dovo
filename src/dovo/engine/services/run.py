@@ -5,12 +5,12 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from dovo.common.clock import Clock
+from dovo.common.exceptions import catch_failure
 from dovo.common.filesystem import WorkspacePaths
 from dovo.common.session_id import SessionIdFactory
 from dovo.core.agents.models import AgentEnvMode
 from dovo.core.catalog import Catalog
 from dovo.core.catalog.blueprint import Blueprint
-from dovo.core.catalog.exceptions import BlueprintLoadError, BlueprintNotFoundError, BlueprintValidationError
 from dovo.core.db import SessionsRepository
 from dovo.core.git.runner import GitRunner
 from dovo.core.inputs import format_input_error_message
@@ -18,7 +18,7 @@ from dovo.core.sessions import reconcile_stale_sessions
 from dovo.engine.engine import Engine
 from dovo.engine.exceptions import EngineInputError, EngineRuntimeError
 from dovo.engine.models import BlueprintRunResult, FailurePrompter, InteractionPrompter, RunObserver, RunRequest
-from dovo.engine.services._shared import fail, finalize, resolve_env_overrides
+from dovo.engine.services._shared import fail, fail_with, finalize, resolve_env_overrides
 
 
 @dataclass
@@ -57,9 +57,10 @@ class BlueprintRunService:
             self.warnings.append(reconciliation_result.warning)
 
         catalog = Catalog(self.paths)
-        blueprint, fail_outcome = self._load_blueprint(catalog)
-        if fail_outcome is not None or blueprint is None:
-            return fail_outcome or fail(self.warnings, f"Failed to load Blueprint '{self.name}'.")
+        with catch_failure("catalog.load_definition", blueprint=self.name) as caught:
+            blueprint = Blueprint.load(self.name, catalog=catalog)
+        if caught.failure is not None:
+            return fail_with(self.warnings, caught.failure)
 
         try:
             run_outcome = Engine(
@@ -94,19 +95,3 @@ class BlueprintRunService:
             return fail(self.warnings, str(exc))
 
         return finalize(self.sessions_db, self.warnings, run_outcome, run_outcome.session_id or "")
-
-    def _load_blueprint(self, catalog: Catalog) -> tuple[Blueprint | None, BlueprintRunResult | None]:
-        """Load and validate blueprint definition from catalog, returning error result on failure."""
-        try:
-            blueprint = Blueprint.load(self.name, catalog=catalog)
-        except BlueprintNotFoundError as exc:
-            msg = str(exc) if str(exc) else f"Blueprint '{self.name}' not found in catalog."
-            return None, fail(self.warnings, msg)
-        except BlueprintLoadError as exc:
-            msg = str(exc) if str(exc) else "Failed to resolve blueprint."
-            return None, fail(self.warnings, msg)
-        except BlueprintValidationError as exc:
-            msg = str(exc) if str(exc) else "Blueprint definition is invalid."
-            return None, fail(self.warnings, msg)
-
-        return blueprint, None

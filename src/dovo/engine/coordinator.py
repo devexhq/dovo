@@ -14,7 +14,7 @@ from dovo.common.timing import TimeSpan
 from dovo.core.agents.models import ResolvedAgentSettings
 from dovo.core.catalog.blueprint import Blueprint
 from dovo.core.catalog.definitions import LoopStepBlock, StepDefinition, StepType
-from dovo.core.catalog.exceptions import BlueprintLoadError, BlueprintNotFoundError, BlueprintValidationError
+from dovo.core.catalog.exceptions import BlueprintLoadError, BlueprintValidationError
 from dovo.core.db import SessionStatus
 from dovo.core.interaction import Interaction, InteractionAnswer, InteractionRequest
 from dovo.core.sessions import SessionLogEvent, SessionLogEventType
@@ -484,12 +484,7 @@ class RunCoordinator:
 
         try:
             blueprint = load_blueprint_from_snapshot(self._context.paths.session_dir(session_id), loaded.state.manifest)
-        except (
-            EngineSnapshotMissingError,
-            BlueprintLoadError,
-            BlueprintNotFoundError,
-            BlueprintValidationError,
-        ) as exc:
+        except (EngineSnapshotMissingError, BlueprintLoadError, BlueprintValidationError) as exc:
             self._errors.append(str(exc))
             return False
 

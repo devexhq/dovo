@@ -2,10 +2,14 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
+from dovo.common.error_codes import ErrorCode
 from dovo.common.filesystem.models import WorkspacePaths
 from dovo.core.agents.models import AgentEnvMode, AgentEnvOverrides
+from dovo.core.catalog.definitions import BlueprintDefinition
 from dovo.core.db import SessionsRepository, SessionStatus
 from dovo.core.git.runner import GitRunner
 from dovo.core.sessions import ReconciliationResult
@@ -13,6 +17,7 @@ from dovo.engine.models import RunOutcome
 from dovo.engine.services.run import BlueprintRunService
 from tests.engine.conftest import StubDriveRun
 from tests.harness.catalog import write_runnable_blueprint
+from tests.harness.diagnostic_log import diagnostic_hint, read_single_event
 from tests.harness.fakes import fixed_clock, fixed_new_id
 
 
@@ -117,8 +122,46 @@ class BlueprintRunServiceExecuteTests:
 
         assert not result.ok
         assert result.session_record is None
-        assert len(result.errors) == 1
-        assert "nope" in result.errors[0]
+        assert result.error_code == ErrorCode.CATALOG_NOT_FOUND
+        assert result.errors == ["Catalog item 'nope' not found."]
+        assert sessions_repo.list() == []
+
+
+class BlueprintRunServiceLoadTests:
+    def test_unexpected_definition_error_is_recorded_under_load_definition(
+        self,
+        engine_paths: WorkspacePaths,
+        sessions_repo: SessionsRepository,
+        monkeypatch: pytest.MonkeyPatch,
+        frozen_diagnostic_clock: Path,
+    ) -> None:
+        """With BlueprintDefinition.from_document raising TypeError("bad"), return INTERNAL_ERROR with the hint, one catalog.load_definition event naming the blueprint, and no session row."""
+        write_runnable_blueprint(engine_paths.root_dir, key="lint", steps=[{"id": "a", "run": "true"}])
+
+        def _explode(cls: type[BlueprintDefinition], raw: dict[str, object], *, key: str) -> BlueprintDefinition:
+            raise TypeError("bad")
+
+        monkeypatch.setattr(BlueprintDefinition, "from_document", classmethod(_explode))
+
+        result = BlueprintRunService(
+            name="lint",
+            paths=engine_paths,
+            sessions_db=sessions_repo,
+            git=GitRunner(),
+            clock=fixed_clock,
+            new_id=fixed_new_id,
+        ).execute()
+
+        assert result.session_record is None
+        assert result.error_code == ErrorCode.INTERNAL_ERROR
+        assert result.errors == [
+            f"Unexpected error during catalog.load_definition: bad{diagnostic_hint(frozen_diagnostic_clock)}"
+        ]
+        event = read_single_event(frozen_diagnostic_clock)
+        assert event["operation"] == "catalog.load_definition"
+        assert event["context"] == {"blueprint": "lint"}
+        assert event["exception_type"] == "TypeError"
+        assert sessions_repo.list() == []
 
     def test_execute_missing_required_input_returns_formatted_input_error(
         self, engine_paths: WorkspacePaths, sessions_repo: SessionsRepository

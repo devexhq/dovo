@@ -10,6 +10,7 @@ from pathlib import Path
 import pytest
 import yaml
 
+from dovo.common.error_codes import ErrorCode
 from dovo.common.filesystem import WorkspacePaths
 from dovo.common.models import Remediation
 from dovo.core.catalog import Catalog
@@ -81,7 +82,8 @@ class CatalogValidateServiceTests:
         assert result.target == "nonexistent-flow"
         assert result.resolved_path is None
         assert result.item_type is None
-        assert result.errors == ["Catalog item 'nonexistent-flow' not found (CATALOG_ITEM_NOT_FOUND)."]
+        assert result.error_code == ErrorCode.CATALOG_NOT_FOUND
+        assert result.errors == ["Catalog item 'nonexistent-flow' not found."]
         assert result.warnings == []
         assert result.remediations == [
             Remediation(
@@ -399,10 +401,10 @@ class _ExplodingBlueprintDefinition(BlueprintDefinition):
 class CatalogValidateDiagnosticLogTests:
     """Tests verifying an unexpected schema-check failure is recorded and named in the validate result."""
 
-    def test_unexpected_schema_failure_records_error_and_appends_hint(
+    def test_unexpected_schema_failure_is_internal_error_under_catalog_validate(
         self, workspace_paths: WorkspacePaths, frozen_diagnostic_clock: Path
     ) -> None:
-        """Return valid False with '<exc> (CATALOG_SCHEMA_INVALID).' plus the hint when blueprint_cls.from_document raises RuntimeError, and record operation catalog.validate_definition."""
+        """Return INVALID, valid False, INTERNAL_ERROR and the unexpected-error message plus hint, with one catalog.validate event naming the target."""
         target_path = _write_yaml(
             workspace_paths.root_dir / "demo.yml", {"name": "demo", "steps": [{"id": "s1", "run": "echo hi"}]}
         )
@@ -414,12 +416,14 @@ class CatalogValidateDiagnosticLogTests:
             step_cls=StepDefinition,
         )
 
+        assert result.status == CatalogValidateStatus.INVALID
         assert result.valid is False
+        assert result.error_code == ErrorCode.INTERNAL_ERROR
         assert result.errors == [
-            f"boom (CATALOG_SCHEMA_INVALID).\nDetails logged: {frozen_diagnostic_clock} (event {FROZEN_EVENT_ID})"
+            f"Unexpected error during catalog.validate: boom\nDetails logged: {frozen_diagnostic_clock} (event {FROZEN_EVENT_ID})"
         ]
         event = json.loads(frozen_diagnostic_clock.read_text(encoding="utf-8"))
         assert event["level"] == "error"
-        assert event["operation"] == "catalog.validate_definition"
-        assert event["context"] == {"key": "demo"}
+        assert event["operation"] == "catalog.validate"
+        assert event["context"] == {"target": str(target_path)}
         assert event["exception_type"] == "RuntimeError"

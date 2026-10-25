@@ -70,3 +70,25 @@ class StepDeleteCliIntegrationTests:
         assert result.exit_code == 1
         assert isinstance(result.exception, LockTimeoutError)
         assert "Catalog Delete Failed" not in result.stdout
+
+
+class StepDeleteCliTests:
+    """Typer runner tests for dovo step delete's declined confirmation."""
+
+    def test_declined_confirmation_returns_cancelled_json(
+        self, cli_runner: CliRunner, isolated_workspace: Path
+    ) -> None:
+        """Exit 1 with payload cancelled True, deleted False, errors ["Deletion cancelled."], status 'cancelled' and no error_code when stdin answers 'n'."""
+        Catalog(initialized_workspace_paths(isolated_workspace)).create(CatalogItemType.STEP, "kept-step")
+
+        result = cli_runner.invoke(
+            app, ["-p", str(isolated_workspace), "step", "delete", "kept-step", "--format", "json"], input="n\n"
+        )
+
+        assert result.exit_code == 1
+        payload = json.loads(result.stdout.splitlines()[-1])["payload"]
+        assert (payload["cancelled"], payload["deleted"]) == (True, False)
+        assert payload["errors"] == ["Deletion cancelled."]
+        assert payload["status"] == "cancelled"
+        assert payload["error_code"] is None
+        assert (isolated_workspace / ".dovo" / "catalog" / "steps" / "kept-step.yml").is_file()

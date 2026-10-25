@@ -7,13 +7,13 @@ import os
 from pathlib import Path
 
 import pytest
+import yaml
 
 from dovo.common.error_codes import ErrorCode
 from dovo.common.filesystem import Filesystem, WorkspacePaths
 from dovo.common.filesystem.services.global_root import resolve_global_paths
 from dovo.common.lock import LockTimeoutError, WorkspaceLock
-from dovo.common.models import DefinitionResolutionStatus
-from dovo.core.catalog import Catalog
+from dovo.core.catalog import Catalog, CatalogError
 from dovo.core.catalog.definitions import BlueprintDefinition
 from dovo.core.catalog.models import (
     CatalogCreateResult,
@@ -21,11 +21,11 @@ from dovo.core.catalog.models import (
     CatalogDeleteResult,
     CatalogDeleteStatus,
     CatalogItemType,
-    CatalogScanResult,
+    CatalogScan,
     CatalogTier,
 )
 from dovo.core.catalog.services.inventory import compute_catalog_sha
-from tests.harness.diagnostic_log import FROZEN_EVENT_ID
+from tests.harness.diagnostic_log import diagnostic_hint, read_single_event
 from tests.harness.lock import raise_lock_timeout
 
 
@@ -171,39 +171,32 @@ class CatalogNamespaceSplittingTests:
 
     def test_name_sharing_trailing_characters_with_namespace_resolves(self, workspace_paths: WorkspacePaths) -> None:
         catalog = Catalog(workspace_paths)
-        catalog.save(
-            "dovo/run-test",
-            {"name": "run-test", "description": "Regression fixture", "action": "run"},
-            item_type=CatalogItemType.STEP,
+        step_file = workspace_paths.catalog_dir / "steps" / "dovo" / "run-test.yml"
+        step_file.parent.mkdir(parents=True, exist_ok=True)
+        step_file.write_text(
+            yaml.safe_dump({"name": "run-test", "description": "Regression fixture", "action": "run"}),
+            encoding="utf-8",
         )
 
-        result = catalog.get("dovo/run-test", item_type=CatalogItemType.STEP)
+        resolution = catalog.get("dovo/run-test", item_type=CatalogItemType.STEP)
 
-        assert result.status == DefinitionResolutionStatus.OK
-        assert result.resolved is not None
-        assert result.resolved.name == "run-test"
-        assert result.resolved.namespace == "dovo"
+        assert resolution.record.name == "run-test"
+        assert resolution.record.namespace == "dovo"
 
 
 class CatalogGetTests:
-    """Tests verifying multi-tier resolution precedence and duplicate-tier warnings for Catalog.get."""
+    """Tests verifying multi-tier resolution precedence and classified failures for Catalog.get."""
 
     def test_get_returns_repo_tier_match_over_user_tier_duplicate(self, workspace_paths: WorkspacePaths) -> None:
         catalog = Catalog(workspace_paths)
         catalog.create(CatalogItemType.BLUEPRINT, "shared-name")
+        _write_user_blueprint("shared-name")
 
-        user_catalog_dir = resolve_global_paths(None).user_catalog_dir
-        (user_catalog_dir / "blueprints").mkdir(parents=True, exist_ok=True)
-        (user_catalog_dir / "blueprints" / "shared-name.yml").write_text(
-            'version: "1.0"\nname: shared-name\ndescription: User tier duplicate\nsteps: []\n', encoding="utf-8"
-        )
+        resolution = catalog.get("shared-name", item_type=CatalogItemType.BLUEPRINT)
 
-        result = catalog.get("shared-name", item_type=CatalogItemType.BLUEPRINT)
-
-        assert result.status == DefinitionResolutionStatus.OK
-        assert result.resolved is not None
-        assert result.resolved.tier == CatalogTier.REPO
-        assert result.warnings == []
+        assert resolution.record.tier == CatalogTier.REPO
+        assert [match.tier for match in resolution.matches] == [CatalogTier.REPO, CatalogTier.USER]
+        assert resolution.definition is None
 
     def test_get_returns_user_tier_match_when_no_repo_tier_entry_exists(self, workspace_paths: WorkspacePaths) -> None:
         user_catalog_dir = resolve_global_paths(None).user_catalog_dir
@@ -213,11 +206,123 @@ class CatalogGetTests:
         )
 
         catalog = Catalog(workspace_paths)
-        result = catalog.get("user-only", item_type=CatalogItemType.STEP)
+        resolution = catalog.get("user-only", item_type=CatalogItemType.STEP)
 
-        assert result.status == DefinitionResolutionStatus.OK
-        assert result.resolved is not None
-        assert result.resolved.tier == CatalogTier.USER
+        assert resolution.record.tier == CatalogTier.USER
+
+    def test_get_validates_definition_into_resolution(self, workspace_paths: WorkspacePaths) -> None:
+        """Return CatalogResolution with record.key == 'demo', a BlueprintDefinition named 'demo', and matches == (record,)."""
+        catalog = Catalog(workspace_paths)
+        catalog.create(CatalogItemType.BLUEPRINT, "demo")
+
+        resolution = catalog.get("demo", item_type=CatalogItemType.BLUEPRINT, definition_cls=BlueprintDefinition)
+
+        assert resolution.record.key == "demo"
+        assert isinstance(resolution.definition, BlueprintDefinition)
+        assert resolution.definition.name == "demo"
+        assert resolution.matches == (resolution.record,)
+
+    def test_get_missing_raises_catalog_not_found(self, workspace_paths: WorkspacePaths) -> None:
+        """Raise CatalogError with error_code CATALOG_NOT_FOUND, message "Catalog item 'ghost' not found.", remediations ()."""
+        with pytest.raises(CatalogError) as raised:
+            Catalog(workspace_paths).get("ghost")
+
+        assert (raised.value.error_code, raised.value.message, raised.value.remediations) == (
+            ErrorCode.CATALOG_NOT_FOUND,
+            "Catalog item 'ghost' not found.",
+            (),
+        )
+
+    @pytest.mark.parametrize(
+        ("content", "code", "message_start"),
+        [
+            pytest.param(
+                "- a\n- b\n",
+                ErrorCode.CATALOG_SYNTAX_ERROR,
+                "Failed to load catalog blueprint 'blueprints/bad.yml': invalid or non-object YAML content.",
+                id="non_mapping",
+            ),
+            pytest.param(
+                "name: bad\nsteps: [\n",
+                ErrorCode.CATALOG_SYNTAX_ERROR,
+                "Failed to load catalog blueprint 'blueprints/bad.yml'",
+                id="syntax",
+            ),
+            pytest.param(
+                "name: bad\ntimeout_seconds: x\nsteps: []\n",
+                ErrorCode.CATALOG_SCHEMA_INVALID,
+                "Model validation failed for 'bad': Blueprint definition validation failed:",
+                id="schema",
+            ),
+        ],
+    )
+    def test_get_unloadable_definition_raises_classified_error(
+        self, workspace_paths: WorkspacePaths, content: str, code: ErrorCode, message_start: str
+    ) -> None:
+        """Raise CatalogError with error_code == code and message starting message_start, and leave <DOVO_HOME>/logs absent."""
+        blueprint_file = workspace_paths.catalog_blueprints_dir / "bad.yml"
+        blueprint_file.parent.mkdir(parents=True, exist_ok=True)
+        blueprint_file.write_text(content, encoding="utf-8")
+
+        with pytest.raises(CatalogError) as raised:
+            Catalog(workspace_paths).get("bad", item_type=CatalogItemType.BLUEPRINT, definition_cls=BlueprintDefinition)
+
+        assert raised.value.error_code == code
+        assert raised.value.message.startswith(message_start)
+        assert not resolve_global_paths(None).logs_dir.exists()
+
+    def test_get_unexpected_definition_error_propagates_unrecorded(self, workspace_paths: WorkspacePaths) -> None:
+        """Raise RuntimeError("boom") from get(definition_cls=_ExplodingBlueprintDefinition) and leave <DOVO_HOME>/logs absent."""
+        catalog = Catalog(workspace_paths)
+        catalog.create(CatalogItemType.BLUEPRINT, "demo")
+
+        with pytest.raises(RuntimeError, match=r"^boom$"):
+            catalog.get("demo", item_type=CatalogItemType.BLUEPRINT, definition_cls=_ExplodingBlueprintDefinition)
+
+        assert not resolve_global_paths(None).logs_dir.exists()
+
+
+class CatalogShowTests:
+    """Tests verifying Catalog.show copies a caught failure into its result."""
+
+    def test_show_failure_copies_error(self, workspace_paths: WorkspacePaths) -> None:
+        """Return CatalogShowResult with error_code CATALOG_NOT_FOUND, errors == ["Catalog item 'ghost' not found."], item None, ok False."""
+        result = Catalog(workspace_paths).show("ghost")
+
+        assert result.error_code == ErrorCode.CATALOG_NOT_FOUND
+        assert result.errors == ["Catalog item 'ghost' not found."]
+        assert result.item is None
+        assert result.ok is False
+
+    @pytest.mark.skipif(os.geteuid() == 0, reason="root ignores file permission bits")
+    def test_show_unreadable_file_records_cause_and_appends_hint(
+        self, workspace_paths: WorkspacePaths, monkeypatch: pytest.MonkeyPatch, frozen_diagnostic_clock: Path
+    ) -> None:
+        """Return error_code CATALOG_SYNTAX_ERROR and the read error plus hint, with one error event under operation catalog.show."""
+        catalog = Catalog(workspace_paths)
+        catalog.create(CatalogItemType.BLUEPRINT, "demo")
+        # Keep the index written by create, so demo stays indexed after its file becomes unreadable.
+        monkeypatch.setattr(
+            "dovo.core.catalog.catalog.scan_and_index_catalog",
+            lambda paths: CatalogScan(records=(), skipped_files=()),
+        )
+        blueprint_file = workspace_paths.catalog_blueprints_dir / "demo.yml"
+        blueprint_file.chmod(0o000)
+        try:
+            result = catalog.show("demo")
+        finally:
+            blueprint_file.chmod(0o644)
+
+        event = read_single_event(frozen_diagnostic_clock)
+        assert result.error_code == ErrorCode.CATALOG_SYNTAX_ERROR
+        assert result.errors == [
+            f"Failed to read file for catalog blueprint 'demo': {event['exception_message']}"
+            f"{diagnostic_hint(frozen_diagnostic_clock)}"
+        ]
+        assert event["level"] == "error"
+        assert event["operation"] == "catalog.show"
+        assert event["context"] == {"name": "demo"}
+        assert event["exception_type"] == "PermissionError"
 
 
 class CatalogDeleteTierGuardTests:
@@ -294,7 +399,8 @@ def _run_classified_case(
         return catalog.create(CatalogItemType.BLUEPRINT, "demo")
     if case == "reindex_miss":
         monkeypatch.setattr(
-            "dovo.core.catalog.services.inventory.scan_and_index_tier", lambda tier, paths: CatalogScanResult()
+            "dovo.core.catalog.services.inventory.scan_and_index_tier",
+            lambda tier, paths: CatalogScan(records=(), skipped_files=()),
         )
         return catalog.create(CatalogItemType.BLUEPRINT, "demo")
     if case == "protected_delete":
@@ -364,11 +470,17 @@ class CatalogMutationOutcomeTests:
         assert not resolve_global_paths(None).logs_dir.exists()
 
     @pytest.mark.skipif(os.geteuid() == 0, reason="root ignores directory permission bits")
-    @pytest.mark.parametrize("operation", ["create", "delete"])
-    def test_unexpected_failure_propagates_without_record(
-        self, workspace_paths: WorkspacePaths, operation: str
+    @pytest.mark.parametrize(
+        ("operation", "message_start"),
+        [
+            pytest.param("create", "Failed to write catalog item '", id="create"),
+            pytest.param("delete", "Failed to delete catalog item '", id="delete"),
+        ],
+    )
+    def test_write_failure_is_catalog_write_failed_with_hint(
+        self, workspace_paths: WorkspacePaths, frozen_diagnostic_clock: Path, operation: str, message_start: str
     ) -> None:
-        """Raise PermissionError from Catalog.create/delete on a read-only blueprints dir and leave <DOVO_HOME>/logs absent."""
+        """On a read-only blueprints dir, return write_failed and CATALOG_WRITE_FAILED with the hint and one catalog.<operation> event; create leaves no file, delete keeps it."""
         catalog = Catalog(workspace_paths)
         blueprints_dir = workspace_paths.catalog_blueprints_dir
         blueprints_dir.mkdir(parents=True, exist_ok=True)
@@ -376,54 +488,122 @@ class CatalogMutationOutcomeTests:
             catalog.create(CatalogItemType.BLUEPRINT, "demo")
         blueprints_dir.chmod(0o555)
         try:
-            with pytest.raises(PermissionError):
-                if operation == "delete":
-                    catalog.delete("demo")
-                else:
-                    catalog.create(CatalogItemType.BLUEPRINT, "demo")
+            result = (
+                catalog.delete("demo") if operation == "delete" else catalog.create(CatalogItemType.BLUEPRINT, "demo")
+            )
         finally:
             blueprints_dir.chmod(0o755)
 
-        assert not resolve_global_paths(None).logs_dir.exists()
-
-
-class CatalogDiagnosticLogTests:
-    """Tests verifying unexpected definition load failures are recorded with a hint and expected ones are not."""
-
-    def test_unexpected_definition_load_failure_records_error(
-        self, workspace_paths: WorkspacePaths, frozen_diagnostic_clock: Path
-    ) -> None:
-        """Return LOAD_ERROR with "Model validation failed for 'demo': boom" plus the hint when a BlueprintDefinition subclass's from_document raises RuntimeError, and record operation catalog.load_definition with context {key: demo}."""
-        catalog = Catalog(workspace_paths)
-        catalog.create(CatalogItemType.BLUEPRINT, "demo")
-
-        result = catalog.get("demo", item_type=CatalogItemType.BLUEPRINT, definition_cls=_ExplodingBlueprintDefinition)
-
-        assert result.status == DefinitionResolutionStatus.LOAD_ERROR
-        assert result.errors == [
-            f"Model validation failed for 'demo': boom\nDetails logged: {frozen_diagnostic_clock} (event {FROZEN_EVENT_ID})"
-        ]
-        event = json.loads(frozen_diagnostic_clock.read_text(encoding="utf-8"))
-        assert event["level"] == "error"
-        assert event["operation"] == "catalog.load_definition"
-        assert event["context"] == {"key": "demo"}
-        assert event["exception_type"] == "RuntimeError"
-
-    def test_expected_definition_errors_are_not_recorded(self, workspace_paths: WorkspacePaths) -> None:
-        """Return today's message with no hint for a schema-invalid blueprint and leave <DOVO_HOME>/logs absent."""
-        catalog = Catalog(workspace_paths)
-        catalog.save(
-            "bad-timeout",
-            {"name": "bad-timeout", "timeout_seconds": "not-a-number", "steps": []},
-            item_type=CatalogItemType.BLUEPRINT,
-        )
-
-        result = catalog.get("bad-timeout", item_type=CatalogItemType.BLUEPRINT, definition_cls=BlueprintDefinition)
-
-        assert result.status == DefinitionResolutionStatus.LOAD_ERROR
+        assert result.status == "write_failed"
+        assert result.error_code == ErrorCode.CATALOG_WRITE_FAILED
         assert len(result.errors) == 1
-        assert result.errors[0].startswith(
-            "Model validation failed for 'bad-timeout': Blueprint definition validation failed:"
-        )
-        assert "Details logged" not in result.errors[0]
+        assert result.errors[0].startswith(message_start)
+        assert result.errors[0].endswith(diagnostic_hint(frozen_diagnostic_clock))
+        event = read_single_event(frozen_diagnostic_clock)
+        assert event["level"] == "error"
+        assert event["operation"] == f"catalog.{operation}"
+        assert event["exception_type"] == "PermissionError"
+        if operation == "delete":
+            assert (blueprints_dir / "demo.yml").is_file()
+        else:
+            assert sorted(path.name for path in blueprints_dir.iterdir()) == []
+
+    @pytest.mark.parametrize(
+        ("operation", "patched", "expected_status"),
+        [
+            pytest.param(
+                "create",
+                "dovo.core.catalog.services.inventory.scan_and_index_tier",
+                CatalogCreateStatus.INTERNAL_ERROR,
+                id="create",
+            ),
+            pytest.param(
+                "delete",
+                "dovo.core.catalog.services.inventory.delete_file",
+                CatalogDeleteStatus.INTERNAL_ERROR,
+                id="delete",
+            ),
+        ],
+    )
+    def test_unexpected_failure_is_internal_error_and_recorded(
+        self,
+        workspace_paths: WorkspacePaths,
+        monkeypatch: pytest.MonkeyPatch,
+        frozen_diagnostic_clock: Path,
+        operation: str,
+        patched: str,
+        expected_status: CatalogCreateStatus | CatalogDeleteStatus,
+    ) -> None:
+        """With scan_and_index_tier/delete_file raising TypeError("bad"), return internal_error and INTERNAL_ERROR with the hint, and one catalog.<operation> event."""
+        catalog = Catalog(workspace_paths)
+        if operation == "delete":
+            catalog.create(CatalogItemType.BLUEPRINT, "demo")
+
+        def _explode(*args: object) -> None:
+            raise TypeError("bad")
+
+        monkeypatch.setattr(patched, _explode)
+
+        result = catalog.delete("demo") if operation == "delete" else catalog.create(CatalogItemType.BLUEPRINT, "demo")
+
+        assert result.status == expected_status
+        assert result.error_code == ErrorCode.INTERNAL_ERROR
+        assert result.errors == [
+            f"Unexpected error during catalog.{operation}: bad{diagnostic_hint(frozen_diagnostic_clock)}"
+        ]
+        event = read_single_event(frozen_diagnostic_clock)
+        assert event["operation"] == f"catalog.{operation}"
+        assert event["exception_type"] == "TypeError"
+
+
+class CatalogListTests:
+    """Tests verifying Catalog.list reports skipped files as warnings and copies a caught failure into its result."""
+
+    @pytest.mark.skipif(os.geteuid() == 0, reason="root ignores file permission bits")
+    def test_unreadable_file_is_a_warning_and_others_listed(self, workspace_paths: WorkspacePaths) -> None:
+        """Return items containing 'good' and the unreadable file's read error in warnings, with errors []."""
+        catalog = Catalog(workspace_paths)
+        catalog.create(CatalogItemType.BLUEPRINT, "good")
+        catalog.create(CatalogItemType.BLUEPRINT, "bad")
+        bad_file = workspace_paths.catalog_blueprints_dir / "bad.yml"
+        bad_file.chmod(0o000)
+        try:
+            result = catalog.list(type_filter=CatalogItemType.BLUEPRINT)
+        finally:
+            bad_file.chmod(0o644)
+
+        keys = [item.key for item in result.items]
+        assert "good" in keys
+        assert "bad" not in keys
+        assert len(result.warnings) == 1
+        assert result.warnings[0].startswith(f"Failed to read catalog blueprint '{bad_file}': ")
+        assert result.errors == []
+
+    def test_list_failure_copies_error_with_hint(
+        self, workspace_paths: WorkspacePaths, monkeypatch: pytest.MonkeyPatch, frozen_diagnostic_clock: Path
+    ) -> None:
+        """With atomic_write_json raising OSError("disk full"), return CATALOG_WRITE_FAILED with the index-write message plus hint, and one catalog.list event."""
+
+        def _disk_full(path: Path, data: object) -> None:
+            raise OSError("disk full")
+
+        monkeypatch.setattr(Filesystem, "atomic_write_json", _disk_full)
+
+        result = Catalog(workspace_paths).list()
+
+        index_path = workspace_paths.global_paths.global_catalog_dir / "index.json"
+        assert result.error_code == ErrorCode.CATALOG_WRITE_FAILED
+        assert result.errors == [
+            f"Failed to write catalog index '{index_path}': disk full{diagnostic_hint(frozen_diagnostic_clock)}"
+        ]
+        event = read_single_event(frozen_diagnostic_clock)
+        assert event["level"] == "error"
+        assert event["operation"] == "catalog.list"
+
+    def test_invalid_type_filter_is_catalog_type_invalid(self, workspace_paths: WorkspacePaths) -> None:
+        """Return CATALOG_TYPE_INVALID with coerce_catalog_item_type's message for list(type_filter="widget"), and leave <DOVO_HOME>/logs absent."""
+        result = Catalog(workspace_paths).list(type_filter="widget")
+
+        assert result.error_code == ErrorCode.CATALOG_TYPE_INVALID
+        assert result.errors == ["Invalid item_type 'widget'. Allowed choices: blueprint, step"]
         assert not resolve_global_paths(None).logs_dir.exists()

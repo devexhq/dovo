@@ -11,6 +11,7 @@ from typer.testing import CliRunner
 from dovo.cli import app
 from dovo.common.filesystem.services.global_root import resolve_global_paths
 from dovo.common.lock import LockTimeoutError, WorkspaceLock
+from tests.harness.diagnostic_log import diagnostic_hint, read_single_event
 from tests.harness.lock import raise_lock_timeout
 
 pytestmark = pytest.mark.usefixtures("workspace_config")
@@ -82,20 +83,6 @@ class BlueprintCreateCliIntegrationTests:
         catalog_dir: Path = getattr(resolve_global_paths(None), catalog_dir_attr)
         assert (catalog_dir / "blueprints" / "tier-blueprint.yml").is_file()
 
-    def test_blueprint_create_cli_user_and_global_together_exits_one(
-        self, cli_runner: CliRunner, isolated_workspace: Path
-    ) -> None:
-        result = cli_runner.invoke(
-            app,
-            ["-p", str(isolated_workspace), "blueprint", "create", "--name", "both-blueprint", "--user", "--global"],
-        )
-
-        assert result.exit_code == 1
-        assert "mutually exclusive" in result.stdout
-        global_paths = resolve_global_paths(None)
-        assert not (global_paths.user_catalog_dir / "blueprints" / "both-blueprint.yml").exists()
-        assert not (global_paths.global_catalog_dir / "blueprints" / "both-blueprint.yml").exists()
-
     def test_blueprint_create_cli_lock_timeout_propagates(
         self, cli_runner: CliRunner, isolated_workspace: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
@@ -107,3 +94,64 @@ class BlueprintCreateCliIntegrationTests:
         assert result.exit_code == 1
         assert isinstance(result.exception, LockTimeoutError)
         assert "Catalog Creation Failed" not in result.stdout
+
+
+class BlueprintCreateCliTests:
+    """Typer runner tests for dovo blueprint create's usage error and classified failures."""
+
+    def test_user_and_global_together_is_usage_error(self, cli_runner: CliRunner, isolated_workspace: Path) -> None:
+        """Exit 2 with '--user and --global are mutually exclusive.' in output and no both-blueprint.yml in any tier."""
+        result = cli_runner.invoke(
+            app,
+            ["-p", str(isolated_workspace), "blueprint", "create", "--name", "both-blueprint", "--user", "--global"],
+        )
+
+        assert result.exit_code == 2
+        assert "--user and --global are mutually exclusive." in result.output
+        global_paths = resolve_global_paths(None)
+        assert not (isolated_workspace / ".dovo" / "catalog" / "blueprints" / "both-blueprint.yml").exists()
+        assert not (global_paths.user_catalog_dir / "blueprints" / "both-blueprint.yml").exists()
+        assert not (global_paths.global_catalog_dir / "blueprints" / "both-blueprint.yml").exists()
+
+    def test_collision_json_has_already_exists_status_and_code(
+        self, cli_runner: CliRunner, isolated_workspace: Path
+    ) -> None:
+        """Exit 1 with payload status 'already_exists' and error_code CATALOG_ALREADY_EXISTS."""
+        cli_runner.invoke(app, ["-p", str(isolated_workspace), "blueprint", "create", "--name", "dup-blueprint"])
+
+        result = cli_runner.invoke(
+            app,
+            ["-p", str(isolated_workspace), "blueprint", "create", "--name", "dup-blueprint", "--format", "json"],
+        )
+
+        assert result.exit_code == 1
+        payload = json.loads(result.stdout)["payload"]
+        assert payload["status"] == "already_exists"
+        assert payload["error_code"] == "CATALOG_ALREADY_EXISTS"
+
+    def test_unexpected_error_reports_internal_error_json(
+        self,
+        cli_runner: CliRunner,
+        isolated_workspace: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        frozen_diagnostic_clock: Path,
+    ) -> None:
+        """With scan_and_index_tier raising TypeError("bad"), exit 1 with internal_error, INTERNAL_ERROR, the hint, and a catalog.create event with a traceback."""
+
+        def _explode(*args: object) -> None:
+            raise TypeError("bad")
+
+        monkeypatch.setattr("dovo.core.catalog.services.inventory.scan_and_index_tier", _explode)
+
+        result = cli_runner.invoke(
+            app, ["-p", str(isolated_workspace), "blueprint", "create", "--name", "demo", "--format", "json"]
+        )
+
+        assert result.exit_code == 1
+        payload = json.loads(result.stdout)["payload"]
+        assert payload["status"] == "internal_error"
+        assert payload["error_code"] == "INTERNAL_ERROR"
+        assert payload["errors"][0].endswith(diagnostic_hint(frozen_diagnostic_clock))
+        event = read_single_event(frozen_diagnostic_clock)
+        assert event["operation"] == "catalog.create"
+        assert "TypeError: bad" in str(event["formatted_traceback"])

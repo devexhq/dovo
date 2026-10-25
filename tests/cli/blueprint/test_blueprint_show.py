@@ -56,4 +56,14 @@ class BlueprintShowCliIntegrationTests:
         result = cli_runner.invoke(app, ["-p", str(isolated_workspace), "blueprint", "show", "missing-blueprint"])
 
         assert result.exit_code == 1
-        assert "not found" in result.stdout
+        assert "Catalog item 'missing-blueprint' not found." in result.stdout
+
+    def test_show_missing_json_has_catalog_not_found(self, cli_runner: CliRunner, isolated_workspace: Path) -> None:
+        result = cli_runner.invoke(
+            app, ["-p", str(isolated_workspace), "blueprint", "show", "missing-blueprint", "--format", "json"]
+        )
+
+        assert result.exit_code == 1
+        payload = json.loads(result.stdout)["payload"]
+        assert payload["item"] is None
+        assert payload["errors"] == ["Catalog item 'missing-blueprint' not found."]

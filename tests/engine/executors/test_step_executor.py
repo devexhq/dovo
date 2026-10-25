@@ -7,6 +7,7 @@ from pathlib import Path
 
 import pytest
 
+from dovo.common.filesystem.models import WorkspacePaths
 from dovo.common.filesystem.services import resolve_global_paths
 from dovo.core.artifacts.models import ArtifactUploadResult
 from dovo.core.artifacts.store import ArtifactStore
@@ -15,6 +16,7 @@ from dovo.engine.executors import step_executor
 from dovo.engine.executors.models import OutputCallback, StepExecutionContext
 from dovo.engine.executors.step_executor import StepExecution
 from tests.harness.builders import StepBuilder
+from tests.harness.catalog import write_runnable_step
 from tests.harness.diagnostic_log import diagnostic_hint, read_single_event
 
 
@@ -26,6 +28,49 @@ class StepExecutionResolutionTests:
 
         assert result.status == "failed"
         assert result.error_message == "Could not resolve step 's1'."
+
+    def test_uses_step_failure_fails_step_with_failure_message(
+        self, tmp_path: Path, engine_paths: WorkspacePaths
+    ) -> None:
+        """Return a failed StepResult with error_message == "Catalog item 'missing-step' not found." for uses: missing-step, and add no diagnostic hint."""
+        step = StepDefinition(id="s1", uses="missing-step")
+        execution = StepExecution(StepExecutionContext(step=step, worktree_path=tmp_path, paths=engine_paths))
+
+        result = execution.run()
+
+        assert result.status == "failed"
+        assert result.error_message == "Catalog item 'missing-step' not found."
+        assert execution.diagnostic_hints == []
+        assert not resolve_global_paths().logs_dir.exists()
+
+    def test_uses_step_unexpected_error_appends_hint_to_step_error(
+        self,
+        tmp_path: Path,
+        engine_paths: WorkspacePaths,
+        monkeypatch: pytest.MonkeyPatch,
+        frozen_diagnostic_clock: Path,
+    ) -> None:
+        """With StepDefinition.model_validate raising RuntimeError("x") during get, fail the step with the unexpected-error message plus hint, leave diagnostic_hints empty, and write one event with context {step: <ref>}."""
+        write_runnable_step(engine_paths.root_dir, key="base-step", definition={"id": "base-step", "run": "true"})
+        step = StepDefinition(id="s1", uses="base-step")
+
+        def _explode(cls: type[StepDefinition], obj: object, **kwargs: object) -> StepDefinition:
+            raise RuntimeError("x")
+
+        monkeypatch.setattr(StepDefinition, "model_validate", classmethod(_explode))
+        execution = StepExecution(StepExecutionContext(step=step, worktree_path=tmp_path, paths=engine_paths))
+
+        result = execution.run()
+
+        assert result.status == "failed"
+        assert result.error_message == (
+            f"Unexpected error during catalog.load_definition: x{diagnostic_hint(frozen_diagnostic_clock)}"
+        )
+        assert execution.diagnostic_hints == []
+        event = read_single_event(frozen_diagnostic_clock)
+        assert event["operation"] == "catalog.load_definition"
+        assert event["context"] == {"step": "base-step"}
+        assert event["exception_type"] == "RuntimeError"
 
     def test_run_shorthand_step_executes_as_command(self, tmp_path: Path) -> None:
         step = StepDefinition(id="s1", run="echo ok")

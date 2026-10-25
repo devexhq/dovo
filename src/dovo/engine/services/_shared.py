@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from dovo.common.diagnostic_log import append_diagnostic_hint
+from dovo.common.exceptions import Failure
 from dovo.core.agents.environment import env_passthrough_flag_error
 from dovo.core.agents.models import AgentEnvMode, AgentEnvOverrides
 from dovo.core.db import SessionRecord, SessionsRepository
@@ -14,6 +16,17 @@ def fail(warnings: list[str], message: str) -> BlueprintRunResult:
     return BlueprintRunResult(
         session_record=None,
         errors=[message],
+        warnings=warnings,
+    )
+
+
+def fail_with(warnings: list[str], failure: Failure) -> BlueprintRunResult:
+    """Construct a failed BlueprintRunResult from a caught failure: its code, message with any Details logged line, and remediations."""
+    return BlueprintRunResult(
+        session_record=None,
+        error_code=failure.error_code,
+        errors=[append_diagnostic_hint(failure.message, failure.diagnostic)],
+        remediations=list(failure.remediations),
         warnings=warnings,
     )
 

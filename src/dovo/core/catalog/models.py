@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
 from typing import Any, ClassVar
 
 from pydantic import BaseModel, Field, field_validator
 
-from dovo.common.models import BaseResult, DefinitionResolutionStatus
+from dovo.common.models import BaseResult
 
 
 class CatalogTier(StrEnum):
@@ -110,6 +111,23 @@ class CatalogRecord(CatalogIndexEntry):
     tier: CatalogTier
 
 
+@dataclass(frozen=True, slots=True)
+class CatalogScan:
+    """Records indexed by a catalog scan, and the read errors of files it skipped."""
+
+    records: tuple[CatalogRecord, ...]
+    skipped_files: tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class CatalogResolution:
+    """The highest-precedence record matching a key, its validated definition when one was requested, and every match."""
+
+    record: CatalogRecord
+    definition: object | None
+    matches: tuple[CatalogRecord, ...]
+
+
 class SeedResult(BaseResult):
     """Outcome of seeding packaged catalog blueprint templates."""
 
@@ -123,40 +141,12 @@ class SeedResult(BaseResult):
         return not self.errors
 
 
-class CatalogScanResult(BaseResult):
-    """Result of scanning and indexing catalog blueprint directories."""
-
-    items: list[CatalogRecord] = Field(default_factory=list)
-
-    @property
-    def ok(self) -> bool:
-        """Return True when scanning and rewriting index.json completed without errors."""
-        return not self.errors
-
-
-class CatalogSubdirectoryScanResult(BaseResult):
-    """Result of scanning a catalog subdirectory."""
-
-    scanned_records: list[CatalogIndexEntry] = Field(default_factory=list)
-    scanned_shas: set[str] = Field(default_factory=set)
-
-
 class YamlParseOutcome(BaseModel):
     """Outcome of reading and parsing a YAML catalog blueprint file."""
 
     model_config = {"extra": "forbid", "strict": True}
 
     parsed_data: dict[str, Any] | None = None
-    errors: list[str] = Field(default_factory=list)
-
-
-class DefinitionValidationOutcome(BaseModel):
-    """Outcome of validating a catalog blueprint definition against schema and model."""
-
-    model_config = {"extra": "forbid", "strict": True}
-
-    definition: Any | None = None
-    status: DefinitionResolutionStatus = DefinitionResolutionStatus.OK
     errors: list[str] = Field(default_factory=list)
 
 
@@ -194,6 +184,8 @@ class CatalogDeleteStatus(StrEnum):
     PROTECTED = "protected"
     WRONG_TIER = "wrong_tier"
     CANCELLED = "cancelled"
+    WRITE_FAILED = "write_failed"
+    INTERNAL_ERROR = "internal_error"
 
 
 class CatalogDeleteResult(BaseResult):
@@ -217,7 +209,7 @@ class CatalogCreateStatus(StrEnum):
     INVALID_TYPE = "invalid_type"
     ALREADY_EXISTS = "already_exists"
     WRITE_FAILED = "write_failed"
-    CONFLICTING_TIERS = "conflicting_tiers"
+    INTERNAL_ERROR = "internal_error"
 
 
 class CatalogCreateResult(BaseResult):
