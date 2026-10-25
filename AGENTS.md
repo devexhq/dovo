@@ -61,7 +61,10 @@ ID, with the `path:line` that breaks it.
   so code behind an entrypoint does not catch broad `Exception` to report it.
   Only a site that recovers or collects per-item failures and continues
   catches there, and it records what it caught. Helpers get no `*Result` or `*Status`
-  of their own, and no table maps one status or error code onto another. Raise
+  of their own, and no table or `match` maps one status or error code onto
+  another. `error_code` is a failure's only classification: a status value
+  never names a failure cause, so a new status enum or value holds only
+  outcomes `error_code` cannot express. Raise
   anything else only for programmer errors and broken invariants. *Why:* exit
   codes, the JSON envelope and every caller branch on the entrypoint's result,
   and a failure that carries the `ErrorCode` it was raised with needs no
