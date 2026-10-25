@@ -53,7 +53,7 @@ Follow planning.md Step 3. Estimate the changed lines per FR and group FRs into 
 
 Structure `.agentic/plan.md` per planning.md Step 4, in this order: What you're approving (open questions with their assumed answers, changes to existing behaviour, what stays unchanged), Traps, GWT Scenarios, the Phases table with its deletion ledger, Traceability, Artifact inventory, one section per phase, and cross-cutting doc updates. Link the issue rather than copying its prose; copy only literal contracts, into the phase that implements them.
 
-When grounding shows one of the issue's internal shapes is wrong, follow planning.md Step 1: plan the better design, assume it in an Open Question with the `path:line` that shows why, and name the departure. Only the issue's observable contracts are binding; an issue sentence is not by itself a reason to plan a duplicate symbol or a dependency the code holds but never calls.
+When grounding shows one of the issue's internal shapes is wrong, follow planning.md Step 1: plan the better design, assume it in an Open Question with the `path:line` that shows why, and name the departure. Only the issue's observable contracts are binding; an issue sentence is not by itself a reason to plan a duplicate symbol or a dependency the code holds but never calls. A guard ("same message as today") binds only what a user or caller relies on, and planning.md Step 1 allows a named departure from it in the same way.
 
 When the issue leaves a detail unspecified, choose the option consistent with the nearest existing pattern, record the rejected alternative, and add a numbered Open Question stating the assumed answer rather than stalling. Ask at most one clarifying question when a tradeoff needs confirmation first.
 
@@ -88,4 +88,4 @@ Write `.agentic/plan.json` alongside the markdown. `.dovo/catalog/blueprints/fea
 
 Run planning.md Step 5. Report the paths written, the Phases table, a one-paragraph summary, every numbered Open Question restated in chat, and plainly that this was planning only: nothing was implemented, tested, committed or pushed.
 
-**A human reviews the plan before implementation.** Stop and wait. `/dovo-plan-review` reviews it in a fresh session first; `/dovo-code` then implements every phase, in order.
+**A human reviews the plan before implementation.** Stop and wait. `/dovo-plan-review` reviews it and `/dovo-plan-challenge` challenges its design, each in a fresh session, first; `/dovo-code` then implements every phase, in order.
