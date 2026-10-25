@@ -5,10 +5,11 @@ from pathlib import Path
 
 import pytest
 
+from dovo.common.error_codes import ErrorCode
 from dovo.common.filesystem import WorkspacePaths
 from dovo.common.tool_policy import ToolCapability, ToolPolicy, ToolRule
 from dovo.core.catalog.definitions import ArtifactPublishSpec, StepDefinition, StepType
-from dovo.core.catalog.exceptions import StepValidationError
+from dovo.core.catalog.exceptions import CatalogError, StepValidationError
 from dovo.core.catalog.services.resolve_step import (
     load_step,
     load_step_by_name,
@@ -136,16 +137,34 @@ class StepLoadingTests:
     def test_load_step_invalid_dictionary_returns_none(self) -> None:
         assert load_step({"unexpected": "key", "id": 123}) is None
 
-    def test_load_step_by_path_returns_definition_or_none(self, tmp_path: Path) -> None:
+    def test_load_step_by_path_returns_definition(self, tmp_path: Path) -> None:
         step_file = tmp_path / "custom.yaml"
         step_file.write_text("id: custom\ntype: command\ncommand: echo hi\n", encoding="utf-8")
 
         loaded = load_step_by_path(step_file)
-        assert loaded is not None
         assert loaded.id == "custom"
 
-        missing = load_step_by_path(tmp_path / "nonexistent.yaml")
-        assert missing is None
+    @pytest.mark.parametrize(
+        ("content", "code", "message_start"),
+        [
+            pytest.param(None, ErrorCode.CATALOG_NOT_FOUND, "Catalog file not found at '", id="missing"),
+            pytest.param("- a\n", ErrorCode.CATALOG_SYNTAX_ERROR, "Failed to load catalog blueprint '", id="syntax"),
+            pytest.param("id: 3\n", ErrorCode.CATALOG_SCHEMA_INVALID, "Model validation failed for '", id="schema"),
+        ],
+    )
+    def test_load_step_by_path_raises_classified_catalog_error(
+        self, tmp_path: Path, content: str | None, code: ErrorCode, message_start: str
+    ) -> None:
+        """Raise CatalogError with the reader's code for a missing or non-object file and CATALOG_SCHEMA_INVALID for an invalid step."""
+        step_file = tmp_path / "custom.yaml"
+        if content is not None:
+            step_file.write_text(content, encoding="utf-8")
+
+        with pytest.raises(CatalogError) as raised:
+            load_step_by_path(step_file)
+
+        assert raised.value.error_code == code
+        assert raised.value.message.startswith(message_start)
 
 
 class MergeUsesStepTests:

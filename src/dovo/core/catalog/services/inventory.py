@@ -6,18 +6,23 @@ from importlib.resources.abc import Traversable
 from pathlib import Path
 
 from dovo.common.diagnostic_log import DiagnosticLevel, record_exception
+from dovo.common.error_codes import ErrorCode
 from dovo.common.filesystem import Filesystem, WorkspacePaths, YamlFile
 from dovo.common.filesystem.services.operations import delete_file
 from dovo.common.lock import WorkspaceLock, resolve_lock_file_path
-from dovo.core.catalog.exceptions import CatalogProtectionError, CatalogTierDeleteError, CatalogWriteError
+from dovo.core.catalog.exceptions import (
+    CatalogError,
+    CatalogProtectionError,
+    CatalogTierDeleteError,
+    CatalogWriteError,
+)
 from dovo.core.catalog.models import (
     CatalogIndex,
     CatalogIndexEntry,
     CatalogItemType,
     CatalogItemTypeDirectory,
     CatalogRecord,
-    CatalogScanResult,
-    CatalogSubdirectoryScanResult,
+    CatalogScan,
     CatalogTier,
 )
 
@@ -65,22 +70,36 @@ def tier_root(tier: CatalogTier, paths: WorkspacePaths) -> Path:
 
 
 def load_catalog_index(tier_dir: Path) -> CatalogIndex:
-    """Read and parse tier_dir/index.json, returning an empty CatalogIndex when the file is absent or invalid."""
-    index_path = tier_dir / "index.json"
-    try:
-        text = index_path.read_text(encoding="utf-8")
-    except OSError:
-        return CatalogIndex()
+    """Read and parse tier_dir/index.json, returning an empty CatalogIndex when the file is absent or invalid.
 
+    An unreadable or invalid index is recorded at debug level before the empty index is returned.
+    """
+    index_path = tier_dir / "index.json"
+    if not index_path.exists():
+        return CatalogIndex()
     try:
-        return CatalogIndex.model_validate_json(text)
-    except ValueError:
+        return CatalogIndex.model_validate_json(index_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        record_exception(
+            exc,
+            level=DiagnosticLevel.DEBUG,
+            operation="catalog.read_index",
+            context={"path": str(index_path)},
+        )
         return CatalogIndex()
 
 
 def write_catalog_index(tier_dir: Path, index: CatalogIndex) -> None:
-    """Atomically overwrite tier_dir/index.json with index's full contents."""
-    Filesystem.atomic_write_json(tier_dir / "index.json", index.model_dump(mode="json"))
+    """Atomically overwrite tier_dir/index.json with index's full contents.
+
+    Raises:
+        CatalogWriteError: If the index cannot be written.
+    """
+    index_path = tier_dir / "index.json"
+    try:
+        Filesystem.atomic_write_json(index_path, index.model_dump(mode="json"))
+    except OSError as exc:
+        raise CatalogWriteError(f"Failed to write catalog index '{index_path}': {exc}") from exc
 
 
 def _index_entry_for_file(
@@ -106,25 +125,10 @@ def _index_entry_for_file(
     return entry, None
 
 
-def _append_scan_result(
-    result: CatalogSubdirectoryScanResult,
-    *,
-    entry: CatalogIndexEntry | None,
-    error: str | None,
-) -> None:
-    """Accumulate one scanned catalog entry into the scan result."""
-    if error is not None:
-        result.errors.append(error)
-        return
-    if entry is None:
-        return
-    result.scanned_records.append(entry)
-    result.scanned_shas.add(entry.sha)
-
-
-def _scan_tier_subdirectories(tier_dir: Path) -> CatalogSubdirectoryScanResult:
-    """Scan one tier's blueprints/steps subdirectories for YAML files and index each entry."""
-    result = CatalogSubdirectoryScanResult(scanned_records=[], errors=[], scanned_shas=set())
+def _scan_tier_subdirectories(tier_dir: Path) -> tuple[list[CatalogIndexEntry], list[str]]:
+    """Scan one tier's blueprints/steps subdirectories, returning the indexed entries and the skipped files' messages."""
+    entries: list[CatalogIndexEntry] = []
+    skipped: list[str] = []
 
     subdirs: list[tuple[CatalogItemType, Path]] = [
         (CatalogItemType.BLUEPRINT, tier_dir / "blueprints"),
@@ -135,9 +139,12 @@ def _scan_tier_subdirectories(tier_dir: Path) -> CatalogSubdirectoryScanResult:
             continue
         for file_entry in Filesystem.scan_yaml_directory(sub_dir):
             entry, error = _index_entry_for_file(item_type, tier_dir, file_entry)
-            _append_scan_result(result, entry=entry, error=error)
+            if error is not None:
+                skipped.append(error)
+            elif entry is not None:
+                entries.append(entry)
 
-    return result
+    return entries, skipped
 
 
 def _global_tier_lock_path(paths: WorkspacePaths) -> Path:
@@ -145,30 +152,38 @@ def _global_tier_lock_path(paths: WorkspacePaths) -> Path:
     return resolve_lock_file_path(paths.global_paths.data_dir)
 
 
-def scan_and_index_tier(tier: CatalogTier, paths: WorkspacePaths) -> CatalogScanResult:
-    """Walk one tier's blueprints/steps directories, compute SHAs, and rewrite that tier's index.json wholesale."""
+def scan_and_index_tier(tier: CatalogTier, paths: WorkspacePaths) -> CatalogScan:
+    """Walk one tier's blueprints/steps directories, compute SHAs, and rewrite that tier's index.json wholesale.
+
+    Raises:
+        CatalogWriteError: If the tier's index.json cannot be written.
+    """
     tier_dir = tier_root(tier, paths)
     tier_dir.mkdir(parents=True, exist_ok=True)
 
     lock_path = paths.lock_file if tier is CatalogTier.REPO else _global_tier_lock_path(paths)
     with WorkspaceLock(lock_path):
-        scan_result = _scan_tier_subdirectories(tier_dir)
-        write_catalog_index(tier_dir, CatalogIndex(items=scan_result.scanned_records))
+        entries, skipped = _scan_tier_subdirectories(tier_dir)
+        write_catalog_index(tier_dir, CatalogIndex(items=entries))
 
-        records = [CatalogRecord(**entry.model_dump(), tier=tier) for entry in scan_result.scanned_records]
-        return CatalogScanResult(items=records, errors=scan_result.errors)
+        records = tuple(CatalogRecord(**entry.model_dump(), tier=tier) for entry in entries)
+        return CatalogScan(records=records, skipped_files=tuple(skipped))
 
 
-def scan_and_index_catalog(paths: WorkspacePaths) -> CatalogScanResult:
-    """Scan and reindex the GLOBAL, USER, and REPO catalog tiers in precedence order, aggregating warnings."""
-    items: list[CatalogRecord] = []
-    errors: list[str] = []
+def scan_and_index_catalog(paths: WorkspacePaths) -> CatalogScan:
+    """Scan and reindex the GLOBAL, USER, and REPO catalog tiers in precedence order, aggregating skipped files.
+
+    Raises:
+        CatalogWriteError: If any tier's index.json cannot be written.
+    """
+    records: list[CatalogRecord] = []
+    skipped: list[str] = []
     for tier in (CatalogTier.GLOBAL, CatalogTier.USER, CatalogTier.REPO):
-        result = scan_and_index_tier(tier, paths)
-        items.extend(result.items)
-        errors.extend(result.errors)
+        scan = scan_and_index_tier(tier, paths)
+        records.extend(scan.records)
+        skipped.extend(scan.skipped_files)
 
-    return CatalogScanResult(items=items, errors=errors)
+    return CatalogScan(records=tuple(records), skipped_files=tuple(skipped))
 
 
 def list_packaged_template_defaults(catalog_templates_dir: Traversable) -> list[tuple[str, str]]:
@@ -317,12 +332,18 @@ def _get_initial_template_content(type_enum: CatalogItemType, stem: str, catalog
 
 
 def coerce_catalog_item_type(item_type: CatalogItemType | str) -> CatalogItemType:
-    """Parse a catalog item type, or raise ValueError with allowed choices."""
+    """Parse a catalog item type.
+
+    Raises:
+        CatalogError: CATALOG_TYPE_INVALID naming the allowed choices.
+    """
     try:
         return item_type if isinstance(item_type, CatalogItemType) else CatalogItemType(str(item_type).lower())
-    except ValueError as exc:
+    except ValueError:
         allowed = ", ".join([t.value for t in CatalogItemType])
-        raise ValueError(f"Invalid item_type '{item_type}'. Allowed choices: {allowed}") from exc
+        raise CatalogError(
+            ErrorCode.CATALOG_TYPE_INVALID, f"Invalid item_type '{item_type}'. Allowed choices: {allowed}"
+        ) from None
 
 
 def create_catalog_item(
@@ -331,7 +352,12 @@ def create_catalog_item(
     tier: CatalogTier,
     paths: WorkspacePaths,
 ) -> CatalogRecord:
-    """Create a new catalog item under the selected tier's `<type>s/<name>.yml` and reindex that tier."""
+    """Create a new catalog item under the selected tier's `<type>s/<name>.yml` and reindex that tier.
+
+    Raises:
+        CatalogError: CATALOG_TYPE_INVALID for an unknown item_type, CATALOG_ALREADY_EXISTS when the file exists,
+            CATALOG_WRITE_FAILED when writing or reindexing it fails.
+    """
     lock_path = paths.lock_file if tier is CatalogTier.REPO else _global_tier_lock_path(paths)
     with WorkspaceLock(lock_path):
         type_enum = coerce_catalog_item_type(item_type)
@@ -342,25 +368,30 @@ def create_catalog_item(
 
         if target_path.exists():
             rel_path = target_path.relative_to(tier_dir)
-            raise FileExistsError(f"Catalog blueprint collision at path '{rel_path}'")
+            raise CatalogError(ErrorCode.CATALOG_ALREADY_EXISTS, f"Catalog blueprint collision at path '{rel_path}'")
 
         content = _get_initial_template_content(type_enum, stem, paths.catalog_templates_dir)
-        Filesystem.atomic_write_text(target_path, content)
+        try:
+            Filesystem.atomic_write_text(target_path, content)
+        except OSError as exc:
+            raise CatalogWriteError(f"Failed to write catalog item '{target_path}': {exc}") from exc
 
-        scan_result = scan_and_index_tier(tier, paths)
+        scan = scan_and_index_tier(tier, paths)
         rel_path = target_path.relative_to(tier_dir)
-        record = next((r for r in scan_result.items if r.path == rel_path), None)
+        record = next((r for r in scan.records if r.path == rel_path), None)
         if record is None:
             raise CatalogWriteError(f"Failed to reindex newly created catalog blueprint '{rel_path}'.")
         return record
 
 
-def delete_catalog_item_by_sha_or_name(sha_or_name: str, paths: WorkspacePaths) -> CatalogRecord | None:
-    """Delete a REPO-tier catalog file and reindex.
+def delete_catalog_item_by_sha_or_name(sha_or_name: str, paths: WorkspacePaths) -> CatalogRecord:
+    """Delete a REPO-tier catalog file and reindex, returning the deleted record.
 
     Raises:
+        CatalogError: CATALOG_NOT_FOUND when nothing matches sha_or_name.
         CatalogTierDeleteError: If the resolved match is not indexed at the REPO tier.
         CatalogProtectionError: If attempting to delete a template in the protected 'dovo/' namespace.
+        CatalogWriteError: If removing the file or reindexing fails.
     """
     if sha_or_name.startswith("dovo/"):
         raise CatalogProtectionError(f"Cannot delete bundled catalog template '{sha_or_name}'.")
@@ -370,7 +401,7 @@ def delete_catalog_item_by_sha_or_name(sha_or_name: str, paths: WorkspacePaths) 
         scan_and_index_catalog(paths)
         matches = find_catalog_record_matches(sha_or_name, None, paths)
         if not matches:
-            return None
+            raise CatalogError(ErrorCode.CATALOG_NOT_FOUND, f"Catalog blueprint '{sha_or_name}' not found.")
 
         item = matches[0]
         if item.tier != CatalogTier.REPO:
@@ -382,7 +413,10 @@ def delete_catalog_item_by_sha_or_name(sha_or_name: str, paths: WorkspacePaths) 
             raise CatalogProtectionError(f"Cannot delete bundled catalog template '{item.key}'.")
 
         file_path = catalog_dir / item.path
-        delete_file(file_path)
+        try:
+            delete_file(file_path)
+        except OSError as exc:
+            raise CatalogWriteError(f"Failed to delete catalog item '{file_path}': {exc}") from exc
 
         scan_and_index_tier(CatalogTier.REPO, paths)
         return item

@@ -80,6 +80,7 @@ class CatalogValidateFormatter(ComponentFormatter[CatalogValidateResult, Catalog
             target=data.target,
             resolved_path=data.resolved_path.as_posix() if data.resolved_path is not None else None,
             item_type=data.item_type,
+            error_code=data.error_code,
             errors=list(data.errors),
             warnings=list(data.warnings),
             remediations=list(data.remediations),

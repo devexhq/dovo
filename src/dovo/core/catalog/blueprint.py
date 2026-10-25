@@ -6,7 +6,6 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, ClassVar
 
 from dovo.core.catalog.definitions import BlueprintDefinition, LoopStepBlock, StepDefinition
-from dovo.core.catalog.exceptions import BlueprintLoadError, BlueprintNotFoundError
 from dovo.core.catalog.models import CatalogItemType
 from dovo.core.inputs import InputResolveResult, ParameterInput, resolve_inputs
 
@@ -29,17 +28,13 @@ class Blueprint:
         """Load and validate one Blueprint by its globally unique catalog key.
 
         Raises:
-            BlueprintNotFoundError: If no Blueprint record matches ``key``.
-            BlueprintLoadError: If the record's YAML is unreadable or invalid.
+            CatalogError: If no record matches key, or its YAML or definition is invalid.
         """
-        result = catalog.get(key, item_type=CatalogItemType.BLUEPRINT, definition_cls=BlueprintDefinition)
-        if not result.ok or result.definition is None or result.resolved is None:
-            message = "; ".join(result.errors) or f"Blueprint '{key}' not found."
-            if result.resolved is None:
-                raise BlueprintNotFoundError(message)
-            raise BlueprintLoadError(message)
-
-        return cls(result.definition, key=result.resolved.key, path=result.resolved.path)
+        resolution = catalog.get(key, item_type=CatalogItemType.BLUEPRINT, definition_cls=BlueprintDefinition)
+        definition = resolution.definition
+        if not isinstance(definition, BlueprintDefinition):
+            raise TypeError(f"Catalog.get returned {type(definition).__name__} for blueprint '{key}'.")
+        return cls(definition, key=resolution.record.key, path=resolution.record.path)
 
     @property
     def definition(self) -> BlueprintDefinition:

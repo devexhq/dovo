@@ -53,4 +53,15 @@ class StepShowCliIntegrationTests:
         result = cli_runner.invoke(app, ["-p", str(isolated_workspace), "step", "show", "missing-step"])
 
         assert result.exit_code == 1
-        assert "not found" in result.stdout
+        assert "Catalog item 'missing-step' not found." in result.stdout
+
+    def test_show_missing_json_has_catalog_not_found(self, cli_runner: CliRunner, isolated_workspace: Path) -> None:
+        result = cli_runner.invoke(
+            app, ["-p", str(isolated_workspace), "step", "show", "missing-step", "--format", "json"]
+        )
+
+        assert result.exit_code == 1
+        payload = json.loads(result.stdout)["payload"]
+        assert payload["item"] is None
+        assert payload["error_code"] == "CATALOG_NOT_FOUND"
+        assert payload["errors"] == ["Catalog item 'missing-step' not found."]

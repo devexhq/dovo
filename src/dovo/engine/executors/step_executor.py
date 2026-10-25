@@ -12,6 +12,8 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import IO
 
+from dovo.common.diagnostic_log import append_diagnostic_hint
+from dovo.common.exceptions import catch_failure
 from dovo.common.models import FailurePolicy
 from dovo.common.process import (
     get_isolated_process_kwargs,
@@ -163,9 +165,9 @@ class StepExecution:
             outcome = _failed_dispatch(f"Worktree path '{self.worktree_path}' does not exist or is not a directory.")
             return _step_result(self.redactor, self.step.id, outcome, 0.0)
 
-        if not self._prepare():
-            outcome = _failed_dispatch(f"Could not resolve step '{self.step.id}'.")
-            return _step_result(self.redactor, self.step.id, outcome, 0.0)
+        error = self._prepare()
+        if error is not None:
+            return _step_result(self.redactor, self.step.id, _failed_dispatch(error), 0.0)
 
         watch = Stopwatch.start()
         outcome = self._run_attempts()
@@ -187,12 +189,12 @@ class StepExecution:
             )
         return self._finalize_failure(outcome, duration, outputs=outputs, warnings=output_warnings)
 
-    def _prepare(self) -> bool:
-        """Resolve shorthand aliases and compute retry budget."""
+    def _prepare(self) -> str | None:
+        """Resolve shorthand aliases and compute retry budget, returning the step error when resolution fails."""
         if self.step.uses is not None or self.step.run is not None:
             resolved = self._resolve_shorthand()
-            if resolved is None:
-                return False
+            if isinstance(resolved, str):
+                return resolved
             self.step = resolved
         self._uninterpolated_step = self.step
         self.max_attempts = (
@@ -200,14 +202,24 @@ class StepExecution:
         )
         if self.session_tmp_dir is not None:
             self.step_scratch_dir, self.output_file = resolve_step_temp_paths(self.session_tmp_dir, self.step.id)
-        return True
+        return None
 
-    def _resolve_shorthand(self) -> StepDefinition | None:
-        """Resolve a uses/run step via resolve_step_definition, or None when it raises StepValidationError."""
+    def _resolve_shorthand(self) -> StepDefinition | str:
+        """Resolve a uses/run step, catching a uses step's catalog load once, or return the step error with any Details logged line."""
+        if self.step.uses is None:
+            return self._resolve_step()
+        with catch_failure("catalog.load_definition", step=self.step.uses) as caught:
+            resolved = self._resolve_step()
+        if caught.failure is None:
+            return resolved
+        return append_diagnostic_hint(caught.failure.message, caught.failure.diagnostic)
+
+    def _resolve_step(self) -> StepDefinition | str:
+        """Resolve the step's shorthand, or return the step error when it cannot be resolved."""
         try:
             return resolve_step_definition(self.step, paths=self.paths)
         except StepValidationError:
-            return None
+            return f"Could not resolve step '{self.step.id}'."
 
     def _run_attempts(self) -> StepDispatchOutcome:
         """Run attempts up to max_attempts times, sleeping backoff_ms between failures."""

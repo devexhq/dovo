@@ -48,6 +48,21 @@ def _force_interactive(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(UiDispatcher, "is_interactive", property(lambda self: True))
 
 
+class RunCliTests:
+    """Typer runner tests for dovo run's catalog failures."""
+
+    def test_run_missing_blueprint_json_reports_catalog_not_found(self, cli_runner: CliRunner, git_repo: Path) -> None:
+        """Exit 1 with one Run Failed event whose message is the catalog's not-found error for `run ghost --format json`."""
+        result = cli_runner.invoke(app, ["-p", str(git_repo), "run", "ghost", "--format", "json"])
+
+        assert result.exit_code == 1
+        events = [json.loads(line) for line in result.stdout.splitlines() if line.strip()]
+        failures = [event["payload"] for event in events if event["event_type"] == "ErrorPanelEvent"]
+        assert failures == [
+            {"title": "Run Failed", "message": "Catalog item 'ghost' not found.", "border_style": "red"}
+        ]
+
+
 class RunCliIntegrationTests:
     """Typer runner integration tests for dovo run."""
 

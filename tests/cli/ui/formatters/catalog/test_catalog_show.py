@@ -116,17 +116,18 @@ TEMPLATE_MATCH = FormatterCase(
 )
 
 ERRORS = FormatterCase(
-    data=CatalogShowResult(errors=["Catalog blueprint 'missing' not found."]),
+    data=CatalogShowResult(error_code="CATALOG_NOT_FOUND", errors=["Catalog item 'missing' not found."]),
     view=CatalogShowView(
         item=None,
         content=None,
         template_matches=[],
         catalog_path_relative=None,
-        errors=["Catalog blueprint 'missing' not found."],
+        error_code="CATALOG_NOT_FOUND",
+        errors=["Catalog item 'missing' not found."],
         warnings=[],
         remediations=[],
     ),
-    render_expectations=["Catalog blueprint 'missing' not found."],
+    render_expectations=["Catalog item 'missing' not found."],
 )
 
 SHOW_CASES = [
@@ -140,6 +141,7 @@ PAYLOAD_CASES = [
     pytest.param(
         BLUEPRINT_FOUND,
         {
+            "error_code": None,
             "errors": [],
             "warnings": [],
             "remediations": [],
@@ -160,7 +162,8 @@ PAYLOAD_CASES = [
     pytest.param(
         ERRORS,
         {
-            "errors": ["Catalog blueprint 'missing' not found."],
+            "error_code": "CATALOG_NOT_FOUND",
+            "errors": ["Catalog item 'missing' not found."],
             "warnings": [],
             "remediations": [],
             "item": None,
@@ -173,6 +176,7 @@ PAYLOAD_CASES = [
     pytest.param(
         TEMPLATE_MATCH,
         {
+            "error_code": None,
             "errors": [],
             "warnings": [],
             "remediations": [],

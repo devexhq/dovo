@@ -48,7 +48,7 @@ class EngineRunStartFailureTests:
         [
             pytest.param(
                 "snapshot",
-                "Failed to snapshot run definitions: blueprint 'uncataloged' not found in catalog.",
+                "Failed to snapshot run definitions: Catalog item 'uncataloged' not found.",
                 False,
                 id="snapshot",
             ),

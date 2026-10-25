@@ -62,6 +62,9 @@ def blueprint_create(
     format: FormatOption = OutputFormatOptions.TERMINAL,
 ):
     """Create a new blueprint at the REPO tier by default, or at USER/GLOBAL tier with --user/--global."""
+    if user and global_:
+        raise typer.BadParameter("--user and --global are mutually exclusive.")
+
     context: CliContext = ctx.obj["context"]
     result = blueprint_create_command(context, name, user=user, global_=global_, output_format=format)
     if not result.ok:

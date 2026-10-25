@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
@@ -14,6 +15,7 @@ from dovo.common.redact import SecretRedactor
 from dovo.core.catalog import Catalog
 from dovo.core.catalog.blueprint import Blueprint
 from dovo.core.catalog.definitions import StepDefinition, StepType
+from dovo.core.catalog.models import CatalogScan
 from dovo.core.db import SessionStatus
 from dovo.core.project.models import ProjectIdentity
 from dovo.core.project.services.identity import save_project_identity
@@ -28,6 +30,7 @@ from dovo.engine.writer import (
 )
 from tests.harness.builders import BlueprintBuilder, StepBuilder
 from tests.harness.catalog import write_runnable_blueprint, write_runnable_step
+from tests.harness.diagnostic_log import diagnostic_hint, read_single_event
 from tests.harness.workspace_paths import initialized_workspace_paths
 
 WorkspacePathsFactory = Callable[[Path, Path | None], WorkspacePaths]
@@ -111,7 +114,7 @@ class SnapshotDefinitionsTests:
         manifest = snapshot_definitions(catalog, blueprint, session_dir, warnings)
 
         assert manifest is None
-        assert warnings == ["Failed to snapshot run definitions: blueprint 'no-catalog-task' not found in catalog."]
+        assert warnings == ["Failed to snapshot run definitions: Catalog item 'no-catalog-task' not found."]
         assert not (session_dir / "definitions").exists()
 
     def test_snapshot_definitions_missing_uses_step_returns_none_with_warning(self, tmp_path: Path) -> None:
@@ -125,8 +128,42 @@ class SnapshotDefinitionsTests:
         manifest = snapshot_definitions(catalog, blueprint, session_dir, warnings)
 
         assert manifest is None
-        assert warnings == ["Failed to snapshot run definitions: catalog step 'ghost-step' not found."]
+        assert warnings == ["Failed to snapshot run definitions: Catalog item 'ghost-step' not found."]
         assert not (session_dir / "definitions").exists()
+
+    @pytest.mark.skipif(os.geteuid() == 0, reason="root ignores file permission bits")
+    def test_snapshot_definitions_unreadable_uses_step_warning_carries_hint(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, frozen_diagnostic_clock: Path
+    ) -> None:
+        """For a uses: step whose indexed file is 0o000, return None and warn with show's read error and hint, with one error event under catalog.show."""
+        workspace = tmp_path / "workspace"
+        write_runnable_step(workspace, key="locked-step", definition={"id": "locked-step", "run": "echo hi"})
+        write_runnable_blueprint(workspace, key="locked-task", steps=[{"id": "s1", "uses": "locked-step"}])
+        paths = initialized_workspace_paths(workspace)
+        catalog = Catalog(paths)
+        blueprint = Blueprint.load("locked-task", catalog=catalog)
+        # Keep the index from the load above, so the step stays indexed after its file becomes unreadable.
+        monkeypatch.setattr(
+            "dovo.core.catalog.catalog.scan_and_index_catalog",
+            lambda paths: CatalogScan(records=(), skipped_files=()),
+        )
+        step_file = paths.catalog_dir / "steps" / "locked-step.yml"
+        step_file.chmod(0o000)
+        warnings: list[str] = []
+        try:
+            manifest = snapshot_definitions(catalog, blueprint, tmp_path / "session", warnings)
+        finally:
+            step_file.chmod(0o644)
+
+        assert manifest is None
+        event = read_single_event(frozen_diagnostic_clock)
+        assert warnings == [
+            "Failed to snapshot run definitions: Failed to read file for catalog blueprint 'locked-step': "
+            f"{event['exception_message']}{diagnostic_hint(frozen_diagnostic_clock)}"
+        ]
+        assert event["level"] == "error"
+        assert event["operation"] == "catalog.show"
+        assert event["context"] == {"name": "locked-step"}
 
 
 class LoadBlueprintFromSnapshotTests:

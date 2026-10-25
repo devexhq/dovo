@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+import typer.rich_utils
 from typer.testing import CliRunner
 
 from dovo.common.constants import REQUIRED_SUBDIRS
@@ -39,6 +40,17 @@ def _isolated_dovo_home(tmp_path_factory: pytest.TempPathFactory, monkeypatch: p
     read and write the real machine's global Dovo directory.
     """
     monkeypatch.setenv("DOVO_HOME", str(tmp_path_factory.mktemp("dovo_home")))
+
+
+@pytest.fixture(autouse=True)
+def _plain_typer_output(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keep Typer's Rich output free of ANSI styling in CI.
+
+    Typer forces a styled terminal at import time when GITHUB_ACTIONS,
+    FORCE_COLOR or PY_COLORS is set, so usage errors and help text gain
+    escape codes there that local runs never see.
+    """
+    monkeypatch.setattr(typer.rich_utils, "FORCE_TERMINAL", False)
 
 
 @pytest.fixture(autouse=True)

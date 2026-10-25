@@ -38,14 +38,6 @@ class StepCreateCliIntegrationTests:
         assert payload["payload"]["item"]["tier"] == "repo"
         assert payload["payload"]["item"]["item_type"] == "step"
 
-    def test_step_create_cli_collision_exits_one(self, cli_runner: CliRunner, isolated_workspace: Path) -> None:
-        cli_runner.invoke(app, ["-p", str(isolated_workspace), "step", "create", "--name", "dup-step"])
-
-        result = cli_runner.invoke(app, ["-p", str(isolated_workspace), "step", "create", "--name", "dup-step"])
-
-        assert result.exit_code == 1
-        assert "collision" in result.stdout
-
     @pytest.mark.parametrize(
         ("tier", "catalog_dir_attr"),
         [
@@ -66,19 +58,6 @@ class StepCreateCliIntegrationTests:
         catalog_dir: Path = getattr(resolve_global_paths(None), catalog_dir_attr)
         assert (catalog_dir / "steps" / "tier-step.yml").is_file()
 
-    def test_step_create_cli_user_and_global_together_exits_one(
-        self, cli_runner: CliRunner, isolated_workspace: Path
-    ) -> None:
-        result = cli_runner.invoke(
-            app, ["-p", str(isolated_workspace), "step", "create", "--name", "both-step", "--user", "--global"]
-        )
-
-        assert result.exit_code == 1
-        assert "mutually exclusive" in result.stdout
-        global_paths = resolve_global_paths(None)
-        assert not (global_paths.user_catalog_dir / "steps" / "both-step.yml").exists()
-        assert not (global_paths.global_catalog_dir / "steps" / "both-step.yml").exists()
-
     def test_step_create_cli_lock_timeout_propagates(
         self, cli_runner: CliRunner, isolated_workspace: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
@@ -90,3 +69,36 @@ class StepCreateCliIntegrationTests:
         assert result.exit_code == 1
         assert isinstance(result.exception, LockTimeoutError)
         assert "Catalog Creation Failed" not in result.stdout
+
+
+class StepCreateCliTests:
+    """Typer runner tests for dovo step create's usage error and classified failures."""
+
+    def test_user_and_global_together_is_usage_error(self, cli_runner: CliRunner, isolated_workspace: Path) -> None:
+        """Exit 2 with '--user and --global are mutually exclusive.' in output and no both-step.yml in any tier."""
+        result = cli_runner.invoke(
+            app, ["-p", str(isolated_workspace), "step", "create", "--name", "both-step", "--user", "--global"]
+        )
+
+        assert result.exit_code == 2
+        assert "--user and --global are mutually exclusive." in result.output
+        global_paths = resolve_global_paths(None)
+        assert not (isolated_workspace / ".dovo" / "catalog" / "steps" / "both-step.yml").exists()
+        assert not (global_paths.user_catalog_dir / "steps" / "both-step.yml").exists()
+        assert not (global_paths.global_catalog_dir / "steps" / "both-step.yml").exists()
+
+    def test_collision_json_has_already_exists_status_and_code(
+        self, cli_runner: CliRunner, isolated_workspace: Path
+    ) -> None:
+        """Exit 1 with payload status 'already_exists', error_code CATALOG_ALREADY_EXISTS and the collision message."""
+        cli_runner.invoke(app, ["-p", str(isolated_workspace), "step", "create", "--name", "dup-step"])
+
+        result = cli_runner.invoke(
+            app, ["-p", str(isolated_workspace), "step", "create", "--name", "dup-step", "--format", "json"]
+        )
+
+        assert result.exit_code == 1
+        payload = json.loads(result.stdout)["payload"]
+        assert payload["status"] == "already_exists"
+        assert payload["error_code"] == "CATALOG_ALREADY_EXISTS"
+        assert payload["errors"] == ["Catalog blueprint collision at path 'steps/dup-step.yml'"]

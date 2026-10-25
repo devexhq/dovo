@@ -50,6 +50,7 @@ class CatalogShowView(BaseModel):
     content: str | None = None
     template_matches: list[CatalogTemplateView] = Field(default_factory=list)
     catalog_path_relative: str | None = None
+    error_code: str | None = None
     errors: list[str] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
     remediations: list[Remediation] = Field(default_factory=list)
@@ -66,6 +67,7 @@ class CatalogValidateView(BaseModel):
     target: str
     resolved_path: str | None = None
     item_type: str | None = None
+    error_code: str | None = None
     errors: list[str] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
     remediations: list[Remediation] = Field(default_factory=list)

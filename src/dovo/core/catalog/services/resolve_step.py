@@ -7,10 +7,11 @@ from typing import Any
 
 from pydantic import ValidationError
 
+from dovo.common.error_codes import ErrorCode
 from dovo.common.filesystem.models import WorkspacePaths
 from dovo.core.catalog.catalog import Catalog
 from dovo.core.catalog.definitions import StepDefinition, StepType
-from dovo.core.catalog.exceptions import CatalogFileNotFoundError, CatalogYamlError, StepValidationError
+from dovo.core.catalog.exceptions import CatalogError, StepValidationError
 from dovo.core.catalog.models import CatalogItemType
 
 
@@ -20,7 +21,11 @@ def load_step(
     paths: WorkspacePaths | None = None,
     catalog: Catalog | None = None,
 ) -> StepDefinition | None:
-    """Load a step from a dictionary, file path, StepDefinition, or catalog step ID."""
+    """Load a step from a dictionary, file path, StepDefinition, or catalog step ID.
+
+    Raises:
+        CatalogError: When a file path or catalog step ID names a step that cannot be found or loaded.
+    """
     if isinstance(source, StepDefinition):
         return source
     if isinstance(source, dict):
@@ -39,26 +44,34 @@ def load_step_by_name(
     paths: WorkspacePaths | None = None,
     catalog: Catalog | None = None,
 ) -> StepDefinition | None:
-    """Resolve a catalog step by name or key via the Catalog index."""
+    """Resolve a catalog step by name or key via the Catalog index, or None when neither catalog nor paths is given.
+
+    Raises:
+        CatalogError: If no step matches name, or its YAML or definition is invalid.
+    """
     if catalog is not None:
         cat = catalog
     elif paths is not None:
         cat = Catalog(paths)
     else:
         return None
-    result = cat.get(name, item_type=CatalogItemType.STEP, definition_cls=StepDefinition)
-    if result.ok and result.definition is not None:
-        return result.definition
+    definition = cat.get(name, item_type=CatalogItemType.STEP, definition_cls=StepDefinition).definition
+    if not isinstance(definition, StepDefinition):
+        raise TypeError(f"Catalog.get returned {type(definition).__name__} for step '{name}'.")
+    return definition
 
-    return None
 
+def load_step_by_path(path: str | Path) -> StepDefinition:
+    """Load a step definition file by path.
 
-def load_step_by_path(path: str | Path) -> StepDefinition | None:
-    """Resolve a catalog item by path, returning None when it cannot be loaded."""
+    Raises:
+        CatalogError: CATALOG_NOT_FOUND or CATALOG_SYNTAX_ERROR from read_yaml, or CATALOG_SCHEMA_INVALID
+            ("Model validation failed for '<path>': <exc>") when the file fails StepDefinition validation.
+    """
     try:
         return StepDefinition.model_validate(Catalog.read_yaml(Path(path)))
-    except (CatalogFileNotFoundError, CatalogYamlError, ValidationError):
-        return None
+    except ValidationError as exc:
+        raise CatalogError(ErrorCode.CATALOG_SCHEMA_INVALID, f"Model validation failed for '{path}': {exc}") from exc
 
 
 def merge_uses_step(using: StepDefinition, base_definition: StepDefinition) -> StepDefinition | None:
@@ -96,7 +109,11 @@ def resolve_step_definition(
     paths: WorkspacePaths | None = None,
     catalog: Catalog | None = None,
 ) -> StepDefinition:
-    """Resolve a step's 'run' or 'uses' shorthand into a concrete StepDefinition, raising StepValidationError when it cannot."""
+    """Resolve a step's 'run' or 'uses' shorthand into a concrete StepDefinition.
+
+    Raises StepValidationError when the step cannot be resolved, and CatalogError when its 'uses'
+    reference is missing, unparsable or fails validation.
+    """
     if isinstance(step, dict):
         try:
             step_definition = StepDefinition.model_validate(step)
@@ -122,7 +139,7 @@ def _resolve_or_none(
     paths: WorkspacePaths | None = None,
     catalog: Catalog | None = None,
 ) -> StepDefinition | None:
-    """Resolve a step following its 'run'/'uses'/'type' mode, or None when unresolvable."""
+    """Resolve a step following its 'run'/'uses'/'type' mode, or None when it names no mode or has no paths for 'uses'; a bad 'uses' reference raises CatalogError."""
     if step.run is not None:
         return _resolve_run(step)
 
@@ -159,7 +176,7 @@ def _resolve_from_uses(
     paths: WorkspacePaths | None = None,
     catalog: Catalog | None = None,
 ) -> StepDefinition | None:
-    """Load the referenced step and apply only fields explicitly set in this step."""
+    """Load the referenced step and apply only fields explicitly set in this step, raising CatalogError when it cannot be loaded."""
     if step.uses is None:
         return None
     if paths is None and catalog is None:

@@ -1,5 +1,5 @@
 from enum import StrEnum
-from typing import Any, Self
+from typing import Self
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
@@ -28,16 +28,6 @@ class AgentEnvModeOptions(StrEnum):
     INHERIT = "inherit"
 
 
-class DefinitionResolutionStatus(StrEnum):
-    """Classified outcomes for resolving a domain definition by name."""
-
-    OK = "ok"
-    NOT_FOUND = "not_found"
-    INVALID_NAME = "invalid_name"
-    LOAD_ERROR = "load_error"
-    DISCOVERY_FAILED = "discovery_failed"
-
-
 class Remediation(BaseModel):
     """One recovery step for a failed or warning result: what to do, and the command that does it when there is one."""
 
@@ -61,21 +51,6 @@ class BaseResult(BaseModel):
     def validate_error_code_presence(self) -> Self:
         """Require error_code when errors or remediations are present; enforcement is not enabled yet."""
         return self
-
-
-class DefinitionResolutionResult[T](BaseResult):
-    """Non-raising result of resolving one domain definition name."""
-
-    status: DefinitionResolutionStatus
-    requested_name: str
-    resolved: T | None = None
-    definition: Any | None = None
-    matches: list[T] = Field(default_factory=list)
-
-    @property
-    def ok(self) -> bool:
-        """Return True when a unique or deterministically chosen entry was found."""
-        return self.status == DefinitionResolutionStatus.OK
 
 
 class FailurePolicy(StrEnum):

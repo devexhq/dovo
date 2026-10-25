@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Mapping
 from pathlib import Path
 
 import pytest
+import yaml
 from typer.testing import CliRunner
 
 from dovo.cli import app
@@ -14,6 +16,13 @@ from dovo.core.catalog.models import CatalogItemType
 from tests.harness.workspace_paths import initialized_workspace_paths
 
 pytestmark = pytest.mark.usefixtures("workspace_config")
+
+
+def _write_repo_step(workspace: Path, name: str, definition: Mapping[str, object]) -> None:
+    """Write definition as YAML to the workspace's REPO-tier steps/<name>.yml."""
+    steps_dir = initialized_workspace_paths(workspace).catalog_dir / "steps"
+    steps_dir.mkdir(parents=True, exist_ok=True)
+    (steps_dir / f"{name}.yml").write_text(yaml.safe_dump(definition), encoding="utf-8")
 
 
 class StepValidateCliIntegrationTests:
@@ -42,9 +51,7 @@ class StepValidateCliIntegrationTests:
     def test_step_validate_cli_invalid_step_schema_exits_one(
         self, cli_runner: CliRunner, isolated_workspace: Path
     ) -> None:
-        Catalog(initialized_workspace_paths(isolated_workspace)).save(
-            "invalid-step", {"id": "invalid-step", "type": "unknown_type"}, item_type=CatalogItemType.STEP
-        )
+        _write_repo_step(isolated_workspace, "invalid-step", {"id": "invalid-step", "type": "unknown_type"})
 
         result = cli_runner.invoke(app, ["-p", str(isolated_workspace), "step", "validate", "invalid-step"])
 
@@ -55,7 +62,18 @@ class StepValidateCliIntegrationTests:
         result = cli_runner.invoke(app, ["-p", str(isolated_workspace), "step", "validate", "missing-step"])
 
         assert result.exit_code == 2
-        assert "not found" in result.stdout
+        assert "Catalog item 'missing-step' not found." in result.stdout
+
+    def test_validate_missing_json_has_catalog_not_found(self, cli_runner: CliRunner, isolated_workspace: Path) -> None:
+        result = cli_runner.invoke(
+            app, ["-p", str(isolated_workspace), "step", "validate", "missing-step", "--format", "json"]
+        )
+
+        assert result.exit_code == 2
+        payload = json.loads(result.stdout)["payload"]
+        assert payload["status"] == "not_found"
+        assert payload["error_code"] == "CATALOG_NOT_FOUND"
+        assert payload["errors"] == ["Catalog item 'missing-step' not found."]
 
 
 class StepValidateAskCliIntegrationTests:
@@ -79,9 +97,7 @@ class StepValidateAskCliIntegrationTests:
                 },
             },
         }
-        Catalog(initialized_workspace_paths(isolated_workspace)).save(
-            "pick", definition, item_type=CatalogItemType.STEP
-        )
+        _write_repo_step(isolated_workspace, "pick", definition)
 
         result = cli_runner.invoke(app, ["-p", str(isolated_workspace), "step", "validate", "pick", "--format", "json"])
 

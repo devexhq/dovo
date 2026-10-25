@@ -39,7 +39,8 @@ def _resolve_one_use(catalog: Catalog, ref: str, warnings: list[str]) -> tuple[C
     """Resolve one uses: ref's catalog record and raw content, or append a warning and return None."""
     step_show = catalog.show(ref, item_type=CatalogItemType.STEP)
     if not step_show.ok or step_show.item is None or step_show.content is None:
-        warnings.append(f"Failed to snapshot run definitions: catalog step '{ref}' not found.")
+        detail = step_show.errors[0] if step_show.errors else f"catalog step '{ref}' not found."
+        warnings.append(f"Failed to snapshot run definitions: {detail}")
         return None
     return step_show.item, step_show.content
 
@@ -140,7 +141,10 @@ def snapshot_definitions(
     """Snapshot the resolved blueprint and its transitive uses: step chain into session_dir/definitions/."""
     blueprint_show = catalog.show(blueprint.key, item_type=CatalogItemType.BLUEPRINT)
     if not blueprint_show.ok or blueprint_show.item is None or blueprint_show.content is None:
-        warnings.append(f"Failed to snapshot run definitions: blueprint '{blueprint.key}' not found in catalog.")
+        detail = (
+            blueprint_show.errors[0] if blueprint_show.errors else f"blueprint '{blueprint.key}' not found in catalog."
+        )
+        warnings.append(f"Failed to snapshot run definitions: {detail}")
         return None
 
     blueprint_record = blueprint_show.item

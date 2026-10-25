@@ -84,6 +84,7 @@ class CatalogShowFormatter(ComponentFormatter[CatalogShowResult, CatalogShowView
             content=data.content,
             template_matches=template_matches,
             catalog_path_relative=catalog_path_relative,
+            error_code=data.error_code,
             errors=data.errors,
             warnings=data.warnings,
             remediations=data.remediations,

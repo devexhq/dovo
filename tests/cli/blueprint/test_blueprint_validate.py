@@ -11,8 +11,10 @@ from typer.testing import CliRunner
 
 from dovo.cli import app
 from dovo.core.catalog import Catalog
+from dovo.core.catalog.definitions import BlueprintDefinition
 from dovo.core.catalog.models import CatalogItemType
 from tests.harness.ask import approval_gate_blueprint, review_triage_blueprint, revise_loop_blueprint
+from tests.harness.diagnostic_log import diagnostic_hint, read_single_event
 from tests.harness.workspace_paths import initialized_workspace_paths
 
 pytestmark = pytest.mark.usefixtures("workspace_config")
@@ -49,7 +51,18 @@ class BlueprintValidateCliIntegrationTests:
         result = cli_runner.invoke(app, ["-p", str(isolated_workspace), "blueprint", "validate", "missing-blueprint"])
 
         assert result.exit_code == 2
-        assert "not found" in result.stdout
+        assert "Catalog item 'missing-blueprint' not found." in result.stdout
+
+    def test_validate_missing_json_has_catalog_not_found(self, cli_runner: CliRunner, isolated_workspace: Path) -> None:
+        result = cli_runner.invoke(
+            app, ["-p", str(isolated_workspace), "blueprint", "validate", "missing-blueprint", "--format", "json"]
+        )
+
+        assert result.exit_code == 2
+        payload = json.loads(result.stdout)["payload"]
+        assert payload["status"] == "not_found"
+        assert payload["error_code"] == "CATALOG_NOT_FOUND"
+        assert payload["errors"] == ["Catalog item 'missing-blueprint' not found."]
 
 
 class BlueprintValidateAskCliIntegrationTests:
@@ -72,3 +85,37 @@ class BlueprintValidateAskCliIntegrationTests:
         result = cli_runner.invoke(app, ["-p", str(isolated_workspace), "blueprint", "validate", str(target)])
 
         assert result.exit_code == 0, result.stdout
+
+
+class BlueprintValidateCliTests:
+    """Typer runner tests for dovo blueprint validate's unexpected failures."""
+
+    def test_unexpected_definition_error_reports_internal_error_json(
+        self,
+        cli_runner: CliRunner,
+        isolated_workspace: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        frozen_diagnostic_clock: Path,
+    ) -> None:
+        """With BlueprintDefinition.from_document raising RuntimeError("boom"), exit 1 with status 'invalid', the unexpected-error message plus hint, and one catalog.validate event."""
+        Catalog(initialized_workspace_paths(isolated_workspace)).create(CatalogItemType.BLUEPRINT, "demo")
+
+        def _explode(cls: type[BlueprintDefinition], raw: dict[str, object], *, key: str) -> BlueprintDefinition:
+            raise RuntimeError("boom")
+
+        monkeypatch.setattr(BlueprintDefinition, "from_document", classmethod(_explode))
+
+        result = cli_runner.invoke(
+            app, ["-p", str(isolated_workspace), "blueprint", "validate", "demo", "--format", "json"]
+        )
+
+        assert result.exit_code == 1
+        payload = json.loads(result.stdout)["payload"]
+        assert payload["status"] == "invalid"
+        assert payload["error_code"] == "INTERNAL_ERROR"
+        assert payload["errors"] == [
+            f"Unexpected error during catalog.validate: boom{diagnostic_hint(frozen_diagnostic_clock)}"
+        ]
+        event = read_single_event(frozen_diagnostic_clock)
+        assert event["operation"] == "catalog.validate"
+        assert event["exception_type"] == "RuntimeError"
