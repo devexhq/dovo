@@ -1,7 +1,7 @@
 version: 1
 name: ready-issue
 id: ready-issue
-description: Re-ground a GitHub issue against main and re-check it against /dovo-issue, then, once a person approves, apply the proposed edits and label it dovo:ready with a comment naming the sha it was checked at
+description: Re-ground a GitHub issue against main and re-check it against /dovo-issue and the AGENTS.md rules, then, once a person approves, apply the proposed edits and label it dovo:ready with a comment naming the sha it was checked at
 summary: Issue to dovo:ready with a human gate
 
 inputs:
