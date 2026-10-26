@@ -79,12 +79,13 @@ def comment_body(review: dict[str, object], report: str, *, session: str | None)
     return f"{header}\n{report}"
 
 
-def find_own_comment(comments: list[dict[str, object]], viewer: str) -> int | None:
-    """Return the id of the first comment whose first line is MARKER and whose user is viewer, else None.
+def find_own_comment(comments: list[dict[str, object]], viewer: str, *, marker: str = MARKER) -> int | None:
+    """Return the id of the first comment whose first line is marker and whose user is viewer, else None.
 
     Args:
         comments: The PR's comments, each with `id`, `user` (a login) and `body`.
         viewer: The login of the authenticated `gh` user.
+        marker: The comment's first line: the dovo-review marker unless another publisher passes its own.
 
     Returns:
         The id of the viewer's marked comment, or None when there is none.
@@ -94,7 +95,7 @@ def find_own_comment(comments: list[dict[str, object]], viewer: str) -> int | No
         comment_id = comment.get("id")
         if comment.get("user") != viewer or not isinstance(body, str) or not isinstance(comment_id, int):
             continue
-        if body.splitlines()[:1] == [MARKER]:
+        if body.splitlines()[:1] == [marker]:
             return comment_id
     return None
 
