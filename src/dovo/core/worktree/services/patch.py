@@ -300,7 +300,9 @@ class WorktreePatch:
         """Apply worktree changes back to the main workspace and return the applied or dry-run result.
 
         Raises:
-            WorktreeError: For every failure in the issue's Failure codes table except INTERNAL_ERROR.
+            WorktreeApplyConflictError: WORKTREE_APPLY_CONFLICT when the patch does not apply cleanly.
+            WorktreeError: WORKTREE_NOT_FOUND, WORKTREE_ALREADY_MERGED, WORKTREE_MISSING, GIT_DIRTY_WORKTREE,
+                PATCH_EMPTY, or a git failure's code (GIT_FAILED, GIT_TIMEOUT, GIT_BINARY_MISSING, FS_NOT_FOUND).
         """
         record = find_worktree(self.db, worktree_id)
         if record.status == WorktreeStatus.MERGED:
