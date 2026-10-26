@@ -1,7 +1,7 @@
 version: 1
 name: feature-dev
 id: feature-dev
-description: Check a GitHub issue is labelled dovo:ready, plan it, review and challenge the plan once and fold in every finding and fold-routed challenge, answer its open questions, implement it after approval, review and fix blockers and warnings until none remain or only a person can settle them, then open a PR and post the final review to it
+description: Check a GitHub issue is labelled dovo:ready, plan it, review and challenge the plan once and fold in every finding and fold-routed challenge, answer its open questions, walk the approver through it, implement it after approval, review and fix blockers and warnings until none remain or only a person can settle them, then open a PR and post the final review to it
 summary: Issue to reviewed PR with human gates
 
 inputs:
@@ -139,13 +139,30 @@ steps:
       - { name: plan, path: .agentic/plan.md }
       - { name: plan-questions, path: .agentic/plan.json }
 
+  # Written after every answer is folded in, so it explains the plan being
+  # approved. The approval prompt shows it rather than the plan, which is cut
+  # at 200 lines there; the full plan stays in the plan artifact.
+  - id: plan-walkthrough
+    name: Walk through the plan for the approver
+    type: agent
+    prompt: |
+      /dovo-plan-walkthrough
+
+      Follow .agents/skills/dovo-plan-walkthrough/SKILL.md if the slash command is not recognized.
+      Explain .agentic/plan.md to the person approving it and write .agentic/plan-walkthrough.md.
+      Do not change the plan, implement anything, commit or push.
+    tools: { allow_all: true }
+    timeout_seconds: 1800
+    artifacts:
+      - { name: plan-walkthrough, path: .agentic/plan-walkthrough.md }
+
   - id: approve-plan
     name: Approve the plan
     type: ask
     interaction:
       mode: confirm
-      message: Approve this plan for issue ${{ inputs.issue }}?
-      artifact: plan
+      message: Approve this plan for issue ${{ inputs.issue }}? The full plan is in the plan artifact.
+      artifact: plan-walkthrough
       comment: { policy: optional, message: Instructions for the implementer }
 
   - id: code-loop

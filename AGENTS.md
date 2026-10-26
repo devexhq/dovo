@@ -20,7 +20,8 @@ they are not repeated here.
    The plan sizes the work and splits it into phases. Skip it for a single-file
    change that adds no surface. If a plan was created, review it
    (`/dovo-plan-review`) and challenge its design (`/dovo-plan-challenge`),
-   each in a fresh session, before a human approves it.
+   each in a fresh session, then walk the approver through it
+   (`/dovo-plan-walkthrough`) before a human approves it.
 3. **Phase the plan.** Each phase is reviewable in one sitting (roughly 400
    changed lines or less), passes the quality gate on its own and ships
    something. When a change replaces an internal, phase it as add, switch
