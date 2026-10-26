@@ -15,7 +15,7 @@ ANY_BUDGET: Final[dict[str, int]] = {
     "src/dovo/cli/ui/formatters/common.py": 1,
     "src/dovo/cli/ui/formatters/config/config_views.py": 2,
     "src/dovo/cli/ui/formatters/doctor/doctor_views.py": 1,
-    "src/dovo/cli/ui/formatters/registry.py": 3,
+    "src/dovo/cli/ui/formatters/registry.py": 1,
     "src/dovo/common/filesystem/filesystem.py": 1,
     "src/dovo/common/filesystem/models.py": 1,
     "src/dovo/common/filesystem/services/operations.py": 1,

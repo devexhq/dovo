@@ -149,8 +149,11 @@ max-args = 5
 "tasks.py" = ["T201", "PLR0913"]
 "scripts/*" = ["PLR0913"]
 "src/dovo/cli/ui/**" = ["TID251"]
-"src/dovo/cli/ui/dispatcher.py" = ["TID251", "T201", "PLC0415"]
+"src/dovo/cli/ui/dispatcher.py" = ["TID251", "T201"]
 "src/dovo/cli/run/observer.py" = ["TID251"]
+# Imports deferred to first use, so CLI startup does not load every formatter group or alembic.
+"src/dovo/cli/ui/formatters/registry.py" = ["PLC0415"]
+"src/dovo/core/db/migrations.py" = ["PLC0415"]
 
 # Legacy exceptions scoped for follow-up refactoring:
 "src/dovo/cli/cli.py" = ["SLF001"]

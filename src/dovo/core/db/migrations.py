@@ -2,9 +2,6 @@
 
 from pathlib import Path
 
-from alembic import command
-from alembic.config import Config
-
 from dovo.common.lock import WorkspaceLock, resolve_lock_file_path
 from dovo.core.db.connection import sqlite_url
 
@@ -18,6 +15,11 @@ LATEST_SCHEMA_REVISION = SESSION_PID_STARTED_AT_REVISION
 
 def init_database(database_file: Path) -> Path:
     """Run table migrations and initialize the centralized global SQLite database layout."""
+    # Alembic is imported only when migrations run: every command imports this package, and alembic alone costs
+    # about 60ms of startup.
+    from alembic import command
+    from alembic.config import Config
+
     with WorkspaceLock(resolve_lock_file_path(database_file.parent)):
         database_file.parent.mkdir(parents=True, exist_ok=True)
 

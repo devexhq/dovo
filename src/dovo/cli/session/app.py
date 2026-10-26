@@ -243,10 +243,3 @@ session_app.command("show")(session_show)
 session_app.command("logs")(session_logs)
 session_app.command("diff")(session_diff)
 session_app.command("resume")(session_resume)
-
-
-def register_session_shortcuts(app: typer.Typer) -> None:
-    """Register the top-level logs, diff and resume shortcuts with the same handlers as their session forms."""
-    app.command("logs")(session_logs)
-    app.command("diff")(session_diff)
-    app.command("resume")(session_resume)

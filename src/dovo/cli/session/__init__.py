@@ -1,5 +1,5 @@
 """Session CLI subpackage."""
 
-from .app import register_session_shortcuts, session_app
+from .app import session_app
 
-__all__ = ["register_session_shortcuts", "session_app"]
+__all__ = ["session_app"]

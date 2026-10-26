@@ -1,116 +1,169 @@
-"""Central registration registry and entrypoint for UI component formatters."""
+"""Central registration registry and entrypoint for UI component formatters.
+
+Formatters are grouped by the package that defines the models they render, and a group is imported only when one of
+its models is first dispatched, so a command imports the formatters it renders and not every other command's.
+"""
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import TYPE_CHECKING, Any, Final
 
 from pydantic import BaseModel
 
-import dovo.cli.ui.events as event_models
-import dovo.cli.ui.formatters.artifacts as artifacts_formatters
-import dovo.cli.ui.formatters.catalog as catalog_formatters
-import dovo.cli.ui.formatters.config as config_formatters
-import dovo.cli.ui.formatters.doctor as doctor_formatters
-import dovo.cli.ui.formatters.events as event_formatters
-import dovo.cli.ui.formatters.global_cli as global_formatters
-import dovo.cli.ui.formatters.init as init_formatters
-import dovo.cli.ui.formatters.session as session_formatters
-import dovo.cli.ui.formatters.status as status_formatters
-import dovo.cli.ui.formatters.worktree as worktree_formatters
-import dovo.core.artifacts as artifacts_models
-import dovo.core.bootstrap as bootstrap_models
-import dovo.core.catalog as catalog_models
-import dovo.core.config as config_models
-import dovo.core.diagnostics as diagnostics_models
-import dovo.core.sessions as sessions_models
-import dovo.core.status as status_models
-import dovo.core.worktree as worktree_models
 from dovo.cli.ui.formatters.base import ComponentFormatter
 from dovo.cli.ui.formatters.common import DispatcherProtocol
 
 if TYPE_CHECKING:
     from rich.console import Console
 
-FORMATTER_REGISTRY: Final[dict[type[BaseModel], type[ComponentFormatter[Any]]]] = {
-    # Artifacts
-    artifacts_models.ArtifactsListResult: artifacts_formatters.ArtifactsListFormatter,
-    artifacts_models.ArtifactDownloadResult: artifacts_formatters.ArtifactDownloadFormatter,
-    artifacts_models.ArtifactsPruneResult: artifacts_formatters.ArtifactsPruneFormatter,
-    # Events
-    event_models.ErrorPanelEvent: event_formatters.ErrorPanelFormatter,
-    event_models.LockWaitEvent: event_formatters.LockWaitFormatter,
-    event_models.WarningEvent: event_formatters.WarningFormatter,
-    event_models.MessageEvent: event_formatters.MessageFormatter,
-    event_models.RunSuccessEvent: event_formatters.RunSuccessFormatter,
-    event_models.StepStartEvent: event_formatters.StepStartFormatter,
-    event_models.StepDoneEvent: event_formatters.StepDoneFormatter,
-    event_models.StepOutputEvent: event_formatters.StepOutputFormatter,
-    event_models.AgentProgressEvent: event_formatters.AgentProgressFormatter,
-    event_models.WorktreeLifecycleEvent: event_formatters.WorktreeLifecycleFormatter,
-    event_models.LoopLifecycleEvent: event_formatters.LoopLifecycleFormatter,
-    event_models.PromptEvent: event_formatters.PromptFormatter,
-    # Catalog
-    catalog_models.CatalogListResult: catalog_formatters.CatalogListFormatter,
-    catalog_models.CatalogShowResult: catalog_formatters.CatalogShowFormatter,
-    catalog_models.CatalogDeleteResult: catalog_formatters.CatalogDeleteFormatter,
-    catalog_models.CatalogCreateResult: catalog_formatters.CatalogCreateFormatter,
-    catalog_models.CatalogValidateResult: catalog_formatters.CatalogValidateFormatter,
-    # Config
-    config_models.ConfigLoadResult: config_formatters.ConfigLoadFormatter,
-    config_models.ConfigValidationResult: config_formatters.ConfigValidateFormatter,
-    config_models.ConfigSetResult: config_formatters.ConfigSetFormatter,
-    config_models.ConfigUnsetResult: config_formatters.ConfigUnsetFormatter,
-    # Diagnostics
-    diagnostics_models.DiagnosticsReport: doctor_formatters.DoctorReportFormatter,
-    # Session
-    sessions_models.DiffResult: session_formatters.SessionDiffFormatter,
-    sessions_models.HistoryListResult: session_formatters.SessionListFormatter,
-    sessions_models.HistoryShowResult: session_formatters.SessionShowFormatter,
-    sessions_models.LogsShowResult: session_formatters.SessionLogsFormatter,
-    # Init
-    bootstrap_models.WorkspaceInitResult: init_formatters.WorkspaceInitFormatter,
-    # Worktree
-    worktree_models.PrunedItem: worktree_formatters.PrunedItemFormatter,
-    worktree_models.WorktreePruneResult: worktree_formatters.WorktreePruneFormatter,
-    worktree_models.WorktreeShowResult: worktree_formatters.WorktreeShowFormatter,
-    worktree_models.WorktreeListResult: worktree_formatters.WorktreeListFormatter,
-    worktree_models.WorktreeCreateResult: worktree_formatters.WorktreeCreateFormatter,
-    worktree_models.WorktreeApplyResult: worktree_formatters.WorktreeApplyFormatter,
-    worktree_models.WorktreeDeleteResult: worktree_formatters.WorktreeDeleteFormatter,
-    worktree_models.WorktreeDiffResult: worktree_formatters.WorktreeDiffFormatter,
-    # Status
-    status_models.DovoStatusResult: status_formatters.DovoStatusFormatter,
-    # Global CLI
-    event_models.WelcomeBannerEvent: global_formatters.WelcomeBannerFormatter,
+type FormatterTable = dict[type[BaseModel], ComponentFormatter[Any]]
+
+
+def _artifacts_formatters(console: Console | None) -> FormatterTable:
+    """Formatters for `dovo.core.artifacts` results."""
+    import dovo.cli.ui.formatters.artifacts as formatters
+    import dovo.core.artifacts as models
+
+    return {
+        models.ArtifactsListResult: formatters.ArtifactsListFormatter(),
+        models.ArtifactDownloadResult: formatters.ArtifactDownloadFormatter(),
+        models.ArtifactsPruneResult: formatters.ArtifactsPruneFormatter(),
+    }
+
+
+def _event_formatters(console: Console | None) -> FormatterTable:
+    """Formatters for the runtime UI events in `dovo.cli.ui.events`."""
+    import dovo.cli.ui.events as models
+    import dovo.cli.ui.formatters.events as formatters
+    import dovo.cli.ui.formatters.global_cli as global_formatters
+
+    return {
+        models.ErrorPanelEvent: formatters.ErrorPanelFormatter(),
+        models.LockWaitEvent: formatters.LockWaitFormatter(),
+        models.WarningEvent: formatters.WarningFormatter(),
+        models.MessageEvent: formatters.MessageFormatter(),
+        models.RunSuccessEvent: formatters.RunSuccessFormatter(),
+        models.StepStartEvent: formatters.StepStartFormatter(),
+        models.StepDoneEvent: formatters.StepDoneFormatter(),
+        models.StepOutputEvent: formatters.StepOutputFormatter(),
+        models.AgentProgressEvent: formatters.AgentProgressFormatter(),
+        models.WorktreeLifecycleEvent: formatters.WorktreeLifecycleFormatter(),
+        models.LoopLifecycleEvent: formatters.LoopLifecycleFormatter(),
+        models.PromptEvent: formatters.PromptFormatter(),
+        models.WelcomeBannerEvent: global_formatters.WelcomeBannerFormatter(),
+    }
+
+
+def _catalog_formatters(console: Console | None) -> FormatterTable:
+    """Formatters for `dovo.core.catalog` results."""
+    import dovo.cli.ui.formatters.catalog as formatters
+    import dovo.core.catalog as models
+
+    return {
+        models.CatalogListResult: formatters.CatalogListFormatter(),
+        models.CatalogShowResult: formatters.CatalogShowFormatter(),
+        models.CatalogDeleteResult: formatters.CatalogDeleteFormatter(),
+        models.CatalogCreateResult: formatters.CatalogCreateFormatter(),
+        models.CatalogValidateResult: formatters.CatalogValidateFormatter(),
+    }
+
+
+def _config_formatters(console: Console | None) -> FormatterTable:
+    """Formatters for `dovo.core.config` results."""
+    import dovo.cli.ui.formatters.config as formatters
+    import dovo.core.config as models
+
+    return {
+        models.ConfigLoadResult: formatters.ConfigLoadFormatter(),
+        models.ConfigValidationResult: formatters.ConfigValidateFormatter(),
+        models.ConfigSetResult: formatters.ConfigSetFormatter(),
+        models.ConfigUnsetResult: formatters.ConfigUnsetFormatter(),
+    }
+
+
+def _diagnostics_formatters(console: Console | None) -> FormatterTable:
+    """Formatters for `dovo.core.diagnostics` results."""
+    import dovo.cli.ui.formatters.doctor as formatters
+    import dovo.core.diagnostics as models
+
+    return {models.DiagnosticsReport: formatters.DoctorReportFormatter()}
+
+
+def _sessions_formatters(console: Console | None) -> FormatterTable:
+    """Formatters for `dovo.core.sessions` results; the diff formatter renders through the dispatcher's console."""
+    import dovo.cli.ui.formatters.session as formatters
+    import dovo.core.sessions as models
+
+    return {
+        models.DiffResult: formatters.SessionDiffFormatter(console=console),
+        models.HistoryListResult: formatters.SessionListFormatter(),
+        models.HistoryShowResult: formatters.SessionShowFormatter(),
+        models.LogsShowResult: formatters.SessionLogsFormatter(),
+    }
+
+
+def _bootstrap_formatters(console: Console | None) -> FormatterTable:
+    """Formatters for `dovo.core.bootstrap` results."""
+    import dovo.cli.ui.formatters.init as formatters
+    import dovo.core.bootstrap as models
+
+    return {models.WorkspaceInitResult: formatters.WorkspaceInitFormatter()}
+
+
+def _worktree_formatters(console: Console | None) -> FormatterTable:
+    """Formatters for `dovo.core.worktree` results."""
+    import dovo.cli.ui.formatters.worktree as formatters
+    import dovo.core.worktree as models
+
+    return {
+        models.PrunedItem: formatters.PrunedItemFormatter(),
+        models.WorktreePruneResult: formatters.WorktreePruneFormatter(),
+        models.WorktreeShowResult: formatters.WorktreeShowFormatter(),
+        models.WorktreeListResult: formatters.WorktreeListFormatter(),
+        models.WorktreeCreateResult: formatters.WorktreeCreateFormatter(),
+        models.WorktreeApplyResult: formatters.WorktreeApplyFormatter(),
+        models.WorktreeDeleteResult: formatters.WorktreeDeleteFormatter(),
+        models.WorktreeDiffResult: formatters.WorktreeDiffFormatter(),
+    }
+
+
+def _status_formatters(console: Console | None) -> FormatterTable:
+    """Formatters for `dovo.core.status` results."""
+    import dovo.cli.ui.formatters.status as formatters
+    import dovo.core.status as models
+
+    return {models.DovoStatusResult: formatters.DovoStatusFormatter()}
+
+
+# Each group's formatters, keyed by the package whose modules define the models they render.
+FORMATTER_GROUPS: Final[dict[str, Callable[[Console | None], FormatterTable]]] = {
+    "dovo.core.artifacts": _artifacts_formatters,
+    "dovo.cli.ui.events": _event_formatters,
+    "dovo.core.catalog": _catalog_formatters,
+    "dovo.core.config": _config_formatters,
+    "dovo.core.diagnostics": _diagnostics_formatters,
+    "dovo.core.sessions": _sessions_formatters,
+    "dovo.core.bootstrap": _bootstrap_formatters,
+    "dovo.core.worktree": _worktree_formatters,
+    "dovo.core.status": _status_formatters,
 }
 
 
-def _instantiate_formatter(
-    formatter_cls: type[ComponentFormatter[Any]],
-    console: Console | None = None,
-) -> ComponentFormatter[Any]:
-    """Instantiate formatter, passing console if accepted by constructor.
-
-    Args:
-        formatter_cls: Concrete ComponentFormatter subclass.
-        console: Optional Rich Console instance.
-    """
-    if formatter_cls is session_formatters.SessionDiffFormatter:
-        return formatter_cls(console=console)
-    return formatter_cls()
-
-
-def register_all_formatters(
+def register_formatters_for(
     dispatcher: DispatcherProtocol,
+    model_cls: type[object],
     console: Console | None = None,
 ) -> None:
-    """Register all component formatters onto the provided dispatcher.
+    """Register every formatter in the group that renders `model_cls`, importing that group on first use.
 
     Args:
         dispatcher: Target dispatcher complying with DispatcherProtocol.
+        model_cls: Model type about to be dispatched; a type outside every group registers nothing.
         console: Optional Rich Console instance to propagate to formatters.
     """
-    effective_console = console or getattr(dispatcher, "_custom_console", None)
-    for model_cls, formatter_cls in FORMATTER_REGISTRY.items():
-        inst = _instantiate_formatter(formatter_cls, effective_console)
-        dispatcher.register(model_cls, inst)
+    for package, group in FORMATTER_GROUPS.items():
+        if model_cls.__module__ == package or model_cls.__module__.startswith(f"{package}."):
+            for group_model_cls, formatter in group(console).items():
+                dispatcher.register(group_model_cls, formatter)
+            return
