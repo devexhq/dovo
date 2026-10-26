@@ -24,7 +24,7 @@ Output goes to `.agentic/plan-walkthrough.md`. The blueprint shows it at the pla
 
 ## 1. Resolve the input
 
-The plan is `<plan-path>` when given, otherwise `.agentic/plan.md`. If it is missing, stop and say so. Read it in full, every file it links to, and `plan.json` beside it. Take the issue number from the `# Issue #<n>:` header and read it with `gh issue view <n> --json number,title,body`.
+The plan is `<plan-path>` when given, otherwise `.agentic/plan.md`. If it is missing, stop and say so. Read it in full, every file it links to, and `plan.json` beside it. When `plan.json`'s `issue` is a number, read that issue with `gh issue view <n> --json number,title,body`. When it is `null`, the plan was written from a plain-language request: work from the plan, its `## Requirements` list and its linked files, and run no issue lookup.
 
 ## 2. Ground "today" in the code
 
@@ -35,7 +35,7 @@ For every behaviour the walkthrough says changes, open the code the plan cites a
 Write `.agentic/plan-walkthrough.md`, overwriting any earlier one, in this structure and order:
 
 ```markdown
-# Walkthrough: #<n>, <short title>
+# Walkthrough: <#n, when there is an issue,> <short title>
 
 ## In one paragraph
 
