@@ -13,7 +13,7 @@ from dovo.core.worktree.models import WorktreeListResult
 
 def _format_list_rich(data: WorktreeListResult) -> RenderableType:
     """Render the error panel, the empty state, or the worktree summary table."""
-    if data.errors:
+    if not data.ok:
         return build_error_panel(
             "Worktree List Failed", data.errors, "Failed to list worktrees.", remediations=data.remediations
         )

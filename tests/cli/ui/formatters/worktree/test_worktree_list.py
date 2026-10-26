@@ -57,10 +57,16 @@ INTERNAL_ERROR = FormatterCase.identity(
     ],
 )
 
+FAILURE_WITHOUT_ERRORS = FormatterCase.identity(
+    data=WorktreeListResult(error_code="INTERNAL_ERROR"),
+    render_expectations=["Worktree List Failed", "Failed to list worktrees."],
+)
+
 WORKTREE_LIST_CASES = [
     pytest.param(WITH_WORKTREES, id="with_worktrees"),
     pytest.param(EMPTY_WORKTREES, id="empty_worktrees"),
     pytest.param(INTERNAL_ERROR, id="internal_error"),
+    pytest.param(FAILURE_WITHOUT_ERRORS, id="failure_without_errors"),
 ]
 
 WORKTREE_LIST_PAYLOAD_CASES = [
