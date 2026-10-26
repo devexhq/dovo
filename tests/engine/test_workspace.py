@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import functools
 import shlex
 import shutil
 from collections.abc import Callable
@@ -10,6 +11,7 @@ from pathlib import Path
 
 import pytest
 
+from dovo.common.error_codes import ErrorCode
 from dovo.common.filesystem.models import WorkspacePaths
 from dovo.common.lock import LockTimeoutError
 from dovo.common.models import Remediation
@@ -270,7 +272,7 @@ class WorkspaceCleanupTests:
             pytest.param(RuntimeError, True, id="runtime"),
             pytest.param(LockTimeoutError, False, id="lock-timeout"),
             pytest.param(GitPlumbingTimeoutError, False, id="git"),
-            pytest.param(WorktreeError, False, id="worktree"),
+            pytest.param(functools.partial(WorktreeError, ErrorCode.WORKTREE_MISSING), False, id="worktree"),
         ],
     )
     def test_removal_failure_appends_warning_with_path_and_returns_false(
@@ -278,7 +280,7 @@ class WorkspaceCleanupTests:
         worktree_setup: WorktreeSetupFactory,
         monkeypatch: pytest.MonkeyPatch,
         frozen_diagnostic_clock: Path,
-        error: type[Exception],
+        error: Callable[[str], Exception],
         recorded: bool,
     ) -> None:
         """Append the removal warning; only an unexpected error hints it and writes one engine.workspace record."""

@@ -5,6 +5,7 @@ from __future__ import annotations
 import shutil
 from pathlib import Path
 
+from dovo.common.error_codes import ErrorCode
 from dovo.core.git.runner import GitRunner
 from dovo.core.worktree.exceptions import WorktreeError
 
@@ -87,18 +88,18 @@ def apply_wip_to_worktree(
         Sorted list of repo-relative paths touched by the overlay.
 
     Raises:
-        WorktreeError: When overlay fails.
+        WorktreeError: WORKTREE_MISSING when worktree_path is not a directory, or WORKTREE_WIP_FAILED when copying a file fails.
         GitPlumbingTimeoutError: When git status times out.
     """
     root = source_root.expanduser().resolve()
     dest = worktree_path.expanduser().resolve()
     if not dest.is_dir():
-        raise WorktreeError(f"worktree path does not exist: {dest}")
+        raise WorktreeError(ErrorCode.WORKTREE_MISSING, f"worktree path does not exist: {dest}")
 
     paths = list_wip_paths(root, git=git)
     try:
         for rel in paths:
             copy_wip_file(root, dest, rel)
     except OSError as exc:
-        raise WorktreeError(str(exc)) from exc
+        raise WorktreeError(ErrorCode.WORKTREE_WIP_FAILED, str(exc)) from exc
     return paths

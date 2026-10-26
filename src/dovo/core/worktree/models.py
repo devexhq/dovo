@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
 
 from pydantic import BaseModel, Field
 
+from dovo.common.diagnostic_log import DiagnosticRecord
 from dovo.common.models import BaseResult
 from dovo.core.db import WorktreeRecord
 
@@ -174,61 +176,29 @@ class StaleWorktreeItem(BaseModel):
     reason: str = ""
 
 
-class WorktreeDetectionStatus(StrEnum):
-    """Outcome status for stale worktree scanning."""
+@dataclass(frozen=True, slots=True)
+class WorktreeDetection:
+    """Stale worktree resources found by one scan, with the scan's warnings and error-level records."""
 
-    OK = "ok"
-    GIT_FAILED = "git_failed"
-    UNREADABLE_CONFIG = "unreadable_config"
-    ERROR = "error"
-
-
-class WorktreeDetectionResult(BaseResult):
-    """Structured, non-raising result of stale worktree detection."""
-
-    status: WorktreeDetectionStatus = WorktreeDetectionStatus.OK
-    items: list[StaleWorktreeItem] = Field(default_factory=list)
-    active_worktree_count: int = 0
+    items: tuple[StaleWorktreeItem, ...]
+    active_worktree_count: int
+    warnings: tuple[str, ...]
+    diagnostics: tuple[DiagnosticRecord, ...]
 
     @property
-    def ok(self) -> bool:
-        """Return True when detection completed without classified errors."""
-        return self.status == WorktreeDetectionStatus.OK and not self.errors
-
-    @property
-    def total_stale_count(self) -> int:
-        """Return total count of stale items detected."""
-        return len(self.items)
-
-    @property
-    def has_stale_items(self) -> bool:
-        """Return True if any stale items were detected."""
-        return len(self.items) > 0
-
-    @property
-    def has_dirty_orphans(self) -> bool:
-        """Return True if any orphaned directory has uncommitted changes."""
-        return any(item.is_dirty for item in self.items)
-
-    @property
-    def stale_worktrees(self) -> list[StaleWorktreeItem]:
+    def stale_worktrees(self) -> tuple[StaleWorktreeItem, ...]:
         """Return stale Git worktree registration items."""
-        return [i for i in self.items if i.category == StaleWorktreeCategory.STALE_WORKTREE_REF]
+        return tuple(i for i in self.items if i.category == StaleWorktreeCategory.STALE_WORKTREE_REF)
 
     @property
-    def orphaned_directories(self) -> list[StaleWorktreeItem]:
+    def orphaned_directories(self) -> tuple[StaleWorktreeItem, ...]:
         """Return unindexed or non-active worktree directory items."""
-        return [i for i in self.items if i.category == StaleWorktreeCategory.ORPHANED_DIRECTORY]
+        return tuple(i for i in self.items if i.category == StaleWorktreeCategory.ORPHANED_DIRECTORY)
 
     @property
-    def stale_db_records(self) -> list[StaleWorktreeItem]:
+    def stale_db_records(self) -> tuple[StaleWorktreeItem, ...]:
         """Return active database records missing on disk."""
-        return [i for i in self.items if i.category == StaleWorktreeCategory.STALE_DB_RECORD]
-
-    @property
-    def stale_branches(self) -> list[StaleWorktreeItem]:
-        """Return unlinked worktree branch items."""
-        return [i for i in self.items if i.category == StaleWorktreeCategory.STALE_BRANCH]
+        return tuple(i for i in self.items if i.category == StaleWorktreeCategory.STALE_DB_RECORD)
 
 
 class PruneAction(StrEnum):
@@ -243,10 +213,7 @@ class WorktreePruneStatus(StrEnum):
     """Outcome status for worktree prune execution."""
 
     OK = "ok"
-    PARTIAL_SUCCESS = "partial_success"
-    GIT_FAILED = "git_failed"
-    LOCKED = "locked"
-    ERROR = "error"
+    PARTIAL_FAILURE = "partial_failure"
 
 
 class PrunedItem(BaseModel):
@@ -267,15 +234,15 @@ class PrunedItem(BaseModel):
 class WorktreePruneResult(BaseResult):
     """Structured result of worktree pruning execution."""
 
-    status: WorktreePruneStatus = WorktreePruneStatus.OK
+    status: WorktreePruneStatus | None = WorktreePruneStatus.OK
     dry_run: bool = False
     force: bool = False
     items: list[PrunedItem] = Field(default_factory=list)
 
     @property
     def ok(self) -> bool:
-        """Return True if prune completed cleanly without failures."""
-        return self.status == WorktreePruneStatus.OK and not self.errors
+        """Return True when prune reported no failure; partial_failure is not ok."""
+        return self.error_code is None
 
     @property
     def pruned_items(self) -> list[PrunedItem]:

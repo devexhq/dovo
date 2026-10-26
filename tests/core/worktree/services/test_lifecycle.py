@@ -11,6 +11,7 @@ from typing import NoReturn
 import pytest
 
 from dovo.common.clock import Clock
+from dovo.common.error_codes import ErrorCode
 from dovo.common.filesystem import WorkspacePaths
 from dovo.common.filesystem.services import resolve_global_paths
 from dovo.common.models import Remediation
@@ -668,7 +669,7 @@ class WorktreeLifecycleDiagnosticLogTests:
         lifecycle = _lifecycle(worktree_workspace)
 
         def missing_worktree(*, git: GitRunner, source_root: Path, worktree_path: Path) -> list[str]:
-            raise WorktreeError("worktree path does not exist: x")
+            raise WorktreeError(ErrorCode.WORKTREE_MISSING, "worktree path does not exist: x")
 
         monkeypatch.setattr("dovo.core.worktree.services.lifecycle.apply_wip_to_worktree", missing_worktree)
 

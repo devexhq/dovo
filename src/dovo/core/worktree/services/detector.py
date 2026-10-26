@@ -2,20 +2,30 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from pathlib import Path
 
+from dovo.common.diagnostic_log import DiagnosticLevel, DiagnosticRecord, error_diagnostics, record_exception
 from dovo.common.filesystem import WorkspacePaths
 from dovo.core.db import SessionsRepository, WorktreeRecord, WorktreesRepository, WorktreeStatus
-from dovo.core.git.exceptions import GitError
+from dovo.core.git.exceptions import GitError, GitNotFoundError
 from dovo.core.git.models import GitWorktreeEntry
 from dovo.core.git.runner import GitRunner
 from dovo.core.worktree.models import (
     StaleWorktreeCategory,
     StaleWorktreeItem,
-    WorktreeDetectionResult,
-    WorktreeDetectionStatus,
+    WorktreeDetection,
 )
-from dovo.core.worktree.services.failure_log import logged_failure
+
+
+@dataclass(frozen=True, slots=True)
+class _DirtyState:
+    """Dirty state of one orphaned directory, with the warning and error-level records from a failed inspection."""
+
+    is_dirty: bool
+    dirty_file_count: int
+    warning: str | None
+    diagnostics: tuple[DiagnosticRecord, ...]
 
 
 def _build_record_lookups(
@@ -98,32 +108,31 @@ class WorktreeDetector:
                     )
         return stale_items
 
-    def _inspect_directory_dirty_state(self, dir_path: Path) -> tuple[bool, int, str | None]:
+    def _inspect_directory_dirty_state(self, dir_path: Path) -> _DirtyState:
         """Check whether an orphaned directory contains uncommitted or untracked changes."""
         try:
             status_lines = self.git.status_porcelain(dir_path)
-            if status_lines:
-                return True, len(status_lines), None
-            return False, 0, None
         except Exception as exc:
-            return (
-                False,
-                0,
-                logged_failure(
-                    f"Unable to inspect git status for orphaned directory '{dir_path.name}': {exc}",
-                    exc,
-                    operation="worktree.detect",
-                    context={"path": str(dir_path)},
-                ),
+            warning = f"Unable to inspect git status for orphaned directory '{dir_path.name}': {exc}"
+            if isinstance(exc, GitError):
+                return _DirtyState(is_dirty=False, dirty_file_count=0, warning=warning, diagnostics=())
+            record = record_exception(
+                exc, level=DiagnosticLevel.ERROR, operation="worktree.detect", context={"path": str(dir_path)}
             )
+            return _DirtyState(
+                is_dirty=False, dirty_file_count=0, warning=warning, diagnostics=tuple(error_diagnostics(record))
+            )
+        return _DirtyState(
+            is_dirty=bool(status_lines), dirty_file_count=len(status_lines), warning=None, diagnostics=()
+        )
 
     def _create_orphaned_item(
         self,
         child: Path,
         record: WorktreeRecord | None,
-    ) -> tuple[StaleWorktreeItem, str | None]:
-        """Build StaleWorktreeItem and optional warning for an orphaned directory."""
-        is_dirty, dirty_count, warn = self._inspect_directory_dirty_state(child)
+    ) -> tuple[StaleWorktreeItem, _DirtyState]:
+        """Build StaleWorktreeItem and the dirty-state inspection outcome for an orphaned directory."""
+        dirty = self._inspect_directory_dirty_state(child)
         if record is None:
             reason = f"Worktree directory '{child.name}' is not tracked in the database"
         else:
@@ -135,50 +144,52 @@ class WorktreeDetector:
             session_id=record.id if record else None,
             path=child,
             branch_name=record.branch_name if record else None,
-            is_dirty=is_dirty,
-            dirty_file_count=dirty_count,
+            is_dirty=dirty.is_dirty,
+            dirty_file_count=dirty.dirty_file_count,
             reason=reason,
         )
-        return item, warn
+        return item, dirty
 
     def _process_worktree_child(
         self,
         child: Path,
         records_by_id: dict[str, WorktreeRecord],
         records_by_path: dict[str, WorktreeRecord],
-    ) -> tuple[bool, StaleWorktreeItem | None, str | None]:
-        """Classify a single child directory as active or orphaned."""
+    ) -> tuple[StaleWorktreeItem, _DirtyState] | None:
+        """Classify a single child directory: None when active, else its orphaned item and dirty state."""
         record = records_by_id.get(child.name) or records_by_path.get(str(child.resolve()))
         if record is not None and record.status == WorktreeStatus.ACTIVE:
-            return True, None, None
+            return None
 
-        item, warn = self._create_orphaned_item(child, record)
-        return False, item, warn
+        return self._create_orphaned_item(child, record)
 
     def _detect_orphaned_directories(
         self, all_records: list[WorktreeRecord]
-    ) -> tuple[list[StaleWorktreeItem], int, list[str]]:
+    ) -> tuple[list[StaleWorktreeItem], int, list[str], list[DiagnosticRecord]]:
         """Identify directories under the workspace's worktrees directory that are not active."""
         if not self.worktree_base_dir.exists():
-            return [], 0, []
+            return [], 0, [], []
 
         records_by_id, records_by_path = _build_record_lookups(all_records)
         orphaned_items: list[StaleWorktreeItem] = []
         warnings: list[str] = []
+        diagnostics: list[DiagnosticRecord] = []
         active_count = 0
 
         for child in sorted(self.worktree_base_dir.iterdir()):
             if not child.is_dir():
                 continue
-            is_active, item, warn = self._process_worktree_child(child, records_by_id, records_by_path)
-            if is_active:
+            orphaned = self._process_worktree_child(child, records_by_id, records_by_path)
+            if orphaned is None:
                 active_count += 1
-            elif item is not None:
-                orphaned_items.append(item)
-                if warn:
-                    warnings.append(warn)
+                continue
+            item, dirty = orphaned
+            orphaned_items.append(item)
+            if dirty.warning:
+                warnings.append(dirty.warning)
+            diagnostics.extend(dirty.diagnostics)
 
-        return orphaned_items, active_count, warnings
+        return orphaned_items, active_count, warnings, diagnostics
 
     def _get_active_branch_names(
         self,
@@ -201,10 +212,10 @@ class WorktreeDetector:
         try:
             worktree_branches = self.git.list_branches(self.path, pattern="dovo/dovo_*")
         except Exception as exc:
-            # No result entry carries this failure, so the hint is dropped.
-            logged_failure(
-                "Failed to list worktree branches", exc, operation="worktree.detect", context={"path": str(self.path)}
-            )
+            if not isinstance(exc, GitNotFoundError):
+                record_exception(
+                    exc, level=DiagnosticLevel.DEBUG, operation="worktree.detect", context={"path": str(self.path)}
+                )
             return []
 
         active_branches = self._get_active_branch_names(worktree_entries, all_records)
@@ -219,50 +230,18 @@ class WorktreeDetector:
             if b not in active_branches
         ]
 
-    def detect(self) -> WorktreeDetectionResult:
+    def detect(self) -> WorktreeDetection:
         """Scan and classify all stale worktree resources non-destructively.
 
-        Returns:
-            Structured WorktreeDetectionResult containing all detected items.
+        Raises:
+            GitError: When git worktree list fails, with its own error_code and message.
         """
-        try:
-            worktree_entries = self.git.worktree_list(self.path)
-        except GitError as exc:
-            return WorktreeDetectionResult(
-                status=WorktreeDetectionStatus.GIT_FAILED,
-                errors=[f"Failed to list git worktrees (GIT_FAILED): {exc}"],
-            )
-        except Exception as exc:
-            return WorktreeDetectionResult(
-                status=WorktreeDetectionStatus.ERROR,
-                errors=[
-                    logged_failure(
-                        f"Unexpected error while listing git worktrees: {exc}",
-                        exc,
-                        operation="worktree.detect",
-                        context={"path": str(self.path)},
-                    )
-                ],
-            )
-
-        try:
-            all_records = self.db.list()
-        except Exception as exc:
-            return WorktreeDetectionResult(
-                status=WorktreeDetectionStatus.ERROR,
-                errors=[
-                    logged_failure(
-                        f"Failed to query worktrees from database: {exc}",
-                        exc,
-                        operation="worktree.detect",
-                        context={"path": str(self.path)},
-                    )
-                ],
-            )
+        worktree_entries = self.git.worktree_list(self.path)
+        all_records = self.db.list()
 
         stale_worktrees = self._detect_stale_worktree_refs(worktree_entries)
         stale_db_records = self._detect_stale_db_records(all_records)
-        orphaned_dirs, active_count, warnings = self._detect_orphaned_directories(all_records)
+        orphaned_dirs, active_count, warnings, diagnostics = self._detect_orphaned_directories(all_records)
         stale_branches = self._detect_stale_branches(worktree_entries, all_records)
 
         all_items = [
@@ -272,11 +251,11 @@ class WorktreeDetector:
             *stale_branches,
         ]
 
-        return WorktreeDetectionResult(
-            status=WorktreeDetectionStatus.OK,
-            items=all_items,
+        return WorktreeDetection(
+            items=tuple(all_items),
             active_worktree_count=active_count,
-            warnings=warnings,
+            warnings=tuple(warnings),
+            diagnostics=tuple(diagnostics),
         )
 
 
@@ -286,6 +265,6 @@ def detect_stale_worktrees(
     *,
     git: GitRunner,
     sessions_db: SessionsRepository | None = None,
-) -> WorktreeDetectionResult:
-    """Non-raising helper to scan and detect stale worktree resources under paths.worktrees_dir."""
+) -> WorktreeDetection:
+    """Scan paths.worktrees_dir for stale worktree resources; raise GitError when git worktree list fails."""
     return WorktreeDetector(paths, db, git=git, sessions_db=sessions_db).detect()

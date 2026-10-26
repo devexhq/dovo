@@ -355,8 +355,8 @@ REMEDIATION_RESOLUTION_CASES = [
             name="Worktree References Check",
             category=CheckCategory.WORKTREE,
             status=CheckStatus.WARNING,
-            message="Worktree detection could not complete (status='git_failed').",
-            details={"detection_status": "git_failed"},
+            message="Worktree detection could not complete (GIT_FAILED): Git execution failed ('git worktree list'): fatal error",
+            details={"error_code": "GIT_FAILED"},
         ),
         [
             Remediation(
