@@ -92,7 +92,7 @@ class CatalogValidateServiceTests:
         assert result.warnings == []
         assert result.remediations == [
             Remediation(
-                message="Check that 'nonexistent-flow' names an indexed catalog item, or pass a file path instead."
+                message="Check that 'nonexistent-flow' names an indexed blueprint, or pass a file path instead."
             )
         ]
 
@@ -344,7 +344,7 @@ class CatalogValidateServiceTests:
         assert passed.ok is True
 
     def test_validate_catalog_name_is_scoped_to_item_type(self, isolated_workspace: Path) -> None:
-        """For a REPO blueprint 'shared' and no step 'shared', return error_code CATALOG_NOT_FOUND, valid False and errors ["Catalog item 'shared' not found."] with item_type STEP, and error_code None with item_type BLUEPRINT."""
+        """For a REPO blueprint 'shared' and no step 'shared', return error_code CATALOG_NOT_FOUND, valid False and errors ["Catalog item 'shared' not found."] and a step-named remediation with item_type STEP, and error_code None with item_type BLUEPRINT."""
         write_runnable_blueprint(isolated_workspace, key="shared", steps=[{"id": "s1", "run": "echo hi"}])
 
         as_step = _validate("shared", path=isolated_workspace, item_type=CatalogItemType.STEP)
@@ -353,6 +353,9 @@ class CatalogValidateServiceTests:
         assert as_step.error_code == ErrorCode.CATALOG_NOT_FOUND
         assert as_step.valid is False
         assert as_step.errors == ["Catalog item 'shared' not found."]
+        assert as_step.remediations == [
+            Remediation(message="Check that 'shared' names an indexed step, or pass a file path instead.")
+        ]
         assert as_blueprint.error_code is None
 
     @pytest.mark.parametrize(

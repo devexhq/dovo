@@ -246,7 +246,7 @@ class Catalog:
         with catch_failure("catalog.validate", target=target) as caught:
             resolution = self._resolve_validate_target(target, item_type=item_type)
         if caught.failure is not None:
-            return _target_lookup_failure(target, caught.failure)
+            return _target_lookup_failure(target, item_type, caught.failure)
         with catch_failure("catalog.validate", target=target) as caught:
             validated = validate_catalog_item(
                 target,
@@ -362,10 +362,10 @@ def _failure_message(failure: Failure) -> str:
     return append_diagnostic_hint(failure.message, failure.diagnostic)
 
 
-def _target_lookup_failure(target: str, failure: Failure) -> CatalogValidateResult:
-    """Build the failed validate result from a failed target lookup: its code, message and remediations, or the catalog-name remediation for CATALOG_NOT_FOUND."""
+def _target_lookup_failure(target: str, item_type: CatalogItemType, failure: Failure) -> CatalogValidateResult:
+    """Build the failed validate result from a failed target lookup: its code, message and remediations, or the item_type-scoped catalog-name remediation for CATALOG_NOT_FOUND."""
     remediations = (
-        [Remediation(message=f"Check that '{target}' names an indexed catalog item, or pass a file path instead.")]
+        [Remediation(message=f"Check that '{target}' names an indexed {item_type.value}, or pass a file path instead.")]
         if failure.error_code is ErrorCode.CATALOG_NOT_FOUND
         else list(failure.remediations)
     )
