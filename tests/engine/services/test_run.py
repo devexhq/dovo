@@ -11,7 +11,7 @@ import pytest
 from dovo.common.diagnostic_log import DiagnosticLevel, DiagnosticRecord
 from dovo.common.error_codes import ErrorCode
 from dovo.common.filesystem.models import WorkspacePaths
-from dovo.common.lock import LockTimeoutError, WorkspaceLock
+from dovo.common.lock import LockTimeoutError
 from dovo.core.agents.models import AgentEnvMode, AgentEnvOverrides
 from dovo.core.catalog.definitions import BlueprintDefinition
 from dovo.core.db import SessionsRepository, SessionStatus
@@ -23,7 +23,7 @@ from tests.engine.conftest import StubDriveRun
 from tests.harness.catalog import write_runnable_blueprint
 from tests.harness.diagnostic_log import diagnostic_record, read_single_event
 from tests.harness.fakes import fixed_clock, fixed_new_id
-from tests.harness.lock import raise_lock_timeout
+from tests.harness.lock import time_out_first_lock
 from tests.harness.sessions import fail_reconciliation_list
 
 
@@ -273,7 +273,7 @@ class BlueprintRunServiceLoadTests:
     ) -> None:
         """Raise LockTimeoutError("lock held") from execute() and leave the sessions table empty."""
         write_runnable_blueprint(engine_paths.root_dir, key="lint", steps=[{"id": "a", "run": "true"}])
-        monkeypatch.setattr(WorkspaceLock, "__enter__", raise_lock_timeout)
+        time_out_first_lock(monkeypatch)
 
         with pytest.raises(LockTimeoutError, match="lock held"):
             BlueprintRunService(

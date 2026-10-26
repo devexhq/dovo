@@ -10,7 +10,7 @@ import pytest
 from sqlmodel import select
 
 from dovo.common.filesystem.models import WorkspacePaths
-from dovo.common.lock import LockTimeoutError, WorkspaceLock
+from dovo.common.lock import LockTimeoutError
 from dovo.common.models import Remediation
 from dovo.core.db import SessionRecord, SessionsRepository, SessionStatus
 from dovo.core.sessions import (
@@ -28,7 +28,7 @@ from dovo.core.sessions import (
     SessionLogEventType,
 )
 from tests.harness.diagnostic_log import diagnostic_record, read_single_event
-from tests.harness.lock import raise_lock_timeout
+from tests.harness.lock import time_out_first_lock
 from tests.harness.sessions import fail_reconciliation_list
 from tests.harness.workspace_paths import initialized_workspace_paths
 
@@ -417,7 +417,7 @@ class SessionCollectionListTests:
     ) -> None:
         """Raise LockTimeoutError("lock held") from list()."""
         sessions = SessionCollection(initialized_workspace_paths(isolated_workspace))
-        monkeypatch.setattr(WorkspaceLock, "__enter__", raise_lock_timeout)
+        time_out_first_lock(monkeypatch)
 
         with pytest.raises(LockTimeoutError, match="lock held"):
             sessions.list()

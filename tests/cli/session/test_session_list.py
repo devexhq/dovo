@@ -10,10 +10,10 @@ import pytest
 from typer.testing import CliRunner
 
 from dovo.cli import app
-from dovo.common.lock import LockTimeoutError, WorkspaceLock
+from dovo.common.lock import LockTimeoutError
 from dovo.core.db import SessionStatus
 from tests.harness.diagnostic_log import FROZEN_EVENT_ID
-from tests.harness.lock import raise_lock_timeout
+from tests.harness.lock import time_out_first_lock
 from tests.harness.sessions import fail_reconciliation_list
 from tests.harness.workspace_paths import initialized_workspace_db
 
@@ -69,7 +69,7 @@ class SessionListCliIntegrationTests:
         self, cli_runner: CliRunner, cli_workspace: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """Exit 1 with result.exception a LockTimeoutError for `session list --format json`."""
-        monkeypatch.setattr(WorkspaceLock, "__enter__", raise_lock_timeout)
+        time_out_first_lock(monkeypatch)
 
         result = cli_runner.invoke(app, ["-p", str(cli_workspace), "session", "list", "--format", "json"])
 
