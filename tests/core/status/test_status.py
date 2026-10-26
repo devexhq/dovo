@@ -9,13 +9,17 @@ from pathlib import Path
 import pytest
 
 from dovo.common.filesystem import Filesystem
+from dovo.common.lock import LockTimeoutError, WorkspaceLock
 from dovo.common.models import Remediation
 from dovo.core.config.loader import ConfigLoadStatus
 from dovo.core.db import SessionsRepository, SessionStatus, WorktreesRepository
 from dovo.core.git.runner import GitRunner
 from dovo.core.status import Status
+from tests.harness.diagnostic_log import diagnostic_record
+from tests.harness.lock import raise_lock_timeout
+from tests.harness.sessions import fail_reconciliation_list
 from tests.harness.status_workspace import BuildStatusWorkspace, status_config_payload
-from tests.harness.workspace_paths import initialized_workspace_paths
+from tests.harness.workspace_paths import initialized_workspace_db, initialized_workspace_paths
 
 
 def _tree_listing(root: Path) -> list[str]:
@@ -50,7 +54,7 @@ class StatusCollectTests:
             worktree_path=fs.worktrees_dir / "sb-001",
         )
 
-        result = Status(paths, git=GitRunner()).collect()
+        result = Status(paths, git=GitRunner(), sessions_db=initialized_workspace_db(workspace).sessions).collect()
 
         assert result.root_dir == workspace
         assert result.is_initialized is True
@@ -76,17 +80,17 @@ class StatusCollectTests:
         assert result.warnings == []
         assert result.remediations == []
 
-    def test_collect_on_plain_directory_writes_nothing(self, tmp_path: Path) -> None:
+    def test_collect_on_plain_directory_writes_only_the_workspace_lock(self, tmp_path: Path) -> None:
+        """Leave the tree listing equal to the listing before collect() plus `.dovo/.lock`."""
         paths = initialized_workspace_paths(tmp_path)
         before = _tree_listing(tmp_path)
 
-        Status(paths, git=GitRunner()).collect()
+        Status(paths, git=GitRunner(), sessions_db=initialized_workspace_db(tmp_path).sessions).collect()
 
-        assert _tree_listing(tmp_path) == before
+        assert _tree_listing(tmp_path) == sorted([*before, ".dovo/.lock"])
 
-    def test_collect_on_populated_workspace_leaves_rows_and_files_unchanged(
-        self, status_workspace: BuildStatusWorkspace
-    ) -> None:
+    def test_collect_on_populated_workspace_leaves_rows_unchanged(self, status_workspace: BuildStatusWorkspace) -> None:
+        """Leave non-stale session and worktree rows unchanged and add only `.dovo/.lock` to the tree listing."""
         workspace = status_workspace(config=None)
         fs = Filesystem(workspace)
         paths = initialized_workspace_paths(workspace)
@@ -108,12 +112,63 @@ class StatusCollectTests:
         worktrees_before = [record.model_dump() for record in worktrees_repo.list()]
         listing_before = _tree_listing(workspace)
 
-        Status(paths, git=GitRunner()).collect()
+        Status(paths, git=GitRunner(), sessions_db=initialized_workspace_db(workspace).sessions).collect()
 
         assert [record.model_dump() for record in sessions_repo.list()] == sessions_before
         assert [record.model_dump() for record in worktrees_repo.list()] == worktrees_before
         assert not fs.config_file.exists()
-        assert _tree_listing(workspace) == listing_before
+        assert _tree_listing(workspace) == sorted({*listing_before, ".dovo/.lock"})
+
+
+class StatusReconciliationTests:
+    """Tests for the stale-session reconciliation Status.collect() runs before its probes."""
+
+    def test_collect_puts_reconciliation_warning_first(self, status_workspace: BuildStatusWorkspace) -> None:
+        """With branch "main" and a running row "session-stale" with no pid, mark it failed and return warnings ["Reconciled 1 interrupted session (session_id: session-stale).", "Active branch is 'main'. Automated workflows on primary branches are discouraged."]."""
+        workspace = status_workspace(branch="main")
+        sessions_db = initialized_workspace_db(workspace).sessions
+        sessions_db.create("session-stale", "blueprint", "blueprint")
+
+        result = Status(initialized_workspace_paths(workspace), git=GitRunner(), sessions_db=sessions_db).collect()
+
+        stored = sessions_db.get("session-stale")
+        assert stored is not None
+        assert stored.status is SessionStatus.FAILED
+        assert result.warnings == [
+            "Reconciled 1 interrupted session (session_id: session-stale).",
+            "Active branch is 'main'. Automated workflows on primary branches are discouraged.",
+        ]
+
+    def test_collect_reports_reconciliation_record_in_diagnostics(
+        self, status_workspace: BuildStatusWorkspace, frozen_diagnostic_clock: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """With fail_reconciliation_list, return warnings [] and diagnostics [diagnostic_record(frozen_diagnostic_clock)]."""
+        workspace = status_workspace()
+        fail_reconciliation_list(monkeypatch)
+
+        result = Status(
+            initialized_workspace_paths(workspace),
+            git=GitRunner(),
+            sessions_db=initialized_workspace_db(workspace).sessions,
+        ).collect()
+
+        assert result.warnings == []
+        assert result.diagnostics == [diagnostic_record(frozen_diagnostic_clock)]
+
+    def test_collect_propagates_lock_timeout(
+        self, status_workspace: BuildStatusWorkspace, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Raise LockTimeoutError("lock held") from collect()."""
+        workspace = status_workspace()
+        status = Status(
+            initialized_workspace_paths(workspace),
+            git=GitRunner(),
+            sessions_db=initialized_workspace_db(workspace).sessions,
+        )
+        monkeypatch.setattr(WorkspaceLock, "__enter__", raise_lock_timeout)
+
+        with pytest.raises(LockTimeoutError, match="lock held"):
+            status.collect()
 
 
 class StatusWarningsOrderingTests:
@@ -127,7 +182,7 @@ class StatusWarningsOrderingTests:
         (workspace / "dirty.txt").write_text("dirty content", encoding="utf-8")
         Filesystem.atomic_write_text(fs.catalog_blueprints_dir / "broken.yml", "bad: [yaml\n")
 
-        result = Status(paths, git=GitRunner()).collect()
+        result = Status(paths, git=GitRunner(), sessions_db=initialized_workspace_db(workspace).sessions).collect()
 
         assert result.warnings == [
             "Dovo workspace is not initialized. Run 'dovo init' to configure.",
@@ -141,7 +196,7 @@ class StatusWarningsOrderingTests:
             status_config_payload(model=None, max_active_worktrees=8),
         )
 
-        result2 = Status(paths, git=GitRunner()).collect()
+        result2 = Status(paths, git=GitRunner(), sessions_db=initialized_workspace_db(workspace).sessions).collect()
 
         assert result2.warnings == [
             "Active branch is 'main'. Automated workflows on primary branches are discouraged.",
@@ -158,7 +213,11 @@ class StatusFixesRemediationTests:
     def test_collect_remediations_for_uninitialized_workspace(self, status_workspace: BuildStatusWorkspace) -> None:
         workspace = status_workspace(config=None)
 
-        result = Status(initialized_workspace_paths(workspace), git=GitRunner()).collect()
+        result = Status(
+            initialized_workspace_paths(workspace),
+            git=GitRunner(),
+            sessions_db=initialized_workspace_db(workspace).sessions,
+        ).collect()
 
         assert result.remediations == [
             Remediation(message="Run 'dovo init' to initialize Dovo in this repository.", command="dovo init")
@@ -169,7 +228,11 @@ class StatusFixesRemediationTests:
         fs = Filesystem(non_git_dir)
         Filesystem.atomic_write_json(fs.config_file, status_config_payload(model="gpt-4o"))
 
-        result = Status(initialized_workspace_paths(non_git_dir), git=GitRunner()).collect()
+        result = Status(
+            initialized_workspace_paths(non_git_dir),
+            git=GitRunner(),
+            sessions_db=initialized_workspace_db(non_git_dir).sessions,
+        ).collect()
 
         assert result.remediations == [
             Remediation(message="Run 'git init' or navigate to a Git repository.", command="git init")
@@ -210,7 +273,11 @@ class StatusFixesRemediationTests:
     ) -> None:
         workspace = status_workspace(config=payload)
 
-        result = Status(initialized_workspace_paths(workspace), git=GitRunner()).collect()
+        result = Status(
+            initialized_workspace_paths(workspace),
+            git=GitRunner(),
+            sessions_db=initialized_workspace_db(workspace).sessions,
+        ).collect()
 
         assert result.remediations == expected_remediations
 
@@ -220,7 +287,11 @@ class StatusFixesRemediationTests:
 
         fs.config_file.mkdir(parents=True, exist_ok=True)
 
-        result = Status(initialized_workspace_paths(workspace), git=GitRunner()).collect()
+        result = Status(
+            initialized_workspace_paths(workspace),
+            git=GitRunner(),
+            sessions_db=initialized_workspace_db(workspace).sessions,
+        ).collect()
 
         assert result.remediations == [
             Remediation(message="Remove directory at '.dovo/config.json' and run 'dovo init'.")
@@ -235,7 +306,11 @@ class StatusFixesRemediationTests:
         try:
             if os.access(fs.config_file, os.R_OK):
                 pytest.skip("filesystem still allows reading unreadable mode")
-            result = Status(initialized_workspace_paths(workspace), git=GitRunner()).collect()
+            result = Status(
+                initialized_workspace_paths(workspace),
+                git=GitRunner(),
+                sessions_db=initialized_workspace_db(workspace).sessions,
+            ).collect()
             assert result.remediations == [Remediation(message="Check file permissions for '.dovo/config.json'.")]
         finally:
             fs.config_file.chmod(stat.S_IRUSR | stat.S_IWUSR)

@@ -7,7 +7,7 @@ from dovo.core.config.loader import ConfigLoadStatus
 from dovo.core.git.runner import GitRunner
 from dovo.core.status import Status
 from tests.harness.status_workspace import BuildStatusWorkspace
-from tests.harness.workspace_paths import initialized_workspace_paths
+from tests.harness.workspace_paths import initialized_workspace_db, initialized_workspace_paths
 
 
 class ConfigProbeTests:
@@ -18,7 +18,11 @@ class ConfigProbeTests:
     ) -> None:
         workspace = status_workspace(branch="feature-uninit", config=None)
 
-        result = Status(initialized_workspace_paths(workspace), git=GitRunner()).collect()
+        result = Status(
+            initialized_workspace_paths(workspace),
+            git=GitRunner(),
+            sessions_db=initialized_workspace_db(workspace).sessions,
+        ).collect()
 
         assert result.is_initialized is False
         assert result.git.branch == "feature-uninit"
@@ -31,7 +35,11 @@ class ConfigProbeTests:
     def test_collect_malformed_config_reports_malformed_json(self, status_workspace: BuildStatusWorkspace) -> None:
         workspace = status_workspace(config="{invalid_json: true")
 
-        result = Status(initialized_workspace_paths(workspace), git=GitRunner()).collect()
+        result = Status(
+            initialized_workspace_paths(workspace),
+            git=GitRunner(),
+            sessions_db=initialized_workspace_db(workspace).sessions,
+        ).collect()
 
         assert result.config.status == ConfigLoadStatus.MALFORMED_JSON
         assert result.config.is_valid is False

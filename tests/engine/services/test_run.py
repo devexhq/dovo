@@ -11,17 +11,19 @@ import pytest
 from dovo.common.diagnostic_log import DiagnosticLevel, DiagnosticRecord
 from dovo.common.error_codes import ErrorCode
 from dovo.common.filesystem.models import WorkspacePaths
+from dovo.common.lock import LockTimeoutError, WorkspaceLock
 from dovo.core.agents.models import AgentEnvMode, AgentEnvOverrides
 from dovo.core.catalog.definitions import BlueprintDefinition
 from dovo.core.db import SessionsRepository, SessionStatus
 from dovo.core.git.runner import GitRunner
-from dovo.core.sessions import ReconciliationResult
+from dovo.core.sessions import Reconciliation
 from dovo.engine.models import RunOutcome
 from dovo.engine.services.run import BlueprintRunService
 from tests.engine.conftest import StubDriveRun
 from tests.harness.catalog import write_runnable_blueprint
 from tests.harness.diagnostic_log import diagnostic_record, read_single_event
 from tests.harness.fakes import fixed_clock, fixed_new_id
+from tests.harness.lock import raise_lock_timeout
 from tests.harness.sessions import fail_reconciliation_list
 
 
@@ -249,7 +251,7 @@ class BlueprintRunServiceLoadTests:
         """Append the reconciliation warning before the blueprint loads, so a failed load still reports it."""
         monkeypatch.setattr(
             "dovo.engine.services.run.reconcile_stale_sessions",
-            lambda sessions_db, *, path: ReconciliationResult(warning="reconciled 1 stale run"),
+            lambda sessions_db, *, path: Reconciliation(warning="reconciled 1 stale run"),
         )
 
         result = BlueprintRunService(
@@ -262,6 +264,29 @@ class BlueprintRunServiceLoadTests:
         ).execute()
 
         assert result.warnings == ["reconciled 1 stale run"]
+
+    def test_execute_propagates_reconciliation_lock_timeout(
+        self,
+        engine_paths: WorkspacePaths,
+        sessions_repo: SessionsRepository,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Raise LockTimeoutError("lock held") from execute() and leave the sessions table empty."""
+        write_runnable_blueprint(engine_paths.root_dir, key="lint", steps=[{"id": "a", "run": "true"}])
+        monkeypatch.setattr(WorkspaceLock, "__enter__", raise_lock_timeout)
+
+        with pytest.raises(LockTimeoutError, match="lock held"):
+            BlueprintRunService(
+                name="lint",
+                paths=engine_paths,
+                sessions_db=sessions_repo,
+                git=GitRunner(),
+                clock=fixed_clock,
+                new_id=fixed_new_id,
+            ).execute()
+
+        monkeypatch.undo()
+        assert sessions_repo.list() == []
 
 
 class BlueprintRunServiceEnvTests:

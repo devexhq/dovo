@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from dovo.common.clock import Clock
-from dovo.common.diagnostic_log import DiagnosticRecord
+from dovo.common.diagnostic_log import DiagnosticRecord, error_diagnostics
 from dovo.common.exceptions import catch_failure
 from dovo.common.filesystem import WorkspacePaths
 from dovo.common.session_id import SessionIdFactory
@@ -49,15 +49,19 @@ class BlueprintRunService:
     diagnostics: list[DiagnosticRecord] = field(default_factory=list)
 
     def execute(self) -> BlueprintRunResult:
-        """Run the full execution pipeline and return the outcome."""
+        """Run the full execution pipeline and return the outcome.
+
+        Raises:
+            LockTimeoutError: If another process holds the workspace lock.
+        """
         env_overrides, env_error = resolve_env_overrides(self.env_mode, self.env_passthrough)
         if env_error is not None:
             return fail(self.warnings, self.diagnostics, env_error)
 
-        reconciliation_result = reconcile_stale_sessions(self.sessions_db, path=self.paths.root_dir)
-        if reconciliation_result.warning:
-            self.warnings.append(reconciliation_result.warning)
-        self.diagnostics.extend(reconciliation_result.diagnostics)
+        reconciliation = reconcile_stale_sessions(self.sessions_db, path=self.paths.root_dir)
+        if reconciliation.warning:
+            self.warnings.append(reconciliation.warning)
+        self.diagnostics.extend(error_diagnostics(reconciliation.diagnostic))
 
         catalog = Catalog(self.paths)
         with catch_failure("catalog.load_definition", blueprint=self.name) as caught:

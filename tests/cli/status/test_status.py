@@ -10,13 +10,17 @@ import pytest
 from typer.testing import CliRunner
 
 from dovo.cli import app
+from dovo.common.lock import LockTimeoutError, WorkspaceLock
+from dovo.core.db import SessionStatus
 from dovo.core.git import GitNotFoundError
 from dovo.core.status.models import (
     DovoStatusResult,
 )
 from tests.harness.diagnostic_log import FROZEN_EVENT_ID
 from tests.harness.fakes import FakeGitRunner, use_fake_git
+from tests.harness.lock import raise_lock_timeout
 from tests.harness.sessions import fail_reconciliation_list
+from tests.harness.workspace_paths import initialized_workspace_db
 
 
 class StatusCliIntegrationTests:
@@ -80,6 +84,33 @@ class StatusCliIntegrationTests:
         assert event["payload"]["diagnostics"] == [
             {"event_id": FROZEN_EVENT_ID, "log_path": str(frozen_diagnostic_clock)}
         ]
+
+    def test_status_cli_json_reports_reconciled_stale_session(
+        self, cli_runner: CliRunner, status_workspace: Path
+    ) -> None:
+        """With a running row "session-stale" with no pid, exit 0, emit payload warnings[0] "Reconciled 1 interrupted session (session_id: session-stale)." and leave the row failed."""
+        sessions_db = initialized_workspace_db(status_workspace).sessions
+        sessions_db.create("session-stale", "blueprint", "blueprint")
+
+        result = cli_runner.invoke(app, ["-p", str(status_workspace), "status", "--format", "json"])
+
+        assert result.exit_code == 0
+        event = json.loads(result.stdout)
+        assert event["payload"]["warnings"][0] == "Reconciled 1 interrupted session (session_id: session-stale)."
+        stored = sessions_db.get("session-stale")
+        assert stored is not None
+        assert stored.status is SessionStatus.FAILED
+
+    def test_status_cli_json_under_lock_timeout_exits_one(
+        self, cli_runner: CliRunner, status_workspace: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Exit 1 with result.exception a LockTimeoutError for `status --format json`."""
+        monkeypatch.setattr(WorkspaceLock, "__enter__", raise_lock_timeout)
+
+        result = cli_runner.invoke(app, ["-p", str(status_workspace), "status", "--format", "json"])
+
+        assert result.exit_code == 1
+        assert isinstance(result.exception, LockTimeoutError)
 
     def test_status_cli_json_reports_unknown_branch_when_git_is_missing(
         self,

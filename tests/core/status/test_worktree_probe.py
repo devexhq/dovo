@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from dovo.common.filesystem import Filesystem
@@ -9,22 +11,27 @@ from dovo.core.db import SessionsRepository, SessionStatus, WorktreesRepository
 from dovo.core.git.runner import GitRunner
 from dovo.core.status import Status
 from tests.harness.status_workspace import BuildStatusWorkspace, status_config_payload
-from tests.harness.workspace_paths import initialized_workspace_paths
+from tests.harness.workspace_paths import initialized_workspace_db, initialized_workspace_paths
 
 
 class WorktreeProbeTests:
     """Tests for worktree inventory collection."""
 
-    def test_collect_without_database_counts_worktree_directories(self, status_workspace: BuildStatusWorkspace) -> None:
+    def test_collect_without_database_counts_worktree_directories(
+        self, status_workspace: BuildStatusWorkspace, tmp_path: Path
+    ) -> None:
+        """With database=False and sessions_db on tmp_path / "reconcile.db", report database.exists False and 2 active and total worktrees from directories."""
         workspace = status_workspace(
             database=False, config=status_config_payload(model="gpt-4o", max_active_worktrees=4)
         )
         fs = Filesystem(workspace)
+        paths = initialized_workspace_paths(workspace)
+        sessions_db = SessionsRepository(db_path=tmp_path / "reconcile.db", project_id=paths.project_id)
 
         (fs.worktrees_dir / "sb-1").mkdir(parents=True, exist_ok=True)
         (fs.worktrees_dir / "sb-2").mkdir(parents=True, exist_ok=True)
 
-        result = Status(initialized_workspace_paths(workspace), git=GitRunner()).collect()
+        result = Status(paths, git=GitRunner(), sessions_db=sessions_db).collect()
 
         assert result.database.exists is False
         assert result.worktrees.active_worktrees == 2
@@ -54,7 +61,7 @@ class WorktreeProbeTests:
 
         monkeypatch.setattr(WorktreesRepository, "list", mock_list)
 
-        result = Status(paths, git=GitRunner()).collect()
+        result = Status(paths, git=GitRunner(), sessions_db=initialized_workspace_db(workspace).sessions).collect()
 
         assert result.database.total_sessions == 1
         assert result.worktrees.active_worktrees == 1

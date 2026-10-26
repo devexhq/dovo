@@ -10,6 +10,7 @@ import pytest
 from sqlmodel import select
 
 from dovo.common.filesystem.models import WorkspacePaths
+from dovo.common.lock import LockTimeoutError, WorkspaceLock
 from dovo.common.models import Remediation
 from dovo.core.db import SessionRecord, SessionsRepository, SessionStatus
 from dovo.core.sessions import (
@@ -20,13 +21,14 @@ from dovo.core.sessions import (
     LogsShowResult,
     LogsShowStatus,
     LogStreamFilter,
-    ReconciliationResult,
+    Reconciliation,
     Session,
     SessionCollection,
     SessionLogEvent,
     SessionLogEventType,
 )
 from tests.harness.diagnostic_log import diagnostic_record, read_single_event
+from tests.harness.lock import raise_lock_timeout
 from tests.harness.sessions import fail_reconciliation_list
 from tests.harness.workspace_paths import initialized_workspace_paths
 
@@ -383,8 +385,8 @@ class SessionCollectionListTests:
     ) -> None:
         sessions = SessionCollection(initialized_workspace_paths(isolated_workspace))
 
-        def _mock_reconcile(*_args: object, **_kwargs: object) -> ReconciliationResult:
-            return ReconciliationResult(reconciled=[], warning="Session was terminated abnormally")
+        def _mock_reconcile(*_args: object, **_kwargs: object) -> Reconciliation:
+            return Reconciliation(warning="Session was terminated abnormally")
 
         monkeypatch.setattr("dovo.core.sessions.sessions.reconcile_stale_sessions", _mock_reconcile)
 
@@ -409,6 +411,16 @@ class SessionCollectionListTests:
         assert result.warnings == []
         assert result.diagnostics == [diagnostic_record(frozen_diagnostic_clock)]
         assert read_single_event(frozen_diagnostic_clock)["operation"] == "session.reconcile"
+
+    def test_list_propagates_reconciliation_lock_timeout(
+        self, isolated_workspace: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Raise LockTimeoutError("lock held") from list()."""
+        sessions = SessionCollection(initialized_workspace_paths(isolated_workspace))
+        monkeypatch.setattr(WorkspaceLock, "__enter__", raise_lock_timeout)
+
+        with pytest.raises(LockTimeoutError, match="lock held"):
+            sessions.list()
 
 
 class SessionDetailsTests:

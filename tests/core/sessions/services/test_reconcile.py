@@ -15,7 +15,7 @@ import pytest
 from dovo.common.filesystem.services import resolve_global_paths
 from dovo.common.lock import LockTimeoutError, WorkspaceLock
 from dovo.core.db import SessionsRepository, SessionStatus
-from dovo.core.sessions import ReconciliationResult
+from dovo.core.sessions import Reconciliation
 from dovo.core.sessions.services.reconcile import (
     STALE_RUN_ERROR_MESSAGE,
     current_process_started_at,
@@ -26,6 +26,7 @@ from dovo.core.sessions.services.reconcile import (
     reconcile_stale_sessions,
 )
 from tests.harness.diagnostic_log import diagnostic_record, read_single_event
+from tests.harness.lock import raise_lock_timeout
 from tests.harness.workspace_paths import initialized_workspace_paths
 
 DEAD_PID = 4242
@@ -254,7 +255,7 @@ class ReconcileStaleRunsTests:
         assert stored is not None
         assert stored.status == SessionStatus.FAILED
         assert stored.error_message == STALE_RUN_ERROR_MESSAGE
-        assert result.reconciled == [stored]
+        assert result.reconciled == (stored,)
         assert result.warning == "Reconciled 1 interrupted session (session_id: session-dead)."
 
     @pytest.mark.parametrize(
@@ -288,51 +289,45 @@ class ReconcileStaleRunsTests:
         assert stored.status == expected_status
         assert stored.error_message == expected_error
 
-    def test_repository_failure_records_error_in_diagnostics(
+    def test_repository_failure_records_error_in_diagnostic(
         self, isolated_workspace: Path, frozen_diagnostic_clock: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """Return no warning, the record in diagnostics, and write one session.reconcile error record when SessionsRepository.list raises."""
+        """Return Reconciliation(diagnostic=diagnostic_record(frozen_diagnostic_clock)) and write one session.reconcile error event with context {"path": <workspace>}."""
         sessions = _sessions_for(isolated_workspace)
         monkeypatch.setattr(SessionsRepository, "list", _raise_db_unavailable)
 
         result = reconcile_stale_sessions(sessions, path=isolated_workspace)
 
-        assert result == ReconciliationResult(
-            reconciled=[], warning=None, diagnostics=[diagnostic_record(frozen_diagnostic_clock)]
-        )
+        assert result == Reconciliation(diagnostic=diagnostic_record(frozen_diagnostic_clock))
         event = read_single_event(frozen_diagnostic_clock)
         assert event["level"] == "error"
         assert event["operation"] == "session.reconcile"
         assert event["context"] == {"path": str(isolated_workspace)}
         assert event["exception_message"] == "db unavailable"
 
-    def test_lock_timeout_returns_empty_result_without_record(
+    def test_lock_timeout_propagates_without_record(
         self, isolated_workspace: Path, frozen_diagnostic_clock: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """Return an empty result and leave <DOVO_HOME>/logs absent when the workspace lock raises LockTimeoutError."""
+        """With raise_lock_timeout, raise LockTimeoutError("lock held") and leave <DOVO_HOME>/logs absent."""
         sessions = _sessions_for(isolated_workspace)
+        monkeypatch.setattr(WorkspaceLock, "__enter__", raise_lock_timeout)
 
-        def _timeout(_self: WorkspaceLock) -> WorkspaceLock:
-            raise LockTimeoutError("lock held")
+        with pytest.raises(LockTimeoutError, match="lock held"):
+            reconcile_stale_sessions(sessions, path=isolated_workspace)
 
-        monkeypatch.setattr(WorkspaceLock, "__enter__", _timeout)
-
-        result = reconcile_stale_sessions(sessions, path=isolated_workspace)
-
-        assert result == ReconciliationResult(reconciled=[], warning=None)
         assert not frozen_diagnostic_clock.parent.parent.exists()
 
-    def test_detached_repository_without_path_returns_empty_result(self, frozen_diagnostic_clock: Path) -> None:
-        """Return an empty result and leave <DOVO_HOME>/logs absent for a detached repository without a path."""
+    def test_detached_repository_without_path_returns_empty_reconciliation(self, frozen_diagnostic_clock: Path) -> None:
+        """Return Reconciliation() and leave <DOVO_HOME>/logs absent for a detached repository without a path."""
         detached = SessionsRepository(path=None, auto_init=False)
 
-        assert reconcile_stale_sessions(detached) == ReconciliationResult(reconciled=[], warning=None)
+        assert reconcile_stale_sessions(detached) == Reconciliation()
         assert not frozen_diagnostic_clock.parent.parent.exists()
 
     def test_repository_failure_unchanged_when_recorder_cannot_write(
         self, isolated_workspace: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """Return an empty result with no warning when <DOVO_HOME>/logs is a regular file."""
+        """Return Reconciliation() when <DOVO_HOME>/logs is a regular file."""
         sessions = _sessions_for(isolated_workspace)
         monkeypatch.setattr(SessionsRepository, "list", _raise_db_unavailable)
         logs_dir = resolve_global_paths().logs_dir
@@ -341,4 +336,4 @@ class ReconcileStaleRunsTests:
 
         result = reconcile_stale_sessions(sessions, path=isolated_workspace)
 
-        assert result == ReconciliationResult(reconciled=[], warning=None)
+        assert result == Reconciliation()
