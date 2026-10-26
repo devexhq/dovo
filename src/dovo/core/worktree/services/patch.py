@@ -31,6 +31,7 @@ _CONFLICT_PATTERNS = (
     re.compile(r"^error:\s+([^:]+):\s+patch does not apply"),
     re.compile(r"cannot apply binary patch to '([^']+)'"),
     re.compile(r"^error:\s+([^:]+):\s+(?:already exists in working directory|does not exist in index)"),
+    re.compile(r"^error:\s+([^:]+):\s+No such file or directory"),
 )
 
 
@@ -201,11 +202,12 @@ class WorktreePatch:
         return diff_text, touched_files, patch_paths
 
     def _verify_patch_cleanliness(self, diff_text: str, worktree_id: str) -> None:
-        """Dry-run the patch with git apply --check, marking the worktree conflicted on failure.
+        """Dry-run the patch with git apply --check, marking the worktree conflicted when it names conflicting paths.
 
         Raises:
-            WorktreeApplyConflictError: When the patch does not apply cleanly.
-            WorktreeError: With a git code during the conflict check.
+            WorktreeApplyConflictError: When the check fails and its stderr names conflicting paths.
+            WorktreeError: GIT_FAILED when the check exits non-zero without naming a conflicting path,
+                or a git code during the conflict check.
         """
         with _reraise_git(worktree_id, "during conflict check"):
             returncode, _, stderr = self.git.apply_check(self.path, diff_text, binary=True)
@@ -213,13 +215,19 @@ class WorktreePatch:
             return
 
         conflicts = extract_conflicts(stderr)
+        if not conflicts:
+            raise WorktreeError(
+                ErrorCode.GIT_FAILED,
+                f"Git failed during conflict check for worktree '{worktree_id}': "
+                f"{stderr.strip() or 'patch check failed'}",
+            )
         try:
             self.db.update_status(worktree_id, WorktreeStatus.CONFLICT)
         except Exception as exc:
             record_exception(
                 exc, level=DiagnosticLevel.DEBUG, operation="worktree.apply", context={"worktree_id": worktree_id}
             )
-        conflict_bullets = "\n".join(f"  • {f}" for f in conflicts) if conflicts else f"  {stderr.strip()}"
+        conflict_bullets = "\n".join(f"  • {f}" for f in conflicts)
         raise WorktreeApplyConflictError(
             f"Cannot apply worktree {worktree_id}: conflicts detected.\nConflicting files:\n{conflict_bullets}",
             [

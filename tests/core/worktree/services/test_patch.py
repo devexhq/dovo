@@ -38,6 +38,7 @@ class ExtractConflictsTests:
                 "error: src/new.py: already exists in working directory\n", ["src/new.py"], id="already_exists"
             ),
             pytest.param("error: src/gone.py: does not exist in index\n", ["src/gone.py"], id="not_in_index"),
+            pytest.param("error: src/gone.py: No such file or directory\n", ["src/gone.py"], id="missing_in_workspace"),
             pytest.param("Applying patch\nnothing to see here\n", [], id="no_conflict_markers"),
         ],
     )
@@ -749,6 +750,34 @@ class WorktreePatchGitFailureTests:
         assert result.errors == [f"Git failed during conflict check for worktree 'dovo_t': {error}"]
         assert result.diagnostics == []
         assert not resolve_global_paths(None).logs_dir.exists()
+
+    def test_nonzero_check_without_conflicting_paths_reports_git_failed(
+        self, worktree_workspace_paths: WorkspacePaths
+    ) -> None:
+        """Return GIT_FAILED, conflicting_files == [] and errors == ["Git failed during conflict check for worktree '<id>': error: No valid patches in input"] when ("apply","--check") exits 128 naming no path, and leave the worktree status unchanged."""
+        _create_worktree_with_change(worktree_workspace_paths, "dovo_t")
+        db = _repo(worktree_workspace_paths)
+        before = db.get("dovo_t")
+        assert before is not None
+        fake = FakeGitRunner(
+            {
+                ("apply", "--check"): GitProcessOutput(
+                    returncode=128, stdout="", stderr="error: No valid patches in input\n"
+                )
+            }
+        )
+        worktree = _worktree(worktree_workspace_paths, db, git=fake)
+
+        result = worktree.apply("dovo_t")
+
+        assert result.error_code == ErrorCode.GIT_FAILED
+        assert result.conflicting_files == []
+        assert result.errors == [
+            "Git failed during conflict check for worktree 'dovo_t': error: No valid patches in input"
+        ]
+        after = db.get("dovo_t")
+        assert after is not None
+        assert after.status == before.status
 
     def test_fs_not_found_records_its_oserror_cause(
         self, worktree_workspace_paths: WorkspacePaths, frozen_diagnostic_clock: Path
