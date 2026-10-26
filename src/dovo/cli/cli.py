@@ -16,7 +16,13 @@ if TYPE_CHECKING:
 from dovo.cli.context import CliContext, default_lock_wait_notifier, ensure_lazy_project_init
 from dovo.cli.ui.dispatcher import ui_dispatcher
 from dovo.cli.ui.events import ErrorPanelEvent, MessageEvent, WelcomeBannerEvent
-from dovo.common.diagnostic_log import bind_cli_command, reset_cli_command
+from dovo.common.diagnostic_log import (
+    DiagnosticLevel,
+    append_diagnostic_hint,
+    bind_cli_command,
+    record_exception,
+    reset_cli_command,
+)
 from dovo.common.filesystem import Filesystem, WorkspaceNotInitializedError
 from dovo.common.lock import LockTimeoutError, WorkspaceLock
 from dovo.common.version import get_version
@@ -221,9 +227,6 @@ def run_cli() -> None:
     """Main entrypoint with global crash protection."""
     try:
         app()
-    except typer.Exit:
-        # Allow intentional Typer exits (like version_callback or help) to pass through normally
-        raise
     except LockTimeoutError as exc:
         ui_dispatcher.dispatch(
             ErrorPanelEvent(
@@ -238,10 +241,13 @@ def run_cli() -> None:
         sys.exit(1)
     except Exception as exc:
         # Global Catch-All for unexpected bugs (e.g., missing record.id)
+        record = record_exception(exc, level=DiagnosticLevel.ERROR, operation="cli.run")
         ui_dispatcher.dispatch(
             ErrorPanelEvent(
                 title="Fatal Error",
-                message=f"A fatal unexpected error occurred.\nDetails: {_exception_details(exc)}",
+                message=append_diagnostic_hint(
+                    f"A fatal unexpected error occurred.\nDetails: {_exception_details(exc)}", record
+                ),
                 border_style="red",
             )
         )

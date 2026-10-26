@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import dataclasses
+import sys
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -19,8 +21,9 @@ from dovo.cli.ui import ErrorPanelEvent
 from dovo.common.clock import utc_now
 from dovo.common.lock import LockTimeoutError
 from dovo.common.session_id import new_session_id
+from dovo.core.config import ConfigLoadError
 from dovo.core.config.generator import build_default_config
-from dovo.core.config.loader import ConfigLoadResult
+from dovo.core.config.loader import ConfigLoadResult, ConfigLoadStatus
 from dovo.core.config.models import DovoConfig
 from dovo.core.config.mutate import ConfigSetResult, ConfigSetStatus
 from dovo.core.config.validate import ConfigValidationResult
@@ -28,6 +31,7 @@ from dovo.core.diagnostics.models import DiagnosticsReport
 from dovo.core.git.runner import GitRunner
 from dovo.core.status.models import DovoStatusResult
 from tests.harness.builders import WorkspaceBuilder
+from tests.harness.diagnostic_log import FROZEN_EVENT_ID, diagnostic_hint, read_single_event
 
 
 class CliSmokeTests:
@@ -174,7 +178,7 @@ class RunCliCrashProtectionTests:
         assert "Fatal Error" in capsys.readouterr().out
 
     def test_run_cli_unexpected_exception_panel_lists_exception_notes(
-        self, monkeypatch: pytest.MonkeyPatch, dispatch_spy: list[object]
+        self, monkeypatch: pytest.MonkeyPatch, dispatch_spy: list[object], frozen_diagnostic_clock: Path
     ) -> None:
         """Append each note added to the exception to the Fatal Error panel's details, one per line."""
 
@@ -194,10 +198,84 @@ class RunCliCrashProtectionTests:
                 title="Fatal Error",
                 message=(
                     "A fatal unexpected error occurred.\nDetails: unwritable data dir\nRemove it, then rerun dovo run."
+                    + diagnostic_hint(frozen_diagnostic_clock)
                 ),
                 border_style="red",
             )
         ]
+
+    def test_run_cli_unexpected_exception_records_cli_run_event(
+        self, monkeypatch: pytest.MonkeyPatch, frozen_diagnostic_clock: Path
+    ) -> None:
+        """Write one error-level cli.run event with a null command and the exception's type, message and traceback, and exit 1."""
+
+        def _raise_unexpected() -> None:
+            raise RuntimeError("missing record.id")
+
+        monkeypatch.setattr(cli_module, "app", _raise_unexpected)
+
+        with pytest.raises(SystemExit) as exc_info:
+            cli_module.run_cli()
+
+        assert exc_info.value.code == 1
+        event = read_single_event(frozen_diagnostic_clock)
+        assert event["event_id"] == FROZEN_EVENT_ID
+        assert event["level"] == "error"
+        assert event["operation"] == "cli.run"
+        assert event["command"] is None
+        assert event["exception_type"] == "RuntimeError"
+        assert event["exception_message"] == "missing record.id"
+        assert "RuntimeError: missing record.id" in str(event["formatted_traceback"])
+
+    def test_run_cli_config_load_error_dispatches_its_result_and_exits_one(
+        self, monkeypatch: pytest.MonkeyPatch, dispatch_spy: list[object]
+    ) -> None:
+        """Dispatch the ConfigLoadError's result as the only event and exit 1."""
+        load_result = ConfigLoadResult(status=ConfigLoadStatus.MALFORMED_JSON, config_path=Path("config.json"))
+
+        def _raise_config_load_error() -> None:
+            raise ConfigLoadError("malformed config.json", load_result)
+
+        monkeypatch.setattr(cli_module, "app", _raise_config_load_error)
+
+        with pytest.raises(SystemExit) as exc_info:
+            cli_module.run_cli()
+
+        assert exc_info.value.code == 1
+        assert dispatch_spy == [load_result]
+
+    @pytest.mark.parametrize(
+        ("case", "expected"),
+        [
+            pytest.param("bare", 0, id="bare"),
+            pytest.param("help", 0, id="help"),
+            pytest.param("version", 0, id="version"),
+            pytest.param("usage-error", 2, id="usage-error"),
+            pytest.param("typer-exit", 1, id="typer-exit"),
+        ],
+    )
+    def test_run_cli_passes_through_click_and_typer_exit_codes(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        cli_workspace: Path,
+        git_repo: Path,
+        case: str,
+        expected: int,
+    ) -> None:
+        """Exit with Click's or the command's own exit code when the argv never reaches a run_cli handler."""
+        argv_for: dict[str, Callable[[], list[str]]] = {
+            "bare": lambda: [],
+            "help": lambda: ["--help"],
+            "version": lambda: ["--version"],
+            "usage-error": lambda: ["-p", str(cli_workspace), "worktree", "list", "--format", "nope"],
+            "typer-exit": lambda: ["-p", str(git_repo), "worktree", "list"],
+        }
+        monkeypatch.setattr(sys, "argv", ["dovo", *argv_for[case]()])
+
+        with pytest.raises(SystemExit) as exc_info:
+            cli_module.run_cli()
+
+        assert exc_info.value.code == expected
 
 
 GUARD_MESSAGE_HEAD = "Workspace is not initialized: no valid project identity at"

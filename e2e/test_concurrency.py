@@ -41,3 +41,32 @@ class AdvisoryLockingCliTests:
         finally:
             fcntl.flock(file_descriptor, fcntl.LOCK_UN)
             os.close(file_descriptor)
+
+    @pytest.mark.parametrize(
+        "argv",
+        [
+            pytest.param(["worktree", "create"], id="worktree-create"),
+            pytest.param(["blueprint", "create", "--name", "locked-bp"], id="blueprint-create"),
+            pytest.param(["step", "create", "--name", "locked-step"], id="step-create"),
+        ],
+    )
+    def test_escaping_lock_timeout_renders_panel_without_traceback_and_exits_1(
+        self, run_dovo: DovoRunner, initialized_project: Path, argv: list[str]
+    ) -> None:
+        """Print the Workspace Lock Timeout panel on stdout, no Traceback on stderr, and exit 1."""
+        lock_file = initialized_project / ".dovo" / "workspace.lock"
+        file_descriptor = os.open(lock_file, os.O_CREAT | os.O_RDWR)
+        fcntl.flock(file_descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+
+        try:
+            result = run_dovo(argv, cwd=initialized_project, env={"DOVO_LOCK_TIMEOUT_SECONDS": "0.5"})
+
+            assert result.exit_code == 1
+            assert "Workspace Lock Timeout" in result.stdout
+            assert "Timed out waiting for workspace lock" in result.stdout
+            assert "Traceback" not in result.stderr
+            if argv[0] == "worktree":
+                assert "Lock Held" in result.stdout
+        finally:
+            fcntl.flock(file_descriptor, fcntl.LOCK_UN)
+            os.close(file_descriptor)
