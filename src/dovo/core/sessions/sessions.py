@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from pathlib import Path
 
+from dovo.common.diagnostic_log import error_diagnostics
 from dovo.common.filesystem import WorkspacePaths
 from dovo.common.models import Remediation
 from dovo.common.redact import SecretRedactor
@@ -241,11 +242,15 @@ class SessionCollection:
         return Session(self.paths, session_id, db=self.db, sensitive_variables=self.sensitive_variables)
 
     def list(self, *, limit: int | None = 20, status: str | None = None) -> HistoryListResult:
-        """Reconcile stale sessions, then list this project's session records, newest first."""
+        """Reconcile stale sessions, then list this project's session records, newest first.
+
+        Raises:
+            LockTimeoutError: If another process holds the workspace lock.
+        """
         warnings: list[str] = []
-        reconciliation_result = reconcile_stale_sessions(self.db, path=self.paths.root_dir)
-        if reconciliation_result.warning:
-            warnings.append(reconciliation_result.warning)
+        reconciliation = reconcile_stale_sessions(self.db, path=self.paths.root_dir)
+        if reconciliation.warning:
+            warnings.append(reconciliation.warning)
 
         status_filter: SessionStatus | str | None = None
         if status is not None:
@@ -260,7 +265,7 @@ class SessionCollection:
             status=HistoryListStatus.OK,
             sessions=sessions,
             warnings=warnings,
-            diagnostics=list(reconciliation_result.diagnostics),
+            diagnostics=error_diagnostics(reconciliation.diagnostic),
         )
 
     def latest_details(self, *, include_logs: bool = False) -> HistoryShowResult:

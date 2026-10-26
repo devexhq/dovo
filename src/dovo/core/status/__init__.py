@@ -1,4 +1,4 @@
-"""Workspace health and runtime status collection without side effects."""
+"""Workspace health and runtime status collection, after reconciling stale sessions."""
 
 from dovo.core.status.models import (
     CatalogStatusInfo,

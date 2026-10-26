@@ -39,6 +39,8 @@ Error messages shown by `list` and `show` are masked on read, including names li
 
 Lists recorded sessions, newest first.
 
+Before it lists, `dovo session list` marks sessions left `running` by a `dovo` process that no longer exists as `failed`, and adds `Reconciled 1 interrupted session (session_id: <id>).` to its warnings. If another `dovo` process holds the workspace lock until the wait times out, `dovo session list` stops with a workspace lock timeout error and exits 1.
+
 ### Options
 
 | Flag | Description |

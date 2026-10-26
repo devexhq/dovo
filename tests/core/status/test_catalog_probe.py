@@ -6,7 +6,7 @@ from dovo.common.filesystem import Filesystem
 from dovo.core.git.runner import GitRunner
 from dovo.core.status import Status
 from tests.harness.status_workspace import BuildStatusWorkspace
-from tests.harness.workspace_paths import initialized_workspace_paths
+from tests.harness.workspace_paths import initialized_workspace_db, initialized_workspace_paths
 
 
 class CatalogProbeTests:
@@ -15,7 +15,11 @@ class CatalogProbeTests:
     def test_collect_missing_catalog_directory_reports_absent(self, status_workspace: BuildStatusWorkspace) -> None:
         workspace = status_workspace()
 
-        result = Status(initialized_workspace_paths(workspace), git=GitRunner()).collect()
+        result = Status(
+            initialized_workspace_paths(workspace),
+            git=GitRunner(),
+            sessions_db=initialized_workspace_db(workspace).sessions,
+        ).collect()
 
         assert result.is_initialized is True
         assert result.catalog.exists is False
@@ -30,7 +34,11 @@ class CatalogProbeTests:
         Filesystem.atomic_write_text(fs.catalog_blueprints_dir / "valid-bp.yml", "name: valid-bp\n")
         Filesystem.atomic_write_text(fs.catalog_blueprints_dir / "bad.yml", "invalid: [yaml: broken\n")
 
-        result = Status(initialized_workspace_paths(workspace), git=GitRunner()).collect()
+        result = Status(
+            initialized_workspace_paths(workspace),
+            git=GitRunner(),
+            sessions_db=initialized_workspace_db(workspace).sessions,
+        ).collect()
 
         assert result.catalog.exists is True
         assert result.catalog.total_items == 2

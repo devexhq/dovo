@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
 from typing import Literal
 
 from pydantic import BaseModel, Field
 
+from dovo.common.diagnostic_log import DiagnosticRecord
 from dovo.common.models import BaseResult
 from dovo.core.db import SessionRecord
 
@@ -187,8 +189,10 @@ class HistoryShowResult(BaseResult):
         return self.status == HistoryShowStatus.OK and self.session is not None and not self.errors
 
 
-class ReconciliationResult(BaseResult):
-    """Result of reconciling stale running sessions."""
+@dataclass(frozen=True, slots=True)
+class Reconciliation:
+    """Stale sessions marked failed, the warning to show for them, and the record of an unexpected failure."""
 
-    reconciled: list[SessionRecord] = Field(default_factory=list)
+    reconciled: tuple[SessionRecord, ...] = ()
     warning: str | None = None
+    diagnostic: DiagnosticRecord | None = None

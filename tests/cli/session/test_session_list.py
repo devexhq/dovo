@@ -10,8 +10,10 @@ import pytest
 from typer.testing import CliRunner
 
 from dovo.cli import app
+from dovo.common.lock import LockTimeoutError
 from dovo.core.db import SessionStatus
 from tests.harness.diagnostic_log import FROZEN_EVENT_ID
+from tests.harness.lock import time_out_first_lock
 from tests.harness.sessions import fail_reconciliation_list
 from tests.harness.workspace_paths import initialized_workspace_db
 
@@ -62,6 +64,17 @@ class SessionListCliIntegrationTests:
         assert [row["session_id"] for row in payload["sessions"]] == ["session-completed"]
         assert payload["warnings"] == []
         assert payload["diagnostics"] == [{"event_id": FROZEN_EVENT_ID, "log_path": str(frozen_diagnostic_clock)}]
+
+    def test_session_list_cli_json_under_lock_timeout_exits_one(
+        self, cli_runner: CliRunner, cli_workspace: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Exit 1 with result.exception a LockTimeoutError for `session list --format json`."""
+        time_out_first_lock(monkeypatch)
+
+        result = cli_runner.invoke(app, ["-p", str(cli_workspace), "session", "list", "--format", "json"])
+
+        assert result.exit_code == 1
+        assert isinstance(result.exception, LockTimeoutError)
 
     def test_bare_session_and_ls_alias_equal_session_list(self, cli_runner: CliRunner, cli_workspace: Path) -> None:
         db = initialized_workspace_db(cli_workspace)
