@@ -165,6 +165,7 @@ RENDERED: Final[list[type[BaseResult]]] = [
     WorktreeShowResult,
     WorktreeListResult,
     WorktreeCreateResult,
+    WorktreeApplyResult,
     WorktreeDeleteResult,
 ]
 

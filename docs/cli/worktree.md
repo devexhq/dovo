@@ -2,7 +2,7 @@
 
 `dovo worktree` creates and manages isolated Git worktrees.
 
-When `create` fails with an unexpected error or an operating-system error, or cannot save the worktree's metadata, or a step of removing the worktree fails during `delete`, Dovo writes a [diagnostic log](doctor.md#diagnostic-logs) record, prints a `Details logged: <path> (event <event_id>)` line after the output, and lists the record in `diagnostics` with `--format json`; the error or warning message is unchanged. When `apply` or `diff` fails with an unexpected error, the error or warning message instead ends with that line. If the record cannot be written, the line is absent.
+When `create` fails with an unexpected error or an operating-system error, or cannot save the worktree's metadata, or a step of removing the worktree hits an unexpected or operating-system error during `delete`, Dovo writes a [diagnostic log](doctor.md#diagnostic-logs) record, prints a `Details logged: <path> (event <event_id>)` line after the output, and lists the record in `diagnostics` with `--format json`; the error or warning message is unchanged. When `apply` or `diff` fails with an unexpected error, the error or warning message instead ends with that line. If the record cannot be written, the line is absent.
 
 ## Subcommands
 

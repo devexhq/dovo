@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
 import pytest
 
 from dovo.cli.ui.formatters.worktree.worktree_apply import WorktreeApplyFormatter
+from dovo.common.diagnostic_log import DiagnosticLevel, DiagnosticRecord
 from dovo.common.models import Remediation
 from dovo.core.worktree.models import (
     WorktreeApplyResult,
@@ -53,10 +55,34 @@ FAILED_CONFLICT = FormatterCase.identity(
     render_expectations=["Merge conflict in src/conflict.py", "Fix:", "- Resolve manually"],
 )
 
+APPLIED_DELETE_WITH_DIAGNOSTICS = FormatterCase.identity(
+    data=WorktreeApplyResult(
+        status=WorktreeApplyStatus.OK,
+        worktree_id="dovo_4",
+        strategy=WorktreeApplyStrategy.SQUASH,
+        commit_sha="def5678",
+        cleaned_up=True,
+        warnings=["Failed to delete branch 'dovo/dovo_4': boom"],
+        diagnostics=[
+            DiagnosticRecord(
+                event_id="exc_3f9a1c07b2de",
+                log_path=Path("/home/me/.dovo/logs/2026-10-23/exc_3f9a1c07b2de.json"),
+                level=DiagnosticLevel.ERROR,
+            )
+        ],
+    ),
+    render_expectations=[
+        "dovo_4",
+        "Failed to delete branch 'dovo/dovo_4': boom",
+        "Details logged: /home/me/.dovo/logs/2026-10-23/exc_3f9a1c07b2de.json (event exc_3f9a1c07b2de)",
+    ],
+)
+
 WORKTREE_APPLY_CASES = [
     pytest.param(APPLIED_SQUASH, id="applied_squash"),
     pytest.param(APPLIED_PATCH, id="applied_patch"),
     pytest.param(FAILED_CONFLICT, id="failed_conflict"),
+    pytest.param(APPLIED_DELETE_WITH_DIAGNOSTICS, id="applied_delete_with_diagnostics"),
 ]
 
 WORKTREE_APPLY_PAYLOAD_CASES = [
